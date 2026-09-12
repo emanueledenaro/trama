@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 import Testing
 @testable import TramaCore
@@ -161,19 +162,35 @@ struct GitHubClientTests {
 
     @Test("Cancelling the runner terminates the subprocess promptly")
     func cancellationTerminatesProcess() async throws {
-        let runner = ProcessGitHubCommandRunner(executableURL: URL(fileURLWithPath: "/bin/sleep"))
-        let clock = ContinuousClock()
-        let started = clock.now
+        let fixtureRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent("TramaGitHubCancellationTests", isDirectory: true)
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: fixtureRoot, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: fixtureRoot) }
+        let readyURL = fixtureRoot.appendingPathComponent("ready.pid")
+        let program = """
+        import os, pathlib, signal, sys, time
+        signal.signal(signal.SIGTERM, signal.SIG_IGN)
+        pathlib.Path(sys.argv[1]).write_text(str(os.getpid()), encoding="utf-8")
+        time.sleep(20)
+        """
+        let runner = ProcessGitHubCommandRunner(executableURL: URL(fileURLWithPath: "/usr/bin/python3"))
         let task = Task {
-            try await runner.run(arguments: ["5"], timeout: .seconds(10))
+            try await runner.run(
+                arguments: ["-c", program, readyURL.path],
+                timeout: .seconds(30)
+            )
         }
-        try await Task.sleep(for: .milliseconds(30))
+        let pid = try await waitForProcessReadiness(at: readyURL, timeout: .seconds(5))
+        let clock = ContinuousClock()
+        let cancellationStarted = clock.now
         task.cancel()
 
         await #expect(throws: CancellationError.self) {
             _ = try await task.value
         }
-        #expect(started.duration(to: clock.now) < .seconds(2))
+        #expect(cancellationStarted.duration(to: clock.now) < .seconds(5))
+        #expect(await waitUntilProcessExits(pid, timeout: .seconds(1)))
     }
 
     @Test("GitHub process is pinned and receives no token variables")
@@ -311,6 +328,39 @@ struct GitHubClientTests {
         #expect((1...3).contains(calls))
         #expect(elapsed < .seconds(2))
     }
+}
+
+private enum CancellationFixtureError: Error {
+    case processDidNotBecomeReady
+    case invalidPID
+}
+
+private func waitForProcessReadiness(at url: URL, timeout: Duration) async throws -> Int32 {
+    let clock = ContinuousClock()
+    let deadline = clock.now.advanced(by: timeout)
+    while clock.now < deadline {
+        if let data = try? Data(contentsOf: url),
+           let text = String(data: data, encoding: .utf8),
+           let pid = Int32(text.trimmingCharacters(in: .whitespacesAndNewlines)),
+           pid > 0 {
+            return pid
+        }
+        try await Task.sleep(for: .milliseconds(10))
+    }
+    throw CancellationFixtureError.processDidNotBecomeReady
+}
+
+private func waitUntilProcessExits(_ pid: Int32, timeout: Duration) async -> Bool {
+    guard pid > 0 else { return false }
+    let clock = ContinuousClock()
+    let deadline = clock.now.advanced(by: timeout)
+    while clock.now < deadline {
+        errno = 0
+        if kill(pid, 0) == -1, errno == ESRCH { return true }
+        try? await Task.sleep(for: .milliseconds(10))
+    }
+    errno = 0
+    return kill(pid, 0) == -1 && errno == ESRCH
 }
 
 private actor FixtureGitHubRunner: GitHubCommandRunning {
