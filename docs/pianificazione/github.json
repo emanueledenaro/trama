@@ -1,0 +1,201 @@
+{
+  "spec": {
+    "number": 1,
+    "url": "https://github.com/emanueledenaro/trama/issues/1",
+    "title": "Specifica: Trama nativa, Patto Vivo e consapevolezza del gruppo"
+  },
+  "tickets": {
+    "1": {
+      "number": 2,
+      "url": "https://github.com/emanueledenaro/trama/issues/2",
+      "title": "T01: Aprire Trama e ritrovare un progetto",
+      "id": 5435164092,
+      "blockedBy": [],
+      "document": "docs/pianificazione/tickets/01-avvio-nativo.md"
+    },
+    "2": {
+      "number": 3,
+      "url": "https://github.com/emanueledenaro/trama/issues/3",
+      "title": "T02: Riconoscere e collegare Codex di OpenAI",
+      "id": 5435164237,
+      "blockedBy": [
+        1
+      ],
+      "document": "docs/pianificazione/tickets/02-collegare-codex.md"
+    },
+    "3": {
+      "number": 4,
+      "url": "https://github.com/emanueledenaro/trama/issues/4",
+      "title": "T03: Riconoscere GitHub e verificare le operazioni disponibili",
+      "id": 5435164392,
+      "blockedBy": [
+        2
+      ],
+      "document": "docs/pianificazione/tickets/03-collegamenti-github.md"
+    },
+    "4": {
+      "number": 5,
+      "url": "https://github.com/emanueledenaro/trama/issues/5",
+      "title": "T04: Preparare automaticamente il metodo AI Hero",
+      "id": 5435164536,
+      "blockedBy": [
+        1,
+        2
+      ],
+      "document": "docs/pianificazione/tickets/04-setup-aihero.md"
+    },
+    "5": {
+      "number": 6,
+      "url": "https://github.com/emanueledenaro/trama/issues/6",
+      "title": "T05: Esplorare una mappa collegata ai file reali",
+      "id": 5435164669,
+      "blockedBy": [
+        1
+      ],
+      "document": "docs/pianificazione/tickets/05-mappa-viva.md"
+    },
+    "6": {
+      "number": 7,
+      "url": "https://github.com/emanueledenaro/trama/issues/7",
+      "title": "T06: Passare da un modulo a un piano di Codex",
+      "id": 5435164817,
+      "blockedBy": [
+        2,
+        4,
+        5
+      ],
+      "document": "docs/pianificazione/tickets/06-richiesta-piano.md"
+    },
+    "7": {
+      "number": 8,
+      "url": "https://github.com/emanueledenaro/trama/issues/8",
+      "title": "T07: Prendere una decisione e vedere quali lavori ne dipendono",
+      "id": 5435164961,
+      "blockedBy": [
+        6
+      ],
+      "document": "docs/pianificazione/tickets/07-decisioni-patto.md"
+    },
+    "8": {
+      "number": 9,
+      "url": "https://github.com/emanueledenaro/trama/issues/9",
+      "title": "T08: Eseguire una modifica in un worktree dedicato",
+      "id": 5435165101,
+      "blockedBy": [
+        7
+      ],
+      "document": "docs/pianificazione/tickets/08-sessione-isolata.md"
+    },
+    "9": {
+      "number": 10,
+      "url": "https://github.com/emanueledenaro/trama/issues/10",
+      "title": "T09: Revisionare il comportamento su un candidato preciso",
+      "id": 5435165247,
+      "blockedBy": [
+        8
+      ],
+      "document": "docs/pianificazione/tickets/09-verifiche-revisione.md"
+    },
+    "10": {
+      "number": 11,
+      "url": "https://github.com/emanueledenaro/trama/issues/11",
+      "title": "T10: Creare un progetto partendo da un’idea",
+      "id": 5435165424,
+      "blockedBy": [
+        8
+      ],
+      "document": "docs/pianificazione/tickets/10-nuovo-progetto.md"
+    },
+    "11": {
+      "number": 12,
+      "url": "https://github.com/emanueledenaro/trama/issues/12",
+      "title": "T11: Collegare una issue al lavoro e pubblicare una PR revisionata",
+      "id": 5435165555,
+      "blockedBy": [
+        3,
+        9
+      ],
+      "document": "docs/pianificazione/tickets/11-issue-pull-request.md"
+    },
+    "12": {
+      "number": 13,
+      "url": "https://github.com/emanueledenaro/trama/issues/13",
+      "title": "T12: Vedere le novità condivise dal gruppo",
+      "id": 5435165676,
+      "blockedBy": [
+        3,
+        5
+      ],
+      "document": "docs/pianificazione/tickets/12-attivita-gruppo.md"
+    },
+    "13": {
+      "number": 14,
+      "url": "https://github.com/emanueledenaro/trama/issues/14",
+      "title": "T13: Ricevere un avviso per un conflitto Git riprodotto",
+      "id": 5435165844,
+      "blockedBy": [
+        8,
+        9,
+        12
+      ],
+      "document": "docs/pianificazione/tickets/13-conflitti-git.md"
+    },
+    "14": {
+      "number": 15,
+      "url": "https://github.com/emanueledenaro/trama/issues/15",
+      "title": "T14: Capire le conseguenze delle modifiche del gruppo",
+      "id": 5435166050,
+      "blockedBy": [
+        6,
+        7,
+        9,
+        12
+      ],
+      "document": "docs/pianificazione/tickets/14-intenzione-comportamento.md"
+    },
+    "15": {
+      "number": 16,
+      "url": "https://github.com/emanueledenaro/trama/issues/16",
+      "title": "T15: Aggiornare il piano e avvisare solo quando serve",
+      "id": 5435166222,
+      "blockedBy": [
+        13,
+        14
+      ],
+      "document": "docs/pianificazione/tickets/15-reazione-avvisi.md"
+    },
+    "16": {
+      "number": 17,
+      "url": "https://github.com/emanueledenaro/trama/issues/17",
+      "title": "T16: Seguire il progetto a finestra chiusa",
+      "id": 5435166352,
+      "blockedBy": [
+        15
+      ],
+      "document": "docs/pianificazione/tickets/16-background-ripresa.md"
+    },
+    "17": {
+      "number": 18,
+      "url": "https://github.com/emanueledenaro/trama/issues/18",
+      "title": "T17: Verificare l’intero percorso con l’interfaccia Apple",
+      "id": 5435166496,
+      "blockedBy": [
+        4,
+        10,
+        11,
+        16
+      ],
+      "document": "docs/pianificazione/tickets/17-esperienza-macos.md"
+    },
+    "18": {
+      "number": 19,
+      "url": "https://github.com/emanueledenaro/trama/issues/19",
+      "title": "T18: Consegnare una beta locale riproducibile dal codice pubblico",
+      "id": 5435166673,
+      "blockedBy": [
+        17
+      ],
+      "document": "docs/pianificazione/tickets/18-beta-riproducibile.md"
+    }
+  }
+}

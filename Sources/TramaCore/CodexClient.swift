@@ -1,0 +1,1945 @@
+import Foundation
+
+public final class CodexClient: @unchecked Sendable {
+    public enum AccountStatus: Equatable, Sendable {
+        case signedOut
+        case chatGPT(email: String?, plan: String)
+    }
+
+    public struct App: Codable, Equatable, Sendable, Identifiable {
+        public let id: String
+        public let name: String
+        public let description: String
+        public let installURL: URL?
+        public let isAccessible: Bool
+        public let isEnabled: Bool
+        public let isInstalled: Bool
+        public let isCallable: Bool
+
+        public init(
+            id: String,
+            name: String,
+            description: String,
+            installURL: URL?,
+            isAccessible: Bool,
+            isEnabled: Bool,
+            isInstalled: Bool,
+            isCallable: Bool
+        ) {
+            self.id = id
+            self.name = name
+            self.description = description
+            self.installURL = installURL
+            self.isAccessible = isAccessible
+            self.isEnabled = isEnabled
+            self.isInstalled = isInstalled
+            self.isCallable = isCallable
+        }
+    }
+
+    public struct ServerInfo: Codable, Equatable, Sendable {
+        public let userAgent: String
+        public let codexHome: String
+        public let platformFamily: String
+        public let platformOS: String
+
+        public init(
+            userAgent: String,
+            codexHome: String,
+            platformFamily: String,
+            platformOS: String
+        ) {
+            self.userAgent = userAgent
+            self.codexHome = codexHome
+            self.platformFamily = platformFamily
+            self.platformOS = platformOS
+        }
+    }
+
+    public struct ApprovalRequest: Codable, Equatable, Sendable, Identifiable {
+        public let id: String
+        public let kind: String
+        public let title: String
+        public let detail: String
+
+        public init(id: String, kind: String, title: String, detail: String) {
+            self.id = id
+            self.kind = kind
+            self.title = title
+            self.detail = detail
+        }
+    }
+
+    public struct LoadedSkill: Codable, Equatable, Sendable, Identifiable {
+        public var id: String { path }
+        public let name: String
+        public let path: String
+        public let enabled: Bool
+
+        public init(name: String, path: String, enabled: Bool) {
+            self.name = name
+            self.path = path
+            self.enabled = enabled
+        }
+    }
+
+    public enum ApprovalDecision: String, Codable, Equatable, Sendable {
+        case allowOnce
+        case decline
+    }
+
+    public enum ClientError: Error, Equatable, Sendable {
+        case executableNotFound
+        case invalidExecutable(String)
+        case connectionInProgress
+        case notConnected
+        case authenticationRequired
+        case unsupportedAccount(String)
+        case alreadySignedIn
+        case loginFailed(String)
+        case emptyPrompt
+        case invalidWorkingDirectory(String)
+        case invalidOutputSchema
+        case skillDiscoveryFailed(String)
+        case toolIsolationUnavailable(String)
+        case planAlreadyRunning
+        case executionAlreadyRunning
+        case noActiveTurn
+        case malformedMessage(String)
+        case rpcError(code: Int, message: String)
+        case timedOut(String)
+        case processExited(status: Int32, stderr: String)
+        case transport(String)
+        case turnInterrupted
+        case turnFailed(String)
+        case emptyPlan
+        case emptyExecutionResponse
+    }
+
+    private let core: Core
+    private let restrictedCore: Core
+
+    public init(
+        codexURL: URL? = nil,
+        requestTimeout: TimeInterval = 15,
+        turnTimeout: TimeInterval = 300
+    ) {
+        let discoveryCore = Core(
+            transportFactory: {
+                let executableURL = try Self.resolveExecutable(configuredURL: codexURL)
+                return ProcessTransport(
+                    executableURL: executableURL,
+                    arguments: Self.appServerArguments
+                )
+            },
+            requestTimeout: requestTimeout,
+            turnTimeout: turnTimeout
+        )
+        core = discoveryCore
+        restrictedCore = Core(
+            transportFactory: {
+                let executableURL = try Self.resolveExecutable(configuredURL: codexURL)
+                return ProcessTransport(
+                    executableURL: executableURL,
+                    arguments: try Self.restrictedAppServerArguments(codexURL: executableURL)
+                )
+            },
+            requestTimeout: requestTimeout,
+            turnTimeout: turnTimeout
+        )
+    }
+
+    init(
+        transport: any CodexTransport,
+        requestTimeout: TimeInterval = 1,
+        turnTimeout: TimeInterval = 2
+    ) {
+        let testCore = Core(
+            transportFactory: { transport },
+            requestTimeout: requestTimeout,
+            turnTimeout: turnTimeout
+        )
+        core = testCore
+        restrictedCore = testCore
+    }
+
+    public func connect() async throws -> AccountStatus {
+        try await core.connect()
+    }
+
+    public func startLogin() async throws -> URL {
+        try await core.startLogin()
+    }
+
+    public func listApps() async throws -> [App] {
+        try await core.listApps()
+    }
+
+    public func listSkills(cwd: URL) async throws -> [LoadedSkill] {
+        try await core.listSkills(cwd: cwd)
+    }
+
+    public func plan(
+        prompt: String,
+        cwd: URL,
+        outputSchema: Data? = nil,
+        onText: @escaping @Sendable (String) -> Void = { _ in }
+    ) async throws -> String {
+        try await restrictedCore.plan(
+            prompt: prompt,
+            cwd: cwd,
+            outputSchema: outputSchema,
+            onText: onText
+        )
+    }
+
+    public func execute(
+        prompt: String,
+        cwd: URL,
+        onText: @escaping @Sendable (String) -> Void = { _ in },
+        onApproval: @escaping @Sendable (ApprovalRequest) async -> ApprovalDecision
+    ) async throws -> String {
+        try await restrictedCore.execute(
+            prompt: prompt,
+            cwd: cwd,
+            onText: onText,
+            onApproval: onApproval
+        )
+    }
+
+    public func cancelTurn() async {
+        try? await restrictedCore.cancelTurn()
+    }
+
+    public func serverInfo() async -> ServerInfo? {
+        await core.serverInfo
+    }
+
+    public func stop() {
+        Task {
+            await core.stop()
+            await restrictedCore.stop()
+        }
+    }
+
+    static let appServerArguments = [
+        "app-server",
+        "--stdio",
+        "-c", "model_provider=\"openai\"",
+        "-c", "openai_base_url=\"https://chatgpt.com/backend-api/codex\"",
+        "-c", "chatgpt_base_url=\"https://chatgpt.com/backend-api/\""
+    ]
+
+    static func restrictedAppServerArguments(
+        codexURL: URL,
+        inventoryTimeout: TimeInterval = 5
+    ) throws -> [String] {
+        let process = Process()
+        let output = Pipe()
+        process.executableURL = codexURL
+        process.arguments = ["mcp", "list", "--json"]
+        var environment = ProcessInfo.processInfo.environment
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        let inheritedPath = environment["PATH"] ?? ""
+        environment["PATH"] = [
+            codexURL.deletingLastPathComponent().path,
+            "\(home)/.local/bin",
+            "/opt/homebrew/bin",
+            "/usr/local/bin",
+            "/usr/bin",
+            "/bin",
+            inheritedPath
+        ].joined(separator: ":")
+        process.environment = environment
+        process.standardOutput = output
+        process.standardError = FileHandle.nullDevice
+        let outputLock = NSLock()
+        let outputFinished = DispatchSemaphore(value: 0)
+        var outputData = Data()
+        var outputExceededLimit = false
+        output.fileHandleForReading.readabilityHandler = { handle in
+            let chunk = handle.availableData
+            guard !chunk.isEmpty else {
+                handle.readabilityHandler = nil
+                outputFinished.signal()
+                return
+            }
+            outputLock.withLock {
+                guard !outputExceededLimit else { return }
+                if outputData.count + chunk.count > 1_048_576 {
+                    outputExceededLimit = true
+                    process.terminate()
+                } else {
+                    outputData.append(chunk)
+                }
+            }
+        }
+        let finished = DispatchSemaphore(value: 0)
+        process.terminationHandler = { _ in finished.signal() }
+        try process.run()
+        guard finished.wait(timeout: .now() + max(inventoryTimeout, 0.01)) == .success else {
+            process.terminate()
+            if process.isRunning { process.interrupt() }
+            output.fileHandleForReading.readabilityHandler = nil
+            try? output.fileHandleForReading.close()
+            throw ClientError.toolIsolationUnavailable(
+                "timeout durante l'inventario MCP del runtime ristretto"
+            )
+        }
+        _ = outputFinished.wait(timeout: .now() + 1)
+        output.fileHandleForReading.readabilityHandler = nil
+        let data = outputLock.withLock { outputData }
+        guard !outputExceededLimit else {
+            throw ClientError.toolIsolationUnavailable(
+                "inventario MCP troppo grande per il runtime ristretto"
+            )
+        }
+        guard process.terminationStatus == 0,
+              let rows = try JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
+            throw ClientError.toolIsolationUnavailable(
+                "Codex non ha restituito l'inventario MCP necessario al runtime ristretto"
+            )
+        }
+
+        var arguments = appServerArguments
+        for row in rows {
+            guard let name = row["name"] as? String,
+                  !name.isEmpty,
+                  name.allSatisfy({ $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" }),
+                  let transport = row["transport"] as? [String: Any],
+                  let type = transport["type"] as? String else {
+                throw ClientError.toolIsolationUnavailable(
+                    "l'inventario MCP contiene una voce senza nome o trasporto"
+                )
+            }
+            let value: String
+            switch type {
+            case "stdio":
+                value = "{command=\"/usr/bin/false\",enabled=false}"
+            case "streamable_http", "sse":
+                value = "{url=\"http://127.0.0.1:9/mcp\",enabled=false}"
+            default:
+                throw ClientError.toolIsolationUnavailable(
+                    "trasporto MCP non supportato nel runtime ristretto: \(type)"
+                )
+            }
+            arguments.append(contentsOf: [
+                "-c", "mcp_servers.\(name)=\(value)"
+            ])
+        }
+        arguments.append(contentsOf: [
+            "--disable", "apps",
+            "--disable", "plugins",
+            "--disable", "hooks",
+            "--disable", "multi_agent"
+        ])
+        return arguments
+    }
+
+    private static func resolveExecutable(configuredURL: URL?) throws -> URL {
+        let fileManager = FileManager.default
+
+        if let configuredURL {
+            guard configuredURL.isFileURL,
+                  fileManager.isExecutableFile(atPath: configuredURL.path) else {
+                throw ClientError.invalidExecutable(configuredURL.path)
+            }
+            return configuredURL
+        }
+
+        var candidates: [String] = []
+        if let path = ProcessInfo.processInfo.environment["PATH"] {
+            candidates.append(contentsOf: path.split(separator: ":").map { "\($0)/codex" })
+        }
+
+        let home = fileManager.homeDirectoryForCurrentUser.path
+        candidates.append(contentsOf: [
+            "\(home)/.local/bin/codex",
+            "/opt/homebrew/bin/codex",
+            "/usr/local/bin/codex"
+        ])
+
+        var seen = Set<String>()
+        for candidate in candidates where seen.insert(candidate).inserted {
+            if fileManager.isExecutableFile(atPath: candidate) {
+                return URL(fileURLWithPath: candidate)
+            }
+        }
+
+        throw ClientError.executableNotFound
+    }
+}
+
+extension CodexClient.ClientError: LocalizedError {
+    public var errorDescription: String? {
+        switch self {
+        case .executableNotFound:
+            return "Codex CLI non è stato trovato. Installa Codex o seleziona il suo eseguibile."
+        case let .invalidExecutable(path):
+            return "Il percorso Codex non è un eseguibile valido: \(path)"
+        case .connectionInProgress:
+            return "La connessione a Codex è già in corso."
+        case .notConnected:
+            return "Codex App Server non è connesso."
+        case .authenticationRequired:
+            return "Accedi a ChatGPT prima di usare questa funzione."
+        case let .unsupportedAccount(type):
+            return "Trama richiede l'accesso ChatGPT. Il tipo di account Codex attivo è \(type)."
+        case .alreadySignedIn:
+            return "Codex usa già un account ChatGPT."
+        case let .loginFailed(message):
+            return "Accesso ChatGPT non completato: \(message)"
+        case .emptyPrompt:
+            return "La richiesta non può essere vuota."
+        case let .invalidWorkingDirectory(path):
+            return "La cartella del progetto non è valida: \(path)"
+        case .invalidOutputSchema:
+            return "Lo schema di output deve essere un oggetto JSON valido."
+        case let .skillDiscoveryFailed(detail):
+            return "Codex non ha completato la lettura delle skill: \(detail)"
+        case let .toolIsolationUnavailable(detail):
+            return "Codex non può isolare gli strumenti del thread: \(detail)"
+        case .planAlreadyRunning:
+            return "È già in corso una richiesta di piano."
+        case .executionAlreadyRunning:
+            return "È già in corso un turno Codex."
+        case .noActiveTurn:
+            return "Non c'è un turno Codex attivo da interrompere."
+        case let .malformedMessage(message):
+            return "Codex App Server ha inviato un messaggio non valido: \(message)"
+        case let .rpcError(code, message):
+            return "Codex App Server ha restituito l'errore \(code): \(message)"
+        case let .timedOut(method):
+            return "Codex App Server non ha risposto in tempo a \(method)."
+        case let .processExited(status, stderr):
+            let detail = stderr.isEmpty ? "" : " Dettaglio: \(stderr)"
+            return "Codex App Server è terminato con stato \(status).\(detail)"
+        case let .transport(message):
+            return "Errore di comunicazione con Codex App Server: \(message)"
+        case .turnInterrupted:
+            return "La richiesta di piano è stata interrotta."
+        case let .turnFailed(message):
+            return "Codex non ha completato il piano: \(message)"
+        case .emptyPlan:
+            return "Codex ha completato il turno senza restituire un piano."
+        case .emptyExecutionResponse:
+            return "Codex ha completato il turno senza restituire una risposta."
+        }
+    }
+}
+
+private actor Core {
+    typealias TransportFactory = @Sendable () throws -> any CodexTransport
+
+    private struct PendingRequest {
+        let method: String
+        let continuation: CheckedContinuation<JSONValue, Error>
+        let timeoutTask: Task<Void, Never>
+    }
+
+    private struct LoginOutcome {
+        let success: Bool
+        let error: String?
+    }
+
+    private struct PendingApproval {
+        let session: PlanSession
+        let method: String
+        let task: Task<Void, Never>
+    }
+
+    private final class PlanSession: @unchecked Sendable {
+        let threadID: String
+        let onText: @Sendable (String) -> Void
+        let onApproval: (@Sendable (CodexClient.ApprovalRequest) async -> CodexClient.ApprovalDecision)?
+        let emptyResultError: CodexClient.ClientError
+        var turnID: String?
+        var streamedText = ""
+        var finalText: String?
+        var failureMessage: String?
+        var cancelRequested = false
+        var completion: CheckedContinuation<String, Error>?
+        var completedResult: Result<String, Error>?
+        var timeoutTask: Task<Void, Never>?
+
+        init(
+            threadID: String,
+            onText: @escaping @Sendable (String) -> Void,
+            onApproval: (@Sendable (CodexClient.ApprovalRequest) async -> CodexClient.ApprovalDecision)?,
+            emptyResultError: CodexClient.ClientError
+        ) {
+            self.threadID = threadID
+            self.onText = onText
+            self.onApproval = onApproval
+            self.emptyResultError = emptyResultError
+        }
+
+        func finish(_ result: Result<String, Error>) {
+            guard completedResult == nil else { return }
+            completedResult = result
+            timeoutTask?.cancel()
+            if let completion {
+                self.completion = nil
+                completion.resume(with: result)
+            }
+        }
+    }
+
+    private let transportFactory: TransportFactory
+    private let requestTimeout: TimeInterval
+    private let turnTimeout: TimeInterval
+    private var transport: (any CodexTransport)?
+    private var eventTask: Task<Void, Never>?
+    private var initialized = false
+    private var connecting = false
+    private var nextRequestID = 1
+    private var pendingRequests: [RPCID: PendingRequest] = [:]
+    private var pendingApprovals: [RPCID: PendingApproval] = [:]
+    private var stdoutBuffer = Data()
+    private var stderrTail = Data()
+    private var currentAccount: CodexClient.AccountStatus?
+    private var pendingLoginID: String?
+    private var completedLoginOutcomes: [String: LoginOutcome] = [:]
+    private var lastLoginFailure: String?
+    private var activePlan: PlanSession?
+    private(set) var serverInfo: CodexClient.ServerInfo?
+
+    init(
+        transportFactory: @escaping TransportFactory,
+        requestTimeout: TimeInterval,
+        turnTimeout: TimeInterval
+    ) {
+        self.transportFactory = transportFactory
+        self.requestTimeout = max(requestTimeout, 0.05)
+        self.turnTimeout = max(turnTimeout, 0.05)
+    }
+
+    func connect() async throws -> CodexClient.AccountStatus {
+        try await ensureInitialized()
+        return try await readAccount()
+    }
+
+    func startLogin() async throws -> URL {
+        try await ensureInitialized()
+
+        let status = try await readAccount(ignorePreviousLoginFailure: true)
+        if case .chatGPT = status {
+            throw CodexClient.ClientError.alreadySignedIn
+        }
+
+        let result = try await request(
+            method: "account/login/start",
+            params: .object(["type": .string("chatgpt")])
+        )
+        guard let object = result.objectValue,
+              object["type"]?.stringValue == "chatgpt",
+              let loginID = object["loginId"]?.stringValue,
+              let urlString = object["authUrl"]?.stringValue,
+              let url = URL(string: urlString),
+              ["https", "http"].contains(url.scheme?.lowercased() ?? "") else {
+            throw CodexClient.ClientError.malformedMessage("risposta account/login/start incompleta")
+        }
+
+        pendingLoginID = loginID
+        lastLoginFailure = nil
+        if let outcome = completedLoginOutcomes.removeValue(forKey: loginID) {
+            pendingLoginID = nil
+            if !outcome.success {
+                lastLoginFailure = outcome.error ?? "accesso annullato"
+            }
+        }
+        return url
+    }
+
+    func listApps() async throws -> [CodexClient.App] {
+        try await ensureInitialized()
+        guard case .chatGPT = try await readAccount() else {
+            throw CodexClient.ClientError.authenticationRequired
+        }
+
+        var summaries: [CodexClient.App] = []
+        var cursor: String?
+        var pageCount = 0
+        repeat {
+            pageCount += 1
+            guard pageCount <= 20 else {
+                throw CodexClient.ClientError.malformedMessage("app/list ha superato il limite di pagine")
+            }
+
+            var params: [String: JSONValue] = [
+                "limit": .integer(100),
+                "forceRefetch": .bool(false)
+            ]
+            if let cursor {
+                params["cursor"] = .string(cursor)
+            } else {
+                params["cursor"] = .null
+            }
+
+            let result = try await request(method: "app/list", params: .object(params))
+            guard let object = result.objectValue,
+                  let data = object["data"]?.arrayValue else {
+                throw CodexClient.ClientError.malformedMessage("risposta app/list incompleta")
+            }
+
+            summaries.append(contentsOf: try data.map(Self.decodeAppSummary))
+            cursor = object["nextCursor"]?.stringValue
+        } while cursor != nil
+
+        let installedResult = try await request(
+            method: "app/installed",
+            params: .object(["forceRefresh": .bool(false)])
+        )
+        let installedObjects = installedResult.objectValue?["apps"]?.arrayValue ?? []
+        var installedByID: [String: (enabled: Bool, callable: Bool)] = [:]
+        for value in installedObjects {
+            guard let object = value.objectValue,
+                  let id = object["id"]?.stringValue else { continue }
+            installedByID[id] = (
+                object["enabled"]?.boolValue ?? false,
+                object["callable"]?.boolValue ?? false
+            )
+        }
+
+        return summaries.map { app in
+            let runtime = installedByID[app.id]
+            return CodexClient.App(
+                id: app.id,
+                name: app.name,
+                description: app.description,
+                installURL: app.installURL,
+                isAccessible: app.isAccessible,
+                isEnabled: runtime?.enabled ?? app.isEnabled,
+                isInstalled: runtime != nil,
+                isCallable: runtime?.callable ?? false
+            )
+        }
+    }
+
+    func listSkills(cwd: URL) async throws -> [CodexClient.LoadedSkill] {
+        guard cwd.isFileURL, cwd.path.hasPrefix("/") else {
+            throw CodexClient.ClientError.invalidWorkingDirectory(cwd.path)
+        }
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: cwd.path, isDirectory: &isDirectory),
+              isDirectory.boolValue else {
+            throw CodexClient.ClientError.invalidWorkingDirectory(cwd.path)
+        }
+        try await ensureInitialized()
+
+        let result = try await request(
+            method: "skills/list",
+            params: .object([
+                "cwds": .array([.string(cwd.path)]),
+                "forceReload": .bool(true)
+            ])
+        )
+        guard let entries = result.objectValue?["data"]?.arrayValue else {
+            throw CodexClient.ClientError.malformedMessage("risposta skills/list incompleta")
+        }
+
+        var skills: [CodexClient.LoadedSkill] = []
+        var errors: [String] = []
+        for entryValue in entries {
+            guard let entry = entryValue.objectValue else { continue }
+            for errorValue in entry["errors"]?.arrayValue ?? [] {
+                guard let error = errorValue.objectValue else { continue }
+                let path = error["path"]?.stringValue ?? "percorso sconosciuto"
+                let message = error["message"]?.stringValue ?? "errore sconosciuto"
+                errors.append("\(path): \(message)")
+            }
+            for skillValue in entry["skills"]?.arrayValue ?? [] {
+                guard let skill = skillValue.objectValue,
+                      let name = skill["name"]?.stringValue,
+                      let path = skill["path"]?.stringValue,
+                      let enabled = skill["enabled"]?.boolValue else { continue }
+                skills.append(CodexClient.LoadedSkill(name: name, path: path, enabled: enabled))
+            }
+        }
+        guard errors.isEmpty else {
+            throw CodexClient.ClientError.skillDiscoveryFailed(errors.joined(separator: "\n"))
+        }
+        return skills.sorted { ($0.name, $0.path) < ($1.name, $1.path) }
+    }
+
+    func plan(
+        prompt: String,
+        cwd: URL,
+        outputSchema: Data?,
+        onText: @escaping @Sendable (String) -> Void
+    ) async throws -> String {
+        let trimmedPrompt = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedPrompt.isEmpty else {
+            throw CodexClient.ClientError.emptyPrompt
+        }
+        guard cwd.isFileURL, cwd.path.hasPrefix("/") else {
+            throw CodexClient.ClientError.invalidWorkingDirectory(cwd.path)
+        }
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: cwd.path, isDirectory: &isDirectory),
+              isDirectory.boolValue else {
+            throw CodexClient.ClientError.invalidWorkingDirectory(cwd.path)
+        }
+        guard activePlan == nil else {
+            throw CodexClient.ClientError.planAlreadyRunning
+        }
+        let decodedOutputSchema: JSONValue?
+        if let outputSchema {
+            guard let schema = try? JSONDecoder().decode(JSONValue.self, from: outputSchema),
+                  schema.objectValue != nil else {
+                throw CodexClient.ClientError.invalidOutputSchema
+            }
+            decodedOutputSchema = schema
+        } else {
+            decodedOutputSchema = nil
+        }
+
+        try await ensureInitialized()
+        guard case .chatGPT = try await readAccount() else {
+            throw CodexClient.ClientError.authenticationRequired
+        }
+
+        let restrictedConfig = try await makeRestrictedThreadConfig()
+
+        let threadResult = try await request(
+            method: "thread/start",
+            params: .object([
+                "modelProvider": .string("openai"),
+                "model": .string("gpt-5.6-terra"),
+                "cwd": .string(cwd.path),
+                "approvalPolicy": .string("never"),
+                "sandbox": .string("read-only"),
+                "serviceName": .string("trama"),
+                "ephemeral": .bool(true),
+                "config": restrictedConfig,
+                "developerInstructions": .string(Self.planningInstructions)
+            ]),
+            timeout: max(requestTimeout, 60)
+        )
+        guard let threadID = threadResult.objectValue?["thread"]?.objectValue?["id"]?.stringValue else {
+            throw CodexClient.ClientError.malformedMessage("risposta thread/start senza thread.id")
+        }
+        try await verifyRestrictedThread(threadID: threadID)
+
+        let session = PlanSession(
+            threadID: threadID,
+            onText: onText,
+            onApproval: nil,
+            emptyResultError: .emptyPlan
+        )
+        activePlan = session
+
+        do {
+            var turnParams: [String: JSONValue] = [
+                "threadId": .string(threadID),
+                "input": .array([
+                    .object([
+                        "type": .string("text"),
+                        "text": .string(trimmedPrompt),
+                        "text_elements": .array([])
+                    ])
+                ]),
+                "cwd": .string(cwd.path),
+                "approvalPolicy": .string("never"),
+                "sandboxPolicy": .object([
+                    "type": .string("readOnly"),
+                    "networkAccess": .bool(false)
+                ])
+            ]
+            if let decodedOutputSchema {
+                turnParams["outputSchema"] = decodedOutputSchema
+            }
+            let turnResult = try await request(
+                method: "turn/start",
+                params: .object(turnParams)
+            )
+            guard let turnID = turnResult.objectValue?["turn"]?.objectValue?["id"]?.stringValue else {
+                throw CodexClient.ClientError.malformedMessage("risposta turn/start senza turn.id")
+            }
+            session.turnID = turnID
+
+            if session.cancelRequested {
+                try await interrupt(session: session)
+            }
+
+            let result = try await waitForPlan(session)
+            if activePlan === session {
+                activePlan = nil
+            }
+            return result
+        } catch {
+            session.timeoutTask?.cancel()
+            session.finish(.failure(error))
+            if activePlan === session {
+                activePlan = nil
+            }
+            throw error
+        }
+    }
+
+    func execute(
+        prompt: String,
+        cwd: URL,
+        onText: @escaping @Sendable (String) -> Void,
+        onApproval: @escaping @Sendable (CodexClient.ApprovalRequest) async -> CodexClient.ApprovalDecision
+    ) async throws -> String {
+        let trimmedPrompt = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedPrompt.isEmpty else {
+            throw CodexClient.ClientError.emptyPrompt
+        }
+        guard cwd.isFileURL, cwd.path.hasPrefix("/") else {
+            throw CodexClient.ClientError.invalidWorkingDirectory(cwd.path)
+        }
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: cwd.path, isDirectory: &isDirectory),
+              isDirectory.boolValue else {
+            throw CodexClient.ClientError.invalidWorkingDirectory(cwd.path)
+        }
+        guard activePlan == nil else {
+            throw CodexClient.ClientError.executionAlreadyRunning
+        }
+
+        try await ensureInitialized()
+        guard case .chatGPT = try await readAccount() else {
+            throw CodexClient.ClientError.authenticationRequired
+        }
+
+        let restrictedConfig = try await makeRestrictedThreadConfig()
+
+        let threadResult = try await request(
+            method: "thread/start",
+            params: .object([
+                "modelProvider": .string("openai"),
+                "model": .string("gpt-5.6-terra"),
+                "cwd": .string(cwd.path),
+                "approvalPolicy": .string("on-request"),
+                "sandbox": .string("workspace-write"),
+                "serviceName": .string("trama"),
+                "ephemeral": .bool(true),
+                "config": restrictedConfig,
+                "developerInstructions": .string(Self.executionInstructions)
+            ]),
+            timeout: max(requestTimeout, 60)
+        )
+        guard let threadID = threadResult.objectValue?["thread"]?.objectValue?["id"]?.stringValue else {
+            throw CodexClient.ClientError.malformedMessage("risposta thread/start senza thread.id")
+        }
+        try await verifyRestrictedThread(threadID: threadID)
+
+        let session = PlanSession(
+            threadID: threadID,
+            onText: onText,
+            onApproval: onApproval,
+            emptyResultError: .emptyExecutionResponse
+        )
+        activePlan = session
+
+        do {
+            let turnResult = try await request(
+                method: "turn/start",
+                params: .object([
+                    "threadId": .string(threadID),
+                    "input": .array([
+                        .object([
+                            "type": .string("text"),
+                            "text": .string(trimmedPrompt),
+                            "text_elements": .array([])
+                        ])
+                    ]),
+                    "cwd": .string(cwd.path),
+                    "approvalPolicy": .string("on-request"),
+                    "sandboxPolicy": .object([
+                        "type": .string("workspaceWrite"),
+                        "writableRoots": .array([.string(cwd.path)]),
+                        "networkAccess": .bool(false),
+                        "excludeTmpdirEnvVar": .bool(true),
+                        "excludeSlashTmp": .bool(true)
+                    ])
+                ])
+            )
+            guard let turnID = turnResult.objectValue?["turn"]?.objectValue?["id"]?.stringValue else {
+                throw CodexClient.ClientError.malformedMessage("risposta turn/start senza turn.id")
+            }
+            session.turnID = turnID
+
+            if session.cancelRequested {
+                try await interrupt(session: session)
+            }
+
+            let result = try await waitForPlan(session)
+            if activePlan === session {
+                activePlan = nil
+            }
+            return result
+        } catch {
+            session.timeoutTask?.cancel()
+            session.finish(.failure(error))
+            try? cancelApprovals(for: session, respondWithDecline: false)
+            if activePlan === session {
+                activePlan = nil
+            }
+            throw error
+        }
+    }
+
+    func cancelTurn() async throws {
+        guard let session = activePlan else {
+            throw CodexClient.ClientError.noActiveTurn
+        }
+        session.cancelRequested = true
+        try cancelApprovals(for: session, respondWithDecline: true)
+        guard session.turnID != nil else { return }
+        try await interrupt(session: session)
+    }
+
+    func stop() {
+        let error = CodexClient.ClientError.transport("connessione chiusa")
+        if let session = activePlan {
+            try? cancelApprovals(for: session, respondWithDecline: true)
+            session.finish(.failure(CodexClient.ClientError.turnInterrupted))
+            activePlan = nil
+        }
+        failAll(with: error)
+        eventTask?.cancel()
+        eventTask = nil
+        transport?.stop()
+        transport = nil
+        initialized = false
+        connecting = false
+        serverInfo = nil
+        currentAccount = nil
+        stdoutBuffer.removeAll(keepingCapacity: false)
+        stderrTail.removeAll(keepingCapacity: false)
+    }
+
+    private func ensureInitialized() async throws {
+        if initialized { return }
+        guard !connecting else {
+            throw CodexClient.ClientError.connectionInProgress
+        }
+        connecting = true
+
+        do {
+            let transport = try transportFactory()
+            let events = try transport.start()
+            self.transport = transport
+            eventTask = Task { [weak self] in
+                for await event in events {
+                    guard let self else { return }
+                    await self.receive(event)
+                }
+            }
+
+            let result = try await request(
+                method: "initialize",
+                params: .object([
+                    "clientInfo": .object([
+                        "name": .string("trama"),
+                        "title": .string("Trama"),
+                        "version": .string("0.1.0")
+                    ]),
+                    "capabilities": .object([
+                        "experimentalApi": .bool(true),
+                        "requestAttestation": .bool(false)
+                    ])
+                ])
+            )
+            guard let object = result.objectValue,
+                  let userAgent = object["userAgent"]?.stringValue,
+                  let codexHome = object["codexHome"]?.stringValue,
+                  let platformFamily = object["platformFamily"]?.stringValue,
+                  let platformOS = object["platformOs"]?.stringValue else {
+                throw CodexClient.ClientError.malformedMessage("risposta initialize incompleta")
+            }
+            serverInfo = CodexClient.ServerInfo(
+                userAgent: userAgent,
+                codexHome: codexHome,
+                platformFamily: platformFamily,
+                platformOS: platformOS
+            )
+            try sendNotification(method: "initialized", params: .object([:]))
+            initialized = true
+            connecting = false
+        } catch {
+            connecting = false
+            transport?.stop()
+            transport = nil
+            eventTask?.cancel()
+            eventTask = nil
+            throw error
+        }
+    }
+
+    private func readAccount(ignorePreviousLoginFailure: Bool = false) async throws -> CodexClient.AccountStatus {
+        if !ignorePreviousLoginFailure, let lastLoginFailure {
+            self.lastLoginFailure = nil
+            throw CodexClient.ClientError.loginFailed(lastLoginFailure)
+        }
+
+        let result = try await request(
+            method: "account/read",
+            params: .object(["refreshToken": .bool(false)])
+        )
+        guard let object = result.objectValue else {
+            throw CodexClient.ClientError.malformedMessage("risposta account/read non valida")
+        }
+        guard let account = object["account"], !account.isNull else {
+            currentAccount = .signedOut
+            return .signedOut
+        }
+        guard let accountObject = account.objectValue,
+              let type = accountObject["type"]?.stringValue else {
+            throw CodexClient.ClientError.malformedMessage("account/read senza tipo account")
+        }
+
+        switch type {
+        case "chatgpt":
+            guard let plan = accountObject["planType"]?.stringValue else {
+                throw CodexClient.ClientError.malformedMessage("account ChatGPT senza piano")
+            }
+            let email = accountObject["email"]?.stringValue
+            let status = CodexClient.AccountStatus.chatGPT(email: email, plan: plan)
+            currentAccount = status
+            return status
+        default:
+            currentAccount = nil
+            throw CodexClient.ClientError.unsupportedAccount(type)
+        }
+    }
+
+    private func makeRestrictedThreadConfig() async throws -> JSONValue {
+        let installed = try await request(
+            method: "app/installed",
+            params: .object(["forceRefresh": .bool(false)])
+        )
+        guard let installedApps = installed.objectValue?["apps"]?.arrayValue else {
+            throw CodexClient.ClientError.toolIsolationUnavailable(
+                "app/installed non ha restituito l'inventario globale"
+            )
+        }
+
+        var appOverrides: [String: JSONValue] = [
+            "_default": .object(["enabled": .bool(false)])
+        ]
+        for app in installedApps {
+            if let id = app.objectValue?["id"]?.stringValue {
+                appOverrides[id] = .object(["enabled": .bool(false)])
+            }
+        }
+
+        return .object([
+            "web_search": .string("disabled"),
+            "features": .object([
+                "apps": .bool(false),
+                "plugins": .bool(false),
+                "hooks": .bool(false),
+                "multi_agent": .bool(false)
+            ]),
+            "apps": .object(appOverrides)
+        ])
+    }
+
+    private func verifyRestrictedThread(threadID: String) async throws {
+        let names = try await mcpServerNames(threadID: threadID)
+        guard names.isEmpty else {
+            throw CodexClient.ClientError.toolIsolationUnavailable(
+                "server MCP ancora esposti: \(names.sorted().joined(separator: ", "))"
+            )
+        }
+
+        let installed = try await request(
+            method: "app/installed",
+            params: .object([
+                "threadId": .string(threadID),
+                "forceRefresh": .bool(false)
+            ])
+        )
+        guard let apps = installed.objectValue?["apps"]?.arrayValue else {
+            throw CodexClient.ClientError.toolIsolationUnavailable(
+                "app/installed non ha restituito lo stato del thread"
+            )
+        }
+        let exposedApps = apps.compactMap { value -> String? in
+            guard let app = value.objectValue,
+                  app["enabled"]?.boolValue == true || app["callable"]?.boolValue == true else {
+                return nil
+            }
+            return app["id"]?.stringValue ?? "app sconosciuta"
+        }
+        guard exposedApps.isEmpty else {
+            throw CodexClient.ClientError.toolIsolationUnavailable(
+                "app ancora esposte: \(exposedApps.sorted().joined(separator: ", "))"
+            )
+        }
+    }
+
+    private func mcpServerNames(threadID: String?) async throws -> [String] {
+        var cursor: String?
+        var names: [String] = []
+        var pageCount = 0
+        repeat {
+            pageCount += 1
+            guard pageCount <= 20 else {
+                throw CodexClient.ClientError.toolIsolationUnavailable(
+                    "l'inventario MCP ha superato il limite di pagine"
+                )
+            }
+            var params: [String: JSONValue] = [
+                "limit": .integer(100),
+                "detail": .string("toolsAndAuthOnly")
+            ]
+            params["threadId"] = threadID.map(JSONValue.string) ?? .null
+            params["cursor"] = cursor.map(JSONValue.string) ?? .null
+            let result = try await request(
+                method: "mcpServerStatus/list",
+                params: .object(params)
+            )
+            guard let object = result.objectValue,
+                  let data = object["data"]?.arrayValue else {
+                throw CodexClient.ClientError.toolIsolationUnavailable(
+                    "mcpServerStatus/list non ha restituito un inventario"
+                )
+            }
+            names.append(contentsOf: data.compactMap { value in
+                guard let row = value.objectValue,
+                      !(row["tools"]?.objectValue ?? [:]).isEmpty else { return nil }
+                return row["name"]?.stringValue ?? "server sconosciuto"
+            })
+            cursor = object["nextCursor"]?.stringValue
+        } while cursor != nil
+        return Array(Set(names)).sorted()
+    }
+
+    private func request(
+        method: String,
+        params: JSONValue,
+        timeout: TimeInterval? = nil
+    ) async throws -> JSONValue {
+        guard let transport else {
+            throw CodexClient.ClientError.notConnected
+        }
+
+        let id = RPCID.integer(nextRequestID)
+        nextRequestID += 1
+        let message = JSONValue.object([
+            "method": .string(method),
+            "id": .integer(id.integerValue ?? 0),
+            "params": params
+        ])
+        let data = try encodeLine(message)
+
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                let effectiveTimeout = max(timeout ?? requestTimeout, 0.05)
+                let timeoutTask = Task { [weak self] in
+                    let nanoseconds = UInt64(effectiveTimeout * 1_000_000_000)
+                    try? await Task.sleep(nanoseconds: nanoseconds)
+                    guard !Task.isCancelled, let self else { return }
+                    await self.timeoutRequest(id: id, method: method)
+                }
+                pendingRequests[id] = PendingRequest(
+                    method: method,
+                    continuation: continuation,
+                    timeoutTask: timeoutTask
+                )
+                do {
+                    try transport.send(data)
+                } catch {
+                    timeoutTask.cancel()
+                    pendingRequests.removeValue(forKey: id)
+                    continuation.resume(throwing: CodexClient.ClientError.transport(error.localizedDescription))
+                }
+            }
+        } onCancel: {
+            Task { [weak self] in
+                await self?.cancelRequest(id: id, method: method)
+            }
+        }
+    }
+
+    private func sendNotification(method: String, params: JSONValue) throws {
+        guard let transport else {
+            throw CodexClient.ClientError.notConnected
+        }
+        try transport.send(encodeLine(.object([
+            "method": .string(method),
+            "params": params
+        ])))
+    }
+
+    private func sendResponse(id: RPCID, result: JSONValue) throws {
+        guard let transport else {
+            throw CodexClient.ClientError.notConnected
+        }
+        try transport.send(encodeLine(.object([
+            "id": id.jsonValue,
+            "result": result
+        ])))
+    }
+
+    private func sendUnsupportedResponse(id: RPCID, method: String) throws {
+        guard let transport else {
+            throw CodexClient.ClientError.notConnected
+        }
+        try transport.send(encodeLine(.object([
+            "id": id.jsonValue,
+            "error": .object([
+                "code": .integer(-32601),
+                "message": .string("Trama does not support server request \(method)")
+            ])
+        ])))
+    }
+
+    private func receive(_ event: CodexTransportEvent) {
+        switch event {
+        case let .stdout(data):
+            receiveStdout(data)
+        case let .stderr(data):
+            stderrTail.append(data)
+            if stderrTail.count > 8_192 {
+                stderrTail.removeFirst(stderrTail.count - 8_192)
+            }
+        case let .exited(status):
+            let stderr = String(data: stderrTail, encoding: .utf8)?
+                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            failAll(with: CodexClient.ClientError.processExited(status: status, stderr: stderr))
+            initialized = false
+            connecting = false
+            transport = nil
+            eventTask = nil
+        }
+    }
+
+    private func receiveStdout(_ data: Data) {
+        stdoutBuffer.append(data)
+        if stdoutBuffer.count > 16 * 1_024 * 1_024,
+           stdoutBuffer.firstIndex(of: 0x0A) == nil {
+            closeAfterProtocolFailure(
+                CodexClient.ClientError.malformedMessage("riga JSONL troppo lunga")
+            )
+            return
+        }
+
+        while let newline = stdoutBuffer.firstIndex(of: 0x0A) {
+            var line = Data(stdoutBuffer[..<newline])
+            stdoutBuffer.removeSubrange(...newline)
+            if line.last == 0x0D {
+                line.removeLast()
+            }
+            guard !line.isEmpty else { continue }
+            do {
+                let message = try JSONDecoder().decode(JSONValue.self, from: line)
+                try handleMessage(message)
+            } catch let error as CodexClient.ClientError {
+                closeAfterProtocolFailure(error)
+                return
+            } catch {
+                let preview = String(data: line.prefix(256), encoding: .utf8) ?? "dati non UTF-8"
+                closeAfterProtocolFailure(CodexClient.ClientError.malformedMessage(preview))
+                return
+            }
+        }
+    }
+
+    private func handleMessage(_ message: JSONValue) throws {
+        guard let object = message.objectValue else {
+            throw CodexClient.ClientError.malformedMessage("il messaggio non è un oggetto")
+        }
+        let id = object["id"].flatMap(RPCID.init)
+        let method = object["method"]?.stringValue
+
+        if let id, method == nil {
+            resolveResponse(id: id, object: object)
+            return
+        }
+        if let id, let method {
+            try handleServerRequest(id: id, method: method, params: object["params"])
+            return
+        }
+        if let method {
+            handleNotification(method: method, params: object["params"])
+            return
+        }
+
+        throw CodexClient.ClientError.malformedMessage("mancano id e method")
+    }
+
+    private func resolveResponse(id: RPCID, object: [String: JSONValue]) {
+        guard let pending = pendingRequests.removeValue(forKey: id) else { return }
+        pending.timeoutTask.cancel()
+
+        if let result = object["result"] {
+            pending.continuation.resume(returning: result)
+            return
+        }
+        if let error = object["error"]?.objectValue {
+            let code = error["code"]?.intValue ?? -1
+            let message = error["message"]?.stringValue ?? "Errore RPC senza messaggio"
+            pending.continuation.resume(
+                throwing: CodexClient.ClientError.rpcError(code: code, message: message)
+            )
+            return
+        }
+        pending.continuation.resume(
+            throwing: CodexClient.ClientError.malformedMessage("risposta \(pending.method) senza result o error")
+        )
+    }
+
+    private func handleServerRequest(id: RPCID, method: String, params: JSONValue?) throws {
+        switch method {
+        case "item/commandExecution/requestApproval", "item/fileChange/requestApproval":
+            guard let session = activePlan,
+                  let onApproval = session.onApproval,
+                  approvalBelongsToSession(params: params, session: session),
+                  let approval = makeApprovalRequest(id: id, method: method, params: params) else {
+                try sendApprovalDecision(id: id, method: method, decision: .decline)
+                return
+            }
+            beginApproval(
+                id: id,
+                method: method,
+                request: approval,
+                session: session,
+                onApproval: onApproval
+            )
+        case "item/permissions/requestApproval":
+            try sendResponse(
+                id: id,
+                result: .object([
+                    "permissions": .object([:]),
+                    "scope": .string("turn")
+                ])
+            )
+        case "mcpServer/elicitation/request":
+            try sendResponse(
+                id: id,
+                result: .object([
+                    "action": .string("decline"),
+                    "content": .null
+                ])
+            )
+        case "applyPatchApproval", "execCommandApproval":
+            guard let session = activePlan,
+                  let onApproval = session.onApproval,
+                  approvalBelongsToSession(params: params, session: session),
+                  let approval = makeApprovalRequest(id: id, method: method, params: params) else {
+                try sendApprovalDecision(id: id, method: method, decision: .decline)
+                return
+            }
+            beginApproval(
+                id: id,
+                method: method,
+                request: approval,
+                session: session,
+                onApproval: onApproval
+            )
+        default:
+            try sendUnsupportedResponse(id: id, method: method)
+        }
+    }
+
+    private func beginApproval(
+        id: RPCID,
+        method: String,
+        request: CodexClient.ApprovalRequest,
+        session: PlanSession,
+        onApproval: @escaping @Sendable (CodexClient.ApprovalRequest) async -> CodexClient.ApprovalDecision
+    ) {
+        let task = Task { [weak self] in
+            let decision = await onApproval(request)
+            guard !Task.isCancelled, let self else { return }
+            await self.completeApproval(id: id, decision: decision)
+        }
+        pendingApprovals[id] = PendingApproval(session: session, method: method, task: task)
+    }
+
+    private func completeApproval(id: RPCID, decision: CodexClient.ApprovalDecision) {
+        guard let pending = pendingApprovals.removeValue(forKey: id),
+              activePlan === pending.session,
+              !pending.session.cancelRequested else { return }
+        do {
+            try sendApprovalDecision(id: id, method: pending.method, decision: decision)
+        } catch {
+            closeAfterProtocolFailure(error)
+        }
+    }
+
+    private func sendApprovalDecision(
+        id: RPCID,
+        method: String,
+        decision: CodexClient.ApprovalDecision
+    ) throws {
+        if method == "applyPatchApproval" || method == "execCommandApproval" {
+            let legacyDecision: JSONValue
+            switch decision {
+            case .allowOnce:
+                legacyDecision = .string("approved")
+            case .decline:
+                legacyDecision = .object([
+                    "denied": .object([
+                        "rejection": .string("Trama user declined the request")
+                    ])
+                ])
+            }
+            try sendResponse(id: id, result: .object(["decision": legacyDecision]))
+            return
+        }
+
+        let value = decision == .allowOnce ? "accept" : "decline"
+        try sendResponse(id: id, result: .object(["decision": .string(value)]))
+    }
+
+    private func makeApprovalRequest(
+        id: RPCID,
+        method: String,
+        params: JSONValue?
+    ) -> CodexClient.ApprovalRequest? {
+        let object = params?.objectValue ?? [:]
+        let reason = object["reason"]?.stringValue
+        let cwd = object["cwd"]?.stringValue
+
+        switch method {
+        case "item/commandExecution/requestApproval", "execCommandApproval":
+            let command = object["command"]?.stringValue
+                ?? object["command"]?.arrayValue?
+                    .compactMap(\.stringValue)
+                    .joined(separator: " ")
+            let detail = [command, cwd, reason]
+                .compactMap { $0 }
+                .filter { !$0.isEmpty }
+                .joined(separator: "\n")
+            return CodexClient.ApprovalRequest(
+                id: id.textValue,
+                kind: "command",
+                title: "Esegui comando",
+                detail: detail
+            )
+        case "item/fileChange/requestApproval", "applyPatchApproval":
+            let grantRoot = object["grantRoot"]?.stringValue
+            let detail = [reason, grantRoot]
+                .compactMap { $0 }
+                .filter { !$0.isEmpty }
+                .joined(separator: "\n")
+            return CodexClient.ApprovalRequest(
+                id: id.textValue,
+                kind: "fileChange",
+                title: "Applica modifiche ai file",
+                detail: detail
+            )
+        default:
+            return nil
+        }
+    }
+
+    private func approvalBelongsToSession(
+        params: JSONValue?,
+        session: PlanSession
+    ) -> Bool {
+        guard let object = params?.objectValue,
+              let threadID = object["threadId"]?.stringValue
+                ?? object["conversationId"]?.stringValue,
+              threadID == session.threadID else { return false }
+        if let expectedTurnID = session.turnID,
+           let receivedTurnID = object["turnId"]?.stringValue {
+            return expectedTurnID == receivedTurnID
+        }
+        return true
+    }
+
+    private func handleNotification(method: String, params: JSONValue?) {
+        guard let params = params?.objectValue else { return }
+
+        switch method {
+        case "account/login/completed":
+            let loginID = params["loginId"]?.stringValue
+            let outcome = LoginOutcome(
+                success: params["success"]?.boolValue == true,
+                error: params["error"]?.stringValue
+            )
+            if let loginID, pendingLoginID == nil {
+                completedLoginOutcomes[loginID] = outcome
+            } else if pendingLoginID == nil || loginID == pendingLoginID {
+                pendingLoginID = nil
+                if !outcome.success {
+                    lastLoginFailure = outcome.error ?? "accesso annullato"
+                }
+            }
+        case "account/updated":
+            if params["authMode"]?.stringValue == nil {
+                currentAccount = .signedOut
+            }
+        case "turn/started":
+            guard let session = activePlan,
+                  params["threadId"]?.stringValue == session.threadID,
+                  let turnID = params["turn"]?.objectValue?["id"]?.stringValue else { return }
+            session.turnID = turnID
+        case "item/agentMessage/delta", "item/plan/delta":
+            guard let session = matchingPlan(params: params),
+                  let delta = params["delta"]?.stringValue else { return }
+            session.streamedText += delta
+            session.onText(delta)
+        case "item/completed":
+            guard let session = matchingPlan(params: params),
+                  let item = params["item"]?.objectValue,
+                  let type = item["type"]?.stringValue,
+                  ["agentMessage", "plan"].contains(type),
+                  let text = item["text"]?.stringValue else { return }
+            let phase = item["phase"]?.stringValue
+            if type == "plan" || phase == nil || phase == "final_answer" {
+                session.finalText = text
+            }
+        case "error":
+            guard let session = matchingPlan(params: params),
+                  params["willRetry"]?.boolValue != true else { return }
+            session.failureMessage = params["error"]?.objectValue?["message"]?.stringValue
+                ?? "errore del modello"
+        case "turn/completed":
+            guard let session = matchingPlan(params: params),
+                  let turn = params["turn"]?.objectValue,
+                  let status = turn["status"]?.stringValue else { return }
+            switch status {
+            case "completed":
+                let text = (session.finalText ?? session.streamedText)
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                session.finish(text.isEmpty ? .failure(session.emptyResultError) : .success(text))
+            case "interrupted":
+                session.finish(.failure(CodexClient.ClientError.turnInterrupted))
+            case "failed":
+                let turnMessage = turn["error"]?.objectValue?["message"]?.stringValue
+                session.finish(
+                    .failure(CodexClient.ClientError.turnFailed(
+                        turnMessage ?? session.failureMessage ?? "errore sconosciuto"
+                    ))
+                )
+            default:
+                break
+            }
+            try? cancelApprovals(for: session, respondWithDecline: false)
+        case "serverRequest/resolved":
+            guard let requestValue = params["requestId"],
+                  let requestID = RPCID(requestValue),
+                  let pending = pendingApprovals.removeValue(forKey: requestID) else { return }
+            pending.task.cancel()
+        default:
+            break
+        }
+    }
+
+    private func matchingPlan(params: [String: JSONValue]) -> PlanSession? {
+        guard let session = activePlan,
+              params["threadId"]?.stringValue == session.threadID else { return nil }
+        if let expectedTurnID = session.turnID,
+           let receivedTurnID = params["turnId"]?.stringValue,
+           expectedTurnID != receivedTurnID {
+            return nil
+        }
+        return session
+    }
+
+    private func waitForPlan(_ session: PlanSession) async throws -> String {
+        if let result = session.completedResult {
+            return try result.get()
+        }
+        session.timeoutTask = Task { [weak self, weak session] in
+            let nanoseconds = UInt64((self?.turnTimeout ?? 1) * 1_000_000_000)
+            try? await Task.sleep(nanoseconds: nanoseconds)
+            guard !Task.isCancelled, let self, let session else { return }
+            await self.timeoutPlan(session)
+        }
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                if let result = session.completedResult {
+                    continuation.resume(with: result)
+                } else {
+                    session.completion = continuation
+                }
+            }
+        } onCancel: {
+            Task { [weak self] in
+                try? await self?.cancelTurn()
+            }
+        }
+    }
+
+    private func interrupt(session: PlanSession) async throws {
+        guard let turnID = session.turnID else { return }
+        _ = try await request(
+            method: "turn/interrupt",
+            params: .object([
+                "threadId": .string(session.threadID),
+                "turnId": .string(turnID)
+            ])
+        )
+    }
+
+    private func timeoutRequest(id: RPCID, method: String) {
+        guard let pending = pendingRequests.removeValue(forKey: id) else { return }
+        pending.timeoutTask.cancel()
+        pending.continuation.resume(throwing: CodexClient.ClientError.timedOut(method))
+    }
+
+    private func cancelRequest(id: RPCID, method: String) {
+        guard let pending = pendingRequests.removeValue(forKey: id) else { return }
+        pending.timeoutTask.cancel()
+        pending.continuation.resume(throwing: CancellationError())
+    }
+
+    private func timeoutPlan(_ session: PlanSession) {
+        guard activePlan === session else { return }
+        try? cancelApprovals(for: session, respondWithDecline: true)
+        session.finish(.failure(CodexClient.ClientError.timedOut("turn/completed")))
+        Task { [weak self, weak session] in
+            guard let self, let session else { return }
+            try? await self.interrupt(session: session)
+        }
+    }
+
+    private func closeAfterProtocolFailure(_ error: Error) {
+        failAll(with: error)
+        let currentTransport = transport
+        transport = nil
+        initialized = false
+        connecting = false
+        serverInfo = nil
+        currentTransport?.stop()
+    }
+
+    private func failAll(with error: Error) {
+        cancelAllApprovalTasks()
+        let requests = pendingRequests.values
+        pendingRequests.removeAll()
+        for pending in requests {
+            pending.timeoutTask.cancel()
+            pending.continuation.resume(throwing: error)
+        }
+        activePlan?.finish(.failure(error))
+        activePlan = nil
+    }
+
+    private func cancelApprovals(
+        for session: PlanSession,
+        respondWithDecline: Bool
+    ) throws {
+        let ids = pendingApprovals.compactMap { id, pending in
+            pending.session === session ? id : nil
+        }
+        for id in ids {
+            guard let pending = pendingApprovals.removeValue(forKey: id) else { continue }
+            pending.task.cancel()
+            if respondWithDecline {
+                try sendApprovalDecision(id: id, method: pending.method, decision: .decline)
+            }
+        }
+    }
+
+    private func cancelAllApprovalTasks() {
+        let approvals = pendingApprovals.values
+        pendingApprovals.removeAll()
+        for approval in approvals {
+            approval.task.cancel()
+        }
+    }
+
+    private func encodeLine(_ value: JSONValue) throws -> Data {
+        var data = try JSONEncoder().encode(value)
+        data.append(0x0A)
+        return data
+    }
+
+    private static func decodeAppSummary(_ value: JSONValue) throws -> CodexClient.App {
+        guard let object = value.objectValue,
+              let id = object["id"]?.stringValue,
+              let name = object["name"]?.stringValue else {
+            throw CodexClient.ClientError.malformedMessage("elemento app/list incompleto")
+        }
+        let installURL = object["installUrl"]?.stringValue.flatMap(URL.init(string:))
+        return CodexClient.App(
+            id: id,
+            name: name,
+            description: object["description"]?.stringValue ?? "",
+            installURL: installURL,
+            isAccessible: object["isAccessible"]?.boolValue ?? false,
+            isEnabled: object["isEnabled"]?.boolValue ?? false,
+            isInstalled: false,
+            isCallable: false
+        )
+    }
+
+    private static let planningInstructions = """
+    Produce a plan only. Inspect the local project in read-only mode. Do not modify files,
+    use the network, invoke external side effects, or ask for broader permissions. Explain the
+    expected behavior, involved modules, limits, open assumptions, source paths, and planned checks.
+    """
+
+    private static let executionInstructions = """
+    Work only inside the selected project directory. Do not use the network or write outside that
+    directory. Ask for approval before commands or file changes whenever the active policy requires it.
+    """
+}
+
+protocol CodexTransport: AnyObject, Sendable {
+    func start() throws -> AsyncStream<CodexTransportEvent>
+    func send(_ data: Data) throws
+    func stop()
+}
+
+enum CodexTransportEvent: Sendable {
+    case stdout(Data)
+    case stderr(Data)
+    case exited(Int32)
+}
+
+private final class ProcessTransport: CodexTransport, @unchecked Sendable {
+    private let executableURL: URL
+    private let arguments: [String]
+    private let lock = NSLock()
+    private var process: Process?
+    private var input: FileHandle?
+    private var continuation: AsyncStream<CodexTransportEvent>.Continuation?
+
+    init(executableURL: URL, arguments: [String]) {
+        self.executableURL = executableURL
+        self.arguments = arguments
+    }
+
+    func start() throws -> AsyncStream<CodexTransportEvent> {
+        let process = Process()
+        let stdin = Pipe()
+        let stdout = Pipe()
+        let stderr = Pipe()
+        process.executableURL = executableURL
+        process.arguments = arguments
+        process.standardInput = stdin
+        process.standardOutput = stdout
+        process.standardError = stderr
+        process.environment = Self.environment(for: executableURL)
+
+        let stream = AsyncStream<CodexTransportEvent> { continuation in
+            lock.withLock {
+                self.continuation = continuation
+            }
+        }
+
+        stdout.fileHandleForReading.readabilityHandler = { [weak self] handle in
+            let data = handle.availableData
+            guard !data.isEmpty else {
+                handle.readabilityHandler = nil
+                return
+            }
+            self?.yield(.stdout(data))
+        }
+        stderr.fileHandleForReading.readabilityHandler = { [weak self] handle in
+            let data = handle.availableData
+            guard !data.isEmpty else {
+                handle.readabilityHandler = nil
+                return
+            }
+            self?.yield(.stderr(data))
+        }
+        process.terminationHandler = { [weak self] process in
+            self?.yield(.exited(process.terminationStatus))
+            self?.finish()
+        }
+
+        lock.withLock {
+            self.process = process
+            input = stdin.fileHandleForWriting
+        }
+        do {
+            try process.run()
+        } catch {
+            stdout.fileHandleForReading.readabilityHandler = nil
+            stderr.fileHandleForReading.readabilityHandler = nil
+            finish()
+            lock.withLock {
+                self.process = nil
+                input = nil
+            }
+            throw CodexClient.ClientError.transport(error.localizedDescription)
+        }
+
+        return stream
+    }
+
+    func send(_ data: Data) throws {
+        let handle = lock.withLock { input }
+        guard let handle else {
+            throw CodexClient.ClientError.notConnected
+        }
+        do {
+            try handle.write(contentsOf: data)
+        } catch {
+            throw CodexClient.ClientError.transport(error.localizedDescription)
+        }
+    }
+
+    func stop() {
+        let state = lock.withLock { () -> (Process?, FileHandle?) in
+            let state = (process, input)
+            process = nil
+            input = nil
+            return state
+        }
+        try? state.1?.close()
+        if state.0?.isRunning == true {
+            state.0?.terminate()
+        }
+        finish()
+    }
+
+    private func yield(_ event: CodexTransportEvent) {
+        lock.withLock { continuation }?.yield(event)
+    }
+
+    private func finish() {
+        let continuation = lock.withLock { () -> AsyncStream<CodexTransportEvent>.Continuation? in
+            let continuation = self.continuation
+            self.continuation = nil
+            return continuation
+        }
+        continuation?.finish()
+    }
+
+    private static func environment(for executableURL: URL) -> [String: String] {
+        var environment = ProcessInfo.processInfo.environment
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        var pathEntries = [
+            executableURL.deletingLastPathComponent().path,
+            "\(home)/.local/bin",
+            "/opt/homebrew/bin",
+            "/usr/local/bin",
+            "/usr/bin",
+            "/bin"
+        ]
+        if let inheritedPath = environment["PATH"] {
+            pathEntries.append(contentsOf: inheritedPath.split(separator: ":").map(String.init))
+        }
+        var seen = Set<String>()
+        environment["PATH"] = pathEntries
+            .filter { seen.insert($0).inserted }
+            .joined(separator: ":")
+        return environment
+    }
+}
+
+private enum RPCID: Hashable, Sendable {
+    case integer(Int)
+    case string(String)
+
+    init?(_ value: JSONValue) {
+        if let integer = value.intValue {
+            self = .integer(integer)
+        } else if let string = value.stringValue {
+            self = .string(string)
+        } else {
+            return nil
+        }
+    }
+
+    var integerValue: Int? {
+        guard case let .integer(value) = self else { return nil }
+        return value
+    }
+
+    var jsonValue: JSONValue {
+        switch self {
+        case let .integer(value): return .integer(value)
+        case let .string(value): return .string(value)
+        }
+    }
+
+    var textValue: String {
+        switch self {
+        case let .integer(value): return String(value)
+        case let .string(value): return value
+        }
+    }
+}
+
+private enum JSONValue: Codable, Equatable, Sendable {
+    case object([String: JSONValue])
+    case array([JSONValue])
+    case string(String)
+    case integer(Int)
+    case double(Double)
+    case bool(Bool)
+    case null
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        if container.decodeNil() {
+            self = .null
+        } else if let value = try? container.decode(Bool.self) {
+            self = .bool(value)
+        } else if let value = try? container.decode(Int.self) {
+            self = .integer(value)
+        } else if let value = try? container.decode(Double.self) {
+            self = .double(value)
+        } else if let value = try? container.decode(String.self) {
+            self = .string(value)
+        } else if let value = try? container.decode([String: JSONValue].self) {
+            self = .object(value)
+        } else if let value = try? container.decode([JSONValue].self) {
+            self = .array(value)
+        } else {
+            throw DecodingError.dataCorruptedError(
+                in: container,
+                debugDescription: "Unsupported JSON value"
+            )
+        }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        switch self {
+        case let .object(value): try container.encode(value)
+        case let .array(value): try container.encode(value)
+        case let .string(value): try container.encode(value)
+        case let .integer(value): try container.encode(value)
+        case let .double(value): try container.encode(value)
+        case let .bool(value): try container.encode(value)
+        case .null: try container.encodeNil()
+        }
+    }
+
+    var objectValue: [String: JSONValue]? {
+        guard case let .object(value) = self else { return nil }
+        return value
+    }
+
+    var arrayValue: [JSONValue]? {
+        guard case let .array(value) = self else { return nil }
+        return value
+    }
+
+    var stringValue: String? {
+        guard case let .string(value) = self else { return nil }
+        return value
+    }
+
+    var boolValue: Bool? {
+        guard case let .bool(value) = self else { return nil }
+        return value
+    }
+
+    var intValue: Int? {
+        switch self {
+        case let .integer(value): return value
+        case let .double(value) where value.rounded() == value: return Int(value)
+        default: return nil
+        }
+    }
+
+    var isNull: Bool {
+        if case .null = self { return true }
+        return false
+    }
+}
+
+private extension NSLock {
+    func withLock<T>(_ body: () throws -> T) rethrows -> T {
+        lock()
+        defer { unlock() }
+        return try body()
+    }
+}
