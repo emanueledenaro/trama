@@ -12,6 +12,8 @@ Percorrere il prodotto da primo avvio a revisione e avviso del gruppo con UI acc
 
 [T04](./04-setup-aihero.md), [T10](./10-nuovo-progetto.md), [T11](./11-issue-pull-request.md), [T16](./16-background-ripresa.md)
 
+Ulteriori prerequisiti: [T19 responsive](./19-responsive-macos.md) e [T20 allineamento design](./20-allineamento-design.md), richiesti il 13 settembre 2026.
+
 ## Criteri di accettazione
 
 - [ ] Verificare dal doppio clic accesso, collegamenti, apertura/creazione, mappa, richiesta, decisione, esecuzione, revisione e ritorno al progetto.

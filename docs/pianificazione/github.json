@@ -183,7 +183,9 @@
         4,
         10,
         11,
-        16
+        16,
+        19,
+        20
       ],
       "document": "docs/pianificazione/tickets/17-esperienza-macos.md"
     },
@@ -196,6 +198,22 @@
         17
       ],
       "document": "docs/pianificazione/tickets/18-beta-riproducibile.md"
+    },
+    "19": {
+      "number": 21,
+      "url": "https://github.com/emanueledenaro/trama/issues/21",
+      "title": "T19: Adattare il layout alle dimensioni della finestra macOS",
+      "id": 5436555822,
+      "blockedBy": [],
+      "document": "docs/pianificazione/tickets/19-responsive-macos.md"
+    },
+    "20": {
+      "number": 22,
+      "url": "https://github.com/emanueledenaro/trama/issues/22",
+      "title": "T20: Uniformare spazi, allineamenti e gerarchia visiva Apple",
+      "id": 5436555906,
+      "blockedBy": [],
+      "document": "docs/pianificazione/tickets/20-allineamento-design.md"
     }
   }
 }

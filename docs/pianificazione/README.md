@@ -1,6 +1,6 @@
 # Ticket del piano operativo
 
-Il piano è pubblicato nel repository [emanueledenaro/trama](https://github.com/emanueledenaro/trama). La [specifica principale](https://github.com/emanueledenaro/trama/issues/1) è la issue 1. I ticket T01-T18 corrispondono alle issue 2-19.
+Il piano è pubblicato nel repository [emanueledenaro/trama](https://github.com/emanueledenaro/trama). La [specifica principale](https://github.com/emanueledenaro/trama/issues/1) è la issue 1. I primi 18 ticket corrispondono alle issue 2-19. T19 e T20, richiesti per responsive e design, sono le issue 21 e 22.
 
 Il file [github.json](github.json) conserva per ogni ticket numero, URL, titolo, dipendenze e documento locale. È la mappatura tra il piano nel repository e GitHub Issues. Non sostituisce una lettura live dello stato remoto e non segna un ticket come completato.
 
@@ -22,7 +22,9 @@ Il file [github.json](github.json) conserva per ogni ticket numero, URL, titolo,
 | [T14](tickets/14-intenzione-comportamento.md) | [#15](https://github.com/emanueledenaro/trama/issues/15) | Capire le conseguenze delle modifiche del gruppo | T06, T07, T09, T12 |
 | [T15](tickets/15-reazione-avvisi.md) | [#16](https://github.com/emanueledenaro/trama/issues/16) | Aggiornare il piano e avvisare solo quando serve | T13, T14 |
 | [T16](tickets/16-background-ripresa.md) | [#17](https://github.com/emanueledenaro/trama/issues/17) | Seguire il progetto a finestra chiusa | T15 |
-| [T17](tickets/17-esperienza-macos.md) | [#18](https://github.com/emanueledenaro/trama/issues/18) | Verificare l'intero percorso con l'interfaccia Apple | T04, T10, T11, T16 |
+| [T17](tickets/17-esperienza-macos.md) | [#18](https://github.com/emanueledenaro/trama/issues/18) | Verificare l'intero percorso con l'interfaccia Apple | T04, T10, T11, T16, T19, T20 |
 | [T18](tickets/18-beta-riproducibile.md) | [#19](https://github.com/emanueledenaro/trama/issues/19) | Consegnare una beta locale riproducibile dal codice pubblico | T17 |
+| [T19](tickets/19-responsive-macos.md) | [#21](https://github.com/emanueledenaro/trama/issues/21) | Adattare le finestre e i pannelli alle dimensioni disponibili | Incremento #20 integrato |
+| [T20](tickets/20-allineamento-design.md) | [#22](https://github.com/emanueledenaro/trama/issues/22) | Uniformare spazi, allineamenti e gerarchia visiva Apple | Incremento #20 integrato |
 
 Ogni ticket richiede il percorso dimostrabile indicato nel proprio documento. Il codice presente, un test simulato o una dipendenza completata non bastano a chiuderlo. Le verifiche ancora mancanti sono riepilogate in [stato-beta.md](../stato-beta.md).
