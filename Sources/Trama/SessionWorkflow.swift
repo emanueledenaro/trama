@@ -504,13 +504,13 @@ struct SessionReviewView: View {
                     }.padding(10).frame(maxWidth: .infinity, alignment: .leading)
                 }
                 if let output = request.executionOutput, !output.isEmpty {
-                    DisclosureGroup("Attività di Codex") { Text(output).font(.callout).textSelection(.enabled).padding(.top, 8) }
+                    DisclosureGroup("Attività di Codex") { ReviewOutput(text: output).frame(height: 220).padding(.top, 8) }
                 }
                 if let review = request.review {
                     let setupCount = review.changedFiles.filter { request.setupBaselineHashes?[$0] != nil }.count
                     Text("\(review.changedFiles.count - setupCount) file del progetto nel candidato").font(.headline)
                     if setupCount > 0 { Text("Il diff include anche \(setupCount) file di configurazione del metodo AI Hero.").font(.caption).foregroundStyle(.secondary) }
-                    DisclosureGroup("Mostra diff") { Text(review.diff.isEmpty ? "Nessuna modifica al codice." : review.diff).font(.system(.caption, design: .monospaced)).textSelection(.enabled).padding(.top, 8) }
+                    DisclosureGroup("Mostra diff") { ReviewOutput(text: review.diff.isEmpty ? "Nessuna modifica al codice." : review.diff).frame(height: 220).padding(.top, 8) }
                     HStack {
                         Button("Esegui swift test") { store.runChecks(request.id) }.disabled(store.isPlanning)
                         if ["Verifiche fallite", "Verifiche interrotte", "Errore di esecuzione"].contains(request.state) {
@@ -522,7 +522,7 @@ struct SessionReviewView: View {
                     if let check = request.check {
                         let current = !["Da rivalutare", "Verifiche in corso", "Verifiche interrotte", "Errore di esecuzione", "Interrotto"].contains(request.state)
                         Label(!current ? "Verifiche precedenti: da ripetere" : check.exitCode == 0 ? "Controlli superati" : "Controlli falliti", systemImage: current && check.exitCode == 0 ? "checkmark.circle" : "exclamationmark.circle").foregroundStyle(current && check.exitCode == 0 ? Color.green : Color.orange)
-                        DisclosureGroup("Output delle verifiche") { Text(check.output).font(.system(.caption, design: .monospaced)).textSelection(.enabled) }
+                        DisclosureGroup("Output delle verifiche") { ReviewOutput(text: check.output).frame(height: 220).padding(.top, 8) }
                     }
                     if let id = request.candidateID, let verdict = try? store.document.pact?.inspect(candidateID: id) {
                         ForEach(Array(verdict.blockers.enumerated()), id: \.offset) { _, blocker in Text(blocker.userMessage).font(.caption).foregroundStyle(.secondary) }
@@ -559,5 +559,36 @@ struct SessionReviewView: View {
         guard !store.isPlanning, request.state == "Da revisionare", !store.hasRemoteConflict(for: request),
               let candidateID = request.candidateID else { return false }
         return (try? store.document.pact?.inspect(candidateID: candidateID, requireHumanApproval: false).allowed) == true
+    }
+}
+
+private struct ReviewOutput: NSViewRepresentable {
+    let text: String
+
+    func makeNSView(context: Context) -> NSScrollView {
+        let scroll = NSScrollView()
+        scroll.hasVerticalScroller = true
+        scroll.hasHorizontalScroller = true
+        scroll.autohidesScrollers = true
+        let editor = NSTextView(frame: .zero)
+        editor.isEditable = false
+        editor.isSelectable = true
+        editor.isRichText = false
+        editor.font = .monospacedSystemFont(ofSize: NSFont.smallSystemFontSize, weight: .regular)
+        editor.textColor = .labelColor
+        editor.backgroundColor = .textBackgroundColor
+        editor.isVerticallyResizable = true
+        editor.isHorizontallyResizable = true
+        editor.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+        editor.textContainer?.widthTracksTextView = false
+        editor.textContainer?.containerSize = editor.maxSize
+        editor.textContainerInset = NSSize(width: 12, height: 12)
+        scroll.documentView = editor
+        return scroll
+    }
+
+    func updateNSView(_ scroll: NSScrollView, context: Context) {
+        guard let editor = scroll.documentView as? NSTextView else { return }
+        if editor.string != text { editor.string = text }
     }
 }
