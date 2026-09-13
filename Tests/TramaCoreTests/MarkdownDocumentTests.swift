@@ -14,6 +14,7 @@ final class MarkdownDocumentTests: XCTestCase {
         - [ ] Da verificare
         - [x] Completato
         - Voce normale
+          - Sotto voce
         1. Primo passo
 
         | Stato | Prova |
@@ -31,10 +32,11 @@ final class MarkdownDocumentTests: XCTestCase {
             .heading(level: 1, text: "Titolo"),
             .paragraph("Testo con **enfasi** sulla stessa idea."),
             .heading(level: 2, text: "Criteri"),
-            .task(text: "Da verificare", checked: false),
-            .task(text: "Completato", checked: true),
-            .bullet("Voce normale"),
-            .ordered(number: 1, text: "Primo passo"),
+            .task(text: "Da verificare", checked: false, level: 0),
+            .task(text: "Completato", checked: true, level: 0),
+            .bullet(text: "Voce normale", level: 0),
+            .bullet(text: "Sotto voce", level: 1),
+            .ordered(number: 1, text: "Primo passo", level: 0),
             .table(headers: ["Stato", "Prova"], rows: [["Aperto", "CI"]]),
             .code(language: "swift", text: "print(\"solo testo\")")
         ])
@@ -53,6 +55,30 @@ final class MarkdownDocumentTests: XCTestCase {
             .quote("Non eseguire questa frase."),
             .divider,
             .paragraph("Testo finale.")
+        ])
+    }
+
+    func testNormalizesCRLFAndKeepsAShortFenceInsideALongerFence() {
+        let source = "# Titolo\r\n\r\n| A | B |\r\n| --- | --- |\r\n| x | y |\r\n\r\n````markdown\r\n```swift\r\nprint(1)\r\n```\r\n````"
+
+        let document = MarkdownDocument.parse(source)
+
+        XCTAssertEqual(document.blocks, [
+            .heading(level: 1, text: "Titolo"),
+            .table(headers: ["A", "B"], rows: [["x", "y"]]),
+            .code(language: "markdown", text: "```swift\nprint(1)\n```")
+        ])
+    }
+
+    func testKeepsAnEscapedPipeInsideItsTableCell() {
+        let document = MarkdownDocument.parse("""
+        | Espressione | Esito |
+        | --- | --- |
+        | `a \\| b` | valido |
+        """)
+
+        XCTAssertEqual(document.blocks, [
+            .table(headers: ["Espressione", "Esito"], rows: [["`a | b`", "valido"]])
         ])
     }
 }

@@ -28,19 +28,21 @@ struct IssueMarkdownView: View {
                 .accessibilityAddTraits(.isHeader)
         case let .paragraph(text):
             inlineText(text).font(.body)
-        case let .bullet(text):
+        case let .bullet(text, level):
             HStack(alignment: .firstTextBaseline, spacing: TramaSpacing.control) {
                 Text("•").accessibilityHidden(true)
                 inlineText(text).font(.body)
             }
-        case let .ordered(number, text):
+            .padding(.leading, listIndent(level))
+        case let .ordered(number, text, level):
             HStack(alignment: .firstTextBaseline, spacing: TramaSpacing.control) {
                 Text("\(number).").foregroundStyle(.secondary).accessibilityHidden(true)
                 inlineText(text).font(.body)
             }
             .accessibilityElement(children: .combine)
             .accessibilityLabel("Passaggio \(number): \(plainText(text))")
-        case let .task(text, checked):
+            .padding(.leading, listIndent(level))
+        case let .task(text, checked, level):
             HStack(alignment: .firstTextBaseline, spacing: TramaSpacing.control) {
                 Image(systemName: checked ? "checkmark.circle.fill" : "circle")
                     .foregroundStyle(checked ? Color.green : Color.secondary)
@@ -49,6 +51,7 @@ struct IssueMarkdownView: View {
             }
             .accessibilityElement(children: .combine)
             .accessibilityLabel("\(checked ? "Completato" : "Da verificare"): \(plainText(text))")
+            .padding(.leading, listIndent(level))
         case let .quote(text):
             HStack(alignment: .top, spacing: TramaSpacing.related) {
                 RoundedRectangle(cornerRadius: 1)
@@ -111,5 +114,9 @@ struct IssueMarkdownView: View {
 
     private func plainText(_ source: String) -> String {
         String((try? AttributedString(markdown: source))?.characters ?? AttributedString(source).characters)
+    }
+
+    private func listIndent(_ level: Int) -> CGFloat {
+        CGFloat(level) * TramaSpacing.section
     }
 }

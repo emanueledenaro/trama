@@ -8,7 +8,10 @@ public struct MarkdownDocument: Equatable, Sendable {
     }
 
     public static func parse(_ source: String) -> MarkdownDocument {
-        let lines = source.components(separatedBy: .newlines)
+        let normalized = source
+            .replacingOccurrences(of: "\r\n", with: "\n")
+            .replacingOccurrences(of: "\r", with: "\n")
+        let lines = normalized.components(separatedBy: "\n")
         var blocks: [MarkdownBlock] = []
         var paragraph: [String] = []
         var index = 0
@@ -22,6 +25,7 @@ public struct MarkdownDocument: Equatable, Sendable {
         while index < lines.count {
             let line = lines[index]
             let trimmed = line.trimmingCharacters(in: .whitespaces)
+            let level = indentationLevel(of: line)
 
             if trimmed.isEmpty {
                 flushParagraph()
@@ -29,17 +33,16 @@ public struct MarkdownDocument: Equatable, Sendable {
                 continue
             }
 
-            if trimmed.hasPrefix("```") {
+            if let fence = openingFence(from: trimmed) {
                 flushParagraph()
-                let language = String(trimmed.dropFirst(3)).trimmingCharacters(in: .whitespaces)
                 index += 1
                 var code: [String] = []
-                while index < lines.count, !lines[index].trimmingCharacters(in: .whitespaces).hasPrefix("```") {
+                while index < lines.count, !isClosingFence(lines[index], matching: fence) {
                     code.append(lines[index])
                     index += 1
                 }
                 if index < lines.count { index += 1 }
-                blocks.append(.code(language: language, text: code.joined(separator: "\n")))
+                blocks.append(.code(language: fence.info, text: code.joined(separator: "\n")))
                 continue
             }
 
@@ -59,21 +62,21 @@ public struct MarkdownDocument: Equatable, Sendable {
 
             if let task = task(from: trimmed) {
                 flushParagraph()
-                blocks.append(task)
+                blocks.append(.task(text: task.text, checked: task.checked, level: level))
                 index += 1
                 continue
             }
 
             if trimmed.hasPrefix("- ") || trimmed.hasPrefix("* ") {
                 flushParagraph()
-                blocks.append(.bullet(String(trimmed.dropFirst(2))))
+                blocks.append(.bullet(text: String(trimmed.dropFirst(2)), level: level))
                 index += 1
                 continue
             }
 
             if let ordered = orderedItem(from: trimmed) {
                 flushParagraph()
-                blocks.append(ordered)
+                blocks.append(.ordered(number: ordered.number, text: ordered.text, level: level))
                 index += 1
                 continue
             }
@@ -120,23 +123,52 @@ public struct MarkdownDocument: Equatable, Sendable {
         return nil
     }
 
-    private static func task(from line: String) -> MarkdownBlock? {
+    private struct Fence {
+        let marker: Character
+        let length: Int
+        let info: String
+    }
+
+    private static func openingFence(from line: String) -> Fence? {
+        guard let marker = line.first, marker == "`" || marker == "~" else { return nil }
+        let length = line.prefix { $0 == marker }.count
+        guard length >= 3 else { return nil }
+        let info = String(line.dropFirst(length)).trimmingCharacters(in: .whitespaces)
+        if marker == "`", info.contains("`") { return nil }
+        return Fence(marker: marker, length: length, info: info)
+    }
+
+    private static func isClosingFence(_ line: String, matching fence: Fence) -> Bool {
+        let value = line.trimmingCharacters(in: .whitespaces)
+        let length = value.prefix { $0 == fence.marker }.count
+        guard length >= fence.length else { return false }
+        return value.dropFirst(length).trimmingCharacters(in: .whitespaces).isEmpty
+    }
+
+    private static func task(from line: String) -> (text: String, checked: Bool)? {
         guard line.count >= 6, line.hasPrefix("- ["), line[line.index(line.startIndex, offsetBy: 4)] == "]" else { return nil }
         let marker = line[line.index(line.startIndex, offsetBy: 3)]
         guard marker == " " || marker == "x" || marker == "X" else { return nil }
         let textStart = line.index(line.startIndex, offsetBy: 5)
         let text = line[textStart...].trimmingCharacters(in: .whitespaces)
-        return .task(text: text, checked: marker != " ")
+        return (text, marker != " ")
     }
 
-    private static func orderedItem(from line: String) -> MarkdownBlock? {
+    private static func orderedItem(from line: String) -> (number: Int, text: String)? {
         guard let dot = line.firstIndex(of: "."), dot != line.startIndex else { return nil }
         let numberText = line[..<dot]
         guard let number = Int(numberText) else { return nil }
         let afterDot = line.index(after: dot)
         guard afterDot < line.endIndex, line[afterDot] == " " else { return nil }
         let text = line[line.index(after: afterDot)...].trimmingCharacters(in: .whitespaces)
-        return .ordered(number: number, text: text)
+        return (number, text)
+    }
+
+    private static func indentationLevel(of line: String) -> Int {
+        let width = line.prefix { $0 == " " || $0 == "\t" }.reduce(0) { partial, character in
+            partial + (character == "\t" ? 2 : 1)
+        }
+        return min(width / 2, 6)
     }
 
     private static func tableCells(from line: String) -> [String]? {
@@ -144,9 +176,25 @@ public struct MarkdownDocument: Equatable, Sendable {
         var value = line.trimmingCharacters(in: .whitespaces)
         if value.hasPrefix("|") { value.removeFirst() }
         if value.hasSuffix("|") { value.removeLast() }
-        let cells = value.split(separator: "|", omittingEmptySubsequences: false).map {
-            $0.trimmingCharacters(in: .whitespaces)
+        var cells: [String] = []
+        var cell = ""
+        var index = value.startIndex
+        while index < value.endIndex {
+            let character = value[index]
+            let next = value.index(after: index)
+            if character == "\\", next < value.endIndex, value[next] == "|" {
+                cell.append("|")
+                index = value.index(after: next)
+            } else if character == "|" {
+                cells.append(cell.trimmingCharacters(in: .whitespaces))
+                cell = ""
+                index = next
+            } else {
+                cell.append(character)
+                index = next
+            }
         }
+        cells.append(cell.trimmingCharacters(in: .whitespaces))
         return cells.count > 1 ? cells : nil
     }
 
@@ -162,9 +210,9 @@ public struct MarkdownDocument: Equatable, Sendable {
 public enum MarkdownBlock: Equatable, Sendable {
     case heading(level: Int, text: String)
     case paragraph(String)
-    case bullet(String)
-    case ordered(number: Int, text: String)
-    case task(text: String, checked: Bool)
+    case bullet(text: String, level: Int)
+    case ordered(number: Int, text: String, level: Int)
+    case task(text: String, checked: Bool, level: Int)
     case quote(String)
     case code(language: String, text: String)
     case table(headers: [String], rows: [[String]])

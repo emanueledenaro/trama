@@ -20,4 +20,4 @@ La build QA è stata riavviata sul repository reale di Trama, nella finestra str
 
 ## Limiti
 
-Il parser copre il sottoinsieme usato dalle issue di Trama. Liste annidate e altre estensioni Markdown non hanno ancora una presentazione specifica e vengono conservate come testo. La prova VoiceOver completa e il confronto in tutte le dimensioni restano aperti nei ticket.
+Il parser copre il sottoinsieme usato dalle issue di Trama. Le liste conservano fino a sei livelli di rientro; i ritorni a capo morbidi di uno stesso paragrafo diventano spazi, secondo la semantica Markdown. Altre estensioni non riconosciute rimangono testo. La prova VoiceOver completa e il confronto in tutte le dimensioni restano aperti nei ticket.
