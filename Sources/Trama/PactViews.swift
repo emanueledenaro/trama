@@ -6,36 +6,35 @@ struct DecisionsView: View {
     @State private var draft: DecisionDraft?
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 22) {
-                HStack {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("Patto Vivo").font(.title2.weight(.semibold))
-                        Text("Le scelte che il lavoro deve rispettare.").foregroundStyle(.secondary)
-                    }
-                    Spacer()
+            VStack(alignment: .leading, spacing: 0) {
+                TramaScreenHeader("Patto Vivo", subtitle: "Le scelte che il lavoro deve rispettare.") {
                     Button("Nuova decisione", systemImage: "plus") { draft = DecisionDraft() }.buttonStyle(.borderedProminent)
                 }
-                let decisions = store.document.pact?.decisions ?? []
-                if decisions.isEmpty {
-                    ContentUnavailableView("Le decisioni restano nel progetto", systemImage: "checkmark.seal", description: Text("Registra un comportamento, un esempio concreto e il motivo della scelta. Ogni cambiamento conserva la versione precedente."))
-                }
-                ForEach(decisions, id: \.id) { decision in
-                    GroupBox {
-                        VStack(alignment: .leading, spacing: 12) {
-                            HStack {
-                                Label(decision.id, systemImage: "checkmark.seal").font(.headline)
-                                Text("v\(decision.version)").font(.caption).foregroundStyle(.secondary)
-                                Spacer()
-                                Button("Modifica") { draft = DecisionDraft(decision) }
-                            }
-                            Text(decision.value).font(.body.weight(.medium))
-                            LabeledContent("Esempio", value: decision.acceptedExample)
-                            LabeledContent("Motivo", value: decision.rationale)
-                        }.padding(12).frame(maxWidth: .infinity, alignment: .leading)
+                VStack(alignment: .leading, spacing: TramaSpacing.section) {
+                    let decisions = store.document.pact?.decisions ?? []
+                    if decisions.isEmpty {
+                        ContentUnavailableView("Le decisioni restano nel progetto", systemImage: "checkmark.seal", description: Text("Registra un comportamento, un esempio concreto e il motivo della scelta. Ogni cambiamento conserva la versione precedente."))
                     }
+                    ForEach(decisions, id: \.id) { decision in
+                        GroupBox {
+                            VStack(alignment: .leading, spacing: TramaSpacing.related) {
+                                HStack {
+                                    Label(decision.id, systemImage: "checkmark.seal").font(.headline)
+                                    Text("v\(decision.version)").font(.caption).foregroundStyle(.secondary)
+                                    Spacer()
+                                    Button("Modifica") { draft = DecisionDraft(decision) }
+                                }
+                                Text(decision.value).font(.body.weight(.medium))
+                                LabeledContent("Esempio", value: decision.acceptedExample)
+                                LabeledContent("Motivo", value: decision.rationale)
+                            }.padding(TramaSpacing.related).frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                    }
+                    if store.project?.isDemo == true { demo }
                 }
-                if store.project?.isDemo == true { demo }
-            }.padding(26)
+                .padding(.horizontal, TramaSpacing.content)
+                .padding(.bottom, TramaSpacing.content)
+            }
         }.sheet(item: $draft) { value in DecisionEditor(draft: value) }
     }
     private var demo: some View {
