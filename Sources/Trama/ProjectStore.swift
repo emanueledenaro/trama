@@ -440,7 +440,12 @@ final class ProjectStore: ObservableObject {
                 document.requests[i].proposal = reply.proposal
                 document.requests[i].plan = reply.proposal?.readablePlan ?? reply.message
                 document.requests[i].allowedModuleIDs = reply.proposal?.affectedModuleIDs
-                document.requests[i].planDecisionVersions = versions
+                if let proposal = reply.proposal {
+                    let dependencies = Set(proposal.requiredDecisionIDs + proposal.questions.compactMap(\.revisesDecisionID))
+                    document.requests[i].planDecisionVersions = versions.filter { dependencies.contains($0.key) }
+                } else {
+                    document.requests[i].planDecisionVersions = [:]
+                }
                 let unchanged = fingerprint == request.sourceFingerprint && versions == Dictionary(uniqueKeysWithValues: (document.pact?.decisions ?? []).map { ($0.id, $0.version) })
                 if let proposal = reply.proposal {
                     document.requests[i].state = unchanged ? (proposal.questions.isEmpty ? "Da rivedere" : "Decisione richiesta") : "Da rivalutare"
@@ -494,7 +499,8 @@ final class ProjectStore: ObservableObject {
               ![plan, behavior, example, rationale].contains(where: { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }),
               !moduleIDs.isEmpty else { errorMessage = "Rivedi il piano e il comportamento sul progetto corrente."; return }
         let currentVersions = Dictionary(uniqueKeysWithValues: (document.pact?.decisions ?? []).map { ($0.id, $0.version) })
-        guard document.requests[index].planDecisionVersions == currentVersions else {
+        let plannedVersions = document.requests[index].planDecisionVersions ?? [:]
+        guard plannedVersions.allSatisfy({ currentVersions[$0.key] == $0.value }) else {
             document.requests[index].state = "Da rivalutare"; saveDocument()
             errorMessage = "Le decisioni sono cambiate dopo il piano. Rielabora la richiesta prima di avviare il lavoro."; return
         }
@@ -504,7 +510,9 @@ final class ProjectStore: ObservableObject {
             try engine.decide(id: decisionID, value: behavior, acceptedExample: example, rationale: rationale)
             document.pact = engine; document.requests[index].behaviorDecisionID = decisionID
             document.requests[index].plan = plan; document.requests[index].allowedModuleIDs = moduleIDs
-            document.requests[index].planDecisionVersions = Dictionary(uniqueKeysWithValues: engine.decisions.map { ($0.id, $0.version) })
+            var dependencies = plannedVersions
+            dependencies[decisionID] = engine.decisions.first(where: { $0.id == decisionID })?.version
+            document.requests[index].planDecisionVersions = dependencies
             saveDocument(); intelligence.invalidate(); startExecution(id)
         } catch { errorMessage = error.localizedDescription }
     }
@@ -588,7 +596,12 @@ final class ProjectStore: ObservableObject {
 
     func saveDocument() {
         guard let project else { return }
-        guard stateWritable else { errorMessage = "Lo stato originale non è leggibile e viene conservato. Le nuove attività non possono essere salvate su quel file."; return }
+        guard stateWritable else {
+            if errorMessage == nil {
+                errorMessage = "Lo stato originale non è leggibile e viene conservato. Le nuove attività non possono essere salvate su quel file."
+            }
+            return
+        }
         document.lastSelectedModuleID = selectedModuleID
         document.lastContextWasProject = selectedModuleID == nil
         document.lastSelectedRequestID = selectedRequestID
@@ -602,7 +615,7 @@ final class ProjectStore: ObservableObject {
     }
 
     private func reconcileModelSelection() {
-        guard project != nil else { return }
+        guard project != nil, stateWritable else { return }
         if let saved = document.selectedModel, !saved.isEmpty {
             selectedModel = saved
             if !models.isEmpty {
