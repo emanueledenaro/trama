@@ -109,6 +109,9 @@ struct RequestsView: View {
                                     Text(request.moduleName).font(.caption).foregroundStyle(.secondary)
                                     Text(request.title).font(.title2.weight(.semibold))
                                     TramaStatusBadge(state: request.state)
+                                    Label(request.model ?? "Modello non registrato", systemImage: "cpu")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
                                 }
                                 Divider()
                                 if request.state == "Decisione richiesta" {

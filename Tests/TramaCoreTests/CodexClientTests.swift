@@ -3,6 +3,90 @@ import XCTest
 @testable import TramaCore
 
 final class CodexClientTests: XCTestCase {
+    func testListModelsUsesTheAuthenticatedCodexCatalogAndPaginates() async throws {
+        let transport = FakeCodexTransport()
+        transport.onMessage = { message in
+            switch message["method"] as? String {
+            case "initialize":
+                transport.respond(to: message, result: Self.initializeResult)
+            case "account/read":
+                transport.respond(to: message, result: Self.chatGPTAccount)
+            case "model/list":
+                let params = message["params"] as? [String: Any]
+                if params?["cursor"] as? String == "page-2" {
+                    transport.respond(to: message, result: [
+                        "data": [[
+                            "id": "gpt-5.6-luna",
+                            "model": "gpt-5.6-luna",
+                            "displayName": "GPT-5.6 Luna",
+                            "description": "Per attività rapide",
+                            "isDefault": false,
+                            "hidden": false
+                        ]],
+                        "nextCursor": NSNull()
+                    ])
+                } else {
+                    transport.respond(to: message, result: [
+                        "data": [
+                            [
+                                "id": "gpt-5.6-terra",
+                                "model": "gpt-5.6-terra",
+                                "displayName": "GPT-5.6 Terra",
+                                "description": "Equilibrio tra capacità e costo",
+                                "isDefault": true,
+                                "hidden": false
+                            ],
+                            [
+                                "id": "custom/example",
+                                "model": "custom/example",
+                                "displayName": "Provider esterno",
+                                "description": "Voce aggiunta alla configurazione globale",
+                                "isDefault": false,
+                                "hidden": false
+                            ]
+                        ],
+                        "nextCursor": "page-2"
+                    ])
+                }
+            default:
+                break
+            }
+        }
+
+        let client = CodexClient(transport: transport)
+        let models = try await client.listModels()
+
+        XCTAssertEqual(models.map(\.model), ["gpt-5.6-terra", "gpt-5.6-luna"])
+        XCTAssertEqual(models.first?.displayName, "GPT-5.6 Terra")
+        XCTAssertEqual(models.first?.description, "Equilibrio tra capacità e costo")
+        XCTAssertEqual(models.first?.isDefault, true)
+        XCTAssertEqual(transport.methods, ["initialize", "initialized", "account/read", "model/list", "model/list"])
+        let requests = transport.messages.filter { $0["method"] as? String == "model/list" }
+        let firstParams = try XCTUnwrap(requests.first?["params"] as? [String: Any])
+        XCTAssertEqual(firstParams["includeHidden"] as? Bool, false)
+        XCTAssertEqual(firstParams["limit"] as? Int, 100)
+        XCTAssertNil(firstParams["cursor"])
+        let secondParams = try XCTUnwrap(requests.last?["params"] as? [String: Any])
+        XCTAssertEqual(secondParams["cursor"] as? String, "page-2")
+    }
+
+    func testPlanRejectsAnExternalProviderBeforeStartingCodex() async {
+        let transport = FakeCodexTransport()
+        let client = CodexClient(transport: transport)
+
+        do {
+            _ = try await client.plan(
+                prompt: "Prepara un piano",
+                cwd: URL(fileURLWithPath: FileManager.default.currentDirectoryPath),
+                model: "custom/example"
+            )
+            XCTFail("Expected external model rejection")
+        } catch {
+            XCTAssertEqual(error as? CodexClient.ClientError, .invalidModel("custom/example"))
+        }
+        XCTAssertTrue(transport.methods.isEmpty)
+    }
+
     func testConnectUsesExistingChatGPTAccountAfterHandshake() async throws {
         let transport = FakeCodexTransport()
         transport.onMessage = { message in
@@ -175,6 +259,7 @@ final class CodexClientTests: XCTestCase {
         let result = try await client.plan(
             prompt: "Prepara il piano",
             cwd: URL(fileURLWithPath: FileManager.default.currentDirectoryPath),
+            model: "gpt-6-astra",
             outputSchema: Data("""
             {"type":"object","properties":{"summary":{"type":"string"}},"required":["summary"]}
             """.utf8)
@@ -186,7 +271,7 @@ final class CodexClientTests: XCTestCase {
         let threadStart = try XCTUnwrap(transport.message(method: "thread/start"))
         let threadParams = try XCTUnwrap(threadStart["params"] as? [String: Any])
         XCTAssertEqual(threadParams["modelProvider"] as? String, "openai")
-        XCTAssertEqual(threadParams["model"] as? String, "gpt-5.6-terra")
+        XCTAssertEqual(threadParams["model"] as? String, "gpt-6-astra")
         XCTAssertEqual(threadParams["approvalPolicy"] as? String, "never")
         XCTAssertEqual(threadParams["sandbox"] as? String, "read-only")
         XCTAssertEqual(threadParams["ephemeral"] as? Bool, true)
@@ -348,6 +433,7 @@ final class CodexClientTests: XCTestCase {
         let response = try await client.execute(
             prompt: "Esegui la modifica",
             cwd: URL(fileURLWithPath: FileManager.default.currentDirectoryPath),
+            model: "gpt-5.6-luna",
             onApproval: { request in
                 approvals.append(request)
                 return request.kind == "command" ? .allowOnce : .decline
@@ -373,7 +459,7 @@ final class CodexClientTests: XCTestCase {
         let threadParams = try XCTUnwrap(threadStart["params"] as? [String: Any])
         XCTAssertEqual(threadParams["approvalPolicy"] as? String, "on-request")
         XCTAssertEqual(threadParams["sandbox"] as? String, "workspace-write")
-        XCTAssertEqual(threadParams["model"] as? String, "gpt-5.6-terra")
+        XCTAssertEqual(threadParams["model"] as? String, "gpt-5.6-luna")
         let restrictedConfig = try XCTUnwrap(threadParams["config"] as? [String: Any])
         let restrictedFeatures = try XCTUnwrap(restrictedConfig["features"] as? [String: Any])
         XCTAssertEqual(restrictedFeatures["apps"] as? Bool, false)

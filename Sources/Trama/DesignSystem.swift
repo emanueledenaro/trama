@@ -60,6 +60,8 @@ struct TramaStatusBadge: View {
             ("exclamationmark.triangle.fill", .red)
         case "Da rivalutare", "Verifiche interrotte", "Interrotto":
             ("arrow.clockwise.circle.fill", .orange)
+        case "Modello non disponibile":
+            ("exclamationmark.triangle.fill", .orange)
         case "Analisi in corso", "In esecuzione", "Verifiche in corso", "Preparazione del worktree":
             ("ellipsis.circle.fill", .blue)
         case "Risposta disponibile":
