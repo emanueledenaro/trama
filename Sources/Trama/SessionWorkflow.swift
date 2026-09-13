@@ -425,9 +425,19 @@ extension ProjectStore {
     }
 
     private func decisionVersionsAreCurrent(_ request: WorkRequest, engine: PactEngine) -> Bool {
-        guard let planned = request.planDecisionVersions else { return false }
         let current = Dictionary(uniqueKeysWithValues: engine.decisions.map { ($0.id, $0.version) })
-        return planned.allSatisfy { current[$0.key] == $0.value }
+        var required = Set(
+            (request.proposal?.requiredDecisionIDs ?? []) +
+            (request.proposal?.questions.compactMap(\.revisesDecisionID) ?? [])
+        )
+        if let behaviorDecisionID = request.behaviorDecisionID {
+            required.insert(behaviorDecisionID)
+        }
+        return DecisionImpact.dependenciesAreCurrent(
+            requiredDecisionIDs: required,
+            currentVersions: current,
+            recordedVersions: request.planDecisionVersions
+        )
     }
 }
 

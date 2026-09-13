@@ -44,6 +44,7 @@ public struct PlanProposal: Codable, Equatable, Sendable {
     public let steps: [String]
     public let affectedModuleIDs: [String]
     public let references: [String]
+    public let requiredDecisionIDs: [String]
     public let proposedBehavior: String
     public let acceptedExample: String
     public let rationale: String
@@ -58,7 +59,7 @@ public struct PlanProposal: Codable, Equatable, Sendable {
 
     public static let outputSchema = Data(
         """
-        {"type":"object","additionalProperties":false,"required":["sourceSnapshotID","summary","steps","affectedModuleIDs","references","proposedBehavior","acceptedExample","rationale","questions"],"properties":{"sourceSnapshotID":{"type":"string"},"summary":{"type":"string"},"steps":{"type":"array","items":{"type":"string"}},"affectedModuleIDs":{"type":"array","items":{"type":"string"}},"references":{"type":"array","items":{"type":"string"}},"proposedBehavior":{"type":"string"},"acceptedExample":{"type":"string"},"rationale":{"type":"string"},"questions":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["scenario","question","options","revisesDecisionID"],"properties":{"scenario":{"type":"string"},"question":{"type":"string"},"options":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["label","behavior","example","rationale"],"properties":{"label":{"type":"string"},"behavior":{"type":"string"},"example":{"type":"string"},"rationale":{"type":"string"}}}},"revisesDecisionID":{"type":["string","null"]}}}}}}
+        {"type":"object","additionalProperties":false,"required":["sourceSnapshotID","summary","steps","affectedModuleIDs","references","requiredDecisionIDs","proposedBehavior","acceptedExample","rationale","questions"],"properties":{"sourceSnapshotID":{"type":"string"},"summary":{"type":"string"},"steps":{"type":"array","items":{"type":"string"}},"affectedModuleIDs":{"type":"array","items":{"type":"string"}},"references":{"type":"array","items":{"type":"string"}},"requiredDecisionIDs":{"type":"array","items":{"type":"string"}},"proposedBehavior":{"type":"string"},"acceptedExample":{"type":"string"},"rationale":{"type":"string"},"questions":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["scenario","question","options","revisesDecisionID"],"properties":{"scenario":{"type":"string"},"question":{"type":"string"},"options":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["label","behavior","example","rationale"],"properties":{"label":{"type":"string"},"behavior":{"type":"string"},"example":{"type":"string"},"rationale":{"type":"string"}}}},"revisesDecisionID":{"type":["string","null"]}}}}}}
         """.utf8
     )
 
@@ -69,6 +70,7 @@ public struct PlanProposal: Codable, Equatable, Sendable {
         steps: [String],
         affectedModuleIDs: [String],
         references: [String],
+        requiredDecisionIDs: [String] = [],
         proposedBehavior: String,
         acceptedExample: String,
         rationale: String,
@@ -79,10 +81,44 @@ public struct PlanProposal: Codable, Equatable, Sendable {
         self.steps = steps
         self.affectedModuleIDs = affectedModuleIDs
         self.references = references
+        self.requiredDecisionIDs = requiredDecisionIDs
         self.proposedBehavior = proposedBehavior
         self.acceptedExample = acceptedExample
         self.rationale = rationale
         self.questions = questions
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case sourceSnapshotID, summary, steps, affectedModuleIDs, references
+        case requiredDecisionIDs, proposedBehavior, acceptedExample, rationale, questions
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        sourceSnapshotID = try container.decode(String.self, forKey: .sourceSnapshotID)
+        summary = try container.decode(String.self, forKey: .summary)
+        steps = try container.decode([String].self, forKey: .steps)
+        affectedModuleIDs = try container.decode([String].self, forKey: .affectedModuleIDs)
+        references = try container.decode([String].self, forKey: .references)
+        requiredDecisionIDs = try container.decodeIfPresent([String].self, forKey: .requiredDecisionIDs) ?? []
+        proposedBehavior = try container.decode(String.self, forKey: .proposedBehavior)
+        acceptedExample = try container.decode(String.self, forKey: .acceptedExample)
+        rationale = try container.decode(String.self, forKey: .rationale)
+        questions = try container.decode([DecisionQuestion].self, forKey: .questions)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(sourceSnapshotID, forKey: .sourceSnapshotID)
+        try container.encode(summary, forKey: .summary)
+        try container.encode(steps, forKey: .steps)
+        try container.encode(affectedModuleIDs, forKey: .affectedModuleIDs)
+        try container.encode(references, forKey: .references)
+        try container.encode(requiredDecisionIDs, forKey: .requiredDecisionIDs)
+        try container.encode(proposedBehavior, forKey: .proposedBehavior)
+        try container.encode(acceptedExample, forKey: .acceptedExample)
+        try container.encode(rationale, forKey: .rationale)
+        try container.encode(questions, forKey: .questions)
     }
 
     /// Testo leggibile della proposta. Non include il JSON ricevuto dal modello.
@@ -94,6 +130,9 @@ public struct PlanProposal: Codable, Equatable, Sendable {
         sections.append("Motivazione:\n\(rationale)")
         sections.append("Moduli coinvolti:\n" + affectedModuleIDs.map { "- \($0)" }.joined(separator: "\n"))
         sections.append("Fonti:\n" + references.map { "- \($0)" }.joined(separator: "\n"))
+        if !requiredDecisionIDs.isEmpty {
+            sections.append("Decisioni da rispettare:\n" + requiredDecisionIDs.map { "- \($0)" }.joined(separator: "\n"))
+        }
 
         if !questions.isEmpty {
             let renderedQuestions = questions.enumerated().map { index, question in
@@ -131,13 +170,14 @@ public struct PlanProposal: Codable, Equatable, Sendable {
         Restituisci un solo oggetto JSON, senza testo esterno. La proposta è una bozza modificabile dalla persona e non è una decisione approvata.
 
         Usa questa forma esatta:
-        {"sourceSnapshotID":"...","summary":"...","steps":["..."],"affectedModuleIDs":["..."],"references":["percorso/reale"],"proposedBehavior":"...","acceptedExample":"...","rationale":"...","questions":[{"scenario":"...","question":"...","options":[{"label":"...","behavior":"...","example":"...","rationale":"..."}],"revisesDecisionID":"id-esistente-o-null"}]}
+        {"sourceSnapshotID":"...","summary":"...","steps":["..."],"affectedModuleIDs":["..."],"references":["percorso/reale"],"requiredDecisionIDs":["id-esistente-rilevante"],"proposedBehavior":"...","acceptedExample":"...","rationale":"...","questions":[{"scenario":"...","question":"...","options":[{"label":"...","behavior":"...","example":"...","rationale":"..."}],"revisesDecisionID":"id-esistente-o-null"}]}
 
         Regole:
         - Ripeti sourceSnapshotID senza modificarlo.
         - Usa in affectedModuleIDs soltanto valori di knownModuleIDs.
         - Usa in references soltanto file di knownFiles. Un file nuovo proposto può comparire nei passi come testo, ma non come fonte esistente.
         - Usa revisesDecisionID soltanto per una decisione presente in existingDecisionIDs, altrimenti usa null.
+        - requiredDecisionIDs contiene soltanto le decisioni esistenti che il piano deve davvero rispettare. Una decisione estranea resta fuori dall’elenco.
         - Inserisci domande solo per ambiguità di comportamento che cambiano il risultato. Se il comportamento è chiaro, usa questions vuoto.
         - Ogni domanda deve avere da due a otto alternative concrete. La persona potrà correggerle o scrivere una risposta libera.
         - Non restituire ID per nuove domande o decisioni. Non restituire approved, approval, verified, verification, version o evidence.
@@ -193,6 +233,9 @@ public struct PlanProposal: Codable, Equatable, Sendable {
             throw PlanProposalError.unknownReference(file)
         }
         let decisions = Set(existingDecisionIDs)
+        for id in response.requiredDecisionIDs where !decisions.contains(id) {
+            throw PlanProposalError.unknownDecision(id)
+        }
         for question in response.questions {
             if let id = question.revisesDecisionID, !decisions.contains(id) {
                 throw PlanProposalError.unknownDecision(id)
@@ -207,6 +250,7 @@ public struct PlanProposal: Codable, Equatable, Sendable {
             steps: response.steps,
             affectedModuleIDs: response.affectedModuleIDs,
             references: response.references,
+            requiredDecisionIDs: response.requiredDecisionIDs,
             proposedBehavior: response.proposedBehavior,
             acceptedExample: response.acceptedExample,
             rationale: response.rationale,
@@ -227,6 +271,7 @@ public struct PlanProposal: Codable, Equatable, Sendable {
               !response.references.isEmpty,
               response.references.count <= maximumReferences,
               hasUniqueNonemptyValues(response.references),
+              hasUniqueNonemptyValues(response.requiredDecisionIDs),
               response.questions.count <= maximumQuestions else {
             throw PlanProposalError.invalidContent
         }
@@ -287,7 +332,7 @@ public struct PlanProposal: Codable, Equatable, Sendable {
 
         let proposalKeys: Set<String> = [
             "sourceSnapshotID", "summary", "steps", "affectedModuleIDs", "references",
-            "proposedBehavior", "acceptedExample", "rationale", "questions"
+            "requiredDecisionIDs", "proposedBehavior", "acceptedExample", "rationale", "questions"
         ]
         guard Set(dictionary.keys) == proposalKeys,
               let questions = dictionary["questions"] as? [[String: Any]] else {
@@ -412,6 +457,7 @@ private struct ModelProposal: Decodable {
     let steps: [String]
     let affectedModuleIDs: [String]
     let references: [String]
+    let requiredDecisionIDs: [String]
     let proposedBehavior: String
     let acceptedExample: String
     let rationale: String

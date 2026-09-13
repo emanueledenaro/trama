@@ -15,6 +15,7 @@ final class PlanProposalTests: XCTestCase {
         XCTAssertEqual(proposal.summary, "Conservare gli ordini pagati quando la persona annulla.")
         XCTAssertEqual(proposal.affectedModuleIDs, ["orders"])
         XCTAssertEqual(proposal.references, ["Sources/Orders/Order.swift"])
+        XCTAssertEqual(proposal.requiredDecisionIDs, [])
         XCTAssertEqual(proposal.questions, [])
         XCTAssertTrue(proposal.readablePlan.contains("Comportamento proposto:"))
         XCTAssertTrue(proposal.readablePlan.contains("Sources/Orders/Order.swift"))
@@ -110,6 +111,36 @@ final class PlanProposalTests: XCTestCase {
         }
     }
 
+    func testPlanKeepsOnlyKnownDecisionDependencies() throws {
+        let proposal = try parse(proposalJSON(requiredDecisionIDs: ["cancel-semantics"]))
+        XCTAssertEqual(proposal.requiredDecisionIDs, ["cancel-semantics"])
+
+        XCTAssertThrowsError(try parse(proposalJSON(requiredDecisionIDs: ["invented-decision"]))) { error in
+            XCTAssertEqual(error as? PlanProposalError, .unknownDecision("invented-decision"))
+        }
+    }
+
+    func testModelOutputMustDeclareDecisionDependenciesEvenWhenEmpty() throws {
+        var object = try XCTUnwrap(jsonObject(from: proposalJSON()))
+        object.removeValue(forKey: "requiredDecisionIDs")
+
+        XCTAssertThrowsError(try parse(jsonString(object))) { error in
+            XCTAssertEqual(error as? PlanProposalError, .malformedResponse)
+        }
+    }
+
+    func testDecodesAPersistedProposalCreatedBeforeDecisionDependencies() throws {
+        let current = try parse(proposalJSON(requiredDecisionIDs: ["cancel-semantics"]))
+        let encoded = try JSONEncoder().encode(current)
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        object.removeValue(forKey: "requiredDecisionIDs")
+        let legacy = try JSONSerialization.data(withJSONObject: object)
+
+        let decoded = try JSONDecoder().decode(PlanProposal.self, from: legacy)
+
+        XCTAssertEqual(decoded.requiredDecisionIDs, [])
+    }
+
     func testModelCannotAssignQuestionIDsOrApprovalAuthority() throws {
         var object = try XCTUnwrap(jsonObject(from: proposalJSON()))
         object["approved"] = true
@@ -167,6 +198,7 @@ final class PlanProposalTests: XCTestCase {
         XCTAssertEqual(schema["additionalProperties"] as? Bool, false)
         let properties = try XCTUnwrap(schema["properties"] as? [String: Any])
         XCTAssertNotNil(properties["questions"])
+        XCTAssertNotNil(properties["requiredDecisionIDs"])
         XCTAssertNil(properties["approved"])
     }
 
@@ -187,9 +219,10 @@ final class PlanProposalTests: XCTestCase {
         sourceSnapshotID: String = "snapshot-42",
         moduleIDs: [String] = ["orders"],
         references: [String] = ["Sources/Orders/Order.swift"],
+        requiredDecisionIDs: [String] = [],
         questions: [[String: Any]] = []
     ) -> String {
-        jsonString([
+        var object: [String: Any] = [
             "sourceSnapshotID": sourceSnapshotID,
             "summary": "Conservare gli ordini pagati quando la persona annulla.",
             "steps": [
@@ -202,7 +235,9 @@ final class PlanProposalTests: XCTestCase {
             "acceptedExample": "Un ordine paid torna all'elenco come paid dopo Annulla.",
             "rationale": "Il pagamento osservato non deve essere revocato da un'azione di navigazione.",
             "questions": questions
-        ])
+        ]
+        object["requiredDecisionIDs"] = requiredDecisionIDs
+        return jsonString(object)
     }
 
     private func option(label: String) -> [String: Any] {

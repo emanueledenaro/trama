@@ -109,7 +109,15 @@ extension ProjectStore {
             var engine = try document.pact ?? PactEngine(baseRevision: "workspace-v1", checkSuiteRevision: "declared-v1")
             try engine.decide(id: draft.id, value: draft.value, acceptedExample: draft.example, rationale: draft.rationale)
             document.pact = engine
-            for i in document.requests.indices where !["Analisi in corso", "In esecuzione"].contains(document.requests[i].state) {
+            guard let currentVersion = engine.decisions.first(where: { $0.id == draft.id })?.version else { return }
+            for i in document.requests.indices where
+                !["Analisi in corso", "In esecuzione"].contains(document.requests[i].state) &&
+                DecisionImpact.requiresRealignment(
+                    changedDecisionID: draft.id,
+                    currentVersion: currentVersion,
+                    recordedVersions: document.requests[i].planDecisionVersions,
+                    behaviorDecisionID: document.requests[i].behaviorDecisionID
+                ) {
                 document.requests[i].state = "Da rivalutare"
                 document.requests[i].approvedAt = nil
             }
