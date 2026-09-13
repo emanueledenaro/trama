@@ -38,6 +38,14 @@ open build/Trama.app
 
 `scripts/build-app.sh` compila `Trama`, `TramaMonitor` e le risorse, crea `build/Trama.app` e applica una firma ad hoc locale. Lo script non registra il monitor in background. Questa app non è firmata con Developer ID e non è notarizzata.
 
+## Distribuzione firmata
+
+`bash scripts/package-release.sh --help` descrive il percorso di distribuzione. Lo script richiede `TRAMA_SIGNING_IDENTITY` con il nome completo di un certificato Developer ID Application e `TRAMA_NOTARY_PROFILE` con il nome di un profilo già presente nel Portachiavi. Le credenziali non vengono passate negli argomenti dello script.
+
+Il commit corrente deve essere pubblicato nella storia di main. Lo script crea un clone separato di quel commit, esegue test e build Release, firma helper e app e invia l’archivio al servizio di notarizzazione Apple. Produce `Trama.zip` soltanto dopo accettazione, stapling e verifica Gatekeeper. Conserva log, risultato della notarizzazione, commit e checksum in una nuova cartella `build/Distribution/release.*`.
+
+Questo percorso non è ancora stato eseguito con Developer ID. La prova di installazione e del percorso completo su un secondo Mac rimane separata.
+
 ## Primo uso
 
 1. Apri un progetto esistente oppure il progetto di esempio.
