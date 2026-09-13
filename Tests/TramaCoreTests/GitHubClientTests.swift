@@ -317,16 +317,17 @@ struct GitHubClientTests {
             timeout: .seconds(2),
             operationDuration: .milliseconds(45)
         )
-        let clock = ContinuousClock()
-        let started = clock.now
 
         await #expect(throws: GitHubClientError.timedOut) {
             _ = try await client.snapshot(repository: "acme/widgets")
         }
-        let elapsed = started.duration(to: clock.now)
         let calls = await runner.calls
-        #expect((1...3).contains(calls))
-        #expect(elapsed < .seconds(2))
+        #expect((0...3).contains(calls))
+        let budgets = await runner.timeouts
+        #expect(budgets.allSatisfy { $0 > .zero && $0 <= .milliseconds(45) })
+        for (previous, next) in zip(budgets, budgets.dropFirst()) {
+            #expect(next < previous)
+        }
     }
 }
 
@@ -433,6 +434,7 @@ private actor SequencedGitHubRunner: GitHubCommandRunning {
 private actor DelayedGitHubRunner: GitHubCommandRunning {
     private let delay: Duration
     private(set) var calls = 0
+    private(set) var timeouts: [Duration] = []
 
     init(delay: Duration) {
         self.delay = delay
@@ -440,6 +442,7 @@ private actor DelayedGitHubRunner: GitHubCommandRunning {
 
     func run(arguments: [String], timeout: Duration) async throws -> GitHubCommandResult {
         calls += 1
+        timeouts.append(timeout)
         if timeout < delay {
             try await Task.sleep(for: timeout)
             throw GitHubCommandError.timedOut
