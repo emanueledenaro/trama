@@ -14,11 +14,19 @@ Trama usa controlli, materiali, colori e caratteri di sistema macOS. Questa guid
 
 I valori vivono in `TramaSpacing`. Una vista usa un valore diverso solo quando la misura appartiene al controllo, come la dimensione di una scheda della mappa o l’altezza limitata di un diff.
 
+## Forme
+
+`TramaRadius.control` usa 8 punti per campi, riquadri tecnici e icone. `TramaRadius.card` usa 12 punti per schede e contenitori principali. Capsule, interruttori e controlli macOS conservano la forma fornita dal sistema.
+
 ## Gerarchia
 
 `TramaScreenHeader` allinea titolo, sottotitolo e azioni di Mappa, Issue, Gruppo e Decisioni. Il titolo usa `title2` semibold, il sottotitolo usa `callout` secondario e le azioni restano sulla guida superiore. Il contenuto successivo parte dallo stesso margine di 24 punti.
 
 Titoli delle sezioni interne usano `headline`, il contenuto usa `body` o `callout`, e metadati, versioni, percorsi sintetici e spiegazioni accessorie usano `caption`. Il testo tecnico usa il carattere monospaziato di sistema.
+
+`TramaSupportingText` presenta spiegazioni che devono restare leggibili con `callout` e colore secondario. `caption` resta riservato a metadati brevi come ora, versione, modello e SHA. `TramaLabeledText` dispone etichetta e valore in verticale per evitare righe centrate o compresse con contenuti lunghi.
+
+Le intestazioni e i gruppi di azioni usano una guida sinistra comune. Quando manca spazio, le azioni passano sotto il testo senza centrare il blocco o ridurre il carattere.
 
 ## Stati
 
@@ -32,4 +40,4 @@ Il 13 settembre 2026 la build QA è stata controllata in tema scuro e chiaro, in
 
 La prima prova del tema chiaro ha rilevato che la finestra principale cambiava aspetto mentre Impostazioni restava nel tema di sistema. La stessa preferenza viene ora applicata a entrambe le scene; la build riavviata ha mostrato Impostazioni in tema chiaro. Al termine della prova è stata ripristinata l’opzione Sistema.
 
-Restano da verificare contrasto aumentato, trasparenza ridotta, focus completo da tastiera, tutte le finestre modali e il confronto visivo di ogni sezione. Il ticket #22 rimane aperto fino a quelle prove.
+Il secondo controllo ha attivato temporaneamente Aumenta contrasto e Riduci la trasparenza nelle impostazioni di macOS. Selezione, testi, schede, materiali e contorni sono rimasti leggibili; entrambe le preferenze sono state ripristinate al valore iniziale. Restano da verificare focus completo da tastiera, VoiceOver, tutte le finestre modali e una raccolta esportata del confronto visivo. Il ticket #22 rimane aperto fino a quelle prove.

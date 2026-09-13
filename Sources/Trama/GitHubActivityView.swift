@@ -5,7 +5,7 @@ struct GitHubActivityView: View {
     @EnvironmentObject private var team: TeamViewModel
     @Environment(\.dismiss) private var dismiss
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: TramaSpacing.related) {
             HStack { Text("Attività su GitHub").font(.title2.weight(.semibold)); Spacer(); Button("Fine") { dismiss() }.keyboardShortcut(.cancelAction) }
             if team.activityLoading { ProgressView("Leggo commit, review e check…") }
             if let error = team.activityError { Label(error, systemImage: "exclamationmark.triangle").font(.callout).foregroundStyle(.orange) }

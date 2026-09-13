@@ -18,15 +18,15 @@ struct DecisionsView: View {
                     ForEach(decisions, id: \.id) { decision in
                         GroupBox {
                             VStack(alignment: .leading, spacing: TramaSpacing.related) {
-                                HStack {
+                                HStack(alignment: .firstTextBaseline, spacing: TramaSpacing.control) {
                                     Label(decision.id, systemImage: "checkmark.seal").font(.headline)
-                                    Text("v\(decision.version)").font(.caption).foregroundStyle(.secondary)
+                                    Text("Versione \(decision.version)").font(.caption).foregroundStyle(.secondary)
                                     Spacer()
                                     Button("Modifica") { draft = DecisionDraft(decision) }
                                 }
                                 Text(decision.value).font(.body.weight(.medium))
-                                LabeledContent("Esempio", value: decision.acceptedExample)
-                                LabeledContent("Motivo", value: decision.rationale)
+                                TramaLabeledText(label: "Esempio", value: decision.acceptedExample)
+                                TramaLabeledText(label: "Motivo", value: decision.rationale)
                             }.padding(TramaSpacing.related).frame(maxWidth: .infinity, alignment: .leading)
                         }
                     }
@@ -39,11 +39,11 @@ struct DecisionsView: View {
     }
     private var demo: some View {
         GroupBox {
-            VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: TramaSpacing.related) {
                 Label("Prova il ciclo di revisione", systemImage: "flask").font(.headline)
                 Text("Simulazione locale: un ordine pagato entra in revisione, mentre pagamento e disponibilità restano invariati. I controlli qui sotto riguardano il modello dimostrativo, non il codice del tuo progetto.")
                     .font(.callout).foregroundStyle(.secondary)
-                HStack {
+                TramaAdaptiveActions {
                     Button("Esegui lo scenario") { store.runPactDemo() }
                     if let id = store.document.currentCandidateID {
                         Button("Registra revisione locale") { store.approveDemo(id) }
@@ -57,7 +57,7 @@ struct DecisionsView: View {
                         Text(blockerMessage(blocker)).font(.caption).foregroundStyle(.secondary)
                     }
                 }
-            }.padding(14).frame(maxWidth: .infinity, alignment: .leading)
+            }.padding(TramaSpacing.related).frame(maxWidth: .infinity, alignment: .leading)
         }
     }
     private func blockerMessage(_ blocker: PactBlocker) -> String {
@@ -84,13 +84,19 @@ private struct DecisionEditor: View {
     @Environment(\.dismiss) private var dismiss
     @State var draft: DecisionDraft
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
+        VStack(alignment: .leading, spacing: TramaSpacing.section) {
             Text("Decisione del progetto").font(.title2.weight(.semibold))
             Text("\(draft.id) · Le attività dipendenti dovranno rispettare questa versione.").font(.caption).foregroundStyle(.secondary)
             Form {
-                TextField("Comportamento", text: $draft.value, axis: .vertical).lineLimit(2...4)
-                TextField("Esempio concreto", text: $draft.example, axis: .vertical).lineLimit(2...4)
-                TextField("Motivazione", text: $draft.rationale, axis: .vertical).lineLimit(2...3)
+                LabeledContent("Comportamento") {
+                    TextField("Descrivi il comportamento", text: $draft.value, axis: .vertical).lineLimit(2...4)
+                }
+                LabeledContent("Esempio concreto") {
+                    TextField("Descrivi un caso osservabile", text: $draft.example, axis: .vertical).lineLimit(2...4)
+                }
+                LabeledContent("Motivazione") {
+                    TextField("Spiega il motivo della scelta", text: $draft.rationale, axis: .vertical).lineLimit(2...3)
+                }
             }.textFieldStyle(.roundedBorder)
             HStack {
                 Button("Annulla") { dismiss() }.keyboardShortcut(.cancelAction)
@@ -99,7 +105,7 @@ private struct DecisionEditor: View {
                     store.saveDecision(draft); dismiss()
                 }.buttonStyle(.borderedProminent).disabled([draft.value,draft.example,draft.rationale].contains { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })
             }
-        }.padding(28).frame(width: 570)
+        }.padding(TramaSpacing.content).frame(width: 570)
     }
 }
 

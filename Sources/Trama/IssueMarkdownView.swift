@@ -72,7 +72,7 @@ struct IssueMarkdownView: View {
                         .fixedSize(horizontal: true, vertical: true)
                         .padding(TramaSpacing.related)
                 }
-                .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 8))
+                .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: TramaRadius.control))
             }
         case let .table(headers, rows):
             ScrollView(.horizontal) {
@@ -93,7 +93,7 @@ struct IssueMarkdownView: View {
                 }
                 .padding(TramaSpacing.related)
             }
-            .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 8))
+            .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: TramaRadius.control))
         case .divider:
             Divider().padding(.vertical, TramaSpacing.compact)
         }

@@ -7,21 +7,21 @@ struct ModuleInspector: View {
     var body: some View {
         if let module = store.selectedModule {
             VStack(alignment: .leading, spacing: 0) {
-                HStack(spacing: 12) {
+                HStack(spacing: TramaSpacing.related) {
                     Image(systemName: module.symbol).font(.system(size: 28)).foregroundStyle(.tint)
                     VStack(alignment: .leading, spacing: 4) {
                         Text(module.name).font(.title2.weight(.semibold))
                         Text("\(module.files.count) file sorgente").font(.caption).foregroundStyle(.secondary)
                     }
-                }.padding(22)
+                }.padding(TramaSpacing.content)
                 Picker("Dettaglio", selection: $store.inspectorTab) {
                     Text("Panoramica").tag("Panoramica")
                     Text("File").tag("File")
                     Text("Decisioni").tag("Decisioni")
-                }.pickerStyle(.segmented).labelsHidden().padding(.horizontal, 16).padding(.bottom, 16)
+                }.pickerStyle(.segmented).labelsHidden().padding(.horizontal, TramaSpacing.related).padding(.bottom, TramaSpacing.related)
                 Divider()
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 22) {
+                    VStack(alignment: .leading, spacing: TramaSpacing.section) {
                         if store.inspectorTab == "File" {
                             ForEach(module.files) { file in
                                 Button { store.openFile(file) } label: {
@@ -29,7 +29,7 @@ struct ModuleInspector: View {
                                         Image(systemName: "doc.text").foregroundStyle(.secondary)
                                         VStack(alignment: .leading, spacing: 5) {
                                             Text(file.relativePath).font(.system(.caption, design: .monospaced)).multilineTextAlignment(.leading)
-                                            Text("\(file.lineCount) righe").font(.caption2).foregroundStyle(.secondary)
+                                            Text("\(file.lineCount) righe").font(.caption).foregroundStyle(.secondary)
                                         }
                                         Spacer(minLength: 0)
                                         Image(systemName: "chevron.right").font(.caption2).foregroundStyle(.tertiary)
@@ -61,20 +61,20 @@ struct ModuleInspector: View {
                                 }
                             }
                         }
-                    }.padding(20).frame(maxWidth: .infinity, alignment: .leading)
+                    }.padding(TramaSpacing.section).frame(maxWidth: .infinity, alignment: .leading)
                 }
                 Spacer(minLength: 0)
                 Divider()
                 Button("Pianifica una modifica", systemImage: "square.and.pencil") {
                     store.composer = "Vorrei modificare il modulo \(module.name): "
-                }.frame(maxWidth: .infinity).padding(16)
+                }.frame(maxWidth: .infinity).padding(TramaSpacing.related)
             }
         } else {
             ContentUnavailableView("Seleziona un modulo", systemImage: "sidebar.right", description: Text("Qui trovi file, dipendenze e decisioni."))
         }
     }
     private func inspectorSection<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 10) { Text(title).font(.headline); content() }
+        VStack(alignment: .leading, spacing: TramaSpacing.control) { Text(title).font(.headline); content() }
     }
 }
 
@@ -91,21 +91,21 @@ struct RequestsView: View {
                 layout {
                     List(selection: $store.selectedRequestID) {
                         ForEach(store.document.requests) { request in
-                            VStack(alignment: .leading, spacing: 7) {
+                            VStack(alignment: .leading, spacing: TramaSpacing.compact) {
                                 Text(request.title).font(.headline).lineLimit(3)
                                 HStack(alignment: .center, spacing: TramaSpacing.control) {
                                     Text(request.moduleName).font(.caption).foregroundStyle(.secondary)
                                     Spacer(minLength: TramaSpacing.compact)
                                     TramaStatusBadge(state: request.state)
                                 }
-                            }.padding(.vertical, 7).tag(request.id)
+                            }.padding(.vertical, TramaSpacing.compact).tag(request.id)
                         }
                     }.frame(width: compact ? nil : 230, height: compact ? 150 : nil)
                     Divider()
                     if let request = store.selectedRequest {
                         ScrollView {
-                            VStack(alignment: .leading, spacing: 22) {
-                                VStack(alignment: .leading, spacing: 7) {
+                            VStack(alignment: .leading, spacing: TramaSpacing.section) {
+                                VStack(alignment: .leading, spacing: TramaSpacing.compact) {
                                     Text(request.moduleName).font(.caption).foregroundStyle(.secondary)
                                     Text(request.title).font(.title2.weight(.semibold))
                                     TramaStatusBadge(state: request.state)
@@ -143,7 +143,7 @@ struct RequestsView: View {
                                         if store.codexConnected { store.runPlan(request.id) } else { store.showConnections = true }
                                     }.buttonStyle(.bordered)
                                 }
-                            }.padding(26).frame(maxWidth: .infinity, alignment: .leading)
+                            }.padding(TramaSpacing.content).frame(maxWidth: .infinity, alignment: .leading)
                         }.frame(maxWidth: .infinity, maxHeight: .infinity)
                             .sheet(item: $reviewingPlan) { PlanExecutionEditor(request: $0) }
                     } else { ContentUnavailableView("Seleziona una richiesta", systemImage: "doc.text") }
@@ -162,14 +162,14 @@ struct FilePreviewView: View {
                 Label(preview.path, systemImage: "doc.text").font(.headline)
                 Spacer()
                 Button("Chiudi") { dismiss() }.keyboardShortcut(.cancelAction)
-            }.padding(20)
+            }.padding(TramaSpacing.section)
             Divider()
             ScrollView([.horizontal, .vertical]) {
-                HStack(alignment: .top, spacing: 20) {
+                HStack(alignment: .top, spacing: TramaSpacing.section) {
                     Text((1...max(1, preview.content.components(separatedBy: "\n").count)).map(String.init).joined(separator: "\n"))
                         .foregroundStyle(.tertiary).multilineTextAlignment(.trailing)
                     Text(preview.content).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
-                }.font(.system(size: 12, design: .monospaced)).lineSpacing(4).padding(22)
+                }.font(.system(size: 12, design: .monospaced)).lineSpacing(4).padding(TramaSpacing.content)
             }
         }.frame(minWidth: 480, idealWidth: 660, minHeight: 360, idealHeight: 540)
     }
@@ -190,12 +190,12 @@ struct ConnectionsView: View {
                 VStack(alignment: .leading, spacing: TramaSpacing.section) {
                     Text("Trama usa il componente ufficiale Codex e l’accesso ChatGPT disponibile sul Mac.").foregroundStyle(.secondary)
                     GroupBox {
-                        HStack(alignment: .top, spacing: 14) {
+                        HStack(alignment: .top, spacing: TramaSpacing.related) {
                             Image(systemName: "sparkle").font(.title).foregroundStyle(.tint)
-                            VStack(alignment: .leading, spacing: 8) {
+                            VStack(alignment: .leading, spacing: TramaSpacing.control) {
                                 Text("Codex di OpenAI").font(.headline)
                                 Text(store.accountLabel)
-                                Text(store.codexVersion).font(.caption2).foregroundStyle(.secondary)
+                                Text(store.codexVersion).font(.caption).foregroundStyle(.secondary)
                                 Text(store.connectionDetail).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
                                 TramaAdaptiveActions {
                                     Button("Verifica collegamento") { Task { await store.connectCodex() } }.disabled(store.isConnecting)
@@ -252,15 +252,15 @@ struct SettingsView: View {
         Form {
             Section("Aspetto") {
                 Picker("Tema", selection: $appearance) { Text("Sistema").tag("system"); Text("Chiaro").tag("light"); Text("Scuro").tag("dark") }
-                Text("Interfaccia nativa SwiftUI. Movimento e contrasto seguono le preferenze di macOS.").font(.caption).foregroundStyle(.secondary)
+                TramaSupportingText("Movimento, contrasto e trasparenza seguono le preferenze di macOS.")
             }
             Section("Codex di OpenAI") {
                 LabeledContent("Stato", value: store.accountLabel)
-                Text(store.connectionDetail).font(.caption).foregroundStyle(.secondary)
+                TramaSupportingText(store.connectionDetail)
                 Button("Verifica collegamento") { Task { await store.connectCodex() } }
             }
             Section("Monitor in background") {
-                Text("A finestra chiusa Trama continua le analisi dei progetti abilitati. Dopo Esci, il monitor conserva le novità di GitHub e può avvisarti; le analisi Codex riprendono alla riapertura. Le sessioni di modifica non ripartono da sole.").font(.caption).foregroundStyle(.secondary)
+                TramaSupportingText("A finestra chiusa Trama continua a seguire i progetti abilitati. Dopo Esci, il monitor conserva le novità di GitHub e può avvisarti. Le analisi Codex riprendono alla riapertura e le sessioni di modifica non ripartono da sole.")
                 if background.isRequested {
                     Button("Disattiva monitor") { do { try background.disable() } catch { store.errorMessage = error.localizedDescription } }
                 } else {
@@ -270,7 +270,9 @@ struct SettingsView: View {
                     Button("Autorizza nelle impostazioni macOS") { background.openSettings() }
                 }
                 if let message = background.errorMessage { Text(message).font(.caption).foregroundStyle(.orange) }
-                Text(background.status == .enabled ? "Monitor registrato in macOS" : background.status == .requiresApproval ? "Autorizzazione macOS richiesta" : "Monitor non attivo").font(.caption).foregroundStyle(.secondary)
+                Label(background.status == .enabled ? "Monitor registrato in macOS" : background.status == .requiresApproval ? "Autorizzazione macOS richiesta" : "Monitor non attivo", systemImage: background.status == .enabled ? "checkmark.circle.fill" : background.status == .requiresApproval ? "exclamationmark.circle" : "pause.circle")
+                    .font(.callout)
+                    .foregroundStyle(background.status == .enabled ? Color.green : background.status == .requiresApproval ? Color.orange : Color.secondary)
             }
             Section("Metodo di lavoro") {
                 Text("AI Hero · \(SkillSetup.version)").font(.caption)
@@ -285,10 +287,10 @@ struct SettingsView: View {
                 Button("Consenti notifiche") { Task { await store.notifications.requestPermission() } }
 
                 Toggle("Suono per gli avvisi importanti", isOn: $sound)
-                Text("Il lavoro ordinario rimane silenzioso.").font(.caption).foregroundStyle(.secondary)
+                TramaSupportingText("Il lavoro ordinario rimane silenzioso.")
             }
             Section("Progetto") {
-                Text("Le richieste sono salvate localmente in Application Support/Trama.").font(.caption).foregroundStyle(.secondary)
+                TramaSupportingText("Le richieste sono salvate localmente in Application Support/Trama.")
                 Link("Codice e piano di sviluppo", destination: URL(string: "https://github.com/emanueledenaro/trama")!)
             }
         }.formStyle(.grouped).task { await store.notifications.refresh(); background.refresh() }
@@ -312,13 +314,19 @@ struct NewProjectView: View {
     @State private var name = ""
     @State private var idea = ""
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
+        VStack(alignment: .leading, spacing: TramaSpacing.section) {
             Text("Crea un progetto").font(.title2.weight(.semibold))
             Text("Descrivi cosa vuoi costruire. Trama prepara una richiesta che potrai pianificare con Codex.").foregroundStyle(.secondary)
-            TextField("Nome del progetto", text: $name).textFieldStyle(.roundedBorder)
-            TextField("Cosa vuoi costruire?", text: $idea, axis: .vertical).lineLimit(4...8).textFieldStyle(.roundedBorder)
+            VStack(alignment: .leading, spacing: TramaSpacing.compact) {
+                Text("Nome del progetto").font(.callout.weight(.medium))
+                TextField("Inserisci un nome", text: $name).textFieldStyle(.roundedBorder).accessibilityLabel("Nome del progetto")
+            }
+            VStack(alignment: .leading, spacing: TramaSpacing.compact) {
+                Text("Cosa vuoi costruire?").font(.callout.weight(.medium))
+                TextField("Descrivi il progetto", text: $idea, axis: .vertical).lineLimit(4...8).textFieldStyle(.roundedBorder).accessibilityLabel("Cosa vuoi costruire?")
+            }
             HStack { Button("Annulla") { dismiss() }.keyboardShortcut(.cancelAction); Spacer(); Button("Scegli la cartella") { create() }.buttonStyle(.borderedProminent).disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || idea.isEmpty) }
-        }.padding(28).frame(width: 530)
+        }.padding(TramaSpacing.content).frame(width: 530)
     }
     private func create() {
         let panel = NSSavePanel(); panel.title = "Cartella del nuovo progetto"; panel.nameFieldStringValue = name; panel.canCreateDirectories = true
