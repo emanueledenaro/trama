@@ -14,7 +14,7 @@ Selezionare un modulo, formulare una richiesta e ricevere un piano reale associa
 
 ## Criteri di accettazione
 
-- [ ] Richiesta, progetto, modulo, snapshot e riferimenti alle fonti restano associati anche dopo il riavvio.
+- [x] Richiesta, progetto, modulo, snapshot e riferimenti alle fonti restano associati anche dopo il riavvio.
 - [ ] La pianificazione usa lettura soltanto e non modifica file né avvia effetti esterni.
 - [ ] Il piano mostra comportamento atteso, moduli coinvolti, limiti, ipotesi aperte e verifiche previste; può essere corretto dall’utente.
 - [ ] Streaming, annullamento, limite d’uso, assenza di rete ed errore del modello hanno stati espliciti e non perdono la richiesta.

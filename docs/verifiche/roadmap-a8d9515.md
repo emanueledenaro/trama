@@ -2,7 +2,7 @@
 
 Codice esaminato: `a8d9515961a6ae20ccde44dbef9589f269b9acbd`. [CI riuscita](https://github.com/emanueledenaro/trama/actions/runs/34724052618).
 
-Esito della revisione: 14 criteri verificati in 7 ticket; 5 ulteriori criteri hanno prove parziali esplicite. Gli altri restano da verificare. Nessun ticket è stato chiuso.
+Esito della revisione: 16 criteri verificati in 8 ticket; 3 ulteriori criteri hanno prove parziali esplicite. Gli altri restano da verificare. Nessun ticket è stato chiuso.
 
 La revisione ha distinto le prove della finestra e del modello reale da quelle del trasporto simulato. I criteri parziali restano senza spunta anche quando una loro parte è già funzionante.
 
@@ -13,8 +13,8 @@ Restano i casi limite di apertura, permessi e navigazione completa da tastiera.
 - [x] C1: App compilabile e avviabile, con sidebar, toolbar, SF Symbols e tema di sistema.
   Verificato: Build e avvio provati; sidebar, toolbar, SF Symbols e tema Sistema osservati direttamente nella finestra durante questo audit. [Prova 1](https://github.com/emanueledenaro/trama/actions/runs/34724052618) [Prova 2](https://github.com/emanueledenaro/trama/blob/a8d9515961a6ae20ccde44dbef9589f269b9acbd/docs/verifiche-locali.md) [Prova 3](https://github.com/emanueledenaro/trama/blob/main/docs/verifiche/controlli-nativi-2026-09-13.md)
 - [ ] C2: Primo avvio, selettore annullato, cartella vuota, cartella spostata e permesso negato hanno stati leggibili.
-- [ ] C3: I progetti recenti persistono; il riavvio conserva la selezione senza riavviare agenti.
-  Parziale: La riapertura è documentata, ma serve una traccia esplicita prima e dopo l’uscita completa, con selezione e attività confrontate. [Prova 1](https://github.com/emanueledenaro/trama/blob/a8d9515961a6ae20ccde44dbef9589f269b9acbd/docs/verifiche-locali.md)
+- [x] C3: I progetti recenti persistono; il riavvio conserva la selezione senza riavviare agenti.
+  Verificato: Uscita completa e nuovo PID verificati; progetto nei recenti, selezione, richiesta, piano, snapshot e fonti identici prima e dopo; nessuna attività riavviata. [Prova di riavvio](https://github.com/emanueledenaro/trama/blob/main/docs/verifiche/riavvio-2026-09-13.md)
 - [ ] C4: La selezione della cartella legge la struttura senza eseguire script, installare dipendenze o modificare il codice.
 - [ ] C5: La navigazione essenziale è utilizzabile da tastiera e ha etichette accessibili.
 - [ ] C6: CI macOS minima attiva dal primo incremento, con build e test significativi disponibili. Ogni incremento successivo conserva questi controlli verdi.
@@ -73,8 +73,8 @@ Restano navigazione completa, modifica della struttura, limiti e accesso negato 
 
 Restano modifica manuale del piano, errori e limiti, interruzioni e risposte tardive nel percorso completo.
 
-- [ ] C1: Richiesta, progetto, modulo, snapshot e riferimenti alle fonti restano associati anche dopo il riavvio.
-  Parziale: Richiesta e piano sono documentati nel percorso locale. Serve il confronto esplicito delle associazioni a modulo, snapshot e fonti prima e dopo il riavvio. [Prova 1](https://github.com/emanueledenaro/trama/blob/a8d9515961a6ae20ccde44dbef9589f269b9acbd/docs/verifiche-locali.md)
+- [x] C1: Richiesta, progetto, modulo, snapshot e riferimenti alle fonti restano associati anche dopo il riavvio.
+  Verificato: Uscita completa e nuovo PID verificati; progetto nei recenti, selezione, richiesta, piano, snapshot e fonti identici prima e dopo; nessuna attività riavviata. [Prova di riavvio](https://github.com/emanueledenaro/trama/blob/main/docs/verifiche/riavvio-2026-09-13.md)
 - [ ] C2: La pianificazione usa lettura soltanto e non modifica file né avvia effetti esterni.
   Parziale: Il piano reale e il sorgente locale invariato sono provati. L’assenza di tutti gli effetti esterni richiede una prova del runtime distinta dai test del trasporto simulato. [Prova 1](https://github.com/emanueledenaro/trama/blob/a8d9515961a6ae20ccde44dbef9589f269b9acbd/docs/verifiche-locali.md) [Prova 2](https://github.com/emanueledenaro/trama/blob/a8d9515961a6ae20ccde44dbef9589f269b9acbd/Tests/TramaCoreTests/CodexClientTests.swift) [Prova 3](https://github.com/emanueledenaro/trama/actions/runs/34724052618)
 - [ ] C3: Il piano mostra comportamento atteso, moduli coinvolti, limiti, ipotesi aperte e verifiche previste; può essere corretto dall’utente.

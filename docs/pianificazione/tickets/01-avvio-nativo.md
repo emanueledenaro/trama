@@ -16,7 +16,7 @@ Nessuna
 
 - [x] App compilabile e avviabile, con sidebar, toolbar, SF Symbols e tema di sistema.
 - [ ] Primo avvio, selettore annullato, cartella vuota, cartella spostata e permesso negato hanno stati leggibili.
-- [ ] I progetti recenti persistono; il riavvio conserva la selezione senza riavviare agenti.
+- [x] I progetti recenti persistono; il riavvio conserva la selezione senza riavviare agenti.
 - [ ] La selezione della cartella legge la struttura senza eseguire script, installare dipendenze o modificare il codice.
 - [ ] La navigazione essenziale è utilizzabile da tastiera e ha etichette accessibili.
 

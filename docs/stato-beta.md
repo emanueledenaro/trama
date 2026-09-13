@@ -16,13 +16,13 @@ Le sole modifiche documentali non eseguono build, test, login, chiamate modello 
 
 ## Riconciliazione dei criteri
 
-La [riconciliazione sul commit a8d9515](verifiche/roadmap-a8d9515.md) collega ogni criterio alle prove disponibili e identifica quelli ancora da verificare. Sono stati riconosciuti 14 criteri in 7 ticket, con altri 5 criteri parziali; nessun ticket è stato chiuso. Comprende anche responsive #21, design #22 e l’estensione modelli #23.
+La [riconciliazione sul commit a8d9515](verifiche/roadmap-a8d9515.md) collega ogni criterio alle prove disponibili e identifica quelli ancora da verificare. Sono stati riconosciuti 16 criteri in 8 ticket, con altri 3 criteri parziali; nessun ticket è stato chiuso. Comprende anche responsive #21, design #22 e l’estensione modelli #23.
 
 ## Matrice T01-T18
 
 | Ticket | Presente nel codice | Verifica o parte mancante |
 | --- | --- | --- |
-| T01 | Shell SwiftUI nativa, apertura progetto, catalogo dei recenti con bookmark, ripristino dello stato e scanner in sola lettura. Sono presenti test per identità, spostamento e catalogo corrotto. | Avvio e CI corrente sono provati; il riavvio richiede una traccia più completa. Restano selettore annullato, cartella vuota, permesso negato, tastiera e VoiceOver completi. |
+| T01 | Shell SwiftUI nativa, apertura progetto, catalogo dei recenti con bookmark, ripristino dello stato e scanner in sola lettura. Sono presenti test per identità, spostamento e catalogo corrotto. | Avvio, riavvio con contesto persistito e CI corrente sono provati. Restano selettore annullato, cartella vuota, permesso negato, tastiera e VoiceOver completi. |
 | T02 | `CodexClient` usa Codex App Server 0.148.0, riconosce account ChatGPT, gestisce login, timeout, JSON errato e uscita del processo. I test usano un trasporto simulato. | Il turno minimo reale e il piano nella finestra sono provati. Restano da provare login annullato o scaduto e percorso di riparazione su un Mac senza Codex. |
 | T03 | Lettura dello stato delle app Codex e adapter GitHub CLI per account, snapshot, confronto, issue e pubblicazione. Gli errori di accesso hanno stati distinti nei test. | Matrice autenticata su un repository di prova per branch, commit, diff, PR, review, issue e check. Lo stato del connettore GitHub deve essere provato separatamente da `gh`. |
 | T04 | Pacchetto AI Hero 1.2.3 incluso con licenza e commit sorgente documentati. Il setup preserva file esistenti, è ripetibile e scrive le istruzioni mancanti. | Conferma sul catalogo Codex reale del progetto, prova offline completa e percorso di aggiornamento o rollback verificato. La creazione remota delle etichette non è compresa nel setup locale. |

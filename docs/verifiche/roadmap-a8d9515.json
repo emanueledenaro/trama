@@ -26,11 +26,12 @@
         {
           "criterion": 3,
           "text": "I progetti recenti persistono; il riavvio conserva la selezione senza riavviare agenti.",
-          "status": "parziale",
+          "status": "verificato",
           "evidence": [
-            "https://github.com/emanueledenaro/trama/blob/a8d9515961a6ae20ccde44dbef9589f269b9acbd/docs/verifiche-locali.md"
+            "https://github.com/emanueledenaro/trama/blob/a8d9515961a6ae20ccde44dbef9589f269b9acbd/docs/verifiche-locali.md",
+            "https://github.com/emanueledenaro/trama/blob/main/docs/verifiche/riavvio-2026-09-13.md"
           ],
-          "note": "La riapertura è documentata, ma serve una traccia esplicita prima e dopo l’uscita completa, con selezione e attività confrontate."
+          "note": "Uscita completa e nuovo PID verificati; progetto nei recenti, selezione, richiesta, piano, snapshot e fonti identici prima e dopo; nessuna attività riavviata."
         },
         {
           "criterion": 4,
@@ -281,11 +282,12 @@
         {
           "criterion": 1,
           "text": "Richiesta, progetto, modulo, snapshot e riferimenti alle fonti restano associati anche dopo il riavvio.",
-          "status": "parziale",
+          "status": "verificato",
           "evidence": [
-            "https://github.com/emanueledenaro/trama/blob/a8d9515961a6ae20ccde44dbef9589f269b9acbd/docs/verifiche-locali.md"
+            "https://github.com/emanueledenaro/trama/blob/a8d9515961a6ae20ccde44dbef9589f269b9acbd/docs/verifiche-locali.md",
+            "https://github.com/emanueledenaro/trama/blob/main/docs/verifiche/riavvio-2026-09-13.md"
           ],
-          "note": "Richiesta e piano sono documentati nel percorso locale. Serve il confronto esplicito delle associazioni a modulo, snapshot e fonti prima e dopo il riavvio."
+          "note": "Uscita completa e nuovo PID verificati; progetto nei recenti, selezione, richiesta, piano, snapshot e fonti identici prima e dopo; nessuna attività riavviata."
         },
         {
           "criterion": 2,
