@@ -446,7 +446,16 @@ final class ProjectStore: ObservableObject {
                 } else {
                     document.requests[i].planDecisionVersions = [:]
                 }
-                let unchanged = fingerprint == request.sourceFingerprint && versions == Dictionary(uniqueKeysWithValues: (document.pact?.decisions ?? []).map { ($0.id, $0.version) })
+                let currentVersions = Dictionary(uniqueKeysWithValues: (document.pact?.decisions ?? []).map { ($0.id, $0.version) })
+                let requiredDependencies = Set(
+                    (reply.proposal?.requiredDecisionIDs ?? []) +
+                    (reply.proposal?.questions.compactMap(\.revisesDecisionID) ?? [])
+                )
+                let unchanged = fingerprint == request.sourceFingerprint && DecisionImpact.dependenciesAreCurrent(
+                    requiredDecisionIDs: requiredDependencies,
+                    currentVersions: currentVersions,
+                    recordedVersions: document.requests[i].planDecisionVersions
+                )
                 if let proposal = reply.proposal {
                     document.requests[i].state = unchanged ? (proposal.questions.isEmpty ? "Da rivedere" : "Decisione richiesta") : "Da rivalutare"
                 } else {
@@ -499,8 +508,15 @@ final class ProjectStore: ObservableObject {
               ![plan, behavior, example, rationale].contains(where: { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }),
               !moduleIDs.isEmpty else { errorMessage = "Rivedi il piano e il comportamento sul progetto corrente."; return }
         let currentVersions = Dictionary(uniqueKeysWithValues: (document.pact?.decisions ?? []).map { ($0.id, $0.version) })
-        let plannedVersions = document.requests[index].planDecisionVersions ?? [:]
-        guard plannedVersions.allSatisfy({ currentVersions[$0.key] == $0.value }) else {
+        let requiredDependencies = Set(
+            (document.requests[index].proposal?.requiredDecisionIDs ?? []) +
+            (document.requests[index].proposal?.questions.compactMap(\.revisesDecisionID) ?? [])
+        )
+        guard DecisionImpact.dependenciesAreCurrent(
+            requiredDecisionIDs: requiredDependencies,
+            currentVersions: currentVersions,
+            recordedVersions: document.requests[index].planDecisionVersions
+        ), let plannedVersions = document.requests[index].planDecisionVersions else {
             document.requests[index].state = "Da rivalutare"; saveDocument()
             errorMessage = "Le decisioni sono cambiate dopo il piano. Rielabora la richiesta prima di avviare il lavoro."; return
         }

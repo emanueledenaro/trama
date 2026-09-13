@@ -233,7 +233,7 @@ public struct PlanProposal: Codable, Equatable, Sendable {
             throw PlanProposalError.unknownReference(file)
         }
         let decisions = Set(existingDecisionIDs)
-        for id in response.requiredDecisionIDs ?? [] where !decisions.contains(id) {
+        for id in response.requiredDecisionIDs where !decisions.contains(id) {
             throw PlanProposalError.unknownDecision(id)
         }
         for question in response.questions {
@@ -250,7 +250,7 @@ public struct PlanProposal: Codable, Equatable, Sendable {
             steps: response.steps,
             affectedModuleIDs: response.affectedModuleIDs,
             references: response.references,
-            requiredDecisionIDs: response.requiredDecisionIDs ?? [],
+            requiredDecisionIDs: response.requiredDecisionIDs,
             proposedBehavior: response.proposedBehavior,
             acceptedExample: response.acceptedExample,
             rationale: response.rationale,
@@ -271,7 +271,7 @@ public struct PlanProposal: Codable, Equatable, Sendable {
               !response.references.isEmpty,
               response.references.count <= maximumReferences,
               hasUniqueNonemptyValues(response.references),
-              hasUniqueNonemptyValues(response.requiredDecisionIDs ?? []),
+              hasUniqueNonemptyValues(response.requiredDecisionIDs),
               response.questions.count <= maximumQuestions else {
             throw PlanProposalError.invalidContent
         }
@@ -330,14 +330,11 @@ public struct PlanProposal: Codable, Equatable, Sendable {
             throw PlanProposalError.forbiddenAuthorityField(forbidden)
         }
 
-        let requiredProposalKeys: Set<String> = [
+        let proposalKeys: Set<String> = [
             "sourceSnapshotID", "summary", "steps", "affectedModuleIDs", "references",
-            "proposedBehavior", "acceptedExample", "rationale", "questions"
+            "requiredDecisionIDs", "proposedBehavior", "acceptedExample", "rationale", "questions"
         ]
-        let allowedProposalKeys = requiredProposalKeys.union(["requiredDecisionIDs"])
-        let actualProposalKeys = Set(dictionary.keys)
-        guard requiredProposalKeys.isSubset(of: actualProposalKeys),
-              actualProposalKeys.isSubset(of: allowedProposalKeys),
+        guard Set(dictionary.keys) == proposalKeys,
               let questions = dictionary["questions"] as? [[String: Any]] else {
             throw PlanProposalError.malformedResponse
         }
@@ -460,7 +457,7 @@ private struct ModelProposal: Decodable {
     let steps: [String]
     let affectedModuleIDs: [String]
     let references: [String]
-    let requiredDecisionIDs: [String]?
+    let requiredDecisionIDs: [String]
     let proposedBehavior: String
     let acceptedExample: String
     let rationale: String

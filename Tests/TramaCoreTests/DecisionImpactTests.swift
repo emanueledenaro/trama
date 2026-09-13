@@ -31,4 +31,34 @@ final class DecisionImpactTests: XCTestCase {
             behaviorDecisionID: "request-behavior"
         ))
     }
+
+    func testDependencySnapshotMustBePresentCompleteAndCurrent() {
+        let current = ["required": 3, "unrelated": 7]
+
+        XCTAssertFalse(DecisionImpact.dependenciesAreCurrent(
+            requiredDecisionIDs: ["required"],
+            currentVersions: current,
+            recordedVersions: nil
+        ))
+        XCTAssertFalse(DecisionImpact.dependenciesAreCurrent(
+            requiredDecisionIDs: ["required"],
+            currentVersions: current,
+            recordedVersions: [:]
+        ))
+        XCTAssertFalse(DecisionImpact.dependenciesAreCurrent(
+            requiredDecisionIDs: ["required"],
+            currentVersions: current,
+            recordedVersions: ["required": 2]
+        ))
+        XCTAssertTrue(DecisionImpact.dependenciesAreCurrent(
+            requiredDecisionIDs: ["required"],
+            currentVersions: current,
+            recordedVersions: ["required": 3]
+        ))
+        XCTAssertTrue(DecisionImpact.dependenciesAreCurrent(
+            requiredDecisionIDs: [],
+            currentVersions: current,
+            recordedVersions: [:]
+        ))
+    }
 }

@@ -120,6 +120,15 @@ final class PlanProposalTests: XCTestCase {
         }
     }
 
+    func testModelOutputMustDeclareDecisionDependenciesEvenWhenEmpty() throws {
+        var object = try XCTUnwrap(jsonObject(from: proposalJSON()))
+        object.removeValue(forKey: "requiredDecisionIDs")
+
+        XCTAssertThrowsError(try parse(jsonString(object))) { error in
+            XCTAssertEqual(error as? PlanProposalError, .malformedResponse)
+        }
+    }
+
     func testDecodesAPersistedProposalCreatedBeforeDecisionDependencies() throws {
         let current = try parse(proposalJSON(requiredDecisionIDs: ["cancel-semantics"]))
         let encoded = try JSONEncoder().encode(current)
@@ -210,7 +219,7 @@ final class PlanProposalTests: XCTestCase {
         sourceSnapshotID: String = "snapshot-42",
         moduleIDs: [String] = ["orders"],
         references: [String] = ["Sources/Orders/Order.swift"],
-        requiredDecisionIDs: [String]? = nil,
+        requiredDecisionIDs: [String] = [],
         questions: [[String: Any]] = []
     ) -> String {
         var object: [String: Any] = [
@@ -227,7 +236,7 @@ final class PlanProposalTests: XCTestCase {
             "rationale": "Il pagamento osservato non deve essere revocato da un'azione di navigazione.",
             "questions": questions
         ]
-        if let requiredDecisionIDs { object["requiredDecisionIDs"] = requiredDecisionIDs }
+        object["requiredDecisionIDs"] = requiredDecisionIDs
         return jsonString(object)
     }
 

@@ -1,6 +1,16 @@
 import Foundation
 
 public enum DecisionImpact {
+    public static func dependenciesAreCurrent(
+        requiredDecisionIDs: Set<String>,
+        currentVersions: [String: Int],
+        recordedVersions: [String: Int]?
+    ) -> Bool {
+        guard let recordedVersions,
+              requiredDecisionIDs.isSubset(of: Set(recordedVersions.keys)) else { return false }
+        return recordedVersions.allSatisfy { currentVersions[$0.key] == $0.value }
+    }
+
     public static func requiresRealignment(
         changedDecisionID: String,
         currentVersion: Int,

@@ -27,7 +27,7 @@ final class PlanningReplyTests: XCTestCase {
         let proposal: [String: Any] = [
             "sourceSnapshotID": "snapshot-1", "summary": "Evita duplicati",
             "steps": ["Aggiungi il controllo dello stato"], "affectedModuleIDs": ["orders"],
-            "references": ["Order.swift"], "proposedBehavior": "Seconda richiesta ignorata",
+            "references": ["Order.swift"], "requiredDecisionIDs": [], "proposedBehavior": "Seconda richiesta ignorata",
             "acceptedExample": "La seconda chiamata restituisce nil", "rationale": "Evita duplicazioni",
             "questions": []
         ]
