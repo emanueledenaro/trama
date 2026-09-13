@@ -12,7 +12,7 @@ struct TramaApp: App {
             WorkspaceView()
                 .environmentObject(store)
                 .preferredColorScheme(appearance == "dark" ? .dark : appearance == "light" ? .light : nil)
-                .frame(minWidth: 1040, minHeight: 700)
+                .frame(minWidth: 720, minHeight: 640)
                 .task { await store.restoreProject() }
         }
         .defaultSize(width: 1440, height: 900)

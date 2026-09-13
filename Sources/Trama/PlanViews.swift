@@ -100,7 +100,7 @@ struct PlanExecutionEditor: View {
                     dismiss()
                 }.buttonStyle(.borderedProminent).disabled(store.isPlanning || modules.isEmpty || [plan, behavior, example, rationale].contains { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })
             }
-        }.padding(26).frame(width: 640, height: 720)
+        }.padding(26).frame(minWidth: 480, idealWidth: 640, minHeight: 420, idealHeight: 560)
             .onAppear {
                 plan = request.proposal?.steps.enumerated().map { "\($0.offset + 1). \($0.element)" }.joined(separator: "\n") ?? request.plan
                 behavior = request.proposal?.proposedBehavior ?? ""

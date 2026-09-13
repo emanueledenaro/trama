@@ -69,12 +69,12 @@ struct ProjectMapView: View {
 
     private var graph: some View {
         GeometryReader { geometry in
-            ScrollView([.horizontal, .vertical]) {
+            ScrollView(.vertical) {
                 let modules = store.filteredModules
-                let columns = min(3, modules.count)
+                let columns = max(1, min(modules.count, Int((geometry.size.width - 44 + 28) / (208 + 28))))
                 let cardWidth: CGFloat = 208
                 let gap: CGFloat = 28
-                let width = max(geometry.size.width, CGFloat(columns) * (cardWidth + gap) + 44)
+                let width = geometry.size.width
                 VStack(spacing: 0) {
                     HStack(spacing: 14) {
                         Image(systemName: "shippingbox.fill").font(.system(size: 28)).foregroundStyle(.tint)
@@ -83,7 +83,7 @@ struct ProjectMapView: View {
                             Text("\(modules.count) moduli · \(store.project?.totalFileCount ?? 0) file").font(.caption).foregroundStyle(.secondary)
                         }
                     }
-                    .padding(20).frame(width: 286)
+                    .padding(20).frame(maxWidth: min(286, max(0, width - 44)))
                     .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
                     .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(.quaternary))
                     .padding(.top, 36)
