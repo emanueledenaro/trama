@@ -20,6 +20,7 @@ struct WorkspaceView: View {
                     else { welcome }
                 }
                 .navigationTitle(store.project?.isDemo == true ? "Trama · Progetto di esempio" : store.project?.name ?? "Trama")
+                .navigationSubtitle(store.project?.isDemo == true ? "" : (store.project?.branch ?? ""))
                 .toolbar { toolbar }
                 .inspector(isPresented: Binding(get: { !compactInspector && store.showInspector && store.project != nil && store.section == .map }, set: { store.showInspector = $0 })) {
                     if store.project != nil {
@@ -191,14 +192,6 @@ struct WorkspaceView: View {
             }
         }
         if store.project != nil {
-            ToolbarItem(placement: .principal) {
-                if let project = store.project {
-                    HStack(spacing: 10) {
-                        Label(project.branch ?? "Cartella locale", systemImage: "arrow.triangle.branch").lineLimit(1).truncationMode(.middle).frame(maxWidth: 220)
-                        if project.isDemo { Text("Esempio").foregroundStyle(.orange) }
-                    }.font(.caption).foregroundStyle(.secondary)
-                }
-            }
             ToolbarItemGroup(placement: .primaryAction) {
                 if store.isLoading { ProgressView().controlSize(.small) }
                 Button("Aggiorna", systemImage: "arrow.clockwise") { Task { await store.refresh() } }.disabled(store.isLoading)
