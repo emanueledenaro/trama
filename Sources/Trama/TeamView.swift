@@ -164,14 +164,9 @@ struct TeamView: View {
     }
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                VStack(alignment: .leading, spacing: 5) {
-                    Text("Il lavoro del gruppo").font(.title2.weight(.semibold))
-                    Text("Segui ciò che viene condiviso su GitHub.").foregroundStyle(.secondary)
-                }
-                Spacer()
+            TramaScreenHeader("Il lavoro del gruppo", subtitle: "Segui ciò che viene condiviso su GitHub.") {
                 Toggle("Aggiornamento automatico", isOn: $team.monitoring).toggleStyle(.switch).controlSize(.small)
-            }.padding(24)
+            }
             HStack {
                 Image(systemName: "arrow.triangle.branch").foregroundStyle(.secondary)
                 TextField("proprietario/repository", text: $team.repository).textFieldStyle(.roundedBorder)

@@ -11,7 +11,7 @@ struct TramaApp: App {
         WindowGroup("Trama") {
             WorkspaceView()
                 .environmentObject(store)
-                .preferredColorScheme(appearance == "dark" ? .dark : appearance == "light" ? .light : nil)
+                .preferredColorScheme(selectedColorScheme)
                 .frame(minWidth: 720, minHeight: 640)
                 .task { await store.restoreProject() }
         }
@@ -28,8 +28,16 @@ struct TramaApp: App {
             }
         }
         Settings {
-            SettingsView().environmentObject(store).environmentObject(store.backgroundMonitor).frame(width: 590, height: 660)
+            SettingsView()
+                .environmentObject(store)
+                .environmentObject(store.backgroundMonitor)
+                .preferredColorScheme(selectedColorScheme)
+                .frame(width: 590, height: 660)
         }
+    }
+
+    private var selectedColorScheme: ColorScheme? {
+        appearance == "dark" ? .dark : appearance == "light" ? .light : nil
     }
 }
 

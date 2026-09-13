@@ -93,7 +93,11 @@ struct RequestsView: View {
                         ForEach(store.document.requests) { request in
                             VStack(alignment: .leading, spacing: 7) {
                                 Text(request.title).font(.headline).lineLimit(3)
-                                HStack { Text(request.moduleName); Spacer(); Text(request.state) }.font(.caption).foregroundStyle(.secondary)
+                                HStack(alignment: .center, spacing: TramaSpacing.control) {
+                                    Text(request.moduleName).font(.caption).foregroundStyle(.secondary)
+                                    Spacer(minLength: TramaSpacing.compact)
+                                    TramaStatusBadge(state: request.state)
+                                }
                             }.padding(.vertical, 7).tag(request.id)
                         }
                     }.frame(width: compact ? nil : 230, height: compact ? 150 : nil)
@@ -104,7 +108,7 @@ struct RequestsView: View {
                                 VStack(alignment: .leading, spacing: 7) {
                                     Text(request.moduleName).font(.caption).foregroundStyle(.secondary)
                                     Text(request.title).font(.title2.weight(.semibold))
-                                    Label(request.state, systemImage: store.isPlanning ? "ellipsis" : "doc.text").font(.callout).foregroundStyle(.secondary)
+                                    TramaStatusBadge(state: request.state)
                                 }
                                 Divider()
                                 if request.state == "Decisione richiesta" {

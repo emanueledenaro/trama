@@ -11,16 +11,13 @@ struct IssuesView: View {
     private let api = GitHubIssues()
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                VStack(alignment: .leading, spacing: 5) {
-                    Text("Issue del progetto").font(.title2.weight(.semibold))
-                    Text(store.team.repository.isEmpty ? "Collega un repository nella sezione Gruppo." : store.team.repository).foregroundStyle(.secondary)
+            TramaScreenHeader("Issue del progetto", subtitle: store.team.repository.isEmpty ? "Collega un repository nella sezione Gruppo." : store.team.repository) {
+                HStack(spacing: TramaSpacing.control) {
+                    Button("Aggiorna", systemImage: "arrow.clockwise") { Task { await load() } }.labelStyle(.iconOnly).disabled(loading)
+                    Button("Nuova issue", systemImage: "plus") { showCreate = true }.disabled(store.team.repository.isEmpty || store.isPlanning)
                 }
-                Spacer()
-                Button("Aggiorna", systemImage: "arrow.clockwise") { Task { await load() } }.labelStyle(.iconOnly).disabled(loading)
-                Button("Nuova issue", systemImage: "plus") { showCreate = true }.disabled(store.team.repository.isEmpty || store.isPlanning)
-            }.padding(24)
-            if let error { Text(error).font(.callout).foregroundStyle(.orange).padding(.horizontal, 24).padding(.bottom, 12) }
+            }
+            if let error { Text(error).font(.callout).foregroundStyle(.orange).padding(.horizontal, TramaSpacing.content).padding(.bottom, TramaSpacing.related) }
             Divider()
             if loading { ProgressView("Leggo le issue di GitHub…").frame(maxWidth: .infinity, maxHeight: .infinity) }
             else if issues.isEmpty { ContentUnavailableView("Nessuna issue disponibile", systemImage: "tray", description: Text("Le issue restano su GitHub; Trama le collega al contesto del progetto.")) }
@@ -34,7 +31,7 @@ struct IssuesView: View {
                                 VStack(alignment: .leading, spacing: 6) {
                                     Text(issue.title).font(.headline).lineLimit(3)
                                     Text("#\(issue.number) · \(issue.author)").font(.caption).foregroundStyle(.secondary)
-                                }.padding(.vertical, 8).tag(issue.number)
+                                }.padding(.vertical, TramaSpacing.control).tag(issue.number)
                             }
                         }.frame(width: compact ? nil : 245, height: compact ? 150 : nil)
                         Divider()
@@ -51,13 +48,15 @@ struct IssuesView: View {
                                         }.buttonStyle(.borderedProminent).disabled(store.isPlanning)
                                         Link("Apri su GitHub", destination: issue.url)
                                     }
-                                }.padding(24).frame(maxWidth: .infinity, alignment: .leading)
+                                }.padding(TramaSpacing.content).frame(maxWidth: .infinity, alignment: .leading)
                             }.frame(maxWidth: .infinity)
                         } else { ContentUnavailableView("Seleziona una issue", systemImage: "doc.text").frame(maxWidth: .infinity) }
                     }
                 }
             }
-        }.task(id: store.team.repository) { issues = []; selected = nil; await load() }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .task(id: store.team.repository) { issues = []; selected = nil; await load() }
         .sheet(isPresented: $showCreate, onDismiss: { Task { await load() } }) { CreateIssueView(repository: store.team.repository) }
     }
     private func load() async {

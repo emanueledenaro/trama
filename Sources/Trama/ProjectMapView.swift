@@ -6,24 +6,19 @@ struct ProjectMapView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 5) {
-                    Text("Mappa del progetto").font(.title2.weight(.semibold))
-                    Text("Esplora i moduli e segui i riferimenti al codice.").foregroundStyle(.secondary)
-                }
-                Spacer()
+            TramaScreenHeader("Mappa del progetto", subtitle: "Esplora i moduli e segui i riferimenti al codice.") {
                 Picker("Visualizzazione", selection: $store.mapStyle) {
                     Text("Mappa").tag("Mappa")
                     Text("Albero").tag("Albero")
                 }.pickerStyle(.segmented).labelsHidden().frame(width: 160)
-            }.padding(22)
+            }
             HStack {
                 Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
                 TextField("Cerca moduli o file", text: $store.query).textFieldStyle(.plain)
                 if !store.query.isEmpty { Button("Cancella", systemImage: "xmark.circle.fill") { store.query = "" }.labelStyle(.iconOnly).buttonStyle(.plain) }
                 Spacer()
                 Text("\(store.project?.totalFileCount ?? 0) file rilevati").font(.caption).foregroundStyle(.secondary)
-            }.padding(10).background(.quaternary, in: RoundedRectangle(cornerRadius: 8)).padding(.horizontal, 22).padding(.bottom, 14)
+            }.padding(TramaSpacing.control).background(.quaternary, in: RoundedRectangle(cornerRadius: 8)).padding(.horizontal, TramaSpacing.content).padding(.bottom, TramaSpacing.related)
             if let request = store.selectedRequest, store.hasRemoteConflict(for: request) {
                 HStack {
                     Label("Il candidato entra in conflitto con una revisione del gruppo", systemImage: "exclamationmark.triangle").foregroundStyle(.orange)
