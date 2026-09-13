@@ -255,9 +255,10 @@ struct TeamView: View {
                 VStack(alignment: .leading, spacing: 5) {
                     if let message = store.intelligence.message { Text(message).font(.caption).foregroundStyle(.secondary) }
                     HStack {
-                        Button("Analizza impatto con Codex") { store.intelligence.consider(snapshot: snapshot, automatic: false) }.disabled(!store.codexConnected || store.intelligence.isAnalyzing || team.sourceRepository.caseInsensitiveCompare(snapshot.repository) != .orderedSame || (snapshot.pullRequests.isEmpty && snapshot.branches.isEmpty))
+                        Button("Analizza impatto con Codex") { store.intelligence.consider(snapshot: snapshot, automatic: false) }.disabled(!store.codexConnected || store.selectedModelInfo == nil || store.intelligence.isAnalyzing || team.sourceRepository.caseInsensitiveCompare(snapshot.repository) != .orderedSame || (snapshot.pullRequests.isEmpty && snapshot.branches.isEmpty))
                         if store.intelligence.isAnalyzing { ProgressView().controlSize(.small) }
                     }
+                    Label("Analisi Codex: \(store.selectedModelDisplayName)", systemImage: "cpu").font(.caption)
                     Label("Ultimo accesso GitHub API verificato: \(team.account)", systemImage: "checkmark.shield").font(.caption)
                     Text("Dati letti tramite GitHub CLI. Il lavoro non pubblicato degli altri non è visibile. Nessuna modifica viene unita al tuo branch.").font(.caption).foregroundStyle(.secondary)
                 }.padding(20)

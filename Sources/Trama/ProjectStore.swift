@@ -31,6 +31,7 @@ struct WorkRequest: Identifiable, Codable {
     var failureDetail: String?
     var replyKind: PlanningReply.Kind?
     var replyReferences: [String]?
+    var model: String?
     var setupBaselineHashes: [String: String]?
 }
 
@@ -43,6 +44,7 @@ struct ProjectDocument: Codable {
     var lastContextWasProject: Bool?
     var lastSelectedRequestID: UUID?
     var lastSection: String?
+    var selectedModel: String?
 }
 
 enum WorkspaceSection: String, CaseIterable, Identifiable {
@@ -79,6 +81,10 @@ final class ProjectStore: ObservableObject {
     @Published var activity: [String] = []
     @Published var connectedApps: [CodexClient.App] = []
     @Published var appsError: String?
+    @Published var models: [CodexClient.Model] = []
+    @Published var modelsError: String?
+    @Published var isLoadingModels = false
+    @Published var selectedModel = ""
     @Published var setupReport: SetupReport?
     @Published var skillStatus = "Catalogo skill da verificare"
     @Published var codexVersion = ""
@@ -110,11 +116,12 @@ final class ProjectStore: ObservableObject {
             guard let self, let root = self.localRoot, let project = self.project else { return nil }
             let request = (self.selectedRequest?.proposal != nil ? self.selectedRequest : nil) ?? self.document.requests.first(where: { $0.proposal != nil })
             let text = request.map { $0.request + "\nPiano attuale:\n" + String($0.plan.prefix(8000)) } ?? "Valuta l’impatto sul progetto e sulle sue decisioni. Non c’è una modifica personale in corso."
-            return LocalAwarenessContext(root: root, snapshotID: self.fingerprint, request: text, modules: project.modules.map { ChangeModule(id: $0.id, paths: $0.files.map(\.relativePath)) }, decisions: self.document.pact?.decisions ?? [])
+            guard !self.selectedModel.isEmpty else { return nil }
+            return LocalAwarenessContext(root: root, snapshotID: self.fingerprint, request: text, modules: project.modules.map { ChangeModule(id: $0.id, paths: $0.files.map(\.relativePath)) }, decisions: self.document.pact?.decisions ?? [], model: self.selectedModel)
         }
         intelligence.canAnalyze = { [weak self] in
             guard let self else { return false }
-            return codexConnected && !isPlanning && !isExecuting && !team.sourceRepository.isEmpty && team.sourceRepository.caseInsensitiveCompare(team.repository) == .orderedSame
+            return codexConnected && selectedModelInfo != nil && !isPlanning && !isExecuting && !team.sourceRepository.isEmpty && team.sourceRepository.caseInsensitiveCompare(team.repository) == .orderedSame
         }
         remoteConflicts.contextProvider = { [weak self] in
             guard let self, !self.isExecuting, let request = self.selectedRequest,
@@ -144,6 +151,10 @@ final class ProjectStore: ObservableObject {
         (project?.modules ?? []).filter { query.isEmpty || $0.name.localizedCaseInsensitiveContains(query) || $0.files.contains { $0.relativePath.localizedCaseInsensitiveContains(query) } }
     }
     var selectedRequest: WorkRequest? { document.requests.first { $0.id == selectedRequestID } }
+    var selectedModelInfo: CodexClient.Model? { models.first { $0.model == selectedModel } }
+    var selectedModelDisplayName: String {
+        selectedModelInfo?.displayName ?? (selectedModel.isEmpty ? "Scegli un modello" : selectedModel)
+    }
     var fingerprint: String {
         guard let project else { return "" }
         let contextHashes = (project.contextualInputHashes ?? [:]).map { "\($0.key):\($0.value)" }.sorted().joined(separator: "|")
@@ -233,6 +244,8 @@ final class ProjectStore: ObservableObject {
             project = snapshot
             if previousPath != snapshot.rootPath {
                 document = loadDocument(snapshot)
+                selectedModel = document.selectedModel ?? ""
+                reconcileModelSelection()
                 selectedRequestID = document.lastSelectedRequestID ?? document.requests.first?.id
                 if document.lastContextWasProject == true { selectedModuleID = nil }
                 else { selectedModuleID = snapshot.modules.first(where: { $0.id == document.lastSelectedModuleID })?.id ?? snapshot.modules.first(where: { $0.name.lowercased().contains("ordin") || $0.name.lowercased().contains("order") })?.id ?? snapshot.modules.first?.id }
@@ -314,7 +327,10 @@ final class ProjectStore: ObservableObject {
 
     func connectCodex() async {
         guard !isConnecting else { return }; isConnecting = true
-        defer { isConnecting = false; if !codexConnected { connectedApps = [] } }
+        defer {
+            isConnecting = false
+            if !codexConnected { connectedApps = []; models = [] }
+        }
         do {
             let account = try await codex.connect()
             switch account {
@@ -327,10 +343,34 @@ final class ProjectStore: ObservableObject {
             }
             if codexConnected {
                 codexVersion = await codex.serverInfo()?.userAgent ?? ""
+                isLoadingModels = true
+                do {
+                    models = try await codex.listModels()
+                    modelsError = models.isEmpty ? "Codex non ha restituito modelli OpenAI disponibili." : nil
+                    reconcileModelSelection()
+                } catch {
+                    models = []
+                    modelsError = "Catalogo modelli non disponibile: \(error.localizedDescription)"
+                }
+                isLoadingModels = false
                 do { connectedApps = try await codex.listApps(); appsError = nil }
                 catch { appsError = "Collegamenti non disponibili: \(error.localizedDescription)" }
             }
-        } catch { codexConnected = false; connectionDetail = error.localizedDescription }
+        } catch {
+            codexConnected = false
+            modelsError = nil
+            isLoadingModels = false
+            connectionDetail = error.localizedDescription
+        }
+    }
+
+    func selectModel(_ model: String) {
+        guard !isPlanning, !isExecuting, models.contains(where: { $0.model == model }) else { return }
+        selectedModel = model
+        document.selectedModel = model
+        modelsError = nil
+        intelligence.invalidate()
+        saveDocument()
     }
 
     func signIn() async {
@@ -346,6 +386,7 @@ final class ProjectStore: ObservableObject {
         guard !prompt.isEmpty, let project, !isPlanning, !isPreparingSkills else { return }
         let module = selectedModule
         var request = WorkRequest(title: String(prompt.prefix(90)), moduleID: module?.id ?? "project", moduleName: module?.name ?? project.name, request: prompt, sourceFingerprint: fingerprint)
+        request.model = selectedModel.isEmpty ? nil : selectedModel
         request.state = codexConnected ? "Analisi in corso" : "In attesa di Codex"
         document.requests.insert(request, at: 0); selectedRequestID = request.id
         composer = ""; section = .changes; showInspector = false; saveDocument()
@@ -354,6 +395,14 @@ final class ProjectStore: ObservableObject {
 
     func runPlan(_ id: UUID) {
         guard let root = localRoot, let project, let index = document.requests.firstIndex(where: { $0.id == id }), !isPlanning, !isPreparingSkills else { return }
+        let model = selectedModel
+        guard models.contains(where: { $0.model == model }) else {
+            document.requests[index].state = "Modello non disponibile"
+            document.requests[index].failureDetail = "Scegli un modello OpenAI disponibile prima di avviare l’analisi. Il modello richiesto era \(model.isEmpty ? "non selezionato" : model)."
+            saveDocument()
+            return
+        }
+        document.requests[index].model = model
         document.requests[index].sourceFingerprint = fingerprint
         let request = document.requests[index]
         let token = UUID(); operationID = token
@@ -383,7 +432,7 @@ final class ProjectStore: ObservableObject {
             guard let self else { return }
             defer { if operationID == token { isPlanning = false; saveDocument() } }
             do {
-                let result = try await codex.plan(prompt: prompt, cwd: root, outputSchema: PlanningReply.outputSchema)
+                let result = try await codex.plan(prompt: prompt, cwd: root, model: model, outputSchema: PlanningReply.outputSchema)
                 let reply = try PlanningReply.parse(raw: result, sourceSnapshotID: request.sourceFingerprint, knownModuleIDs: moduleIDs, knownFiles: knownFiles, existingDecisionIDs: decisions.map(\.id))
                 guard operationID == token, localRoot == root, let i = document.requests.firstIndex(where: { $0.id == id }) else { return }
                 document.requests[i].replyKind = reply.kind
@@ -544,11 +593,27 @@ final class ProjectStore: ObservableObject {
         document.lastContextWasProject = selectedModuleID == nil
         document.lastSelectedRequestID = selectedRequestID
         document.lastSection = section?.rawValue
+        if !selectedModel.isEmpty { document.selectedModel = selectedModel }
         do {
             let url = stateURL(project)
             try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
             try JSONEncoder().encode(document).write(to: url, options: .atomic)
         } catch { errorMessage = "Salvataggio non riuscito: \(error.localizedDescription)" }
+    }
+
+    private func reconcileModelSelection() {
+        guard project != nil else { return }
+        if let saved = document.selectedModel, !saved.isEmpty {
+            selectedModel = saved
+            if !models.isEmpty, !models.contains(where: { $0.model == saved }) {
+                modelsError = "Il modello salvato \(saved) non è più disponibile. Scegline un altro per continuare."
+            }
+            return
+        }
+        guard let model = models.first(where: \.isDefault) ?? models.first else { return }
+        selectedModel = model.model
+        document.selectedModel = model.model
+        saveDocument()
     }
 }
 

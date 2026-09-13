@@ -7,6 +7,12 @@ extension ProjectStore {
         guard codexConnected, !isPlanning, !isPreparingSkills, let root = localRoot,
               project != nil, let index = document.requests.firstIndex(where: { $0.id == id }) else { return }
         let request = document.requests[index]
+        guard let model = request.model, models.contains(where: { $0.model == model }) else {
+            document.requests[index].state = "Modello non disponibile"
+            errorMessage = "Il modello registrato per questa richiesta non è disponibile. Verifica il catalogo Codex o scegli un modello per una nuova richiesta."
+            saveDocument()
+            return
+        }
         guard let engine = document.pact, !engine.decisions.isEmpty else {
             section = .decisions
             errorMessage = "Registra il comportamento da rispettare nel Patto Vivo, poi torna al piano e avvia il lavoro."
@@ -130,7 +136,7 @@ extension ProjectStore {
                 let prompt = """
                 Usa $implement e $tdd per implementare il piano approvato in questo worktree. Rispondi in italiano. Il perimetro ammesso è: \(allowedText), più i relativi test. Non modificare .agents, docs/agents o AGENTS.md. Non fare commit, push o merge. Per SwiftPM usa `swift test --disable-sandbox --scratch-path .build --cache-path .build/cache` con TMPDIR, CLANG_MODULE_CACHE_PATH, SWIFTPM_MODULECACHE_OVERRIDE e XDG_CACHE_HOME impostate a sottocartelle di questo worktree. Non chiedere accesso alle cache esterne. Trama eseguirà comunque i propri controlli isolati al termine. Se il piano richiede una scelta nuova o ampliare il perimetro fermati e spiegala. Le decisioni umane sono:\n\(decisions)\nRichiesta:\n\(request.request)\nPiano:\n\(request.plan)\(correctionContext)
                 """
-                let output = try await codex.execute(prompt: prompt, cwd: session.worktreeRoot, onText: { [weak self] text in
+                let output = try await codex.execute(prompt: prompt, cwd: session.worktreeRoot, model: model, onText: { [weak self] text in
                     Task { @MainActor in
                         guard let self, self.operationID == token, self.localRoot == root,
                               let j = self.document.requests.firstIndex(where: { $0.id == id }) else { return }

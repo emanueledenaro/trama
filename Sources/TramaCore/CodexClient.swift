@@ -56,6 +56,28 @@ public final class CodexClient: @unchecked Sendable {
         }
     }
 
+    public struct Model: Codable, Equatable, Sendable, Identifiable {
+        public let id: String
+        public let model: String
+        public let displayName: String
+        public let description: String
+        public let isDefault: Bool
+
+        public init(
+            id: String,
+            model: String,
+            displayName: String,
+            description: String,
+            isDefault: Bool
+        ) {
+            self.id = id
+            self.model = model
+            self.displayName = displayName
+            self.description = description
+            self.isDefault = isDefault
+        }
+    }
+
     public struct ApprovalRequest: Codable, Equatable, Sendable, Identifiable {
         public let id: String
         public let kind: String
@@ -98,6 +120,7 @@ public final class CodexClient: @unchecked Sendable {
         case alreadySignedIn
         case loginFailed(String)
         case emptyPrompt
+        case invalidModel(String)
         case invalidWorkingDirectory(String)
         case invalidOutputSchema
         case skillDiscoveryFailed(String)
@@ -175,6 +198,10 @@ public final class CodexClient: @unchecked Sendable {
         try await core.listApps()
     }
 
+    public func listModels() async throws -> [Model] {
+        try await core.listModels()
+    }
+
     public func listSkills(cwd: URL) async throws -> [LoadedSkill] {
         try await core.listSkills(cwd: cwd)
     }
@@ -182,12 +209,14 @@ public final class CodexClient: @unchecked Sendable {
     public func plan(
         prompt: String,
         cwd: URL,
+        model: String = "gpt-5.6-terra",
         outputSchema: Data? = nil,
         onText: @escaping @Sendable (String) -> Void = { _ in }
     ) async throws -> String {
         try await restrictedCore.plan(
             prompt: prompt,
             cwd: cwd,
+            model: model,
             outputSchema: outputSchema,
             onText: onText
         )
@@ -196,12 +225,14 @@ public final class CodexClient: @unchecked Sendable {
     public func execute(
         prompt: String,
         cwd: URL,
+        model: String = "gpt-5.6-terra",
         onText: @escaping @Sendable (String) -> Void = { _ in },
         onApproval: @escaping @Sendable (ApprovalRequest) async -> ApprovalDecision
     ) async throws -> String {
         try await restrictedCore.execute(
             prompt: prompt,
             cwd: cwd,
+            model: model,
             onText: onText,
             onApproval: onApproval
         )
@@ -391,6 +422,8 @@ extension CodexClient.ClientError: LocalizedError {
             return "Accesso ChatGPT non completato: \(message)"
         case .emptyPrompt:
             return "La richiesta non può essere vuota."
+        case let .invalidModel(model):
+            return "Il modello OpenAI selezionato non è valido: \(model)"
         case let .invalidWorkingDirectory(path):
             return "La cartella del progetto non è valida: \(path)"
         case .invalidOutputSchema:
@@ -616,6 +649,60 @@ private actor Core {
         }
     }
 
+    func listModels() async throws -> [CodexClient.Model] {
+        try await ensureInitialized()
+        guard case .chatGPT = try await readAccount() else {
+            throw CodexClient.ClientError.authenticationRequired
+        }
+
+        var models: [CodexClient.Model] = []
+        var cursor: String?
+        var pageCount = 0
+        repeat {
+            pageCount += 1
+            guard pageCount <= 20 else {
+                throw CodexClient.ClientError.malformedMessage("model/list ha superato il limite di pagine")
+            }
+
+            var params: [String: JSONValue] = [
+                "includeHidden": .bool(false),
+                "limit": .integer(100)
+            ]
+            if let cursor {
+                params["cursor"] = .string(cursor)
+            }
+
+            let result = try await request(method: "model/list", params: .object(params))
+            guard let object = result.objectValue,
+                  let data = object["data"]?.arrayValue else {
+                throw CodexClient.ClientError.malformedMessage("risposta model/list incompleta")
+            }
+            for value in data {
+                guard let modelObject = value.objectValue,
+                      let id = modelObject["id"]?.stringValue,
+                      let model = modelObject["model"]?.stringValue,
+                      let displayName = modelObject["displayName"]?.stringValue,
+                      let description = modelObject["description"]?.stringValue,
+                      let isDefault = modelObject["isDefault"]?.boolValue,
+                      modelObject["hidden"]?.boolValue == false,
+                      !id.isEmpty, !model.isEmpty, !displayName.isEmpty else {
+                    throw CodexClient.ClientError.malformedMessage("model/list contiene un modello non valido")
+                }
+                guard !model.contains("/") else { continue }
+                models.append(CodexClient.Model(
+                    id: id,
+                    model: model,
+                    displayName: displayName,
+                    description: description,
+                    isDefault: isDefault
+                ))
+            }
+            cursor = object["nextCursor"]?.stringValue
+        } while cursor != nil
+
+        return models
+    }
+
     func listSkills(cwd: URL) async throws -> [CodexClient.LoadedSkill] {
         guard cwd.isFileURL, cwd.path.hasPrefix("/") else {
             throw CodexClient.ClientError.invalidWorkingDirectory(cwd.path)
@@ -665,12 +752,17 @@ private actor Core {
     func plan(
         prompt: String,
         cwd: URL,
+        model: String,
         outputSchema: Data?,
         onText: @escaping @Sendable (String) -> Void
     ) async throws -> String {
         let trimmedPrompt = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedPrompt.isEmpty else {
             throw CodexClient.ClientError.emptyPrompt
+        }
+        let selectedModel = model.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !selectedModel.isEmpty, !selectedModel.contains("/") else {
+            throw CodexClient.ClientError.invalidModel(model)
         }
         guard cwd.isFileURL, cwd.path.hasPrefix("/") else {
             throw CodexClient.ClientError.invalidWorkingDirectory(cwd.path)
@@ -705,7 +797,7 @@ private actor Core {
             method: "thread/start",
             params: .object([
                 "modelProvider": .string("openai"),
-                "model": .string("gpt-5.6-terra"),
+                "model": .string(selectedModel),
                 "cwd": .string(cwd.path),
                 "approvalPolicy": .string("never"),
                 "sandbox": .string("read-only"),
@@ -780,12 +872,17 @@ private actor Core {
     func execute(
         prompt: String,
         cwd: URL,
+        model: String,
         onText: @escaping @Sendable (String) -> Void,
         onApproval: @escaping @Sendable (CodexClient.ApprovalRequest) async -> CodexClient.ApprovalDecision
     ) async throws -> String {
         let trimmedPrompt = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedPrompt.isEmpty else {
             throw CodexClient.ClientError.emptyPrompt
+        }
+        let selectedModel = model.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !selectedModel.isEmpty, !selectedModel.contains("/") else {
+            throw CodexClient.ClientError.invalidModel(model)
         }
         guard cwd.isFileURL, cwd.path.hasPrefix("/") else {
             throw CodexClient.ClientError.invalidWorkingDirectory(cwd.path)
@@ -810,7 +907,7 @@ private actor Core {
             method: "thread/start",
             params: .object([
                 "modelProvider": .string("openai"),
-                "model": .string("gpt-5.6-terra"),
+                "model": .string(selectedModel),
                 "cwd": .string(cwd.path),
                 "approvalPolicy": .string("on-request"),
                 "sandbox": .string("workspace-write"),

@@ -154,9 +154,47 @@ struct WorkspaceView: View {
                     }
                 } label: { Label(store.selectedModule?.name ?? "Intero progetto", systemImage: "scope") }
                 .menuStyle(.borderlessButton).lineLimit(1).frame(maxWidth: 220, alignment: .leading).font(.caption)
+                Menu {
+                    if store.models.isEmpty {
+                        Button(store.isLoadingModels ? "Caricamento modelli…" : "Nessun modello disponibile") { }
+                            .disabled(true)
+                    } else {
+                        ForEach(store.models) { model in
+                            Button {
+                                store.selectModel(model.model)
+                            } label: {
+                                if model.model == store.selectedModel {
+                                    Label(model.displayName, systemImage: "checkmark")
+                                } else {
+                                    Text(model.displayName)
+                                }
+                            }
+                        }
+                    }
+                } label: {
+                    Label(store.selectedModelDisplayName, systemImage: "cpu")
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+                .menuStyle(.borderlessButton)
+                .frame(maxWidth: 190, alignment: .leading)
+                .font(.caption)
+                .disabled(store.isPlanning || store.isExecuting || store.models.isEmpty)
+                .help(store.selectedModelInfo?.description ?? store.modelsError ?? "Catalogo modelli di Codex")
+                .accessibilityLabel("Modello OpenAI: \(store.selectedModelDisplayName)")
                 Spacer()
                 if store.isPlanning { ProgressView().controlSize(.small); Text(store.isExecuting ? "Codex sta lavorando nel worktree" : (store.selectedRequest?.state == "Verifiche in corso" ? "Verifiche in corso" : "Codex sta analizzando la richiesta")).font(.caption).foregroundStyle(.secondary) }
                 else { Text("Pianificazione in sola lettura").font(.caption).foregroundStyle(.secondary) }
+            }
+            if let error = store.modelsError {
+                Label(error, systemImage: "exclamationmark.triangle")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+            } else if let model = store.selectedModelInfo {
+                Text(model.description)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
             }
             HStack(alignment: .bottom, spacing: 12) {
                 TextField("Cosa vuoi capire o modificare?", text: $store.composer, axis: .vertical)
@@ -168,7 +206,7 @@ struct WorkspaceView: View {
                 } else {
                     Button { store.submitRequest() } label: { Image(systemName: "arrow.up").fontWeight(.semibold) }
                         .buttonStyle(.borderedProminent).buttonBorderShape(.circle)
-                        .disabled(store.composer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        .disabled(store.composer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || (store.codexConnected && store.selectedModelInfo == nil))
                         .help("Pianifica con Codex").accessibilityLabel("Pianifica con Codex")
                 }
             }

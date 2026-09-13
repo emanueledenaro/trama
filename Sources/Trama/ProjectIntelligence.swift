@@ -11,6 +11,7 @@ struct LocalAwarenessContext {
     let request: String
     let modules: [ChangeModule]
     let decisions: [PactDecision]
+    let model: String
 }
 
 @MainActor
@@ -193,6 +194,7 @@ final class ProjectIntelligence: ObservableObject {
                         try await codex.plan(
                             prompt: prompt,
                             cwd: initialContext.root,
+                            model: initialContext.model,
                             outputSchema: ProjectAwareness.outputSchema
                         )
                     }
@@ -456,7 +458,8 @@ final class ProjectIntelligence: ObservableObject {
             snapshotID: context.snapshotID,
             request: context.request,
             modules: context.modules,
-            decisions: context.decisions
+            decisions: context.decisions,
+            model: context.model
         )
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
@@ -513,6 +516,7 @@ private struct ContextFingerprint: Encodable {
     let request: String
     let modules: [ChangeModule]
     let decisions: [PactDecision]
+    let model: String
 }
 
 private struct CachedFile {
