@@ -75,10 +75,14 @@ final class MarkdownDocumentTests: XCTestCase {
         | Espressione | Esito |
         | --- | --- |
         | `a \\| b` | valido |
+        | testo | finale \\|
         """)
 
         XCTAssertEqual(document.blocks, [
-            .table(headers: ["Espressione", "Esito"], rows: [["`a | b`", "valido"]])
+            .table(headers: ["Espressione", "Esito"], rows: [
+                ["`a | b`", "valido"],
+                ["testo", "finale |"]
+            ])
         ])
     }
 }

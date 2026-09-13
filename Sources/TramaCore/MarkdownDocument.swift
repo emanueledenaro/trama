@@ -175,7 +175,7 @@ public struct MarkdownDocument: Equatable, Sendable {
         guard line.contains("|") else { return nil }
         var value = line.trimmingCharacters(in: .whitespaces)
         if value.hasPrefix("|") { value.removeFirst() }
-        if value.hasSuffix("|") { value.removeLast() }
+        if value.hasSuffix("|"), !terminalPipeIsEscaped(in: value) { value.removeLast() }
         var cells: [String] = []
         var cell = ""
         var index = value.startIndex
@@ -196,6 +196,18 @@ public struct MarkdownDocument: Equatable, Sendable {
         }
         cells.append(cell.trimmingCharacters(in: .whitespaces))
         return cells.count > 1 ? cells : nil
+    }
+
+    private static func terminalPipeIsEscaped(in value: String) -> Bool {
+        guard value.last == "|", value.count > 1 else { return false }
+        var index = value.index(before: value.endIndex)
+        var backslashes = 0
+        while index > value.startIndex {
+            index = value.index(before: index)
+            guard value[index] == "\\" else { break }
+            backslashes += 1
+        }
+        return backslashes.isMultiple(of: 2) == false
     }
 
     private static func isTableSeparator(_ line: String, columns: Int) -> Bool {
