@@ -615,6 +615,7 @@ final class ProjectStore: ObservableObject {
         guard let model = models.first(where: \.isDefault) ?? models.first else { return }
         selectedModel = model.model
         document.selectedModel = model.model
+        modelsError = nil
         saveDocument()
     }
 }
