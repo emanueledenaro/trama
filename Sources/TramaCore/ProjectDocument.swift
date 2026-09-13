@@ -1,0 +1,57 @@
+import Foundation
+
+public struct WorkRequest: Identifiable, Codable {
+    public var id = UUID()
+    public var title: String
+    public var moduleID: String
+    public var moduleName: String
+    public var request: String
+    public var plan: String = ""
+    public var state: String = "Bozza"
+    public var createdAt = Date()
+    public var sourceFingerprint: String
+    public var session: WorkspaceSession?
+    public var review: WorkspaceReview?
+    public var check: WorkspaceCheck?
+    public var candidateID: String?
+    public var leaseID: String?
+    public var executionOutput: String?
+    public var approvedAt: Date?
+    public var pullRequestURL: URL?
+    public var proposal: PlanProposal?
+    public var allowedModuleIDs: [String]?
+    public var confirmedQuestionIDs: [String]?
+    public var behaviorDecisionID: String?
+    public var planDecisionVersions: [String: Int]?
+    public var previousSessions: [WorkspaceSession]?
+    public var failureDetail: String?
+    public var replyKind: PlanningReply.Kind?
+    public var replyReferences: [String]?
+    public var model: String?
+    public var setupBaselineHashes: [String: String]?
+
+    public init(title: String, moduleID: String, moduleName: String, request: String, sourceFingerprint: String) {
+        self.title = title
+        self.moduleID = moduleID
+        self.moduleName = moduleName
+        self.request = request
+        self.sourceFingerprint = sourceFingerprint
+    }
+}
+
+public struct ProjectDocument: Codable {
+    public var schemaVersion = 2
+    public var requests: [WorkRequest] = []
+    public var pact: PactEngine?
+    public var currentCandidateID: String?
+    public var lastSelectedModuleID: String?
+    public var lastContextWasProject: Bool?
+    public var lastSelectedRequestID: UUID?
+    public var lastSection: String?
+    public var selectedModel: String?
+    public var composerDraft: String?
+    public var importedRequestIDs: [UUID]?
+
+    public init() {}
+}
+

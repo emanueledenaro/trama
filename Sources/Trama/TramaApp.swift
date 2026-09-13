@@ -14,6 +14,7 @@ struct TramaApp: App {
                 .preferredColorScheme(selectedColorScheme)
                 .frame(minWidth: 720, minHeight: 640)
                 .task { await store.restoreProject() }
+                .onAppear { delegate.willTerminate = { store.saveDocument() } }
         }
         .defaultSize(width: 1440, height: 900)
         .windowToolbarStyle(.unified)
@@ -65,6 +66,8 @@ private struct TramaWindowTitle: NSViewRepresentable {
 }
 
 final class TramaDelegate: NSObject, NSApplicationDelegate {
+    var willTerminate: (() -> Void)?
+    func applicationWillTerminate(_ notification: Notification) { willTerminate?() }
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApplication.shared.setActivationPolicy(.regular)
         NSApplication.shared.activate(ignoringOtherApps: true)

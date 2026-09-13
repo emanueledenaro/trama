@@ -1,0 +1,108 @@
+import Foundation
+import XCTest
+@testable import TramaCore
+
+final class ProjectDocumentTests: XCTestCase {
+    func testDraftAndSelectionRemainIsolatedAcrossReopenedProjectCopies() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let catalogue = ProjectCatalogue(directoryURL: root.appendingPathComponent("catalogue"))
+        var storages: [ProjectDocumentStorage] = []
+        for name in ["first", "second"] {
+            let clone = root.appendingPathComponent(name)
+            try FileManager.default.createDirectory(at: clone.appendingPathComponent(".git"), withIntermediateDirectories: true)
+            try "[remote \"origin\"]\nurl = https://github.com/example/same.git\n".write(to: clone.appendingPathComponent(".git/config"), atomically: true, encoding: .utf8)
+            let registered = try catalogue.register(url: clone, isDemo: false)
+            storages.append(ProjectDocumentStorage(url: root.appendingPathComponent(registered.id.uuidString + ".json")))
+        }
+        let selectedID = UUID()
+        var first = try storages[0].load()
+        first.composerDraft = "La bozza del primo progetto"
+        first.lastSelectedRequestID = selectedID
+        first.lastSection = "Coordinatore"
+        try storages[0].save(first)
+        var second = try storages[1].load()
+        XCTAssertNil(second.composerDraft)
+        second.composerDraft = "La bozza del secondo progetto"
+        try storages[1].save(second)
+
+        XCTAssertEqual(try storages[0].load().composerDraft, "La bozza del primo progetto")
+        XCTAssertEqual(try storages[0].load().lastSelectedRequestID, selectedID)
+        XCTAssertEqual(try storages[0].load().lastSection, "Coordinatore")
+        XCTAssertEqual(try storages[1].load().composerDraft, "La bozza del secondo progetto")
+        XCTAssertNil(try storages[1].load().lastSelectedRequestID)
+        XCTAssertEqual(try catalogue.load().count, 2)
+    }
+
+    func testInterruptedBackupAndFutureSchemaRemainUntouched() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let url = root.appendingPathComponent("project.json")
+        let original = Data(#"{"schemaVersion":1,"requests":[]}"#.utf8)
+        try original.write(to: url)
+        let backup = url.appendingPathExtension("v1-original.json")
+        try Data("partial".utf8).write(to: backup)
+        let storage = ProjectDocumentStorage(url: url)
+        XCTAssertThrowsError(try storage.load())
+        XCTAssertEqual(try Data(contentsOf: url), original)
+        let future = Data(#"{"schemaVersion":99,"requests":[]}"#.utf8)
+        try future.write(to: url)
+        XCTAssertThrowsError(try storage.load())
+        XCTAssertThrowsError(try storage.save(ProjectDocument()))
+        XCTAssertEqual(try Data(contentsOf: url), future)
+    }
+
+    func testExplicitRecoveryKeepsOriginalAndGrantsNoAuthorization() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let url = directory.appendingPathComponent("project.json")
+        let original = Data("{interrupted".utf8)
+        try original.write(to: url)
+        let storage = ProjectDocumentStorage(url: url)
+
+        let backup = try storage.recover()
+        XCTAssertEqual(try Data(contentsOf: backup), original)
+        let recovered = try storage.load()
+        XCTAssertTrue(recovered.requests.isEmpty)
+        XCTAssertNil(recovered.pact)
+        XCTAssertNil(recovered.currentCandidateID)
+    }
+
+    func testUnreadableDocumentCannotBeOverwrittenByANewDraft() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let url = directory.appendingPathComponent("project.json")
+        let original = Data("{interrupted".utf8)
+        try original.write(to: url)
+        let storage = ProjectDocumentStorage(url: url)
+
+        XCTAssertThrowsError(try storage.load())
+        XCTAssertThrowsError(try storage.save(ProjectDocument()))
+        XCTAssertEqual(try Data(contentsOf: url), original)
+    }
+
+    func testLegacyRequestsRemainRecoverableAfterMigration() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let url = directory.appendingPathComponent("project.json")
+        let original = Data(#"{"schemaVersion":1,"requests":[{"id":"11111111-1111-1111-1111-111111111111","title":"Annullamento ordine","moduleID":"Orders","moduleName":"Ordini","request":"Registra una richiesta di revisione","plan":"Conserva pagamento e disponibilità","state":"Da rivedere","createdAt":100,"sourceFingerprint":"source-1","model":"modello-salvato","approvedAt":200,"candidateID":"candidate-1","leaseID":"lease-1","planDecisionVersions":{"D-12":2}}],"selectedModel":"modello-salvato","lastSection":"Modifiche","lastSelectedRequestID":"11111111-1111-1111-1111-111111111111"}"#.utf8)
+        try original.write(to: url)
+
+        let storage = ProjectDocumentStorage(url: url)
+        let document = try storage.load()
+
+        XCTAssertEqual(document.schemaVersion, 2)
+        XCTAssertEqual(document.importedRequestIDs, [UUID(uuidString: "11111111-1111-1111-1111-111111111111")!])
+        XCTAssertEqual(document.requests.first?.approvedAt, Date(timeIntervalSinceReferenceDate: 200))
+        XCTAssertEqual(document.requests.first?.planDecisionVersions, ["D-12": 2])
+        let backup = try XCTUnwrap(storage.originalBackupURL)
+        XCTAssertEqual(try Data(contentsOf: backup), original)
+        let reopened = try storage.load()
+        XCTAssertEqual(reopened.requests.first?.plan, "Conserva pagamento e disponibilità")
+        XCTAssertEqual(reopened.selectedModel, "modello-salvato")
+    }
+}

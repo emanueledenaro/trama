@@ -135,6 +135,7 @@ struct WorkspaceView: View {
         VStack(spacing: 0) {
             if store.pendingApproval != nil { ApprovalView(); Divider() }
             switch store.section ?? .map {
+            case .coordinator: CoordinatorView()
             case .map: ProjectMapView()
             case .changes: RequestsView()
             case .decisions: DecisionsView()
