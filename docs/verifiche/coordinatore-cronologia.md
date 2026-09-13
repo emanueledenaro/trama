@@ -37,4 +37,4 @@ Gli screenshot sono stati osservati durante la prova, senza esportare una raccol
 - Build macOS debug riuscita e usata per le prove dirette.
 - Revisione C01: risolti il rischio di perdita della bozza al cambio progetto e l’attribuzione impropria a Codex. Standards e Spec hanno confermato queste correzioni.
 
-La revisione aggiuntiva della correzione #51 si è conclusa senza nuovi finding Standards o Spec. Gli esiti CI del candidato e del merge devono essere collegati alle issue prima della chiusura. Firma, notarizzazione, altro Mac e comportamento 24/7 restano fuori da questo incremento.
+La revisione aggiuntiva della correzione #51 si è conclusa senza nuovi finding Standards o Spec. [CI del candidato](https://github.com/emanueledenaro/trama/actions/runs/34769650479) e [CI del merge](https://github.com/emanueledenaro/trama/actions/runs/34769855169) concluse con successo. PR #52 integrata in `cf47ba31bf51097773616a23b2680cb452efb904`; checklist #33 e #51 aggiornate e issue chiuse dopo rilettura. Firma, notarizzazione, altro Mac e comportamento 24/7 restano fuori da questo incremento.
