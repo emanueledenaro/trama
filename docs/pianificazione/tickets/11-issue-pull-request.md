@@ -1,6 +1,6 @@
 # T11: Collegare una issue al lavoro e pubblicare una PR revisionata
 
-Stato: pianificato, bozza per GitHub Issues.
+Stato: parzialmente verificato. Ticket ancora aperto.
 
 Specifica: [Piano operativo](../../piano-operativo.md).
 
@@ -18,8 +18,8 @@ Aprire una GitHub Issue dentro Trama, pianificarla nel suo contesto e arrivare a
 - [ ] L’utente vede destinatario, branch, diff e testo della PR prima della pubblicazione.
 - [ ] Login del connettore e permesso di push Git sono verificati separatamente; mancanza di uno non viene mascherata dall’altro.
 - [ ] Retry dopo timeout riconcilia l’eventuale PR già creata, senza duplicarla.
-- [ ] Fine dell’agente non chiude l’issue; pubblicazione, CI remota, merge e chiusura restano stati distinti.
-- [ ] Una modifica tra revisione e pubblicazione richiede nuova verifica del candidato.
+- [x] Fine dell’agente non chiude l’issue; pubblicazione, CI remota, merge e chiusura restano stati distinti.
+- [x] Una modifica tra revisione e pubblicazione richiede nuova verifica del candidato.
 
 ## Prova di completamento
 
@@ -28,3 +28,5 @@ Seguire una issue di prova fino a una PR autentica sul repository di prova senza
 ## Regola di chiusura
 
 La chiusura richiede evidenze sui comportamenti indicati e revisione indipendente di specifica e convenzioni. Riportare controlli non eseguiti e limiti. Un test simulato non sostituisce la prova reale del collegamento o del sistema operativo.
+
+Prove e criteri residui: [riconciliazione della roadmap](../../verifiche/roadmap-a8d9515.md).

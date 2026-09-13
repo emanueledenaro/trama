@@ -1,0 +1,1144 @@
+{
+  "codeRevision": "a8d9515961a6ae20ccde44dbef9589f269b9acbd",
+  "ci": "https://github.com/emanueledenaro/trama/actions/runs/34724052618",
+  "tickets": [
+    {
+      "number": 2,
+      "criteria": [
+        {
+          "criterion": 1,
+          "text": "App compilabile e avviabile, con sidebar, toolbar, SF Symbols e tema di sistema.",
+          "status": "verificato",
+          "evidence": [
+            "https://github.com/emanueledenaro/trama/actions/runs/34724052618",
+            "https://github.com/emanueledenaro/trama/blob/a8d9515961a6ae20ccde44dbef9589f269b9acbd/docs/verifiche-locali.md",
+            "https://github.com/emanueledenaro/trama/blob/main/docs/verifiche/controlli-nativi-2026-09-13.md"
+          ],
+          "note": "Build e avvio provati; sidebar, toolbar, SF Symbols e tema Sistema osservati direttamente nella finestra durante questo audit."
+        },
+        {
+          "criterion": 2,
+          "text": "Primo avvio, selettore annullato, cartella vuota, cartella spostata e permesso negato hanno stati leggibili.",
+          "status": "da verificare",
+          "evidence": [],
+          "note": "Restano i casi limite di apertura, permessi e navigazione completa da tastiera."
+        },
+        {
+          "criterion": 3,
+          "text": "I progetti recenti persistono; il riavvio conserva la selezione senza riavviare agenti.",
+          "status": "parziale",
+          "evidence": [
+            "https://github.com/emanueledenaro/trama/blob/a8d9515961a6ae20ccde44dbef9589f269b9acbd/docs/verifiche-locali.md"
+          ],
+          "note": "La riapertura è documentata, ma serve una traccia esplicita prima e dopo l’uscita completa, con selezione e attività confrontate."
+        },
+        {
+          "criterion": 4,
+          "text": "La selezione della cartella legge la struttura senza eseguire script, installare dipendenze o modificare il codice.",
+          "status": "da verificare",
+          "evidence": [],
+          "note": "Restano i casi limite di apertura, permessi e navigazione completa da tastiera."
+        },
+        {
+          "criterion": 5,
+          "text": "La navigazione essenziale è utilizzabile da tastiera e ha etichette accessibili.",
+          "status": "da verificare",
+          "evidence": [],
+          "note": "Restano i casi limite di apertura, permessi e navigazione completa da tastiera."
+        },
+        {
+          "criterion": 6,
+          "text": "CI macOS minima attiva dal primo incremento, con build e test significativi disponibili. Ogni incremento successivo conserva questi controlli verdi.",
+          "status": "parziale",
+          "evidence": [
+            "https://github.com/emanueledenaro/trama/actions/runs/34724052618"
+          ],
+          "note": "La CI corrente è verificata. Il criterio contiene anche la disciplina di integrazione dei successivi incrementi, che resta da verificare nel flusso di consegna."
+        }
+      ],
+      "remaining": "Restano i casi limite di apertura, permessi e navigazione completa da tastiera."
+    },
+    {
+      "number": 3,
+      "criteria": [
+        {
+          "criterion": 1,
+          "text": "Versione del componente ufficiale rilevata e protocollo verificato; provider OpenAI esplicito per il processo di Trama.",
+          "status": "verificato",
+          "evidence": [
+            "https://github.com/emanueledenaro/trama/blob/a8d9515961a6ae20ccde44dbef9589f269b9acbd/Tests/TramaCoreTests/CodexClientTests.swift",
+            "https://github.com/emanueledenaro/trama/actions/runs/34724052618",
+            "https://github.com/emanueledenaro/trama/blob/a8d9515961a6ae20ccde44dbef9589f269b9acbd/docs/codex-integration.md"
+          ],
+          "note": "Protocollo e provider verificati dai test e dal percorso reale CodexClient."
+        },
+        {
+          "criterion": 2,
+          "text": "account/read precede il login: un account disponibile viene riconosciuto senza ripetere OAuth o copiare token.",
+          "status": "verificato",
+          "evidence": [
+            "https://github.com/emanueledenaro/trama/blob/a8d9515961a6ae20ccde44dbef9589f269b9acbd/docs/verifiche-locali.md",
+            "https://github.com/emanueledenaro/trama/blob/a8d9515961a6ae20ccde44dbef9589f269b9acbd/Tests/TramaCoreTests/CodexClientTests.swift",
+            "https://github.com/emanueledenaro/trama/actions/runs/34724052618"
+          ],
+          "note": "Account ChatGPT esistente riconosciuto nell’app; ordine account/read prima del login coperto dai test."
+        },
+        {
+          "criterion": 3,
+          "text": "Accesso assente, scaduto, annullato, account differente e API key hanno stati distinti; nessun passaggio automatico alla fatturazione API.",
+          "status": "da verificare",
+          "evidence": [],
+          "note": "Restano login annullato o scaduto, account differente e riparazione su un Mac senza Codex."
+        },
+        {
+          "criterion": 4,
+          "text": "Motore assente o incompatibile produce un percorso di installazione/riparazione documentato. Il componente viene distribuito solo dopo verifica di licenza e aggiornamenti.",
+          "status": "da verificare",
+          "evidence": [],
+          "note": "Restano login annullato o scaduto, account differente e riparazione su un Mac senza Codex."
+        },
+        {
+          "criterion": 5,
+          "text": "Timeout, risposta malformata e uscita del processo terminano la richiesta pendente senza lasciare un falso stato connesso.",
+          "status": "da verificare",
+          "evidence": [],
+          "note": "Restano login annullato o scaduto, account differente e riparazione su un Mac senza Codex."
+        },
+        {
+          "criterion": 6,
+          "text": "Una sessione controllata restituisce una risposta minima reale in sola lettura; la pianificazione collegata alle fonti appartiene a T06.",
+          "status": "parziale",
+          "evidence": [
+            "https://github.com/emanueledenaro/trama/blob/a8d9515961a6ae20ccde44dbef9589f269b9acbd/docs/codex-integration.md",
+            "https://github.com/emanueledenaro/trama/blob/a8d9515961a6ae20ccde44dbef9589f269b9acbd/docs/verifiche-locali.md"
+          ],
+          "note": "La risposta del modello reale è provata. L’audit conserva come parziale la dimostrazione completa dell’isolamento del turno reale, distinta dal contratto simulato."
+        }
+      ],
+      "remaining": "Restano login annullato o scaduto, account differente e riparazione su un Mac senza Codex."
+    },
+    {
+      "number": 4,
+      "criteria": [
+        {
+          "criterion": 1,
+          "text": "Scoprire collegamenti installati, accessibili, abilitati e utilizzabili; non dedurre questi stati dal login di gh o da un remote Git.",
+          "status": "da verificare",
+          "evidence": [],
+          "note": "Serve la matrice completa delle operazioni autorizzate e degli errori di connessione, distinguendo app Codex e gh."
+        },
+        {
+          "criterion": 2,
+          "text": "Aprire il collegamento ufficiale restituito dal componente, poi rileggere lo stato al ritorno dal browser; cancellazione e riconnessione restano recuperabili.",
+          "status": "da verificare",
+          "evidence": [],
+          "note": "Serve la matrice completa delle operazioni autorizzate e degli errori di connessione, distinguendo app Codex e gh."
+        },
+        {
+          "criterion": 3,
+          "text": "Verificare su un repository di prova lettura di branch, commit, diff, PR, review, issue e check; documentare per ogni operazione quale interfaccia la espone.",
+          "status": "da verificare",
+          "evidence": [],
+          "note": "Serve la matrice completa delle operazioni autorizzate e degli errori di connessione, distinguendo app Codex e gh."
+        },
+        {
+          "criterion": 4,
+          "text": "Se il collegamento non espone i dati strutturati necessari al monitoraggio, completare un adapter GitHub autorizzato oppure dichiarare quella capacità non disponibile. Il solo login non chiude il ticket.",
+          "status": "da verificare",
+          "evidence": [],
+          "note": "Serve la matrice completa delle operazioni autorizzate e degli errori di connessione, distinguendo app Codex e gh."
+        },
+        {
+          "criterion": 5,
+          "text": "Repository privato non accessibile, SSO richiesto, API limitata e connessione revocata non vengono interpretati come repository eliminato.",
+          "status": "da verificare",
+          "evidence": [],
+          "note": "Serve la matrice completa delle operazioni autorizzate e degli errori di connessione, distinguendo app Codex e gh."
+        },
+        {
+          "criterion": 6,
+          "text": "I servizi aggiuntivi vengono consigliati solo quando pertinenti al progetto e con il beneficio spiegato.",
+          "status": "da verificare",
+          "evidence": [],
+          "note": "Serve la matrice completa delle operazioni autorizzate e degli errori di connessione, distinguendo app Codex e gh."
+        }
+      ],
+      "remaining": "Serve la matrice completa delle operazioni autorizzate e degli errori di connessione, distinguendo app Codex e gh."
+    },
+    {
+      "number": 5,
+      "criteria": [
+        {
+          "criterion": 1,
+          "text": "Usare un insieme versionato delle skill Matt Pocock, con provenienza, licenza MIT, attribuzione e versione consultabili.",
+          "status": "da verificare",
+          "evidence": [],
+          "note": "Il setup ha test e una prima prova; restano verifica completa del catalogo, conflitti, aggiornamento e rollback nel percorso utente."
+        },
+        {
+          "criterion": 2,
+          "text": "Rilevare repository, tracker, etichette e documentazione esistenti; configurare solo ciò che manca con impostazioni di Trama dichiarate e reversibili.",
+          "status": "da verificare",
+          "evidence": [],
+          "note": "Il setup ha test e una prima prova; restano verifica completa del catalogo, conflitti, aggiornamento e rollback nel percorso utente."
+        },
+        {
+          "criterion": 3,
+          "text": "Il secondo avvio non duplica file o sezioni. Personalizzazioni preesistenti sono preservate; ogni aggiunta gestita è riconoscibile nel diff.",
+          "status": "da verificare",
+          "evidence": [],
+          "note": "Il setup ha test e una prima prova; restano verifica completa del catalogo, conflitti, aggiornamento e rollback nel percorso utente."
+        },
+        {
+          "criterion": 4,
+          "text": "Una configurazione incompatibile richiede una decisione mirata. Non sovrascrivere regole per riuscire a mostrare setup completato.",
+          "status": "da verificare",
+          "evidence": [],
+          "note": "Il setup ha test e una prima prova; restano verifica completa del catalogo, conflitti, aggiornamento e rollback nel percorso utente."
+        },
+        {
+          "criterion": 5,
+          "text": "Distinguere mappatura delle etichette dalla loro esistenza remota; creare etichette solo nel perimetro autorizzato del progetto.",
+          "status": "da verificare",
+          "evidence": [],
+          "note": "Il setup ha test e una prima prova; restano verifica completa del catalogo, conflitti, aggiornamento e rollback nel percorso utente."
+        },
+        {
+          "criterion": 6,
+          "text": "Con pacchetto locale disponibile il setup funziona offline; aggiornamento fallito conserva la versione funzionante e permette rollback.",
+          "status": "da verificare",
+          "evidence": [],
+          "note": "Il setup ha test e una prima prova; restano verifica completa del catalogo, conflitti, aggiornamento e rollback nel percorso utente."
+        },
+        {
+          "criterion": 7,
+          "text": "Confermare con il catalogo skill di Codex che le skill richieste siano caricate. Il setup automatico non esegue tutte le skill.",
+          "status": "da verificare",
+          "evidence": [],
+          "note": "Il setup ha test e una prima prova; restano verifica completa del catalogo, conflitti, aggiornamento e rollback nel percorso utente."
+        },
+        {
+          "criterion": 8,
+          "text": "Il setup locale si completa con GitHub non collegato; le sole operazioni remote restano in attesa senza segnare fallito il setup locale.",
+          "status": "da verificare",
+          "evidence": [],
+          "note": "Il setup ha test e una prima prova; restano verifica completa del catalogo, conflitti, aggiornamento e rollback nel percorso utente."
+        }
+      ],
+      "remaining": "Il setup ha test e una prima prova; restano verifica completa del catalogo, conflitti, aggiornamento e rollback nel percorso utente."
+    },
+    {
+      "number": 6,
+      "criteria": [
+        {
+          "criterion": 1,
+          "text": "Raggruppamento strutturale funzionante su cartelle; primo supporto semantico limitato e dichiarato per SwiftPM. Altri linguaggi mantengono l’esplorazione dei file senza promesse di analisi completa.",
+          "status": "da verificare",
+          "evidence": [],
+          "note": "Restano navigazione completa, modifica della struttura, limiti e accesso negato provati nell’app."
+        },
+        {
+          "criterion": 2,
+          "text": "Ogni modulo ha riferimenti verificabili a file reali; descrizioni dedotte e relazioni non risolte sono distinguibili dai fatti rilevati.",
+          "status": "da verificare",
+          "evidence": [],
+          "note": "Restano navigazione completa, modifica della struttura, limiti e accesso negato provati nell’app."
+        },
+        {
+          "criterion": 3,
+          "text": "Vista ad albero equivalente, ricerca, selezione, percorso di risalita e anteprima del codice sono utilizzabili.",
+          "status": "da verificare",
+          "evidence": [],
+          "note": "Restano navigazione completa, modifica della struttura, limiti e accesso negato provati nell’app."
+        },
+        {
+          "criterion": 4,
+          "text": "Aggiunta, rinomina e rimozione di file aggiornano la mappa; una lettura precedente non può sovrascrivere lo snapshot più recente.",
+          "status": "da verificare",
+          "evidence": [],
+          "note": "Restano navigazione completa, modifica della struttura, limiti e accesso negato provati nell’app."
+        },
+        {
+          "criterion": 5,
+          "text": "Segreti, file esclusi, symlink verso altri percorsi e traversal non entrano nell’indice o nel contesto inviato a Codex.",
+          "status": "da verificare",
+          "evidence": [],
+          "note": "Restano navigazione completa, modifica della struttura, limiti e accesso negato provati nell’app."
+        },
+        {
+          "criterion": 6,
+          "text": "File grandi, repository oltre i limiti dichiarati, file non UTF-8 e accesso negato producono analisi parziale esplicita.",
+          "status": "da verificare",
+          "evidence": [],
+          "note": "Restano navigazione completa, modifica della struttura, limiti e accesso negato provati nell’app."
+        }
+      ],
+      "remaining": "Restano navigazione completa, modifica della struttura, limiti e accesso negato provati nell’app."
+    },
+    {
+      "number": 7,
+      "criteria": [
+        {
+          "criterion": 1,
+          "text": "Richiesta, progetto, modulo, snapshot e riferimenti alle fonti restano associati anche dopo il riavvio.",
+          "status": "parziale",
+          "evidence": [
+            "https://github.com/emanueledenaro/trama/blob/a8d9515961a6ae20ccde44dbef9589f269b9acbd/docs/verifiche-locali.md"
+          ],
+          "note": "Richiesta e piano sono documentati nel percorso locale. Serve il confronto esplicito delle associazioni a modulo, snapshot e fonti prima e dopo il riavvio."
+        },
+        {
+          "criterion": 2,
+          "text": "La pianificazione usa lettura soltanto e non modifica file né avvia effetti esterni.",
+          "status": "parziale",
+          "evidence": [
+            "https://github.com/emanueledenaro/trama/blob/a8d9515961a6ae20ccde44dbef9589f269b9acbd/docs/verifiche-locali.md",
+            "https://github.com/emanueledenaro/trama/blob/a8d9515961a6ae20ccde44dbef9589f269b9acbd/Tests/TramaCoreTests/CodexClientTests.swift",
+            "https://github.com/emanueledenaro/trama/actions/runs/34724052618"
+          ],
+          "note": "Il piano reale e il sorgente locale invariato sono provati. L’assenza di tutti gli effetti esterni richiede una prova del runtime distinta dai test del trasporto simulato."
+        },
+        {
+          "criterion": 3,
+          "text": "Il piano mostra comportamento atteso, moduli coinvolti, limiti, ipotesi aperte e verifiche previste; può essere corretto dall’utente.",
+          "status": "da verificare",
+          "evidence": [],
+          "note": "Restano modifica manuale del piano, errori e limiti, interruzioni e risposte tardive nel percorso completo."
+        },
+        {
+          "criterion": 4,
+          "text": "Streaming, annullamento, limite d’uso, assenza di rete ed errore del modello hanno stati espliciti e non perdono la richiesta.",
+          "status": "da verificare",
+          "evidence": [],
+          "note": "Restano modifica manuale del piano, errori e limiti, interruzioni e risposte tardive nel percorso completo."
+        },
+        {
+          "criterion": 5,
+          "text": "Un cambiamento del repository durante l’analisi rende il piano da rivalutare; un risultato tardivo non sostituisce un piano più recente.",
+          "status": "da verificare",
+          "evidence": [],
+          "note": "Restano modifica manuale del piano, errori e limiti, interruzioni e risposte tardive nel percorso completo."
+        },
+        {
+          "criterion": 6,
+          "text": "Le skill sono selezionate in base al compito; una richiesta semplice non avvia l’intero percorso di sviluppo.",
+          "status": "da verificare",
+          "evidence": [],
+          "note": "Restano modifica manuale del piano, errori e limiti, interruzioni e risposte tardive nel percorso completo."
+        }
+      ],
+      "remaining": "Restano modifica manuale del piano, errori e limiti, interruzioni e risposte tardive nel percorso completo."
+    },
+    {
+      "number": 8,
+      "criteria": [
+        {
+          "criterion": 1,
+          "text": "La scheda contiene caso concreto, alternative correggibili, risposta libera, esempio accettato e motivazione.",
+          "status": "da verificare",
+          "evidence": [],
+          "note": "Restano alternative corrette dall’utente, simulazione e indipendenza dei lavori nella UI. Il test del solo motore non chiude il criterio sull’intero flusso."
+        },
+        {
+          "criterion": 2,
+          "text": "Ogni variazione incrementa la versione; la cronologia conserva la scelta precedente.",
+          "status": "verificato",
+          "evidence": [
+            "https://github.com/emanueledenaro/trama/blob/a8d9515961a6ae20ccde44dbef9589f269b9acbd/Tests/TramaCoreTests/PactEngineTests.swift",
+            "https://github.com/emanueledenaro/trama/actions/runs/34724052618"
+          ],
+          "note": "Versione e cronologia della decisione verificate dal test del motore."
+        },
+        {
+          "criterion": 3,
+          "text": "I lavori dipendenti diventano da riallineare, quelli indipendenti restano validi.",
+          "status": "da verificare",
+          "evidence": [],
+          "note": "Restano alternative corrette dall’utente, simulazione e indipendenza dei lavori nella UI. Il test del solo motore non chiude il criterio sull’intero flusso."
+        },
+        {
+          "criterion": 4,
+          "text": "Una simulazione è etichettata come tale; una spiegazione del modello non diventa risultato osservato.",
+          "status": "da verificare",
+          "evidence": [],
+          "note": "Restano alternative corrette dall’utente, simulazione e indipendenza dei lavori nella UI. Il test del solo motore non chiude il criterio sull’intero flusso."
+        },
+        {
+          "criterion": 5,
+          "text": "Il porting Swift del motore viene completato e verificato con test di comportamento, senza assumere validi i risultati salvati del prototipo TypeScript.",
+          "status": "verificato",
+          "evidence": [
+            "https://github.com/emanueledenaro/trama/blob/a8d9515961a6ae20ccde44dbef9589f269b9acbd/Tests/TramaCoreTests/PactEngineTests.swift",
+            "https://github.com/emanueledenaro/trama/actions/runs/34724052618",
+            "https://github.com/emanueledenaro/trama/blob/a8d9515961a6ae20ccde44dbef9589f269b9acbd/docs/verifiche-locali.md"
+          ],
+          "note": "Motore Swift eseguito nella suite e usato nel percorso nativo."
+        },
+        {
+          "criterion": 6,
+          "text": "I dati persistiti vengono validati prima del ripristino; dati incompleti non autorizzano candidati.",
+          "status": "verificato",
+          "evidence": [
+            "https://github.com/emanueledenaro/trama/blob/a8d9515961a6ae20ccde44dbef9589f269b9acbd/Tests/TramaCoreTests/PactEngineTests.swift",
+            "https://github.com/emanueledenaro/trama/actions/runs/34724052618"
+          ],
+          "note": "Il decoder rifiuta metadati incompleti e riferimenti incoerenti nei test del motore."
+        }
+      ],
+      "remaining": "Restano alternative corrette dall’utente, simulazione e indipendenza dei lavori nella UI. Il test del solo motore non chiude il criterio sull’intero flusso."
+    },
+    {
+      "number": 9,
+      "criteria": [
+        {
+          "criterion": 1,
+          "text": "Delegare versioni delle decisioni, perimetro, base e verifiche richieste a un worktree identificabile.",
+          "status": "verificato",
+          "evidence": [
+            "https://github.com/emanueledenaro/trama/blob/a8d9515961a6ae20ccde44dbef9589f269b9acbd/docs/verifiche-locali.md",
+            "https://github.com/emanueledenaro/trama/blob/a8d9515961a6ae20ccde44dbef9589f269b9acbd/Tests/TramaCoreTests/PactEngineTests.swift",
+            "https://github.com/emanueledenaro/trama/blob/a8d9515961a6ae20ccde44dbef9589f269b9acbd/Tests/TramaCoreTests/WorkspaceSessionTests.swift",
+            "https://github.com/emanueledenaro/trama/actions/runs/34724052618"
+          ],
+          "note": "Sessione reale identificabile con base, perimetro e decisione confermata; test del motore e del worktree."
+        },
+        {
+          "criterion": 2,
+          "text": "Modifiche locali preesistenti nel progetto sorgente restano byte-for-byte intatte; indice e branch originali restano preservati.",
+          "status": "verificato",
+          "evidence": [
+            "https://github.com/emanueledenaro/trama/blob/a8d9515961a6ae20ccde44dbef9589f269b9acbd/docs/verifiche-locali.md",
+            "https://github.com/emanueledenaro/trama/blob/a8d9515961a6ae20ccde44dbef9589f269b9acbd/Tests/TramaCoreTests/WorkspaceSessionTests.swift",
+            "https://github.com/emanueledenaro/trama/actions/runs/34724052618"
+          ],
+          "note": "Sorgente conservato nella prova reale; fixture con file e indice sporchi preservati."
+        },
+        {
+          "criterion": 3,
+          "text": "Approvazioni di comandi, filesystem e rete seguono la politica effettiva del componente. Il worktree non viene presentato come sandbox.",
+          "status": "da verificare",
+          "evidence": [],
+          "note": "Restano ampliamento del perimetro, stop e crash, ripresa e pulizia verificati nella finestra."
+        },
+        {
+          "criterion": 4,
+          "text": "Ampliamenti di perimetro o nuove decisioni fermano le operazioni interessate prima della successiva azione non autorizzata.",
+          "status": "da verificare",
+          "evidence": [],
+          "note": "Restano ampliamento del perimetro, stop e crash, ripresa e pulizia verificati nella finestra."
+        },
+        {
+          "criterion": 5,
+          "text": "Stop, crash, base avanzata e riavvio mostrano lo stato effettivo; un comando già partito non viene dichiarato annullato senza conferma.",
+          "status": "da verificare",
+          "evidence": [],
+          "note": "Restano ampliamento del perimetro, stop e crash, ripresa e pulizia verificati nella finestra."
+        },
+        {
+          "criterion": 6,
+          "text": "Riprendere è un’azione esplicita; pulizia del worktree non elimina lavoro da revisionare o modifiche dell’utente.",
+          "status": "da verificare",
+          "evidence": [],
+          "note": "Restano ampliamento del perimetro, stop e crash, ripresa e pulizia verificati nella finestra."
+        }
+      ],
+      "remaining": "Restano ampliamento del perimetro, stop e crash, ripresa e pulizia verificati nella finestra."
+    },
+    {
+      "number": 10,
+      "criteria": [
+        {
+          "criterion": 1,
+          "text": "Il verificatore raccoglie esiti reali con comando, uscita, log, snapshot del candidato, base, versione delle decisioni e suite.",
+          "status": "verificato",
+          "evidence": [
+            "https://github.com/emanueledenaro/trama/blob/a8d9515961a6ae20ccde44dbef9589f269b9acbd/docs/verifiche-locali.md",
+            "https://github.com/emanueledenaro/trama/blob/a8d9515961a6ae20ccde44dbef9589f269b9acbd/Tests/TramaCoreTests/WorkspaceSessionTests.swift",
+            "https://github.com/emanueledenaro/trama/blob/a8d9515961a6ae20ccde44dbef9589f269b9acbd/Tests/TramaCoreTests/PactEngineTests.swift",
+            "https://github.com/emanueledenaro/trama/actions/runs/34724052618"
+          ],
+          "note": "Il verificatore reale ha registrato comando, uscita, output e snapshot; metadati del patto coperti dai test."
+        },
+        {
+          "criterion": 2,
+          "text": "Separare passato, fallito, non eseguito e non più attuale; le dichiarazioni dell’agente non possono creare evidenze o approvazioni.",
+          "status": "verificato",
+          "evidence": [
+            "https://github.com/emanueledenaro/trama/blob/a8d9515961a6ae20ccde44dbef9589f269b9acbd/docs/verifiche-locali.md",
+            "https://github.com/emanueledenaro/trama/blob/a8d9515961a6ae20ccde44dbef9589f269b9acbd/Tests/TramaCoreTests/PactEngineTests.swift",
+            "https://github.com/emanueledenaro/trama/actions/runs/34724052618"
+          ],
+          "note": "Esiti falliti o non eseguiti rifiutati dal motore; stato obsoleto verificato nell’app; output dell’agente separato."
+        },
+        {
+          "criterion": 3,
+          "text": "Cambio di candidato, base pertinente, decisione dipendente, suite o nuova esecuzione dei controlli revoca il precedente via libera.",
+          "status": "verificato",
+          "evidence": [
+            "https://github.com/emanueledenaro/trama/blob/a8d9515961a6ae20ccde44dbef9589f269b9acbd/docs/verifiche-locali.md",
+            "https://github.com/emanueledenaro/trama/blob/a8d9515961a6ae20ccde44dbef9589f269b9acbd/Tests/TramaCoreTests/PactEngineTests.swift",
+            "https://github.com/emanueledenaro/trama/actions/runs/34724052618"
+          ],
+          "note": "Revoca sul cambio candidato provata nell’app; base, decisione, suite e nuova esecuzione coperti dai test del motore."
+        },
+        {
+          "criterion": 4,
+          "text": "Decisioni indipendenti e attività remote estranee non invalidano revisioni non coinvolte.",
+          "status": "da verificare",
+          "evidence": [],
+          "note": "Resta soprattutto l’indipendenza delle decisioni nella UI: saveDecision invalida oggi tutte le richieste. Servono inoltre prove complete della navigazione e del ricontrollo in ogni azione."
+        },
+        {
+          "criterion": 5,
+          "text": "Diff, spiegazione del comportamento ed evidenze sono navigabili; approvazione locale non equivale a merge o pubblicazione.",
+          "status": "da verificare",
+          "evidence": [],
+          "note": "Resta soprattutto l’indipendenza delle decisioni nella UI: saveDecision invalida oggi tutte le richieste. Servono inoltre prove complete della navigazione e del ricontrollo in ogni azione."
+        },
+        {
+          "criterion": 6,
+          "text": "Il candidato viene ricontrollato immediatamente prima di un’operazione che usa la revisione; cambiamenti concorrenti impediscono di agire sulla vecchia approvazione.",
+          "status": "da verificare",
+          "evidence": [],
+          "note": "Resta soprattutto l’indipendenza delle decisioni nella UI: saveDecision invalida oggi tutte le richieste. Servono inoltre prove complete della navigazione e del ricontrollo in ogni azione."
+        }
+      ],
+      "remaining": "Resta soprattutto l’indipendenza delle decisioni nella UI: saveDecision invalida oggi tutte le richieste. Servono inoltre prove complete della navigazione e del ricontrollo in ogni azione."
+    },
+    {
+      "number": 11,
+      "criteria": [
+        {
+          "criterion": 1,
+          "text": "Nome e cartella sono scelti dall’utente; cartelle non vuote e nomi in conflitto sono gestiti senza sovrascritture.",
+          "status": "da verificare",
+          "evidence": [],
+          "note": "Serve il percorso reale di creazione da un’idea fino alla struttura generata e recuperabile."
+        },
+        {
+          "criterion": 2,
+          "text": "Scopo e struttura sono visibili prima della generazione; il bootstrap usa gli stessi piani, decisioni e autorizzazioni del flusso su repository esistente.",
+          "status": "da verificare",
+          "evidence": [],
+          "note": "Serve il percorso reale di creazione da un’idea fino alla struttura generata e recuperabile."
+        },
+        {
+          "criterion": 3,
+          "text": "Il progetto generato entra nella mappa con riferimenti a file reali e nei recenti.",
+          "status": "da verificare",
+          "evidence": [],
+          "note": "Serve il percorso reale di creazione da un’idea fino alla struttura generata e recuperabile."
+        },
+        {
+          "criterion": 4,
+          "text": "Errore o interruzione conserva il lavoro parziale e consente ripresa esplicita.",
+          "status": "da verificare",
+          "evidence": [],
+          "note": "Serve il percorso reale di creazione da un’idea fino alla struttura generata e recuperabile."
+        },
+        {
+          "criterion": 5,
+          "text": "Creare un progetto locale non pubblica automaticamente un repository remoto.",
+          "status": "da verificare",
+          "evidence": [],
+          "note": "Serve il percorso reale di creazione da un’idea fino alla struttura generata e recuperabile."
+        }
+      ],
+      "remaining": "Serve il percorso reale di creazione da un’idea fino alla struttura generata e recuperabile."
+    },
+    {
+      "number": 12,
+      "criteria": [
+        {
+          "criterion": 1,
+          "text": "Titolo, descrizione, stato e discussione provengono da GitHub; modulo, decisioni e sessioni sono collegamenti di Trama.",
+          "status": "da verificare",
+          "evidence": [],
+          "note": "Restano discussione delle issue, anteprima e pubblicazione dalla UI, matrice dei permessi e retry nel percorso reale."
+        },
+        {
+          "criterion": 2,
+          "text": "L’utente vede destinatario, branch, diff e testo della PR prima della pubblicazione.",
+          "status": "da verificare",
+          "evidence": [],
+          "note": "Restano discussione delle issue, anteprima e pubblicazione dalla UI, matrice dei permessi e retry nel percorso reale."
+        },
+        {
+          "criterion": 3,
+          "text": "Login del connettore e permesso di push Git sono verificati separatamente; mancanza di uno non viene mascherata dall’altro.",
+          "status": "da verificare",
+          "evidence": [],
+          "note": "Restano discussione delle issue, anteprima e pubblicazione dalla UI, matrice dei permessi e retry nel percorso reale."
+        },
+        {
+          "criterion": 4,
+          "text": "Retry dopo timeout riconcilia l’eventuale PR già creata, senza duplicarla.",
+          "status": "da verificare",
+          "evidence": [],
+          "note": "Restano discussione delle issue, anteprima e pubblicazione dalla UI, matrice dei permessi e retry nel percorso reale."
+        },
+        {
+          "criterion": 5,
+          "text": "Fine dell’agente non chiude l’issue; pubblicazione, CI remota, merge e chiusura restano stati distinti.",
+          "status": "verificato",
+          "evidence": [
+            "https://github.com/emanueledenaro/trama/pull/20",
+            "https://github.com/emanueledenaro/trama/actions/runs/34724052618"
+          ],
+          "note": "PR, merge e CI sono eventi separati; la pubblicazione reale non ha chiuso i ticket."
+        },
+        {
+          "criterion": 6,
+          "text": "Una modifica tra revisione e pubblicazione richiede nuova verifica del candidato.",
+          "status": "verificato",
+          "evidence": [
+            "https://github.com/emanueledenaro/trama/blob/a8d9515961a6ae20ccde44dbef9589f269b9acbd/Tests/TramaCoreTests/GitPublicationTests.swift",
+            "https://github.com/emanueledenaro/trama/actions/runs/34724052618",
+            "https://github.com/emanueledenaro/trama/blob/a8d9515961a6ae20ccde44dbef9589f269b9acbd/Sources/Trama/IssuesView.swift"
+          ],
+          "note": "Cattura immutabile e rifiuto dello snapshot modificato coperti dai test; controllo ripetuto prima della pubblicazione."
+        }
+      ],
+      "remaining": "Restano discussione delle issue, anteprima e pubblicazione dalla UI, matrice dei permessi e retry nel percorso reale."
+    },
+    {
+      "number": 13,
+      "criteria": [
+        {
+          "criterion": 1,
+          "text": "Conservare snapshot per repository, branch, SHA, fonte e istante di sincronizzazione; mostrare separatamente checkout locale e stato remoto.",
+          "status": "da verificare",
+          "evidence": [],
+          "note": "Restano force push, fork, rinomina, paginazione, errori e limiti nel monitor reale."
+        },
+        {
+          "criterion": 2,
+          "text": "Gestire nuovi branch, branch eliminati, PR da fork, cambio della base, force push e paginazione senza riutilizzare analisi obsolete.",
+          "status": "da verificare",
+          "evidence": [],
+          "note": "Restano force push, fork, rinomina, paginazione, errori e limiti nel monitor reale."
+        },
+        {
+          "criterion": 3,
+          "text": "Polling efficiente con richieste condizionali e rispetto dei limiti; nessun modello chiamato per controlli senza novità.",
+          "status": "da verificare",
+          "evidence": [],
+          "note": "Restano force push, fork, rinomina, paginazione, errori e limiti nel monitor reale."
+        },
+        {
+          "criterion": 4,
+          "text": "Rete assente, revoca, repository rinominato, risposta incompleta e API limitata conservano l’ultimo stato marcato non aggiornato.",
+          "status": "da verificare",
+          "evidence": [],
+          "note": "Restano force push, fork, rinomina, paginazione, errori e limiti nel monitor reale."
+        },
+        {
+          "criterion": 5,
+          "text": "Un fetch aggiorna i riferimenti remoti senza checkout, pull, merge o modifica automatica del branch dell’utente.",
+          "status": "da verificare",
+          "evidence": [],
+          "note": "Restano force push, fork, rinomina, paginazione, errori e limiti nel monitor reale."
+        },
+        {
+          "criterion": 6,
+          "text": "Il lavoro non pubblicato dagli altri è indicato come non osservabile; l’autore di un commit non viene presentato automaticamente come persona attualmente al lavoro.",
+          "status": "da verificare",
+          "evidence": [],
+          "note": "Restano force push, fork, rinomina, paginazione, errori e limiti nel monitor reale."
+        }
+      ],
+      "remaining": "Restano force push, fork, rinomina, paginazione, errori e limiti nel monitor reale."
+    },
+    {
+      "number": 14,
+      "criteria": [
+        {
+          "criterion": 1,
+          "text": "Il confronto usa base comune e snapshot precisi di entrambi i lavori, compreso il lavoro locale non committato che si dichiara di controllare.",
+          "status": "da verificare",
+          "evidence": [],
+          "note": "Restano avviso nativo del conflitto remoto, base mancante e aggiornamento concorrente nella stessa prova."
+        },
+        {
+          "criterion": 2,
+          "text": "La prova di integrazione non modifica checkout, indice, branch, hook o file dell’utente.",
+          "status": "da verificare",
+          "evidence": [],
+          "note": "Restano avviso nativo del conflitto remoto, base mancante e aggiornamento concorrente nella stessa prova."
+        },
+        {
+          "criterion": 3,
+          "text": "Toccare lo stesso file senza collisione produce attività collegata, non un falso conflitto.",
+          "status": "da verificare",
+          "evidence": [],
+          "note": "Restano avviso nativo del conflitto remoto, base mancante e aggiornamento concorrente nella stessa prova."
+        },
+        {
+          "criterion": 4,
+          "text": "L’avviso collega le parti incompatibili ai rispettivi branch e commit; base mancante o confronto incompleto produce esito non verificabile.",
+          "status": "da verificare",
+          "evidence": [],
+          "note": "Restano avviso nativo del conflitto remoto, base mancante e aggiornamento concorrente nella stessa prova."
+        },
+        {
+          "criterion": 5,
+          "text": "Lavoro modificato durante la prova rende obsoleto il risultato e provoca un nuovo confronto limitato alle parti interessate.",
+          "status": "da verificare",
+          "evidence": [],
+          "note": "Restano avviso nativo del conflitto remoto, base mancante e aggiornamento concorrente nella stessa prova."
+        },
+        {
+          "criterion": 6,
+          "text": "Ogni evidenza registra snapshot di entrambi i lavori, base comune, procedura o comando ed esito; un cambiamento di uno degli input la rende obsoleta.",
+          "status": "da verificare",
+          "evidence": [],
+          "note": "Restano avviso nativo del conflitto remoto, base mancante e aggiornamento concorrente nella stessa prova."
+        }
+      ],
+      "remaining": "Restano avviso nativo del conflitto remoto, base mancante e aggiornamento concorrente nella stessa prova."
+    },
+    {
+      "number": 15,
+      "criteria": [
+        {
+          "criterion": 1,
+          "text": "Analizzare diff, contesto del codice, issue, PR e decisioni; un messaggio di commit da solo non basta a dichiarare il comportamento.",
+          "status": "da verificare",
+          "evidence": [],
+          "note": "Servono prove modello con casi indipendenti di incompatibilità, duplicazione e API cambiate, mantenendo distinta l’interpretazione dalla verifica."
+        },
+        {
+          "criterion": 2,
+          "text": "Ogni interpretazione rimanda a fonti e SHA; fatti osservati e ipotesi sono distinguibili, senza percentuali di confidenza inventate.",
+          "status": "da verificare",
+          "evidence": [],
+          "note": "Servono prove modello con casi indipendenti di incompatibilità, duplicazione e API cambiate, mantenendo distinta l’interpretazione dalla verifica."
+        },
+        {
+          "criterion": 3,
+          "text": "Rilevare nei casi controllati incompatibilità tra file diversi, lavoro duplicato, API cambiate e piani superati.",
+          "status": "da verificare",
+          "evidence": [],
+          "note": "Servono prove modello con casi indipendenti di incompatibilità, duplicazione e API cambiate, mantenendo distinta l’interpretazione dalla verifica."
+        },
+        {
+          "criterion": 4,
+          "text": "Una possibile incoerenza diventa violazione verificata solo dopo uno scenario attendibile eseguito sul candidato combinato, con evidenza prodotta dal verificatore.",
+          "status": "da verificare",
+          "evidence": [],
+          "note": "Servono prove modello con casi indipendenti di incompatibilità, duplicazione e API cambiate, mantenendo distinta l’interpretazione dalla verifica."
+        },
+        {
+          "criterion": 5,
+          "text": "Testare casi positivi e negativi, fixture non viste nell’implementazione, errore del modello, input ambiguo e istruzioni malevole nei contenuti GitHub trattate come dati.",
+          "status": "da verificare",
+          "evidence": [],
+          "note": "Servono prove modello con casi indipendenti di incompatibilità, duplicazione e API cambiate, mantenendo distinta l’interpretazione dalla verifica."
+        },
+        {
+          "criterion": 6,
+          "text": "Richieste e risultati vecchi vengono cancellati o scartati quando cambia lo snapshot; nessun modello può promuovere da solo una propria conclusione a revisione umana.",
+          "status": "da verificare",
+          "evidence": [],
+          "note": "Servono prove modello con casi indipendenti di incompatibilità, duplicazione e API cambiate, mantenendo distinta l’interpretazione dalla verifica."
+        }
+      ],
+      "remaining": "Servono prove modello con casi indipendenti di incompatibilità, duplicazione e API cambiate, mantenendo distinta l’interpretazione dalla verifica."
+    },
+    {
+      "number": 16,
+      "criteria": [
+        {
+          "criterion": 1,
+          "text": "Separare attività collegata, possibile incoerenza, conflitto riprodotto e decisione richiesta.",
+          "status": "da verificare",
+          "evidence": [],
+          "note": "Restano selettività, aggregazione, budget e risoluzione degli avvisi nel percorso completo."
+        },
+        {
+          "criterion": 2,
+          "text": "Mostrare autore quando noto, PR/branch, fonti, conseguenza sul lavoro corrente e azioni Esamina, Rivedi piano, Segna come valutato.",
+          "status": "da verificare",
+          "evidence": [],
+          "note": "Restano selettività, aggregazione, budget e risoluzione degli avvisi nel percorso completo."
+        },
+        {
+          "criterion": 3,
+          "text": "Un nuovo evento rivaluta solo piani ed evidenze dipendenti; il lavoro non coinvolto continua.",
+          "status": "da verificare",
+          "evidence": [],
+          "note": "Restano selettività, aggregazione, budget e risoluzione degli avvisi nel percorso completo."
+        },
+        {
+          "criterion": 4,
+          "text": "Un conflitto verificato che blocca il patto impedisce la successiva integrazione; la sospensione di un agente segue il perimetro e preserva quanto già scritto.",
+          "status": "da verificare",
+          "evidence": [],
+          "note": "Restano selettività, aggregazione, budget e risoluzione degli avvisi nel percorso completo."
+        },
+        {
+          "criterion": 5,
+          "text": "Deduplicare avvisi e risultati, aggregare raffiche di commit, usare cache per SHA e limiti di concorrenza/uso dei modelli.",
+          "status": "da verificare",
+          "evidence": [],
+          "note": "Restano selettività, aggregazione, budget e risoluzione degli avvisi nel percorso completo."
+        },
+        {
+          "criterion": 6,
+          "text": "Raggiunti limiti del servizio o budget concordati, continuare raccolta deterministica disponibile e mostrare analisi AI in attesa; nessun fallback a pagamento non autorizzato.",
+          "status": "da verificare",
+          "evidence": [],
+          "note": "Restano selettività, aggregazione, budget e risoluzione degli avvisi nel percorso completo."
+        },
+        {
+          "criterion": 7,
+          "text": "La notifica si risolve o si aggiorna quando cambia la situazione; ignorare un avviso non equivale ad approvare il candidato.",
+          "status": "da verificare",
+          "evidence": [],
+          "note": "Restano selettività, aggregazione, budget e risoluzione degli avvisi nel percorso completo."
+        }
+      ],
+      "remaining": "Restano selettività, aggregazione, budget e risoluzione degli avvisi nel percorso completo."
+    },
+    {
+      "number": 17,
+      "criteria": [
+        {
+          "criterion": 1,
+          "text": "Attivazione, disattivazione e avvio al login sono visibili e passano dai meccanismi Apple appropriati.",
+          "status": "da verificare",
+          "evidence": [],
+          "note": "Il servizio non è stato registrato nella prova: restano avvio al login, sospensione, riconnessione, notifiche e disattivazione."
+        },
+        {
+          "criterion": 2,
+          "text": "Chiudere la finestra, terminare l’app, fermare il monitor e sospendere il Mac hanno comportamenti distinti e dichiarati.",
+          "status": "da verificare",
+          "evidence": [],
+          "note": "Il servizio non è stato registrato nella prova: restano avvio al login, sospensione, riconnessione, notifiche e disattivazione."
+        },
+        {
+          "criterion": 3,
+          "text": "Il monitor lavora soltanto sui progetti abilitati, con limiti energetici e di uso dei modelli; non riavvia sessioni di modifica del codice.",
+          "status": "da verificare",
+          "evidence": [],
+          "note": "Il servizio non è stato registrato nella prova: restano avvio al login, sospensione, riconnessione, notifiche e disattivazione."
+        },
+        {
+          "criterion": 4,
+          "text": "Un solo coordinatore gestisce eventi e coda quando UI e helper sono attivi; i lock e i cursori persistiti evitano doppie analisi.",
+          "status": "da verificare",
+          "evidence": [],
+          "note": "Il servizio non è stato registrato nella prova: restano avvio al login, sospensione, riconnessione, notifiche e disattivazione."
+        },
+        {
+          "criterion": 5,
+          "text": "Al risveglio o ritorno in rete riconciliare dal checkpoint agli SHA attuali, aggregare novità e mostrare l’ultimo aggiornamento effettivo.",
+          "status": "da verificare",
+          "evidence": [],
+          "note": "Il servizio non è stato registrato nella prova: restano avvio al login, sospensione, riconnessione, notifiche e disattivazione."
+        },
+        {
+          "criterion": 6,
+          "text": "Notifiche negate o suoni disabilitati mantengono tutti gli avvisi consultabili nell’app.",
+          "status": "da verificare",
+          "evidence": [],
+          "note": "Il servizio non è stato registrato nella prova: restano avvio al login, sospensione, riconnessione, notifiche e disattivazione."
+        },
+        {
+          "criterion": 7,
+          "text": "Al primo avvio monitor in background e avvio al login sono disattivati; nessun helper viene registrato prima dell’attivazione esplicita. Disattivare annulla la registrazione e la scelta persiste. La sincronizzazione in primo piano del progetto aperto resta distinta.",
+          "status": "da verificare",
+          "evidence": [],
+          "note": "Il servizio non è stato registrato nella prova: restano avvio al login, sospensione, riconnessione, notifiche e disattivazione."
+        }
+      ],
+      "remaining": "Il servizio non è stato registrato nella prova: restano avvio al login, sospensione, riconnessione, notifiche e disattivazione."
+    },
+    {
+      "number": 18,
+      "criteria": [
+        {
+          "criterion": 1,
+          "text": "Verificare dal doppio clic accesso, collegamenti, apertura/creazione, mappa, richiesta, decisione, esecuzione, revisione e ritorno al progetto.",
+          "status": "da verificare",
+          "evidence": [],
+          "note": "Restano accessibilità completa, misure e matrice visiva; dipende anche da responsive #21 e design #22."
+        },
+        {
+          "criterion": 2,
+          "text": "Sidebar, toolbar, inspector, finestre, selettori e menu sono nativi; l’immagine iniziale ispira la composizione, il design Apple guida i controlli.",
+          "status": "da verificare",
+          "evidence": [],
+          "note": "Restano accessibilità completa, misure e matrice visiva; dipende anche da responsive #21 e design #22."
+        },
+        {
+          "criterion": 3,
+          "text": "Tema chiaro/scuro, Riduci movimento, contrasto, navigazione completa da tastiera e VoiceOver: la vista ad albero offre un’alternativa alla mappa.",
+          "status": "da verificare",
+          "evidence": [],
+          "note": "Restano accessibilità completa, misure e matrice visiva; dipende anche da responsive #21 e design #22."
+        },
+        {
+          "criterion": 4,
+          "text": "Stati vuoto, caricamento, parziale, errore, offline e ripristino verificati su finestre ridimensionate, senza controlli nascosti.",
+          "status": "da verificare",
+          "evidence": [],
+          "note": "Restano accessibilità completa, misure e matrice visiva; dipende anche da responsive #21 e design #22."
+        },
+        {
+          "criterion": 5,
+          "text": "Nessun suono per token, lettura di file o test. Un suono discreto facoltativo accompagna solo avvisi utili, con preferenze persistenti e rispetto delle impostazioni di notifica.",
+          "status": "da verificare",
+          "evidence": [],
+          "note": "Restano accessibilità completa, misure e matrice visiva; dipende anche da responsive #21 e design #22."
+        },
+        {
+          "criterion": 6,
+          "text": "Misurare reattività su fixture da 100, 1000 e 10000 file; UI utilizzabile durante indice e analisi, limiti espliciti e risultati documentati.",
+          "status": "da verificare",
+          "evidence": [],
+          "note": "Restano accessibilità completa, misure e matrice visiva; dipende anche da responsive #21 e design #22."
+        }
+      ],
+      "remaining": "Restano accessibilità completa, misure e matrice visiva; dipende anche da responsive #21 e design #22."
+    },
+    {
+      "number": 19,
+      "criteria": [
+        {
+          "criterion": 1,
+          "text": "Clone pulito, compilazione Release, test e creazione dell’app riusciti in CI macOS; risorse necessarie incluse.",
+          "status": "verificato",
+          "evidence": [
+            "https://github.com/emanueledenaro/trama/actions/runs/34724052618",
+            "https://github.com/emanueledenaro/trama/pull/20"
+          ],
+          "note": "Clone del codice pubblico testato; build Release sul candidato e CI macOS riuscite."
+        },
+        {
+          "criterion": 2,
+          "text": "README documenta requisiti verificati di macOS, Swift e Codex, onboarding, supporto dei repository e funzionamento del monitor.",
+          "status": "da verificare",
+          "evidence": [],
+          "note": "Restano verifica completa della documentazione e della distribuzione; firma Developer ID, notarizzazione e secondo Mac non sono provati."
+        },
+        {
+          "criterion": 3,
+          "text": "Licenze e attribuzioni del progetto, skill AI Hero e componente Codex sono verificate prima di redistribuirli; nessuna dipendenza locale implicita.",
+          "status": "da verificare",
+          "evidence": [],
+          "note": "Restano verifica completa della documentazione e della distribuzione; firma Developer ID, notarizzazione e secondo Mac non sono provati."
+        },
+        {
+          "criterion": 4,
+          "text": "Evidenze distinguono build locale, test, prova UI, CI remota, firma e notarizzazione. La firma ad hoc locale non viene presentata come distribuzione macOS verificata.",
+          "status": "da verificare",
+          "evidence": [],
+          "note": "Restano verifica completa della documentazione e della distribuzione; firma Developer ID, notarizzazione e secondo Mac non sono provati."
+        },
+        {
+          "criterion": 5,
+          "text": "La beta pubblica scaricabile resta separata finché firma Developer ID, notarizzazione e installazione su un secondo Mac non sono verificate.",
+          "status": "da verificare",
+          "evidence": [],
+          "note": "Restano verifica completa della documentazione e della distribuzione; firma Developer ID, notarizzazione e secondo Mac non sono provati."
+        }
+      ],
+      "remaining": "Restano verifica completa della documentazione e della distribuzione; firma Developer ID, notarizzazione e secondo Mac non sono provati."
+    },
+    {
+      "number": 21,
+      "criteria": [
+        {
+          "criterion": 1,
+          "text": "Provare aree di contenuto di 720×640, 1040×700, 1280×800, 1440×900 e 1920×1080 punti; documentare la nuova dimensione minima supportata.",
+          "status": "da verificare",
+          "evidence": [],
+          "note": "Il ticket responsive è da implementare e verificare alle dimensioni definite."
+        },
+        {
+          "criterion": 2,
+          "text": "Sidebar e inspector si comprimono o si chiudono in modo prevedibile. I pulsanti per riaprirli restano disponibili e il contesto selezionato viene conservato.",
+          "status": "da verificare",
+          "evidence": [],
+          "note": "Il ticket responsive è da implementare e verificare alle dimensioni definite."
+        },
+        {
+          "criterion": 3,
+          "text": "La mappa usa colonne adattive. Titoli, percorsi e badge non si sovrappongono; selezione, ricerca e apertura dei file funzionano a ogni dimensione.",
+          "status": "da verificare",
+          "evidence": [],
+          "note": "Il ticket responsive è da implementare e verificare alle dimensioni definite."
+        },
+        {
+          "criterion": 4,
+          "text": "Le azioni principali restano visibili o raggiungibili con lo scorrimento. Nessun pulsante di conferma o annullamento viene tagliato nelle finestre modali.",
+          "status": "da verificare",
+          "evidence": [],
+          "note": "Il ticket responsive è da implementare e verificare alle dimensioni definite."
+        },
+        {
+          "criterion": 5,
+          "text": "Gli editor del piano, i dettagli delle issue e gli output si adattano senza ridurre artificialmente la dimensione del testo. Lo scorrimento orizzontale resta confinato ai contenuti che lo richiedono, come codice e diff.",
+          "status": "da verificare",
+          "evidence": [],
+          "note": "Il ticket responsive è da implementare e verificare alle dimensioni definite."
+        },
+        {
+          "criterion": 6,
+          "text": "Verificare testo lungo, nomi di branch e percorsi lunghi, liste vuote, caricamento, errore e contenuti numerosi.",
+          "status": "da verificare",
+          "evidence": [],
+          "note": "Il ticket responsive è da implementare e verificare alle dimensioni definite."
+        },
+        {
+          "criterion": 7,
+          "text": "Provare finestra affiancata, schermo intero, apertura e chiusura dell’inspector e passaggio tra le sezioni senza salti della selezione o dimensionamenti forzati.",
+          "status": "da verificare",
+          "evidence": [],
+          "note": "Il ticket responsive è da implementare e verificare alle dimensioni definite."
+        },
+        {
+          "criterion": 8,
+          "text": "Tutte le azioni restano utilizzabili da tastiera e con etichette accessibili.",
+          "status": "da verificare",
+          "evidence": [],
+          "note": "Il ticket responsive è da implementare e verificare alle dimensioni definite."
+        }
+      ],
+      "remaining": "Il ticket responsive è da implementare e verificare alle dimensioni definite."
+    },
+    {
+      "number": 22,
+      "criteria": [
+        {
+          "criterion": 1,
+          "text": "Definire e documentare una scala di spaziatura riutilizzabile, coerente con i controlli di sistema. Sostituire i valori isolati che producono distanze diverse per lo stesso tipo di contenuto.",
+          "status": "da verificare",
+          "evidence": [],
+          "note": "Il ticket di allineamento visivo è da implementare e verificare con schermate confrontabili."
+        },
+        {
+          "criterion": 2,
+          "text": "Allineare titoli, testi, icone, campi e pulsanti sulle stesse guide. Verificare margini laterali, spazi tra sezioni e baseline delle righe.",
+          "status": "da verificare",
+          "evidence": [],
+          "note": "Il ticket di allineamento visivo è da implementare e verificare con schermate confrontabili."
+        },
+        {
+          "criterion": 3,
+          "text": "Distinguere titolo, sottotitolo, corpo e metadati con gli stili tipografici di sistema. Evitare testo troppo piccolo e conservare leggibilità con contenuti lunghi.",
+          "status": "da verificare",
+          "evidence": [],
+          "note": "Il ticket di allineamento visivo è da implementare e verificare con schermate confrontabili."
+        },
+        {
+          "criterion": 4,
+          "text": "Uniformare dimensioni e peso degli SF Symbols, altezza dei campi, forme dei contenitori, separatori e stati dei pulsanti.",
+          "status": "da verificare",
+          "evidence": [],
+          "note": "Il ticket di allineamento visivo è da implementare e verificare con schermate confrontabili."
+        },
+        {
+          "criterion": 5,
+          "text": "Rendere coerente la posizione delle azioni principali e secondarie. Conferma e annullamento restano riconoscibili; le etichette dei campi sono visibili anche quando i campi sono compilati.",
+          "status": "da verificare",
+          "evidence": [],
+          "note": "Il ticket di allineamento visivo è da implementare e verificare con schermate confrontabili."
+        },
+        {
+          "criterion": 6,
+          "text": "Equilibrare densità delle liste e spazio delle aree di lavoro, senza grandi vuoti accidentali o gruppi troppo compressi.",
+          "status": "da verificare",
+          "evidence": [],
+          "note": "Il ticket di allineamento visivo è da implementare e verificare con schermate confrontabili."
+        },
+        {
+          "criterion": 7,
+          "text": "Usare colori e materiali semantici di sistema. Verificare tema chiaro e scuro, aumento del contrasto, riduzione della trasparenza, focus da tastiera e stato disabilitato.",
+          "status": "da verificare",
+          "evidence": [],
+          "note": "Il ticket di allineamento visivo è da implementare e verificare con schermate confrontabili."
+        },
+        {
+          "criterion": 8,
+          "text": "Selezione, caricamento, errore, verifica superata e verifica da ripetere hanno una presentazione coerente e comprensibile anche senza il solo colore.",
+          "status": "da verificare",
+          "evidence": [],
+          "note": "Il ticket di allineamento visivo è da implementare e verificare con schermate confrontabili."
+        },
+        {
+          "criterion": 9,
+          "text": "Eseguire un controllo visivo comparato di tutte le sezioni e delle finestre modali con dati identici, includendo una finestra stretta e una ampia.",
+          "status": "da verificare",
+          "evidence": [],
+          "note": "Il ticket di allineamento visivo è da implementare e verificare con schermate confrontabili."
+        }
+      ],
+      "remaining": "Il ticket di allineamento visivo è da implementare e verificare con schermate confrontabili."
+    },
+    {
+      "number": 23,
+      "criteria": [
+        {
+          "criterion": 1,
+          "text": "Leggere il catalogo dei modelli OpenAI esposto dal componente ufficiale Codex, verificando il contratto della versione supportata. Distinguere catalogo disponibile e reale autorizzazione dell’account all’uso di un modello.",
+          "status": "da verificare",
+          "evidence": [],
+          "note": "Estensione registrata su richiesta dell’utente. Il selettore non è presente nella versione osservata; nessuna implementazione avviata in questo passaggio."
+        },
+        {
+          "criterion": 2,
+          "text": "Mostrare un selettore nativo macOS vicino alla richiesta, con nome del modello selezionato e descrizione quando disponibile.",
+          "status": "da verificare",
+          "evidence": [],
+          "note": "Estensione registrata su richiesta dell’utente. Il selettore non è presente nella versione osservata; nessuna implementazione avviata in questo passaggio."
+        },
+        {
+          "criterion": 3,
+          "text": "Conservare la scelta per progetto tra riavvii e ripristinarla senza modificare la configurazione globale di Codex.",
+          "status": "da verificare",
+          "evidence": [],
+          "note": "Estensione registrata su richiesta dell’utente. Il selettore non è presente nella versione osservata; nessuna implementazione avviata in questo passaggio."
+        },
+        {
+          "criterion": 4,
+          "text": "Passare esplicitamente il modello scelto alla pianificazione e all’esecuzione; rendere visibile anche quale modello usa l’analisi delle attività del gruppo.",
+          "status": "da verificare",
+          "evidence": [],
+          "note": "Estensione registrata su richiesta dell’utente. Il selettore non è presente nella versione osservata; nessuna implementazione avviata in questo passaggio."
+        },
+        {
+          "criterion": 5,
+          "text": "Registrare nella richiesta il modello usato. Cambiare selezione durante un’attività non cambia retroattivamente il modello di quella già avviata.",
+          "status": "da verificare",
+          "evidence": [],
+          "note": "Estensione registrata su richiesta dell’utente. Il selettore non è presente nella versione osservata; nessuna implementazione avviata in questo passaggio."
+        },
+        {
+          "criterion": 6,
+          "text": "Gestire caricamento, catalogo vuoto, errore, accesso scaduto e modello non più disponibile. Non sostituire silenziosamente il modello scelto con un altro.",
+          "status": "da verificare",
+          "evidence": [],
+          "note": "Estensione registrata su richiesta dell’utente. Il selettore non è presente nella versione osservata; nessuna implementazione avviata in questo passaggio."
+        },
+        {
+          "criterion": 7,
+          "text": "Conservare provider OpenAI, accesso ChatGPT gestito dal componente ufficiale e isolamento degli strumenti. Nessun passaggio automatico a credenziali API o a un altro provider.",
+          "status": "da verificare",
+          "evidence": [],
+          "note": "Estensione registrata su richiesta dell’utente. Il selettore non è presente nella versione osservata; nessuna implementazione avviata in questo passaggio."
+        },
+        {
+          "criterion": 8,
+          "text": "Verificare accessibilità, nomi lunghi e comportamento del selettore nelle finestre strette, coordinandosi con #21 e #22.",
+          "status": "da verificare",
+          "evidence": [],
+          "note": "Estensione registrata su richiesta dell’utente. Il selettore non è presente nella versione osservata; nessuna implementazione avviata in questo passaggio."
+        }
+      ],
+      "remaining": "Estensione registrata su richiesta dell’utente. Il selettore non è presente nella versione osservata; nessuna implementazione avviata in questo passaggio."
+    }
+  ]
+}

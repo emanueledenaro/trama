@@ -1,6 +1,6 @@
 # T06: Passare da un modulo a un piano di Codex
 
-Stato: pianificato, bozza per GitHub Issues.
+Stato: parzialmente verificato. Ticket ancora aperto.
 
 Specifica: [Piano operativo](../../piano-operativo.md).
 
@@ -28,3 +28,5 @@ Chiedere una modifica al modulo Ordini e aprire i file che sostengono il piano o
 ## Regola di chiusura
 
 La chiusura richiede evidenze sui comportamenti indicati e revisione indipendente di specifica e convenzioni. Riportare controlli non eseguiti e limiti. Un test simulato non sostituisce la prova reale del collegamento o del sistema operativo.
+
+Prove e criteri residui: [riconciliazione della roadmap](../../verifiche/roadmap-a8d9515.md).
