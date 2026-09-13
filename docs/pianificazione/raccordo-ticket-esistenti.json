@@ -1,0 +1,277 @@
+{
+  "2": {
+    "coordinator": [
+      "C01",
+      "C07",
+      "C12"
+    ],
+    "evidence": [
+      "docs/verifiche/riavvio-2026-09-13.md",
+      "docs/verifiche/responsive-secondo-passaggio-2026-09-13.md"
+    ],
+    "gap": "Restano annullamento del selettore, cartella vuota/spostata, permesso negato e percorso completo da tastiera. I progetti persistono, ma la chat e il runtime multiprogetto non sono ancora implementati.",
+    "extension": "Verificare guida facoltativa e ritorno al Coordinatore, conservando recenti, selezione e documenti legacy. Cambiare progetto non deve interrompere gli incarichi già autorizzati della nuova architettura."
+  },
+  "3": {
+    "coordinator": [
+      "C02",
+      "C11",
+      "C12"
+    ],
+    "evidence": [
+      "docs/codex-integration.md",
+      "docs/verifiche/selezione-modelli-2026-09-13.md"
+    ],
+    "gap": "Account esistente e turni reali documentati; restano accesso assente/scaduto/annullato, account differente e percorso su Mac senza componente. I thread attuali non dimostrano una chat persistente.",
+    "extension": "Collegare streaming, errori e ripresa della chat al componente ufficiale e verificare capacità reali di ogni modello. La guida riconosce o ripara il componente senza copiare credenziali."
+  },
+  "4": {
+    "coordinator": [
+      "C08",
+      "C10",
+      "C12"
+    ],
+    "evidence": [
+      "docs/stato-beta.md",
+      "docs/verifiche/trama-su-trama-2026-09-13.md"
+    ],
+    "gap": "L'adapter GitHub e alcune letture reali sono presenti; la matrice completa di capacità e permessi dei collegamenti Codex resta distinta dal login di gh e non è completata.",
+    "extension": "Mostrare nella guida e nella chat le capacità GitHub effettive, i prerequisiti mancanti e le fonti usate dal monitor; nessun nuovo collegamento dedotto dal solo login ChatGPT."
+  },
+  "5": {
+    "coordinator": [
+      "C12",
+      "C13",
+      "C15"
+    ],
+    "evidence": [
+      "docs/design-system.md",
+      "docs/verifiche/risposte-e-perimetro-2026-09-13.md"
+    ],
+    "gap": "Bundle versionato, setup conservativo e riconoscimento delle skill sono documentati; manca il percorso completo di incompatibilità, aggiornamento e rollback offline.",
+    "extension": "Preparare il metodo automaticamente dopo la scelta del progetto anche con GitHub rimandato. Le pratiche del team aggiornano solo parti gestite e reversibili senza sovrascrivere regole o controlli."
+  },
+  "6": {
+    "coordinator": [
+      "C02",
+      "C13"
+    ],
+    "evidence": [
+      "docs/verifiche/responsive-primo-passaggio-2026-09-13.md",
+      "docs/verifiche/trama-su-trama-2026-09-13.md"
+    ],
+    "gap": "Mappa, albero e fonti provati in alcuni percorsi; restano variazioni della struttura, limiti, accesso negato e matrice di navigazione completa.",
+    "extension": "Dalla chat e dal tutorial aprire modulo e fonte reale e tornare al messaggio senza perdere query o selezione; nessuna descrizione AI diventa una relazione verificata."
+  },
+  "7": {
+    "coordinator": [
+      "C01",
+      "C02",
+      "C03",
+      "C11"
+    ],
+    "evidence": [
+      "docs/verifiche/risposte-e-perimetro-2026-09-13.md",
+      "docs/verifiche/riavvio-2026-09-13.md"
+    ],
+    "gap": "Spiegazioni e saluti distinti dai piani eseguibili, fonti e persistenza provati. Restano errori/limiti, risposte tardive e modifica completa del piano nell'app.",
+    "extension": "La chat riusa richieste e piani esistenti, conserva streaming e correlazione per progetto e distingue attesa per limiti da stop esplicito. Il modello di ogni attività resta registrato."
+  },
+  "8": {
+    "coordinator": [
+      "C03",
+      "C06",
+      "C14"
+    ],
+    "evidence": [
+      "docs/verifiche/dipendenze-decisioni-2026-09-13.md",
+      "docs/verifiche/risposte-e-perimetro-2026-09-13.md"
+    ],
+    "gap": "PR #31 e prova Orders/Catalog dimostrano invalidazione selettiva. Restano il percorso completo delle alternative libere e tutte le presentazioni della simulazione; i team paralleli richiedono nuove prove.",
+    "extension": "Porre le domande nella chat e fermare solo gli incarichi dipendenti; riusare storia e versioni del Patto. Il tutorial non promuove dimostrazioni o risposte AI a evidenze reali.",
+    "check": [
+      3
+    ]
+  },
+  "9": {
+    "coordinator": [
+      "C04",
+      "C05",
+      "C06",
+      "C11"
+    ],
+    "evidence": [
+      "docs/verifiche-locali.md",
+      "docs/verifiche/revisione-compatta-2026-09-13.md"
+    ],
+    "gap": "Worktree e conservazione sorgente provati; restano autorizzazioni runtime complete, stop durante comando, crash e recupero/pulizia. Una sessione non equivale ancora a un team persistente.",
+    "extension": "Ogni specialista di scrittura usa isolamento e delega identificabili. Cambio perimetro e stop conservano artefatti. La ripresa esplicita resta per stop/uscita; l'attesa di capacità in un runtime attivo segue C11."
+  },
+  "10": {
+    "coordinator": [
+      "C04",
+      "C06",
+      "C09"
+    ],
+    "evidence": [
+      "docs/verifiche/revisione-compatta-2026-09-13.md",
+      "docs/verifiche/dipendenze-decisioni-2026-09-13.md"
+    ],
+    "gap": "Il precedente difetto di invalidazione globale è corretto dalla PR #31. Restano indipendenza completa dalle attività remote estranee e ricontrollo immediato in tutti i percorsi.",
+    "extension": "Conservare la revisione umana e aggiungere un via libera delegato distinto per mandato. Un Coordinatore non può impersonare la persona; candidato combinato e base devono essere verificati di nuovo prima del merge."
+  },
+  "11": {
+    "coordinator": [
+      "C03",
+      "C04",
+      "C12"
+    ],
+    "evidence": [
+      "docs/stato-beta.md"
+    ],
+    "gap": "Creazione cartella, README e richiesta iniziale presenti; generazione della struttura, errori e ripresa completi non sono provati.",
+    "extension": "La guida e la chat offrono Crea progetto con cartella, idea, piano e mandato visibili. La generazione usa lo stesso percorso isolato, senza pubblicare automaticamente un remoto."
+  },
+  "12": {
+    "coordinator": [
+      "C09",
+      "C10"
+    ],
+    "evidence": [
+      "docs/verifiche/issue-markdown-2026-09-13.md",
+      "docs/verifiche-locali.md"
+    ],
+    "gap": "Pubblicazione tramite componente e Markdown UI sono documentati. Discussione, permessi, retry e pubblicazione completa dalla finestra restano incompleti. Stato/tag aggiunti localmente in #22 non sono ancora pubblicati.",
+    "extension": "Conservare l'anteprima e il percorso manuale senza merge implicito dell'adapter. Il merge delegato è una successiva azione esplicita del Coordinatore entro mandato. Allineare checklist e stato GitHub solo alle prove reali, con retry idempotenti."
+  },
+  "13": {
+    "coordinator": [
+      "C07",
+      "C08",
+      "C11"
+    ],
+    "evidence": [
+      "docs/stato-beta.md",
+      "docs/verifiche/trama-su-trama-2026-09-13.md"
+    ],
+    "gap": "Snapshot, cache e checkpoint presenti; restano force push, fork, repository rinominato e consumo/paginazione nel percorso reale.",
+    "extension": "Instradare eventi pubblicati al progetto corretto anche quando un'altra chat è selezionata. La fonte remota condivisa non fonde candidati o contesti di due cloni."
+  },
+  "14": {
+    "coordinator": [
+      "C08",
+      "C14"
+    ],
+    "evidence": [
+      "docs/stato-beta.md",
+      "docs/verifiche-locali.md"
+    ],
+    "gap": "Confronti Git isolati con casi compatibili e incompatibili coperti dai test; avviso nativo remoto completo e input cambiati durante la prova non sono ancora dimostrati in tutti i casi.",
+    "extension": "Confrontare anche candidati degli specialisti, mantenendo base e snapshot di ciascun lavoro. Rendere avviso e prove raggiungibili dalla chat e marcare l'esercizio tutorial come prova controllata."
+  },
+  "15": {
+    "coordinator": [
+      "C08",
+      "C15"
+    ],
+    "evidence": [
+      "docs/stato-beta.md"
+    ],
+    "gap": "Adapter semantico e rifiuto di autorità inventata presenti; mancano fixture indipendenti e turni reali su incompatibilità, duplicazione e API cambiate.",
+    "extension": "Le interpretazioni degli specialisti e del Coordinatore conservano fonti e livello di prova. La condivisione di metodi generali non trasferisce contenuti o decisioni private fra team."
+  },
+  "16": {
+    "coordinator": [
+      "C06",
+      "C08",
+      "C10",
+      "C11"
+    ],
+    "evidence": [
+      "docs/stato-beta.md"
+    ],
+    "gap": "Deduplica e azioni UI presenti; raffiche equivalenti, budget visibili e ciclo completo di risoluzione non sono provati nell'app.",
+    "extension": "Avvisi e blocchi compaiono nella chat del progetto e nella panoramica. Rivalutare solo dipendenti, conservare stop confermato distinto dalla richiesta e aggiornare ticket senza equiparare ignorato ad approvato."
+  },
+  "17": {
+    "coordinator": [
+      "C07",
+      "C11"
+    ],
+    "evidence": [
+      "docs/stato-beta.md",
+      "docs/verifiche/distribuzione-prerequisiti-2026-09-13.md"
+    ],
+    "gap": "Helper e configurazione esistono, ma registrazione Apple reale e prove complete dopo Esci/sospensione non sono attestate. Un monitor GitHub non prova un Coordinatore AI sempre attivo.",
+    "extension": "Chiudere la finestra lascia i runtime autorizzati attivi; Esci li ferma e lascia il monitor abilitato come osservatore. Riconciliare gli eventi nella chat al ritorno; nessuna operatività cloud implicita."
+  },
+  "18": {
+    "coordinator": [
+      "C14",
+      "C15",
+      "C16"
+    ],
+    "evidence": [
+      "docs/verifiche/responsive-secondo-passaggio-2026-09-13.md",
+      "docs/verifiche/controlli-nativi-2026-09-13.md"
+    ],
+    "gap": "Percorsi nativi parzialmente provati; manca l'intero flusso, accessibilità completa e misure 100/1000/10000 file. La nuova chat e Team devono entrare nell'accettazione finale.",
+    "extension": "Il percorso dal primo avvio include tutorial, Coordinatore, Team, mandato, decisione, modifica, prove, integrazione e ritorno al progetto. Chiudere solo con tutti i nuovi ticket richiesti e #21/#22 verificati."
+  },
+  "19": {
+    "coordinator": [
+      "C16"
+    ],
+    "evidence": [
+      "docs/verifiche/distribuzione-prerequisiti-2026-09-13.md"
+    ],
+    "gap": "Clone/build/test e packaging ad hoc documentati. Restano README finale, licenze complete e percorso utente riprodotto; Developer ID, notarizzazione e secondo Mac non sono provati.",
+    "extension": "La riproduzione da clone pulito comprende tutorial, chat e team oltre alle viste precedenti. Distinguere beta compilabile dal sorgente da app scaricabile firmata e notarizzata."
+  },
+  "21": {
+    "coordinator": [
+      "C02",
+      "C05",
+      "C07",
+      "C12",
+      "C14"
+    ],
+    "evidence": [
+      "docs/verifiche/responsive-primo-passaggio-2026-09-13.md",
+      "docs/verifiche/revisione-compatta-2026-09-13.md",
+      "docs/verifiche/responsive-secondo-passaggio-2026-09-13.md"
+    ],
+    "gap": "PR #25/#26/#30/#32 pubblicate. Le misure dei trascinamenti non completano la matrice con dimensioni indipendentemente verificate; mancano modali, tastiera/VoiceOver e schermate esportate.",
+    "extension": "Applicare la stessa matrice a chat, Team, panoramica globale e tutorial. Nessuna riduzione del minimo, del carattere o dei percorsi esistenti per far entrare nuove schermate."
+  },
+  "22": {
+    "coordinator": [
+      "C02",
+      "C05",
+      "C12",
+      "C14"
+    ],
+    "evidence": [
+      "docs/design-system.md",
+      "docs/verifiche/controlli-nativi-2026-09-13.md",
+      "docs/verifiche/issue-markdown-2026-09-13.md"
+    ],
+    "gap": "Fondazioni visive e Markdown pubblicati; ulteriori rifiniture, tag e label sono locali non committati. Le prove di contrasto/trasparenza locali non chiudono focus, modali, stati disabilitati e raccolta immagini.",
+    "extension": "Chat, Team e tutorial riusano il sistema Apple e i componenti condivisi. Preservare etichette persistenti/accessibili, stato/tag Issue, temi, focus e distinzione fra fatti, simulazioni e prove."
+  },
+  "23": {
+    "coordinator": [
+      "C02",
+      "C05",
+      "C11"
+    ],
+    "evidence": [
+      "docs/verifiche/selezione-modelli-2026-09-13.md"
+    ],
+    "gap": "PR #29 pubblicata; due modelli hanno risposto, una incompatibilità è rimasta errore senza fallback e la scelta è persistita. Restano esecuzione completa con due modelli, modello rimosso, accesso scaduto e VoiceOver. Per completare il criterio di persistenza serve anche una prova esplicita che la configurazione globale sia rimasta invariata.",
+    "extension": "La persona sceglie il modello principale; il Coordinatore sceglie quelli degli specialisti rendendoli visibili per incarico. Catalogo e autorizzazione reale restano distinti e i limiti non autorizzano provider alternativi.",
+    "check": [
+      2
+    ]
+  }
+}
