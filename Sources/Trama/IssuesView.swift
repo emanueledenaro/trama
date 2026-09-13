@@ -28,18 +28,36 @@ struct IssuesView: View {
                     layout {
                         List(selection: $selected) {
                             ForEach(issues) { issue in
-                                VStack(alignment: .leading, spacing: 6) {
+                                VStack(alignment: .leading, spacing: TramaSpacing.compact) {
                                     Text(issue.title).font(.headline).lineLimit(3)
-                                    Text("#\(issue.number) · \(issue.author)").font(.caption).foregroundStyle(.secondary)
+                                    HStack(spacing: TramaSpacing.control) {
+                                        TramaStatusBadge(state: issueState(issue.state))
+                                        Text("#\(issue.number) · \(issue.author)").font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                                    }
+                                    Label(labelSummary(issue.labels), systemImage: "tag")
+                                        .font(.caption).foregroundStyle(.secondary).lineLimit(2)
                                 }.padding(.vertical, TramaSpacing.control).tag(issue.number)
                             }
                         }.frame(width: compact ? nil : 245, height: compact ? 150 : nil)
                         Divider()
                         if let issue = issues.first(where: { $0.number == selected }) {
                             ScrollView {
-                                VStack(alignment: .leading, spacing: 20) {
+                                VStack(alignment: .leading, spacing: TramaSpacing.section) {
                                     Text(issue.title).font(.title2.weight(.semibold))
-                                    Text("#\(issue.number) · \(issue.state)").font(.caption).foregroundStyle(.secondary)
+                                    HStack(spacing: TramaSpacing.control) {
+                                        TramaStatusBadge(state: issueState(issue.state))
+                                        Text("#\(issue.number) · \(issue.author)").font(.caption).foregroundStyle(.secondary)
+                                    }
+                                    VStack(alignment: .leading, spacing: TramaSpacing.control) {
+                                        Text("Etichette").font(.headline)
+                                        if issue.labels.isEmpty {
+                                            Label("Nessuna etichetta", systemImage: "tag").font(.callout).foregroundStyle(.secondary)
+                                        } else {
+                                            VStack(alignment: .leading, spacing: TramaSpacing.compact) {
+                                                ForEach(issue.labels, id: \.self) { TramaTag(text: $0) }
+                                            }
+                                        }
+                                    }
                                     IssueMarkdownView(source: issue.body)
                                     HStack {
                                         Button("Pianifica con Codex") {
@@ -72,6 +90,20 @@ struct IssuesView: View {
         }
         catch { self.error = error.localizedDescription }
     }
+
+    private func issueState(_ state: String) -> String {
+        switch state.lowercased() {
+        case "open": "Aperta"
+        case "closed": "Chiusa"
+        default: state
+        }
+    }
+
+    private func labelSummary(_ labels: [String]) -> String {
+        guard !labels.isEmpty else { return "Nessuna etichetta" }
+        let visible = labels.prefix(2).joined(separator: ", ")
+        return labels.count > 2 ? "\(visible) e altre \(labels.count - 2)" : visible
+    }
 }
 
 private struct CreateIssueView: View {
@@ -92,8 +124,10 @@ private struct CreateIssueView: View {
             }.padding(TramaSpacing.content)
             Divider()
             VStack(alignment: .leading, spacing: TramaSpacing.related) {
-                TextField("Titolo", text: $title).textFieldStyle(.roundedBorder)
-                TextEditor(text: $bodyText).font(.body).frame(minHeight: 140, maxHeight: .infinity).border(.quaternary)
+                Text("Titolo").font(.callout.weight(.medium))
+                TextField("Scrivi il titolo", text: $title).textFieldStyle(.roundedBorder).accessibilityLabel("Titolo")
+                Text("Descrizione").font(.callout.weight(.medium))
+                TextEditor(text: $bodyText).font(.body).frame(minHeight: 140, maxHeight: .infinity).border(.quaternary).accessibilityLabel("Descrizione")
                 if let error {
                     ScrollView { Text(error).font(.caption).foregroundStyle(.orange).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading) }
                         .frame(maxHeight: 72)
@@ -151,9 +185,12 @@ struct PublishPullRequestView: View {
                 DisclosureGroup("Diff del candidato") {
                     ReviewOutput(text: request.review?.diff ?? "").frame(height: 120).padding(.top, TramaSpacing.compact)
                 }
-                TextField("Titolo", text: $title).textFieldStyle(.roundedBorder).disabled(busy)
-                TextField("Branch di destinazione", text: $base).textFieldStyle(.roundedBorder).disabled(busy)
-                TextEditor(text: $bodyText).font(.callout).frame(minHeight: 96, maxHeight: .infinity).border(.quaternary).disabled(busy)
+                Text("Titolo").font(.callout.weight(.medium))
+                TextField("Scrivi il titolo", text: $title).textFieldStyle(.roundedBorder).accessibilityLabel("Titolo").disabled(busy)
+                Text("Branch di destinazione").font(.callout.weight(.medium))
+                TextField("Per esempio main", text: $base).textFieldStyle(.roundedBorder).accessibilityLabel("Branch di destinazione").disabled(busy)
+                Text("Descrizione").font(.callout.weight(.medium))
+                TextEditor(text: $bodyText).font(.callout).frame(minHeight: 96, maxHeight: .infinity).border(.quaternary).accessibilityLabel("Descrizione").disabled(busy)
                 if let error {
                     ScrollView { Text(error).font(.caption).foregroundStyle(.orange).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading) }
                         .frame(maxHeight: 72)

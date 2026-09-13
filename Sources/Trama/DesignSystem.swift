@@ -8,6 +8,11 @@ enum TramaSpacing {
     static let content: CGFloat = 24
 }
 
+enum TramaRadius {
+    static let control: CGFloat = 8
+    static let card: CGFloat = 12
+}
+
 struct TramaScreenHeader<Actions: View>: View {
     let title: String
     let subtitle: String
@@ -31,6 +36,7 @@ struct TramaScreenHeader<Actions: View>: View {
                 actions
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, TramaSpacing.content)
         .padding(.vertical, TramaSpacing.section)
     }
@@ -55,6 +61,50 @@ struct TramaAdaptiveActions<Content: View>: View {
             HStack(spacing: TramaSpacing.control) { content }
             VStack(alignment: .leading, spacing: TramaSpacing.control) { content }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+struct TramaSupportingText: View {
+    let text: String
+
+    init(_ text: String) {
+        self.text = text
+    }
+
+    var body: some View {
+        Text(text)
+            .font(.callout)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+}
+
+struct TramaLabeledText: View {
+    let label: String
+    let value: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: TramaSpacing.compact) {
+            Text(label).font(.caption.weight(.medium)).foregroundStyle(.secondary)
+            Text(value).font(.body).textSelection(.enabled)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
+    }
+}
+
+struct TramaTag: View {
+    let text: String
+
+    var body: some View {
+        Text(text)
+            .font(.caption.weight(.medium))
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(.horizontal, TramaSpacing.control)
+            .padding(.vertical, 4)
+            .background(.quaternary, in: Capsule())
+            .accessibilityLabel("Etichetta: \(text)")
     }
 }
 
@@ -65,7 +115,7 @@ struct TramaStatusBadge: View {
         Label(state, systemImage: style.symbol)
             .font(.caption.weight(.medium))
             .foregroundStyle(style.color)
-            .padding(.horizontal, 8)
+            .padding(.horizontal, TramaSpacing.control)
             .padding(.vertical, 4)
             .background(style.color.opacity(0.12), in: Capsule())
             .accessibilityLabel("Stato: \(state)")
@@ -89,6 +139,10 @@ struct TramaStatusBadge: View {
             ("exclamationmark.triangle.fill", .orange)
         case "Analisi in corso", "In esecuzione", "Verifiche in corso", "Preparazione del worktree":
             ("ellipsis.circle.fill", .blue)
+        case "Aperta":
+            ("circle.fill", .blue)
+        case "Chiusa":
+            ("checkmark.circle.fill", .secondary)
         case "Risposta disponibile":
             ("text.bubble.fill", .secondary)
         case "Bozza":

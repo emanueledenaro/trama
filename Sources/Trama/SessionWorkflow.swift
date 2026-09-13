@@ -486,7 +486,7 @@ private func sessionSetupHashes(root: URL) throws -> [String: String] {
 struct ApprovalView: View {
     @EnvironmentObject private var store: ProjectStore
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
+        VStack(alignment: .leading, spacing: TramaSpacing.section) {
             if let approval = store.pendingApproval {
                 Label("Codex richiede un’autorizzazione", systemImage: "hand.raised").font(.title2.weight(.semibold))
                 Text(approval.title).font(.headline)
@@ -515,10 +515,10 @@ struct SessionReviewView: View {
     @State private var checkingConflict = false
     @State private var showPublication = false
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: TramaSpacing.related) {
             if let session = request.session {
                 GroupBox {
-                    VStack(alignment: .leading, spacing: 8) {
+                    VStack(alignment: .leading, spacing: TramaSpacing.control) {
                         Label(session.branch, systemImage: "arrow.triangle.branch").font(.headline)
                         Text(session.worktreeRoot.path).font(.system(.caption, design: .monospaced)).textSelection(.enabled)
                         if session.sourceHadUncapturedChanges { Text("Il checkout originale ha modifiche locali conservate. La sessione parte dal commit di base e non le include.").font(.caption).foregroundStyle(.orange) }
@@ -526,18 +526,18 @@ struct SessionReviewView: View {
                     }.padding(10).frame(maxWidth: .infinity, alignment: .leading)
                 }
                 if let output = request.executionOutput, !output.isEmpty {
-                    DisclosureGroup("Attività di Codex") { ReviewOutput(text: output).frame(height: 220).padding(.top, 8) }
+                    DisclosureGroup("Attività di Codex") { ReviewOutput(text: output).frame(height: 220).padding(.top, TramaSpacing.compact) }
                 }
                 if let review = request.review {
                     let setupCount = review.changedFiles.filter { request.setupBaselineHashes?[$0] != nil }.count
                     Text("\(review.changedFiles.count - setupCount) file del progetto nel candidato").font(.headline)
                     if setupCount > 0 { Text("Il diff include anche \(setupCount) file di configurazione del metodo AI Hero.").font(.caption).foregroundStyle(.secondary) }
-                    DisclosureGroup("Mostra diff") { ReviewOutput(text: review.diff.isEmpty ? "Nessuna modifica al codice." : review.diff).frame(height: 220).padding(.top, 8) }
+                    DisclosureGroup("Mostra diff") { ReviewOutput(text: review.diff.isEmpty ? "Nessuna modifica al codice." : review.diff).frame(height: 220).padding(.top, TramaSpacing.compact) }
                     TramaAdaptiveActions { reviewActions }
                     if let check = request.check {
                         let current = !["Da rivalutare", "Verifiche in corso", "Verifiche interrotte", "Errore di esecuzione", "Interrotto"].contains(request.state)
                         Label(!current ? "Verifiche precedenti: da ripetere" : check.exitCode == 0 ? "Controlli superati" : "Controlli falliti", systemImage: current && check.exitCode == 0 ? "checkmark.circle" : "exclamationmark.circle").foregroundStyle(current && check.exitCode == 0 ? Color.green : Color.orange)
-                        DisclosureGroup("Output delle verifiche") { ReviewOutput(text: check.output).frame(height: 220).padding(.top, 8) }
+                        DisclosureGroup("Output delle verifiche") { ReviewOutput(text: check.output).frame(height: 220).padding(.top, TramaSpacing.compact) }
                     }
                     if let id = request.candidateID, let verdict = try? store.document.pact?.inspect(candidateID: id) {
                         ForEach(Array(verdict.blockers.enumerated()), id: \.offset) { _, blocker in Text(blocker.userMessage).font(.caption).foregroundStyle(.secondary) }
@@ -550,8 +550,11 @@ struct SessionReviewView: View {
                     if let url = request.pullRequestURL { Link("Apri pull request", destination: url) }
                     Divider()
                     Text("Confronto con un altro branch locale").font(.headline)
+                    VStack(alignment: .leading, spacing: TramaSpacing.compact) {
+                        Text("Branch o revisione").font(.callout.weight(.medium))
+                        TextField("Per esempio main", text: $otherRef).textFieldStyle(.roundedBorder).accessibilityLabel("Branch o revisione")
+                    }
                     HStack {
-                        TextField("Branch o revisione", text: $otherRef).textFieldStyle(.roundedBorder)
                         Button("Verifica conflitti") {
                             checkingConflict = true
                             Task {

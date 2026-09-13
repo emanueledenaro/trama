@@ -154,10 +154,20 @@ final class TeamViewModel: ObservableObject {
     }
 }
 
+private enum TeamTab: String, CaseIterable, Identifiable {
+    case pullRequests = "Pull request"
+    case branches = "Branch"
+    case events = "Novità"
+    case impact = "Impatto"
+    case conflicts = "Conflitti"
+
+    var id: Self { self }
+}
+
 struct TeamView: View {
     @EnvironmentObject private var store: ProjectStore
     @EnvironmentObject private var team: TeamViewModel
-    @State private var selectedTab = "Pull request"
+    @State private var selectedTab = TeamTab.pullRequests
     @State private var showActivity = false
     private func conflictLabel(_ value: RemoteConflictClassification) -> String {
         switch value { case .conflict: "Conflitto Git riprodotto"; case .overlap: "File condivisi, merge pulito"; case .clean: "Nessun conflitto Git rilevato"; case .unknown: "Confronto non verificato" }
@@ -168,9 +178,14 @@ struct TeamView: View {
                 Toggle("Aggiornamento automatico", isOn: $team.monitoring).toggleStyle(.switch).controlSize(.small)
             }
             TramaAdaptiveActions {
-                HStack {
-                    Image(systemName: "arrow.triangle.branch").foregroundStyle(.secondary)
-                    TextField("proprietario/repository", text: $team.repository).textFieldStyle(.roundedBorder)
+                VStack(alignment: .leading, spacing: TramaSpacing.compact) {
+                    Text("Repository GitHub").font(.caption.weight(.medium)).foregroundStyle(.secondary)
+                    HStack {
+                        Image(systemName: "arrow.triangle.branch").foregroundStyle(.secondary)
+                        TextField("proprietario/repository", text: $team.repository)
+                            .textFieldStyle(.roundedBorder)
+                            .accessibilityLabel("Repository GitHub")
+                    }
                 }
                 HStack(spacing: TramaSpacing.control) {
                     Button("Aggiorna") { Task { await team.refresh() } }.disabled(team.isLoading || team.repository.isEmpty)
@@ -178,94 +193,19 @@ struct TeamView: View {
                 }
             }.padding(.horizontal, TramaSpacing.content).padding(.bottom, TramaSpacing.section)
             if let error = team.error {
-                Label(error, systemImage: "exclamationmark.triangle").foregroundStyle(.orange).font(.callout).padding(.horizontal, 24).padding(.bottom, 12)
+                Label(error, systemImage: "exclamationmark.triangle").foregroundStyle(.orange).font(.callout).padding(.horizontal, TramaSpacing.content).padding(.bottom, TramaSpacing.related)
             }
             Divider()
             if let snapshot = team.snapshot {
                 HStack {
-                    Picker("Attività", selection: $selectedTab) { Text("Pull request").tag("Pull request"); Text("Branch").tag("Branch"); Text("Novità").tag("Novità"); Text("Impatto").tag("Impatto"); Text("Conflitti").tag("Conflitti") }.pickerStyle(.menu).labelsHidden().frame(maxWidth: 240, alignment: .leading)
+                    Picker("Attività", selection: $selectedTab) {
+                        ForEach(TeamTab.allCases) { tab in Text(tab.rawValue).tag(tab) }
+                    }.pickerStyle(.menu).labelsHidden().frame(maxWidth: 240, alignment: .leading)
                     Spacer()
                     Text("\(snapshot.fetchedAt, style: .time)").font(.caption).foregroundStyle(.secondary)
-                }.padding(20)
-                List {
-                    if selectedTab == "Pull request" {
-                        if snapshot.pullRequests.isEmpty { Text("Nessuna pull request aperta.").foregroundStyle(.secondary).padding(.vertical, 20) }
-                        ForEach(snapshot.pullRequests, id: \.number) { pr in
-                            ViewThatFits(in: .horizontal) {
-                                HStack(alignment: .top, spacing: 14) {
-                                    pullRequestDescription(pr)
-                                    Spacer(minLength: TramaSpacing.related)
-                                    pullRequestActions(pr)
-                                }
-                                VStack(alignment: .leading, spacing: TramaSpacing.related) {
-                                    pullRequestDescription(pr)
-                                    pullRequestActions(pr)
-                                }
-                            }.padding(.vertical, 10)
-                        }
-                    } else if selectedTab == "Branch" {
-                        ForEach(snapshot.branches, id: \.name) { branch in
-                            HStack { Label(branch.name, systemImage: "arrow.triangle.branch"); Spacer(); Text(String(branch.sha.prefix(8))).font(.system(.caption, design: .monospaced)).foregroundStyle(.secondary); Button("Attività") { team.followActivity(branch: branch); showActivity = true } }.padding(.vertical, 8)
-                        }
-                    } else if selectedTab == "Conflitti" {
-                        if store.remoteConflicts.assessments.isEmpty { Text(store.remoteConflicts.message ?? "Apri una modifica con un candidato per confrontarlo con il lavoro del gruppo.").foregroundStyle(.secondary) }
-                        ForEach(store.remoteConflicts.assessments) { assessment in
-                            VStack(alignment: .leading, spacing: 8) {
-                                Label(conflictLabel(assessment.classification), systemImage: assessment.classification == .conflict ? "exclamationmark.triangle" : "arrow.triangle.branch").font(.headline)
-                                Text(assessment.references.map(\.name).joined(separator: ", ")).font(.callout)
-                                Text(assessment.detail).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
-                                Text("Revisione: " + String(assessment.remoteSHA.prefix(12))).font(.system(.caption, design: .monospaced))
-                                ForEach(assessment.conflictingFiles, id: \.self) { Text($0).font(.caption) }
-                                if let url = assessment.references.first?.url { Link("Apri fonte GitHub", destination: url) }
-                            }.padding(.vertical, 10)
-                        }
-                    } else if selectedTab == "Impatto" {
-                        if store.intelligence.assessments.isEmpty {
-                            Text("Le interpretazioni di Codex compariranno qui dopo l’analisi delle revisioni condivise.").foregroundStyle(.secondary).padding(.vertical, 20)
-                        }
-                        ForEach(Array(store.intelligence.assessments.keys).sorted(), id: \.self) { key in
-                            if let assessment = store.intelligence.assessments[key] {
-                                VStack(alignment: .leading, spacing: 10) {
-                                    Label(key + (store.intelligence.staleReferences.contains(key) ? " · Da rivalutare" : " · Interpretazione di Codex"), systemImage: assessment.status == .possibleIncompatibility ? "exclamationmark.triangle" : "text.magnifyingglass").font(.headline)
-                                    Text(assessment.summary).textSelection(.enabled)
-                                    Text(assessment.suggestedAction).font(.callout).foregroundStyle(.secondary)
-                                    HStack {
-                                        Button("Rivedi il piano") {
-                                            if let request = store.selectedRequest { store.runPlan(request.id); store.section = .changes }
-                                        }.disabled(store.isPlanning || store.selectedRequest == nil)
-                                        if store.intelligence.acknowledgedIDs.contains(assessment.id) {
-                                            Label("Valutato", systemImage: "checkmark").font(.caption).foregroundStyle(.secondary)
-                                        } else {
-                                            Button("Segna come valutato") { store.intelligence.acknowledge(assessment) }
-                                        }
-                                    }
-                                    ForEach(assessment.evidence, id: \.file) { evidence in
-                                        Text(evidence.file + ": " + evidence.detail).font(.caption).foregroundStyle(.secondary)
-                                    }
-                                }.padding(.vertical, 12)
-                            }
-                        }
-                    } else {
-                        if team.events.isEmpty { Text("Le nuove attività compariranno dopo la prossima sincronizzazione.").foregroundStyle(.secondary).padding(.vertical, 20) }
-                        ForEach(team.events) { event in
-                            VStack(alignment: .leading, spacing: 8) {
-                                Text(event.title).font(.headline)
-                                Text("\(event.reference) · \(event.observedAt.formatted(date: .omitted, time: .shortened))").font(.caption).foregroundStyle(.secondary)
-                                if let url = event.url { Link("Apri fonte", destination: url) }
-                            }.padding(.vertical, 10)
-                        }
-                    }
-                }.listStyle(.inset).buttonStyle(.borderless)
-                VStack(alignment: .leading, spacing: 5) {
-                    if let message = store.intelligence.message { Text(message).font(.caption).foregroundStyle(.secondary) }
-                    HStack {
-                        Button("Analizza impatto con Codex") { store.intelligence.consider(snapshot: snapshot, automatic: false) }.disabled(!store.codexConnected || store.selectedModelInfo == nil || store.intelligence.isAnalyzing || team.sourceRepository.caseInsensitiveCompare(snapshot.repository) != .orderedSame || (snapshot.pullRequests.isEmpty && snapshot.branches.isEmpty))
-                        if store.intelligence.isAnalyzing { ProgressView().controlSize(.small) }
-                    }
-                    Label("Analisi Codex: \(store.selectedModelDisplayName)", systemImage: "cpu").font(.caption)
-                    Label("Ultimo accesso GitHub API verificato: \(team.account)", systemImage: "checkmark.shield").font(.caption)
-                    Text("Dati letti tramite GitHub CLI. Il lavoro non pubblicato degli altri non è visibile. Nessuna modifica viene unita al tuo branch.").font(.caption).foregroundStyle(.secondary)
-                }.padding(20)
+                }.padding(TramaSpacing.section)
+                activityContent(snapshot)
+                analysisFooter(snapshot)
             } else {
                 ContentUnavailableView("Collega il repository del gruppo", systemImage: "person.2", description: Text("Indica un repository GitHub accessibile. Trama legge branch e PR usando l’accesso locale di GitHub CLI, distinto dai collegamenti ospitati di Codex."))
             }
@@ -274,12 +214,114 @@ struct TeamView: View {
         .sheet(isPresented: Binding(get: { team.comparison != nil }, set: { if !$0 { team.comparison = nil } })) {
             FilePreviewView(preview: FilePreview(path: "Confronto GitHub", content: team.comparison ?? ""))
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    @ViewBuilder
+    private func activityContent(_ snapshot: GitHubSnapshot) -> some View {
+        switch selectedTab {
+        case .pullRequests:
+            if snapshot.pullRequests.isEmpty {
+                teamEmptyState(("Nessuna pull request aperta", "arrow.triangle.pull", "I branch pubblicati restano disponibili nella sezione Branch."))
+            } else {
+                List {
+                    ForEach(snapshot.pullRequests, id: \.number) { pr in
+                        ViewThatFits(in: .horizontal) {
+                            HStack(alignment: .top, spacing: TramaSpacing.related) {
+                                pullRequestDescription(pr)
+                                Spacer(minLength: TramaSpacing.related)
+                                pullRequestActions(pr)
+                            }
+                            VStack(alignment: .leading, spacing: TramaSpacing.related) {
+                                pullRequestDescription(pr)
+                                pullRequestActions(pr)
+                            }
+                        }.padding(.vertical, TramaSpacing.control)
+                    }
+                }.listStyle(.inset).buttonStyle(.borderless)
+            }
+        case .branches:
+            if snapshot.branches.isEmpty {
+                teamEmptyState(("Nessun branch disponibile", "arrow.triangle.branch", "Aggiorna dopo aver verificato l’accesso al repository."))
+            } else {
+                List {
+                    ForEach(snapshot.branches, id: \.name) { branch in
+                        HStack {
+                            Label(branch.name, systemImage: "arrow.triangle.branch")
+                            Spacer()
+                            Text(String(branch.sha.prefix(8))).font(.system(.caption, design: .monospaced)).foregroundStyle(.secondary)
+                            Button("Attività") { team.followActivity(branch: branch); showActivity = true }
+                        }.padding(.vertical, TramaSpacing.control)
+                    }
+                }.listStyle(.inset).buttonStyle(.borderless)
+            }
+        case .conflicts:
+            if store.remoteConflicts.assessments.isEmpty {
+                teamEmptyState(("Nessun confronto disponibile", "arrow.triangle.branch", store.remoteConflicts.message ?? "Apri una modifica con un candidato per confrontarla con il lavoro del gruppo."))
+            } else {
+                List {
+                    ForEach(store.remoteConflicts.assessments) { assessment in
+                        VStack(alignment: .leading, spacing: TramaSpacing.control) {
+                            Label(conflictLabel(assessment.classification), systemImage: assessment.classification == .conflict ? "exclamationmark.triangle" : "arrow.triangle.branch").font(.headline)
+                            Text(assessment.references.map(\.name).joined(separator: ", ")).font(.callout)
+                            Text(assessment.detail).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+                            Text("Revisione: " + String(assessment.remoteSHA.prefix(12))).font(.system(.caption, design: .monospaced))
+                            ForEach(assessment.conflictingFiles, id: \.self) { Text($0).font(.caption) }
+                            if let url = assessment.references.first?.url { Link("Apri fonte GitHub", destination: url) }
+                        }.padding(.vertical, TramaSpacing.control)
+                    }
+                }.listStyle(.inset).buttonStyle(.borderless)
+            }
+        case .impact:
+            if store.intelligence.assessments.isEmpty {
+                teamEmptyState(("Nessuna interpretazione disponibile", "text.magnifyingglass", "Codex può analizzare le revisioni condivise quando sono presenti branch o pull request pertinenti."))
+            } else {
+                List {
+                    ForEach(Array(store.intelligence.assessments.keys).sorted(), id: \.self) { key in
+                        if let assessment = store.intelligence.assessments[key] {
+                            VStack(alignment: .leading, spacing: TramaSpacing.control) {
+                                Label(key + (store.intelligence.staleReferences.contains(key) ? " · Da rivalutare" : " · Interpretazione di Codex"), systemImage: assessment.status == .possibleIncompatibility ? "exclamationmark.triangle" : "text.magnifyingglass").font(.headline)
+                                Text(assessment.summary).textSelection(.enabled)
+                                Text(assessment.suggestedAction).font(.callout).foregroundStyle(.secondary)
+                                HStack {
+                                    Button("Rivedi il piano") {
+                                        if let request = store.selectedRequest { store.runPlan(request.id); store.section = .changes }
+                                    }.disabled(store.isPlanning || store.selectedRequest == nil)
+                                    if store.intelligence.acknowledgedIDs.contains(assessment.id) {
+                                        Label("Valutato", systemImage: "checkmark").font(.caption).foregroundStyle(.secondary)
+                                    } else {
+                                        Button("Segna come valutato") { store.intelligence.acknowledge(assessment) }
+                                    }
+                                }
+                                ForEach(assessment.evidence, id: \.file) { evidence in
+                                    Text(evidence.file + ": " + evidence.detail).font(.caption).foregroundStyle(.secondary)
+                                }
+                            }.padding(.vertical, TramaSpacing.related)
+                        }
+                    }
+                }.listStyle(.inset).buttonStyle(.borderless)
+            }
+        case .events:
+            if team.events.isEmpty {
+                teamEmptyState(("Nessuna novità condivisa", "clock.arrow.circlepath", "Le nuove attività compariranno quando una sincronizzazione rileva un cambiamento."))
+            } else {
+                List {
+                    ForEach(team.events) { event in
+                        VStack(alignment: .leading, spacing: TramaSpacing.control) {
+                            Text(event.title).font(.headline)
+                            Text("\(event.reference) · \(event.observedAt.formatted(date: .omitted, time: .shortened))").font(.caption).foregroundStyle(.secondary)
+                            if let url = event.url { Link("Apri fonte", destination: url) }
+                        }.padding(.vertical, TramaSpacing.control)
+                    }
+                }.listStyle(.inset).buttonStyle(.borderless)
+            }
+        }
     }
 
     private func pullRequestDescription(_ pr: GitHubPullRequest) -> some View {
-        HStack(alignment: .top, spacing: 14) {
+        HStack(alignment: .top, spacing: TramaSpacing.related) {
             Image(systemName: "arrow.triangle.pull").foregroundStyle(.green)
-            VStack(alignment: .leading, spacing: 7) {
+            VStack(alignment: .leading, spacing: TramaSpacing.compact) {
                 Text("#\(pr.number) \(pr.title)").font(.headline)
                 Text("\(pr.author) · \(pr.headRef) → \(pr.baseRef)").font(.caption).foregroundStyle(.secondary)
             }
@@ -293,5 +335,47 @@ struct TeamView: View {
             Button("Diff") { Task { await team.inspect(pr) } }
             Link("GitHub", destination: pr.url)
         }.fixedSize(horizontal: true, vertical: false)
+    }
+
+    private func analysisFooter(_ snapshot: GitHubSnapshot) -> some View {
+        GroupBox {
+            VStack(alignment: .leading, spacing: TramaSpacing.control) {
+                if let message = store.intelligence.message {
+                    Text(message).font(.callout).foregroundStyle(.secondary)
+                }
+                HStack(spacing: TramaSpacing.control) {
+                    analysisControls(snapshot)
+                }
+                Label("Analisi Codex: \(store.selectedModelDisplayName)", systemImage: "cpu").font(.caption)
+                Label("GitHub verificato come \(team.account)", systemImage: "checkmark.shield").font(.caption)
+                VStack(alignment: .leading, spacing: TramaSpacing.compact) {
+                    Text("Solo il lavoro pubblicato su GitHub è osservabile.")
+                    Text("Il branch locale non viene modificato.")
+                }
+                .font(.callout).foregroundStyle(.secondary)
+            }
+            .padding(TramaSpacing.control)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(.horizontal, TramaSpacing.content)
+        .padding(.vertical, TramaSpacing.related)
+    }
+
+    @ViewBuilder
+    private func analysisControls(_ snapshot: GitHubSnapshot) -> some View {
+        Button("Analizza impatto con Codex") { store.intelligence.consider(snapshot: snapshot, automatic: false) }
+            .disabled(!store.codexConnected || store.selectedModelInfo == nil || store.intelligence.isAnalyzing || team.sourceRepository.caseInsensitiveCompare(snapshot.repository) != .orderedSame || (snapshot.pullRequests.isEmpty && snapshot.branches.isEmpty))
+        if store.intelligence.isAnalyzing { ProgressView().controlSize(.small) }
+    }
+
+    private func teamEmptyState(_ value: (title: String, symbol: String, detail: String)) -> some View {
+        VStack(spacing: TramaSpacing.related) {
+            Image(systemName: value.symbol).font(.system(size: 32)).foregroundStyle(.secondary)
+            Text(value.title).font(.title3.weight(.semibold))
+            Text(value.detail).font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center)
+        }
+        .padding(TramaSpacing.content)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .accessibilityElement(children: .combine)
     }
 }

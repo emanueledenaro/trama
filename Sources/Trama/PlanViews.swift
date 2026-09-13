@@ -6,7 +6,7 @@ struct PlanQuestionsView: View {
     let request: WorkRequest
     var body: some View {
         if let proposal = request.proposal {
-            VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: TramaSpacing.section) {
                 Text(proposal.summary).lineSpacing(4).textSelection(.enabled)
                 ForEach(proposal.questions) { question in
                     if (request.confirmedQuestionIDs ?? []).contains(question.id) {
@@ -30,7 +30,7 @@ private struct DecisionQuestionCard: View {
     @State private var rationale = ""
     var body: some View {
         GroupBox {
-            VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: TramaSpacing.related) {
                 Text(question.scenario).font(.callout).foregroundStyle(.secondary)
                 Text(question.question).font(.headline)
                 ForEach(Array(question.options.enumerated()), id: \.offset) { _, option in
@@ -42,17 +42,24 @@ private struct DecisionQuestionCard: View {
                     Divider()
                 }
                 DisclosureGroup("Scrivi una risposta diversa", isExpanded: $custom) {
-                    VStack(alignment: .leading, spacing: 10) {
-                        TextField("Comportamento che vuoi", text: $behavior, axis: .vertical)
-                        TextField("Esempio concreto", text: $example, axis: .vertical)
-                        TextField("Motivo della scelta", text: $rationale, axis: .vertical)
+                    VStack(alignment: .leading, spacing: TramaSpacing.control) {
+                        labeledField("Comportamento", placeholder: "Descrivi il comportamento", text: $behavior)
+                        labeledField("Esempio concreto", placeholder: "Descrivi un caso osservabile", text: $example)
+                        labeledField("Motivo della scelta", placeholder: "Spiega il motivo", text: $rationale)
                         Button("Registra la mia scelta") {
                             store.answerQuestion(requestID: requestID, question: question, option: DecisionOption(label: "Risposta personale", behavior: behavior, example: example, rationale: rationale))
                         }.disabled([behavior, example, rationale].contains { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })
                     }.textFieldStyle(.roundedBorder).padding(.top, 10)
                 }
-            }.padding(14).frame(maxWidth: .infinity, alignment: .leading)
+            }.padding(TramaSpacing.related).frame(maxWidth: .infinity, alignment: .leading)
         }.disabled(store.isPlanning)
+    }
+
+    private func labeledField(_ label: String, placeholder: String, text: Binding<String>) -> some View {
+        VStack(alignment: .leading, spacing: TramaSpacing.compact) {
+            Text(label).font(.callout.weight(.medium))
+            TextField(placeholder, text: text, axis: .vertical).accessibilityLabel(label)
+        }
     }
 }
 
@@ -66,19 +73,19 @@ struct PlanExecutionEditor: View {
     @State private var rationale = ""
     @State private var modules = Set<String>()
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
+        VStack(alignment: .leading, spacing: TramaSpacing.section) {
             Text("Rivedi il piano").font(.title2.weight(.semibold))
             Text("Puoi cambiare i passi e il comportamento. Avviando registri questa decisione nel Patto Vivo e autorizzi il lavoro nel perimetro scelto.").font(.callout).foregroundStyle(.secondary)
             ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
+                VStack(alignment: .leading, spacing: TramaSpacing.related) {
                     Text("Passi di lavoro").font(.headline)
-                    TextEditor(text: $plan).font(.body).frame(minHeight: 170).border(.quaternary)
+                    TextEditor(text: $plan).font(.body).frame(minHeight: 170).border(.quaternary).accessibilityLabel("Passi di lavoro")
                     Text("Comportamento da rispettare").font(.headline)
-                    TextField("Comportamento", text: $behavior, axis: .vertical).lineLimit(2...5)
+                    TextField("Comportamento", text: $behavior, axis: .vertical).lineLimit(2...5).accessibilityLabel("Comportamento da rispettare")
                     Text("Esempio concreto").font(.headline)
-                    TextField("Esempio da rispettare", text: $example, axis: .vertical).lineLimit(2...5)
+                    TextField("Esempio da rispettare", text: $example, axis: .vertical).lineLimit(2...5).accessibilityLabel("Esempio concreto")
                     Text("Motivo della scelta").font(.headline)
-                    TextField("Motivo", text: $rationale, axis: .vertical).lineLimit(2...4)
+                    TextField("Motivo", text: $rationale, axis: .vertical).lineLimit(2...4).accessibilityLabel("Motivo della scelta")
                     Text("Perimetro consentito").font(.headline)
                     ForEach(store.project?.modules ?? []) { module in
                         Toggle(module.name, isOn: Binding(get: { modules.contains(module.id) }, set: { if $0 { modules.insert(module.id) } else { modules.remove(module.id) } }))
@@ -100,7 +107,7 @@ struct PlanExecutionEditor: View {
                     dismiss()
                 }.buttonStyle(.borderedProminent).disabled(store.isPlanning || modules.isEmpty || [plan, behavior, example, rationale].contains { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })
             }
-        }.padding(26).frame(minWidth: 480, idealWidth: 640, minHeight: 420, idealHeight: 560)
+        }.padding(TramaSpacing.content).frame(minWidth: 480, idealWidth: 640, minHeight: 420, idealHeight: 560)
             .onAppear {
                 plan = request.proposal?.steps.enumerated().map { "\($0.offset + 1). \($0.element)" }.joined(separator: "\n") ?? request.plan
                 behavior = request.proposal?.proposedBehavior ?? ""
@@ -116,9 +123,11 @@ struct RequestClarificationView: View {
     let request: WorkRequest
     @State private var answer = ""
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: TramaSpacing.related) {
+            Text("Chiarimento").font(.callout.weight(.medium))
             TextField("Specifica il risultato che vuoi ottenere", text: $answer, axis: .vertical)
                 .textFieldStyle(.roundedBorder).lineLimit(2...5)
+                .accessibilityLabel("Chiarimento")
                 .onSubmit { send() }
             Button("Invia chiarimento") { send() }
                 .buttonStyle(.borderedProminent)

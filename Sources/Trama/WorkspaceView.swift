@@ -30,7 +30,7 @@ struct WorkspaceView: View {
             }
             .sheet(isPresented: Binding(get: { compactInspector && store.showInspector && store.project != nil && store.section == .map }, set: { store.showInspector = $0 })) {
                 VStack(spacing: 0) {
-                    HStack { Text("Dettagli del modulo").font(.headline); Spacer(); Button("Fine") { store.showInspector = false }.keyboardShortcut(.cancelAction) }.padding(16)
+                    HStack { Text("Dettagli del modulo").font(.headline); Spacer(); Button("Fine") { store.showInspector = false }.keyboardShortcut(.cancelAction) }.padding(TramaSpacing.related)
                     ModuleInspector()
                 }.frame(width: 440, height: 540)
                     .sheet(item: $store.filePreview) { preview in FilePreviewView(preview: preview) }
@@ -91,7 +91,7 @@ struct WorkspaceView: View {
                     }.frame(maxWidth: .infinity, alignment: .leading)
                 }.buttonStyle(.plain)
                 Button { openSettings() } label: { Label("Impostazioni", systemImage: "gearshape") }.buttonStyle(.plain)
-            }.padding(16)
+            }.padding(TramaSpacing.related)
         }
     }
 
@@ -100,7 +100,7 @@ struct WorkspaceView: View {
             Image(systemName: "point.3.connected.trianglepath.dotted")
                 .font(.system(size: 58, weight: .light)).foregroundStyle(.tint)
                 .accessibilityHidden(true)
-            VStack(spacing: 8) {
+            VStack(spacing: TramaSpacing.compact) {
                 Text("Trama").font(.system(size: 38, weight: .semibold))
                 Text("Su cosa vuoi lavorare?").font(.title3).foregroundStyle(.secondary)
             }
@@ -149,7 +149,7 @@ struct WorkspaceView: View {
     private var composer: some View {
         VStack(alignment: .leading, spacing: 10) {
             ViewThatFits(in: .horizontal) {
-                HStack { composerContext; Spacer(); composerState }
+                HStack { composerContext; Spacer(); composerState.fixedSize(horizontal: true, vertical: false) }
                 VStack(alignment: .leading, spacing: TramaSpacing.compact) {
                     composerContext
                     composerState
@@ -165,11 +165,12 @@ struct WorkspaceView: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
             }
-            HStack(alignment: .bottom, spacing: 12) {
+            Text("Richiesta a Codex").font(.caption.weight(.medium)).foregroundStyle(.secondary)
+            HStack(alignment: .bottom, spacing: TramaSpacing.related) {
                 TextField("Cosa vuoi capire o modificare?", text: $store.composer, axis: .vertical)
                     .textFieldStyle(.plain).lineLimit(1...4).font(.body)
                     .onSubmit { store.submitRequest() }
-                    .accessibilityLabel("Richiesta per il modulo selezionato")
+                    .accessibilityLabel("Richiesta a Codex per il modulo selezionato")
                 if store.isPlanning {
                     Button("Interrompi", systemImage: "stop.fill") { store.stopPlanning() }.labelStyle(.iconOnly)
                 } else {
@@ -180,7 +181,7 @@ struct WorkspaceView: View {
                 }
             }
         }
-        .padding(18)
+        .padding(TramaSpacing.section)
         .background(.bar)
     }
 

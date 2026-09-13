@@ -32,12 +32,35 @@ struct TramaApp: App {
                 .environmentObject(store)
                 .environmentObject(store.backgroundMonitor)
                 .preferredColorScheme(selectedColorScheme)
-                .frame(width: 590, height: 660)
+                .frame(minWidth: 520, idealWidth: 590, minHeight: 520, idealHeight: 660)
+                .background(TramaWindowTitle("Impostazioni di Trama"))
         }
     }
 
     private var selectedColorScheme: ColorScheme? {
         appearance == "dark" ? .dark : appearance == "light" ? .light : nil
+    }
+}
+
+private struct TramaWindowTitle: NSViewRepresentable {
+    let title: String
+
+    init(_ title: String) {
+        self.title = title
+    }
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        updateTitle(for: view)
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        updateTitle(for: nsView)
+    }
+
+    private func updateTitle(for view: NSView) {
+        DispatchQueue.main.async { view.window?.title = title }
     }
 }
 

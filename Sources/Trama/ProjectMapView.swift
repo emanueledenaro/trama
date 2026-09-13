@@ -19,20 +19,20 @@ struct ProjectMapView: View {
                     if !store.query.isEmpty { Button("Cancella", systemImage: "xmark.circle.fill") { store.query = "" }.labelStyle(.iconOnly).buttonStyle(.plain) }
                 }
                 Text("\(store.project?.totalFileCount ?? 0) file rilevati").font(.caption).foregroundStyle(.secondary)
-            }.padding(TramaSpacing.control).background(.quaternary, in: RoundedRectangle(cornerRadius: 8)).padding(.horizontal, TramaSpacing.content).padding(.bottom, TramaSpacing.related)
+            }.padding(TramaSpacing.control).background(.quaternary, in: RoundedRectangle(cornerRadius: TramaRadius.control)).padding(.horizontal, TramaSpacing.content).padding(.bottom, TramaSpacing.related)
             if let request = store.selectedRequest, store.hasRemoteConflict(for: request) {
                 HStack {
                     Label("Il candidato entra in conflitto con una revisione del gruppo", systemImage: "exclamationmark.triangle").foregroundStyle(.orange)
                     Spacer()
                     Button("Esamina") { store.section = .team }
-                }.font(.callout).padding(.horizontal, 22).padding(.bottom, 12)
+                }.font(.callout).padding(.horizontal, TramaSpacing.content).padding(.bottom, TramaSpacing.related)
             }
             if store.intelligence.attentionCount > 0 {
                 HStack {
                     Label("\(store.intelligence.attentionCount) novità del gruppo da valutare", systemImage: "exclamationmark.triangle").foregroundStyle(.orange)
                     Spacer()
                     Button("Esamina") { store.section = .team }
-                }.font(.callout).padding(.horizontal, 22).padding(.bottom, 12)
+                }.font(.callout).padding(.horizontal, TramaSpacing.content).padding(.bottom, TramaSpacing.related)
             }
             Divider()
             if store.filteredModules.isEmpty {
@@ -52,13 +52,23 @@ struct ProjectMapView: View {
             } else {
                 graph
             }
-            HStack {
-                Label("Struttura rilevata dai file", systemImage: "doc.text.magnifyingglass")
-                Spacer()
-                if let date = store.project?.scannedAt { Text("Aggiornata \(date, style: .time)") }
-            }.font(.caption).foregroundStyle(.secondary).padding(.horizontal, 20).padding(.vertical, 10)
+            ViewThatFits(in: .horizontal) {
+                HStack {
+                    Label("Struttura rilevata dai file", systemImage: "doc.text.magnifyingglass")
+                    Spacer()
+                    if let date = store.project?.scannedAt { Text("Aggiornata \(date, style: .time)").fixedSize(horizontal: true, vertical: false) }
+                }
+                VStack(alignment: .leading, spacing: TramaSpacing.compact) {
+                    Label("Struttura rilevata dai file", systemImage: "doc.text.magnifyingglass")
+                    if let date = store.project?.scannedAt { Text("Aggiornata \(date, style: .time)") }
+                }
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, TramaSpacing.content)
+            .padding(.vertical, TramaSpacing.control)
             if let warning = store.project?.warnings.first {
-                Label(warning, systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(.orange).padding(.horizontal, 20).padding(.bottom, 10)
+                Label(warning, systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(.orange).padding(.horizontal, TramaSpacing.content).padding(.bottom, TramaSpacing.control)
             }
         }
     }
@@ -72,16 +82,16 @@ struct ProjectMapView: View {
                 let gap: CGFloat = 28
                 let width = geometry.size.width
                 VStack(spacing: 0) {
-                    HStack(spacing: 14) {
+                    HStack(spacing: TramaSpacing.related) {
                         Image(systemName: "shippingbox.fill").font(.system(size: 28)).foregroundStyle(.tint)
                         VStack(alignment: .leading, spacing: 5) {
                             Text(store.project?.isDemo == true ? "Negozio di esempio" : store.project?.name ?? "Progetto").font(.headline)
                             Text("\(modules.count) moduli · \(store.project?.totalFileCount ?? 0) file").font(.caption).foregroundStyle(.secondary)
                         }
                     }
-                    .padding(20).frame(maxWidth: min(286, max(0, width - 44)))
-                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
-                    .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(.quaternary))
+                    .padding(TramaSpacing.section).frame(maxWidth: min(286, max(0, width - 44)))
+                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: TramaRadius.card))
+                    .overlay(RoundedRectangle(cornerRadius: TramaRadius.card).strokeBorder(.quaternary))
                     .padding(.top, 36)
                     Canvas { context, size in
                         var path = Path()
@@ -121,19 +131,20 @@ private struct ModuleNode: View {
             VStack(alignment: .leading, spacing: 15) {
                 HStack(spacing: 11) {
                     Image(systemName: module.symbol).font(.system(size: 22)).foregroundStyle(.tint)
-                        .frame(width: 42, height: 42).background(Color.accentColor.opacity(0.10), in: RoundedRectangle(cornerRadius: 10))
+                        .frame(width: 42, height: 42).background(Color.accentColor.opacity(0.10), in: RoundedRectangle(cornerRadius: TramaRadius.control))
                     Text(module.name).font(.headline).lineLimit(1)
                 }
-                Text(module.relativePath).font(.system(.caption, design: .monospaced)).foregroundStyle(.secondary).lineLimit(2)
+                Text(module.relativePath == "." ? "Radice del progetto" : module.relativePath)
+                    .font(.system(.caption, design: .monospaced)).foregroundStyle(.secondary).lineLimit(2)
                 HStack {
                     Label("\(module.files.count) file", systemImage: "doc.text")
                     Spacer()
                     if !module.dependencies.isEmpty { Label("\(module.dependencies.count)", systemImage: "link") }
                 }.font(.caption).foregroundStyle(.secondary)
             }
-            .padding(16).frame(width: 208, height: 154, alignment: .topLeading)
-            .background(selected ? Color.accentColor.opacity(0.07) : Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 13))
-            .overlay(RoundedRectangle(cornerRadius: 13).strokeBorder(selected ? Color.accentColor : Color.secondary.opacity(0.19), lineWidth: selected ? 1.8 : 1))
+            .padding(TramaSpacing.related).frame(width: 208, height: 154, alignment: .topLeading)
+            .background(selected ? Color.accentColor.opacity(0.07) : Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: TramaRadius.card))
+            .overlay(RoundedRectangle(cornerRadius: TramaRadius.card).strokeBorder(selected ? Color.accentColor : Color.secondary.opacity(0.19), lineWidth: selected ? 2 : 1))
         }.buttonStyle(.plain)
         .accessibilityLabel("Modulo \(module.name), \(module.files.count) file")
         .accessibilityAddTraits(selected ? [.isSelected] : [])
