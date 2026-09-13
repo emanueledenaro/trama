@@ -245,11 +245,11 @@ final class ProjectStore: ObservableObject {
             if previousPath != snapshot.rootPath {
                 document = loadDocument(snapshot)
                 selectedModel = document.selectedModel ?? ""
-                reconcileModelSelection()
                 selectedRequestID = document.lastSelectedRequestID ?? document.requests.first?.id
                 if document.lastContextWasProject == true { selectedModuleID = nil }
                 else { selectedModuleID = snapshot.modules.first(where: { $0.id == document.lastSelectedModuleID })?.id ?? snapshot.modules.first(where: { $0.name.lowercased().contains("ordin") || $0.name.lowercased().contains("order") })?.id ?? snapshot.modules.first?.id }
                 section = WorkspaceSection(rawValue: document.lastSection ?? "") ?? .map
+                reconcileModelSelection()
                 Task {
                     guard token == self.loadToken, self.localRoot == root else { return }
                     await self.team.setProject(root, isDemo: isDemo)
@@ -605,8 +605,10 @@ final class ProjectStore: ObservableObject {
         guard project != nil else { return }
         if let saved = document.selectedModel, !saved.isEmpty {
             selectedModel = saved
-            if !models.isEmpty, !models.contains(where: { $0.model == saved }) {
-                modelsError = "Il modello salvato \(saved) non è più disponibile. Scegline un altro per continuare."
+            if !models.isEmpty {
+                modelsError = models.contains(where: { $0.model == saved })
+                    ? nil
+                    : "Il modello salvato \(saved) non è più disponibile. Scegline un altro per continuare."
             }
             return
         }

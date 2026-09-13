@@ -21,6 +21,7 @@ public struct ChangeContext: Codable, Equatable, Sendable {
     public let changedFiles: [GitHubChangedFile]
     public let title: String?
     public let author: String?
+    public let model: String
 
     public init(
         repository: String,
@@ -31,7 +32,8 @@ public struct ChangeContext: Codable, Equatable, Sendable {
         decisions: [PactDecision],
         changedFiles: [GitHubChangedFile],
         title: String? = nil,
-        author: String? = nil
+        author: String? = nil,
+        model: String = "gpt-5.6-terra"
     ) {
         self.repository = repository
         self.localSnapshotID = localSnapshotID
@@ -42,6 +44,7 @@ public struct ChangeContext: Codable, Equatable, Sendable {
         self.changedFiles = changedFiles
         self.title = title
         self.author = author
+        self.model = model
     }
 }
 

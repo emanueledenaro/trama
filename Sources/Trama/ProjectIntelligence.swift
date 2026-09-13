@@ -171,7 +171,8 @@ final class ProjectIntelligence: ObservableObject {
                     decisions: initialContext.decisions,
                     changedFiles: files,
                     title: candidate.title,
-                    author: candidate.author
+                    author: candidate.author,
+                    model: initialContext.model
                 )
                 let cache = try cacheURL(input)
                 let result: ImpactAssessment

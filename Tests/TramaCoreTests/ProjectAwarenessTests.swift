@@ -30,6 +30,29 @@ final class ProjectAwarenessTests: XCTestCase {
         XCTAssertTrue(assessment.id.hasPrefix("impact-"))
     }
 
+    func testModelParticipatesInTheAssessmentIdentity() async throws {
+        func analyze(_ model: String) async throws -> ImpactAssessment {
+            try await ProjectAwareness.analyze(context: makeContext(model: model)) { prompt in
+                Self.response(
+                    contextID: try Self.contextID(in: prompt),
+                    status: "related",
+                    summary: "La modifica riguarda il lavoro corrente.",
+                    modules: ["editor"],
+                    evidence: [[
+                        "file": "Sources/Editor/CancelAction.swift",
+                        "detail": "La firma cambia."
+                    ]],
+                    suggestedAction: "Esaminare il candidato."
+                )
+            }
+        }
+
+        let luna = try await analyze("gpt-5.6-luna")
+        let terra = try await analyze("gpt-5.6-terra")
+
+        XCTAssertNotEqual(luna.id, terra.id)
+    }
+
     func testPossibleIncompatibilityRemainsAHypothesis() async throws {
         let assessment = try await ProjectAwareness.analyze(context: makeContext()) { prompt in
             Self.response(
@@ -310,7 +333,7 @@ final class ProjectAwarenessTests: XCTestCase {
         }
     }
 
-    private func makeContext() -> ChangeContext {
+    private func makeContext(model: String = "gpt-5.6-terra") -> ChangeContext {
         ChangeContext(
             repository: "acme/editor",
             localSnapshotID: "snapshot-local-42",
@@ -348,7 +371,8 @@ final class ProjectAwarenessTests: XCTestCase {
                 )
             ],
             title: "Preserve drafts on cancel",
-            author: "ada"
+            author: "ada",
+            model: model
         )
     }
 
