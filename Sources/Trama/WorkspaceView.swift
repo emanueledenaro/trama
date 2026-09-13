@@ -46,7 +46,9 @@ struct WorkspaceView: View {
             .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
                 if store.showConnections || !store.codexConnected { Task { await store.connectCodex() } }
             }
-            .sheet(isPresented: $store.showConnections) { ConnectionsView().frame(width: 570, height: 440) }
+            .sheet(isPresented: $store.showConnections) {
+                ConnectionsView().frame(minWidth: 480, idealWidth: 570, minHeight: 380, idealHeight: 520)
+            }
             .sheet(item: Binding(get: { compactInspector && store.showInspector && store.section == .map ? nil : store.filePreview }, set: { store.filePreview = $0 })) { preview in FilePreviewView(preview: preview) }
             .sheet(isPresented: $showingNewProject) { NewProjectView() }
             .alert("Trama", isPresented: Binding(get: { store.errorMessage != nil }, set: { if !$0 { store.errorMessage = nil } })) {
@@ -146,7 +148,44 @@ struct WorkspaceView: View {
 
     private var composer: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack {
+            ViewThatFits(in: .horizontal) {
+                HStack { composerContext; Spacer(); composerState }
+                VStack(alignment: .leading, spacing: TramaSpacing.compact) {
+                    composerContext
+                    composerState
+                }
+            }
+            if let error = store.modelsError {
+                Label(error, systemImage: "exclamationmark.triangle")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+            } else if let model = store.selectedModelInfo {
+                Text(model.description)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
+            HStack(alignment: .bottom, spacing: 12) {
+                TextField("Cosa vuoi capire o modificare?", text: $store.composer, axis: .vertical)
+                    .textFieldStyle(.plain).lineLimit(1...4).font(.body)
+                    .onSubmit { store.submitRequest() }
+                    .accessibilityLabel("Richiesta per il modulo selezionato")
+                if store.isPlanning {
+                    Button("Interrompi", systemImage: "stop.fill") { store.stopPlanning() }.labelStyle(.iconOnly)
+                } else {
+                    Button { store.submitRequest() } label: { Image(systemName: "arrow.up").fontWeight(.semibold) }
+                        .buttonStyle(.borderedProminent).buttonBorderShape(.circle)
+                        .disabled(store.composer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || (store.codexConnected && store.selectedModelInfo == nil))
+                        .help("Pianifica con Codex").accessibilityLabel("Pianifica con Codex")
+                }
+            }
+        }
+        .padding(18)
+        .background(.bar)
+    }
+
+    private var composerContext: some View {
+        HStack(spacing: TramaSpacing.control) {
                 Menu {
                     Button("Intero progetto") { store.selectedModuleID = nil }
                     ForEach(store.project?.modules ?? []) { module in
@@ -182,37 +221,19 @@ struct WorkspaceView: View {
                 .disabled(store.isPlanning || store.isExecuting || store.models.isEmpty)
                 .help(store.selectedModelInfo?.description ?? store.modelsError ?? "Catalogo modelli di Codex")
                 .accessibilityLabel("Modello OpenAI: \(store.selectedModelDisplayName)")
-                Spacer()
-                if store.isPlanning { ProgressView().controlSize(.small); Text(store.isExecuting ? "Codex sta lavorando nel worktree" : (store.selectedRequest?.state == "Verifiche in corso" ? "Verifiche in corso" : "Codex sta analizzando la richiesta")).font(.caption).foregroundStyle(.secondary) }
-                else { Text("Pianificazione in sola lettura").font(.caption).foregroundStyle(.secondary) }
-            }
-            if let error = store.modelsError {
-                Label(error, systemImage: "exclamationmark.triangle")
-                    .font(.caption)
-                    .foregroundStyle(.orange)
-            } else if let model = store.selectedModelInfo {
-                Text(model.description)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
-            }
-            HStack(alignment: .bottom, spacing: 12) {
-                TextField("Cosa vuoi capire o modificare?", text: $store.composer, axis: .vertical)
-                    .textFieldStyle(.plain).lineLimit(1...4).font(.body)
-                    .onSubmit { store.submitRequest() }
-                    .accessibilityLabel("Richiesta per il modulo selezionato")
-                if store.isPlanning {
-                    Button("Interrompi", systemImage: "stop.fill") { store.stopPlanning() }.labelStyle(.iconOnly)
-                } else {
-                    Button { store.submitRequest() } label: { Image(systemName: "arrow.up").fontWeight(.semibold) }
-                        .buttonStyle(.borderedProminent).buttonBorderShape(.circle)
-                        .disabled(store.composer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || (store.codexConnected && store.selectedModelInfo == nil))
-                        .help("Pianifica con Codex").accessibilityLabel("Pianifica con Codex")
-                }
-            }
         }
-        .padding(18)
-        .background(.bar)
+    }
+
+    @ViewBuilder
+    private var composerState: some View {
+        if store.isPlanning {
+            HStack(spacing: TramaSpacing.compact) {
+                ProgressView().controlSize(.small)
+                Text(store.isExecuting ? "Codex sta lavorando nel worktree" : (store.selectedRequest?.state == "Verifiche in corso" ? "Verifiche in corso" : "Codex sta analizzando la richiesta"))
+            }.font(.caption).foregroundStyle(.secondary)
+        } else {
+            Text("Pianificazione in sola lettura").font(.caption).foregroundStyle(.secondary)
+        }
     }
 
     @ToolbarContentBuilder

@@ -85,20 +85,31 @@ private struct CreateIssueView: View {
     @State private var requestID = UUID().uuidString
     private let api = GitHubIssues()
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            Text("Nuova issue").font(.title2.weight(.semibold))
-            Text(repository).foregroundStyle(.secondary)
-            TextField("Titolo", text: $title).textFieldStyle(.roundedBorder)
-            TextEditor(text: $bodyText).font(.body).frame(minHeight: 220).border(.quaternary)
-            if let error { Text(error).font(.caption).foregroundStyle(.orange) }
+        VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: TramaSpacing.compact) {
+                Text("Nuova issue").font(.title2.weight(.semibold))
+                Text(repository).foregroundStyle(.secondary)
+            }.padding(TramaSpacing.content)
+            Divider()
+            VStack(alignment: .leading, spacing: TramaSpacing.related) {
+                TextField("Titolo", text: $title).textFieldStyle(.roundedBorder)
+                TextEditor(text: $bodyText).font(.body).frame(minHeight: 140, maxHeight: .infinity).border(.quaternary)
+                if let error {
+                    ScrollView { Text(error).font(.caption).foregroundStyle(.orange).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading) }
+                        .frame(maxHeight: 72)
+                }
+            }.padding(TramaSpacing.content)
+            Divider()
             HStack {
                 Button("Annulla") { dismiss() }.disabled(publishing)
                 Spacer()
                 if publishing { ProgressView().controlSize(.small) }
                 Button(attempted ? "Verifica e riprova" : "Pubblica issue") { publish() }
                     .buttonStyle(.borderedProminent).disabled(publishing || title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-            }
-        }.padding(28).frame(width: 590).interactiveDismissDisabled(publishing)
+            }.padding(TramaSpacing.content)
+        }
+        .frame(minWidth: 480, idealWidth: 590, minHeight: 420, idealHeight: 560)
+        .interactiveDismissDisabled(publishing)
     }
     private func publish() {
         publishing = true; error = nil
@@ -128,26 +139,37 @@ struct PublishPullRequestView: View {
     @State private var error: String?
     @State private var publishedURL: URL?
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            Text("Pubblica una pull request").font(.title2.weight(.semibold))
-            Text("La pubblicazione usa il candidato revisionato. Il checkout originale e il worktree vengono conservati.").font(.callout).foregroundStyle(.secondary)
-            Text("Destinazione: " + store.team.sourceRepository).font(.callout)
-            Text("Branch da pubblicare: " + (request.session?.branch ?? "non disponibile")).font(.system(.caption, design: .monospaced))
-            DisclosureGroup("Diff del candidato") {
-                ScrollView { Text(request.review?.diff ?? "").font(.system(.caption, design: .monospaced)).textSelection(.enabled) }.frame(height: 140)
-            }
-            TextField("Titolo", text: $title).textFieldStyle(.roundedBorder).disabled(busy)
-            TextField("Branch di destinazione", text: $base).textFieldStyle(.roundedBorder).disabled(busy)
-            TextEditor(text: $bodyText).font(.callout).frame(height: 210).border(.quaternary).disabled(busy)
-            if let error { Text(error).font(.caption).foregroundStyle(.orange).textSelection(.enabled) }
-            if let publishedURL { Link("Apri la pull request", destination: publishedURL) }
+        VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: TramaSpacing.compact) {
+                Text("Pubblica una pull request").font(.title2.weight(.semibold))
+                Text("La pubblicazione usa il candidato revisionato. Il checkout originale e il worktree vengono conservati.").font(.callout).foregroundStyle(.secondary)
+            }.padding(TramaSpacing.content)
+            Divider()
+            VStack(alignment: .leading, spacing: TramaSpacing.control) {
+                Text("Destinazione: " + store.team.sourceRepository).font(.callout)
+                Text("Branch da pubblicare: " + (request.session?.branch ?? "non disponibile")).font(.system(.caption, design: .monospaced)).textSelection(.enabled)
+                DisclosureGroup("Diff del candidato") {
+                    ReviewOutput(text: request.review?.diff ?? "").frame(height: 120).padding(.top, TramaSpacing.compact)
+                }
+                TextField("Titolo", text: $title).textFieldStyle(.roundedBorder).disabled(busy)
+                TextField("Branch di destinazione", text: $base).textFieldStyle(.roundedBorder).disabled(busy)
+                TextEditor(text: $bodyText).font(.callout).frame(minHeight: 96, maxHeight: .infinity).border(.quaternary).disabled(busy)
+                if let error {
+                    ScrollView { Text(error).font(.caption).foregroundStyle(.orange).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading) }
+                        .frame(maxHeight: 72)
+                }
+                if let publishedURL { Link("Apri la pull request", destination: publishedURL) }
+            }.padding(TramaSpacing.content)
+            Divider()
             HStack {
                 Button(publishedURL == nil ? "Annulla" : "Fine") { dismiss() }.disabled(busy)
                 Spacer()
                 if busy { ProgressView().controlSize(.small) }
                 Button("Pubblica su GitHub") { publish() }.buttonStyle(.borderedProminent).disabled(busy || publishedURL != nil || title.isEmpty || base.isEmpty)
-            }
-        }.padding(28).frame(width: 660).interactiveDismissDisabled(busy)
+            }.padding(TramaSpacing.content)
+        }
+        .frame(minWidth: 500, idealWidth: 660, minHeight: 440, idealHeight: 620)
+        .interactiveDismissDisabled(busy)
         .onAppear {
             title = request.title
             base = store.team.snapshot?.defaultBranch ?? "main"

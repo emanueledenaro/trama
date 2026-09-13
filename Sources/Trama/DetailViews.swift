@@ -179,41 +179,67 @@ struct ConnectionsView: View {
     @EnvironmentObject private var store: ProjectStore
     @Environment(\.dismiss) private var dismiss
     var body: some View {
-        VStack(alignment: .leading, spacing: 22) {
-            HStack { Text("Collegamenti").font(.title2.weight(.semibold)); Spacer(); Button("Fine") { dismiss() }.keyboardShortcut(.cancelAction) }
-            Text("Trama usa il componente ufficiale Codex e l’accesso ChatGPT disponibile sul Mac.").foregroundStyle(.secondary)
-            GroupBox {
-                HStack(alignment: .top, spacing: 14) {
-                    Image(systemName: "sparkle").font(.title).foregroundStyle(.tint)
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Codex di OpenAI").font(.headline)
-                        Text(store.accountLabel)
-                        Text(store.codexVersion).font(.caption2).foregroundStyle(.secondary)
-                        Text(store.connectionDetail).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
-                        HStack {
-                            Button("Verifica collegamento") { Task { await store.connectCodex() } }.disabled(store.isConnecting)
-                            if !store.codexConnected { Button("Accedi con ChatGPT") { Task { await store.signIn() } }.buttonStyle(.borderedProminent).disabled(store.isConnecting) }
-                            if store.isConnecting { ProgressView().controlSize(.small) }
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Text("Collegamenti").font(.title2.weight(.semibold))
+                Spacer()
+                Button("Fine") { dismiss() }.keyboardShortcut(.cancelAction)
+            }.padding(TramaSpacing.content)
+            Divider()
+            ScrollView {
+                VStack(alignment: .leading, spacing: TramaSpacing.section) {
+                    Text("Trama usa il componente ufficiale Codex e l’accesso ChatGPT disponibile sul Mac.").foregroundStyle(.secondary)
+                    GroupBox {
+                        HStack(alignment: .top, spacing: 14) {
+                            Image(systemName: "sparkle").font(.title).foregroundStyle(.tint)
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("Codex di OpenAI").font(.headline)
+                                Text(store.accountLabel)
+                                Text(store.codexVersion).font(.caption2).foregroundStyle(.secondary)
+                                Text(store.connectionDetail).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+                                TramaAdaptiveActions {
+                                    Button("Verifica collegamento") { Task { await store.connectCodex() } }.disabled(store.isConnecting)
+                                    if !store.codexConnected { Button("Accedi con ChatGPT") { Task { await store.signIn() } }.buttonStyle(.borderedProminent).disabled(store.isConnecting) }
+                                    if store.isConnecting { ProgressView().controlSize(.small) }
+                                }
+                            }
+                            Spacer(minLength: 0)
                         }
+                        .padding(TramaSpacing.related)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     }
-                    Spacer()
-                }.padding(12).frame(maxWidth: .infinity, alignment: .leading)
-            }
-            VStack(alignment: .leading, spacing: 10) {
-                Label("GitHub è consigliato per seguire PR e lavoro del gruppo.", systemImage: "arrow.triangle.branch").font(.callout).foregroundStyle(.secondary)
-                ForEach(store.connectedApps.filter { $0.name.localizedCaseInsensitiveContains("github") }.prefix(2)) { app in
-                    HStack {
-                        Text(app.name).font(.headline)
-                        Spacer()
-                        Text(app.isCallable ? "Disponibile in Codex" : app.isInstalled ? "Installato" : "Da collegare").font(.caption).foregroundStyle(.secondary)
-                        if !app.isCallable, let url = app.installURL, url.scheme == "https" { Link("Collega", destination: url) }
+                    VStack(alignment: .leading, spacing: TramaSpacing.control) {
+                        Label("GitHub è consigliato per seguire PR e lavoro del gruppo.", systemImage: "arrow.triangle.branch").font(.callout).foregroundStyle(.secondary)
+                        ForEach(store.connectedApps.filter { $0.name.localizedCaseInsensitiveContains("github") }.prefix(2)) { app in
+                            ViewThatFits(in: .horizontal) {
+                                HStack {
+                                    Text(app.name).font(.headline)
+                                    Spacer()
+                                    connectionState(app)
+                                }
+                                VStack(alignment: .leading, spacing: TramaSpacing.compact) {
+                                    Text(app.name).font(.headline)
+                                    connectionState(app)
+                                }
+                            }
+                        }
+                        if let error = store.appsError { Text(error).font(.caption).foregroundStyle(.orange).textSelection(.enabled) }
                     }
                 }
-                if let error = store.appsError { Text(error).font(.caption).foregroundStyle(.orange) }
+                .padding(TramaSpacing.content)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            Spacer(minLength: 0)
-            Text("L’accesso avviene nel browser ufficiale. Trama non copia le credenziali.").font(.caption).foregroundStyle(.secondary)
-        }.padding(26).task { await store.connectCodex() }
+            Divider()
+            Text("L’accesso avviene nel browser ufficiale. Trama non copia le credenziali.")
+                .font(.caption).foregroundStyle(.secondary).padding(TramaSpacing.content)
+        }.task { await store.connectCodex() }
+    }
+
+    private func connectionState(_ app: CodexClient.App) -> some View {
+        HStack(spacing: TramaSpacing.control) {
+            Text(app.isCallable ? "Disponibile in Codex" : app.isInstalled ? "Installato" : "Da collegare").font(.caption).foregroundStyle(.secondary)
+            if !app.isCallable, let url = app.installURL, url.scheme == "https" { Link("Collega", destination: url) }
+        }
     }
 }
 

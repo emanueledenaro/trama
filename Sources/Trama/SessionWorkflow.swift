@@ -491,13 +491,19 @@ struct ApprovalView: View {
                 Label("Codex richiede un’autorizzazione", systemImage: "hand.raised").font(.title2.weight(.semibold))
                 Text(approval.title).font(.headline)
                 ScrollView { Text(approval.detail).font(.system(.callout, design: .monospaced)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading) }.frame(maxHeight: 280)
-                HStack {
-                    Button("Rifiuta") { store.resolveApproval(.decline) }.keyboardShortcut(.cancelAction)
-                    Spacer()
-                    Button("Consenti questa operazione") { store.resolveApproval(.allowOnce) }.buttonStyle(.borderedProminent)
+                ViewThatFits(in: .horizontal) {
+                    HStack {
+                        Button("Rifiuta") { store.resolveApproval(.decline) }.keyboardShortcut(.cancelAction)
+                        Spacer()
+                        Button("Consenti questa operazione") { store.resolveApproval(.allowOnce) }.buttonStyle(.borderedProminent)
+                    }
+                    VStack(alignment: .leading, spacing: TramaSpacing.control) {
+                        Button("Consenti questa operazione") { store.resolveApproval(.allowOnce) }.buttonStyle(.borderedProminent)
+                        Button("Rifiuta") { store.resolveApproval(.decline) }.keyboardShortcut(.cancelAction)
+                    }
                 }
             }
-        }.padding(28).frame(width: 620)
+        }.padding(TramaSpacing.content).frame(maxWidth: 620, alignment: .leading)
     }
 }
 
@@ -527,14 +533,7 @@ struct SessionReviewView: View {
                     Text("\(review.changedFiles.count - setupCount) file del progetto nel candidato").font(.headline)
                     if setupCount > 0 { Text("Il diff include anche \(setupCount) file di configurazione del metodo AI Hero.").font(.caption).foregroundStyle(.secondary) }
                     DisclosureGroup("Mostra diff") { ReviewOutput(text: review.diff.isEmpty ? "Nessuna modifica al codice." : review.diff).frame(height: 220).padding(.top, 8) }
-                    HStack {
-                        Button("Esegui swift test") { store.runChecks(request.id) }.disabled(store.isPlanning)
-                        if ["Verifiche fallite", "Verifiche interrotte", "Errore di esecuzione"].contains(request.state) {
-                            Button("Correggi nello stesso worktree") { store.startExecution(request.id) }
-                                .disabled(store.isPlanning || !store.codexConnected)
-                        }
-                        Button("Registra revisione") { Task { await store.approveRequest(request.id) } }.disabled(!canApprove)
-                    }
+                    TramaAdaptiveActions { reviewActions }
                     if let check = request.check {
                         let current = !["Da rivalutare", "Verifiche in corso", "Verifiche interrotte", "Errore di esecuzione", "Interrotto"].contains(request.state)
                         Label(!current ? "Verifiche precedenti: da ripetere" : check.exitCode == 0 ? "Controlli superati" : "Controlli falliti", systemImage: current && check.exitCode == 0 ? "checkmark.circle" : "exclamationmark.circle").foregroundStyle(current && check.exitCode == 0 ? Color.green : Color.orange)
@@ -571,6 +570,16 @@ struct SessionReviewView: View {
             }
         }.sheet(isPresented: $showPublication) { PublishPullRequestView(request: request) }
     }
+
+    @ViewBuilder
+    private var reviewActions: some View {
+        Button("Esegui swift test") { store.runChecks(request.id) }.disabled(store.isPlanning)
+        if ["Verifiche fallite", "Verifiche interrotte", "Errore di esecuzione"].contains(request.state) {
+            Button("Correggi nello stesso worktree") { store.startExecution(request.id) }
+                .disabled(store.isPlanning || !store.codexConnected)
+        }
+        Button("Registra revisione") { Task { await store.approveRequest(request.id) } }.disabled(!canApprove)
+    }
     private var canApprove: Bool {
         guard !store.isPlanning, request.state == "Da revisionare", !store.hasRemoteConflict(for: request),
               let candidateID = request.candidateID else { return false }
@@ -578,7 +587,7 @@ struct SessionReviewView: View {
     }
 }
 
-private struct ReviewOutput: NSViewRepresentable {
+struct ReviewOutput: NSViewRepresentable {
     let text: String
 
     func makeNSView(context: Context) -> NSScrollView {

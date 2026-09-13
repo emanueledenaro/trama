@@ -167,12 +167,16 @@ struct TeamView: View {
             TramaScreenHeader("Il lavoro del gruppo", subtitle: "Segui ciò che viene condiviso su GitHub.") {
                 Toggle("Aggiornamento automatico", isOn: $team.monitoring).toggleStyle(.switch).controlSize(.small)
             }
-            HStack {
-                Image(systemName: "arrow.triangle.branch").foregroundStyle(.secondary)
-                TextField("proprietario/repository", text: $team.repository).textFieldStyle(.roundedBorder)
-                Button("Aggiorna") { Task { await team.refresh() } }.disabled(team.isLoading || team.repository.isEmpty)
-                if team.isLoading { ProgressView().controlSize(.small) }
-            }.padding(.horizontal, 24).padding(.bottom, 16)
+            TramaAdaptiveActions {
+                HStack {
+                    Image(systemName: "arrow.triangle.branch").foregroundStyle(.secondary)
+                    TextField("proprietario/repository", text: $team.repository).textFieldStyle(.roundedBorder)
+                }
+                HStack(spacing: TramaSpacing.control) {
+                    Button("Aggiorna") { Task { await team.refresh() } }.disabled(team.isLoading || team.repository.isEmpty)
+                    if team.isLoading { ProgressView().controlSize(.small) }
+                }
+            }.padding(.horizontal, TramaSpacing.content).padding(.bottom, TramaSpacing.section)
             if let error = team.error {
                 Label(error, systemImage: "exclamationmark.triangle").foregroundStyle(.orange).font(.callout).padding(.horizontal, 24).padding(.bottom, 12)
             }
@@ -187,16 +191,16 @@ struct TeamView: View {
                     if selectedTab == "Pull request" {
                         if snapshot.pullRequests.isEmpty { Text("Nessuna pull request aperta.").foregroundStyle(.secondary).padding(.vertical, 20) }
                         ForEach(snapshot.pullRequests, id: \.number) { pr in
-                            HStack(alignment: .top, spacing: 14) {
-                                Image(systemName: "arrow.triangle.pull").foregroundStyle(.green)
-                                VStack(alignment: .leading, spacing: 7) {
-                                    Text("#\(pr.number) \(pr.title)").font(.headline)
-                                    Text("\(pr.author) · \(pr.headRef) → \(pr.baseRef)").font(.caption).foregroundStyle(.secondary)
+                            ViewThatFits(in: .horizontal) {
+                                HStack(alignment: .top, spacing: 14) {
+                                    pullRequestDescription(pr)
+                                    Spacer(minLength: TramaSpacing.related)
+                                    pullRequestActions(pr)
                                 }
-                                Spacer()
-                                Button("Commit, review e check") { team.followActivity(pr: pr); showActivity = true }
-                                Button("Diff") { Task { await team.inspect(pr) } }
-                                Link("GitHub", destination: pr.url)
+                                VStack(alignment: .leading, spacing: TramaSpacing.related) {
+                                    pullRequestDescription(pr)
+                                    pullRequestActions(pr)
+                                }
                             }.padding(.vertical, 10)
                         }
                     } else if selectedTab == "Branch" {
@@ -270,5 +274,24 @@ struct TeamView: View {
         .sheet(isPresented: Binding(get: { team.comparison != nil }, set: { if !$0 { team.comparison = nil } })) {
             FilePreviewView(preview: FilePreview(path: "Confronto GitHub", content: team.comparison ?? ""))
         }
+    }
+
+    private func pullRequestDescription(_ pr: GitHubPullRequest) -> some View {
+        HStack(alignment: .top, spacing: 14) {
+            Image(systemName: "arrow.triangle.pull").foregroundStyle(.green)
+            VStack(alignment: .leading, spacing: 7) {
+                Text("#\(pr.number) \(pr.title)").font(.headline)
+                Text("\(pr.author) · \(pr.headRef) → \(pr.baseRef)").font(.caption).foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private func pullRequestActions(_ pr: GitHubPullRequest) -> some View {
+        HStack(spacing: TramaSpacing.control) {
+            Button("Attività") { team.followActivity(pr: pr); showActivity = true }
+                .help("Mostra commit, review e check")
+            Button("Diff") { Task { await team.inspect(pr) } }
+            Link("GitHub", destination: pr.url)
+        }.fixedSize(horizontal: true, vertical: false)
     }
 }
