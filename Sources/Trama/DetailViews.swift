@@ -107,9 +107,19 @@ struct RequestsView: View {
                             if request.state == "Decisione richiesta" {
                                 PlanQuestionsView(request: request)
                             } else if request.plan.isEmpty {
-                                Text("Il piano apparirà qui dopo l’analisi di Codex.").foregroundStyle(.secondary)
+                                Text("La risposta apparirà qui dopo l’analisi di Codex.").foregroundStyle(.secondary)
                             } else {
                                 Text(request.plan).font(.body).lineSpacing(5).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                            if request.state == "Richiesta da chiarire" {
+                                RequestClarificationView(request: request).id(request.id)
+                            }
+                            if request.proposal == nil, let references = request.replyReferences, !references.isEmpty {
+                                DisclosureGroup("Fonti consultate") {
+                                    ForEach(references, id: \.self) { path in
+                                        Button(path) { store.openReference(path) }.buttonStyle(.plain)
+                                    }
+                                }
                             }
                             if let detail = request.failureDetail {
                                 DisclosureGroup("Dettagli dell’errore") { Text(detail).font(.system(.caption, design: .monospaced)).textSelection(.enabled) }

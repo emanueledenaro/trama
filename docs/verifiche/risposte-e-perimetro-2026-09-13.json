@@ -1,0 +1,38 @@
+{
+  "date": "2026-09-13",
+  "greeting": {
+    "requestID": "9FB0EE21-E3CB-4925-BADD-98EAA58A1537",
+    "replyKind": "clarification",
+    "state": "Richiesta da chiarire",
+    "hasProposal": false,
+    "hasSession": false,
+    "pactHash": "848b7b36da23134a6cf7bf573f64759f9d30b13fa3b1389d4d215371e56c6c7d"
+  },
+  "explanationAfterAnswer": {
+    "requestID": "9FB0EE21-E3CB-4925-BADD-98EAA58A1537",
+    "replyKind": "explanation",
+    "state": "Risposta disponibile",
+    "hasProposal": false,
+    "hasSession": false,
+    "references": [
+      "Sources/Orders/CancelPaidOrder.swift",
+      "Sources/Orders/Order.swift",
+      "Sources/Payments/Payment.swift",
+      "Tests/OrdersTests/CancelPaidOrderTests.swift"
+    ],
+    "pactHash": "848b7b36da23134a6cf7bf573f64759f9d30b13fa3b1389d4d215371e56c6c7d",
+    "originalGreetingPreserved": true
+  },
+  "pactUnchanged": true,
+  "scopeUI": {
+    "requestModule": "Sources/Orders",
+    "proposedModuleIDs": [
+      "project"
+    ],
+    "wholeProjectToggleVisible": true,
+    "emptyScopeDisablesExecution": true,
+    "ordersOnlyReenablesConfirmation": true,
+    "confirmationCancelled": true
+  },
+  "note": "La prova del perimetro termina prima dell’esecuzione; non dichiara verificato un nuovo worktree."
+}
