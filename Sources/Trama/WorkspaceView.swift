@@ -138,7 +138,7 @@ struct WorkspaceView: View {
                 } label: { Label(store.selectedModule?.name ?? "Intero progetto", systemImage: "scope") }
                 .menuStyle(.borderlessButton).fixedSize().font(.caption)
                 Spacer()
-                if store.isPlanning { ProgressView().controlSize(.small); Text(store.isExecuting ? "Codex sta lavorando nel worktree" : (store.selectedRequest?.state == "Verifiche in corso" ? "Verifiche in corso" : "Codex sta preparando il piano")).font(.caption).foregroundStyle(.secondary) }
+                if store.isPlanning { ProgressView().controlSize(.small); Text(store.isExecuting ? "Codex sta lavorando nel worktree" : (store.selectedRequest?.state == "Verifiche in corso" ? "Verifiche in corso" : "Codex sta analizzando la richiesta")).font(.caption).foregroundStyle(.secondary) }
                 else { Text("Pianificazione in sola lettura").font(.caption).foregroundStyle(.secondary) }
             }
             HStack(alignment: .bottom, spacing: 12) {
