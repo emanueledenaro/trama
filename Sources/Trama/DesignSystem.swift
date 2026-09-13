@@ -20,16 +20,41 @@ struct TramaScreenHeader<Actions: View>: View {
     }
 
     var body: some View {
-        HStack(alignment: .top, spacing: TramaSpacing.section) {
-            VStack(alignment: .leading, spacing: TramaSpacing.compact) {
-                Text(title).font(.title2.weight(.semibold))
-                Text(subtitle).font(.callout).foregroundStyle(.secondary)
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .top, spacing: TramaSpacing.section) {
+                titleBlock
+                Spacer(minLength: TramaSpacing.related)
+                actions.fixedSize(horizontal: true, vertical: false)
             }
-            Spacer(minLength: TramaSpacing.related)
-            actions
+            VStack(alignment: .leading, spacing: TramaSpacing.related) {
+                titleBlock
+                actions
+            }
         }
         .padding(.horizontal, TramaSpacing.content)
         .padding(.vertical, TramaSpacing.section)
+    }
+
+    private var titleBlock: some View {
+        VStack(alignment: .leading, spacing: TramaSpacing.compact) {
+            Text(title).font(.title2.weight(.semibold))
+            Text(subtitle).font(.callout).foregroundStyle(.secondary)
+        }
+    }
+}
+
+struct TramaAdaptiveActions<Content: View>: View {
+    @ViewBuilder let content: Content
+
+    init(@ViewBuilder content: () -> Content) {
+        self.content = content()
+    }
+
+    var body: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: TramaSpacing.control) { content }
+            VStack(alignment: .leading, spacing: TramaSpacing.control) { content }
+        }
     }
 }
 

@@ -12,11 +12,12 @@ struct ProjectMapView: View {
                     Text("Albero").tag("Albero")
                 }.pickerStyle(.segmented).labelsHidden().frame(width: 160)
             }
-            HStack {
-                Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-                TextField("Cerca moduli o file", text: $store.query).textFieldStyle(.plain)
-                if !store.query.isEmpty { Button("Cancella", systemImage: "xmark.circle.fill") { store.query = "" }.labelStyle(.iconOnly).buttonStyle(.plain) }
-                Spacer()
+            VStack(alignment: .leading, spacing: TramaSpacing.compact) {
+                HStack {
+                    Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+                    TextField("Cerca moduli o file", text: $store.query).textFieldStyle(.plain)
+                    if !store.query.isEmpty { Button("Cancella", systemImage: "xmark.circle.fill") { store.query = "" }.labelStyle(.iconOnly).buttonStyle(.plain) }
+                }
                 Text("\(store.project?.totalFileCount ?? 0) file rilevati").font(.caption).foregroundStyle(.secondary)
             }.padding(TramaSpacing.control).background(.quaternary, in: RoundedRectangle(cornerRadius: 8)).padding(.horizontal, TramaSpacing.content).padding(.bottom, TramaSpacing.related)
             if let request = store.selectedRequest, store.hasRemoteConflict(for: request) {
