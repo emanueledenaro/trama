@@ -6,37 +6,53 @@ struct WorkspaceView: View {
     @Environment(\.openSettings) private var openSettings
     @State private var columnVisibility = NavigationSplitViewVisibility.all
     @State private var showingNewProject = false
+    @State private var expandedColumnVisibility = NavigationSplitViewVisibility.all
 
     var body: some View {
-        NavigationSplitView(columnVisibility: $columnVisibility) {
-            sidebar
-                .navigationSplitViewColumnWidth(min: 180, ideal: 210, max: 270)
-        } detail: {
-            Group {
-                if store.project != nil { projectContent }
-                else { welcome }
-            }
-            .navigationTitle(store.project?.isDemo == true ? "Trama · Progetto di esempio" : store.project?.name ?? "Trama")
-            .toolbar { toolbar }
-            .inspector(isPresented: Binding(get: { store.showInspector && store.project != nil && store.section == .map }, set: { store.showInspector = $0 })) {
-                if store.project != nil {
-                    ModuleInspector().inspectorColumnWidth(min: 270, ideal: 320, max: 420)
+        GeometryReader { geometry in
+            let compactInspector = geometry.size.width < 1100
+            NavigationSplitView(columnVisibility: $columnVisibility) {
+                sidebar
+                    .navigationSplitViewColumnWidth(min: 180, ideal: 210, max: 270)
+            } detail: {
+                Group {
+                    if store.project != nil { projectContent }
+                    else { welcome }
+                }
+                .navigationTitle(store.project?.isDemo == true ? "Trama · Progetto di esempio" : store.project?.name ?? "Trama")
+                .toolbar { toolbar }
+                .inspector(isPresented: Binding(get: { !compactInspector && store.showInspector && store.project != nil && store.section == .map }, set: { store.showInspector = $0 })) {
+                    if store.project != nil {
+                        ModuleInspector().inspectorColumnWidth(min: 270, ideal: 320, max: 420)
+                    }
                 }
             }
+            .sheet(isPresented: Binding(get: { compactInspector && store.showInspector && store.project != nil && store.section == .map }, set: { store.showInspector = $0 })) {
+                VStack(spacing: 0) {
+                    HStack { Text("Dettagli del modulo").font(.headline); Spacer(); Button("Fine") { store.showInspector = false }.keyboardShortcut(.cancelAction) }.padding(16)
+                    ModuleInspector()
+                }.frame(width: 440, height: 540)
+                    .sheet(item: $store.filePreview) { preview in FilePreviewView(preview: preview) }
+            }
+            .onAppear { if compactInspector { store.showInspector = false } }
+            .onChange(of: geometry.size.width < 900, initial: true) { _, compact in
+                if compact { expandedColumnVisibility = columnVisibility; columnVisibility = .detailOnly }
+                else { columnVisibility = expandedColumnVisibility }
+            }
+            .onChange(of: store.section) { _, value in if value != .map { store.showInspector = false }; store.saveViewState() }
+            .onChange(of: store.selectedModuleID) { _, _ in store.saveViewState() }
+            .onChange(of: store.selectedRequestID) { _, _ in store.saveViewState() }
+            .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+                if store.showConnections || !store.codexConnected { Task { await store.connectCodex() } }
+            }
+            .sheet(isPresented: $store.showConnections) { ConnectionsView().frame(width: 570, height: 440) }
+            .sheet(item: Binding(get: { compactInspector && store.showInspector && store.section == .map ? nil : store.filePreview }, set: { store.filePreview = $0 })) { preview in FilePreviewView(preview: preview) }
+            .sheet(isPresented: $showingNewProject) { NewProjectView() }
+            .alert("Trama", isPresented: Binding(get: { store.errorMessage != nil }, set: { if !$0 { store.errorMessage = nil } })) {
+                if store.stateRecoveryNeeded { Button("Riprendi conservando il file originale") { store.recoverProjectState() } }
+                Button("Chiudi", role: .cancel) { store.errorMessage = nil }
+            } message: { Text(store.errorMessage ?? "") }
         }
-        .onChange(of: store.section) { _, value in if value != .map { store.showInspector = false }; store.saveViewState() }
-        .onChange(of: store.selectedModuleID) { _, _ in store.saveViewState() }
-        .onChange(of: store.selectedRequestID) { _, _ in store.saveViewState() }
-        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
-            if store.showConnections || !store.codexConnected { Task { await store.connectCodex() } }
-        }
-        .sheet(isPresented: $store.showConnections) { ConnectionsView().frame(width: 570, height: 440) }
-        .sheet(item: $store.filePreview) { preview in FilePreviewView(preview: preview) }
-        .sheet(isPresented: $showingNewProject) { NewProjectView() }
-        .alert("Trama", isPresented: Binding(get: { store.errorMessage != nil }, set: { if !$0 { store.errorMessage = nil } })) {
-            if store.stateRecoveryNeeded { Button("Riprendi conservando il file originale") { store.recoverProjectState() } }
-            Button("Chiudi", role: .cancel) { store.errorMessage = nil }
-        } message: { Text(store.errorMessage ?? "") }
     }
 
     private var sidebar: some View {
@@ -136,7 +152,7 @@ struct WorkspaceView: View {
                         Button(module.name) { store.selectedModuleID = module.id }
                     }
                 } label: { Label(store.selectedModule?.name ?? "Intero progetto", systemImage: "scope") }
-                .menuStyle(.borderlessButton).fixedSize().font(.caption)
+                .menuStyle(.borderlessButton).lineLimit(1).frame(maxWidth: 220, alignment: .leading).font(.caption)
                 Spacer()
                 if store.isPlanning { ProgressView().controlSize(.small); Text(store.isExecuting ? "Codex sta lavorando nel worktree" : (store.selectedRequest?.state == "Verifiche in corso" ? "Verifiche in corso" : "Codex sta analizzando la richiesta")).font(.caption).foregroundStyle(.secondary) }
                 else { Text("Pianificazione in sola lettura").font(.caption).foregroundStyle(.secondary) }
@@ -178,7 +194,7 @@ struct WorkspaceView: View {
             ToolbarItem(placement: .principal) {
                 if let project = store.project {
                     HStack(spacing: 10) {
-                        Label(project.branch ?? "Cartella locale", systemImage: "arrow.triangle.branch")
+                        Label(project.branch ?? "Cartella locale", systemImage: "arrow.triangle.branch").lineLimit(1).truncationMode(.middle).frame(maxWidth: 220)
                         if project.isDemo { Text("Esempio").foregroundStyle(.orange) }
                     }.font(.caption).foregroundStyle(.secondary)
                 }

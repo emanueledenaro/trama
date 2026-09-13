@@ -45,6 +45,6 @@ struct GitHubActivityView: View {
                 if !activity.warnings.isEmpty { Text(activity.warnings.joined(separator: "\n")).font(.caption).foregroundStyle(.orange) }
                 Text("Questi sono esiti pubblicati su GitHub. La revisione locale del Patto Vivo rimane collegata al candidato verificato in Trama.").font(.caption).foregroundStyle(.secondary)
             } else if !team.activityLoading && team.activityError == nil { Text("Nessuna revisione selezionata.").foregroundStyle(.secondary); Spacer() }
-        }.padding(24).frame(width: 740, height: 640)
+        }.padding(24).frame(minWidth: 480, idealWidth: 660, minHeight: 360, idealHeight: 540)
     }
 }

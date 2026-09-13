@@ -85,58 +85,62 @@ struct RequestsView: View {
         if store.document.requests.isEmpty {
             ContentUnavailableView("Quale modifica vuoi fare?", systemImage: "square.and.pencil", description: Text("Scrivi una richiesta nel campo in basso. Il piano resterà collegato al modulo selezionato."))
         } else {
-            HStack(spacing: 0) {
-                List(selection: $store.selectedRequestID) {
-                    ForEach(store.document.requests) { request in
-                        VStack(alignment: .leading, spacing: 7) {
-                            Text(request.title).font(.headline).lineLimit(3)
-                            HStack { Text(request.moduleName); Spacer(); Text(request.state) }.font(.caption).foregroundStyle(.secondary)
-                        }.padding(.vertical, 7).tag(request.id)
-                    }
-                }.frame(width: 230)
-                Divider()
-                if let request = store.selectedRequest {
-                    ScrollView {
-                        VStack(alignment: .leading, spacing: 22) {
+            GeometryReader { geometry in
+                let compact = geometry.size.width < 760
+                let layout = compact ? AnyLayout(VStackLayout(spacing: 0)) : AnyLayout(HStackLayout(spacing: 0))
+                layout {
+                    List(selection: $store.selectedRequestID) {
+                        ForEach(store.document.requests) { request in
                             VStack(alignment: .leading, spacing: 7) {
-                                Text(request.moduleName).font(.caption).foregroundStyle(.secondary)
-                                Text(request.title).font(.title2.weight(.semibold))
-                                Label(request.state, systemImage: store.isPlanning ? "ellipsis" : "doc.text").font(.callout).foregroundStyle(.secondary)
-                            }
-                            Divider()
-                            if request.state == "Decisione richiesta" {
-                                PlanQuestionsView(request: request)
-                            } else if request.plan.isEmpty {
-                                Text("La risposta apparirà qui dopo l’analisi di Codex.").foregroundStyle(.secondary)
-                            } else {
-                                Text(request.plan).font(.body).lineSpacing(5).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
-                            }
-                            if request.state == "Richiesta da chiarire" {
-                                RequestClarificationView(request: request).id(request.id)
-                            }
-                            if request.proposal == nil, let references = request.replyReferences, !references.isEmpty {
-                                DisclosureGroup("Fonti consultate") {
-                                    ForEach(references, id: \.self) { path in
-                                        Button(path) { store.openReference(path) }.buttonStyle(.plain)
+                                Text(request.title).font(.headline).lineLimit(3)
+                                HStack { Text(request.moduleName); Spacer(); Text(request.state) }.font(.caption).foregroundStyle(.secondary)
+                            }.padding(.vertical, 7).tag(request.id)
+                        }
+                    }.frame(width: compact ? nil : 230, height: compact ? 150 : nil)
+                    Divider()
+                    if let request = store.selectedRequest {
+                        ScrollView {
+                            VStack(alignment: .leading, spacing: 22) {
+                                VStack(alignment: .leading, spacing: 7) {
+                                    Text(request.moduleName).font(.caption).foregroundStyle(.secondary)
+                                    Text(request.title).font(.title2.weight(.semibold))
+                                    Label(request.state, systemImage: store.isPlanning ? "ellipsis" : "doc.text").font(.callout).foregroundStyle(.secondary)
+                                }
+                                Divider()
+                                if request.state == "Decisione richiesta" {
+                                    PlanQuestionsView(request: request)
+                                } else if request.plan.isEmpty {
+                                    Text("La risposta apparirà qui dopo l’analisi di Codex.").foregroundStyle(.secondary)
+                                } else {
+                                    Text(request.plan).font(.body).lineSpacing(5).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
+                                }
+                                if request.state == "Richiesta da chiarire" {
+                                    RequestClarificationView(request: request).id(request.id)
+                                }
+                                if request.proposal == nil, let references = request.replyReferences, !references.isEmpty {
+                                    DisclosureGroup("Fonti consultate") {
+                                        ForEach(references, id: \.self) { path in
+                                            Button(path) { store.openReference(path) }.buttonStyle(.plain)
+                                        }
                                     }
                                 }
-                            }
-                            if let detail = request.failureDetail {
-                                DisclosureGroup("Dettagli dell’errore") { Text(detail).font(.system(.caption, design: .monospaced)).textSelection(.enabled) }
-                            }
-                            if request.session != nil { SessionReviewView(request: request) }
-                            if request.state == "Da rivedere", store.codexConnected, !store.isPlanning {
-                                Button("Rivedi e avvia", systemImage: "play.fill") { reviewingPlan = request }.buttonStyle(.borderedProminent)
-                            }
-                            if !store.isPlanning && request.session == nil {
-                                Button(store.codexConnected ? "Rielabora con Codex" : "Collega Codex") {
-                                    if store.codexConnected { store.runPlan(request.id) } else { store.showConnections = true }
-                                }.buttonStyle(.bordered)
-                            }
-                        }.padding(26).frame(maxWidth: .infinity, alignment: .leading)
-                    }.frame(minWidth: 320)
-                        .sheet(item: $reviewingPlan) { PlanExecutionEditor(request: $0) }
-                } else { ContentUnavailableView("Seleziona una richiesta", systemImage: "doc.text") }
+                                if let detail = request.failureDetail {
+                                    DisclosureGroup("Dettagli dell’errore") { Text(detail).font(.system(.caption, design: .monospaced)).textSelection(.enabled) }
+                                }
+                                if request.session != nil { SessionReviewView(request: request) }
+                                if request.state == "Da rivedere", store.codexConnected, !store.isPlanning {
+                                    Button("Rivedi e avvia", systemImage: "play.fill") { reviewingPlan = request }.buttonStyle(.borderedProminent)
+                                }
+                                if !store.isPlanning && request.session == nil {
+                                    Button(store.codexConnected ? "Rielabora con Codex" : "Collega Codex") {
+                                        if store.codexConnected { store.runPlan(request.id) } else { store.showConnections = true }
+                                    }.buttonStyle(.bordered)
+                                }
+                            }.padding(26).frame(maxWidth: .infinity, alignment: .leading)
+                        }.frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .sheet(item: $reviewingPlan) { PlanExecutionEditor(request: $0) }
+                    } else { ContentUnavailableView("Seleziona una richiesta", systemImage: "doc.text") }
+                }
             }
         }
     }
@@ -160,7 +164,7 @@ struct FilePreviewView: View {
                     Text(preview.content).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
                 }.font(.system(size: 12, design: .monospaced)).lineSpacing(4).padding(22)
             }
-        }.frame(minWidth: 740, idealWidth: 950, minHeight: 580, idealHeight: 700)
+        }.frame(minWidth: 480, idealWidth: 660, minHeight: 360, idealHeight: 540)
     }
 }
 

@@ -184,7 +184,7 @@ struct TeamView: View {
             Divider()
             if let snapshot = team.snapshot {
                 HStack {
-                    Picker("Attività", selection: $selectedTab) { Text("Pull request").tag("Pull request"); Text("Branch").tag("Branch"); Text("Novità").tag("Novità"); Text("Impatto").tag("Impatto"); Text("Conflitti").tag("Conflitti") }.pickerStyle(.segmented).labelsHidden().frame(width: 440)
+                    Picker("Attività", selection: $selectedTab) { Text("Pull request").tag("Pull request"); Text("Branch").tag("Branch"); Text("Novità").tag("Novità"); Text("Impatto").tag("Impatto"); Text("Conflitti").tag("Conflitti") }.pickerStyle(.menu).labelsHidden().frame(maxWidth: 240, alignment: .leading)
                     Spacer()
                     Text("\(snapshot.fetchedAt, style: .time)").font(.caption).foregroundStyle(.secondary)
                 }.padding(20)
