@@ -22,10 +22,10 @@ struct WorkspaceView: View {
                 .navigationTitle(store.project?.isDemo == true ? "Trama · Progetto di esempio" : store.project?.name ?? "Trama")
                 .navigationSubtitle(store.project?.isDemo == true ? "" : (store.project?.branch ?? ""))
                 .toolbar { toolbar }
-                .inspector(isPresented: Binding(get: { !compactInspector && store.showInspector && store.project != nil && store.section == .map }, set: { store.showInspector = $0 })) {
-                    if store.project != nil {
-                        ModuleInspector().inspectorColumnWidth(min: 270, ideal: 320, max: 420)
-                    }
+            }
+            .inspector(isPresented: Binding(get: { !compactInspector && store.showInspector && store.project != nil && store.section == .map }, set: { store.showInspector = $0 })) {
+                if store.project != nil {
+                    ModuleInspector().inspectorColumnWidth(min: 270, ideal: 320, max: 420)
                 }
             }
             .sheet(isPresented: Binding(get: { compactInspector && store.showInspector && store.project != nil && store.section == .map }, set: { store.showInspector = $0 })) {

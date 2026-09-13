@@ -196,6 +196,11 @@ final class ProjectStore: ObservableObject {
             guard token == loadToken else { return }
             let catalogue = try await Task.detached { try ProjectCatalogue().load() }.value
             guard token == loadToken else { return }
+            if previousPath != snapshot.rootPath {
+                // Conserva anche le modifiche della persona durante la lettura asincrona.
+                saveDocument()
+                viewSaveTask?.cancel()
+            }
             activeProjectID = recent.id
             recentProjects = catalogue
             project = snapshot

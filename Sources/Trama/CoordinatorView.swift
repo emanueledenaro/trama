@@ -38,7 +38,7 @@ struct CoordinatorView: View {
             Text(request.request).textSelection(.enabled)
             if !request.plan.isEmpty {
                 Divider()
-                Text("Risposta Codex salvata").font(.headline)
+                Text("Contenuto salvato della richiesta").font(.headline)
                 Text(request.plan).textSelection(.enabled)
             }
             TramaStatusBadge(state: request.state)

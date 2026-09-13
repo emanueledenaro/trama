@@ -18,7 +18,10 @@
       "Mappa, Modifiche, Patto Vivo, selezione modelli e anteprima dei file restano utilizzabili sullo stesso documento migrato.",
       "Test di regressione pertinenti, prova diretta nell’app, revisione Standards e Spec, CI verde sul candidato/merge e documentazione dei limiti completati."
     ],
-    "proof": "Aprire due copie di documenti precedenti, passare fra i progetti e riavviare; confrontare i dati prima/dopo e aprire una richiesta storica dalla chat e da Modifiche."
+    "proof": "Aprire due copie di documenti precedenti, passare fra i progetti e riavviare; confrontare i dati prima/dopo e aprire una richiesta storica dalla chat e da Modifiche.",
+    "blockedByIssues": [
+      51
+    ]
   },
   {
     "key": "C02",

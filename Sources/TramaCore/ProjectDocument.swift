@@ -54,4 +54,3 @@ public struct ProjectDocument: Codable {
 
     public init() {}
 }
-
