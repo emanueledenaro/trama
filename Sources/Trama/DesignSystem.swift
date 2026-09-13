@@ -50,14 +50,22 @@ struct TramaStatusBadge: View {
         switch state {
         case "Revisionato localmente", "PR pubblicata", "Controlli superati":
             ("checkmark.circle.fill", .green)
-        case "Decisione richiesta", "Richiesta da chiarire":
+        case "Nessuna modifica al candidato":
+            ("minus.circle.fill", .secondary)
+        case "Decisione richiesta", "Richiesta da chiarire", "Da rivedere", "Da revisionare", "Da verificare", "Verifica manuale richiesta":
             ("questionmark.circle.fill", .orange)
+        case "In attesa di Codex":
+            ("clock.fill", .orange)
         case "Errore", "Errore di esecuzione", "Verifiche fallite":
             ("exclamationmark.triangle.fill", .red)
         case "Da rivalutare", "Verifiche interrotte", "Interrotto":
             ("arrow.clockwise.circle.fill", .orange)
-        case "Analisi in corso", "In esecuzione", "Verifiche in corso":
+        case "Analisi in corso", "In esecuzione", "Verifiche in corso", "Preparazione del worktree":
             ("ellipsis.circle.fill", .blue)
+        case "Risposta disponibile":
+            ("text.bubble.fill", .secondary)
+        case "Bozza":
+            ("square.and.pencil", .secondary)
         default:
             ("doc.text", .secondary)
         }

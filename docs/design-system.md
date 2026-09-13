@@ -28,6 +28,8 @@ Il colore non è l’unico segnale. Gli errori conservano il testo completo, i c
 
 ## Verifica corrente
 
-Il 13 settembre 2026 la build QA è stata controllata in tema scuro, in finestra ampia e stretta. Le intestazioni condivise risultano allineate. Gli stati della lista richieste e del dettaglio conservano testo, simbolo e colore. Lo stato vuoto delle Issue inizialmente centrava l’intera vista a metà finestra; ora l’intestazione resta in alto e il contenuto vuoto occupa l’area disponibile.
+Il 13 settembre 2026 la build QA è stata controllata in tema scuro e chiaro, in finestra ampia e stretta. Le intestazioni condivise risultano allineate. Gli stati della lista richieste e del dettaglio conservano testo, simbolo e colore. Lo stato vuoto delle Issue inizialmente centrava l’intera vista a metà finestra; ora l’intestazione resta in alto e il contenuto vuoto occupa l’area disponibile.
 
-Restano da verificare tema chiaro, contrasto aumentato, trasparenza ridotta, focus completo da tastiera, tutte le finestre modali e il confronto visivo di ogni sezione. Il ticket #22 rimane aperto fino a quelle prove.
+La prima prova del tema chiaro ha rilevato che la finestra principale cambiava aspetto mentre Impostazioni restava nel tema di sistema. La stessa preferenza viene ora applicata a entrambe le scene; la build riavviata ha mostrato Impostazioni in tema chiaro. Al termine della prova è stata ripristinata l’opzione Sistema.
+
+Restano da verificare contrasto aumentato, trasparenza ridotta, focus completo da tastiera, tutte le finestre modali e il confronto visivo di ogni sezione. Il ticket #22 rimane aperto fino a quelle prove.
