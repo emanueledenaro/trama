@@ -4,54 +4,11 @@ import Combine
 import CryptoKit
 import TramaCore
 
-struct WorkRequest: Identifiable, Codable {
-    var id = UUID()
-    var title: String
-    var moduleID: String
-    var moduleName: String
-    var request: String
-    var plan: String = ""
-    var state: String = "Bozza"
-    var createdAt = Date()
-    var sourceFingerprint: String
-    var session: WorkspaceSession?
-    var review: WorkspaceReview?
-    var check: WorkspaceCheck?
-    var candidateID: String?
-    var leaseID: String?
-    var executionOutput: String?
-    var approvedAt: Date?
-    var pullRequestURL: URL?
-    var proposal: PlanProposal?
-    var allowedModuleIDs: [String]?
-    var confirmedQuestionIDs: [String]?
-    var behaviorDecisionID: String?
-    var planDecisionVersions: [String: Int]?
-    var previousSessions: [WorkspaceSession]?
-    var failureDetail: String?
-    var replyKind: PlanningReply.Kind?
-    var replyReferences: [String]?
-    var model: String?
-    var setupBaselineHashes: [String: String]?
-}
-
-struct ProjectDocument: Codable {
-    var schemaVersion = 1
-    var requests: [WorkRequest] = []
-    var pact: PactEngine?
-    var currentCandidateID: String?
-    var lastSelectedModuleID: String?
-    var lastContextWasProject: Bool?
-    var lastSelectedRequestID: UUID?
-    var lastSection: String?
-    var selectedModel: String?
-}
-
 enum WorkspaceSection: String, CaseIterable, Identifiable {
-    case map = "Mappa", changes = "Modifiche", decisions = "Decisioni", team = "Gruppo", issues = "Issue"
+    case coordinator = "Coordinatore", map = "Mappa", changes = "Modifiche", decisions = "Decisioni", team = "Gruppo", issues = "Issue"
     var id: String { rawValue }
     var symbol: String {
-        switch self { case .map: "square.3.layers.3d"; case .changes: "arrow.triangle.branch"; case .decisions: "checkmark.seal"; case .team: "person.2"; case .issues: "tray" }
+        switch self { case .coordinator: "bubble.left.and.bubble.right"; case .map: "square.3.layers.3d"; case .changes: "arrow.triangle.branch"; case .decisions: "checkmark.seal"; case .team: "person.2"; case .issues: "tray" }
     }
 }
 
@@ -67,7 +24,7 @@ final class ProjectStore: ObservableObject {
     @Published var inspectorTab = "Panoramica"
     @Published var isLoading = false
     @Published var errorMessage: String?
-    @Published var composer = ""
+    @Published var composer = "" { didSet { saveViewState() } }
     @Published var document = ProjectDocument()
     @Published var selectedRequestID: UUID?
     @Published var filePreview: FilePreview?
@@ -239,11 +196,17 @@ final class ProjectStore: ObservableObject {
             guard token == loadToken else { return }
             let catalogue = try await Task.detached { try ProjectCatalogue().load() }.value
             guard token == loadToken else { return }
+            if previousPath != snapshot.rootPath {
+                // Conserva anche le modifiche della persona durante la lettura asincrona.
+                saveDocument()
+                viewSaveTask?.cancel()
+            }
             activeProjectID = recent.id
             recentProjects = catalogue
             project = snapshot
             if previousPath != snapshot.rootPath {
                 document = loadDocument(snapshot)
+                composer = document.composerDraft ?? ""
                 selectedModel = document.selectedModel ?? ""
                 selectedRequestID = document.lastSelectedRequestID ?? document.requests.first?.id
                 if document.lastContextWasProject == true { selectedModuleID = nil }
@@ -591,8 +554,7 @@ final class ProjectStore: ObservableObject {
             } else { return ProjectDocument() }
         }
         do {
-            var result = try JSONDecoder().decode(ProjectDocument.self, from: Data(contentsOf: url))
-            guard result.schemaVersion == 1 else { throw CocoaError(.coderReadCorrupt) }
+            var result = try ProjectDocumentStorage(url: url).load()
             for i in result.requests.indices where ["Analisi in corso", "In esecuzione", "Preparazione del worktree", "Verifiche in corso"].contains(result.requests[i].state) { result.requests[i].state = "Interrotto" }
             return result
         } catch { stateWritable = false; errorMessage = "Impossibile leggere lo stato salvato. Il file originale è conservato. \(error.localizedDescription)"; return ProjectDocument() }
@@ -601,11 +563,10 @@ final class ProjectStore: ObservableObject {
     func recoverProjectState() {
         guard stateRecoveryNeeded, let project else { return }
         do {
-            let source = stateURL(project)
-            if FileManager.default.fileExists(atPath: source.path) {
-                let backup = source.deletingPathExtension().appendingPathExtension("conservato-\(UUID().uuidString).json")
-                try FileManager.default.copyItem(at: source, to: backup)
-            }
+            let storage = ProjectDocumentStorage(url: stateURL(project))
+            try storage.recover()
+            document = try storage.load()
+            composer = ""; selectedRequestID = nil
             stateWritable = true; errorMessage = nil; saveDocument()
         } catch { errorMessage = "Non posso conservare lo stato originale: \(error.localizedDescription)" }
     }
@@ -622,11 +583,10 @@ final class ProjectStore: ObservableObject {
         document.lastContextWasProject = selectedModuleID == nil
         document.lastSelectedRequestID = selectedRequestID
         document.lastSection = section?.rawValue
+        document.composerDraft = composer
         if !selectedModel.isEmpty { document.selectedModel = selectedModel }
         do {
-            let url = stateURL(project)
-            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
-            try JSONEncoder().encode(document).write(to: url, options: .atomic)
+            try ProjectDocumentStorage(url: stateURL(project)).save(document)
         } catch { errorMessage = "Salvataggio non riuscito: \(error.localizedDescription)" }
     }
 

@@ -6,17 +6,18 @@ Stato: modello del Coordinatore e simulazione del primo utilizzo approvati da Em
 
 ## Stato reale di partenza
 
-Base pubblicata verificata: `ad38e76`, PR #32 integrata e CI di main riuscita. Prima del nuovo piano risultavano 22 issue aperte, inclusa la specifica #1. Le ulteriori modifiche di design #22 sono locali e non committate; non vengono dichiarate integrate da questo piano.
+Base pubblicata verificata: `4819103`, con roadmap della PR #49 e incremento design della PR #50 integrati. CI di main della PR #50 riuscita (run 34767206935). La verifica complessiva di #21 e #22 resta aperta.
 
-Il runtime attuale è centrato su un solo progetto e il cambio progetto interrompe Codex. La chat persistente e i team concorrenti sono lavoro da realizzare. Catalogo, scanner, Patto, sessioni, GitHub, modelli e monitor esistenti costituiscono la base da estendere.
+Il runtime attuale è centrato su un solo progetto e il cambio progetto interrompe Codex. La cronologia persistente C01 è in verifica, documentata in [coordinatore-cronologia](verifiche/coordinatore-cronologia.md). Streaming e team concorrenti sono lavoro da realizzare. Catalogo, scanner, Patto, sessioni, GitHub, modelli e monitor esistenti costituiscono la base da estendere.
 
 ## Ordine del lavoro
 
-Preservare e completare la verifica dell’incremento #22 pendente. C01-C04 portano poi un primo percorso verticale dalla cronologia esistente alla chat e a un incarico isolato verificato. Le altre fasi seguono le dipendenze effettive; nessun numero fisso limita la composizione dei futuri team.
+Conservare l’incremento #22 integrato. Il crash dell’inspector #51, riprodotto anche sulla base pubblicata, deve essere risolto per completare la verifica UI di C01. C01-C04 portano un primo percorso verticale dalla cronologia esistente alla chat e a un incarico isolato verificato. Le altre fasi seguono le dipendenze effettive; nessun numero fisso limita la composizione dei futuri team.
 
 | Ticket | Consegna | Bloccato da |
 | --- | --- | --- |
-| [#33](https://github.com/emanueledenaro/trama/issues/33) | Ritrovare chat e richieste senza perdere i dati esistenti | Nessuno |
+| [#51](https://github.com/emanueledenaro/trama/issues/51) | Correggere il crash dell’inspector | Nessuno |
+| [#33](https://github.com/emanueledenaro/trama/issues/33) | Ritrovare chat e richieste senza perdere i dati esistenti | [#51](https://github.com/emanueledenaro/trama/issues/51), verifica UI |
 | [#34](https://github.com/emanueledenaro/trama/issues/34) | Dialogare con il Coordinatore in streaming e aprire le fonti | [#33](https://github.com/emanueledenaro/trama/issues/33) |
 | [#35](https://github.com/emanueledenaro/trama/issues/35) | Concedere un mandato e decidere il comportamento dalla chat | [#34](https://github.com/emanueledenaro/trama/issues/34) |
 | [#36](https://github.com/emanueledenaro/trama/issues/36) | Portare un incarico dalla chat a un candidato verificato | [#35](https://github.com/emanueledenaro/trama/issues/35) |
