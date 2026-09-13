@@ -1,0 +1,98 @@
+{
+  "C01": {
+    "number": 33,
+    "id": 5440888538,
+    "title": "C01: Ritrovare chat e richieste senza perdere i dati esistenti",
+    "url": "https://github.com/emanueledenaro/trama/issues/33"
+  },
+  "C02": {
+    "number": 34,
+    "id": 5440888575,
+    "title": "C02: Dialogare con il Coordinatore in streaming e aprire le fonti",
+    "url": "https://github.com/emanueledenaro/trama/issues/34"
+  },
+  "C03": {
+    "number": 35,
+    "id": 5440888625,
+    "title": "C03: Concedere un mandato e decidere il comportamento dalla chat",
+    "url": "https://github.com/emanueledenaro/trama/issues/35"
+  },
+  "C04": {
+    "number": 36,
+    "id": 5440888681,
+    "title": "C04: Portare un incarico dalla chat a un candidato verificato",
+    "url": "https://github.com/emanueledenaro/trama/issues/36"
+  },
+  "C05": {
+    "number": 37,
+    "id": 5440891357,
+    "title": "C05: Comporre specialisti dinamici e controllarli da Team",
+    "url": "https://github.com/emanueledenaro/trama/issues/37"
+  },
+  "C06": {
+    "number": 38,
+    "id": 5440891411,
+    "title": "C06: Ricalcolare solo gli incarichi coinvolti da decisioni e perimetri",
+    "url": "https://github.com/emanueledenaro/trama/issues/38"
+  },
+  "C07": {
+    "number": 39,
+    "id": 5440891474,
+    "title": "C07: Cambiare progetto mentre i team autorizzati continuano",
+    "url": "https://github.com/emanueledenaro/trama/issues/39"
+  },
+  "C08": {
+    "number": 40,
+    "id": 5440891538,
+    "title": "C08: Mostrare in chat conflitti tra specialisti e collaboratori GitHub",
+    "url": "https://github.com/emanueledenaro/trama/issues/40"
+  },
+  "C09": {
+    "number": 41,
+    "id": 5440894142,
+    "title": "C09: Integrare candidati tramite mandato senza falsare la revisione umana",
+    "url": "https://github.com/emanueledenaro/trama/issues/41"
+  },
+  "C10": {
+    "number": 42,
+    "id": 5440894207,
+    "title": "C10: Aggiornare ticket e checklist solo quando le prove lo consentono",
+    "url": "https://github.com/emanueledenaro/trama/issues/42"
+  },
+  "C11": {
+    "number": 43,
+    "id": 5440894259,
+    "title": "C11: Riprendere il Coordinatore dopo limiti, chiusura e indisponibilità",
+    "url": "https://github.com/emanueledenaro/trama/issues/43"
+  },
+  "C12": {
+    "number": 44,
+    "id": 5440894306,
+    "title": "C12: Configurare Trama al primo avvio con una guida riprendibile",
+    "url": "https://github.com/emanueledenaro/trama/issues/44"
+  },
+  "C13": {
+    "number": 45,
+    "id": 5440897249,
+    "title": "C13: Imparare a conoscere un progetto con il primo esercizio guidato",
+    "url": "https://github.com/emanueledenaro/trama/issues/45"
+  },
+  "C14": {
+    "number": 46,
+    "id": 5440897311,
+    "title": "C14: Completare gli esercizi di modifica, decisione e conflitto",
+    "url": "https://github.com/emanueledenaro/trama/issues/46"
+  },
+  "C15": {
+    "number": 47,
+    "id": 5440897361,
+    "title": "C15: Migliorare i team con pratiche verificate e reversibili",
+    "url": "https://github.com/emanueledenaro/trama/issues/47"
+  },
+  "C16": {
+    "number": 48,
+    "id": 5440897408,
+    "title": "C16: Usare Trama funzionante per sviluppare Trama senza regressioni",
+    "url": "https://github.com/emanueledenaro/trama/issues/48"
+  }
+}

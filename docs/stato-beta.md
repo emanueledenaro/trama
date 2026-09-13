@@ -1,5 +1,7 @@
 # Stato dell'alpha locale
 
+Questa pagina conserva il bilancio dell'alpha iniziale. Per il piano vigente approvato dopo l'intervista sul Coordinatore leggere [piano operativo](piano-operativo.md), [specifica Coordinatore](spec-coordinatore.md) e [raccordo aggiornato di ogni criterio](verifiche/roadmap-coordinatore.md). Le prove riportate qui restano storiche e non attestano le nuove funzioni.
+
 Stato esaminato il 13 settembre 2026. Questa pagina separa il codice presente dalle prove ancora necessarie. Nessun ticket T01-T18 è segnato come chiuso da questo documento.
 
 ## Stato osservato

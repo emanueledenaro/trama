@@ -1,0 +1,381 @@
+[
+  {
+    "key": "C01",
+    "title": "Ritrovare chat e richieste senza perdere i dati esistenti",
+    "blockedBy": [],
+    "legacy": [
+      2,
+      7,
+      8,
+      23
+    ],
+    "outcome": "Aprire un progetto già usato e ritrovare nella nuova sezione Coordinatore la cronologia ricavata dalle richieste, conservando anche tutte le viste precedenti.",
+    "criteria": [
+      "La migrazione conserva richieste, piani, decisioni versionate, modelli, approvazioni e riferimenti ai worktree; i documenti precedenti restano recuperabili.",
+      "La sezione Coordinatore mostra messaggi storici come importati, con progetto e richiesta di origine; non inventa conversazioni, risultati o agenti passati.",
+      "La bozza del messaggio e la selezione persistono per progetto dopo riavvio e non passano a un'altra cartella con lo stesso remote.",
+      "Una migrazione interrotta o un documento non leggibile conserva l'originale e propone recupero senza concedere nuove autorizzazioni.",
+      "Mappa, Modifiche, Patto Vivo, selezione modelli e anteprima dei file restano utilizzabili sullo stesso documento migrato.",
+      "Test di regressione pertinenti, prova diretta nell’app, revisione Standards e Spec, CI verde sul candidato/merge e documentazione dei limiti completati."
+    ],
+    "proof": "Aprire due copie di documenti precedenti, passare fra i progetti e riavviare; confrontare i dati prima/dopo e aprire una richiesta storica dalla chat e da Modifiche."
+  },
+  {
+    "key": "C02",
+    "title": "Dialogare con il Coordinatore in streaming e aprire le fonti",
+    "blockedBy": [
+      "C01"
+    ],
+    "legacy": [
+      3,
+      6,
+      7,
+      23
+    ],
+    "outcome": "Scrivere nella chat principale, ottenere una risposta Codex reale e consultare le fonti nella Mappa e nei file mantenendo la conversazione.",
+    "criteria": [
+      "Una sola superficie di chat mostra progetto attivo, modello scelto dalla persona e risposta progressiva ricevuta dal componente Codex ufficiale.",
+      "Saluti e richieste informative non creano piani eseguibili né specialisti non necessari; le richieste di modifica mantengono la distinzione dal piano approvato.",
+      "Messaggi, fonti, delta di streaming e stato finale appartengono al progetto e alla richiesta corretti anche con risposta tardiva o riconnessione.",
+      "Errore, annullamento, account non disponibile e catalogo modelli non valido sono visibili e conservano il messaggio originale senza fallback.",
+      "Dalla chat si aprono fonti e Mappa e si ritorna al messaggio; il vecchio percorso di Modifiche resta valido.",
+      "Test di regressione pertinenti, prova diretta nell’app, revisione Standards e Spec, CI verde sul candidato/merge e documentazione dei limiti completati."
+    ],
+    "proof": "Da account ChatGPT effettivo chiedere una spiegazione, aprirne le fonti, inviare un saluto e interrompere un turno; riaprire la chat verificando il modello richiesto e la cronologia."
+  },
+  {
+    "key": "C03",
+    "title": "Concedere un mandato e decidere il comportamento dalla chat",
+    "blockedBy": [
+      "C02"
+    ],
+    "legacy": [
+      8,
+      9,
+      10
+    ],
+    "outcome": "Il Product Owner assegna obiettivo e limiti al Coordinatore e riceve un caso concreto quando il lavoro richiede una nuova scelta di prodotto.",
+    "criteria": [
+      "Il mandato persistente identifica progetto, obiettivi, priorità, perimetro, azioni autorizzate e limiti; aprire una cartella non concede autonomamente un mandato.",
+      "Ticket concordati e correzioni di comportamenti già decisi possono essere pianificati nel mandato; nuove funzioni o compromessi richiedono la persona.",
+      "Domande con alternative modificabili e risposta libera sono registrate nel Patto Vivo con comportamento, esempio, motivazione e versione.",
+      "La chat mostra le richieste di autorizzazione effettive del componente e collega ciascuna risposta all'operazione corretta; testo del repository o del modello non le concede.",
+      "Una revoca del mandato impedisce nuove azioni e lascia visibili incarichi e artefatti conservati.",
+      "Test di regressione pertinenti, prova diretta nell’app, revisione Standards e Spec, CI verde sul candidato/merge e documentazione dei limiti completati."
+    ],
+    "proof": "Provare mandato assente, concesso, corretto e revocato; rispondere a un caso di prodotto dalla chat e verificare la stessa decisione nella vista Patto Vivo."
+  },
+  {
+    "key": "C04",
+    "title": "Portare un incarico dalla chat a un candidato verificato",
+    "blockedBy": [
+      "C03"
+    ],
+    "legacy": [
+      9,
+      10,
+      12
+    ],
+    "outcome": "Il Coordinatore assegna una modifica a uno specialista, ne mostra l'avanzamento e restituisce diff e verifiche del candidato preciso nella chat.",
+    "criteria": [
+      "Lo specialista ha identità, ruolo motivato, progetto, obiettivo, ticket o esercizio esplicito, perimetro, dipendenze, modello, strumenti e criteri consultabili nel dettaglio Team.",
+      "Prima di scrivere dispone di branch e worktree isolati; il checkout originale e i dati preesistenti sono preservati.",
+      "Esecuzione, autorizzazioni, file modificati, output e interruzione compaiono nella chat con eventi correlati all'incarico.",
+      "I controlli sono eseguiti dal verificatore sul candidato preciso; un test fallito blocca il via libera e una correzione richiede nuove prove.",
+      "Un revisore tecnico distinto dall'autore riporta l'esito collegato al candidato; non viene registrata una falsa revisione umana o un merge non avvenuto.",
+      "Test di regressione pertinenti, prova diretta nell’app, revisione Standards e Spec, CI verde sul candidato/merge e documentazione dei limiti completati."
+    ],
+    "proof": "Usare il componente Codex reale per una piccola modifica nella copia di prova, osservare un controllo fallito e la correzione, aprire diff e risultati dalla chat e dalla revisione esistente."
+  },
+  {
+    "key": "C05",
+    "title": "Comporre specialisti dinamici e controllarli da Team",
+    "blockedBy": [
+      "C04"
+    ],
+    "legacy": [
+      9,
+      21,
+      22,
+      23
+    ],
+    "outcome": "Il Coordinatore crea gli specialisti utili al task e la persona consulta e controlla il team dalla chat e dalla schermata Team.",
+    "criteria": [
+      "I ruoli sono descritti liberamente in funzione di stack, dominio, fase e competenze mancanti; nessun catalogo chiuso o squadra obbligatoria.",
+      "Il parallelismo è motivato dal lavoro indipendente e rispetta dipendenze e risorse; non viene imposto un limite fisso di due né avviato un agente solo per riempire un ruolo.",
+      "Ogni scheda espone motivo, ruolo, attività, stato, modello, strumenti, worktree, dipendenze, verifiche e ultimo aggiornamento effettivo.",
+      "Il Coordinatore sceglie solo modelli OpenAI effettivamente disponibili per nuovi incarichi; la persona mantiene il modello principale e nessuna attività avviata cambia modello silenziosamente.",
+      "Stop, priorità e sostituzione dell'agente sono azioni consultabili dalla chat; distinguere richiesta e conferma di arresto, conservando risultati e cronologia.",
+      "Test di regressione pertinenti, prova diretta nell’app, revisione Standards e Spec, CI verde sul candidato/merge e documentazione dei limiti completati."
+    ],
+    "proof": "Confrontare un task che richiede un solo specialista con uno separabile; osservare gli agenti reali, fermarne uno dal dettaglio e verificare che il lavoro indipendente continui."
+  },
+  {
+    "key": "C06",
+    "title": "Ricalcolare solo gli incarichi coinvolti da decisioni e perimetri",
+    "blockedBy": [
+      "C05"
+    ],
+    "legacy": [
+      8,
+      9,
+      10,
+      16
+    ],
+    "outcome": "Una scelta di prodotto o una correzione del perimetro ferma e riallinea gli specialisti dipendenti lasciando proseguire gli altri.",
+    "criteria": [
+      "Dipendenze di decisione, incarico e candidato sono esplicite e versionate; metadati mancanti o incompleti non autorizzano azioni.",
+      "Una decisione richiesta blocca soltanto il lavoro dipendente e presenta caso, alternative e conseguenze al Product Owner.",
+      "Restringere un perimetro richiede arresto controllato dell'agente coinvolto e dei dipendenti, conservando il diff già prodotto.",
+      "La ripresa usa piano e delega ricalcolati; le vecchie evidenze restano storiche e non autorizzano il nuovo candidato.",
+      "Modifiche alle decisioni non coinvolte non invalidano gli incarichi indipendenti, anche quando arrivano risultati tardivi.",
+      "Test di regressione pertinenti, prova diretta nell’app, revisione Standards e Spec, CI verde sul candidato/merge e documentazione dei limiti completati."
+    ],
+    "proof": "Due incarichi su moduli diversi: cambiare la decisione e il perimetro di uno, osservare arresto e riallineamento selettivi, poi riprendere e confrontare le versioni delle prove."
+  },
+  {
+    "key": "C07",
+    "title": "Cambiare progetto mentre i team autorizzati continuano",
+    "blockedBy": [
+      "C05"
+    ],
+    "legacy": [
+      2,
+      7,
+      17,
+      21,
+      22
+    ],
+    "outcome": "Passare fra progetti e panoramica globale senza interrompere gli incarichi del progetto precedente o mescolare le conversazioni.",
+    "criteria": [
+      "Il cambio della selezione UI cambia cronologia e team visibili e conserva la bozza; gli incarichi già autorizzati restano nel runtime del progetto di origine.",
+      "La panoramica globale raccoglie stato, CI, blocchi, decisioni richieste e ultimo aggiornamento; contenuti privati non vengono incorporati nel contesto di altri team.",
+      "Due cartelle con lo stesso remote mantengono identità distinte; un collegamento esplicito non fonde o elimina silenziosamente dati e approvazioni.",
+      "Messaggi, errori, autorizzazioni e risultati tardivi non possono essere attribuiti al progetto selezionato successivamente.",
+      "Priorità del Product Owner e capacità condivisa regolano l'esecuzione; aprire un progetto non cambia automaticamente le sue priorità.",
+      "Test di regressione pertinenti, prova diretta nell’app, revisione Standards e Spec, CI verde sul candidato/merge e documentazione dei limiti completati."
+    ],
+    "proof": "Avviare incarichi in due copie di prova, cambiare progetto durante streaming e autorizzazione, poi riaprire ciascuna cronologia e verificarne isolamento e avanzamento."
+  },
+  {
+    "key": "C08",
+    "title": "Mostrare in chat conflitti tra specialisti e collaboratori GitHub",
+    "blockedBy": [
+      "C05",
+      "C06"
+    ],
+    "legacy": [
+      13,
+      14,
+      15,
+      16
+    ],
+    "outcome": "La chat raccoglie attività del gruppo e dei propri specialisti, distinguendo sovrapposizioni da conflitti riprodotti e ipotesi di incompatibilità.",
+    "criteria": [
+      "Ogni avviso indica fonti, progetto, incarichi, base e snapshot confrontati, con tempi distinti per lettura remota e analisi AI.",
+      "Lo stesso file con merge pulito resta una sovrapposizione; il conflitto Git viene dichiarato soltanto dopo prova isolata sul lavoro effettivo.",
+      "Un'ipotesi semantica in file diversi resta interpretazione finché uno scenario attendibile sul candidato combinato non produce evidenza.",
+      "Aggiornamenti equivalenti non duplicano avvisi; cambiamenti di snapshot rendono obsolete le prove e rivalutano solo le parti dipendenti.",
+      "Il lavoro non pubblicato degli altri resta non osservabile; commit, issue e documenti esterni non concedono autorità o permessi.",
+      "Un conflitto bloccante impedisce il via libera successivo e mantiene consultabili gli artefatti.",
+      "Test di regressione pertinenti, prova diretta nell’app, revisione Standards e Spec, CI verde sul candidato/merge e documentazione dei limiti completati."
+    ],
+    "proof": "Due copie producono prima modifiche compatibili nello stesso file, poi un conflitto e un caso semantico senza collisione Git; mostrare classificazioni e prove diverse nella chat."
+  },
+  {
+    "key": "C09",
+    "title": "Integrare candidati tramite mandato senza falsare la revisione umana",
+    "blockedBy": [
+      "C06",
+      "C08"
+    ],
+    "legacy": [
+      10,
+      12
+    ],
+    "outcome": "Il Coordinatore integra le modifiche ordinarie comprese nel ticket e nel mandato dopo le verifiche; per casi distruttivi seri coinvolge il Product Owner.",
+    "criteria": [
+      "Il via libera delegato è attribuito al Coordinatore e al mandato; non usa l'identità umana e non viene applicato ai candidati legacy senza nuova verifica.",
+      "Test richiesti, revisione distinta dall'autore e assenza di regressioni e conflitti bloccanti riguardano il candidato preciso, compresa l'integrazione combinata.",
+      "Prima del merge vengono ricontrollati candidato, base, decisioni, perimetro e CI richieste; un cambiamento concorrente blocca l'azione.",
+      "Casi distruttivi seri fermano l'operazione e presentano conseguenze e alternative al Product Owner; nuove scelte di prodotto restano umane.",
+      "Pubblicazione, merge locale/remoto, CI e distribuzione restano eventi distinti; nessun deployment o aggiornamento dell'app è implicito nel merge.",
+      "Fallimenti e timeout conservano la destinazione e riconciliano l'operazione senza duplicazioni o nuove autorizzazioni.",
+      "Test di regressione pertinenti, prova diretta nell’app, revisione Standards e Spec, CI verde sul candidato/merge e documentazione dei limiti completati."
+    ],
+    "proof": "Integrare una modifica ordinaria in un repository di prova autorizzato; provocare candidato obsoleto e operazione distruttiva per verificare blocchi reali e assenza di falso via libera umano."
+  },
+  {
+    "key": "C10",
+    "title": "Aggiornare ticket e checklist solo quando le prove lo consentono",
+    "blockedBy": [
+      "C09"
+    ],
+    "legacy": [
+      12,
+      18,
+      19
+    ],
+    "outcome": "Avanzamento, impedimenti e completamento vengono riportati nella chat e nei ticket GitHub con prove, evitando chiusure premature.",
+    "criteria": [
+      "Ogni criterio ha esito e riferimenti a prove, candidato/commit e limiti; codice presente o fine agente non bastano per completarlo.",
+      "Le transizioni di richiesta, candidato, PR, CI, merge e ticket rimangono distinte e sono riconciliate dai dati reali.",
+      "La checklist viene aggiornata dopo una prova valida; tutti i criteri, test, prova UI, revisione, CI e documentazione sono necessari per chiudere il ticket.",
+      "Un incremento parziale lascia la issue aperta con le parti mancanti; un errore remoto non viene presentato come aggiornamento riuscito.",
+      "Retry e riavvio non duplicano commenti o chiusure; un ticket riaperto conserva la cronologia delle prove precedenti.",
+      "Test di regressione pertinenti, prova diretta nell’app, revisione Standards e Spec, CI verde sul candidato/merge e documentazione dei limiti completati."
+    ],
+    "proof": "Portare una issue di prova da lavoro parziale a verifica completa e chiusura, simulare timeout e riapertura e confrontare chat e GitHub senza duplicati."
+  },
+  {
+    "key": "C11",
+    "title": "Riprendere il Coordinatore dopo limiti, chiusura e indisponibilità",
+    "blockedBy": [
+      "C07"
+    ],
+    "legacy": [
+      7,
+      9,
+      16,
+      17
+    ],
+    "outcome": "Il lavoro continua a finestra chiusa; Esci arresta gli agenti, mentre il monitor abilitato conserva novità da riconciliare alla riapertura.",
+    "criteria": [
+      "Chiudere la finestra, Esci, stop esplicito, crash, sospensione e offline hanno stati distinti con ultimo aggiornamento effettivo.",
+      "Esci impedisce nuove assegnazioni e richiede arresto controllato, preservando chat, team, candidati e worktree; il monitor non riavvia modifiche.",
+      "Mentre Trama resta in esecuzione, i limiti Codex provocano attesa senza raffiche di retry e ripresa automatica dei soli incarichi ancora autorizzati quando la capacità torna disponibile.",
+      "Stop ed Esci richiedono ripresa esplicita; un esito incerto viene riconciliato prima di ripetere un'operazione con effetti.",
+      "UI e helper coordinano checkpoint ed eventi senza duplicati, solo sui progetti abilitati; notifiche negate mantengono gli avvisi nella chat.",
+      "Suoni persistenti e facoltativi accompagnano solo avvisi utili; niente suono per token o sincronizzazioni senza conseguenze.",
+      "Test di regressione pertinenti, prova diretta nell’app, revisione Standards e Spec, CI verde sul candidato/merge e documentazione dei limiti completati."
+    ],
+    "proof": "Provare finestra chiusa, Esci, riapertura, limite reale o fixture di trasporto dichiarata, rete assente e risveglio; verificare checkpoint, no doppie azioni e ripresa corretta."
+  },
+  {
+    "key": "C12",
+    "title": "Configurare Trama al primo avvio con una guida riprendibile",
+    "blockedBy": [
+      "C02",
+      "C03"
+    ],
+    "legacy": [
+      2,
+      3,
+      4,
+      5,
+      11,
+      18
+    ],
+    "outcome": "Dal primo avvio scegliere Configura e prova oppure Apri un progetto, riconoscere i collegamenti e arrivare alla chat senza configurare manualmente il metodo.",
+    "criteria": [
+      "La guida è facoltativa, richiamabile e riprendibile e non si ripete a ogni apertura.",
+      "Componente ufficiale Codex, versione e accesso ChatGPT vengono verificati; assenza, errore, annullamento e riparazione hanno un passo recuperabile.",
+      "GitHub viene proposto e le capacità effettive sono distinte dai login; rimandarlo lascia disponibili esplorazione e percorso locale.",
+      "AI Hero si configura nel progetto scelto preservando personalizzazioni e mostrando il riepilogo; le incompatibilità non vengono sovrascritte.",
+      "Il passaggio al progetto reale o alla creazione mantiene chiari progetto attivo, modello, mandato, team e prerequisiti mancanti.",
+      "Test di regressione pertinenti, prova diretta nell’app, revisione Standards e Spec, CI verde sul candidato/merge e documentazione dei limiti completati."
+    ],
+    "proof": "Primo avvio pulito con account presente e assente, GitHub rimandato, guida interrotta e ripresa; aprire un progetto personalizzato senza perdita di configurazioni."
+  },
+  {
+    "key": "C13",
+    "title": "Imparare a conoscere un progetto con il primo esercizio guidato",
+    "blockedBy": [
+      "C12"
+    ],
+    "legacy": [
+      5,
+      6,
+      7
+    ],
+    "outcome": "Nella copia locale Negozio di esempio chiedere una spiegazione reale e aprire moduli e fonti dalla chat.",
+    "criteria": [
+      "Il tutorial crea o riprende una copia dedicata etichettata come esercizio senza modificare progetti reali o pubblicare dati.",
+      "La spiegazione arriva da Codex con riferimenti ai file letti; non è una risposta preconfezionata presentata come risultato AI.",
+      "Mappa, albero, ricerca, inspector e fonti sono raggiungibili dalla chat e il ritorno conserva il messaggio.",
+      "Una richiesta informativa semplice non avvia automaticamente squadre o modifiche; l'assenza di accesso Codex consente esplorazione locale con limite dichiarato.",
+      "L'avanzamento viene salvato solo dopo azioni osservate e la guida può essere saltata o richiamata senza duplicare esercizi.",
+      "Test di regressione pertinenti, prova diretta nell’app, revisione Standards e Spec, CI verde sul candidato/merge e documentazione dei limiti completati."
+    ],
+    "proof": "Seguire il primo esercizio con un account reale, aprire una fonte, riavviare e riprenderlo; controllare che nessun file di progetto reale o remoto sia cambiato."
+  },
+  {
+    "key": "C14",
+    "title": "Completare gli esercizi di modifica, decisione e conflitto",
+    "blockedBy": [
+      "C13",
+      "C04",
+      "C06",
+      "C08",
+      "C09"
+    ],
+    "legacy": [
+      8,
+      9,
+      10,
+      14,
+      18
+    ],
+    "outcome": "Il nuovo utente percorre una modifica verificata, una scelta del Patto Vivo e un confronto controllato prima di passare al proprio progetto.",
+    "criteria": [
+      "Il mandato dell'esercizio è spiegato prima dell'avvio; il team è motivato dal task e lavora solo sulla copia dedicata.",
+      "Un caso controllato produce un vero test fallito, una correzione e nuove prove sul candidato aggiornato; timer e dichiarazioni del modello non segnano successi.",
+      "Una domanda di prodotto mostra alternative e risposta libera; la nuova decisione invalida solo gli incarichi dipendenti e conserva la ricerca del catalogo indipendente.",
+      "L'esercizio di collaborazione è marcato come tale e confronta due modifiche prima compatibili poi incompatibili senza inventare un collaboratore reale.",
+      "A fine esercizio sono consultabili diff, test, revisione e integrazione locale; nessuna pubblicazione su un repository reale è implicita.",
+      "Saltare, interrompere o riprendere la guida conserva dati e rende disponibili Apri il mio progetto e Crea un progetto.",
+      "Test di regressione pertinenti, prova diretta nell’app, revisione Standards e Spec, CI verde sul candidato/merge e documentazione dei limiti completati."
+    ],
+    "proof": "Eseguire il tutorial completo dalla finestra con le stesse copie di prova; raccogliere prove di test e confronto, decisioni versionate e passaggio al progetto reale."
+  },
+  {
+    "key": "C15",
+    "title": "Migliorare i team con pratiche verificate e reversibili",
+    "blockedBy": [
+      "C05",
+      "C10",
+      "C07"
+    ],
+    "legacy": [
+      5,
+      15,
+      16
+    ],
+    "outcome": "Il Coordinatore usa risultati del lavoro per migliorare composizione e metodo e propone pratiche generali ad altri team senza trasferire dati riservati.",
+    "criteria": [
+      "Le proposte derivano da evidenze identificabili di regressioni, revisioni, attese o duplicazioni; assenza di problemi non prova da sola che un conflitto sia stato evitato.",
+      "Ogni miglioramento conserva motivazione, progetto, versione precedente, verifica comparativa e possibilità di rollback.",
+      "Ruoli, istruzioni e scelta dei modelli possono evolvere entro mandato senza alterare attività in corso, permessi o controlli obbligatori.",
+      "Le pratiche condivise contengono solo metodi generali; codice, decisioni e contenuti privati restano separati e il destinatario verifica l'utilità prima dell'adozione.",
+      "Una pratica inefficace o regressiva viene ritirata conservandone la storia; nessun cambiamento ai pesi dei modelli o auto-approvazione.",
+      "Test di regressione pertinenti, prova diretta nell’app, revisione Standards e Spec, CI verde sul candidato/merge e documentazione dei limiti completati."
+    ],
+    "proof": "Derivare una pratica da un problema riprodotto, confrontarla su casi indipendenti, proporla a un altro progetto e provare adozione e rollback senza contaminazione dei contesti."
+  },
+  {
+    "key": "C16",
+    "title": "Usare Trama funzionante per sviluppare Trama senza regressioni",
+    "blockedBy": [
+      "C09",
+      "C11",
+      "C14",
+      "C15"
+    ],
+    "legacy": [
+      18,
+      19,
+      21,
+      22
+    ],
+    "outcome": "Il Coordinatore gestisce un ticket del repository Trama usando il percorso completo già funzionante e consegna una modifica verificata dell'app.",
+    "criteria": [
+      "Il percorso chat, team, mandato, worktree, verifiche e revisione è prima dimostrato su progetto di prova; il dogfooding non sostituisce questa prova.",
+      "Il ticket Trama ha criteri e fonti reali; specialisti lavorano su un candidato isolato conservando funzioni e dati della versione in uso.",
+      "Test di regressione, confronto UI e revisione indipendente coprono ogni schermata coinvolta e il candidato preciso, inclusi responsive e accessibilità.",
+      "Build e installazione di prova sono distinte dall'app in uso; nessuna sostituzione silenziosa del processo che coordina il lavoro.",
+      "Merge e aggiornamento ticket seguono il mandato e le prove; distribuzione richiede le autorizzazioni previste, firma e notarizzazione restano passaggi separati.",
+      "Test di regressione pertinenti, prova diretta nell’app, revisione Standards e Spec, CI verde sul candidato/merge e documentazione dei limiti completati."
+    ],
+    "proof": "Seguire un ticket Trama dalla chat alla PR verificata, provarne la build separata e confrontare richieste e Patto preesistenti prima/dopo; registrare CI e limiti di distribuzione."
+  }
+]
