@@ -6,6 +6,12 @@ App macOS nativa in SwiftUI. Il motore AI è Codex App Server di OpenAI. Seguire
 
 Scrivere in italiano semplice. Conservare fatti e significato. Usare frasi dirette, senza em dash, en dash, enfasi promozionale o chiusure da chatbot. Humanizer si applica a risposte, commenti, commit, PR e documenti.
 
+## Lingua del codice
+
+Il codice sorgente è in inglese: nomi di tipi, funzioni, proprietà, test, commenti tecnici, errori tecnici, messaggi di log e testi dei commit. I messaggi di commit usano verbi inglesi e descrivono il cambiamento in modo concreto.
+
+L'interfaccia dell'app, la documentazione di prodotto, le issue, le pull request e le comunicazioni con la persona restano in italiano, salvo quando un termine tecnico o una fonte richiedono l'inglese. Non tradurre retroattivamente dati persistiti, contenuti storici, nomi di API esterne o testo già pubblicato soltanto per applicare questa regola.
+
 ## Agent skills
 
 ### Issue tracker
