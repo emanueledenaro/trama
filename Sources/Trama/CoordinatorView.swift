@@ -76,7 +76,7 @@ struct CoordinatorView: View {
         case .unavailable(let reason):
             Divider()
             HStack(spacing: TramaSpacing.compact) {
-                Image(systemName: "exclamationmark.triangle").foregroundStyle(.orange)
+                Image(systemName: "exclamationmark.triangle").foregroundStyle(.red)
                 Text("Il Coordinatore non è disponibile: \(reason)").lineLimit(2)
                 Spacer(minLength: TramaSpacing.compact)
                 Button("Riprova") { store.retryCoordinator() }

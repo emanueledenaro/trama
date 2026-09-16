@@ -47,9 +47,10 @@ struct LoopbackHTTPServerTests {
         var request = URLRequest(url: base.appendingPathComponent("mcp"))
         request.httpMethod = "POST"
         request.httpBody = Data(repeating: 0x41, count: 64)
-        let (_, response) = try await Self.session.data(for: request)
+        let (body, response) = try await Self.session.data(for: request)
 
         #expect((response as? HTTPURLResponse)?.statusCode == 413)
+        #expect(String(decoding: body, as: UTF8.self).contains("-32600"))
         #expect(await received.values.isEmpty)
     }
 

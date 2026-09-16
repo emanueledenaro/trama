@@ -4,9 +4,10 @@ import Foundation
 /// thread, and the context sent ahead of the person's message on a thread that already exists.
 public enum CoordinatorBriefing {
     public struct ContextUpdate: Equatable, Sendable {
-        public var update: String
+        public var text: String
         /// Study parts included in the update.
         public var parts: [ProjectStudy.Part]
+        public var includesMemory: Bool
     }
 
     public static func developerInstructions(projectName: String) -> String {
@@ -49,7 +50,7 @@ public enum CoordinatorBriefing {
             sections.append(study.text(for: parts))
         }
         if includeMemory { sections.append(memorySection(memory)) }
-        return ContextUpdate(update: sections.joined(separator: "\n\n"), parts: parts)
+        return ContextUpdate(text: sections.joined(separator: "\n\n"), parts: parts, includesMemory: includeMemory)
     }
 
     /// Known repository paths named in `text`, in order of first appearance.
@@ -58,11 +59,10 @@ public enum CoordinatorBriefing {
         for path in Set(knownFiles) where !path.isEmpty {
             var searchStart = text.startIndex
             while let range = text.range(of: path, range: searchStart..<text.endIndex) {
-                let before = range.lowerBound == text.startIndex ? nil : text[text.index(before: range.lowerBound)]
-                let after = range.upperBound == text.endIndex ? nil : text[range.upperBound]
-                let bounded = !(before.map(isPathCharacter) ?? false)
-                    && !(after.map { isPathCharacter($0) && $0 != "." } ?? false)
-                if bounded {
+                let startsPath: Bool = range.lowerBound > text.startIndex && isPathCharacter(text[text.index(before: range.lowerBound)])
+                // A trailing period ends a sentence, not the path.
+                let continuesPath: Bool = range.upperBound < text.endIndex && isPathCharacter(text[range.upperBound]) && text[range.upperBound] != "."
+                if !startsPath && !continuesPath {
                     found.append((range.lowerBound, path))
                     break
                 }
@@ -77,8 +77,7 @@ public enum CoordinatorBriefing {
     }
 
     private static func memorySection(_ memory: CoordinatorMemory) -> String {
-        memory.text.isEmpty
-            ? "## La tua memoria\nLa tua memoria per questo progetto è vuota."
-            : "## La tua memoria\n" + memory.text
+        let body: String = memory.text.isEmpty ? "La tua memoria per questo progetto è vuota." : memory.text
+        return "## La tua memoria\n\(body)"
     }
 }

@@ -204,7 +204,8 @@ struct CoordinatorToolServerTests {
         #expect(try await Self.toolError(server, token, write) == "caller_turn_inactive")
         #expect(await host.memory.text.isEmpty)
 
-        await server.beginTurn(sessionKey: credential.sessionKey, turnID: "turn-1")
+        await server.beginTurn(sessionKey: credential.sessionKey)
+        await server.bindTurn(sessionKey: credential.sessionKey, turnID: "turn-1")
         let written = try Self.json(Data(try await Self.toolText(server, token, write).utf8)).objectValue
         #expect(written?["revision"] == .integer(1))
         #expect(await host.memory.text == "La beta aspetta il rimborso parziale.")
@@ -231,13 +232,51 @@ struct CoordinatorToolServerTests {
         let server = CoordinatorToolServer(host: host)
         let credential = await server.issueCredential(projectID: Self.projectID)
 
-        await server.beginTurn(sessionKey: credential.sessionKey, turnID: nil)
+        await server.beginTurn(sessionKey: credential.sessionKey)
         _ = try await Self.toolText(server, credential.token, Self.call(id: 1, tool: "write_memory", arguments: ["text": .string("Prima del turno")], turnID: "turn-9"))
         #expect(await host.memory.text == "Prima del turno")
 
-        await server.beginTurn(sessionKey: credential.sessionKey, turnID: "turn-1")
+        await server.bindTurn(sessionKey: credential.sessionKey, turnID: "turn-1")
         #expect(try await Self.toolError(server, credential.token, Self.call(id: 2, tool: "write_memory", arguments: ["text": .string("Altro turno")], turnID: "turn-9")) == "caller_turn_inactive")
         #expect(await host.memory.text == "Prima del turno")
+
+        // A turn id can only narrow the authority of the turn that is starting.
+        await server.bindTurn(sessionKey: credential.sessionKey, turnID: "turn-9")
+        #expect(try await Self.toolError(server, credential.token, Self.call(id: 3, tool: "write_memory", arguments: ["text": .string("Rebound")], turnID: "turn-9")) == "caller_turn_inactive")
+    }
+
+    @Test("A turn id reported after the turn ended grants no write authority")
+    func lateTurnIDGrantsNothing() async throws {
+        let host = FakeHost()
+        let server = CoordinatorToolServer(host: host)
+        let credential = await server.issueCredential(projectID: Self.projectID)
+
+        await server.beginTurn(sessionKey: credential.sessionKey)
+        await server.endTurn(sessionKey: credential.sessionKey)
+        await server.bindTurn(sessionKey: credential.sessionKey, turnID: "turn-late")
+
+        #expect(try await Self.toolError(server, credential.token, Self.call(id: 1, tool: "write_memory", arguments: ["text": .string("Tardi")])) == "caller_turn_inactive")
+        #expect(try await Self.toolError(server, credential.token, Self.call(id: 2, tool: "write_memory", arguments: ["text": .string("Tardi")], turnID: "turn-late")) == "caller_turn_inactive")
+        #expect(await host.memory.text.isEmpty)
+    }
+
+    @Test("Ending a turn cancels the session's requests in progress")
+    func endingATurnCancelsRequests() async throws {
+        let host = FakeHost()
+        let server = CoordinatorToolServer(host: host)
+        let credential = await server.issueCredential(projectID: Self.projectID)
+        await server.beginTurn(sessionKey: credential.sessionKey)
+
+        await host.holdContextReads()
+        let pending = Task { await server.respond(to: Self.post(Self.call(id: 5, tool: "read_history"), token: credential.token)) }
+        await host.waitForHeldRead()
+        await server.endTurn(sessionKey: credential.sessionKey)
+        await host.releaseContextReads()
+
+        let answer = await pending.value
+        #expect(answer.status == 202)
+        #expect(answer.body.isEmpty)
+        #expect(await server.respond(to: Self.post(Self.message(id: 6, method: "ping"), token: credential.token)).status == 200)
     }
 
     @Test("A closed project answers as unavailable, with the request id")

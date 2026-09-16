@@ -46,8 +46,12 @@ public final class LoopbackHTTPServer: @unchecked Sendable {
             listener.stateUpdateHandler = { state in
                 switch state {
                 case .ready:
-                    guard resumed.set(), let port = listener.port?.rawValue else { return }
-                    continuation.resume(returning: port)
+                    guard resumed.set() else { return }
+                    if let port = listener.port?.rawValue {
+                        continuation.resume(returning: port)
+                    } else {
+                        continuation.resume(throwing: LoopbackHTTPServerError.startFailed("no port assigned"))
+                    }
                 case let .failed(error):
                     guard resumed.set() else { return }
                     continuation.resume(throwing: LoopbackHTTPServerError.startFailed(error.localizedDescription))
@@ -87,6 +91,7 @@ public final class LoopbackHTTPServer: @unchecked Sendable {
         let handler: Handler
         var buffer = Data()
         var timeout: Task<Void, Never>?
+        var handling: Task<Void, Never>?
 
         init(connection: NWConnection, maximumBodyBytes: Int, handler: @escaping Handler) {
             self.connection = connection
@@ -95,9 +100,11 @@ public final class LoopbackHTTPServer: @unchecked Sendable {
         }
 
         func run() {
-            timeout = Task { [connection] in
+            timeout = Task { [weak self, connection] in
                 try? await Task.sleep(for: LoopbackHTTPServer.connectionTimeout)
-                if !Task.isCancelled { connection.cancel() }
+                guard !Task.isCancelled else { return }
+                self?.handling?.cancel()
+                connection.cancel()
             }
             receive()
         }
@@ -113,9 +120,9 @@ public final class LoopbackHTTPServer: @unchecked Sendable {
                 case .needMore:
                     if isComplete { close() } else { receive() }
                 case let .refuse(status):
-                    send(GatewayHTTPResponse(status: status))
+                    send(Self.refusal(status))
                 case let .request(request):
-                    Task {
+                    handling = Task {
                         let response = await self.handler(request)
                         self.send(response)
                     }
@@ -174,6 +181,13 @@ public final class LoopbackHTTPServer: @unchecked Sendable {
         private func close() {
             timeout?.cancel()
             connection.cancel()
+        }
+
+        /// A transport refusal with the JSON-RPC error body the tool server uses for the same cases.
+        private static func refusal(_ status: Int) -> GatewayHTTPResponse {
+            let message = status == 413 ? "Request body is too large." : reason(status)
+            let body = Data(#"{"error":{"code":-32600,"message":"\#(message)"},"id":null,"jsonrpc":"2.0"}"#.utf8)
+            return GatewayHTTPResponse(status: status, headers: ["Content-Type": "application/json"], body: body)
         }
 
         private static func reason(_ status: Int) -> String {

@@ -233,11 +233,18 @@ struct WorkspaceView: View {
         if store.isPlanning {
             HStack(spacing: TramaSpacing.compact) {
                 ProgressView().controlSize(.small)
-                Text(store.isExecuting ? "Il Coordinatore sta lavorando nel worktree" : store.coordinatorPhase == .studying ? "Il Coordinatore sta studiando il progetto" : (store.selectedRequest?.state == .checking ? "Verifiche in corso" : "Il Coordinatore sta leggendo il progetto"))
+                Text(workingDescription)
             }.font(.caption).foregroundStyle(.secondary)
         } else {
             EmptyView()
         }
+    }
+
+    private var workingDescription: String {
+        if store.isExecuting { return "Il Coordinatore sta lavorando nel worktree" }
+        if store.coordinatorPhase == .studying { return "Il Coordinatore sta studiando il progetto" }
+        if store.selectedRequest?.state == .checking { return "Verifiche in corso" }
+        return "Il Coordinatore sta leggendo il progetto"
     }
 
     @ToolbarContentBuilder

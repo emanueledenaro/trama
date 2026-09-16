@@ -212,7 +212,9 @@ private enum Writer {
         switch part {
         case .code:
             let snapshot = sources.snapshot
-            hasher.add(snapshot.name, snapshot.branch ?? "", snapshot.headSHA ?? "", String(snapshot.totalFileCount), String(snapshot.isDemo))
+            let branch: String = snapshot.branch ?? ""
+            let head: String = snapshot.headSHA ?? ""
+            hasher.add(snapshot.name, branch, head, String(snapshot.totalFileCount), String(snapshot.isDemo))
             for module in snapshot.modules {
                 hasher.add(module.id, module.name, module.relativePath, module.dependencies.joined(separator: ","))
                 for file in module.files { hasher.add(file.relativePath, file.contentHash, String(file.lineCount)) }
@@ -223,7 +225,9 @@ private enum Writer {
         case .catalogue:
             let catalogue = sources.catalogue
             for project in catalogue.registeredProjects { hasher.add(project.id.uuidString, project.name, String(project.isDemo)) }
-            hasher.add(catalogue.activeProjectID?.uuidString ?? "", catalogue.coordinatorModel ?? "")
+            let activeProject: String = catalogue.activeProjectID?.uuidString ?? ""
+            let coordinatorModel: String = catalogue.coordinatorModel ?? ""
+            hasher.add(activeProject, coordinatorModel)
             for model in catalogue.models { hasher.add(model.model, model.displayName, String(model.isDefault)) }
             for skill in catalogue.skills { hasher.add(skill.name, String(skill.enabled)) }
         case .github:
@@ -252,7 +256,9 @@ private enum Writer {
             }
         case .requests:
             for request in changeRequests(sources) {
-                hasher.add(request.id.uuidString, request.title, request.state.rawValue, request.moduleName, request.candidateID ?? "", request.pullRequestURL?.absoluteString ?? "")
+                let candidate: String = request.candidateID ?? ""
+                let pullRequest: String = request.pullRequestURL?.absoluteString ?? ""
+                hasher.add(request.id.uuidString, request.title, request.state.rawValue, request.moduleName, candidate, pullRequest)
             }
         case .history:
             for event in recentEvents(sources) { hasher.add(event.id.uuidString, String(event.sequence), eventText(event)) }
@@ -290,17 +296,17 @@ private enum Writer {
             left.value == right.value ? left.key < right.key : left.value > right.value
         }
         let languages = ordered.map { "\($0.key) (\($0.value) file)" }
-        if !languages.isEmpty { lines.append("Linguaggi: " + languages.joined(separator: ", ") + ".") }
+        if !languages.isEmpty { lines.append("Linguaggi: \(languages.joined(separator: ", ")).") }
         lines.append("Moduli:")
         let names = Dictionary(snapshot.modules.map { ($0.id, $0.name) }, uniquingKeysWith: { first, _ in first })
         for module in snapshot.modules.prefix(maximumListed) {
             let lineCount = module.files.reduce(0) { $0 + $1.lineCount }
-            let dependencies = module.dependencies.map { names[$0] ?? $0 }
-            let uses = dependencies.isEmpty ? "" : "; usa " + dependencies.joined(separator: ", ")
+            let dependencies: [String] = module.dependencies.map { names[$0] ?? $0 }
+            let uses: String = dependencies.isEmpty ? "" : "; usa \(dependencies.joined(separator: ", "))"
             lines.append("- \(module.name) (\(module.relativePath)): \(module.files.count) file, \(lineCount) righe\(uses)")
         }
         if snapshot.modules.count > maximumListed { lines.append("- altri \(snapshot.modules.count - maximumListed) moduli") }
-        if !snapshot.warnings.isEmpty { lines.append("Avvisi della lettura: " + snapshot.warnings.joined(separator: " ")) }
+        if !snapshot.warnings.isEmpty { lines.append("Avvisi della lettura: \(snapshot.warnings.joined(separator: " "))") }
         return lines.joined(separator: "\n")
     }
 
@@ -330,14 +336,23 @@ private enum Writer {
 
     private static func catalogue(_ catalogue: StudyCatalogue) -> String {
         var lines = ["## Trama e Codex"]
-        let others = catalogue.registeredProjects.filter { $0.id != catalogue.activeProjectID }
-        let names = others.prefix(maximumListed).map { $0.name + ($0.isDemo ? " (esempio)" : "") }
-        lines.append("Altri progetti registrati in Trama: " + (names.isEmpty ? "nessuno." : names.joined(separator: ", ") + "."))
-        lines.append("Modello del Coordinatore: " + (catalogue.coordinatorModel ?? "non scelto") + ".")
-        let models = catalogue.models.map { "\($0.displayName) (\($0.model)\($0.isDefault ? ", predefinito" : ""))" }
-        lines.append("Modelli disponibili: " + (models.isEmpty ? "catalogo non letto." : models.joined(separator: ", ") + "."))
-        let skills = catalogue.skills.filter(\.enabled).map(\.name)
-        lines.append("Skill attive: " + (skills.isEmpty ? "nessuna rilevata." : skills.joined(separator: ", ") + "."))
+        let others: [RecentProject] = catalogue.registeredProjects.filter { $0.id != catalogue.activeProjectID }
+        let names: [String] = others.prefix(maximumListed).map { project in
+            project.isDemo ? "\(project.name) (esempio)" : project.name
+        }
+        let projectList: String = names.isEmpty ? "nessuno" : names.joined(separator: ", ")
+        lines.append("Altri progetti registrati in Trama: \(projectList).")
+        let coordinatorModel: String = catalogue.coordinatorModel ?? "non scelto"
+        lines.append("Modello del Coordinatore: \(coordinatorModel).")
+        let models: [String] = catalogue.models.map { model in
+            let marker: String = model.isDefault ? ", predefinito" : ""
+            return "\(model.displayName) (\(model.model)\(marker))"
+        }
+        let modelList: String = models.isEmpty ? "catalogo non letto" : models.joined(separator: ", ")
+        lines.append("Modelli disponibili: \(modelList).")
+        let skills: [String] = catalogue.skills.filter(\.enabled).map(\.name)
+        let skillList: String = skills.isEmpty ? "nessuna rilevata" : skills.joined(separator: ", ")
+        lines.append("Skill attive: \(skillList).")
         return lines.joined(separator: "\n")
     }
 
@@ -353,7 +368,7 @@ private enum Writer {
             for branch in github.branches.prefix(maximumListed) {
                 lines.append("- \(branch.name) \(branch.sha.prefix(7))")
             }
-            if !github.warnings.isEmpty { lines.append("Avvisi: " + github.warnings.joined(separator: " ")) }
+            if !github.warnings.isEmpty { lines.append("Avvisi: \(github.warnings.joined(separator: " "))") }
         } else {
             lines.append("GitHub non è collegato a questo progetto.")
         }
@@ -362,10 +377,11 @@ private enum Writer {
             let closed = issues.filter { $0.state.lowercased() != "open" }
             lines.append("Issue aperte: \(open.count).")
             for issue in open.prefix(maximumListed) {
-                let labels = issue.labels.isEmpty ? "" : " [" + issue.labels.joined(separator: ", ") + "]"
+                let labels: String = issue.labels.isEmpty ? "" : " [\(issue.labels.joined(separator: ", "))]"
                 lines.append("- #\(issue.number) \(issue.title)\(labels)")
             }
-            lines.append("Issue chiuse: \(closed.count)" + (closed.isEmpty ? "." : ", le più recenti:"))
+            let closedEnding: String = closed.isEmpty ? "." : ", le più recenti:"
+            lines.append("Issue chiuse: \(closed.count)\(closedEnding)")
             for issue in closed.suffix(10).reversed() {
                 lines.append("- #\(issue.number) \(issue.title)")
             }
@@ -398,18 +414,22 @@ private enum Writer {
     private static func mandate(_ mandate: ProjectMandate?) -> String {
         guard let mandate else { return "## Mandato\nNessun mandato concesso: il Coordinatore legge e propone, senza agire." }
         if mandate.status == .revoked {
-            let reason = mandate.revocation.map { ": \($0.reason)" } ?? ""
+            let reason: String = mandate.revocation.map { ": \($0.reason)" } ?? ""
             return "## Mandato\nMandato v\(mandate.version) revocato\(reason). Il Coordinatore legge e propone, senza agire."
         }
-        return [
-            "## Mandato",
-            "Mandato v\(mandate.version) concesso da \(mandate.grantedBy).",
-            "Obiettivi: " + mandate.objectives.joined(separator: "; ") + ".",
-            "Priorità: " + (mandate.priorities.isEmpty ? "nessuna." : mandate.priorities.joined(separator: "; ") + "."),
-            "Perimetro: " + mandate.scopeModuleIDs.joined(separator: ", ") + ".",
-            "Azioni autorizzate: " + mandate.authorizedActions.map(actionLabel).joined(separator: ", ") + ".",
-            "Limiti: " + (mandate.limits.isEmpty ? "nessuno." : mandate.limits.joined(separator: "; ") + ".")
-        ].joined(separator: "\n")
+        let objectives: String = mandate.objectives.joined(separator: "; ")
+        let priorities: String = mandate.priorities.isEmpty ? "nessuna" : mandate.priorities.joined(separator: "; ")
+        let scope: String = mandate.scopeModuleIDs.joined(separator: ", ")
+        let actions: String = mandate.authorizedActions.map(actionLabel).joined(separator: ", ")
+        let limits: String = mandate.limits.isEmpty ? "nessuno" : mandate.limits.joined(separator: "; ")
+        var lines: [String] = ["## Mandato"]
+        lines.append("Mandato v\(mandate.version) concesso da \(mandate.grantedBy).")
+        lines.append("Obiettivi: \(objectives).")
+        lines.append("Priorità: \(priorities).")
+        lines.append("Perimetro: \(scope).")
+        lines.append("Azioni autorizzate: \(actions).")
+        lines.append("Limiti: \(limits).")
+        return lines.joined(separator: "\n")
     }
 
     private static func actionLabel(_ action: ProjectMandate.Action) -> String {
@@ -453,19 +473,22 @@ private enum Writer {
     private static func eventText(_ event: ConversationEvent) -> String {
         switch event.content {
         case let .personMessage(text, _, moduleName):
-            return "Persona (\(moduleName)): " + clipped(text)
+            return "Persona (\(moduleName)): \(clipped(text))"
         case let .coordinatorText(text, _, _):
-            return "Coordinatore: " + clipped(text)
+            return "Coordinatore: \(clipped(text))"
         case let .activity(title, detail):
-            return "Attività: " + title + (detail.map { " · " + clipped($0) } ?? "")
+            let suffix: String = detail.map { " · \(clipped($0))" } ?? ""
+            return "Attività: \(title)\(suffix)"
         case let .card(card):
-            return "Scheda \(card.kind.rawValue): " + card.title + (card.detail.map { " · " + clipped($0) } ?? "")
+            let suffix: String = card.detail.map { " · \(clipped($0))" } ?? ""
+            return "Scheda \(card.kind.rawValue): \(card.title)\(suffix)"
         }
     }
 
     private static func clipped(_ text: String, limit: Int = 600) -> String {
-        let flat = text.split(whereSeparator: \.isNewline).joined(separator: " ")
-        return flat.count > limit ? String(flat.prefix(limit)) + "…" : flat
+        let flat: String = text.split(whereSeparator: \.isNewline).joined(separator: " ")
+        guard flat.count > limit else { return flat }
+        return "\(flat.prefix(limit))…"
     }
 }
 

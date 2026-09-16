@@ -167,7 +167,8 @@ struct ProjectStudyTests {
         var sources = try fixture.sources()
         let first = ProjectStudy.make(from: sources, previous: nil).study
 
-        #expect(first.partsToInject(after: [:]) == ProjectStudy.Part.allCases.filter { $0 != .history })
+        let everyPartButHistory: [ProjectStudy.Part] = [.code, .instructions, .catalogue, .github, .monitor, .pact, .mandate, .requests]
+        #expect(first.partsToInject(after: [:]) == everyPartButHistory)
         #expect(first.partsToInject(after: first.fingerprints).isEmpty)
 
         var pact = try #require(sources.pact)

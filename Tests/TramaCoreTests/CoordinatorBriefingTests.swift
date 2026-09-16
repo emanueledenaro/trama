@@ -46,9 +46,10 @@ struct CoordinatorBriefingTests {
         #expect(CoordinatorBriefing.contextUpdate(study: first, injected: first.fingerprints, memory: memory, includeMemory: false) == nil)
 
         let withMemory = try #require(CoordinatorBriefing.contextUpdate(study: first, injected: first.fingerprints, memory: memory, includeMemory: true))
-        #expect(withMemory.update.contains("Seconda priorità: rimborsi parziali."))
+        #expect(withMemory.text.contains("Seconda priorità: rimborsi parziali."))
         #expect(withMemory.parts.isEmpty)
-        #expect(!withMemory.update.contains("## Codice"))
+        #expect(withMemory.includesMemory)
+        #expect(!withMemory.text.contains("## Codice"))
 
         var pact = try #require(sources.pact)
         try pact.decide(id: "D-9", value: "Rimborsi solo con ricevuta", acceptedExample: "Ricevuta allegata", rationale: "Controllo")
@@ -56,12 +57,13 @@ struct CoordinatorBriefingTests {
         let second = ProjectStudy.make(from: sources, previous: first).study
         let changed = try #require(CoordinatorBriefing.contextUpdate(study: second, injected: first.fingerprints, memory: memory, includeMemory: false))
         #expect(changed.parts == [.pact])
-        #expect(changed.update.contains("Rimborsi solo con ricevuta"))
-        #expect(!changed.update.contains("Seconda priorità"))
-        #expect(changed.update.hasPrefix("Aggiornamento di Trama"))
+        #expect(!changed.includesMemory)
+        #expect(changed.text.contains("Rimborsi solo con ricevuta"))
+        #expect(!changed.text.contains("Seconda priorità"))
+        #expect(changed.text.hasPrefix("Aggiornamento di Trama"))
 
         let empty = try #require(CoordinatorBriefing.contextUpdate(study: nil, injected: [:], memory: CoordinatorMemory(), includeMemory: true))
-        #expect(empty.update.contains("La tua memoria per questo progetto è vuota."))
+        #expect(empty.text.contains("La tua memoria per questo progetto è vuota."))
     }
 
     @Test("Repository paths named in the reply become its sources, in order and only when they exist")

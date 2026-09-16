@@ -62,6 +62,9 @@ final class ProjectStore: ObservableObject {
     let coordinator = CoordinatorRuntime()
     var coordinatorTask: Task<Void, Never>?
     var coordinatorGeneration = UUID()
+    /// Pact decisions and mandate the study was last refreshed for on save.
+    private var studiedDecisions: [PactDecision] = []
+    private var studiedMandate: ProjectMandate?
     var approvalQueue: [(request: CodexClient.ApprovalRequest, continuation: CheckedContinuation<CodexClient.ApprovalDecision, Never>)] = []
     let sessions = WorkspaceSessionManager()
     let conflictProbe = GitConflictProbe()
@@ -685,6 +688,13 @@ final class ProjectStore: ObservableObject {
         document.lastSection = section?.rawValue
         document.composerDraft = composer
         if !selectedModel.isEmpty { document.selectedModel = selectedModel }
+        // The Pact and the mandate change from several views; their study parts follow on save.
+        let decisions = document.pact?.decisions ?? []
+        if decisions != studiedDecisions || document.mandate != studiedMandate {
+            studiedDecisions = decisions
+            studiedMandate = document.mandate
+            refreshCoordinatorStudy()
+        }
         do {
             try ProjectDocumentStorage(url: stateURL(project)).save(document)
         } catch { errorMessage = "Salvataggio non riuscito: \(error.localizedDescription)" }

@@ -81,12 +81,17 @@ public actor CoordinatorToolServer {
     public static let supportedProtocolVersions = ["2025-06-18", "2025-03-26", "2024-11-05"]
     public static let tokenPrefix = "trama_session_"
 
+    /// The right to write, held while one turn of the caller runs.
+    private struct TurnAuthority {
+        /// Nil until Codex reports the id of the turn that is starting.
+        var turnID: String?
+    }
+
     private struct Session {
         let key: String
         let projectID: UUID
         let digest: [UInt8]
-        /// Set while a turn of the caller runs; the inner value is nil until Codex reports the turn id.
-        var activeTurn: String??
+        var turn: TurnAuthority?
     }
 
     private struct InFlightKey: Hashable {
@@ -119,27 +124,38 @@ public actor CoordinatorToolServer {
             .replacingOccurrences(of: "/", with: "_")
             .replacingOccurrences(of: "=", with: "")
         let key = "coordinator-session:" + UUID().uuidString
-        sessions[key] = Session(key: key, projectID: projectID, digest: Self.digest(token), activeTurn: nil)
+        sessions[key] = Session(key: key, projectID: projectID, digest: Self.digest(token), turn: nil)
         return CoordinatorSessionCredential(token: token, sessionKey: key, projectID: projectID)
     }
 
     /// Removes the credential and cancels its requests in progress.
     public func revoke(sessionKey: String) {
         sessions[sessionKey] = nil
+        cancelRequests(sessionKey: sessionKey)
+    }
+
+    /// Lets the session write while the turn that is starting runs.
+    public func beginTurn(sessionKey: String) {
+        sessions[sessionKey]?.turn = TurnAuthority(turnID: nil)
+    }
+
+    /// Narrows the open authority to the turn id Codex reported. An id that arrives after the turn
+    /// ended, or once an id is already bound, changes nothing.
+    public func bindTurn(sessionKey: String, turnID: String) {
+        guard sessions[sessionKey]?.turn?.turnID == nil, sessions[sessionKey]?.turn != nil else { return }
+        sessions[sessionKey]?.turn?.turnID = turnID
+    }
+
+    /// Ends the write authority of the session and cancels its requests in progress; it can still read.
+    public func endTurn(sessionKey: String) {
+        sessions[sessionKey]?.turn = nil
+        cancelRequests(sessionKey: sessionKey)
+    }
+
+    private func cancelRequests(sessionKey: String) {
         for (key, task) in inFlight where key.sessionKey == sessionKey {
             task.cancel()
         }
-    }
-
-    /// Lets the session write while this turn runs. Pass nil when the turn is starting and Codex
-    /// has not reported its id yet; calling again with the id narrows the authority to that turn.
-    public func beginTurn(sessionKey: String, turnID: String?) {
-        sessions[sessionKey]?.activeTurn = .some(turnID)
-    }
-
-    /// Ends the write authority of the session; it can still read.
-    public func endTurn(sessionKey: String) {
-        sessions[sessionKey]?.activeTurn = nil
     }
 
     // MARK: HTTP
@@ -211,7 +227,7 @@ public actor CoordinatorToolServer {
                 responses.append(response)
             case let .pending(key, task):
                 let response = await task.value
-                inFlight[key] = nil
+                if inFlight[key] == task { inFlight[key] = nil }
                 if let response { responses.append(response) }
             }
         }
@@ -285,7 +301,9 @@ public actor CoordinatorToolServer {
             return CoordinatorTools.failure("caller_session_inactive", "The session credential was revoked.")
         }
         if tool.requiresActiveTurn {
-            guard let turn = session.activeTurn, turn == nil || callerTurnID == nil || callerTurnID == turn else {
+            // Like Synara, authority follows the caller's running turn; the turn metadata Codex sends
+            // with each call must match it once the turn id is known.
+            guard let turn = session.turn, turn.turnID == nil || callerTurnID == nil || callerTurnID == turn.turnID else {
                 return CoordinatorTools.failure("caller_turn_inactive", "This tool writes only while the Coordinator turn that calls it is running.")
             }
             guard case let .string(text)? = arguments["text"] else {
@@ -301,13 +319,13 @@ public actor CoordinatorToolServer {
             } catch let error as CoordinatorMemoryError {
                 return CoordinatorTools.failure("memory_too_large", error.localizedDescription)
             } catch CoordinatorToolHostError.projectUnavailable {
-                return CoordinatorTools.failure("project_unavailable", "The project is no longer open in Trama.")
+                return CoordinatorTools.projectUnavailable
             } catch {
                 return CoordinatorTools.failure("operation_failed", "Trama could not save the memory.")
             }
         }
         guard let context = await host.toolContext(projectID: session.projectID) else {
-            return CoordinatorTools.failure("project_unavailable", "The project is no longer open in Trama.")
+            return CoordinatorTools.projectUnavailable
         }
         return CoordinatorTools.read(tool, arguments: arguments, context: context)
     }
@@ -331,22 +349,27 @@ public actor CoordinatorToolServer {
     }
 }
 
+/// A tool Trama offers the Coordinator on its MCP server.
+public enum CoordinatorTool: String, CaseIterable, Sendable {
+    case readStudy = "read_study"
+    case readPact = "read_pact"
+    case readMandate = "read_mandate"
+    case readIssues = "read_issues"
+    case readHistory = "read_history"
+    case writeMemory = "write_memory"
+
+    var requiresActiveTurn: Bool { self == .writeMemory }
+}
+
 /// The Coordinator tools: definitions and the read handlers, as functions of the project data.
 enum CoordinatorTools {
-    enum Tool: String, CaseIterable {
-        case readStudy = "read_study"
-        case readPact = "read_pact"
-        case readMandate = "read_mandate"
-        case readIssues = "read_issues"
-        case readHistory = "read_history"
-        case writeMemory = "write_memory"
-
-        var requiresActiveTurn: Bool { self == .writeMemory }
-    }
+    typealias Tool = CoordinatorTool
 
     static let serverInstructions = "Trama tools read this project's study, Pact, mandate, GitHub data and conversation, and keep your memory for the project."
 
     static let maximumIssueBodyBytes = 16_000
+    static let issueStates = ["open", "closed", "all"]
+    static let projectUnavailable = failure("project_unavailable", "The project is no longer open in Trama.")
 
     static var definitions: [JSONValue] {
         Tool.allCases.map { tool in
@@ -361,7 +384,7 @@ enum CoordinatorTools {
             case .readIssues:
                 ("Read GitHub issues and open pull requests; pass number to read one issue with its body.",
                  ["number": .object(["type": .string("integer"), "minimum": .integer(1)]),
-                  "state": .object(["type": .string("string"), "enum": .array([.string("open"), .string("closed"), .string("all")])])], [])
+                  "state": .object(["type": .string("string"), "enum": .array(issueStates.map(JSONValue.string))])], [])
             case .readHistory:
                 ("Read the latest events of the conversation with the person, oldest first.",
                  ["limit": .object(["type": .string("integer"), "minimum": .integer(1), "maximum": .integer(100)]),
@@ -407,7 +430,8 @@ enum CoordinatorTools {
         }
         guard let value = arguments["part"] else { return success(text: study.text) }
         guard let name = value.stringValue, let part = ProjectStudy.Part(rawValue: name) else {
-            return failure("invalid_arguments", "part must be one of: " + ProjectStudy.Part.allCases.map(\.rawValue).joined(separator: ", ") + ".")
+            let names: String = ProjectStudy.Part.allCases.map(\.rawValue).joined(separator: ", ")
+            return failure("invalid_arguments", "part must be one of: \(names).")
         }
         return success(text: study.text(for: [part]))
     }
@@ -472,11 +496,12 @@ enum CoordinatorTools {
             }
             var summary = issueSummary(issue)
             let body = StudySecretFilter.redact(issue.body)
-            summary["body"] = .string(body.utf8.count > maximumIssueBodyBytes ? String(decoding: body.utf8.prefix(maximumIssueBodyBytes), as: UTF8.self) : body)
+            let clippedBody: String = body.utf8.count > maximumIssueBodyBytes ? String(decoding: body.utf8.prefix(maximumIssueBodyBytes), as: UTF8.self) : body
+            summary["body"] = .string(clippedBody)
             return success(json: .object(["repository": repository, "issue": .object(summary)]))
         }
         let state = arguments["state"]?.stringValue ?? "all"
-        guard ["open", "closed", "all"].contains(state), arguments["state"] == nil || arguments["state"]?.stringValue != nil else {
+        guard issueStates.contains(state), arguments["state"] == nil || arguments["state"]?.stringValue != nil else {
             return failure("invalid_arguments", "state must be open, closed or all.")
         }
         let issues: JSONValue = context.issues.map { issues in
@@ -536,13 +561,17 @@ enum CoordinatorTools {
         let text: String
         switch event.content {
         case let .personMessage(message, _, _):
-            (kind, text) = ("personMessage", message)
+            kind = "personMessage"
+            text = message
         case let .coordinatorText(message, _, _):
-            (kind, text) = ("coordinatorText", message)
+            kind = "coordinatorText"
+            text = message
         case let .activity(title, detail):
-            (kind, text) = ("activity", [title, detail].compactMap { $0 }.joined(separator: " · "))
+            kind = "activity"
+            text = detail.map { "\(title) · \($0)" } ?? title
         case let .card(card):
-            (kind, text) = ("card." + card.kind.rawValue, [card.title, card.detail].compactMap { $0 }.joined(separator: "\n"))
+            kind = "card.\(card.kind.rawValue)"
+            text = card.detail.map { "\(card.title)\n\($0)" } ?? card.title
         }
         var object: [String: JSONValue] = [
             "sequence": .integer(event.sequence),

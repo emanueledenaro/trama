@@ -1870,8 +1870,9 @@ private actor Core {
                   let item = params["item"]?.objectValue,
                   let type = item["type"]?.stringValue else { return }
             if type == "mcpToolCall", let onEvent = session.onEvent, let itemID = item["id"]?.stringValue {
-                let failed = item["status"]?.stringValue != "completed"
-                    || item["result"]?.objectValue?["isError"]?.boolValue == true
+                let completed: Bool = item["status"]?.stringValue == "completed"
+                let refused: Bool = item["result"]?.objectValue?["isError"]?.boolValue ?? false
+                let failed: Bool = !completed || refused
                 onEvent(.toolCallCompleted(
                     itemID: itemID,
                     server: item["server"]?.stringValue ?? "",

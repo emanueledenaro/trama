@@ -42,7 +42,7 @@ final class CoordinatorRuntime {
             self.server = server
         }
         if self.projectID != projectID || client == nil {
-            await shutdown()
+            shutdown()
             let credential = await tools.issueCredential(projectID: projectID)
             self.credential = credential
             client = CodexClient.coordinatorRuntime(token: credential.token)
@@ -52,9 +52,13 @@ final class CoordinatorRuntime {
         return (client, endpoint)
     }
 
-    /// Revokes the credential and stops the Codex process. The thread stays saved in the document.
-    func shutdown() async {
-        if let credential { await tools.revoke(sessionKey: credential.sessionKey) }
+    /// Stops the Codex process and revokes its credential. The runtime state is cleared at once, so a
+    /// runtime prepared right after is never touched; the thread stays saved in the document.
+    func shutdown() {
+        if let credential {
+            let tools = self.tools
+            Task { await tools.revoke(sessionKey: credential.sessionKey) }
+        }
         client?.stop()
         client = nil
         credential = nil
@@ -66,14 +70,51 @@ final class CoordinatorRuntime {
         settings = nil
     }
 
-    func beginTurn(_ turnID: String?) async {
+    func beginTurn() async {
         guard let credential else { return }
-        await tools.beginTurn(sessionKey: credential.sessionKey, turnID: turnID)
+        await tools.beginTurn(sessionKey: credential.sessionKey)
+    }
+
+    func bindTurn(_ turnID: String) async {
+        guard let credential else { return }
+        await tools.bindTurn(sessionKey: credential.sessionKey, turnID: turnID)
     }
 
     func endTurn() async {
         guard let credential else { return }
         await tools.endTurn(sessionKey: credential.sessionKey)
+    }
+
+    /// Runs a Coordinator turn with write authority. Events reach `onEvent` in order, and all of
+    /// them are handled before the authority ends, so a late turn id cannot reopen it.
+    func runTurn(
+        client: CodexClient,
+        threadID: String,
+        input: [String],
+        settings: CodexClient.CoordinatorThreadSettings,
+        onEvent: @escaping @MainActor (CodexClient.CoordinatorTurnEvent) async -> Void
+    ) async throws -> String {
+        let (events, continuation) = AsyncStream<CodexClient.CoordinatorTurnEvent>.makeStream()
+        let consumer = Task { @MainActor in
+            for await event in events {
+                if case let .turnStarted(turnID) = event { await self.bindTurn(turnID) }
+                await onEvent(event)
+            }
+        }
+        await beginTurn()
+        defer { continuation.finish() }
+        do {
+            let reply = try await client.runCoordinatorTurn(threadID: threadID, input: input, settings: settings) { continuation.yield($0) }
+            continuation.finish()
+            await consumer.value
+            await endTurn()
+            return reply
+        } catch {
+            continuation.finish()
+            await consumer.value
+            await endTurn()
+            throw error
+        }
     }
 }
 
@@ -109,7 +150,7 @@ extension ProjectStore {
         if rereadInstructions || coordinator.instructionFiles == nil {
             coordinator.instructionFiles = RepositoryInstructions().read(root: root)
         }
-        let github = team.sourceRepository.isEmpty || team.snapshot?.repository.caseInsensitiveCompare(team.sourceRepository) != .orderedSame ? nil : team.snapshot
+        let github = projectGitHubSnapshot
         let sources = StudySources(
             snapshot: project,
             instructionFiles: coordinator.instructionFiles ?? [],
@@ -140,6 +181,13 @@ extension ProjectStore {
         return update.recomputed
     }
 
+    /// The monitor's GitHub snapshot when it belongs to this project's own remote.
+    var projectGitHubSnapshot: GitHubSnapshot? {
+        guard !team.sourceRepository.isEmpty,
+              team.snapshot?.repository.caseInsensitiveCompare(team.sourceRepository) == .orderedSame else { return nil }
+        return team.snapshot
+    }
+
     /// Reads the project's issues for the study when the project has a GitHub repository.
     func refreshProjectIssues() async {
         let repository = team.sourceRepository
@@ -158,7 +206,7 @@ extension ProjectStore {
     func coordinatorToolContext(projectID: UUID) -> CoordinatorToolContext? {
         guard projectID == activeProjectID, let project else { return nil }
         refreshCoordinatorStudy()
-        let github = team.snapshot?.repository.caseInsensitiveCompare(team.sourceRepository) == .orderedSame ? team.snapshot : nil
+        let github = projectGitHubSnapshot
         return CoordinatorToolContext(projectName: project.name, document: document, issues: github == nil ? nil : projectIssues, github: github)
     }
 
@@ -249,8 +297,7 @@ extension ProjectStore {
         coordinatorTask = nil
         coordinatorPhase = .idle
         coordinatorStudyText = nil
-        let runtime = coordinator
-        Task { await runtime.shutdown() }
+        coordinator.shutdown()
     }
 
     private func recordCoordinatorThread(_ threadID: String, model: String) {
@@ -279,29 +326,15 @@ extension ProjectStore {
                 coordinatorStudyText = nil
             }
         }
-        await coordinator.beginTurn(nil)
-        let runtime = coordinator
-        let reply: String
-        do {
-            reply = try await client.runCoordinatorTurn(
-                threadID: threadID,
-                input: CoordinatorBriefing.openingInput(study: study, memory: memory, replacing: reason),
-                settings: settings
-            ) { [weak self] event in
-                Task { @MainActor in
-                    guard let self, self.coordinatorGeneration == generation else { return }
-                    switch event {
-                    case let .turnStarted(turnID): await runtime.beginTurn(turnID)
-                    case let .textDelta(delta): self.coordinatorStudyText? += delta
-                    default: break
-                    }
-                }
-            }
-        } catch {
-            await runtime.endTurn()
-            throw error
+        let reply = try await coordinator.runTurn(
+            client: client,
+            threadID: threadID,
+            input: CoordinatorBriefing.openingInput(study: study, memory: memory, replacing: reason),
+            settings: settings
+        ) { [weak self] event in
+            guard let self, self.coordinatorGeneration == generation, case let .textDelta(delta) = event else { return }
+            self.coordinatorStudyText? += delta
         }
-        await runtime.endTurn()
         guard coordinatorGeneration == generation else { return }
         document.coordinator?.thread?.injectedStudy = study.fingerprints
         coordinator.memoryDelivered = true
@@ -355,9 +388,11 @@ extension ProjectStore {
             includeMemory: !coordinator.memoryDelivered
         )
         let moduleLine = document.requests[index].moduleID == "project" ? "" : "Contesto scelto dalla persona: modulo \(moduleName).\n\n"
-        let input = [update?.update, moduleLine + text].compactMap { $0 }
+        let input = [update?.text, moduleLine + text].compactMap { $0 }
         settings.model = model
-        let knownFiles = Array(Set(project.modules.flatMap(\.files).map(\.relativePath) + (project.contextualInputHashes ?? [:]).keys + (coordinator.instructionFiles ?? []).map(\.path)))
+        var knownFiles: Set<String> = Set(project.modules.flatMap(\.files).map(\.relativePath))
+        knownFiles.formUnion((project.contextualInputHashes ?? [:]).keys)
+        knownFiles.formUnion((coordinator.instructionFiles ?? []).map(\.path))
 
         document.requests[index].model = model
         document.requests[index].sourceFingerprint = fingerprint
@@ -367,7 +402,8 @@ extension ProjectStore {
         document.requests[index].proposal = nil
         document.requests[index].replyKind = nil
         document.requests[index].replyReferences = nil
-        document.conversation?.appendActivity(requestID: id, title: "Messaggio inviato al Coordinatore", detail: update.map { "\(model) · aggiornamento: " + Self.updateSummary($0) } ?? model)
+        let sentDetail: String = update.map { "\(model) · aggiornamento: \(Self.updateSummary($0))" } ?? model
+        document.conversation?.appendActivity(requestID: id, title: "Messaggio inviato al Coordinatore", detail: sentDetail)
         let token = UUID(); operationID = token
         streamingReplies[id] = ""
         isPlanning = true
@@ -377,15 +413,11 @@ extension ProjectStore {
         activePlanTask = Task { [weak self] in
             guard let self else { return }
             defer { if operationID == token { isPlanning = false; streamingReplies[id] = nil; saveDocument() } }
-            await runtime.beginTurn(nil)
             do {
-                let reply = try await client.runCoordinatorTurn(threadID: threadID, input: input, settings: settings) { [weak self] event in
-                    Task { @MainActor in
-                        guard let self, self.operationID == token, self.localRoot == root else { return }
-                        await self.receiveCoordinatorEvent(event, requestID: id, runtime: runtime)
-                    }
+                let reply = try await runtime.runTurn(client: client, threadID: threadID, input: input, settings: settings) { [weak self] event in
+                    guard let self, self.operationID == token, self.localRoot == root else { return }
+                    self.receiveCoordinatorEvent(event, requestID: id)
                 }
-                await runtime.endTurn()
                 guard operationID == token, localRoot == root, let i = document.requests.firstIndex(where: { $0.id == id }) else { return }
                 if let update, let study = state.study {
                     for part in update.parts {
@@ -393,7 +425,7 @@ extension ProjectStore {
                     }
                 }
                 coordinator.memoryDelivered = true
-                let references = CoordinatorBriefing.references(in: reply, knownFiles: knownFiles)
+                let references = CoordinatorBriefing.references(in: reply, knownFiles: Array(knownFiles))
                 document.requests[i].replyKind = .explanation
                 document.requests[i].plan = reply
                 document.requests[i].replyReferences = references
@@ -402,7 +434,6 @@ extension ProjectStore {
                 document.conversation?.recordReply(requestID: id, text: reply, model: model, references: references)
                 activity.insert("Risposta del Coordinatore ricevuta per \(document.requests[i].moduleName).", at: 0)
             } catch {
-                await runtime.endTurn()
                 guard operationID == token, localRoot == root, let i = document.requests.firstIndex(where: { $0.id == id }) else { return }
                 let interrupted = Task.isCancelled || (error as? CodexClient.ClientError) == .turnInterrupted
                 document.requests[i].state = interrupted ? .interrupted : .failed
@@ -419,10 +450,10 @@ extension ProjectStore {
         }
     }
 
-    private func receiveCoordinatorEvent(_ event: CodexClient.CoordinatorTurnEvent, requestID: UUID, runtime: CoordinatorRuntime) async {
+    private func receiveCoordinatorEvent(_ event: CodexClient.CoordinatorTurnEvent, requestID: UUID) {
         switch event {
-        case let .turnStarted(turnID):
-            await runtime.beginTurn(turnID)
+        case .turnStarted:
+            break
         case let .textDelta(delta):
             streamingReplies[requestID, default: ""] += delta
         case let .commentary(note):
@@ -430,27 +461,28 @@ extension ProjectStore {
         case .toolCallStarted:
             break
         case let .toolCallCompleted(_, server, tool, succeeded, error):
-            let title = Self.toolTitle(tool)
-            let detail = succeeded ? "\(server) · \(tool)" : "\(server) · \(tool) · " + (error ?? "non riuscito")
-            document.conversation?.appendActivity(requestID: requestID, title: succeeded ? title : title + " non riuscito", detail: detail)
+            let title: String = Self.toolTitle(tool)
+            let failure: String = error ?? "non riuscito"
+            let detail: String = succeeded ? "\(server) · \(tool)" : "\(server) · \(tool) · \(failure)"
+            document.conversation?.appendActivity(requestID: requestID, title: succeeded ? title : "\(title) non riuscito", detail: detail)
         }
     }
 
     static func toolTitle(_ tool: String) -> String {
-        switch tool {
-        case "read_study": "Ha letto lo studio"
-        case "read_pact": "Ha letto il Patto"
-        case "read_mandate": "Ha letto il mandato"
-        case "read_issues": "Ha letto issue e pull request"
-        case "read_history": "Ha letto la cronologia"
-        case "write_memory": "Ha aggiornato la memoria"
-        default: "Strumento \(tool)"
+        switch CoordinatorTool(rawValue: tool) {
+        case .readStudy: "Ha letto lo studio"
+        case .readPact: "Ha letto il Patto"
+        case .readMandate: "Ha letto il mandato"
+        case .readIssues: "Ha letto issue e pull request"
+        case .readHistory: "Ha letto la cronologia"
+        case .writeMemory: "Ha aggiornato la memoria"
+        case nil: "Strumento \(tool)"
         }
     }
 
     private static func updateSummary(_ update: CoordinatorBriefing.ContextUpdate) -> String {
         var parts = update.parts.map(\.rawValue)
-        if update.update.contains("## La tua memoria") { parts.append("memoria") }
+        if update.includesMemory { parts.append("memoria") }
         return parts.joined(separator: ", ")
     }
 
