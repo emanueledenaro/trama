@@ -555,6 +555,7 @@ final class ProjectStore: ObservableObject {
             try engine.decide(id: decisionID, value: behavior, acceptedExample: example, rationale: rationale)
             document.pact = engine; document.requests[index].behaviorDecisionID = decisionID
             document.requests[index].plan = plan; document.requests[index].allowedModuleIDs = moduleIDs
+            document.conversation?.reviseReply(requestID: id, text: plan)
             var dependencies = plannedVersions
             dependencies[decisionID] = engine.decisions.first(where: { $0.id == decisionID })?.version
             document.requests[index].planDecisionVersions = dependencies

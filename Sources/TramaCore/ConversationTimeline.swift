@@ -96,16 +96,19 @@ public struct ConversationTimeline: Codable, Equatable, Sendable {
     public mutating func recordReply(requestID: UUID, text: String, model: String?, references: [String], at date: Date = Date()) {
         let content = ConversationEvent.Content.coordinatorText(text: text, model: model, references: references)
         let turn = events.lastIndex { $0.requestID == requestID && $0.origin == .person }
-        let previous = events.lastIndex { event in
-            guard event.requestID == requestID, case .coordinatorText = event.content else { return false }
-            return true
-        }
-        if let previous, previous > (turn ?? -1) {
+        if let previous = lastReplyIndex(requestID: requestID), previous > (turn ?? -1) {
             let id = events.remove(at: previous).id
             append(content, origin: .coordinator, requestID: requestID, at: date, id: id)
         } else {
             append(content, origin: .coordinator, requestID: requestID, at: date)
         }
+    }
+
+    /// Replaces the text of the latest reply without moving it, as when the person edits the proposed plan.
+    public mutating func reviseReply(requestID: UUID, text: String) {
+        guard let index = lastReplyIndex(requestID: requestID),
+              case .coordinatorText(_, let model, let references) = events[index].content else { return }
+        events[index].content = .coordinatorText(text: text, model: model, references: references)
     }
 
     public mutating func appendActivity(requestID: UUID?, title: String, detail: String?, at date: Date = Date()) {
@@ -120,6 +123,13 @@ public struct ConversationTimeline: Codable, Equatable, Sendable {
         at date: Date = Date()
     ) {
         append(.card(card), origin: origin, requestID: requestID, assignmentID: assignmentID, at: date)
+    }
+
+    private func lastReplyIndex(requestID: UUID) -> Int? {
+        events.lastIndex { event in
+            guard event.requestID == requestID, case .coordinatorText = event.content else { return false }
+            return true
+        }
     }
 
     private mutating func append(
@@ -220,7 +230,8 @@ extension ConversationTimeline {
     ///
     /// Consecutive activities of the same request form one group. The latest reply of each request
     /// shows the request status; a request whose latest turn has no reply yet gets a pending reply row.
-    /// `runningRequestIDs` are the requests with a turn in progress: their last activity group stays open.
+    /// `runningRequestIDs` are the requests with a turn in progress: their last activity group stays open,
+    /// and a new analysis started after the reply shows its progress in a pending row below it.
     public static func rows(for document: ProjectDocument, runningRequestIDs: Set<UUID> = []) -> [ConversationRow] {
         let events = document.conversation?.events ?? []
         let requests = Dictionary(document.requests.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
@@ -238,9 +249,12 @@ extension ConversationTimeline {
             default: break
             }
         }
-        let pendingRequests = Set(lastPersonIndex.compactMap { requestID, personIndex in
-            (lastReplyIndex[requestID] ?? -1) < personIndex ? requestID : nil
-        })
+        let pendingRequests = Set(lastEventIndex.filter { requestID, eventIndex in
+            guard let personIndex = lastPersonIndex[requestID] else { return false }
+            let replyIndex = lastReplyIndex[requestID] ?? -1
+            let isRerunning = runningRequestIDs.contains(requestID) && replyIndex < eventIndex
+            return replyIndex < personIndex || isRerunning
+        }.keys)
 
         var rows: [ConversationRow] = []
         for (index, event) in events.enumerated() {

@@ -165,6 +165,44 @@ struct ConversationTimelineTests {
         #expect(Self.chronology(document).last == "reply \(request.id.uuidString.prefix(8)) status: Gli ordini…")
     }
 
+    @Test("A plan edited by the person replaces the reply text in place")
+    func editedPlanRevisesReply() {
+        var document = ProjectDocument()
+        let request = Self.request("Annulla un ordine")
+        document.requests = [request]
+        document.conversation?.appendPersonMessage(for: request)
+        document.conversation?.recordReply(requestID: request.id, text: "Piano proposto", model: "m", references: ["a.swift"])
+        document.conversation?.appendActivity(requestID: request.id, title: "Esecuzione avviata", detail: nil)
+        document.conversation?.reviseReply(requestID: request.id, text: "Piano rivisto")
+
+        let short = request.id.uuidString.prefix(8)
+        #expect(Self.chronology(document) == [
+            "person \(short) Ordini: Annulla un ordine",
+            "reply \(short) status m [a.swift]: Piano rivisto"
+        ])
+        #expect(document.conversation?.events.map(\.sequence) == [1, 2, 3])
+    }
+
+    @Test("A new analysis of an answered turn shows its progress after its activities")
+    func runningReanalysisIsPending() {
+        var document = ProjectDocument()
+        let request = Self.request("Annulla un ordine")
+        document.requests = [request]
+        document.conversation?.appendPersonMessage(for: request)
+        document.conversation?.recordReply(requestID: request.id, text: "Prima risposta", model: "m", references: [])
+        document.conversation?.appendActivity(requestID: request.id, title: "Analisi avviata", detail: nil)
+
+        let short = request.id.uuidString.prefix(8)
+        let running = ConversationTimeline.rows(for: document, runningRequestIDs: [request.id])
+        #expect(running.map(Self.kind) == ["person", "reply", "activities", "reply"])
+        #expect(Self.chronology(document, running: [request.id]) == [
+            "person \(short) Ordini: Annulla un ordine",
+            "reply \(short) m: Prima risposta",
+            "reply \(short) status: -"
+        ])
+        #expect(Self.chronology(document).last == "reply \(short) status m: Prima risposta")
+    }
+
     @Test("Cards of every method act keep their kind, correlation and order")
     func cardsKeepCorrelation() throws {
         var document = ProjectDocument()
@@ -222,8 +260,17 @@ struct ConversationTimelineTests {
     }
 
     /// Person messages and replies as a readable line each, activities and cards left out.
-    static func chronology(_ document: ProjectDocument) -> [String] {
-        ConversationTimeline.rows(for: document).compactMap { row in
+    static func kind(_ row: ConversationRow) -> String {
+        switch row {
+        case .personMessage: "person"
+        case .coordinatorReply: "reply"
+        case .activityGroup: "activities"
+        case .card: "card"
+        }
+    }
+
+    static func chronology(_ document: ProjectDocument, running: Set<UUID> = []) -> [String] {
+        ConversationTimeline.rows(for: document, runningRequestIDs: running).compactMap { row in
             switch row {
             case .personMessage(let message):
                 let imported = message.isImported ? " imported" : ""
