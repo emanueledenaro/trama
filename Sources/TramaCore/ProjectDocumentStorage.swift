@@ -34,7 +34,10 @@ public struct ProjectDocumentStorage {
                 document.importedRequestIDs = document.requests.map(\.id)
             }
             // Schema 3: the chat reads the conversation timeline instead of the requests.
-            document.conversation = .migrating(requests: document.requests, projectID: projectID)
+            if document.schemaVersion < 3 {
+                document.conversation = .migrating(requests: document.requests, projectID: projectID)
+            }
+            // Schema 4 adds the optional Coordinator state: nothing to convert.
             document.schemaVersion = ProjectDocument.currentSchemaVersion
             try save(document)
         }

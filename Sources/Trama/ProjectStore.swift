@@ -48,13 +48,28 @@ final class ProjectStore: ObservableObject {
     @Published var codexVersion = ""
     @Published var isPreparingSkills = false
     @Published var pendingApproval: CodexClient.ApprovalRequest?
-    /// Raw streamed reply text per request while a Codex turn is running. Not persisted.
+    /// Readable streamed reply text per request while a Codex turn is running. Not persisted.
     @Published var streamingReplies: [UUID: String] = [:]
+    /// Raw JSON streamed by the planner, from which `streamingReplies` shows the message.
+    var planStreams: [UUID: String] = [:]
+    @Published var coordinatorPhase: CoordinatorPhase = .idle
+    /// The study the Coordinator is writing in the opening turn of a new thread.
+    @Published var coordinatorStudyText: String?
+    /// Issues of the project's GitHub repository, read for the Coordinator study.
+    @Published var projectIssues: [GitHubIssue]?
+    var loadedSkills: [CodexClient.LoadedSkill] = []
+    var lastIssuesRefresh: Date?
+    let coordinator = CoordinatorRuntime()
+    var coordinatorTask: Task<Void, Never>?
+    var coordinatorGeneration = UUID()
+    /// Pact decisions and mandate the study was last refreshed for on save.
+    private var studiedDecisions: [PactDecision] = []
+    private var studiedMandate: ProjectMandate?
     var approvalQueue: [(request: CodexClient.ApprovalRequest, continuation: CheckedContinuation<CodexClient.ApprovalDecision, Never>)] = []
     let sessions = WorkspaceSessionManager()
     let conflictProbe = GitConflictProbe()
     private var restored = false
-    private var activeProjectID: UUID?
+    private(set) var activeProjectID: UUID?
     private var viewSaveTask: Task<Void, Never>?
     private var loadToken = UUID()
     var operationID = UUID()
@@ -67,7 +82,7 @@ final class ProjectStore: ObservableObject {
     let remoteConflicts = RemoteConflictMonitor()
     let notifications = NotificationService()
     private var observation = Set<AnyCancellable>()
-    private var stateWritable = true
+    private(set) var stateWritable = true
     private var setupToken = UUID()
     var stateRecoveryNeeded: Bool { !stateWritable }
 
@@ -98,8 +113,14 @@ final class ProjectStore: ObservableObject {
             return backgroundMonitor.isRequested && backgroundMonitor.status == .enabled
         }
         team.didRefresh = { [weak self] snapshot in
-            self?.intelligence.consider(snapshot: snapshot)
-            self?.remoteConflicts.consider(snapshot)
+            guard let self else { return }
+            intelligence.consider(snapshot: snapshot)
+            remoteConflicts.consider(snapshot)
+            refreshCoordinatorStudy()
+            if lastIssuesRefresh.map({ Date().timeIntervalSince($0) > 300 }) ?? true {
+                lastIssuesRefresh = Date()
+                Task { await self.refreshProjectIssues() }
+            }
         }
         for publisher in [team.objectWillChange, intelligence.objectWillChange, remoteConflicts.objectWillChange, notifications.objectWillChange] {
             publisher.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &observation)
@@ -194,7 +215,8 @@ final class ProjectStore: ObservableObject {
             activePlanTask?.cancel(); rejectAllApprovals(); isPlanning = false; isExecuting = false
             intelligence.stop(); remoteConflicts.reset(); setupToken = UUID(); isPreparingSkills = false
             await codex.cancelTurn()
-            streamingReplies = [:]
+            streamingReplies = [:]; planStreams = [:]
+            stopCoordinator(); projectIssues = nil; lastIssuesRefresh = nil
         }
         do {
             let snapshot = try await Task.detached { try RepositoryScanner().scan(root: root, isDemo: isDemo) }.value
@@ -234,6 +256,7 @@ final class ProjectStore: ObservableObject {
             activity.insert("Lettura completata: \(snapshot.totalFileCount) file in \(snapshot.modules.count) moduli.", at: 0)
             isLoading = false
             startWatcher()
+            startCoordinator()
         } catch {
             guard token == loadToken else { return }; isLoading = false; errorMessage = error.localizedDescription
         }
@@ -374,6 +397,7 @@ final class ProjectStore: ObservableObject {
                     modelsError = "Catalogo modelli non disponibile: \(error.localizedDescription)"
                 }
                 isLoadingModels = false
+                startCoordinator()
                 do { connectedApps = try await codex.listApps(); appsError = nil }
                 catch { appsError = "Collegamenti non disponibili: \(error.localizedDescription)" }
             }
@@ -392,6 +416,7 @@ final class ProjectStore: ObservableObject {
         modelsError = nil
         intelligence.invalidate()
         saveDocument()
+        if case .unavailable = coordinatorPhase { retryCoordinator() }
     }
 
     func signIn() async {
@@ -408,11 +433,11 @@ final class ProjectStore: ObservableObject {
         let module = selectedModule
         var request = WorkRequest(title: String(prompt.prefix(90)), moduleID: module?.id ?? "project", moduleName: module?.name ?? project.name, request: prompt, sourceFingerprint: fingerprint)
         request.model = selectedModel.isEmpty ? nil : selectedModel
-        request.state = codexConnected ? .analysing : .waitingForCoordinator
+        request.state = .waitingForCoordinator
         document.requests.insert(request, at: 0); selectedRequestID = request.id
         document.conversation?.appendPersonMessage(for: request)
         composer = ""; section = .coordinator; showInspector = false; saveDocument()
-        if codexConnected { runPlan(request.id) } else { showConnections = true }
+        if codexConnected { sendToCoordinator(request.id) } else { showConnections = true }
     }
 
     func runPlan(_ id: UUID) {
@@ -430,6 +455,7 @@ final class ProjectStore: ObservableObject {
         let request = document.requests[index]
         let token = UUID(); operationID = token
         streamingReplies[id] = ""
+        planStreams[id] = ""
         intelligence.invalidate()
         let decisions = document.pact?.decisions ?? []
         let versions = Dictionary(uniqueKeysWithValues: decisions.map { ($0.id, $0.version) })
@@ -455,9 +481,13 @@ final class ProjectStore: ObservableObject {
         saveDocument()
         activePlanTask = Task { [weak self] in
             guard let self else { return }
-            defer { if operationID == token { isPlanning = false; streamingReplies[id] = nil; saveDocument() } }
+            defer { if operationID == token { isPlanning = false; streamingReplies[id] = nil; planStreams[id] = nil; saveDocument() } }
             do {
-                let result = try await codex.plan(prompt: prompt, cwd: root, model: model, outputSchema: PlanningReply.outputSchema, onText: { [weak self] delta in Task { @MainActor in guard let self, self.operationID == token, self.localRoot == root else { return }; self.streamingReplies[id, default: ""] += delta } })
+                let result = try await codex.plan(prompt: prompt, cwd: root, model: model, outputSchema: PlanningReply.outputSchema, onText: { [weak self] delta in Task { @MainActor in
+                    guard let self, self.operationID == token, self.localRoot == root else { return }
+                    self.planStreams[id, default: ""] += delta
+                    self.streamingReplies[id] = StreamingReplyPreview.message(fromPartialJSON: self.planStreams[id] ?? "") ?? ""
+                } })
                 let reply = try PlanningReply.parse(raw: result, sourceSnapshotID: request.sourceFingerprint, knownModuleIDs: moduleIDs, knownFiles: knownFiles, existingDecisionIDs: decisions.map(\.id))
                 guard operationID == token, localRoot == root, let i = document.requests.firstIndex(where: { $0.id == id }) else { return }
                 document.requests[i].replyKind = reply.kind
@@ -563,13 +593,18 @@ final class ProjectStore: ObservableObject {
         } catch { errorMessage = error.localizedDescription }
     }
 
-    func stopPlanning() { activePlanTask?.cancel(); rejectAllApprovals(); Task { await codex.cancelTurn() } }
+    func stopPlanning() {
+        activePlanTask?.cancel(); rejectAllApprovals()
+        let coordinatorClient = coordinator.client
+        Task { await codex.cancelTurn(); await coordinatorClient?.cancelTurn() }
+    }
 
     func invalidateForSourceChange(_ fresh: RepositorySnapshot) {
         if let sha = fresh.headSHA, var pact = document.pact, pact.baseRevision != sha {
             do { try pact.setBaseRevision(sha); document.pact = pact }
             catch { errorMessage = error.localizedDescription }
         }
+        refreshCoordinatorStudy(rereadInstructions: true)
         for i in document.requests.indices where document.requests[i].sourceFingerprint != fingerprint && document.requests[i].state != .analysing && document.requests[i].state != .executing {
             document.requests[i].state = .stale
             document.requests[i].approvedAt = nil
@@ -593,6 +628,7 @@ final class ProjectStore: ObservableObject {
                 do {
                     let loaded = try await codex.listSkills(cwd: root)
                     guard setupToken == token, localRoot == root else { return }
+                    loadedSkills = loaded
                     let required = ["ask-matt", "implement", "tdd", "code-review"]
                     let names = Set(loaded.filter(\.enabled).map(\.name))
                     let missing = required.filter { !names.contains($0) }
@@ -652,6 +688,13 @@ final class ProjectStore: ObservableObject {
         document.lastSection = section?.rawValue
         document.composerDraft = composer
         if !selectedModel.isEmpty { document.selectedModel = selectedModel }
+        // The Pact and the mandate change from several views; their study parts follow on save.
+        let decisions = document.pact?.decisions ?? []
+        if decisions != studiedDecisions || document.mandate != studiedMandate {
+            studiedDecisions = decisions
+            studiedMandate = document.mandate
+            refreshCoordinatorStudy()
+        }
         do {
             try ProjectDocumentStorage(url: stateURL(project)).save(document)
         } catch { errorMessage = "Salvataggio non riuscito: \(error.localizedDescription)" }

@@ -47,7 +47,7 @@ struct ConversationTimelineTests {
         let storage = ProjectDocumentStorage(url: url, projectID: Self.projectID)
         let migrated = try storage.load()
 
-        #expect(migrated.schemaVersion == 3)
+        #expect(migrated.schemaVersion == ProjectDocument.currentSchemaVersion)
         #expect(try Self.canonicalJSON(migrated.requests) == Self.canonicalJSON(before.requests))
         #expect(migrated.importedRequestIDs == before.importedRequestIDs)
         #expect(migrated.lastSection == "Modifiche")
@@ -84,7 +84,7 @@ struct ConversationTimelineTests {
         let storage = ProjectDocumentStorage(url: url)
         let migrated = try storage.load()
 
-        #expect(migrated.schemaVersion == 3)
+        #expect(migrated.schemaVersion == ProjectDocument.currentSchemaVersion)
         #expect(migrated.importedRequestIDs == [Self.ordersID])
         #expect(Self.chronology(migrated) == [
             "person 11111111 Ordini imported: Annulla un ordine pagato",
@@ -96,7 +96,7 @@ struct ConversationTimelineTests {
     @Test("A new document starts with an empty timeline")
     func newDocumentHasEmptyTimeline() {
         let document = ProjectDocument()
-        #expect(document.schemaVersion == 3)
+        #expect(document.schemaVersion == ProjectDocument.currentSchemaVersion)
         #expect(document.conversation?.events.isEmpty == true)
         #expect(ConversationTimeline.rows(for: document).isEmpty)
     }

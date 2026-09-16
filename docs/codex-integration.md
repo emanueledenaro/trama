@@ -139,7 +139,7 @@ Il campo `thread/start.config` contiene una configurazione annidata valida solo 
 }
 ```
 
-`features.apps: false` rimuove l'integrazione app. `apps._default.enabled: false` copre le app senza una regola specifica. Il thread non aggiunge voci MCP: quelle appartengono già alla configurazione di avvio del processo ristretto.
+`features.apps: false` rimuove l'integrazione app. `apps._default.enabled: false` copre le app senza una regola specifica. I thread di piano ed esecuzione non aggiungono voci MCP: quelle appartengono già alla configurazione di avvio del processo ristretto. Il thread del Coordinatore aggiunge soltanto il server `trama`, descritto sotto.
 
 Dopo `thread/start`, il client verifica lo snapshot del thread con `mcpServerStatus/list` e `app/installed`. Una riga MCP senza strumenti è solo stato informativo. Una riga con strumenti indica che il modello potrebbe invocarli: il client restituisce `toolIsolationUnavailable` prima di `turn/start`, indicando i server ancora utilizzabili. La schermata dei collegamenti continua a usare la configurazione globale.
 
@@ -193,6 +193,38 @@ La documentazione online corrente mostra alcuni valori camelCase per `thread/sta
 Il client usa `item/agentMessage/delta` per lo streaming. Accetta anche `item/plan/delta`, ma il testo autorevole arriva dall'item `agentMessage` o `plan` dentro `item/completed`. La conclusione del lavoro è `turn/completed` con stato `completed`, `interrupted` o `failed`. Un evento `error` con `willRetry: true` non chiude il turno.
 
 `cancelTurn()` invia `turn/interrupt` con thread e turno correnti. Il chiamante aspetta comunque `turn/completed`; il risultato diventa `turnInterrupted` quando lo stato finale è `interrupted`.
+
+## Thread del Coordinatore
+
+Il Coordinatore di un progetto usa un thread persistente, non effimero. Gira in un processo ristretto dedicato, creato con `CodexClient.coordinatorRuntime(token:)`: stessi override del processo ristretto, più la variabile `TRAMA_COORDINATOR_TOKEN` nell'ambiente. Il token esiste solo nella memoria di Trama e nell'ambiente di quel processo; non compare in argomenti, configurazione o documento. Un nuovo progetto revoca il token e chiude il processo. Se la configurazione globale ha già un server MCP chiamato `trama`, l'avvio si ferma.
+
+`openCoordinatorThread` apre il thread con `thread/start` (`ephemeral: false`) oppure lo riprende con `thread/resume` e `excludeTurns: true`. Entrambe le chiamate portano modello, `cwd`, `approvalPolicy: "never"`, `sandbox: "read-only"`, istruzioni del thread e questa configurazione:
+
+```json
+{
+  "web_search": "disabled",
+  "features": {"apps": false, "plugins": false, "hooks": false, "multi_agent": false},
+  "apps": {"_default": {"enabled": false}},
+  "mcp_servers.trama": {
+    "url": "http://127.0.0.1:<porta>/mcp",
+    "bearer_token_env_var": "TRAMA_COORDINATOR_TOKEN",
+    "default_tools_approval_mode": "approve"
+  },
+  "shell_environment_policy.exclude": ["TRAMA_COORDINATOR_TOKEN"]
+}
+```
+
+Le chiavi puntate sono necessarie. Con Codex 0.154.0 una tabella `mcp_servers` completa nella configurazione del thread sostituisce gli override del processo e riattiva i server globali: la prova nell'app ha trovato `cloudflare-docs` e `node_repl` esposti, e la verifica di isolamento ha fermato l'avvio. La chiave `mcp_servers.trama` aggiunge il server e lascia spenti gli altri. `default_tools_approval_mode: "approve"` serve perché con `approvalPolicy: "never"` Codex rifiuta ogni strumento MCP senza `readOnlyHint` («MCP tool call requires approval, but approval policy is never»). Il controllo resta a Trama, al confine di ogni strumento.
+
+Dopo l'apertura il client verifica il thread come per il piano, ammettendo strumenti soltanto dal server `trama`. `thread/resume` deve restituire lo stesso id. Se la ripresa fallisce con un messaggio di thread inesistente (Codex 0.154.0 risponde «no rollout found for thread id …»; il client accetta anche «not found», «missing thread», «no such thread», «unknown thread», «does not exist», «invalid session id» quando il messaggio nomina thread, rollout o sessione), il client apre un nuovo thread e restituisce `.replaced` con il motivo. Ogni altro errore arriva al chiamante senza ripiego.
+
+`runCoordinatorTurn` invia gli elementi di testo in ordine, con `sandboxPolicy: {"type":"readOnly","networkAccess":false}` e senza `outputSchema`: la risposta è prosa libera. Gli eventi riportati sono l'id del turno (da `turn/start` o `turn/started`, una volta sola), i delta di testo, le note con `phase: "commentary"` (non entrano nello streaming) e le chiamate `mcpToolCall` all'inizio e alla fine.
+
+## Server degli strumenti di Trama
+
+`CoordinatorToolServer` risponde a `POST /mcp` su `127.0.0.1`, con porta scelta dal sistema (`LoopbackHTTPServer`, Network.framework, una richiesta per connessione). Segue il canale MCP di Synara: JSON, mai SSE, nessun `Mcp-Session-Id`, corpo massimo 1 MiB, batch fino a 50 messaggi, 202 quando non c'è niente da rispondere. Senza token valido risponde 401 con `caller_session_inactive`; `GET` e `DELETE` ricevono 405. I rifiuti degli strumenti sono risultati con `isError: true` e `{"error": {"code", "message"}}`, sempre con l'id della richiesta.
+
+Strumenti: `read_study`, `read_pact`, `read_mandate`, `read_issues`, `read_history` (sola lettura, `readOnlyHint: true`) e `write_memory`. La scrittura vale solo mentre gira un turno del Coordinatore; se la chiamata porta `_meta.x-codex-turn-metadata.turn_id`, deve coincidere con il turno attivo.
 
 ## Approvazioni ed errori
 
@@ -254,7 +286,7 @@ Il comando App Server e il trasporto WebSocket sono documentati come sperimental
 
 Gli schemi generati dalla versione installata e la pagina online non sono identici. Per esempio, l'account Bedrock locale usa `usesCodexManagedCredentials`, mentre la pagina corrente mostra `credentialSource`. Trama tratta account diversi da ChatGPT come non supportati e non dipende da quel campo.
 
-I test automatici usano un trasporto simulato. Coprono framing spezzato, risposta malformata, timeout, uscita del processo, login senza token, sandbox, streaming, annullamento, connettori, override per thread, verifica MCP e rifiuto delle approvazioni. Non dimostrano OAuth, accesso a un repository reale, comportamento di App Sandbox o un turno modello effettivo.
+I test automatici usano un trasporto simulato. Coprono thread persistente, ripresa e ripiego del Coordinatore, framing spezzato, risposta malformata, timeout, uscita del processo, login senza token, sandbox, streaming, annullamento, connettori, override per thread, verifica MCP e rifiuto delle approvazioni. Non dimostrano OAuth, accesso a un repository reale, comportamento di App Sandbox o un turno modello effettivo.
 
 ## Fonti ufficiali
 

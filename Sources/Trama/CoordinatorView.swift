@@ -6,6 +6,7 @@ struct CoordinatorView: View {
     @EnvironmentObject private var store: ProjectStore
     /// Concluded activity rows the person opened; every row starts closed.
     @State private var expandedActivityGroups: Set<UUID> = []
+    @State private var showMemory = false
 
     private var rows: [ConversationRow] {
         ConversationTimeline.rows(for: store.document, runningRequestIDs: Set(store.streamingReplies.keys))
@@ -15,6 +16,9 @@ struct CoordinatorView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             TramaScreenHeader("Coordinatore", subtitle: "\(store.project?.name ?? "Progetto") · \(store.selectedModelDisplayName)") {
+                Button("Memoria", systemImage: "brain") { showMemory = true }
+                    .help("Le note che il Coordinatore conserva per questo progetto")
+                    .popover(isPresented: $showMemory, arrowEdge: .bottom) { memoryPopover }
                 Button("Mandato", systemImage: "checkmark.shield") { store.showMandate = true }
                     .help("Obiettivi, perimetro e limiti concessi al Coordinatore")
             }
@@ -22,16 +26,21 @@ struct CoordinatorView: View {
                 Divider()
                 mandateStatus
             }
+            coordinatorStatus
             Divider()
             let rows = rows
-            if rows.isEmpty {
+            if rows.isEmpty && store.coordinatorStudyText == nil {
                 ContentUnavailableView("Nessuna richiesta registrata", systemImage: "bubble.left.and.bubble.right", description: emptyStateDescription)
             } else {
                 ScrollViewReader { proxy in
                     ScrollView {
                         LazyVStack(alignment: .leading, spacing: TramaSpacing.section) {
+                            let latestReplyID = rows.last { if case .coordinatorReply = $0 { true } else { false } }?.id
                             ForEach(rows) { row in
-                                self.row(row).id(row.id)
+                                self.row(row, latestReplyID: latestReplyID).id(row.id)
+                            }
+                            if let study = store.coordinatorStudyText {
+                                pendingStudy(study).id(Self.pendingStudyID)
                             }
                         }
                         .frame(maxWidth: 720)
@@ -43,9 +52,97 @@ struct CoordinatorView: View {
                     .onChange(of: lastStreamedText) { _, _ in
                         if let id = rows.last?.id { proxy.scrollTo(id, anchor: .bottom) }
                     }
+                    .onChange(of: store.coordinatorStudyText) { _, text in
+                        if text != nil { proxy.scrollTo(Self.pendingStudyID, anchor: .bottom) }
+                    }
                 }
             }
         }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    private static let pendingStudyID = UUID()
+
+    /// Opening, failure or origin of the Coordinator thread, shown under the header.
+    @ViewBuilder
+    private var coordinatorStatus: some View {
+        switch store.coordinatorPhase {
+        case .opening:
+            Divider()
+            HStack(spacing: TramaSpacing.compact) {
+                ProgressView().controlSize(.mini)
+                Text(store.coordinatorThreadID == nil ? "Il Coordinatore apre il suo thread" : "Il Coordinatore riprende il suo thread")
+            }
+            .statusLine()
+        case .unavailable(let reason):
+            Divider()
+            HStack(spacing: TramaSpacing.compact) {
+                Image(systemName: "exclamationmark.triangle").foregroundStyle(.red)
+                Text("Il Coordinatore non è disponibile: \(reason)").lineLimit(2)
+                Spacer(minLength: TramaSpacing.compact)
+                Button("Riprova") { store.retryCoordinator() }
+                    .disabled(!store.codexConnected)
+            }
+            .statusLine()
+        case .ready where store.coordinator.resumed:
+            Divider()
+            Label("Thread ripreso: il Coordinatore ricorda la conversazione", systemImage: "arrow.uturn.backward.circle")
+                .statusLine()
+        case .idle, .studying, .ready:
+            EmptyView()
+        }
+    }
+
+    private var memoryPopover: some View {
+        let memory = store.document.coordinator?.memory ?? CoordinatorMemory()
+        return VStack(alignment: .leading, spacing: TramaSpacing.related) {
+            Text("Memoria del Coordinatore").font(.headline)
+            if memory.text.isEmpty {
+                Text("Il Coordinatore non ha ancora scritto note per questo progetto.").foregroundStyle(.secondary)
+            } else {
+                ScrollView {
+                    Text(memory.text).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .frame(maxHeight: 280)
+                if let updated = memory.updatedAt {
+                    Text("Revisione \(memory.revision) · \(updated.formatted(date: .abbreviated, time: .shortened)) · \(memory.text.utf8.count) di \(CoordinatorMemory.byteLimit) byte")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            Text("Solo il Coordinatore la scrive, con il suo strumento. Trama gliela restituisce a ogni ripresa del thread.")
+                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(TramaSpacing.section)
+        .frame(width: 380)
+    }
+
+    /// The study the Coordinator is writing in the opening turn of a new thread.
+    private func pendingStudy(_ text: String) -> some View {
+        studyCard(title: "Studio del progetto", text: text) {
+            HStack(spacing: TramaSpacing.control) {
+                ProgressView().controlSize(.small)
+                Text(text.isEmpty ? "Il Coordinatore sta studiando il progetto" : "Studio in arrivo").font(.callout).foregroundStyle(.secondary)
+                Button("Interrompi", systemImage: "stop.fill") { store.stopPlanning() }
+            }
+        }
+    }
+
+    private func studyCard<Footer: View>(title: String, text: String, @ViewBuilder footer: () -> Footer) -> some View {
+        VStack(alignment: .leading, spacing: TramaSpacing.related) {
+            HStack(spacing: TramaSpacing.compact) {
+                Image(systemName: "doc.text.magnifyingglass")
+                Text(title).font(.headline)
+                Spacer(minLength: 0)
+                Text("Coordinatore").font(.caption).foregroundStyle(.secondary)
+            }
+            if !text.isEmpty { IssueMarkdownView(source: text) }
+            footer()
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(TramaSpacing.section)
+        .background(.background.secondary, in: RoundedRectangle(cornerRadius: TramaRadius.card))
+        .overlay(RoundedRectangle(cornerRadius: TramaRadius.card).stroke(.separator))
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(title)
     }
 
     /// Description for the empty chat; explains the no-mandate mode when no mandate exists.
@@ -88,13 +185,13 @@ struct CoordinatorView: View {
     }
 
     @ViewBuilder
-    private func row(_ row: ConversationRow) -> some View {
+    private func row(_ row: ConversationRow, latestReplyID: UUID?) -> some View {
         switch row {
         case .personMessage(let message):
             personMessage(message)
         case .coordinatorReply(let reply):
             if let request = store.document.requests.first(where: { $0.id == reply.requestID }) {
-                coordinatorReply(reply, request: request)
+                coordinatorReply(reply, request: request, isLatest: reply.id == latestReplyID)
             }
         case .activityGroup(let group):
             activityGroup(group)
@@ -168,18 +265,40 @@ struct CoordinatorView: View {
         .textSelection(.enabled)
     }
 
-    /// A method act. Later tickets give each kind its own content; here it shows title and detail.
+    /// A method act. The study and the context notice have their own look; later tickets give the other kinds theirs.
+    @ViewBuilder
     private func cardRow(_ row: ConversationRow.CardRow) -> some View {
-        VStack(alignment: .leading, spacing: TramaSpacing.compact) {
-            Text(row.card.title).font(.headline)
-            if let detail = row.card.detail { Text(detail).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true) }
+        switch row.card.kind {
+        case .study:
+            studyCard(title: row.card.title, text: row.card.detail ?? "") {
+                Text(row.date, format: .dateTime.day().month().hour().minute()).font(.caption).foregroundStyle(.secondary)
+            }
+        case .contextNotice:
+            HStack(alignment: .firstTextBaseline, spacing: TramaSpacing.control) {
+                Image(systemName: "arrow.triangle.2.circlepath")
+                VStack(alignment: .leading, spacing: TramaSpacing.compact) {
+                    Text(row.card.title).font(.callout.weight(.semibold))
+                    if let detail = row.card.detail { Text(detail).fixedSize(horizontal: false, vertical: true) }
+                }
+            }
+            .font(.callout)
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(TramaSpacing.related)
+            .overlay(RoundedRectangle(cornerRadius: TramaRadius.card).stroke(.separator))
+            .accessibilityElement(children: .combine)
+        default:
+            VStack(alignment: .leading, spacing: TramaSpacing.compact) {
+                Text(row.card.title).font(.headline)
+                if let detail = row.card.detail { Text(detail).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true) }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(TramaSpacing.related)
+            .background(.background.secondary, in: RoundedRectangle(cornerRadius: TramaRadius.card))
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(TramaSpacing.related)
-        .background(.background.secondary, in: RoundedRectangle(cornerRadius: TramaRadius.card))
     }
 
-    private func coordinatorReply(_ reply: ConversationRow.CoordinatorReplyRow, request: WorkRequest) -> some View {
+    private func coordinatorReply(_ reply: ConversationRow.CoordinatorReplyRow, request: WorkRequest, isLatest: Bool) -> some View {
         VStack(alignment: .leading, spacing: TramaSpacing.related) {
             HStack(spacing: TramaSpacing.compact) {
                 Text("Coordinatore")
@@ -189,7 +308,7 @@ struct CoordinatorView: View {
             if reply.showsRequestStatus {
                 replyBody(request, text: reply.text)
             } else if let text = reply.text {
-                Text(text).textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
+                IssueMarkdownView(source: text)
             }
 
             // A running or failed analysis replaces the reply, so its sources no longer apply.
@@ -203,6 +322,15 @@ struct CoordinatorView: View {
                             .accessibilityLabel("Apri fonte \(path)")
                     }
                 }
+            }
+
+            // Only the latest reply offers a plan, so the conversation does not repeat the same button.
+            if isLatest, reply.showsRequestStatus, request.proposal == nil, request.replyKind == .explanation,
+               request.state == .replyAvailable, store.streamingReplies[request.id] == nil {
+                Button("Prepara un piano", systemImage: "list.bullet.clipboard") { store.preparePlan(request.id) }
+                    .disabled(store.isPlanning || !store.codexConnected)
+                    .help("Chiede al pianificatore un piano verificabile per questa richiesta")
+                    .accessibilityLabel("Prepara un piano: \(request.title)")
             }
 
             if reply.showsRequestStatus, request.proposal != nil {
@@ -224,10 +352,9 @@ struct CoordinatorView: View {
 
     @ViewBuilder
     private func replyBody(_ request: WorkRequest, text: String?) -> some View {
-        if let raw = store.streamingReplies[request.id] {
-            let preview = StreamingReplyPreview.message(fromPartialJSON: raw) ?? ""
+        if let preview = store.streamingReplies[request.id] {
             if !preview.isEmpty {
-                Text(preview).textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
+                IssueMarkdownView(source: preview)
             }
             HStack(spacing: TramaSpacing.control) {
                 ProgressView().controlSize(.small)
@@ -238,10 +365,21 @@ struct CoordinatorView: View {
             TramaStatusBadge(state: request.state)
             Text(detail).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         } else if let text, !text.isEmpty {
-            Text(text).textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
+            IssueMarkdownView(source: text)
             TramaStatusBadge(state: request.state)
         } else {
             TramaStatusBadge(state: request.state)
         }
+    }
+}
+
+private extension View {
+    /// A quiet one-line status under the chat header.
+    func statusLine() -> some View {
+        font(.callout)
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, TramaSpacing.content)
+            .padding(.vertical, TramaSpacing.compact)
     }
 }
