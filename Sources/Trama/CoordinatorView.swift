@@ -4,9 +4,13 @@ import TramaCore
 /// The main chat surface: the person's requests and the Coordinator's replies for the active project.
 struct CoordinatorView: View {
     @EnvironmentObject private var store: ProjectStore
+    /// Concluded activity rows the person opened; every row starts closed.
+    @State private var expandedActivityGroups: Set<UUID> = []
 
-    private var conversation: [WorkRequest] { store.document.requests.reversed() }
-    private var lastStreamedText: String? { conversation.last.flatMap { store.streamingReplies[$0.id] } }
+    private var rows: [ConversationRow] {
+        ConversationTimeline.rows(for: store.document, runningRequestIDs: Set(store.streamingReplies.keys))
+    }
+    private var lastStreamedText: String? { rows.last?.requestID.flatMap { store.streamingReplies[$0] } }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -19,24 +23,25 @@ struct CoordinatorView: View {
                 mandateStatus
             }
             Divider()
-            if conversation.isEmpty {
+            let rows = rows
+            if rows.isEmpty {
                 ContentUnavailableView("Nessuna richiesta registrata", systemImage: "bubble.left.and.bubble.right", description: emptyStateDescription)
             } else {
                 ScrollViewReader { proxy in
                     ScrollView {
                         LazyVStack(alignment: .leading, spacing: TramaSpacing.section) {
-                            ForEach(conversation) { request in
-                                exchange(request).id(request.id)
+                            ForEach(rows) { row in
+                                self.row(row).id(row.id)
                             }
                         }
                         .frame(maxWidth: 720)
                         .frame(maxWidth: .infinity)
                         .padding(TramaSpacing.content)
                     }
-                    .onAppear { scrollToFocus(proxy) }
-                    .onChange(of: store.document.requests.count) { _, _ in scrollToFocus(proxy) }
+                    .onAppear { scrollToFocus(proxy, rows: rows) }
+                    .onChange(of: rows.count) { _, _ in scrollToFocus(proxy, rows: rows) }
                     .onChange(of: lastStreamedText) { _, _ in
-                        if let id = conversation.last?.id { proxy.scrollTo(id, anchor: .bottom) }
+                        if let id = rows.last?.id { proxy.scrollTo(id, anchor: .bottom) }
                     }
                 }
             }
@@ -76,27 +81,38 @@ struct CoordinatorView: View {
         }
     }
 
-    private func scrollToFocus(_ proxy: ScrollViewProxy) {
-        if let id = store.selectedRequestID ?? conversation.last?.id { proxy.scrollTo(id, anchor: .bottom) }
+    /// Scrolls to the last row of the selected request, or to the end of the conversation.
+    private func scrollToFocus(_ proxy: ScrollViewProxy, rows: [ConversationRow]) {
+        let selected = store.selectedRequestID.flatMap { id in rows.last { $0.requestID == id } }
+        if let id = selected?.id ?? rows.last?.id { proxy.scrollTo(id, anchor: .bottom) }
     }
 
-    private func exchange(_ request: WorkRequest) -> some View {
-        VStack(alignment: .leading, spacing: TramaSpacing.related) {
-            personMessage(request)
-            coordinatorReply(request)
+    @ViewBuilder
+    private func row(_ row: ConversationRow) -> some View {
+        switch row {
+        case .personMessage(let message):
+            personMessage(message)
+        case .coordinatorReply(let reply):
+            if let request = store.document.requests.first(where: { $0.id == reply.requestID }) {
+                coordinatorReply(reply, request: request)
+            }
+        case .activityGroup(let group):
+            activityGroup(group)
+        case .card(let card):
+            cardRow(card)
         }
     }
 
-    private func personMessage(_ request: WorkRequest) -> some View {
+    private func personMessage(_ message: ConversationRow.PersonMessageRow) -> some View {
         VStack(alignment: .trailing, spacing: TramaSpacing.compact) {
-            if store.document.importedRequestIDs?.contains(request.id) == true {
+            if message.isImported {
                 Text("Importata dalle richieste precedenti").font(.caption).foregroundStyle(.secondary)
             }
             HStack(spacing: TramaSpacing.compact) {
-                Text("Tu · \(request.moduleName)")
-                Text(request.createdAt, format: .dateTime.day().month().hour().minute())
+                Text("Tu · \(message.moduleName)")
+                Text(message.date, format: .dateTime.day().month().hour().minute())
             }.font(.caption).foregroundStyle(.secondary)
-            Text(request.request)
+            Text(message.text)
                 .textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(TramaSpacing.related)
@@ -106,19 +122,82 @@ struct CoordinatorView: View {
         .frame(maxWidth: .infinity, alignment: .trailing)
     }
 
-    private func coordinatorReply(_ request: WorkRequest) -> some View {
+    /// Technical activities of one turn: listed while the turn runs, one closed row once it is concluded.
+    @ViewBuilder
+    private func activityGroup(_ group: ConversationRow.ActivityGroupRow) -> some View {
+        if group.isConcluded {
+            let isExpanded = expandedActivityGroups.contains(group.id)
+            VStack(alignment: .leading, spacing: TramaSpacing.compact) {
+                Button {
+                    if isExpanded { expandedActivityGroups.remove(group.id) } else { expandedActivityGroups.insert(group.id) }
+                } label: {
+                    HStack(spacing: TramaSpacing.compact) {
+                        Image(systemName: "chevron.right")
+                            .font(.caption2.weight(.semibold))
+                            .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                        Text(group.duration.map { "Ha lavorato per " + ConversationRow.ActivityGroupRow.formattedDuration($0) } ?? "Dettagli")
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityValue(isExpanded ? "Aperto" : "Chiuso")
+                .accessibilityHint(group.activities.count == 1 ? "1 attività tecnica" : "\(group.activities.count) attività tecniche")
+                if isExpanded { activityList(group.activities).padding(.leading, TramaSpacing.related) }
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, TramaSpacing.related)
+        } else {
+            activityList(group.activities)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, TramaSpacing.related)
+        }
+    }
+
+    private func activityList(_ activities: [ConversationRow.ActivityGroupRow.Activity]) -> some View {
+        VStack(alignment: .leading, spacing: TramaSpacing.compact) {
+            ForEach(activities, id: \.id) { activity in
+                HStack(alignment: .firstTextBaseline, spacing: TramaSpacing.compact) {
+                    Text(activity.date, format: .dateTime.hour().minute().second()).monospacedDigit()
+                    Text(activity.title)
+                    if let detail = activity.detail { Text(detail).foregroundStyle(.tertiary).lineLimit(2) }
+                }
+            }
+        }
+        .textSelection(.enabled)
+    }
+
+    /// A method act. Later tickets give each kind its own content; here it shows title and detail.
+    private func cardRow(_ row: ConversationRow.CardRow) -> some View {
+        VStack(alignment: .leading, spacing: TramaSpacing.compact) {
+            Text(row.card.title).font(.headline)
+            if let detail = row.card.detail { Text(detail).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true) }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(TramaSpacing.related)
+        .background(.background.secondary, in: RoundedRectangle(cornerRadius: TramaRadius.card))
+    }
+
+    private func coordinatorReply(_ reply: ConversationRow.CoordinatorReplyRow, request: WorkRequest) -> some View {
         VStack(alignment: .leading, spacing: TramaSpacing.related) {
             HStack(spacing: TramaSpacing.compact) {
                 Text("Coordinatore")
-                if let model = request.model, !model.isEmpty { Text("· \(model)") }
+                if let model = reply.model, !model.isEmpty { Text("· \(model)") }
             }.font(.caption).foregroundStyle(.secondary)
 
-            replyBody(request)
+            if reply.showsRequestStatus {
+                replyBody(request, text: reply.text)
+            } else if let text = reply.text {
+                Text(text).textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
+            }
 
-            if let references = request.replyReferences, !references.isEmpty {
+            // A running or failed analysis replaces the reply, so its sources no longer apply.
+            let replaced = reply.showsRequestStatus && (store.streamingReplies[request.id] != nil || request.failureDetail != nil)
+            if !reply.references.isEmpty, !replaced {
                 VStack(alignment: .leading, spacing: TramaSpacing.compact) {
                     Text("Fonti").font(.caption).foregroundStyle(.secondary)
-                    ForEach(references, id: \.self) { path in
+                    ForEach(reply.references, id: \.self) { path in
                         Button(path) { store.selectedRequestID = request.id; store.openReference(path) }
                             .buttonStyle(.link)
                             .accessibilityLabel("Apri fonte \(path)")
@@ -126,7 +205,7 @@ struct CoordinatorView: View {
                 }
             }
 
-            if request.proposal != nil {
+            if reply.showsRequestStatus, request.proposal != nil {
                 Text("Piano proposto: rivedilo in Modifiche prima di eseguirlo").font(.caption).foregroundStyle(.secondary)
                 HStack(spacing: TramaSpacing.control) {
                     Button("Apri nella Mappa", systemImage: "square.3.layers.3d") { store.openInMap(request) }
@@ -144,7 +223,7 @@ struct CoordinatorView: View {
     }
 
     @ViewBuilder
-    private func replyBody(_ request: WorkRequest) -> some View {
+    private func replyBody(_ request: WorkRequest, text: String?) -> some View {
         if let raw = store.streamingReplies[request.id] {
             let preview = StreamingReplyPreview.message(fromPartialJSON: raw) ?? ""
             if !preview.isEmpty {
@@ -158,8 +237,8 @@ struct CoordinatorView: View {
         } else if let detail = request.failureDetail {
             TramaStatusBadge(state: request.state)
             Text(detail).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-        } else if !request.plan.isEmpty {
-            Text(request.plan).textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
+        } else if let text, !text.isEmpty {
+            Text(text).textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
             TramaStatusBadge(state: request.state)
         } else {
             TramaStatusBadge(state: request.state)

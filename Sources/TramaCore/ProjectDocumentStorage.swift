@@ -3,12 +3,19 @@ import Foundation
 /// Conserva il documento originale prima di migrare e scrive ogni versione atomicamente.
 public struct ProjectDocumentStorage {
     public let url: URL
+    /// Stamped on the conversation events created while migrating.
+    public let projectID: UUID?
 
-    public init(url: URL) { self.url = url }
+    public init(url: URL, projectID: UUID? = nil) {
+        self.url = url
+        self.projectID = projectID
+    }
 
+    /// The untouched copy of the document as it was before its first migration.
     public var originalBackupURL: URL? {
-        let backup = url.appendingPathExtension("v1-original.json")
-        return FileManager.default.fileExists(atPath: backup.path) ? backup : nil
+        (1..<ProjectDocument.currentSchemaVersion)
+            .map(backupURL(schemaVersion:))
+            .first { FileManager.default.fileExists(atPath: $0.path) }
     }
 
     public func load() throws -> ProjectDocument {
@@ -16,16 +23,25 @@ public struct ProjectDocumentStorage {
         guard FileManager.default.fileExists(atPath: url.path) else { return ProjectDocument() }
         let data = try Data(contentsOf: url)
         var document = try decode(data)
-        if document.schemaVersion == 1 {
-            let backup = url.appendingPathExtension("v1-original.json")
+        if document.schemaVersion < ProjectDocument.currentSchemaVersion {
+            let backup = backupURL(schemaVersion: document.schemaVersion)
             try rejectSymbolicLink(backup)
             if !FileManager.default.fileExists(atPath: backup.path) {
                 try FileManager.default.copyItem(at: url, to: backup)
             }
             guard try Data(contentsOf: backup) == data else { throw CocoaError(.fileReadCorruptFile) }
-            document.schemaVersion = 2
-            document.importedRequestIDs = document.requests.map(\.id)
+            if document.schemaVersion == 1 {
+                document.importedRequestIDs = document.requests.map(\.id)
+            }
+            // Schema 3: the chat reads the conversation timeline instead of the requests.
+            document.conversation = .migrating(requests: document.requests, projectID: projectID)
+            document.schemaVersion = ProjectDocument.currentSchemaVersion
             try save(document)
+        }
+        if document.conversation == nil {
+            document.conversation = .migrating(requests: document.requests, projectID: projectID)
+        } else if document.conversation?.projectID == nil {
+            document.conversation?.projectID = projectID
         }
         return document
     }
@@ -54,8 +70,12 @@ public struct ProjectDocumentStorage {
 
     private func decode(_ data: Data) throws -> ProjectDocument {
         let document = try JSONDecoder().decode(ProjectDocument.self, from: data)
-        guard (1...2).contains(document.schemaVersion) else { throw CocoaError(.coderReadCorrupt) }
+        guard (1...ProjectDocument.currentSchemaVersion).contains(document.schemaVersion) else { throw CocoaError(.coderReadCorrupt) }
         return document
+    }
+
+    private func backupURL(schemaVersion: Int) -> URL {
+        url.appendingPathExtension("v\(schemaVersion)-original.json")
     }
 
     private func rejectSymbolicLink(_ file: URL) throws {
