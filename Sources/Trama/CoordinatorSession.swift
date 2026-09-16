@@ -18,7 +18,7 @@ final class CoordinatorRuntime {
     let host = StoreToolHost()
     private(set) lazy var tools = CoordinatorToolServer(host: host)
     private var server: LoopbackHTTPServer?
-    private var endpoint: URL?
+    private(set) var endpoint: URL?
     private(set) var client: CodexClient?
     private(set) var credential: CoordinatorSessionCredential?
     private(set) var projectID: UUID?
@@ -30,6 +30,8 @@ final class CoordinatorRuntime {
     var resumed = false
     /// Instruction files read at the last source change, reused between study refreshes.
     var instructionFiles: [RepositoryInstructionFile]?
+    /// The settings the thread was opened with.
+    var settings: CodexClient.CoordinatorThreadSettings?
 
     /// Returns a runtime for the project, replacing the one of another project.
     func prepare(projectID: UUID) async throws -> (client: CodexClient, endpoint: URL) {
@@ -61,6 +63,7 @@ final class CoordinatorRuntime {
         memoryDelivered = false
         resumed = false
         instructionFiles = nil
+        settings = nil
     }
 
     func beginTurn(_ turnID: String?) async {
@@ -199,6 +202,7 @@ extension ProjectStore {
                 let opening = try await client.openCoordinatorThread(settings, resuming: coordinatorThreadID)
                 guard coordinatorGeneration == generation else { return }
                 coordinator.threadID = opening.threadID
+                coordinator.settings = settings
                 var replacedReason: String?
                 switch opening {
                 case .resumed:
@@ -333,7 +337,7 @@ extension ProjectStore {
             return
         }
         guard coordinatorPhase == .ready, let threadID = coordinator.threadID, let client = coordinator.client,
-              let endpoint = coordinator.credential.map({ _ in true }), endpoint else {
+              var settings = coordinator.settings else {
             document.requests[index].state = .waitingForCoordinator
             saveDocument()
             startCoordinator()
@@ -352,12 +356,7 @@ extension ProjectStore {
         )
         let moduleLine = document.requests[index].moduleID == "project" ? "" : "Contesto scelto dalla persona: modulo \(moduleName).\n\n"
         let input = [update?.update, moduleLine + text].compactMap { $0 }
-        let settings = CodexClient.CoordinatorThreadSettings(
-            cwd: root,
-            model: model,
-            developerInstructions: CoordinatorBriefing.developerInstructions(projectName: project.name),
-            toolServerURL: URL(string: "http://127.0.0.1/mcp")!
-        )
+        settings.model = model
         let knownFiles = Array(Set(project.modules.flatMap(\.files).map(\.relativePath) + (project.contextualInputHashes ?? [:]).keys + (coordinator.instructionFiles ?? []).map(\.path)))
 
         document.requests[index].model = model
