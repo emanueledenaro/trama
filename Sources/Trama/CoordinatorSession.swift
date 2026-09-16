@@ -367,7 +367,7 @@ extension ProjectStore {
             guard let request = document.coordinator?.decisionRequests.first(where: { $0.id == id }) else { return }
             sayToCoordinator(CoordinatorBriefing.decisionMessage(request: request, decision: recorded.decision))
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = Self.personFacingMessage(error)
         }
     }
 
@@ -376,7 +376,7 @@ extension ProjectStore {
             try document.declineMandateRequest(id)
             sayToCoordinator(CoordinatorBriefing.mandateMessage(.declined))
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = Self.personFacingMessage(error)
         }
     }
 

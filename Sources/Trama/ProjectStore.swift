@@ -347,7 +347,7 @@ final class ProjectStore: ObservableObject {
             intelligence.invalidate()
             activity.insert("Mandato concesso al Coordinatore per \(project.name).", at: 0)
             announceMandateChange(.granted(version: mandate.version))
-        } catch { errorMessage = Self.mandateMessage(error) }
+        } catch { errorMessage = Self.personFacingMessage(error) }
     }
 
     func correctMandate(objectives: [String], priorities: [String], scopeModuleIDs: [String], authorizedActions: [ProjectMandate.Action], limits: [String]) {
@@ -363,7 +363,7 @@ final class ProjectStore: ObservableObject {
             intelligence.invalidate()
             activity.insert("Mandato corretto: versione \(mandate.version).", at: 0)
             announceMandateChange(.corrected(version: mandate.version))
-        } catch { errorMessage = Self.mandateMessage(error) }
+        } catch { errorMessage = Self.personFacingMessage(error) }
     }
 
     func revokeMandate(reason: String) {
@@ -372,7 +372,7 @@ final class ProjectStore: ObservableObject {
             intelligence.invalidate()
             activity.insert("Mandato revocato.", at: 0)
             announceMandateChange(.revoked, reason: reason)
-        } catch { errorMessage = Self.mandateMessage(error) }
+        } catch { errorMessage = Self.personFacingMessage(error) }
     }
 
     /// Grants the Coordinator's proposal from the card, or records it as a correction of a live mandate.
@@ -390,15 +390,25 @@ final class ProjectStore: ObservableObject {
                 break
             }
             announceMandateChange(recorded.resolution)
-        } catch { errorMessage = Self.mandateMessage(error) }
+        } catch { errorMessage = Self.personFacingMessage(error) }
     }
 
-    private static func mandateMessage(_ error: Error) -> String {
+    /// Italian copy for mandate and card errors shown in the Trama alert.
+    static func personFacingMessage(_ error: Error) -> String {
         if let requestError = error as? CoordinatorRequestError {
             switch requestError {
             case .noGrantedMandate: return "Non c'è un mandato concesso da correggere o revocare."
             case .missingField("reason"): return "Indica il motivo della revoca."
-            default: return requestError.localizedDescription
+            case .missingField("objectives"): return "Indica almeno un obiettivo per il mandato."
+            case .missingField("scopeModuleIDs"): return "Scegli almeno un modulo nel perimetro del mandato."
+            case .missingField("authorizedActions"): return "Scegli almeno un'azione autorizzata."
+            case .missingField: return "Il mandato non è completo."
+            case .alreadyResolved: return "Hai già risposto a questa scheda."
+            case .emptyAnswer: return "La risposta è vuota."
+            case .unknownRequest: return "Questa scheda non è più disponibile."
+            case let .unknownAlternative(index): return "Non c'è l'alternativa \(index + 1)."
+            case let .alternativeCount(count): return "Una decisione ha bisogno di due-quattro alternative, non \(count)."
+            case let .invalidMandate(mandateError): return personFacingMessage(mandateError)
             }
         }
         switch error as? ProjectMandateError {
