@@ -6,11 +6,13 @@ public struct CoordinatorState: Codable, Equatable, Sendable {
     public var thread: CoordinatorThreadRecord?
     public var memory = CoordinatorMemory()
     public var study: ProjectStudy?
+    /// Context window use of the thread and the person's warning threshold. Nil in documents before V07.
+    public var context: CoordinatorContextState?
 
     public init() {}
 
     private enum CodingKeys: String, CodingKey {
-        case thread, memory, study
+        case thread, memory, study, context
     }
 
     public init(from decoder: Decoder) throws {
@@ -18,6 +20,7 @@ public struct CoordinatorState: Codable, Equatable, Sendable {
         thread = try container.decodeIfPresent(CoordinatorThreadRecord.self, forKey: .thread)
         memory = try container.decodeIfPresent(CoordinatorMemory.self, forKey: .memory) ?? CoordinatorMemory()
         study = try container.decodeIfPresent(ProjectStudy.self, forKey: .study)
+        context = try container.decodeIfPresent(CoordinatorContextState.self, forKey: .context)
     }
 }
 

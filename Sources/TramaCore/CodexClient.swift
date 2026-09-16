@@ -62,19 +62,42 @@ public final class CodexClient: @unchecked Sendable {
         public let displayName: String
         public let description: String
         public let isDefault: Bool
+        /// Efforts the model accepts, from the runtime catalogue; empty when Codex does not say.
+        public let supportedReasoningEfforts: [String]
+        /// Kept only when it is one of `supportedReasoningEfforts`.
+        public let defaultReasoningEffort: String?
 
         public init(
             id: String,
             model: String,
             displayName: String,
             description: String,
-            isDefault: Bool
+            isDefault: Bool,
+            supportedReasoningEfforts: [String] = [],
+            defaultReasoningEffort: String? = nil
         ) {
             self.id = id
             self.model = model
             self.displayName = displayName
             self.description = description
             self.isDefault = isDefault
+            self.supportedReasoningEfforts = supportedReasoningEfforts
+            self.defaultReasoningEffort = defaultReasoningEffort
+        }
+
+        private enum CodingKeys: String, CodingKey {
+            case id, model, displayName, description, isDefault, supportedReasoningEfforts, defaultReasoningEffort
+        }
+
+        public init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            id = try container.decode(String.self, forKey: .id)
+            model = try container.decode(String.self, forKey: .model)
+            displayName = try container.decode(String.self, forKey: .displayName)
+            description = try container.decode(String.self, forKey: .description)
+            isDefault = try container.decode(Bool.self, forKey: .isDefault)
+            supportedReasoningEfforts = try container.decodeIfPresent([String].self, forKey: .supportedReasoningEfforts) ?? []
+            defaultReasoningEffort = try container.decodeIfPresent(String.self, forKey: .defaultReasoningEffort)
         }
     }
 
@@ -97,11 +120,14 @@ public final class CodexClient: @unchecked Sendable {
         public let name: String
         public let path: String
         public let enabled: Bool
+        /// The short description shown in the composer's command menu.
+        public let description: String?
 
-        public init(name: String, path: String, enabled: Bool) {
+        public init(name: String, path: String, enabled: Bool, description: String? = nil) {
             self.name = name
             self.path = path
             self.enabled = enabled
+            self.description = description
         }
     }
 
@@ -147,16 +173,34 @@ public final class CodexClient: @unchecked Sendable {
 
         public var cwd: URL
         public var model: String
+        /// Reasoning effort sent with a turn. Codex keeps it for later turns, so Trama sends it every time.
+        public var effort: String?
         public var developerInstructions: String
         /// The full MCP endpoint, for example `http://127.0.0.1:52011/mcp`.
         public var toolServerURL: URL
 
-        public init(cwd: URL, model: String, developerInstructions: String, toolServerURL: URL) {
+        public init(cwd: URL, model: String, effort: String? = nil, developerInstructions: String, toolServerURL: URL) {
             self.cwd = cwd
             self.model = model
+            self.effort = effort
             self.developerInstructions = developerInstructions
             self.toolServerURL = toolServerURL
         }
+    }
+
+    /// One item of a Coordinator turn, in the order Codex receives them.
+    public enum TurnInputItem: Equatable, Sendable {
+        case text(String)
+        /// An image file on disk.
+        case localImage(path: String)
+        /// A skill named in the text as `$name`.
+        case skill(name: String, path: String)
+    }
+
+    /// What Codex reports about a Coordinator thread outside the turn's reply.
+    public enum ThreadEvent: Equatable, Sendable {
+        case contextUsage(ContextUsageSnapshot)
+        case compaction(ContextCompactionState)
     }
 
     public enum CoordinatorThreadOpening: Equatable, Sendable {
@@ -312,11 +356,27 @@ public final class CodexClient: @unchecked Sendable {
     /// Runs one turn on the Coordinator thread. The reply is free prose; `input` items are sent in order.
     public func runCoordinatorTurn(
         threadID: String,
-        input: [String],
+        input: [TurnInputItem],
         settings: CoordinatorThreadSettings,
         onEvent: @escaping @Sendable (CoordinatorTurnEvent) -> Void
     ) async throws -> String {
         try await restrictedCore.runCoordinatorTurn(threadID: threadID, input: input, settings: settings, onEvent: onEvent)
+    }
+
+    /// Runs one turn made of text items only.
+    public func runCoordinatorTurn(
+        threadID: String,
+        input: [String],
+        settings: CoordinatorThreadSettings,
+        onEvent: @escaping @Sendable (CoordinatorTurnEvent) -> Void
+    ) async throws -> String {
+        try await runCoordinatorTurn(threadID: threadID, input: input.map(TurnInputItem.text), settings: settings, onEvent: onEvent)
+    }
+
+    /// Delivers context usage and compaction of `threadID`, during and between turns; nil stops it.
+    /// Notifications of other threads, subagents included, are not delivered.
+    public func observeThread(_ threadID: String, _ handler: (@Sendable (ThreadEvent) -> Void)?) async {
+        await restrictedCore.observeThread(threadID, handler)
     }
 
     public func cancelTurn() async {
@@ -641,6 +701,7 @@ private actor Core {
     private var completedLoginOutcomes: [String: LoginOutcome] = [:]
     private var lastLoginFailure: String?
     private var activePlan: PlanSession?
+    private var threadObservers: [String: @Sendable (CodexClient.ThreadEvent) -> Void] = [:]
     private(set) var serverInfo: CodexClient.ServerInfo?
 
     init(
@@ -795,12 +856,19 @@ private actor Core {
                     throw CodexClient.ClientError.malformedMessage("model/list contiene un modello non valido")
                 }
                 guard !model.contains("/") else { continue }
+                // Efforts arrive as strings or as `{ reasoningEffort, description }` objects.
+                let efforts: [String] = (modelObject["supportedReasoningEfforts"]?.arrayValue ?? []).compactMap { value in
+                    value.stringValue ?? value.objectValue?["reasoningEffort"]?.stringValue
+                }
+                let defaultEffort = modelObject["defaultReasoningEffort"]?.stringValue.flatMap { efforts.contains($0) ? $0 : nil }
                 models.append(CodexClient.Model(
                     id: id,
                     model: model,
                     displayName: displayName,
                     description: description,
-                    isDefault: isDefault
+                    isDefault: isDefault,
+                    supportedReasoningEfforts: efforts,
+                    defaultReasoningEffort: defaultEffort
                 ))
             }
             cursor = object["nextCursor"]?.stringValue
@@ -846,7 +914,10 @@ private actor Core {
                       let name = skill["name"]?.stringValue,
                       let path = skill["path"]?.stringValue,
                       let enabled = skill["enabled"]?.boolValue else { continue }
-                skills.append(CodexClient.LoadedSkill(name: name, path: path, enabled: enabled))
+                let summary = skill["interface"]?.objectValue?["shortDescription"]?.stringValue
+                    ?? skill["shortDescription"]?.stringValue
+                    ?? skill["description"]?.stringValue
+                skills.append(CodexClient.LoadedSkill(name: name, path: path, enabled: enabled, description: summary))
             }
         }
         guard errors.isEmpty else {
@@ -1150,16 +1221,32 @@ private actor Core {
         return threadID
     }
 
+    func observeThread(_ threadID: String, _ handler: (@Sendable (CodexClient.ThreadEvent) -> Void)?) {
+        threadObservers[threadID] = handler
+    }
+
     func runCoordinatorTurn(
         threadID: String,
-        input: [String],
+        input: [CodexClient.TurnInputItem],
         settings: CodexClient.CoordinatorThreadSettings,
         onEvent: @escaping @Sendable (CodexClient.CoordinatorTurnEvent) -> Void
     ) async throws -> String {
-        let items = input
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
-        guard !items.isEmpty else {
+        let items: [JSONValue] = input.compactMap { item in
+            switch item {
+            case let .text(text):
+                let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                return trimmed.isEmpty ? nil : .object([
+                    "type": .string("text"),
+                    "text": .string(trimmed),
+                    "text_elements": .array([])
+                ])
+            case let .localImage(path):
+                return .object(["type": .string("localImage"), "path": .string(path)])
+            case let .skill(name, path):
+                return .object(["type": .string("skill"), "name": .string(name), "path": .string(path)])
+            }
+        }
+        guard input.contains(where: { if case let .text(text) = $0 { !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty } else { false } }) else {
             throw CodexClient.ClientError.emptyPrompt
         }
         let model = try Self.validatedModel(settings.model)
@@ -1178,27 +1265,22 @@ private actor Core {
         session.onEvent = onEvent
         activePlan = session
 
+        var params: [String: JSONValue] = [
+            "threadId": .string(threadID),
+            "input": .array(items),
+            "cwd": .string(settings.cwd.path),
+            "model": .string(model),
+            "approvalPolicy": .string("never"),
+            "sandboxPolicy": .object([
+                "type": .string("readOnly"),
+                "networkAccess": .bool(false)
+            ])
+        ]
+        if let effort = settings.effort?.trimmingCharacters(in: .whitespacesAndNewlines), !effort.isEmpty {
+            params["effort"] = .string(effort)
+        }
         do {
-            let turnResult = try await request(
-                method: "turn/start",
-                params: .object([
-                    "threadId": .string(threadID),
-                    "input": .array(items.map { text in
-                        .object([
-                            "type": .string("text"),
-                            "text": .string(text),
-                            "text_elements": .array([])
-                        ])
-                    }),
-                    "cwd": .string(settings.cwd.path),
-                    "model": .string(model),
-                    "approvalPolicy": .string("never"),
-                    "sandboxPolicy": .object([
-                        "type": .string("readOnly"),
-                        "networkAccess": .bool(false)
-                    ])
-                ])
-            )
+            let turnResult = try await request(method: "turn/start", params: .object(params))
             guard let turnID = turnResult.objectValue?["turn"]?.objectValue?["id"]?.stringValue else {
                 throw CodexClient.ClientError.malformedMessage("risposta turn/start senza turn.id")
             }
@@ -1813,8 +1895,31 @@ private actor Core {
         return true
     }
 
+    /// Usage and compaction of an observed thread; subagent threads have their own id and are skipped.
+    private func notifyThreadObserver(method: String, params: [String: JSONValue]) {
+        guard let threadID = params["threadId"]?.stringValue, let observer = threadObservers[threadID] else { return }
+        switch method {
+        case "thread/tokenUsage/updated":
+            if let snapshot = ContextUsageSnapshot(codexNotification: .object(params)) {
+                observer(.contextUsage(snapshot))
+            }
+        case "item/started", "item/completed":
+            guard let item = params["item"]?.objectValue, item["type"]?.stringValue == "contextCompaction" else { return }
+            if method == "item/started" {
+                observer(.compaction(.inProgress))
+            } else {
+                observer(.compaction(item["status"]?.stringValue == "failed" ? .failed : .completed))
+            }
+        case "thread/compacted":
+            observer(.compaction(.completed))
+        default:
+            break
+        }
+    }
+
     private func handleNotification(method: String, params: JSONValue?) {
         guard let params = params?.objectValue else { return }
+        notifyThreadObserver(method: method, params: params)
 
         switch method {
         case "account/login/completed":
