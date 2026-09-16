@@ -193,6 +193,12 @@ struct ComposerMentionTests {
         #expect(ComposerMentions.tokenRange(endingAt: 20, in: text) == nil)
         #expect(ComposerMentions.tokenRange(endingAt: 4, in: text) == nil)
     }
+
+    @Test("Only tokens naming real objects become chips")
+    func chipRanges() {
+        let text = "@module:Payments @module:Pay @issue:70 @Sources/Orders/Order.swift"
+        #expect(ComposerMentions.resolvedTokenRanges(in: text, sources: Self.sources) == [0..<16, 29..<38, 39..<66])
+    }
 }
 
 @Suite("Composer skills")

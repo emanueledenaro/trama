@@ -90,7 +90,7 @@ final class CoordinatorRuntime {
     func runTurn(
         client: CodexClient,
         threadID: String,
-        input: [String],
+        input: [CodexClient.TurnInputItem],
         settings: CodexClient.CoordinatorThreadSettings,
         onEvent: @escaping @MainActor (CodexClient.CoordinatorTurnEvent) async -> Void
     ) async throws -> String {
@@ -227,7 +227,7 @@ extension ProjectStore {
         guard coordinatorTask == nil, coordinatorPhase != .ready, codexConnected, stateWritable,
               let project, let root = localRoot, let projectID = activeProjectID else { return }
         guard let model = selectedModelInfo?.model else {
-            coordinatorPhase = .unavailable("Scegli un modello OpenAI disponibile per il Coordinatore.")
+            coordinatorPhase = .unavailable(needsModelChoice ? CoordinatorModelChoice.preferredUnavailableMessage : "Scegli un modello OpenAI disponibile per il Coordinatore.")
             return
         }
         coordinator.host.store = self
@@ -249,6 +249,7 @@ extension ProjectStore {
                 )
                 let opening = try await client.openCoordinatorThread(settings, resuming: coordinatorThreadID)
                 guard coordinatorGeneration == generation else { return }
+                await observeCoordinatorThread(client: client, threadID: opening.threadID)
                 coordinator.threadID = opening.threadID
                 coordinator.settings = settings
                 var replacedReason: String?
@@ -292,6 +293,8 @@ extension ProjectStore {
 
     /// Stops the runtime of the current project, for example when another project opens.
     func stopCoordinator() {
+        coordinatorEventsTask?.cancel()
+        coordinatorEventsTask = nil
         coordinatorGeneration = UUID()
         coordinatorTask?.cancel()
         coordinatorTask = nil
@@ -302,6 +305,7 @@ extension ProjectStore {
 
     private func recordCoordinatorThread(_ threadID: String, model: String) {
         var state = document.coordinator ?? CoordinatorState()
+        state.context?.resetForThread(threadID)
         state.thread = CoordinatorThreadRecord(
             provider: Self.coordinatorProvider,
             resumeCursor: .object(["threadId": .string(threadID)]),
@@ -329,7 +333,7 @@ extension ProjectStore {
         let reply = try await coordinator.runTurn(
             client: client,
             threadID: threadID,
-            input: CoordinatorBriefing.openingInput(study: study, memory: memory, replacing: reason),
+            input: CoordinatorBriefing.openingInput(study: study, memory: memory, replacing: reason).map { .text($0) },
             settings: settings
         ) { [weak self] event in
             guard let self, self.coordinatorGeneration == generation, case let .textDelta(delta) = event else { return }
@@ -361,8 +365,10 @@ extension ProjectStore {
     func sendToCoordinator(_ id: UUID) {
         guard let index = document.requests.firstIndex(where: { $0.id == id }),
               let project, let root = localRoot, !isPlanning, !isPreparingSkills else { return }
-        let model = selectedModel
-        guard models.contains(where: { $0.model == model }) else {
+        let override = pendingTurnOverrides[id] ?? TurnOverride()
+        let model = override.model ?? selectedModel
+        guard let selection = CoordinatorModelChoice.turnSelection(coordinatorModel: selectedModel, override: override, models: models) else {
+            pendingTurnOverrides[id] = nil
             document.requests[index].state = .modelUnavailable
             document.requests[index].failureDetail = "Scegli un modello OpenAI disponibile prima di scrivere al Coordinatore. Il modello richiesto era \(model.isEmpty ? "non selezionato" : model)."
             document.conversation?.appendActivity(requestID: id, title: "Modello non disponibile", detail: model.isEmpty ? nil : model)
@@ -387,14 +393,27 @@ extension ProjectStore {
             memory: state.memory,
             includeMemory: !coordinator.memoryDelivered
         )
-        let moduleLine = document.requests[index].moduleID == "project" ? "" : "Contesto scelto dalla persona: modulo \(moduleName).\n\n"
-        let input = [update?.text, moduleLine + text].compactMap { $0 }
-        settings.model = model
+        let moduleLine = document.requests[index].moduleID == "project" ? nil : "Contesto scelto dalla persona: modulo \(moduleName)."
+        // Images belong to the message that opened the request, not to later answers.
+        let images = text == document.requests[index].request
+            ? (document.requests[index].attachments ?? []).filter { FileManager.default.fileExists(atPath: $0) }
+            : []
+        let turn = CoordinatorTurnComposer.compose(
+            message: text,
+            imagePaths: images,
+            moduleLine: moduleLine,
+            contextUpdate: update?.text,
+            sources: mentionSources,
+            skills: loadedSkills
+        )
+        settings.model = selection.model
+        settings.effort = selection.effort
+        pendingTurnOverrides[id] = nil
         var knownFiles: Set<String> = Set(project.modules.flatMap(\.files).map(\.relativePath))
         knownFiles.formUnion((project.contextualInputHashes ?? [:]).keys)
         knownFiles.formUnion((coordinator.instructionFiles ?? []).map(\.path))
 
-        document.requests[index].model = model
+        document.requests[index].model = selection.model
         document.requests[index].sourceFingerprint = fingerprint
         document.requests[index].state = .analysing
         document.requests[index].failureDetail = nil
@@ -402,7 +421,14 @@ extension ProjectStore {
         document.requests[index].proposal = nil
         document.requests[index].replyKind = nil
         document.requests[index].replyReferences = nil
-        let sentDetail: String = update.map { "\(model) · aggiornamento: \(Self.updateSummary($0))" } ?? model
+        var sentParts: [String] = [selection.overridesModel ? "\(selection.model) solo per questo messaggio" : selection.model]
+        if let effort = selection.effort {
+            let label = CoordinatorModelChoice.effortLabel(effort).lowercased()
+            sentParts.append(selection.overridesEffort ? "sforzo \(label) solo per questo messaggio" : "sforzo \(label)")
+        }
+        if let update { sentParts.append("aggiornamento: \(Self.updateSummary(update))") }
+        if let summary = turn.summary { sentParts.append(summary) }
+        let sentDetail = sentParts.joined(separator: " · ")
         document.conversation?.appendActivity(requestID: id, title: "Messaggio inviato al Coordinatore", detail: sentDetail)
         let token = UUID(); operationID = token
         streamingReplies[id] = ""
@@ -414,7 +440,7 @@ extension ProjectStore {
             guard let self else { return }
             defer { if operationID == token { isPlanning = false; streamingReplies[id] = nil; saveDocument() } }
             do {
-                let reply = try await runtime.runTurn(client: client, threadID: threadID, input: input, settings: settings) { [weak self] event in
+                let reply = try await runtime.runTurn(client: client, threadID: threadID, input: turn.input, settings: settings) { [weak self] event in
                     guard let self, self.operationID == token, self.localRoot == root else { return }
                     self.receiveCoordinatorEvent(event, requestID: id)
                 }
@@ -431,7 +457,7 @@ extension ProjectStore {
                 document.requests[i].replyReferences = references
                 document.requests[i].state = .replyAvailable
                 document.conversation?.appendActivity(requestID: id, title: "Risposta ricevuta", detail: references.count == 1 ? "1 fonte" : "\(references.count) fonti")
-                document.conversation?.recordReply(requestID: id, text: reply, model: model, references: references)
+                document.conversation?.recordReply(requestID: id, text: reply, model: selection.model, references: references)
                 activity.insert("Risposta del Coordinatore ricevuta per \(document.requests[i].moduleName).", at: 0)
             } catch {
                 guard operationID == token, localRoot == root, let i = document.requests.firstIndex(where: { $0.id == id }) else { return }
@@ -466,6 +492,71 @@ extension ProjectStore {
             let detail: String = succeeded ? "\(server) · \(tool)" : "\(server) · \(tool) · \(failure)"
             document.conversation?.appendActivity(requestID: requestID, title: succeeded ? title : "\(title) non riuscito", detail: detail)
         }
+    }
+
+    // MARK: Context window
+
+    /// The objects an `@` mention can name in this project.
+    var mentionSources: MentionSources {
+        MentionSources(modules: project?.modules ?? [], issues: projectIssues ?? [], decisions: document.pact?.decisions ?? [])
+    }
+
+    /// The meter of the open thread; nil before its first usage and after a completed compaction.
+    var contextMeter: ContextWindowMeter? {
+        guard let context = document.coordinator?.context, let threadID = coordinatorThreadID,
+              context.threadID == nil || context.threadID == threadID else { return nil }
+        return context.meter
+    }
+
+    var contextThreshold: Int {
+        document.coordinator?.context?.thresholdPercent ?? CoordinatorContextState.defaultThreshold
+    }
+
+    func setContextThreshold(_ percent: Int) {
+        guard project != nil, stateWritable else { return }
+        updateContext { context in context.setThreshold(percent) }
+        saveDocument()
+    }
+
+    /// Streams usage and compaction of the thread into the document, in the order Codex sent them.
+    private func observeCoordinatorThread(client: CodexClient, threadID: String) async {
+        coordinatorEventsTask?.cancel()
+        let (events, continuation) = AsyncStream<CodexClient.ThreadEvent>.makeStream()
+        coordinatorEventsTask = Task { [weak self] in
+            for await event in events {
+                self?.receiveThreadEvent(event, threadID: threadID)
+            }
+        }
+        await client.observeThread(threadID) { continuation.yield($0) }
+    }
+
+    private func receiveThreadEvent(_ event: CodexClient.ThreadEvent, threadID: String) {
+        guard coordinatorThreadID == threadID, project != nil, stateWritable else { return }
+        switch event {
+        case let .contextUsage(snapshot):
+            updateContext { context in context.record(snapshot, threadID: threadID) }
+        case let .compaction(phase):
+            updateContext { context in
+                context.record(phase)
+                return nil
+            }
+            // The running Coordinator turn owns the row; outside a turn it stands alone.
+            document.conversation?.appendActivity(requestID: streamingReplies.keys.first, title: phase.activityTitle, detail: nil)
+            if phase != .inProgress { activity.insert(phase.activityTitle + ".", at: 0) }
+        }
+        saveDocument()
+    }
+
+    /// Applies a change to the context state and posts the notice it returns as a chat card.
+    private func updateContext(_ change: (inout CoordinatorContextState) -> ContextThresholdNotice?) {
+        var state = document.coordinator ?? CoordinatorState()
+        var context = state.context ?? CoordinatorContextState()
+        let notice = change(&context)
+        state.context = context
+        document.coordinator = state
+        guard let notice else { return }
+        document.conversation?.appendCard(notice.card(threadID: coordinatorThreadID), origin: .trama, requestID: nil)
+        activity.insert("Contesto del Coordinatore oltre la soglia del \(notice.thresholdPercent)%.", at: 0)
     }
 
     static func toolTitle(_ tool: String) -> String {

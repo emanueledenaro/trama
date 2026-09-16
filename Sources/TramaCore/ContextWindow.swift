@@ -164,6 +164,8 @@ public struct ContextWindowMeter: Equatable, Sendable {
 
 /// The warning Trama adds to the chat when the Coordinator's context passes the person's threshold.
 public struct ContextThresholdNotice: Equatable, Sendable {
+    public static let cardTitle = "Contesto oltre la soglia"
+
     public var usedPercentage: Double
     public var usedTokens: Int
     public var maxTokens: Int
@@ -183,7 +185,7 @@ public struct ContextThresholdNotice: Equatable, Sendable {
         let tokens = "\(ContextWindowFormat.tokens(usedTokens)) su \(ContextWindowFormat.tokens(maxTokens)) token"
         return ConversationEvent.Card(
             kind: .contextNotice,
-            title: "Contesto oltre la soglia",
+            title: Self.cardTitle,
             detail: "La finestra di contesto del Coordinatore è piena \(share) (\(tokens)), sopra la soglia impostata \(threshold). Codex la compatta da solo quando serve; puoi cambiare la soglia dal misuratore nel campo di scrittura.",
             referenceID: threadID
         )

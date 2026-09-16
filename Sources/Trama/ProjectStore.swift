@@ -25,6 +25,13 @@ final class ProjectStore: ObservableObject {
     @Published var isLoading = false
     @Published var errorMessage: String?
     @Published var composer = "" { didSet { saveViewState() } }
+    /// Long pastes and image files of the draft; they are sent with the next message.
+    @Published var composerPastes: [PastedText] = [] { didSet { saveViewState() } }
+    @Published var composerAttachments: [String] = [] { didSet { saveViewState() } }
+    /// A model or effort for the next message only; the Coordinator model does not change.
+    @Published var turnOverride = TurnOverride()
+    /// A short composer message, for example a rejected attachment.
+    @Published var composerNotice: String?
     @Published var document = ProjectDocument()
     @Published var selectedRequestID: UUID?
     @Published var filePreview: FilePreview?
@@ -62,6 +69,10 @@ final class ProjectStore: ObservableObject {
     let coordinator = CoordinatorRuntime()
     var coordinatorTask: Task<Void, Never>?
     var coordinatorGeneration = UUID()
+    /// Delivers usage and compaction of the open Coordinator thread.
+    var coordinatorEventsTask: Task<Void, Never>?
+    /// The one-message overrides of requests not sent yet.
+    var pendingTurnOverrides: [UUID: TurnOverride] = [:]
     /// Pact decisions and mandate the study was last refreshed for on save.
     private var studiedDecisions: [PactDecision] = []
     private var studiedMandate: ProjectMandate?
@@ -236,6 +247,10 @@ final class ProjectStore: ObservableObject {
             if previousPath != snapshot.rootPath {
                 document = loadDocument(snapshot)
                 composer = document.composerDraft ?? ""
+                composerPastes = document.composerPastes ?? []
+                composerAttachments = (document.composerAttachments ?? []).filter { FileManager.default.fileExists(atPath: $0) }
+                turnOverride = TurnOverride()
+                pendingTurnOverrides = [:]
                 selectedModel = document.selectedModel ?? ""
                 selectedRequestID = document.lastSelectedRequestID ?? document.requests.first?.id
                 if document.lastContextWasProject == true { selectedModuleID = nil }
@@ -427,16 +442,27 @@ final class ProjectStore: ObservableObject {
         } catch { connectionDetail = error.localizedDescription }
     }
 
+    var canSubmit: Bool {
+        !composer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !composerPastes.isEmpty || !composerAttachments.isEmpty
+    }
+
     func submitRequest() {
         let prompt = composer.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !prompt.isEmpty, let project, !isPlanning, !isPreparingSkills else { return }
+        guard canSubmit, let project, !isPlanning, !isPreparingSkills else { return }
         let module = selectedModule
-        var request = WorkRequest(title: String(prompt.prefix(90)), moduleID: module?.id ?? "project", moduleName: module?.name ?? project.name, request: prompt, sourceFingerprint: fingerprint)
+        let message = PastedText.serialize(prompt: prompt, pastes: composerPastes)
+        let title = prompt.isEmpty ? (composerPastes.first?.title ?? "Immagini allegate") : prompt
+        var request = WorkRequest(title: String(title.prefix(90)), moduleID: module?.id ?? "project", moduleName: module?.name ?? project.name, request: message, sourceFingerprint: fingerprint)
         request.model = selectedModel.isEmpty ? nil : selectedModel
+        request.attachments = composerAttachments.isEmpty ? nil : composerAttachments
         request.state = .waitingForCoordinator
         document.requests.insert(request, at: 0); selectedRequestID = request.id
         document.conversation?.appendPersonMessage(for: request)
-        composer = ""; section = .coordinator; showInspector = false; saveDocument()
+        if !turnOverride.isEmpty { pendingTurnOverrides[request.id] = turnOverride }
+        turnOverride = TurnOverride()
+        composerNotice = nil
+        composer = ""; composerPastes = []; composerAttachments = []
+        section = .coordinator; showInspector = false; saveDocument()
         if codexConnected { sendToCoordinator(request.id) } else { showConnections = true }
     }
 
@@ -638,7 +664,7 @@ final class ProjectStore: ObservableObject {
         } catch { if setupToken == token { errorMessage = "Preparazione AI Hero: \(error.localizedDescription)" } }
     }
 
-    private func stateURL(_ snapshot: RepositorySnapshot) -> URL {
+    func stateURL(_ snapshot: RepositorySnapshot) -> URL {
         let key = activeProjectID?.uuidString ?? (snapshot.isDemo ? "demo" : snapshot.rootPath)
         let hash = SHA256.hash(data: Data(key.utf8)).map { String(format: "%02x", $0) }.joined()
         return FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Trama/Projects/\(hash).json")
@@ -669,7 +695,7 @@ final class ProjectStore: ObservableObject {
             let storage = ProjectDocumentStorage(url: stateURL(project), projectID: activeProjectID)
             try storage.recover()
             document = try storage.load()
-            composer = ""; selectedRequestID = nil
+            composer = ""; composerPastes = []; composerAttachments = []; selectedRequestID = nil
             stateWritable = true; errorMessage = nil; saveDocument()
         } catch { errorMessage = "Non posso conservare lo stato originale: \(error.localizedDescription)" }
     }
@@ -687,6 +713,8 @@ final class ProjectStore: ObservableObject {
         document.lastSelectedRequestID = selectedRequestID
         document.lastSection = section?.rawValue
         document.composerDraft = composer
+        document.composerPastes = composerPastes.isEmpty ? nil : composerPastes
+        document.composerAttachments = composerAttachments.isEmpty ? nil : composerAttachments
         if !selectedModel.isEmpty { document.selectedModel = selectedModel }
         // The Pact and the mandate change from several views; their study parts follow on save.
         let decisions = document.pact?.decisions ?? []
@@ -700,22 +728,33 @@ final class ProjectStore: ObservableObject {
         } catch { errorMessage = "Salvataggio non riuscito: \(error.localizedDescription)" }
     }
 
+    /// True when the project has no model and the catalogue lacks Trama's preferred one.
+    var needsModelChoice: Bool {
+        CoordinatorModelChoice.preselect(saved: document.selectedModel, models: models) == .preferredUnavailable
+    }
+
     private func reconcileModelSelection() {
         guard project != nil, stateWritable else { return }
-        if let saved = document.selectedModel, !saved.isEmpty {
+        switch CoordinatorModelChoice.preselect(saved: document.selectedModel, models: models) {
+        case let .saved(saved):
             selectedModel = saved
             if !models.isEmpty {
                 modelsError = models.contains(where: { $0.model == saved })
                     ? nil
                     : "Il modello salvato \(saved) non è più disponibile. Scegline un altro per continuare."
             }
-            return
+        case let .preselected(model):
+            selectedModel = model
+            document.selectedModel = model
+            modelsError = nil
+            activity.insert("Modello del Coordinatore preselezionato: \(model).", at: 0)
+            saveDocument()
+        case .catalogueLoading:
+            break
+        case .preferredUnavailable:
+            selectedModel = ""
+            modelsError = CoordinatorModelChoice.preferredUnavailableMessage
         }
-        guard let model = models.first(where: \.isDefault) ?? models.first else { return }
-        selectedModel = model.model
-        document.selectedModel = model.model
-        modelsError = nil
-        saveDocument()
     }
 }
 
