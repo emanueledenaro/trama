@@ -8,7 +8,7 @@ extension ProjectStore {
               project != nil, let index = document.requests.firstIndex(where: { $0.id == id }) else { return }
         let request = document.requests[index]
         guard let model = request.model, models.contains(where: { $0.model == model }) else {
-            document.requests[index].state = "Modello non disponibile"
+            document.requests[index].state = .modelUnavailable
             errorMessage = "Il modello registrato per questa richiesta non è disponibile. Verifica il catalogo Codex o scegli un modello per una nuova richiesta."
             saveDocument()
             return
@@ -18,21 +18,21 @@ extension ProjectStore {
             errorMessage = "Registra il comportamento da rispettare nel Patto Vivo, poi torna al piano e avvia il lavoro."
             return
         }
-        let correctionStates = ["Verifiche fallite", "Verifiche interrotte", "Errore di esecuzione"]
-        guard request.state == "Da rivedere" || correctionStates.contains(request.state) else {
+        let correctionStates: [RequestState] = [.checksFailed, .checksInterrupted, .executionFailed]
+        guard request.state == .planReady || correctionStates.contains(request.state) else {
             errorMessage = "Rielabora il piano sul progetto corrente prima di avviare una modifica."
             return
         }
         guard request.sourceFingerprint == fingerprint,
               request.proposal?.sourceSnapshotID == request.sourceFingerprint else {
-            document.requests[index].state = "Da rivalutare"
+            document.requests[index].state = .stale
             errorMessage = "Il progetto è cambiato dopo il piano. Rielabora la richiesta prima di avviare il lavoro."
             saveDocument()
             return
         }
         let confirmedQuestions = Set(request.confirmedQuestionIDs ?? [])
         guard request.proposal?.questions.allSatisfy({ confirmedQuestions.contains($0.id) }) == true else {
-            document.requests[index].state = "Decisione richiesta"
+            document.requests[index].state = .decisionNeeded
             errorMessage = "Conferma le scelte di comportamento ancora aperte prima di avviare il lavoro."
             saveDocument()
             return
@@ -40,7 +40,7 @@ extension ProjectStore {
         guard let behaviorDecisionID = request.behaviorDecisionID,
               engine.decisions.contains(where: { $0.id == behaviorDecisionID }),
               decisionVersionsAreCurrent(request, engine: engine) else {
-            document.requests[index].state = "Da rivalutare"
+            document.requests[index].state = .stale
             errorMessage = "Le decisioni usate dal piano non sono più attuali. Rivedi il piano prima di continuare."
             saveDocument()
             return
@@ -48,7 +48,7 @@ extension ProjectStore {
         let token = UUID()
         operationID = token
         isPlanning = true; isExecuting = true; showInspector = false
-        document.requests[index].state = "Preparazione del worktree"
+        document.requests[index].state = .preparingWorktree
         activePlanTask = Task { [weak self] in
             guard let self else { return }
             defer {
@@ -78,7 +78,7 @@ extension ProjectStore {
                 invalidateForSourceChange(freshSource)
                 guard fingerprint == request.sourceFingerprint,
                       freshSource.headSHA == session.baseSHA else {
-                    document.requests[freshIndex].state = "Da rivalutare"
+                    document.requests[freshIndex].state = .stale
                     errorMessage = "La base del progetto è cambiata durante la preparazione."
                     return
                 }
@@ -126,7 +126,7 @@ extension ProjectStore {
                 document.requests[preparedIndex].check = nil
                 document.requests[preparedIndex].approvedAt = nil
                 document.requests[preparedIndex].executionOutput = ""
-                document.requests[preparedIndex].state = "In esecuzione"
+                document.requests[preparedIndex].state = .executing
                 saveDocument()
                 let decisions = pact.decisions.map { "\($0.id) v\($0.version): \($0.value). Esempio: \($0.acceptedExample)" }.joined(separator: "\n")
                 let allowedText = allowedModules.joined(separator: ", ")
@@ -168,12 +168,12 @@ extension ProjectStore {
                 ) {
                     try await runChecksAsync(id, session: session, root: root, token: token)
                 } else if let stateIndex = document.requests.firstIndex(where: { $0.id == id }) {
-                    document.requests[stateIndex].state = "Verifica manuale richiesta"
+                    document.requests[stateIndex].state = .manualCheckNeeded
                 }
             } catch {
                 if operationID == token, localRoot == root,
                    let j = document.requests.firstIndex(where: { $0.id == id }) {
-                    document.requests[j].state = Task.isCancelled ? "Interrotto" : "Errore di esecuzione"
+                    document.requests[j].state = Task.isCancelled ? .interrupted : .executionFailed
                     document.requests[j].executionOutput = (document.requests[j].executionOutput ?? "") + "\n" + error.localizedDescription
                 }
             }
@@ -217,7 +217,7 @@ extension ProjectStore {
             document.requests[index].candidateID = nil
             document.requests[index].check = nil
             document.requests[index].approvedAt = nil
-            document.requests[index].state = "Nessuna modifica al candidato"
+            document.requests[index].state = .candidateUnchanged
             errorMessage = "Codex non ha prodotto modifiche pubblicabili nel perimetro richiesto."
             return nil
         }
@@ -236,7 +236,7 @@ extension ProjectStore {
             document.requests[index].candidateID = candidateID
             document.requests[index].check = nil
             document.requests[index].approvedAt = nil
-            document.requests[index].state = "Da verificare"
+            document.requests[index].state = .checksPending
             return candidateID
         } catch {
             errorMessage = error.localizedDescription
@@ -254,7 +254,7 @@ extension ProjectStore {
         let token = UUID()
         operationID = token
         isPlanning = true
-        document.requests[index].state = "Verifiche in corso"
+        document.requests[index].state = .checking
         document.requests[index].approvedAt = nil
         activePlanTask = Task { [weak self] in
             guard let self else { return }
@@ -270,7 +270,7 @@ extension ProjectStore {
                 guard operationID == token, localRoot == root,
                       let currentIndex = document.requests.firstIndex(where: { $0.id == id }) else { return }
                 errorMessage = error.localizedDescription
-                document.requests[currentIndex].state = "Verifiche interrotte"
+                document.requests[currentIndex].state = .checksInterrupted
             }
         }
     }
@@ -303,7 +303,7 @@ extension ProjectStore {
         }
         guard let refreshedIndex = document.requests.firstIndex(where: { $0.id == id }),
               document.requests[refreshedIndex].review?.snapshotID == before.snapshotID else { return }
-        document.requests[refreshedIndex].state = "Verifiche in corso"
+        document.requests[refreshedIndex].state = .checking
         let command = try CheckSandbox.command(
             for: URL(fileURLWithPath: "/usr/bin/xcrun"),
             arguments: [
@@ -349,8 +349,8 @@ extension ProjectStore {
             pactAllowsReview = false
         }
         document.requests[resultIndex].state = check.exitCode != 0
-            ? "Verifiche fallite"
-            : (pactAllowsReview ? "Da revisionare" : "Da rivalutare")
+            ? .checksFailed
+            : (pactAllowsReview ? .reviewPending : .stale)
         if pactAllowsReview {
             notifications.post(
                 id: "review-ready-\(id.uuidString)",
@@ -386,7 +386,7 @@ extension ProjectStore {
             invalidateForSourceChange(freshSource)
             guard fingerprint == document.requests[refreshedIndex].sourceFingerprint,
                   freshSource.headSHA == session.baseSHA else {
-                document.requests[refreshedIndex].state = "Da rivalutare"
+                document.requests[refreshedIndex].state = .stale
                 errorMessage = "La base del progetto è cambiata. Esegui nuovamente piano e verifiche."
                 return
             }
@@ -400,20 +400,20 @@ extension ProjectStore {
                   document.requests[currentIndex].check?.exitCode == 0,
                   let candidateID = document.requests[currentIndex].candidateID,
                   !hasRemoteConflict(for: document.requests[currentIndex]) else {
-                document.requests[currentIndex].state = "Da rivalutare"
+                document.requests[currentIndex].state = .stale
                 errorMessage = "Il candidato, la base o le verifiche sono cambiati. Esegui nuovamente i controlli prima della revisione."
                 return
             }
             guard var pact = document.pact else { return }
             guard try pact.inspect(candidateID: candidateID, requireHumanApproval: false).allowed else {
-                document.requests[currentIndex].state = "Da rivalutare"
+                document.requests[currentIndex].state = .stale
                 errorMessage = "Il candidato non soddisfa più il Patto Vivo corrente."
                 return
             }
             try pact.approve(candidateID: candidateID, humanActor: "Utente locale di Trama")
             document.pact = pact
             document.requests[currentIndex].approvedAt = Date()
-            document.requests[currentIndex].state = "Revisionato localmente"
+            document.requests[currentIndex].state = .reviewedLocally
         } catch { errorMessage = error.localizedDescription }
     }
 
@@ -535,14 +535,14 @@ struct SessionReviewView: View {
                     DisclosureGroup("Mostra diff") { ReviewOutput(text: review.diff.isEmpty ? "Nessuna modifica al codice." : review.diff).frame(height: 220).padding(.top, TramaSpacing.compact) }
                     TramaAdaptiveActions { reviewActions }
                     if let check = request.check {
-                        let current = !["Da rivalutare", "Verifiche in corso", "Verifiche interrotte", "Errore di esecuzione", "Interrotto"].contains(request.state)
+                        let current = ![.stale, .checking, .checksInterrupted, .executionFailed, .interrupted].contains(request.state)
                         Label(!current ? "Verifiche precedenti: da ripetere" : check.exitCode == 0 ? "Controlli superati" : "Controlli falliti", systemImage: current && check.exitCode == 0 ? "checkmark.circle" : "exclamationmark.circle").foregroundStyle(current && check.exitCode == 0 ? Color.green : Color.orange)
                         DisclosureGroup("Output delle verifiche") { ReviewOutput(text: check.output).frame(height: 220).padding(.top, TramaSpacing.compact) }
                     }
                     if let id = request.candidateID, let verdict = try? store.document.pact?.inspect(candidateID: id) {
                         ForEach(Array(verdict.blockers.enumerated()), id: \.offset) { _, blocker in Text(blocker.userMessage).font(.caption).foregroundStyle(.secondary) }
                     }
-                    if request.state == "Revisionato localmente", !store.team.sourceRepository.isEmpty {
+                    if request.state == .reviewedLocally, !store.team.sourceRepository.isEmpty {
                         Button("Pubblica pull request", systemImage: "arrow.up.doc") { showPublication = true }
                             .buttonStyle(.borderedProminent)
                             .disabled(store.isPlanning || store.hasRemoteConflict(for: request))
@@ -577,14 +577,14 @@ struct SessionReviewView: View {
     @ViewBuilder
     private var reviewActions: some View {
         Button("Esegui swift test") { store.runChecks(request.id) }.disabled(store.isPlanning)
-        if ["Verifiche fallite", "Verifiche interrotte", "Errore di esecuzione"].contains(request.state) {
+        if [.checksFailed, .checksInterrupted, .executionFailed].contains(request.state) {
             Button("Correggi nello stesso worktree") { store.startExecution(request.id) }
                 .disabled(store.isPlanning || !store.codexConnected)
         }
         Button("Registra revisione") { Task { await store.approveRequest(request.id) } }.disabled(!canApprove)
     }
     private var canApprove: Bool {
-        guard !store.isPlanning, request.state == "Da revisionare", !store.hasRemoteConflict(for: request),
+        guard !store.isPlanning, request.state == .reviewPending, !store.hasRemoteConflict(for: request),
               let candidateID = request.candidateID else { return false }
         return (try? store.document.pact?.inspect(candidateID: candidateID, requireHumanApproval: false).allowed) == true
     }

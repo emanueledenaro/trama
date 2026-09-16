@@ -31,7 +31,7 @@ struct IssuesView: View {
                                 VStack(alignment: .leading, spacing: TramaSpacing.compact) {
                                     Text(issue.title).font(.headline).lineLimit(3)
                                     HStack(spacing: TramaSpacing.control) {
-                                        TramaStatusBadge(state: issueState(issue.state))
+                                        issueBadge(issue.state)
                                         Text("#\(issue.number) · \(issue.author)").font(.caption).foregroundStyle(.secondary).lineLimit(1)
                                     }
                                     Label(labelSummary(issue.labels), systemImage: "tag")
@@ -45,7 +45,7 @@ struct IssuesView: View {
                                 VStack(alignment: .leading, spacing: TramaSpacing.section) {
                                     Text(issue.title).font(.title2.weight(.semibold))
                                     HStack(spacing: TramaSpacing.control) {
-                                        TramaStatusBadge(state: issueState(issue.state))
+                                        issueBadge(issue.state)
                                         Text("#\(issue.number) · \(issue.author)").font(.caption).foregroundStyle(.secondary)
                                     }
                                     VStack(alignment: .leading, spacing: TramaSpacing.control) {
@@ -92,11 +92,11 @@ struct IssuesView: View {
         catch { self.error = error.localizedDescription }
     }
 
-    private func issueState(_ state: String) -> String {
+    private func issueBadge(_ state: String) -> TramaStatusBadge {
         switch state.lowercased() {
-        case "open": "Aperta"
-        case "closed": "Chiusa"
-        default: state
+        case "open": TramaStatusBadge(label: "Aperta", symbol: "circle.fill", color: .blue)
+        case "closed": TramaStatusBadge(label: "Chiusa", symbol: "checkmark.circle.fill", color: .secondary)
+        default: TramaStatusBadge(label: state, symbol: "doc.text", color: .secondary)
         }
     }
 
@@ -218,7 +218,7 @@ struct PublishPullRequestView: View {
         guard store.localRoot == request.session?.sourceRoot,
               let current = store.document.requests.first(where: { $0.id == request.id }),
               current.candidateID == candidateID, current.review?.snapshotID == snapshotID,
-              current.approvedAt == request.approvedAt, current.state == "Revisionato localmente", !store.hasRemoteConflict(for: current),
+              current.approvedAt == request.approvedAt, current.state == .reviewedLocally, !store.hasRemoteConflict(for: current),
               current.sourceFingerprint == store.fingerprint,
               let verdict = try? store.document.pact?.inspect(candidateID: candidateID) else { return false }
         return verdict.allowed
@@ -247,7 +247,7 @@ struct PublishPullRequestView: View {
                 publishedURL = url
                 if store.localRoot == session.sourceRoot, let index = store.document.requests.firstIndex(where: { $0.id == request.id }) {
                     store.document.requests[index].pullRequestURL = url
-                    store.document.requests[index].state = "PR pubblicata"
+                    store.document.requests[index].state = .pullRequestPublished
                     store.saveDocument()
                 }
             } catch { self.error = error.localizedDescription }

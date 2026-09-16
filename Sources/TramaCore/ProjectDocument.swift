@@ -7,7 +7,7 @@ public struct WorkRequest: Identifiable, Codable {
     public var moduleName: String
     public var request: String
     public var plan: String = ""
-    public var state: String = "Bozza"
+    public var state: RequestState = .draft
     public var createdAt = Date()
     public var sourceFingerprint: String
     public var session: WorkspaceSession?

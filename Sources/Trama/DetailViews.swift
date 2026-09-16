@@ -56,7 +56,7 @@ struct ModuleInspector: View {
                                 if requests.isEmpty { Text("Nessuna modifica registrata.").foregroundStyle(.secondary) }
                                 ForEach(requests) { request in
                                     Button { store.selectedRequestID = request.id; store.section = .changes } label: {
-                                        VStack(alignment: .leading, spacing: 4) { Text(request.title).lineLimit(2); Text(request.state).font(.caption).foregroundStyle(.secondary) }
+                                        VStack(alignment: .leading, spacing: 4) { Text(request.title).lineLimit(2); Text(request.state.label).font(.caption).foregroundStyle(.secondary) }
                                     }.buttonStyle(.plain)
                                 }
                             }
@@ -117,14 +117,14 @@ struct RequestsView: View {
                                         .foregroundStyle(.secondary)
                                 }
                                 Divider()
-                                if request.state == "Decisione richiesta" {
+                                if request.state == .decisionNeeded {
                                     PlanQuestionsView(request: request)
                                 } else if request.plan.isEmpty {
                                     Text("La risposta apparirà qui dopo l’analisi del Coordinatore.").foregroundStyle(.secondary)
                                 } else {
                                     Text(request.plan).font(.body).lineSpacing(5).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
                                 }
-                                if request.state == "Richiesta da chiarire" {
+                                if request.state == .clarificationNeeded {
                                     RequestClarificationView(request: request).id(request.id)
                                 }
                                 if request.proposal == nil, let references = request.replyReferences, !references.isEmpty {
@@ -138,7 +138,7 @@ struct RequestsView: View {
                                     DisclosureGroup("Dettagli dell’errore") { Text(detail).font(.system(.caption, design: .monospaced)).textSelection(.enabled) }
                                 }
                                 if request.session != nil { SessionReviewView(request: request) }
-                                if request.state == "Da rivedere", store.codexConnected, !store.isPlanning {
+                                if request.state == .planReady, store.codexConnected, !store.isPlanning {
                                     Button("Rivedi e avvia", systemImage: "play.fill") { reviewingPlan = request }.buttonStyle(.borderedProminent)
                                 }
                                 if !store.isPlanning && request.session == nil {
