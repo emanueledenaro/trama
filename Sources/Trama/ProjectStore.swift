@@ -302,7 +302,7 @@ final class ProjectStore: ObservableObject {
     // MARK: Project mandate
 
     /// The label used as actor for mandate changes made from this app.
-    private var mandateActor: String { accountLabel.isEmpty ? "Product Owner" : accountLabel }
+    private var mandateActor: String { codexConnected ? accountLabel : "Product Owner" }
 
     func grantMandate(objectives: [String], priorities: [String], scopeModuleIDs: [String], authorizedActions: [ProjectMandate.Action], limits: [String]) {
         guard let project else { return }
