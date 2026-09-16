@@ -30,6 +30,8 @@ final class ProjectStore: ObservableObject {
     @Published var filePreview: FilePreview?
     @Published var showConnections = false
     @Published var showMandate = false
+    /// The Coordinator's proposal when the mandate sheet opens from a card; nil from the header.
+    @Published var mandateProposal: MandateRequest?
     @Published var isPlanning = false
     @Published var isExecuting = false
     @Published var accountLabel = "Codex non collegato"
@@ -333,37 +335,80 @@ final class ProjectStore: ObservableObject {
     func grantMandate(objectives: [String], priorities: [String], scopeModuleIDs: [String], authorizedActions: [ProjectMandate.Action], limits: [String]) {
         guard let project else { return }
         do {
-            document.mandate = try ProjectMandate.grant(projectID: project.id, objectives: objectives, priorities: priorities, scopeModuleIDs: scopeModuleIDs, authorizedActions: authorizedActions, limits: limits, grantedBy: mandateActor)
+            let mandate = try document.grantMandate(
+                projectID: project.id,
+                objectives: objectives,
+                priorities: priorities,
+                scopeModuleIDs: scopeModuleIDs,
+                authorizedActions: authorizedActions,
+                limits: limits,
+                actor: mandateActor
+            )
+            intelligence.invalidate()
             activity.insert("Mandato concesso al Coordinatore per \(project.name).", at: 0)
-            saveDocument()
+            announceMandateChange(.granted(version: mandate.version))
         } catch { errorMessage = Self.mandateMessage(error) }
     }
 
     func correctMandate(objectives: [String], priorities: [String], scopeModuleIDs: [String], authorizedActions: [ProjectMandate.Action], limits: [String]) {
-        guard let current = document.mandate else { return }
         do {
-            document.mandate = try current.corrected(objectives: objectives, priorities: priorities, scopeModuleIDs: scopeModuleIDs, authorizedActions: authorizedActions, limits: limits, correctedBy: mandateActor)
-            activity.insert("Mandato corretto: versione \(document.mandate?.version ?? current.version).", at: 0)
-            saveDocument()
+            let mandate = try document.correctMandate(
+                objectives: objectives,
+                priorities: priorities,
+                scopeModuleIDs: scopeModuleIDs,
+                authorizedActions: authorizedActions,
+                limits: limits,
+                actor: mandateActor
+            )
+            intelligence.invalidate()
+            activity.insert("Mandato corretto: versione \(mandate.version).", at: 0)
+            announceMandateChange(.corrected(version: mandate.version))
         } catch { errorMessage = Self.mandateMessage(error) }
     }
 
     func revokeMandate(reason: String) {
-        guard let current = document.mandate else { return }
-        document.mandate = current.revoked(by: mandateActor, reason: reason)
-        activity.insert("Mandato revocato.", at: 0)
-        saveDocument()
+        do {
+            _ = try document.revokeMandate(reason: reason, actor: mandateActor)
+            intelligence.invalidate()
+            activity.insert("Mandato revocato.", at: 0)
+            announceMandateChange(.revoked, reason: reason)
+        } catch { errorMessage = Self.mandateMessage(error) }
+    }
+
+    /// Grants the Coordinator's proposal from the card, or records it as a correction of a live mandate.
+    func acceptMandateProposal(_ id: String) {
+        guard let project, stateWritable else { return }
+        do {
+            let recorded = try document.acceptMandateProposal(id, projectID: project.id, actor: mandateActor)
+            intelligence.invalidate()
+            switch recorded.resolution {
+            case let .granted(version):
+                activity.insert("Mandato concesso al Coordinatore per \(project.name) (versione \(version)).", at: 0)
+            case let .corrected(version):
+                activity.insert("Mandato corretto: versione \(version).", at: 0)
+            case .revoked, .declined:
+                break
+            }
+            announceMandateChange(recorded.resolution)
+        } catch { errorMessage = Self.mandateMessage(error) }
     }
 
     private static func mandateMessage(_ error: Error) -> String {
+        if let requestError = error as? CoordinatorRequestError {
+            switch requestError {
+            case .noGrantedMandate: return "Non c'è un mandato concesso da correggere o revocare."
+            case .missingField("reason"): return "Indica il motivo della revoca."
+            default: return requestError.localizedDescription
+            }
+        }
         switch error as? ProjectMandateError {
-        case .missingField("objectives"): "Indica almeno un obiettivo per il mandato."
-        case .missingField("scopeModuleIDs"): "Scegli almeno un modulo nel perimetro del mandato."
-        case .missingField("authorizedActions"): "Scegli almeno un'azione autorizzata."
-        case .missingField: "Il mandato non è completo."
-        case .actionRequiresPerson: "Nuove funzioni e compromessi restano decisioni della persona e non entrano nel mandato."
-        case .revoked: "Il mandato è revocato: concedine uno nuovo per modificarlo."
-        case nil: error.localizedDescription
+        case .missingField("objectives"): return "Indica almeno un obiettivo per il mandato."
+        case .missingField("scopeModuleIDs"): return "Scegli almeno un modulo nel perimetro del mandato."
+        case .missingField("authorizedActions"): return "Scegli almeno un'azione autorizzata."
+        case .missingField: return "Il mandato non è completo."
+        case .actionRequiresPerson: return "Nuove funzioni e compromessi restano decisioni della persona e non entrano nel mandato."
+        case .revoked: return "Il mandato è revocato: concedine uno nuovo per modificarlo."
+        case nil: return error.localizedDescription
         }
     }
 

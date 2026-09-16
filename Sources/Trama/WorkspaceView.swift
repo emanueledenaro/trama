@@ -49,7 +49,9 @@ struct WorkspaceView: View {
             .sheet(isPresented: $store.showConnections) {
                 ConnectionsView().frame(minWidth: 480, idealWidth: 570, minHeight: 380, idealHeight: 520)
             }
-            .sheet(isPresented: $store.showMandate) { MandateView().environmentObject(store) }
+            .sheet(isPresented: $store.showMandate, onDismiss: { store.mandateProposal = nil }) {
+                MandateView().environmentObject(store)
+            }
             .sheet(item: Binding(get: { compactInspector && store.showInspector && store.section == .map ? nil : store.filePreview }, set: { store.filePreview = $0 })) { preview in FilePreviewView(preview: preview) }
             .sheet(isPresented: $showingNewProject) { NewProjectView() }
             .alert("Trama", isPresented: Binding(get: { store.errorMessage != nil }, set: { if !$0 { store.errorMessage = nil } })) {

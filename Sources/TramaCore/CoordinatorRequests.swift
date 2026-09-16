@@ -8,6 +8,7 @@ public enum CoordinatorRequestError: Error, Equatable, Sendable, LocalizedError 
     case alreadyResolved
     case emptyAnswer
     case unknownAlternative(Int)
+    case noGrantedMandate
 
     public var errorDescription: String? {
         switch self {
@@ -18,6 +19,7 @@ public enum CoordinatorRequestError: Error, Equatable, Sendable, LocalizedError 
         case .alreadyResolved: "The person already answered this card."
         case .emptyAnswer: "The answer is empty."
         case let .unknownAlternative(index): "There is no alternative \(index)."
+        case .noGrantedMandate: "There is no granted mandate to correct or revoke."
         }
     }
 }
@@ -94,6 +96,15 @@ public struct MandateRequest: Codable, Equatable, Identifiable, Sendable {
 
     mutating func resolve(_ resolution: Resolution, at date: Date) throws {
         guard isPending else { throw CoordinatorRequestError.alreadyResolved }
+        record(resolution, at: date)
+    }
+
+    /// Overwrites a previous grant or correction, used when the person later revokes the mandate.
+    mutating func supersede(_ resolution: Resolution, at date: Date) {
+        record(resolution, at: date)
+    }
+
+    private mutating func record(_ resolution: Resolution, at date: Date) {
         self.resolution = resolution
         resolvedAt = date
     }
@@ -290,5 +301,119 @@ extension ProjectDocument {
         }
         coordinator = state
         return resolved
+    }
+
+    /// Grants a mandate from the sheet or a card and resolves every pending mandate request.
+    @discardableResult
+    public mutating func grantMandate(
+        projectID: String,
+        objectives: [String],
+        priorities: [String],
+        scopeModuleIDs: [String],
+        authorizedActions: [ProjectMandate.Action],
+        limits: [String],
+        actor: String,
+        at date: Date = Date()
+    ) throws -> ProjectMandate {
+        let mandate = try ProjectMandate.grant(
+            projectID: projectID,
+            objectives: objectives,
+            priorities: priorities,
+            scopeModuleIDs: scopeModuleIDs,
+            authorizedActions: authorizedActions,
+            limits: limits,
+            grantedBy: actor,
+            at: date
+        )
+        self.mandate = mandate
+        resolvePendingMandateRequests(.granted(version: mandate.version), at: date)
+        return mandate
+    }
+
+    /// Writes a new version of the granted mandate and resolves every pending mandate request.
+    @discardableResult
+    public mutating func correctMandate(
+        objectives: [String],
+        priorities: [String],
+        scopeModuleIDs: [String],
+        authorizedActions: [ProjectMandate.Action],
+        limits: [String],
+        actor: String,
+        at date: Date = Date()
+    ) throws -> ProjectMandate {
+        guard let current = mandate, current.status == .granted else {
+            throw CoordinatorRequestError.noGrantedMandate
+        }
+        let mandate = try current.corrected(
+            objectives: objectives,
+            priorities: priorities,
+            scopeModuleIDs: scopeModuleIDs,
+            authorizedActions: authorizedActions,
+            limits: limits,
+            correctedBy: actor,
+            at: date
+        )
+        self.mandate = mandate
+        resolvePendingMandateRequests(.corrected(version: mandate.version), at: date)
+        return mandate
+    }
+
+    /// Revokes the granted mandate. Pending cards and earlier grants or corrections become revoked;
+    /// a declined card stays declined.
+    @discardableResult
+    public mutating func revokeMandate(reason: String, actor: String, at date: Date = Date()) throws -> ProjectMandate {
+        let reason = reason.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !reason.isEmpty else { throw CoordinatorRequestError.missingField("reason") }
+        guard let current = mandate, current.status == .granted else {
+            throw CoordinatorRequestError.noGrantedMandate
+        }
+        let revoked = current.revoked(by: actor, reason: reason, at: date)
+        mandate = revoked
+        if var state = coordinator {
+            for index in state.mandateRequests.indices {
+                if state.mandateRequests[index].resolution != .declined {
+                    state.mandateRequests[index].supersede(.revoked, at: date)
+                }
+            }
+            coordinator = state
+        }
+        return revoked
+    }
+
+    /// Grants the Coordinator's proposal, or records it as a correction when a mandate is already live.
+    @discardableResult
+    public mutating func acceptMandateProposal(
+        _ id: String,
+        projectID: String,
+        actor: String,
+        at date: Date = Date()
+    ) throws -> (mandate: ProjectMandate, resolution: MandateRequest.Resolution) {
+        guard let request = coordinator?.mandateRequests.first(where: { $0.id == id }) else {
+            throw CoordinatorRequestError.unknownRequest(id)
+        }
+        guard request.isPending else { throw CoordinatorRequestError.alreadyResolved }
+        if mandate?.status == .granted {
+            let mandate = try correctMandate(
+                objectives: request.objectives,
+                priorities: request.priorities,
+                scopeModuleIDs: request.scopeModuleIDs,
+                authorizedActions: request.authorizedActions,
+                limits: request.limits,
+                actor: actor,
+                at: date
+            )
+            return (mandate, .corrected(version: mandate.version))
+        }
+        let mandate = try grantMandate(
+            projectID: projectID,
+            objectives: request.objectives,
+            priorities: request.priorities,
+            scopeModuleIDs: request.scopeModuleIDs,
+            authorizedActions: request.authorizedActions,
+            limits: request.limits,
+            actor: actor,
+            at: date
+        )
+        return (mandate, .granted(version: mandate.version))
     }
 }

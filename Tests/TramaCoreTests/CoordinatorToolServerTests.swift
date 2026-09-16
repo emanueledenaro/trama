@@ -528,9 +528,11 @@ actor FakeHost: CoordinatorToolHost {
     func preparePlan(projectID: UUID, order: CoordinatorPlanOrder, mandate: ProjectMandate) async throws -> UUID {
         if revokesOnNextPlan {
             revokesOnNextPlan = false
-            context?.document.mandate = context?.document.mandate?.revoked(by: "Product Owner", reason: "Revocato durante la chiamata")
+            let current = context?.document.mandate
+            context?.document.mandate = current?.revoked(by: "Product Owner", reason: "Revocato durante la chiamata")
         }
-        guard context?.document.mandate == mandate else { throw CoordinatorToolHostError.mandateChanged }
+        let liveMandate = context?.document.mandate
+        guard liveMandate == mandate else { throw CoordinatorToolHostError.mandateChanged }
         let requestID = UUID()
         plans.append(PlannedOrder(order: order, mandateVersion: mandate.version, requestID: requestID))
         return requestID
