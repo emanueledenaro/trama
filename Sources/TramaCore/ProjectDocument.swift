@@ -29,6 +29,8 @@ public struct WorkRequest: Identifiable, Codable, Sendable {
     public var replyReferences: [String]?
     public var model: String?
     public var setupBaselineHashes: [String: String]?
+    /// Image files sent with the latest message of the request.
+    public var attachments: [String]?
 
     /// True when the Coordinator answered with a plan or the request already carries work (candidate, session, PR).
     /// Explanations and clarifications are conversation only.
@@ -64,6 +66,10 @@ public struct ProjectDocument: Codable, Sendable {
     public var lastSection: String?
     public var selectedModel: String?
     public var composerDraft: String?
+    /// Long pastes of the draft, shown as cards and sent after the text.
+    public var composerPastes: [PastedText]?
+    /// Image files attached to the draft, saved in Trama's data folder.
+    public var composerAttachments: [String]?
     public var importedRequestIDs: [UUID]?
 
     public init() {}

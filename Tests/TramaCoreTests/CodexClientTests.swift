@@ -1187,6 +1187,152 @@ final class CodexClientTests: XCTestCase {
         XCTAssertTrue(transport.methods.isEmpty)
     }
 
+    func testCoordinatorTurnSendsImagesSkillsAndAnExplicitEffort() async throws {
+        let transport = FakeCodexTransport()
+        transport.onMessage = { message in
+            Self.respondToCoordinatorHandshake(transport, message)
+            guard message["method"] as? String == "turn/start" else { return }
+            transport.respond(to: message, result: ["turn": ["id": "turn-e1", "status": "inProgress", "items": []]])
+            transport.emitCompletedResponse(threadID: "thread-c1", turnID: "turn-e1", text: "Fatto.")
+        }
+        var settings = Self.coordinatorSettings
+        settings.effort = "high"
+        let client = CodexClient(transport: transport)
+        let reply = try await client.runCoordinatorTurn(
+            threadID: "thread-c1",
+            input: [.text("Guarda $tdd"), .text("  "), .localImage(path: "/tmp/trama/a.png"), .skill(name: "tdd", path: "/p/tdd/SKILL.md")],
+            settings: settings
+        ) { _ in }
+
+        XCTAssertEqual(reply, "Fatto.")
+        let start = try XCTUnwrap(transport.message(method: "turn/start"))
+        let params = try XCTUnwrap(start["params"] as? [String: Any])
+        XCTAssertEqual(params["effort"] as? String, "high")
+        XCTAssertEqual(params["model"] as? String, "gpt-5.5")
+        let input = try XCTUnwrap(params["input"] as? [[String: Any]])
+        XCTAssertEqual(input.count, 3)
+        XCTAssertEqual(input[0]["type"] as? String, "text")
+        XCTAssertEqual(input[0]["text"] as? String, "Guarda $tdd")
+        XCTAssertEqual(input[1]["type"] as? String, "localImage")
+        XCTAssertEqual(input[1]["path"] as? String, "/tmp/trama/a.png")
+        XCTAssertEqual(input[2]["type"] as? String, "skill")
+        XCTAssertEqual(input[2]["name"] as? String, "tdd")
+        XCTAssertEqual(input[2]["path"] as? String, "/p/tdd/SKILL.md")
+    }
+
+    func testCoordinatorTurnWithoutEffortLeavesItOut() async throws {
+        let transport = FakeCodexTransport()
+        transport.onMessage = { message in
+            Self.respondToCoordinatorHandshake(transport, message)
+            guard message["method"] as? String == "turn/start" else { return }
+            transport.respond(to: message, result: ["turn": ["id": "turn-e2", "status": "inProgress", "items": []]])
+            transport.emitCompletedResponse(threadID: "thread-c1", turnID: "turn-e2", text: "Fatto.")
+        }
+        let client = CodexClient(transport: transport)
+        _ = try await client.runCoordinatorTurn(threadID: "thread-c1", input: ["Ciao"], settings: Self.coordinatorSettings) { _ in }
+        let params = try XCTUnwrap(transport.message(method: "turn/start")?["params"] as? [String: Any])
+        XCTAssertNil(params["effort"])
+    }
+
+    func testCoordinatorThreadObserverReceivesUsageAndCompactionOfItsThreadOnly() async throws {
+        let usage: (String, Int) -> [String: Any] = { threadID, used in
+            ["method": "thread/tokenUsage/updated", "params": [
+                "threadId": threadID, "turnId": "turn-u1",
+                "tokenUsage": [
+                    "total": ["totalTokens": used * 3, "inputTokens": used * 3 - 10, "cachedInputTokens": 0, "cacheWriteInputTokens": 0, "outputTokens": 10, "reasoningOutputTokens": 0],
+                    "last": ["totalTokens": used, "inputTokens": used - 10, "cachedInputTokens": 0, "cacheWriteInputTokens": 0, "outputTokens": 10, "reasoningOutputTokens": 0],
+                    "modelContextWindow": 258_400
+                ]
+            ]]
+        }
+        let transport = FakeCodexTransport()
+        transport.onMessage = { message in
+            Self.respondToCoordinatorHandshake(transport, message)
+            guard message["method"] as? String == "turn/start" else { return }
+            transport.respond(to: message, result: ["turn": ["id": "turn-u1", "status": "inProgress", "items": []]])
+            let base: [String: Any] = ["threadId": "thread-c1", "turnId": "turn-u1"]
+            transport.emit(usage("thread-c1", 40_000))
+            transport.emit(usage("child-thread", 99_000))
+            transport.emit(["method": "item/started", "params": base.merging(["item": ["type": "contextCompaction", "id": "cc-1"]]) { $1 }])
+            transport.emit(["method": "item/started", "params": ["threadId": "child-thread", "turnId": "x", "item": ["type": "contextCompaction", "id": "cc-2"]]])
+            transport.emit(["method": "item/completed", "params": base.merging(["item": ["type": "contextCompaction", "id": "cc-1"]]) { $1 }])
+            transport.emitCompletedResponse(threadID: "thread-c1", turnID: "turn-u1", text: "Fatto.")
+            transport.emit(usage("thread-c1", 12_000))
+            transport.emit(["method": "item/completed", "params": base.merging(["item": ["type": "contextCompaction", "id": "cc-3", "status": "failed"]]) { $1 }])
+            transport.emit(["method": "thread/compacted", "params": ["threadId": "thread-c1", "turnId": "turn-u1"]])
+        }
+        let client = CodexClient(transport: transport)
+        let events = LockedThreadEvents()
+        await client.observeThread("thread-c1") { events.append($0) }
+        _ = try await client.runCoordinatorTurn(threadID: "thread-c1", input: ["Ciao"], settings: Self.coordinatorSettings) { _ in }
+
+        let deadline = Date().addingTimeInterval(2)
+        while events.values.count < 6, Date() < deadline { try await Task.sleep(nanoseconds: 10_000_000) }
+        XCTAssertEqual(events.values, [
+            .contextUsage(ContextUsageSnapshot(usedTokens: 40_000, maxTokens: 258_400, totalProcessedTokens: 120_000, inputTokens: 39_990, cachedInputTokens: 0, outputTokens: 10, reasoningOutputTokens: 0)),
+            .compaction(.inProgress),
+            .compaction(.completed),
+            .contextUsage(ContextUsageSnapshot(usedTokens: 12_000, maxTokens: 258_400, totalProcessedTokens: 36_000, inputTokens: 11_990, cachedInputTokens: 0, outputTokens: 10, reasoningOutputTokens: 0)),
+            .compaction(.failed),
+            .compaction(.completed)
+        ])
+
+        await client.observeThread("thread-c1", nil)
+        transport.emit(usage("thread-c1", 50_000))
+        try await Task.sleep(nanoseconds: 50_000_000)
+        XCTAssertEqual(events.values.count, 6)
+    }
+
+    func testListModelsReadsTheReasoningEffortsOfEachModel() async throws {
+        let transport = FakeCodexTransport()
+        transport.onMessage = { message in
+            switch message["method"] as? String {
+            case "initialize": transport.respond(to: message, result: Self.initializeResult)
+            case "account/read": transport.respond(to: message, result: Self.chatGPTAccount)
+            case "model/list":
+                transport.respond(to: message, result: [
+                    "data": [
+                        ["id": "a", "model": "a", "displayName": "A", "description": "", "isDefault": true, "hidden": false,
+                         "supportedReasoningEfforts": [["reasoningEffort": "low", "description": "Fast"], ["reasoningEffort": "high", "description": "Deep"]],
+                         "defaultReasoningEffort": "high"],
+                        ["id": "b", "model": "b", "displayName": "B", "description": "", "isDefault": false, "hidden": false,
+                         "supportedReasoningEfforts": ["medium"], "defaultReasoningEffort": "xhigh"],
+                        ["id": "c", "model": "c", "displayName": "C", "description": "", "isDefault": false, "hidden": false]
+                    ],
+                    "nextCursor": NSNull()
+                ])
+            default: break
+            }
+        }
+        let models = try await CodexClient(transport: transport).listModels()
+        XCTAssertEqual(models.map(\.supportedReasoningEfforts), [["low", "high"], ["medium"], []])
+        XCTAssertEqual(models.map(\.defaultReasoningEffort), ["high", nil, nil])
+    }
+
+    func testListSkillsKeepsTheShortDescription() async throws {
+        let root = FileManager.default.temporaryDirectory
+        let transport = FakeCodexTransport()
+        transport.onMessage = { message in
+            switch message["method"] as? String {
+            case "initialize": transport.respond(to: message, result: Self.initializeResult)
+            case "skills/list":
+                transport.respond(to: message, result: ["data": [[
+                    "cwd": root.path,
+                    "errors": [],
+                    "skills": [
+                        ["name": "tdd", "path": "/p/tdd/SKILL.md", "enabled": true, "description": "Long", "interface": ["shortDescription": "Test first"]],
+                        ["name": "grill", "path": "/p/grill/SKILL.md", "enabled": true, "description": "Grill the plan"],
+                        ["name": "bare", "path": "/p/bare/SKILL.md", "enabled": false]
+                    ]
+                ]]])
+            default: break
+            }
+        }
+        let skills = try await CodexClient(transport: transport).listSkills(cwd: root)
+        XCTAssertEqual(skills.map(\.name), ["bare", "grill", "tdd"])
+        XCTAssertEqual(skills.map(\.description), [nil, "Grill the plan", "Test first"])
+    }
+
     func testCoordinatorRuntimeCarriesTheTokenOnlyInItsProcessEnvironment() {
         let environment = CodexClient.coordinatorEnvironment(token: "trama_session_secret", base: ["PATH": "/usr/bin", "TRAMA_COORDINATOR_TOKEN": "stale"])
         XCTAssertEqual(environment["TRAMA_COORDINATOR_TOKEN"], "trama_session_secret")
@@ -1254,6 +1400,19 @@ private final class LockedTurnEvents: @unchecked Sendable {
     }
 
     func append(_ value: CodexClient.CoordinatorTurnEvent) {
+        lock.withLock { storage.append(value) }
+    }
+}
+
+private final class LockedThreadEvents: @unchecked Sendable {
+    private let lock = NSLock()
+    private var storage: [CodexClient.ThreadEvent] = []
+
+    var values: [CodexClient.ThreadEvent] {
+        lock.withLock { storage }
+    }
+
+    func append(_ value: CodexClient.ThreadEvent) {
         lock.withLock { storage.append(value) }
     }
 }
