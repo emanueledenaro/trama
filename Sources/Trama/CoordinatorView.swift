@@ -14,11 +14,13 @@ struct CoordinatorView: View {
                 Button("Mandato", systemImage: "checkmark.shield") { store.showMandate = true }
                     .help("Obiettivi, perimetro e limiti concessi al Coordinatore")
             }
-            Divider()
-            mandateStatus
+            if store.document.mandate != nil {
+                Divider()
+                mandateStatus
+            }
             Divider()
             if conversation.isEmpty {
-                ContentUnavailableView("Nessuna richiesta registrata", systemImage: "bubble.left.and.bubble.right", description: Text("Scrivi nel campo in basso. Le richieste e le risposte salvate resteranno collegate a questo progetto."))
+                ContentUnavailableView("Nessuna richiesta registrata", systemImage: "bubble.left.and.bubble.right", description: emptyStateDescription)
             } else {
                 ScrollViewReader { proxy in
                     ScrollView {
@@ -41,26 +43,37 @@ struct CoordinatorView: View {
         }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
-    /// One-line summary of the mandate state, shown under the header.
+    /// Description for the empty chat; explains the no-mandate mode when no mandate exists.
+    private var emptyStateDescription: Text {
+        let base = Text("Scrivi nel campo in basso. Le richieste e le risposte salvate resteranno collegate a questo progetto.")
+        guard store.document.mandate == nil else { return base }
+        return base + Text("\n\nSenza mandato il Coordinatore propone e tu decidi ogni azione. Puoi concederne uno dal pulsante Mandato.")
+    }
+
+    /// One-line summary of the mandate state, shown under the header; opens the mandate sheet.
+    @ViewBuilder
     private var mandateStatus: some View {
-        HStack(spacing: TramaSpacing.compact) {
-            if let mandate = store.document.mandate {
-                if mandate.status == .revoked {
-                    Image(systemName: "shield.slash")
-                    Text("Mandato revocato: \(mandate.revocation?.reason ?? "")")
-                } else {
-                    Image(systemName: "checkmark.shield")
-                    Text("Mandato v\(mandate.version): \(mandate.objectives.first ?? "") · \(mandate.scopeModuleIDs.count) moduli")
+        if let mandate = store.document.mandate {
+            Button {
+                store.showMandate = true
+            } label: {
+                HStack(spacing: TramaSpacing.compact) {
+                    if mandate.status == .revoked {
+                        Image(systemName: "shield.slash")
+                        Text("Mandato revocato")
+                    } else {
+                        Image(systemName: "checkmark.shield")
+                        Text("Mandato v\(mandate.version) · \(mandate.scopeModuleIDs.count) moduli")
+                    }
                 }
-            } else {
-                Image(systemName: "shield.slash")
-                Text("Nessun mandato: il Coordinatore propone, la persona decide ogni azione")
             }
+            .buttonStyle(.plain)
+            .help("Apri il mandato")
+            .font(.callout)
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, TramaSpacing.content)
+            .padding(.vertical, TramaSpacing.compact)
         }
-        .font(.callout)
-        .foregroundStyle(.secondary)
-        .padding(.horizontal, TramaSpacing.content)
-        .padding(.vertical, TramaSpacing.compact)
     }
 
     private func scrollToFocus(_ proxy: ScrollViewProxy) {
@@ -81,13 +94,14 @@ struct CoordinatorView: View {
             }
             HStack(spacing: TramaSpacing.compact) {
                 Text("Tu · \(request.moduleName)")
-                Text(request.createdAt, style: .date)
+                Text(request.createdAt, format: .dateTime.day().month().hour().minute())
             }.font(.caption).foregroundStyle(.secondary)
             Text(request.request)
                 .textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(TramaSpacing.related)
                 .background(.quaternary, in: RoundedRectangle(cornerRadius: TramaRadius.card))
+                .frame(maxWidth: 540, alignment: .trailing)
         }
         .frame(maxWidth: .infinity, alignment: .trailing)
     }
@@ -114,24 +128,19 @@ struct CoordinatorView: View {
 
             if request.proposal != nil {
                 Text("Piano proposto: rivedilo in Modifiche prima di eseguirlo").font(.caption).foregroundStyle(.secondary)
-            }
-
-            HStack(spacing: TramaSpacing.control) {
-                Button("Apri nella Mappa", systemImage: "square.3.layers.3d") { store.openInMap(request) }
-                    .accessibilityLabel("Apri nella Mappa: \(request.title)")
-                if request.isChange {
-                    Button("Apri in Modifiche", systemImage: "arrow.up.forward.square") {
+                HStack(spacing: TramaSpacing.control) {
+                    Button("Apri nella Mappa", systemImage: "square.3.layers.3d") { store.openInMap(request) }
+                        .accessibilityLabel("Apri nella Mappa: \(request.title)")
+                    Button("Vedi piano", systemImage: "arrow.up.forward.square") {
                         store.selectedRequestID = request.id
                         store.section = .changes
                     }
-                    .accessibilityLabel("Apri in Modifiche: \(request.title)")
+                    .accessibilityLabel("Vedi piano: \(request.title)")
                 }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(TramaSpacing.related)
-        .background(.background, in: RoundedRectangle(cornerRadius: TramaRadius.card))
-        .overlay(RoundedRectangle(cornerRadius: TramaRadius.card).stroke(.separator))
     }
 
     @ViewBuilder
@@ -143,7 +152,7 @@ struct CoordinatorView: View {
             }
             HStack(spacing: TramaSpacing.control) {
                 ProgressView().controlSize(.small)
-                Text(preview.isEmpty ? "Codex sta leggendo il progetto" : "Risposta in arrivo").font(.callout).foregroundStyle(.secondary)
+                Text(preview.isEmpty ? "Il Coordinatore sta leggendo il progetto" : "Risposta in arrivo").font(.callout).foregroundStyle(.secondary)
                 Button("Interrompi", systemImage: "stop.fill") { store.stopPlanning() }
             }
         } else if let detail = request.failureDetail {

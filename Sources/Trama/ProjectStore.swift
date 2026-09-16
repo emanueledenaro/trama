@@ -268,7 +268,7 @@ final class ProjectStore: ObservableObject {
                               self.document.requests[i].review?.snapshotID == previousReview.snapshotID else { continue }
                         if latest.snapshotID != previousReview.snapshotID {
                             self.document.requests[i].review = latest
-                            self.document.requests[i].state = "Da rivalutare"
+                            self.document.requests[i].state = .stale
                             self.document.requests[i].approvedAt = nil
                             self.document.requests[i].candidateID = nil
                             self.remoteConflicts.reset()
@@ -408,7 +408,7 @@ final class ProjectStore: ObservableObject {
         let module = selectedModule
         var request = WorkRequest(title: String(prompt.prefix(90)), moduleID: module?.id ?? "project", moduleName: module?.name ?? project.name, request: prompt, sourceFingerprint: fingerprint)
         request.model = selectedModel.isEmpty ? nil : selectedModel
-        request.state = codexConnected ? "Analisi in corso" : "In attesa di Codex"
+        request.state = codexConnected ? .analysing : .waitingForCoordinator
         document.requests.insert(request, at: 0); selectedRequestID = request.id
         composer = ""; section = .coordinator; showInspector = false; saveDocument()
         if codexConnected { runPlan(request.id) } else { showConnections = true }
@@ -418,7 +418,7 @@ final class ProjectStore: ObservableObject {
         guard let root = localRoot, let project, let index = document.requests.firstIndex(where: { $0.id == id }), !isPlanning, !isPreparingSkills else { return }
         let model = selectedModel
         guard models.contains(where: { $0.model == model }) else {
-            document.requests[index].state = "Modello non disponibile"
+            document.requests[index].state = .modelUnavailable
             document.requests[index].failureDetail = "Scegli un modello OpenAI disponibile prima di avviare l’analisi. Il modello richiesto era \(model.isEmpty ? "non selezionato" : model)."
             saveDocument()
             return
@@ -436,7 +436,7 @@ final class ProjectStore: ObservableObject {
         files.append(contentsOf: (project.contextualInputHashes ?? [:]).keys)
         files = Array(Set(files)).sorted()
         let knownFiles = files
-        isPlanning = true; document.requests[index].state = "Analisi in corso"
+        isPlanning = true; document.requests[index].state = .analysing
         document.requests[index].plan = ""; document.requests[index].proposal = nil; document.requests[index].failureDetail = nil
         document.requests[index].replyKind = nil; document.requests[index].replyReferences = nil
         document.requests[index].confirmedQuestionIDs = []
@@ -479,16 +479,16 @@ final class ProjectStore: ObservableObject {
                     recordedVersions: document.requests[i].planDecisionVersions
                 )
                 if let proposal = reply.proposal {
-                    document.requests[i].state = unchanged ? (proposal.questions.isEmpty ? "Da rivedere" : "Decisione richiesta") : "Da rivalutare"
+                    document.requests[i].state = unchanged ? (proposal.questions.isEmpty ? .planReady : .decisionNeeded) : .stale
                 } else {
-                    document.requests[i].state = unchanged ? (reply.kind == .clarification ? "Richiesta da chiarire" : "Risposta disponibile") : "Da rivalutare"
+                    document.requests[i].state = unchanged ? (reply.kind == .clarification ? .clarificationNeeded : .replyAvailable) : .stale
                 }
-                activity.insert("Risposta di Codex ricevuta per \(request.moduleName).", at: 0)
+                activity.insert("Risposta del Coordinatore ricevuta per \(request.moduleName).", at: 0)
             } catch {
                 guard operationID == token, localRoot == root, let i = document.requests.firstIndex(where: { $0.id == id }) else { return }
-                document.requests[i].state = Task.isCancelled ? "Interrotto" : "Errore"
+                document.requests[i].state = Task.isCancelled ? .interrupted : .failed
                 document.requests[i].failureDetail = error.localizedDescription
-                document.requests[i].plan = Task.isCancelled ? "L’analisi è stata interrotta. Puoi riprenderla quando vuoi." : "Codex non ha completato l’analisi. Il progetto è conservato; puoi controllare il collegamento e riprovare."
+                document.requests[i].plan = Task.isCancelled ? "L’analisi è stata interrotta. Puoi riprenderla quando vuoi." : "Il Coordinatore non ha completato l’analisi. Il progetto è conservato; puoi controllare il collegamento Codex e riprovare."
             }
         }
     }
@@ -498,19 +498,19 @@ final class ProjectStore: ObservableObject {
         guard !isPlanning, !isPreparingSkills, !text.isEmpty,
               let index = document.requests.firstIndex(where: { $0.id == id }),
               document.requests[index].replyKind == .clarification,
-              document.requests[index].state == "Richiesta da chiarire" else { return }
+              document.requests[index].state == .clarificationNeeded else { return }
         let question = document.requests[index].plan
-        document.requests[index].request += "\n\nChiarimento chiesto da Codex (contesto):\n" + question + "\nRisposta della persona:\n" + text
+        document.requests[index].request += "\n\nChiarimento chiesto dal Coordinatore (contesto):\n" + question + "\nRisposta della persona:\n" + text
         document.requests[index].title = String(text.prefix(90))
         saveDocument()
         if codexConnected { runPlan(id) } else {
-            document.requests[index].state = "In attesa di Codex"; saveDocument(); showConnections = true
+            document.requests[index].state = .waitingForCoordinator; saveDocument(); showConnections = true
         }
     }
 
     func answerQuestion(requestID: UUID, question: DecisionQuestion, option: DecisionOption) {
         guard !isPlanning, let index = document.requests.firstIndex(where: { $0.id == requestID }),
-              document.requests[index].state == "Decisione richiesta", document.requests[index].sourceFingerprint == fingerprint else { return }
+              document.requests[index].state == .decisionNeeded, document.requests[index].sourceFingerprint == fingerprint else { return }
         do {
             var engine = try document.pact ?? PactEngine(baseRevision: project?.headSHA ?? "workspace-v1", checkSuiteRevision: "swift-test-v1")
             let id = question.revisesDecisionID ?? "D-" + UUID().uuidString.prefix(8).uppercased()
@@ -539,7 +539,7 @@ final class ProjectStore: ObservableObject {
             currentVersions: currentVersions,
             recordedVersions: document.requests[index].planDecisionVersions
         ), let plannedVersions = document.requests[index].planDecisionVersions else {
-            document.requests[index].state = "Da rivalutare"; saveDocument()
+            document.requests[index].state = .stale; saveDocument()
             errorMessage = "Le decisioni sono cambiate dopo il piano. Rielabora la richiesta prima di avviare il lavoro."; return
         }
         do {
@@ -562,8 +562,8 @@ final class ProjectStore: ObservableObject {
             do { try pact.setBaseRevision(sha); document.pact = pact }
             catch { errorMessage = error.localizedDescription }
         }
-        for i in document.requests.indices where document.requests[i].sourceFingerprint != fingerprint && document.requests[i].state != "Analisi in corso" && document.requests[i].state != "In esecuzione" {
-            document.requests[i].state = "Da rivalutare"
+        for i in document.requests.indices where document.requests[i].sourceFingerprint != fingerprint && document.requests[i].state != .analysing && document.requests[i].state != .executing {
+            document.requests[i].state = .stale
             document.requests[i].approvedAt = nil
         }
         saveDocument()
@@ -614,7 +614,7 @@ final class ProjectStore: ObservableObject {
         }
         do {
             var result = try ProjectDocumentStorage(url: url).load()
-            for i in result.requests.indices where ["Analisi in corso", "In esecuzione", "Preparazione del worktree", "Verifiche in corso"].contains(result.requests[i].state) { result.requests[i].state = "Interrotto" }
+            for i in result.requests.indices where [.analysing, .executing, .preparingWorktree, .checking].contains(result.requests[i].state) { result.requests[i].state = .interrupted }
             return result
         } catch { stateWritable = false; errorMessage = "Impossibile leggere lo stato salvato. Il file originale è conservato. \(error.localizedDescription)"; return ProjectDocument() }
     }

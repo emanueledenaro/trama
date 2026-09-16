@@ -117,14 +117,14 @@ extension ProjectStore {
             document.pact = engine
             guard let currentVersion = engine.decisions.first(where: { $0.id == draft.id })?.version else { return }
             for i in document.requests.indices where
-                !["Analisi in corso", "In esecuzione"].contains(document.requests[i].state) &&
+                ![.analysing, .executing].contains(document.requests[i].state) &&
                 DecisionImpact.requiresRealignment(
                     changedDecisionID: draft.id,
                     currentVersion: currentVersion,
                     recordedVersions: document.requests[i].planDecisionVersions,
                     behaviorDecisionID: document.requests[i].behaviorDecisionID
                 ) {
-                document.requests[i].state = "Da rivalutare"
+                document.requests[i].state = .stale
                 document.requests[i].approvedAt = nil
             }
             intelligence.invalidate(); saveDocument()

@@ -1,4 +1,5 @@
 import SwiftUI
+import TramaCore
 
 enum TramaSpacing {
     static let compact: CGFloat = 6
@@ -109,46 +110,37 @@ struct TramaTag: View {
 }
 
 struct TramaStatusBadge: View {
-    let state: String
+    let label: String
+    let symbol: String
+    let color: Color
 
-    var body: some View {
-        Label(state, systemImage: style.symbol)
-            .font(.caption.weight(.medium))
-            .foregroundStyle(style.color)
-            .padding(.horizontal, TramaSpacing.control)
-            .padding(.vertical, 4)
-            .background(style.color.opacity(0.12), in: Capsule())
-            .accessibilityLabel("Stato: \(state)")
+    init(label: String, symbol: String, color: Color) {
+        self.label = label
+        self.symbol = symbol
+        self.color = color
     }
 
-    private var style: (symbol: String, color: Color) {
-        switch state {
-        case "Revisionato localmente", "PR pubblicata", "Controlli superati":
-            ("checkmark.circle.fill", .green)
-        case "Nessuna modifica al candidato":
-            ("minus.circle.fill", .secondary)
-        case "Decisione richiesta", "Richiesta da chiarire", "Da rivedere", "Da revisionare", "Da verificare", "Verifica manuale richiesta":
-            ("questionmark.circle.fill", .orange)
-        case "In attesa di Codex":
-            ("clock.fill", .orange)
-        case "Errore", "Errore di esecuzione", "Verifiche fallite":
-            ("exclamationmark.triangle.fill", .red)
-        case "Da rivalutare", "Verifiche interrotte", "Interrotto":
-            ("arrow.clockwise.circle.fill", .orange)
-        case "Modello non disponibile":
-            ("exclamationmark.triangle.fill", .orange)
-        case "Analisi in corso", "In esecuzione", "Verifiche in corso", "Preparazione del worktree":
-            ("ellipsis.circle.fill", .blue)
-        case "Aperta":
-            ("circle.fill", .blue)
-        case "Chiusa":
-            ("checkmark.circle.fill", .secondary)
-        case "Risposta disponibile":
-            ("text.bubble.fill", .secondary)
-        case "Bozza":
-            ("square.and.pencil", .secondary)
-        default:
-            ("doc.text", .secondary)
+    init(state: RequestState) {
+        self.init(label: state.label, symbol: state.symbol, color: Self.color(for: state.tone))
+    }
+
+    var body: some View {
+        Label(label, systemImage: symbol)
+            .font(.caption.weight(.medium))
+            .foregroundStyle(color)
+            .padding(.horizontal, TramaSpacing.control)
+            .padding(.vertical, 4)
+            .background(color.opacity(0.12), in: Capsule())
+            .accessibilityLabel("Stato: \(label)")
+    }
+
+    static func color(for tone: RequestState.Tone) -> Color {
+        switch tone {
+        case .neutral: .secondary
+        case .waiting, .attention: .orange
+        case .working: .blue
+        case .success: .green
+        case .failure: .red
         }
     }
 }
