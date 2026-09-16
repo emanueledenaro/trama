@@ -47,6 +47,8 @@ final class ProjectStore: ObservableObject {
     @Published var codexVersion = ""
     @Published var isPreparingSkills = false
     @Published var pendingApproval: CodexClient.ApprovalRequest?
+    /// Raw streamed reply text per request while a Codex turn is running. Not persisted.
+    @Published var streamingReplies: [UUID: String] = [:]
     var approvalQueue: [(request: CodexClient.ApprovalRequest, continuation: CheckedContinuation<CodexClient.ApprovalDecision, Never>)] = []
     let sessions = WorkspaceSessionManager()
     let conflictProbe = GitConflictProbe()
