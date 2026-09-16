@@ -10,7 +10,12 @@ struct CoordinatorView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            TramaScreenHeader("Coordinatore", subtitle: "\(store.project?.name ?? "Progetto") · \(store.selectedModelDisplayName)") { EmptyView() }
+            TramaScreenHeader("Coordinatore", subtitle: "\(store.project?.name ?? "Progetto") · \(store.selectedModelDisplayName)") {
+                Button("Mandato", systemImage: "checkmark.shield") { store.showMandate = true }
+                    .help("Obiettivi, perimetro e limiti concessi al Coordinatore")
+            }
+            Divider()
+            mandateStatus
             Divider()
             if conversation.isEmpty {
                 ContentUnavailableView("Nessuna richiesta registrata", systemImage: "bubble.left.and.bubble.right", description: Text("Scrivi nel campo in basso. Le richieste e le risposte salvate resteranno collegate a questo progetto."))
@@ -34,6 +39,28 @@ struct CoordinatorView: View {
                 }
             }
         }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    /// One-line summary of the mandate state, shown under the header.
+    private var mandateStatus: some View {
+        HStack(spacing: TramaSpacing.compact) {
+            if let mandate = store.document.mandate {
+                if mandate.status == .revoked {
+                    Image(systemName: "shield.slash")
+                    Text("Mandato revocato: \(mandate.revocation?.reason ?? "")")
+                } else {
+                    Image(systemName: "checkmark.shield")
+                    Text("Mandato v\(mandate.version): \(mandate.objectives.first ?? "") · \(mandate.scopeModuleIDs.count) moduli")
+                }
+            } else {
+                Image(systemName: "shield.slash")
+                Text("Nessun mandato: il Coordinatore propone, la persona decide ogni azione")
+            }
+        }
+        .font(.callout)
+        .foregroundStyle(.secondary)
+        .padding(.horizontal, TramaSpacing.content)
+        .padding(.vertical, TramaSpacing.compact)
     }
 
     private func scrollToFocus(_ proxy: ScrollViewProxy) {
@@ -92,11 +119,13 @@ struct CoordinatorView: View {
             HStack(spacing: TramaSpacing.control) {
                 Button("Apri nella Mappa", systemImage: "square.3.layers.3d") { store.openInMap(request) }
                     .accessibilityLabel("Apri nella Mappa: \(request.title)")
-                Button("Apri richiesta in Modifiche", systemImage: "arrow.up.forward.square") {
-                    store.selectedRequestID = request.id
-                    store.section = .changes
+                if request.isChange {
+                    Button("Apri in Modifiche", systemImage: "arrow.up.forward.square") {
+                        store.selectedRequestID = request.id
+                        store.section = .changes
+                    }
+                    .accessibilityLabel("Apri in Modifiche: \(request.title)")
                 }
-                .accessibilityLabel("Apri richiesta: \(request.title)")
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)

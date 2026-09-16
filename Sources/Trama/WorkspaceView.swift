@@ -49,6 +49,7 @@ struct WorkspaceView: View {
             .sheet(isPresented: $store.showConnections) {
                 ConnectionsView().frame(minWidth: 480, idealWidth: 570, minHeight: 380, idealHeight: 520)
             }
+            .sheet(isPresented: $store.showMandate) { MandateView().environmentObject(store) }
             .sheet(item: Binding(get: { compactInspector && store.showInspector && store.section == .map ? nil : store.filePreview }, set: { store.filePreview = $0 })) { preview in FilePreviewView(preview: preview) }
             .sheet(isPresented: $showingNewProject) { NewProjectView() }
             .alert("Trama", isPresented: Binding(get: { store.errorMessage != nil }, set: { if !$0 { store.errorMessage = nil } })) {
@@ -166,9 +167,9 @@ struct WorkspaceView: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
             }
-            Text("Richiesta a Codex").font(.caption.weight(.medium)).foregroundStyle(.secondary)
+            Text(store.section == .coordinator ? "Messaggio al Coordinatore" : "Richiesta a Codex").font(.caption.weight(.medium)).foregroundStyle(.secondary)
             HStack(alignment: .bottom, spacing: TramaSpacing.related) {
-                TextField("Cosa vuoi capire o modificare?", text: $store.composer, axis: .vertical)
+                TextField(store.section == .coordinator ? "Scrivi al Coordinatore: cosa vuoi capire o modificare?" : "Cosa vuoi capire o modificare?", text: $store.composer, axis: .vertical)
                     .textFieldStyle(.plain).lineLimit(1...4).font(.body)
                     .onSubmit { store.submitRequest() }
                     .accessibilityLabel("Richiesta a Codex per il modulo selezionato")
@@ -178,9 +179,13 @@ struct WorkspaceView: View {
                     Button { store.submitRequest() } label: { Image(systemName: "arrow.up").fontWeight(.semibold) }
                         .buttonStyle(.borderedProminent).buttonBorderShape(.circle)
                         .disabled(store.composer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || (store.codexConnected && store.selectedModelInfo == nil))
-                        .help("Pianifica con Codex").accessibilityLabel("Pianifica con Codex")
+                        .help(store.section == .coordinator ? "Invia al Coordinatore" : "Pianifica con Codex").accessibilityLabel(store.section == .coordinator ? "Invia al Coordinatore" : "Pianifica con Codex")
                 }
             }
+            .padding(.horizontal, TramaSpacing.related)
+            .padding(.vertical, TramaSpacing.control)
+            .background(.background, in: RoundedRectangle(cornerRadius: TramaRadius.card))
+            .overlay(RoundedRectangle(cornerRadius: TramaRadius.card).stroke(.separator))
         }
         .padding(TramaSpacing.section)
         .background(.bar)

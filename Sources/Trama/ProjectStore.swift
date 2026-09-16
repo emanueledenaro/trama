@@ -17,7 +17,7 @@ final class ProjectStore: ObservableObject {
     @Published var project: RepositorySnapshot?
     @Published var recentProjects: [RecentProject] = []
     @Published var selectedModuleID: String?
-    @Published var section: WorkspaceSection? = .map
+    @Published var section: WorkspaceSection? = .coordinator
     @Published var query = ""
     @Published var mapStyle = "Mappa"
     @Published var showInspector = true
@@ -29,6 +29,7 @@ final class ProjectStore: ObservableObject {
     @Published var selectedRequestID: UUID?
     @Published var filePreview: FilePreview?
     @Published var showConnections = false
+    @Published var showMandate = false
     @Published var isPlanning = false
     @Published var isExecuting = false
     @Published var accountLabel = "Codex non collegato"
@@ -110,6 +111,9 @@ final class ProjectStore: ObservableObject {
         (project?.modules ?? []).filter { query.isEmpty || $0.name.localizedCaseInsensitiveContains(query) || $0.files.contains { $0.relativePath.localizedCaseInsensitiveContains(query) } }
     }
     var selectedRequest: WorkRequest? { document.requests.first { $0.id == selectedRequestID } }
+    /// Requests that belong in "Modifiche": only those whose reply is a plan or that already carry work.
+    /// Explanations and clarifications stay in the Coordinator chat.
+    var changeRequests: [WorkRequest] { document.requests.filter(\.isChange) }
     var selectedModelInfo: CodexClient.Model? { models.first { $0.model == selectedModel } }
     var selectedModelDisplayName: String {
         selectedModelInfo?.displayName ?? (selectedModel.isEmpty ? "Scegli un modello" : selectedModel)
@@ -214,7 +218,7 @@ final class ProjectStore: ObservableObject {
                 selectedRequestID = document.lastSelectedRequestID ?? document.requests.first?.id
                 if document.lastContextWasProject == true { selectedModuleID = nil }
                 else { selectedModuleID = snapshot.modules.first(where: { $0.id == document.lastSelectedModuleID })?.id ?? snapshot.modules.first(where: { $0.name.lowercased().contains("ordin") || $0.name.lowercased().contains("order") })?.id ?? snapshot.modules.first?.id }
-                section = WorkspaceSection(rawValue: document.lastSection ?? "") ?? .map
+                section = WorkspaceSection(rawValue: document.lastSection ?? "") ?? .coordinator
                 reconcileModelSelection()
                 Task {
                     guard token == self.loadToken, self.localRoot == root else { return }
@@ -298,6 +302,48 @@ final class ProjectStore: ObservableObject {
 
     func returnToCoordinator() { section = .coordinator }
 
+    // MARK: Project mandate
+
+    /// The label used as actor for mandate changes made from this app.
+    private var mandateActor: String { codexConnected ? accountLabel : "Product Owner" }
+
+    func grantMandate(objectives: [String], priorities: [String], scopeModuleIDs: [String], authorizedActions: [ProjectMandate.Action], limits: [String]) {
+        guard let project else { return }
+        do {
+            document.mandate = try ProjectMandate.grant(projectID: project.id, objectives: objectives, priorities: priorities, scopeModuleIDs: scopeModuleIDs, authorizedActions: authorizedActions, limits: limits, grantedBy: mandateActor)
+            activity.insert("Mandato concesso al Coordinatore per \(project.name).", at: 0)
+            saveDocument()
+        } catch { errorMessage = Self.mandateMessage(error) }
+    }
+
+    func correctMandate(objectives: [String], priorities: [String], scopeModuleIDs: [String], authorizedActions: [ProjectMandate.Action], limits: [String]) {
+        guard let current = document.mandate else { return }
+        do {
+            document.mandate = try current.corrected(objectives: objectives, priorities: priorities, scopeModuleIDs: scopeModuleIDs, authorizedActions: authorizedActions, limits: limits, correctedBy: mandateActor)
+            activity.insert("Mandato corretto: versione \(document.mandate?.version ?? current.version).", at: 0)
+            saveDocument()
+        } catch { errorMessage = Self.mandateMessage(error) }
+    }
+
+    func revokeMandate(reason: String) {
+        guard let current = document.mandate else { return }
+        document.mandate = current.revoked(by: mandateActor, reason: reason)
+        activity.insert("Mandato revocato.", at: 0)
+        saveDocument()
+    }
+
+    private static func mandateMessage(_ error: Error) -> String {
+        switch error as? ProjectMandateError {
+        case .missingField("objectives"): "Indica almeno un obiettivo per il mandato."
+        case .missingField("scopeModuleIDs"): "Scegli almeno un modulo nel perimetro del mandato."
+        case .missingField("authorizedActions"): "Scegli almeno un'azione autorizzata."
+        case .missingField: "Il mandato non è completo."
+        case .actionRequiresPerson: "Nuove funzioni e compromessi restano decisioni della persona e non entrano nel mandato."
+        case .revoked: "Il mandato è revocato: concedine uno nuovo per modificarlo."
+        case nil: error.localizedDescription
+        }
+    }
+
     func revealProject() { if let root = localRoot { NSWorkspace.shared.activateFileViewerSelecting([root]) } }
 
     func connectCodex() async {
@@ -364,7 +410,7 @@ final class ProjectStore: ObservableObject {
         request.model = selectedModel.isEmpty ? nil : selectedModel
         request.state = codexConnected ? "Analisi in corso" : "In attesa di Codex"
         document.requests.insert(request, at: 0); selectedRequestID = request.id
-        composer = ""; if section != .coordinator { section = .changes }; showInspector = false; saveDocument()
+        composer = ""; section = .coordinator; showInspector = false; saveDocument()
         if codexConnected { runPlan(request.id) } else { showConnections = true }
     }
 

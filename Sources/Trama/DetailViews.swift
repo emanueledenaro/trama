@@ -52,8 +52,8 @@ struct ModuleInspector: View {
                                 Text("Gli import risolti non descrivono tutte le relazioni di comportamento.").font(.caption).foregroundStyle(.secondary)
                             }
                             inspectorSection("Lavoro sul modulo") {
-                                let requests = store.document.requests.filter { $0.moduleID == module.id }
-                                if requests.isEmpty { Text("Nessuna richiesta registrata.").foregroundStyle(.secondary) }
+                                let requests = store.changeRequests.filter { $0.moduleID == module.id }
+                                if requests.isEmpty { Text("Nessuna modifica registrata.").foregroundStyle(.secondary) }
                                 ForEach(requests) { request in
                                     Button { store.selectedRequestID = request.id; store.section = .changes } label: {
                                         VStack(alignment: .leading, spacing: 4) { Text(request.title).lineLimit(2); Text(request.state).font(.caption).foregroundStyle(.secondary) }
@@ -82,15 +82,15 @@ struct RequestsView: View {
     @EnvironmentObject private var store: ProjectStore
     @State private var reviewingPlan: WorkRequest?
     var body: some View {
-        if store.document.requests.isEmpty {
-            ContentUnavailableView("Quale modifica vuoi fare?", systemImage: "square.and.pencil", description: Text("Scrivi una richiesta nel campo in basso. Il piano resterà collegato al modulo selezionato."))
+        if store.changeRequests.isEmpty {
+            ContentUnavailableView("Nessuna modifica in corso", systemImage: "square.and.pencil", description: Text("Chiedi una modifica al Coordinatore. Quando risponde con un piano, la richiesta compare qui."))
         } else {
             GeometryReader { geometry in
                 let compact = geometry.size.width < 760
                 let layout = compact ? AnyLayout(VStackLayout(spacing: 0)) : AnyLayout(HStackLayout(spacing: 0))
                 layout {
                     List(selection: $store.selectedRequestID) {
-                        ForEach(store.document.requests) { request in
+                        ForEach(store.changeRequests) { request in
                             VStack(alignment: .leading, spacing: TramaSpacing.compact) {
                                 Text(request.title).font(.headline).lineLimit(3)
                                 HStack(alignment: .center, spacing: TramaSpacing.control) {
@@ -102,7 +102,7 @@ struct RequestsView: View {
                         }
                     }.frame(width: compact ? nil : 230, height: compact ? 150 : nil)
                     Divider()
-                    if let request = store.selectedRequest {
+                    if let request = store.selectedRequest, request.isChange {
                         ScrollView {
                             VStack(alignment: .leading, spacing: TramaSpacing.section) {
                                 VStack(alignment: .leading, spacing: TramaSpacing.compact) {

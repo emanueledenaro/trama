@@ -105,4 +105,23 @@ final class ProjectDocumentTests: XCTestCase {
         XCTAssertEqual(reopened.requests.first?.plan, "Conserva pagamento e disponibilità")
         XCTAssertEqual(reopened.selectedModel, "modello-salvato")
     }
+
+    func testOnlyPlansAndCarriedWorkCountAsChanges() {
+        var request = WorkRequest(title: "Spiegami il modulo", moduleID: "m", moduleName: "M", request: "Cosa fa?", sourceFingerprint: "f")
+        XCTAssertFalse(request.isChange)
+        request.replyKind = .explanation
+        XCTAssertFalse(request.isChange)
+        request.replyKind = .clarification
+        XCTAssertFalse(request.isChange)
+        request.replyKind = .plan
+        XCTAssertTrue(request.isChange)
+
+        var carried = WorkRequest(title: "Con lavoro", moduleID: "m", moduleName: "M", request: "Fai", sourceFingerprint: "f")
+        carried.replyKind = .explanation
+        carried.candidateID = "abc123"
+        XCTAssertTrue(carried.isChange)
+        carried.candidateID = nil
+        carried.pullRequestURL = URL(string: "https://github.com/example/repo/pull/1")
+        XCTAssertTrue(carried.isChange)
+    }
 }
