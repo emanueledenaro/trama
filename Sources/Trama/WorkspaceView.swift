@@ -182,6 +182,10 @@ struct WorkspaceView: View {
                         .help(store.section == .coordinator ? "Invia al Coordinatore" : "Pianifica con Codex").accessibilityLabel(store.section == .coordinator ? "Invia al Coordinatore" : "Pianifica con Codex")
                 }
             }
+            .padding(.horizontal, TramaSpacing.related)
+            .padding(.vertical, TramaSpacing.control)
+            .background(.background, in: RoundedRectangle(cornerRadius: TramaRadius.card))
+            .overlay(RoundedRectangle(cornerRadius: TramaRadius.card).stroke(.separator))
         }
         .padding(TramaSpacing.section)
         .background(.bar)
