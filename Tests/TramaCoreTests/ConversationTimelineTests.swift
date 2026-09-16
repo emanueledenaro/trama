@@ -141,28 +141,83 @@ struct ConversationTimelineTests {
         #expect(document.conversation?.events.map(\.sequence) == [1, 3, 4, 5])
     }
 
-    @Test("Technical activities of a concluded turn collapse into one row; a running turn stays open")
+    @Test("Technical activities of a concluded turn collapse into one row; a running turn is never collapsed")
     func activitiesGroupPerTurn() throws {
         var document = ProjectDocument()
         let request = Self.request("Spiega gli ordini")
         document.requests = [request]
-        document.conversation?.appendPersonMessage(for: request)
-        document.conversation?.appendActivity(requestID: request.id, title: "Analisi avviata", detail: "gpt-5.5")
-        document.conversation?.appendActivity(requestID: request.id, title: "Lettura del progetto", detail: nil)
+        let start = Date(timeIntervalSinceReferenceDate: 1_000)
+        document.conversation?.appendPersonMessage(for: request, at: start)
+        document.conversation?.appendActivity(requestID: request.id, title: "Analisi avviata", detail: "gpt-5.5", at: start.addingTimeInterval(1))
+        document.conversation?.appendActivity(requestID: request.id, title: "Lettura del progetto", detail: nil, at: start.addingTimeInterval(2))
 
         let running = ConversationTimeline.rows(for: document, runningRequestIDs: [request.id])
         guard case .activityGroup(let open) = running[1] else { Issue.record("expected an activity group"); return }
         #expect(open.isConcluded == false)
         #expect(open.activities.map(\.title) == ["Analisi avviata", "Lettura del progetto"])
 
-        document.conversation?.appendActivity(requestID: request.id, title: "Risposta ricevuta", detail: nil)
-        document.conversation?.recordReply(requestID: request.id, text: "Gli ordini…", model: nil, references: [])
+        document.conversation?.appendActivity(requestID: request.id, title: "Risposta ricevuta", detail: nil, at: start.addingTimeInterval(13))
+        document.conversation?.recordReply(requestID: request.id, text: "Gli ordini…", model: nil, references: [], at: start.addingTimeInterval(13.5))
         let rows = ConversationTimeline.rows(for: document)
-        #expect(rows.count == 3)
+        #expect(rows.map(Self.kind) == ["person", "activities", "reply"])
         guard case .activityGroup(let closed) = rows[1] else { Issue.record("expected an activity group"); return }
         #expect(closed.isConcluded)
         #expect(closed.activities.count == 3)
+        #expect(closed.duration == 12.5)
         #expect(Self.chronology(document).last == "reply \(request.id.uuidString.prefix(8)) status: Gli ordini…")
+    }
+
+    @Test("The person message bounds the group: every activity of the turn is collected, cards stay outside")
+    func groupSpansTheWholeTurn() throws {
+        var document = ProjectDocument()
+        let request = Self.request("Annulla un ordine")
+        let other = Self.request("Spiega i pagamenti")
+        document.requests = [other, request]
+        document.conversation?.appendPersonMessage(for: request)
+        document.conversation?.appendActivity(requestID: request.id, title: "Analisi avviata", detail: nil)
+        document.conversation?.appendActivity(requestID: request.id, title: "Analisi interrotta", detail: nil)
+        document.conversation?.appendCard(.init(kind: .decision, title: "Decisione richiesta", detail: nil, referenceID: "D-1"), origin: .coordinator, requestID: request.id)
+        document.conversation?.appendPersonMessage(for: other)
+        document.conversation?.appendActivity(requestID: request.id, title: "Analisi avviata", detail: nil)
+        document.conversation?.recordReply(requestID: request.id, text: "Piano", model: nil, references: [])
+        document.conversation?.appendPersonMessage(for: request, text: "Solo ordini pagati")
+        document.conversation?.appendActivity(requestID: request.id, title: "Analisi avviata", detail: nil)
+        document.conversation?.recordReply(requestID: request.id, text: "Piano rivisto", model: nil, references: [])
+
+        let rows = ConversationTimeline.rows(for: document)
+        #expect(rows.map(Self.kind) == ["person", "activities", "card", "person", "reply", "reply", "person", "activities", "reply"])
+        guard case .activityGroup(let first) = rows[1], case .activityGroup(let second) = rows[7] else {
+            Issue.record("expected two activity groups"); return
+        }
+        #expect(first.activities.map(\.title) == ["Analisi avviata", "Analisi interrotta", "Analisi avviata"])
+        #expect(second.activities.count == 1)
+        #expect(first.id != second.id)
+    }
+
+    @Test("Without a completed reply the group has no duration")
+    func failedTurnHasNoDuration() throws {
+        var document = ProjectDocument()
+        let request = Self.request("Aggiungi un test")
+        document.requests = [request]
+        document.conversation?.appendPersonMessage(for: request)
+        document.conversation?.appendActivity(requestID: request.id, title: "Analisi non completata", detail: "Codex non raggiungibile")
+
+        let rows = ConversationTimeline.rows(for: document)
+        #expect(rows.map(Self.kind) == ["person", "activities", "reply"])
+        guard case .activityGroup(let group) = rows[1] else { Issue.record("expected an activity group"); return }
+        #expect(group.isConcluded)
+        #expect(group.duration == nil)
+        #expect(ConversationTimeline.rows(for: ProjectDocument()).isEmpty)
+    }
+
+    @Test("Work durations read as milliseconds, tenths, seconds, then minutes and seconds")
+    func workDurationFormat() {
+        #expect(ConversationRow.ActivityGroupRow.formattedDuration(0.45) == "450 ms")
+        #expect(ConversationRow.ActivityGroupRow.formattedDuration(2.46) == "2,5 s")
+        #expect(ConversationRow.ActivityGroupRow.formattedDuration(12.5) == "12 s")
+        #expect(ConversationRow.ActivityGroupRow.formattedDuration(59.9) == "59 s")
+        #expect(ConversationRow.ActivityGroupRow.formattedDuration(65) == "1m 5s")
+        #expect(ConversationRow.ActivityGroupRow.formattedDuration(3_600) == "60m 0s")
     }
 
     @Test("A plan edited by the person replaces the reply text in place")

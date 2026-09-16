@@ -4,6 +4,8 @@ import TramaCore
 /// The main chat surface: the person's requests and the Coordinator's replies for the active project.
 struct CoordinatorView: View {
     @EnvironmentObject private var store: ProjectStore
+    /// Concluded activity rows the person opened; every row starts closed.
+    @State private var expandedActivityGroups: Set<UUID> = []
 
     private var rows: [ConversationRow] {
         ConversationTimeline.rows(for: store.document, runningRequestIDs: Set(store.streamingReplies.keys))
@@ -120,28 +122,50 @@ struct CoordinatorView: View {
         .frame(maxWidth: .infinity, alignment: .trailing)
     }
 
-    /// Technical activities of one turn: open while the turn runs, collapsed once it is concluded.
+    /// Technical activities of one turn: listed while the turn runs, one closed row once it is concluded.
+    @ViewBuilder
     private func activityGroup(_ group: ConversationRow.ActivityGroupRow) -> some View {
-        DisclosureGroup {
+        if group.isConcluded {
+            let isExpanded = expandedActivityGroups.contains(group.id)
             VStack(alignment: .leading, spacing: TramaSpacing.compact) {
-                ForEach(group.activities, id: \.id) { activity in
-                    HStack(alignment: .firstTextBaseline, spacing: TramaSpacing.compact) {
-                        Text(activity.date, format: .dateTime.hour().minute().second()).monospacedDigit()
-                        Text(activity.title)
-                        if let detail = activity.detail { Text(detail).foregroundStyle(.tertiary).lineLimit(2) }
+                Button {
+                    if isExpanded { expandedActivityGroups.remove(group.id) } else { expandedActivityGroups.insert(group.id) }
+                } label: {
+                    HStack(spacing: TramaSpacing.compact) {
+                        Image(systemName: "chevron.right")
+                            .font(.caption2.weight(.semibold))
+                            .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                        Text(group.duration.map { "Ha lavorato per " + ConversationRow.ActivityGroupRow.formattedDuration($0) } ?? "Dettagli")
                     }
+                    .contentShape(Rectangle())
                 }
+                .buttonStyle(.plain)
+                .accessibilityValue(isExpanded ? "Aperto" : "Chiuso")
+                .accessibilityHint("\(group.activities.count) attività tecniche")
+                if isExpanded { activityList(group.activities).padding(.leading, TramaSpacing.related) }
             }
             .font(.caption)
             .foregroundStyle(.secondary)
-            .textSelection(.enabled)
-        } label: {
-            Label(group.activities.count == 1 ? "1 attività tecnica" : "\(group.activities.count) attività tecniche", systemImage: "gearshape.2")
+            .padding(.horizontal, TramaSpacing.related)
+        } else {
+            activityList(group.activities)
                 .font(.caption)
                 .foregroundStyle(.secondary)
+                .padding(.horizontal, TramaSpacing.related)
         }
-        .disclosureGroupStyle(ActivityDisclosureStyle(startsExpanded: !group.isConcluded))
-        .padding(.horizontal, TramaSpacing.related)
+    }
+
+    private func activityList(_ activities: [ConversationRow.ActivityGroupRow.Activity]) -> some View {
+        VStack(alignment: .leading, spacing: TramaSpacing.compact) {
+            ForEach(activities, id: \.id) { activity in
+                HStack(alignment: .firstTextBaseline, spacing: TramaSpacing.compact) {
+                    Text(activity.date, format: .dateTime.hour().minute().second()).monospacedDigit()
+                    Text(activity.title)
+                    if let detail = activity.detail { Text(detail).foregroundStyle(.tertiary).lineLimit(2) }
+                }
+            }
+        }
+        .textSelection(.enabled)
     }
 
     /// A method act. Later tickets give each kind its own content; here it shows title and detail.
@@ -218,42 +242,6 @@ struct CoordinatorView: View {
             TramaStatusBadge(state: request.state)
         } else {
             TramaStatusBadge(state: request.state)
-        }
-    }
-}
-
-/// Starts expanded while the turn runs and lets the person toggle it afterwards.
-private struct ActivityDisclosureStyle: DisclosureGroupStyle {
-    let startsExpanded: Bool
-
-    func makeBody(configuration: Configuration) -> some View {
-        ActivityDisclosure(configuration: configuration, startsExpanded: startsExpanded)
-    }
-
-    private struct ActivityDisclosure: View {
-        let configuration: DisclosureGroupStyleConfiguration
-        let startsExpanded: Bool
-        @State private var expanded: Bool?
-
-        var body: some View {
-            let isExpanded = expanded ?? startsExpanded
-            VStack(alignment: .leading, spacing: TramaSpacing.compact) {
-                Button {
-                    expanded = !isExpanded
-                } label: {
-                    HStack(spacing: TramaSpacing.compact) {
-                        Image(systemName: "chevron.right")
-                            .font(.caption2.weight(.semibold))
-                            .rotationEffect(.degrees(isExpanded ? 90 : 0))
-                            .foregroundStyle(.secondary)
-                        configuration.label
-                    }
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityValue(isExpanded ? "Aperto" : "Chiuso")
-                if isExpanded { configuration.content.padding(.leading, TramaSpacing.related) }
-            }
         }
     }
 }

@@ -193,8 +193,22 @@ public enum ConversationRow: Identifiable, Equatable, Sendable {
         public var id: UUID
         public var requestID: UUID?
         public var activities: [Activity]
-        /// False while the turn is still running; a concluded group is shown collapsed.
+        /// False while the turn is still running: a running turn is never collapsed.
         public var isConcluded: Bool
+        /// From the first collected activity to the end of the reply; nil when the turn has no reply.
+        public var duration: TimeInterval?
+
+        /// "450 ms" under a second, "2,5 s" under ten, "12 s" under a minute, then "1m 5s".
+        public static func formattedDuration(_ duration: TimeInterval) -> String {
+            switch duration {
+            case ..<1: return "\(Int(duration * 1_000)) ms"
+            case ..<10: return (duration.formatted(.number.precision(.fractionLength(1)).locale(Locale(identifier: "it_IT")))) + " s"
+            case ..<60: return "\(Int(duration)) s"
+            default:
+                let seconds = Int(duration)
+                return "\(seconds / 60)m \(seconds % 60)s"
+            }
+        }
     }
 
     public struct CardRow: Equatable, Sendable {
@@ -226,11 +240,19 @@ public enum ConversationRow: Identifiable, Equatable, Sendable {
 }
 
 extension ConversationTimeline {
+    /// A turn opens with a message of the person and lasts until the next one for the same request.
+    private struct Turn: Hashable {
+        var requestID: UUID?
+        /// Index of the opening person message; for events without a request, the event's own index.
+        var start: Int
+    }
+
     /// Builds the chat rows of a document.
     ///
-    /// Consecutive activities of the same request form one group. The latest reply of each request
-    /// shows the request status; a request whose latest turn has no reply yet gets a pending reply row.
-    /// `runningRequestIDs` are the requests with a turn in progress: their last activity group stays open,
+    /// All activities of a turn form one group, placed where the first of them happened; cards and
+    /// replies stay outside it. The latest reply of each request shows the request status; a request
+    /// whose latest turn has no reply yet gets a pending reply row.
+    /// `runningRequestIDs` are the requests with a turn in progress: that turn is never collapsed,
     /// and a new analysis started after the reply shows its progress in a pending row below it.
     public static func rows(for document: ProjectDocument, runningRequestIDs: Set<UUID> = []) -> [ConversationRow] {
         let events = document.conversation?.events ?? []
@@ -240,13 +262,30 @@ extension ConversationTimeline {
         var lastEventIndex: [UUID: Int] = [:]
         var lastPersonIndex: [UUID: Int] = [:]
         var lastReplyIndex: [UUID: Int] = [:]
+        var turns: [Turn] = []
+        var activities: [Turn: [ConversationRow.ActivityGroupRow.Activity]] = [:]
+        var replyEnd: [Turn: Date] = [:]
         for (index, event) in events.enumerated() {
-            guard let requestID = event.requestID else { continue }
+            guard let requestID = event.requestID else {
+                turns.append(Turn(requestID: nil, start: index))
+                if case .activity(let title, let detail) = event.content {
+                    activities[turns[index]] = [.init(id: event.id, title: title, detail: detail, date: event.createdAt)]
+                }
+                continue
+            }
             lastEventIndex[requestID] = index
+            if case .personMessage = event.content { lastPersonIndex[requestID] = index }
+            let turn = Turn(requestID: requestID, start: lastPersonIndex[requestID] ?? -1)
+            turns.append(turn)
             switch event.content {
-            case .personMessage: lastPersonIndex[requestID] = index
-            case .coordinatorText: latestReply[requestID] = event.id; lastReplyIndex[requestID] = index
-            default: break
+            case .coordinatorText:
+                latestReply[requestID] = event.id
+                lastReplyIndex[requestID] = index
+                replyEnd[turn] = event.createdAt
+            case .activity(let title, let detail):
+                activities[turn, default: []].append(.init(id: event.id, title: title, detail: detail, date: event.createdAt))
+            default:
+                break
             }
         }
         let pendingRequests = Set(lastEventIndex.filter { requestID, eventIndex in
@@ -258,6 +297,7 @@ extension ConversationTimeline {
 
         var rows: [ConversationRow] = []
         for (index, event) in events.enumerated() {
+            let turn = turns[index]
             switch event.content {
             case .personMessage(let text, _, let moduleName):
                 guard let requestID = event.requestID else { continue }
@@ -271,31 +311,25 @@ extension ConversationTimeline {
                     id: event.id, requestID: requestID, text: text, model: model, references: references,
                     showsRequestStatus: latestReply[requestID] == event.id && !pendingRequests.contains(requestID)
                 )))
-            case .activity(let title, let detail):
-                let activity = ConversationRow.ActivityGroupRow.Activity(id: event.id, title: title, detail: detail, date: event.createdAt)
-                if case .activityGroup(var group) = rows.last, group.requestID == event.requestID {
-                    group.activities.append(activity)
-                    rows[rows.count - 1] = .activityGroup(group)
-                } else {
-                    rows.append(.activityGroup(.init(id: event.id, requestID: event.requestID, activities: [activity], isConcluded: true)))
-                }
+            case .activity:
+                guard let collected = activities[turn], collected.first?.id == event.id else { continue }
+                let isRunning = turn.requestID.map { runningRequestIDs.contains($0) && turn.start == (lastPersonIndex[$0] ?? -1) } ?? false
+                let duration = replyEnd[turn].map { $0.timeIntervalSince(event.createdAt) }.flatMap { $0 >= 0 ? $0 : nil }
+                rows.append(.activityGroup(.init(
+                    id: event.id, requestID: event.requestID, activities: collected,
+                    isConcluded: !isRunning, duration: isRunning ? nil : duration
+                )))
             case .card(let card):
                 rows.append(.card(.init(
                     id: event.id, requestID: event.requestID, assignmentID: event.assignmentID,
                     origin: event.origin, card: card, date: event.createdAt
                 )))
             }
-            if let requestID = event.requestID, lastEventIndex[requestID] == index {
-                if case .activityGroup(var group) = rows.last, runningRequestIDs.contains(requestID) {
-                    group.isConcluded = false
-                    rows[rows.count - 1] = .activityGroup(group)
-                }
-                if pendingRequests.contains(requestID) {
-                    rows.append(.coordinatorReply(.init(
-                        id: requestID, requestID: requestID, text: nil, model: requests[requestID]?.model,
-                        references: [], showsRequestStatus: true
-                    )))
-                }
+            if let requestID = event.requestID, lastEventIndex[requestID] == index, pendingRequests.contains(requestID) {
+                rows.append(.coordinatorReply(.init(
+                    id: requestID, requestID: requestID, text: nil, model: requests[requestID]?.model,
+                    references: [], showsRequestStatus: true
+                )))
             }
         }
         return rows
