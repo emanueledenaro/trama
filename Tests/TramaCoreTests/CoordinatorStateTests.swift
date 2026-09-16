@@ -25,7 +25,7 @@ struct CoordinatorStateTests {
      "composerDraft":"bozza"}
     """#.utf8)
 
-    @Test("A schema 3 document migrates to schema 4 without touching its conversation")
+    @Test("A schema 3 document migrates to the current schema without touching its conversation")
     func schemaThreeMigratesWithoutLoss() throws {
         let directory = try Self.temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -36,7 +36,6 @@ struct CoordinatorStateTests {
         let storage = ProjectDocumentStorage(url: url, projectID: Self.projectID)
         let migrated = try storage.load()
 
-        #expect(migrated.schemaVersion == 4)
         #expect(migrated.schemaVersion == ProjectDocument.currentSchemaVersion)
         #expect(migrated.conversation == before.conversation)
         #expect(migrated.conversation?.events.map(\.sequence) == [1, 2, 4, 5])

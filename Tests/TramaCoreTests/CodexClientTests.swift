@@ -953,6 +953,8 @@ final class CodexClientTests: XCTestCase {
         XCTAssertEqual(trama["url"] as? String, "http://127.0.0.1:52011/mcp")
         XCTAssertEqual(trama["bearer_token_env_var"] as? String, "TRAMA_COORDINATOR_TOKEN")
         XCTAssertEqual(trama["default_tools_approval_mode"] as? String, "approve")
+        // A read-only check can outlast Codex's default MCP tool timeout of 60 seconds.
+        XCTAssertEqual(trama["tool_timeout_sec"] as? Int, 660)
         XCTAssertEqual(config["shell_environment_policy.exclude"] as? [String], ["TRAMA_COORDINATOR_TOKEN"])
         let verified = transport.messages.contains { message in
             message["method"] as? String == "mcpServerStatus/list"
@@ -1113,6 +1115,8 @@ final class CodexClientTests: XCTestCase {
             transport.emit(["method": "item/completed", "params": base.merging(["item": ["type": "mcpToolCall", "id": "call-1", "server": "trama", "tool": "read_study", "status": "completed", "result": ["content": [["type": "text", "text": "## Codice"]]], "error": NSNull()]]) { $1 }])
             transport.emit(["method": "item/started", "params": base.merging(["item": ["type": "mcpToolCall", "id": "call-2", "server": "trama", "tool": "write_memory", "status": "inProgress", "arguments": ["text": "x"]]]) { $1 }])
             transport.emit(["method": "item/completed", "params": base.merging(["item": ["type": "mcpToolCall", "id": "call-2", "server": "trama", "tool": "write_memory", "status": "failed", "error": ["message": "tool timed out"]]]) { $1 }])
+            transport.emit(["method": "item/started", "params": base.merging(["item": ["type": "mcpToolCall", "id": "call-3", "server": "trama", "tool": "prepare_plan", "status": "inProgress", "arguments": [:]]]) { $1 }])
+            transport.emit(["method": "item/completed", "params": base.merging(["item": ["type": "mcpToolCall", "id": "call-3", "server": "trama", "tool": "prepare_plan", "status": "completed", "result": ["content": [["type": "text", "text": #"{"error":{"code":"mandate_revoked","message":"The person revoked the mandate."}}"#]], "isError": true], "error": NSNull()]]) { $1 }])
             transport.emit(["method": "item/started", "params": base.merging(["item": ["type": "agentMessage", "id": "answer", "text": "", "phase": "final_answer"]]) { $1 }])
             transport.emit(["method": "item/agentMessage/delta", "params": base.merging(["itemId": "answer", "delta": "Mancano "]) { $1 }])
             transport.emit(["method": "item/agentMessage/delta", "params": base.merging(["itemId": "answer", "delta": "i test."]) { $1 }])
@@ -1135,6 +1139,8 @@ final class CodexClientTests: XCTestCase {
             .toolCallCompleted(itemID: "call-1", server: "trama", tool: "read_study", succeeded: true, error: nil),
             .toolCallStarted(itemID: "call-2", server: "trama", tool: "write_memory"),
             .toolCallCompleted(itemID: "call-2", server: "trama", tool: "write_memory", succeeded: false, error: "tool timed out"),
+            .toolCallStarted(itemID: "call-3", server: "trama", tool: "prepare_plan"),
+            .toolCallCompleted(itemID: "call-3", server: "trama", tool: "prepare_plan", succeeded: false, error: "mandate_revoked"),
             .textDelta("Mancano "),
             .textDelta("i test.")
         ])

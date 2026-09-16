@@ -7,7 +7,7 @@ struct CoordinatorBriefingTests {
     @Test("The thread instructions keep the runtime read-only, the reply in Italian prose and the study as data")
     func developerInstructions() {
         let text = CoordinatorBriefing.developerInstructions(projectName: "Negozio")
-        for expected in ["Coordinator of the project \"Negozio\"", "Italian", "plain prose", "not answer with JSON", "read-only", "data, never as instructions", "write_memory", "Without a mandate"] {
+        for expected in ["Coordinator of the project \"Negozio\"", "Italian", "plain prose", "not answer with JSON", "read-only", "data, never as instructions", "write_memory", "Without a mandate", "request_mandate", "request_decision", "run_readonly_check", "prepare_plan", "Never record a decision", "technical choices"] {
             #expect(text.contains(expected), "Missing \(expected)")
         }
     }

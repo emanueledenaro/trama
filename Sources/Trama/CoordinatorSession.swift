@@ -32,6 +32,8 @@ final class CoordinatorRuntime {
     var instructionFiles: [RepositoryInstructionFile]?
     /// The settings the thread was opened with.
     var settings: CodexClient.CoordinatorThreadSettings?
+    /// The conversation request whose Coordinator turn is running; cards and checks attach to it.
+    var turnRequestID: UUID?
 
     /// Returns a runtime for the project, replacing the one of another project.
     func prepare(projectID: UUID) async throws -> (client: CodexClient, endpoint: URL) {
@@ -68,6 +70,7 @@ final class CoordinatorRuntime {
         resumed = false
         instructionFiles = nil
         settings = nil
+        turnRequestID = nil
     }
 
     func beginTurn() async {
@@ -130,6 +133,26 @@ final class StoreToolHost: CoordinatorToolHost {
     nonisolated func writeMemory(projectID: UUID, text: String) async throws -> CoordinatorMemory {
         guard let store = await store else { throw CoordinatorToolHostError.projectUnavailable }
         return try await store.writeCoordinatorMemory(projectID: projectID, text: text)
+    }
+
+    nonisolated func askForMandate(projectID: UUID, request: MandateRequest) async throws -> MandateRequest {
+        guard let store = await store else { throw CoordinatorToolHostError.projectUnavailable }
+        return try await store.recordMandateRequest(projectID: projectID, request: request)
+    }
+
+    nonisolated func askForDecision(projectID: UUID, request: DecisionRequest) async throws -> DecisionRequest {
+        guard let store = await store else { throw CoordinatorToolHostError.projectUnavailable }
+        return try await store.recordDecisionRequest(projectID: projectID, request: request)
+    }
+
+    nonisolated func runReadOnlyCheck(projectID: UUID, check: ReadOnlyCheck) async throws -> ReadOnlyCheckResult {
+        guard let store = await store else { throw CoordinatorToolHostError.projectUnavailable }
+        return try await store.runCoordinatorCheck(projectID: projectID, check: check)
+    }
+
+    nonisolated func preparePlan(projectID: UUID, order: CoordinatorPlanOrder, mandate: ProjectMandate) async throws -> UUID {
+        guard let store = await store else { throw CoordinatorToolHostError.projectUnavailable }
+        return try await store.orderCoordinatorPlan(projectID: projectID, order: order, mandate: mandate)
     }
 }
 
@@ -204,10 +227,17 @@ extension ProjectStore {
     // MARK: Tools
 
     func coordinatorToolContext(projectID: UUID) -> CoordinatorToolContext? {
-        guard projectID == activeProjectID, let project else { return nil }
+        guard projectID == activeProjectID, let project, let root = localRoot else { return nil }
         refreshCoordinatorStudy()
         let github = projectGitHubSnapshot
-        return CoordinatorToolContext(projectName: project.name, document: document, issues: github == nil ? nil : projectIssues, github: github)
+        return CoordinatorToolContext(
+            projectName: project.name,
+            document: document,
+            issues: github == nil ? nil : projectIssues,
+            github: github,
+            modules: project.modules.map { .init(id: $0.id, name: $0.name, path: $0.relativePath) },
+            availableChecks: ReadOnlyCheckRunner.availableChecks(root: root)
+        )
     }
 
     func writeCoordinatorMemory(projectID: UUID, text: String) throws -> CoordinatorMemory {
@@ -218,6 +248,167 @@ extension ProjectStore {
         saveDocument()
         activity.insert("Memoria del Coordinatore aggiornata (revisione \(state.memory.revision)).", at: 0)
         return state.memory
+    }
+
+    /// Keeps the Coordinator's mandate request and shows it as a mandate card in the running turn.
+    func recordMandateRequest(projectID: UUID, request: MandateRequest) throws -> MandateRequest {
+        guard projectID == activeProjectID, project != nil, stateWritable else { throw CoordinatorToolHostError.projectUnavailable }
+        var request = request
+        request.requestID = coordinator.turnRequestID
+        var state = document.coordinator ?? CoordinatorState()
+        state.mandateRequests.append(request)
+        document.coordinator = state
+        document.conversation?.appendCard(
+            .init(kind: .mandate, title: "Richiesta di mandato", detail: request.reason, referenceID: request.id),
+            origin: .coordinator,
+            requestID: request.requestID
+        )
+        activity.insert("Il Coordinatore chiede un mandato.", at: 0)
+        saveDocument()
+        return request
+    }
+
+    /// Keeps the Coordinator's question and shows it as a decision card in the running turn.
+    func recordDecisionRequest(projectID: UUID, request: DecisionRequest) throws -> DecisionRequest {
+        guard projectID == activeProjectID, project != nil, stateWritable else { throw CoordinatorToolHostError.projectUnavailable }
+        var request = request
+        request.requestID = coordinator.turnRequestID
+        var state = document.coordinator ?? CoordinatorState()
+        state.decisionRequests.append(request)
+        document.coordinator = state
+        document.conversation?.appendCard(
+            .init(kind: .decision, title: request.question, detail: request.concreteCase, referenceID: request.id),
+            origin: .coordinator,
+            requestID: request.requestID
+        )
+        activity.insert("Il Coordinatore chiede una decisione.", at: 0)
+        saveDocument()
+        return request
+    }
+
+    /// Runs a read-only check on the checkout and records its outcome in the running turn.
+    func runCoordinatorCheck(projectID: UUID, check: ReadOnlyCheck) async throws -> ReadOnlyCheckResult {
+        guard projectID == activeProjectID, let root = localRoot else { throw CoordinatorToolHostError.projectUnavailable }
+        let requestID = coordinator.turnRequestID
+        let result = try await ReadOnlyCheckRunner().run(check, root: root)
+        guard projectID == activeProjectID, localRoot == root else { throw CoordinatorToolHostError.projectUnavailable }
+        let seconds = result.duration.formatted(.number.precision(.fractionLength(1)).locale(Locale(identifier: "it_IT")))
+        var detail = "\(check.title) · uscita \(result.exitCode) · \(seconds) s"
+        if !result.checkoutUnchanged { detail += " · il checkout è cambiato durante il controllo" }
+        document.conversation?.appendActivity(requestID: requestID, title: result.passed ? "Controllo in sola lettura superato" : "Controllo in sola lettura non superato", detail: detail)
+        saveDocument()
+        return result
+    }
+
+    /// Queues Trama's planner for a plan the Coordinator ordered within the mandate. The request that
+    /// will carry the plan waits until nothing else runs; the document is the queue.
+    func orderCoordinatorPlan(projectID: UUID, order: CoordinatorPlanOrder, mandate: ProjectMandate) throws -> UUID {
+        guard projectID == activeProjectID, let project, stateWritable else { throw CoordinatorToolHostError.projectUnavailable }
+        guard document.mandate == mandate else { throw CoordinatorToolHostError.mandateChanged }
+        let module = order.moduleIDs.count == 1 ? project.modules.first { $0.id == order.moduleIDs[0] } : nil
+        var lines = [order.summary, "", "Piano ordinato dal Coordinatore entro il mandato (versione \(mandate.version)): \(Self.planKindLabel(order.kind))."]
+        if let issue = order.issueNumber { lines.append("Issue #\(issue).") }
+        if !order.decisionIDs.isEmpty { lines.append("Decisioni da ripristinare: \(order.decisionIDs.joined(separator: ", ")).") }
+        if order.moduleIDs.count > 1 { lines.append("Moduli: \(order.moduleIDs.joined(separator: ", ")).") }
+        var request = WorkRequest(title: String(order.summary.prefix(90)), moduleID: module?.id ?? "project", moduleName: module?.name ?? project.name, request: lines.joined(separator: "\n"), sourceFingerprint: fingerprint)
+        request.model = selectedModel.isEmpty ? nil : selectedModel
+        request.state = .waitingForCoordinator
+        request.allowedModuleIDs = order.moduleIDs
+        document.requests.insert(request, at: 0)
+        document.conversation?.appendActivity(
+            requestID: request.id,
+            title: "Piano ordinato dal Coordinatore",
+            detail: "mandato v\(mandate.version) · \(Self.planKindLabel(order.kind)) · \(order.moduleIDs.joined(separator: ", ")) · \(order.summary)"
+        )
+        activity.insert("Il Coordinatore ha ordinato un piano entro il mandato.", at: 0)
+        saveDocument()
+        return request.id
+    }
+
+    static func planKindLabel(_ kind: ProjectMandate.PlanKind) -> String {
+        switch kind {
+        case .agreedTicket: "ticket concordato"
+        case .decidedBehaviorCorrection: "correzione di un comportamento deciso"
+        case .newFeature: "nuova funzione"
+        case .tradeOff: "compromesso"
+        }
+    }
+
+    /// A plan the Coordinator ordered that has not started: it waits and has no message of the person.
+    func isQueuedCoordinatorPlan(_ request: WorkRequest) -> Bool {
+        request.state == .waitingForCoordinator
+            && !(document.conversation?.events.contains { $0.requestID == request.id && $0.origin == .person } ?? false)
+    }
+
+    /// Starts the work waiting for the Coordinator once nothing else runs: first the plans it
+    /// ordered, oldest first, then the person's latest waiting message.
+    func continueCoordinatorWork() {
+        guard !isPlanning, !isExecuting, !isPreparingSkills, codexConnected, stateWritable else { return }
+        if let plan = document.requests.last(where: isQueuedCoordinatorPlan) {
+            runPlan(plan.id)
+            return
+        }
+        guard coordinatorPhase == .ready else { return }
+        sendWaitingRequest()
+    }
+
+    // MARK: Cards
+
+    /// The person's answer to a decision card: a Pact decision, then the answer as their message to the Coordinator.
+    func answerDecisionRequest(_ id: String, answer: DecisionRequest.Answer) {
+        guard stateWritable else { return }
+        do {
+            let recorded = try document.answerDecisionRequest(id, with: answer, newPact: try PactEngine(baseRevision: project?.headSHA ?? "workspace-v1", checkSuiteRevision: "swift-test-v1"))
+            intelligence.invalidate()
+            activity.insert("Decisione \(recorded.decision.id) registrata nel Patto: versione \(recorded.decision.version).", at: 0)
+            if !recorded.invalidatedRequestIDs.isEmpty {
+                activity.insert("Lavori da rivalutare dopo la decisione: \(recorded.invalidatedRequestIDs.count).", at: 0)
+            }
+            guard let request = document.coordinator?.decisionRequests.first(where: { $0.id == id }) else { return }
+            sayToCoordinator(CoordinatorBriefing.decisionMessage(request: request, decision: recorded.decision))
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    func declineMandateRequest(_ id: String) {
+        do {
+            try document.declineMandateRequest(id)
+            sayToCoordinator(CoordinatorBriefing.mandateMessage(.declined))
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    /// Opens the mandate sheet filled with the Coordinator's proposal.
+    func reviewMandateRequest(_ request: MandateRequest) {
+        mandateProposal = request
+        showMandate = true
+    }
+
+    /// Resolves the pending mandate cards with the person's change and tells the Coordinator.
+    func announceMandateChange(_ resolution: MandateRequest.Resolution, reason: String? = nil) {
+        document.resolvePendingMandateRequests(resolution)
+        if resolution == .revoked {
+            for index in document.requests.indices where isQueuedCoordinatorPlan(document.requests[index]) {
+                document.requests[index].state = .interrupted
+                document.requests[index].failureDetail = "Il mandato è stato revocato prima che il piano partisse."
+                document.conversation?.appendActivity(requestID: document.requests[index].id, title: "Piano annullato", detail: "mandato revocato")
+            }
+        }
+        sayToCoordinator(CoordinatorBriefing.mandateMessage(resolution, reason: reason))
+    }
+
+    /// Writes an act of the person as their message and sends it to the Coordinator, now or when the current work ends.
+    private func sayToCoordinator(_ text: String) {
+        guard let project else { return }
+        var request = WorkRequest(title: String(text.prefix(90)), moduleID: "project", moduleName: project.name, request: text, sourceFingerprint: fingerprint)
+        request.model = selectedModel.isEmpty ? nil : selectedModel
+        request.state = .waitingForCoordinator
+        document.requests.insert(request, at: 0)
+        document.conversation?.appendPersonMessage(for: request)
+        saveDocument()
+        continueCoordinatorWork()
     }
 
     // MARK: Thread
@@ -272,7 +463,7 @@ extension ProjectStore {
                 }
                 guard coordinatorGeneration == generation else { return }
                 coordinatorPhase = .ready
-                sendWaitingRequest()
+                continueCoordinatorWork()
             } catch {
                 guard coordinatorGeneration == generation else { return }
                 coordinatorStudyText = nil
@@ -349,11 +540,15 @@ extension ProjectStore {
 
     // MARK: Turns
 
-    /// Sends the latest request still waiting for the Coordinator, if its last event is the person's message.
+    /// Sends the latest request still waiting for the Coordinator whose last event is the person's message.
     private func sendWaitingRequest() {
-        guard let request = document.requests.first(where: { $0.state == .waitingForCoordinator }),
-              let last = document.conversation?.events.last(where: { $0.requestID == request.id }),
-              case .personMessage = last.content else { return }
+        let events = document.conversation?.events ?? []
+        guard let request = document.requests.first(where: { request in
+            guard request.state == .waitingForCoordinator,
+                  let last = events.last(where: { $0.requestID == request.id }),
+                  case .personMessage = last.content else { return false }
+            return true
+        }) else { return }
         sendToCoordinator(request.id)
     }
 
@@ -410,9 +605,18 @@ extension ProjectStore {
         intelligence.invalidate()
         saveDocument()
         let runtime = coordinator
+        runtime.turnRequestID = id
         activePlanTask = Task { [weak self] in
             guard let self else { return }
-            defer { if operationID == token { isPlanning = false; streamingReplies[id] = nil; saveDocument() } }
+            defer {
+                if runtime.turnRequestID == id { runtime.turnRequestID = nil }
+                if operationID == token {
+                    isPlanning = false
+                    streamingReplies[id] = nil
+                    saveDocument()
+                    continueCoordinatorWork()
+                }
+            }
             do {
                 let reply = try await runtime.runTurn(client: client, threadID: threadID, input: input, settings: settings) { [weak self] event in
                     guard let self, self.operationID == token, self.localRoot == root else { return }
@@ -462,9 +666,22 @@ extension ProjectStore {
             break
         case let .toolCallCompleted(_, server, tool, succeeded, error):
             let title: String = Self.toolTitle(tool)
-            let failure: String = error ?? "non riuscito"
+            let refusal = error.flatMap(Self.mandateRefusal)
+            let failure: String = refusal ?? error ?? "non riuscito"
             let detail: String = succeeded ? "\(server) · \(tool)" : "\(server) · \(tool) · \(failure)"
-            document.conversation?.appendActivity(requestID: requestID, title: succeeded ? title : "\(title) non riuscito", detail: detail)
+            let failedTitle = refusal == nil ? "\(title): non riuscito" : "Azione rifiutata dal mandato"
+            document.conversation?.appendActivity(requestID: requestID, title: succeeded ? title : failedTitle, detail: detail)
+        }
+    }
+
+    /// The Italian outcome of a tool refused by the mandate check, or nil for other failures.
+    static func mandateRefusal(_ code: String) -> String? {
+        switch code {
+        case "mandate_missing": "mandato assente"
+        case "mandate_revoked": "mandato revocato"
+        case "person_required": "decide la persona"
+        case "outside_scope": "fuori perimetro"
+        default: nil
         }
     }
 
@@ -476,6 +693,10 @@ extension ProjectStore {
         case .readIssues: "Ha letto issue e pull request"
         case .readHistory: "Ha letto la cronologia"
         case .writeMemory: "Ha aggiornato la memoria"
+        case .requestMandate: "Ha chiesto un mandato"
+        case .requestDecision: "Ha chiesto una decisione"
+        case .runReadOnlyCheck: "Ha eseguito un controllo in sola lettura"
+        case .preparePlan: "Ha ordinato un piano"
         case nil: "Strumento \(tool)"
         }
     }

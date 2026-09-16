@@ -167,8 +167,20 @@ public struct ProjectMandate: Codable, Equatable, Sendable {
         return .authorized
     }
 
+    /// Work that touches several modules is authorized only when every module is in scope.
+    public static func authorization(for action: Action, moduleIDs: [String], mandate: ProjectMandate?) -> Authorization {
+        let decision = authorization(for: action, mandate: mandate)
+        guard decision == .authorized, let mandate, !mandate.moduleIDsOutsideScope(moduleIDs).isEmpty else { return decision }
+        return .outsideScope
+    }
+
     public func authorization(for action: Action, moduleID: String? = nil) -> Authorization {
         Self.authorization(for: action, moduleID: moduleID, mandate: self)
+    }
+
+    /// The given modules the scope does not cover, in the given order.
+    public func moduleIDsOutsideScope(_ moduleIDs: [String]) -> [String] {
+        moduleIDs.filter { !scopeModuleIDs.contains($0) }
     }
 
     private func snapshot(at date: Date) -> Snapshot {

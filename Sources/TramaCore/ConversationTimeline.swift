@@ -253,7 +253,7 @@ extension ConversationTimeline {
     ///
     /// All activities of a turn form one group, placed where the first of them happened; cards and
     /// replies stay outside it. The latest reply of each request shows the request status; a request
-    /// whose latest turn has no reply yet gets a pending reply row.
+    /// whose latest turn has no reply yet gets a pending reply row, and so does running work without a person message.
     /// `runningRequestIDs` are the requests with a turn in progress: that turn is never collapsed,
     /// and a new analysis started after the reply shows its progress in a pending row below it.
     public static func rows(for document: ProjectDocument, runningRequestIDs: Set<UUID> = []) -> [ConversationRow] {
@@ -291,9 +291,10 @@ extension ConversationTimeline {
             }
         }
         let pendingRequests = Set(lastEventIndex.filter { requestID, eventIndex in
-            guard let personIndex = lastPersonIndex[requestID] else { return false }
             let replyIndex = lastReplyIndex[requestID] ?? -1
             let isRerunning = runningRequestIDs.contains(requestID) && replyIndex < eventIndex
+            // Work the Coordinator ordered has no person message: it is pending only while it runs.
+            guard let personIndex = lastPersonIndex[requestID] else { return isRerunning }
             return replyIndex < personIndex || isRerunning
         }.keys)
 

@@ -71,6 +71,19 @@ struct ProjectMandateTests {
         #expect(ProjectMandate.authorization(for: .plan(.agreedTicket), moduleID: "app", mandate: mandate) == .outsideScope)
     }
 
+    @Test("Work on several modules is authorized only when every module is in scope")
+    func severalModulesMustAllBeInScope() throws {
+        let mandate = try Self.makeMandate(actions: [.plan(.agreedTicket)], scope: ["core", "app"])
+
+        #expect(ProjectMandate.authorization(for: .plan(.agreedTicket), moduleIDs: ["core", "app"], mandate: mandate) == .authorized)
+        #expect(ProjectMandate.authorization(for: .plan(.agreedTicket), moduleIDs: ["core", "docs"], mandate: mandate) == .outsideScope)
+        #expect(ProjectMandate.authorization(for: .plan(.agreedTicket), moduleIDs: [], mandate: mandate) == .authorized)
+        #expect(ProjectMandate.authorization(for: .plan(.newFeature), moduleIDs: ["docs"], mandate: mandate) == .personRequired)
+        #expect(ProjectMandate.authorization(for: .executeInWorktree, moduleIDs: ["docs"], mandate: mandate) == .notInMandate)
+        #expect(ProjectMandate.authorization(for: .plan(.agreedTicket), moduleIDs: ["docs"], mandate: nil) == .mandateMissing)
+        #expect(mandate.moduleIDsOutsideScope(["docs", "core", "api"]) == ["docs", "api"])
+    }
+
     @Test("Correcting a mandate keeps history and bumps the version")
     func correctionKeepsHistory() throws {
         let original = try Self.makeMandate(actions: [.plan(.agreedTicket)])

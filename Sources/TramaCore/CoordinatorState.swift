@@ -1,16 +1,20 @@
 import Foundation
 
 /// What Trama keeps about a project's Coordinator between launches: its persistent thread,
-/// its own memory and the last study Trama computed.
+/// its own memory, the last study Trama computed and what it asked the person.
 public struct CoordinatorState: Codable, Equatable, Sendable {
     public var thread: CoordinatorThreadRecord?
     public var memory = CoordinatorMemory()
     public var study: ProjectStudy?
+    /// Mandates the Coordinator asked for, oldest first; each one is a mandate card.
+    public var mandateRequests: [MandateRequest] = []
+    /// Behavior decisions the Coordinator asked the person for, oldest first; each one is a decision card.
+    public var decisionRequests: [DecisionRequest] = []
 
     public init() {}
 
     private enum CodingKeys: String, CodingKey {
-        case thread, memory, study
+        case thread, memory, study, mandateRequests, decisionRequests
     }
 
     public init(from decoder: Decoder) throws {
@@ -18,6 +22,8 @@ public struct CoordinatorState: Codable, Equatable, Sendable {
         thread = try container.decodeIfPresent(CoordinatorThreadRecord.self, forKey: .thread)
         memory = try container.decodeIfPresent(CoordinatorMemory.self, forKey: .memory) ?? CoordinatorMemory()
         study = try container.decodeIfPresent(ProjectStudy.self, forKey: .study)
+        mandateRequests = try container.decodeIfPresent([MandateRequest].self, forKey: .mandateRequests) ?? []
+        decisionRequests = try container.decodeIfPresent([DecisionRequest].self, forKey: .decisionRequests) ?? []
     }
 }
 

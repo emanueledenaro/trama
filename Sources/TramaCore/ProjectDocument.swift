@@ -46,7 +46,7 @@ public struct WorkRequest: Identifiable, Codable, Sendable {
 }
 
 public struct ProjectDocument: Codable, Sendable {
-    public static let currentSchemaVersion = 4
+    public static let currentSchemaVersion = 5
 
     public var schemaVersion = ProjectDocument.currentSchemaVersion
     public var requests: [WorkRequest] = []
