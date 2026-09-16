@@ -1097,17 +1097,15 @@ private actor Core {
         }
 
         var config = try await makeRestrictedThreadConfig().objectValue ?? [:]
-        config["mcp_servers"] = .object([
-            CodexClient.CoordinatorThreadSettings.toolServerName: .object([
-                "url": .string(settings.toolServerURL.absoluteString),
-                "bearer_token_env_var": .string(CodexClient.CoordinatorThreadSettings.tokenEnvironmentVariable),
-                // Trama checks every call at the tool boundary; Codex must not ask a person in between.
-                "default_tools_approval_mode": .string("approve")
-            ])
+        // Dotted keys add to the process configuration: a whole mcp_servers table would replace the
+        // overrides that switch every global MCP server off.
+        config["mcp_servers.\(CodexClient.CoordinatorThreadSettings.toolServerName)"] = .object([
+            "url": .string(settings.toolServerURL.absoluteString),
+            "bearer_token_env_var": .string(CodexClient.CoordinatorThreadSettings.tokenEnvironmentVariable),
+            // Trama checks every call at the tool boundary; Codex must not ask a person in between.
+            "default_tools_approval_mode": .string("approve")
         ])
-        config["shell_environment_policy"] = .object([
-            "exclude": .array([.string(CodexClient.CoordinatorThreadSettings.tokenEnvironmentVariable)])
-        ])
+        config["shell_environment_policy.exclude"] = .array([.string(CodexClient.CoordinatorThreadSettings.tokenEnvironmentVariable)])
         let common: [String: JSONValue] = [
             "model": .string(model),
             "cwd": .string(settings.cwd.path),

@@ -945,14 +945,15 @@ final class CodexClientTests: XCTestCase {
         XCTAssertEqual(features["apps"] as? Bool, false)
         let apps = try XCTUnwrap(config["apps"] as? [String: Any])
         XCTAssertEqual((apps["_default"] as? [String: Any])?["enabled"] as? Bool, false)
-        let servers = try XCTUnwrap(config["mcp_servers"] as? [String: Any])
-        XCTAssertEqual(Array(servers.keys), ["trama"])
-        let trama = try XCTUnwrap(servers["trama"] as? [String: Any])
+        // A whole mcp_servers table would replace the process overrides that switch the global servers
+        // off (checked on Codex 0.154.0); the dotted key adds trama and keeps them.
+        XCTAssertNil(config["mcp_servers"])
+        XCTAssertNil(config["shell_environment_policy"])
+        let trama = try XCTUnwrap(config["mcp_servers.trama"] as? [String: Any])
         XCTAssertEqual(trama["url"] as? String, "http://127.0.0.1:52011/mcp")
         XCTAssertEqual(trama["bearer_token_env_var"] as? String, "TRAMA_COORDINATOR_TOKEN")
         XCTAssertEqual(trama["default_tools_approval_mode"] as? String, "approve")
-        let shell = try XCTUnwrap(config["shell_environment_policy"] as? [String: Any])
-        XCTAssertEqual(shell["exclude"] as? [String], ["TRAMA_COORDINATOR_TOKEN"])
+        XCTAssertEqual(config["shell_environment_policy.exclude"] as? [String], ["TRAMA_COORDINATOR_TOKEN"])
         let verified = transport.messages.contains { message in
             message["method"] as? String == "mcpServerStatus/list"
                 && (message["params"] as? [String: Any])?["threadId"] as? String == "thread-c1"
@@ -982,7 +983,7 @@ final class CodexClientTests: XCTestCase {
         XCTAssertEqual(params["approvalPolicy"] as? String, "never")
         XCTAssertEqual(params["developerInstructions"] as? String, "You are the Trama Coordinator.")
         let config = try XCTUnwrap(params["config"] as? [String: Any])
-        let trama = try XCTUnwrap((config["mcp_servers"] as? [String: Any])?["trama"] as? [String: Any])
+        let trama = try XCTUnwrap(config["mcp_servers.trama"] as? [String: Any])
         XCTAssertEqual(trama["bearer_token_env_var"] as? String, "TRAMA_COORDINATOR_TOKEN")
         XCTAssertEqual(((config["features"] as? [String: Any])?["multi_agent"]) as? Bool, false)
     }
