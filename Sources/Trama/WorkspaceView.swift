@@ -143,8 +143,10 @@ struct WorkspaceView: View {
             case .team: TeamView().environmentObject(store.team)
             case .issues: IssuesView()
             }
-            Divider()
-            composer
+            if store.section == .coordinator {
+                Divider()
+                composer
+            }
         }
     }
 
@@ -161,25 +163,20 @@ struct WorkspaceView: View {
                 Label(error, systemImage: "exclamationmark.triangle")
                     .font(.caption)
                     .foregroundStyle(.orange)
-            } else if let model = store.selectedModelInfo {
-                Text(model.description)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
             }
-            Text(store.section == .coordinator ? "Messaggio al Coordinatore" : "Richiesta a Codex").font(.caption.weight(.medium)).foregroundStyle(.secondary)
             HStack(alignment: .bottom, spacing: TramaSpacing.related) {
-                TextField(store.section == .coordinator ? "Scrivi al Coordinatore: cosa vuoi capire o modificare?" : "Cosa vuoi capire o modificare?", text: $store.composer, axis: .vertical)
+                TextField("Scrivi al Coordinatore", text: $store.composer, axis: .vertical)
                     .textFieldStyle(.plain).lineLimit(1...4).font(.body)
                     .onSubmit { store.submitRequest() }
-                    .accessibilityLabel("Richiesta a Codex per il modulo selezionato")
+                    .help("Il Coordinatore legge il progetto senza modificarlo finché non approvi un piano")
+                    .accessibilityLabel("Messaggio al Coordinatore")
                 if store.isPlanning {
                     Button("Interrompi", systemImage: "stop.fill") { store.stopPlanning() }.labelStyle(.iconOnly)
                 } else {
                     Button { store.submitRequest() } label: { Image(systemName: "arrow.up").fontWeight(.semibold) }
                         .buttonStyle(.borderedProminent).buttonBorderShape(.circle)
                         .disabled(store.composer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || (store.codexConnected && store.selectedModelInfo == nil))
-                        .help(store.section == .coordinator ? "Invia al Coordinatore" : "Pianifica con Codex").accessibilityLabel(store.section == .coordinator ? "Invia al Coordinatore" : "Pianifica con Codex")
+                        .help("Invia al Coordinatore").accessibilityLabel("Invia al Coordinatore")
                 }
             }
             .padding(.horizontal, TramaSpacing.related)
@@ -227,7 +224,7 @@ struct WorkspaceView: View {
                 .font(.caption)
                 .disabled(store.isPlanning || store.isExecuting || store.models.isEmpty)
                 .help(store.selectedModelInfo?.description ?? store.modelsError ?? "Catalogo modelli di Codex")
-                .accessibilityLabel("Modello OpenAI: \(store.selectedModelDisplayName)")
+                .accessibilityLabel("Modello: \(store.selectedModelDisplayName)")
         }
     }
 
@@ -236,10 +233,10 @@ struct WorkspaceView: View {
         if store.isPlanning {
             HStack(spacing: TramaSpacing.compact) {
                 ProgressView().controlSize(.small)
-                Text(store.isExecuting ? "Codex sta lavorando nel worktree" : (store.selectedRequest?.state == "Verifiche in corso" ? "Verifiche in corso" : "Codex sta analizzando la richiesta"))
+                Text(store.isExecuting ? "Il Coordinatore sta lavorando nel worktree" : (store.selectedRequest?.state == "Verifiche in corso" ? "Verifiche in corso" : "Il Coordinatore sta leggendo il progetto"))
             }.font(.caption).foregroundStyle(.secondary)
         } else {
-            Text("Pianificazione in sola lettura").font(.caption).foregroundStyle(.secondary)
+            EmptyView()
         }
     }
 

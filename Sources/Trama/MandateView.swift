@@ -75,10 +75,11 @@ struct MandateView: View {
                     }
                     Section("Obiettivi") {
                         TextEditor(text: $objectives).frame(minHeight: 80)
-                        Text("Un obiettivo per riga").font(.caption).foregroundStyle(.secondary)
+                        Text("Un elemento per riga").font(.caption).foregroundStyle(.secondary)
                     }
                     Section("Priorità") {
                         TextEditor(text: $priorities).frame(minHeight: 80)
+                        Text("Un elemento per riga").font(.caption).foregroundStyle(.secondary)
                     }
                     Section("Perimetro") {
                         if modules.isEmpty {
@@ -96,15 +97,20 @@ struct MandateView: View {
                     }
                     Section("Limiti") {
                         TextEditor(text: $limits).frame(minHeight: 80)
+                        Text("Un elemento per riga").font(.caption).foregroundStyle(.secondary)
                     }
                     Section {
                         if hasGrantedMandate {
                             Button("Salva correzione") { saveCorrection() }.buttonStyle(.borderedProminent)
+                        } else {
+                            Button("Concedi mandato") { grant() }.buttonStyle(.borderedProminent)
+                        }
+                    }
+                    if hasGrantedMandate {
+                        Section("Revoca") {
                             TextField("Motivo della revoca", text: $revocationReason)
                             Button("Revoca mandato", role: .destructive) { revoke() }
                                 .disabled(revocationReason.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                        } else {
-                            Button("Concedi mandato") { grant() }.buttonStyle(.borderedProminent)
                         }
                     }
                 }

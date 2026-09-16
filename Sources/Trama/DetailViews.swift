@@ -65,8 +65,11 @@ struct ModuleInspector: View {
                 }
                 Spacer(minLength: 0)
                 Divider()
-                Button("Pianifica una modifica", systemImage: "square.and.pencil") {
-                    store.composer = "Vorrei modificare il modulo \(module.name): "
+                Button("Chiedi al Coordinatore su questo modulo", systemImage: "bubble.left.and.bubble.right") {
+                    store.selectedModuleID = module.id
+                    store.composer = "Sul modulo \(module.name): "
+                    store.showInspector = false
+                    store.section = .coordinator
                 }.frame(maxWidth: .infinity).padding(TramaSpacing.related)
             }
         } else {
@@ -117,7 +120,7 @@ struct RequestsView: View {
                                 if request.state == "Decisione richiesta" {
                                     PlanQuestionsView(request: request)
                                 } else if request.plan.isEmpty {
-                                    Text("La risposta apparirà qui dopo l’analisi di Codex.").foregroundStyle(.secondary)
+                                    Text("La risposta apparirà qui dopo l’analisi del Coordinatore.").foregroundStyle(.secondary)
                                 } else {
                                     Text(request.plan).font(.body).lineSpacing(5).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
                                 }
@@ -139,7 +142,7 @@ struct RequestsView: View {
                                     Button("Rivedi e avvia", systemImage: "play.fill") { reviewingPlan = request }.buttonStyle(.borderedProminent)
                                 }
                                 if !store.isPlanning && request.session == nil {
-                                    Button(store.codexConnected ? "Rielabora con Codex" : "Collega Codex") {
+                                    Button(store.codexConnected ? "Chiedi di nuovo al Coordinatore" : "Collega ChatGPT") {
                                         if store.codexConnected { store.runPlan(request.id) } else { store.showConnections = true }
                                     }.buttonStyle(.bordered)
                                 }
@@ -316,7 +319,7 @@ struct NewProjectView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: TramaSpacing.section) {
             Text("Crea un progetto").font(.title2.weight(.semibold))
-            Text("Descrivi cosa vuoi costruire. Trama prepara una richiesta che potrai pianificare con Codex.").foregroundStyle(.secondary)
+            Text("Descrivi cosa vuoi costruire. Trama prepara una richiesta che potrai discutere con il Coordinatore.").foregroundStyle(.secondary)
             VStack(alignment: .leading, spacing: TramaSpacing.compact) {
                 Text("Nome del progetto").font(.callout.weight(.medium))
                 TextField("Inserisci un nome", text: $name).textFieldStyle(.roundedBorder).accessibilityLabel("Nome del progetto")

@@ -274,18 +274,18 @@ struct TeamView: View {
             }
         case .impact:
             if store.intelligence.assessments.isEmpty {
-                teamEmptyState(("Nessuna interpretazione disponibile", "text.magnifyingglass", "Codex può analizzare le revisioni condivise quando sono presenti branch o pull request pertinenti."))
+                teamEmptyState(("Nessuna interpretazione disponibile", "text.magnifyingglass", "Il Coordinatore può analizzare le revisioni condivise quando sono presenti branch o pull request pertinenti."))
             } else {
                 List {
                     ForEach(Array(store.intelligence.assessments.keys).sorted(), id: \.self) { key in
                         if let assessment = store.intelligence.assessments[key] {
                             VStack(alignment: .leading, spacing: TramaSpacing.control) {
-                                Label(key + (store.intelligence.staleReferences.contains(key) ? " · Da rivalutare" : " · Interpretazione di Codex"), systemImage: assessment.status == .possibleIncompatibility ? "exclamationmark.triangle" : "text.magnifyingglass").font(.headline)
+                                Label(key + (store.intelligence.staleReferences.contains(key) ? " · Da rivalutare" : " · Interpretazione del Coordinatore"), systemImage: assessment.status == .possibleIncompatibility ? "exclamationmark.triangle" : "text.magnifyingglass").font(.headline)
                                 Text(assessment.summary).textSelection(.enabled)
                                 Text(assessment.suggestedAction).font(.callout).foregroundStyle(.secondary)
                                 HStack {
                                     Button("Rivedi il piano") {
-                                        if let request = store.selectedRequest { store.runPlan(request.id); store.section = .changes }
+                                        if let request = store.selectedRequest { store.runPlan(request.id); store.section = .coordinator }
                                     }.disabled(store.isPlanning || store.selectedRequest == nil)
                                     if store.intelligence.acknowledgedIDs.contains(assessment.id) {
                                         Label("Valutato", systemImage: "checkmark").font(.caption).foregroundStyle(.secondary)
@@ -363,7 +363,7 @@ struct TeamView: View {
 
     @ViewBuilder
     private func analysisControls(_ snapshot: GitHubSnapshot) -> some View {
-        Button("Analizza impatto con Codex") { store.intelligence.consider(snapshot: snapshot, automatic: false) }
+        Button("Chiedi al Coordinatore l’impatto") { store.intelligence.consider(snapshot: snapshot, automatic: false) }
             .disabled(!store.codexConnected || store.selectedModelInfo == nil || store.intelligence.isAnalyzing || team.sourceRepository.caseInsensitiveCompare(snapshot.repository) != .orderedSame || (snapshot.pullRequests.isEmpty && snapshot.branches.isEmpty))
         if store.intelligence.isAnalyzing { ProgressView().controlSize(.small) }
     }
