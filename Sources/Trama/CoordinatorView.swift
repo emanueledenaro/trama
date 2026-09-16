@@ -1,56 +1,130 @@
 import SwiftUI
 import TramaCore
 
+/// The main chat surface: the person's requests and the Coordinator's replies for the active project.
 struct CoordinatorView: View {
     @EnvironmentObject private var store: ProjectStore
 
+    private var conversation: [WorkRequest] { store.document.requests.reversed() }
+    private var lastStreamedText: String? { conversation.last.flatMap { store.streamingReplies[$0.id] } }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            TramaScreenHeader("Coordinatore", subtitle: "Cronologia delle richieste di questo progetto") { EmptyView() }
+            TramaScreenHeader("Coordinatore", subtitle: "\(store.project?.name ?? "Progetto") · \(store.selectedModelDisplayName)") { EmptyView() }
             Divider()
-            if store.document.requests.isEmpty {
+            if conversation.isEmpty {
                 ContentUnavailableView("Nessuna richiesta registrata", systemImage: "bubble.left.and.bubble.right", description: Text("Scrivi nel campo in basso. Le richieste e le risposte salvate resteranno collegate a questo progetto."))
             } else {
                 ScrollViewReader { proxy in
                     ScrollView {
                         LazyVStack(alignment: .leading, spacing: TramaSpacing.section) {
-                            ForEach(store.document.requests.reversed()) { request in
-                                history(request).id(request.id)
+                            ForEach(conversation) { request in
+                                exchange(request).id(request.id)
                             }
-                        }.padding(TramaSpacing.content)
+                        }
+                        .frame(maxWidth: 720)
+                        .frame(maxWidth: .infinity)
+                        .padding(TramaSpacing.content)
                     }
-                    .onAppear { if let id = store.selectedRequestID { proxy.scrollTo(id, anchor: .top) } }
+                    .onAppear { scrollToFocus(proxy) }
+                    .onChange(of: store.document.requests.count) { _, _ in scrollToFocus(proxy) }
+                    .onChange(of: lastStreamedText) { _, _ in
+                        if let id = conversation.last?.id { proxy.scrollTo(id, anchor: .bottom) }
+                    }
                 }
             }
         }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
-    private func history(_ request: WorkRequest) -> some View {
+    private func scrollToFocus(_ proxy: ScrollViewProxy) {
+        if let id = store.selectedRequestID ?? conversation.last?.id { proxy.scrollTo(id, anchor: .bottom) }
+    }
+
+    private func exchange(_ request: WorkRequest) -> some View {
         VStack(alignment: .leading, spacing: TramaSpacing.related) {
-            VStack(alignment: .leading, spacing: TramaSpacing.compact) {
-                Text(store.document.importedRequestIDs?.contains(request.id) == true ? "Importata dalle richieste precedenti" : "Richiesta salvata")
-                    .font(.caption).foregroundStyle(.secondary)
-                Text(store.project?.name ?? "Progetto").font(.headline)
-                Text(request.title).font(.title3)
-                Text(request.moduleName).font(.callout).foregroundStyle(.secondary)
-                Text(request.createdAt, style: .date).font(.caption).foregroundStyle(.secondary)
+            personMessage(request)
+            coordinatorReply(request)
+        }
+    }
+
+    private func personMessage(_ request: WorkRequest) -> some View {
+        VStack(alignment: .trailing, spacing: TramaSpacing.compact) {
+            if store.document.importedRequestIDs?.contains(request.id) == true {
+                Text("Importata dalle richieste precedenti").font(.caption).foregroundStyle(.secondary)
             }
-            Text(request.request).textSelection(.enabled)
-            if !request.plan.isEmpty {
-                Divider()
-                Text("Contenuto salvato della richiesta").font(.headline)
-                Text(request.plan).textSelection(.enabled)
+            HStack(spacing: TramaSpacing.compact) {
+                Text("Tu · \(request.moduleName)")
+                Text(request.createdAt, style: .date)
+            }.font(.caption).foregroundStyle(.secondary)
+            Text(request.request)
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(TramaSpacing.related)
+                .background(.quaternary, in: RoundedRectangle(cornerRadius: TramaRadius.card))
+        }
+        .frame(maxWidth: .infinity, alignment: .trailing)
+    }
+
+    private func coordinatorReply(_ request: WorkRequest) -> some View {
+        VStack(alignment: .leading, spacing: TramaSpacing.related) {
+            HStack(spacing: TramaSpacing.compact) {
+                Text("Coordinatore")
+                if let model = request.model, !model.isEmpty { Text("· \(model)") }
+            }.font(.caption).foregroundStyle(.secondary)
+
+            replyBody(request)
+
+            if let references = request.replyReferences, !references.isEmpty {
+                VStack(alignment: .leading, spacing: TramaSpacing.compact) {
+                    Text("Fonti").font(.caption).foregroundStyle(.secondary)
+                    ForEach(references, id: \.self) { path in
+                        Button(path) { store.selectedRequestID = request.id; store.openReference(path) }
+                            .buttonStyle(.link)
+                            .accessibilityLabel("Apri fonte \(path)")
+                    }
+                }
             }
-            TramaStatusBadge(state: request.state)
-            Button("Apri richiesta in Modifiche", systemImage: "arrow.up.forward.square") {
-                store.selectedRequestID = request.id
-                store.section = .changes
+
+            if request.proposal != nil {
+                Text("Piano proposto: rivedilo in Modifiche prima di eseguirlo").font(.caption).foregroundStyle(.secondary)
             }
-            .accessibilityLabel("Apri richiesta: \(request.title)")
+
+            HStack(spacing: TramaSpacing.control) {
+                Button("Apri nella Mappa", systemImage: "square.3.layers.3d") { store.openInMap(request) }
+                    .accessibilityLabel("Apri nella Mappa: \(request.title)")
+                Button("Apri richiesta in Modifiche", systemImage: "arrow.up.forward.square") {
+                    store.selectedRequestID = request.id
+                    store.section = .changes
+                }
+                .accessibilityLabel("Apri richiesta: \(request.title)")
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(TramaSpacing.related)
         .background(.background, in: RoundedRectangle(cornerRadius: TramaRadius.card))
         .overlay(RoundedRectangle(cornerRadius: TramaRadius.card).stroke(.separator))
+    }
+
+    @ViewBuilder
+    private func replyBody(_ request: WorkRequest) -> some View {
+        if let raw = store.streamingReplies[request.id] {
+            let preview = StreamingReplyPreview.message(fromPartialJSON: raw) ?? ""
+            if !preview.isEmpty {
+                Text(preview).textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
+            }
+            HStack(spacing: TramaSpacing.control) {
+                ProgressView().controlSize(.small)
+                Text(preview.isEmpty ? "Codex sta leggendo il progetto" : "Risposta in arrivo").font(.callout).foregroundStyle(.secondary)
+                Button("Interrompi", systemImage: "stop.fill") { store.stopPlanning() }
+            }
+        } else if let detail = request.failureDetail {
+            TramaStatusBadge(state: request.state)
+            Text(detail).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+        } else if !request.plan.isEmpty {
+            Text(request.plan).textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
+            TramaStatusBadge(state: request.state)
+        } else {
+            TramaStatusBadge(state: request.state)
+        }
     }
 }
