@@ -46,8 +46,12 @@ public struct WorkRequest: Identifiable, Codable {
 }
 
 public struct ProjectDocument: Codable {
-    public var schemaVersion = 2
+    public static let currentSchemaVersion = 3
+
+    public var schemaVersion = ProjectDocument.currentSchemaVersion
     public var requests: [WorkRequest] = []
+    /// The Coordinator conversation. Nil only while decoding a document written before schema 3.
+    public var conversation: ConversationTimeline? = ConversationTimeline()
     public var pact: PactEngine?
     /// Nil until the Product Owner grants it; selecting a folder never sets it.
     public var mandate: ProjectMandate?

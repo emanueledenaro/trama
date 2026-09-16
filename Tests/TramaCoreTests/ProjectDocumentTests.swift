@@ -95,7 +95,7 @@ final class ProjectDocumentTests: XCTestCase {
         let storage = ProjectDocumentStorage(url: url)
         let document = try storage.load()
 
-        XCTAssertEqual(document.schemaVersion, 2)
+        XCTAssertEqual(document.schemaVersion, ProjectDocument.currentSchemaVersion)
         XCTAssertEqual(document.importedRequestIDs, [UUID(uuidString: "11111111-1111-1111-1111-111111111111")!])
         XCTAssertEqual(document.requests.first?.approvedAt, Date(timeIntervalSinceReferenceDate: 200))
         XCTAssertEqual(document.requests.first?.planDecisionVersions, ["D-12": 2])
