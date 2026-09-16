@@ -152,7 +152,7 @@ struct CoordinatorView: View {
             }
             HStack(spacing: TramaSpacing.control) {
                 ProgressView().controlSize(.small)
-                Text(preview.isEmpty ? "Codex sta leggendo il progetto" : "Risposta in arrivo").font(.callout).foregroundStyle(.secondary)
+                Text(preview.isEmpty ? "Il Coordinatore sta leggendo il progetto" : "Risposta in arrivo").font(.callout).foregroundStyle(.secondary)
                 Button("Interrompi", systemImage: "stop.fill") { store.stopPlanning() }
             }
         } else if let detail = request.failureDetail {

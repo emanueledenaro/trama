@@ -408,7 +408,7 @@ final class ProjectStore: ObservableObject {
         let module = selectedModule
         var request = WorkRequest(title: String(prompt.prefix(90)), moduleID: module?.id ?? "project", moduleName: module?.name ?? project.name, request: prompt, sourceFingerprint: fingerprint)
         request.model = selectedModel.isEmpty ? nil : selectedModel
-        request.state = codexConnected ? "Analisi in corso" : "In attesa di Codex"
+        request.state = codexConnected ? "Analisi in corso" : "In attesa del Coordinatore"
         document.requests.insert(request, at: 0); selectedRequestID = request.id
         composer = ""; section = .coordinator; showInspector = false; saveDocument()
         if codexConnected { runPlan(request.id) } else { showConnections = true }
@@ -483,12 +483,12 @@ final class ProjectStore: ObservableObject {
                 } else {
                     document.requests[i].state = unchanged ? (reply.kind == .clarification ? "Richiesta da chiarire" : "Risposta disponibile") : "Da rivalutare"
                 }
-                activity.insert("Risposta di Codex ricevuta per \(request.moduleName).", at: 0)
+                activity.insert("Risposta del Coordinatore ricevuta per \(request.moduleName).", at: 0)
             } catch {
                 guard operationID == token, localRoot == root, let i = document.requests.firstIndex(where: { $0.id == id }) else { return }
                 document.requests[i].state = Task.isCancelled ? "Interrotto" : "Errore"
                 document.requests[i].failureDetail = error.localizedDescription
-                document.requests[i].plan = Task.isCancelled ? "L’analisi è stata interrotta. Puoi riprenderla quando vuoi." : "Codex non ha completato l’analisi. Il progetto è conservato; puoi controllare il collegamento e riprovare."
+                document.requests[i].plan = Task.isCancelled ? "L’analisi è stata interrotta. Puoi riprenderla quando vuoi." : "Il Coordinatore non ha completato l’analisi. Il progetto è conservato; puoi controllare il collegamento Codex e riprovare."
             }
         }
     }
@@ -500,11 +500,11 @@ final class ProjectStore: ObservableObject {
               document.requests[index].replyKind == .clarification,
               document.requests[index].state == "Richiesta da chiarire" else { return }
         let question = document.requests[index].plan
-        document.requests[index].request += "\n\nChiarimento chiesto da Codex (contesto):\n" + question + "\nRisposta della persona:\n" + text
+        document.requests[index].request += "\n\nChiarimento chiesto dal Coordinatore (contesto):\n" + question + "\nRisposta della persona:\n" + text
         document.requests[index].title = String(text.prefix(90))
         saveDocument()
         if codexConnected { runPlan(id) } else {
-            document.requests[index].state = "In attesa di Codex"; saveDocument(); showConnections = true
+            document.requests[index].state = "In attesa del Coordinatore"; saveDocument(); showConnections = true
         }
     }
 

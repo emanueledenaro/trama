@@ -129,7 +129,7 @@ struct TramaStatusBadge: View {
             ("minus.circle.fill", .secondary)
         case "Decisione richiesta", "Richiesta da chiarire", "Da rivedere", "Da revisionare", "Da verificare", "Verifica manuale richiesta":
             ("questionmark.circle.fill", .orange)
-        case "In attesa di Codex":
+        case "In attesa del Coordinatore", "In attesa di Codex":
             ("clock.fill", .orange)
         case "Errore", "Errore di esecuzione", "Verifiche fallite":
             ("exclamationmark.triangle.fill", .red)
