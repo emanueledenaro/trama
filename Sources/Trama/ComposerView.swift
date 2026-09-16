@@ -393,7 +393,7 @@ struct ContextMeterView: View {
             ForEach(meter.detailLines, id: \.self) { Text($0).foregroundStyle(.secondary) }
             Divider()
             Picker("Avviso sopra", selection: Binding(get: { threshold }, set: setThreshold)) {
-                ForEach(Array(stride(from: CoordinatorContextState.thresholdRange.lowerBound, through: CoordinatorContextState.thresholdRange.upperBound, by: 5)), id: \.self) { value in
+                ForEach([1] + Array(stride(from: 5, through: CoordinatorContextState.thresholdRange.upperBound, by: 5)), id: \.self) { value in
                     Text("\(value)%").tag(value)
                 }
             }

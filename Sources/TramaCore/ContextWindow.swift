@@ -197,7 +197,7 @@ public struct ContextThresholdNotice: Equatable, Sendable {
 /// compaction and the warning threshold the person set for the project.
 public struct CoordinatorContextState: Codable, Equatable, Sendable {
     public static let defaultThreshold = 80
-    public static let thresholdRange = 10...95
+    public static let thresholdRange = 1...95
 
     /// The thread the usage belongs to; usage of any other thread is ignored.
     public private(set) var threadID: String?
