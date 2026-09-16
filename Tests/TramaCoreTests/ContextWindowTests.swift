@@ -186,7 +186,7 @@ struct ContextThresholdTests {
         #expect(value10 == nil)
         let notice11 = state.record(Self.usage(91_000), threadID: "t1", at: Self.start + 2)
         #expect(try #require(notice11).thresholdPercent == 90)
-        state.setThreshold(10)
+        state.setThreshold(2)
         #expect(state.thresholdPercent == CoordinatorContextState.thresholdRange.lowerBound)
         state.setThreshold(120)
         #expect(state.thresholdPercent == CoordinatorContextState.thresholdRange.upperBound)
