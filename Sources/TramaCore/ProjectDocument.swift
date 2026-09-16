@@ -30,6 +30,12 @@ public struct WorkRequest: Identifiable, Codable {
     public var model: String?
     public var setupBaselineHashes: [String: String]?
 
+    /// True when the Coordinator answered with a plan or the request already carries work (candidate, session, PR).
+    /// Explanations and clarifications are conversation only.
+    public var isChange: Bool {
+        replyKind == .plan || proposal != nil || candidateID != nil || session != nil || pullRequestURL != nil
+    }
+
     public init(title: String, moduleID: String, moduleName: String, request: String, sourceFingerprint: String) {
         self.title = title
         self.moduleID = moduleID

@@ -119,11 +119,13 @@ struct CoordinatorView: View {
             HStack(spacing: TramaSpacing.control) {
                 Button("Apri nella Mappa", systemImage: "square.3.layers.3d") { store.openInMap(request) }
                     .accessibilityLabel("Apri nella Mappa: \(request.title)")
-                Button("Apri richiesta in Modifiche", systemImage: "arrow.up.forward.square") {
-                    store.selectedRequestID = request.id
-                    store.section = .changes
+                if request.isChange {
+                    Button("Apri in Modifiche", systemImage: "arrow.up.forward.square") {
+                        store.selectedRequestID = request.id
+                        store.section = .changes
+                    }
+                    .accessibilityLabel("Apri in Modifiche: \(request.title)")
                 }
-                .accessibilityLabel("Apri richiesta: \(request.title)")
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)

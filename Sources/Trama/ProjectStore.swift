@@ -111,6 +111,9 @@ final class ProjectStore: ObservableObject {
         (project?.modules ?? []).filter { query.isEmpty || $0.name.localizedCaseInsensitiveContains(query) || $0.files.contains { $0.relativePath.localizedCaseInsensitiveContains(query) } }
     }
     var selectedRequest: WorkRequest? { document.requests.first { $0.id == selectedRequestID } }
+    /// Requests that belong in "Modifiche": only those whose reply is a plan or that already carry work.
+    /// Explanations and clarifications stay in the Coordinator chat.
+    var changeRequests: [WorkRequest] { document.requests.filter(\.isChange) }
     var selectedModelInfo: CodexClient.Model? { models.first { $0.model == selectedModel } }
     var selectedModelDisplayName: String {
         selectedModelInfo?.displayName ?? (selectedModel.isEmpty ? "Scegli un modello" : selectedModel)
@@ -407,7 +410,7 @@ final class ProjectStore: ObservableObject {
         request.model = selectedModel.isEmpty ? nil : selectedModel
         request.state = codexConnected ? "Analisi in corso" : "In attesa di Codex"
         document.requests.insert(request, at: 0); selectedRequestID = request.id
-        composer = ""; if section != .coordinator { section = .changes }; showInspector = false; saveDocument()
+        composer = ""; section = .coordinator; showInspector = false; saveDocument()
         if codexConnected { runPlan(request.id) } else { showConnections = true }
     }
 
