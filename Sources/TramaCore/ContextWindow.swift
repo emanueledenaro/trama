@@ -99,6 +99,7 @@ public enum ContextWindowFormat {
 
     /// True when the Italian reading of the percentage starts with a vowel (uno, otto, undici, ottanta).
     static func startsWithVowelSound(_ label: String) -> Bool {
+        // 11 and 1 read "undici" and "uno"; 8, 80-89 read "otto", "ottanta".
         label.hasPrefix("8") || label.hasPrefix("1%") || label.hasPrefix("1,") || label.hasPrefix("11%") || label.hasPrefix("11,")
     }
 
@@ -196,7 +197,7 @@ public struct ContextThresholdNotice: Equatable, Sendable {
 /// compaction and the warning threshold the person set for the project.
 public struct CoordinatorContextState: Codable, Equatable, Sendable {
     public static let defaultThreshold = 80
-    public static let thresholdRange = 50...95
+    public static let thresholdRange = 10...95
 
     /// The thread the usage belongs to; usage of any other thread is ignored.
     public private(set) var threadID: String?
