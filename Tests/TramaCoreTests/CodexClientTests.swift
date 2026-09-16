@@ -978,6 +978,7 @@ final class CodexClientTests: XCTestCase {
         let resume = try XCTUnwrap(transport.message(method: "thread/resume"))
         let params = try XCTUnwrap(resume["params"] as? [String: Any])
         XCTAssertEqual(params["threadId"] as? String, "thread-c1")
+        XCTAssertEqual(params["model"] as? String, "gpt-5.5")
         XCTAssertEqual(params["excludeTurns"] as? Bool, true)
         XCTAssertEqual(params["sandbox"] as? String, "read-only")
         XCTAssertEqual(params["approvalPolicy"] as? String, "never")
@@ -1149,6 +1150,29 @@ final class CodexClientTests: XCTestCase {
         let input = try XCTUnwrap(params["input"] as? [[String: Any]])
         XCTAssertEqual(input.compactMap { $0["text"] as? String }, ["Aggiornamento dello studio", "Cosa manca per la beta?"])
         XCTAssertFalse(transport.methods.contains("thread/start"))
+    }
+
+    func testCoordinatorNeverFallsBackToTheCodexDefaultModel() async {
+        // Without a model, Codex would use the default of the person's config.toml.
+        var settings = Self.coordinatorSettings
+        settings.model = "  "
+        let transport = FakeCodexTransport()
+        let client = CodexClient(transport: transport)
+        for resuming in [nil, "thread-c1"] {
+            do {
+                _ = try await client.openCoordinatorThread(settings, resuming: resuming)
+                XCTFail("Expected a missing model to be refused")
+            } catch {
+                XCTAssertEqual(error as? CodexClient.ClientError, .invalidModel("  "))
+            }
+        }
+        do {
+            _ = try await client.runCoordinatorTurn(threadID: "thread-c1", input: ["Ciao"], settings: settings) { _ in }
+            XCTFail("Expected a missing model to be refused")
+        } catch {
+            XCTAssertEqual(error as? CodexClient.ClientError, .invalidModel("  "))
+        }
+        XCTAssertTrue(transport.methods.isEmpty)
     }
 
     func testCoordinatorTurnRejectsEmptyInputBeforeCallingCodex() async {
