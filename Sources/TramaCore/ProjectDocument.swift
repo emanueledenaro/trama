@@ -46,7 +46,7 @@ public struct WorkRequest: Identifiable, Codable {
 }
 
 public struct ProjectDocument: Codable {
-    public static let currentSchemaVersion = 3
+    public static let currentSchemaVersion = 4
 
     public var schemaVersion = ProjectDocument.currentSchemaVersion
     public var requests: [WorkRequest] = []
@@ -55,6 +55,8 @@ public struct ProjectDocument: Codable {
     public var pact: PactEngine?
     /// Nil until the Product Owner grants it; selecting a folder never sets it.
     public var mandate: ProjectMandate?
+    /// The persistent Coordinator thread, its memory and study. Nil until the Coordinator first opens.
+    public var coordinator: CoordinatorState?
     public var currentCandidateID: String?
     public var lastSelectedModuleID: String?
     public var lastContextWasProject: Bool?
