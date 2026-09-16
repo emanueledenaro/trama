@@ -43,36 +43,93 @@ public struct CoordinatorSessionCredential: Equatable, Sendable {
 
 /// The project data a tool call reads, taken from Trama at the time of the call.
 public struct CoordinatorToolContext: Sendable {
+    /// A module of the project as the mandate scope names it.
+    public struct Module: Equatable, Sendable {
+        public var id: String
+        public var name: String
+        public var path: String
+
+        public init(id: String, name: String, path: String) {
+            self.id = id
+            self.name = name
+            self.path = path
+        }
+    }
+
     public var projectName: String
+    /// The document as it is at the time of the call, mandate included.
     public var document: ProjectDocument
     public var issues: [GitHubIssue]?
     public var github: GitHubSnapshot?
+    public var modules: [Module]
+    public var availableChecks: [ReadOnlyCheck]
 
-    public init(projectName: String, document: ProjectDocument, issues: [GitHubIssue]?, github: GitHubSnapshot?) {
+    public init(
+        projectName: String,
+        document: ProjectDocument,
+        issues: [GitHubIssue]?,
+        github: GitHubSnapshot?,
+        modules: [Module] = [],
+        availableChecks: [ReadOnlyCheck] = []
+    ) {
         self.projectName = projectName
         self.document = document
         self.issues = issues
         self.github = github
+        self.modules = modules
+        self.availableChecks = availableChecks
     }
 }
 
 public enum CoordinatorToolHostError: Error, Equatable, Sendable {
     case projectUnavailable
+    /// The project's mandate is no longer the one the call was authorized with.
+    case mandateChanged
 }
 
-/// Trama's side of the Coordinator tools.
+/// A plan the Coordinator orders within its mandate; Trama's planner writes it for the person to review.
+public struct CoordinatorPlanOrder: Equatable, Sendable {
+    public var kind: ProjectMandate.PlanKind
+    public var moduleIDs: [String]
+    /// The change to plan, with what the person asked.
+    public var summary: String
+    public var issueNumber: Int?
+    /// Pact decisions a correction restores.
+    public var decisionIDs: [String]
+
+    public init(kind: ProjectMandate.PlanKind, moduleIDs: [String], summary: String, issueNumber: Int?, decisionIDs: [String]) {
+        self.kind = kind
+        self.moduleIDs = moduleIDs
+        self.summary = summary
+        self.issueNumber = issueNumber
+        self.decisionIDs = decisionIDs
+    }
+}
+
+/// Trama's side of the Coordinator tools. The server has already checked the caller, its turn and,
+/// for actions, the mandate before any of these runs.
 public protocol CoordinatorToolHost: Sendable {
     /// Nil when the project is no longer open.
     func toolContext(projectID: UUID) async -> CoordinatorToolContext?
     /// Replaces the project's Coordinator memory and persists the document.
     func writeMemory(projectID: UUID, text: String) async throws -> CoordinatorMemory
+    /// Keeps the request and shows it to the person as a mandate card.
+    func askForMandate(projectID: UUID, request: MandateRequest) async throws -> MandateRequest
+    /// Keeps the request and shows it to the person as a decision card.
+    func askForDecision(projectID: UUID, request: DecisionRequest) async throws -> DecisionRequest
+    func runReadOnlyCheck(projectID: UUID, check: ReadOnlyCheck) async throws -> ReadOnlyCheckResult
+    /// Queues the planner for the order and returns the conversation request that will carry the plan.
+    /// Throws `mandateChanged` unless the project's mandate is still exactly `mandate`.
+    func preparePlan(projectID: UUID, order: CoordinatorPlanOrder, mandate: ProjectMandate) async throws -> UUID
 }
 
-/// The local MCP endpoint through which the Coordinator reads Trama and writes its memory.
+/// The local MCP endpoint through which the Coordinator reads Trama, keeps its memory, asks the
+/// person and acts within its mandate.
 ///
 /// It answers one stateless `POST /mcp` with JSON: HTTP status for transport and credentials,
 /// JSON-RPC errors for protocol problems, and tool results with `isError` for every refusal.
-/// The caller is identified only by its bearer token, never by the arguments.
+/// The caller is identified only by its bearer token, never by the arguments. Every call passes
+/// `callTool`, which checks session, turn and mandate before the tool runs.
 public actor CoordinatorToolServer {
     public static let path = "/mcp"
     public static let maximumBodyBytes = 1_048_576
@@ -304,30 +361,52 @@ public actor CoordinatorToolServer {
             // Like Synara, authority follows the caller's running turn; the turn metadata Codex sends
             // with each call must match it once the turn id is known.
             guard let turn = session.turn, turn.turnID == nil || callerTurnID == nil || callerTurnID == turn.turnID else {
-                return CoordinatorTools.failure("caller_turn_inactive", "This tool writes only while the Coordinator turn that calls it is running.")
+                return CoordinatorTools.failure("caller_turn_inactive", "This tool works only while the Coordinator turn that calls it is running.")
             }
-            guard case let .string(text)? = arguments["text"] else {
-                return CoordinatorTools.failure("invalid_arguments", "write_memory needs a text string.")
+        }
+        let projectID = session.projectID
+        do {
+            if tool == .writeMemory {
+                return try await CoordinatorTools.writeMemory(arguments, host: host, projectID: projectID)
+            }
+            guard let context = await host.toolContext(projectID: projectID) else {
+                return CoordinatorTools.projectUnavailable
+            }
+            switch tool.access {
+            case .read:
+                return CoordinatorTools.read(tool, arguments: arguments, context: context)
+            case .converse, .check:
+                return try await CoordinatorTools.converse(tool, arguments: arguments, context: context, host: host, projectID: projectID)
+            case .act:
+                return try await act(tool, arguments: arguments, context: context, projectID: projectID)
+            }
+        } catch let failure as CoordinatorTools.Failure {
+            return failure.result
+        } catch CoordinatorToolHostError.projectUnavailable {
+            return CoordinatorTools.projectUnavailable
+        } catch {
+            return CoordinatorTools.failure("operation_failed", "Trama could not complete \(tool.rawValue).")
+        }
+    }
+
+    /// The mandate check of every action: the action runs only when the mandate read at the time of
+    /// the call authorizes it, and only if that mandate is still in place when Trama starts it.
+    private func act(_ tool: CoordinatorTools.Tool, arguments: [String: JSONValue], context: CoordinatorToolContext, projectID: UUID) async throws -> JSONValue {
+        let intent = try CoordinatorTools.intent(tool, arguments: arguments, context: context)
+        var mandate = context.document.mandate
+        for _ in 0..<2 {
+            let decision = ProjectMandate.authorization(for: intent.action, moduleIDs: intent.moduleIDs, mandate: mandate)
+            guard decision == .authorized, let granted = mandate else {
+                return CoordinatorTools.refusal(decision, intent: intent, mandate: mandate)
             }
             do {
-                let memory = try await host.writeMemory(projectID: session.projectID, text: text)
-                return CoordinatorTools.success(json: .object([
-                    "revision": .integer(memory.revision),
-                    "bytes": .integer(memory.text.utf8.count),
-                    "limit": .integer(CoordinatorMemory.byteLimit)
-                ]))
-            } catch let error as CoordinatorMemoryError {
-                return CoordinatorTools.failure("memory_too_large", error.localizedDescription)
-            } catch CoordinatorToolHostError.projectUnavailable {
-                return CoordinatorTools.projectUnavailable
-            } catch {
-                return CoordinatorTools.failure("operation_failed", "Trama could not save the memory.")
+                return try await intent.perform(host, projectID, granted)
+            } catch CoordinatorToolHostError.mandateChanged {
+                guard let fresh = await host.toolContext(projectID: projectID) else { return CoordinatorTools.projectUnavailable }
+                mandate = fresh.document.mandate
             }
         }
-        guard let context = await host.toolContext(projectID: session.projectID) else {
-            return CoordinatorTools.projectUnavailable
-        }
-        return CoordinatorTools.read(tool, arguments: arguments, context: context)
+        return CoordinatorTools.failure("operation_failed", "The mandate changed while Trama started \(tool.rawValue); read_mandate and call it again.")
     }
 
     private static func errorResponse(id: JSONValue, code: Int, message: String) -> JSONValue {
@@ -357,15 +436,41 @@ public enum CoordinatorTool: String, CaseIterable, Sendable {
     case readIssues = "read_issues"
     case readHistory = "read_history"
     case writeMemory = "write_memory"
+    case requestMandate = "request_mandate"
+    case requestDecision = "request_decision"
+    case runReadOnlyCheck = "run_readonly_check"
+    case preparePlan = "prepare_plan"
 
-    var requiresActiveTurn: Bool { self == .writeMemory }
+    /// What a tool may touch. The server checks it before the tool runs.
+    public enum Access: Sendable {
+        /// Reads Trama's data about the project.
+        case read
+        /// Writes only the Coordinator's own notes and the questions it puts to the person.
+        case converse
+        /// Runs a check that cannot write to the project.
+        case check
+        /// Changes the project's work: only the mandate allows it.
+        case act
+    }
+
+    public var access: Access {
+        switch self {
+        case .readStudy, .readPact, .readMandate, .readIssues, .readHistory: .read
+        case .writeMemory, .requestMandate, .requestDecision: .converse
+        case .runReadOnlyCheck: .check
+        case .preparePlan: .act
+        }
+    }
+
+    /// Everything beyond reading happens only while the caller's turn runs.
+    var requiresActiveTurn: Bool { access != .read }
 }
 
 /// The Coordinator tools: definitions and the read handlers, as functions of the project data.
 enum CoordinatorTools {
     typealias Tool = CoordinatorTool
 
-    static let serverInstructions = "Trama tools read this project's study, Pact, mandate, GitHub data and conversation, and keep your memory for the project."
+    static let serverInstructions = "Trama tools read this project's study, Pact, mandate, GitHub data and conversation, keep your memory, put mandates and behavior decisions to the person, run read-only checks and act only within the mandate."
 
     static let maximumIssueBodyBytes = 16_000
     static let issueStates = ["open", "closed", "all"]
@@ -392,8 +497,10 @@ enum CoordinatorTools {
             case .writeMemory:
                 ("Replace your memory for this project with the given text (at most \(CoordinatorMemory.byteLimit) UTF-8 bytes). Trama gives it back to you whenever the thread starts or resumes.",
                  ["text": .object(["type": .string("string")])], ["text"])
+            case .requestMandate, .requestDecision, .runReadOnlyCheck, .preparePlan:
+                actionDefinition(tool)
             }
-            let readOnly = !tool.requiresActiveTurn
+            let readOnly = tool.access == .read || tool.access == .check
             return .object([
                 "name": .string(tool.rawValue),
                 "description": .string(description),
@@ -406,7 +513,7 @@ enum CoordinatorTools {
                 "annotations": .object([
                     "readOnlyHint": .bool(readOnly),
                     "destructiveHint": .bool(false),
-                    "idempotentHint": .bool(readOnly),
+                    "idempotentHint": .bool(tool.access == .read),
                     "openWorldHint": .bool(false)
                 ])
             ])
@@ -420,7 +527,8 @@ enum CoordinatorTools {
         case .readMandate: readMandate(context)
         case .readIssues: readIssues(arguments, context)
         case .readHistory: readHistory(arguments, context)
-        case .writeMemory: failure("invalid_arguments", "write_memory is not a read tool.")
+        case .writeMemory, .requestMandate, .requestDecision, .runReadOnlyCheck, .preparePlan:
+            failure("invalid_arguments", "\(tool.rawValue) is not a read tool.")
         }
     }
 
@@ -449,14 +557,29 @@ enum CoordinatorTools {
         return success(json: .object(["decisions": .array(decisions)]))
     }
 
+    /// The mandate, the modules it covers and what each action would get now, like Synara's context tool.
     private static func readMandate(_ context: CoordinatorToolContext) -> JSONValue {
-        guard let mandate = context.document.mandate else {
-            return success(json: .object([
-                "status": .string("missing"),
-                "meaning": .string("Without a mandate the Coordinator reads, runs read-only checks and proposes; it acts on nothing.")
-            ]))
-        }
+        let mandate = context.document.mandate
         var object: [String: JSONValue] = [
+            "modules": .array(context.modules.map { module in
+                .object([
+                    "id": .string(module.id),
+                    "name": .string(module.name),
+                    "path": .string(module.path),
+                    "inScope": .bool(mandate?.scopeModuleIDs.contains(module.id) ?? false)
+                ])
+            }),
+            "actions": .object(Dictionary(uniqueKeysWithValues: allActions.map { action in
+                (actionName(action), .string(authorizationCode(ProjectMandate.authorization(for: action, mandate: mandate))))
+            })),
+            "pendingMandateRequests": .integer(context.document.coordinator?.mandateRequests.filter(\.isPending).count ?? 0)
+        ]
+        guard let mandate else {
+            object["status"] = .string("missing")
+            object["meaning"] = .string("Without a mandate the Coordinator reads, runs read-only checks and proposes; it acts on nothing. Ask the person with request_mandate.")
+            return success(json: .object(object))
+        }
+        object.merge([
             "status": .string(mandate.status.rawValue),
             "version": .integer(mandate.version),
             "objectives": .array(mandate.objectives.map(JSONValue.string)),
@@ -466,7 +589,7 @@ enum CoordinatorTools {
             "limits": .array(mandate.limits.map(JSONValue.string)),
             "grantedBy": .string(mandate.grantedBy),
             "grantedAt": .string(mandate.grantedAt.formatted(.iso8601))
-        ]
+        ]) { _, new in new }
         if let revocation = mandate.revocation {
             object["revocation"] = .object([
                 "revokedBy": .string(revocation.revokedBy),
@@ -477,13 +600,19 @@ enum CoordinatorTools {
         return success(json: .object(object))
     }
 
-    private static func actionName(_ action: ProjectMandate.Action) -> String {
+    static let allActions: [ProjectMandate.Action] = ProjectMandate.PlanKind.allCases.map { .plan($0) } + [.executeInWorktree, .openPullRequest, .integrateCandidate]
+
+    static func actionName(_ action: ProjectMandate.Action) -> String {
         switch action {
         case .plan(let kind): "plan.\(kind.rawValue)"
         case .executeInWorktree: "executeInWorktree"
         case .openPullRequest: "openPullRequest"
         case .integrateCandidate: "integrateCandidate"
         }
+    }
+
+    static func action(named name: String) -> ProjectMandate.Action? {
+        allActions.first { actionName($0) == name }
     }
 
     private static func readIssues(_ arguments: [String: JSONValue], _ context: CoordinatorToolContext) -> JSONValue {
@@ -592,8 +721,10 @@ enum CoordinatorTools {
         success(text: String(decoding: encode(json), as: UTF8.self))
     }
 
-    static func failure(_ code: String, _ message: String) -> JSONValue {
-        let error = JSONValue.object(["error": .object(["code": .string(code), "message": .string(message)])])
+    static func failure(_ code: String, _ message: String, details: [String: JSONValue]? = nil) -> JSONValue {
+        var fields: [String: JSONValue] = ["code": .string(code), "message": .string(message)]
+        if let details { fields["details"] = .object(details) }
+        let error = JSONValue.object(["error": .object(fields)])
         return .object([
             "content": .array([.object(["type": .string("text"), "text": .string(String(decoding: encode(error), as: UTF8.self))])]),
             "isError": .bool(true)

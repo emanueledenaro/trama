@@ -118,6 +118,22 @@ struct ConversationTimelineTests {
         ])
     }
 
+    @Test("A plan the Coordinator ordered shows its progress while it runs, then its reply, without a person message")
+    func orderedPlanShowsProgress() {
+        var document = ProjectDocument()
+        let request = Self.request("Rimborso parziale")
+        document.requests = [request]
+        document.conversation?.appendActivity(requestID: request.id, title: "Piano ordinato dal Coordinatore", detail: "mandato v1")
+        let short = request.id.uuidString.prefix(8)
+
+        #expect(Self.chronology(document).isEmpty)
+        #expect(Self.chronology(document, running: [request.id]) == ["reply \(short) status: -"])
+
+        document.conversation?.recordReply(requestID: request.id, text: "Piano del rimborso", model: "m", references: [])
+        #expect(Self.chronology(document) == ["reply \(short) status m: Piano del rimborso"])
+        #expect(document.conversation?.events.count == 2)
+    }
+
     @Test("A new analysis of the same turn replaces the reply; a clarification opens a new turn")
     func repliesFollowTurns() {
         var document = ProjectDocument()
