@@ -1,6 +1,6 @@
 import Foundation
 
-public struct WorkRequest: Identifiable, Codable {
+public struct WorkRequest: Identifiable, Codable, Sendable {
     public var id = UUID()
     public var title: String
     public var moduleID: String
@@ -45,7 +45,7 @@ public struct WorkRequest: Identifiable, Codable {
     }
 }
 
-public struct ProjectDocument: Codable {
+public struct ProjectDocument: Codable, Sendable {
     public static let currentSchemaVersion = 4
 
     public var schemaVersion = ProjectDocument.currentSchemaVersion

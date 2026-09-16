@@ -331,7 +331,7 @@ public final class CodexClient: @unchecked Sendable {
     }
 
     /// True when a resume error means Codex has no such thread, so a new one may replace it.
-    static func isMissingThread(_ message: String) -> Bool {
+    public static func isMissingThread(_ message: String) -> Bool {
         let text = message.lowercased()
         let markers = ["no rollout found", "not found", "missing thread", "no such thread", "unknown thread", "does not exist", "invalid session id"]
         let subjects = ["thread", "rollout", "session"]

@@ -65,6 +65,30 @@ struct ProjectStudyTests {
         #expect(context.excerpt.hasSuffix("progetto."))
     }
 
+    @Test("Past the total limit, instruction files are listed without their text")
+    func instructionFilesHaveATotalLimit() throws {
+        let fixture = try Fixture()
+        defer { fixture.remove() }
+        let page = String(repeating: "Decisione architetturale documentata.\n", count: 70)
+        for index in 1...30 {
+            try page.write(to: fixture.root.appendingPathComponent(String(format: "docs/adr/%04d-extra.md", index)), atomically: true, encoding: .utf8)
+        }
+
+        let files = RepositoryInstructions().read(root: fixture.root)
+        let total = files.reduce(0) { $0 + $1.excerpt.utf8.count }
+        #expect(total <= RepositoryInstructions.maximumTotalBytes)
+        let omitted = files.filter { $0.excerpt.isEmpty }
+        #expect(!omitted.isEmpty)
+        #expect(omitted.allSatisfy { $0.isTruncated })
+        #expect(files.first?.path == "AGENTS.md")
+        #expect(files.first?.excerpt.isEmpty == false)
+
+        var sources = try fixture.sources()
+        sources.instructionFiles = files
+        let text = ProjectStudy.make(from: sources, previous: nil).study.text
+        #expect(text.contains("### \(omitted[0].path) (non incluso per il limite dello studio: leggilo dal repository)"))
+    }
+
     @Test("A Pact change recomputes only the Pact part")
     func pactChangeRecomputesPact() throws {
         let fixture = try Fixture()
