@@ -47,6 +47,8 @@ final class ProjectStore: ObservableObject {
     @Published var codexVersion = ""
     @Published var isPreparingSkills = false
     @Published var pendingApproval: CodexClient.ApprovalRequest?
+    /// Raw streamed reply text per request while a Codex turn is running. Not persisted.
+    @Published var streamingReplies: [UUID: String] = [:]
     var approvalQueue: [(request: CodexClient.ApprovalRequest, continuation: CheckedContinuation<CodexClient.ApprovalDecision, Never>)] = []
     let sessions = WorkspaceSessionManager()
     let conflictProbe = GitConflictProbe()
@@ -188,6 +190,7 @@ final class ProjectStore: ObservableObject {
             activePlanTask?.cancel(); rejectAllApprovals(); isPlanning = false; isExecuting = false
             intelligence.stop(); remoteConflicts.reset(); setupToken = UUID(); isPreparingSkills = false
             await codex.cancelTurn()
+            streamingReplies = [:]
         }
         do {
             let snapshot = try await Task.detached { try RepositoryScanner().scan(root: root, isDemo: isDemo) }.value
@@ -286,6 +289,15 @@ final class ProjectStore: ObservableObject {
         catch { errorMessage = error.localizedDescription }
     }
 
+    func openInMap(_ request: WorkRequest) {
+        selectedRequestID = request.id
+        selectedModuleID = request.moduleID == "project" ? nil : request.moduleID
+        section = .map
+        showInspector = selectedModuleID != nil
+    }
+
+    func returnToCoordinator() { section = .coordinator }
+
     func revealProject() { if let root = localRoot { NSWorkspace.shared.activateFileViewerSelecting([root]) } }
 
     func connectCodex() async {
@@ -352,7 +364,7 @@ final class ProjectStore: ObservableObject {
         request.model = selectedModel.isEmpty ? nil : selectedModel
         request.state = codexConnected ? "Analisi in corso" : "In attesa di Codex"
         document.requests.insert(request, at: 0); selectedRequestID = request.id
-        composer = ""; section = .changes; showInspector = false; saveDocument()
+        composer = ""; if section != .coordinator { section = .changes }; showInspector = false; saveDocument()
         if codexConnected { runPlan(request.id) } else { showConnections = true }
     }
 
@@ -369,6 +381,7 @@ final class ProjectStore: ObservableObject {
         document.requests[index].sourceFingerprint = fingerprint
         let request = document.requests[index]
         let token = UUID(); operationID = token
+        streamingReplies[id] = ""
         intelligence.invalidate()
         let decisions = document.pact?.decisions ?? []
         let versions = Dictionary(uniqueKeysWithValues: decisions.map { ($0.id, $0.version) })
@@ -393,9 +406,9 @@ final class ProjectStore: ObservableObject {
         saveDocument()
         activePlanTask = Task { [weak self] in
             guard let self else { return }
-            defer { if operationID == token { isPlanning = false; saveDocument() } }
+            defer { if operationID == token { isPlanning = false; streamingReplies[id] = nil; saveDocument() } }
             do {
-                let result = try await codex.plan(prompt: prompt, cwd: root, model: model, outputSchema: PlanningReply.outputSchema)
+                let result = try await codex.plan(prompt: prompt, cwd: root, model: model, outputSchema: PlanningReply.outputSchema, onText: { [weak self] delta in Task { @MainActor in guard let self, self.operationID == token, self.localRoot == root else { return }; self.streamingReplies[id, default: ""] += delta } })
                 let reply = try PlanningReply.parse(raw: result, sourceSnapshotID: request.sourceFingerprint, knownModuleIDs: moduleIDs, knownFiles: knownFiles, existingDecisionIDs: decisions.map(\.id))
                 guard operationID == token, localRoot == root, let i = document.requests.firstIndex(where: { $0.id == id }) else { return }
                 document.requests[i].replyKind = reply.kind
