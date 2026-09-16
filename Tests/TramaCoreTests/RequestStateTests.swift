@@ -28,7 +28,7 @@ struct RequestStateTests {
         #expect(RequestState(legacy: "Stato inventato") == .stale)
     }
 
-    @Test("Encoding writes the label so older builds still read the document")
+    @Test("Encoding writes the persisted raw value so older builds still read the document")
     func encodesLabel() throws {
         let data = try JSONEncoder().encode(RequestState.reviewPending)
         #expect(String(decoding: data, as: UTF8.self) == "\"Da revisionare\"")
