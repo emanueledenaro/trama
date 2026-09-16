@@ -167,9 +167,9 @@ struct WorkspaceView: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
             }
-            Text("Richiesta a Codex").font(.caption.weight(.medium)).foregroundStyle(.secondary)
+            Text(store.section == .coordinator ? "Messaggio al Coordinatore" : "Richiesta a Codex").font(.caption.weight(.medium)).foregroundStyle(.secondary)
             HStack(alignment: .bottom, spacing: TramaSpacing.related) {
-                TextField("Cosa vuoi capire o modificare?", text: $store.composer, axis: .vertical)
+                TextField(store.section == .coordinator ? "Scrivi al Coordinatore: cosa vuoi capire o modificare?" : "Cosa vuoi capire o modificare?", text: $store.composer, axis: .vertical)
                     .textFieldStyle(.plain).lineLimit(1...4).font(.body)
                     .onSubmit { store.submitRequest() }
                     .accessibilityLabel("Richiesta a Codex per il modulo selezionato")
@@ -179,7 +179,7 @@ struct WorkspaceView: View {
                     Button { store.submitRequest() } label: { Image(systemName: "arrow.up").fontWeight(.semibold) }
                         .buttonStyle(.borderedProminent).buttonBorderShape(.circle)
                         .disabled(store.composer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || (store.codexConnected && store.selectedModelInfo == nil))
-                        .help("Pianifica con Codex").accessibilityLabel("Pianifica con Codex")
+                        .help(store.section == .coordinator ? "Invia al Coordinatore" : "Pianifica con Codex").accessibilityLabel(store.section == .coordinator ? "Invia al Coordinatore" : "Pianifica con Codex")
                 }
             }
         }

@@ -17,7 +17,7 @@ final class ProjectStore: ObservableObject {
     @Published var project: RepositorySnapshot?
     @Published var recentProjects: [RecentProject] = []
     @Published var selectedModuleID: String?
-    @Published var section: WorkspaceSection? = .map
+    @Published var section: WorkspaceSection? = .coordinator
     @Published var query = ""
     @Published var mapStyle = "Mappa"
     @Published var showInspector = true
@@ -215,7 +215,7 @@ final class ProjectStore: ObservableObject {
                 selectedRequestID = document.lastSelectedRequestID ?? document.requests.first?.id
                 if document.lastContextWasProject == true { selectedModuleID = nil }
                 else { selectedModuleID = snapshot.modules.first(where: { $0.id == document.lastSelectedModuleID })?.id ?? snapshot.modules.first(where: { $0.name.lowercased().contains("ordin") || $0.name.lowercased().contains("order") })?.id ?? snapshot.modules.first?.id }
-                section = WorkspaceSection(rawValue: document.lastSection ?? "") ?? .map
+                section = WorkspaceSection(rawValue: document.lastSection ?? "") ?? .coordinator
                 reconcileModelSelection()
                 Task {
                     guard token == self.loadToken, self.localRoot == root else { return }
