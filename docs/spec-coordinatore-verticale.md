@@ -2,7 +2,7 @@
 
 Stato: direzione approvata da Emanuele il 16 settembre 2026 dopo l'intervista registrata negli ADR 0006 e 0007. Questa specifica sostituisce l'ordine C03, C04, C05 del [piano operativo](piano-operativo.md) con un solo incremento verticale. Le funzioni esistenti restano la base; la [specifica del Coordinatore](spec-coordinatore.md) resta valida per tutto ciò che qui non viene ridefinito.
 
-Riferimenti: [ADR 0006](adr/0006-coordinatore-thread-persistente-con-strumenti.md), [ADR 0007](adr/0007-finestra-centrata-su-decisioni-team-e-verifiche.md), [riferimento visivo della app Codex](reference/design-app-codex.md), [glossario](../CONTEXT.md).
+Riferimenti: [ADR 0006](adr/0006-coordinatore-thread-persistente-con-strumenti.md), [ADR 0007](adr/0007-finestra-centrata-su-decisioni-team-e-verifiche.md), [riferimento visivo della app Codex](reference/design-app-codex.md), [riferimento funzionale Synara](reference/synara-funzioni.md), [glossario](../CONTEXT.md).
 
 ## Problema
 

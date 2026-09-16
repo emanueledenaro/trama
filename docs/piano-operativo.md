@@ -2,7 +2,7 @@
 
 Stato: incremento verticale del Coordinatore approvato da Emanuele il 16 settembre 2026. Questo piano sostituisce l'ordine C03, C04, C05 con i ticket V01-V09 e mantiene requisiti, ottimizzazioni e prove precedenti.
 
-[Specifica dell'incremento verticale](spec-coordinatore-verticale.md) · [Specifica del Coordinatore](spec-coordinatore.md) · [ADR 0006](adr/0006-coordinatore-thread-persistente-con-strumenti.md) · [ADR 0007](adr/0007-finestra-centrata-su-decisioni-team-e-verifiche.md) · [Riferimento visivo](reference/design-app-codex.md) · [Intervista approvata](progettazione/coordinatore-intervista.md) · [Piano iniziale conservato](pianificazione/piano-iniziale-2026-09-12.md).
+[Specifica dell'incremento verticale](spec-coordinatore-verticale.md) · [Specifica del Coordinatore](spec-coordinatore.md) · [ADR 0006](adr/0006-coordinatore-thread-persistente-con-strumenti.md) · [ADR 0007](adr/0007-finestra-centrata-su-decisioni-team-e-verifiche.md) · [Riferimento visivo](reference/design-app-codex.md) · [Riferimento funzionale Synara](reference/synara-funzioni.md) · [Intervista approvata](progettazione/coordinatore-intervista.md) · [Piano iniziale conservato](pianificazione/piano-iniziale-2026-09-12.md).
 
 ## Stato reale di partenza
 
