@@ -73,6 +73,20 @@ struct CoordinatorView: View {
                 Text(store.coordinatorThreadID == nil ? "Il Coordinatore apre il suo thread" : "Il Coordinatore riprende il suo thread")
             }
             .statusLine()
+        case .unavailable where store.needsModelChoice:
+            Divider()
+            HStack(spacing: TramaSpacing.compact) {
+                Image(systemName: "cpu").foregroundStyle(.orange)
+                Text(CoordinatorModelChoice.preferredUnavailableMessage).lineLimit(3)
+                Spacer(minLength: TramaSpacing.compact)
+                Menu("Scegli un modello") {
+                    ForEach(store.models) { model in
+                        Button(model.displayName) { store.selectModel(model.model) }
+                    }
+                }
+                .fixedSize()
+            }
+            .statusLine()
         case .unavailable(let reason):
             Divider()
             HStack(spacing: TramaSpacing.compact) {
@@ -209,12 +223,37 @@ struct CoordinatorView: View {
                 Text("Tu · \(message.moduleName)")
                 Text(message.date, format: .dateTime.day().month().hour().minute())
             }.font(.caption).foregroundStyle(.secondary)
-            Text(message.text)
-                .textSelection(.enabled)
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(TramaSpacing.related)
-                .background(.quaternary, in: RoundedRectangle(cornerRadius: TramaRadius.card))
-                .frame(maxWidth: 540, alignment: .trailing)
+            let parts = PastedText.extractTrailing(from: message.text)
+            let request = store.document.requests.first { $0.id == message.requestID }
+            let images = request?.request == message.text ? (request?.attachments ?? []) : []
+            if !images.isEmpty {
+                HStack(spacing: TramaSpacing.compact) {
+                    ForEach(images, id: \.self) { path in
+                        if let image = NSImage(contentsOfFile: path) {
+                            Image(nsImage: image).resizable().scaledToFill()
+                                .frame(width: 72, height: 72)
+                                .clipShape(RoundedRectangle(cornerRadius: TramaRadius.control, style: .continuous))
+                                .accessibilityLabel("Immagine allegata")
+                        } else {
+                            Label("Immagine non più disponibile", systemImage: "photo").font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            }
+            ForEach(Array(parts.texts.enumerated()), id: \.offset) { _, pasted in
+                let card = PastedText(text: pasted)
+                Label("\(card.title) · testo incollato, \(card.sizeLabel)", systemImage: "doc.plaintext")
+                    .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                    .help(String(pasted.prefix(2_000)))
+            }
+            if !parts.prompt.isEmpty {
+                Text(parts.prompt)
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(TramaSpacing.related)
+                    .background(.quaternary, in: RoundedRectangle(cornerRadius: TramaRadius.card))
+                    .frame(maxWidth: 540, alignment: .trailing)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .trailing)
     }
@@ -275,7 +314,7 @@ struct CoordinatorView: View {
             }
         case .contextNotice:
             HStack(alignment: .firstTextBaseline, spacing: TramaSpacing.control) {
-                Image(systemName: "arrow.triangle.2.circlepath")
+                Image(systemName: row.card.title == ContextThresholdNotice.cardTitle ? "gauge.with.dots.needle.67percent" : "arrow.triangle.2.circlepath")
                 VStack(alignment: .leading, spacing: TramaSpacing.compact) {
                     Text(row.card.title).font(.callout.weight(.semibold))
                     if let detail = row.card.detail { Text(detail).fixedSize(horizontal: false, vertical: true) }

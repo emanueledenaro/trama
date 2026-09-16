@@ -94,6 +94,14 @@ public enum ComposerMentions {
         tokenMatches(in: text, whileTyping: false).first { $0.range.upperBound == cursor }?.range
     }
 
+    /// UTF-16 ranges of the tokens that name real project objects: the editor shows them as chips
+    /// and removes each one whole.
+    public static func resolvedTokenRanges(in text: String, sources: MentionSources) -> [Range<Int>] {
+        tokenMatches(in: text, whileTyping: false).compactMap { match in
+            resolve(path: match.path, sources: sources) == nil ? nil : match.range
+        }
+    }
+
     private static func tokenMatches(in text: String, whileTyping: Bool) -> [(path: String, range: Range<Int>)] {
         guard let expression = try? NSRegularExpression(pattern: whileTyping ? typingPattern : readPattern) else { return [] }
         let string = text as NSString
