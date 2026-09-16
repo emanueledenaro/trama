@@ -41,7 +41,7 @@ Il catalogo dell'account includeva `gpt-6-astra` (predefinito Codex) e `gpt-5.6-
 
 - La finestra del modello in prova è 828.400 token. Lo studio occupa il 4,1%. La soglia minima è 1% (prima 10%, e 50% ancora prima): altrimenti l'avviso non scatta su questa finestra. Il selettore offre 1%, poi 5% e successivi di 5 in 5 fino a 95%. Il predefinito resta 80%.
 - Il misuratore usa `last.totalTokens` dell'ultima richiesta, come Synara, non il cumulativo del thread. Dopo il secondo turno è salito da 34.204 a 41.921.
-- La compattazione del provider non è apparsa in questa prova. I test coprono gli eventi; Trama non la simula.
+- La compattazione del provider non è apparsa in questa prova. Trama osserva `thread/compacting`, `thread/compacted` e gli elementi `contextCompaction` (`item/started`, `item/updated`, `item/completed`). Non la simula.
 - Skill `/`, testo incollato e immagini sono coperti dai test e dal composer, non da un invio reale in questa prova. Non c'erano decisioni del Patto nel clone, quindi niente menzione di decisione nell'app.
 - `CFFIXED_USER_HOME` non isola `UserDefaults`. Al primo avvio `lastProject` ha aperto anche `/tmp/trama-v02-proof/luna/trama`. Quel documento è nella home isolata, non in Application Support reale. Gli avvii successivi del driver saltavano `restoreProject`.
 - `cacheDisplay` non disegna i materiali traslucidi né, in questa sessione, il testo nella bolla della persona. Il testo inviato è nella cattura del composer e nella riga di attività.

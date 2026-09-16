@@ -1903,13 +1903,15 @@ private actor Core {
             if let snapshot = ContextUsageSnapshot(codexNotification: .object(params)) {
                 observer(.contextUsage(snapshot))
             }
-        case "item/started", "item/completed":
+        case "item/started", "item/updated", "item/completed":
             guard let item = params["item"]?.objectValue, item["type"]?.stringValue == "contextCompaction" else { return }
-            if method == "item/started" {
-                observer(.compaction(.inProgress))
-            } else {
+            if method == "item/completed" {
                 observer(.compaction(item["status"]?.stringValue == "failed" ? .failed : .completed))
+            } else {
+                observer(.compaction(.inProgress))
             }
+        case "thread/compacting":
+            observer(.compaction(.inProgress))
         case "thread/compacted":
             observer(.compaction(.completed))
         default:

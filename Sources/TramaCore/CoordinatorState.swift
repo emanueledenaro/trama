@@ -6,7 +6,7 @@ public struct CoordinatorState: Codable, Equatable, Sendable {
     public var thread: CoordinatorThreadRecord?
     public var memory = CoordinatorMemory()
     public var study: ProjectStudy?
-    /// Context window use of the thread and the person's warning threshold. Nil in documents before V07.
+    /// Context window use of the thread and the person's warning threshold. Nil until usage or a threshold is stored.
     public var context: CoordinatorContextState?
 
     public init() {}

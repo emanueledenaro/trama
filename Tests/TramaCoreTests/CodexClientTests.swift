@@ -1254,6 +1254,8 @@ final class CodexClientTests: XCTestCase {
             transport.emit(usage("thread-c1", 40_000))
             transport.emit(usage("child-thread", 99_000))
             transport.emit(["method": "item/started", "params": base.merging(["item": ["type": "contextCompaction", "id": "cc-1"]]) { $1 }])
+            transport.emit(["method": "thread/compacting", "params": base])
+            transport.emit(["method": "item/updated", "params": base.merging(["item": ["type": "contextCompaction", "id": "cc-1", "status": "inProgress"]]) { $1 }])
             transport.emit(["method": "item/started", "params": ["threadId": "child-thread", "turnId": "x", "item": ["type": "contextCompaction", "id": "cc-2"]]])
             transport.emit(["method": "item/completed", "params": base.merging(["item": ["type": "contextCompaction", "id": "cc-1"]]) { $1 }])
             transport.emitCompletedResponse(threadID: "thread-c1", turnID: "turn-u1", text: "Fatto.")
@@ -1267,9 +1269,11 @@ final class CodexClientTests: XCTestCase {
         _ = try await client.runCoordinatorTurn(threadID: "thread-c1", input: ["Ciao"], settings: Self.coordinatorSettings) { _ in }
 
         let deadline = Date().addingTimeInterval(2)
-        while events.values.count < 6, Date() < deadline { try await Task.sleep(nanoseconds: 10_000_000) }
+        while events.values.count < 8, Date() < deadline { try await Task.sleep(nanoseconds: 10_000_000) }
         XCTAssertEqual(events.values, [
             .contextUsage(ContextUsageSnapshot(usedTokens: 40_000, maxTokens: 258_400, totalProcessedTokens: 120_000, inputTokens: 39_990, cachedInputTokens: 0, outputTokens: 10, reasoningOutputTokens: 0)),
+            .compaction(.inProgress),
+            .compaction(.inProgress),
             .compaction(.inProgress),
             .compaction(.completed),
             .contextUsage(ContextUsageSnapshot(usedTokens: 12_000, maxTokens: 258_400, totalProcessedTokens: 36_000, inputTokens: 11_990, cachedInputTokens: 0, outputTokens: 10, reasoningOutputTokens: 0)),
@@ -1280,7 +1284,7 @@ final class CodexClientTests: XCTestCase {
         await client.observeThread("thread-c1", nil)
         transport.emit(usage("thread-c1", 50_000))
         try await Task.sleep(nanoseconds: 50_000_000)
-        XCTAssertEqual(events.values.count, 6)
+        XCTAssertEqual(events.values.count, 8)
     }
 
     func testListModelsReadsTheReasoningEffortsOfEachModel() async throws {
