@@ -29,6 +29,7 @@ final class ProjectStore: ObservableObject {
     @Published var selectedRequestID: UUID?
     @Published var filePreview: FilePreview?
     @Published var showConnections = false
+    @Published var showMandate = false
     @Published var isPlanning = false
     @Published var isExecuting = false
     @Published var accountLabel = "Codex non collegato"
@@ -297,6 +298,48 @@ final class ProjectStore: ObservableObject {
     }
 
     func returnToCoordinator() { section = .coordinator }
+
+    // MARK: Project mandate
+
+    /// The label used as actor for mandate changes made from this app.
+    private var mandateActor: String { accountLabel.isEmpty ? "Product Owner" : accountLabel }
+
+    func grantMandate(objectives: [String], priorities: [String], scopeModuleIDs: [String], authorizedActions: [ProjectMandate.Action], limits: [String]) {
+        guard let project else { return }
+        do {
+            document.mandate = try ProjectMandate.grant(projectID: project.id, objectives: objectives, priorities: priorities, scopeModuleIDs: scopeModuleIDs, authorizedActions: authorizedActions, limits: limits, grantedBy: mandateActor)
+            activity.insert("Mandato concesso al Coordinatore per \(project.name).", at: 0)
+            saveDocument()
+        } catch { errorMessage = Self.mandateMessage(error) }
+    }
+
+    func correctMandate(objectives: [String], priorities: [String], scopeModuleIDs: [String], authorizedActions: [ProjectMandate.Action], limits: [String]) {
+        guard let current = document.mandate else { return }
+        do {
+            document.mandate = try current.corrected(objectives: objectives, priorities: priorities, scopeModuleIDs: scopeModuleIDs, authorizedActions: authorizedActions, limits: limits, correctedBy: mandateActor)
+            activity.insert("Mandato corretto: versione \(document.mandate?.version ?? current.version).", at: 0)
+            saveDocument()
+        } catch { errorMessage = Self.mandateMessage(error) }
+    }
+
+    func revokeMandate(reason: String) {
+        guard let current = document.mandate else { return }
+        document.mandate = current.revoked(by: mandateActor, reason: reason)
+        activity.insert("Mandato revocato.", at: 0)
+        saveDocument()
+    }
+
+    private static func mandateMessage(_ error: Error) -> String {
+        switch error as? ProjectMandateError {
+        case .missingField("objectives"): "Indica almeno un obiettivo per il mandato."
+        case .missingField("scopeModuleIDs"): "Scegli almeno un modulo nel perimetro del mandato."
+        case .missingField("authorizedActions"): "Scegli almeno un'azione autorizzata."
+        case .missingField: "Il mandato non è completo."
+        case .actionRequiresPerson: "Nuove funzioni e compromessi restano decisioni della persona e non entrano nel mandato."
+        case .revoked: "Il mandato è revocato: concedine uno nuovo per modificarlo."
+        case nil: error.localizedDescription
+        }
+    }
 
     func revealProject() { if let root = localRoot { NSWorkspace.shared.activateFileViewerSelecting([root]) } }
 
