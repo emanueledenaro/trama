@@ -94,5 +94,55 @@
     "id": 5440897408,
     "title": "C16: Usare Trama funzionante per sviluppare Trama senza regressioni",
     "url": "https://github.com/emanueledenaro/trama/issues/48"
+  },
+  "V01": {
+    "number": 64,
+    "title": "V01: Timeline degli eventi della conversazione",
+    "url": "https://github.com/emanueledenaro/trama/issues/64"
+  },
+  "V02": {
+    "number": 65,
+    "title": "V02: Il Coordinatore studia il progetto e lo ricorda",
+    "url": "https://github.com/emanueledenaro/trama/issues/65"
+  },
+  "V03": {
+    "number": 66,
+    "title": "V03: Mandato e decisioni dalla conversazione",
+    "url": "https://github.com/emanueledenaro/trama/issues/66"
+  },
+  "V04": {
+    "number": 67,
+    "title": "V04: Team di progetto e incarico in worktree",
+    "url": "https://github.com/emanueledenaro/trama/issues/67"
+  },
+  "V05": {
+    "number": 68,
+    "title": "V05: Candidato verificato in chat",
+    "url": "https://github.com/emanueledenaro/trama/issues/68"
+  },
+  "V06": {
+    "number": 69,
+    "title": "V06: Impianto della finestra centrato su decisioni, team e verifiche",
+    "url": "https://github.com/emanueledenaro/trama/issues/69"
+  },
+  "V07": {
+    "number": 70,
+    "title": "V07: Composer con menzioni e misuratore della finestra di contesto",
+    "url": "https://github.com/emanueledenaro/trama/issues/70"
+  },
+  "V08": {
+    "number": 71,
+    "title": "V08: Forma dell'adattatore provider con Codex come unico adattatore",
+    "url": "https://github.com/emanueledenaro/trama/issues/71"
+  },
+  "V09": {
+    "number": 72,
+    "title": "V09: Prova reale Trama su Trama e chiusura dell'incremento",
+    "url": "https://github.com/emanueledenaro/trama/issues/72"
+  },
+  "SPEC-V": {
+    "number": 63,
+    "title": "Specifica: il Coordinatore vero, incremento verticale",
+    "url": "https://github.com/emanueledenaro/trama/issues/63"
   }
 }

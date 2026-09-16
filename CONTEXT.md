@@ -22,6 +22,16 @@ Team di progetto: l'insieme degli specialisti appartenenti a un singolo progetto
 
 Specialista: un agente con una competenza e un incarico motivato all'interno di un team di progetto. Il ruolo è distinto dal modello AI usato per svolgerlo e non conferisce autorità sulle decisioni del Product Owner.
 
+Incarico: un lavoro assegnato dal Coordinatore a uno specialista, con obiettivo, perimetro, dipendenze e verifiche richieste. Un incarico produce candidati; la delega è il legame tra quell'incarico, le decisioni applicabili e il mandato.
+
+Studio del progetto: la conoscenza che il Coordinatore ha del progetto attivo prima di dialogare: codice e moduli, documenti, issue e pull request, decisioni, mandato, incarichi e candidati, eventi del monitor e cronologia della chat. Lo studio avviene all'apertura del progetto e si aggiorna quando il progetto cambia.
+
+Memoria del Coordinatore: le note che il Coordinatore conserva per un progetto oltre la durata della sua finestra di contesto. È distinta dallo studio, che Trama ricava dai dati, e dalla cronologia, che è la conversazione stessa.
+
+Scheda: un atto del metodo mostrato nella conversazione: studio, proposta di team, mandato, incarico, decisione, candidato, conflitto. Una scheda non è un log di strumenti né un messaggio libero.
+
+Ispettore: la superficie che mostra il dettaglio di ciò che la persona tocca nella conversazione o nella sidebar: decisione, candidato, specialista, modulo, issue, gruppo. Non è una sezione da visitare a sé.
+
 Progetto attivo: il progetto cui si riferisce il dialogo corrente con il Coordinatore. È distinto dai progetti che hanno lavoro in corso.
 
 Mandato di progetto: l'autorizzazione persistente del Product Owner a perseguire obiettivi entro limiti definiti per un progetto. La delega di un singolo incarico deve rientrare nel mandato e nelle decisioni applicabili.

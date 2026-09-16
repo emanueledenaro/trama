@@ -1,38 +1,49 @@
 # Piano operativo vigente di Trama
 
-Stato: modello del Coordinatore e simulazione del primo utilizzo approvati da Emanuele. Questo piano sostituisce le scelte del piano iniziale incompatibili con l’intervista, mantenendo requisiti, ottimizzazioni e prove precedenti.
+Stato: incremento verticale del Coordinatore approvato da Emanuele il 16 settembre 2026. Questo piano sostituisce l'ordine C03, C04, C05 con i ticket V01-V09 e mantiene requisiti, ottimizzazioni e prove precedenti.
 
-[Specifica completa](spec-coordinatore.md) · [Intervista approvata](progettazione/coordinatore-intervista.md) · [Piano iniziale conservato](pianificazione/piano-iniziale-2026-09-12.md).
+[Specifica dell'incremento verticale](spec-coordinatore-verticale.md) · [Specifica del Coordinatore](spec-coordinatore.md) · [ADR 0006](adr/0006-coordinatore-thread-persistente-con-strumenti.md) · [ADR 0007](adr/0007-finestra-centrata-su-decisioni-team-e-verifiche.md) · [Riferimento visivo](reference/design-app-codex.md) · [Intervista approvata](progettazione/coordinatore-intervista.md) · [Piano iniziale conservato](pianificazione/piano-iniziale-2026-09-12.md).
 
 ## Stato reale di partenza
 
-Base pubblicata verificata: `cf47ba3`, con roadmap della PR #49, incremento design della PR #50 e cronologia del Coordinatore della PR #52 integrati. C01/#33 e correzione inspector #51 sono chiusi dopo test, prova app, revisione e CI di main riuscita (run 34769855169). La verifica complessiva di #21 e #22 resta aperta.
+Base pubblicata: `4507788`, con la cronologia del Coordinatore (C01, #33), la chat in streaming con fonti (C02, PR #55), il modello del mandato (PR #56) e il campo di scrittura solo nel Coordinatore con RequestState (PR #62) integrati. C01 è chiuso e verificato; C02 (#34) resta aperto perché le prove reali e il documento di verifica arrivano con V09 sul nuovo runtime. La verifica complessiva di #21 e #22 resta aperta e va ripetuta sul nuovo impianto.
 
-Il runtime attuale è centrato su un solo progetto e il cambio progetto interrompe Codex. La cronologia persistente C01 è verificata, documentata in [coordinatore-cronologia](verifiche/coordinatore-cronologia.md). Streaming e team concorrenti sono lavoro da realizzare. Catalogo, scanner, Patto, sessioni, GitHub, modelli e monitor esistenti costituiscono la base da estendere.
+Il Coordinatore attuale apre un thread effimero a ogni messaggio, riceve solo la richiesta e le decisioni, può soltanto leggere file e non compone un team. Il Product Owner lo ha giudicato inutilizzabile rispetto alla specifica: da qui l'incremento verticale. Catalogo, scanner, Patto, sessioni, GitHub, modelli e monitor esistenti restano la base da estendere.
 
 ## Ordine del lavoro
 
-Conservare l’incremento #22 integrato. Il crash dell’inspector #51 è risolto e C01 è completato. Il prossimo incremento è C02/#34. C01-C04 portano un primo percorso verticale dalla cronologia esistente alla chat e a un incarico isolato verificato. Le altre fasi seguono le dipendenze effettive; nessun numero fisso limita la composizione dei futuri team.
+I ticket V01-V09 costruiscono il Coordinatore vero per fette verticali, ognuna dimostrabile. V07 corre in parallelo con V03-V05; V06 in parallelo con V05. C03, C04 e C05 sono chiusi come sostituiti; #57, #58, #59 e #60 sono chiusi come assorbiti o realizzati.
 
 | Ticket | Consegna | Bloccato da |
 | --- | --- | --- |
-| [#51](https://github.com/emanueledenaro/trama/issues/51) | Correggere il crash dell’inspector, completato | Nessuno |
-| [#33](https://github.com/emanueledenaro/trama/issues/33) | Ritrovare chat e richieste senza perdere i dati esistenti, completato | [#51](https://github.com/emanueledenaro/trama/issues/51), verifica UI |
-| [#34](https://github.com/emanueledenaro/trama/issues/34) | Dialogare con il Coordinatore in streaming e aprire le fonti | [#33](https://github.com/emanueledenaro/trama/issues/33) |
-| [#35](https://github.com/emanueledenaro/trama/issues/35) | Concedere un mandato e decidere il comportamento dalla chat | [#34](https://github.com/emanueledenaro/trama/issues/34) |
-| [#36](https://github.com/emanueledenaro/trama/issues/36) | Portare un incarico dalla chat a un candidato verificato | [#35](https://github.com/emanueledenaro/trama/issues/35) |
-| [#37](https://github.com/emanueledenaro/trama/issues/37) | Comporre specialisti dinamici e controllarli da Team | [#36](https://github.com/emanueledenaro/trama/issues/36) |
-| [#38](https://github.com/emanueledenaro/trama/issues/38) | Ricalcolare solo gli incarichi coinvolti da decisioni e perimetri | [#37](https://github.com/emanueledenaro/trama/issues/37) |
-| [#39](https://github.com/emanueledenaro/trama/issues/39) | Cambiare progetto mentre i team autorizzati continuano | [#37](https://github.com/emanueledenaro/trama/issues/37) |
-| [#40](https://github.com/emanueledenaro/trama/issues/40) | Mostrare in chat conflitti tra specialisti e collaboratori GitHub | [#37](https://github.com/emanueledenaro/trama/issues/37), [#38](https://github.com/emanueledenaro/trama/issues/38) |
-| [#41](https://github.com/emanueledenaro/trama/issues/41) | Integrare candidati tramite mandato senza falsare la revisione umana | [#38](https://github.com/emanueledenaro/trama/issues/38), [#40](https://github.com/emanueledenaro/trama/issues/40) |
-| [#42](https://github.com/emanueledenaro/trama/issues/42) | Aggiornare ticket e checklist solo quando le prove lo consentono | [#41](https://github.com/emanueledenaro/trama/issues/41) |
-| [#43](https://github.com/emanueledenaro/trama/issues/43) | Riprendere il Coordinatore dopo limiti, chiusura e indisponibilità | [#39](https://github.com/emanueledenaro/trama/issues/39) |
-| [#44](https://github.com/emanueledenaro/trama/issues/44) | Configurare Trama al primo avvio con una guida riprendibile | [#34](https://github.com/emanueledenaro/trama/issues/34), [#35](https://github.com/emanueledenaro/trama/issues/35) |
-| [#45](https://github.com/emanueledenaro/trama/issues/45) | Imparare a conoscere un progetto con il primo esercizio guidato | [#44](https://github.com/emanueledenaro/trama/issues/44) |
-| [#46](https://github.com/emanueledenaro/trama/issues/46) | Completare gli esercizi di modifica, decisione e conflitto | [#45](https://github.com/emanueledenaro/trama/issues/45), [#36](https://github.com/emanueledenaro/trama/issues/36), [#38](https://github.com/emanueledenaro/trama/issues/38), [#40](https://github.com/emanueledenaro/trama/issues/40), [#41](https://github.com/emanueledenaro/trama/issues/41) |
-| [#47](https://github.com/emanueledenaro/trama/issues/47) | Migliorare i team con pratiche verificate e reversibili | [#37](https://github.com/emanueledenaro/trama/issues/37), [#42](https://github.com/emanueledenaro/trama/issues/42), [#39](https://github.com/emanueledenaro/trama/issues/39) |
-| [#48](https://github.com/emanueledenaro/trama/issues/48) | Usare Trama funzionante per sviluppare Trama senza regressioni | [#41](https://github.com/emanueledenaro/trama/issues/41), [#43](https://github.com/emanueledenaro/trama/issues/43), [#46](https://github.com/emanueledenaro/trama/issues/46), [#47](https://github.com/emanueledenaro/trama/issues/47) |
+| [#64](https://github.com/emanueledenaro/trama/issues/64) | V01 Timeline degli eventi della conversazione | Nessuno |
+| [#65](https://github.com/emanueledenaro/trama/issues/65) | V02 Il Coordinatore studia il progetto e lo ricorda | [#64](https://github.com/emanueledenaro/trama/issues/64) |
+| [#66](https://github.com/emanueledenaro/trama/issues/66) | V03 Mandato e decisioni dalla conversazione | [#65](https://github.com/emanueledenaro/trama/issues/65) |
+| [#67](https://github.com/emanueledenaro/trama/issues/67) | V04 Team di progetto e incarico in worktree | [#66](https://github.com/emanueledenaro/trama/issues/66) |
+| [#68](https://github.com/emanueledenaro/trama/issues/68) | V05 Candidato verificato in chat | [#67](https://github.com/emanueledenaro/trama/issues/67) |
+| [#69](https://github.com/emanueledenaro/trama/issues/69) | V06 Impianto della finestra centrato su decisioni, team e verifiche | [#67](https://github.com/emanueledenaro/trama/issues/67) |
+| [#70](https://github.com/emanueledenaro/trama/issues/70) | V07 Composer con menzioni e misuratore della finestra di contesto | [#65](https://github.com/emanueledenaro/trama/issues/65) |
+| [#71](https://github.com/emanueledenaro/trama/issues/71) | V08 Forma dell'adattatore provider con Codex come unico adattatore | [#68](https://github.com/emanueledenaro/trama/issues/68), [#70](https://github.com/emanueledenaro/trama/issues/70) |
+| [#72](https://github.com/emanueledenaro/trama/issues/72) | V09 Prova reale Trama su Trama e chiusura dell'incremento | [#68](https://github.com/emanueledenaro/trama/issues/68), [#69](https://github.com/emanueledenaro/trama/issues/69), [#70](https://github.com/emanueledenaro/trama/issues/70), [#71](https://github.com/emanueledenaro/trama/issues/71) |
+| [#61](https://github.com/emanueledenaro/trama/issues/61) | Tastiera e scorciatoie sul nuovo impianto | [#69](https://github.com/emanueledenaro/trama/issues/69) |
+
+Le fasi successive restano i ticket C06-C16, riformulati sopra il nuovo Coordinatore. Le dipendenze aggiornate:
+
+| Ticket | Consegna | Bloccato da |
+| --- | --- | --- |
+| [#38](https://github.com/emanueledenaro/trama/issues/38) | C06 Ricalcolare solo gli incarichi coinvolti da decisioni e perimetri | [#68](https://github.com/emanueledenaro/trama/issues/68) |
+| [#39](https://github.com/emanueledenaro/trama/issues/39) | C07 Cambiare progetto mentre i team autorizzati continuano | [#68](https://github.com/emanueledenaro/trama/issues/68), [#69](https://github.com/emanueledenaro/trama/issues/69) |
+| [#40](https://github.com/emanueledenaro/trama/issues/40) | C08 Mostrare in chat conflitti tra specialisti e collaboratori GitHub | [#68](https://github.com/emanueledenaro/trama/issues/68), [#38](https://github.com/emanueledenaro/trama/issues/38) |
+| [#41](https://github.com/emanueledenaro/trama/issues/41) | C09 Integrare candidati tramite mandato senza falsare la revisione umana | [#38](https://github.com/emanueledenaro/trama/issues/38), [#40](https://github.com/emanueledenaro/trama/issues/40) |
+| [#42](https://github.com/emanueledenaro/trama/issues/42) | C10 Aggiornare ticket e checklist solo quando le prove lo consentono | [#41](https://github.com/emanueledenaro/trama/issues/41) |
+| [#43](https://github.com/emanueledenaro/trama/issues/43) | C11 Riprendere il Coordinatore dopo limiti, chiusura e indisponibilità | [#39](https://github.com/emanueledenaro/trama/issues/39) |
+| [#44](https://github.com/emanueledenaro/trama/issues/44) | C12 Configurare Trama al primo avvio con una guida riprendibile | [#65](https://github.com/emanueledenaro/trama/issues/65), [#66](https://github.com/emanueledenaro/trama/issues/66) |
+| [#45](https://github.com/emanueledenaro/trama/issues/45) | C13 Imparare a conoscere un progetto con il primo esercizio guidato | [#44](https://github.com/emanueledenaro/trama/issues/44) |
+| [#46](https://github.com/emanueledenaro/trama/issues/46) | C14 Completare gli esercizi di modifica, decisione e conflitto | [#45](https://github.com/emanueledenaro/trama/issues/45), [#68](https://github.com/emanueledenaro/trama/issues/68), [#38](https://github.com/emanueledenaro/trama/issues/38), [#40](https://github.com/emanueledenaro/trama/issues/40), [#41](https://github.com/emanueledenaro/trama/issues/41) |
+| [#47](https://github.com/emanueledenaro/trama/issues/47) | C15 Migliorare i team con pratiche verificate e reversibili | [#67](https://github.com/emanueledenaro/trama/issues/67), [#42](https://github.com/emanueledenaro/trama/issues/42), [#39](https://github.com/emanueledenaro/trama/issues/39) |
+| [#48](https://github.com/emanueledenaro/trama/issues/48) | C16 Usare Trama funzionante per sviluppare Trama senza regressioni | [#41](https://github.com/emanueledenaro/trama/issues/41), [#43](https://github.com/emanueledenaro/trama/issues/43), [#46](https://github.com/emanueledenaro/trama/issues/46), [#47](https://github.com/emanueledenaro/trama/issues/47) |
+
+Un secondo adattatore provider (Claude Agent SDK) e le automazioni programmate sono ticket da aprire dopo V08 e V09.
 
 ## Ticket precedenti e verifica finale
 
