@@ -195,14 +195,16 @@ public enum ConversationRow: Identifiable, Equatable, Sendable {
         public var activities: [Activity]
         /// False while the turn is still running: a running turn is never collapsed.
         public var isConcluded: Bool
-        /// From the first collected activity to the end of the reply; nil when the turn has no reply.
+        /// From the first collected activity to the end of the reply; nil when the turn has no reply
+        /// or when its last activity came after the reply, as in a failed new analysis.
         public var duration: TimeInterval?
 
         /// "450 ms" under a second, "2,5 s" under ten, "12 s" under a minute, then "1m 5s".
         public static func formattedDuration(_ duration: TimeInterval) -> String {
             switch duration {
             case ..<1: return "\(Int(duration * 1_000)) ms"
-            case ..<10: return (duration.formatted(.number.precision(.fractionLength(1)).locale(Locale(identifier: "it_IT")))) + " s"
+            // Below 9.95 so that one decimal never rounds up to "10,0 s".
+            case ..<9.95: return (duration.formatted(.number.precision(.fractionLength(1)).locale(Locale(identifier: "it_IT")))) + " s"
             case ..<60: return "\(Int(duration)) s"
             default:
                 let seconds = Int(duration)
@@ -314,7 +316,10 @@ extension ConversationTimeline {
             case .activity:
                 guard let collected = activities[turn], collected.first?.id == event.id else { continue }
                 let isRunning = turn.requestID.map { runningRequestIDs.contains($0) && turn.start == (lastPersonIndex[$0] ?? -1) } ?? false
-                let duration = replyEnd[turn].map { $0.timeIntervalSince(event.createdAt) }.flatMap { $0 >= 0 ? $0 : nil }
+                let duration = replyEnd[turn].flatMap { end -> TimeInterval? in
+                    guard let last = collected.last?.date, last <= end else { return nil }
+                    return end.timeIntervalSince(event.createdAt)
+                }
                 rows.append(.activityGroup(.init(
                     id: event.id, requestID: event.requestID, activities: collected,
                     isConcluded: !isRunning, duration: isRunning ? nil : duration

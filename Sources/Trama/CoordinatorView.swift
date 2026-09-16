@@ -141,7 +141,7 @@ struct CoordinatorView: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityValue(isExpanded ? "Aperto" : "Chiuso")
-                .accessibilityHint("\(group.activities.count) attività tecniche")
+                .accessibilityHint(group.activities.count == 1 ? "1 attività tecnica" : "\(group.activities.count) attività tecniche")
                 if isExpanded { activityList(group.activities).padding(.leading, TramaSpacing.related) }
             }
             .font(.caption)

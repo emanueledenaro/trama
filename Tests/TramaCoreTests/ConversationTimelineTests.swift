@@ -210,10 +210,29 @@ struct ConversationTimelineTests {
         #expect(ConversationTimeline.rows(for: ProjectDocument()).isEmpty)
     }
 
+    @Test("A failed new analysis after a reply leaves the group without a duration")
+    func failedRerunHasNoDuration() throws {
+        var document = ProjectDocument()
+        let request = Self.request("Annulla un ordine")
+        document.requests = [request]
+        let start = Date(timeIntervalSinceReferenceDate: 0)
+        document.conversation?.appendPersonMessage(for: request, at: start)
+        document.conversation?.appendActivity(requestID: request.id, title: "Analisi avviata", detail: nil, at: start.addingTimeInterval(1))
+        document.conversation?.recordReply(requestID: request.id, text: "Piano", model: nil, references: [], at: start.addingTimeInterval(13))
+        document.conversation?.appendActivity(requestID: request.id, title: "Analisi avviata", detail: nil, at: start.addingTimeInterval(100))
+        document.conversation?.appendActivity(requestID: request.id, title: "Analisi non completata", detail: nil, at: start.addingTimeInterval(101))
+
+        let rows = ConversationTimeline.rows(for: document)
+        guard case .activityGroup(let group) = rows[1] else { Issue.record("expected an activity group"); return }
+        #expect(group.activities.count == 3)
+        #expect(group.duration == nil)
+    }
+
     @Test("Work durations read as milliseconds, tenths, seconds, then minutes and seconds")
     func workDurationFormat() {
         #expect(ConversationRow.ActivityGroupRow.formattedDuration(0.45) == "450 ms")
         #expect(ConversationRow.ActivityGroupRow.formattedDuration(2.46) == "2,5 s")
+        #expect(ConversationRow.ActivityGroupRow.formattedDuration(9.96) == "9 s")
         #expect(ConversationRow.ActivityGroupRow.formattedDuration(12.5) == "12 s")
         #expect(ConversationRow.ActivityGroupRow.formattedDuration(59.9) == "59 s")
         #expect(ConversationRow.ActivityGroupRow.formattedDuration(65) == "1m 5s")

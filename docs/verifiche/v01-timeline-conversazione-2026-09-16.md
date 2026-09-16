@@ -4,7 +4,7 @@ Verifica del 16 settembre 2026 per #64. Base: `main` a `cb20757`. Il candidato a
 
 ## Test automatici
 
-`swift test` sul candidato: 113 test Swift Testing in 13 suite e 96 test XCTest, nessun fallimento.
+`swift test` sul candidato: 114 test Swift Testing in 13 suite e 96 test XCTest, nessun fallimento.
 
 La suite `Conversation timeline` copre:
 
@@ -53,7 +53,9 @@ Le richieste precedenti appaiono «Da rivalutare» perché il clone ha un'istant
 - Le attività tecniche sono passi registrati da Trama (analisi avviata, risposta ricevuta, analisi interrotta o non completata, modello non disponibile). Gli eventi degli strumenti di Codex arrivano con il thread persistente e gli strumenti dei ticket successivi. Non esistono ancora testi intermedi del Coordinatore da raccogliere nel gruppo.
 - Il testo in streaming resta in memoria e diventa un evento solo quando la risposta è completa.
 - Nessun flusso produce ancora schede. Il modello e la resa ci sono, i produttori arrivano con studio, team, mandato e incarichi. L'avviso di contesto è una scheda del metodo richiesta dal ticket. Gli eventi di uso del contesto non esistono ancora e non diventano righe.
-- Il gruppo delle attività sta nella posizione della prima attività del turno, prima della risposta. Se una nuova analisi riparte dopo la risposta, durante l'esecuzione le nuove attività compaiono sotto la risposta precedente. A turno concluso la risposta passa in fondo.
-- Lo stato aperto o chiuso di ogni riga vive nella vista: si riapre chiuso quando si cambia progetto o si riavvia.
+- Il confine del gruppo è l'ultimo messaggio della persona sulla stessa richiesta, non l'ultimo messaggio della chat, perché le attività portano l'identificativo della richiesta. Se un'attività di una richiesta arriva dopo il messaggio di un'altra, entra comunque nel gruppo della sua richiesta, più in alto.
+- Il gruppo delle attività sta nella posizione della prima attività del turno, prima della risposta. Se una nuova analisi riparte dopo la risposta, le nuove attività entrano in quel gruppo, che torna aperto finché l'analisi è in corso. Sotto la risposta precedente compare solo la riga di avanzamento. A turno concluso la risposta passa in fondo.
+- La durata va dalla prima attività raccolta alla fine della risposta. Dopo una nuova analisi riuscita comprende anche l'attesa fra le due esecuzioni. Se l'ultima attività è successiva alla risposta, come in una nuova analisi fallita, la riga si chiama «Dettagli». I secondi interi sono troncati, per esempio 12,5 secondi si leggono «12 s».
+- Lo stato aperto o chiuso di ogni riga vive nella vista della chat e non viene salvato: dopo un riavvio ogni riga torna chiusa.
 - Nella prova, l'attività «Risposta ricevuta» riporta «1 fonti». Il plurale è stato corretto in «1 fonte» dopo la prova; l'evento già salvato conserva il testo di allora.
 - Le versioni precedenti dell'app rifiutano lo schema 3 e propongono il recupero. Se la persona lo accetta in una versione precedente, la nuova versione trova un backup che non coincide più con il file e chiede a sua volta il recupero esplicito. Il backup originale resta conservato.
