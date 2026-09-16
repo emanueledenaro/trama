@@ -39,6 +39,15 @@ struct RequestStateTests {
         #expect(RequestState.Phase.allCases.count <= 8)
         let symbols = Set(RequestState.allCases.map(\.symbol))
         #expect(symbols.count == RequestState.Phase.allCases.count)
-        for state in RequestState.allCases { #expect(state.label == state.rawValue) }
+    }
+
+    @Test("Near-identical stored strings get a label that names the step; the rest show the raw value")
+    func labels() {
+        #expect(RequestState.planReady.label == "Piano da rivedere")
+        #expect(RequestState.checksPending.label == "Verifiche da eseguire")
+        #expect(RequestState.reviewPending.label == "Codice da revisionare")
+        let renamed: Set<RequestState> = [.planReady, .checksPending, .reviewPending]
+        for state in RequestState.allCases where !renamed.contains(state) { #expect(state.label == state.rawValue) }
+        #expect(Set(RequestState.allCases.map(\.label)).count == RequestState.allCases.count)
     }
 }

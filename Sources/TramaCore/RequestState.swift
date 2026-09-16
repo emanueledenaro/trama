@@ -2,8 +2,9 @@ import Foundation
 
 /// State of a `WorkRequest` along the Coordinator workflow.
 ///
-/// Raw values are the Italian labels shown in the app and persisted in `ProjectDocument`;
-/// they match the strings older documents stored, so existing files decode without migration.
+/// Raw values are the Italian strings persisted in `ProjectDocument`; they match what older
+/// documents stored, so existing files decode without migration. `label` is what the interface
+/// shows: it equals the raw value except where the stored string is too close to another one.
 /// Legacy synonyms are mapped in `init(legacy:)`.
 public enum RequestState: String, Codable, CaseIterable, Sendable, Hashable {
     case draft = "Bozza"
@@ -41,7 +42,17 @@ public enum RequestState: String, Codable, CaseIterable, Sendable, Hashable {
     }
 
     /// Italian label shown in the interface.
-    public var label: String { rawValue }
+    ///
+    /// Three stored strings ("Da rivedere", "Da verificare", "Da revisionare") read almost the same
+    /// while pointing at different steps; the label names the step so the badge is unambiguous.
+    public var label: String {
+        switch self {
+        case .planReady: "Piano da rivedere"
+        case .checksPending: "Verifiche da eseguire"
+        case .reviewPending: "Codice da revisionare"
+        default: rawValue
+        }
+    }
 
     public var phase: Phase {
         switch self {
