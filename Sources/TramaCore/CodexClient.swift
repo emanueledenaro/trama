@@ -139,13 +139,71 @@ public final class CodexClient: @unchecked Sendable {
         case emptyExecutionResponse
     }
 
+    /// The Coordinator's persistent thread: where it runs and how it reaches Trama's tools.
+    /// The session token is not part of it; it lives only in the runtime process environment.
+    public struct CoordinatorThreadSettings: Equatable, Sendable {
+        public static let tokenEnvironmentVariable = "TRAMA_COORDINATOR_TOKEN"
+        public static let toolServerName = "trama"
+
+        public var cwd: URL
+        public var model: String
+        public var developerInstructions: String
+        /// The full MCP endpoint, for example `http://127.0.0.1:52011/mcp`.
+        public var toolServerURL: URL
+
+        public init(cwd: URL, model: String, developerInstructions: String, toolServerURL: URL) {
+            self.cwd = cwd
+            self.model = model
+            self.developerInstructions = developerInstructions
+            self.toolServerURL = toolServerURL
+        }
+    }
+
+    public enum CoordinatorThreadOpening: Equatable, Sendable {
+        case started(threadID: String)
+        case resumed(threadID: String)
+        /// Codex no longer has the saved thread; a new one was started in its place.
+        case replaced(previousThreadID: String, threadID: String, reason: String)
+
+        public var threadID: String {
+            switch self {
+            case let .started(threadID), let .resumed(threadID), let .replaced(_, threadID, _): threadID
+            }
+        }
+    }
+
+    public enum CoordinatorTurnEvent: Equatable, Sendable {
+        case turnStarted(turnID: String)
+        /// Streamed text of the reply.
+        case textDelta(String)
+        /// A note the Coordinator wrote while working, before its reply.
+        case commentary(String)
+        case toolCallStarted(itemID: String, server: String, tool: String)
+        case toolCallCompleted(itemID: String, server: String, tool: String, succeeded: Bool, error: String?)
+    }
+
     private let core: Core
     private let restrictedCore: Core
 
-    public init(
+    public convenience init(
         codexURL: URL? = nil,
         requestTimeout: TimeInterval = 15,
         turnTimeout: TimeInterval = 300
+    ) {
+        self.init(codexURL: codexURL, requestTimeout: requestTimeout, turnTimeout: turnTimeout, coordinatorToken: nil)
+    }
+
+    /// A client whose restricted runtime serves the Coordinator: its app-server process carries
+    /// the session token in its environment and keeps the Trama tool server name for Trama.
+    public static func coordinatorRuntime(codexURL: URL? = nil, token: String) -> CodexClient {
+        CodexClient(codexURL: codexURL, requestTimeout: 15, turnTimeout: 900, coordinatorToken: token)
+    }
+
+    private init(
+        codexURL: URL?,
+        requestTimeout: TimeInterval,
+        turnTimeout: TimeInterval,
+        coordinatorToken: String?
     ) {
         let discoveryCore = Core(
             transportFactory: {
@@ -164,7 +222,11 @@ public final class CodexClient: @unchecked Sendable {
                 let executableURL = try Self.resolveExecutable(configuredURL: codexURL)
                 return ProcessTransport(
                     executableURL: executableURL,
-                    arguments: try Self.restrictedAppServerArguments(codexURL: executableURL)
+                    arguments: try Self.restrictedAppServerArguments(
+                        codexURL: executableURL,
+                        reservedServerName: coordinatorToken == nil ? nil : CoordinatorThreadSettings.toolServerName
+                    ),
+                    environmentOverrides: coordinatorToken.map { Self.coordinatorEnvironment(token: $0, base: [:]) } ?? [:]
                 )
             },
             requestTimeout: requestTimeout,
@@ -238,8 +300,42 @@ public final class CodexClient: @unchecked Sendable {
         )
     }
 
+    /// Opens the Coordinator's persistent thread in the restricted runtime: resumes `threadID` when
+    /// given, and starts a new thread only when there is none or Codex no longer has it.
+    public func openCoordinatorThread(
+        _ settings: CoordinatorThreadSettings,
+        resuming threadID: String?
+    ) async throws -> CoordinatorThreadOpening {
+        try await restrictedCore.openCoordinatorThread(settings, resuming: threadID)
+    }
+
+    /// Runs one turn on the Coordinator thread. The reply is free prose; `input` items are sent in order.
+    public func runCoordinatorTurn(
+        threadID: String,
+        input: [String],
+        settings: CoordinatorThreadSettings,
+        onEvent: @escaping @Sendable (CoordinatorTurnEvent) -> Void
+    ) async throws -> String {
+        try await restrictedCore.runCoordinatorTurn(threadID: threadID, input: input, settings: settings, onEvent: onEvent)
+    }
+
     public func cancelTurn() async {
         try? await restrictedCore.cancelTurn()
+    }
+
+    /// The Coordinator runtime environment: `base` plus the session token.
+    static func coordinatorEnvironment(token: String, base: [String: String]) -> [String: String] {
+        var environment = base
+        environment[CoordinatorThreadSettings.tokenEnvironmentVariable] = token
+        return environment
+    }
+
+    /// True when a resume error means Codex has no such thread, so a new one may replace it.
+    static func isMissingThread(_ message: String) -> Bool {
+        let text = message.lowercased()
+        let markers = ["no rollout found", "not found", "missing thread", "no such thread", "unknown thread", "does not exist", "invalid session id"]
+        let subjects = ["thread", "rollout", "session"]
+        return markers.contains(where: text.contains) && subjects.contains(where: text.contains)
     }
 
     public func serverInfo() async -> ServerInfo? {
@@ -263,7 +359,8 @@ public final class CodexClient: @unchecked Sendable {
 
     static func restrictedAppServerArguments(
         codexURL: URL,
-        inventoryTimeout: TimeInterval = 5
+        inventoryTimeout: TimeInterval = 5,
+        reservedServerName: String? = nil
     ) throws -> [String] {
         let process = Process()
         let output = Pipe()
@@ -341,6 +438,11 @@ public final class CodexClient: @unchecked Sendable {
                   let type = transport["type"] as? String else {
                 throw ClientError.toolIsolationUnavailable(
                     "l'inventario MCP contiene una voce senza nome o trasporto"
+                )
+            }
+            if name == reservedServerName {
+                throw ClientError.toolIsolationUnavailable(
+                    "un server MCP globale usa il nome \(name), riservato agli strumenti di Trama"
                 )
             }
             let value: String
@@ -486,6 +588,10 @@ private actor Core {
         let onText: @Sendable (String) -> Void
         let onApproval: (@Sendable (CodexClient.ApprovalRequest) async -> CodexClient.ApprovalDecision)?
         let emptyResultError: CodexClient.ClientError
+        /// Set for Coordinator turns: tool calls and notes are reported, notes are not streamed.
+        var onEvent: (@Sendable (CodexClient.CoordinatorTurnEvent) -> Void)?
+        var messagePhases: [String: String] = [:]
+        var turnStartReported = false
         var turnID: String?
         var streamedText = ""
         var finalText: String?
@@ -979,6 +1085,172 @@ private actor Core {
         }
     }
 
+    func openCoordinatorThread(
+        _ settings: CodexClient.CoordinatorThreadSettings,
+        resuming previousThreadID: String?
+    ) async throws -> CodexClient.CoordinatorThreadOpening {
+        let model = try Self.validatedModel(settings.model)
+        try Self.validateWorkingDirectory(settings.cwd)
+        try await ensureInitialized()
+        guard case .chatGPT = try await readAccount() else {
+            throw CodexClient.ClientError.authenticationRequired
+        }
+
+        var config = try await makeRestrictedThreadConfig().objectValue ?? [:]
+        config["mcp_servers"] = .object([
+            CodexClient.CoordinatorThreadSettings.toolServerName: .object([
+                "url": .string(settings.toolServerURL.absoluteString),
+                "bearer_token_env_var": .string(CodexClient.CoordinatorThreadSettings.tokenEnvironmentVariable),
+                // Trama checks every call at the tool boundary; Codex must not ask a person in between.
+                "default_tools_approval_mode": .string("approve")
+            ])
+        ])
+        config["shell_environment_policy"] = .object([
+            "exclude": .array([.string(CodexClient.CoordinatorThreadSettings.tokenEnvironmentVariable)])
+        ])
+        let common: [String: JSONValue] = [
+            "model": .string(model),
+            "cwd": .string(settings.cwd.path),
+            "approvalPolicy": .string("never"),
+            "sandbox": .string("read-only"),
+            "config": .object(config),
+            "developerInstructions": .string(settings.developerInstructions)
+        ]
+
+        if let previousThreadID {
+            do {
+                var params = common
+                params["threadId"] = .string(previousThreadID)
+                params["excludeTurns"] = .bool(true)
+                let result = try await request(method: "thread/resume", params: .object(params), timeout: max(requestTimeout, 60))
+                guard let resumedID = result.objectValue?["thread"]?.objectValue?["id"]?.stringValue else {
+                    throw CodexClient.ClientError.malformedMessage("risposta thread/resume senza thread.id")
+                }
+                guard resumedID == previousThreadID else {
+                    throw CodexClient.ClientError.malformedMessage("thread/resume ha restituito il thread \(resumedID) invece di \(previousThreadID)")
+                }
+                try await verifyRestrictedThread(threadID: resumedID, allowedServers: [CodexClient.CoordinatorThreadSettings.toolServerName])
+                return .resumed(threadID: resumedID)
+            } catch let CodexClient.ClientError.rpcError(_, message) where CodexClient.isMissingThread(message) {
+                let threadID = try await startCoordinatorThread(common)
+                return .replaced(previousThreadID: previousThreadID, threadID: threadID, reason: message)
+            }
+        }
+        return .started(threadID: try await startCoordinatorThread(common))
+    }
+
+    private func startCoordinatorThread(_ common: [String: JSONValue]) async throws -> String {
+        var params = common
+        params["modelProvider"] = .string("openai")
+        params["serviceName"] = .string("trama")
+        params["ephemeral"] = .bool(false)
+        let result = try await request(method: "thread/start", params: .object(params), timeout: max(requestTimeout, 60))
+        guard let threadID = result.objectValue?["thread"]?.objectValue?["id"]?.stringValue else {
+            throw CodexClient.ClientError.malformedMessage("risposta thread/start senza thread.id")
+        }
+        try await verifyRestrictedThread(threadID: threadID, allowedServers: [CodexClient.CoordinatorThreadSettings.toolServerName])
+        return threadID
+    }
+
+    func runCoordinatorTurn(
+        threadID: String,
+        input: [String],
+        settings: CodexClient.CoordinatorThreadSettings,
+        onEvent: @escaping @Sendable (CodexClient.CoordinatorTurnEvent) -> Void
+    ) async throws -> String {
+        let items = input
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        guard !items.isEmpty else {
+            throw CodexClient.ClientError.emptyPrompt
+        }
+        let model = try Self.validatedModel(settings.model)
+        try Self.validateWorkingDirectory(settings.cwd)
+        guard activePlan == nil else {
+            throw CodexClient.ClientError.executionAlreadyRunning
+        }
+        try await ensureInitialized()
+
+        let session = PlanSession(
+            threadID: threadID,
+            onText: { onEvent(.textDelta($0)) },
+            onApproval: nil,
+            emptyResultError: .emptyExecutionResponse
+        )
+        session.onEvent = onEvent
+        activePlan = session
+
+        do {
+            let turnResult = try await request(
+                method: "turn/start",
+                params: .object([
+                    "threadId": .string(threadID),
+                    "input": .array(items.map { text in
+                        .object([
+                            "type": .string("text"),
+                            "text": .string(text),
+                            "text_elements": .array([])
+                        ])
+                    }),
+                    "cwd": .string(settings.cwd.path),
+                    "model": .string(model),
+                    "approvalPolicy": .string("never"),
+                    "sandboxPolicy": .object([
+                        "type": .string("readOnly"),
+                        "networkAccess": .bool(false)
+                    ])
+                ])
+            )
+            guard let turnID = turnResult.objectValue?["turn"]?.objectValue?["id"]?.stringValue else {
+                throw CodexClient.ClientError.malformedMessage("risposta turn/start senza turn.id")
+            }
+            reportTurnStart(turnID, session: session)
+
+            if session.cancelRequested {
+                try await interrupt(session: session)
+            }
+
+            let result = try await waitForPlan(session)
+            if activePlan === session {
+                activePlan = nil
+            }
+            return result
+        } catch {
+            session.timeoutTask?.cancel()
+            session.finish(.failure(error))
+            if activePlan === session {
+                activePlan = nil
+            }
+            throw error
+        }
+    }
+
+    private func reportTurnStart(_ turnID: String, session: PlanSession) {
+        session.turnID = turnID
+        guard let onEvent = session.onEvent, !session.turnStartReported else { return }
+        session.turnStartReported = true
+        onEvent(.turnStarted(turnID: turnID))
+    }
+
+    private static func validatedModel(_ model: String) throws -> String {
+        let selected = model.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !selected.isEmpty, !selected.contains("/") else {
+            throw CodexClient.ClientError.invalidModel(model)
+        }
+        return selected
+    }
+
+    private static func validateWorkingDirectory(_ cwd: URL) throws {
+        guard cwd.isFileURL, cwd.path.hasPrefix("/") else {
+            throw CodexClient.ClientError.invalidWorkingDirectory(cwd.path)
+        }
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: cwd.path, isDirectory: &isDirectory),
+              isDirectory.boolValue else {
+            throw CodexClient.ClientError.invalidWorkingDirectory(cwd.path)
+        }
+    }
+
     func cancelTurn() async throws {
         guard let session = activePlan else {
             throw CodexClient.ClientError.noActiveTurn
@@ -1136,8 +1408,8 @@ private actor Core {
         ])
     }
 
-    private func verifyRestrictedThread(threadID: String) async throws {
-        let names = try await mcpServerNames(threadID: threadID)
+    private func verifyRestrictedThread(threadID: String, allowedServers: Set<String> = []) async throws {
+        let names = try await mcpServerNames(threadID: threadID).filter { !allowedServers.contains($0) }
         guard names.isEmpty else {
             throw CodexClient.ClientError.toolIsolationUnavailable(
                 "server MCP ancora esposti: \(names.sorted().joined(separator: ", "))"
@@ -1569,21 +1841,56 @@ private actor Core {
             guard let session = activePlan,
                   params["threadId"]?.stringValue == session.threadID,
                   let turnID = params["turn"]?.objectValue?["id"]?.stringValue else { return }
-            session.turnID = turnID
+            reportTurnStart(turnID, session: session)
         case "item/agentMessage/delta", "item/plan/delta":
             guard let session = matchingPlan(params: params),
                   let delta = params["delta"]?.stringValue else { return }
+            if session.onEvent != nil,
+               let itemID = params["itemId"]?.stringValue,
+               session.messagePhases[itemID] == "commentary" { return }
             session.streamedText += delta
             session.onText(delta)
+        case "item/started":
+            guard let session = matchingPlan(params: params),
+                  let onEvent = session.onEvent,
+                  let item = params["item"]?.objectValue,
+                  let itemID = item["id"]?.stringValue else { return }
+            switch item["type"]?.stringValue {
+            case "agentMessage":
+                session.messagePhases[itemID] = item["phase"]?.stringValue
+            case "mcpToolCall":
+                onEvent(.toolCallStarted(
+                    itemID: itemID,
+                    server: item["server"]?.stringValue ?? "",
+                    tool: item["tool"]?.stringValue ?? ""
+                ))
+            default:
+                break
+            }
         case "item/completed":
             guard let session = matchingPlan(params: params),
                   let item = params["item"]?.objectValue,
-                  let type = item["type"]?.stringValue,
-                  ["agentMessage", "plan"].contains(type),
+                  let type = item["type"]?.stringValue else { return }
+            if type == "mcpToolCall", let onEvent = session.onEvent, let itemID = item["id"]?.stringValue {
+                let failed = item["status"]?.stringValue != "completed"
+                    || item["result"]?.objectValue?["isError"]?.boolValue == true
+                onEvent(.toolCallCompleted(
+                    itemID: itemID,
+                    server: item["server"]?.stringValue ?? "",
+                    tool: item["tool"]?.stringValue ?? "",
+                    succeeded: !failed,
+                    error: item["error"]?.objectValue?["message"]?.stringValue
+                ))
+                return
+            }
+            guard ["agentMessage", "plan"].contains(type),
                   let text = item["text"]?.stringValue else { return }
             let phase = item["phase"]?.stringValue
             if type == "plan" || phase == nil || phase == "final_answer" {
                 session.finalText = text
+            } else if phase == "commentary", let onEvent = session.onEvent {
+                let note = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !note.isEmpty { onEvent(.commentary(note)) }
             }
         case "error":
             guard let session = matchingPlan(params: params),
@@ -1789,14 +2096,16 @@ enum CodexTransportEvent: Sendable {
 private final class ProcessTransport: CodexTransport, @unchecked Sendable {
     private let executableURL: URL
     private let arguments: [String]
+    private let environmentOverrides: [String: String]
     private let lock = NSLock()
     private var process: Process?
     private var input: FileHandle?
     private var continuation: AsyncStream<CodexTransportEvent>.Continuation?
 
-    init(executableURL: URL, arguments: [String]) {
+    init(executableURL: URL, arguments: [String], environmentOverrides: [String: String] = [:]) {
         self.executableURL = executableURL
         self.arguments = arguments
+        self.environmentOverrides = environmentOverrides
     }
 
     func start() throws -> AsyncStream<CodexTransportEvent> {
@@ -1809,7 +2118,7 @@ private final class ProcessTransport: CodexTransport, @unchecked Sendable {
         process.standardInput = stdin
         process.standardOutput = stdout
         process.standardError = stderr
-        process.environment = Self.environment(for: executableURL)
+        process.environment = Self.environment(for: executableURL).merging(environmentOverrides) { $1 }
 
         let stream = AsyncStream<CodexTransportEvent> { continuation in
             lock.withLock {

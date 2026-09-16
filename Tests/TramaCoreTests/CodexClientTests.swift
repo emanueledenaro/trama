@@ -886,6 +886,310 @@ final class CodexClientTests: XCTestCase {
         }
     }
 
+    // MARK: Coordinator thread
+
+    private static let coordinatorSettings = CodexClient.CoordinatorThreadSettings(
+        cwd: URL(fileURLWithPath: FileManager.default.currentDirectoryPath),
+        model: "gpt-5.5",
+        developerInstructions: "You are the Trama Coordinator.",
+        toolServerURL: URL(string: "http://127.0.0.1:52011/mcp")!
+    )
+
+    private static func respondToCoordinatorHandshake(_ transport: FakeCodexTransport, _ message: [String: Any]) {
+        switch message["method"] as? String {
+        case "initialize":
+            transport.respond(to: message, result: initializeResult)
+        case "account/read":
+            transport.respond(to: message, result: chatGPTAccount)
+        case "mcpServerStatus/list":
+            let params = message["params"] as? [String: Any]
+            if params?["threadId"] is String {
+                transport.respond(to: message, result: [
+                    "data": [["name": "trama", "tools": ["read_study": [:]]]],
+                    "nextCursor": NSNull()
+                ])
+            }
+        default:
+            break
+        }
+    }
+
+    func testCoordinatorThreadStartsAPersistentRestrictedThreadWithTramaTools() async throws {
+        let transport = FakeCodexTransport()
+        transport.onMessage = { message in
+            Self.respondToCoordinatorHandshake(transport, message)
+            if message["method"] as? String == "thread/start" {
+                transport.respond(to: message, result: ["thread": ["id": "thread-c1"], "model": "gpt-5.5"])
+            }
+        }
+
+        let client = CodexClient(transport: transport)
+        let opening = try await client.openCoordinatorThread(Self.coordinatorSettings, resuming: nil)
+
+        XCTAssertEqual(opening, .started(threadID: "thread-c1"))
+        XCTAssertEqual(opening.threadID, "thread-c1")
+        XCTAssertFalse(transport.methods.contains("thread/resume"))
+        let start = try XCTUnwrap(transport.message(method: "thread/start"))
+        let params = try XCTUnwrap(start["params"] as? [String: Any])
+        XCTAssertEqual(params["ephemeral"] as? Bool, false)
+        XCTAssertEqual(params["model"] as? String, "gpt-5.5")
+        XCTAssertEqual(params["modelProvider"] as? String, "openai")
+        XCTAssertEqual(params["sandbox"] as? String, "read-only")
+        XCTAssertEqual(params["approvalPolicy"] as? String, "never")
+        XCTAssertEqual(params["developerInstructions"] as? String, "You are the Trama Coordinator.")
+        XCTAssertEqual(params["cwd"] as? String, FileManager.default.currentDirectoryPath)
+        let config = try XCTUnwrap(params["config"] as? [String: Any])
+        XCTAssertEqual(config["web_search"] as? String, "disabled")
+        let features = try XCTUnwrap(config["features"] as? [String: Any])
+        XCTAssertEqual(features["multi_agent"] as? Bool, false)
+        XCTAssertEqual(features["apps"] as? Bool, false)
+        let apps = try XCTUnwrap(config["apps"] as? [String: Any])
+        XCTAssertEqual((apps["_default"] as? [String: Any])?["enabled"] as? Bool, false)
+        let servers = try XCTUnwrap(config["mcp_servers"] as? [String: Any])
+        XCTAssertEqual(Array(servers.keys), ["trama"])
+        let trama = try XCTUnwrap(servers["trama"] as? [String: Any])
+        XCTAssertEqual(trama["url"] as? String, "http://127.0.0.1:52011/mcp")
+        XCTAssertEqual(trama["bearer_token_env_var"] as? String, "TRAMA_COORDINATOR_TOKEN")
+        XCTAssertEqual(trama["default_tools_approval_mode"] as? String, "approve")
+        let shell = try XCTUnwrap(config["shell_environment_policy"] as? [String: Any])
+        XCTAssertEqual(shell["exclude"] as? [String], ["TRAMA_COORDINATOR_TOKEN"])
+        let verified = transport.messages.contains { message in
+            message["method"] as? String == "mcpServerStatus/list"
+                && (message["params"] as? [String: Any])?["threadId"] as? String == "thread-c1"
+        }
+        XCTAssertTrue(verified)
+    }
+
+    func testCoordinatorThreadResumesWithTheSameRestrictedConfiguration() async throws {
+        let transport = FakeCodexTransport()
+        transport.onMessage = { message in
+            Self.respondToCoordinatorHandshake(transport, message)
+            if message["method"] as? String == "thread/resume" {
+                transport.respond(to: message, result: ["thread": ["id": "thread-c1"], "model": "gpt-5.5"])
+            }
+        }
+
+        let client = CodexClient(transport: transport)
+        let opening = try await client.openCoordinatorThread(Self.coordinatorSettings, resuming: "thread-c1")
+
+        XCTAssertEqual(opening, .resumed(threadID: "thread-c1"))
+        XCTAssertFalse(transport.methods.contains("thread/start"))
+        let resume = try XCTUnwrap(transport.message(method: "thread/resume"))
+        let params = try XCTUnwrap(resume["params"] as? [String: Any])
+        XCTAssertEqual(params["threadId"] as? String, "thread-c1")
+        XCTAssertEqual(params["excludeTurns"] as? Bool, true)
+        XCTAssertEqual(params["sandbox"] as? String, "read-only")
+        XCTAssertEqual(params["approvalPolicy"] as? String, "never")
+        XCTAssertEqual(params["developerInstructions"] as? String, "You are the Trama Coordinator.")
+        let config = try XCTUnwrap(params["config"] as? [String: Any])
+        let trama = try XCTUnwrap((config["mcp_servers"] as? [String: Any])?["trama"] as? [String: Any])
+        XCTAssertEqual(trama["bearer_token_env_var"] as? String, "TRAMA_COORDINATOR_TOKEN")
+        XCTAssertEqual(((config["features"] as? [String: Any])?["multi_agent"]) as? Bool, false)
+    }
+
+    func testCoordinatorThreadReplacesAThreadCodexNoLongerHas() async throws {
+        let transport = FakeCodexTransport()
+        transport.onMessage = { message in
+            Self.respondToCoordinatorHandshake(transport, message)
+            switch message["method"] as? String {
+            case "thread/resume":
+                transport.emit([
+                    "id": message["id"]!,
+                    "error": ["code": -32600, "message": "no rollout found for thread id thread-old"]
+                ])
+            case "thread/start":
+                transport.respond(to: message, result: ["thread": ["id": "thread-new"]])
+            default:
+                break
+            }
+        }
+
+        let client = CodexClient(transport: transport)
+        let opening = try await client.openCoordinatorThread(Self.coordinatorSettings, resuming: "thread-old")
+
+        guard case let .replaced(previous, threadID, reason) = opening else {
+            return XCTFail("Expected a replaced thread, got \(opening)")
+        }
+        XCTAssertEqual(previous, "thread-old")
+        XCTAssertEqual(threadID, "thread-new")
+        XCTAssertTrue(reason.contains("no rollout found"))
+        XCTAssertEqual(transport.methods.filter { $0 == "thread/start" || $0 == "thread/resume" }, ["thread/resume", "thread/start"])
+        let start = try XCTUnwrap(transport.message(method: "thread/start"))
+        XCTAssertEqual((start["params"] as? [String: Any])?["ephemeral"] as? Bool, false)
+    }
+
+    func testCoordinatorThreadKeepsTheThreadWhenResumeFailsForAnotherReason() async throws {
+        for failure in ["model not found: gpt-0", "usage limit reached", "invalid request"] {
+            let transport = FakeCodexTransport()
+            transport.onMessage = { message in
+                Self.respondToCoordinatorHandshake(transport, message)
+                if message["method"] as? String == "thread/resume" {
+                    transport.emit(["id": message["id"]!, "error": ["code": -32600, "message": failure]])
+                }
+            }
+
+            let client = CodexClient(transport: transport)
+            do {
+                _ = try await client.openCoordinatorThread(Self.coordinatorSettings, resuming: "thread-c1")
+                XCTFail("Expected \(failure) to fail")
+            } catch {
+                XCTAssertEqual(error as? CodexClient.ClientError, .rpcError(code: -32600, message: failure))
+            }
+            XCTAssertFalse(transport.methods.contains("thread/start"), failure)
+        }
+    }
+
+    func testCoordinatorThreadRejectsAResumeThatReturnsAnotherThread() async throws {
+        let transport = FakeCodexTransport()
+        transport.onMessage = { message in
+            Self.respondToCoordinatorHandshake(transport, message)
+            if message["method"] as? String == "thread/resume" {
+                transport.respond(to: message, result: ["thread": ["id": "thread-other"]])
+            }
+        }
+
+        let client = CodexClient(transport: transport)
+        do {
+            _ = try await client.openCoordinatorThread(Self.coordinatorSettings, resuming: "thread-c1")
+            XCTFail("Expected a mismatched resume to fail")
+        } catch {
+            guard case .malformedMessage = error as? CodexClient.ClientError else {
+                return XCTFail("Unexpected error: \(error)")
+            }
+        }
+        XCTAssertFalse(transport.methods.contains("thread/start"))
+    }
+
+    func testCoordinatorThreadRefusesMCPServersOtherThanTrama() async throws {
+        let transport = FakeCodexTransport()
+        transport.onMessage = { message in
+            switch message["method"] as? String {
+            case "initialize":
+                transport.respond(to: message, result: Self.initializeResult)
+            case "account/read":
+                transport.respond(to: message, result: Self.chatGPTAccount)
+            case "thread/start":
+                transport.respond(to: message, result: ["thread": ["id": "thread-c1"]])
+            case "mcpServerStatus/list":
+                transport.respond(to: message, result: [
+                    "data": [
+                        ["name": "trama", "tools": ["read_study": [:]]],
+                        ["name": "github", "tools": ["create_issue": [:]]]
+                    ],
+                    "nextCursor": NSNull()
+                ])
+            default:
+                break
+            }
+        }
+
+        let client = CodexClient(transport: transport)
+        do {
+            _ = try await client.openCoordinatorThread(Self.coordinatorSettings, resuming: nil)
+            XCTFail("Expected tool isolation failure")
+        } catch {
+            guard case let .toolIsolationUnavailable(detail) = error as? CodexClient.ClientError else {
+                return XCTFail("Unexpected error: \(error)")
+            }
+            XCTAssertTrue(detail.contains("github"))
+            XCTAssertFalse(detail.contains("trama"))
+        }
+    }
+
+    func testCoordinatorTurnStreamsProseAndReportsToolCallsAndNotes() async throws {
+        let transport = FakeCodexTransport()
+        transport.onMessage = { message in
+            Self.respondToCoordinatorHandshake(transport, message)
+            guard message["method"] as? String == "turn/start" else { return }
+            transport.respond(to: message, result: ["turn": ["id": "turn-c1", "status": "inProgress", "items": []]])
+            let base: [String: Any] = ["threadId": "thread-c1", "turnId": "turn-c1"]
+            transport.emit(["method": "turn/started", "params": ["threadId": "thread-c1", "turn": ["id": "turn-c1"]]])
+            transport.emit(["method": "item/started", "params": base.merging(["item": ["type": "agentMessage", "id": "note", "text": "", "phase": "commentary"]]) { $1 }])
+            transport.emit(["method": "item/agentMessage/delta", "params": base.merging(["itemId": "note", "delta": "Leggo lo studio."]) { $1 }])
+            transport.emit(["method": "item/completed", "params": base.merging(["item": ["type": "agentMessage", "id": "note", "text": "Leggo lo studio.", "phase": "commentary"]]) { $1 }])
+            transport.emit(["method": "item/started", "params": base.merging(["item": ["type": "mcpToolCall", "id": "call-1", "server": "trama", "tool": "read_study", "status": "inProgress", "arguments": [:]]]) { $1 }])
+            transport.emit(["method": "item/completed", "params": base.merging(["item": ["type": "mcpToolCall", "id": "call-1", "server": "trama", "tool": "read_study", "status": "completed", "result": ["content": [["type": "text", "text": "## Codice"]]], "error": NSNull()]]) { $1 }])
+            transport.emit(["method": "item/started", "params": base.merging(["item": ["type": "mcpToolCall", "id": "call-2", "server": "trama", "tool": "write_memory", "status": "inProgress", "arguments": ["text": "x"]]]) { $1 }])
+            transport.emit(["method": "item/completed", "params": base.merging(["item": ["type": "mcpToolCall", "id": "call-2", "server": "trama", "tool": "write_memory", "status": "failed", "error": ["message": "tool timed out"]]]) { $1 }])
+            transport.emit(["method": "item/started", "params": base.merging(["item": ["type": "agentMessage", "id": "answer", "text": "", "phase": "final_answer"]]) { $1 }])
+            transport.emit(["method": "item/agentMessage/delta", "params": base.merging(["itemId": "answer", "delta": "Mancano "]) { $1 }])
+            transport.emit(["method": "item/agentMessage/delta", "params": base.merging(["itemId": "answer", "delta": "i test."]) { $1 }])
+            transport.emitCompletedResponse(threadID: "thread-c1", turnID: "turn-c1", text: "Mancano i test.")
+        }
+
+        let client = CodexClient(transport: transport)
+        let events = LockedTurnEvents()
+        let reply = try await client.runCoordinatorTurn(
+            threadID: "thread-c1",
+            input: ["Aggiornamento dello studio", "Cosa manca per la beta?"],
+            settings: Self.coordinatorSettings
+        ) { events.append($0) }
+
+        XCTAssertEqual(reply, "Mancano i test.")
+        XCTAssertEqual(events.values, [
+            .turnStarted(turnID: "turn-c1"),
+            .commentary("Leggo lo studio."),
+            .toolCallStarted(itemID: "call-1", server: "trama", tool: "read_study"),
+            .toolCallCompleted(itemID: "call-1", server: "trama", tool: "read_study", succeeded: true, error: nil),
+            .toolCallStarted(itemID: "call-2", server: "trama", tool: "write_memory"),
+            .toolCallCompleted(itemID: "call-2", server: "trama", tool: "write_memory", succeeded: false, error: "tool timed out"),
+            .textDelta("Mancano "),
+            .textDelta("i test.")
+        ])
+        let start = try XCTUnwrap(transport.message(method: "turn/start"))
+        let params = try XCTUnwrap(start["params"] as? [String: Any])
+        XCTAssertEqual(params["threadId"] as? String, "thread-c1")
+        XCTAssertEqual(params["model"] as? String, "gpt-5.5")
+        XCTAssertEqual(params["approvalPolicy"] as? String, "never")
+        XCTAssertNil(params["outputSchema"])
+        let sandbox = try XCTUnwrap(params["sandboxPolicy"] as? [String: Any])
+        XCTAssertEqual(sandbox["type"] as? String, "readOnly")
+        XCTAssertEqual(sandbox["networkAccess"] as? Bool, false)
+        let input = try XCTUnwrap(params["input"] as? [[String: Any]])
+        XCTAssertEqual(input.compactMap { $0["text"] as? String }, ["Aggiornamento dello studio", "Cosa manca per la beta?"])
+        XCTAssertFalse(transport.methods.contains("thread/start"))
+    }
+
+    func testCoordinatorTurnRejectsEmptyInputBeforeCallingCodex() async {
+        let transport = FakeCodexTransport()
+        let client = CodexClient(transport: transport)
+        do {
+            _ = try await client.runCoordinatorTurn(threadID: "thread-c1", input: ["  ", ""], settings: Self.coordinatorSettings) { _ in }
+            XCTFail("Expected empty prompt")
+        } catch {
+            XCTAssertEqual(error as? CodexClient.ClientError, .emptyPrompt)
+        }
+        XCTAssertTrue(transport.methods.isEmpty)
+    }
+
+    func testCoordinatorRuntimeCarriesTheTokenOnlyInItsProcessEnvironment() {
+        let environment = CodexClient.coordinatorEnvironment(token: "trama_session_secret", base: ["PATH": "/usr/bin", "TRAMA_COORDINATOR_TOKEN": "stale"])
+        XCTAssertEqual(environment["TRAMA_COORDINATOR_TOKEN"], "trama_session_secret")
+        XCTAssertEqual(environment["PATH"], "/usr/bin")
+        let settingsDescription = String(describing: Self.coordinatorSettings)
+        XCTAssertFalse(settingsDescription.contains("trama_session_secret"))
+    }
+
+    func testCoordinatorRuntimeRefusesAGlobalMCPServerNamedTrama() throws {
+        let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+            .appendingPathComponent(".scratch/codex-inventory-tests/\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let executable = root.appendingPathComponent("codex")
+        let inventory = #"[{"name":"trama","transport":{"type":"stdio"}},{"name":"github","transport":{"type":"streamable_http"}}]"#
+        try Data("#!/bin/sh\necho '\(inventory)'\n".utf8).write(to: executable)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: executable.path)
+
+        let plain = try CodexClient.restrictedAppServerArguments(codexURL: executable)
+        XCTAssertTrue(plain.contains("mcp_servers.github={url=\"http://127.0.0.1:9/mcp\",enabled=false}"))
+        XCTAssertThrowsError(try CodexClient.restrictedAppServerArguments(codexURL: executable, reservedServerName: "trama")) { error in
+            guard case let CodexClient.ClientError.toolIsolationUnavailable(detail) = error else {
+                return XCTFail("Unexpected error: \(error)")
+            }
+            XCTAssertTrue(detail.contains("trama"))
+        }
+    }
+
     private static let initializeResult: [String: Any] = [
         "userAgent": "Codex Desktop/0.148.0 (Mac OS; arm64) dumb (trama; 0.1.0)",
         "codexHome": "/tmp/codex-home",
@@ -912,6 +1216,19 @@ private final class LockedStrings: @unchecked Sendable {
     }
 
     func append(_ value: String) {
+        lock.withLock { storage.append(value) }
+    }
+}
+
+private final class LockedTurnEvents: @unchecked Sendable {
+    private let lock = NSLock()
+    private var storage: [CodexClient.CoordinatorTurnEvent] = []
+
+    var values: [CodexClient.CoordinatorTurnEvent] {
+        lock.withLock { storage }
+    }
+
+    func append(_ value: CodexClient.CoordinatorTurnEvent) {
         lock.withLock { storage.append(value) }
     }
 }

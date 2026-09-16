@@ -225,6 +225,21 @@ struct CoordinatorToolServerTests {
         #expect(await host.memory.text == "Nota del turno")
     }
 
+    @Test("A turn that has not reported its id yet can write; once known, other turns cannot")
+    func provisionalTurnAuthority() async throws {
+        let host = FakeHost()
+        let server = CoordinatorToolServer(host: host)
+        let credential = await server.issueCredential(projectID: Self.projectID)
+
+        await server.beginTurn(sessionKey: credential.sessionKey, turnID: nil)
+        _ = try await Self.toolText(server, credential.token, Self.call(id: 1, tool: "write_memory", arguments: ["text": .string("Prima del turno")], turnID: "turn-9"))
+        #expect(await host.memory.text == "Prima del turno")
+
+        await server.beginTurn(sessionKey: credential.sessionKey, turnID: "turn-1")
+        #expect(try await Self.toolError(server, credential.token, Self.call(id: 2, tool: "write_memory", arguments: ["text": .string("Altro turno")], turnID: "turn-9")) == "caller_turn_inactive")
+        #expect(await host.memory.text == "Prima del turno")
+    }
+
     @Test("A closed project answers as unavailable, with the request id")
     func closedProjectIsUnavailable() async throws {
         let host = FakeHost()

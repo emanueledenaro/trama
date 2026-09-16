@@ -85,7 +85,8 @@ public actor CoordinatorToolServer {
         let key: String
         let projectID: UUID
         let digest: [UInt8]
-        var activeTurnID: String?
+        /// Set while a turn of the caller runs; the inner value is nil until Codex reports the turn id.
+        var activeTurn: String??
     }
 
     private struct InFlightKey: Hashable {
@@ -118,7 +119,7 @@ public actor CoordinatorToolServer {
             .replacingOccurrences(of: "/", with: "_")
             .replacingOccurrences(of: "=", with: "")
         let key = "coordinator-session:" + UUID().uuidString
-        sessions[key] = Session(key: key, projectID: projectID, digest: Self.digest(token), activeTurnID: nil)
+        sessions[key] = Session(key: key, projectID: projectID, digest: Self.digest(token), activeTurn: nil)
         return CoordinatorSessionCredential(token: token, sessionKey: key, projectID: projectID)
     }
 
@@ -130,14 +131,15 @@ public actor CoordinatorToolServer {
         }
     }
 
-    /// Lets the session write while this turn runs.
-    public func beginTurn(sessionKey: String, turnID: String) {
-        sessions[sessionKey]?.activeTurnID = turnID
+    /// Lets the session write while this turn runs. Pass nil when the turn is starting and Codex
+    /// has not reported its id yet; calling again with the id narrows the authority to that turn.
+    public func beginTurn(sessionKey: String, turnID: String?) {
+        sessions[sessionKey]?.activeTurn = .some(turnID)
     }
 
     /// Ends the write authority of the session; it can still read.
     public func endTurn(sessionKey: String) {
-        sessions[sessionKey]?.activeTurnID = nil
+        sessions[sessionKey]?.activeTurn = nil
     }
 
     // MARK: HTTP
@@ -283,15 +285,11 @@ public actor CoordinatorToolServer {
             return CoordinatorTools.failure("caller_session_inactive", "The session credential was revoked.")
         }
         if tool.requiresActiveTurn {
-            guard let turn = session.activeTurnID, callerTurnID == nil || callerTurnID == turn else {
+            guard let turn = session.activeTurn, turn == nil || callerTurnID == nil || callerTurnID == turn else {
                 return CoordinatorTools.failure("caller_turn_inactive", "This tool writes only while the Coordinator turn that calls it is running.")
             }
             guard case let .string(text)? = arguments["text"] else {
                 return CoordinatorTools.failure("invalid_arguments", "write_memory needs a text string.")
-            }
-            // The turn may have ended while the call waited: authority is checked again before writing.
-            guard sessions[sessionKey]?.activeTurnID == turn else {
-                return CoordinatorTools.failure("caller_turn_inactive", "The Coordinator turn has ended.")
             }
             do {
                 let memory = try await host.writeMemory(projectID: session.projectID, text: text)
