@@ -486,7 +486,7 @@ final class ProjectStore: ObservableObject {
                 } else {
                     document.requests[i].state = unchanged ? (reply.kind == .clarification ? .clarificationNeeded : .replyAvailable) : .stale
                 }
-                document.conversation?.appendActivity(requestID: id, title: "Risposta ricevuta", detail: "\(reply.references.count) fonti")
+                document.conversation?.appendActivity(requestID: id, title: "Risposta ricevuta", detail: reply.references.count == 1 ? "1 fonte" : "\(reply.references.count) fonti")
                 document.conversation?.recordReply(requestID: id, text: document.requests[i].plan, model: model, references: reply.references)
                 activity.insert("Risposta del Coordinatore ricevuta per \(request.moduleName).", at: 0)
             } catch {
