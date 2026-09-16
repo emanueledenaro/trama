@@ -35,8 +35,9 @@ struct CoordinatorView: View {
                 ScrollViewReader { proxy in
                     ScrollView {
                         LazyVStack(alignment: .leading, spacing: TramaSpacing.section) {
+                            let latestReplyID = rows.last { if case .coordinatorReply = $0 { true } else { false } }?.id
                             ForEach(rows) { row in
-                                self.row(row).id(row.id)
+                                self.row(row, latestReplyID: latestReplyID).id(row.id)
                             }
                             if let study = store.coordinatorStudyText {
                                 pendingStudy(study).id(Self.pendingStudyID)
@@ -184,13 +185,13 @@ struct CoordinatorView: View {
     }
 
     @ViewBuilder
-    private func row(_ row: ConversationRow) -> some View {
+    private func row(_ row: ConversationRow, latestReplyID: UUID?) -> some View {
         switch row {
         case .personMessage(let message):
             personMessage(message)
         case .coordinatorReply(let reply):
             if let request = store.document.requests.first(where: { $0.id == reply.requestID }) {
-                coordinatorReply(reply, request: request)
+                coordinatorReply(reply, request: request, isLatest: reply.id == latestReplyID)
             }
         case .activityGroup(let group):
             activityGroup(group)
@@ -297,7 +298,7 @@ struct CoordinatorView: View {
         }
     }
 
-    private func coordinatorReply(_ reply: ConversationRow.CoordinatorReplyRow, request: WorkRequest) -> some View {
+    private func coordinatorReply(_ reply: ConversationRow.CoordinatorReplyRow, request: WorkRequest, isLatest: Bool) -> some View {
         VStack(alignment: .leading, spacing: TramaSpacing.related) {
             HStack(spacing: TramaSpacing.compact) {
                 Text("Coordinatore")
@@ -323,7 +324,8 @@ struct CoordinatorView: View {
                 }
             }
 
-            if reply.showsRequestStatus, request.proposal == nil, request.replyKind == .explanation,
+            // Only the latest reply offers a plan, so the conversation does not repeat the same button.
+            if isLatest, reply.showsRequestStatus, request.proposal == nil, request.replyKind == .explanation,
                request.state == .replyAvailable, store.streamingReplies[request.id] == nil {
                 Button("Prepara un piano", systemImage: "list.bullet.clipboard") { store.preparePlan(request.id) }
                     .disabled(store.isPlanning || !store.codexConnected)
@@ -352,7 +354,7 @@ struct CoordinatorView: View {
     private func replyBody(_ request: WorkRequest, text: String?) -> some View {
         if let preview = store.streamingReplies[request.id] {
             if !preview.isEmpty {
-                Text(preview).textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
+                IssueMarkdownView(source: preview)
             }
             HStack(spacing: TramaSpacing.control) {
                 ProgressView().controlSize(.small)
