@@ -376,9 +376,10 @@ struct CoordinatorView: View {
             if !card.personActions.isEmpty {
                 TramaAdaptiveActions {
                     if card.personActions.contains(.grant) {
-                        Button("Concedi") { store.acceptMandateProposal(request.id) }
+                        let grantLabel = card.currentMandate?.status == .granted ? "Accetta la proposta" : "Concedi"
+                        Button(grantLabel) { store.acceptMandateProposal(request.id) }
                             .buttonStyle(.borderedProminent)
-                            .accessibilityLabel("Concedi il mandato proposto")
+                            .accessibilityLabel(card.currentMandate?.status == .granted ? "Accetta la proposta di mandato" : "Concedi il mandato proposto")
                     }
                     if card.personActions.contains(.correct) {
                         Button("Correggi") { store.reviewMandateRequest(request) }
@@ -410,12 +411,11 @@ struct CoordinatorView: View {
         let request = card.request
         return VStack(alignment: .leading, spacing: TramaSpacing.related) {
             HStack(spacing: TramaSpacing.compact) {
-                Image(systemName: request.category == .destructive ? "exclamationmark.triangle" : "checkmark.seal")
                 Text("Decisione").font(.headline)
                 TramaStatusBadge(
-                    label: request.category == .destructive ? "Caso distruttivo" : "Prodotto",
+                    label: request.category == .destructive ? "Caso distruttivo" : "Scelta di prodotto",
                     symbol: request.category == .destructive ? "exclamationmark.triangle" : "checkmark.seal",
-                    color: request.category == .destructive ? .orange : .secondary
+                    color: card.canAnswer || request.category == .destructive ? .orange : .secondary
                 )
                 Spacer(minLength: 0)
                 Text("Coordinatore").font(.caption).foregroundStyle(.secondary)
@@ -441,7 +441,7 @@ struct CoordinatorView: View {
                     .accessibilityLabel("Alternativa \(index + 1): \(alternative.behavior)")
                 }
                 VStack(alignment: .leading, spacing: TramaSpacing.compact) {
-                    Text("Oppure rispondi con parole tue").font(.caption).foregroundStyle(.secondary)
+                    TramaSupportingText("Oppure rispondi con parole tue")
                     TextField("La tua decisione", text: decisionDraft(request.id), axis: .vertical)
                         .lineLimit(2...5)
                     Button("Registra la decisione") {
@@ -453,8 +453,9 @@ struct CoordinatorView: View {
             } else if let outcome = request.outcome {
                 VStack(alignment: .leading, spacing: TramaSpacing.compact) {
                     Text("Decisione \(outcome.decisionID) · versione \(outcome.version)")
-                        .font(.callout)
-                    Text(decisionOutcomeText(request, outcome)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text(decisionOutcomeText(request, outcome)).fixedSize(horizontal: false, vertical: true)
                     Button("Apri nel Patto") { store.section = .decisions }
                         .accessibilityLabel("Apri la decisione \(outcome.decisionID) nel Patto")
                 }

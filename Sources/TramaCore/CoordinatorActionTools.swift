@@ -30,7 +30,7 @@ extension CoordinatorTools {
     static func actionDefinition(_ tool: Tool) -> (String, [String: JSONValue], [String]) {
         switch tool {
         case .requestMandate:
-            return ("Ask the person for a mandate, or for a correction of the current one, with the reason and the proposal. Trama shows it as a card; the person grants, corrects or declines it. Module ids come from read_mandate.",
+            return ("Ask the person for a mandate, or for a correction of the current one, with the reason and the proposal. Trama shows it as a card; the person grants, corrects or revokes it. Module ids come from read_mandate.",
                     ["reason": text, "objectives": list(minimum: 1), "priorities": list(minimum: 0), "scopeModuleIDs": list(minimum: 1),
                      "authorizedActions": .object(["type": .string("array"), "minItems": .integer(1), "items": .object(["type": .string("string"), "enum": .array(delegableActions.map { .string(actionName($0)) })])]),
                      "limits": list(minimum: 0)],
@@ -133,7 +133,7 @@ extension CoordinatorTools {
         return success(json: .object([
             "status": .string("asked"),
             "mandateRequestID": .string(asked.id),
-            "meaning": .string("The person grants, corrects or declines the mandate on the card. Trama tells you the outcome in a later message; until then act on nothing.")
+            "meaning": .string("The person grants, corrects or revokes the mandate on the card. Trama tells you the outcome in a later message; until then act on nothing.")
         ]))
     }
 
