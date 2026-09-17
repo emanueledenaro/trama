@@ -59,6 +59,26 @@ struct GitHubClientTests {
         #expect(await runner.calls.isEmpty)
     }
 
+    @Test("The gh process is asked for plain JSON, not a colored pager")
+    func processEnvironmentDisablesColor() {
+        let environment = ProcessGitHubCommandRunner.processEnvironment(base: [
+            "CLICOLOR": "1",
+            "CLICOLOR_FORCE": "1",
+            "TERM": "xterm-256color",
+            "GH_TOKEN": "secret",
+            "PATH": "/opt/homebrew/bin"
+        ])
+        #expect(environment["NO_COLOR"] == "1")
+        #expect(environment["CLICOLOR"] == "0")
+        #expect(environment["CLICOLOR_FORCE"] == nil)
+        #expect(environment["GH_PAGER"] == "cat")
+        #expect(environment["TERM"] == "dumb")
+        #expect(environment["GH_TOKEN"] == nil)
+        #expect(environment["PATH"] == "/opt/homebrew/bin")
+        #expect(environment["GH_HOST"] == "github.com")
+        #expect(environment["GH_PROMPT_DISABLED"] == "1")
+    }
+
     @Test("Classifies auth, revocation, rate limit, and hidden repositories")
     func classifiesFailures() async {
         let cases: [(String, GitHubClientError)] = [

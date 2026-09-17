@@ -150,7 +150,11 @@ public actor ProcessGitHubCommandRunner: GitHubCommandRunning {
         environment["GH_HOST"] = "github.com"
         environment["GH_PROMPT_DISABLED"] = "1"
         environment["GIT_TERMINAL_PROMPT"] = "0"
-        for key in ["GH_TOKEN", "GITHUB_TOKEN", "GH_ENTERPRISE_TOKEN", "GITHUB_ENTERPRISE_TOKEN"] {
+        environment["GH_PAGER"] = "cat"
+        environment["NO_COLOR"] = "1"
+        environment["CLICOLOR"] = "0"
+        environment["TERM"] = "dumb"
+        for key in ["GH_TOKEN", "GITHUB_TOKEN", "GH_ENTERPRISE_TOKEN", "GITHUB_ENTERPRISE_TOKEN", "CLICOLOR_FORCE"] {
             environment.removeValue(forKey: key)
         }
         return environment

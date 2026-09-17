@@ -136,115 +136,16 @@ struct WorkspaceView: View {
         VStack(spacing: 0) {
             if store.pendingApproval != nil { ApprovalView(); Divider() }
             switch store.section ?? .map {
-            case .coordinator: CoordinatorView()
+            case .coordinator:
+                // The composer floats over the end of the conversation.
+                CoordinatorView().safeAreaInset(edge: .bottom, spacing: 0) { CoordinatorComposer() }
             case .map: ProjectMapView()
             case .changes: RequestsView()
             case .decisions: DecisionsView()
             case .team: TeamView().environmentObject(store.team)
             case .issues: IssuesView()
             }
-            if store.section == .coordinator {
-                Divider()
-                composer
-            }
         }
-    }
-
-    private var composer: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            ViewThatFits(in: .horizontal) {
-                HStack { composerContext; Spacer(); composerState.fixedSize(horizontal: true, vertical: false) }
-                VStack(alignment: .leading, spacing: TramaSpacing.compact) {
-                    composerContext
-                    composerState
-                }
-            }
-            if let error = store.modelsError {
-                Label(error, systemImage: "exclamationmark.triangle")
-                    .font(.caption)
-                    .foregroundStyle(.orange)
-            }
-            HStack(alignment: .bottom, spacing: TramaSpacing.related) {
-                TextField("Scrivi al Coordinatore", text: $store.composer, axis: .vertical)
-                    .textFieldStyle(.plain).lineLimit(1...4).font(.body)
-                    .onSubmit { store.submitRequest() }
-                    .help("Il Coordinatore ricorda la conversazione e legge il progetto senza modificarlo")
-                    .accessibilityLabel("Messaggio al Coordinatore")
-                if store.isPlanning {
-                    Button("Interrompi", systemImage: "stop.fill") { store.stopPlanning() }.labelStyle(.iconOnly)
-                } else {
-                    Button { store.submitRequest() } label: { Image(systemName: "arrow.up").fontWeight(.semibold) }
-                        .buttonStyle(.borderedProminent).buttonBorderShape(.circle)
-                        .disabled(store.composer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || (store.codexConnected && store.selectedModelInfo == nil))
-                        .help("Invia al Coordinatore").accessibilityLabel("Invia al Coordinatore")
-                }
-            }
-            .padding(.horizontal, TramaSpacing.related)
-            .padding(.vertical, TramaSpacing.control)
-            .background(.background, in: RoundedRectangle(cornerRadius: TramaRadius.card))
-            .overlay(RoundedRectangle(cornerRadius: TramaRadius.card).stroke(.separator))
-        }
-        .padding(TramaSpacing.section)
-        .background(.bar)
-    }
-
-    private var composerContext: some View {
-        HStack(spacing: TramaSpacing.control) {
-                Menu {
-                    Button("Intero progetto") { store.selectedModuleID = nil }
-                    ForEach(store.project?.modules ?? []) { module in
-                        Button(module.name) { store.selectedModuleID = module.id }
-                    }
-                } label: { Label(store.selectedModule?.name ?? "Intero progetto", systemImage: "scope") }
-                .menuStyle(.borderlessButton).lineLimit(1).frame(maxWidth: 220, alignment: .leading).font(.caption)
-                Menu {
-                    if store.models.isEmpty {
-                        Button(store.isLoadingModels ? "Caricamento modelli…" : "Nessun modello disponibile") { }
-                            .disabled(true)
-                    } else {
-                        ForEach(store.models) { model in
-                            Button {
-                                store.selectModel(model.model)
-                            } label: {
-                                if model.model == store.selectedModel {
-                                    Label(model.displayName, systemImage: "checkmark")
-                                } else {
-                                    Text(model.displayName)
-                                }
-                            }
-                        }
-                    }
-                } label: {
-                    Label(store.selectedModelDisplayName, systemImage: "cpu")
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                }
-                .menuStyle(.borderlessButton)
-                .frame(maxWidth: 190, alignment: .leading)
-                .font(.caption)
-                .disabled(store.isPlanning || store.isExecuting || store.models.isEmpty)
-                .help(store.selectedModelInfo?.description ?? store.modelsError ?? "Catalogo modelli di Codex")
-                .accessibilityLabel("Modello: \(store.selectedModelDisplayName)")
-        }
-    }
-
-    @ViewBuilder
-    private var composerState: some View {
-        if store.isPlanning {
-            HStack(spacing: TramaSpacing.compact) {
-                ProgressView().controlSize(.small)
-                Text(workingDescription)
-            }.font(.caption).foregroundStyle(.secondary)
-        } else {
-            EmptyView()
-        }
-    }
-
-    private var workingDescription: String {
-        if store.isExecuting { return "Il Coordinatore sta lavorando nel worktree" }
-        if store.coordinatorPhase == .studying { return "Il Coordinatore sta studiando il progetto" }
-        if store.selectedRequest?.state == .checking { return "Verifiche in corso" }
-        return "Il Coordinatore sta leggendo il progetto"
     }
 
     @ToolbarContentBuilder
