@@ -348,8 +348,7 @@ extension ConversationTimeline {
                 guard let collected = activities[turn], collected.first?.id == event.id else { continue }
                 let isRunning: Bool
                 var duration: TimeInterval?
-                if let assignmentID = turn.assignmentID {
-                    _ = assignmentID
+                if turn.assignmentID != nil {
                     isRunning = turn.turnID.map(runningSpecialistTurns.contains) ?? false
                     // A specialist group runs from its first activity to the last one of the same turn.
                     if !isRunning, let last = collected.last?.date, last > event.createdAt {
