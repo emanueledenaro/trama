@@ -202,6 +202,45 @@ struct SpecialistRuntimeTests {
         #expect(transport.request("turn/start") == nil)
     }
 
+    @Test("Under the sandbox Trama asks for, a write outside the worktree is denied, index included")
+    func sandboxDeniesWritesOutsideTheWorktree() async throws {
+        guard let codex = GitFixture.findCodex() else { return }
+        let fixture = try GitFixture()
+        defer { fixture.remove() }
+        let sessions = WorkspaceSessionManager(worktreesRoot: fixture.root.appendingPathComponent("managed-worktrees"))
+        let session = try await sessions.prepare(repository: fixture.repository, name: "Ada")
+        let statusBefore = try fixture.git(["status", "--porcelain=v1", "--untracked-files=all"])
+        let indexBefore = try Data(contentsOf: fixture.repository.appendingPathComponent(".git/index"))
+        let outside = fixture.repository.appendingPathComponent("tracked.txt")
+        let mainIndex = fixture.repository.appendingPathComponent(".git/index")
+        // The same seatbelt shape the specialist thread declares: write in the workspace root, no network.
+        let command = try CheckSandbox.command(
+            for: URL(fileURLWithPath: "/bin/sh"),
+            arguments: ["-c", "echo dentro > refund.txt; echo fuori > \(outside.path); : > \(mainIndex.path); echo rete: $(/usr/bin/curl -s -m 2 https://example.com > /dev/null 2>&1; echo $?)"],
+            cwd: session.worktreeRoot,
+            codexURL: codex
+        )
+        let process = Process()
+        let output = Pipe()
+        process.executableURL = command.executableURL
+        process.arguments = command.arguments
+        process.currentDirectoryURL = command.currentDirectoryURL
+        process.standardOutput = output
+        process.standardError = output
+        try process.run()
+        let data = output.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
+        let text = String(decoding: data, as: UTF8.self)
+
+        #expect(try String(contentsOf: session.worktreeRoot.appendingPathComponent("refund.txt"), encoding: .utf8) == "dentro\n")
+        #expect(text.contains("Operation not permitted"))
+        #expect(try fixture.read("tracked.txt") == "committed\n")
+        #expect(try Data(contentsOf: mainIndex) == indexBefore)
+        #expect(try fixture.git(["status", "--porcelain=v1", "--untracked-files=all"]) == statusBefore)
+        // Network access is off, so the request cannot succeed.
+        #expect(text.contains("rete: 0") == false)
+    }
+
     // MARK: Activities of a turn
 
     @Test("The turn reports commands, file changes, notes and the final answer, in order")
