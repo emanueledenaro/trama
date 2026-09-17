@@ -11,9 +11,17 @@ struct CoordinatorView: View {
     @State private var decisionDrafts: [String: String] = [:]
     /// Revocation reasons keyed by mandate request id.
     @State private var revocationDrafts: [String: String] = [:]
+    /// Specialists the person keeps, keyed by team proposal id; nil means the whole proposal.
+    @State private var teamSelections: [String: Set<String>] = [:]
+    /// Corrections written on a team proposal card, keyed by its id.
+    @State private var teamNotes: [String: String] = [:]
 
     private var rows: [ConversationRow] {
-        ConversationTimeline.rows(for: store.document, runningRequestIDs: Set(store.streamingReplies.keys))
+        ConversationTimeline.rows(
+            for: store.document,
+            runningRequestIDs: Set(store.streamingReplies.keys),
+            runningSpecialistTurns: store.specialists.runningTurns
+        )
     }
     private var lastStreamedText: String? { rows.last?.requestID.flatMap { store.streamingReplies[$0] } }
 
@@ -265,8 +273,10 @@ struct CoordinatorView: View {
     }
 
     /// Technical activities of one turn: listed while the turn runs, one closed row once it is concluded.
+    /// A specialist's turn says whose it is, so its work is never confused with the Coordinator's.
     @ViewBuilder
     private func activityGroup(_ group: ConversationRow.ActivityGroupRow) -> some View {
+        let author = specialistName(group)
         if group.isConcluded {
             let isExpanded = expandedActivityGroups.contains(group.id)
             VStack(alignment: .leading, spacing: TramaSpacing.compact) {
@@ -277,6 +287,7 @@ struct CoordinatorView: View {
                         Image(systemName: "chevron.right")
                             .font(.caption2.weight(.semibold))
                             .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                        if let author { Text(author) }
                         Text(group.duration.map { "Ha lavorato per " + ConversationRow.ActivityGroupRow.formattedDuration($0) } ?? "Dettagli")
                     }
                     .contentShape(Rectangle())
@@ -290,11 +301,29 @@ struct CoordinatorView: View {
             .foregroundStyle(.secondary)
             .padding(.horizontal, TramaSpacing.related)
         } else {
-            activityList(group.activities)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, TramaSpacing.related)
+            VStack(alignment: .leading, spacing: TramaSpacing.compact) {
+                if let author {
+                    HStack(spacing: TramaSpacing.compact) {
+                        ProgressView().controlSize(.mini)
+                        Text("\(author) sta lavorando")
+                    }
+                }
+                activityList(group.activities)
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, TramaSpacing.related)
         }
+    }
+
+    /// "Specialista Ada · incarico A-1234" for a specialist group, nil for the Coordinator's own.
+    private func specialistName(_ group: ConversationRow.ActivityGroupRow) -> String? {
+        guard let assignmentID = group.assignmentID else { return nil }
+        guard let team = store.document.team, let assignment = team.assignment(assignmentID) else {
+            return "Specialista · incarico \(assignmentID)"
+        }
+        let name = team.specialist(assignment.specialistID)?.name ?? assignment.specialistID
+        return "Specialista \(name) · incarico \(assignment.id)"
     }
 
     private func activityList(_ activities: [ConversationRow.ActivityGroupRow.Activity]) -> some View {
@@ -303,7 +332,9 @@ struct CoordinatorView: View {
                 HStack(alignment: .firstTextBaseline, spacing: TramaSpacing.compact) {
                     Text(activity.date, format: .dateTime.hour().minute().second()).monospacedDigit()
                     Text(activity.title)
-                    if let detail = activity.detail { Text(detail).foregroundStyle(.tertiary).lineLimit(2) }
+                    if let detail = activity.detail {
+                        Text(detail).foregroundStyle(.tertiary).fixedSize(horizontal: false, vertical: true)
+                    }
                 }
             }
         }
@@ -318,6 +349,10 @@ struct CoordinatorView: View {
             mandateCard(card, date: row.date)
         case .decision(let card):
             decisionCard(card, date: row.date)
+        case .teamProposal(let card):
+            teamProposalCard(card, date: row.date)
+        case .assignment(let card):
+            assignmentCard(card, date: row.date)
         case .generic(let card):
             switch card.kind {
             case .study:
@@ -470,6 +505,183 @@ struct CoordinatorView: View {
         .overlay(RoundedRectangle(cornerRadius: TramaRadius.card).stroke(.separator))
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Scheda di decisione: \(request.question)")
+    }
+
+    /// The team the Coordinator proposed: the person confirms it as it is, or corrects it once.
+    private func teamProposalCard(_ card: ConversationCard.TeamProposalCard, date: Date) -> some View {
+        let proposal = card.proposal
+        let kept = teamSelections[proposal.id] ?? Set(proposal.members.map(\.name))
+        return VStack(alignment: .leading, spacing: TramaSpacing.related) {
+            HStack(spacing: TramaSpacing.compact) {
+                Image(systemName: "person.3")
+                Text("Proposta del team").font(.headline)
+                Spacer(minLength: 0)
+                Text("Coordinatore").font(.caption).foregroundStyle(.secondary)
+            }
+            if let summary = proposal.summary {
+                Text(summary).fixedSize(horizontal: false, vertical: true)
+            }
+            ForEach(Array(proposal.members.enumerated()), id: \.offset) { _, member in
+                VStack(alignment: .leading, spacing: TramaSpacing.compact) {
+                    if card.canAnswer {
+                        Toggle(isOn: Binding(
+                            get: { kept.contains(member.name) },
+                            set: { keep in
+                                var names = kept
+                                if keep { names.insert(member.name) } else { names.remove(member.name) }
+                                teamSelections[proposal.id] = names
+                            }
+                        )) {
+                            Text("\(member.name) · \(member.competence)").font(.body.weight(.medium))
+                        }
+                        .accessibilityLabel("Tieni \(member.name), \(member.competence)")
+                    } else {
+                        Text("\(member.name) · \(member.competence)").font(.body.weight(.medium))
+                    }
+                    TramaSupportingText(member.reason)
+                    if !member.moduleIDs.isEmpty {
+                        Text("Moduli: \(member.moduleIDs.joined(separator: ", "))").font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(TramaSpacing.related)
+                .overlay(RoundedRectangle(cornerRadius: TramaRadius.control).stroke(.separator))
+            }
+            if card.canAnswer {
+                VStack(alignment: .leading, spacing: TramaSpacing.compact) {
+                    TramaSupportingText("Puoi togliere chi non serve e scrivere una correzione")
+                    TextField("Correzione (facoltativa)", text: teamNote(proposal.id), axis: .vertical)
+                        .lineLimit(1...4)
+                    Button(kept.count == proposal.members.count && (teamNotes[proposal.id] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Conferma il team" : "Conferma con le correzioni") {
+                        store.answerTeamProposal(
+                            proposal.id,
+                            keeping: kept.count == proposal.members.count ? nil : proposal.members.map(\.name).filter(kept.contains),
+                            note: teamNotes[proposal.id]
+                        )
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(kept.isEmpty)
+                    .accessibilityLabel("Conferma il team proposto")
+                }
+            } else {
+                VStack(alignment: .leading, spacing: TramaSpacing.compact) {
+                    Text(teamResolutionText(proposal.resolution)).font(.callout).foregroundStyle(.secondary)
+                    if !card.specialists.isEmpty {
+                        Text(card.specialists.map { "\($0.name) (\($0.id))" }.joined(separator: ", "))
+                            .font(.callout)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Button("Apri il Team") { store.section = .team }
+                            .accessibilityLabel("Apri la sezione Team")
+                    }
+                }
+            }
+            Text(date, format: .dateTime.day().month().hour().minute()).font(.caption).foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(TramaSpacing.section)
+        .background(.background.secondary, in: RoundedRectangle(cornerRadius: TramaRadius.card))
+        .overlay(RoundedRectangle(cornerRadius: TramaRadius.card).stroke(.separator))
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Scheda di proposta del team")
+    }
+
+    /// The work of one specialist: what it has to do, where it works and what the person can do now.
+    private func assignmentCard(_ card: ConversationCard.Assignment, date: Date) -> some View {
+        let assignment = card.assignment
+        let actions = card.personActions
+        return VStack(alignment: .leading, spacing: TramaSpacing.related) {
+            HStack(spacing: TramaSpacing.compact) {
+                Image(systemName: "person.badge.clock")
+                Text("Incarico").font(.headline)
+                SpecialistStatusBadge(status: assignment.status)
+                Spacer(minLength: 0)
+                Text("Coordinatore").font(.caption).foregroundStyle(.secondary)
+            }
+            TramaLabeledText(label: "Specialista", value: card.specialist.map { "\($0.name) · \($0.competence)" } ?? assignment.specialistID)
+            TramaLabeledText(label: "Obiettivo", value: assignment.objective)
+            if let issue = assignment.issueNumber {
+                TramaLabeledText(label: "Ticket", value: "Issue #\(issue)")
+            }
+            if let exercise = assignment.exercise {
+                TramaLabeledText(label: "Esercizio", value: exercise)
+            }
+            TramaLabeledText(label: "Perimetro", value: assignment.moduleIDs.joined(separator: ", "))
+            if !assignment.dependencies.isEmpty {
+                TramaLabeledText(label: "Dipendenze", value: assignment.dependencies.joined(separator: ", "))
+            }
+            HStack(spacing: TramaSpacing.related) {
+                if actions.contains(.changeModel) {
+                    VStack(alignment: .leading, spacing: TramaSpacing.compact) {
+                        Text("Modello").font(.caption.weight(.medium)).foregroundStyle(.secondary)
+                        Menu(assignment.model) {
+                            ForEach(store.models) { model in
+                                Button(model.displayName) { store.setSpecialistModel(assignmentID: assignment.id, model: model.model) }
+                            }
+                        }
+                        .fixedSize()
+                        .accessibilityLabel("Modello dello specialista: \(assignment.model)")
+                    }
+                } else {
+                    TramaLabeledText(label: "Modello", value: assignment.model)
+                }
+                TramaLabeledText(label: "Verifiche richieste", value: assignment.requiredChecks.isEmpty ? "nessuna" : assignment.requiredChecks.joined(separator: ", "))
+            }
+            TramaLabeledText(
+                label: "Worktree",
+                value: assignment.needsWorktree
+                    ? (assignment.workspace.map { "\($0.branch) · \($0.worktreeRoot.path)" } ?? "in preparazione")
+                    : "non necessario, incarico di sola lettura"
+            )
+            if let stop = assignment.stops.last {
+                TramaSupportingText("Arresto chiesto da \(stop.requestedBy): \(stop.reason)\(stop.confirmedAt == nil ? " · in attesa di conferma" : " · confermato")")
+            }
+            if let result = assignment.result {
+                TramaLabeledText(label: "Risultato", value: result)
+            }
+            if let failure = assignment.failure {
+                TramaSupportingText("Errore: \(failure)")
+            }
+            if !actions.isEmpty {
+                TramaAdaptiveActions {
+                    if actions.contains(.stop) {
+                        Button("Ferma", systemImage: "stop.fill") { store.stopSpecialist(assignmentID: assignment.id) }
+                            .accessibilityLabel("Ferma lo specialista")
+                    }
+                    if actions.contains(.resume) {
+                        Button("Riprendi", systemImage: "play.fill") { store.resumeSpecialist(assignmentID: assignment.id) }
+                            .buttonStyle(.borderedProminent)
+                            .disabled(!store.codexConnected)
+                            .accessibilityLabel("Riprendi l'incarico")
+                    }
+                    Button("Apri il Team") { store.section = .team }
+                        .accessibilityLabel("Apri la sezione Team")
+                }
+            }
+            Text(date, format: .dateTime.day().month().hour().minute()).font(.caption).foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(TramaSpacing.section)
+        .background(.background.secondary, in: RoundedRectangle(cornerRadius: TramaRadius.card))
+        .overlay(RoundedRectangle(cornerRadius: TramaRadius.card).stroke(.separator))
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Scheda di incarico")
+    }
+
+    private func teamResolutionText(_ resolution: TeamProposal.Resolution?) -> String {
+        switch resolution {
+        case nil: "In attesa della tua risposta."
+        case .confirmed: "Team confermato."
+        case let .corrected(_, removed, note):
+            "Team corretto." + (removed.isEmpty ? "" : " Tolti: \(removed.joined(separator: ", ")).") + (note.map { " \($0)" } ?? "")
+        case .superseded: "Proposta sostituita da una più recente."
+        }
+    }
+
+    private func teamNote(_ id: String) -> Binding<String> {
+        Binding(
+            get: { teamNotes[id] ?? "" },
+            set: { teamNotes[id] = $0 }
+        )
     }
 
     private func revocationDraft(_ id: String) -> Binding<String> {

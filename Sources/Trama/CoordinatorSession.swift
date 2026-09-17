@@ -236,7 +236,9 @@ extension ProjectStore {
             issues: github == nil ? nil : projectIssues,
             github: github,
             modules: project.modules.map { .init(id: $0.id, name: $0.name, path: $0.relativePath) },
-            availableChecks: ReadOnlyCheckRunner.availableChecks(root: root)
+            availableChecks: ReadOnlyCheckRunner.availableChecks(root: root),
+            models: models.map(\.model),
+            defaultSpecialistModel: selectedModel.isEmpty ? nil : selectedModel
         )
     }
 
@@ -381,6 +383,8 @@ extension ProjectStore {
     /// Resolves the pending mandate cards with the person's change and tells the Coordinator.
     func announceMandateChange(_ resolution: MandateRequest.Resolution, reason: String? = nil) {
         document.resolvePendingMandateRequests(resolution)
+        // Work the changed mandate no longer covers is stopped, so running work is always authorized.
+        stopWorkOutsideMandate(reason: resolution == .revoked ? "Il mandato è stato revocato." : "Il mandato è stato corretto e non copre più questo incarico.")
         if resolution == .revoked {
             for index in document.requests.indices where isQueuedCoordinatorPlan(document.requests[index]) {
                 document.requests[index].state = .interrupted
@@ -392,7 +396,7 @@ extension ProjectStore {
     }
 
     /// Writes an act of the person as their message and sends it to the Coordinator, now or when the current work ends.
-    private func sayToCoordinator(_ text: String) {
+    func sayToCoordinator(_ text: String) {
         guard let project else { return }
         var request = WorkRequest(title: String(text.prefix(90)), moduleID: "project", moduleName: project.name, request: text, sourceFingerprint: fingerprint)
         request.model = selectedModel.isEmpty ? nil : selectedModel
@@ -578,7 +582,8 @@ extension ProjectStore {
             study: state.study,
             injected: state.thread?.injectedStudy ?? [:],
             memory: state.memory,
-            includeMemory: !coordinator.memoryDelivered
+            includeMemory: !coordinator.memoryDelivered,
+            team: document.team
         )
         let moduleLine = document.requests[index].moduleID == "project" ? nil : "Contesto scelto dalla persona: modulo \(moduleName)."
         // Images belong to the message that opened the request, not to later answers.
@@ -646,6 +651,7 @@ extension ProjectStore {
                         document.coordinator?.thread?.injectedStudy[part.rawValue] = study.section(part)?.fingerprint
                     }
                 }
+                if let update, update.includesTeam { document.markTeamReported(update.reportedAssignmentIDs) }
                 coordinator.memoryDelivered = true
                 let references = CoordinatorBriefing.references(in: reply, knownFiles: Array(knownFiles))
                 document.requests[i].replyKind = .explanation
@@ -680,7 +686,8 @@ extension ProjectStore {
             streamingReplies[requestID, default: ""] += delta
         case let .commentary(note):
             document.conversation?.appendActivity(requestID: requestID, title: "Nota del Coordinatore", detail: note)
-        case .toolCallStarted:
+        case .toolCallStarted, .reasoning, .commandCompleted, .fileChangeCompleted:
+            // The Coordinator runtime reads: its commands and reasoning stay out of the conversation.
             break
         case let .toolCallCompleted(_, server, tool, succeeded, error):
             let title: String = Self.toolTitle(tool)
@@ -780,6 +787,11 @@ extension ProjectStore {
         case .requestDecision: "Ha chiesto una decisione"
         case .runReadOnlyCheck: "Ha eseguito un controllo in sola lettura"
         case .preparePlan: "Ha ordinato un piano"
+        case .readTeam: "Ha letto il team"
+        case .proposeTeam: "Ha proposto il team"
+        case .createSpecialist: "Ha aggiunto uno specialista"
+        case .assignTask: "Ha assegnato un incarico"
+        case .stopSpecialist: "Ha chiesto di fermare uno specialista"
         case nil: "Strumento \(tool)"
         }
     }

@@ -45,6 +45,8 @@ public struct ConversationEvent: Codable, Identifiable, Equatable, Sendable {
     public var origin: Origin
     public var requestID: UUID?
     public var assignmentID: String?
+    /// The provider turn the event belongs to; specialist activities are collected by it.
+    public var turnID: String?
     public var createdAt: Date
     public var content: Content
 }
@@ -115,6 +117,11 @@ public struct ConversationTimeline: Codable, Equatable, Sendable {
         append(.activity(title: title, detail: detail), origin: .trama, requestID: requestID, at: date)
     }
 
+    /// A technical activity of a specialist; the chat collects the activities of one of its turns.
+    public mutating func appendSpecialistActivity(assignmentID: String, turnID: String?, title: String, detail: String?, at date: Date = Date()) {
+        append(.activity(title: title, detail: detail), origin: .specialist, requestID: nil, assignmentID: assignmentID, turnID: turnID, at: date)
+    }
+
     public mutating func appendCard(
         _ card: ConversationEvent.Card,
         origin: ConversationEvent.Origin,
@@ -123,6 +130,20 @@ public struct ConversationTimeline: Codable, Equatable, Sendable {
         at date: Date = Date()
     ) {
         append(.card(card), origin: origin, requestID: requestID, assignmentID: assignmentID, at: date)
+    }
+
+    /// Moves the events appended after `sequence` to the end, keeping their order, so a card written
+    /// during the opening turn follows the study card that closes it.
+    public mutating func moveToEnd(after sequence: Int) {
+        let moved = events.filter { $0.sequence > sequence }
+        guard !moved.isEmpty else { return }
+        events.removeAll { $0.sequence > sequence }
+        for event in moved {
+            lastSequence += 1
+            var moved = event
+            moved.sequence = lastSequence
+            events.append(moved)
+        }
     }
 
     private func lastReplyIndex(requestID: UUID) -> Int? {
@@ -137,6 +158,7 @@ public struct ConversationTimeline: Codable, Equatable, Sendable {
         origin: ConversationEvent.Origin,
         requestID: UUID?,
         assignmentID: String? = nil,
+        turnID: String? = nil,
         at date: Date,
         id: UUID = UUID()
     ) {
@@ -148,6 +170,7 @@ public struct ConversationTimeline: Codable, Equatable, Sendable {
             origin: origin,
             requestID: requestID,
             assignmentID: assignmentID,
+            turnID: turnID,
             createdAt: date,
             content: content
         ))
@@ -192,6 +215,10 @@ public enum ConversationRow: Identifiable, Equatable, Sendable {
 
         public var id: UUID
         public var requestID: UUID?
+        /// The assignment whose specialist produced the activities; nil for the Coordinator's own.
+        public var assignmentID: String?
+        /// The provider turn of a specialist group.
+        public var turnID: String?
         public var activities: [Activity]
         /// False while the turn is still running: a running turn is never collapsed.
         public var isConcluded: Bool
@@ -247,6 +274,9 @@ extension ConversationTimeline {
         var requestID: UUID?
         /// Index of the opening person message; for events without a request, the event's own index.
         var start: Int
+        /// Assignment and provider turn of a specialist group.
+        var assignmentID: String?
+        var turnID: String?
     }
 
     /// Builds the chat rows of a document.
@@ -256,7 +286,7 @@ extension ConversationTimeline {
     /// whose latest turn has no reply yet gets a pending reply row, and so does running work without a person message.
     /// `runningRequestIDs` are the requests with a turn in progress: that turn is never collapsed,
     /// and a new analysis started after the reply shows its progress in a pending row below it.
-    public static func rows(for document: ProjectDocument, runningRequestIDs: Set<UUID> = []) -> [ConversationRow] {
+    public static func rows(for document: ProjectDocument, runningRequestIDs: Set<UUID> = [], runningSpecialistTurns: Set<String> = []) -> [ConversationRow] {
         let events = document.conversation?.events ?? []
         let requests = Dictionary(document.requests.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         let imported = Set(document.importedRequestIDs ?? [])
@@ -267,8 +297,20 @@ extension ConversationTimeline {
         var turns: [Turn] = []
         var activities: [Turn: [ConversationRow.ActivityGroupRow.Activity]] = [:]
         var replyEnd: [Turn: Date] = [:]
+        var specialistTurnStart: [Turn: Int] = [:]
         for (index, event) in events.enumerated() {
             guard let requestID = event.requestID else {
+                if let assignmentID = event.assignmentID, case .activity(let title, let detail) = event.content {
+                    var turn = Turn(requestID: nil, start: index, assignmentID: assignmentID, turnID: event.turnID)
+                    if let start = specialistTurnStart[turn] {
+                        turn.start = start
+                    } else {
+                        specialistTurnStart[turn] = index
+                    }
+                    turns.append(turn)
+                    activities[turn, default: []].append(.init(id: event.id, title: title, detail: detail, date: event.createdAt))
+                    continue
+                }
                 turns.append(Turn(requestID: nil, start: index))
                 if case .activity(let title, let detail) = event.content {
                     activities[turns[index]] = [.init(id: event.id, title: title, detail: detail, date: event.createdAt)]
@@ -316,14 +358,26 @@ extension ConversationTimeline {
                 )))
             case .activity:
                 guard let collected = activities[turn], collected.first?.id == event.id else { continue }
-                let isRunning = turn.requestID.map { runningRequestIDs.contains($0) && turn.start == (lastPersonIndex[$0] ?? -1) } ?? false
-                let duration = replyEnd[turn].flatMap { end -> TimeInterval? in
-                    guard let last = collected.last?.date, last <= end else { return nil }
-                    return end.timeIntervalSince(event.createdAt)
+                let isRunning: Bool
+                var duration: TimeInterval?
+                if let assignmentID = turn.assignmentID {
+                    _ = assignmentID
+                    isRunning = turn.turnID.map(runningSpecialistTurns.contains) ?? false
+                    // A specialist group runs from its first activity to the last one of the same turn.
+                    if !isRunning, let last = collected.last?.date, last > event.createdAt {
+                        duration = last.timeIntervalSince(event.createdAt)
+                    }
+                } else {
+                    isRunning = turn.requestID.map { runningRequestIDs.contains($0) && turn.start == (lastPersonIndex[$0] ?? -1) } ?? false
+                    duration = replyEnd[turn].flatMap { end -> TimeInterval? in
+                        guard let last = collected.last?.date, last <= end else { return nil }
+                        return end.timeIntervalSince(event.createdAt)
+                    }
+                    if isRunning { duration = nil }
                 }
                 rows.append(.activityGroup(.init(
-                    id: event.id, requestID: event.requestID, activities: collected,
-                    isConcluded: !isRunning, duration: isRunning ? nil : duration
+                    id: event.id, requestID: event.requestID, assignmentID: turn.assignmentID, turnID: turn.turnID,
+                    activities: collected, isConcluded: !isRunning, duration: duration
                 )))
             case .card(let card):
                 rows.append(.card(.init(

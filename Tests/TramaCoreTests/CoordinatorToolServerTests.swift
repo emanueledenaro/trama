@@ -113,8 +113,8 @@ struct CoordinatorToolServerTests {
 
         let list = try await Self.result(server, token, Self.message(id: 4, method: "tools/list"))
         let tools = try #require(list["tools"]?.arrayValue).compactMap(\.objectValue)
-        #expect(tools.compactMap { $0["name"]?.stringValue } == ["read_study", "read_pact", "read_mandate", "read_issues", "read_history", "write_memory", "request_mandate", "request_decision", "run_readonly_check", "prepare_plan"])
-        let projectReadOnly: Set<String> = ["read_study", "read_pact", "read_mandate", "read_issues", "read_history", "run_readonly_check"]
+        #expect(tools.compactMap { $0["name"]?.stringValue } == ["read_study", "read_pact", "read_mandate", "read_issues", "read_history", "write_memory", "request_mandate", "request_decision", "run_readonly_check", "prepare_plan", "read_team", "propose_team", "create_specialist", "assign_task", "stop_specialist"])
+        let projectReadOnly: Set<String> = ["read_study", "read_pact", "read_mandate", "read_issues", "read_history", "run_readonly_check", "read_team"]
         for tool in tools {
             let name = tool["name"]?.stringValue ?? ""
             let hints = tool["annotations"]?.objectValue
@@ -421,15 +421,27 @@ actor FakeHost: CoordinatorToolHost {
     private(set) var decisionRequests: [DecisionRequest] = []
     private(set) var plans: [PlannedOrder] = []
     private(set) var checks: [ReadOnlyCheck] = []
+    /// Assignments whose runtime the host was asked to start, in order.
+    private(set) var startedAssignments: [String] = []
+    private(set) var stopRequests: [String] = []
+    /// Team proposal cards the host showed the person.
+    private(set) var proposalCards = 0
     private var context: CoordinatorToolContext?
     private var revokesOnNextPlan = false
+    private var revokesOnNextAction = false
     private var nextCheckFailure: (exitCode: Int32, output: String)?
     private var throwsOnNextCheck = false
     private var holding = false
     private var heldReads: [CheckedContinuation<Void, Never>] = []
     private var heldReadWaiters: [CheckedContinuation<Void, Never>] = []
 
-    init() {
+    /// Whether the fake project already has a team the person confirmed.
+    enum TeamSetup: Sendable {
+        case none
+        case confirmed
+    }
+
+    init(team: TeamSetup = .confirmed) {
         var pact = try! PactEngine(baseRevision: "abc", checkSuiteRevision: "swift-test-v1")
         try! pact.decide(id: "D-1", value: "Rimborso entro 14 giorni", acceptedExample: "Ordine del 1 marzo rimborsato il 10", rationale: "Politica commerciale")
         var document = ProjectDocument()
@@ -459,6 +471,14 @@ actor FakeHost: CoordinatorToolHost {
         )
         document.coordinator = CoordinatorState()
         document.coordinator?.study = ProjectStudy.make(from: sources, previous: nil).study
+        if team == .confirmed {
+            let proposal = try! TeamProposal(summary: "Due aree indipendenti", members: [
+                ProposedSpecialist(name: "Ada", competence: "Ordini e rimborsi", reason: "La issue 12 tocca il rimborso", moduleIDs: ["Sources/Orders"]),
+                ProposedSpecialist(name: "Bruno", competence: "Pagamenti", reason: "I pagamenti hanno test fragili", moduleIDs: ["Sources/Payments"])
+            ])
+            try! document.proposeTeam(proposal)
+            try! document.confirmTeam(proposalID: proposal.id, keeping: nil, note: nil)
+        }
         context = CoordinatorToolContext(
             projectName: "Negozio",
             document: document,
@@ -469,8 +489,14 @@ actor FakeHost: CoordinatorToolHost {
                 .init(id: "Sources/Payments", name: "Payments", path: "Sources/Payments"),
                 .init(id: "docs", name: "docs", path: "docs")
             ],
-            availableChecks: ReadOnlyCheck.allCases
+            availableChecks: ReadOnlyCheck.allCases,
+            models: ["gpt-5.6-luna", "gpt-5.6-terra"],
+            defaultSpecialistModel: "gpt-5.6-luna"
         )
+    }
+
+    func specialistID(_ name: String) -> String? {
+        document.team?.members.first { $0.name == name }?.id
     }
 
     var document: ProjectDocument { context?.document ?? ProjectDocument() }
@@ -536,6 +562,49 @@ actor FakeHost: CoordinatorToolHost {
         let requestID = UUID()
         plans.append(PlannedOrder(order: order, mandateVersion: mandate.version, requestID: requestID))
         return requestID
+    }
+
+    // MARK: Team
+
+    func proposeTeam(projectID: UUID, proposal: TeamProposal) async throws -> TeamProposal {
+        guard projectID == CoordinatorToolServerTests.projectID, context != nil else { throw CoordinatorToolHostError.projectUnavailable }
+        try context!.document.proposeTeam(proposal)
+        proposalCards += 1
+        return proposal
+    }
+
+    func createSpecialist(projectID: UUID, draft: SpecialistDraft, mandate: ProjectMandate) async throws -> Specialist {
+        try requireLiveMandate(projectID: projectID, mandate: mandate)
+        return try context!.document.addSpecialist(draft)
+    }
+
+    func assignTask(projectID: UUID, order: AssignmentOrder, mandate: ProjectMandate) async throws -> SpecialistAssignment {
+        try requireLiveMandate(projectID: projectID, mandate: mandate)
+        let assignment = try context!.document.assign(order, mandateVersion: mandate.version)
+        startedAssignments.append(assignment.id)
+        return assignment
+    }
+
+    func stopSpecialist(projectID: UUID, order: SpecialistStopOrder, mandate: ProjectMandate) async throws -> SpecialistStopOutcome {
+        try requireLiveMandate(projectID: projectID, mandate: mandate)
+        let outcome = try context!.document.applyStopOrder(order, actor: "Coordinatore")
+        if case let .stopRequested(assignmentID, _) = outcome { stopRequests.append(assignmentID) }
+        return outcome
+    }
+
+    /// The same check the real host makes: the mandate read at the call must still be in place.
+    private func requireLiveMandate(projectID: UUID, mandate: ProjectMandate) throws {
+        guard projectID == CoordinatorToolServerTests.projectID, context != nil else { throw CoordinatorToolHostError.projectUnavailable }
+        if revokesOnNextAction {
+            revokesOnNextAction = false
+            let current = context?.document.mandate
+            context?.document.mandate = current?.revoked(by: "Product Owner", reason: "Revocato durante la chiamata")
+        }
+        guard context?.document.mandate == mandate else { throw CoordinatorToolHostError.mandateChanged }
+    }
+
+    func revokeMandateOnNextAction() {
+        revokesOnNextAction = true
     }
 
     func setMandate(_ mandate: ProjectMandate?) {
