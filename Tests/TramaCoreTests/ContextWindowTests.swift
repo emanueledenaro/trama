@@ -186,11 +186,34 @@ struct ContextThresholdTests {
         #expect(value10 == nil)
         let notice11 = state.record(Self.usage(91_000), threadID: "t1", at: Self.start + 2)
         #expect(try #require(notice11).thresholdPercent == 90)
-        state.setThreshold(0)
+        state.setThreshold(1)
         #expect(state.thresholdPercent == CoordinatorContextState.thresholdRange.lowerBound)
-        #expect(CoordinatorContextState.thresholdRange.lowerBound == 1)
+        #expect(CoordinatorContextState.thresholdRange == 5...95)
         state.setThreshold(120)
         #expect(state.thresholdPercent == CoordinatorContextState.thresholdRange.upperBound)
+    }
+
+    @Test("A threshold saved below the minimum loads as the minimum and still warns")
+    func thresholdBelowMinimumOnLoad() throws {
+        var saved = CoordinatorContextState()
+        _ = saved.record(ContextUsageSnapshot(usedTokens: 41_921, maxTokens: 828_400), threadID: "t1", at: Self.start)
+        var json = try #require(try JSONSerialization.jsonObject(with: JSONEncoder().encode(saved)) as? [String: Any])
+        json["thresholdPercent"] = 1
+        json["warnedAtThreshold"] = 1
+        var state = try JSONDecoder().decode(CoordinatorContextState.self, from: JSONSerialization.data(withJSONObject: json))
+        #expect(state.thresholdPercent == 5)
+        #expect(state.usage == saved.usage)
+        let notice = state.setThreshold(5)
+        #expect(try #require(notice).thresholdPercent == 5)
+        let repeated = state.setThreshold(5)
+        #expect(repeated == nil)
+    }
+
+    @Test("A saved state without a threshold loads the default")
+    func missingThresholdOnLoad() throws {
+        let state = try JSONDecoder().decode(CoordinatorContextState.self, from: Data("{}".utf8))
+        #expect(state.thresholdPercent == CoordinatorContextState.defaultThreshold)
+        #expect(state.meter == nil)
     }
 
     @Test("Setting the threshold below the current use warns at once")

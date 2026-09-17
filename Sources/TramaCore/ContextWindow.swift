@@ -197,7 +197,7 @@ public struct ContextThresholdNotice: Equatable, Sendable {
 /// compaction and the warning threshold the person set for the project.
 public struct CoordinatorContextState: Codable, Equatable, Sendable {
     public static let defaultThreshold = 80
-    public static let thresholdRange = 1...95
+    public static let thresholdRange = 5...95
 
     /// The thread the usage belongs to; usage of any other thread is ignored.
     public private(set) var threadID: String?
@@ -210,6 +210,23 @@ public struct CoordinatorContextState: Codable, Equatable, Sendable {
     public private(set) var warnedAtThreshold: Int?
 
     public init() {}
+
+    private enum CodingKeys: String, CodingKey {
+        case threadID, usage, usageAt, compaction, compactionAt, thresholdPercent, warnedAtThreshold
+    }
+
+    /// A threshold saved outside `thresholdRange` (for example 1% from an earlier build) is clamped on load.
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        threadID = try container.decodeIfPresent(String.self, forKey: .threadID)
+        usage = try container.decodeIfPresent(ContextUsageSnapshot.self, forKey: .usage)
+        usageAt = try container.decodeIfPresent(Date.self, forKey: .usageAt)
+        compaction = try container.decodeIfPresent(ContextCompactionState.self, forKey: .compaction)
+        compactionAt = try container.decodeIfPresent(Date.self, forKey: .compactionAt)
+        warnedAtThreshold = try container.decodeIfPresent(Int.self, forKey: .warnedAtThreshold)
+        let saved = try container.decodeIfPresent(Int.self, forKey: .thresholdPercent) ?? Self.defaultThreshold
+        thresholdPercent = Self.clampedThreshold(saved)
+    }
 
     /// The meter to draw; nil before the first usage and after a completed compaction, until the next usage.
     public var meter: ContextWindowMeter? {
@@ -236,8 +253,12 @@ public struct CoordinatorContextState: Codable, Equatable, Sendable {
     /// Sets the threshold within `thresholdRange`; returns a notice when the current use is already above it.
     @discardableResult
     public mutating func setThreshold(_ percent: Int) -> ContextThresholdNotice? {
-        thresholdPercent = min(max(percent, Self.thresholdRange.lowerBound), Self.thresholdRange.upperBound)
+        thresholdPercent = Self.clampedThreshold(percent)
         return pendingNotice()
+    }
+
+    private static func clampedThreshold(_ percent: Int) -> Int {
+        min(max(percent, thresholdRange.lowerBound), thresholdRange.upperBound)
     }
 
     /// Forgets the usage of a replaced thread; the threshold stays.
