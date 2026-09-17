@@ -113,11 +113,13 @@ struct CoordinatorToolServerTests {
 
         let list = try await Self.result(server, token, Self.message(id: 4, method: "tools/list"))
         let tools = try #require(list["tools"]?.arrayValue).compactMap(\.objectValue)
-        #expect(tools.compactMap { $0["name"]?.stringValue } == ["read_study", "read_pact", "read_mandate", "read_issues", "read_history", "write_memory"])
+        #expect(tools.compactMap { $0["name"]?.stringValue } == ["read_study", "read_pact", "read_mandate", "read_issues", "read_history", "write_memory", "request_mandate", "request_decision", "run_readonly_check", "prepare_plan"])
+        let projectReadOnly: Set<String> = ["read_study", "read_pact", "read_mandate", "read_issues", "read_history", "run_readonly_check"]
         for tool in tools {
             let name = tool["name"]?.stringValue ?? ""
             let hints = tool["annotations"]?.objectValue
-            #expect(hints?["readOnlyHint"] == .bool(name != "write_memory"), "\(name)")
+            #expect(hints?["readOnlyHint"] == .bool(projectReadOnly.contains(name)), "\(name)")
+            #expect(hints?["destructiveHint"] == .bool(false))
             #expect(hints?["openWorldHint"] == .bool(false))
             #expect(tool["inputSchema"]?.objectValue?["type"] == .string("object"))
             #expect(tool["description"]?.stringValue?.isEmpty == false)
@@ -407,9 +409,22 @@ struct CoordinatorToolServerTests {
 
 /// Trama's side of the tools, holding one project in memory.
 actor FakeHost: CoordinatorToolHost {
+    struct PlannedOrder: Equatable {
+        var order: CoordinatorPlanOrder
+        var mandateVersion: Int
+        var requestID: UUID
+    }
+
     private(set) var memory = CoordinatorMemory()
     private(set) var contextReads = 0
+    private(set) var mandateRequests: [MandateRequest] = []
+    private(set) var decisionRequests: [DecisionRequest] = []
+    private(set) var plans: [PlannedOrder] = []
+    private(set) var checks: [ReadOnlyCheck] = []
     private var context: CoordinatorToolContext?
+    private var revokesOnNextPlan = false
+    private var nextCheckFailure: (exitCode: Int32, output: String)?
+    private var throwsOnNextCheck = false
     private var holding = false
     private var heldReads: [CheckedContinuation<Void, Never>] = []
     private var heldReadWaiters: [CheckedContinuation<Void, Never>] = []
@@ -444,8 +459,21 @@ actor FakeHost: CoordinatorToolHost {
         )
         document.coordinator = CoordinatorState()
         document.coordinator?.study = ProjectStudy.make(from: sources, previous: nil).study
-        context = CoordinatorToolContext(projectName: "Negozio", document: document, issues: issues, github: github)
+        context = CoordinatorToolContext(
+            projectName: "Negozio",
+            document: document,
+            issues: issues,
+            github: github,
+            modules: [
+                .init(id: "Sources/Orders", name: "Orders", path: "Sources/Orders"),
+                .init(id: "Sources/Payments", name: "Payments", path: "Sources/Payments"),
+                .init(id: "docs", name: "docs", path: "docs")
+            ],
+            availableChecks: ReadOnlyCheck.allCases
+        )
     }
+
+    var document: ProjectDocument { context?.document ?? ProjectDocument() }
 
     func toolContext(projectID: UUID) async -> CoordinatorToolContext? {
         contextReads += 1
@@ -464,6 +492,70 @@ actor FakeHost: CoordinatorToolHost {
         try memory.replace(with: text)
         context?.document.coordinator?.memory = memory
         return memory
+    }
+
+    func askForMandate(projectID: UUID, request: MandateRequest) async throws -> MandateRequest {
+        guard projectID == CoordinatorToolServerTests.projectID, context != nil else { throw CoordinatorToolHostError.projectUnavailable }
+        mandateRequests.append(request)
+        return request
+    }
+
+    func askForDecision(projectID: UUID, request: DecisionRequest) async throws -> DecisionRequest {
+        guard projectID == CoordinatorToolServerTests.projectID, context != nil else { throw CoordinatorToolHostError.projectUnavailable }
+        decisionRequests.append(request)
+        return request
+    }
+
+    func runReadOnlyCheck(projectID: UUID, check: ReadOnlyCheck) async throws -> ReadOnlyCheckResult {
+        if throwsOnNextCheck {
+            throwsOnNextCheck = false
+            throw ReadOnlyCheckError.sandbox("Codex CLI non è stato trovato.")
+        }
+        checks.append(check)
+        let failure = nextCheckFailure
+        nextCheckFailure = nil
+        return ReadOnlyCheckResult(
+            check: check,
+            command: ["xcrun", "swift", check == .swiftBuild ? "build" : "test"],
+            exitCode: failure?.exitCode ?? 0,
+            output: failure?.output ?? "Test run with 3 tests passed",
+            duration: 1.5,
+            headSHA: "abc1234",
+            checkoutUnchanged: true
+        )
+    }
+
+    func preparePlan(projectID: UUID, order: CoordinatorPlanOrder, mandate: ProjectMandate) async throws -> UUID {
+        if revokesOnNextPlan {
+            revokesOnNextPlan = false
+            let current = context?.document.mandate
+            context?.document.mandate = current?.revoked(by: "Product Owner", reason: "Revocato durante la chiamata")
+        }
+        let liveMandate = context?.document.mandate
+        guard liveMandate == mandate else { throw CoordinatorToolHostError.mandateChanged }
+        let requestID = UUID()
+        plans.append(PlannedOrder(order: order, mandateVersion: mandate.version, requestID: requestID))
+        return requestID
+    }
+
+    func setMandate(_ mandate: ProjectMandate?) {
+        context?.document.mandate = mandate
+    }
+
+    func revokeMandateOnNextPlan() {
+        revokesOnNextPlan = true
+    }
+
+    func failNextCheck(exitCode: Int32, output: String) {
+        nextCheckFailure = (exitCode, output)
+    }
+
+    func throwOnNextCheck() {
+        throwsOnNextCheck = true
+    }
+
+    func setAvailableChecks(_ checks: [ReadOnlyCheck]) {
+        context?.availableChecks = checks
     }
 
     func grantMandate() {

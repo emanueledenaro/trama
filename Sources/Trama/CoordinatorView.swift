@@ -7,6 +7,10 @@ struct CoordinatorView: View {
     /// Concluded activity rows the person opened; every row starts closed.
     @State private var expandedActivityGroups: Set<UUID> = []
     @State private var showMemory = false
+    /// Free-text answers keyed by decision request id.
+    @State private var decisionDrafts: [String: String] = [:]
+    /// Revocation reasons keyed by mandate request id.
+    @State private var revocationDrafts: [String: String] = [:]
 
     private var rows: [ConversationRow] {
         ConversationTimeline.rows(for: store.document, runningRequestIDs: Set(store.streamingReplies.keys))
@@ -34,7 +38,9 @@ struct CoordinatorView: View {
             } else {
                 ScrollViewReader { proxy in
                     ScrollView {
-                        LazyVStack(alignment: .leading, spacing: TramaSpacing.section) {
+                        // Eager on purpose: a LazyVStack scrolled to the bottom with a tall mandate card above kept
+                        // re-estimating row heights and spun the main thread at full CPU.
+                        VStack(alignment: .leading, spacing: TramaSpacing.section) {
                             let latestReplyID = rows.last { if case .coordinatorReply = $0 { true } else { false } }?.id
                             ForEach(rows) { row in
                                 self.row(row, latestReplyID: latestReplyID).id(row.id)
@@ -304,36 +310,197 @@ struct CoordinatorView: View {
         .textSelection(.enabled)
     }
 
-    /// A method act. The study and the context notice have their own look; later tickets give the other kinds theirs.
+    /// A method act. Mandate and decision cards are the person's answers; the others keep their own look.
     @ViewBuilder
     private func cardRow(_ row: ConversationRow.CardRow) -> some View {
-        switch row.card.kind {
-        case .study:
-            studyCard(title: row.card.title, text: row.card.detail ?? "") {
-                Text(row.date, format: .dateTime.day().month().hour().minute()).font(.caption).foregroundStyle(.secondary)
-            }
-        case .contextNotice:
-            HStack(alignment: .firstTextBaseline, spacing: TramaSpacing.control) {
-                Image(systemName: row.card.title == ContextThresholdNotice.cardTitle ? "gauge.with.dots.needle.67percent" : "arrow.triangle.2.circlepath")
+        switch ConversationCard.presenting(row, in: store.document) {
+        case .mandate(let card):
+            mandateCard(card, date: row.date)
+        case .decision(let card):
+            decisionCard(card, date: row.date)
+        case .generic(let card):
+            switch card.kind {
+            case .study:
+                studyCard(title: card.title, text: card.detail ?? "") {
+                    Text(row.date, format: .dateTime.day().month().hour().minute()).font(.caption).foregroundStyle(.secondary)
+                }
+            case .contextNotice:
+                HStack(alignment: .firstTextBaseline, spacing: TramaSpacing.control) {
+                    Image(systemName: card.title == ContextThresholdNotice.cardTitle ? "gauge.with.dots.needle.67percent" : "arrow.triangle.2.circlepath")
+                    VStack(alignment: .leading, spacing: TramaSpacing.compact) {
+                        Text(card.title).font(.callout.weight(.semibold))
+                        if let detail = card.detail { Text(detail).fixedSize(horizontal: false, vertical: true) }
+                    }
+                }
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(TramaSpacing.related)
+                .overlay(RoundedRectangle(cornerRadius: TramaRadius.card).stroke(.separator))
+                .accessibilityElement(children: .combine)
+            default:
                 VStack(alignment: .leading, spacing: TramaSpacing.compact) {
-                    Text(row.card.title).font(.callout.weight(.semibold))
-                    if let detail = row.card.detail { Text(detail).fixedSize(horizontal: false, vertical: true) }
+                    Text(card.title).font(.headline)
+                    if let detail = card.detail { Text(detail).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true) }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(TramaSpacing.related)
+                .background(.background.secondary, in: RoundedRectangle(cornerRadius: TramaRadius.card))
+            }
+        }
+    }
+
+    private func mandateCard(_ card: ConversationCard.Mandate, date: Date) -> some View {
+        let request = card.request
+        return VStack(alignment: .leading, spacing: TramaSpacing.related) {
+            HStack(spacing: TramaSpacing.compact) {
+                Image(systemName: "checkmark.shield")
+                Text("Mandato").font(.headline)
+                Spacer(minLength: 0)
+                Text("Coordinatore").font(.caption).foregroundStyle(.secondary)
+            }
+            Text(request.reason).fixedSize(horizontal: false, vertical: true)
+            TramaLabeledText(label: "Obiettivi", value: request.objectives.joined(separator: "\n"))
+            if !request.priorities.isEmpty {
+                TramaLabeledText(label: "Priorità", value: request.priorities.joined(separator: "\n"))
+            }
+            TramaLabeledText(label: "Perimetro", value: request.scopeModuleIDs.joined(separator: ", "))
+            TramaLabeledText(
+                label: "Azioni",
+                value: request.authorizedActions.map { MandateActionChoice(action: $0)?.label ?? "Azione" }.joined(separator: "\n")
+            )
+            if !request.limits.isEmpty {
+                TramaLabeledText(label: "Limiti", value: request.limits.joined(separator: "\n"))
+            }
+            if let resolution = request.resolution {
+                Text(mandateResolutionText(resolution)).font(.callout).foregroundStyle(.secondary)
+            }
+            if !card.personActions.isEmpty {
+                TramaAdaptiveActions {
+                    if card.personActions.contains(.grant) {
+                        let grantLabel = card.currentMandate?.status == .granted ? "Accetta la proposta" : "Concedi"
+                        Button(grantLabel) { store.acceptMandateProposal(request.id) }
+                            .buttonStyle(.borderedProminent)
+                            .accessibilityLabel(card.currentMandate?.status == .granted ? "Accetta la proposta di mandato" : "Concedi il mandato proposto")
+                    }
+                    if card.personActions.contains(.correct) {
+                        Button("Correggi") { store.reviewMandateRequest(request) }
+                            .accessibilityLabel("Correggi il mandato")
+                    }
                 }
             }
-            .font(.callout)
-            .foregroundStyle(.secondary)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(TramaSpacing.related)
-            .overlay(RoundedRectangle(cornerRadius: TramaRadius.card).stroke(.separator))
-            .accessibilityElement(children: .combine)
-        default:
-            VStack(alignment: .leading, spacing: TramaSpacing.compact) {
-                Text(row.card.title).font(.headline)
-                if let detail = row.card.detail { Text(detail).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true) }
+            if card.personActions.contains(.revoke) {
+                VStack(alignment: .leading, spacing: TramaSpacing.compact) {
+                    TextField("Motivo della revoca", text: revocationDraft(request.id))
+                    Button("Revoca", role: .destructive) {
+                        store.revokeMandate(reason: revocationDrafts[request.id] ?? "")
+                    }
+                    .disabled((revocationDrafts[request.id] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .accessibilityLabel("Revoca il mandato")
+                }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(TramaSpacing.related)
-            .background(.background.secondary, in: RoundedRectangle(cornerRadius: TramaRadius.card))
+            Text(date, format: .dateTime.day().month().hour().minute()).font(.caption).foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(TramaSpacing.section)
+        .background(.background.secondary, in: RoundedRectangle(cornerRadius: TramaRadius.card))
+        .overlay(RoundedRectangle(cornerRadius: TramaRadius.card).stroke(.separator))
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Scheda di mandato")
+    }
+
+    private func decisionCard(_ card: ConversationCard.Decision, date: Date) -> some View {
+        let request = card.request
+        return VStack(alignment: .leading, spacing: TramaSpacing.related) {
+            HStack(spacing: TramaSpacing.compact) {
+                Text("Decisione").font(.headline)
+                TramaStatusBadge(
+                    label: request.category == .destructive ? "Caso distruttivo" : "Scelta di prodotto",
+                    symbol: request.category == .destructive ? "exclamationmark.triangle" : "checkmark.seal",
+                    color: card.canAnswer || request.category == .destructive ? .orange : .secondary
+                )
+                Spacer(minLength: 0)
+                Text("Coordinatore").font(.caption).foregroundStyle(.secondary)
+            }
+            Text(request.question).font(.body.weight(.medium)).fixedSize(horizontal: false, vertical: true)
+            TramaLabeledText(label: "Caso concreto", value: request.concreteCase)
+            if card.canAnswer {
+                ForEach(Array(request.alternatives.enumerated()), id: \.offset) { index, alternative in
+                    Button {
+                        store.answerDecisionRequest(request.id, answer: .alternative(index))
+                    } label: {
+                        VStack(alignment: .leading, spacing: TramaSpacing.compact) {
+                            Text(alternative.behavior).frame(maxWidth: .infinity, alignment: .leading)
+                            Text(alternative.example).font(.callout).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading)
+                            if let consequence = alternative.consequence {
+                                TramaSupportingText(consequence)
+                            }
+                        }
+                        .padding(TramaSpacing.related)
+                    }
+                    .buttonStyle(.plain)
+                    .overlay(RoundedRectangle(cornerRadius: TramaRadius.control).stroke(.separator))
+                    .accessibilityLabel("Alternativa \(index + 1): \(alternative.behavior)")
+                }
+                VStack(alignment: .leading, spacing: TramaSpacing.compact) {
+                    TramaSupportingText("Oppure rispondi con parole tue")
+                    TextField("La tua decisione", text: decisionDraft(request.id), axis: .vertical)
+                        .lineLimit(2...5)
+                    Button("Registra la decisione") {
+                        store.answerDecisionRequest(request.id, answer: .freeText(decisionDrafts[request.id] ?? ""))
+                    }
+                    .disabled((decisionDrafts[request.id] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .accessibilityLabel("Registra la decisione con una risposta libera")
+                }
+            } else if let outcome = request.outcome {
+                VStack(alignment: .leading, spacing: TramaSpacing.compact) {
+                    Text("Decisione \(outcome.decisionID) · versione \(outcome.version)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text(decisionOutcomeText(request, outcome)).fixedSize(horizontal: false, vertical: true)
+                    Button("Apri nel Patto") { store.section = .decisions }
+                        .accessibilityLabel("Apri la decisione \(outcome.decisionID) nel Patto")
+                }
+            }
+            Text(date, format: .dateTime.day().month().hour().minute()).font(.caption).foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(TramaSpacing.section)
+        .background(.background.secondary, in: RoundedRectangle(cornerRadius: TramaRadius.card))
+        .overlay(RoundedRectangle(cornerRadius: TramaRadius.card).stroke(.separator))
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Scheda di decisione: \(request.question)")
+    }
+
+    private func revocationDraft(_ id: String) -> Binding<String> {
+        Binding(
+            get: { revocationDrafts[id] ?? "" },
+            set: { revocationDrafts[id] = $0 }
+        )
+    }
+
+    private func decisionDraft(_ id: String) -> Binding<String> {
+        Binding(
+            get: { decisionDrafts[id] ?? "" },
+            set: { decisionDrafts[id] = $0 }
+        )
+    }
+
+    private func mandateResolutionText(_ resolution: MandateRequest.Resolution) -> String {
+        switch resolution {
+        case let .granted(version): "Mandato concesso, versione \(version)."
+        case let .corrected(version): "Mandato corretto, versione \(version)."
+        case .revoked: "Mandato revocato."
+        }
+    }
+
+    private func decisionOutcomeText(_ request: DecisionRequest, _ outcome: DecisionRequest.Outcome) -> String {
+        switch outcome.answer {
+        case let .alternative(index):
+            guard request.alternatives.indices.contains(index) else { return "Risposta registrata nel Patto." }
+            return request.alternatives[index].behavior
+        case let .freeText(text):
+            return text
         }
     }
 

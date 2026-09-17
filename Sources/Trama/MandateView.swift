@@ -10,44 +10,10 @@ struct MandateView: View {
     @State private var priorities = ""
     @State private var limits = ""
     @State private var selectedModuleIDs: Set<String> = []
-    @State private var allowedActions: Set<ActionChoice> = []
+    @State private var allowedActions: Set<MandateActionChoice> = []
     @State private var revocationReason = ""
 
     /// The delegable actions the person can tick. New features and trade-offs are never offered.
-    enum ActionChoice: String, CaseIterable, Identifiable {
-        case agreedTickets
-        case decidedCorrections
-        case executeInWorktree
-        case openPullRequest
-        case integrateCandidate
-
-        var id: String { rawValue }
-
-        var action: ProjectMandate.Action {
-            switch self {
-            case .agreedTickets: .plan(.agreedTicket)
-            case .decidedCorrections: .plan(.decidedBehaviorCorrection)
-            case .executeInWorktree: .executeInWorktree
-            case .openPullRequest: .openPullRequest
-            case .integrateCandidate: .integrateCandidate
-            }
-        }
-
-        var label: String {
-            switch self {
-            case .agreedTickets: "Pianificare ticket concordati"
-            case .decidedCorrections: "Pianificare correzioni di comportamenti già decisi"
-            case .executeInWorktree: "Eseguire in un worktree isolato"
-            case .openPullRequest: "Aprire pull request"
-            case .integrateCandidate: "Integrare candidati verificati"
-            }
-        }
-
-        init?(action: ProjectMandate.Action) {
-            guard let match = Self.allCases.first(where: { $0.action == action }) else { return nil }
-            self = match
-        }
-    }
 
     private var mandate: ProjectMandate? { store.document.mandate }
     private var hasGrantedMandate: Bool { mandate?.status == .granted }
@@ -90,7 +56,7 @@ struct MandateView: View {
                         }
                     }
                     Section("Azioni autorizzate") {
-                        ForEach(ActionChoice.allCases) { choice in
+                        ForEach(MandateActionChoice.allCases) { choice in
                             Toggle(choice.label, isOn: binding(forAction: choice))
                         }
                         Text("Nuove funzioni e compromessi restano sempre decisioni della persona").font(.caption).foregroundStyle(.secondary)
@@ -136,7 +102,7 @@ struct MandateView: View {
         )
     }
 
-    private func binding(forAction choice: ActionChoice) -> Binding<Bool> {
+    private func binding(forAction choice: MandateActionChoice) -> Binding<Bool> {
         Binding(
             get: { allowedActions.contains(choice) },
             set: { isOn in if isOn { allowedActions.insert(choice) } else { allowedActions.remove(choice) } }
@@ -144,12 +110,20 @@ struct MandateView: View {
     }
 
     private func prefill() {
+        if let proposal = store.mandateProposal {
+            apply(objectives: proposal.objectives, priorities: proposal.priorities, limits: proposal.limits, scope: proposal.scopeModuleIDs, actions: proposal.authorizedActions)
+            return
+        }
         guard let mandate else { return }
-        objectives = mandate.objectives.joined(separator: "\n")
-        priorities = mandate.priorities.joined(separator: "\n")
-        limits = mandate.limits.joined(separator: "\n")
-        selectedModuleIDs = Set(mandate.scopeModuleIDs)
-        allowedActions = Set(mandate.authorizedActions.compactMap(ActionChoice.init(action:)))
+        apply(objectives: mandate.objectives, priorities: mandate.priorities, limits: mandate.limits, scope: mandate.scopeModuleIDs, actions: mandate.authorizedActions)
+    }
+
+    private func apply(objectives: [String], priorities: [String], limits: [String], scope: [String], actions: [ProjectMandate.Action]) {
+        self.objectives = objectives.joined(separator: "\n")
+        self.priorities = priorities.joined(separator: "\n")
+        self.limits = limits.joined(separator: "\n")
+        selectedModuleIDs = Set(scope)
+        allowedActions = Set(actions.compactMap(MandateActionChoice.init(action:)))
     }
 
     private func grant() {
@@ -186,5 +160,41 @@ struct MandateView: View {
         text.split(whereSeparator: \.isNewline)
             .map { $0.trimmingCharacters(in: .whitespaces) }
             .filter { !$0.isEmpty }
+    }
+}
+
+/// Delegable mandate actions offered on the sheet and on the chat card.
+enum MandateActionChoice: String, CaseIterable, Identifiable {
+    case agreedTickets
+    case decidedCorrections
+    case executeInWorktree
+    case openPullRequest
+    case integrateCandidate
+
+    var id: String { rawValue }
+
+    var action: ProjectMandate.Action {
+        switch self {
+        case .agreedTickets: .plan(.agreedTicket)
+        case .decidedCorrections: .plan(.decidedBehaviorCorrection)
+        case .executeInWorktree: .executeInWorktree
+        case .openPullRequest: .openPullRequest
+        case .integrateCandidate: .integrateCandidate
+        }
+    }
+
+    var label: String {
+        switch self {
+        case .agreedTickets: "Pianificare ticket concordati"
+        case .decidedCorrections: "Pianificare correzioni di comportamenti già decisi"
+        case .executeInWorktree: "Eseguire in un worktree isolato"
+        case .openPullRequest: "Aprire pull request"
+        case .integrateCandidate: "Integrare candidati verificati"
+        }
+    }
+
+    init?(action: ProjectMandate.Action) {
+        guard let match = Self.allCases.first(where: { $0.action == action }) else { return nil }
+        self = match
     }
 }

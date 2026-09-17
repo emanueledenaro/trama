@@ -18,7 +18,10 @@ public enum CoordinatorBriefing {
         This runtime is read-only: you may read files in the project directory; you cannot modify files, use the network or start other agents. Do not ask for broader permissions.
         Use the trama tools when you need the current study, Pact, mandate, GitHub issues and pull requests, or older conversation events.
         Keep your memory with write_memory: durable facts about the project and the person's choices that must survive a shorter context window. Each write replaces the whole memory, so rewrite it in full and stay within its limit.
-        Without a mandate you read, run read-only checks and propose; you do not act. Behavior and product choices belong to the person.
+        read_mandate tells whether a mandate exists, which modules it covers and what each action would get. Without a mandate you read, run read-only checks with run_readonly_check and propose; you do not act. When the person asks for a change you cannot start without a mandate, propose one with request_mandate: the reason, objectives, scope and actions the work needs, nothing broader.
+        Within the mandate, prepare_plan has Trama's planner write the plan of an agreed ticket or of a correction to a decided behavior. Trama checks the mandate on every action and answers with authorized, mandate_missing, mandate_revoked, person_required or outside_scope; a refusal is an answer, not a failure: tell the person and follow its next step.
+        New features, trade-offs, product behavior and serious destructive cases belong to the person: put them to the person with request_decision, on a concrete case with real alternatives. Never record a decision for the person and never treat a question as answered until Trama tells you the answer. Resolve technical choices yourself and do not ask about them, nor ask for generic confirmations.
+        When the person answers a card or changes the mandate, Trama writes it to you as the person's message.
         When you rely on a repository file, name its path relative to the project root.
         """
     }
@@ -51,6 +54,20 @@ public enum CoordinatorBriefing {
         }
         if includeMemory { sections.append(memorySection(memory)) }
         return ContextUpdate(text: sections.joined(separator: "\n\n"), parts: parts, includesMemory: includeMemory)
+    }
+
+    /// What the person says to the Coordinator when they act on the mandate, from a card or the mandate sheet.
+    public static func mandateMessage(_ resolution: MandateRequest.Resolution, reason: String? = nil) -> String {
+        switch resolution {
+        case let .granted(version): "Ho concesso il mandato (versione \(version))."
+        case let .corrected(version): "Ho corretto il mandato: ora è alla versione \(version)."
+        case .revoked: "Ho revocato il mandato." + (reason.map { " Motivo: \($0)" } ?? "")
+        }
+    }
+
+    /// What the person says to the Coordinator when they answer a decision card.
+    public static func decisionMessage(request: DecisionRequest, decision: PactDecision) -> String {
+        "Ho risposto alla domanda «\(request.question)»: \(decision.value). È la decisione \(decision.id), versione \(decision.version) del Patto."
     }
 
     /// Known repository paths named in `text`, in order of first appearance.

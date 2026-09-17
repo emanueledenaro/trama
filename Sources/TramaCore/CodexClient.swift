@@ -1174,7 +1174,9 @@ private actor Core {
             "url": .string(settings.toolServerURL.absoluteString),
             "bearer_token_env_var": .string(CodexClient.CoordinatorThreadSettings.tokenEnvironmentVariable),
             // Trama checks every call at the tool boundary; Codex must not ask a person in between.
-            "default_tools_approval_mode": .string("approve")
+            "default_tools_approval_mode": .string("approve"),
+            // A read-only check can run for minutes; Codex stops MCP calls after 60 seconds by default.
+            "tool_timeout_sec": .integer(Int(ReadOnlyCheckRunner.longestCall.components.seconds))
         ])
         config["shell_environment_policy.exclude"] = .array([.string(CodexClient.CoordinatorThreadSettings.tokenEnvironmentVariable)])
         let common: [String: JSONValue] = [
@@ -1980,12 +1982,14 @@ private actor Core {
                 let completed: Bool = item["status"]?.stringValue == "completed"
                 let refused: Bool = item["result"]?.objectValue?["isError"]?.boolValue ?? false
                 let failed: Bool = !completed || refused
+                // Codex 0.154.0 marks a result with isError as a failed item and drops the flag, so a
+                // failed item's result is read for a refusal code too.
                 onEvent(.toolCallCompleted(
                     itemID: itemID,
                     server: item["server"]?.stringValue ?? "",
                     tool: item["tool"]?.stringValue ?? "",
                     succeeded: !failed,
-                    error: item["error"]?.objectValue?["message"]?.stringValue
+                    error: item["error"]?.objectValue?["message"]?.stringValue ?? (failed ? Self.refusalCode(item["result"]) : nil)
                 ))
                 return
             }
@@ -2044,6 +2048,13 @@ private actor Core {
             return nil
         }
         return session
+    }
+
+    /// The `error.code` a tool put in the text of a refused result, as Trama's tools do.
+    private static func refusalCode(_ result: JSONValue?) -> String? {
+        guard let text = result?.objectValue?["content"]?.arrayValue?.first?.objectValue?["text"]?.stringValue,
+              let payload = try? JSONDecoder().decode(JSONValue.self, from: Data(text.utf8)) else { return nil }
+        return payload.objectValue?["error"]?.objectValue?["code"]?.stringValue
     }
 
     private func waitForPlan(_ session: PlanSession) async throws -> String {
