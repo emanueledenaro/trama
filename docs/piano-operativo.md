@@ -10,9 +10,21 @@ Base pubblicata: `4507788`, con la cronologia del Coordinatore (C01, #33), la ch
 
 Il Coordinatore attuale apre un thread effimero a ogni messaggio, riceve solo la richiesta e le decisioni, può soltanto leggere file e non compone un team. Il Product Owner lo ha giudicato inutilizzabile rispetto alla specifica: da qui l'incremento verticale. Catalogo, scanner, Patto, sessioni, GitHub, modelli e monitor esistenti restano la base da estendere.
 
+## Stato al 18 settembre 2026
+
+Integrati in `main` a `8ba959e`: V01 (#64), V02 (#65), V03 (#66) e V07 (#70), con le PR #73, #75, #77 e #89.
+
+V04 (#67) è completo nel codice, nei test e nella misura della CPU, ma non è chiudibile. La prova diretta nell'app richiede turni reali di Codex (proposta del team, mandato, incarico, turni dello specialista), non sostituibili da fixture, e il 18 settembre 2026 l'account ChatGPT ha esaurito il limite di utilizzo di Codex. Si sblocca il 19 settembre 2026 alle 14:59. Il candidato è su `synara/project-team-worktree` a `83e3592`; la checklist di #67 è non spuntata e i limiti sono scritti in [docs/verifiche/v04-team-incarico-2026-09-18.md](verifiche/v04-team-incarico-2026-09-18.md). Il branch contiene ancora il commit `488db9d` con l'aggancio temporaneo della prova (`Sources/Trama/V04Proof.swift`), che deve sparire prima della PR.
+
+Lo stesso limite blocca V05 (#68), V06 (#69), V08 (#71) e V09 (#72): tutte richiedono esecuzioni reali. P01 (#80) è l'unico ticket senza dipendenze e senza bisogno di Codex, ed è in corso.
+
+## Regola di consumo dei thread di lavoro
+
+Decisa da Emanuele il 18 settembre 2026 per contenere il consumo: **un solo thread di implementazione alla volta**, nessun ticket in parallelo finché non lo chiede lui. I ticket di sola documentazione (P01 e simili) girano su `pi` con `openrouter/deepseek/deepseek-v4.1-flash` e `thinkingLevel: minimal`. L'orchestratore controlla i thread di lavoro ogni dieci minuti circa, con una sola attesa lunga per controllo e una lettura solo se serve. Ai thread di lavoro si chiedono commit intermedi frequenti, così un limite di sessione non perde lavoro.
+
 ## Ordine del lavoro
 
-I ticket V01-V09 costruiscono il Coordinatore vero per fette verticali, ognuna dimostrabile. V07 corre in parallelo con V03-V05; V06 in parallelo con V05. P01 è solo documentazione e può partire subito. I provider entrano dopo V08 e prima di V09: prima Claude Agent (P02), poi gli altri sette. C03, C04 e C05 sono chiusi come sostituiti; #57, #58, #59 e #60 sono chiusi come assorbiti o realizzati.
+I ticket V01-V09 costruiscono il Coordinatore vero per fette verticali, ognuna dimostrabile. L'ordine è seriale secondo la regola di consumo sopra: un ticket per volta, nell'ordine di dipendenza della tabella. V07 e V06 hanno corso in parallelo con V03-V05 quando il piano è stato scritto; non accade più. P01 è solo documentazione e non ha dipendenze. I provider entrano dopo V08 e prima di V09: prima Claude Agent (P02), poi gli altri sette. C03, C04 e C05 sono chiusi come sostituiti; #57, #58, #59 e #60 sono chiusi come assorbiti o realizzati.
 
 | Ticket | Consegna | Bloccato da |
 | --- | --- | --- |
