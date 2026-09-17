@@ -1117,6 +1117,9 @@ final class CodexClientTests: XCTestCase {
             transport.emit(["method": "item/completed", "params": base.merging(["item": ["type": "mcpToolCall", "id": "call-2", "server": "trama", "tool": "write_memory", "status": "failed", "error": ["message": "tool timed out"]]]) { $1 }])
             transport.emit(["method": "item/started", "params": base.merging(["item": ["type": "mcpToolCall", "id": "call-3", "server": "trama", "tool": "prepare_plan", "status": "inProgress", "arguments": [:]]]) { $1 }])
             transport.emit(["method": "item/completed", "params": base.merging(["item": ["type": "mcpToolCall", "id": "call-3", "server": "trama", "tool": "prepare_plan", "status": "completed", "result": ["content": [["type": "text", "text": #"{"error":{"code":"mandate_revoked","message":"The person revoked the mandate."}}"#]], "isError": true], "error": NSNull()]]) { $1 }])
+            // Codex 0.154.0 reports a result with isError as a failed item whose result has no isError field.
+            transport.emit(["method": "item/started", "params": base.merging(["item": ["type": "mcpToolCall", "id": "call-4", "server": "trama", "tool": "prepare_plan", "status": "inProgress", "arguments": [:]]]) { $1 }])
+            transport.emit(["method": "item/completed", "params": base.merging(["item": ["type": "mcpToolCall", "id": "call-4", "server": "trama", "tool": "prepare_plan", "status": "failed", "result": ["content": [["type": "text", "text": #"{"error":{"code":"mandate_revoked","message":"The person revoked the mandate."}}"#]], "structuredContent": NSNull()], "error": NSNull()]]) { $1 }])
             transport.emit(["method": "item/started", "params": base.merging(["item": ["type": "agentMessage", "id": "answer", "text": "", "phase": "final_answer"]]) { $1 }])
             transport.emit(["method": "item/agentMessage/delta", "params": base.merging(["itemId": "answer", "delta": "Mancano "]) { $1 }])
             transport.emit(["method": "item/agentMessage/delta", "params": base.merging(["itemId": "answer", "delta": "i test."]) { $1 }])
@@ -1141,6 +1144,8 @@ final class CodexClientTests: XCTestCase {
             .toolCallCompleted(itemID: "call-2", server: "trama", tool: "write_memory", succeeded: false, error: "tool timed out"),
             .toolCallStarted(itemID: "call-3", server: "trama", tool: "prepare_plan"),
             .toolCallCompleted(itemID: "call-3", server: "trama", tool: "prepare_plan", succeeded: false, error: "mandate_revoked"),
+            .toolCallStarted(itemID: "call-4", server: "trama", tool: "prepare_plan"),
+            .toolCallCompleted(itemID: "call-4", server: "trama", tool: "prepare_plan", succeeded: false, error: "mandate_revoked"),
             .textDelta("Mancano "),
             .textDelta("i test.")
         ])

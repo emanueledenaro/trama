@@ -1982,12 +1982,14 @@ private actor Core {
                 let completed: Bool = item["status"]?.stringValue == "completed"
                 let refused: Bool = item["result"]?.objectValue?["isError"]?.boolValue ?? false
                 let failed: Bool = !completed || refused
+                // Codex 0.154.0 marks a result with isError as a failed item and drops the flag, so a
+                // failed item's result is read for a refusal code too.
                 onEvent(.toolCallCompleted(
                     itemID: itemID,
                     server: item["server"]?.stringValue ?? "",
                     tool: item["tool"]?.stringValue ?? "",
                     succeeded: !failed,
-                    error: item["error"]?.objectValue?["message"]?.stringValue ?? (refused ? Self.refusalCode(item["result"]) : nil)
+                    error: item["error"]?.objectValue?["message"]?.stringValue ?? (failed ? Self.refusalCode(item["result"]) : nil)
                 ))
                 return
             }
