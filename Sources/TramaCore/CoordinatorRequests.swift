@@ -207,7 +207,8 @@ public struct DecisionRequest: Codable, Equatable, Identifiable, Sendable {
         case let .alternative(index):
             guard alternatives.indices.contains(index) else { throw CoordinatorRequestError.unknownAlternative(index) }
             let chosen = alternatives[index]
-            var rationale = "Scelta della persona tra \(alternatives.count) alternative sul caso: \(concreteCase)."
+            let sentenceEnd = concreteCase.last.map { ".!?".contains($0) } == true ? "" : "."
+            var rationale = "Scelta della persona tra \(alternatives.count) alternative sul caso: \(concreteCase)\(sentenceEnd)"
             if let consequence = chosen.consequence { rationale += " Conseguenza accettata: \(consequence)" }
             return (chosen.behavior, chosen.example, rationale)
         case let .freeText(text):

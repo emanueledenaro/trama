@@ -156,6 +156,16 @@ struct CoordinatorRequestsTests {
         #expect(outcome.answeredAt == Date(timeIntervalSinceReferenceDate: 40))
     }
 
+    @Test("A concrete case that already ends a sentence is not followed by a second full stop")
+    func rationaleKeepsOneFullStop() throws {
+        let request = try DecisionRequest(category: .product, question: "Rimborso parziale?", concreteCase: "Ordine 12 pagato, un articolo reso.", alternatives: Self.alternatives, revisesDecisionID: nil)
+
+        let rationale = try request.decisionContent(for: .alternative(0)).rationale
+
+        #expect(rationale.hasPrefix("Scelta della persona tra 2 alternative sul caso: Ordine 12 pagato, un articolo reso. "))
+        #expect(!rationale.contains(".."))
+    }
+
     @Test("A free answer revising a decision bumps its version and marks the dependent work stale")
     func freeAnswerRevisesDecision() throws {
         var document = try Self.documentWithDependentWork()
