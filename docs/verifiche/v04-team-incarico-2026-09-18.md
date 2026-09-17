@@ -61,6 +61,23 @@ Da completare con la prova diretta nell'app.
 
 Da completare con la prova diretta nell'app.
 
+## Revisione Standards e Spec
+
+La revisione con due agenti in parallelo (skill `/code-review`) è bloccata dallo stesso limite di utilizzo di Codex, perché gli agenti di revisione girano su Codex. La revisione è stata fatta a mano sul diff `main...HEAD`.
+
+Standards. Il codice nuovo è in inglese e i testi dell'interfaccia in italiano, come chiede `AGENTS.md`. Nessuna violazione dura. Rilievi di giudizio:
+
+- `Sources/Trama/TeamView.swift` è rimasto il gruppo GitHub, mentre la sezione «Team» è `SpecialistsView`. Il nome del tipo non dice più cosa rende. Rinominarlo tocca `WorkspaceView` e altri punti: rimandato.
+- `SpecialistSupervisor.receiveSpecialistTurnEvent` ripete otto volte la stessa chiamata ad `appendSpecialistActivity` con titolo e dettaglio diversi. Una tabella titolo/dettaglio per caso ridurrebbe la ripetizione; non fatta per non allargare il diff senza una necessità.
+- Corretto: `ConversationTimeline.rows` aveva un binding morto (`if let assignmentID = turn.assignmentID { _ = assignmentID ... }`), ora è `if turn.assignmentID != nil` (`854c58c`).
+
+Spec. I criteri risultano implementati e coperti dai test: i cinque strumenti con il controllo del mandato, lo specialista come entità persistita, il runtime in worktree con modello esplicito e sandbox ristretta, le schede di proposta e di incarico, le attività raccolte per turno, l'arresto in due passi, la sezione Team distinta dal Gruppo. Due scelte dichiarate che si discostano dalla lettera del criterio «tutti soggetti al mandato»:
+
+- `propose_team` non chiede il mandato. Mostra una scheda e non crea nessuno, come `request_mandate`; chiedere un mandato per poter proporre un team sarebbe un giro a vuoto.
+- `stop_specialist` controlla l'azione (`executeInWorktree`, o `composeTeam` con `remove`) ma non il perimetro dei moduli: un lavoro fuori perimetro dopo una correzione del mandato deve comunque poter essere fermato.
+
+Resta fuori dalla revisione la prova diretta nell'app, che è il criterio non ancora soddisfatto.
+
 ## Limiti
 
 - La prova diretta nell'app manca per il limite di utilizzo di Codex. Nessun criterio di #67 che dipende da quella prova è da considerarsi verificato.
