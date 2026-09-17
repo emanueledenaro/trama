@@ -38,7 +38,7 @@ swift test --filter "CoordinatorToolAuthorizationTests|ProjectMandateTests"
 
 ## Ambiente della prova nell'app
 
-L'app è stata compilata dal branch con un aggancio temporaneo (`V03Proof.swift`), rimosso prima dei commit; nel branch non ne resta traccia. L'aggancio pilotava lo store, catturava la finestra con `NSView.cacheDisplay` e scriveva un resoconto testuale. Come in V01 e V02 la sessione non ha la registrazione dello schermo né l'accesso di assistenza: nelle catture la barra laterale e i pulsanti della barra in alto restano bianchi, e i testi sotto la sfocatura della barra sono poco leggibili.
+Per i punti 1-6 l'app è stata compilata dal branch con un aggancio temporaneo (`V03Proof.swift`); per il rifiuto dopo la revoca con un secondo aggancio (`V03RefusalProof.swift`). Entrambi sono stati rimossi prima dei commit e nel branch non ne resta traccia. Il primo aggancio pilotava lo store, catturava la finestra con `NSView.cacheDisplay` e scriveva un resoconto testuale. Come in V01 e V02 la sessione non ha la registrazione dello schermo né l'accesso di assistenza: nelle catture la barra laterale e i pulsanti della barra in alto restano bianchi, e i testi sotto la sfocatura della barra sono poco leggibili.
 
 Trama girava con `CFFIXED_USER_HOME=/tmp/trama-v03-home`. I dati reali in Application Support e `~/.codex/config.toml` non sono stati toccati. Il progetto era un clone del branch in `/tmp/trama-v03-proof/trama`. Prima dell'apertura il documento conteneva solo `selectedModel: gpt-5.6-luna`, e il resoconto conferma lo stesso modello nel documento e nel thread a ogni apertura.
 
@@ -55,7 +55,35 @@ La cattura della sezione Patto è stata scartata: `cacheDisplay` ha disegnato ti
 
 ### Rifiuto dopo la revoca
 
-Il rifiuto di `prepare_plan` dopo la revoca non è stato catturato nell'app. L'aggancio girava sul main actor e restava in attesa attiva mentre il turno successivo doveva partire: le risposte alla decisione e alla revoca sono rimaste «In attesa del Coordinatore» e il rollout del thread non contiene quei turni. Una nuova cattura richiederebbe un altro aggancio nell'app o il controllo dell'interfaccia, che questa sessione non ha. Il rifiuto è provato dai tre test sopra, che passano dallo stesso server degli strumenti usato dall'app: `mandate_revoked` come risultato `isError`, nessun piano in coda, anche quando la revoca arriva mentre l'azione parte.
+La prima prova non aveva catturato il rifiuto: dopo la revoca l'app restava al 100% di CPU e il turno successivo non partiva. La causa era un difetto dell'app, non solo del primo aggancio (vedi «Ciclo di layout nella chat»).
+
+La seconda prova parte dal documento salvato con il mandato già revocato. Il secondo aggancio, dopo l'apertura, accoda un solo messaggio e ritorna; nessun ciclo di attesa sul main actor. Un abbonamento a `objectWillChange` si accorge della fine di quel turno e pianifica una sola cattura con `DispatchQueue.main.asyncAfter`. Il messaggio chiede al Coordinatore di chiamare comunque `prepare_plan` con `kind: agreedTicket` sul modulo `Sources/TramaCore` e di riportare l'esito così com'è.
+
+1. Prima esecuzione, alle 10:16. All'apertura il Coordinatore riceve prima i messaggi rimasti in attesa dalla prova precedente, cioè la risposta alla decisione e la revoca, e risponde che il mandato v1 è revocato e che non prepara piani. Poi riceve il messaggio della prova e chiama `mcp__trama__prepare_plan`. Il server degli strumenti risponde:
+
+   ```
+   {"error":{"code":"mandate_revoked","details":{"action":"plan.agreedTicket","authorization":"mandate_revoked","mandateVersion":1,"moduleIDs":["Sources/TramaCore"],"next":"request_mandate"},"message":"The person revoked the mandate. Act on nothing; if the work still needs it, ask with request_mandate."}}
+   ```
+
+   Codex marca la chiamata come fallita. In chat però la riga diceva «Ha ordinato un piano: non riuscito · trama · prepare_plan · non riuscito» invece del rifiuto. Codex 0.154.0 trasforma un risultato con `isError` in un elemento `mcpToolCall` con `status: failed`, e il `result` perde il campo `isError`; Trama cercava il codice solo quando `isError` era presente. Corretto in `a4d7cfb`, con il caso aggiunto al test del turno del Coordinatore sul trasporto simulato.
+2. Seconda esecuzione con la correzione, alle 10:20, sullo stesso thread. Il risultato dello strumento è identico. In chat la riga dice «Azione rifiutata dal mandato · trama · prepare_plan · mandato revocato», la risposta del Coordinatore riporta il JSON di `mandate_revoked` e la barra in alto dice «Mandato revocato» [06](v03/06-action-refused.png). La cattura mostra le due esecuzioni una sotto l'altra: sopra la vecchia riga «non riuscito», sotto quella corretta.
+3. Nessun piano in coda. Il resoconto dell'aggancio riporta `plansBefore=0` e `plansAfter=0`, con `isPlanning=false` e il mandato ancora `v1 revoked`. Nel documento l'unico evento «Piano ordinato dal Coordinatore» è quello del punto 3, quando il mandato era concesso. La richiesta della prova è in stato «Risposta disponibile», non «Piano pronto».
+4. Dopo la cattura l'app è rimasta a 0% di CPU, e il campionamento del main thread lo trova fermo in attesa di eventi (`mach_msg2_trap`).
+
+Nel rollout la chiamata passa dalla modalità codice di Codex (`exec` con `tools.mcp__trama__prepare_plan`), quindi l'uscita registrata è il testo del risultato. Il flag `isError` sul risultato MCP è provato dal test «A refusal is a tool result with isError and the request id, never a protocol or HTTP error» e, nell'app, dallo stato `failed` che Codex ha dato alla chiamata.
+
+### Ciclo di layout nella chat
+
+Con il documento della prova, l'app andava al 100% di CPU pochi secondi dopo l'apertura, prima di qualsiasi turno. Il campionamento del main thread mostrava un ciclo di aggiornamento di SwiftUI (`NSHostingView.beginTransaction`, `GraphHost.flushTransactions`, `AG::Subgraph::update`). Bisezione su copie del documento, con `CODEX_HOME` vuoto per non avviare turni:
+
+- documento intero: 99-100% di CPU;
+- senza la scheda di mandato: sotto il 17%, poi 0%;
+- senza la scheda di decisione: 99-100%;
+- senza i messaggi in attesa, cioè senza le righe in fondo che fanno scorrere la chat verso il basso all'apertura: 0%;
+- togliendo `.textSelection` da tutta la chat il ciclo restava, spostato su `LazySubviewPlacements`;
+- `main` a `b836f30`, con lo stesso documento riportato allo schema 4: 0-1%, perché lì la scheda di mandato è una riga generica bassa.
+
+La causa è il `LazyVStack` della chat. Scorso in fondo, con la scheda di mandato alta sopra l'area visibile, continuava a stimare di nuovo le altezze delle righe. La chat ora usa un `VStack` (`e8fb71c`): con lo stesso documento la CPU resta tra 0% e 2%. Il difetto nasce con V03, perché su `main` la scheda non è alta. Non esiste un test automatico per questo layout; la verifica è la misura della CPU e il campionamento.
 
 ### Runtime
 
@@ -68,8 +96,10 @@ Censimento dal rollout di Codex del thread creato dalla prova (`01a0ac6d-1af2-�
 | Thread | Uso | Turni |
 | --- | --- | --- |
 | `01a0ac6d-1af2-…` | punti 1-6 | 4 con `gpt-5.6-luna` |
+| `01a0ac6d-1af2-…` | rifiuto dopo la revoca, prima esecuzione | 3 con `gpt-5.6-luna` (due messaggi in attesa e la prova) |
+| `01a0ac6d-1af2-…` | rifiuto dopo la revoca, seconda esecuzione | 1 con `gpt-5.6-luna` |
 
-Nessun turno ha usato `gpt-6-astra`: le 18 occorrenze del modello nel rollout sono tutte `gpt-5.6-luna`. Anche le richieste di pianificazione nel documento riportano `gpt-5.6-luna`. Nessuna prova è stata rifatta.
+Nessun turno ha usato `gpt-6-astra`: le 34 occorrenze del modello nel rollout sono tutte `gpt-5.6-luna`, e ogni turno riporta `approval_policy: never` e `sandbox_policy: read-only`. Anche le richieste di pianificazione nel documento riportano `gpt-5.6-luna`. Nessuna prova è stata rifatta.
 
 ## Deviazioni dal riferimento Synara
 
@@ -95,12 +125,14 @@ La revisione sul branch intero rispetto a `main` non ha trovato violazioni degli
 - tolto un alias rimasto in `MandateView`;
 - questo resoconto: nomi delle suite, test nuovi e deviazioni.
 
+La prova del rifiuto ha poi trovato due difetti, corretti in commit separati: il ciclo di layout della chat (`e8fb71c`) e il codice di rifiuto perso con gli elementi falliti di Codex (`a4d7cfb`).
+
 Restano come scelte di giudizio, senza modifiche: i campi del mandato che viaggiano insieme senza un tipo proprio, i codici di rifiuto come stringhe in tre punti, qualche duplicazione tra `CoordinatorSession` e `PactViews`, e lo stato del checkout vuoto per una cartella non Git (i progetti Trama sono sempre repository Git).
 
 ## Limiti
 
-- Il rifiuto dopo la revoca è provato dai test, non nell'app (vedi sopra).
-- Le risposte alla decisione e alla revoca non sono arrivate al Coordinatore durante la prova, per lo stesso blocco dell'aggancio. Il recapito delle risposte come messaggi è provato dai test.
+- La chat non è più pigra: con conversazioni molto lunghe tutte le righe vengono costruite all'apertura. Con i documenti delle prove non si vede un costo.
+- Nella cattura 06 i gruppi di attività sono aperti dal secondo aggancio; nell'app restano chiusi finché la persona non li apre. Il testo del messaggio della persona non viene disegnato da `cacheDisplay` e il suo contenuto è riportato sopra.
 - La scheda di decisione è comparsa dopo una richiesta che nominava `request_decision`. Se il modello ponga domande di prodotto da solo resta una scelta del modello, guidata dalle istruzioni del thread.
 - La correzione del mandato dalla scheda e la risposta libera sono provate dai test, non nell'app.
 - Le catture non includono la sezione Patto (vedi sopra).
