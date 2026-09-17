@@ -105,13 +105,9 @@ struct CoordinatorRequestsTests {
         state.mandateRequests = [try Self.mandateRequest(id: "M-1"), try Self.mandateRequest(id: "M-2")]
         document.coordinator = state
 
-        try document.declineMandateRequest("M-1", at: Date(timeIntervalSinceReferenceDate: 5))
-        #expect(throws: CoordinatorRequestError.alreadyResolved) { try document.declineMandateRequest("M-1") }
-        #expect(throws: CoordinatorRequestError.unknownRequest("M-9")) { try document.declineMandateRequest("M-9") }
-
         let resolved = document.resolvePendingMandateRequests(.granted(version: 1), at: Date(timeIntervalSinceReferenceDate: 6))
-        #expect(resolved.map(\.id) == ["M-2"])
-        #expect(document.coordinator?.mandateRequests.map(\.resolution) == [.declined, .granted(version: 1)])
+        #expect(resolved.map(\.id) == ["M-1", "M-2"])
+        #expect(document.coordinator?.mandateRequests.map(\.resolution) == [.granted(version: 1), .granted(version: 1)])
         #expect(document.coordinator?.mandateRequests.last?.resolvedAt == Date(timeIntervalSinceReferenceDate: 6))
         #expect(document.resolvePendingMandateRequests(.revoked).isEmpty)
     }
@@ -230,7 +226,6 @@ struct CoordinatorRequestsTests {
         #expect(CoordinatorBriefing.mandateMessage(.granted(version: 1)) == "Ho concesso il mandato (versione 1).")
         #expect(CoordinatorBriefing.mandateMessage(.corrected(version: 3)) == "Ho corretto il mandato: ora è alla versione 3.")
         #expect(CoordinatorBriefing.mandateMessage(.revoked, reason: "Cambio di priorità") == "Ho revocato il mandato. Motivo: Cambio di priorità")
-        #expect(CoordinatorBriefing.mandateMessage(.declined) == "Per ora non concedo il mandato che hai proposto.")
         let request = try Self.decisionRequest()
         let decision = PactDecision(id: "D-7", version: 2, value: "Il rimborso parziale resta in revisione", acceptedExample: "e", rationale: "r")
         #expect(CoordinatorBriefing.decisionMessage(request: request, decision: decision) == "Ho risposto alla domanda «Come trattiamo un rimborso parziale?»: Il rimborso parziale resta in revisione. È la decisione D-7, versione 2 del Patto.")

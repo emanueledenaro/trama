@@ -954,7 +954,7 @@ final class CodexClientTests: XCTestCase {
         XCTAssertEqual(trama["bearer_token_env_var"] as? String, "TRAMA_COORDINATOR_TOKEN")
         XCTAssertEqual(trama["default_tools_approval_mode"] as? String, "approve")
         // A read-only check can outlast Codex's default MCP tool timeout of 60 seconds.
-        XCTAssertEqual(trama["tool_timeout_sec"] as? Int, 660)
+        XCTAssertEqual(trama["tool_timeout_sec"] as? Int, 750)
         XCTAssertEqual(config["shell_environment_policy.exclude"] as? [String], ["TRAMA_COORDINATOR_TOKEN"])
         let verified = transport.messages.contains { message in
             message["method"] as? String == "mcpServerStatus/list"

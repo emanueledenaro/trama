@@ -72,6 +72,10 @@ public enum ReadOnlyCheckError: Error, Equatable, Sendable, LocalizedError {
 public struct ReadOnlyCheckRunner: Sendable {
     public static let maximumOutputBytes = 16_000
     public static let defaultTimeout: Duration = .seconds(600)
+    /// Limit of each Git read of the checkout before and after the check.
+    static let checkoutReadTimeout: Duration = .seconds(30)
+    /// Longest a check call can take with the default timeout: the check, four checkout reads and a margin.
+    public static let longestCall: Duration = defaultTimeout + checkoutReadTimeout * 4 + .seconds(30)
 
     public let codexURL: URL?
     public let scratchRoot: URL
@@ -181,12 +185,12 @@ public struct ReadOnlyCheckRunner: Sendable {
         guard let status = try? await WorkspaceProcess.run(
             executable: git,
             arguments: ["-C", root.path, "--no-optional-locks", "status", "--porcelain=v1", "-z", "--untracked-files=all"],
-            directory: root, environment: environment, timeout: .seconds(30), outputLimit: WorkspaceSessionManager.defaultOutputLimit
+            directory: root, environment: environment, timeout: checkoutReadTimeout, outputLimit: WorkspaceSessionManager.defaultOutputLimit
         ), status.exitCode == 0 else { return nil }
         let head = try? await WorkspaceProcess.run(
             executable: git,
             arguments: ["-C", root.path, "rev-parse", "--verify", "HEAD"],
-            directory: root, environment: environment, timeout: .seconds(30), outputLimit: 4_096
+            directory: root, environment: environment, timeout: checkoutReadTimeout, outputLimit: 4_096
         )
         let sha = head.flatMap { $0.exitCode == 0 ? String(decoding: $0.standardOutput, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines) : nil }
         return CheckoutState(head: sha, status: status.standardOutput)

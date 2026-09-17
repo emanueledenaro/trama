@@ -62,7 +62,6 @@ public enum CoordinatorBriefing {
         case let .granted(version): "Ho concesso il mandato (versione \(version))."
         case let .corrected(version): "Ho corretto il mandato: ora è alla versione \(version)."
         case .revoked: "Ho revocato il mandato." + (reason.map { " Motivo: \($0)" } ?? "")
-        case .declined: "Per ora non concedo il mandato che hai proposto."
         }
     }
 

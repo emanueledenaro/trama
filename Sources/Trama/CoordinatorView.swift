@@ -431,7 +431,7 @@ struct CoordinatorView: View {
                             Text(alternative.behavior).frame(maxWidth: .infinity, alignment: .leading)
                             Text(alternative.example).font(.callout).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading)
                             if let consequence = alternative.consequence {
-                                Text(consequence).font(.caption).foregroundStyle(.secondary)
+                                TramaSupportingText(consequence)
                             }
                         }
                         .padding(TramaSpacing.related)
@@ -489,7 +489,6 @@ struct CoordinatorView: View {
         case let .granted(version): "Mandato concesso, versione \(version)."
         case let .corrected(version): "Mandato corretto, versione \(version)."
         case .revoked: "Mandato revocato."
-        case .declined: "Mandato non concesso."
         }
     }
 

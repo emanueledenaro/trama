@@ -288,7 +288,7 @@ extension ProjectStore {
 
     /// Runs a read-only check on the checkout and records its outcome in the running turn.
     func runCoordinatorCheck(projectID: UUID, check: ReadOnlyCheck) async throws -> ReadOnlyCheckResult {
-        guard projectID == activeProjectID, let root = localRoot else { throw CoordinatorToolHostError.projectUnavailable }
+        guard projectID == activeProjectID, let root = localRoot, stateWritable else { throw CoordinatorToolHostError.projectUnavailable }
         let requestID = coordinator.turnRequestID
         let result = try await ReadOnlyCheckRunner().run(check, root: root)
         guard projectID == activeProjectID, localRoot == root else { throw CoordinatorToolHostError.projectUnavailable }
@@ -371,14 +371,6 @@ extension ProjectStore {
         }
     }
 
-    func declineMandateRequest(_ id: String) {
-        do {
-            try document.declineMandateRequest(id)
-            sayToCoordinator(CoordinatorBriefing.mandateMessage(.declined))
-        } catch {
-            errorMessage = Self.personFacingMessage(error)
-        }
-    }
 
     /// Opens the mandate sheet filled with the Coordinator's proposal.
     func reviewMandateRequest(_ request: MandateRequest) {

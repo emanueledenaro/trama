@@ -25,13 +25,12 @@ public enum CoordinatorRequestError: Error, Equatable, Sendable, LocalizedError 
 }
 
 /// A mandate the Coordinator asked the person for. It is shown as a mandate card until the person
-/// grants, corrects, revokes or declines; the proposal only fills the form, the person decides the mandate.
+/// grants, corrects or revokes the mandate; the proposal only fills the form, the person decides the mandate.
 public struct MandateRequest: Codable, Equatable, Identifiable, Sendable {
     public enum Resolution: Codable, Equatable, Sendable {
         case granted(version: Int)
         case corrected(version: Int)
         case revoked
-        case declined
     }
 
     public let id: String
@@ -284,13 +283,6 @@ extension ProjectDocument {
         return recorded
     }
 
-    public mutating func declineMandateRequest(_ id: String, at date: Date = Date()) throws {
-        guard let index = coordinator?.mandateRequests.firstIndex(where: { $0.id == id }) else {
-            throw CoordinatorRequestError.unknownRequest(id)
-        }
-        try coordinator?.mandateRequests[index].resolve(.declined, at: date)
-    }
-
     /// Resolves every pending mandate card with the person's change to the mandate and returns them.
     @discardableResult
     public mutating func resolvePendingMandateRequests(_ resolution: MandateRequest.Resolution, at date: Date = Date()) -> [MandateRequest] {
@@ -372,9 +364,7 @@ extension ProjectDocument {
         mandate = revoked
         if var state = coordinator {
             for index in state.mandateRequests.indices {
-                if state.mandateRequests[index].resolution != .declined {
-                    state.mandateRequests[index].supersede(.revoked, at: date)
-                }
+                state.mandateRequests[index].supersede(.revoked, at: date)
             }
             coordinator = state
         }

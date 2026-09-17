@@ -401,7 +401,7 @@ final class ProjectStore: ObservableObject {
                 activity.insert("Mandato concesso al Coordinatore per \(project.name) (versione \(version)).", at: 0)
             case let .corrected(version):
                 activity.insert("Mandato corretto: versione \(version).", at: 0)
-            case .revoked, .declined:
+            case .revoked:
                 break
             }
             announceMandateChange(recorded.resolution)

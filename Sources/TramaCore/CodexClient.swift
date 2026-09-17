@@ -1176,7 +1176,7 @@ private actor Core {
             // Trama checks every call at the tool boundary; Codex must not ask a person in between.
             "default_tools_approval_mode": .string("approve"),
             // A read-only check can run for minutes; Codex stops MCP calls after 60 seconds by default.
-            "tool_timeout_sec": .integer(660)
+            "tool_timeout_sec": .integer(Int(ReadOnlyCheckRunner.longestCall.components.seconds))
         ])
         config["shell_environment_policy.exclude"] = .array([.string(CodexClient.CoordinatorThreadSettings.tokenEnvironmentVariable)])
         let common: [String: JSONValue] = [

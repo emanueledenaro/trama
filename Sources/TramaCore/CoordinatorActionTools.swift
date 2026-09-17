@@ -42,7 +42,7 @@ extension CoordinatorTools {
                 "required": .array([.string("behavior"), .string("example")]),
                 "additionalProperties": .bool(false)
             ])
-            return ("Put a product behavior choice or a serious destructive case to the person, on a concrete case with \(2) to \(DecisionRequest.maximumAlternatives) alternatives. The person answers with an alternative or in their own words and only that answer becomes a Pact decision. Never ask about technical choices you can resolve yourself.",
+            return ("Put a product behavior choice or a serious destructive case to the person, on a concrete case with 2 to \(DecisionRequest.maximumAlternatives) alternatives. The person answers with an alternative or in their own words and only that answer becomes a Pact decision. Never ask about technical choices you can resolve yourself.",
                     ["category": .object(["type": .string("string"), "enum": .array(DecisionRequest.Category.allCases.map { .string($0.rawValue) })]),
                      "question": text, "concreteCase": text,
                      "alternatives": .object(["type": .string("array"), "minItems": .integer(2), "maxItems": .integer(DecisionRequest.maximumAlternatives), "items": alternative]),

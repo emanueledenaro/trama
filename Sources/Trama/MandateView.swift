@@ -10,11 +10,10 @@ struct MandateView: View {
     @State private var priorities = ""
     @State private var limits = ""
     @State private var selectedModuleIDs: Set<String> = []
-    @State private var allowedActions: Set<ActionChoice> = []
+    @State private var allowedActions: Set<MandateActionChoice> = []
     @State private var revocationReason = ""
 
     /// The delegable actions the person can tick. New features and trade-offs are never offered.
-    typealias ActionChoice = MandateActionChoice
 
     private var mandate: ProjectMandate? { store.document.mandate }
     private var hasGrantedMandate: Bool { mandate?.status == .granted }
@@ -57,7 +56,7 @@ struct MandateView: View {
                         }
                     }
                     Section("Azioni autorizzate") {
-                        ForEach(ActionChoice.allCases) { choice in
+                        ForEach(MandateActionChoice.allCases) { choice in
                             Toggle(choice.label, isOn: binding(forAction: choice))
                         }
                         Text("Nuove funzioni e compromessi restano sempre decisioni della persona").font(.caption).foregroundStyle(.secondary)
@@ -103,7 +102,7 @@ struct MandateView: View {
         )
     }
 
-    private func binding(forAction choice: ActionChoice) -> Binding<Bool> {
+    private func binding(forAction choice: MandateActionChoice) -> Binding<Bool> {
         Binding(
             get: { allowedActions.contains(choice) },
             set: { isOn in if isOn { allowedActions.insert(choice) } else { allowedActions.remove(choice) } }
@@ -124,7 +123,7 @@ struct MandateView: View {
         self.priorities = priorities.joined(separator: "\n")
         self.limits = limits.joined(separator: "\n")
         selectedModuleIDs = Set(scope)
-        allowedActions = Set(actions.compactMap(ActionChoice.init(action:)))
+        allowedActions = Set(actions.compactMap(MandateActionChoice.init(action:)))
     }
 
     private func grant() {
