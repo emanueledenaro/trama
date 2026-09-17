@@ -40,7 +40,7 @@ Il primo scenario che deve funzionare fino in fondo è Trama su Trama: aprire il
 22. Come Product Owner, voglio scegliere il modello del Coordinatore e vedere e cambiare quello proposto per ogni specialista, così ogni incarico ha un modello identificabile.
 23. Come Product Owner, voglio fermare uno specialista, cambiarne la priorità o correggerne il perimetro dall'ispettore, così intervengo conservando il lavoro già prodotto.
 24. Come Product Owner, voglio che il Coordinatore riceva gli eventi del monitor e dei colleghi GitHub come contesto e me li riporti solo quando contano, così non seguo due fonti.
-25. Come Product Owner, voglio che lo stato di accesso al provider, i modelli e le capacità siano rilevati e mostrati con la stessa forma per ogni provider, così aggiungere Claude in seguito non cambia l'interfaccia.
+25. Come Product Owner, voglio che lo stato di accesso al provider, i modelli e le capacità siano rilevati e mostrati con la stessa forma per ogni provider, così ogni provider di Synara si aggiunge senza cambiare l'interfaccia.
 26. Come utente, voglio che l'interfaccia sia neutra e quieta come la app Codex, con font di sistema, tema chiaro e scuro, Riduci trasparenza e contrasto aumentato rispettati, così Trama resta un'app Apple.
 27. Come utente, voglio tastiera e VoiceOver sulle schede, sull'ispettore e sul composer, così la nuova chat non è meno accessibile della vecchia.
 28. Come utente con documenti precedenti, voglio ritrovare richieste, decisioni, approvazioni e worktree dopo l'aggiornamento, così nulla di verificato va perso.
@@ -59,7 +59,7 @@ Il primo scenario che deve funzionare fino in fondo è Trama su Trama: aprire il
 - La risposta del Coordinatore non è più vincolata a un solo oggetto JSON. La prosa è libera; le schede nascono dalle chiamate agli strumenti. La proposta di piano esistente diventa il contenuto della scheda di incarico o di candidato, con la stessa validazione delle fonti.
 - L'impianto della finestra segue l'ADR 0007: sidebar con progetti e, sotto quello attivo, Team, Patto e Lavoro; colonna centrale con la conversazione e il composer; ispettore a destra per decisione, candidato, specialista, modulo, issue e gruppo; striscia di stato con i tre numeri in alto. Mappa, Modifiche, Decisioni, Gruppo e Issue si riusano come viste dell'ispettore.
 - I token visivi vengono dal riferimento della app Codex: grigi neutri, font di sistema, raggi continui, ombre leggere, pulsante primario pieno, blu solo informativo. Il codice colore dei tre stati (deciso, in costruzione, verificato) è l'unico colore di identità. Da Synara si portano i comportamenti: bolla della persona senza bordo, risposta senza bolla, gruppo di attività collassato per turno, ispettore dell'attività, misuratore di contesto ad anello, chip e menzioni, selettore modello e sforzo, stato vuoto.
-- Il collegamento ai provider assume la forma di Synara: un adattatore con capacità dichiarate, stato di accesso rilevato, catalogo modelli e opzioni per provider, eventi normalizzati in un solo formato consumato dalla timeline. Nel verticale esiste un solo adattatore completo, Codex. Claude Agent SDK è il secondo adattatore in un ticket successivo.
+- Il collegamento ai provider assume la forma di Synara: un adattatore con capacità dichiarate, stato di accesso rilevato, catalogo modelli e opzioni per provider, eventi normalizzati in un solo formato consumato dalla timeline. V08 porta Codex nella forma comune; i ticket P01-P09 portano gli altri otto provider di Synara (Claude Agent, Cursor, Antigravity, Grok, Droid, OpenCode, Pi, Devin), riscritti in Swift senza Node dentro Trama, come deciso nell'[ADR 0008](adr/0008-provider-di-synara-in-swift.md). Cursor, Grok, Droid e Devin condividono un solo client ACP. Codex resta collegato direttamente all'app-server.
 - Il monitor esistente continua a produrre i suoi eventi; il Coordinatore li riceve come contesto tramite lo studio e la cronologia. Le automazioni programmate alla Synara non entrano nel verticale.
 - Le PR #56 e #62 sono la base su cui si costruisce; i ticket #57, #58, #59, #60 e #61 vengono chiusi come assorbiti o superati quando il verticale li copre.
 
@@ -77,7 +77,7 @@ Un buon test osserva il comportamento ai confini sopra, non le proprietà privat
 
 ## Fuori perimetro
 
-- Secondo adattatore provider (Claude Agent SDK) e ogni provider oltre Codex.
+- Provider che Synara non supporta.
 - Automazioni programmate, battito e politica di completamento alla Synara; il monitor esistente resta com'è.
 - Tutorial ed esercizi guidati (C12-C14), ricalcolo selettivo degli incarichi (C06), cambio progetto con team che continuano (C07), conflitti fra specialisti e collaboratori (C08), integrazione tramite mandato (C09), aggiornamento ticket (C10), ripresa dopo limiti (C11), miglioramento del team (C15), Trama su Trama come processo continuo (C16). Restano ticket successivi, riformulati sopra questo incremento.
 - Temi configurabili, font a scelta e voce nel composer.
@@ -85,4 +85,4 @@ Un buon test osserva il comportamento ai confini sopra, non le proprietà privat
 
 ## Note di consegna
 
-L'incremento si costruisce per fette verticali, ognuna dimostrabile: la prima porta lo studio e la memoria in un thread persistente con la nuova timeline; la seconda gli strumenti e il mandato; la terza team e specialisti con un incarico che produce un candidato verificato; la quarta l'impianto della finestra e l'ispettore; la quinta il composer, il misuratore di contesto e la forma dell'adattatore provider. La suddivisione precisa e le dipendenze sono nei ticket.
+L'incremento si costruisce per fette verticali, ognuna dimostrabile: la prima porta lo studio e la memoria in un thread persistente con la nuova timeline; la seconda gli strumenti e il mandato; la terza team e specialisti con un incarico che produce un candidato verificato; la quarta l'impianto della finestra e l'ispettore; la quinta il composer, il misuratore di contesto e la forma dell'adattatore provider; la sesta gli altri otto provider di Synara, prima di V09. La suddivisione precisa e le dipendenze sono nei ticket.
