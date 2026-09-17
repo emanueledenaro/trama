@@ -1,10 +1,16 @@
 # V04: team di progetto e incarico in worktree
 
-Verifica del 18 settembre 2026 per #67. Base: `main` a `fb7c587` (V01, V02, V03 e V07 integrati). Candidato sul branch `synara/project-team-worktree`. Componente reale: Codex CLI 0.154.0 con l'account ChatGPT del Mac.
+Verifica del 18 settembre 2026 per #67. Base: `main` a `fb7c587` (V01, V02, V03 e V07 integrati); `main` è poi avanzato a `8ba959e` con soli documenti di pianificazione. Candidato sul branch `synara/project-team-worktree`, commit `ccb9f37`, `269008b`, `417b8c9` e `488db9d` (quest'ultimo è lavoro in corso). Componente reale: Codex CLI 0.154.0 con l'account ChatGPT del Mac.
+
+## Stato
+
+- Test automatici: verdi, 295 test Swift Testing in 34 suite e 112 test XCTest.
+- CPU a riposo con le schede nuove: misurata, il thread principale resta in attesa di eventi.
+- Prova diretta nell'app: **non eseguita**. L'account ChatGPT ha esaurito il limite di utilizzo di Codex e lo sblocca il 19 settembre 2026 alle 14:59. Vedi «Prova diretta nell'app».
 
 ## Test automatici
 
-`swift test` sul candidato: 294 test Swift Testing in 34 suite e 112 test XCTest, nessun fallimento. Le suite nuove sono queste.
+`swift test` sul candidato: 295 test Swift Testing in 34 suite e 112 test XCTest, nessun fallimento. Le suite nuove sono queste.
 
 - `Project team`, il dominio del team senza Codex: una proposta vuole almeno uno specialista, con competenza e motivo, e nomi distinti; proporre non crea nessuno e una nuova proposta sostituisce quella in attesa; la conferma crea gli specialisti una volta sola e una seconda risposta è rifiutata; la correzione tiene solo gli specialisti scelti e registra chi è stato tolto e la nota; dopo la conferma si aggiunge uno specialista solo per lavoro nuovo, mai per un ruolo già libero; uno specialista tolto conserva la sua storia e non riceve incarichi; un incarico registra obiettivo, ticket, perimetro, dipendenze, modello, strumenti, verifiche richieste e versione del mandato; uno specialista occupato non prende un secondo incarico; il parallelismo richiede lavoro indipendente (nessun modulo in comune con lavoro attivo, nessuna dipendenza non conclusa) e non ha limite fisso; il ciclo del turno porta l'incarico da in preparazione a concluso conservando risultato e turni; l'arresto è prima richiesto e poi confermato; un turno che finisce da solo dopo la richiesta di arresto resta concluso; il lavoro senza runtime vivo viene fermato da Trama e l'arresto con rimozione fa uscire lo specialista dal team; la ripresa riparte nello stesso worktree e thread con il modello scelto dalla persona; un mandato più stretto o revocato dice quali incarichi attivi non copre più; gli aggiornamenti aspettano il Coordinatore finché non gli sono riportati; il team sopravvive a salvataggio e riapertura.
 - `Coordinator team tools`, la cucitura degli strumenti senza Codex, un esito del mandato per test: `propose_team` mostra la scheda con mandato assente, concesso o revocato e non crea nessuno specialista, funziona solo nel turno del chiamante, rifiuta moduli sconosciuti e risponde `team_already_confirmed` dopo la conferma; `create_specialist` risponde `mandate_missing`, `mandate_revoked`, `outside_scope` (azione non concessa e modulo fuori perimetro), `team_not_confirmed`, `specialist_available` e, entro il mandato, aggiunge lo specialista; `assign_task` risponde `mandate_missing`, `mandate_revoked`, `person_required` per nuove funzioni e compromessi, `outside_scope`, `model_unavailable`, `specialist_busy`, `work_not_independent`, `dependencies_pending`, e entro il mandato registra l'incarico e fa partire lo specialista; un mandato revocato mentre l'incarico parte è rifiutato con il nuovo esito; `stop_specialist` risponde `mandate_missing`, `mandate_revoked`, `outside_scope`, `specialist_not_running`, chiede l'arresto entro il mandato e con `remove` fa uscire lo specialista dal team; `read_team` elenca proposta, specialisti, incarico corrente e l'esito che ogni azione del team otterrebbe adesso.
@@ -15,20 +21,47 @@ Verifica del 18 settembre 2026 per #67. Base: `main` a `fb7c587` (V01, V02, V03 
 
 `bash scripts/build-app.sh release` ha prodotto `build/Trama.app`.
 
+## CPU a riposo con le schede nuove
+
+La correzione di V03 (`e8fb71c`) sostituisce il `LazyVStack` della chat con un `VStack`, perché scorrere in fondo con una scheda alta sopra l'area visibile faceva ristimare le altezze e portava l'app al 100% di CPU. Le schede di V04 (proposta del team, incarico, attività raccolte) sono alte quanto quella di V03, quindi la misura va rifatta.
+
+Metodo. Un documento di prova con la scheda di proposta, due schede di incarico, un turno di specialista concluso e uno in corso è stato scritto con lo storage di Trama e aperto dall'app compilata dal candidato, con `CFFIXED_USER_HOME=/tmp/trama-v04-cpu-home` e `CODEX_HOME` vuoto per non avviare turni. La CPU è stata campionata con `top -pid <pid> -l 35 -s 1` e il thread principale con `sample <pid> 6`.
+
+Esito. Il thread principale passa tutti i campioni in `mach_msg2_trap`, in attesa di eventi, senza `beginTransaction`, `flushTransactions` o aggiornamenti di SwiftUI. Non c'è nessun ciclo di layout. La CPU complessiva dell'app è 0% nella maggior parte dei secondi, con una punta di 8-9% ogni cinque secondi: il campione della punta mostra `ProjectStore.startWatcher()` che esegue `RepositoryScanner.scan` (metadati Git e SHA256 dei file) su un thread di background. Quel watcher esiste da `381ef99`, la prima versione nativa, ed è fuori dal perimetro di questo ticket. Lo stesso profilo si ottiene con e senza le schede nuove:
+
+| Documento | Campioni | Media | Massimo | Sopra 2% |
+| --- | --- | --- | --- | --- |
+| Con le schede nuove | 35 | 1,81% | 9,40% | 9 |
+| Senza le schede nuove | 35 | 1,71% | 8,70% | 7 |
+
+Le schede nuove non aggiungono lavoro misurabile. La media resta fra 0% e 2%; le punte sono del watcher, fuori dal main actor.
+
+## Prova diretta nell'app
+
+**Non eseguita.** Il 18 settembre 2026 alle 01:04 il thread del Coordinatore della prova si è chiuso con l'errore `usage_limit_exceeded`: «You've hit your usage limit. Visit https://chatgpt.com/codex/settings/usage to purchase more credits or try again at Sep 19th, 2026 2:59 PM.» Il rollout è `~/.codex/sessions/2026/09/18/rollout-2026-09-18T01-04-14-01a0b19d-0bda-7e82-b395-737ce0bed172.jsonl`, ultima riga `task_complete` con quell'errore. La stessa risposta arriva oggi da una chiamata minima:
+
+```
+$ codex exec --model gpt-5.6-luna --skip-git-repo-check "Rispondi solo con: ok"
+ERROR: You've hit your usage limit. ... try again at Sep 19th, 2026 2:59 PM.
+```
+
+La prova richiede turni reali di Codex (proposta del team, mandato, incarico, turni dello specialista), quindi non può essere sostituita da fixture. Va ripetuta dopo lo sblocco.
+
 ## Ambiente della prova nell'app
 
-L'app è stata compilata dal branch con un aggancio temporaneo (`V04Proof.swift`), rimosso prima del commit. L'aggancio è una macchina a passi: si iscrive a `objectWillChange` dello store e, quando la condizione di un passo è vera, esegue il passo e pianifica una cattura con `DispatchQueue.main.asyncAfter`. Non c'è nessun ciclo di attesa sul main actor. La cattura usa `NSView.cacheDisplay`; come in V01, V02 e V03 la sessione non ha la registrazione dello schermo né l'accesso di assistenza, quindi nelle immagini la barra laterale e i pulsanti in alto restano bianchi.
+L'app è compilata dal branch con un aggancio temporaneo (`V04Proof.swift`), che sparisce prima della PR. L'aggancio è una macchina a passi: si iscrive a `objectWillChange` dello store e, quando la condizione di un passo è vera, esegue il passo e pianifica una cattura con `DispatchQueue.main.asyncAfter`. Non c'è nessun ciclo di attesa sul main actor. La cattura usa `NSView.cacheDisplay`; come in V01, V02 e V03 la sessione non ha la registrazione dello schermo né l'accesso di assistenza, quindi nelle immagini la barra laterale e i pulsanti in alto restano bianchi.
 
 Trama girava con `CFFIXED_USER_HOME=/tmp/trama-v04-home`. I dati reali in Application Support e `~/.codex/config.toml` non sono stati toccati. Il progetto era un clone del branch in `/tmp/trama-v04-proof/trama`, con `origin` su `github.com/emanueledenaro/trama`. Prima dell'apertura il documento conteneva soltanto `selectedModel: gpt-5.6-luna`.
 
 ## Esiti
 
-Da completare con la prova.
+Da completare con la prova diretta nell'app.
 
 ## Modelli usati
 
-Da completare con la prova.
+Da completare con la prova diretta nell'app.
 
 ## Limiti
 
-Da completare con la prova.
+- La prova diretta nell'app manca per il limite di utilizzo di Codex. Nessun criterio di #67 che dipende da quella prova è da considerarsi verificato.
+- La misura della CPU è fatta su un documento scritto dallo storage di Trama, non sul documento prodotto dalla prova reale. Misura comunque la chat con le schede nuove, che è l'oggetto della verifica di V03.
