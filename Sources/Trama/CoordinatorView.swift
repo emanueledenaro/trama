@@ -38,7 +38,9 @@ struct CoordinatorView: View {
             } else {
                 ScrollViewReader { proxy in
                     ScrollView {
-                        LazyVStack(alignment: .leading, spacing: TramaSpacing.section) {
+                        // Eager on purpose: a LazyVStack scrolled to the bottom with a tall mandate card above kept
+                        // re-estimating row heights and spun the main thread at full CPU.
+                        VStack(alignment: .leading, spacing: TramaSpacing.section) {
                             let latestReplyID = rows.last { if case .coordinatorReply = $0 { true } else { false } }?.id
                             ForEach(rows) { row in
                                 self.row(row, latestReplyID: latestReplyID).id(row.id)
