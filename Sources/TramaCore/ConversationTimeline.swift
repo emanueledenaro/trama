@@ -132,20 +132,6 @@ public struct ConversationTimeline: Codable, Equatable, Sendable {
         append(.card(card), origin: origin, requestID: requestID, assignmentID: assignmentID, at: date)
     }
 
-    /// Moves the events appended after `sequence` to the end, keeping their order, so a card written
-    /// during the opening turn follows the study card that closes it.
-    public mutating func moveToEnd(after sequence: Int) {
-        let moved = events.filter { $0.sequence > sequence }
-        guard !moved.isEmpty else { return }
-        events.removeAll { $0.sequence > sequence }
-        for event in moved {
-            lastSequence += 1
-            var moved = event
-            moved.sequence = lastSequence
-            events.append(moved)
-        }
-    }
-
     private func lastReplyIndex(requestID: UUID) -> Int? {
         events.lastIndex { event in
             guard event.requestID == requestID, case .coordinatorText = event.content else { return false }
@@ -297,16 +283,18 @@ extension ConversationTimeline {
         var turns: [Turn] = []
         var activities: [Turn: [ConversationRow.ActivityGroupRow.Activity]] = [:]
         var replyEnd: [Turn: Date] = [:]
-        var specialistTurnStart: [Turn: Int] = [:]
+        struct SpecialistTurnKey: Hashable {
+            var assignmentID: String
+            var turnID: String?
+        }
+        var specialistTurnStart: [SpecialistTurnKey: Int] = [:]
         for (index, event) in events.enumerated() {
             guard let requestID = event.requestID else {
                 if let assignmentID = event.assignmentID, case .activity(let title, let detail) = event.content {
-                    var turn = Turn(requestID: nil, start: index, assignmentID: assignmentID, turnID: event.turnID)
-                    if let start = specialistTurnStart[turn] {
-                        turn.start = start
-                    } else {
-                        specialistTurnStart[turn] = index
-                    }
+                    let key = SpecialistTurnKey(assignmentID: assignmentID, turnID: event.turnID)
+                    let start = specialistTurnStart[key] ?? index
+                    specialistTurnStart[key] = start
+                    let turn = Turn(requestID: nil, start: start, assignmentID: assignmentID, turnID: event.turnID)
                     turns.append(turn)
                     activities[turn, default: []].append(.init(id: event.id, title: title, detail: detail, date: event.createdAt))
                     continue

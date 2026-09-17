@@ -150,7 +150,7 @@ extension ProjectStore {
         proposal.requestID = coordinator.turnRequestID
         try document.proposeTeam(proposal)
         let detail = ([proposal.summary].compactMap { $0 } + proposal.members.map { "\($0.name) · \($0.competence): \($0.reason)" }).joined(separator: "\n")
-        document.conversation?.appendCard(
+        appendCoordinatorCard(
             .init(kind: .teamProposal, title: "Proposta del team", detail: detail, referenceID: proposal.id),
             origin: .coordinator,
             requestID: proposal.requestID
@@ -180,7 +180,7 @@ extension ProjectStore {
         guard document.mandate == mandate else { throw CoordinatorToolHostError.mandateChanged }
         let assignment = try document.assign(order, mandateVersion: mandate.version, requestID: coordinator.turnRequestID)
         let name = document.team?.specialist(assignment.specialistID)?.name ?? assignment.specialistID
-        document.conversation?.appendCard(
+        appendCoordinatorCard(
             .init(kind: .assignment, title: "Incarico a \(name)", detail: assignment.objective, referenceID: assignment.id),
             origin: .coordinator,
             requestID: assignment.requestID,

@@ -34,6 +34,15 @@ final class CoordinatorRuntime {
     var settings: CodexClient.CoordinatorThreadSettings?
     /// The conversation request whose Coordinator turn is running; cards and checks attach to it.
     var turnRequestID: UUID?
+    /// Cards written while the Coordinator studies: they wait for the study card that closes that turn.
+    var deferredCards: [DeferredCard] = []
+
+    struct DeferredCard {
+        var card: ConversationEvent.Card
+        var origin: ConversationEvent.Origin
+        var requestID: UUID?
+        var assignmentID: String?
+    }
 
     /// Returns a runtime for the project, replacing the one of another project.
     func prepare(projectID: UUID) async throws -> (client: CodexClient, endpoint: URL) {
@@ -71,6 +80,7 @@ final class CoordinatorRuntime {
         instructionFiles = nil
         settings = nil
         turnRequestID = nil
+        deferredCards = []
     }
 
     func beginTurn() async {
@@ -252,6 +262,25 @@ extension ProjectStore {
         return state.memory
     }
 
+    /// Writes a card of the running turn. During the opening study the cards wait, so the study
+    /// card that closes that turn stays the first line of the conversation.
+    func appendCoordinatorCard(_ card: ConversationEvent.Card, origin: ConversationEvent.Origin, requestID: UUID?, assignmentID: String? = nil) {
+        guard coordinatorPhase == .studying else {
+            document.conversation?.appendCard(card, origin: origin, requestID: requestID, assignmentID: assignmentID)
+            return
+        }
+        coordinator.deferredCards.append(.init(card: card, origin: origin, requestID: requestID, assignmentID: assignmentID))
+    }
+
+    /// Writes the cards the study turn produced, in the order the Coordinator asked for them.
+    func flushDeferredCards() {
+        let cards = coordinator.deferredCards
+        coordinator.deferredCards = []
+        for card in cards {
+            document.conversation?.appendCard(card.card, origin: card.origin, requestID: card.requestID, assignmentID: card.assignmentID)
+        }
+    }
+
     /// Keeps the Coordinator's mandate request and shows it as a mandate card in the running turn.
     func recordMandateRequest(projectID: UUID, request: MandateRequest) throws -> MandateRequest {
         guard projectID == activeProjectID, project != nil, stateWritable else { throw CoordinatorToolHostError.projectUnavailable }
@@ -260,7 +289,7 @@ extension ProjectStore {
         var state = document.coordinator ?? CoordinatorState()
         state.mandateRequests.append(request)
         document.coordinator = state
-        document.conversation?.appendCard(
+        appendCoordinatorCard(
             .init(kind: .mandate, title: "Richiesta di mandato", detail: request.reason, referenceID: request.id),
             origin: .coordinator,
             requestID: request.requestID
@@ -278,7 +307,7 @@ extension ProjectStore {
         var state = document.coordinator ?? CoordinatorState()
         state.decisionRequests.append(request)
         document.coordinator = state
-        document.conversation?.appendCard(
+        appendCoordinatorCard(
             .init(kind: .decision, title: request.question, detail: request.concreteCase, referenceID: request.id),
             origin: .coordinator,
             requestID: request.requestID
@@ -515,6 +544,9 @@ extension ProjectStore {
             if coordinatorGeneration == generation {
                 isPlanning = false
                 coordinatorStudyText = nil
+                coordinatorPhase = .ready
+                flushDeferredCards()
+                saveDocument()
             }
         }
         let reply = try await coordinator.runTurn(
@@ -529,11 +561,13 @@ extension ProjectStore {
         guard coordinatorGeneration == generation else { return }
         document.coordinator?.thread?.injectedStudy = study.fingerprints
         coordinator.memoryDelivered = true
+        coordinatorPhase = .ready
         document.conversation?.appendCard(
             .init(kind: .study, title: "Studio del progetto", detail: reply, referenceID: threadID),
             origin: .coordinator,
             requestID: nil
         )
+        flushDeferredCards()
         activity.insert("Studio del Coordinatore ricevuto per \(project?.name ?? "il progetto").", at: 0)
         saveDocument()
     }
