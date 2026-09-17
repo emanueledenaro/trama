@@ -60,6 +60,35 @@ struct CoordinatorRequestsTests {
         #expect(reopened.mandate == before.mandate)
     }
 
+    @Test("A schema 4 document with the V07 composer and context fields migrates without losing them")
+    func schemaFourComposerFieldsMigrate() throws {
+        let directory = try CoordinatorStateTests.temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let url = directory.appendingPathComponent("project.json")
+        let original = Data(#"""
+        {"schemaVersion":4,"requests":[{"id":"55555555-5555-5555-5555-555555555555","title":"t","moduleID":"Orders","moduleName":"Orders","request":"Guarda lo schermo","plan":"","state":"Risposta disponibile","createdAt":400,"sourceFingerprint":"f","attachments":["/tmp/schermo.png"]}],
+         "selectedModel":"gpt-5.6-luna",
+         "composerPastes":[{"id":"66666666-6666-6666-6666-666666666666","createdAt":500,"text":"registro lungo"}],
+         "composerAttachments":["/tmp/bozza.png"],
+         "coordinator":{"thread":{"provider":"codex","resumeCursor":{"threadId":"thread-7"},"model":"gpt-5.6-luna","startedAt":10},
+          "context":{"threadID":"thread-7","usageAt":600,"thresholdPercent":60,"warnedAtThreshold":60}}}
+        """#.utf8)
+        try original.write(to: url)
+        let before = try JSONDecoder().decode(ProjectDocument.self, from: original)
+
+        let migrated = try ProjectDocumentStorage(url: url, projectID: Self.projectID).load()
+
+        #expect(migrated.schemaVersion == ProjectDocument.currentSchemaVersion)
+        #expect(migrated.composerPastes == before.composerPastes)
+        #expect(migrated.composerPastes?.first?.text == "registro lungo")
+        #expect(migrated.composerAttachments == ["/tmp/bozza.png"])
+        #expect(migrated.requests.first?.attachments == ["/tmp/schermo.png"])
+        #expect(migrated.coordinator == before.coordinator)
+        #expect(migrated.coordinator?.context?.thresholdPercent == 60)
+        #expect(migrated.coordinator?.context?.warnedAtThreshold == 60)
+        #expect(migrated.coordinator?.mandateRequests == [])
+    }
+
     @Test("Mandate and decision cards survive a save and a reload")
     func requestsRoundTrip() throws {
         let directory = try CoordinatorStateTests.temporaryDirectory()

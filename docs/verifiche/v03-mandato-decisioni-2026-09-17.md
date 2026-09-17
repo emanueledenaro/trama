@@ -1,10 +1,10 @@
 # V03: mandato e decisioni dalla conversazione
 
-Verifica del 17 settembre 2026 per #66. Base: `main` a `0c17f2b`. Candidato sul branch `claude/v03-mandate-decisions`: commit `ccd2f02`, `16eaa52` e `34cb89f` del thread precedente, più le correzioni di questa verifica. Componente reale: Codex CLI 0.154.0 con l'account ChatGPT del Mac.
+Verifica del 17 settembre 2026 per #66. Base: `main` a `b836f30`, dopo l'integrazione di V07 (#78). Candidato sul branch `claude/v03-mandate-decisions`: commit `ccd2f02`, `16eaa52` e `34cb89f` del thread precedente, più le correzioni di questa verifica. Componente reale: Codex CLI 0.154.0 con l'account ChatGPT del Mac.
 
 ## Test automatici
 
-`swift test` sul candidato: 186 test Swift Testing in 21 suite e 107 test XCTest, nessun fallimento. Le suite nuove o estese sono queste.
+`swift test` sul candidato ribasato: 240 test Swift Testing in 30 suite e 112 test XCTest, nessun fallimento. Le suite nuove o estese sono queste.
 
 - `Coordinator tool authorization`, la cucitura degli strumenti senza Codex, un esito per test:
   - senza mandato `prepare_plan` risponde `mandate_missing` e non pianifica nulla;
@@ -20,7 +20,7 @@ Verifica del 17 settembre 2026 per #66. Base: `main` a `0c17f2b`. Candidato sul 
   - le scelte tecniche risolvibili (`category: technical`) non diventano domande per la persona;
   - `run_readonly_check` esegue un controllo noto senza mandato e riporta l'esito;
   - `read_mandate` elenca i moduli nel perimetro e l'esito di ogni azione.
-- `Coordinator requests to the person`: un documento schema 4 passa allo schema 5 senza perdere richieste, conversazione, Patto, mandato e stato del Coordinatore; schede di mandato e di decisione sopravvivono a salvataggio e riapertura; validazione delle richieste; concessione, correzione e revoca risolvono tutte e sole le schede di mandato in attesa; un'alternativa crea una decisione alla versione 1 senza toccare le altre; una risposta libera che revisiona una decisione ne incrementa la versione e segna come da rivalutare i lavori dipendenti; una scheda già risposta, una risposta vuota o un'alternativa inesistente non registrano nulla; una decisione registrata a mano invalida gli stessi lavori dipendenti di una scheda risposta; le risposte arrivano al Coordinatore come messaggi in italiano; la motivazione ha un solo punto dopo il caso concreto.
+- `Coordinator requests to the person`: un documento schema 4 passa allo schema 5 senza perdere richieste, conversazione, Patto, mandato e stato del Coordinatore, e un documento schema 4 scritto da V07 conserva incolla, allegati e stato del contesto; schede di mandato e di decisione sopravvivono a salvataggio e riapertura; validazione delle richieste; concessione, correzione e revoca risolvono tutte e sole le schede di mandato in attesa; un'alternativa crea una decisione alla versione 1 senza toccare le altre; una risposta libera che revisiona una decisione ne incrementa la versione e segna come da rivalutare i lavori dipendenti; una scheda già risposta, una risposta vuota o un'alternativa inesistente non registrano nulla; una decisione registrata a mano invalida gli stessi lavori dipendenti di una scheda risposta; le risposte arrivano al Coordinatore come messaggi in italiano; la motivazione ha un solo punto dopo il caso concreto.
 - `Coordinator cards in the conversation`: la scheda di mandato offre concessione e correzione, e la revoca solo con un mandato concesso; dopo la concessione la stessa scheda offre correzione e revoca; la scheda di decisione mostra caso concreto e alternative e li nasconde dopo la risposta; concessione, correzione e revoca dalla scheda e dal pannello del mandato; una revoca dalla scheda blocca gli strumenti d'azione e lascia leggibile il mandato; una risposta libera diventa una decisione versionata e la scheda non accetta altre risposte.
 - `Project mandate`: un lavoro su più moduli è autorizzato solo se ogni modulo è nel perimetro. Il test già presente sul mandato revocato resta verde.
 
@@ -79,7 +79,7 @@ Nessun turno ha usato `gpt-6-astra`: le 18 occorrenze del modello nel rollout so
 - `run_readonly_check` ha un timeout di 600 secondi. Synara non ha timeout per chiamata. Nella configurazione del thread Trama alza `tool_timeout_sec` del server `trama` a 750 secondi, ricavati dal limite del controllo più le quattro letture Git del checkout e un margine, perché Codex interrompe le chiamate MCP dopo 60 secondi.
 - `prepare_plan` ha `readOnlyHint: false` e `destructiveHint: false`, mentre in Synara gli strumenti di scrittura sono `destructive: true`. Lo strumento mette in coda un piano che la persona rivede prima di ogni esecuzione e non cambia file.
 - Senza mandato scrivono ancora `write_memory`, `request_mandate` e `request_decision`, ma solo nello stato del Coordinatore (memoria e schede), mai nel codice, nel Patto o nel mandato. «Nessuno strumento scrive» è letto come nessuno strumento cambia il progetto.
-- Il documento passa dallo schema 4 allo schema 5 per le schede di mandato e di decisione; un documento schema 4 si apre senza perdite con backup `v4-original.json`.
+- Il documento passa dallo schema 4 allo schema 5 per le schede di mandato e di decisione; un documento schema 4 si apre senza perdite con backup `v4-original.json`. V07 aveva aggiunto campi opzionali restando allo schema 4, quindi il numero 5 resta libero; i due test di V07 che davano lo schema 4 come corrente ora verificano la migrazione allo schema corrente.
 - La risposta libera registra come esempio accettato il caso concreto della scheda, perché la persona scrive il comportamento e non un esempio.
 - La revoca richiede un motivo anche dal pannello del mandato, come dalla scheda.
 - Non esiste uno strumento separato alla `synara_context`: `read_mandate` riporta mandato, perimetro ed esito di ogni azione.

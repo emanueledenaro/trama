@@ -267,7 +267,7 @@ struct ContextStateStorageTests {
      "composerDraft":"bozza V02"}
     """#.utf8)
 
-    @Test("A V02 schema 4 document opens unchanged, with no context state yet")
+    @Test("A V02 schema 4 document migrates to the current schema with its data and no context state yet")
     func schemaFourOpens() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -277,9 +277,9 @@ struct ContextStateStorageTests {
 
         let storage = ProjectDocumentStorage(url: url, projectID: UUID(uuidString: "99999999-9999-9999-9999-999999999999"))
         let document = try storage.load()
-        #expect(document.schemaVersion == 4)
-        #expect(storage.originalBackupURL == nil)
-        #expect(try Data(contentsOf: url) == Self.schemaFourDocument)
+        #expect(document.schemaVersion == ProjectDocument.currentSchemaVersion)
+        let backup = try #require(storage.originalBackupURL)
+        #expect(try Data(contentsOf: backup) == Self.schemaFourDocument)
         #expect(document.coordinator?.thread?.resumeCursor.objectValue?["threadId"]?.stringValue == "thread-v02")
         #expect(document.coordinator?.memory.text == "Priorità: mandato")
         #expect(document.coordinator?.context == nil)
@@ -311,6 +311,6 @@ struct ContextStateStorageTests {
         #expect(reopened.coordinator?.memory.text == "Priorità: mandato")
         #expect(reopened.composerPastes?.first?.text == "log\nlog")
         #expect(reopened.composerAttachments == ["/tmp/a.png"])
-        #expect(reopened.schemaVersion == 4)
+        #expect(reopened.schemaVersion == ProjectDocument.currentSchemaVersion)
     }
 }
