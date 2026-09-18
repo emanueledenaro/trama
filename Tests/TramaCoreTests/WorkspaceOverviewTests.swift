@@ -220,14 +220,19 @@ struct WorkspaceOverviewTests {
         }
     }
 
-    @Test("Every target has a stable identity and a title")
+    @Test("Every target has a stable identity, a title and the symbol of its pane")
     func targetIdentity() {
-        let ids = [
-            InspectorTarget.map, .module("m"), .requests, .candidate(UUID()), .pact,
+        let targets: [InspectorTarget] = [
+            .map, .module("m"), .requests, .candidate(UUID()), .pact,
             .decision("D-1"), .team, .specialist("S-1"), .group, .issues, .issue(7)
-        ].map(\.id)
+        ]
+        let ids = targets.map(\.id)
         #expect(Set(ids).count == ids.count)
         #expect(ids.allSatisfy { !$0.isEmpty })
+        #expect(targets.allSatisfy { !$0.title.isEmpty && !$0.symbol.isEmpty })
+        // A pane keeps one symbol whichever object it shows.
+        #expect(InspectorTarget.team.symbol == InspectorTarget.specialist("S-1").symbol)
+        #expect(InspectorTarget.pact.symbol == InspectorTarget.decision("D-1").symbol)
         #expect(InspectorTarget.candidate(UUID()).title == "Candidato")
     }
 

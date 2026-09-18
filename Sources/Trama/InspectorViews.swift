@@ -32,7 +32,10 @@ struct InspectorView: View {
 
     private var header: some View {
         HStack(spacing: TramaSpacing.compact) {
-            Image(systemName: symbol).font(.callout).foregroundStyle(TramaText.secondary).frame(width: 16)
+            Image(systemName: store.inspectorTarget?.symbol ?? "sidebar.right")
+                .font(.callout)
+                .foregroundStyle(TramaText.secondary)
+                .frame(width: 16)
             Text(store.inspectorTarget?.title ?? "Dettagli")
                 .font(.headline)
                 .foregroundStyle(TramaText.emphasis)
@@ -70,18 +73,6 @@ struct InspectorView: View {
         }
     }
 
-    private var symbol: String {
-        switch store.inspectorTarget {
-        case .map, .module: "square.3.layers.3d"
-        case .requests, .candidate: "arrow.triangle.branch"
-        case .pact, .decision: "checkmark.seal"
-        case .team, .specialist: "person.3"
-        case .group: "person.2"
-        case .issues, .issue: "tray"
-        case nil: "sidebar.right"
-        }
-    }
-
     @ViewBuilder
     private var content: some View {
         switch store.inspectorTarget {
@@ -101,8 +92,10 @@ struct InspectorView: View {
             SpecialistInspector(specialistID: id)
         case .group:
             TeamView().environmentObject(store.team).environment(\.tramaHeaderDensity, .panel)
-        case .issues, .issue:
+        case .issues:
             IssuesView().environment(\.tramaHeaderDensity, .panel)
+        case let .issue(number):
+            IssuesView(initialSelection: number).environment(\.tramaHeaderDensity, .panel)
         case nil:
             ContentUnavailableView("Nessun dettaglio", systemImage: "sidebar.right", description: Text("Scegli una decisione, un candidato, uno specialista o un modulo nella sidebar, nella striscia o nelle schede della conversazione."))
         }
@@ -353,7 +346,13 @@ struct AssignmentBlock: View {
                 TramaLabeledText(label: "Mandato", value: "versione \(assignment.mandateVersion)")
                 TramaLabeledText(label: "Dipendenze", value: assignment.dependencies.isEmpty ? "nessuna" : assignment.dependencies.joined(separator: ", "))
                 if let issue = assignment.issueNumber {
-                    TramaLabeledText(label: "Issue", value: "#\(issue)")
+                    VStack(alignment: .leading, spacing: TramaSpacing.compact) {
+                        Text("Issue").font(.caption.weight(.medium)).foregroundStyle(TramaText.secondary)
+                        Button("#\(issue)") { store.openInspector(.issue(issue)) }
+                            .buttonStyle(.link)
+                            .accessibilityLabel("Apri la issue \(issue) nell'ispettore")
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
             turns

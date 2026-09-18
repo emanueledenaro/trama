@@ -253,6 +253,18 @@ public enum InspectorTarget: Hashable, Identifiable, Sendable {
         }
     }
 
+    /// SF Symbol shown next to the title, derived from the pane the target belongs to.
+    public var symbol: String {
+        switch self {
+        case .map, .module: "square.3.layers.3d"
+        case .requests, .candidate: "arrow.triangle.branch"
+        case .pact, .decision: "checkmark.seal"
+        case .team, .specialist: "person.3"
+        case .group: "person.2"
+        case .issues, .issue: "tray"
+        }
+    }
+
     /// Maps a stored pane name to a target; nil closes the inspector.
     ///
     /// - Parameters:

@@ -78,7 +78,7 @@ struct WorkspaceView: View {
     /// the two in step while the list is updating.
     private var sidebarSelection: Binding<String?> {
         Binding(
-            get: { store.showInspector ? Self.rowID(for: store.inspectorTarget, in: store) : nil },
+            get: { store.showInspector ? rowID(for: store.inspectorTarget) : nil },
             set: { open(selection: $0) }
         )
     }
@@ -106,9 +106,12 @@ struct WorkspaceView: View {
         }
     }
 
+    /// The live state of the active project, read once per body pass instead of once per section.
+    private var sidebarModel: WorkspaceSidebar { WorkspaceSidebar(document: store.document) }
+
     @ViewBuilder
     private var liveSections: some View {
-        let sidebar = WorkspaceSidebar(document: store.document)
+        let sidebar = sidebarModel
         if !sidebar.team.isEmpty {
             Section("Team") {
                 ForEach(sidebar.team) { entry in
@@ -297,7 +300,7 @@ struct WorkspaceView: View {
             Task { await store.openRecent(recent) }
             return
         }
-        if let entry = Self.rowTargets(in: store)[selection] {
+        if let entry = rowTargets[selection] {
             store.open(entry)
         }
     }
@@ -317,24 +320,24 @@ struct WorkspaceView: View {
     }
 
     /// Every sidebar row that opens a destination, keyed by the row identity the list uses.
-    static func rowTargets(in store: ProjectStore) -> [String: SidebarDestination] {
-        let sidebar = WorkspaceSidebar(document: store.document)
+    private var rowTargets: [String: SidebarDestination] {
+        let sidebar = sidebarModel
         var targets: [String: SidebarDestination] = [:]
-        for entry in sidebar.team { targets[teamRowID(entry.id)] = entry.destination }
-        for entry in sidebar.decisionsInForce { targets[decisionRowID(entry.id)] = entry.destination }
-        for entry in sidebar.decisionsPending { targets[pendingRowID(entry.id)] = entry.destination }
-        for entry in sidebar.work { targets[workRowID(entry.id)] = entry.destination }
+        for entry in sidebar.team { targets[Self.teamRowID(entry.id)] = entry.destination }
+        for entry in sidebar.decisionsInForce { targets[Self.decisionRowID(entry.id)] = entry.destination }
+        for entry in sidebar.decisionsPending { targets[Self.pendingRowID(entry.id)] = entry.destination }
+        for entry in sidebar.work { targets[Self.workRowID(entry.id)] = entry.destination }
         return targets
     }
 
     /// The sidebar row that shows an inspector target, so opening the inspector also selects the row.
-    static func rowID(for target: InspectorTarget?, in store: ProjectStore) -> String? {
+    private func rowID(for target: InspectorTarget?) -> String? {
         switch target {
-        case .specialist(let id): teamRowID(id)
-        case .decision(let id): decisionRowID(id)
-        case .pact: store.document.pact?.decisions.first.map { decisionRowID($0.id) }
-        case .candidate(let id): workRowID(id)
-        case .requests: WorkspaceSidebar(document: store.document).work.first.map { workRowID($0.id) }
+        case .specialist(let id): Self.teamRowID(id)
+        case .decision(let id): Self.decisionRowID(id)
+        case .pact: store.document.pact?.decisions.first.map { Self.decisionRowID($0.id) }
+        case .candidate(let id): Self.workRowID(id)
+        case .requests: sidebarModel.work.first.map { Self.workRowID($0.id) }
         default: nil
         }
     }

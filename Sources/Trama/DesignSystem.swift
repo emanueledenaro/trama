@@ -109,7 +109,7 @@ extension View {
 }
 
 /// Resolves a light and a dark tone into one colour that follows the system appearance.
-func dynamic(light: UInt32, dark: UInt32, lightAlpha: Double = 1, darkAlpha: Double = 1) -> Color {
+private func dynamic(light: UInt32, dark: UInt32, lightAlpha: Double = 1, darkAlpha: Double = 1) -> Color {
     Color(nsColor: NSColor(name: nil) { appearance in
         let isDark = appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
         let value = isDark ? dark : light
@@ -123,7 +123,7 @@ func dynamic(light: UInt32, dark: UInt32, lightAlpha: Double = 1, darkAlpha: Dou
 }
 
 /// One tone of the reference palette, the same in light and dark.
-func color(hex: UInt32, alpha: Double = 1) -> Color {
+private func color(hex: UInt32, alpha: Double = 1) -> Color {
     Color(
         .sRGB,
         red: Double((hex >> 16) & 0xFF) / 255,

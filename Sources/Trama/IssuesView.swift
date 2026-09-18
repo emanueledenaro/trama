@@ -3,6 +3,8 @@ import TramaCore
 
 struct IssuesView: View {
     @EnvironmentObject private var store: ProjectStore
+    /// The issue the inspector asked for; `load()` keeps it when it exists and falls back otherwise.
+    var initialSelection: Int?
     @State private var issues: [GitHubIssue] = []
     @State private var selected: Int?
     @State private var loading = false
@@ -75,7 +77,7 @@ struct IssuesView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .task(id: store.team.repository) { issues = []; selected = nil; await load() }
+        .task(id: store.team.repository) { issues = []; selected = initialSelection; await load() }
         .sheet(isPresented: $showCreate, onDismiss: { Task { await load() } }) { CreateIssueView(repository: store.team.repository) }
     }
     private func load() async {
