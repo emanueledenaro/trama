@@ -1007,6 +1007,8 @@ Quattro provider parlano ACP e condividono un solo runtime: Cursor, Grok, Droid 
 
 Il riferimento completo è la sezione 5: Codex è l'adattatore su cui quella forma è stata scritta. Qui restano i punti che servono a V08 per non rileggere Synara.
 
+**Percorsi dei file.** `provider/Layers/CodexAdapter.ts` (2509 righe); `apps/server/src/codexAppServerManager.ts`, `codexAppServerTransport.ts`, `codexProcessEnv.ts`, `codexHomePaths.ts`, `codexTurnInput.ts`, `codexServiceTier.ts`, `codexErrorClassification.ts`, `codexWorkingDirectory.ts`; `provider/codexDiscoveryCatalog.ts`, `provider/codexCliVersion.ts`; controllo di accesso in `provider/Layers/ProviderHealth.ts:797-995`; blocco MCP in `agentGateway/mcpInjection.ts:44-53`.
+
 **Trasporto.** Un processo `codex app-server` per thread, JSON-RPC su stdio, framing a byte con limite di 16 MiB per riga e coda di scrittura da 32 MiB (`apps/server/src/codexAppServerTransport.ts:3-12`, `:143-255`). `initialize` dichiara `clientInfo.name: "synara_desktop"` e `capabilities.experimentalApi: true` (`apps/server/src/codexAppServerManager.ts:805-816`). Scadenza di 20 s per richiesta (`:3612-3643`).
 
 **Controllo di accesso.** Due comandi CLI, non app-server: `codex --version` e `codex -c mcp_servers={} login status`, con timeout di 4 s (`apps/server/src/provider/Layers/ProviderHealth.ts:843`, `:923`). Un `model_provider` diverso da `openai` in `config.toml` salta il controllo di login e dà `ready`/`unknown` (`:909-920`). Dentro la sessione `account/read` serve solo a filtrare i modelli per piano (`codexAppServerManager.ts:428-455`). Versioni minime: `0.37.0` generale, `0.124.0` per Auto, `0.125.0` per ripresa e fork (`apps/server/src/provider/codexCliVersion.ts:9-13`).
