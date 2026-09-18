@@ -704,6 +704,13 @@ actor FakeHost: CoordinatorToolHost {
         context?.document.mandate = mandate
     }
 
+    /// The providers a specialist may run on besides Codex, and the one it defaults to.
+    func offerProviders(_ models: [String: [String]], defaults: [String: String] = [:], defaultProvider: ProviderKind = .codex) {
+        context?.providerModels = models
+        context?.providerDefaultModels = defaults
+        context?.defaultSpecialistProvider = defaultProvider
+    }
+
     func revokeMandateOnNextPlan() {
         revokesOnNextPlan = true
     }

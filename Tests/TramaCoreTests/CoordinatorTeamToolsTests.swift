@@ -312,6 +312,54 @@ struct CoordinatorTeamToolsTests {
         #expect(await host.startedAssignments.count == 2)
     }
 
+    @Test("assign_task records the provider on the assignment and takes the model from that provider's catalogue")
+    func assignOnClaude() async throws {
+        let (host, server, credential) = await Self.session()
+        await host.setMandate(try Self.mandate([.executeInWorktree]))
+        await host.offerProviders(["claudeAgent": ["haiku", "sonnet"]], defaults: ["claudeAgent": "haiku"])
+
+        var arguments = Self.assignArguments
+        arguments["provider"] = .string("claudeAgent")
+        let assigned = try Gate.object(try await Server.toolText(server, credential.token, Self.call(id: 50, .assignTask, arguments)))
+        #expect(assigned["provider"] == .string("claudeAgent"))
+        #expect(assigned["model"] == .string("haiku"))
+        let assignmentID = try #require(assigned["assignmentID"]?.stringValue)
+        let recorded = try #require(await host.document.team?.assignment(assignmentID))
+        #expect(recorded.provider == .claudeAgent)
+        #expect(recorded.model == "haiku")
+    }
+
+    @Test("assign_task runs on the provider of the Coordinator when none is named")
+    func assignDefaultsToTheCoordinatorProvider() async throws {
+        let (host, server, credential) = await Self.session()
+        await host.setMandate(try Self.mandate([.executeInWorktree]))
+        await host.offerProviders(["claudeAgent": ["haiku"]], defaults: ["claudeAgent": "haiku"], defaultProvider: .claudeAgent)
+        let assigned = try Gate.object(try await Server.toolText(server, credential.token, Self.call(id: 51, .assignTask, Self.assignArguments)))
+        #expect(assigned["provider"] == .string("claudeAgent"))
+        #expect(assigned["model"] == .string("haiku"))
+    }
+
+    @Test("assign_task refuses a provider that is not offered and a model of another provider")
+    func assignRefusesUnofferedProviders() async throws {
+        let (host, server, credential) = await Self.session()
+        await host.setMandate(try Self.mandate([.executeInWorktree]))
+
+        var unoffered = Self.assignArguments
+        unoffered["provider"] = .string("claudeAgent")
+        let refusal = try await Gate.refusal(server, credential.token, Self.call(id: 52, .assignTask, unoffered))
+        #expect(refusal.code == "provider_unavailable")
+        #expect(await host.startedAssignments.isEmpty)
+
+        await host.offerProviders(["claudeAgent": ["haiku"]], defaults: ["claudeAgent": "haiku"])
+        var foreign = unoffered
+        foreign["model"] = .string("gpt-5.6-luna")
+        #expect(try await Gate.refusal(server, credential.token, Self.call(id: 53, .assignTask, foreign)).code == "model_unavailable")
+        var unknown = Self.assignArguments
+        unknown["provider"] = .string("nowhere")
+        #expect(try await Server.toolError(server, credential.token, Self.call(id: 54, .assignTask, unknown)) == "invalid_arguments")
+        #expect(await host.startedAssignments.isEmpty)
+    }
+
     // MARK: stop_specialist
 
     @Test("stop_specialist without a mandate answers mandate_missing")

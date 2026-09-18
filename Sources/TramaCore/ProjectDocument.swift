@@ -76,6 +76,27 @@ public struct ProjectDocument: Codable, Sendable {
     /// Image files attached to the draft, saved in Trama's data folder.
     public var composerAttachments: [String]?
     public var importedRequestIDs: [UUID]?
+    /// The models the person chose per provider, for the Coordinator and for the specialists.
+    public var providerPreferences: ProviderModelPreference?
+    /// The provider that produced the last Coordinator turn, so reopening resumes with it.
+    public var lastTurnProvider: ProviderKind?
 
     public init() {}
+
+    /// Remembers the Coordinator model the person chose for a provider (ADR 0009).
+    public mutating func rememberCoordinatorModel(_ model: String?, for provider: ProviderKind) {
+        var preference = providerPreferences ?? ProviderModelPreference()
+        preference.rememberCoordinator(model, for: provider)
+        providerPreferences = preference
+    }
+
+    /// Remembers the specialist model the person chose for a provider (ADR 0009).
+    public mutating func rememberSpecialistModel(_ model: String?, for provider: ProviderKind) {
+        var preference = providerPreferences ?? ProviderModelPreference()
+        preference.rememberSpecialist(model, for: provider)
+        providerPreferences = preference
+    }
+
+    /// The provider of the last Coordinator turn, or Codex when the project never ran one.
+    public var lastTurnProviderOrCodex: ProviderKind { lastTurnProvider ?? .codex }
 }

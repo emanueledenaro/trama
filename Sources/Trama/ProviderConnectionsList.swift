@@ -54,3 +54,29 @@ struct ProviderConnectionsList: View {
         }
     }
 }
+
+/// The status strip of a blocked provider. ADR 0009 asks for the warning both here and as a card in
+/// the conversation, with the reason and the proposed action. Switching provider stays the person's
+/// decision, so the strip only offers the picker and a retry.
+struct ProviderStatusStrip: View {
+    @EnvironmentObject private var store: ProjectStore
+    let block: ProviderBlock
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: TramaSpacing.control) {
+            Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("\(block.provider.displayName): \(block.reason.summary)").font(.callout.weight(.semibold))
+                Text("Il lavoro resta in corso e in attesa, con worktree e risultati intatti.").font(.caption).foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 0)
+            Button("Scegli un altro provider") { store.showConnections = true }
+            Button("Riprova") { store.resumeAfterProviderBlock(block.provider) }
+        }
+        .padding(.horizontal, TramaSpacing.related)
+        .padding(.vertical, TramaSpacing.compact)
+        .background(.orange.opacity(0.12))
+        .overlay(alignment: .bottom) { Divider() }
+        .accessibilityElement(children: .combine)
+    }
+}

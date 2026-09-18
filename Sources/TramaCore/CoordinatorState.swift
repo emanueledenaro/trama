@@ -8,6 +8,8 @@ public struct CoordinatorState: Codable, Equatable, Sendable {
     public var study: ProjectStudy?
     /// Context window use of the thread and the person's warning threshold. Nil until usage or a threshold is stored.
     public var context: CoordinatorContextState?
+    /// The block that stopped the Coordinator, if one did. Cleared when the person resumes.
+    public var providerBlock: ProviderBlock?
     /// Mandates the Coordinator asked for, oldest first; each one is a mandate card.
     public var mandateRequests: [MandateRequest] = []
     /// Behavior decisions the Coordinator asked the person for, oldest first; each one is a decision card.
@@ -16,7 +18,7 @@ public struct CoordinatorState: Codable, Equatable, Sendable {
     public init() {}
 
     private enum CodingKeys: String, CodingKey {
-        case thread, memory, study, context, mandateRequests, decisionRequests
+        case thread, memory, study, context, providerBlock, mandateRequests, decisionRequests
     }
 
     public init(from decoder: Decoder) throws {
@@ -25,6 +27,7 @@ public struct CoordinatorState: Codable, Equatable, Sendable {
         memory = try container.decodeIfPresent(CoordinatorMemory.self, forKey: .memory) ?? CoordinatorMemory()
         study = try container.decodeIfPresent(ProjectStudy.self, forKey: .study)
         context = try container.decodeIfPresent(CoordinatorContextState.self, forKey: .context)
+        providerBlock = try container.decodeIfPresent(ProviderBlock.self, forKey: .providerBlock)
         mandateRequests = try container.decodeIfPresent([MandateRequest].self, forKey: .mandateRequests) ?? []
         decisionRequests = try container.decodeIfPresent([DecisionRequest].self, forKey: .decisionRequests) ?? []
     }

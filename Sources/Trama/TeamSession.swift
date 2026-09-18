@@ -6,13 +6,16 @@ import TramaCore
 @MainActor
 final class SpecialistSupervisor: ObservableObject {
     private struct Runtime {
-        let client: CodexClient
+        let runtime: ProviderSessionRuntime
         var task: Task<Void, Never>?
         var turnID: String?
     }
 
     weak var store: ProjectStore?
     private var runtimes: [String: Runtime] = [:]
+    /// Assignments whose provider is blocked: their runtime is stopped and the document is left in
+    /// waiting, so the later cancellation must not confirm a stop.
+    private var blockedAssignments: Set<String> = []
     /// Provider turns of specialists running now; the chat keeps their activity groups open.
     @Published private(set) var runningTurns: Set<String> = []
 
@@ -29,21 +32,45 @@ final class SpecialistSupervisor: ObservableObject {
               let assignment = team.assignment(assignmentID),
               let specialist = team.specialist(assignment.specialistID),
               assignment.status == .preparing else { return }
-        let client = CodexClient.specialistRuntime()
+        let provider = assignment.resolvedProvider
+        if let reason = store.specialistProviderReason(provider) {
+            let block = ProviderBlock(
+                provider: provider,
+                reason: .unknown(reason),
+                detail: "Il provider dell'incarico \(assignment.id) non è disponibile in Trama: il lavoro resta in attesa e la persona decide.",
+                observedAt: Date()
+            )
+            // A provider that cannot open is a normal state: the assignment waits, with a card and the strip.
+            try? store.document.recordProviderBlock(block, assignmentID: assignmentID)
+            store.document.conversation?.appendCard(
+                ConversationEvent.Card(kind: .providerBlocked, title: block.title, detail: block.reason.summary, referenceID: assignmentID),
+                origin: .trama,
+                requestID: nil,
+                assignmentID: assignmentID
+            )
+            store.providerNotice = block
+            store.saveDocument()
+            return
+        }
         let isFirstTurn = assignment.turns.isEmpty
+        let resumeCursor = assignment.resumeCursor.flatMap { try? JSONEncoder().encode($0) }
         let launch = SpecialistLaunch(
             assignmentID: assignment.id,
+            provider: provider,
             projectRoot: root,
             worktreeName: "\(specialist.name) \(assignment.id)",
             needsWorktree: assignment.needsWorktree,
             workspace: assignment.workspace,
-            threadID: assignment.threadID,
-            model: assignment.model,
+            threadID: "specialist-\(assignment.id)",
+            resumeCursor: resumeCursor,
+            modelSelection: store.specialistModelSelection(provider: provider, model: assignment.model),
+            runtimeMode: .fullAccess,
             developerInstructions: SpecialistBriefing.developerInstructions(projectName: project.name, specialist: specialist, assignment: assignment),
             input: isFirstTurn
                 ? SpecialistBriefing.openingInput(specialist: specialist, assignment: assignment)
                 : SpecialistBriefing.resumeInput(assignment: assignment)
         )
+        let runtime = ProviderSessionRuntime(adapter: CoordinatorRuntime.makeAdapter(provider: provider, token: ""))
         let (events, continuation) = AsyncStream<SpecialistRunEvent>.makeStream()
         let sessions = store.sessions
         let task = Task { [weak self] in
@@ -51,7 +78,7 @@ final class SpecialistSupervisor: ObservableObject {
                 for await event in events { self?.receive(event, assignmentID: assignmentID) }
             }
             do {
-                let reply = try await SpecialistRunner.run(launch, client: client, sessions: sessions) { continuation.yield($0) }
+                let reply = try await SpecialistRunner.run(launch, runtime: runtime, sessions: sessions) { continuation.yield($0) }
                 continuation.finish()
                 await consumer.value
                 await self?.finish(assignmentID: assignmentID, outcome: .completed(reply))
@@ -62,7 +89,7 @@ final class SpecialistSupervisor: ObservableObject {
                 await self?.finish(assignmentID: assignmentID, outcome: interrupted ? .interrupted : .failed(error.localizedDescription))
             }
         }
-        runtimes[assignmentID] = Runtime(client: client, task: task, turnID: nil)
+        runtimes[assignmentID] = Runtime(runtime: runtime, task: task, turnID: nil)
         store.noteSpecialistStart(assignmentID: assignmentID, resumed: !isFirstTurn)
     }
 
@@ -73,15 +100,27 @@ final class SpecialistSupervisor: ObservableObject {
             store?.confirmSpecialistStop(assignmentID: assignmentID, note: "Nessun turno in corso da interrompere.")
             return
         }
-        let client = runtime.client
-        Task { await client.cancelTurn() }
+        let sessionRuntime = runtime.runtime
+        Task { await sessionRuntime.interrupt() }
+    }
+
+    /// The provider of the assignment is blocked: stop its runtime and leave the assignment in
+    /// progress and in waiting, with its worktree and results intact.
+    func abandonForBlock(assignmentID: String) {
+        blockedAssignments.insert(assignmentID)
+        guard let runtime = runtimes.removeValue(forKey: assignmentID) else { return }
+        runtime.task?.cancel()
+        let sessionRuntime = runtime.runtime
+        Task { await sessionRuntime.stop() }
+        if let turnID = runtime.turnID { runningTurns.remove(turnID) }
     }
 
     /// Stops every runtime, for example when another project opens or the app quits.
     func stopAll(reason: String) {
         for (assignmentID, runtime) in runtimes {
             runtime.task?.cancel()
-            runtime.client.stop()
+            let sessionRuntime = runtime.runtime
+            Task { await sessionRuntime.stop() }
             runtimes[assignmentID] = nil
             if let turnID = runtime.turnID { runningTurns.remove(turnID) }
         }
@@ -93,8 +132,8 @@ final class SpecialistSupervisor: ObservableObject {
         switch event {
         case let .workspaceReady(session):
             store.recordSpecialistWorkspace(session, assignmentID: assignmentID)
-        case let .threadOpened(opening):
-            store.recordSpecialistThread(opening, assignmentID: assignmentID)
+        case let .sessionOpened(session):
+            store.recordSpecialistSession(session, assignmentID: assignmentID)
         case let .turn(turnEvent):
             if case .turnStarted = turnEvent.kind, let turnID = turnEvent.turnID {
                 runtimes[assignmentID]?.turnID = turnID
@@ -105,8 +144,12 @@ final class SpecialistSupervisor: ObservableObject {
     }
 
     private func finish(assignmentID: String, outcome: SpecialistAssignment.TurnEnd) {
+        if blockedAssignments.remove(assignmentID) != nil {
+            runtimes[assignmentID] = nil
+            return
+        }
         let runtime = runtimes.removeValue(forKey: assignmentID)
-        runtime?.client.stop()
+        if let runtime { let sessionRuntime = runtime.runtime; Task { await sessionRuntime.stop() } }
         if let turnID = runtime?.turnID { runningTurns.remove(turnID) }
         store?.finishSpecialistTurn(assignmentID: assignmentID, turnID: runtime?.turnID, outcome: outcome)
     }
@@ -249,6 +292,7 @@ extension ProjectStore {
         }
         do {
             _ = try document.resumeAssignment(assignmentID)
+            if document.team?.waitingAssignments.isEmpty ?? true { providerNotice = nil }
             saveDocument()
             specialists.start(assignmentID: assignmentID)
         } catch {
@@ -261,6 +305,7 @@ extension ProjectStore {
         guard stateWritable else { return }
         do {
             try document.setAssignmentModel(assignmentID, model: model)
+            document.rememberSpecialistModel(model, for: document.team?.assignment(assignmentID)?.resolvedProvider ?? .codex)
             document.conversation?.appendSpecialistActivity(assignmentID: assignmentID, turnID: nil, title: "Modello scelto dalla persona", detail: model)
             saveDocument()
         } catch {
@@ -317,9 +362,11 @@ extension ProjectStore {
         switch event.kind {
         case let .turnStarted(_, _):
             let turnID = event.turnID ?? turnID
-            let model = document.team?.assignment(assignmentID)?.model ?? ""
-            if let turnID {
-                try? document.beginSpecialistTurn(assignmentID: assignmentID, turnID: turnID, model: model)
+            let assignment = document.team?.assignment(assignmentID)
+            let model = assignment?.model ?? ""
+            if let turnID, let assignment {
+                // The provider that really produced the turn, never an inferred one.
+                try? document.beginSpecialistTurn(assignmentID: assignmentID, turnID: turnID, model: model, provider: assignment.resolvedProvider)
             }
             document.conversation?.appendSpecialistActivity(assignmentID: assignmentID, turnID: turnID, title: "Turno avviato", detail: model)
         case .contentDelta(.assistantText):
@@ -346,6 +393,17 @@ extension ProjectStore {
                 title: succeeded ? "Ha modificato \(paths.count == 1 ? "un file" : "\(paths.count) file")" : "Modifica dei file non riuscita",
                 detail: paths.joined(separator: ", ")
             )
+        case let .providerBlocked(block):
+            // A blocked provider is a normal state: the assignment stays in progress and in waiting.
+            try? document.recordProviderBlock(block, assignmentID: assignmentID)
+            document.conversation?.appendCard(
+                ConversationEvent.Card(kind: .providerBlocked, title: block.title, detail: block.reason.summary, referenceID: assignmentID),
+                origin: .trama,
+                requestID: nil,
+                assignmentID: assignmentID
+            )
+            providerNotice = block
+            specialists.abandonForBlock(assignmentID: assignmentID)
         case let .toolCallStarted(server, tool):
             document.conversation?.appendSpecialistActivity(assignmentID: assignmentID, turnID: turnID, title: "Strumento avviato", detail: "\(server) · \(tool)")
         case let .toolCallCompleted(server, tool, succeeded, error):

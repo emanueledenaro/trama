@@ -43,6 +43,7 @@ public actor CodexProviderAdapter: ProviderAdapter {
     private let eventStream: AsyncStream<ProviderEvent>
     private var sessions: [String: ProviderSession] = [:]
     private var threadSettings: [String: CodexClient.CoordinatorThreadSettings] = [:]
+    private var specialistSettings: [String: CodexClient.SpecialistThreadSettings] = [:]
 
     public init(client: CodexClient, codexHome: URL? = nil) {
         self.client = client
@@ -132,6 +133,9 @@ public actor CodexProviderAdapter: ProviderAdapter {
     }
 
     public func startSession(_ input: ProviderSessionStartInput) async throws -> ProviderSession {
+        if let writableRoot = input.writableRoot {
+            return try await startSpecialistSession(input, writableRoot: writableRoot)
+        }
         let settings = CodexProviderAdapter.settings(for: input)
         let resuming = input.resumeCursor.flatMap(CodexProviderAdapter.threadID(fromCursor:))
         let opening = try await client.openCoordinatorThread(settings, resuming: resuming)
@@ -150,6 +154,26 @@ public actor CodexProviderAdapter: ProviderAdapter {
         return session
     }
 
+    /// Opens a specialist thread: the worktree is the working directory and the only writable root.
+    private func startSpecialistSession(_ input: ProviderSessionStartInput, writableRoot: URL) async throws -> ProviderSession {
+        let settings = CodexProviderAdapter.specialistSettings(for: input, writableRoot: writableRoot)
+        let resuming = input.resumeCursor.flatMap(CodexProviderAdapter.threadID(fromCursor:))
+        let opening = try await client.openSpecialistThread(settings, resuming: resuming)
+        emit(CodexEventNormalizer.normalize(opening: opening))
+        let session = ProviderSession(
+            provider: .codex,
+            status: .ready,
+            threadID: opening.threadID,
+            runtimeMode: input.runtimeMode,
+            cwd: input.cwd,
+            model: input.modelSelection?.model,
+            resumeCursor: CodexProviderAdapter.cursor(threadID: opening.threadID)
+        )
+        sessions[opening.threadID] = session
+        specialistSettings[opening.threadID] = settings
+        return session
+    }
+
     /// Runs one turn on the thread and streams its normalized events.
     ///
     /// The Codex transport Trama owns answers one `turn/start` per call and yields the reply when
@@ -158,6 +182,9 @@ public actor CodexProviderAdapter: ProviderAdapter {
     public func sendTurn(_ input: ProviderSendTurnInput) async throws -> ProviderTurnStartResult {
         let threadID = input.threadID
         guard !threadID.isEmpty else { throw CodexClient.ClientError.notConnected }
+        if let specialist = specialistSettings[threadID] {
+            return try await sendSpecialistTurn(input, settings: specialist)
+        }
         let settings = threadSettings[threadID] ?? CodexProviderAdapter.settings(
             cwd: FileManager.default.temporaryDirectory,
             modelSelection: input.modelSelection,
@@ -172,14 +199,40 @@ public actor CodexProviderAdapter: ProviderAdapter {
             }
         }
         let tracker = TurnTracker()
+        let streamed = TextAccumulator()
         let continuation = eventContinuation
-        _ = try await client.runCoordinatorTurn(threadID: threadID, input: items, settings: settings) { event in
+        let reply = try await client.runCoordinatorTurn(threadID: threadID, input: items, settings: settings) { event in
             if case let .turnStarted(id) = event { tracker.turnID = id }
+            if case let .textDelta(delta) = event { streamed.append(delta) }
             continuation?.yield(CodexEventNormalizer.normalize(turnEvent: event, threadID: threadID, turnID: tracker.turnID))
         }
         guard let turnID = tracker.turnID else {
             throw CodexClient.ClientError.malformedMessage("turno senza turn.id")
         }
+        // A turn that did not stream still has a reply; publish it so a caller that reads the event
+        // stream, as the provider session runtime does, sees the whole answer.
+        if streamed.value.isEmpty, !reply.isEmpty {
+            continuation?.yield(ProviderEvent(
+                eventID: UUID().uuidString,
+                provider: .codex,
+                threadID: threadID,
+                turnID: turnID,
+                providerRefs: ProviderEventRefs(providerThreadID: threadID, providerTurnID: turnID),
+                raw: ProviderRawEvent(source: CodexEventNormalizer.notificationSource, method: "turn/reply"),
+                kind: .contentDelta(.assistantText(reply))
+            ))
+        }
+        // `sendTurn` returns when the turn ended, so the normalized stream must say so: a caller that
+        // reads the stream closes its turn boundary on this event.
+        continuation?.yield(ProviderEvent(
+            eventID: UUID().uuidString,
+            provider: .codex,
+            threadID: threadID,
+            turnID: turnID,
+            providerRefs: ProviderEventRefs(providerThreadID: threadID, providerTurnID: turnID),
+            raw: ProviderRawEvent(source: CodexEventNormalizer.notificationSource, method: "turn/completed"),
+            kind: .turnCompleted(state: .completed)
+        ))
         return ProviderTurnStartResult(threadID: threadID, turnID: turnID, resumeCursor: CodexProviderAdapter.cursor(threadID: threadID))
     }
 
@@ -188,6 +241,7 @@ public actor CodexProviderAdapter: ProviderAdapter {
     }
 
     public func stopSession(threadID: String) async {
+        specialistSettings[threadID] = nil
         if let session = sessions.removeValue(forKey: threadID) {
             emit(ProviderEvent(
                 eventID: UUID().uuidString,
@@ -197,6 +251,40 @@ public actor CodexProviderAdapter: ProviderAdapter {
             ))
         }
         threadSettings[threadID] = nil
+    }
+
+    /// One specialist turn: the input is the text Trama composed for the assignment.
+    private func sendSpecialistTurn(_ input: ProviderSendTurnInput, settings: CodexClient.SpecialistThreadSettings) async throws -> ProviderTurnStartResult {
+        let text = input.input.compactMap { item -> String? in
+            guard case let .text(value) = item else { return nil }
+            return value
+        }.joined(separator: "\n")
+        let tracker = TurnTracker()
+        let streamed = TextAccumulator()
+        let continuation = eventContinuation
+        let reply = try await client.runSpecialistTurn(threadID: input.threadID, input: text, settings: settings) { event in
+            if case let .turnStarted(id) = event { tracker.turnID = id }
+            if case let .textDelta(delta) = event { streamed.append(delta) }
+            continuation?.yield(CodexEventNormalizer.normalize(turnEvent: event, threadID: input.threadID, turnID: tracker.turnID))
+        }
+        guard let turnID = tracker.turnID else {
+            throw CodexClient.ClientError.malformedMessage("turno senza turn.id")
+        }
+        if streamed.value.isEmpty, !reply.isEmpty {
+            continuation?.yield(ProviderEvent(
+                eventID: UUID().uuidString, provider: .codex, threadID: input.threadID, turnID: turnID,
+                providerRefs: ProviderEventRefs(providerThreadID: input.threadID, providerTurnID: turnID),
+                raw: ProviderRawEvent(source: CodexEventNormalizer.notificationSource, method: "turn/reply"),
+                kind: .contentDelta(.assistantText(reply))
+            ))
+        }
+        continuation?.yield(ProviderEvent(
+            eventID: UUID().uuidString, provider: .codex, threadID: input.threadID, turnID: turnID,
+            providerRefs: ProviderEventRefs(providerThreadID: input.threadID, providerTurnID: turnID),
+            raw: ProviderRawEvent(source: CodexEventNormalizer.notificationSource, method: "turn/completed"),
+            kind: .turnCompleted(state: .completed)
+        ))
+        return ProviderTurnStartResult(threadID: input.threadID, turnID: turnID, resumeCursor: CodexProviderAdapter.cursor(threadID: input.threadID))
     }
 
     @discardableResult
@@ -256,6 +344,17 @@ public actor CodexProviderAdapter: ProviderAdapter {
         )
     }
 
+    /// The specialist settings: the worktree is the working directory and its only writable root.
+    static func specialistSettings(for input: ProviderSessionStartInput, writableRoot: URL) -> CodexClient.SpecialistThreadSettings {
+        CodexClient.SpecialistThreadSettings(
+            cwd: input.cwd ?? writableRoot,
+            writableRoot: writableRoot,
+            model: input.modelSelection?.model ?? defaultModel,
+            effort: input.modelSelection?.codexOptions?.reasoningEffort,
+            developerInstructions: input.developerInstructions ?? ""
+        )
+    }
+
     static func settings(
         cwd: URL,
         modelSelection: ModelSelection?,
@@ -269,6 +368,19 @@ public actor CodexProviderAdapter: ProviderAdapter {
             developerInstructions: developerInstructions ?? "",
             toolServerURL: toolServerURL ?? URL(string: "http://127.0.0.1:0/mcp")!
         )
+    }
+}
+
+/// A tiny box so the synchronous event callback can accumulate the streamed reply.
+public final class TextAccumulator: @unchecked Sendable {
+    public init() {}
+    private let lock = NSLock()
+    private var storage = ""
+    public var value: String {
+        lock.lock(); defer { lock.unlock() }; return storage
+    }
+    public func append(_ text: String) {
+        lock.lock(); storage += text; lock.unlock()
     }
 }
 

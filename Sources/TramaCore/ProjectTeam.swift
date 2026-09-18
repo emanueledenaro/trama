@@ -208,8 +208,10 @@ public struct AssignmentOrder: Equatable, Sendable {
     public var requiredChecks: [String]
     /// The Coordinator's instructions for the specialist thread.
     public var instructions: String
+    /// The provider recorded on the assignment. Codex while it is the only one.
+    public var provider: ProviderKind
 
-    public init(specialistID: String, kind: ProjectMandate.PlanKind, objective: String, issueNumber: Int?, exercise: String?, moduleIDs: [String], dependencies: [String], model: String, tools: [SpecialistTool], requiredChecks: [String], instructions: String) {
+    public init(specialistID: String, kind: ProjectMandate.PlanKind, objective: String, issueNumber: Int?, exercise: String?, moduleIDs: [String], dependencies: [String], model: String, tools: [SpecialistTool], requiredChecks: [String], instructions: String, provider: ProviderKind = .codex) {
         self.specialistID = specialistID
         self.kind = kind
         self.objective = objective
@@ -221,6 +223,7 @@ public struct AssignmentOrder: Equatable, Sendable {
         self.tools = tools
         self.requiredChecks = requiredChecks
         self.instructions = instructions
+        self.provider = provider
     }
 }
 
@@ -250,13 +253,16 @@ public struct SpecialistAssignment: Codable, Equatable, Identifiable, Sendable {
         /// Waiting for its worktree, thread or turn.
         case preparing
         case running
-        /// Someone asked to stop; Codex has not confirmed yet.
+        /// Someone asked to stop; the provider has not confirmed yet.
         case stopRequested
+        /// The provider is blocked. The assignment stays in progress and in waiting: the worktree
+        /// and its results are intact, and the person decides what happens next.
+        case waiting
         case stopped
         case completed
         case failed
 
-        public var isActive: Bool { [.preparing, .running, .stopRequested].contains(self) }
+        public var isActive: Bool { [.preparing, .running, .stopRequested, .waiting].contains(self) }
     }
 
     public enum TurnOutcome: String, Codable, Sendable {
@@ -271,10 +277,12 @@ public struct SpecialistAssignment: Codable, Equatable, Identifiable, Sendable {
     }
 
     public struct Turn: Codable, Equatable, Sendable {
-        /// The Codex turn id.
+        /// The provider turn id.
         public let id: String
         public let number: Int
         public let model: String
+        /// The provider that produced the turn. Nil only for turns recorded before schema 7.
+        public var provider: ProviderKind? = nil
         public let startedAt: Date
         public internal(set) var endedAt: Date?
         public internal(set) var outcome: TurnOutcome?
@@ -308,7 +316,11 @@ public struct SpecialistAssignment: Codable, Equatable, Identifiable, Sendable {
     /// The mandate version that authorized the work.
     public let mandateVersion: Int
     public let createdAt: Date
+    /// The provider recorded at assignment time.
+    public internal(set) var provider: ProviderKind?
     public internal(set) var status: Status
+    /// The block that put the assignment in waiting, cleared when it resumes.
+    public internal(set) var block: ProviderBlock?
     public internal(set) var workspace: WorkspaceSession?
     /// Opaque data to resume the specialist thread; Codex stores `{"threadId": ...}`.
     public internal(set) var resumeCursor: JSONValue?
@@ -325,6 +337,10 @@ public struct SpecialistAssignment: Codable, Equatable, Identifiable, Sendable {
 
     /// A read-only assignment works in the project checkout without writing and needs no worktree.
     public var needsWorktree: Bool { tools.contains(.edits) }
+
+    /// The provider that serves this assignment: the recorded one, otherwise Codex, the only
+    /// provider that existed before schema 7.
+    public var resolvedProvider: ProviderKind { provider ?? .codex }
 
     public var threadID: String? { resumeCursor?.objectValue?["threadId"]?.stringValue }
 
@@ -353,6 +369,11 @@ public struct ProjectTeam: Codable, Equatable, Sendable {
 
     public var activeAssignments: [SpecialistAssignment] {
         specialists.compactMap(\.currentAssignment).filter(\.status.isActive)
+    }
+
+    /// Assignments stopped because their provider is blocked.
+    public var waitingAssignments: [SpecialistAssignment] {
+        specialists.flatMap(\.assignments).filter { $0.status == .waiting }
     }
 
     /// Assignments whose status the Coordinator has not been told about.
@@ -421,7 +442,7 @@ public struct ProjectTeam: Codable, Equatable, Sendable {
         switch status {
         case .preparing, .running: .working
         case .stopRequested: .stopping
-        case .stopped: .stopped
+        case .waiting, .stopped: .stopped
         case .completed, .failed: .available
         }
     }
@@ -562,7 +583,9 @@ extension ProjectDocument {
             instructions: instructions,
             mandateVersion: mandateVersion,
             createdAt: date,
+            provider: order.provider,
             status: .preparing,
+            block: nil,
             workspace: nil,
             resumeCursor: nil,
             turns: [],
@@ -598,12 +621,56 @@ extension ProjectDocument {
         }
     }
 
+    /// The opaque cursor of the provider session Trama opened for this specialist.
+    public mutating func recordSpecialistCursor(assignmentID: String, cursor: JSONValue?, at date: Date = Date()) throws {
+        try changeAssignment(assignmentID, at: date) { assignment in
+            assignment.resumeCursor = cursor
+        }
+    }
+
+    /// The assignment stops because its provider is blocked. It stays in progress and in waiting:
+    /// the worktree, the turns and the results are untouched, and no provider is substituted.
+    public mutating func recordProviderBlock(_ block: ProviderBlock, assignmentID: String, at date: Date = Date()) throws {
+        try changeAssignment(assignmentID, at: date) { assignment in
+            guard assignment.status.isActive, assignment.status != .stopRequested else { return }
+            if let index = assignment.turns.indices.last, assignment.turns[index].endedAt == nil {
+                // A block stops the turn; it is not a failure of the work.
+                assignment.turns[index].endedAt = date
+                assignment.turns[index].outcome = .interrupted
+            }
+            assignment.status = .waiting
+            assignment.block = block
+            assignment.lastUpdate = "In attesa: \(block.reason.summary)"
+        }
+    }
+
+    /// The person changes the provider of an assignment. The worktree and the history stay; the
+    /// session restarts on the new provider, the work does not.
+    @discardableResult
+    public mutating func setAssignmentProvider(_ id: String, provider: ProviderKind, at date: Date = Date()) throws -> SpecialistAssignment {
+        guard var team, team.assignment(id) != nil else { throw ProjectTeamError.unknownAssignment(id) }
+        try team.updateAssignment(id, at: date) { assignment, specialist in
+            assignment.provider = provider
+            assignment.block = nil
+            if assignment.status == .waiting || assignment.status == .failed || assignment.status == .stopped {
+                assignment.status = .preparing
+                assignment.failure = nil
+            }
+            assignment.lastUpdate = "Provider scelto dalla persona: \(provider.displayName)"
+            if specialist.currentAssignment?.id == assignment.id { specialist.model = assignment.model }
+        }
+        self.team = team
+        guard let updated = team.assignment(id) else { throw ProjectTeamError.unknownAssignment(id) }
+        return updated
+    }
+
     /// A turn started; a pending stop request stays pending.
-    public mutating func beginSpecialistTurn(assignmentID: String, turnID: String, model: String, at date: Date = Date()) throws {
+    public mutating func beginSpecialistTurn(assignmentID: String, turnID: String, model: String, provider: ProviderKind? = nil, at date: Date = Date()) throws {
         try changeAssignment(assignmentID, at: date) { assignment in
             guard assignment.status.isActive else { throw ProjectTeamError.notRunning(assignment.specialistID) }
             if assignment.status == .preparing { assignment.status = .running }
-            assignment.turns.append(.init(id: turnID, number: assignment.turns.count + 1, model: model, startedAt: date))
+            let recorded = provider ?? assignment.provider
+            assignment.turns.append(.init(id: turnID, number: assignment.turns.count + 1, model: model, provider: recorded, startedAt: date))
             assignment.lastUpdate = "Turno \(assignment.turns.count) in corso con \(model)"
         }
     }
@@ -699,7 +766,7 @@ extension ProjectDocument {
     @discardableResult
     public mutating func resumeAssignment(_ id: String, at date: Date = Date()) throws -> SpecialistAssignment {
         guard var team, let assignment = team.assignment(id) else { throw ProjectTeamError.unknownAssignment(id) }
-        guard [.stopped, .failed].contains(assignment.status),
+        guard [.stopped, .failed, .waiting].contains(assignment.status),
               let specialist = team.specialist(assignment.specialistID),
               specialist.currentAssignment?.id == id else { throw ProjectTeamError.cannotResume(id) }
         guard specialist.status != .removed else { throw ProjectTeamError.specialistRemoved(specialist.id) }
@@ -707,6 +774,7 @@ extension ProjectDocument {
         try team.updateAssignment(id, at: date) { assignment, _ in
             assignment.status = .preparing
             assignment.failure = nil
+            assignment.block = nil
             assignment.lastUpdate = "Ripresa dell'incarico con \(assignment.model)"
         }
         self.team = team

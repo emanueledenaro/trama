@@ -115,6 +115,7 @@ public enum CoordinatorBriefing {
         case .preparing: "in preparazione"
         case .running: "al lavoro"
         case .stopRequested: "arresto richiesto"
+        case .waiting: "in attesa: il provider è bloccato"
         case .stopped: "fermato"
         case .completed: "concluso"
         case .failed: "non riuscito"

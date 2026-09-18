@@ -16,16 +16,27 @@ struct SpecialistRuntimeTests {
         return (try ProjectTeamTests.specialist("Ada", in: document), assignment, document)
     }
 
+    /// The Codex adapter over the simulated transport, driven as the app drives it.
+    static func runtime(_ client: CodexClient) -> ProviderSessionRuntime {
+        ProviderSessionRuntime(adapter: CodexProviderAdapter(
+            client: client,
+            codexHome: URL(fileURLWithPath: "/tmp/codex-home-does-not-exist")
+        ))
+    }
+
     static func launch(_ fixture: GitFixture, workspace: WorkspaceSession? = nil, threadID: String? = nil, needsWorktree: Bool = true, model: String = "gpt-5.6-luna") throws -> SpecialistLaunch {
         let (specialist, assignment, _) = try assignment(tools: needsWorktree ? [.commands, .edits] : [.commands], model: model)
         return SpecialistLaunch(
             assignmentID: assignment.id,
+            provider: .codex,
             projectRoot: fixture.repository,
             worktreeName: specialist.name,
             needsWorktree: needsWorktree,
             workspace: workspace,
             threadID: threadID,
-            model: model,
+            resumeCursor: threadID.flatMap { try? JSONEncoder().encode(JSONValue.object(["threadId": .string($0)])) },
+            modelSelection: .codex(model: model, options: nil),
+            runtimeMode: .fullAccess,
             developerInstructions: SpecialistBriefing.developerInstructions(projectName: "negozio", specialist: specialist, assignment: assignment),
             input: SpecialistBriefing.openingInput(specialist: specialist, assignment: assignment)
         )
@@ -53,7 +64,7 @@ struct SpecialistRuntimeTests {
         let client = CodexClient(transport: transport, requestTimeout: 2, turnTimeout: 4)
         let events = EventLog()
 
-        let reply = try await SpecialistRunner.run(try Self.launch(fixture), client: client, sessions: sessions) { events.append($0) }
+        let reply = try await SpecialistRunner.run(try Self.launch(fixture), runtime: Self.runtime(client), sessions: sessions) { events.append($0) }
 
         #expect(reply == "Ho aggiunto il rimborso parziale in refund.txt.")
         let workspace = try #require(events.workspace)
@@ -103,7 +114,7 @@ struct SpecialistRuntimeTests {
         let client = CodexClient(transport: transport, requestTimeout: 2, turnTimeout: 4)
         let events = EventLog()
 
-        _ = try await SpecialistRunner.run(try Self.launch(fixture, needsWorktree: false), client: client, sessions: sessions) { events.append($0) }
+        _ = try await SpecialistRunner.run(try Self.launch(fixture, needsWorktree: false), runtime: Self.runtime(client), sessions: sessions) { events.append($0) }
 
         #expect(events.workspace == nil)
         let start = try #require(transport.request("thread/start"))
@@ -128,11 +139,11 @@ struct SpecialistRuntimeTests {
 
         _ = try await SpecialistRunner.run(
             try Self.launch(fixture, workspace: existing, threadID: "thread-ada", model: "gpt-5.6-terra"),
-            client: client,
+            runtime: Self.runtime(client),
             sessions: sessions
         ) { events.append($0) }
 
-        #expect(events.opening == .resumed(threadID: "thread-ada"))
+        #expect(events.session?.threadID == "thread-ada")
         #expect(transport.request("thread/start") == nil)
         let resume = try #require(transport.request("thread/resume"))
         #expect(resume["threadId"] as? String == "thread-ada")
@@ -157,17 +168,13 @@ struct SpecialistRuntimeTests {
 
         _ = try await SpecialistRunner.run(
             try Self.launch(fixture, workspace: existing, threadID: "thread-lost"),
-            client: client,
+            runtime: Self.runtime(client),
             sessions: sessions
         ) { events.append($0) }
 
-        guard case let .replaced(previous, threadID, reason)? = events.opening else {
-            Issue.record("The opening was \(String(describing: events.opening))")
-            return
-        }
-        #expect(previous == "thread-lost")
-        #expect(threadID == "thread-specialist")
-        #expect(reason.contains("no rollout found"))
+        // The adapter replaced the lost thread: the session is a new one and the turn runs on it.
+        #expect(events.session?.threadID == "thread-specialist")
+        #expect(transport.request("thread/start") != nil)
         #expect((transport.request("turn/start"))?["threadId"] as? String == "thread-specialist")
     }
 
@@ -179,10 +186,10 @@ struct SpecialistRuntimeTests {
         let transport = SpecialistTransport()
         let client = CodexClient(transport: transport, requestTimeout: 2, turnTimeout: 4)
         var launch = try Self.launch(fixture)
-        launch.model = " "
+        launch.modelSelection = .codex(model: " ", options: nil)
 
         await #expect(throws: CodexClient.ClientError.invalidModel(" ")) {
-            try await SpecialistRunner.run(launch, client: client, sessions: sessions) { _ in }
+            try await SpecialistRunner.run(launch, runtime: Self.runtime(client), sessions: sessions) { _ in }
         }
         #expect(transport.request("thread/start") == nil)
     }
@@ -197,7 +204,7 @@ struct SpecialistRuntimeTests {
         let client = CodexClient(transport: transport, requestTimeout: 2, turnTimeout: 4)
 
         await #expect(throws: (any Error).self) {
-            try await SpecialistRunner.run(try Self.launch(fixture), client: client, sessions: sessions) { _ in }
+            try await SpecialistRunner.run(try Self.launch(fixture), runtime: Self.runtime(client), sessions: sessions) { _ in }
         }
         #expect(transport.request("turn/start") == nil)
     }
@@ -253,7 +260,7 @@ struct SpecialistRuntimeTests {
         let client = CodexClient(transport: transport, requestTimeout: 2, turnTimeout: 4)
         let events = EventLog()
 
-        let reply = try await SpecialistRunner.run(try Self.launch(fixture), client: client, sessions: sessions) { events.append($0) }
+        let reply = try await SpecialistRunner.run(try Self.launch(fixture), runtime: Self.runtime(client), sessions: sessions) { events.append($0) }
 
         #expect(reply == "Ho aggiunto il rimborso parziale in refund.txt.")
         let turnEvents = events.turnEvents
@@ -323,12 +330,17 @@ private final class EventLog: @unchecked Sendable {
         values.compactMap { if case let .workspaceReady(session) = $0 { session } else { nil } }.first
     }
 
-    var opening: CodexClient.CoordinatorThreadOpening? {
-        values.compactMap { if case let .threadOpened(opening) = $0 { opening } else { nil } }.first
+    var session: ProviderSession? {
+        values.compactMap { if case let .sessionOpened(session) = $0 { session } else { nil } }.first
     }
 
+    /// The events of the turn itself; the session opening is reported separately.
     var turnEvents: [ProviderEvent] {
-        values.compactMap { if case let .turn(event) = $0 { event } else { nil } }
+        values.compactMap { value -> ProviderEvent? in
+            guard case let .turn(event) = value else { return nil }
+            if case .threadStarted = event.kind { return nil }
+            return event
+        }
     }
 }
 

@@ -145,6 +145,77 @@ final class CodexProviderAdapterTests: XCTestCase {
         XCTAssertFalse(transport.methods.contains("initialize"))
     }
 
+    func testStartSessionOpensACoordinatorThread() async throws {
+        let transport = FakeCodexTransport()
+        transport.onMessage = { message in
+            switch message["method"] as? String {
+            case "initialize": transport.respond(to: message, result: Self.initializeResult)
+            case "account/read": transport.respond(to: message, result: Self.chatGPTAccount)
+            case "mcpServerStatus/list":
+                let params = message["params"] as? [String: Any]
+                if params?["threadId"] is String {
+                    transport.respond(to: message, result: ["data": [["name": "trama"]], "nextCursor": NSNull()])
+                }
+            case "thread/start":
+                transport.respond(to: message, result: ["thread": ["id": "thread-c1"], "model": "gpt-5.6-luna"])
+            default: break
+            }
+        }
+        let adapter = CodexProviderAdapter(
+            client: CodexClient(transport: transport),
+            codexHome: URL(fileURLWithPath: "/tmp/codex-home-does-not-exist")
+        )
+        let session = try await adapter.startSession(ProviderSessionStartInput(
+            threadID: "thread-c1",
+            cwd: URL(fileURLWithPath: FileManager.default.temporaryDirectory.path),
+            modelSelection: .codex(model: "gpt-5.6-luna", options: nil),
+            runtimeMode: .fullAccess
+        ))
+        XCTAssertEqual(session.threadID, "thread-c1")
+        XCTAssertEqual(session.status, .ready)
+    }
+
+    func testASpecialistSessionUsesTheWorktreeAsTheOnlyWritableRoot() async throws {
+        let transport = FakeCodexTransport()
+        transport.onMessage = { message in
+            switch message["method"] as? String {
+            case "initialize": transport.respond(to: message, result: Self.initializeResult)
+            case "account/read": transport.respond(to: message, result: Self.chatGPTAccount)
+            case "mcpServerStatus/list":
+                let params = message["params"] as? [String: Any]
+                if params?["threadId"] is String {
+                    transport.respond(to: message, result: ["data": [], "nextCursor": NSNull()])
+                }
+            case "thread/start":
+                transport.respond(to: message, result: ["thread": ["id": "thread-s1"], "model": "gpt-5.6-luna"])
+            case "turn/start":
+                transport.respond(to: message, result: ["turn": ["id": "turn-s1", "status": "inProgress", "items": []]])
+                transport.emitCompletedResponse(threadID: "thread-s1", turnID: "turn-s1", text: "Fatto.")
+            default: break
+            }
+        }
+        let adapter = CodexProviderAdapter(
+            client: CodexClient(transport: transport),
+            codexHome: URL(fileURLWithPath: "/tmp/codex-home-does-not-exist")
+        )
+        let worktree = FileManager.default.temporaryDirectory
+        _ = try await adapter.startSession(ProviderSessionStartInput(
+            threadID: "thread-s1",
+            cwd: worktree,
+            modelSelection: .codex(model: "gpt-5.6-luna", options: nil),
+            runtimeMode: .fullAccess,
+            writableRoot: worktree
+        ))
+        let result = try await adapter.sendTurn(ProviderSendTurnInput(threadID: "thread-s1", input: [.text("Lavora")]))
+        XCTAssertEqual(result.turnID, "turn-s1")
+        let start = try XCTUnwrap(transport.message(method: "thread/start"))
+        let params = try XCTUnwrap(start["params"] as? [String: Any])
+        XCTAssertEqual(params["sandbox"] as? String, "workspace-write")
+        let config = try XCTUnwrap(params["config"] as? [String: Any])
+        let writable = try XCTUnwrap(config["sandbox_workspace_write"] as? [String: Any])
+        XCTAssertEqual(writable["writable_roots"] as? [String], [worktree.path])
+    }
+
     func testListModelsNormalizesDescriptors() async throws {
         let transport = FakeCodexTransport()
         transport.onMessage = { message in

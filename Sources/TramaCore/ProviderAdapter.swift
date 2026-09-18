@@ -157,6 +157,15 @@ public struct ProviderAccessStatus: Codable, Equatable, Sendable {
     public var provider: ProviderKind
     public var state: ProviderAccessState
     public var isAvailable: Bool
+    /// The screen state of the provider check: `ready`, `warning` or `error`. V08 carries only the
+    /// access state, which folds `warning` into `unknown`; the field keeps the distinction the
+    /// reference's `ServerProviderStatus` makes, so a warning is not read as an error.
+    public var screenState: String?
+    /// The block code when the provider cannot run: `usage-limit`, `lost-authentication`,
+    /// `missing-binary` or `unknown`. Nil means the provider is not blocked.
+    public var blockCode: String?
+    /// When a usage limit lifts, as the provider reports it.
+    public var blockUntil: Date?
     public var authType: String?
     public var authLabel: String?
     public var version: String?
@@ -167,6 +176,9 @@ public struct ProviderAccessStatus: Codable, Equatable, Sendable {
         provider: ProviderKind,
         state: ProviderAccessState,
         isAvailable: Bool = true,
+        screenState: String? = nil,
+        blockCode: String? = nil,
+        blockUntil: Date? = nil,
         authType: String? = nil,
         authLabel: String? = nil,
         version: String? = nil,
@@ -176,6 +188,9 @@ public struct ProviderAccessStatus: Codable, Equatable, Sendable {
         self.provider = provider
         self.state = state
         self.isAvailable = isAvailable
+        self.screenState = screenState
+        self.blockCode = blockCode
+        self.blockUntil = blockUntil
         self.authType = authType
         self.authLabel = authLabel
         self.version = version
@@ -459,6 +474,13 @@ public struct ProviderSessionStartInput: Sendable {
     public var developerInstructions: String?
     public var toolServerURL: URL?
     public var tokenEnvironmentVariable: String?
+    /// The bearer the tool server expects. V08 adds it so a provider that carries host tools in
+    /// its own options, as Claude does with `--mcp-config`, can be given the credential directly
+    /// instead of through the child environment Codex uses.
+    public var toolServerToken: String?
+    /// The only directory the session may write in, for a specialist. Codex enforces it with its
+    /// workspace-write sandbox; Claude receives it as its working directory and a written rule.
+    public var writableRoot: URL?
 
     public init(
         threadID: String,
@@ -469,7 +491,9 @@ public struct ProviderSessionStartInput: Sendable {
         runtimeMode: ProviderRuntimeMode = .fullAccess,
         developerInstructions: String? = nil,
         toolServerURL: URL? = nil,
-        tokenEnvironmentVariable: String? = nil
+        tokenEnvironmentVariable: String? = nil,
+        toolServerToken: String? = nil,
+        writableRoot: URL? = nil
     ) {
         self.threadID = threadID
         self.cwd = cwd
@@ -480,6 +504,19 @@ public struct ProviderSessionStartInput: Sendable {
         self.developerInstructions = developerInstructions
         self.toolServerURL = toolServerURL
         self.tokenEnvironmentVariable = tokenEnvironmentVariable
+        self.toolServerToken = toolServerToken
+        self.writableRoot = writableRoot
+    }
+}
+
+public extension ProviderTurnInputItem {
+    /// The same shape as the Codex turn item the Coordinator composer already produces.
+    static func from(_ item: CodexClient.TurnInputItem) -> ProviderTurnInputItem {
+        switch item {
+        case let .text(text): return .text(text)
+        case let .localImage(path): return .localImage(path: path)
+        case let .skill(name, path): return .skill(name: name, path: path)
+        }
     }
 }
 
@@ -674,6 +711,9 @@ public struct ProviderEvent: Codable, Equatable, Sendable, Identifiable {
         case requestResolved(decision: String)
         case userInputRequested(questionCount: Int)
         case modelRerouted(to: String?)
+        /// The provider is blocked: a normal state, not an error. The block carries the reason and,
+        /// for a usage limit, the date it lifts.
+        case providerBlocked(ProviderBlock)
         case configWarning(message: String)
         case deprecationNotice(message: String)
         case accountUpdated(label: String?)

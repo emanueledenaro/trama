@@ -12,7 +12,7 @@ final class ProviderAdapterTests: XCTestCase {
     }
 
     func testOnlyCodexIsAvailableInV08() {
-        XCTAssertEqual(ProviderCatalogue.all.filter(\.isAvailable).map(\.provider), [.codex])
+        XCTAssertEqual(ProviderCatalogue.all.filter(\.isAvailable).map(\.provider), [.codex, .claudeAgent])
     }
 
     func testCatalogueMatchesTheReferenceSessionModelSwitchAndRollback() {

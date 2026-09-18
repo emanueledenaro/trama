@@ -12,17 +12,20 @@ enum CoordinatorPhase: Equatable {
     case unavailable(String)
 }
 
-/// The local tool server, its credential and the Codex runtime that serve the active project's Coordinator.
+/// The local tool server, its credential and the provider runtime that serve the active project's
+/// Coordinator. The session opens through the V08 adapter interface, so the Coordinator runs on any
+/// connected provider: Codex today, Claude Agent as well.
 @MainActor
 final class CoordinatorRuntime {
     let host = StoreToolHost()
     private(set) lazy var tools = CoordinatorToolServer(host: host)
     private var server: LoopbackHTTPServer?
     private(set) var endpoint: URL?
-    private(set) var client: CodexClient?
+    private(set) var runtime: ProviderSessionRuntime?
+    private(set) var provider: ProviderKind = .codex
     private(set) var credential: CoordinatorSessionCredential?
     private(set) var projectID: UUID?
-    /// The thread opened by this runtime; nil until it is started or resumed.
+    /// The provider thread of this runtime; nil until it is opened.
     var threadID: String?
     /// True once this runtime has given the thread its memory.
     var memoryDelivered = false
@@ -30,8 +33,9 @@ final class CoordinatorRuntime {
     var resumed = false
     /// Instruction files read at the last source change, reused between study refreshes.
     var instructionFiles: [RepositoryInstructionFile]?
-    /// The settings the thread was opened with.
-    var settings: CodexClient.CoordinatorThreadSettings?
+    var cwd: URL?
+    var modelSelection: ModelSelection?
+    var developerInstructions: String?
     /// The conversation request whose Coordinator turn is running; cards and checks attach to it.
     var turnRequestID: UUID?
     /// Cards written while the Coordinator studies: they wait for the study card that closes that turn.
@@ -44,43 +48,104 @@ final class CoordinatorRuntime {
         var assignmentID: String?
     }
 
-    /// Returns a runtime for the project, replacing the one of another project.
-    func prepare(projectID: UUID) async throws -> (client: CodexClient, endpoint: URL) {
+    /// A sendable channel so the turn consumer sees every event in order, whatever thread the
+    /// adapter reports it on.
+    final class TurnChannel: @unchecked Sendable {
+        private let lock = NSLock()
+        private var continuation: AsyncStream<ProviderEvent>.Continuation?
+        func set(_ continuation: AsyncStream<ProviderEvent>.Continuation?) {
+            lock.lock(); self.continuation = continuation; lock.unlock()
+        }
+        func yield(_ event: ProviderEvent) {
+            lock.lock(); let continuation = self.continuation; lock.unlock()
+            continuation?.yield(event)
+        }
+    }
+
+    private let channel = TurnChannel()
+    /// The Coordinator may ask before acting; Trama answers with its own policy.
+    private var permissionHandler: (@Sendable (ProviderEvent) -> Void)?
+    private var auxiliaryHandler: (@Sendable (ProviderEvent) -> Void)?
+
+    /// Prepares the tool server and the provider runtime for the project.
+    func prepare(
+        projectID: UUID,
+        provider: ProviderKind,
+        cwd: URL,
+        modelSelection: ModelSelection?,
+        developerInstructions: String
+    ) async throws -> URL {
         if server == nil || endpoint == nil {
             let tools = self.tools
             let server = LoopbackHTTPServer { await tools.respond(to: $0) }
             endpoint = try await server.start().appendingPathComponent("mcp")
             self.server = server
         }
-        if self.projectID != projectID || client == nil {
+        if self.projectID != projectID || runtime == nil || self.provider != provider {
             shutdown()
             let credential = await tools.issueCredential(projectID: projectID)
             self.credential = credential
-            client = CodexClient.coordinatorRuntime(token: credential.token)
+            let adapter = Self.makeAdapter(provider: provider, token: credential.token)
+            let runtime = ProviderSessionRuntime(adapter: adapter)
+            self.runtime = runtime
+            self.provider = provider
             self.projectID = projectID
+            await installObserver()
         }
-        guard let client, let endpoint else { throw CodexClient.ClientError.notConnected }
-        return (client, endpoint)
+        guard let endpoint else { throw CodexClient.ClientError.notConnected }
+        self.cwd = cwd
+        self.modelSelection = modelSelection
+        self.developerInstructions = developerInstructions
+        return endpoint
     }
 
-    /// Stops the Codex process and revokes its credential. The runtime state is cleared at once, so a
+    static func makeAdapter(provider: ProviderKind, token: String) -> any ProviderAdapter {
+        switch provider {
+        case .claudeAgent:
+            return ClaudeProviderAdapter()
+        default:
+            return CodexProviderAdapter(client: CodexClient.coordinatorRuntime(token: token))
+        }
+    }
+
+    /// Opens or resumes the Coordinator session through the adapter.
+    func open(threadID: String, resumeCursor: Data?) async throws -> ProviderSession {
+        guard let runtime else { throw CodexClient.ClientError.notConnected }
+        return try await runtime.open(ProviderSessionOpen(
+            threadID: threadID,
+            cwd: cwd ?? FileManager.default.temporaryDirectory,
+            modelSelection: modelSelection,
+            runtimeMode: provider == .claudeAgent ? .approvalRequired : .fullAccess,
+            developerInstructions: developerInstructions,
+            toolServerURL: endpoint,
+            toolServerToken: credential?.token,
+            resumeCursor: resumeCursor
+        ))
+    }
+
+    /// Stops the provider process and revokes its credential. The runtime state is cleared at once, so a
     /// runtime prepared right after is never touched; the thread stays saved in the document.
     func shutdown() {
         if let credential {
             let tools = self.tools
             Task { await tools.revoke(sessionKey: credential.sessionKey) }
         }
-        client?.stop()
-        client = nil
+        let runtime = self.runtime
+        Task { await runtime?.stop() }
+        self.runtime = nil
         credential = nil
         projectID = nil
         threadID = nil
         memoryDelivered = false
         resumed = false
         instructionFiles = nil
-        settings = nil
+        cwd = nil
+        modelSelection = nil
+        developerInstructions = nil
         turnRequestID = nil
         deferredCards = []
+        permissionHandler = nil
+        auxiliaryHandler = nil
     }
 
     func beginTurn() async {
@@ -98,35 +163,63 @@ final class CoordinatorRuntime {
         await tools.endTurn(sessionKey: credential.sessionKey)
     }
 
+    /// Events outside the running turn: context usage, compaction, session state and blocks.
+    func observeAuxiliary(_ handler: @escaping @Sendable (ProviderEvent) -> Void) {
+        auxiliaryHandler = handler
+    }
+
+    /// Answers a `can_use_tool` request with Trama's Coordinator policy.
+    func respondToPermission(requestID: String, tool: String?) async {
+        guard let runtime else { return }
+        try? await runtime.respondToRequest(requestID: requestID, decision: CoordinatorPermissionPolicy.decision(forTool: tool))
+    }
+
+    /// Answers a question the Coordinator put to the person.
+    func respondToQuestion(requestID: String, answers: [String: String]) async {
+        guard let runtime else { return }
+        try? await runtime.respondToUserInput(requestID: requestID, answers: answers)
+    }
+
+    func interrupt() async {
+        await runtime?.interrupt()
+    }
+
+    private func installObserver() async {
+        guard let runtime else { return }
+        let channel = self.channel
+        await runtime.observe { [weak self] event in
+            // The turn consumer reads the channel in order; the rest hops to the main actor.
+            channel.yield(event)
+            Task { @MainActor in self?.auxiliaryHandler?(event) }
+        }
+    }
+
     /// Runs a Coordinator turn with write authority. Events reach `onEvent` in order, and all of
     /// them are handled before the authority ends, so a late turn id cannot reopen it.
     func runTurn(
-        client: CodexClient,
-        threadID: String,
-        input: [CodexClient.TurnInputItem],
-        settings: CodexClient.CoordinatorThreadSettings,
+        input: [ProviderTurnInputItem],
+        modelSelection: ModelSelection?,
         onEvent: @escaping @MainActor (ProviderEvent) async -> Void
-    ) async throws -> String {
+    ) async throws -> ProviderTurnOutcome {
+        guard let runtime else { throw CodexClient.ClientError.notConnected }
         let (events, continuation) = AsyncStream<ProviderEvent>.makeStream()
-        let tracker = TurnTracker()
         let consumer = Task { @MainActor in
             for await event in events {
                 if case .turnStarted = event.kind, let turnID = event.turnID { await self.bindTurn(turnID) }
                 await onEvent(event)
             }
         }
+        channel.set(continuation)
         await beginTurn()
-        defer { continuation.finish() }
         do {
-            let reply = try await client.runCoordinatorTurn(threadID: threadID, input: input, settings: settings) { event in
-                if case let .turnStarted(id) = event { tracker.turnID = id }
-                continuation.yield(CodexEventNormalizer.normalize(turnEvent: event, threadID: threadID, turnID: tracker.turnID))
-            }
+            let outcome = try await runtime.runTurn(ProviderTurn(input: input, modelSelection: modelSelection))
+            channel.set(nil)
             continuation.finish()
             await consumer.value
             await endTurn()
-            return reply
+            return outcome
         } catch {
+            channel.set(nil)
             continuation.finish()
             await consumer.value
             await endTurn()
@@ -252,8 +345,41 @@ extension ProjectStore {
             modules: project.modules.map { .init(id: $0.id, name: $0.name, path: $0.relativePath) },
             availableChecks: ReadOnlyCheckRunner.availableChecks(root: root),
             models: models.map(\.model),
-            defaultSpecialistModel: selectedModel.isEmpty ? nil : selectedModel
+            defaultSpecialistModel: specialistDefaultModel(for: .codex) ?? (selectedModel.isEmpty ? nil : selectedModel),
+            providerModels: claudeSpecialistModels.map { [ProviderKind.claudeAgent.rawValue: $0] } ?? [:],
+            providerDefaultModels: claudeSpecialistDefault.map { [ProviderKind.claudeAgent.rawValue: $0] } ?? [:],
+            defaultSpecialistProvider: coordinator.provider
         )
+    }
+
+    /// The Claude models a specialist may use, offered only while Claude Agent is authenticated
+    /// (ADR 0009: connected means authenticated).
+    private var claudeSpecialistModels: [String]? {
+        guard providerAccess[.claudeAgent]?.state == .authenticated,
+              let catalog = providerCatalogs[.claudeAgent], !catalog.models.isEmpty else { return nil }
+        return catalog.models.map(\.slug)
+    }
+
+    private var claudeSpecialistDefault: String? {
+        guard let catalog = providerCatalogs[.claudeAgent], claudeSpecialistModels != nil else { return nil }
+        return ProviderModelDefault.specialist(provider: .claudeAgent, catalog: catalog, preference: document.providerPreferences)
+    }
+
+    /// A specialist starts from the cheapest model of the provider, or from the person's remembered
+    /// choice for that provider. ADR 0009.
+    func specialistDefaultModel(for provider: ProviderKind) -> String? {
+        let catalog = ProviderModelCatalog(
+            models: models.map { model in
+                ProviderModelDescriptor(
+                    slug: model.model,
+                    resolvedModel: model.model,
+                    name: model.displayName,
+                    isDefault: model.isDefault
+                )
+            },
+            source: .runtime
+        )
+        return ProviderModelDefault.specialist(provider: provider, catalog: catalog, preference: document.providerPreferences)
     }
 
     func writeCoordinatorMemory(projectID: UUID, text: String) throws -> CoordinatorMemory {
@@ -443,11 +569,29 @@ extension ProjectStore {
     // MARK: Thread
 
     /// Starts or resumes the Coordinator of the active project. A new thread opens the conversation with its study.
-    func startCoordinator() {
-        guard coordinatorTask == nil, coordinatorPhase != .ready, codexConnected, stateWritable,
+    func startCoordinator(accessChecked: Bool = false) {
+        guard coordinatorTask == nil, coordinatorPhase != .ready, stateWritable,
               let project, let root = localRoot, let projectID = activeProjectID else { return }
-        guard let model = selectedModelInfo?.model else {
-            coordinatorPhase = .unavailable(needsModelChoice ? CoordinatorModelChoice.preferredUnavailableMessage : "Scegli un modello OpenAI disponibile per il Coordinatore.")
+        let provider = document.lastTurnProviderOrCodex
+        // An unknown access state is not an answer (ADR 0009): the check runs before the provider
+        // is refused, so reopening on Claude does not wait for Codex to connect first.
+        if provider == .claudeAgent, !accessChecked, (providerAccess[.claudeAgent]?.state ?? .unknown) == .unknown {
+            coordinatorPhase = .opening
+            Task { [weak self] in
+                await self?.recordClaudeAccess()
+                self?.coordinatorPhase = .idle
+                self?.startCoordinator(accessChecked: true)
+            }
+            return
+        }
+        if let reason = coordinatorProviderReason(provider) {
+            coordinatorPhase = .unavailable(reason)
+            return
+        }
+        guard let choice = coordinatorTurnChoice(provider: provider, override: TurnOverride()) else {
+            coordinatorPhase = .unavailable(provider == .claudeAgent
+                ? "Scegli un modello Claude disponibile per il Coordinatore."
+                : CoordinatorModelChoice.preferredUnavailableMessage)
             return
         }
         coordinator.host.store = self
@@ -459,37 +603,46 @@ extension ProjectStore {
             defer { if coordinatorGeneration == generation { coordinatorTask = nil } }
             do {
                 refreshCoordinatorStudy(rereadInstructions: true)
-                let (client, endpoint) = try await coordinator.prepare(projectID: projectID)
-                guard coordinatorGeneration == generation else { return }
-                let settings = CodexClient.CoordinatorThreadSettings(
+                var instructions = CoordinatorBriefing.developerInstructions(projectName: project.name)
+                if let handover = coordinatorHandover {
+                    // A provider switch keeps the thread: the new session opens with the handover.
+                    instructions += "\n\n" + handover.briefing
+                }
+                let saved = document.coordinator?.thread
+                let resume = saved.flatMap { try? JSONEncoder().encode($0.resumeCursor) }
+                _ = try await coordinator.prepare(
+                    projectID: projectID,
+                    provider: provider,
                     cwd: root,
-                    model: model,
-                    developerInstructions: CoordinatorBriefing.developerInstructions(projectName: project.name),
-                    toolServerURL: endpoint
+                    modelSelection: choice.selection,
+                    developerInstructions: instructions
                 )
-                let opening = try await client.openCoordinatorThread(settings, resuming: coordinatorThreadID)
                 guard coordinatorGeneration == generation else { return }
-                await observeCoordinatorThread(client: client, threadID: opening.threadID)
-                coordinator.threadID = opening.threadID
-                coordinator.settings = settings
-                var replacedReason: String?
-                switch opening {
-                case .resumed:
-                    coordinator.resumed = true
-                case let .started(threadID):
-                    recordCoordinatorThread(threadID, model: model)
-                case let .replaced(_, threadID, reason):
-                    replacedReason = reason
-                    recordCoordinatorThread(threadID, model: model)
+                coordinator.observeAuxiliary { [weak self] event in
+                    Task { @MainActor in self?.handleCoordinatorEvent(event) }
+                }
+                let session = try await coordinator.open(
+                    threadID: "coordinator-\(projectID.uuidString)",
+                    resumeCursor: resume
+                )
+                guard coordinatorGeneration == generation else { return }
+                // The provider that really produced this session, so reopening resumes with it.
+                document.lastTurnProvider = provider
+                coordinatorHandover = nil
+                coordinator.threadID = session.threadID
+                let replaced = Self.threadWasReplaced(saved: saved, provider: provider, session: session, requestedResume: resume != nil)
+                if !replaced { coordinator.resumed = resume != nil }
+                recordCoordinatorThread(session, model: choice.model, provider: provider, replaced: replaced)
+                if replaced {
                     document.conversation?.appendCard(
-                        .init(kind: .contextNotice, title: "Nuovo thread del Coordinatore", detail: "Il thread precedente non è più disponibile (\(reason)). Il Coordinatore riparte da un nuovo thread con lo studio del progetto e la sua memoria.", referenceID: threadID),
+                        .init(kind: .contextNotice, title: "Nuovo thread del Coordinatore", detail: "Il thread precedente non è più disponibile. Il Coordinatore riparte da un nuovo thread con lo studio del progetto e la sua memoria.", referenceID: session.threadID),
                         origin: .trama,
                         requestID: nil
                     )
                 }
                 saveDocument()
                 if document.coordinator?.thread?.injectedStudy.isEmpty ?? true {
-                    try await runStudyTurn(client: client, settings: settings, threadID: opening.threadID, replacing: replacedReason, generation: generation)
+                    try await runStudyTurn(threadID: session.threadID, replacing: replaced, generation: generation)
                 }
                 guard coordinatorGeneration == generation else { return }
                 coordinatorPhase = .ready
@@ -503,6 +656,91 @@ extension ProjectStore {
                 saveDocument()
             }
         }
+    }
+
+    /// Why the app cannot open the Coordinator on this provider, or nil when it can.
+    func coordinatorProviderReason(_ provider: ProviderKind) -> String? {
+        guard ProjectStore.appRunsCoordinator(provider) else {
+            return "Il provider dell'ultimo turno è \(provider.displayName) e Trama non sa ancora aprirlo: riprendi o cambia provider dalla schermata dei collegamenti."
+        }
+        switch provider {
+        case .codex:
+            guard codexConnected else { return "Collega Codex per aprire il Coordinatore." }
+        case .claudeAgent:
+            guard providerAccess[.claudeAgent]?.state == .authenticated else {
+                return "Collega l'account di Claude Agent per aprire il Coordinatore."
+            }
+        default:
+            return nil
+        }
+        return nil
+    }
+
+    /// A resume that produced a different provider session means the old thread was gone.
+    static func threadWasReplaced(saved: CoordinatorThreadRecord?, provider: ProviderKind, session: ProviderSession, requestedResume: Bool) -> Bool {
+        guard requestedResume, let saved, saved.provider == provider.rawValue else { return false }
+        let previous = saved.resumeCursor.objectValue?["threadId"]?.stringValue
+            ?? saved.resumeCursor.objectValue?["resume"]?.stringValue
+        guard let previous else { return false }
+        return session.threadID != previous
+    }
+    func switchCoordinatorProvider(to provider: ProviderKind) {
+        guard stateWritable else { return }
+        guard provider != document.lastTurnProviderOrCodex else { return }
+        guard ProjectStore.appRunsCoordinator(provider) else {
+            coordinatorPhase = .unavailable("Trama non ha ancora un adattatore completo per \(provider.displayName): il passaggio non è disponibile. Il thread resta su \(document.lastTurnProviderOrCodex.displayName).")
+            return
+        }
+        // Only a provider that can run is chosen: a refused switch keeps the thread and the provider.
+        let accessUnknown = provider == .claudeAgent && (providerAccess[.claudeAgent]?.state ?? .unknown) == .unknown
+        if let reason = coordinatorProviderReason(provider), !accessUnknown {
+            providerNotice = ProviderBlock(provider: provider, reason: .unknown(reason), detail: "Il thread resta su \(document.lastTurnProviderOrCodex.displayName): il cambio è una decisione della persona e il provider scelto non può girare adesso.", observedAt: Date())
+            return
+        }
+        let previous = document.lastTurnProviderOrCodex
+        let handover = CoordinatorProviderSwitch.plan(from: previous, to: provider, document: document)
+        coordinatorHandover = handover
+        document.lastTurnProvider = provider
+        document.coordinator?.providerBlock = nil
+        // The old session is not reused: the new provider opens its own.
+        coordinator.threadID = nil
+        document.coordinator?.thread = nil
+        document.conversation?.appendCard(
+            ConversationEvent.Card(
+                kind: .contextNotice,
+                title: "Provider del Coordinatore: \(provider.displayName)",
+                detail: "Il Coordinatore riparte da \(previous.displayName) a \(provider.displayName) in una sessione nuova, con la trascrizione, la memoria e lo studio del progetto.",
+                referenceID: nil
+            ),
+            origin: .trama,
+            requestID: nil
+        )
+        saveDocument()
+        stopCoordinator()
+        retryCoordinator()
+    }
+
+    /// The person retries after a provider block, from the status strip. Every waiting assignment
+    /// of that provider resumes; the Coordinator resumes when it was the one that stopped.
+    func resumeAfterProviderBlock(_ provider: ProviderKind) {
+        guard stateWritable else { return }
+        let waiting = document.team?.waitingAssignments.filter { $0.resolvedProvider == provider } ?? []
+        for assignment in waiting {
+            resumeSpecialist(assignmentID: assignment.id)
+        }
+        if document.coordinator?.providerBlock?.provider == provider {
+            resumeCoordinatorAfterBlock()
+        }
+        if document.team?.waitingAssignments.isEmpty ?? true { providerNotice = nil }
+    }
+
+    /// The person resumes the Coordinator after a provider block. The provider does not change.
+    func resumeCoordinatorAfterBlock() {
+        guard stateWritable else { return }
+        document.coordinator?.providerBlock = nil
+        if document.team?.waitingAssignments.isEmpty ?? true { providerNotice = nil }
+        saveDocument()
+        retryCoordinator()
     }
 
     func retryCoordinator() {
@@ -523,21 +761,24 @@ extension ProjectStore {
         coordinator.shutdown()
     }
 
-    private func recordCoordinatorThread(_ threadID: String, model: String) {
+    private func recordCoordinatorThread(_ session: ProviderSession, model: String, provider: ProviderKind, replaced: Bool) {
         var state = document.coordinator ?? CoordinatorState()
-        state.context?.resetForThread(threadID)
+        state.context?.resetForThread(session.threadID)
+        let previousStudy = (!replaced && state.thread?.provider == provider.rawValue) ? (state.thread?.injectedStudy ?? [:]) : [:]
+        let cursor = session.resumeCursor.flatMap { try? JSONDecoder().decode(JSONValue.self, from: $0) } ?? .null
         state.thread = CoordinatorThreadRecord(
-            provider: Self.coordinatorProvider,
-            resumeCursor: .object(["threadId": .string(threadID)]),
+            provider: provider.rawValue,
+            resumeCursor: cursor,
             model: model,
-            startedAt: Date()
+            startedAt: Date(),
+            injectedStudy: previousStudy
         )
         document.coordinator = state
         coordinator.memoryDelivered = false
     }
 
     /// The opening turn: the Coordinator reads the whole study and memory and says what it understood.
-    private func runStudyTurn(client: CodexClient, settings: CodexClient.CoordinatorThreadSettings, threadID: String, replacing reason: String?, generation: UUID) async throws {
+    private func runStudyTurn(threadID: String, replacing replaced: Bool, generation: UUID) async throws {
         refreshCoordinatorStudy()
         guard let study = document.coordinator?.study else { return }
         let memory = document.coordinator?.memory ?? CoordinatorMemory()
@@ -553,12 +794,12 @@ extension ProjectStore {
                 saveDocument()
             }
         }
-        let reply = try await coordinator.runTurn(
-            client: client,
-            threadID: threadID,
-            input: CoordinatorBriefing.openingInput(study: study, memory: memory, replacing: reason).map { .text($0) },
-            settings: settings
-        ) { [weak self] event in
+        let opening = CoordinatorBriefing.openingInput(
+            study: study,
+            memory: memory,
+            replacing: replaced ? "il thread precedente non è più disponibile" : nil
+        )
+        let outcome = try await coordinator.runTurn(input: opening.map { .text($0) }, modelSelection: nil) { [weak self] event in
             guard let self, self.coordinatorGeneration == generation, case let .contentDelta(.assistantText(delta)) = event.kind else { return }
             self.coordinatorStudyText? += delta
         }
@@ -567,7 +808,7 @@ extension ProjectStore {
         coordinator.memoryDelivered = true
         coordinatorPhase = .ready
         document.conversation?.appendCard(
-            .init(kind: .study, title: "Studio del progetto", detail: reply, referenceID: threadID),
+            .init(kind: .study, title: "Studio del progetto", detail: outcome.reply, referenceID: threadID),
             origin: .coordinator,
             requestID: nil
         )
@@ -595,17 +836,16 @@ extension ProjectStore {
         guard let index = document.requests.firstIndex(where: { $0.id == id }),
               let project, let root = localRoot, !isPlanning, !isPreparingSkills else { return }
         let override = pendingTurnOverrides[id] ?? TurnOverride()
-        let model = override.model ?? selectedModel
-        guard let selection = CoordinatorModelChoice.turnSelection(coordinatorModel: selectedModel, override: override, models: models) else {
+        let requestedModel = override.model ?? selectedModel
+        guard let choice = coordinatorTurnChoice(provider: coordinator.provider, override: override) else {
             pendingTurnOverrides[id] = nil
             document.requests[index].state = .modelUnavailable
-            document.requests[index].failureDetail = "Scegli un modello OpenAI disponibile prima di scrivere al Coordinatore. Il modello richiesto era \(model.isEmpty ? "non selezionato" : model)."
-            document.conversation?.appendActivity(requestID: id, title: "Modello non disponibile", detail: model.isEmpty ? nil : model)
+            document.requests[index].failureDetail = "Scegli un modello disponibile per \(coordinator.provider.displayName) prima di scrivere al Coordinatore. Il modello richiesto era \(requestedModel.isEmpty ? "non selezionato" : requestedModel)."
+            document.conversation?.appendActivity(requestID: id, title: "Modello non disponibile", detail: requestedModel.isEmpty ? nil : requestedModel)
             saveDocument()
             return
         }
-        guard coordinatorPhase == .ready, let threadID = coordinator.threadID, let client = coordinator.client,
-              var settings = coordinator.settings else {
+        guard coordinatorPhase == .ready, let threadID = coordinator.threadID, coordinator.runtime != nil else {
             document.requests[index].state = .waitingForCoordinator
             saveDocument()
             startCoordinator()
@@ -636,14 +876,12 @@ extension ProjectStore {
             sources: mentionSources,
             skills: loadedSkills
         )
-        settings.model = selection.model
-        settings.effort = selection.effort
         pendingTurnOverrides[id] = nil
         var knownFiles: Set<String> = Set(project.modules.flatMap(\.files).map(\.relativePath))
         knownFiles.formUnion((project.contextualInputHashes ?? [:]).keys)
         knownFiles.formUnion((coordinator.instructionFiles ?? []).map(\.path))
 
-        document.requests[index].model = selection.model
+        document.requests[index].model = choice.model
         document.requests[index].sourceFingerprint = fingerprint
         document.requests[index].state = .analysing
         document.requests[index].failureDetail = nil
@@ -651,10 +889,10 @@ extension ProjectStore {
         document.requests[index].proposal = nil
         document.requests[index].replyKind = nil
         document.requests[index].replyReferences = nil
-        var sentParts: [String] = [selection.overridesModel ? "\(selection.model) solo per questo messaggio" : selection.model]
-        if let effort = selection.effort {
+        var sentParts: [String] = [choice.overridesModel ? "\(choice.model) solo per questo messaggio" : choice.model]
+        if let effort = choice.effort {
             let label = CoordinatorModelChoice.effortLabel(effort).lowercased()
-            sentParts.append(selection.overridesEffort ? "sforzo \(label) solo per questo messaggio" : "sforzo \(label)")
+            sentParts.append(choice.overridesEffort ? "sforzo \(label) solo per questo messaggio" : "sforzo \(label)")
         }
         if let update { sentParts.append("aggiornamento: \(Self.updateSummary(update))") }
         if let summary = turn.summary { sentParts.append(summary) }
@@ -679,10 +917,11 @@ extension ProjectStore {
                 }
             }
             do {
-                let reply = try await runtime.runTurn(client: client, threadID: threadID, input: turn.input, settings: settings) { [weak self] event in
+                let outcome = try await runtime.runTurn(input: turn.input.map(ProviderTurnInputItem.from), modelSelection: choice.selection) { [weak self] event in
                     guard let self, self.operationID == token, self.localRoot == root else { return }
                     self.receiveCoordinatorEvent(event, requestID: id)
                 }
+                let reply = outcome.reply
                 guard operationID == token, localRoot == root, let i = document.requests.firstIndex(where: { $0.id == id }) else { return }
                 if let update, let study = state.study {
                     for part in update.parts {
@@ -697,7 +936,7 @@ extension ProjectStore {
                 document.requests[i].replyReferences = references
                 document.requests[i].state = .replyAvailable
                 document.conversation?.appendActivity(requestID: id, title: "Risposta ricevuta", detail: references.count == 1 ? "1 fonte" : "\(references.count) fonti")
-                document.conversation?.recordReply(requestID: id, text: reply, model: selection.model, references: references)
+                document.conversation?.recordReply(requestID: id, text: reply, model: choice.model, references: references)
                 activity.insert("Risposta del Coordinatore ricevuta per \(document.requests[i].moduleName).", at: 0)
             } catch {
                 guard operationID == token, localRoot == root, let i = document.requests.firstIndex(where: { $0.id == id }) else { return }
@@ -791,6 +1030,16 @@ extension ProjectStore {
         switch event.kind {
         case let .contextUsage(snapshot):
             updateContext { context in context.record(snapshot, threadID: threadID) }
+        case let .providerBlocked(block):
+            // A blocked provider stops the Coordinator turn. The provider does not change.
+            document.coordinator?.providerBlock = block
+            providerNotice = block
+            document.conversation?.appendCard(
+                ConversationEvent.Card(kind: .providerBlocked, title: block.title, detail: block.reason.summary, referenceID: nil),
+                origin: .trama,
+                requestID: streamingReplies.keys.first
+            )
+            stopCoordinator()
         case let .contextCompaction(state):
             guard let phase = ContextCompactionState(rawValue: state) else { return }
             updateContext { context in
@@ -855,5 +1104,31 @@ extension ProjectStore {
         document.conversation?.appendPersonMessage(for: document.requests[index], text: "Prepara un piano per questa richiesta.")
         saveDocument()
         runPlan(id)
+    }
+}
+
+
+extension ProjectStore {
+    /// The model one Coordinator turn runs with, on the provider of the session.
+    func coordinatorTurnChoice(provider: ProviderKind, override: TurnOverride) -> CoordinatorTurnChoice? {
+        CoordinatorTurnSelection.choice(
+            provider: provider,
+            coordinatorModel: selectedModel,
+            override: override,
+            codexModels: models,
+            claudeCatalog: providerCatalogs[.claudeAgent] ?? ProviderModelCatalog(models: [], source: .fallback),
+            preference: document.providerPreferences
+        )
+    }
+
+    /// Routes one Coordinator event: context, compaction and blocks to the thread state, permission
+    /// requests to Trama's policy, turn events to the running turn.
+    func handleCoordinatorEvent(_ event: ProviderEvent) {
+        if let threadID = coordinator.threadID {
+            receiveThreadEvent(event, threadID: threadID)
+        }
+        if case let .requestOpened(requestType, detail) = event.kind, requestType == "canUseTool", let requestID = event.requestID {
+            Task { await coordinator.respondToPermission(requestID: requestID, tool: detail) }
+        }
     }
 }

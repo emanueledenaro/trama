@@ -359,6 +359,8 @@ struct CoordinatorView: View {
             teamProposalCard(card, date: row.date)
         case .assignment(let card):
             assignmentCard(card, date: row.date)
+        case .providerBlocked(let card):
+            providerBlockedCard(card, date: row.date)
         case .candidate(let card):
             candidateCard(card, date: row.date)
         case .generic(let card):
@@ -391,6 +393,33 @@ struct CoordinatorView: View {
                 .background(.background.secondary, in: RoundedRectangle(cornerRadius: TramaRadius.card))
             }
         }
+    }
+
+    /// A blocked provider. Trama stopped and warned; the person decides what happens next.
+    private func providerBlockedCard(_ card: ConversationCard.ProviderBlockedCard, date: Date) -> some View {
+        VStack(alignment: .leading, spacing: TramaSpacing.related) {
+            HStack(spacing: TramaSpacing.compact) {
+                Image(systemName: "exclamationmark.triangle")
+                Text(card.block.title).font(.headline)
+                Spacer(minLength: 0)
+                Text(card.block.provider.displayName).font(.caption).foregroundStyle(.secondary)
+            }
+            Text(card.reason).fixedSize(horizontal: false, vertical: true)
+            Text(card.proposedAction).font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: TramaSpacing.control) {
+                Button("Scegli un altro provider") { store.showConnections = true }
+                if let assignmentID = card.assignmentID {
+                    Button("Riprova") { store.resumeSpecialist(assignmentID: assignmentID) }
+                } else {
+                    Button("Riprova") { store.resumeCoordinatorAfterBlock() }
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(TramaSpacing.related)
+        .background(.background.secondary, in: RoundedRectangle(cornerRadius: TramaRadius.card))
+        .overlay(RoundedRectangle(cornerRadius: TramaRadius.card).stroke(.orange.opacity(0.5)))
+        .accessibilityElement(children: .combine)
     }
 
     private func mandateCard(_ card: ConversationCard.Mandate, date: Date) -> some View {
