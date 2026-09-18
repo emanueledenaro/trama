@@ -889,7 +889,7 @@ extension ProjectStore {
         document.requests[index].proposal = nil
         document.requests[index].replyKind = nil
         document.requests[index].replyReferences = nil
-        var sentParts: [String] = [choice.overridesModel ? "\(choice.model) solo per questo messaggio" : choice.model]
+        var sentParts: [String] = ["\(coordinator.provider.displayName) · \(choice.model)\(choice.overridesModel ? " solo per questo messaggio" : "")"]
         if let effort = choice.effort {
             let label = CoordinatorModelChoice.effortLabel(effort).lowercased()
             sentParts.append(choice.overridesEffort ? "sforzo \(label) solo per questo messaggio" : "sforzo \(label)")
@@ -936,7 +936,7 @@ extension ProjectStore {
                 document.requests[i].replyReferences = references
                 document.requests[i].state = .replyAvailable
                 document.conversation?.appendActivity(requestID: id, title: "Risposta ricevuta", detail: references.count == 1 ? "1 fonte" : "\(references.count) fonti")
-                document.conversation?.recordReply(requestID: id, text: reply, model: choice.model, references: references)
+                document.conversation?.recordReply(requestID: id, text: reply, model: choice.model, provider: runtime.provider, references: references)
                 activity.insert("Risposta del Coordinatore ricevuta per \(document.requests[i].moduleName).", at: 0)
             } catch {
                 guard operationID == token, localRoot == root, let i = document.requests.firstIndex(where: { $0.id == id }) else { return }

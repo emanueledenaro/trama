@@ -47,6 +47,8 @@ public struct ConversationEvent: Codable, Identifiable, Equatable, Sendable {
     public var assignmentID: String?
     /// The provider turn the event belongs to; specialist activities are collected by it.
     public var turnID: String?
+    /// The provider that produced the event. Nil for events recorded before it was tracked.
+    public var provider: ProviderKind?
     public var createdAt: Date
     public var content: Content
 }
@@ -95,14 +97,14 @@ public struct ConversationTimeline: Codable, Equatable, Sendable {
     ///
     /// A new analysis of the same turn replaces the previous reply: the event keeps its identifier
     /// and moves to the end with a new sequence. After a new person message the reply is a new event.
-    public mutating func recordReply(requestID: UUID, text: String, model: String?, references: [String], at date: Date = Date()) {
+    public mutating func recordReply(requestID: UUID, text: String, model: String?, provider: ProviderKind? = nil, references: [String], at date: Date = Date()) {
         let content = ConversationEvent.Content.coordinatorText(text: text, model: model, references: references)
         let turn = events.lastIndex { $0.requestID == requestID && $0.origin == .person }
         if let previous = lastReplyIndex(requestID: requestID), previous > (turn ?? -1) {
             let id = events.remove(at: previous).id
-            append(content, origin: .coordinator, requestID: requestID, at: date, id: id)
+            append(content, origin: .coordinator, requestID: requestID, provider: provider, at: date, id: id)
         } else {
-            append(content, origin: .coordinator, requestID: requestID, at: date)
+            append(content, origin: .coordinator, requestID: requestID, provider: provider, at: date)
         }
     }
 
@@ -145,6 +147,7 @@ public struct ConversationTimeline: Codable, Equatable, Sendable {
         requestID: UUID?,
         assignmentID: String? = nil,
         turnID: String? = nil,
+        provider: ProviderKind? = nil,
         at date: Date,
         id: UUID = UUID()
     ) {
@@ -157,6 +160,7 @@ public struct ConversationTimeline: Codable, Equatable, Sendable {
             requestID: requestID,
             assignmentID: assignmentID,
             turnID: turnID,
+            provider: provider,
             createdAt: date,
             content: content
         ))
@@ -186,6 +190,8 @@ public enum ConversationRow: Identifiable, Equatable, Sendable {
         /// Nil while the turn has no reply yet: the chat shows progress, failure or status instead.
         public var text: String?
         public var model: String?
+        /// The provider that produced the reply; nil for turns recorded before it was tracked.
+        public var provider: ProviderKind?
         public var references: [String]
         /// True for the latest reply of the request, which carries its live status and actions.
         public var showsRequestStatus: Bool
@@ -205,6 +211,9 @@ public enum ConversationRow: Identifiable, Equatable, Sendable {
         public var assignmentID: String?
         /// The provider turn of a specialist group.
         public var turnID: String?
+        /// The provider and model recorded on the turn, when the turn is known.
+        public var provider: ProviderKind?
+        public var model: String?
         public var activities: [Activity]
         /// False while the turn is still running: a running turn is never collapsed.
         public var isConcluded: Bool
@@ -341,7 +350,7 @@ extension ConversationTimeline {
             case .coordinatorText(let text, let model, let references):
                 guard let requestID = event.requestID else { continue }
                 rows.append(.coordinatorReply(.init(
-                    id: event.id, requestID: requestID, text: text, model: model, references: references,
+                    id: event.id, requestID: requestID, text: text, model: model, provider: event.provider, references: references,
                     showsRequestStatus: latestReply[requestID] == event.id && !pendingRequests.contains(requestID)
                 )))
             case .activity:
@@ -362,8 +371,13 @@ extension ConversationTimeline {
                     }
                     if isRunning { duration = nil }
                 }
+                // The provider and model come from the recorded turn; a turn never recorded shows none.
+                let turnRecord = turn.assignmentID.flatMap { id in
+                    document.team?.assignment(id)?.turns.first { $0.id == turn.turnID }
+                }
                 rows.append(.activityGroup(.init(
                     id: event.id, requestID: event.requestID, assignmentID: turn.assignmentID, turnID: turn.turnID,
+                    provider: turnRecord?.provider, model: turnRecord?.model,
                     activities: collected, isConcluded: !isRunning, duration: duration
                 )))
             case .card(let card):
@@ -375,6 +389,7 @@ extension ConversationTimeline {
             if let requestID = event.requestID, lastEventIndex[requestID] == index, pendingRequests.contains(requestID) {
                 rows.append(.coordinatorReply(.init(
                     id: requestID, requestID: requestID, text: nil, model: requests[requestID]?.model,
+                    provider: document.lastTurnProviderOrCodex,
                     references: [], showsRequestStatus: true
                 )))
             }

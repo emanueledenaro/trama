@@ -323,13 +323,17 @@ struct CoordinatorView: View {
     }
 
     /// "Specialista Ada · incarico A-1234" for a specialist group, nil for the Coordinator's own.
+    /// The provider and model recorded on the turn follow, when the turn is known.
     private func specialistName(_ group: ConversationRow.ActivityGroupRow) -> String? {
         guard let assignmentID = group.assignmentID else { return nil }
         guard let team = store.document.team, let assignment = team.assignment(assignmentID) else {
             return "Specialista · incarico \(assignmentID)"
         }
         let name = team.specialist(assignment.specialistID)?.name ?? assignment.specialistID
-        return "Specialista \(name) · incarico \(assignment.id)"
+        var label = "Specialista \(name) · incarico \(assignment.id)"
+        if let provider = group.provider { label += " · \(provider.displayName)" }
+        if let model = group.model { label += " · \(model)" }
+        return label
     }
 
     private func activityList(_ activities: [ConversationRow.ActivityGroupRow.Activity]) -> some View {
@@ -837,6 +841,7 @@ struct CoordinatorView: View {
         VStack(alignment: .leading, spacing: TramaSpacing.related) {
             HStack(spacing: TramaSpacing.compact) {
                 Text("Coordinatore")
+                if let provider = reply.provider { Text("· \(provider.displayName)") }
                 if let model = reply.model, !model.isEmpty { Text("· \(model)") }
             }.font(.caption).foregroundStyle(.secondary)
 

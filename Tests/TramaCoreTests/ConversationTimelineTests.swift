@@ -331,6 +331,64 @@ struct ConversationTimelineTests {
         #expect(decoded.conversation == document.conversation)
     }
 
+    @Test("A reply records the provider and model that produced its turn")
+    func replyRecordsTheProvider() throws {
+        var document = ProjectDocument()
+        let request = Self.request("Spiega gli ordini")
+        document.requests = [request]
+        document.conversation?.appendPersonMessage(for: request)
+        document.conversation?.recordReply(requestID: request.id, text: "Gli ordini…", model: "haiku", provider: .claudeAgent, references: [])
+
+        let rows = ConversationTimeline.rows(for: document)
+        guard case .coordinatorReply(let reply) = rows.last else { Issue.record("expected a reply row"); return }
+        #expect(reply.provider == .claudeAgent)
+        #expect(reply.model == "haiku")
+    }
+
+    @Test("A pending turn names the provider the session is running on")
+    func pendingReplyNamesTheSessionProvider() {
+        var document = ProjectDocument()
+        let request = Self.request("Spiega gli ordini")
+        document.requests = [request]
+        document.lastTurnProvider = .claudeAgent
+        document.conversation?.appendPersonMessage(for: request)
+
+        let rows = ConversationTimeline.rows(for: document)
+        guard case .coordinatorReply(let pending) = rows.last else { Issue.record("expected a pending reply"); return }
+        #expect(pending.text == nil)
+        #expect(pending.provider == .claudeAgent)
+    }
+
+    @Test("A specialist group names the provider and model of its recorded turn")
+    func specialistGroupNamesTheTurnProvider() throws {
+        var (document, assignment) = try AssignmentProviderTests.assigned(provider: .claudeAgent)
+        try document.beginSpecialistTurn(assignmentID: assignment.id, turnID: "turn-1", model: "haiku")
+        document.conversation?.appendSpecialistActivity(assignmentID: assignment.id, turnID: "turn-1", title: "Lettura dei file", detail: nil)
+
+        let rows = ConversationTimeline.rows(for: document)
+        guard case .activityGroup(let group) = rows.first else { Issue.record("expected an activity group"); return }
+        #expect(group.provider == .claudeAgent)
+        #expect(group.model == "haiku")
+    }
+
+    @Test("A turn never recorded shows no provider instead of an invented one")
+    func unrecordedTurnShowsNoProvider() throws {
+        var (document, assignment) = try AssignmentProviderTests.assigned(provider: .claudeAgent)
+        document.conversation?.appendSpecialistActivity(assignmentID: assignment.id, turnID: "turn-9", title: "Lettura dei file", detail: nil)
+
+        let rows = ConversationTimeline.rows(for: document)
+        guard case .activityGroup(let group) = rows.first else { Issue.record("expected an activity group"); return }
+        #expect(group.provider == nil)
+        #expect(group.model == nil)
+    }
+
+    @Test("An event recorded before the provider field decodes with none")
+    func eventWithoutAProviderDecodes() throws {
+        let data = Data(#"{"id":"11111111-1111-1111-1111-111111111111","sequence":1,"origin":"coordinator","createdAt":0,"content":{"coordinatorText":{"text":"ok","references":[]}}}"#.utf8)
+        let event = try JSONDecoder().decode(ConversationEvent.self, from: data)
+        #expect(event.provider == nil)
+    }
+
     // MARK: - Helpers
 
     static func request(_ text: String) -> WorkRequest {
