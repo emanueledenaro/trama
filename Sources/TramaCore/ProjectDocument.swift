@@ -48,7 +48,7 @@ public struct WorkRequest: Identifiable, Codable, Sendable {
 }
 
 public struct ProjectDocument: Codable, Sendable {
-    public static let currentSchemaVersion = 6
+    public static let currentSchemaVersion = 7
 
     public var schemaVersion = ProjectDocument.currentSchemaVersion
     public var requests: [WorkRequest] = []
@@ -73,6 +73,10 @@ public struct ProjectDocument: Codable, Sendable {
     /// Image files attached to the draft, saved in Trama's data folder.
     public var composerAttachments: [String]?
     public var importedRequestIDs: [UUID]?
+    /// The models the person chose per provider, for the Coordinator and for the specialists.
+    public var providerPreferences: ProviderModelPreference?
+    /// The provider that produced the last Coordinator turn, so reopening resumes with it.
+    public var lastTurnProvider: ProviderKind?
 
     public init() {}
 }

@@ -14,6 +14,7 @@ struct SpecialistStatusBadge: View {
         case .preparing: "In preparazione"
         case .running: "Al lavoro"
         case .stopRequested: "Arresto richiesto"
+        case .waiting: "In attesa"
         case .stopped: "Fermato"
         case .completed: "Concluso"
         case .failed: "Non riuscito"
@@ -25,6 +26,7 @@ struct SpecialistStatusBadge: View {
         case .preparing: "clock"
         case .running: "play.circle"
         case .stopRequested: "pause.circle"
+        case .waiting: "exclamationmark.circle"
         case .stopped: "stop.circle"
         case .completed: "checkmark.seal"
         case .failed: "exclamationmark.triangle"
@@ -35,7 +37,7 @@ struct SpecialistStatusBadge: View {
         switch status {
         case .preparing: .secondary
         case .running: .blue
-        case .stopRequested, .stopped: .orange
+        case .stopRequested, .stopped, .waiting: .orange
         case .completed: .green
         case .failed: .red
         }

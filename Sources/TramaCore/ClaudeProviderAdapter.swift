@@ -572,14 +572,15 @@ public actor ClaudeProviderAdapter: ProviderAdapter {
 
     // MARK: - Event handling
 
-    private func handle(_ event: ClaudeClient.Event, threadID: String) async {
+    private func handle(_ event: ClaudeClient.Event, threadID: String) {
         guard var state = threads[threadID] else { return }
         switch event {
         case let .message(value, turnID):
             if value.objectValue?["type"]?.stringValue == "system",
-               value.objectValue?["subtype"]?.stringValue == "init" {
+               value.objectValue?["subtype"]?.stringValue == "init",
+               let sessionID = value.objectValue?["session_id"]?.stringValue {
                 // The `system init` record is authoritative; the initialize response may arrive first.
-                state.nativeSessionID = await state.client.nativeSessionID
+                state.nativeSessionID = sessionID
             }
             let nativeSessionID = state.nativeSessionID
             var normalized = state.normalizer.normalize(
@@ -681,12 +682,12 @@ public actor ClaudeProviderAdapter: ProviderAdapter {
             threads[threadID] = state
             emit(ClaudeEventNormalizer.suspended(status: status, threadID: threadID, nativeSessionID: state.nativeSessionID))
 
-        case let .exited(status):
+        case let .exited(status, stderr):
             state.session.status = .error
             state.session.activeTurnID = nil
             state.session.lastError = "Il processo claude è uscito con codice \(status)."
             threads[threadID] = state
-            emit(ClaudeEventNormalizer.exited(status: status, stderr: await state.client.lastStderr, threadID: threadID, nativeSessionID: state.nativeSessionID))
+            emit(ClaudeEventNormalizer.exited(status: status, stderr: stderr, threadID: threadID, nativeSessionID: state.nativeSessionID))
 
         case .stderr:
             break

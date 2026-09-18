@@ -185,7 +185,7 @@ final class ClaudeClientTests: XCTestCase {
         var iterator = client.events.makeAsyncIterator()
         transport.exit(status: 1)
         let event = await iterator.next()
-        guard case let .exited(1) = event else { return XCTFail("expected a plain exit") }
+        guard case .exited(1, _) = event else { return XCTFail("expected a plain exit") }
         let suspended = await client.isSuspended
         XCTAssertFalse(suspended)
     }

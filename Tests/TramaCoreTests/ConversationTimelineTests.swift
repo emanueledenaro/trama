@@ -314,7 +314,7 @@ struct ConversationTimelineTests {
         #expect(cards.map(\.card.kind) == ConversationEvent.CardKind.allCases)
         #expect(cards.allSatisfy { $0.requestID == request.id })
         #expect(document.conversation?.events.first { $0.assignmentID == "A-1" }?.content == .card(.init(kind: .assignment, title: "assignment", detail: nil, referenceID: "ref-assignment")))
-        #expect(ConversationEvent.CardKind.allCases.count == 8)
+        #expect(ConversationEvent.CardKind.allCases.count == 9)
     }
 
     @Test("Events survive encoding and decoding")

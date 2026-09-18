@@ -484,8 +484,8 @@ public actor ClaudeClient {
         case controlRequest(id: String, subtype: ClaudeProtocol.InboundControlSubtype, request: JSONValue)
         case controlCancelled(id: String)
         case stderr(String)
-        /// A clean exit with a non-zero status that is not a suspension.
-        case exited(Int32)
+        /// A clean exit with a non-zero status that is not a suspension, with the stderr tail.
+        case exited(Int32, stderr: String)
         /// Exit 130 (SIGINT) or 143 (SIGTERM): a suspension to resume, never a crash.
         case suspended(Int32)
     }
@@ -709,7 +709,7 @@ public actor ClaudeClient {
             transport = nil
             eventTask = nil
             activeTurnID = nil
-            eventContinuation.yield(wasSuspended ? .suspended(status) : .exited(status))
+            eventContinuation.yield(wasSuspended ? .suspended(status) : .exited(status, stderr: lastStderr))
         }
     }
 

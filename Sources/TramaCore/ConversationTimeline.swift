@@ -13,7 +13,7 @@ public struct ConversationEvent: Codable, Identifiable, Equatable, Sendable {
 
     /// The method acts shown as cards in the conversation.
     public enum CardKind: String, Codable, CaseIterable, Sendable {
-        case study, teamProposal, mandate, assignment, decision, candidate, conflict, contextNotice
+        case study, teamProposal, mandate, assignment, decision, candidate, conflict, contextNotice, providerBlocked
     }
 
     public struct Card: Codable, Equatable, Sendable {
