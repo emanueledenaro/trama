@@ -355,7 +355,7 @@ struct WorkspaceSessionTests {
     }
 }
 
-private final class GitFixture: @unchecked Sendable {
+final class GitFixture: @unchecked Sendable {
     let root: URL
     let repository: URL
 
@@ -445,7 +445,7 @@ private final class GitFixture: @unchecked Sendable {
     func git(_ arguments: [String]) throws -> String {
         let data = try gitData(arguments)
         guard let value = String(data: data, encoding: .utf8) else {
-            throw FixtureError.invalidUTF8
+            throw GitFixtureError.invalidUTF8
         }
         return value.trimmingCharacters(in: .whitespacesAndNewlines)
     }
@@ -476,7 +476,7 @@ private final class GitFixture: @unchecked Sendable {
         let standardOutput = output.fileHandleForReading.readDataToEndOfFile()
         let standardError = error.fileHandleForReading.readDataToEndOfFile()
         guard process.terminationStatus == 0 else {
-            throw FixtureError.gitFailed(
+            throw GitFixtureError.gitFailed(
                 String(data: standardError, encoding: .utf8) ?? "Git failed"
             )
         }
@@ -484,7 +484,7 @@ private final class GitFixture: @unchecked Sendable {
     }
 }
 
-private enum FixtureError: Error {
+enum GitFixtureError: Error {
     case gitFailed(String)
     case invalidUTF8
 }

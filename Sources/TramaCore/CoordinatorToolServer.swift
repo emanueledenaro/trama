@@ -63,6 +63,10 @@ public struct CoordinatorToolContext: Sendable {
     public var github: GitHubSnapshot?
     public var modules: [Module]
     public var availableChecks: [ReadOnlyCheck]
+    /// Models of the Codex catalogue a specialist may use.
+    public var models: [String]
+    /// The model an assignment gets when the Coordinator does not propose one: the Coordinator's own.
+    public var defaultSpecialistModel: String?
 
     public init(
         projectName: String,
@@ -70,7 +74,9 @@ public struct CoordinatorToolContext: Sendable {
         issues: [GitHubIssue]?,
         github: GitHubSnapshot?,
         modules: [Module] = [],
-        availableChecks: [ReadOnlyCheck] = []
+        availableChecks: [ReadOnlyCheck] = [],
+        models: [String] = [],
+        defaultSpecialistModel: String? = nil
     ) {
         self.projectName = projectName
         self.document = document
@@ -78,6 +84,8 @@ public struct CoordinatorToolContext: Sendable {
         self.github = github
         self.modules = modules
         self.availableChecks = availableChecks
+        self.models = models
+        self.defaultSpecialistModel = defaultSpecialistModel
     }
 }
 
@@ -121,6 +129,14 @@ public protocol CoordinatorToolHost: Sendable {
     /// Queues the planner for the order and returns the conversation request that will carry the plan.
     /// Throws `mandateChanged` unless the project's mandate is still exactly `mandate`.
     func preparePlan(projectID: UUID, order: CoordinatorPlanOrder, mandate: ProjectMandate) async throws -> UUID
+    /// Keeps the team proposal and shows it to the person as a card; creates no specialist.
+    func proposeTeam(projectID: UUID, proposal: TeamProposal) async throws -> TeamProposal
+    /// Adds a specialist to the confirmed team. Throws `mandateChanged` like `preparePlan`.
+    func createSpecialist(projectID: UUID, draft: SpecialistDraft, mandate: ProjectMandate) async throws -> Specialist
+    /// Records the assignment, shows its card and starts the specialist runtime. Throws `mandateChanged` like `preparePlan`.
+    func assignTask(projectID: UUID, order: AssignmentOrder, mandate: ProjectMandate) async throws -> SpecialistAssignment
+    /// Requests the stop of the specialist's work, or removes a specialist with none. Throws `mandateChanged` like `preparePlan`.
+    func stopSpecialist(projectID: UUID, order: SpecialistStopOrder, mandate: ProjectMandate) async throws -> SpecialistStopOutcome
 }
 
 /// The local MCP endpoint through which the Coordinator reads Trama, keeps its memory, asks the
@@ -382,6 +398,8 @@ public actor CoordinatorToolServer {
             }
         } catch let failure as CoordinatorTools.Failure {
             return failure.result
+        } catch let error as ProjectTeamError {
+            return CoordinatorTools.teamFailure(error).result
         } catch CoordinatorToolHostError.projectUnavailable {
             return CoordinatorTools.projectUnavailable
         } catch {
@@ -395,7 +413,8 @@ public actor CoordinatorToolServer {
         let intent = try CoordinatorTools.intent(tool, arguments: arguments, context: context)
         var mandate = context.document.mandate
         for _ in 0..<2 {
-            let decision = ProjectMandate.authorization(for: intent.action, moduleIDs: intent.moduleIDs, mandate: mandate)
+            let decision = intent.workKind.map { ProjectMandate.authorization(for: intent.action, moduleIDs: intent.moduleIDs, workKind: $0, mandate: mandate) }
+                ?? ProjectMandate.authorization(for: intent.action, moduleIDs: intent.moduleIDs, mandate: mandate)
             guard decision == .authorized, let granted = mandate else {
                 return CoordinatorTools.refusal(decision, intent: intent, mandate: mandate)
             }
@@ -440,6 +459,11 @@ public enum CoordinatorTool: String, CaseIterable, Sendable {
     case requestDecision = "request_decision"
     case runReadOnlyCheck = "run_readonly_check"
     case preparePlan = "prepare_plan"
+    case readTeam = "read_team"
+    case proposeTeam = "propose_team"
+    case createSpecialist = "create_specialist"
+    case assignTask = "assign_task"
+    case stopSpecialist = "stop_specialist"
 
     /// What a tool may touch. The server checks it before the tool runs.
     public enum Access: Sendable {
@@ -455,10 +479,10 @@ public enum CoordinatorTool: String, CaseIterable, Sendable {
 
     public var access: Access {
         switch self {
-        case .readStudy, .readPact, .readMandate, .readIssues, .readHistory: .read
-        case .writeMemory, .requestMandate, .requestDecision: .converse
+        case .readStudy, .readPact, .readMandate, .readIssues, .readHistory, .readTeam: .read
+        case .writeMemory, .requestMandate, .requestDecision, .proposeTeam: .converse
         case .runReadOnlyCheck: .check
-        case .preparePlan: .act
+        case .preparePlan, .createSpecialist, .assignTask, .stopSpecialist: .act
         }
     }
 
@@ -470,7 +494,7 @@ public enum CoordinatorTool: String, CaseIterable, Sendable {
 enum CoordinatorTools {
     typealias Tool = CoordinatorTool
 
-    static let serverInstructions = "Trama tools read this project's study, Pact, mandate, GitHub data and conversation, keep your memory, put mandates and behavior decisions to the person, run read-only checks and act only within the mandate."
+    static let serverInstructions = "Trama tools read this project's study, Pact, mandate, team, GitHub data and conversation, keep your memory, put mandates, team proposals and behavior decisions to the person, run read-only checks and act only within the mandate."
 
     static let maximumIssueBodyBytes = 16_000
     static let issueStates = ["open", "closed", "all"]
@@ -499,6 +523,8 @@ enum CoordinatorTools {
                  ["text": .object(["type": .string("string")])], ["text"])
             case .requestMandate, .requestDecision, .runReadOnlyCheck, .preparePlan:
                 actionDefinition(tool)
+            case .readTeam, .proposeTeam, .createSpecialist, .assignTask, .stopSpecialist:
+                teamDefinition(tool)
             }
             let readOnly = tool.access == .read || tool.access == .check
             return .object([
@@ -527,7 +553,8 @@ enum CoordinatorTools {
         case .readMandate: readMandate(context)
         case .readIssues: readIssues(arguments, context)
         case .readHistory: readHistory(arguments, context)
-        case .writeMemory, .requestMandate, .requestDecision, .runReadOnlyCheck, .preparePlan:
+        case .readTeam: readTeam(context)
+        case .writeMemory, .requestMandate, .requestDecision, .runReadOnlyCheck, .preparePlan, .proposeTeam, .createSpecialist, .assignTask, .stopSpecialist:
             failure("invalid_arguments", "\(tool.rawValue) is not a read tool.")
         }
     }
@@ -600,7 +627,7 @@ enum CoordinatorTools {
         return success(json: .object(object))
     }
 
-    static let allActions: [ProjectMandate.Action] = ProjectMandate.PlanKind.allCases.map { .plan($0) } + [.executeInWorktree, .openPullRequest, .integrateCandidate]
+    static let allActions: [ProjectMandate.Action] = ProjectMandate.PlanKind.allCases.map { .plan($0) } + [.executeInWorktree, .openPullRequest, .integrateCandidate, .composeTeam]
 
     static func actionName(_ action: ProjectMandate.Action) -> String {
         switch action {
@@ -608,6 +635,7 @@ enum CoordinatorTools {
         case .executeInWorktree: "executeInWorktree"
         case .openPullRequest: "openPullRequest"
         case .integrateCandidate: "integrateCandidate"
+        case .composeTeam: "composeTeam"
         }
     }
 

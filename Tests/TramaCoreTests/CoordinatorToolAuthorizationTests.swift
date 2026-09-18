@@ -40,7 +40,12 @@ struct CoordinatorToolAuthorizationTests {
         .requestMandate: mandateArguments,
         .requestDecision: decisionArguments,
         .runReadOnlyCheck: ["check": .string("git_status")],
-        .preparePlan: planArguments
+        .preparePlan: planArguments,
+        .readTeam: [:],
+        .proposeTeam: CoordinatorTeamToolsTests.proposeArguments,
+        .createSpecialist: CoordinatorTeamToolsTests.createArguments,
+        .assignTask: CoordinatorTeamToolsTests.assignArguments,
+        .stopSpecialist: CoordinatorTeamToolsTests.stopArguments
     ]
 
     // MARK: One test per outcome
@@ -177,6 +182,7 @@ struct CoordinatorToolAuthorizationTests {
         #expect(Set(Self.validArguments.keys) == Set(CoordinatorTool.allCases))
         let pact = await host.document.pact
 
+        let team = await host.document.team
         for mandate in [nil, try Self.mandate(actions: [.plan(.agreedTicket)]).revoked(by: "Product Owner", reason: "Stop")] {
             await host.setMandate(mandate)
             for tool in CoordinatorTool.allCases {
@@ -184,14 +190,20 @@ struct CoordinatorToolAuthorizationTests {
                 if tool.access == .act {
                     let refused = try Self.refusal(from: result)
                     #expect(refused.code == (mandate == nil ? "mandate_missing" : "mandate_revoked"), "\(tool)")
+                } else if tool == .proposeTeam {
+                    // Proposing needs no mandate, but this project already has a team the person confirmed.
+                    #expect(try Self.refusal(from: result).code == "team_already_confirmed")
                 } else {
                     #expect(result["isError"] == nil, "\(tool)")
                 }
             }
         }
         #expect(await host.plans.isEmpty)
+        #expect(await host.startedAssignments.isEmpty)
+        #expect(await host.stopRequests.isEmpty)
         #expect(await host.document.pact == pact)
-        #expect(CoordinatorTool.allCases.filter { $0.access == .act } == [.preparePlan])
+        #expect(await host.document.team == team)
+        #expect(CoordinatorTool.allCases.filter { $0.access == .act } == [.preparePlan, .createSpecialist, .assignTask, .stopSpecialist])
     }
 
     // MARK: Asking the person

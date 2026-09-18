@@ -48,7 +48,7 @@ public struct WorkRequest: Identifiable, Codable, Sendable {
 }
 
 public struct ProjectDocument: Codable, Sendable {
-    public static let currentSchemaVersion = 5
+    public static let currentSchemaVersion = 6
 
     public var schemaVersion = ProjectDocument.currentSchemaVersion
     public var requests: [WorkRequest] = []
@@ -59,6 +59,8 @@ public struct ProjectDocument: Codable, Sendable {
     public var mandate: ProjectMandate?
     /// The persistent Coordinator thread, its memory and study. Nil until the Coordinator first opens.
     public var coordinator: CoordinatorState?
+    /// The project team: the proposal the person answered, the specialists and their assignments. Nil until proposed.
+    public var team: ProjectTeam?
     public var currentCandidateID: String?
     public var lastSelectedModuleID: String?
     public var lastContextWasProject: Bool?

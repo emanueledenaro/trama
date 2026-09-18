@@ -438,6 +438,7 @@ private enum Writer {
         case .executeInWorktree: "eseguire in un worktree"
         case .openPullRequest: "aprire pull request"
         case .integrateCandidate: "integrare candidati"
+        case .composeTeam: "aggiungere e togliere specialisti"
         }
     }
 

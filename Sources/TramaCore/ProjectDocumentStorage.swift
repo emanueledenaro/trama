@@ -37,8 +37,8 @@ public struct ProjectDocumentStorage {
             if document.schemaVersion < 3 {
                 document.conversation = .migrating(requests: document.requests, projectID: projectID)
             }
-            // Schema 4 adds the optional Coordinator state and schema 5 its mandate and decision
-            // cards: nothing to convert. The bump keeps older builds from rewriting these documents.
+            // Schema 4 adds the optional Coordinator state, schema 5 its mandate and decision cards and
+            // schema 6 the project team: nothing to convert. The bump keeps older builds from rewriting these documents.
             document.schemaVersion = ProjectDocument.currentSchemaVersion
             try save(document)
         }

@@ -144,7 +144,8 @@ struct WorkspaceView: View {
             case .map: ProjectMapView()
             case .changes: RequestsView()
             case .decisions: DecisionsView()
-            case .team: TeamView().environmentObject(store.team)
+            case .team: SpecialistsView()
+            case .group: TeamView().environmentObject(store.team)
             case .issues: IssuesView()
             }
         }

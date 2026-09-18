@@ -30,6 +30,8 @@ public struct ProjectMandate: Codable, Equatable, Sendable {
         case executeInWorktree
         case openPullRequest
         case integrateCandidate
+        /// Add specialists to the confirmed team and take them out of it.
+        case composeTeam
 
         public var requiresPerson: Bool {
             if case .plan(let kind) = self { return kind.requiresPerson }
@@ -172,6 +174,14 @@ public struct ProjectMandate: Codable, Equatable, Sendable {
         let decision = authorization(for: action, mandate: mandate)
         guard decision == .authorized, let mandate, !mandate.moduleIDsOutsideScope(moduleIDs).isEmpty else { return decision }
         return .outsideScope
+    }
+
+    /// Work of a kind only the person decides is refused as `personRequired` once a mandate is in force,
+    /// whatever the action and scope.
+    public static func authorization(for action: Action, moduleIDs: [String], workKind: PlanKind, mandate: ProjectMandate?) -> Authorization {
+        let decision = authorization(for: action, moduleIDs: moduleIDs, mandate: mandate)
+        guard workKind.requiresPerson, decision != .mandateMissing, decision != .revoked else { return decision }
+        return .personRequired
     }
 
     public func authorization(for action: Action, moduleID: String? = nil) -> Authorization {

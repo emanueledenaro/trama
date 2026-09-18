@@ -5,10 +5,19 @@ import CryptoKit
 import TramaCore
 
 enum WorkspaceSection: String, CaseIterable, Identifiable {
-    case coordinator = "Coordinatore", map = "Mappa", changes = "Modifiche", decisions = "Decisioni", team = "Gruppo", issues = "Issue"
+    // The raw values are persisted in the document; "Gruppo" stays the GitHub group of the monitor.
+    case coordinator = "Coordinatore", team = "Team", map = "Mappa", changes = "Modifiche", decisions = "Decisioni", group = "Gruppo", issues = "Issue"
     var id: String { rawValue }
     var symbol: String {
-        switch self { case .coordinator: "bubble.left.and.bubble.right"; case .map: "square.3.layers.3d"; case .changes: "arrow.triangle.branch"; case .decisions: "checkmark.seal"; case .team: "person.2"; case .issues: "tray" }
+        switch self {
+        case .coordinator: "bubble.left.and.bubble.right"
+        case .team: "person.3"
+        case .map: "square.3.layers.3d"
+        case .changes: "arrow.triangle.branch"
+        case .decisions: "checkmark.seal"
+        case .group: "person.2"
+        case .issues: "tray"
+        }
     }
 }
 
@@ -90,6 +99,8 @@ final class ProjectStore: ObservableObject {
     private var watcherTask: Task<Void, Never>?
     let codex = CodexClient()
     let team = TeamViewModel()
+    /// The specialists of the open project at work.
+    let specialists = SpecialistSupervisor()
     let backgroundMonitor = BackgroundMonitorService()
     let intelligence = ProjectIntelligence()
     let remoteConflicts = RemoteConflictMonitor()
@@ -135,7 +146,8 @@ final class ProjectStore: ObservableObject {
                 Task { await self.refreshProjectIssues() }
             }
         }
-        for publisher in [team.objectWillChange, intelligence.objectWillChange, remoteConflicts.objectWillChange, notifications.objectWillChange] {
+        specialists.store = self
+        for publisher in [team.objectWillChange, intelligence.objectWillChange, remoteConflicts.objectWillChange, notifications.objectWillChange, specialists.objectWillChange] {
             publisher.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &observation)
         }
     }
@@ -230,6 +242,7 @@ final class ProjectStore: ObservableObject {
             await codex.cancelTurn()
             streamingReplies = [:]; planStreams = [:]
             stopCoordinator(); projectIssues = nil; lastIssuesRefresh = nil
+            specialists.stopAll(reason: "Trama ha aperto un altro progetto.")
         }
         do {
             let snapshot = try await Task.detached { try RepositoryScanner().scan(root: root, isDemo: isDemo) }.value
@@ -248,6 +261,13 @@ final class ProjectStore: ObservableObject {
             project = snapshot
             if previousPath != snapshot.rootPath {
                 document = loadDocument(snapshot)
+                // Work of a previous launch has no runtime any more; the person can resume it.
+                if !(document.team?.activeAssignments.isEmpty ?? true) {
+                    let interrupted = document.stopOrphanedAssignments(note: "Trama è stato chiuso mentre lo specialista lavorava.")
+                    for assignmentID in interrupted {
+                        document.conversation?.appendSpecialistActivity(assignmentID: assignmentID, turnID: nil, title: "Arresto confermato", detail: "Trama è stato chiuso mentre lo specialista lavorava.")
+                    }
+                }
                 composer = document.composerDraft ?? ""
                 composerPastes = document.composerPastes ?? []
                 composerAttachments = (document.composerAttachments ?? []).filter { FileManager.default.fileExists(atPath: $0) }
@@ -438,6 +458,7 @@ final class ProjectStore: ObservableObject {
     }
 
     func revealProject() { if let root = localRoot { NSWorkspace.shared.activateFileViewerSelecting([root]) } }
+    func reveal(_ url: URL) { NSWorkspace.shared.activateFileViewerSelecting([url]) }
 
     func connectCodex() async {
         guard !isConnecting else { return }; isConnecting = true

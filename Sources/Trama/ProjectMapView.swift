@@ -24,14 +24,14 @@ struct ProjectMapView: View {
                 HStack {
                     Label("Il candidato entra in conflitto con una revisione del gruppo", systemImage: "exclamationmark.triangle").foregroundStyle(.orange)
                     Spacer()
-                    Button("Esamina") { store.section = .team }
+                    Button("Esamina") { store.section = .group }
                 }.font(.callout).padding(.horizontal, TramaSpacing.content).padding(.bottom, TramaSpacing.related)
             }
             if store.intelligence.attentionCount > 0 {
                 HStack {
                     Label("\(store.intelligence.attentionCount) novità del gruppo da valutare", systemImage: "exclamationmark.triangle").foregroundStyle(.orange)
                     Spacer()
-                    Button("Esamina") { store.section = .team }
+                    Button("Esamina") { store.section = .group }
                 }.font(.callout).padding(.horizontal, TramaSpacing.content).padding(.bottom, TramaSpacing.related)
             }
             Divider()
