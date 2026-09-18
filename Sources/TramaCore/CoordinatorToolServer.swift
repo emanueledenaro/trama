@@ -137,6 +137,14 @@ public protocol CoordinatorToolHost: Sendable {
     func assignTask(projectID: UUID, order: AssignmentOrder, mandate: ProjectMandate) async throws -> SpecialistAssignment
     /// Requests the stop of the specialist's work, or removes a specialist with none. Throws `mandateChanged` like `preparePlan`.
     func stopSpecialist(projectID: UUID, order: SpecialistStopOrder, mandate: ProjectMandate) async throws -> SpecialistStopOutcome
+    /// Captures the assignment's worktree content and declares the candidate. Throws `mandateChanged` like `preparePlan`.
+    func declareCandidate(projectID: UUID, declaration: CandidateDeclaration, mandate: ProjectMandate) async throws -> Candidate
+    /// Runs one required check in the sandbox on the candidate's own worktree and records its evidence.
+    func verifyCandidate(projectID: UUID, candidateID: String, check: ReadOnlyCheck) async throws -> CandidateCheckResult
+    /// Runs a technical review of the candidate in a thread distinct from its author.
+    func reviewCandidate(projectID: UUID, candidateID: String) async throws -> TechnicalReview
+    /// Records the Coordinator's green light on a verified candidate. Throws `mandateChanged` like `preparePlan`.
+    func clearCandidate(projectID: UUID, candidateID: String, mandate: ProjectMandate) async throws -> Candidate
 }
 
 /// The local MCP endpoint through which the Coordinator reads Trama, keeps its memory, asks the
@@ -400,6 +408,8 @@ public actor CoordinatorToolServer {
             return failure.result
         } catch let error as ProjectTeamError {
             return CoordinatorTools.teamFailure(error).result
+        } catch let error as CandidateError {
+            return CoordinatorTools.teamFailure(error).result
         } catch CoordinatorToolHostError.projectUnavailable {
             return CoordinatorTools.projectUnavailable
         } catch {
@@ -464,6 +474,10 @@ public enum CoordinatorTool: String, CaseIterable, Sendable {
     case createSpecialist = "create_specialist"
     case assignTask = "assign_task"
     case stopSpecialist = "stop_specialist"
+    case declareCandidate = "declare_candidate"
+    case verifyCandidate = "verify_candidate"
+    case reviewCandidate = "review_candidate"
+    case clearCandidate = "clear_candidate"
 
     /// What a tool may touch. The server checks it before the tool runs.
     public enum Access: Sendable {
@@ -481,8 +495,8 @@ public enum CoordinatorTool: String, CaseIterable, Sendable {
         switch self {
         case .readStudy, .readPact, .readMandate, .readIssues, .readHistory, .readTeam: .read
         case .writeMemory, .requestMandate, .requestDecision, .proposeTeam: .converse
-        case .runReadOnlyCheck: .check
-        case .preparePlan, .createSpecialist, .assignTask, .stopSpecialist: .act
+        case .runReadOnlyCheck, .verifyCandidate, .reviewCandidate: .check
+        case .preparePlan, .createSpecialist, .assignTask, .stopSpecialist, .declareCandidate, .clearCandidate: .act
         }
     }
 
@@ -525,6 +539,8 @@ enum CoordinatorTools {
                 actionDefinition(tool)
             case .readTeam, .proposeTeam, .createSpecialist, .assignTask, .stopSpecialist:
                 teamDefinition(tool)
+            case .declareCandidate, .verifyCandidate, .reviewCandidate, .clearCandidate:
+                candidateDefinition(tool)
             }
             let readOnly = tool.access == .read || tool.access == .check
             return .object([
@@ -554,7 +570,7 @@ enum CoordinatorTools {
         case .readIssues: readIssues(arguments, context)
         case .readHistory: readHistory(arguments, context)
         case .readTeam: readTeam(context)
-        case .writeMemory, .requestMandate, .requestDecision, .runReadOnlyCheck, .preparePlan, .proposeTeam, .createSpecialist, .assignTask, .stopSpecialist:
+        case .writeMemory, .requestMandate, .requestDecision, .runReadOnlyCheck, .preparePlan, .proposeTeam, .createSpecialist, .assignTask, .stopSpecialist, .declareCandidate, .verifyCandidate, .reviewCandidate, .clearCandidate:
             failure("invalid_arguments", "\(tool.rawValue) is not a read tool.")
         }
     }

@@ -14,6 +14,7 @@ public enum CandidateError: Error, Equatable, Sendable, LocalizedError {
     case reviewForAnotherCandidate(expected: String, found: String)
     case clearanceNeedsApprovedReview(candidateID: String)
     case clearanceNeedsVerifiedCandidate(candidateID: String, blockers: [String])
+    case reviewerUnavailable
 
     public var errorDescription: String? {
         switch self {
@@ -30,6 +31,7 @@ public enum CandidateError: Error, Equatable, Sendable, LocalizedError {
         case let .reviewForAnotherCandidate(expected, found): "The review refers to candidate \(found), not to \(expected)."
         case let .clearanceNeedsApprovedReview(candidateID): "Candidate \(candidateID) needs a technical review that approves it before the green light."
         case let .clearanceNeedsVerifiedCandidate(candidateID, blockers): "Candidate \(candidateID) is not verified: \(blockers.joined(separator: ", "))."
+        case .reviewerUnavailable: "A technical review needs Codex; connect it and try again."
         }
     }
 }

@@ -428,7 +428,7 @@ struct ProjectTeamTests {
         #expect(specialist.currentAssignment?.threadID == "thread-ada")
     }
 
-    @Test("A schema 5 document written by V03 migrates to schema 6 without losing cards, mandate or conversation")
+    @Test("A schema 5 document written by V03 migrates to the current schema without losing cards, mandate or conversation")
     func schemaFiveMigratesWithoutLoss() throws {
         let directory = try CoordinatorStateTests.temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -452,8 +452,9 @@ struct ProjectTeamTests {
         let migrated = try storage.load()
 
         #expect(before.schemaVersion == 5)
-        #expect(migrated.schemaVersion == 6)
+        #expect(migrated.schemaVersion == 7)
         #expect(migrated.schemaVersion == ProjectDocument.currentSchemaVersion)
+        #expect(migrated.candidates == nil)
         #expect(migrated.conversation == before.conversation)
         #expect(migrated.conversation?.events.count == 3)
         #expect(migrated.mandate == before.mandate)
