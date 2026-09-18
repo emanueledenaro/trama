@@ -725,6 +725,8 @@ private actor Core {
         var completion: CheckedContinuation<String, Error>?
         var completedResult: Result<String, Error>?
         var timeoutTask: Task<Void, Never>?
+        /// The last moment the turn produced progress; the stall watchdog reads it.
+        var lastProgressAt = Date()
 
         init(
             threadID: String,
@@ -755,7 +757,7 @@ private actor Core {
     private var transport: (any CodexTransport)?
     private var eventTask: Task<Void, Never>?
     private var initialized = false
-    private var connecting = false
+    private var initializationTask: Task<Void, Error>?
     private var nextRequestID = 1
     private var pendingRequests: [RPCID: PendingRequest] = [:]
     private var pendingApprovals: [RPCID: PendingApproval] = [:]
@@ -1590,7 +1592,7 @@ private actor Core {
         transport?.stop()
         transport = nil
         initialized = false
-        connecting = false
+        initializationTask = nil
         serverInfo = nil
         currentAccount = nil
         stdoutBuffer.removeAll(keepingCapacity: false)
@@ -1599,11 +1601,23 @@ private actor Core {
 
     private func ensureInitialized() async throws {
         if initialized { return }
-        guard !connecting else {
-            throw CodexClient.ClientError.connectionInProgress
+        if let task = initializationTask {
+            return try await task.value
         }
-        connecting = true
+        let task = Task { try await self.performInitialization() }
+        initializationTask = task
+        do {
+            try await task.value
+        } catch {
+            initializationTask = nil
+            throw error
+        }
+        initializationTask = nil
+        initialized = true
+    }
 
+    private func performInitialization() async throws {
+        if initialized { return }
         do {
             let transport = try transportFactory()
             let events = try transport.start()
@@ -1643,10 +1657,7 @@ private actor Core {
                 platformOS: platformOS
             )
             try sendNotification(method: "initialized", params: .object([:]))
-            initialized = true
-            connecting = false
         } catch {
-            connecting = false
             transport?.stop()
             transport = nil
             eventTask?.cancel()
@@ -1889,7 +1900,7 @@ private actor Core {
                 .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             failAll(with: CodexClient.ClientError.processExited(status: status, stderr: stderr))
             initialized = false
-            connecting = false
+            initializationTask = nil
             transport = nil
             eventTask = nil
         }
@@ -2158,6 +2169,9 @@ private actor Core {
     private func handleNotification(method: String, params: JSONValue?) {
         guard let params = params?.objectValue else { return }
         notifyThreadObserver(method: method, params: params)
+        if ProviderStallWatchdog.isProgress(method: method) {
+            activePlan?.lastProgressAt = Date()
+        }
 
         switch method {
         case "account/login/completed":
@@ -2318,10 +2332,17 @@ private actor Core {
             return try result.get()
         }
         session.timeoutTask = Task { [weak self, weak session] in
-            let nanoseconds = UInt64((self?.turnTimeout ?? 1) * 1_000_000_000)
-            try? await Task.sleep(nanoseconds: nanoseconds)
-            guard !Task.isCancelled, let self, let session else { return }
-            await self.timeoutPlan(session)
+            while !Task.isCancelled {
+                let idleTimeout = self?.turnTimeout ?? 1
+                let interval = min(ProviderStallWatchdog.synaraCheckInterval, idleTimeout)
+                try? await Task.sleep(nanoseconds: UInt64(interval * 1_000_000_000))
+                guard !Task.isCancelled, let self, let session else { return }
+                let idle = Date().timeIntervalSince(session.lastProgressAt)
+                if idle >= idleTimeout {
+                    await self.timeoutPlan(session)
+                    return
+                }
+            }
         }
         return try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
@@ -2376,7 +2397,7 @@ private actor Core {
         let currentTransport = transport
         transport = nil
         initialized = false
-        connecting = false
+        initializationTask = nil
         serverInfo = nil
         currentTransport?.stop()
     }
