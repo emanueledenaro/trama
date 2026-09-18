@@ -285,4 +285,20 @@ private struct RealProofToolHost: CoordinatorToolHost {
     func stopSpecialist(projectID: UUID, order: SpecialistStopOrder, mandate: ProjectMandate) async throws -> SpecialistStopOutcome {
         throw CoordinatorToolHostError.projectUnavailable
     }
+
+    func declareCandidate(projectID: UUID, declaration: CandidateDeclaration, mandate: ProjectMandate) async throws -> Candidate {
+        throw CoordinatorToolHostError.projectUnavailable
+    }
+
+    func verifyCandidate(projectID: UUID, candidateID: String, check: ReadOnlyCheck) async throws -> CandidateCheckResult {
+        throw CoordinatorToolHostError.projectUnavailable
+    }
+
+    func reviewCandidate(projectID: UUID, candidateID: String) async throws -> TechnicalReview {
+        throw CoordinatorToolHostError.projectUnavailable
+    }
+
+    func clearCandidate(projectID: UUID, candidateID: String, mandate: ProjectMandate) async throws -> Candidate {
+        throw CoordinatorToolHostError.projectUnavailable
+    }
 }

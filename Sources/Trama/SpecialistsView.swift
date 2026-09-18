@@ -36,27 +36,26 @@ struct SpecialistStatusBadge: View {
     private var color: Color {
         switch status {
         case .preparing: .secondary
-        case .running: .blue
-        case .stopRequested, .stopped, .waiting: .orange
-        case .completed: .green
-        case .failed: .red
+        case .running: TramaStateColor.building
+        case .stopRequested, .stopped, .waiting: TramaStateColor.pending
+        case .completed: TramaStateColor.verified
+        case .failed: TramaStateColor.failed
         }
     }
 }
 
-/// The Team section: the specialists of this project, their work and their worktrees. The GitHub
-/// collaborators stay in Gruppo.
+/// The Team pane: the specialists of this project, their work and their worktrees. The GitHub
+/// collaborators stay in Gruppo. The card itself lives in `SpecialistDetail`, shared with the
+/// inspector, so the two never drift apart.
 struct SpecialistsView: View {
     @EnvironmentObject private var store: ProjectStore
-    @State private var removalReasons: [String: String] = [:]
-    @State private var expanded: Set<String> = []
 
     private var team: ProjectTeam? { store.document.team }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             TramaScreenHeader("Team del progetto", subtitle: subtitle) {
-                Button("Vai alla conversazione", systemImage: "bubble.left.and.bubble.right") { store.section = .coordinator }
+                Button("Vai alla conversazione", systemImage: "bubble.left.and.bubble.right") { store.returnToCoordinator() }
             }
             Divider()
             if let team, !team.specialists.isEmpty {
@@ -66,10 +65,13 @@ struct SpecialistsView: View {
                             pendingProposal(proposal)
                         }
                         ForEach(team.specialists) { specialist in
-                            specialistCard(specialist)
+                            TramaPanel {
+                                SpecialistDetail(specialist: specialist)
+                                    .padding(TramaSpacing.section)
+                            }
                         }
                     }
-                    .padding(TramaSpacing.content)
+                    .padding(TramaSpacing.section)
                     .frame(maxWidth: 820)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
@@ -95,156 +97,17 @@ struct SpecialistsView: View {
     }
 
     private func pendingProposal(_ proposal: TeamProposal) -> some View {
-        VStack(alignment: .leading, spacing: TramaSpacing.compact) {
-            Label("Proposta del team in attesa", systemImage: "person.3.sequence")
-                .font(.headline)
-            Text("Rispondi dalla scheda nella conversazione: \(proposal.members.map(\.name).joined(separator: ", ")).")
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-            Button("Apri la conversazione") { store.section = .coordinator }
+        TramaPanel {
+            VStack(alignment: .leading, spacing: TramaSpacing.compact) {
+                Label("Proposta del team in attesa", systemImage: "person.3.sequence")
+                    .font(.headline)
+                Text("Rispondi dalla scheda nella conversazione: \(proposal.members.map(\.name).joined(separator: ", ")).")
+                    .foregroundStyle(TramaText.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Button("Apri la conversazione") { store.returnToCoordinator() }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(TramaSpacing.section)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(TramaSpacing.section)
-        .background(.background.secondary, in: RoundedRectangle(cornerRadius: TramaRadius.card))
-    }
-
-    private func specialistCard(_ specialist: Specialist) -> some View {
-        let assignment = specialist.currentAssignment
-        let isExpanded = expanded.contains(specialist.id)
-        return VStack(alignment: .leading, spacing: TramaSpacing.related) {
-            HStack(spacing: TramaSpacing.compact) {
-                Text(specialist.name).font(.headline)
-                TramaTag(text: specialist.competence)
-                if let assignment { SpecialistStatusBadge(status: assignment.status) }
-                Spacer(minLength: 0)
-                Text(specialistStatusText(specialist)).font(.caption).foregroundStyle(.secondary)
-            }
-            TramaSupportingText(specialist.reason)
-            HStack(alignment: .top, spacing: TramaSpacing.section) {
-                TramaLabeledText(label: "Perimetro", value: specialist.moduleIDs.isEmpty ? "da definire con l'incarico" : specialist.moduleIDs.joined(separator: ", "))
-                TramaLabeledText(label: "Modello", value: specialist.model ?? "nessun incarico")
-                TramaLabeledText(label: "Strumenti", value: specialist.tools.map(Self.toolLabel).joined(separator: ", "))
-            }
-            Text("Ultimo aggiornamento: \(specialist.lastUpdate) · \(specialist.updatedAt.formatted(date: .abbreviated, time: .shortened))")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-            if let assignment {
-                assignmentBlock(assignment, specialist: specialist)
-            }
-            if let removal = specialist.removal {
-                TramaSupportingText("Uscito dal team il \(removal.removedAt.formatted(date: .abbreviated, time: .shortened)): \(removal.reason) (\(removal.removedBy))")
-            }
-            if specialist.assignments.count > 1 {
-                Button(isExpanded ? "Nascondi gli incarichi precedenti" : "Mostra gli incarichi precedenti (\(specialist.assignments.count - 1))") {
-                    if isExpanded { expanded.remove(specialist.id) } else { expanded.insert(specialist.id) }
-                }
-                .buttonStyle(.link)
-                if isExpanded {
-                    ForEach(specialist.assignments.dropLast().reversed(), id: \.id) { past in
-                        VStack(alignment: .leading, spacing: TramaSpacing.compact) {
-                            HStack(spacing: TramaSpacing.compact) {
-                                Text(past.id).font(.caption.monospaced())
-                                SpecialistStatusBadge(status: past.status)
-                            }
-                            Text(past.objective).font(.callout)
-                            if let result = past.result { TramaSupportingText(result) }
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(TramaSpacing.related)
-                        .overlay(RoundedRectangle(cornerRadius: TramaRadius.control).stroke(.separator))
-                    }
-                }
-            }
-            if specialist.status != .removed, assignment?.status.isActive != true {
-                HStack(spacing: TramaSpacing.control) {
-                    TextField("Motivo dell'uscita dal team", text: removalReason(specialist.id))
-                    Button("Togli dal team", role: .destructive) {
-                        store.removeSpecialist(specialist.id, reason: removalReasons[specialist.id] ?? "")
-                    }
-                    .disabled((removalReasons[specialist.id] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                    .accessibilityLabel("Togli \(specialist.name) dal team")
-                }
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(TramaSpacing.section)
-        .background(.background.secondary, in: RoundedRectangle(cornerRadius: TramaRadius.card))
-        .overlay(RoundedRectangle(cornerRadius: TramaRadius.card).stroke(.separator))
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("Specialista \(specialist.name)")
-    }
-
-    private func assignmentBlock(_ assignment: SpecialistAssignment, specialist: Specialist) -> some View {
-        let card = ConversationCard.Assignment(assignment: assignment, specialist: specialist)
-        return VStack(alignment: .leading, spacing: TramaSpacing.related) {
-            TramaLabeledText(label: "Incarico \(assignment.id)", value: assignment.objective)
-            HStack(alignment: .top, spacing: TramaSpacing.section) {
-                TramaLabeledText(
-                    label: "Worktree",
-                    value: assignment.needsWorktree
-                        ? (assignment.workspace.map { "\($0.branch)\n\($0.worktreeRoot.path)" } ?? "in preparazione")
-                        : "non necessario, sola lettura"
-                )
-                TramaLabeledText(label: "Turni", value: "\(assignment.turns.count)")
-                TramaLabeledText(label: "Verifiche richieste", value: assignment.requiredChecks.isEmpty ? "nessuna" : assignment.requiredChecks.joined(separator: ", "))
-            }
-            if let stop = assignment.stops.last {
-                TramaSupportingText("Arresto chiesto da \(stop.requestedBy): \(stop.reason)\(stop.confirmedAt == nil ? " · in attesa di conferma" : " · confermato")")
-            }
-            if let result = assignment.result { TramaLabeledText(label: "Risultato", value: result) }
-            if let failure = assignment.failure { TramaSupportingText("Errore: \(failure)") }
-            TramaAdaptiveActions {
-                if card.personActions.contains(.stop) {
-                    Button("Ferma", systemImage: "stop.fill") { store.stopSpecialist(assignmentID: assignment.id) }
-                        .accessibilityLabel("Ferma \(specialist.name)")
-                }
-                if card.personActions.contains(.resume) {
-                    Button("Riprendi", systemImage: "play.fill") { store.resumeSpecialist(assignmentID: assignment.id) }
-                        .buttonStyle(.borderedProminent)
-                        .disabled(!store.codexConnected)
-                        .accessibilityLabel("Riprendi l'incarico di \(specialist.name)")
-                }
-                if card.personActions.contains(.changeModel) {
-                    Menu("Modello: \(assignment.model)") {
-                        ForEach(store.models) { model in
-                            Button(model.displayName) { store.setSpecialistModel(assignmentID: assignment.id, model: model.model) }
-                        }
-                    }
-                    .fixedSize()
-                }
-                if let workspace = assignment.workspace {
-                    Button("Mostra il worktree", systemImage: "folder") { store.reveal(workspace.worktreeRoot) }
-                        .accessibilityLabel("Mostra il worktree di \(specialist.name) nel Finder")
-                }
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(TramaSpacing.related)
-        .overlay(RoundedRectangle(cornerRadius: TramaRadius.control).stroke(.separator))
-    }
-
-    private func specialistStatusText(_ specialist: Specialist) -> String {
-        switch specialist.status {
-        case .available: "libero"
-        case .working: "al lavoro"
-        case .stopping: "in arresto"
-        case .stopped: "fermato"
-        case .removed: "fuori dal team"
-        }
-    }
-
-    private static func toolLabel(_ tool: SpecialistTool) -> String {
-        switch tool {
-        case .commands: "comandi"
-        case .edits: "modifiche nel worktree"
-        }
-    }
-
-    private func removalReason(_ id: String) -> Binding<String> {
-        Binding(
-            get: { removalReasons[id] ?? "" },
-            set: { removalReasons[id] = $0 }
-        )
     }
 }

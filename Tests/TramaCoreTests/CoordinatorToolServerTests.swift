@@ -113,8 +113,8 @@ struct CoordinatorToolServerTests {
 
         let list = try await Self.result(server, token, Self.message(id: 4, method: "tools/list"))
         let tools = try #require(list["tools"]?.arrayValue).compactMap(\.objectValue)
-        #expect(tools.compactMap { $0["name"]?.stringValue } == ["read_study", "read_pact", "read_mandate", "read_issues", "read_history", "write_memory", "request_mandate", "request_decision", "run_readonly_check", "prepare_plan", "read_team", "propose_team", "create_specialist", "assign_task", "stop_specialist"])
-        let projectReadOnly: Set<String> = ["read_study", "read_pact", "read_mandate", "read_issues", "read_history", "run_readonly_check", "read_team"]
+        #expect(tools.compactMap { $0["name"]?.stringValue } == ["read_study", "read_pact", "read_mandate", "read_issues", "read_history", "write_memory", "request_mandate", "request_decision", "run_readonly_check", "prepare_plan", "read_team", "propose_team", "create_specialist", "assign_task", "stop_specialist", "declare_candidate", "verify_candidate", "review_candidate", "clear_candidate"])
+        let projectReadOnly: Set<String> = ["read_study", "read_pact", "read_mandate", "read_issues", "read_history", "run_readonly_check", "read_team", "verify_candidate", "review_candidate"]
         for tool in tools {
             let name = tool["name"]?.stringValue ?? ""
             let hints = tool["annotations"]?.objectValue
@@ -426,6 +426,10 @@ actor FakeHost: CoordinatorToolHost {
     private(set) var stopRequests: [String] = []
     /// Team proposal cards the host showed the person.
     private(set) var proposalCards = 0
+    /// The evidence the host recorded through candidate checks, in order.
+    private(set) var candidateChecks: [CandidateCheckResult] = []
+    /// Technical reviews the host recorded, in order.
+    private(set) var candidateReviews: [TechnicalReview] = []
     private var context: CoordinatorToolContext?
     private var revokesOnNextPlan = false
     private var revokesOnNextAction = false
@@ -590,6 +594,95 @@ actor FakeHost: CoordinatorToolHost {
         let outcome = try context!.document.applyStopOrder(order, actor: "Coordinatore")
         if case let .stopRequested(assignmentID, _) = outcome { stopRequests.append(assignmentID) }
         return outcome
+    }
+
+    // MARK: Candidates
+
+    /// The review Trama captured for the next declaration, keyed by assignment.
+    var reviewForDeclaration: [String: WorkspaceReview] = [:]
+    /// The checks the host should report as failed, by raw value.
+    var failingChecks: Set<String> = []
+
+    func declareCandidate(projectID: UUID, declaration: CandidateDeclaration, mandate: ProjectMandate) async throws -> Candidate {
+        try requireLiveMandate(projectID: projectID, mandate: mandate)
+        let review = reviewForDeclaration[declaration.assignmentID] ?? WorkspaceReview(
+            snapshotID: "snap-\(declaration.assignmentID)-\((context?.document.candidates ?? []).count + 1)",
+            baseSHA: "abc",
+            diff: "diff --git a/order b/order\n+rimborso\n",
+            changedFiles: ["Sources/Orders/Order.swift"],
+            excludedSensitiveFiles: []
+        )
+        return try context!.document.declareCandidate(declaration, review: review)
+    }
+
+    func verifyCandidate(projectID: UUID, candidateID: String, check: ReadOnlyCheck) async throws -> CandidateCheckResult {
+        guard let candidate = context?.document.candidate(candidateID) else { throw CandidateError.unknownCandidate(candidateID) }
+        let failed = failingChecks.contains(check.rawValue)
+        let output = failed ? "Test Suite failed\nXCTAssertEqual failed" : "Test run with 3 tests passed"
+        _ = try? context?.document.recordCandidateEvidence(
+            candidateID: candidateID,
+            check: check,
+            command: "xcrun swift test --package-path /tmp/worktree",
+            output: output,
+            log: output,
+            detail: failed ? "2 test falliti" : output,
+            passed: !failed
+        )
+        let run = CandidateCheckResult(candidateID: candidate.id, check: check, command: "xcrun swift test --package-path /tmp/worktree", exitCode: failed ? 1 : 0, output: output, duration: 0.5)
+        candidateChecks.append(run)
+        return run
+    }
+
+    func reviewCandidate(projectID: UUID, candidateID: String) async throws -> TechnicalReview {
+        guard let candidate = context?.document.candidate(candidateID) else { throw CandidateError.unknownCandidate(candidateID) }
+        let assignment = context?.document.team?.assignment(candidate.assignmentID)
+        let review = TechnicalReview(
+            candidateID: candidateID,
+            reviewerName: "Revisore tecnico",
+            reviewerThreadID: "thread-reviewer-\(candidateID)",
+            authorThreadID: assignment?.threadID,
+            verdict: .approved,
+            summary: "Il candidato rispetta D-1 e le sue evidenze."
+        )
+        _ = try? context?.document.recordTechnicalReview(review)
+        candidateReviews.append(review)
+        return review
+    }
+
+    func clearCandidate(projectID: UUID, candidateID: String, mandate: ProjectMandate) async throws -> Candidate {
+        try requireLiveMandate(projectID: projectID, mandate: mandate)
+        return try context!.document.clearCandidate(candidateID: candidateID, actor: "Coordinatore")
+    }
+
+    func setReviewForDeclaration(_ review: WorkspaceReview, assignmentID: String) {
+        reviewForDeclaration[assignmentID] = review
+    }
+
+    /// Seeds a real assignment in the document and returns its id.
+    func seedAssignment(kind: ProjectMandate.PlanKind = .agreedTicket) throws -> String {
+        guard let ada = context?.document.team?.members.first(where: { $0.name == "Ada" }) else {
+            throw ProjectTeamError.unknownSpecialist("Ada")
+        }
+        let order = AssignmentOrder(
+            specialistID: ada.id, kind: kind, objective: "Aggiungere il rimborso parziale", issueNumber: 12,
+            exercise: nil, moduleIDs: ["Sources/Orders"], dependencies: [], model: "gpt-5.6-luna",
+            tools: [.commands, .edits], requiredChecks: ["swift_test"], instructions: "Lavora sugli ordini."
+        )
+        return try context!.document.assign(order, mandateVersion: 1).id
+    }
+
+    /// Seeds a real assignment and candidate in the document, so tests can call the candidate tools.
+    func seedAssignmentAndCandidate() throws -> (assignmentID: String, candidateID: String) {
+        let assignmentID = try seedAssignment()
+        let candidate = try context!.document.declareCandidate(
+            CandidateDeclaration(assignmentID: assignmentID, decisionIDs: ["D-1"]),
+            review: WorkspaceReview(snapshotID: "snap-seed", baseSHA: "abc", diff: "diff --git a/order b/order\n+rimborso\n", changedFiles: ["Sources/Orders/Order.swift"], excludedSensitiveFiles: [])
+        )
+        return (assignmentID, candidate.id)
+    }
+
+    func failCandidateCheck(_ check: ReadOnlyCheck) {
+        failingChecks.insert(check.rawValue)
     }
 
     /// The same check the real host makes: the mandate read at the call must still be in place.

@@ -14,25 +14,25 @@ struct ProjectMapView: View {
             }
             VStack(alignment: .leading, spacing: TramaSpacing.compact) {
                 HStack {
-                    Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+                    Image(systemName: "magnifyingglass").foregroundStyle(TramaText.secondary)
                     TextField("Cerca moduli o file", text: $store.query).textFieldStyle(.plain)
                     if !store.query.isEmpty { Button("Cancella", systemImage: "xmark.circle.fill") { store.query = "" }.labelStyle(.iconOnly).buttonStyle(.plain) }
                 }
-                Text("\(store.project?.totalFileCount ?? 0) file rilevati").font(.caption).foregroundStyle(.secondary)
-            }.padding(TramaSpacing.control).background(.quaternary, in: RoundedRectangle(cornerRadius: TramaRadius.control)).padding(.horizontal, TramaSpacing.content).padding(.bottom, TramaSpacing.related)
+                Text("\(store.project?.totalFileCount ?? 0) file rilevati").font(.caption).foregroundStyle(TramaText.secondary)
+            }.padding(TramaSpacing.control).background(TramaSurface.soft, in: RoundedRectangle(cornerRadius: TramaRadius.control)).padding(.horizontal, TramaSpacing.section).padding(.bottom, TramaSpacing.related)
             if let request = store.selectedRequest, store.hasRemoteConflict(for: request) {
                 HStack {
-                    Label("Il candidato entra in conflitto con una revisione del gruppo", systemImage: "exclamationmark.triangle").foregroundStyle(.orange)
+                    Label("Il candidato entra in conflitto con una revisione del gruppo", systemImage: "exclamationmark.triangle").foregroundStyle(TramaStateColor.pending)
                     Spacer()
-                    Button("Esamina") { store.section = .group }
-                }.font(.callout).padding(.horizontal, TramaSpacing.content).padding(.bottom, TramaSpacing.related)
+                    Button("Esamina") { store.openInspector(.group) }
+                }.font(.callout).padding(.horizontal, TramaSpacing.section).padding(.bottom, TramaSpacing.related)
             }
             if store.intelligence.attentionCount > 0 {
                 HStack {
-                    Label("\(store.intelligence.attentionCount) novità del gruppo da valutare", systemImage: "exclamationmark.triangle").foregroundStyle(.orange)
+                    Label("\(store.intelligence.attentionCount) novità del gruppo da valutare", systemImage: "exclamationmark.triangle").foregroundStyle(TramaStateColor.pending)
                     Spacer()
-                    Button("Esamina") { store.section = .group }
-                }.font(.callout).padding(.horizontal, TramaSpacing.content).padding(.bottom, TramaSpacing.related)
+                    Button("Esamina") { store.openInspector(.group) }
+                }.font(.callout).padding(.horizontal, TramaSpacing.section).padding(.bottom, TramaSpacing.related)
             }
             Divider()
             if store.filteredModules.isEmpty {
@@ -64,11 +64,11 @@ struct ProjectMapView: View {
                 }
             }
             .font(.caption)
-            .foregroundStyle(.secondary)
-            .padding(.horizontal, TramaSpacing.content)
+            .foregroundStyle(TramaText.secondary)
+            .padding(.horizontal, TramaSpacing.section)
             .padding(.vertical, TramaSpacing.control)
             if let warning = store.project?.warnings.first {
-                Label(warning, systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(.orange).padding(.horizontal, TramaSpacing.content).padding(.bottom, TramaSpacing.control)
+                Label(warning, systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(TramaStateColor.pending).padding(.horizontal, TramaSpacing.section).padding(.bottom, TramaSpacing.control)
             }
         }
     }
@@ -86,12 +86,12 @@ struct ProjectMapView: View {
                         Image(systemName: "shippingbox.fill").font(.system(size: 28)).foregroundStyle(.tint)
                         VStack(alignment: .leading, spacing: 5) {
                             Text(store.project?.isDemo == true ? "Negozio di esempio" : store.project?.name ?? "Progetto").font(.headline)
-                            Text("\(modules.count) moduli · \(store.project?.totalFileCount ?? 0) file").font(.caption).foregroundStyle(.secondary)
+                            Text("\(modules.count) moduli · \(store.project?.totalFileCount ?? 0) file").font(.caption).foregroundStyle(TramaText.secondary)
                         }
                     }
                     .padding(TramaSpacing.section).frame(maxWidth: min(286, max(0, width - 44)))
                     .background(.regularMaterial, in: RoundedRectangle(cornerRadius: TramaRadius.card))
-                    .overlay(RoundedRectangle(cornerRadius: TramaRadius.card).strokeBorder(.quaternary))
+                    .overlay(RoundedRectangle(cornerRadius: TramaRadius.card).strokeBorder(TramaBorder.outline()))
                     .padding(.top, 36)
                     Canvas { context, size in
                         var path = Path()
@@ -117,7 +117,7 @@ struct ProjectMapView: View {
                     Spacer(minLength: 28)
                 }.frame(width: width).frame(minHeight: geometry.size.height, alignment: .top)
             }
-            .background(Color(nsColor: .underPageBackgroundColor).opacity(0.45))
+            .background(TramaSurface.soft)
         }
     }
 }
@@ -130,21 +130,21 @@ private struct ModuleNode: View {
         Button(action: action) {
             VStack(alignment: .leading, spacing: 15) {
                 HStack(spacing: 11) {
-                    Image(systemName: module.symbol).font(.system(size: 22)).foregroundStyle(.tint)
-                        .frame(width: 42, height: 42).background(Color.accentColor.opacity(0.10), in: RoundedRectangle(cornerRadius: TramaRadius.control))
+                    Image(systemName: module.symbol).font(.system(size: 22)).foregroundStyle(TramaInfo.text)
+                        .frame(width: 42, height: 42).background(TramaInfo.solid.opacity(0.10), in: RoundedRectangle(cornerRadius: TramaRadius.control))
                     Text(module.name).font(.headline).lineLimit(1)
                 }
                 Text(module.relativePath == "." ? "Radice del progetto" : module.relativePath)
-                    .font(.system(.caption, design: .monospaced)).foregroundStyle(.secondary).lineLimit(2)
+                    .font(.system(.caption, design: .monospaced)).foregroundStyle(TramaText.secondary).lineLimit(2)
                 HStack {
                     Label("\(module.files.count) file", systemImage: "doc.text")
                     Spacer()
                     if !module.dependencies.isEmpty { Label("\(module.dependencies.count)", systemImage: "link") }
-                }.font(.caption).foregroundStyle(.secondary)
+                }.font(.caption).foregroundStyle(TramaText.secondary)
             }
             .padding(TramaSpacing.related).frame(width: 208, height: 154, alignment: .topLeading)
-            .background(selected ? Color.accentColor.opacity(0.07) : Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: TramaRadius.card))
-            .overlay(RoundedRectangle(cornerRadius: TramaRadius.card).strokeBorder(selected ? Color.accentColor : Color.secondary.opacity(0.19), lineWidth: selected ? 2 : 1))
+            .background(selected ? TramaInfo.solid.opacity(0.07) : TramaSurface.raised, in: RoundedRectangle(cornerRadius: TramaRadius.card))
+            .overlay(RoundedRectangle(cornerRadius: TramaRadius.card).strokeBorder(selected ? TramaInfo.solid : TramaBorder.outline(), lineWidth: selected ? 2 : 1))
         }.buttonStyle(.plain)
         .accessibilityLabel("Modulo \(module.name), \(module.files.count) file")
         .accessibilityAddTraits(selected ? [.isSelected] : [])

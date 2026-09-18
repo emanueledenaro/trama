@@ -105,7 +105,7 @@ struct PlanExecutionEditor: View {
                 Button("Conferma e avvia") {
                     store.applyPlanAndExecute(request.id, plan: plan, behavior: behavior, example: example, rationale: rationale, moduleIDs: modules.sorted())
                     dismiss()
-                }.buttonStyle(.borderedProminent).disabled(store.isPlanning || modules.isEmpty || [plan, behavior, example, rationale].contains { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })
+                }.buttonStyle(TramaPrimaryButtonStyle()).disabled(store.isPlanning || modules.isEmpty || [plan, behavior, example, rationale].contains { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })
             }
         }.padding(TramaSpacing.content).frame(minWidth: 480, idealWidth: 640, minHeight: 420, idealHeight: 560)
             .onAppear {
@@ -130,7 +130,7 @@ struct RequestClarificationView: View {
                 .accessibilityLabel("Chiarimento")
                 .onSubmit { send() }
             Button("Invia chiarimento") { send() }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(TramaPrimaryButtonStyle())
                 .disabled(store.isPlanning || store.isPreparingSkills || answer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             if store.isPreparingSkills { ProgressView("Preparazione del metodo di lavoro…").controlSize(.small) }
             Text("Il chiarimento aggiorna la richiesta. Non registra una decisione di prodotto e non avvia modifiche.")

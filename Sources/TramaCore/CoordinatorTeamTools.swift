@@ -76,7 +76,7 @@ extension CoordinatorTools {
             }
             object["proposal"] = .object(summary)
         }
-        object["specialists"] = .array(team.specialists.map(specialistSummary))
+        object["specialists"] = .array(team.specialists.map { specialistSummary($0, in: context.document) })
         return success(json: .object(object))
     }
 
@@ -89,7 +89,7 @@ extension CoordinatorTools {
         }
     }
 
-    private static func specialistSummary(_ specialist: Specialist) -> JSONValue {
+    private static func specialistSummary(_ specialist: Specialist, in document: ProjectDocument) -> JSONValue {
         var object: [String: JSONValue] = [
             "id": .string(specialist.id),
             "name": .string(specialist.name),
@@ -103,7 +103,46 @@ extension CoordinatorTools {
             "updatedAt": .string(specialist.updatedAt.formatted(.iso8601))
         ]
         if let model = specialist.model { object["model"] = .string(model) }
-        if let current = specialist.currentAssignment { object["assignment"] = assignmentSummary(current) }
+        if let current = specialist.currentAssignment {
+            object["assignment"] = assignmentSummary(current)
+            let candidates = document.candidates(forAssignment: current.id)
+            if !candidates.isEmpty {
+                object["candidates"] = .array(candidates.map { candidate in
+                    var summary: [String: JSONValue] = [
+                        "id": .string(candidate.id),
+                        "snapshot": .string(candidate.snapshotID),
+                        "baseRevision": .string(candidate.baseRevision),
+                        "requiredDecisionIDs": .array(candidate.requiredDecisionIDs.map(JSONValue.string)),
+                        "requiredChecks": .array(candidate.requiredChecks.map(JSONValue.string)),
+                        "declaredAt": .string(candidate.declaredAt.formatted(.iso8601))
+                    ]
+                    if let report = try? document.candidateReport(candidate.id) {
+                        summary["state"] = .string(report.state.rawValue)
+                        summary["evidence"] = .array(report.evidence.map { evidence in
+                            .object([
+                                "check": .string(evidence.checkID),
+                                "result": .string(evidence.result.rawValue),
+                                "command": .string(clipped(evidence.command)),
+                                "output": .string(clipped(evidence.output))
+                            ])
+                        })
+                        summary["blockers"] = .array(report.blockers.map { .string($0.code) })
+                        summary["clearanceInvalidated"] = .bool(report.clearanceInvalidated)
+                    }
+                    if let review = candidate.technicalReview {
+                        summary["review"] = .object([
+                            "verdict": .string(review.verdict.rawValue),
+                            "reviewer": .string(review.reviewerName),
+                            "summary": .string(clipped(review.summary)),
+                            "reviewerThreadID": .string(review.reviewerThreadID),
+                            "isHumanReview": .bool(review.isHumanReview),
+                            "isMerge": .bool(review.isMerge)
+                        ])
+                    }
+                    return .object(summary)
+                })
+            }
+        }
         let past = specialist.assignments.dropLast()
         if !past.isEmpty {
             object["pastAssignments"] = .array(past.map { .object(["id": .string($0.id), "objective": .string($0.objective), "status": .string($0.status.rawValue)]) })
@@ -145,7 +184,7 @@ extension CoordinatorTools {
         return .object(object)
     }
 
-    private static func clipped(_ text: String) -> String {
+    static func clipped(_ text: String) -> String {
         text.utf8.count > maximumIssueBodyBytes ? String(decoding: text.utf8.prefix(maximumIssueBodyBytes), as: UTF8.self) : text
     }
 
@@ -312,7 +351,7 @@ extension CoordinatorTools {
         }
     }
 
-    private static func confirmedTeam(_ context: CoordinatorToolContext) throws -> ProjectTeam {
+    static func confirmedTeam(_ context: CoordinatorToolContext) throws -> ProjectTeam {
         guard let team = context.document.team, team.isConfirmed else { throw teamFailure(.teamNotConfirmed) }
         return team
     }

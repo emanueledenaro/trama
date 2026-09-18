@@ -454,6 +454,7 @@ struct ProjectTeamTests {
         #expect(before.schemaVersion == 5)
         #expect(migrated.schemaVersion == 7)
         #expect(migrated.schemaVersion == ProjectDocument.currentSchemaVersion)
+        #expect(migrated.candidates == nil)
         #expect(migrated.conversation == before.conversation)
         #expect(migrated.conversation?.events.count == 3)
         #expect(migrated.mandate == before.mandate)

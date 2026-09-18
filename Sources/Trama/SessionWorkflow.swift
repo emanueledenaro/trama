@@ -495,10 +495,10 @@ struct ApprovalView: View {
                     HStack {
                         Button("Rifiuta") { store.resolveApproval(.decline) }.keyboardShortcut(.cancelAction)
                         Spacer()
-                        Button("Consenti questa operazione") { store.resolveApproval(.allowOnce) }.buttonStyle(.borderedProminent)
+                        Button("Consenti questa operazione") { store.resolveApproval(.allowOnce) }.buttonStyle(TramaPrimaryButtonStyle())
                     }
                     VStack(alignment: .leading, spacing: TramaSpacing.control) {
-                        Button("Consenti questa operazione") { store.resolveApproval(.allowOnce) }.buttonStyle(.borderedProminent)
+                        Button("Consenti questa operazione") { store.resolveApproval(.allowOnce) }.buttonStyle(TramaPrimaryButtonStyle())
                         Button("Rifiuta") { store.resolveApproval(.decline) }.keyboardShortcut(.cancelAction)
                     }
                 }
@@ -544,7 +544,7 @@ struct SessionReviewView: View {
                     }
                     if request.state == .reviewedLocally, !store.team.sourceRepository.isEmpty {
                         Button("Pubblica pull request", systemImage: "arrow.up.doc") { showPublication = true }
-                            .buttonStyle(.borderedProminent)
+                            .buttonStyle(TramaPrimaryButtonStyle())
                             .disabled(store.isPlanning || store.hasRemoteConflict(for: request))
                     }
                     if let url = request.pullRequestURL { Link("Apri pull request", destination: url) }

@@ -101,11 +101,24 @@ public enum ConversationCard: Equatable, Sendable {
         public var personActions: [PersonAction] { [.switchProvider, .retry] }
     }
 
+    /// A candidate with its diff, evidence, technical review and current state.
+    public struct CandidateCard: Equatable, Sendable {
+        public let report: CandidateReport
+
+        public init(report: CandidateReport) {
+            self.report = report
+        }
+
+        public var candidate: Candidate { report.candidate }
+        public var state: CandidateState { report.state }
+    }
+
     case mandate(Mandate)
     case decision(Decision)
     case providerBlocked(ProviderBlockedCard)
     case teamProposal(TeamProposalCard)
     case assignment(Assignment)
+    case candidate(CandidateCard)
     /// Study, context notice, a card whose request is gone, or a kind this ticket does not own.
     case generic(ConversationEvent.Card)
 
@@ -148,6 +161,11 @@ public enum ConversationCard: Equatable, Sendable {
                 return .generic(row.card)
             }
             return .assignment(Assignment(assignment: assignment, specialist: team.specialist(assignment.specialistID)))
+        case .candidate:
+            guard let id = row.card.referenceID, let report = try? document.candidateReport(id) else {
+                return .generic(row.card)
+            }
+            return .candidate(CandidateCard(report: report))
         default:
             return .generic(row.card)
         }
