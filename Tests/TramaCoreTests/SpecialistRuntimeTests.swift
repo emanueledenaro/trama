@@ -257,12 +257,13 @@ struct SpecialistRuntimeTests {
 
         #expect(reply == "Ho aggiunto il rimborso parziale in refund.txt.")
         let turnEvents = events.turnEvents
-        #expect(turnEvents.first == .turnStarted(turnID: "turn-specialist"))
-        #expect(turnEvents.contains(.reasoning("Leggo il modulo degli ordini")))
-        #expect(turnEvents.contains(.commentary("Aggiungo il test del rimborso")))
-        #expect(turnEvents.contains(.commandCompleted(itemID: "cmd-1", command: "swift test", exitCode: 0, output: "Test run with 3 tests passed", succeeded: true)))
-        #expect(turnEvents.contains(.commandCompleted(itemID: "cmd-2", command: "git commit -m rimborso", exitCode: 128, output: "fatal: sandbox", succeeded: false)))
-        #expect(turnEvents.contains(.fileChangeCompleted(itemID: "patch-1", paths: ["Sources/Orders/Refund.swift", "Tests/OrdersTests/RefundTests.swift"], succeeded: true)))
+        #expect(turnEvents.first?.kind == .turnStarted(model: nil, effort: nil))
+        #expect(turnEvents.first?.turnID == "turn-specialist")
+        #expect(turnEvents.contains { $0.kind == .contentDelta(.reasoningSummaryText("Leggo il modulo degli ordini")) })
+        #expect(turnEvents.contains { $0.kind == .commentary("Aggiungo il test del rimborso") })
+        #expect(turnEvents.contains { $0.kind == .commandCompleted(command: "swift test", exitCode: 0, output: "Test run with 3 tests passed", succeeded: true) })
+        #expect(turnEvents.contains { $0.kind == .commandCompleted(command: "git commit -m rimborso", exitCode: 128, output: "fatal: sandbox", succeeded: false) })
+        #expect(turnEvents.contains { $0.kind == .fileChangeCompleted(paths: ["Sources/Orders/Refund.swift", "Tests/OrdersTests/RefundTests.swift"], succeeded: true) })
     }
 
     // MARK: The briefing
@@ -326,7 +327,7 @@ private final class EventLog: @unchecked Sendable {
         values.compactMap { if case let .threadOpened(opening) = $0 { opening } else { nil } }.first
     }
 
-    var turnEvents: [CodexClient.TurnEvent] {
+    var turnEvents: [ProviderEvent] {
         values.compactMap { if case let .turn(event) = $0 { event } else { nil } }
     }
 }

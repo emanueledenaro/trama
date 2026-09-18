@@ -209,6 +209,7 @@ struct ConnectionsView: View {
                         .padding(TramaSpacing.related)
                         .frame(maxWidth: .infinity, alignment: .leading)
                     }
+                    ProviderConnectionsList(rows: ProviderConnectionPresentationBuilder.rows(statuses: store.providerAccess))
                     VStack(alignment: .leading, spacing: TramaSpacing.control) {
                         Label("GitHub è consigliato per seguire PR e lavoro del gruppo.", systemImage: "arrow.triangle.branch").font(.callout).foregroundStyle(.secondary)
                         ForEach(store.connectedApps.filter { $0.name.localizedCaseInsensitiveContains("github") }.prefix(2)) { app in

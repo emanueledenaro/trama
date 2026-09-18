@@ -105,19 +105,23 @@ final class CoordinatorRuntime {
         threadID: String,
         input: [CodexClient.TurnInputItem],
         settings: CodexClient.CoordinatorThreadSettings,
-        onEvent: @escaping @MainActor (CodexClient.CoordinatorTurnEvent) async -> Void
+        onEvent: @escaping @MainActor (ProviderEvent) async -> Void
     ) async throws -> String {
-        let (events, continuation) = AsyncStream<CodexClient.CoordinatorTurnEvent>.makeStream()
+        let (events, continuation) = AsyncStream<ProviderEvent>.makeStream()
+        let tracker = TurnTracker()
         let consumer = Task { @MainActor in
             for await event in events {
-                if case let .turnStarted(turnID) = event { await self.bindTurn(turnID) }
+                if case .turnStarted = event.kind, let turnID = event.turnID { await self.bindTurn(turnID) }
                 await onEvent(event)
             }
         }
         await beginTurn()
         defer { continuation.finish() }
         do {
-            let reply = try await client.runCoordinatorTurn(threadID: threadID, input: input, settings: settings) { continuation.yield($0) }
+            let reply = try await client.runCoordinatorTurn(threadID: threadID, input: input, settings: settings) { event in
+                if case let .turnStarted(id) = event { tracker.turnID = id }
+                continuation.yield(CodexEventNormalizer.normalize(turnEvent: event, threadID: threadID, turnID: tracker.turnID))
+            }
             continuation.finish()
             await consumer.value
             await endTurn()
@@ -555,7 +559,7 @@ extension ProjectStore {
             input: CoordinatorBriefing.openingInput(study: study, memory: memory, replacing: reason).map { .text($0) },
             settings: settings
         ) { [weak self] event in
-            guard let self, self.coordinatorGeneration == generation, case let .textDelta(delta) = event else { return }
+            guard let self, self.coordinatorGeneration == generation, case let .contentDelta(.assistantText(delta)) = event.kind else { return }
             self.coordinatorStudyText? += delta
         }
         guard coordinatorGeneration == generation else { return }
@@ -712,24 +716,26 @@ extension ProjectStore {
         }
     }
 
-    private func receiveCoordinatorEvent(_ event: CodexClient.CoordinatorTurnEvent, requestID: UUID) {
-        switch event {
+    private func receiveCoordinatorEvent(_ event: ProviderEvent, requestID: UUID) {
+        switch event.kind {
         case .turnStarted:
             break
-        case let .textDelta(delta):
+        case let .contentDelta(.assistantText(delta)):
             streamingReplies[requestID, default: ""] += delta
         case let .commentary(note):
             document.conversation?.appendActivity(requestID: requestID, title: "Nota del Coordinatore", detail: note)
-        case .toolCallStarted, .reasoning, .commandCompleted, .fileChangeCompleted:
+        case .toolCallStarted, .contentDelta, .commandCompleted, .fileChangeCompleted:
             // The Coordinator runtime reads: its commands and reasoning stay out of the conversation.
             break
-        case let .toolCallCompleted(_, server, tool, succeeded, error):
+        case let .toolCallCompleted(server, tool, succeeded, error):
             let title: String = Self.toolTitle(tool)
             let refusal = error.flatMap(Self.mandateRefusal)
             let failure: String = refusal ?? error ?? "non riuscito"
             let detail: String = succeeded ? "\(server) · \(tool)" : "\(server) · \(tool) · \(failure)"
             let failedTitle = refusal == nil ? "\(title): non riuscito" : "Azione rifiutata dal mandato"
             document.conversation?.appendActivity(requestID: requestID, title: succeeded ? title : failedTitle, detail: detail)
+        default:
+            break
         }
     }
 
@@ -771,21 +777,22 @@ extension ProjectStore {
     /// Streams usage and compaction of the thread into the document, in the order Codex sent them.
     private func observeCoordinatorThread(client: CodexClient, threadID: String) async {
         coordinatorEventsTask?.cancel()
-        let (events, continuation) = AsyncStream<CodexClient.ThreadEvent>.makeStream()
+        let (events, continuation) = AsyncStream<ProviderEvent>.makeStream()
         coordinatorEventsTask = Task { [weak self] in
             for await event in events {
                 self?.receiveThreadEvent(event, threadID: threadID)
             }
         }
-        await client.observeThread(threadID) { continuation.yield($0) }
+        await client.observeThread(threadID) { continuation.yield(CodexEventNormalizer.normalize(threadEvent: $0, threadID: threadID)) }
     }
 
-    private func receiveThreadEvent(_ event: CodexClient.ThreadEvent, threadID: String) {
+    private func receiveThreadEvent(_ event: ProviderEvent, threadID: String) {
         guard coordinatorThreadID == threadID, project != nil, stateWritable else { return }
-        switch event {
+        switch event.kind {
         case let .contextUsage(snapshot):
             updateContext { context in context.record(snapshot, threadID: threadID) }
-        case let .compaction(phase):
+        case let .contextCompaction(state):
+            guard let phase = ContextCompactionState(rawValue: state) else { return }
             updateContext { context in
                 context.record(phase)
                 return nil
@@ -793,6 +800,8 @@ extension ProjectStore {
             // The running Coordinator turn owns the row; outside a turn it stands alone.
             document.conversation?.appendActivity(requestID: streamingReplies.keys.first, title: phase.activityTitle, detail: nil)
             if phase != .inProgress { activity.insert(phase.activityTitle + ".", at: 0) }
+        default:
+            return
         }
         saveDocument()
     }

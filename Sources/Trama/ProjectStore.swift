@@ -109,6 +109,18 @@ final class ProjectStore: ObservableObject {
     @Published var projectIssues: [GitHubIssue]?
     var loadedSkills: [CodexClient.LoadedSkill] = []
     var lastIssuesRefresh: Date?
+    /// The on-disk provider status cache: read once at launch, written when a check changes it.
+    let providerStatuses = ProviderStatusStore(configuration: .init(directory: ProjectStore.providerStatusDirectory))
+    /// The shared model catalogue cache: fresh for 10 minutes, revalidated in the background.
+    let modelCatalog = ModelCatalogCache()
+    /// The last known status of every provider, shown by the connections screen.
+    @Published var providerAccess: [ProviderKind: ProviderAccessStatus] = [:]
+
+    static var providerStatusDirectory: URL {
+        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+            ?? FileManager.default.temporaryDirectory
+        return base.appendingPathComponent("Trama", isDirectory: true)
+    }
     let coordinator = CoordinatorRuntime()
     var coordinatorTask: Task<Void, Never>?
     var coordinatorGeneration = UUID()
@@ -181,6 +193,11 @@ final class ProjectStore: ObservableObject {
         specialists.store = self
         for publisher in [team.objectWillChange, intelligence.objectWillChange, remoteConflicts.objectWillChange, notifications.objectWillChange, specialists.objectWillChange] {
             publisher.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &observation)
+        }
+        Task { [weak self] in
+            guard let self else { return }
+            let stored = await providerStatuses.loadFromDisk()
+            providerAccess = Dictionary(uniqueKeysWithValues: stored.map { ($0.provider, $0) })
         }
     }
 
@@ -555,8 +572,24 @@ final class ProjectStore: ObservableObject {
                 codexVersion = await codex.serverInfo()?.userAgent ?? ""
                 isLoadingModels = true
                 do {
-                    models = try await codex.listModels()
-                    modelsError = models.isEmpty ? "Codex non ha restituito modelli OpenAI disponibili." : nil
+                    let codexClient = codex
+                    let catalog = await modelCatalog.lookup(key: ProviderModelCatalogKey(provider: .codex, cwd: localRoot?.path)) {
+                        let list = try await codexClient.listModels()
+                        return ProviderModelCatalog(models: list.map { model in
+                            ProviderModelDescriptor(
+                                slug: model.model,
+                                resolvedModel: model.model,
+                                name: model.displayName,
+                                description: model.description,
+                                supportedReasoningEfforts: model.supportedReasoningEfforts,
+                                defaultReasoningEffort: model.defaultReasoningEffort,
+                                isDefault: model.isDefault
+                            )
+                        }, source: .runtime)
+                    }
+                    models = catalog.models.map(\.codexModel)
+                    modelsError = catalog.error.map { "Catalogo modelli non disponibile: \($0)" }
+                        ?? (models.isEmpty ? "Codex non ha restituito modelli OpenAI disponibili." : nil)
                     reconcileModelSelection()
                 } catch {
                     models = []
@@ -573,6 +606,24 @@ final class ProjectStore: ObservableObject {
             isLoadingModels = false
             connectionDetail = error.localizedDescription
         }
+        await recordCodexAccess()
+    }
+
+    /// Persists the Codex access state so the connections screen shows it right after a restart.
+    private func recordCodexAccess() async {
+        let state: ProviderAccessState = codexConnected
+            ? .authenticated
+            : (connectionDetail == "Accesso richiesto" ? .unauthenticated : .unknown)
+        let status = ProviderAccessStatus(
+            provider: .codex,
+            state: state,
+            isAvailable: true,
+            authLabel: codexConnected ? accountLabel : nil,
+            version: codexVersion.isEmpty ? nil : codexVersion,
+            message: connectionDetail
+        )
+        await providerStatuses.record(status)
+        providerAccess[.codex] = status
     }
 
     func selectModel(_ model: String) {
