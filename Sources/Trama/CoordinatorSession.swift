@@ -569,10 +569,21 @@ extension ProjectStore {
     // MARK: Thread
 
     /// Starts or resumes the Coordinator of the active project. A new thread opens the conversation with its study.
-    func startCoordinator() {
+    func startCoordinator(accessChecked: Bool = false) {
         guard coordinatorTask == nil, coordinatorPhase != .ready, stateWritable,
               let project, let root = localRoot, let projectID = activeProjectID else { return }
         let provider = document.lastTurnProviderOrCodex
+        // An unknown access state is not an answer (ADR 0009): the check runs before the provider
+        // is refused, so reopening on Claude does not wait for Codex to connect first.
+        if provider == .claudeAgent, !accessChecked, (providerAccess[.claudeAgent]?.state ?? .unknown) == .unknown {
+            coordinatorPhase = .opening
+            Task { [weak self] in
+                await self?.recordClaudeAccess()
+                self?.coordinatorPhase = .idle
+                self?.startCoordinator(accessChecked: true)
+            }
+            return
+        }
         if let reason = coordinatorProviderReason(provider) {
             coordinatorPhase = .unavailable(reason)
             return

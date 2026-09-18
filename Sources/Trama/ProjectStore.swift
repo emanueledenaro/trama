@@ -663,7 +663,7 @@ final class ProjectStore: ObservableObject {
     }
 
     /// Checks Claude Agent and keeps its status for the connections screen.
-    private func recordClaudeAccess() async {
+    func recordClaudeAccess() async {
         let status = await claudeAdapter.checkAccess()
         await providerStatuses.record(status)
         providerAccess[.claudeAgent] = status
