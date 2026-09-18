@@ -266,6 +266,67 @@ struct ProviderRuntimePolicyTests {
         #expect(card.personActions == [.switchProvider, .retry])
     }
 
+    // MARK: Coordinator turn selection
+
+    @Test("The Coordinator turn takes the provider default on Claude and Trama's model on Codex")
+    func coordinatorTurnChoicePerProvider() {
+        let claude = CoordinatorTurnSelection.choice(
+            provider: .claudeAgent,
+            coordinatorModel: "gpt-5.6-luna",
+            override: TurnOverride(),
+            codexModels: [],
+            claudeCatalog: Self.claudeCatalog
+        )
+        #expect(claude?.model == "default")
+        #expect(claude?.selection.provider == .claudeAgent)
+
+        let codexModels = [CodexClient.Model(id: "gpt-5.6-luna", model: "gpt-5.6-luna", displayName: "Luna", description: "", isDefault: false, supportedReasoningEfforts: ["high"], defaultReasoningEffort: "high")]
+        let codex = CoordinatorTurnSelection.choice(
+            provider: .codex,
+            coordinatorModel: "gpt-5.6-luna",
+            override: TurnOverride(),
+            codexModels: codexModels,
+            claudeCatalog: Self.claudeCatalog
+        )
+        #expect(codex?.model == "gpt-5.6-luna")
+        #expect(codex?.selection.provider == .codex)
+    }
+
+    @Test("A model outside the provider's catalogue is refused")
+    func coordinatorTurnChoiceRefusesUnknownModels() {
+        let refused = CoordinatorTurnSelection.choice(
+            provider: .claudeAgent,
+            coordinatorModel: nil,
+            override: TurnOverride(model: "gpt-5.6-luna"),
+            codexModels: [],
+            claudeCatalog: Self.claudeCatalog
+        )
+        #expect(refused == nil)
+        let badEffort = CoordinatorTurnSelection.choice(
+            provider: .claudeAgent,
+            coordinatorModel: nil,
+            override: TurnOverride(effort: "ultracode"),
+            codexModels: [],
+            claudeCatalog: Self.claudeCatalog
+        )
+        #expect(badEffort == nil)
+    }
+
+    // MARK: Coordinator permission policy
+
+    @Test("The Coordinator may read and use Trama's tools, and may not write the project directly")
+    func coordinatorPermissionPolicy() {
+        #expect(CoordinatorPermissionPolicy.decision(forTool: "Read") == .allow)
+        #expect(CoordinatorPermissionPolicy.decision(forTool: "mcp__trama__read_study") == .allow)
+        #expect(CoordinatorPermissionPolicy.decision(forTool: nil) == .allow)
+        for tool in ["Write", "Edit", "NotebookEdit", "Bash"] {
+            guard case .deny = CoordinatorPermissionPolicy.decision(forTool: tool) else {
+                Issue.record("\(tool) must be refused to the Coordinator")
+                continue
+            }
+        }
+    }
+
     // MARK: Coordinator provider switch
 
     @Test("Switching the Coordinator provider keeps the thread and hands over transcript, memory and study")
