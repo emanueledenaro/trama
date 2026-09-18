@@ -132,12 +132,6 @@ extension ProjectStore {
             throw CandidateError.reviewNotDistinct(candidateID: candidateID)
         }
         try document.recordTechnicalReview(review)
-        appendCoordinatorCard(
-            .init(kind: .candidate, title: "Revisione tecnica di \(candidateID)", detail: review.summary, referenceID: candidateID),
-            origin: .coordinator,
-            requestID: coordinator.turnRequestID,
-            assignmentID: candidate.assignmentID
-        )
         document.conversation?.appendActivity(
             requestID: coordinator.turnRequestID,
             title: "Revisione tecnica del candidato",
@@ -153,12 +147,6 @@ extension ProjectStore {
         guard projectID == activeProjectID, project != nil, stateWritable else { throw CoordinatorToolHostError.projectUnavailable }
         guard document.mandate == mandate else { throw CoordinatorToolHostError.mandateChanged }
         let cleared = try document.clearCandidate(candidateID: candidateID, actor: Self.coordinatorActor)
-        appendCoordinatorCard(
-            .init(kind: .candidate, title: "Via libera del Coordinatore", detail: "Candidato \(candidateID) verificato.", referenceID: candidateID),
-            origin: .coordinator,
-            requestID: coordinator.turnRequestID,
-            assignmentID: cleared.assignmentID
-        )
         document.conversation?.appendActivity(
             requestID: coordinator.turnRequestID,
             title: "Via libera del Coordinatore",
