@@ -49,13 +49,37 @@ struct CandidateCheckRunnerTests {
         #expect(passed.output.isEmpty)
     }
 
-    @Test("The Swift checks run against the candidate's package path")
+    @Test("The Swift checks run against the candidate's package path, without a nested sandbox")
     func swiftCheckCommand() {
         let root = URL(fileURLWithPath: "/tmp/candidate-worktree")
         let test = CandidateCheckRunner.checkCommand(.swiftTest, worktreeRoot: root)
         #expect(test.executable.lastPathComponent == "xcrun")
-        #expect(test.arguments == ["swift", "test", "--package-path", root.path])
+        #expect(test.arguments == ["swift", "test", "--package-path", root.path, "--disable-sandbox"])
         let build = CandidateCheckRunner.checkCommand(.swiftBuild, worktreeRoot: root)
-        #expect(build.arguments == ["swift", "build", "--package-path", root.path])
+        #expect(build.arguments == ["swift", "build", "--package-path", root.path, "--disable-sandbox"])
+    }
+
+    @Test("A real swift test runs on the candidate worktree and keeps the failure output")
+    func swiftTestOnTheCandidate() async throws {
+        guard let codex = GitFixture.findCodex() else { return }
+        let fixture = try GitFixture()
+        defer { fixture.remove() }
+        try fixture.installSwiftPackage()
+        let sessions = WorkspaceSessionManager(worktreesRoot: fixture.root.appendingPathComponent("managed-worktrees"))
+        let session = try await sessions.prepare(repository: fixture.repository, name: "Ada")
+        let runner = CandidateCheckRunner(codexURL: codex, timeout: .seconds(300))
+
+        let passed = try await runner.run(.swiftTest, worktreeRoot: session.worktreeRoot)
+        #expect(passed.passed)
+        #expect(passed.command.contains("--package-path"))
+
+        // A correction in the worktree is a new candidate: the check reports the real failure.
+        try "import Testing\n@testable import Fixture\n@Test func valueIsStable() { #expect(value() == 7) }\n"
+            .write(to: session.worktreeRoot.appendingPathComponent("Tests/FixtureTests/FixtureTests.swift"), atomically: true, encoding: .utf8)
+        let failed = try await runner.run(.swiftTest, worktreeRoot: session.worktreeRoot)
+        #expect(failed.passed == false)
+        #expect(failed.output.contains("valueIsStable"))
+        // The project checkout never changed: only the candidate worktree did.
+        #expect(try fixture.read("tracked.txt") == "committed\n")
     }
 }

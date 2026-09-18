@@ -63,7 +63,8 @@ public struct CandidateCheckRunner: Sendable {
         case .swiftBuild, .swiftTest:
             return (URL(fileURLWithPath: "/usr/bin/xcrun"), [
                 "swift", check == .swiftBuild ? "build" : "test",
-                "--package-path", worktreeRoot.path
+                "--package-path", worktreeRoot.path,
+                "--disable-sandbox"
             ])
         }
     }
