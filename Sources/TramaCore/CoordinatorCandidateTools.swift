@@ -155,7 +155,7 @@ extension CoordinatorTools {
     private static func clearIntent(_ arguments: [String: JSONValue], context: CoordinatorToolContext) throws -> Intent {
         let reader = try ToolArguments(arguments, tool: .clearCandidate, allowed: ["candidate"])
         let candidate = try Self.candidate(try reader.string("candidate"), context: context)
-        guard let assignment = context.document.team?.assignment(candidate.assignmentID) else {
+        guard context.document.team?.assignment(candidate.assignmentID) != nil else {
             throw Failure.invalid("Candidate \(candidate.id) has no assignment.")
         }
         return Intent(action: .integrateCandidate, moduleIDs: candidate.touchedModules) { host, projectID, mandate in
