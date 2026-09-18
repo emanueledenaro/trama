@@ -562,11 +562,34 @@ final class ProjectStore: ObservableObject {
         for option in resolved { providerAccess[option.provider] = option.access }
     }
 
-    /// On reopening, work resumes with the provider of the last turn. An unavailable provider stops
-    /// Trama and warns; the provider is never changed here (ADR 0009).
+    /// A provider is choosable for the Coordinator only when it is authenticated and the app has a
+    /// runtime that can open it. The others stay listed with their reason (ADR 0009).
+    func canChooseForCoordinator(_ option: ProviderOption) -> Bool {
+        option.isSelectable && ProjectStore.appRunsCoordinator(option.provider)
+    }
+
+    func coordinatorChoiceReason(_ option: ProviderOption) -> String? {
+        guard option.isSelectable else { return option.reason }
+        guard ProjectStore.appRunsCoordinator(option.provider) else {
+            return "Il Coordinatore dell'app apre ancora solo Codex."
+        }
+        return nil
+    }
+
+    /// The providers the app's own runtimes can open today. Codex is the only one until the
+    /// Coordinator and specialist runtimes become provider-agnostic.
+    static func appRunsCoordinator(_ provider: ProviderKind) -> Bool { provider == .codex }
+    static func appRunsSpecialist(_ provider: ProviderKind) -> Bool { provider == .codex }
+
+    /// On reopening, work resumes with the provider of the last turn. An unavailable provider, and a
+    /// provider the app cannot open, stop Trama and warn; the provider is never changed here.
     @discardableResult
     func applyResumeProviderDecision() -> Bool {
-        switch ProviderRuntimePolicy.resumeDecision(lastProvider: document.lastTurnProvider, statuses: providerAccess) {
+        switch ProviderRuntimePolicy.resumeDecision(
+            lastProvider: document.lastTurnProvider,
+            statuses: providerAccess,
+            canRun: ProjectStore.appRunsCoordinator
+        ) {
         case .proceed:
             if document.lastTurnProvider == nil, document.team?.waitingAssignments.isEmpty ?? true {
                 providerNotice = nil

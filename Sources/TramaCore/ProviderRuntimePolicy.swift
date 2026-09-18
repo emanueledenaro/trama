@@ -115,26 +115,17 @@ public enum ProviderRuntimePolicy {
     /// A warning that is not a block stays a warning: `unknown` without a declared block code is not
     /// a block, so a status Trama cannot read never stops work by itself.
     public static func block(for status: ProviderAccessStatus) -> ProviderBlock? {
+        let reason: ProviderBlockReason
         if !status.isAvailable {
-            return ProviderBlock(
-                provider: status.provider,
-                reason: .missingBinary,
-                detail: status.message,
-                observedAt: status.checkedAt
-            )
+            reason = .missingBinary
+        } else if status.state == .unauthenticated {
+            reason = .lostAuthentication
+        } else if let declared = ProviderBlockReason.make(code: status.blockCode, until: status.blockUntil, detail: status.message) {
+            reason = declared
+        } else {
+            return nil
         }
-        if status.state == .unauthenticated {
-            return ProviderBlock(
-                provider: status.provider,
-                reason: .lostAuthentication,
-                detail: status.message,
-                observedAt: status.checkedAt
-            )
-        }
-        if let reason = ProviderBlockReason.make(code: status.blockCode, until: status.blockUntil, detail: status.message) {
-            return ProviderBlock(provider: status.provider, reason: reason, detail: status.message, observedAt: status.checkedAt)
-        }
-        return nil
+        return ProviderBlock(provider: status.provider, reason: reason, detail: status.message, observedAt: status.checkedAt)
     }
 
     public static func decision(for status: ProviderAccessStatus) -> ProviderRuntimeDecision {
@@ -147,9 +138,18 @@ public enum ProviderRuntimePolicy {
     public static func resumeDecision(
         lastProvider: ProviderKind?,
         statuses: [ProviderKind: ProviderAccessStatus],
-        fallback: ProviderKind = .codex
+        fallback: ProviderKind = .codex,
+        canRun: (ProviderKind) -> Bool = { _ in true }
     ) -> ProviderRuntimeDecision {
         let provider = lastProvider ?? fallback
+        guard canRun(provider) else {
+            return .stopAndWarn(ProviderBlock(
+                provider: provider,
+                reason: .unknown("il runtime dell'app non apre ancora questo provider per il Coordinatore"),
+                detail: "Il provider dell'ultimo turno non è disponibile in Trama: il lavoro si ferma e la persona decide.",
+                observedAt: Date()
+            ))
+        }
         guard let status = statuses[provider] else { return .proceed }
         return decision(for: status)
     }

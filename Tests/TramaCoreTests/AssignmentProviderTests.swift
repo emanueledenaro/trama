@@ -93,6 +93,7 @@ struct AssignmentProviderTests {
         #expect(updated.workspace != nil, "the worktree stays")
         #expect(updated.turns.count == 1, "the history stays")
         #expect(updated.turns.first?.endedAt != nil)
+        #expect(updated.turns.first?.outcome == .interrupted, "a block stops the turn, it does not fail it")
         #expect(document.team?.waitingAssignments.map(\.id) == [assignment.id])
     }
 

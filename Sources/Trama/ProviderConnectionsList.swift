@@ -55,7 +55,6 @@ struct ProviderConnectionsList: View {
     }
 }
 
-
 /// The status strip of a blocked provider. ADR 0009 asks for the warning both here and as a card in
 /// the conversation, with the reason and the proposed action. Switching provider stays the person's
 /// decision, so the strip only offers the picker and a retry.

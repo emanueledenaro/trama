@@ -251,11 +251,11 @@ struct ConnectionsView: View {
                 HStack(spacing: TramaSpacing.control) {
                     Text(option.displayName).font(.subheadline)
                     Spacer(minLength: 0)
-                    if option.isSelectable {
+                    if store.canChooseForCoordinator(option) {
                         Button("Usa per il Coordinatore") { store.switchCoordinatorProvider(to: option.provider) }
                             .disabled(option.provider == store.document.lastTurnProviderOrCodex)
                     } else {
-                        Text("Non selezionabile: \(option.reason ?? "stato non noto")")
+                        Text("Non selezionabile: \(store.coordinatorChoiceReason(option) ?? "stato non noto")")
                             .font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
                     }
                 }

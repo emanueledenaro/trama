@@ -252,13 +252,13 @@ extension ProjectStore {
             modules: project.modules.map { .init(id: $0.id, name: $0.name, path: $0.relativePath) },
             availableChecks: ReadOnlyCheckRunner.availableChecks(root: root),
             models: models.map(\.model),
-            defaultSpecialistModel: specialistDefaultModel ?? (selectedModel.isEmpty ? nil : selectedModel)
+            defaultSpecialistModel: specialistDefaultModel(for: .codex) ?? (selectedModel.isEmpty ? nil : selectedModel)
         )
     }
 
     /// A specialist starts from the cheapest model of the provider, or from the person's remembered
     /// choice for that provider. ADR 0009.
-    var specialistDefaultModel: String? {
+    func specialistDefaultModel(for provider: ProviderKind) -> String? {
         let catalog = ProviderModelCatalog(
             models: models.map { model in
                 ProviderModelDescriptor(
@@ -270,7 +270,7 @@ extension ProjectStore {
             },
             source: .runtime
         )
-        return ProviderModelDefault.specialist(provider: .codex, catalog: catalog, preference: document.providerPreferences)
+        return ProviderModelDefault.specialist(provider: provider, catalog: catalog, preference: document.providerPreferences)
     }
 
     func writeCoordinatorMemory(projectID: UUID, text: String) throws -> CoordinatorMemory {
@@ -463,6 +463,11 @@ extension ProjectStore {
     func startCoordinator() {
         guard coordinatorTask == nil, coordinatorPhase != .ready, codexConnected, stateWritable,
               let project, let root = localRoot, let projectID = activeProjectID else { return }
+        guard ProjectStore.appRunsCoordinator(document.lastTurnProviderOrCodex) else {
+            // The recorded provider cannot be opened here: Trama stops and warns, and never switches.
+            coordinatorPhase = .unavailable("Il Coordinatore dell'app apre ancora solo Codex. Il provider dell'ultimo turno è \(document.lastTurnProviderOrCodex.displayName): riprendi o cambia provider dalla schermata dei collegamenti.")
+            return
+        }
         guard let model = selectedModelInfo?.model else {
             coordinatorPhase = .unavailable(needsModelChoice ? CoordinatorModelChoice.preferredUnavailableMessage : "Scegli un modello OpenAI disponibile per il Coordinatore.")
             return
@@ -490,7 +495,7 @@ extension ProjectStore {
                     toolServerURL: endpoint
                 )
                 let opening = try await client.openCoordinatorThread(settings, resuming: coordinatorThreadID)
-                // The provider of the last Coordinator turn, so reopening resumes with it (ADR 0009).
+                // The provider that really produced this turn, so reopening resumes with it (ADR 0009).
                 document.lastTurnProvider = .codex
                 coordinatorHandover = nil
                 guard coordinatorGeneration == generation else { return }
@@ -533,8 +538,12 @@ extension ProjectStore {
     /// The person switches the Coordinator's provider. The thread survives: the session is not
     /// transferred, so Trama opens a new one and hands it the transcript, the memory and the study.
     func switchCoordinatorProvider(to provider: ProviderKind) {
-        guard stateWritable, let project else { return }
+        guard stateWritable else { return }
         guard provider != document.lastTurnProviderOrCodex else { return }
+        guard ProjectStore.appRunsCoordinator(provider) else {
+            coordinatorPhase = .unavailable("Il Coordinatore dell'app apre ancora solo Codex: il passaggio a \(provider.displayName) non è disponibile. Il thread resta su \(document.lastTurnProviderOrCodex.displayName).")
+            return
+        }
         let previous = document.lastTurnProviderOrCodex
         let handover = CoordinatorProviderSwitch.plan(from: previous, to: provider, document: document)
         coordinatorHandover = handover
@@ -555,14 +564,7 @@ extension ProjectStore {
         )
         saveDocument()
         stopCoordinator()
-        if provider == .codex {
-            retryCoordinator()
-        } else {
-            // The app's Coordinator runtime opens Codex only: the switch is recorded and the session
-            // resets, but the new provider cannot be opened here yet.
-            coordinatorPhase = .unavailable("Il Coordinatore dell'app apre ancora solo Codex. Il passaggio a \(provider.displayName) è registrato e il thread ripartirà da lì quando l'app lo supporterà.")
-        }
-        _ = project
+        retryCoordinator()
     }
 
     /// The person retries after a provider block, from the status strip. Every waiting assignment

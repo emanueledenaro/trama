@@ -801,7 +801,7 @@ public enum ClaudeRuntimeProbe {
             let initialization = try await client.start(options: options, initializeTimeout: timeout)
             await client.stop()
             guard let account = initialization.account?.objectValue else {
-                return .unknown("Claude non ha riportato l'account all'avvio.")
+                return .unknown("Claude did not report the account at startup.")
             }
             if let email = account["email"]?.stringValue, !email.isEmpty {
                 return .authenticated(subscriptionType: account["subscriptionType"]?.stringValue)

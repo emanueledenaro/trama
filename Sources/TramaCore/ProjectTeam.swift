@@ -627,8 +627,9 @@ extension ProjectDocument {
         try changeAssignment(assignmentID, at: date) { assignment in
             guard assignment.status.isActive, assignment.status != .stopRequested else { return }
             if let index = assignment.turns.indices.last, assignment.turns[index].endedAt == nil {
+                // A block stops the turn; it is not a failure of the work.
                 assignment.turns[index].endedAt = date
-                assignment.turns[index].outcome = .failed
+                assignment.turns[index].outcome = .interrupted
             }
             assignment.status = .waiting
             assignment.block = block
@@ -640,7 +641,7 @@ extension ProjectDocument {
     /// session restarts on the new provider, the work does not.
     @discardableResult
     public mutating func setAssignmentProvider(_ id: String, provider: ProviderKind, at date: Date = Date()) throws -> SpecialistAssignment {
-        guard var team, let existing = team.assignment(id) else { throw ProjectTeamError.unknownAssignment(id) }
+        guard var team, team.assignment(id) != nil else { throw ProjectTeamError.unknownAssignment(id) }
         try team.updateAssignment(id, at: date) { assignment, specialist in
             assignment.provider = provider
             assignment.block = nil
@@ -653,7 +654,6 @@ extension ProjectDocument {
         }
         self.team = team
         guard let updated = team.assignment(id) else { throw ProjectTeamError.unknownAssignment(id) }
-        _ = existing
         return updated
     }
 

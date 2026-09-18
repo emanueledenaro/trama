@@ -135,7 +135,7 @@ public actor ClaudeProviderAdapter: ProviderAdapter {
         let key = ProviderModelCatalogKey(provider: .claudeAgent, binaryPath: binaryURL.path)
         if let modelCache {
             let catalog = await modelCache.lookup(key: key) { [weak self] in
-                guard let self else { return ProviderModelCatalog(models: [], source: .runtime, error: "adattatore non disponibile") }
+                guard let self else { return ProviderModelCatalog(models: [], source: .runtime, error: "adapter unavailable") }
                 return await self.discoverModels()
             }
             if catalog.isUsable { cachedCatalog = catalog }
@@ -167,7 +167,7 @@ public actor ClaudeProviderAdapter: ProviderAdapter {
             return ProviderModelCatalog(
                 models: ClaudeStaticCatalogue.models,
                 source: .fallback,
-                error: "Catalogo modelli di Claude non disponibile: \(error.localizedDescription)"
+                error: "Claude model catalogue unavailable: \(error.localizedDescription)"
             )
         }
     }
@@ -187,7 +187,7 @@ public actor ClaudeProviderAdapter: ProviderAdapter {
             return ProviderModelCatalog(
                 models: [],
                 source: .runtime,
-                error: "Claude non ha restituito voci di modello valide (\(mapped.skipped) scartate)."
+                error: "Claude returned no valid model entries (\(mapped.skipped) skipped)."
             )
         }
         return ProviderModelCatalog(models: mapped.models, source: .runtime)
@@ -705,7 +705,7 @@ public actor ClaudeProviderAdapter: ProviderAdapter {
         case let .exited(status, stderr):
             state.session.status = .error
             state.session.activeTurnID = nil
-            state.session.lastError = "Il processo claude è uscito con codice \(status)."
+            state.session.lastError = "The claude process exited with code \(status)."
             threads[threadID] = state
             emit(ClaudeEventNormalizer.exited(status: status, stderr: stderr, threadID: threadID, nativeSessionID: state.nativeSessionID))
 

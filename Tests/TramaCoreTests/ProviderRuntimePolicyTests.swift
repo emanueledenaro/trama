@@ -123,6 +123,24 @@ struct ProviderRuntimePolicyTests {
         #expect(block.reason == .lostAuthentication)
     }
 
+    @Test("A last provider the app cannot open stops and warns even when its account is fine")
+    func resumeStopsWhenTheAppCannotOpenIt() {
+        let statuses: [ProviderKind: ProviderAccessStatus] = [
+            .codex: Self.status(.codex),
+            .claudeAgent: Self.status(.claudeAgent)
+        ]
+        guard case let .stopAndWarn(block) = ProviderRuntimePolicy.resumeDecision(
+            lastProvider: .claudeAgent,
+            statuses: statuses,
+            canRun: { $0 == .codex }
+        ) else {
+            Issue.record("a provider the app cannot open must stop, not switch to Codex")
+            return
+        }
+        #expect(block.provider == .claudeAgent)
+        #expect(block.reason.code == "unknown")
+    }
+
     @Test("A document without a last provider resumes with the default provider")
     func resumeWithoutALastProvider() {
         #expect(ProviderRuntimePolicy.resumeDecision(lastProvider: nil, statuses: [:]) == .proceed)

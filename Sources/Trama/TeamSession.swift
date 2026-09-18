@@ -32,6 +32,16 @@ final class SpecialistSupervisor: ObservableObject {
               let assignment = team.assignment(assignmentID),
               let specialist = team.specialist(assignment.specialistID),
               assignment.status == .preparing else { return }
+        guard ProjectStore.appRunsSpecialist(assignment.resolvedProvider) else {
+            // Never run one provider's work in another's process: that would misattribute the turns.
+            store.providerNotice = ProviderBlock(
+                provider: assignment.resolvedProvider,
+                reason: .unknown("il runtime dell'app non apre ancora questo provider per gli specialisti"),
+                detail: "Il provider dell'incarico \(assignment.id) non è disponibile in Trama: il lavoro resta in attesa e la persona decide.",
+                observedAt: Date()
+            )
+            return
+        }
         let client = CodexClient.specialistRuntime()
         let isFirstTurn = assignment.turns.isEmpty
         let launch = SpecialistLaunch(
@@ -336,9 +346,11 @@ extension ProjectStore {
         switch event.kind {
         case let .turnStarted(_, _):
             let turnID = event.turnID ?? turnID
-            let model = document.team?.assignment(assignmentID)?.model ?? ""
+            let assignment = document.team?.assignment(assignmentID)
+            let model = assignment?.model ?? ""
             if let turnID {
-                try? document.beginSpecialistTurn(assignmentID: assignmentID, turnID: turnID, model: model)
+                // The provider that really produced the turn, never an inferred one.
+                try? document.beginSpecialistTurn(assignmentID: assignmentID, turnID: turnID, model: model, provider: .codex)
             }
             document.conversation?.appendSpecialistActivity(assignmentID: assignmentID, turnID: turnID, title: "Turno avviato", detail: model)
         case .contentDelta(.assistantText):

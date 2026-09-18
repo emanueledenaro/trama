@@ -195,3 +195,16 @@ Sette criteri aggiunti al ticket dopo l'ADR 0009. Sono implementati in
   la scelta, azzera il thread e inietta il passaggio nella sessione successiva. L'apertura di una
   sessione Claude come Coordinatore dentro l'app non esiste ancora: è lo stesso limite di prodotto
   dichiarato sopra.
+
+## Limiti della politica dei provider
+
+- Il runtime del Coordinatore e quello degli specialisti aprono ancora solo Codex. Il provider
+  registrato su un incarico o sull'ultimo turno del Coordinatore viene rispettato: se non è Codex,
+  Trama si ferma e avvisa invece di aprirne un altro. La selezione nell'app rifiuta un provider che
+  il runtime non sa aprire, con il motivo.
+- Il passaggio del Coordinatore costruisce e conserva il passaggio di consegne, ma apre la sessione
+  solo su Codex. La consegna a un provider diverso resta impossibile finché il runtime non diventa
+  agnostico rispetto al provider.
+- L'evento di blocco nasce dall'adattatore di Claude ed è provato con trasporto simulato e con il
+  processo reale per il limite di utilizzo; il percorso che ferma il Coordinatore dell'app è
+  esercitato dai test del modello, non da una sessione Claude dentro l'app.
