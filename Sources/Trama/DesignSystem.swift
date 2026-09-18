@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import TramaCore
 
@@ -12,6 +13,174 @@ enum TramaSpacing {
 enum TramaRadius {
     static let control: CGFloat = 8
     static let card: CGFloat = 12
+    /// Floating composer and window cards, 2xl in the reference.
+    static let floating: CGFloat = 16
+}
+
+/// The neutral grays of the Codex window, per role, with the light and dark tone of each.
+///
+/// The names are roles, not numbers: `page` is white in light and near black in dark, as in
+/// `docs/reference/design-app-codex.md`. Nothing here carries a hue except the informational blue.
+enum TramaSurface {
+    /// Main surface: the conversation column and the detail area.
+    static let page = dynamic(light: 0xFFFFFF, dark: 0x181818)
+    /// Secondary surface: sidebar, menus and the inspector header.
+    static let secondary = dynamic(light: 0xF9F9F9, dark: 0x212121)
+    /// Soft background for chips, active rows and the person's message.
+    static let soft = dynamic(light: 0xEDEDED, dark: 0x303030)
+    /// Filled primary button: near black on light, near black on dark, always with white text.
+    static let primaryButton = dynamic(light: 0x181818, dark: 0x131313)
+    /// Floating blocks that must read above the page: the composer and the cards.
+    static let raised = dynamic(light: 0xFFFFFF, dark: 0x212121)
+}
+
+enum TramaText {
+    static let primary = dynamic(light: 0x282828, dark: 0xDFDFDF)
+    static let emphasis = dynamic(light: 0x0D0D0D, dark: 0xFFFFFF)
+    static let secondary = dynamic(light: 0x5D5D5D, dark: 0x8F8F8F)
+    static let tertiary = dynamic(light: 0x8F8F8F, dark: 0x5D5D5D)
+}
+
+enum TramaInfo {
+    /// Informational text: links and selected rows.
+    static let text = dynamic(light: 0x0169CC, dark: 0x66B5FF)
+    /// Informational fill.
+    static let solid = Color(nsColor: NSColor(srgbRed: 0x02 / 255, green: 0x85 / 255, blue: 0xFF / 255, alpha: 1))
+}
+
+/// The three states of the window: an open decision, work under way, a verified candidate.
+///
+/// These are the only colours the window chrome uses beyond the grays; text and symbol always
+/// accompany them, so the state never depends on colour alone.
+enum TramaStateColor {
+    static let pending = Color(nsColor: .systemOrange)
+    static let building = Color(nsColor: .systemBlue)
+    static let verified = Color(nsColor: .systemGreen)
+    static let failed = Color(nsColor: .systemRed)
+}
+
+/// Border and hover of the flat controls, stronger when the system asks for more contrast.
+enum TramaBorder {
+    static func outline(_ contrast: ColorSchemeContrast) -> Color {
+        contrast == .increased
+            ? Color.primary.opacity(0.42)
+            : dynamic(light: 0x000000, dark: 0xFFFFFF, lightAlpha: 0.16, darkAlpha: 0.25)
+    }
+
+    /// The standard outline, where the view has no contrast environment of its own.
+    static func outline() -> Color { outline(.standard) }
+
+    /// A hairline between blocks, quieter than a full outline.
+    static func hairline(_ contrast: ColorSchemeContrast) -> Color {
+        contrast == .increased
+            ? Color.primary.opacity(0.30)
+            : dynamic(light: 0x000000, dark: 0xFFFFFF, lightAlpha: 0.10, darkAlpha: 0.18)
+    }
+
+    static func hairline() -> Color { hairline(.standard) }
+
+    /// Background of a flat control under the pointer.
+    static func hover(_ contrast: ColorSchemeContrast) -> Color {
+        contrast == .increased
+            ? Color.primary.opacity(0.16)
+            : dynamic(light: 0x000000, dark: 0xFFFFFF, lightAlpha: 0.08, darkAlpha: 0.12)
+    }
+}
+
+/// The four shadow steps of the reference; all very light.
+enum TramaShadow {
+    struct Step {
+        let radius: CGFloat
+        let y: CGFloat
+        let opacity: Double
+    }
+
+    static let small = Step(radius: 2, y: 1, opacity: 0.08)
+    static let medium = Step(radius: 4, y: 2, opacity: 0.08)
+    static let large = Step(radius: 8, y: 4, opacity: 0.10)
+    static let extraLarge = Step(radius: 16, y: 8, opacity: 0.12)
+}
+
+extension View {
+    /// Applies one of the four shadow steps of the reference.
+    func tramaShadow(_ step: TramaShadow.Step) -> some View {
+        shadow(color: .black.opacity(step.opacity), radius: step.radius, y: step.y)
+    }
+}
+
+/// Resolves a light and a dark tone into one colour that follows the system appearance.
+func dynamic(light: UInt32, dark: UInt32, lightAlpha: Double = 1, darkAlpha: Double = 1) -> Color {
+    Color(nsColor: NSColor(name: nil) { appearance in
+        let isDark = appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+        let value = isDark ? dark : light
+        return NSColor(
+            srgbRed: CGFloat((value >> 16) & 0xFF) / 255,
+            green: CGFloat((value >> 8) & 0xFF) / 255,
+            blue: CGFloat(value & 0xFF) / 255,
+            alpha: CGFloat(isDark ? darkAlpha : lightAlpha)
+        )
+    })
+}
+
+/// The window's own surfaces: a card, the flat row of the sidebar and the filled primary button.
+///
+/// They read `colorSchemeContrast` and `accessibilityReduceTransparency`, so Increase Contrast and
+/// Reduce Transparency change the result instead of being ignored.
+struct TramaPanel<Content: View>: View {
+    @Environment(\.colorSchemeContrast) private var contrast
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    var raised = false
+    var radius: CGFloat = TramaRadius.card
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        content
+            .background(surfaceBackground)
+            .overlay(RoundedRectangle(cornerRadius: radius, style: .continuous).strokeBorder(TramaBorder.outline(contrast), lineWidth: reduceTransparency ? 1.2 : 1))
+            .tramaShadow(TramaShadow.small)
+    }
+
+    /// A raised panel is translucent until the system asks for less transparency, then it is opaque.
+    @ViewBuilder
+    private var surfaceBackground: some View {
+        let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
+        if raised, !reduceTransparency {
+            shape.fill(.regularMaterial)
+        } else {
+            (raised ? TramaSurface.raised : TramaSurface.secondary).clipShape(shape)
+        }
+    }
+}
+
+/// The filled primary action of the window; on light it is near black with white text.
+struct TramaPrimaryButtonStyle: ButtonStyle {
+    @Environment(\.colorSchemeContrast) private var contrast
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.body.weight(.medium))
+            .foregroundStyle(.white)
+            .padding(.horizontal, TramaSpacing.related)
+            .frame(minHeight: 28)
+            .background(TramaSurface.primaryButton.opacity(configuration.isPressed ? 0.85 : 1), in: RoundedRectangle(cornerRadius: TramaRadius.control, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: TramaRadius.control, style: .continuous).strokeBorder(.white.opacity(contrast == .increased ? 0.45 : 0), lineWidth: 1))
+            .opacity(configuration.isPressed ? 0.9 : 1)
+    }
+}
+
+/// A bordered action that leaves the primary button as the only filled one.
+struct TramaSecondaryButtonStyle: ButtonStyle {
+    @Environment(\.colorSchemeContrast) private var contrast
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.body)
+            .foregroundStyle(TramaText.primary)
+            .padding(.horizontal, TramaSpacing.related)
+            .frame(minHeight: 28)
+            .background(configuration.isPressed ? TramaBorder.hover(contrast) : .clear, in: RoundedRectangle(cornerRadius: TramaRadius.control, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: TramaRadius.control, style: .continuous).strokeBorder(TramaBorder.outline(contrast), lineWidth: 1))
+    }
 }
 
 struct TramaScreenHeader<Actions: View>: View {
@@ -44,8 +213,8 @@ struct TramaScreenHeader<Actions: View>: View {
 
     private var titleBlock: some View {
         VStack(alignment: .leading, spacing: TramaSpacing.compact) {
-            Text(title).font(.title2.weight(.semibold))
-            Text(subtitle).font(.callout).foregroundStyle(.secondary)
+            Text(title).font(.title2.weight(.semibold)).foregroundStyle(TramaText.emphasis)
+            Text(subtitle).font(.callout).foregroundStyle(TramaText.secondary)
         }
     }
 }
@@ -76,7 +245,7 @@ struct TramaSupportingText: View {
     var body: some View {
         Text(text)
             .font(.callout)
-            .foregroundStyle(.secondary)
+            .foregroundStyle(TramaText.secondary)
             .fixedSize(horizontal: false, vertical: true)
     }
 }
@@ -87,8 +256,8 @@ struct TramaLabeledText: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: TramaSpacing.compact) {
-            Text(label).font(.caption.weight(.medium)).foregroundStyle(.secondary)
-            Text(value).font(.body).textSelection(.enabled)
+            Text(label).font(.caption.weight(.medium)).foregroundStyle(TramaText.secondary)
+            Text(value).font(.body).textSelection(.enabled).foregroundStyle(TramaText.primary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .combine)
@@ -104,7 +273,7 @@ struct TramaTag: View {
             .fixedSize(horizontal: false, vertical: true)
             .padding(.horizontal, TramaSpacing.control)
             .padding(.vertical, 4)
-            .background(.quaternary, in: Capsule())
+            .background(TramaSurface.soft, in: Capsule())
             .accessibilityLabel("Etichetta: \(text)")
     }
 }
@@ -137,10 +306,10 @@ struct TramaStatusBadge: View {
     static func color(for tone: RequestState.Tone) -> Color {
         switch tone {
         case .neutral: .secondary
-        case .waiting, .attention: .orange
-        case .working: .blue
-        case .success: .green
-        case .failure: .red
+        case .waiting, .attention: TramaStateColor.pending
+        case .working: TramaStateColor.building
+        case .success: TramaStateColor.verified
+        case .failure: TramaStateColor.failed
         }
     }
 }

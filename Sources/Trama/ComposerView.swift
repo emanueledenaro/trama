@@ -56,7 +56,8 @@ struct CoordinatorComposer: View {
                     onCursorChange: { cursor = $0 },
                     onKey: { handleKey($0, suggestions: suggestions) },
                     onPasteImages: { images in images.forEach { store.attachImage(data: $0.data, fileExtension: $0.fileExtension) } },
-                    onPasteLongText: { store.composerPastes.append(PastedText(text: $0)) }
+                    onPasteLongText: { store.composerPastes.append(PastedText(text: $0)) },
+                    focusRequest: store.composerFocusRequest
                 )
                 .frame(height: min(max(editorHeight, 20), 180))
                 .accessibilityLabel("Messaggio al Coordinatore")
@@ -429,6 +430,8 @@ struct ComposerTextView: NSViewRepresentable {
     var onKey: (ComposerKey) -> Bool
     var onPasteImages: ([PastedImage]) -> Void
     var onPasteLongText: (String) -> Void
+    /// Increases when the person asks for the focus; every change moves the first responder here.
+    var focusRequest = 0
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
@@ -484,10 +487,15 @@ struct ComposerTextView: NSViewRepresentable {
         }
         textView.applyChipStyle()
         context.coordinator.updateHeight(textView)
+        if context.coordinator.focusRequest != focusRequest {
+            context.coordinator.focusRequest = focusRequest
+            DispatchQueue.main.async { textView.window?.makeFirstResponder(textView) }
+        }
     }
 
     final class Coordinator: NSObject, NSTextViewDelegate {
         var parent: ComposerTextView
+        var focusRequest = 0
 
         init(_ parent: ComposerTextView) {
             self.parent = parent

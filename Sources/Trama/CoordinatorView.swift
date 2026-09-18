@@ -493,7 +493,7 @@ struct CoordinatorView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     Text(decisionOutcomeText(request, outcome)).fixedSize(horizontal: false, vertical: true)
-                    Button("Apri nel Patto") { store.section = .decisions }
+                    Button("Apri nel Patto") { store.openInspector(.decision(outcome.decisionID)) }
                         .accessibilityLabel("Apri la decisione \(outcome.decisionID) nel Patto")
                 }
             }
@@ -570,7 +570,7 @@ struct CoordinatorView: View {
                         Text(card.specialists.map { "\($0.name) (\($0.id))" }.joined(separator: ", "))
                             .font(.callout)
                             .fixedSize(horizontal: false, vertical: true)
-                        Button("Apri il Team") { store.section = .team }
+                        Button("Apri il Team") { store.openInspector(.team) }
                             .accessibilityLabel("Apri la sezione Team")
                     }
                 }
@@ -653,7 +653,7 @@ struct CoordinatorView: View {
                             .disabled(!store.codexConnected)
                             .accessibilityLabel("Riprendi l'incarico")
                     }
-                    Button("Apri il Team") { store.section = .team }
+                    Button("Apri il Team") { store.openInspector(.specialist(assignment.specialistID)) }
                         .accessibilityLabel("Apri la sezione Team")
                 }
             }
@@ -757,8 +757,7 @@ struct CoordinatorView: View {
                     Button("Apri nella Mappa", systemImage: "square.3.layers.3d") { store.openInMap(request) }
                         .accessibilityLabel("Apri nella Mappa: \(request.title)")
                     Button("Vedi piano", systemImage: "arrow.up.forward.square") {
-                        store.selectedRequestID = request.id
-                        store.section = .changes
+                        store.openInspector(.candidate(request.id))
                     }
                     .accessibilityLabel("Vedi piano: \(request.title)")
                 }

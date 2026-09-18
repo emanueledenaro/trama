@@ -283,3 +283,13 @@ public enum InspectorTarget: Hashable, Identifiable, Sendable {
         }
     }
 }
+
+extension ProjectDocument {
+    /// The work that depends on a decision: the requests that recorded it as their behavior, and the
+    /// ones whose plan was built on one of its versions.
+    public func workDepending(on decisionID: String) -> [WorkRequest] {
+        requests.filter { request in
+            request.behaviorDecisionID == decisionID || request.planDecisionVersions?[decisionID] != nil
+        }
+    }
+}

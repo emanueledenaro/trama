@@ -38,7 +38,7 @@ struct ModuleInspector: View {
                             }
                         } else if store.inspectorTab == "Decisioni" {
                             Text("Le decisioni conservano il comportamento concordato e le versioni su cui si basa il lavoro.").foregroundStyle(.secondary)
-                            Button("Apri Patto Vivo", systemImage: "checkmark.seal") { store.section = .decisions }
+                            Button("Apri Patto Vivo", systemImage: "checkmark.seal") { store.openInspector(.pact) }
                         } else {
                             inspectorSection("Struttura rilevata") { Text(module.summary).foregroundStyle(.secondary) }
                             inspectorSection("Percorso") { Text(module.relativePath).font(.system(.callout, design: .monospaced)).textSelection(.enabled) }
@@ -55,7 +55,7 @@ struct ModuleInspector: View {
                                 let requests = store.changeRequests.filter { $0.moduleID == module.id }
                                 if requests.isEmpty { Text("Nessuna modifica registrata.").foregroundStyle(.secondary) }
                                 ForEach(requests) { request in
-                                    Button { store.selectedRequestID = request.id; store.section = .changes } label: {
+                                    Button { store.openInspector(.candidate(request.id)) } label: {
                                         VStack(alignment: .leading, spacing: 4) { Text(request.title).lineLimit(2); Text(request.state.label).font(.caption).foregroundStyle(.secondary) }
                                     }.buttonStyle(.plain)
                                 }
@@ -69,7 +69,7 @@ struct ModuleInspector: View {
                     store.selectedModuleID = module.id
                     store.composer = "Sul modulo \(module.name): "
                     store.showInspector = false
-                    store.section = .coordinator
+                    store.returnToCoordinator()
                 }.frame(maxWidth: .infinity).padding(TramaSpacing.related)
             }
         } else {
