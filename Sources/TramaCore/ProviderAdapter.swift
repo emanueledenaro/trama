@@ -459,6 +459,10 @@ public struct ProviderSessionStartInput: Sendable {
     public var developerInstructions: String?
     public var toolServerURL: URL?
     public var tokenEnvironmentVariable: String?
+    /// The bearer the tool server expects. V08 adds it so a provider that carries host tools in
+    /// its own options, as Claude does with `--mcp-config`, can be given the credential directly
+    /// instead of through the child environment Codex uses.
+    public var toolServerToken: String?
 
     public init(
         threadID: String,
@@ -469,7 +473,8 @@ public struct ProviderSessionStartInput: Sendable {
         runtimeMode: ProviderRuntimeMode = .fullAccess,
         developerInstructions: String? = nil,
         toolServerURL: URL? = nil,
-        tokenEnvironmentVariable: String? = nil
+        tokenEnvironmentVariable: String? = nil,
+        toolServerToken: String? = nil
     ) {
         self.threadID = threadID
         self.cwd = cwd
@@ -480,6 +485,7 @@ public struct ProviderSessionStartInput: Sendable {
         self.developerInstructions = developerInstructions
         self.toolServerURL = toolServerURL
         self.tokenEnvironmentVariable = tokenEnvironmentVariable
+        self.toolServerToken = toolServerToken
     }
 }
 

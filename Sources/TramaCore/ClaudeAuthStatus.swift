@@ -7,12 +7,15 @@ public struct ClaudeCommandResult: Equatable, Sendable {
     public var code: Int32
     /// True when Trama stopped the process because the check took too long.
     public var timedOut: Bool
+    /// False when the process never started, for example because the binary is missing.
+    public var didLaunch: Bool
 
-    public init(stdout: String = "", stderr: String = "", code: Int32 = 0, timedOut: Bool = false) {
+    public init(stdout: String = "", stderr: String = "", code: Int32 = 0, timedOut: Bool = false, didLaunch: Bool = true) {
         self.stdout = stdout
         self.stderr = stderr
         self.code = code
         self.timedOut = timedOut
+        self.didLaunch = didLaunch
     }
 
     public var combinedLowercased: String {
@@ -54,6 +57,13 @@ public struct ClaudeAuthVerdict: Equatable, Sendable {
 /// carries an auth boolean anywhere in the tree decides before the exit code does.
 public enum ClaudeAuthStatusParser {
     public static func parse(_ result: ClaudeCommandResult) -> ClaudeAuthVerdict {
+        if result.timedOut {
+            return ClaudeAuthVerdict(
+                status: .warning,
+                authStatus: .unknown,
+                message: "Non è stato possibile verificare l'accesso di Claude. La verifica ha superato il tempo massimo."
+            )
+        }
         if hasUnsupportedAuthStatusText(result) {
             return ClaudeAuthVerdict(
                 status: .warning,

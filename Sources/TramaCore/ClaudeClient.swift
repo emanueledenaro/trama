@@ -35,6 +35,9 @@ public final class ClaudeProcessTransport: ClaudeTransport, @unchecked Sendable 
     }
 
     public func start() throws -> AsyncStream<ClaudeTransportEvent> {
+        guard FileManager.default.isExecutableFile(atPath: executableURL.path) else {
+            throw ClaudeClient.ClientError.executableNotFound(executableURL.path)
+        }
         let process = Process()
         let stdin = Pipe()
         let stdout = Pipe()
@@ -257,19 +260,32 @@ public struct ClaudeSessionOptions: Equatable, Sendable {
     /// The argument list, in the order the SDK builds it.
     public func arguments() throws -> [String] {
         var args = ClaudeProtocol.framingArguments
-        args += ["--permission-prompt-tool", "stdio"]
-        args += ["--permission-mode", permissionMode.rawValue]
-        if permissionMode == .bypassPermissions {
-            args.append("--dangerously-skip-permissions")
-        }
-        if let model, !model.isEmpty {
-            args += ["--model", model]
+        if let thinking {
+            if thinking {
+                if let maxThinkingTokens, maxThinkingTokens > 0 {
+                    args += ["--max-thinking-tokens", String(maxThinkingTokens)]
+                } else {
+                    args += ["--thinking", "adaptive"]
+                }
+            } else {
+                args += ["--thinking", "disabled"]
+            }
+        } else if let maxThinkingTokens, maxThinkingTokens > 0 {
+            args += ["--max-thinking-tokens", String(maxThinkingTokens)]
         }
         if let effort, !effort.isEmpty {
             args += ["--effort", effort]
         }
+        if let model, !model.isEmpty {
+            args += ["--model", model]
+        }
         if let autoCompactWindow, autoCompactWindow > 0 {
             args += ["--autocompact", String(autoCompactWindow)]
+        }
+        args += ["--permission-prompt-tool", "stdio"]
+        args += ["--permission-mode", permissionMode.rawValue]
+        if permissionMode == .bypassPermissions {
+            args.append("--allow-dangerously-skip-permissions")
         }
         if includePartialMessages {
             args.append("--include-partial-messages")
@@ -281,19 +297,19 @@ public struct ClaudeSessionOptions: Equatable, Sendable {
             args += ["--append-system-prompt", developerInstructions]
         }
         if !settingSources.isEmpty {
-            args += ["--setting-sources", settingSources.joined(separator: ",")]
+            args.append("--setting-sources=\(settingSources.joined(separator: ","))")
         }
         if !mcpServers.isEmpty {
             args += ["--mcp-config", try ClaudeProtocol.mcpConfigJSON(Dictionary(uniqueKeysWithValues: mcpServers.map { ($0.name, $0) }))]
             if strictMcpConfig { args.append("--strict-mcp-config") }
         }
         if let sessionID, !sessionID.isEmpty {
-            args += ["--session-id", sessionID]
+            args.append("--session-id=\(sessionID)")
         }
         if let resumeSessionID, !resumeSessionID.isEmpty {
-            args += ["--resume", resumeSessionID]
+            args.append("--resume=\(resumeSessionID)")
             if let resumeSessionAt, !resumeSessionAt.isEmpty {
-                args += ["--resume-session-at", resumeSessionAt]
+                args.append("--resume-session-at=\(resumeSessionAt)")
             }
             if forkSession { args.append("--fork-session") }
         }
@@ -310,6 +326,16 @@ public struct ClaudeResumeCursor: Codable, Equatable, Sendable {
     public var processedTokenTotal: Int?
     public var tokenAccountingVersion: Int?
     public var claudeCache: ClaudeCacheObservation?
+
+    private enum CodingKeys: String, CodingKey {
+        case threadID = "threadId"
+        case resume
+        case resumeSessionAt
+        case turnCount
+        case processedTokenTotal
+        case tokenAccountingVersion
+        case claudeCache
+    }
 
     public init(
         threadID: String? = nil,
@@ -335,7 +361,7 @@ public struct ClaudeResumeCursor: Codable, Equatable, Sendable {
               let object = value.objectValue else { return ClaudeResumeCursor() }
         let resume = object["resume"]?.stringValue.flatMap { isUUID($0) ? $0 : nil }
         var cache: ClaudeCacheObservation?
-        if let cacheValue = object["claudeCache"],
+        if let resume, let cacheValue = object["claudeCache"],
            let decoded = try? JSONDecoder().decode(ClaudeCacheObservation.self, from: JSONEncoder().encode(cacheValue)) {
             cache = decoded.nativeSessionID == resume ? decoded : nil
         }
@@ -515,9 +541,6 @@ public actor ClaudeClient {
     @discardableResult
     public func start(options: ClaudeSessionOptions, initializeTimeout: TimeInterval = 30) async throws -> ClaudeInitialization {
         guard transport == nil else { throw ClientError.alreadyStarted }
-        guard FileManager.default.isExecutableFile(atPath: options.binaryURL.path) else {
-            throw ClientError.executableNotFound(options.binaryURL.path)
-        }
         let arguments = try options.arguments()
         let transport = try transportFactory()
         let stream = try transport.start()
