@@ -174,6 +174,8 @@ final class CodexProviderAdapterTests: XCTestCase {
         XCTAssertEqual(catalog.models.map(\.slug), ["gpt-5.6-luna"])
         XCTAssertEqual(catalog.models.first?.supportedReasoningEfforts, ["low", "high"])
         XCTAssertEqual(catalog.models.first?.defaultReasoningEffort, "high")
+        XCTAssertEqual(catalog.models.first?.codexModel.model, "gpt-5.6-luna")
+        XCTAssertEqual(catalog.models.first?.codexModel.isDefault, true)
     }
 
     func testSteerCompactAndRollbackSendTheRightMethods() async throws {

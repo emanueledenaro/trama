@@ -341,6 +341,7 @@ public struct ProviderModelDescriptor: Codable, Equatable, Sendable, Identifiabl
     public var supportedReasoningEfforts: [String]
     public var defaultReasoningEffort: String?
     public var supportsFastMode: Bool
+    public var isDefault: Bool
 
     public var id: String { slug }
 
@@ -351,7 +352,8 @@ public struct ProviderModelDescriptor: Codable, Equatable, Sendable, Identifiabl
         description: String? = nil,
         supportedReasoningEfforts: [String] = [],
         defaultReasoningEffort: String? = nil,
-        supportsFastMode: Bool = false
+        supportsFastMode: Bool = false,
+        isDefault: Bool = false
     ) {
         self.slug = slug
         self.resolvedModel = resolvedModel
@@ -360,6 +362,7 @@ public struct ProviderModelDescriptor: Codable, Equatable, Sendable, Identifiabl
         self.supportedReasoningEfforts = supportedReasoningEfforts
         self.defaultReasoningEffort = defaultReasoningEffort
         self.supportsFastMode = supportsFastMode
+        self.isDefault = isDefault
     }
 }
 
@@ -760,5 +763,37 @@ public extension ProviderAdapter {
     /// Convenience for tests and for the registry: the conformance problems of this adapter.
     func conformanceIssues() -> [String] {
         ProviderConformance.issues(capabilities: capabilities, methods: implementedMethods)
+    }
+}
+
+/// The adapters Trama really has, looked up by provider. In V08 the registry holds only Codex; the
+/// other eight providers arrive with their tickets. The registry never creates an adapter, it only
+/// answers whether one exists and whether it is conformant.
+public struct ProviderAdapterRegistry: Sendable {
+    private var adapters: [ProviderKind: any ProviderAdapter] = [:]
+
+    public init(adapters: [any ProviderAdapter] = []) {
+        for adapter in adapters { register(adapter) }
+    }
+
+    @discardableResult
+    public mutating func register(_ adapter: any ProviderAdapter) -> Bool {
+        guard adapters[adapter.provider] == nil else { return false }
+        adapters[adapter.provider] = adapter
+        return true
+    }
+
+    public func adapter(for provider: ProviderKind) -> (any ProviderAdapter)? {
+        adapters[provider]
+    }
+
+    public var registeredProviders: [ProviderKind] {
+        ProviderKind.allCases.filter { adapters[$0] != nil }
+    }
+
+    /// The registration and conformance problems of every registered adapter, in provider order.
+    public func issues() -> [String] {
+        ProviderConformance.registryIssues(adapters: registeredProviders)
+            + registeredProviders.flatMap { adapters[$0]?.conformanceIssues() ?? [] }
     }
 }

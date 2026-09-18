@@ -138,6 +138,17 @@ final class ProviderAdapterTests: XCTestCase {
         XCTAssertFalse(ProviderAccessStatus(provider: .codex, state: .authenticated, isAvailable: false).isReady)
     }
 
+    func testRegistryHoldsCodexAndReportsNoIssues() {
+        var registry = ProviderAdapterRegistry()
+        let adapter = CodexProviderAdapter(client: CodexClient(transport: FakeCodexTransport()))
+        XCTAssertTrue(registry.register(adapter))
+        XCTAssertFalse(registry.register(adapter), "the same provider must not register twice")
+        XCTAssertEqual(registry.registeredProviders, [.codex])
+        XCTAssertEqual(registry.issues(), [])
+        XCTAssertNotNil(registry.adapter(for: .codex))
+        XCTAssertNil(registry.adapter(for: .cursor))
+    }
+
     func testProviderEventKeepsTheRawPayloadForUnmappedMethods() throws {
         let event = ProviderEvent(
             eventID: "e1",

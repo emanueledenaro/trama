@@ -123,7 +123,8 @@ public actor CodexProviderAdapter: ProviderAdapter {
                     name: model.displayName,
                     description: model.description,
                     supportedReasoningEfforts: model.supportedReasoningEfforts,
-                    defaultReasoningEffort: model.defaultReasoningEffort
+                    defaultReasoningEffort: model.defaultReasoningEffort,
+                    isDefault: model.isDefault
                 )
             },
             source: .runtime
@@ -279,5 +280,20 @@ public final class TurnTracker: @unchecked Sendable {
     public var turnID: String? {
         get { lock.lock(); defer { lock.unlock() }; return storage }
         set { lock.lock(); storage = newValue; lock.unlock() }
+    }
+}
+
+public extension ProviderModelDescriptor {
+    /// The Codex model shape the existing chat and composer already use.
+    var codexModel: CodexClient.Model {
+        CodexClient.Model(
+            id: slug,
+            model: resolvedModel ?? slug,
+            displayName: name,
+            description: description ?? "",
+            isDefault: isDefault,
+            supportedReasoningEfforts: supportedReasoningEfforts,
+            defaultReasoningEffort: defaultReasoningEffort
+        )
     }
 }
