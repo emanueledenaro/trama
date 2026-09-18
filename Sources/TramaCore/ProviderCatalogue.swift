@@ -88,7 +88,7 @@ public enum ProviderCatalogue {
             supportsThreadCompaction: false,
             supportsThreadImport: true
         ),
-        isAvailable: false,
+        isAvailable: true,
         signInCommand: "claude login"
     )
 

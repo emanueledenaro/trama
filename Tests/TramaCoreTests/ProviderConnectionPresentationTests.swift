@@ -28,6 +28,29 @@ final class ProviderConnectionPresentationTests: XCTestCase {
         XCTAssertTrue(codex?.isAvailable ?? false)
     }
 
+    func testClaudeUsesTheSameRowShapeAsTheOtherProviders() {
+        let status = ProviderAccessStatus(
+            provider: .claudeAgent,
+            state: .authenticated,
+            authType: "max",
+            authLabel: "Claude Max Subscription",
+            version: "2.1.276"
+        )
+        let rows = ProviderConnectionPresentationBuilder.rows(statuses: [.claudeAgent: status])
+        let claude = rows.first { $0.provider == .claudeAgent }
+        XCTAssertEqual(claude?.displayName, "Claude Agent")
+        XCTAssertEqual(claude?.access.stateLabel, "Collegato")
+        XCTAssertEqual(claude?.access.authLabel, "Claude Max Subscription")
+        XCTAssertEqual(claude?.signInCommand, "claude login")
+        XCTAssertTrue(claude?.isAvailable ?? false)
+        let values = Dictionary(uniqueKeysWithValues: (claude?.capabilities ?? []).map { ($0.label, $0.value) })
+        XCTAssertEqual(values["Cambio modello"], "In sessione")
+        XCTAssertEqual(values["Rollback"], "Con riavvio")
+        XCTAssertEqual(values["Compattazione"], "No")
+        XCTAssertEqual(values["Scoperta comandi"], "Sì")
+        XCTAssertEqual(values["Uso token"], "Sì")
+    }
+
     func testACapabilityRowReadsTheModelSwitchAndRollback() {
         let lines = ProviderConnectionPresentationBuilder.capabilityLines(ProviderCatalogue.codex.capabilities)
         let values = Dictionary(uniqueKeysWithValues: lines.map { ($0.label, $0.value) })

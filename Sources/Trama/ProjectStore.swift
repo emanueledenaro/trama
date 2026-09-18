@@ -110,6 +110,8 @@ final class ProjectStore: ObservableObject {
     var activePlanTask: Task<Void, Never>?
     private var watcherTask: Task<Void, Never>?
     let codex = CodexClient()
+    /// The Claude Agent adapter of P02: its access state joins the same connections screen.
+    let claudeAdapter = ClaudeProviderAdapter()
     let team = TeamViewModel()
     /// The specialists of the open project at work.
     let specialists = SpecialistSupervisor()
@@ -532,6 +534,14 @@ final class ProjectStore: ObservableObject {
             connectionDetail = error.localizedDescription
         }
         await recordCodexAccess()
+        await recordClaudeAccess()
+    }
+
+    /// Checks Claude Agent and keeps its status for the connections screen.
+    private func recordClaudeAccess() async {
+        let status = await claudeAdapter.checkAccess()
+        await providerStatuses.record(status)
+        providerAccess[.claudeAgent] = status
     }
 
     /// Persists the Codex access state so the connections screen shows it right after a restart.

@@ -30,6 +30,16 @@ final class ClaudeRealSessionTests: XCTestCase {
         XCTAssertEqual(status.state, .authenticated, status.message ?? "")
         XCTAssertNotNil(status.version)
         print("[P02] access: state=\(status.state.rawValue) version=\(status.version ?? "?") label=\(status.authLabel ?? "?")")
+
+        // The same path the connections screen reads: store the status, then build the rows.
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("trama-p02-status-\(UUID().uuidString)")
+        let store = ProviderStatusStore(configuration: .init(directory: directory))
+        await store.record(status)
+        let rows = ProviderConnectionPresentationBuilder.rows(statuses: [.claudeAgent: status])
+        let claude = try? XCTUnwrap(rows.first { $0.provider == .claudeAgent })
+        XCTAssertEqual(claude?.access.stateLabel, "Collegato")
+        XCTAssertEqual(claude?.isAvailable, true)
+        print("[P02] connections row: \(claude?.displayName ?? "?") -> \(claude?.access.stateLabel ?? "?") (\(claude?.access.authLabel ?? "?"))")
     }
 
     func testRealModelCatalogComesFromTheRuntime() async throws {
