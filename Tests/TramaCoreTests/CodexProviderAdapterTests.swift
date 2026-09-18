@@ -145,6 +145,36 @@ final class CodexProviderAdapterTests: XCTestCase {
         XCTAssertFalse(transport.methods.contains("initialize"))
     }
 
+    func testStartSessionOpensACoordinatorThread() async throws {
+        let transport = FakeCodexTransport()
+        transport.onMessage = { message in
+            switch message["method"] as? String {
+            case "initialize": transport.respond(to: message, result: Self.initializeResult)
+            case "account/read": transport.respond(to: message, result: Self.chatGPTAccount)
+            case "mcpServerStatus/list":
+                let params = message["params"] as? [String: Any]
+                if params?["threadId"] is String {
+                    transport.respond(to: message, result: ["data": [["name": "trama"]], "nextCursor": NSNull()])
+                }
+            case "thread/start":
+                transport.respond(to: message, result: ["thread": ["id": "thread-c1"], "model": "gpt-5.6-luna"])
+            default: break
+            }
+        }
+        let adapter = CodexProviderAdapter(
+            client: CodexClient(transport: transport),
+            codexHome: URL(fileURLWithPath: "/tmp/codex-home-does-not-exist")
+        )
+        let session = try await adapter.startSession(ProviderSessionStartInput(
+            threadID: "thread-c1",
+            cwd: URL(fileURLWithPath: FileManager.default.temporaryDirectory.path),
+            modelSelection: .codex(model: "gpt-5.6-luna", options: nil),
+            runtimeMode: .fullAccess
+        ))
+        XCTAssertEqual(session.threadID, "thread-c1")
+        XCTAssertEqual(session.status, .ready)
+    }
+
     func testListModelsNormalizesDescriptors() async throws {
         let transport = FakeCodexTransport()
         transport.onMessage = { message in

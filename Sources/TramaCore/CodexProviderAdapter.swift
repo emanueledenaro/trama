@@ -172,14 +172,40 @@ public actor CodexProviderAdapter: ProviderAdapter {
             }
         }
         let tracker = TurnTracker()
+        let streamed = TextAccumulator()
         let continuation = eventContinuation
-        _ = try await client.runCoordinatorTurn(threadID: threadID, input: items, settings: settings) { event in
+        let reply = try await client.runCoordinatorTurn(threadID: threadID, input: items, settings: settings) { event in
             if case let .turnStarted(id) = event { tracker.turnID = id }
+            if case let .textDelta(delta) = event { streamed.append(delta) }
             continuation?.yield(CodexEventNormalizer.normalize(turnEvent: event, threadID: threadID, turnID: tracker.turnID))
         }
         guard let turnID = tracker.turnID else {
             throw CodexClient.ClientError.malformedMessage("turno senza turn.id")
         }
+        // A turn that did not stream still has a reply; publish it so a caller that reads the event
+        // stream, as the provider session runtime does, sees the whole answer.
+        if streamed.value.isEmpty, !reply.isEmpty {
+            continuation?.yield(ProviderEvent(
+                eventID: UUID().uuidString,
+                provider: .codex,
+                threadID: threadID,
+                turnID: turnID,
+                providerRefs: ProviderEventRefs(providerThreadID: threadID, providerTurnID: turnID),
+                raw: ProviderRawEvent(source: CodexEventNormalizer.notificationSource, method: "turn/reply"),
+                kind: .contentDelta(.assistantText(reply))
+            ))
+        }
+        // `sendTurn` returns when the turn ended, so the normalized stream must say so: a caller that
+        // reads the stream closes its turn boundary on this event.
+        continuation?.yield(ProviderEvent(
+            eventID: UUID().uuidString,
+            provider: .codex,
+            threadID: threadID,
+            turnID: turnID,
+            providerRefs: ProviderEventRefs(providerThreadID: threadID, providerTurnID: turnID),
+            raw: ProviderRawEvent(source: CodexEventNormalizer.notificationSource, method: "turn/completed"),
+            kind: .turnCompleted(state: .completed)
+        ))
         return ProviderTurnStartResult(threadID: threadID, turnID: turnID, resumeCursor: CodexProviderAdapter.cursor(threadID: threadID))
     }
 
@@ -269,6 +295,19 @@ public actor CodexProviderAdapter: ProviderAdapter {
             developerInstructions: developerInstructions ?? "",
             toolServerURL: toolServerURL ?? URL(string: "http://127.0.0.1:0/mcp")!
         )
+    }
+}
+
+/// A tiny box so the synchronous event callback can accumulate the streamed reply.
+public final class TextAccumulator: @unchecked Sendable {
+    public init() {}
+    private let lock = NSLock()
+    private var storage = ""
+    public var value: String {
+        lock.lock(); defer { lock.unlock() }; return storage
+    }
+    public func append(_ text: String) {
+        lock.lock(); storage += text; lock.unlock()
     }
 }
 

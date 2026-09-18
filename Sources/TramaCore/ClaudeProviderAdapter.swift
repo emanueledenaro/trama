@@ -611,7 +611,17 @@ public actor ClaudeProviderAdapter: ProviderAdapter {
                 state.lastBlock = block
                 state.session.status = .closed
                 state.session.activeTurnID = nil
+                state.interruptRequested = true
                 let client = state.client
+                let blockedTurnID = state.turnID
+                state.turnID = nil
+                emit(ProviderEvent(
+                    eventID: UUID().uuidString,
+                    provider: .claudeAgent,
+                    threadID: threadID,
+                    turnID: blockedTurnID,
+                    kind: .turnCompleted(state: .interrupted)
+                ))
                 Task { await client.interrupt() }
             }
             switch normalized.signal {
@@ -699,15 +709,31 @@ public actor ClaudeProviderAdapter: ProviderAdapter {
             state.session.status = .closed
             state.session.activeTurnID = nil
             state.session.resumeCursor = cursorData(state, cache: state.accounting.cacheObservation)
+            let suspendedTurnID = state.turnID
+            state.turnID = nil
             threads[threadID] = state
             emit(ClaudeEventNormalizer.suspended(status: status, threadID: threadID, nativeSessionID: state.nativeSessionID))
+            if suspendedTurnID != nil {
+                emit(ProviderEvent(
+                    eventID: UUID().uuidString, provider: .claudeAgent, threadID: threadID,
+                    turnID: suspendedTurnID, kind: .turnCompleted(state: .interrupted)
+                ))
+            }
 
         case let .exited(status, stderr):
             state.session.status = .error
             state.session.activeTurnID = nil
             state.session.lastError = "The claude process exited with code \(status)."
+            let exitedTurnID = state.turnID
+            state.turnID = nil
             threads[threadID] = state
             emit(ClaudeEventNormalizer.exited(status: status, stderr: stderr, threadID: threadID, nativeSessionID: state.nativeSessionID))
+            if exitedTurnID != nil {
+                emit(ProviderEvent(
+                    eventID: UUID().uuidString, provider: .claudeAgent, threadID: threadID,
+                    turnID: exitedTurnID, kind: .turnCompleted(state: .failed)
+                ))
+            }
 
         case .stderr:
             break
