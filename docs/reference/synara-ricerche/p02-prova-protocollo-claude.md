@@ -158,3 +158,40 @@ la prova diretta nell'app è coperta solo dalla riga della schermata dei collega
 un'esecuzione grafica. La prova di completamento dentro l'app resta impossibile finché il
 Coordinatore non può scegliere Claude: `CoordinatorSession` apre solo Codex e la scelta del provider
 è una decisione di prodotto che non esiste ancora.
+
+## La politica dei provider di ADR 0009
+
+Sette criteri aggiunti al ticket dopo l'ADR 0009. Sono implementati in
+`Sources/TramaCore/ProviderRuntimePolicy.swift` e nelle strutture che li consumano.
+
+- **Un provider bloccato è uno stato normale.** `ProviderBlockReason` distingue limite di utilizzo
+  (con la data di sblocco quando il provider la riporta), autenticazione persa, binario mancante e
+  causa non classificata. `ProviderRuntimePolicy.block(for:)` lo legge da uno stato di accesso, e
+  l'adattatore di Claude emette l'evento normalizzato `providerBlocked` da un `rate_limit_event` con
+  stato diverso da `allowed` e da un `result` in errore che nomina un limite o un accesso perso.
+- **Nessun cambio automatico.** `ProviderRuntimeDecision` ha solo `proceed` e `stopAndWarn`. Non
+  esiste un ramo che sostituisce il provider. L'incarico passa a `waiting`, resta attivo, e conserva
+  worktree, turni e risultati; la ripresa azzera il blocco.
+- **La scheda e la striscia di stato.** La scheda `providerBlocked` nella conversazione e
+  `ProviderStatusStrip` mostrano motivo e azione proposta, con "Scegli un altro provider" e
+  "Riprova". Il cambio resta una decisione della persona.
+- **Collegato significa autenticato.** `ProviderOffering.options` elenca ogni provider con il suo
+  stato reale; `resolveUnknowns` fa girare il controllo prima di mostrare un provider sconosciuto;
+  solo `state == .authenticated` rende il provider selezionabile, e gli altri restano elencati con
+  il motivo.
+- **Modelli predefiniti.** `ProviderModelDefault.coordinator` prende la voce predefinita del
+  catalogo del provider; `specialist` prende il modello più economico della scala di costo nota
+  (`haiku` per Claude, `gpt-5.6-luna` per Codex). `ProviderModelPreference` ricorda la scelta della
+  persona per provider nel documento. Il Coordinatore di Trama mantiene il modello deciso in #70 per
+  Codex: la deviazione è dichiarata nella pull request.
+- **Documento del progetto.** Lo schema passa da 6 a 7: l'incarico registra `provider` al momento
+  dell'assegnazione, ogni turno registra il provider che lo ha prodotto, e il documento registra
+  `lastTurnProvider`. Un test costruisce un documento schema 6 dalla forma reale, toglie i campi
+  nuovi, lo ricarica e verifica che ogni dato esistente sopravviva e che il backup resti identico.
+- **Riapertura.** `ProviderRuntimePolicy.resumeDecision` riprende con il provider dell'ultimo
+  turno; se è bloccato, Trama ferma e avvisa invece di cambiare.
+- **Cambio del provider del Coordinatore.** `CoordinatorProviderSwitch.plan` costruisce il passaggio
+  con trascrizione, memoria e studio, e segnala che la sessione è nuova. Nell'app il cambio registra
+  la scelta, azzera il thread e inietta il passaggio nella sessione successiva. L'apertura di una
+  sessione Claude come Coordinatore dentro l'app non esiste ancora: è lo stesso limite di prodotto
+  dichiarato sopra.
