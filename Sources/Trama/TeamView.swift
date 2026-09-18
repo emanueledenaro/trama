@@ -191,9 +191,9 @@ struct TeamView: View {
                     Button("Aggiorna") { Task { await team.refresh() } }.disabled(team.isLoading || team.repository.isEmpty)
                     if team.isLoading { ProgressView().controlSize(.small) }
                 }
-            }.padding(.horizontal, TramaSpacing.content).padding(.bottom, TramaSpacing.section)
+            }.padding(.horizontal, TramaSpacing.section).padding(.bottom, TramaSpacing.section)
             if let error = team.error {
-                Label(error, systemImage: "exclamationmark.triangle").foregroundStyle(.orange).font(.callout).padding(.horizontal, TramaSpacing.content).padding(.bottom, TramaSpacing.related)
+                Label(error, systemImage: "exclamationmark.triangle").foregroundStyle(.orange).font(.callout).padding(.horizontal, TramaSpacing.section).padding(.bottom, TramaSpacing.related)
             }
             Divider()
             if let snapshot = team.snapshot {
@@ -357,7 +357,7 @@ struct TeamView: View {
             .padding(TramaSpacing.control)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(.horizontal, TramaSpacing.content)
+        .padding(.horizontal, TramaSpacing.section)
         .padding(.vertical, TramaSpacing.related)
     }
 

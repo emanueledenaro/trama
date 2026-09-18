@@ -34,6 +34,32 @@ Le intestazioni e i gruppi di azioni usano una guida sinistra comune. Quando man
 
 Il colore non è l’unico segnale. Gli errori conservano il testo completo, i controlli disabilitati mantengono l’etichetta e gli esiti delle verifiche mostrano un simbolo con la descrizione.
 
+## Token della finestra
+
+Dal 18 settembre 2026 l’impianto della finestra segue i ruoli della app Codex raccolti in `docs/reference/design-app-codex.md`. I token vivono in `DesignSystem.swift` e portano il nome del ruolo, non il numero del grigio: `TramaSurface` per le superfici, `TramaText` per il testo, `TramaBorder` per contorni e hover, `TramaShadow` per le quattro ombre, `TramaInfo` per il blu informativo. Ogni ruolo ha il tono chiaro e il tono scuro, quindi le viste non scelgono mai un colore in base al tema.
+
+| Ruolo | Chiaro | Scuro |
+| --- | --- | --- |
+| `TramaSurface.page` | `#ffffff` | `#181818` |
+| `TramaSurface.secondary` | `#f9f9f9` | `#212121` |
+| `TramaSurface.soft` | `#ededed` | `#303030` |
+| `TramaSurface.raised` | `#ffffff` | `#212121` |
+| `TramaSurface.primaryButton` | `#181818` | `#131313` |
+| `TramaText.emphasis` | `#0d0d0d` | `#ffffff` |
+| `TramaText.primary` | `#282828` | `#dfdfdf` |
+| `TramaText.secondary` | `#5d5d5d` | `#8f8f8f` |
+| `TramaText.tertiary` | `#8f8f8f` | `#5d5d5d` |
+| `TramaInfo.text` | `#0169cc` | `#66b5ff` |
+| `TramaInfo.solid` | `#0285ff` | `#0285ff` |
+
+`TramaStateColor` tiene i tre stati della finestra: `pending` arancione, `building` blu, `verified` verde, più `failed` rosso per gli errori. Sono gli unici colori oltre ai grigi, e solo dove uno stato è vivo: nella striscia a zero il punto e il numero restano grigi.
+
+`TramaPrimaryButtonStyle` è il pulsante primario pieno: nero quasi pieno con testo bianco, su tutte le viste, invece del pulsante di sistema che prenderebbe il colore d’accento. Rispetta `controlSize`, lo stato disabilitato e Aumenta contrasto. La variante `shape: .circle` è il pulsante di invio del compositore. Il resto dell’interfaccia usa `TramaSecondaryButtonStyle` o i pulsanti di sistema.
+
+`TramaScreenHeader` ha due densità. Fuori dall’ispettore mostra titolo e sottotitolo con le azioni sulla stessa guida. Dentro l’ispettore (`tramaHeaderDensity == .panel`) diventa una riga di stato con il solo sottotitolo e le azioni, perché il titolo è già quello dell’ispettore: così non ci sono due titoli nello stesso pannello e i margini restano quelli del contenuto.
+
+`TramaPanel` raggruppa superficie, contorno e ombra leggera per schede e pannelli. Quando il sistema chiede Riduci trasparenza il pannello e il compositore diventano opachi invece che traslucidi; quando chiede Aumenta contrasto i contorni si rafforzano.
+
 ## Verifica corrente
 
 Il 13 settembre 2026 la build QA è stata controllata in tema scuro e chiaro, in finestra ampia e stretta. Le intestazioni condivise risultano allineate. Gli stati della lista richieste e del dettaglio conservano testo, simbolo e colore. Lo stato vuoto delle Issue inizialmente centrava l’intera vista a metà finestra; ora l’intestazione resta in alto e il contenuto vuoto occupa l’area disponibile.

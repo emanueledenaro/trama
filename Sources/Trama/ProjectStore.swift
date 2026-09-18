@@ -19,6 +19,35 @@ enum WorkspaceSection: String, CaseIterable, Identifiable {
         case .issues: "tray"
         }
     }
+
+    /// The pane this section stores, the one it opens the inspector on, and the reverse.
+    ///
+    /// The sections are no longer what the window is made of: they survive as the storage format of
+    /// the document and as the surface the Coordinator cards already call (`store.section = .team`).
+    init(target: InspectorTarget?) {
+        switch target {
+        case nil: self = .coordinator
+        case .map, .module: self = .map
+        case .requests, .candidate: self = .changes
+        case .pact, .decision: self = .decisions
+        case .team, .specialist: self = .team
+        case .group: self = .group
+        case .issues, .issue: self = .issues
+        }
+    }
+
+    /// The inspector target the section opens; nil closes the inspector and shows the conversation.
+    func target(moduleID: String?, requestID: UUID?) -> InspectorTarget? {
+        switch self {
+        case .coordinator: nil
+        case .team: .team
+        case .map: moduleID.map(InspectorTarget.module) ?? .map
+        case .changes: requestID.map(InspectorTarget.candidate) ?? .requests
+        case .decisions: .pact
+        case .group: .group
+        case .issues: .issues
+        }
+    }
 }
 
 @MainActor
@@ -26,7 +55,8 @@ final class ProjectStore: ObservableObject {
     @Published var project: RepositorySnapshot?
     @Published var recentProjects: [RecentProject] = []
     @Published var selectedModuleID: String?
-    @Published var section: WorkspaceSection? = .coordinator
+    /// What the right-hand inspector shows; nil when no target is open.
+    @Published var inspectorTarget: InspectorTarget?
     @Published var query = ""
     @Published var mapStyle = "Mappa"
     @Published var showInspector = true
@@ -66,6 +96,8 @@ final class ProjectStore: ObservableObject {
     @Published var codexVersion = ""
     @Published var isPreparingSkills = false
     @Published var pendingApproval: CodexClient.ApprovalRequest?
+    /// Increases when the person asks for the keyboard focus on the composer.
+    @Published var composerFocusRequest = 0
     /// Readable streamed reply text per request while a Codex turn is running. Not persisted.
     @Published var streamingReplies: [UUID: String] = [:]
     /// Raw JSON streamed by the planner, from which `streamingReplies` shows the message.
@@ -153,6 +185,50 @@ final class ProjectStore: ObservableObject {
     }
 
     var selectedModule: RepositoryModule? { project?.modules.first { $0.id == selectedModuleID } }
+
+    /// The pane stored in the document, kept as the compatibility surface of the Coordinator cards
+    /// and of `saveDocument`. The window itself reads `inspectorTarget`.
+    var section: WorkspaceSection? {
+        get { showInspector ? WorkspaceSection(target: inspectorTarget) : .coordinator }
+        set {
+            if let newValue, newValue != .coordinator {
+                inspectorTarget = newValue.target(moduleID: selectedModuleID, requestID: selectedRequestID)
+                showInspector = true
+            } else {
+                showInspector = false
+            }
+        }
+    }
+
+    /// Brings the keyboard focus to the composer field.
+    func focusComposer() {
+        composerFocusRequest += 1
+    }
+
+    /// Opens the inspector on a target, or closes it when the target is nil. The target stays
+    /// remembered, so reopening the inspector returns to what the person was reading.
+    func openInspector(_ target: InspectorTarget?) {
+        if let target {
+            inspectorTarget = target
+            showInspector = true
+        } else {
+            showInspector = false
+        }
+    }
+
+    /// Shows the inspector on the open target, closes it, or opens the work list when none was chosen.
+    func toggleInspector() {
+        if showInspector { showInspector = false }
+        else { openInspector(inspectorTarget ?? .requests) }
+    }
+
+    /// Opens the target of a sidebar row.
+    func open(_ destination: SidebarDestination) {
+        switch destination {
+        case let .inspector(target): openInspector(target)
+        case .conversation: openInspector(nil)
+        }
+    }
     var filteredModules: [RepositoryModule] {
         (project?.modules ?? []).filter { query.isEmpty || $0.name.localizedCaseInsensitiveContains(query) || $0.files.contains { $0.relativePath.localizedCaseInsensitiveContains(query) } }
     }
@@ -356,11 +432,10 @@ final class ProjectStore: ObservableObject {
     func openInMap(_ request: WorkRequest) {
         selectedRequestID = request.id
         selectedModuleID = request.moduleID == "project" ? nil : request.moduleID
-        section = .map
-        showInspector = selectedModuleID != nil
+        openInspector(selectedModuleID.map(InspectorTarget.module) ?? .map)
     }
 
-    func returnToCoordinator() { section = .coordinator }
+    func returnToCoordinator() { openInspector(nil) }
 
     // MARK: Project mandate
 

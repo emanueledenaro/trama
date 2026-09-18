@@ -423,7 +423,7 @@ struct CoordinatorView: View {
                     if card.personActions.contains(.grant) {
                         let grantLabel = card.currentMandate?.status == .granted ? "Accetta la proposta" : "Concedi"
                         Button(grantLabel) { store.acceptMandateProposal(request.id) }
-                            .buttonStyle(.borderedProminent)
+                            .buttonStyle(TramaPrimaryButtonStyle())
                             .accessibilityLabel(card.currentMandate?.status == .granted ? "Accetta la proposta di mandato" : "Concedi il mandato proposto")
                     }
                     if card.personActions.contains(.correct) {
@@ -501,7 +501,7 @@ struct CoordinatorView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     Text(decisionOutcomeText(request, outcome)).fixedSize(horizontal: false, vertical: true)
-                    Button("Apri nel Patto") { store.section = .decisions }
+                    Button("Apri nel Patto") { store.openInspector(.decision(outcome.decisionID)) }
                         .accessibilityLabel("Apri la decisione \(outcome.decisionID) nel Patto")
                 }
             }
@@ -567,7 +567,7 @@ struct CoordinatorView: View {
                             note: teamNotes[proposal.id]
                         )
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(TramaPrimaryButtonStyle())
                     .disabled(kept.isEmpty)
                     .accessibilityLabel("Conferma il team proposto")
                 }
@@ -657,11 +657,11 @@ struct CoordinatorView: View {
                     }
                     if actions.contains(.resume) {
                         Button("Riprendi", systemImage: "play.fill") { store.resumeSpecialist(assignmentID: assignment.id) }
-                            .buttonStyle(.borderedProminent)
+                            .buttonStyle(TramaPrimaryButtonStyle())
                             .disabled(!store.codexConnected)
                             .accessibilityLabel("Riprendi l'incarico")
                     }
-                    Button("Apri il Team") { store.section = .team }
+                    Button("Apri il Team") { store.openInspector(.specialist(assignment.specialistID)) }
                         .accessibilityLabel("Apri la sezione Team")
                 }
             }
