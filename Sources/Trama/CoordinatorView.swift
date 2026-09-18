@@ -15,6 +15,8 @@ struct CoordinatorView: View {
     @State private var teamSelections: [String: Set<String>] = [:]
     /// Corrections written on a team proposal card, keyed by its id.
     @State private var teamNotes: [String: String] = [:]
+    /// Candidate whose diff and evidence the person opened from its card.
+    @State private var openedCandidate: String?
 
     private var rows: [ConversationRow] {
         ConversationTimeline.rows(
@@ -72,6 +74,10 @@ struct CoordinatorView: View {
                 }
             }
         }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .sheet(item: Binding(
+                get: { openedCandidate.map(OpenedCandidate.init) },
+                set: { openedCandidate = $0?.id }
+            )) { CandidateDetailView(candidateID: $0.id) }
     }
 
     private static let pendingStudyID = UUID()
@@ -353,6 +359,8 @@ struct CoordinatorView: View {
             teamProposalCard(card, date: row.date)
         case .assignment(let card):
             assignmentCard(card, date: row.date)
+        case .candidate(let card):
+            candidateCard(card, date: row.date)
         case .generic(let card):
             switch card.kind {
             case .study:
@@ -665,6 +673,86 @@ struct CoordinatorView: View {
         .overlay(RoundedRectangle(cornerRadius: TramaRadius.card).stroke(.separator))
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Scheda di incarico")
+    }
+
+    /// A candidate: its diff, the evidence Trama recorded, the technical review and its state.
+    private func candidateCard(_ card: ConversationCard.CandidateCard, date: Date) -> some View {
+        let report = card.report
+        let candidate = report.candidate
+        return VStack(alignment: .leading, spacing: TramaSpacing.related) {
+            HStack(spacing: TramaSpacing.compact) {
+                Image(systemName: "checkmark.seal")
+                Text("Candidato").font(.headline)
+                CandidateStateBadge(state: report.state)
+                Spacer(minLength: 0)
+                Text("Trama").font(.caption).foregroundStyle(.secondary)
+            }
+            TramaLabeledText(label: "Candidato", value: candidate.id)
+            TramaLabeledText(label: "Base", value: candidate.baseRevision)
+            TramaLabeledText(label: "Decisioni pertinenti", value: candidate.requiredDecisionIDs.joined(separator: ", "))
+            TramaLabeledText(label: "Verifiche richieste", value: candidate.requiredChecks.joined(separator: ", "))
+            if !candidate.changedFiles.isEmpty {
+                TramaLabeledText(label: "File", value: candidate.changedFiles.joined(separator: ", "))
+            }
+            evidenceSummary(report)
+            if let review = candidate.technicalReview {
+                VStack(alignment: .leading, spacing: TramaSpacing.compact) {
+                    Text("Revisione tecnica · \(review.verdict == .approved ? "approvata" : "modifiche richieste")").font(.callout.weight(.medium))
+                    TramaSupportingText(review.summary)
+                    Text("Thread del revisore \(review.reviewerThreadID) · non è una revisione umana e nessun merge è avvenuto.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(TramaSpacing.related)
+                .overlay(RoundedRectangle(cornerRadius: TramaRadius.control).stroke(.separator))
+            } else {
+                TramaSupportingText("Nessuna revisione tecnica registrata per questo candidato.")
+            }
+            if report.clearanceInvalidated {
+                Label("Il via libera precedente non vale più per questo candidato.", systemImage: "exclamationmark.triangle")
+                    .font(.callout)
+                    .foregroundStyle(.orange)
+            }
+            if !report.blockers.isEmpty {
+                ForEach(Array(report.blockers.enumerated()), id: \.offset) { _, blocker in
+                    Text(blocker.candidateMessage).font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            TramaAdaptiveActions {
+                Button("Apri il diff", systemImage: "doc.text.magnifyingglass") { openedCandidate = candidate.id }
+                    .accessibilityLabel("Apri il diff del candidato \(candidate.id)")
+            }
+            Text(date, format: .dateTime.day().month().hour().minute()).font(.caption).foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(TramaSpacing.section)
+        .background(.background.secondary, in: RoundedRectangle(cornerRadius: TramaRadius.card))
+        .overlay(RoundedRectangle(cornerRadius: TramaRadius.card).stroke(.separator))
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Scheda di candidato \(candidate.id), \(report.state.label)")
+    }
+
+    @ViewBuilder
+    private func evidenceSummary(_ report: CandidateReport) -> some View {
+        VStack(alignment: .leading, spacing: TramaSpacing.compact) {
+            Text("Evidenze delle verifiche").font(.callout.weight(.medium))
+            if report.evidence.isEmpty {
+                TramaSupportingText("Nessun controllo registrato su questo candidato.")
+            } else {
+                ForEach(Array(report.evidence.enumerated()), id: \.offset) { _, evidence in
+                    HStack(alignment: .firstTextBaseline, spacing: TramaSpacing.compact) {
+                        Image(systemName: evidence.result == .pass ? "checkmark.circle" : evidence.result == .fail ? "xmark.circle" : "circle")
+                            .foregroundStyle(evidence.result == .pass ? Color.green : evidence.result == .fail ? Color.orange : Color.secondary)
+                        VStack(alignment: .leading, spacing: TramaSpacing.compact) {
+                            Text("\(evidence.checkID) · \(evidence.result.rawValue)").font(.callout)
+                            if evidence.result != .pass, !evidence.output.isEmpty {
+                                Text(evidence.output).font(.system(.caption, design: .monospaced)).foregroundStyle(.secondary).lineLimit(6).textSelection(.enabled)
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 
     private func teamResolutionText(_ resolution: TeamProposal.Resolution?) -> String {

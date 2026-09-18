@@ -309,6 +309,33 @@ public struct PactEngine: Codable, Equatable, Sendable {
         return decision
     }
 
+    public func lease(id: String) throws -> PactLease {
+        guard let lease = leasesByID[id] else {
+            throw PactEngineError.unknownLease(id)
+        }
+        return lease
+    }
+
+    public func candidate(id: String) throws -> PactCandidate {
+        try registeredCandidate(id: id)
+    }
+
+    /// Evidence recorded for one candidate, ordered by check, so a card never mixes candidates.
+    public func evidence(candidateID: String) -> [PactEvidence] {
+        evidenceByKey.values.filter { $0.candidateID == candidateID }.sorted { $0.checkID < $1.checkID }
+    }
+
+    /// The digest a delegated clearance is bound to: the candidate, its base, the leased decision
+    /// versions and the evidence recorded on it. It changes when any of them changes, so a previous
+    /// green light stops authorizing the candidate it was given for.
+    public func contentFingerprint(candidateID: String) throws -> String {
+        let candidate = try registeredCandidate(id: candidateID)
+        guard let lease = leasesByID[candidate.leaseID] else {
+            throw PactEngineError.unknownLease(candidate.leaseID)
+        }
+        return fingerprint(candidate: candidate, lease: lease)
+    }
+
     public func decisionHistory(for id: String) throws -> [PactDecision] {
         guard let history = decisionHistoryByID[id] else {
             throw PactEngineError.unknownDecision(id)

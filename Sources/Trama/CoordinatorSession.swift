@@ -826,6 +826,10 @@ extension ProjectStore {
         case .createSpecialist: "Ha aggiunto uno specialista"
         case .assignTask: "Ha assegnato un incarico"
         case .stopSpecialist: "Ha chiesto di fermare uno specialista"
+        case .declareCandidate: "Ha dichiarato un candidato"
+        case .verifyCandidate: "Ha eseguito un controllo sul candidato"
+        case .reviewCandidate: "Ha chiesto una revisione tecnica"
+        case .clearCandidate: "Ha dato il via libera a un candidato"
         case nil: "Strumento \(tool)"
         }
     }

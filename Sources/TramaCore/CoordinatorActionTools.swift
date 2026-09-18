@@ -105,6 +105,8 @@ extension CoordinatorTools {
         case .requestDecision: try await requestDecision(arguments, context: context, host: host, projectID: projectID)
         case .runReadOnlyCheck: try await runReadOnlyCheck(arguments, context: context, host: host, projectID: projectID)
         case .proposeTeam: try await proposeTeam(arguments, context: context, host: host, projectID: projectID)
+        case .verifyCandidate: try await verifyCandidate(arguments, context: context, host: host, projectID: projectID)
+        case .reviewCandidate: try await reviewCandidate(arguments, context: context, host: host, projectID: projectID)
         default: throw Failure.invalid("\(tool.rawValue) does not ask the person or run a check.")
         }
     }
@@ -220,6 +222,7 @@ extension CoordinatorTools {
         switch tool {
         case .preparePlan: return try planIntent(arguments, context: context)
         case .createSpecialist, .assignTask, .stopSpecialist: return try teamIntent(tool, arguments: arguments, context: context)
+        case .declareCandidate, .clearCandidate: return try candidateIntent(tool, arguments: arguments, context: context)
         default: throw Failure.invalid("\(tool.rawValue) is not an action.")
         }
     }
