@@ -6,6 +6,8 @@ import TramaCore
 /// The floating field under the Coordinator chat: mentions, skills, pastes, images and per-message settings.
 struct CoordinatorComposer: View {
     @EnvironmentObject private var store: ProjectStore
+    @Environment(\.colorSchemeContrast) private var contrast
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @State private var cursor = 0
     @State private var editorHeight: CGFloat = 20
     @State private var pendingCursor: Int?
@@ -64,9 +66,9 @@ struct CoordinatorComposer: View {
                 bottomRow
             }
             .padding(TramaSpacing.related)
-            .background(.background, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(.separator))
-            .shadow(color: .black.opacity(0.08), radius: 14, y: 4)
+            .background(composerSurface)
+            .overlay(RoundedRectangle(cornerRadius: TramaRadius.floating, style: .continuous).strokeBorder(TramaBorder.outline(contrast), lineWidth: 1))
+            .tramaShadow(TramaShadow.large)
         }
         .frame(maxWidth: 760)
         .frame(maxWidth: .infinity)
@@ -81,6 +83,17 @@ struct CoordinatorComposer: View {
 
     private var notices: [String] {
         [store.modelsError, store.composerNotice].compactMap { $0 }
+    }
+
+    /// The floating surface of the field: translucent until the system asks for less transparency.
+    @ViewBuilder
+    private var composerSurface: some View {
+        let shape = RoundedRectangle(cornerRadius: TramaRadius.floating, style: .continuous)
+        if reduceTransparency {
+            TramaSurface.raised.clipShape(shape)
+        } else {
+            shape.fill(.regularMaterial)
+        }
     }
 
     // MARK: Suggestions
@@ -98,7 +111,7 @@ struct CoordinatorComposer: View {
                     .font(.callout)
                     .padding(.horizontal, TramaSpacing.control)
                     .padding(.vertical, 5)
-                    .background(index == highlightedSuggestion ? Color.accentColor.opacity(0.15) : .clear, in: RoundedRectangle(cornerRadius: TramaRadius.control, style: .continuous))
+                    .background(index == highlightedSuggestion ? TramaInfo.solid.opacity(0.15) : .clear, in: RoundedRectangle(cornerRadius: TramaRadius.control, style: .continuous))
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -107,7 +120,7 @@ struct CoordinatorComposer: View {
         }
         .padding(TramaSpacing.compact)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: TramaRadius.card, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: TramaRadius.card, style: .continuous).stroke(.separator))
+        .overlay(RoundedRectangle(cornerRadius: TramaRadius.card, style: .continuous).strokeBorder(TramaBorder.outline()))
     }
 
     private func handleKey(_ key: ComposerKey, suggestions: [ComposerSuggestion]) -> Bool {
@@ -212,11 +225,10 @@ struct CoordinatorComposer: View {
             if store.isPlanning {
                 Button("Interrompi", systemImage: "stop.fill") { store.stopPlanning() }
                     .labelStyle(.iconOnly)
-                    .buttonStyle(.borderedProminent)
-                    .buttonBorderShape(.circle)
+                    .buttonStyle(TramaPrimaryButtonStyle(shape: .circle))
             } else {
                 Button { store.submitRequest() } label: { Image(systemName: "arrow.up").fontWeight(.semibold) }
-                    .buttonStyle(.borderedProminent).buttonBorderShape(.circle)
+                    .buttonStyle(TramaPrimaryButtonStyle(shape: .circle))
                     .disabled(!canSend)
                     .help("Invia al Coordinatore").accessibilityLabel("Invia al Coordinatore")
             }
@@ -288,7 +300,7 @@ struct CoordinatorComposer: View {
         } label: {
             Label(turnLabel(defaultEffort: defaultEffort), systemImage: "gauge.with.dots.needle.50percent")
                 .lineLimit(1)
-                .foregroundStyle(store.turnOverride.isEmpty ? Color.secondary : Color.accentColor)
+                .foregroundStyle(store.turnOverride.isEmpty ? TramaText.secondary : TramaInfo.text)
         }
         .menuStyle(.borderlessButton).fixedSize()
         .disabled(store.isPlanning || store.models.isEmpty)
@@ -369,7 +381,7 @@ struct ContextMeterView: View {
                         Circle().stroke(.quaternary, lineWidth: 2)
                         Circle()
                             .trim(from: 0, to: meter.fraction)
-                            .stroke(Color.accentColor, style: StrokeStyle(lineWidth: 2, lineCap: .round))
+                            .stroke(TramaInfo.solid, style: StrokeStyle(lineWidth: 2, lineCap: .round))
                             .rotationEffect(.degrees(-90))
                             .animation(.easeOut(duration: 0.5), value: meter.fraction)
                     }

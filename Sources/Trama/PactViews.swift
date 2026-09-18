@@ -8,7 +8,7 @@ struct DecisionsView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
                 TramaScreenHeader("Patto Vivo", subtitle: "Le scelte che il lavoro deve rispettare.") {
-                    Button("Nuova decisione", systemImage: "plus") { draft = DecisionDraft() }.buttonStyle(.borderedProminent)
+                    Button("Nuova decisione", systemImage: "plus") { draft = DecisionDraft() }.buttonStyle(TramaPrimaryButtonStyle())
                 }
                 VStack(alignment: .leading, spacing: TramaSpacing.section) {
                     let decisions = store.document.pact?.decisions ?? []
@@ -32,7 +32,7 @@ struct DecisionsView: View {
                     }
                     if store.project?.isDemo == true { demo }
                 }
-                .padding(.horizontal, TramaSpacing.content)
+                .padding(.horizontal, TramaSpacing.section)
                 .padding(.bottom, TramaSpacing.content)
             }
         }.sheet(item: $draft) { value in DecisionEditor(draft: value) }
@@ -103,7 +103,7 @@ private struct DecisionEditor: View {
                 Spacer()
                 Button("Registra decisione") {
                     store.saveDecision(draft); dismiss()
-                }.buttonStyle(.borderedProminent).disabled([draft.value,draft.example,draft.rationale].contains { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })
+                }.buttonStyle(TramaPrimaryButtonStyle()).disabled([draft.value,draft.example,draft.rationale].contains { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })
             }
         }.padding(TramaSpacing.content).frame(width: 570)
     }

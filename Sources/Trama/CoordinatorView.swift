@@ -415,7 +415,7 @@ struct CoordinatorView: View {
                     if card.personActions.contains(.grant) {
                         let grantLabel = card.currentMandate?.status == .granted ? "Accetta la proposta" : "Concedi"
                         Button(grantLabel) { store.acceptMandateProposal(request.id) }
-                            .buttonStyle(.borderedProminent)
+                            .buttonStyle(TramaPrimaryButtonStyle())
                             .accessibilityLabel(card.currentMandate?.status == .granted ? "Accetta la proposta di mandato" : "Concedi il mandato proposto")
                     }
                     if card.personActions.contains(.correct) {
@@ -559,7 +559,7 @@ struct CoordinatorView: View {
                             note: teamNotes[proposal.id]
                         )
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(TramaPrimaryButtonStyle())
                     .disabled(kept.isEmpty)
                     .accessibilityLabel("Conferma il team proposto")
                 }
@@ -649,7 +649,7 @@ struct CoordinatorView: View {
                     }
                     if actions.contains(.resume) {
                         Button("Riprendi", systemImage: "play.fill") { store.resumeSpecialist(assignmentID: assignment.id) }
-                            .buttonStyle(.borderedProminent)
+                            .buttonStyle(TramaPrimaryButtonStyle())
                             .disabled(!store.codexConnected)
                             .accessibilityLabel("Riprendi l'incarico")
                     }

@@ -10,11 +10,12 @@ import TramaCore
 struct InspectorView: View {
     @EnvironmentObject private var store: ProjectStore
     @Environment(\.colorSchemeContrast) private var contrast
+    /// The sheet draws its own title row, so the pane hides its header there.
+    var showsHeader = true
 
     var body: some View {
         VStack(spacing: 0) {
-            header
-            Divider()
+            if showsHeader { header }
             content
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -31,8 +32,18 @@ struct InspectorView: View {
 
     private var header: some View {
         HStack(spacing: TramaSpacing.compact) {
-            Image(systemName: symbol).foregroundStyle(TramaText.secondary)
-            Text(store.inspectorTarget?.title ?? "Dettagli").font(.headline)
+            Image(systemName: symbol).font(.callout).foregroundStyle(TramaText.secondary).frame(width: 16)
+            Text(store.inspectorTarget?.title ?? "Dettagli")
+                .font(.headline)
+                .foregroundStyle(TramaText.emphasis)
+                .lineLimit(1)
+            if let subtitle = headerSubtitle {
+                Text(subtitle)
+                    .font(.caption)
+                    .foregroundStyle(TramaText.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
             Spacer(minLength: 0)
             Button("Chiudi l'ispettore", systemImage: "xmark") { store.showInspector = false }
                 .labelStyle(.iconOnly)
@@ -41,10 +52,22 @@ struct InspectorView: View {
                 .help("Chiudi l'ispettore (Esc)")
                 .accessibilityLabel("Chiudi l'ispettore")
         }
-        .padding(.horizontal, TramaSpacing.related)
-        .padding(.vertical, TramaSpacing.control)
+        .padding(.horizontal, TramaSpacing.section)
+        .frame(minHeight: 38)
         .background(TramaSurface.secondary)
         .overlay(alignment: .bottom) { Rectangle().fill(TramaBorder.hairline(contrast)).frame(height: 1) }
+    }
+
+    /// What the header adds to the pane name: the object the inspector is showing.
+    private var headerSubtitle: String? {
+        switch store.inspectorTarget {
+        case let .module(id): store.project?.modules.first { $0.id == id }?.name
+        case let .specialist(id): store.document.team?.specialist(id)?.name
+        case let .decision(id): id
+        case let .candidate(id): store.document.requests.first { $0.id == id }?.title
+        case let .issue(number): "#\(number)"
+        default: nil
+        }
     }
 
     private var symbol: String {
@@ -63,23 +86,23 @@ struct InspectorView: View {
     private var content: some View {
         switch store.inspectorTarget {
         case .map:
-            ProjectMapView()
+            ProjectMapView().environment(\.tramaHeaderDensity, .panel)
         case .module:
             ModuleInspector()
         case .requests, .candidate:
             RequestsView()
         case .pact:
-            DecisionsView()
+            DecisionsView().environment(\.tramaHeaderDensity, .panel)
         case let .decision(id):
             DecisionInspector(decisionID: id) { store.openInspector($0) }
         case .team:
-            SpecialistsView()
+            SpecialistsView().environment(\.tramaHeaderDensity, .panel)
         case let .specialist(id):
             SpecialistInspector(specialistID: id)
         case .group:
-            TeamView().environmentObject(store.team)
+            TeamView().environmentObject(store.team).environment(\.tramaHeaderDensity, .panel)
         case .issues, .issue:
-            IssuesView()
+            IssuesView().environment(\.tramaHeaderDensity, .panel)
         case nil:
             ContentUnavailableView("Nessun dettaglio", systemImage: "sidebar.right", description: Text("Scegli una decisione, un candidato, uno specialista o un modulo nella sidebar, nella striscia o nelle schede della conversazione."))
         }
@@ -100,7 +123,7 @@ struct InspectorSheet: View {
             }
             .padding(TramaSpacing.related)
             Divider()
-            InspectorView()
+            InspectorView(showsHeader: false)
         }
         .frame(minWidth: 420, idealWidth: 520, minHeight: 480, idealHeight: 640)
         .sheet(item: $store.filePreview) { preview in FilePreviewView(preview: preview) }

@@ -45,7 +45,7 @@ enum TramaInfo {
     /// Informational text: links and selected rows.
     static let text = dynamic(light: 0x0169CC, dark: 0x66B5FF)
     /// Informational fill.
-    static let solid = Color(nsColor: NSColor(srgbRed: 0x02 / 255, green: 0x85 / 255, blue: 0xFF / 255, alpha: 1))
+    static let solid = color(hex: 0x0285FF)
 }
 
 /// The three states of the window: an open decision, work under way, a verified candidate.
@@ -122,6 +122,17 @@ func dynamic(light: UInt32, dark: UInt32, lightAlpha: Double = 1, darkAlpha: Dou
     })
 }
 
+/// One tone of the reference palette, the same in light and dark.
+func color(hex: UInt32, alpha: Double = 1) -> Color {
+    Color(
+        .sRGB,
+        red: Double((hex >> 16) & 0xFF) / 255,
+        green: Double((hex >> 8) & 0xFF) / 255,
+        blue: Double(hex & 0xFF) / 255,
+        opacity: alpha
+    )
+}
+
 /// The window's own surfaces: a card, the flat row of the sidebar and the filled primary button.
 ///
 /// They read `colorSchemeContrast` and `accessibilityReduceTransparency`, so Increase Contrast and
@@ -152,19 +163,73 @@ struct TramaPanel<Content: View>: View {
     }
 }
 
-/// The filled primary action of the window; on light it is near black with white text.
+/// The filled primary action of the window.
+///
+/// On light it is near black with white text, as the reference asks; the system's own prominent
+/// button would take the accent colour instead. It answers control size, the disabled state and
+/// Increase Contrast.
 struct TramaPrimaryButtonStyle: ButtonStyle {
+    enum Shape {
+        case rounded
+        /// The circular icon-only send button of the composer.
+        case circle
+    }
+
+    var shape: Shape = .rounded
+
     @Environment(\.colorSchemeContrast) private var contrast
+    @Environment(\.controlSize) private var controlSize
+    @Environment(\.isEnabled) private var isEnabled
 
     func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(.body.weight(.medium))
+        let metrics = Metrics(controlSize)
+        return configuration.label
+            .font(metrics.font)
             .foregroundStyle(.white)
-            .padding(.horizontal, TramaSpacing.related)
-            .frame(minHeight: 28)
-            .background(TramaSurface.primaryButton.opacity(configuration.isPressed ? 0.85 : 1), in: RoundedRectangle(cornerRadius: TramaRadius.control, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: TramaRadius.control, style: .continuous).strokeBorder(.white.opacity(contrast == .increased ? 0.45 : 0), lineWidth: 1))
-            .opacity(configuration.isPressed ? 0.9 : 1)
+            .padding(.horizontal, shape == .circle ? 0 : metrics.horizontal)
+            .frame(minWidth: shape == .circle ? metrics.height : nil, minHeight: metrics.height)
+            .background(backgroundView(isPressed: configuration.isPressed))
+            .opacity(isEnabled ? 1 : 0.45)
+    }
+
+    private func fill(isPressed: Bool) -> Color {
+        TramaSurface.primaryButton.opacity(isPressed ? 0.82 : 1)
+    }
+
+    private func outlineWidth() -> CGFloat { contrast == .increased ? 1 : 0 }
+
+    @ViewBuilder
+    private func backgroundView(isPressed: Bool) -> some View {
+        switch shape {
+        case .rounded:
+            let rounded = RoundedRectangle(cornerRadius: TramaRadius.control, style: .continuous)
+            rounded.fill(fill(isPressed: isPressed))
+                .overlay(rounded.strokeBorder(.white.opacity(contrast == .increased ? 0.45 : 0), lineWidth: outlineWidth()))
+        case .circle:
+            Circle().fill(fill(isPressed: isPressed))
+                .overlay(Circle().strokeBorder(.white.opacity(contrast == .increased ? 0.45 : 0), lineWidth: outlineWidth()))
+        }
+    }
+
+    private struct Metrics {
+        let height: CGFloat
+        let horizontal: CGFloat
+        let font: Font
+
+        init(_ size: ControlSize) {
+            switch size {
+            case .mini: self.init(height: 20, horizontal: 8, font: .caption)
+            case .small: self.init(height: 24, horizontal: 10, font: .callout)
+            case .large, .extraLarge: self.init(height: 36, horizontal: 18, font: .body)
+            default: self.init(height: 28, horizontal: 12, font: .body)
+            }
+        }
+
+        private init(height: CGFloat, horizontal: CGFloat, font: Font) {
+            self.height = height
+            self.horizontal = horizontal
+            self.font = font
+        }
     }
 }
 
@@ -183,7 +248,24 @@ struct TramaSecondaryButtonStyle: ButtonStyle {
     }
 }
 
+/// How much room a shared header takes: full screens breathe, the panels of the inspector do not.
+enum TramaHeaderDensity {
+    case screen, panel
+}
+
+private struct TramaHeaderDensityKey: EnvironmentKey {
+    static let defaultValue: TramaHeaderDensity = .screen
+}
+
+extension EnvironmentValues {
+    var tramaHeaderDensity: TramaHeaderDensity {
+        get { self[TramaHeaderDensityKey.self] }
+        set { self[TramaHeaderDensityKey.self] = newValue }
+    }
+}
+
 struct TramaScreenHeader<Actions: View>: View {
+    @Environment(\.tramaHeaderDensity) private var density
     let title: String
     let subtitle: String
     @ViewBuilder let actions: Actions
@@ -195,6 +277,27 @@ struct TramaScreenHeader<Actions: View>: View {
     }
 
     var body: some View {
+        if density == .panel {
+            panelBar
+        } else {
+            screenHeader
+        }
+    }
+
+    /// Inside the inspector the title is already in the pane's own header, so the shared header
+    /// becomes one quiet status line with the actions on the same guide.
+    private var panelBar: some View {
+        HStack(alignment: .firstTextBaseline, spacing: TramaSpacing.related) {
+            Text(subtitle).font(.callout).foregroundStyle(TramaText.secondary)
+            Spacer(minLength: 0)
+            actions.fixedSize(horizontal: true, vertical: false)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, TramaSpacing.section)
+        .padding(.vertical, TramaSpacing.control)
+    }
+
+    private var screenHeader: some View {
         ViewThatFits(in: .horizontal) {
             HStack(alignment: .top, spacing: TramaSpacing.section) {
                 titleBlock

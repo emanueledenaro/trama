@@ -7,18 +7,16 @@ struct ModuleInspector: View {
     var body: some View {
         if let module = store.selectedModule {
             VStack(alignment: .leading, spacing: 0) {
-                HStack(spacing: TramaSpacing.related) {
-                    Image(systemName: module.symbol).font(.system(size: 28)).foregroundStyle(.tint)
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(module.name).font(.title2.weight(.semibold))
-                        Text("\(module.files.count) file sorgente").font(.caption).foregroundStyle(.secondary)
-                    }
-                }.padding(TramaSpacing.content)
+                HStack(spacing: TramaSpacing.control) {
+                    Image(systemName: module.symbol).font(.callout).foregroundStyle(TramaText.secondary)
+                    Text("\(module.files.count) file sorgente").font(.callout).foregroundStyle(TramaText.secondary)
+                    Spacer(minLength: 0)
+                }.padding(.horizontal, TramaSpacing.section).padding(.vertical, TramaSpacing.control)
                 Picker("Dettaglio", selection: $store.inspectorTab) {
                     Text("Panoramica").tag("Panoramica")
                     Text("File").tag("File")
                     Text("Decisioni").tag("Decisioni")
-                }.pickerStyle(.segmented).labelsHidden().padding(.horizontal, TramaSpacing.related).padding(.bottom, TramaSpacing.related)
+                }.pickerStyle(.segmented).labelsHidden().padding(.horizontal, TramaSpacing.section).padding(.bottom, TramaSpacing.related)
                 Divider()
                 ScrollView {
                     VStack(alignment: .leading, spacing: TramaSpacing.section) {
@@ -139,14 +137,14 @@ struct RequestsView: View {
                                 }
                                 if request.session != nil { SessionReviewView(request: request) }
                                 if request.state == .planReady, store.codexConnected, !store.isPlanning {
-                                    Button("Rivedi e avvia", systemImage: "play.fill") { reviewingPlan = request }.buttonStyle(.borderedProminent)
+                                    Button("Rivedi e avvia", systemImage: "play.fill") { reviewingPlan = request }.buttonStyle(TramaPrimaryButtonStyle())
                                 }
                                 if !store.isPlanning && request.session == nil {
                                     Button(store.codexConnected ? "Chiedi di nuovo al Coordinatore" : "Collega ChatGPT") {
                                         if store.codexConnected { store.runPlan(request.id) } else { store.showConnections = true }
                                     }.buttonStyle(.bordered)
                                 }
-                            }.padding(TramaSpacing.content).frame(maxWidth: .infinity, alignment: .leading)
+                            }.padding(TramaSpacing.section).frame(maxWidth: .infinity, alignment: .leading)
                         }.frame(maxWidth: .infinity, maxHeight: .infinity)
                             .sheet(item: $reviewingPlan) { PlanExecutionEditor(request: $0) }
                     } else { ContentUnavailableView("Seleziona una richiesta", systemImage: "doc.text") }
@@ -202,7 +200,7 @@ struct ConnectionsView: View {
                                 Text(store.connectionDetail).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
                                 TramaAdaptiveActions {
                                     Button("Verifica collegamento") { Task { await store.connectCodex() } }.disabled(store.isConnecting)
-                                    if !store.codexConnected { Button("Accedi con ChatGPT") { Task { await store.signIn() } }.buttonStyle(.borderedProminent).disabled(store.isConnecting) }
+                                    if !store.codexConnected { Button("Accedi con ChatGPT") { Task { await store.signIn() } }.buttonStyle(TramaPrimaryButtonStyle()).disabled(store.isConnecting) }
                                     if store.isConnecting { ProgressView().controlSize(.small) }
                                 }
                             }
@@ -328,7 +326,7 @@ struct NewProjectView: View {
                 Text("Cosa vuoi costruire?").font(.callout.weight(.medium))
                 TextField("Descrivi il progetto", text: $idea, axis: .vertical).lineLimit(4...8).textFieldStyle(.roundedBorder).accessibilityLabel("Cosa vuoi costruire?")
             }
-            HStack { Button("Annulla") { dismiss() }.keyboardShortcut(.cancelAction); Spacer(); Button("Scegli la cartella") { create() }.buttonStyle(.borderedProminent).disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || idea.isEmpty) }
+            HStack { Button("Annulla") { dismiss() }.keyboardShortcut(.cancelAction); Spacer(); Button("Scegli la cartella") { create() }.buttonStyle(TramaPrimaryButtonStyle()).disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || idea.isEmpty) }
         }.padding(TramaSpacing.content).frame(width: 530)
     }
     private func create() {

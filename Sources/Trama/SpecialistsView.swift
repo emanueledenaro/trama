@@ -69,7 +69,7 @@ struct SpecialistsView: View {
                             }
                         }
                     }
-                    .padding(TramaSpacing.content)
+                    .padding(TramaSpacing.section)
                     .frame(maxWidth: 820)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }

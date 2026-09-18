@@ -14,8 +14,6 @@ struct WorkspaceView: View {
     @State private var columnVisibility = NavigationSplitViewVisibility.all
     @State private var expandedColumnVisibility = NavigationSplitViewVisibility.all
     @State private var showingNewProject = false
-    /// Identity of the selected sidebar row; arrows and VoiceOver come from the list itself.
-    @State private var selection: String?
 
     var body: some View {
         GeometryReader { geometry in
@@ -66,6 +64,8 @@ struct WorkspaceView: View {
                 set: { store.filePreview = $0 }
             )) { preview in FilePreviewView(preview: preview) }
             .sheet(isPresented: $showingNewProject) { NewProjectView() }
+            .tint(TramaInfo.solid)
+            .onAppear { V06Proof.shared.start(store) }
             .alert("Trama", isPresented: Binding(get: { store.errorMessage != nil }, set: { if !$0 { store.errorMessage = nil } })) {
                 if store.stateRecoveryNeeded { Button("Riprendi conservando il file originale") { store.recoverProjectState() } }
                 Button("Chiudi", role: .cancel) { store.errorMessage = nil }
@@ -75,9 +75,18 @@ struct WorkspaceView: View {
 
     // MARK: Sidebar
 
+    /// The selected row always mirrors the open inspector target, so no change handler has to keep
+    /// the two in step while the list is updating.
+    private var sidebarSelection: Binding<String?> {
+        Binding(
+            get: { store.showInspector ? Self.rowID(for: store.inspectorTarget, in: store) : nil },
+            set: { open(selection: $0) }
+        )
+    }
+
     private var sidebar: some View {
         VStack(spacing: 0) {
-            List(selection: $selection) {
+            List(selection: sidebarSelection) {
                 Section("Progetti") {
                     ForEach(store.recentProjects) { recent in
                         projectRow(recent).tag(Self.projectRowID(recent))
@@ -94,14 +103,6 @@ struct WorkspaceView: View {
                 }
             }
             .listStyle(.sidebar)
-            .onChange(of: selection) { _, value in open(selection: value) }
-            .onChange(of: store.inspectorTarget) { _, target in
-                guard store.showInspector else { return }
-                selection = Self.rowID(for: target, in: store)
-            }
-            .onChange(of: store.showInspector) { _, visible in
-                if !visible { selection = nil }
-            }
             footer
         }
     }
@@ -376,8 +377,13 @@ struct StatusStrip: View {
                 target: .requests
             )
             Spacer(minLength: 0)
-            if let project = store.project {
-                Text(project.name).font(.caption).foregroundStyle(TramaText.secondary).lineLimit(1)
+            // The project is already named in the sidebar; here the branch is the useful context.
+            if let branch = store.project?.branch, !branch.isEmpty {
+                Label(branch, systemImage: "arrow.triangle.branch")
+                    .font(.caption)
+                    .foregroundStyle(TramaText.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
             }
         }
         .padding(.horizontal, TramaSpacing.content)
@@ -389,10 +395,15 @@ struct StatusStrip: View {
     }
 
     private func item(count: Int, label: String, color: Color, target: InspectorTarget) -> some View {
-        Button { open(target) } label: {
+        // The three-state colour marks a live state: at zero the dot and the number stay gray.
+        let live = count > 0
+        return Button { open(target) } label: {
             HStack(spacing: TramaSpacing.compact) {
-                StateDot(color: color)
-                Text("\(count)").font(.callout.weight(.semibold)).monospacedDigit()
+                StateDot(color: live ? color : TramaText.tertiary)
+                Text("\(count)")
+                    .font(.callout.weight(live ? .semibold : .regular))
+                    .monospacedDigit()
+                    .foregroundStyle(live ? TramaText.primary : TramaText.tertiary)
                 Text(label).font(.callout).foregroundStyle(TramaText.secondary).lineLimit(1)
             }
             .contentShape(Rectangle())
