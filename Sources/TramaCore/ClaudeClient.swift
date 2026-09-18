@@ -279,8 +279,8 @@ public struct ClaudeSessionOptions: Equatable, Sendable {
         if let model, !model.isEmpty {
             args += ["--model", model]
         }
-        if let autoCompactWindow, autoCompactWindow > 0 {
-            args += ["--autocompact", String(autoCompactWindow)]
+        if let autoCompactWindow {
+            args += ["--autocompact", autoCompactWindow > 0 ? String(autoCompactWindow) : "auto"]
         }
         args += ["--permission-prompt-tool", "stdio"]
         args += ["--permission-mode", permissionMode.rawValue]
@@ -620,7 +620,7 @@ public actor ClaudeClient {
     public func stop() async {
         guard transport != nil || eventTask != nil else { return }
         isStopping = true
-        let error = ClientError.transport("sessione chiusa")
+        let error = ClientError.transport("session closed")
         failPending(with: error)
         eventTask?.cancel()
         eventTask = nil
@@ -679,7 +679,7 @@ public actor ClaudeClient {
     private func timeoutControl(_ id: String, subtype: String) {
         guard let continuation = pending.removeValue(forKey: id) else { return }
         pendingTimeouts.removeValue(forKey: id)?.cancel()
-        continuation.resume(throwing: ClientError.timedOut("nessuna risposta a \(subtype)"))
+        continuation.resume(throwing: ClientError.timedOut("no control response for \(subtype)"))
     }
 
     private func failPending(with error: Error) {
@@ -721,7 +721,7 @@ public actor ClaudeClient {
             if line.last == 0x0D { line.removeLast() }
             guard !line.isEmpty else { continue }
             guard let value = try? JSONDecoder().decode(JSONValue.self, from: line) else {
-                eventContinuation.yield(.stderr("Riga non JSON ignorata: \(String(decoding: line.prefix(256), as: UTF8.self))\n"))
+                eventContinuation.yield(.stderr("Non-JSON line ignored: \(String(decoding: line.prefix(256), as: UTF8.self))\n"))
                 continue
             }
             handle(value)
@@ -734,7 +734,7 @@ public actor ClaudeClient {
             guard let continuation = pending.removeValue(forKey: id) else { return }
             pendingTimeouts.removeValue(forKey: id)?.cancel()
             if subtype == "error" {
-                continuation.resume(throwing: ClientError.controlError(error ?? "errore del canale di controllo"))
+                continuation.resume(throwing: ClientError.controlError(error ?? "control channel error"))
             } else {
                 continuation.resume(returning: result ?? .null)
             }

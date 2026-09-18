@@ -132,6 +132,7 @@ final class ClaudeAuthStatusTests: XCTestCase {
         )
         let status = await checker.check()
         XCTAssertEqual(status.state, .unknown)
+        XCTAssertEqual(status.screenState, "error")
         XCTAssertFalse(status.isAvailable)
     }
 
@@ -146,6 +147,7 @@ final class ClaudeAuthStatusTests: XCTestCase {
         )
         let status = await checker.check()
         XCTAssertEqual(status.state, .authenticated)
+        XCTAssertEqual(status.screenState, "ready")
         XCTAssertEqual(status.version, "2.1.276")
         XCTAssertEqual(status.authLabel, "Claude Max Subscription")
     }
@@ -209,6 +211,7 @@ final class ClaudeAuthStatusTests: XCTestCase {
         )
         let status = await checker.check()
         XCTAssertEqual(status.state, .unknown)
+        XCTAssertEqual(status.screenState, "warning")
         XCTAssertTrue(status.isAvailable)
     }
 }

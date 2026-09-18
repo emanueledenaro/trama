@@ -157,6 +157,10 @@ public struct ProviderAccessStatus: Codable, Equatable, Sendable {
     public var provider: ProviderKind
     public var state: ProviderAccessState
     public var isAvailable: Bool
+    /// The screen state of the provider check: `ready`, `warning` or `error`. V08 carries only the
+    /// access state, which folds `warning` into `unknown`; the field keeps the distinction the
+    /// reference's `ServerProviderStatus` makes, so a warning is not read as an error.
+    public var screenState: String?
     public var authType: String?
     public var authLabel: String?
     public var version: String?
@@ -167,6 +171,7 @@ public struct ProviderAccessStatus: Codable, Equatable, Sendable {
         provider: ProviderKind,
         state: ProviderAccessState,
         isAvailable: Bool = true,
+        screenState: String? = nil,
         authType: String? = nil,
         authLabel: String? = nil,
         version: String? = nil,
@@ -176,6 +181,7 @@ public struct ProviderAccessStatus: Codable, Equatable, Sendable {
         self.provider = provider
         self.state = state
         self.isAvailable = isAvailable
+        self.screenState = screenState
         self.authType = authType
         self.authLabel = authLabel
         self.version = version

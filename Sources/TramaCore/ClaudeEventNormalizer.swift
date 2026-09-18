@@ -349,21 +349,18 @@ public struct ClaudeEventNormalizer: Sendable {
     // MARK: - Helpers
 
     /// `mcp__trama__list` reads as server `trama`, tool `list`; anything else is a built-in tool.
+    /// `mcp__trama__read_study` splits into server `trama` and tool `read_study`.
+    static func splitMcpTool(_ tool: String) -> (server: String, name: String)? {
+        guard tool.hasPrefix("mcp__"), let separator = tool.dropFirst(5).range(of: "__") else { return nil }
+        return (String(tool.dropFirst(5)[..<separator.lowerBound]), String(tool[separator.upperBound...]))
+    }
+
     static func serverName(for tool: String) -> String {
-        guard tool.hasPrefix("mcp__") else { return "claude" }
-        let parts = tool.dropFirst(5).split(separator: "_", omittingEmptySubsequences: false)
-        // The separator is a double underscore, which split removes; rejoin on the raw string.
-        let remainder = tool.dropFirst(5)
-        if let range = remainder.range(of: "__") {
-            return String(remainder[..<range.lowerBound])
-        }
-        _ = parts
-        return "mcp"
+        splitMcpTool(tool)?.server ?? "claude"
     }
 
     static func shortToolName(_ tool: String) -> String {
-        guard tool.hasPrefix("mcp__"), let range = tool.dropFirst(5).range(of: "__") else { return tool }
-        return String(tool[range.upperBound...])
+        splitMcpTool(tool)?.name ?? tool
     }
 
     static func toolResultText(_ content: JSONValue?) -> String? {

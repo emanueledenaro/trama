@@ -27,6 +27,12 @@ final class FakeClaudeTransport: ClaudeTransport, @unchecked Sendable {
     /// A malformed line emitted before any valid record, to prove it is skipped.
     var emitGarbageOnStart = false
 
+    /// Control requests the client waits for; answering keeps tests fast and deterministic.
+    private static let autoAnsweredSubtypes: Set<String> = [
+        "interrupt", "set_model", "set_permission_mode", "apply_flag_settings",
+        "set_max_thinking_tokens", "get_context_usage"
+    ]
+
     var messages: [JSONValue] { lock.locked { stored } }
 
     func controlRequests() -> [[String: JSONValue]] {
@@ -78,6 +84,8 @@ final class FakeClaudeTransport: ClaudeTransport, @unchecked Sendable {
             emit(ClaudeProtocol.controlResponse(id: id, result: answer))
         } else if subtype == "initialize", let initializeResponse {
             emit(ClaudeProtocol.controlResponse(id: id, result: initializeResponse))
+        } else if Self.autoAnsweredSubtypes.contains(subtype) {
+            emit(ClaudeProtocol.controlResponse(id: id, result: .object([:])))
         }
     }
 

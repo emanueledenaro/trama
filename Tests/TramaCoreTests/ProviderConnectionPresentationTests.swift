@@ -41,7 +41,7 @@ final class ProviderConnectionPresentationTests: XCTestCase {
         XCTAssertEqual(claude?.displayName, "Claude Agent")
         XCTAssertEqual(claude?.access.stateLabel, "Collegato")
         XCTAssertEqual(claude?.access.authLabel, "Claude Max Subscription")
-        XCTAssertEqual(claude?.signInCommand, "claude login")
+        XCTAssertEqual(claude?.signInCommand, "claude auth login")
         XCTAssertTrue(claude?.isAvailable ?? false)
         let values = Dictionary(uniqueKeysWithValues: (claude?.capabilities ?? []).map { ($0.label, $0.value) })
         XCTAssertEqual(values["Cambio modello"], "In sessione")

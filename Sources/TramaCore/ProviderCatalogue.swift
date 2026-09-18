@@ -89,7 +89,7 @@ public enum ProviderCatalogue {
             supportsThreadImport: true
         ),
         isAvailable: true,
-        signInCommand: "claude login"
+        signInCommand: "claude auth login"
     )
 
     public static let cursor = ProviderDescriptor(

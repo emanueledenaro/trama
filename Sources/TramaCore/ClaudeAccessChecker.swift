@@ -115,6 +115,7 @@ public struct ClaudeAccessChecker: Sendable {
                 provider: .claudeAgent,
                 state: .unknown,
                 isAvailable: false,
+                screenState: ClaudeAuthVerdict.ScreenState.error.rawValue,
                 message: "Il programma `claude` non è installato o non è nel PATH.",
                 checkedAt: checkedAt
             )
@@ -125,6 +126,7 @@ public struct ClaudeAccessChecker: Sendable {
                 provider: .claudeAgent,
                 state: .unknown,
                 isAvailable: false,
+                screenState: ClaudeAuthVerdict.ScreenState.error.rawValue,
                 message: detail.map { "Il programma `claude` è installato ma non si avvia. \($0)" }
                     ?? "Il programma `claude` è installato ma non si avvia.",
                 checkedAt: checkedAt
@@ -172,6 +174,7 @@ public struct ClaudeAccessChecker: Sendable {
             provider: .claudeAgent,
             state: effective.authStatus,
             isAvailable: true,
+            screenState: effective.status.rawValue,
             authType: metadata?.type,
             authLabel: metadata?.label,
             version: version,

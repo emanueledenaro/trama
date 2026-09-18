@@ -393,6 +393,55 @@ final class ClaudeProviderAdapterTests: XCTestCase {
         XCTAssertTrue(events.contains { if case .configWarning = $0.kind { return true } else { return false } })
     }
 
+    func testFastModeIsRequestedThroughFlagSettings() async throws {
+        let (adapter, box) = makeAdapter()
+        _ = try await adapter.startSession(ProviderSessionStartInput(
+            threadID: "t1",
+            cwd: URL(fileURLWithPath: "/tmp"),
+            modelSelection: .claudeAgent(model: "claude-opus-5", options: ClaudeModelOptions(fastMode: true)),
+            runtimeMode: .approvalRequired
+        ))
+        let transport = try XCTUnwrap(box.transports.first)
+        XCTAssertEqual(
+            transport.controlRequest(subtype: "apply_flag_settings")?["settings"]?.objectValue?["fastMode"]?.boolValue,
+            true
+        )
+    }
+
+    func testAutoCompactWindowZeroMeansAuto() throws {
+        var options = ClaudeSessionOptions(
+            binaryURL: URL(fileURLWithPath: "/tmp/claude"),
+            workingDirectory: URL(fileURLWithPath: "/tmp"),
+            autoCompactWindow: 0
+        )
+        XCTAssertTrue(try options.arguments().contains("auto"))
+        options.autoCompactWindow = 200_000
+        XCTAssertTrue(try options.arguments().contains("200000"))
+    }
+
+    func testAnAllMalformedCatalogWarnsAndFails() async throws {
+        let box = TransportBox()
+        let transport = FakeClaudeTransport()
+        transport.initializeResponse = .object([
+            "models": .array([.object(["displayName": .string("senza slug")]), .string("nonsense")]),
+            "account": .object(["email": .string("person@example.com")])
+        ])
+        let adapter = ClaudeProviderAdapter(
+            binaryURL: URL(fileURLWithPath: "/tmp/claude"),
+            environment: [:],
+            transportFactory: { _ in
+                box.transports.append(transport)
+                return transport
+            }
+        )
+        _ = try await adapter.startSession(ProviderSessionStartInput(threadID: "t1", cwd: URL(fileURLWithPath: "/tmp"), runtimeMode: .approvalRequired))
+        let catalog = try await adapter.listModels()
+        XCTAssertTrue(catalog.models.isEmpty)
+        XCTAssertNotNil(catalog.error, "an all-malformed catalogue must fail, never guess")
+        let events = await collect(adapter, count: 2)
+        XCTAssertTrue(events.contains { if case .configWarning = $0.kind { return true } else { return false } }, "the malformed entries must be declared")
+    }
+
     func testCacheEvidenceSurvivesARestart() async throws {
         let (adapter, box) = makeAdapter()
         _ = try await adapter.startSession(ProviderSessionStartInput(threadID: "t1", cwd: URL(fileURLWithPath: "/tmp"), runtimeMode: .approvalRequired))

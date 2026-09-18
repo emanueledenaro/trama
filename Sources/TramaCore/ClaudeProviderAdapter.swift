@@ -118,8 +118,7 @@ public actor ClaudeProviderAdapter: ProviderAdapter {
     // MARK: - Access and catalogue
 
     public func checkAccess() async -> ProviderAccessStatus {
-        let status = await accessChecker.check()
-        return status
+        await accessChecker.check()
     }
 
     /// The runtime catalogue from `supportedModels`, cached for ten minutes by the shared cache.
@@ -174,7 +173,7 @@ public actor ClaudeProviderAdapter: ProviderAdapter {
     /// Maps the runtime entries and declares the malformed ones instead of guessing them.
     private func catalog(from models: [JSONValue]) -> ProviderModelCatalog {
         let mapped = ClaudeModelCatalog.descriptors(from: models)
-        if mapped.skipped > 0, !mapped.models.isEmpty {
+        if mapped.skipped > 0 {
             emit(ProviderEvent(
                 eventID: UUID().uuidString,
                 provider: .claudeAgent,
@@ -216,6 +215,21 @@ public actor ClaudeProviderAdapter: ProviderAdapter {
             ))
         }
         let initialization = opened.initialization
+        if options.fastMode == true {
+            do {
+                try await opened.client.applyFlagSettings(.object(["fastMode": .bool(true)]))
+            } catch {
+                // The runtime decides: a model without the fast lane refuses it, and the reason is reported below.
+            }
+            if let reason = initialization.fastModeDisabledReason {
+                emit(ProviderEvent(
+                    eventID: UUID().uuidString,
+                    provider: .claudeAgent,
+                    threadID: input.threadID,
+                    kind: .configWarning(message: "La modalità veloce non è disponibile in questa sessione Claude: \(reason).")
+                ))
+            }
+        }
         let accounting = ClaudeTokenAccounting(
             processedTokenTotal: cursor.tokenAccountingVersion == 1 ? (cursor.processedTokenTotal ?? 0) : 0,
             contextWindow: nil,
@@ -261,7 +275,7 @@ public actor ClaudeProviderAdapter: ProviderAdapter {
     public func forkThread(sourceThreadID: String, newThreadID: String, sourceResumeCursor: Data, runtimeMode: ProviderRuntimeMode = .fullAccess) async throws -> ProviderSession {
         let cursor = ClaudeResumeCursor.decode(sourceResumeCursor)
         guard let resume = cursor.resume else {
-            throw ClaudeClient.ClientError.malformedMessage("il cursore da forcare non ha una sessione Claude")
+            throw ClaudeClient.ClientError.malformedMessage("the fork source cursor has no Claude session")
         }
         let input = ProviderSessionStartInput(
             threadID: newThreadID,
@@ -297,6 +311,10 @@ public actor ClaudeProviderAdapter: ProviderAdapter {
             }
             if let thinking = options?.thinking {
                 try await state.client.setMaxThinkingTokens(thinking ? (state.options.maxThinkingTokens ?? 0) : 0)
+            }
+            if let fastMode = options?.fastMode, fastMode != state.options.fastMode {
+                try await state.client.applyFlagSettings(.object(["fastMode": .bool(fastMode)]))
+                state.options.fastMode = fastMode
             }
         }
         if let runtimeMode = input.runtimeMode, runtimeMode != state.session.runtimeMode {
