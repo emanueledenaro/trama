@@ -161,6 +161,51 @@ final class ClaudeProviderAdapterTests: XCTestCase {
         XCTAssertTrue(succeeded)
     }
 
+    func testARateLimitBecomesABlockedProviderWithItsDate() async throws {
+        let (adapter, box) = makeAdapter()
+        _ = try await adapter.startSession(ProviderSessionStartInput(threadID: "t1", cwd: URL(fileURLWithPath: "/tmp"), runtimeMode: .fullAccess))
+        let transport = try XCTUnwrap(box.transports.first)
+        transport.emit(.object([
+            "type": .string("rate_limit_event"),
+            "rate_limit_info": .object([
+                "status": .string("rejected"),
+                "resetsAt": .double(1_800_000_000),
+                "rateLimitType": .string("five_hour")
+            ])
+        ]))
+        let events = await collect(adapter, count: 3)
+        let blocked = events.compactMap { event -> ProviderBlock? in
+            if case let .providerBlocked(block) = event.kind { return block }
+            return nil
+        }.last
+        XCTAssertEqual(blocked?.reason, .usageLimit(unblockAt: Date(timeIntervalSince1970: 1_800_000_000)))
+        let recorded = await adapter.block(for: "t1")
+        XCTAssertNotNil(recorded)
+        let session = await adapter.session(for: "t1")
+        XCTAssertEqual(session?.status, .closed, "the session stops but stays resumable")
+    }
+
+    func testAnAllowedRateLimitIsNotABlock() {
+        XCTAssertNil(ClaudeEventNormalizer.block(fromRateLimit: .object(["status": .string("allowed")])))
+        XCTAssertNil(ClaudeEventNormalizer.block(fromRateLimit: nil))
+    }
+
+    func testAFailedResultNamingALostLoginBlocks() {
+        let block = ClaudeEventNormalizer.block(fromResult: [
+            "is_error": .bool(true),
+            "result": .string("authentication_error: OAuth token has expired")
+        ])
+        XCTAssertEqual(block?.reason, .lostAuthentication)
+        XCTAssertNil(ClaudeEventNormalizer.block(fromResult: ["is_error": .bool(false)]))
+        XCTAssertEqual(
+            ClaudeEventNormalizer.block(fromResult: [
+                "is_error": .bool(true),
+                "result": .string("Usage limit reached for this account")
+            ])?.reason,
+            .usageLimit(unblockAt: nil)
+        )
+    }
+
     func testCompactBoundaryIsACompactionAndASignal() {
         var normalizer = ClaudeEventNormalizer()
         let normalized = normalizer.normalize(

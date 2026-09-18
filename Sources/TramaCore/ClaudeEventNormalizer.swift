@@ -69,10 +69,17 @@ public struct ClaudeEventNormalizer: Sendable {
         case "result":
             return normalizeResult(object, message: message, threadID: threadID, nativeSessionID: nativeSessionID, turnID: turnID, at: date)
         case "rate_limit_event":
-            return ClaudeNormalized(events: [make(
+            var events = [make(
                 kind: .rateLimitsUpdated(detail: object["rate_limit_info"]?.objectValue?["status"]?.stringValue),
                 threadID: threadID, nativeSessionID: nativeSessionID, turnID: turnID, at: date, raw: message
-            )])
+            )]
+            if let block = Self.block(fromRateLimit: object["rate_limit_info"], at: date) {
+                events.append(make(
+                    kind: .providerBlocked(block),
+                    threadID: threadID, nativeSessionID: nativeSessionID, turnID: turnID, at: date, raw: message
+                ))
+            }
+            return ClaudeNormalized(events: events)
         case "tool_progress":
             return ClaudeNormalized(events: [make(
                 kind: .toolProgress(detail: object["tool_name"]?.stringValue),
@@ -330,11 +337,17 @@ public struct ClaudeEventNormalizer: Sendable {
         } else {
             state = .completed
         }
-        let events = [make(
+        var events = [make(
             kind: .turnCompleted(state: state),
             threadID: threadID, nativeSessionID: object["session_id"]?.stringValue ?? nativeSessionID,
             turnID: turnID, at: date, raw: message
         )]
+        if let block = Self.block(fromResult: object, at: date) {
+            events.append(make(
+                kind: .providerBlocked(block),
+                threadID: threadID, nativeSessionID: nativeSessionID, turnID: turnID, at: date, raw: message
+            ))
+        }
         return ClaudeNormalized(
             events: events,
             signal: .result(
@@ -349,6 +362,32 @@ public struct ClaudeEventNormalizer: Sendable {
     // MARK: - Helpers
 
     /// `mcp__trama__list` reads as server `trama`, tool `list`; anything else is a built-in tool.
+    /// A rate-limit status other than `allowed` is a usage limit; `resetsAt` is when it lifts.
+    static func block(fromRateLimit info: JSONValue?, at date: Date = Date()) -> ProviderBlock? {
+        guard let object = info?.objectValue else { return nil }
+        let status = object["status"]?.stringValue ?? ""
+        guard !status.isEmpty, status != "allowed" else { return nil }
+        let until = object["resetsAt"]?.doubleValue.map { Date(timeIntervalSince1970: $0) }
+        return ProviderBlock(provider: .claudeAgent, reason: .usageLimit(unblockAt: until), observedAt: date)
+    }
+
+    /// A failed result whose text names a limit or a lost login is a block, not a plain failure.
+    static func block(fromResult object: [String: JSONValue], at date: Date = Date()) -> ProviderBlock? {
+        guard object["is_error"]?.boolValue == true else { return nil }
+        var text = object["result"]?.stringValue ?? ""
+        if let errors = object["errors"]?.arrayValue {
+            text += " " + errors.compactMap(\.stringValue).joined(separator: " ")
+        }
+        let lower = text.lowercased()
+        if lower.contains("usage limit") || lower.contains("rate limit") || lower.contains("429") {
+            return ProviderBlock(provider: .claudeAgent, reason: .usageLimit(unblockAt: nil), detail: text, observedAt: date)
+        }
+        if lower.contains("authentication") || lower.contains("unauthorized") || lower.contains("invalid api key") || lower.contains("401") {
+            return ProviderBlock(provider: .claudeAgent, reason: .lostAuthentication, detail: text, observedAt: date)
+        }
+        return nil
+    }
+
     /// `mcp__trama__read_study` splits into server `trama` and tool `read_study`.
     static func splitMcpTool(_ tool: String) -> (server: String, name: String)? {
         guard tool.hasPrefix("mcp__"), let separator = tool.dropFirst(5).range(of: "__") else { return nil }

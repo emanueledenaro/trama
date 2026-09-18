@@ -83,6 +83,8 @@ final class ProjectStore: ObservableObject {
     let modelCatalog = ModelCatalogCache()
     /// The last known status of every provider, shown by the connections screen.
     @Published var providerAccess: [ProviderKind: ProviderAccessStatus] = [:]
+    /// The block that stopped work, shown by the status strip and by a card in the conversation.
+    @Published var providerNotice: ProviderBlock?
 
     static var providerStatusDirectory: URL {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first

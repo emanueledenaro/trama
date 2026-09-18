@@ -505,6 +505,29 @@ extension ProjectStore {
         }
     }
 
+    /// The person retries after a provider block, from the status strip. Every waiting assignment
+    /// of that provider resumes; the Coordinator resumes when it was the one that stopped.
+    func resumeAfterProviderBlock(_ provider: ProviderKind) {
+        guard stateWritable else { return }
+        let waiting = document.team?.waitingAssignments.filter { $0.resolvedProvider == provider } ?? []
+        for assignment in waiting {
+            resumeSpecialist(assignmentID: assignment.id)
+        }
+        if document.coordinator?.providerBlock?.provider == provider {
+            resumeCoordinatorAfterBlock()
+        }
+        if document.team?.waitingAssignments.isEmpty ?? true { providerNotice = nil }
+    }
+
+    /// The person resumes the Coordinator after a provider block. The provider does not change.
+    func resumeCoordinatorAfterBlock() {
+        guard stateWritable else { return }
+        document.coordinator?.providerBlock = nil
+        if document.team?.waitingAssignments.isEmpty ?? true { providerNotice = nil }
+        saveDocument()
+        retryCoordinator()
+    }
+
     func retryCoordinator() {
         guard coordinatorTask == nil else { return }
         if case .unavailable = coordinatorPhase { coordinatorPhase = .idle }
@@ -791,6 +814,16 @@ extension ProjectStore {
         switch event.kind {
         case let .contextUsage(snapshot):
             updateContext { context in context.record(snapshot, threadID: threadID) }
+        case let .providerBlocked(block):
+            // A blocked provider stops the Coordinator turn. The provider does not change.
+            document.coordinator?.providerBlock = block
+            providerNotice = block
+            document.conversation?.appendCard(
+                ConversationEvent.Card(kind: .providerBlocked, title: block.title, detail: block.reason.summary, referenceID: nil),
+                origin: .trama,
+                requestID: streamingReplies.keys.first
+            )
+            stopCoordinator()
         case let .contextCompaction(state):
             guard let phase = ContextCompactionState(rawValue: state) else { return }
             updateContext { context in

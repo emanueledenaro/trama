@@ -57,6 +57,8 @@ public actor ClaudeProviderAdapter: ProviderAdapter {
         var pendingUserInputs: [String: [JSONValue]]
         var turnID: String?
         var interruptRequested: Bool
+        /// The last block the provider reported, so the caller can show it without another check.
+        var lastBlock: ProviderBlock?
         var nativeSessionID: String?
         var turnCount: Int
         var eventTask: Task<Void, Never>?
@@ -254,6 +256,7 @@ public actor ClaudeProviderAdapter: ProviderAdapter {
             pendingUserInputs: [:],
             turnID: nil,
             interruptRequested: false,
+            lastBlock: nil,
             nativeSessionID: initialization.nativeSessionID,
             turnCount: cursor.turnCount ?? 0,
             eventTask: nil
@@ -446,6 +449,11 @@ public actor ClaudeProviderAdapter: ProviderAdapter {
         threads[threadID]?.session
     }
 
+    /// The last block the provider reported for a thread.
+    public func block(for threadID: String) -> ProviderBlock? {
+        threads[threadID]?.lastBlock
+    }
+
     /// The live context usage, with the one-second cap of the reference.
     public func contextUsage(threadID: String) async throws -> JSONValue {
         guard let state = threads[threadID] else { throw ClaudeClient.ClientError.notConnected }
@@ -594,6 +602,18 @@ public actor ClaudeProviderAdapter: ProviderAdapter {
                 normalized.events.removeAll { if case .turnCompleted = $0.kind { return true } else { return false } }
             }
             emit(normalized.events)
+            if let block = normalized.events.compactMap({ event -> ProviderBlock? in
+                if case let .providerBlocked(block) = event.kind { return block }
+                return nil
+            }).last {
+                // A blocked provider is a normal state: stop this turn, keep the session resumable,
+                // and never switch provider. The person decides what happens next.
+                state.lastBlock = block
+                state.session.status = .closed
+                state.session.activeTurnID = nil
+                let client = state.client
+                Task { await client.interrupt() }
+            }
             switch normalized.signal {
             case let .assistant(messageID, usage, model):
                 if let usage, let update = state.accounting.recordAssistant(

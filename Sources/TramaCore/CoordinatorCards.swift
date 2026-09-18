@@ -76,8 +76,34 @@ public enum ConversationCard: Equatable, Sendable {
         }
     }
 
+    /// A blocked provider: the person chooses what to do. Trama never switches provider on its own.
+    public struct ProviderBlockedCard: Equatable, Sendable {
+        public enum PersonAction: String, Equatable, Sendable {
+            /// Open the provider picker and choose another provider for this work.
+            case switchProvider
+            /// Resume the same work when the block is over.
+            case retry
+        }
+
+        public let block: ProviderBlock
+        /// The assignment the block stopped, when it belongs to a specialist.
+        public let assignmentID: String?
+
+        public init(block: ProviderBlock, assignmentID: String? = nil) {
+            self.block = block
+            self.assignmentID = assignmentID
+        }
+
+        public var reason: String { block.reason.summary }
+        public var proposedAction: String { block.proposedAction }
+
+        /// The person can always pick another provider, and can retry the same one.
+        public var personActions: [PersonAction] { [.switchProvider, .retry] }
+    }
+
     case mandate(Mandate)
     case decision(Decision)
+    case providerBlocked(ProviderBlockedCard)
     case teamProposal(TeamProposalCard)
     case assignment(Assignment)
     /// Study, context notice, a card whose request is gone, or a kind this ticket does not own.
@@ -98,6 +124,12 @@ public enum ConversationCard: Equatable, Sendable {
                 return .generic(row.card)
             }
             return .decision(Decision(request: request))
+        case .providerBlocked:
+            let assignmentID = row.card.referenceID
+            let block = assignmentID.flatMap { document.team?.assignment($0)?.block }
+                ?? document.coordinator?.providerBlock
+            guard let block else { return .generic(row.card) }
+            return .providerBlocked(ProviderBlockedCard(block: block, assignmentID: assignmentID))
         case .teamProposal:
             guard let id = row.card.referenceID, let team = document.team,
                   let proposal = team.proposals.first(where: { $0.id == id }) else {

@@ -13,6 +13,9 @@ final class SpecialistSupervisor: ObservableObject {
 
     weak var store: ProjectStore?
     private var runtimes: [String: Runtime] = [:]
+    /// Assignments whose provider is blocked: their runtime is stopped and the document is left in
+    /// waiting, so the later cancellation must not confirm a stop.
+    private var blockedAssignments: Set<String> = []
     /// Provider turns of specialists running now; the chat keeps their activity groups open.
     @Published private(set) var runningTurns: Set<String> = []
 
@@ -77,6 +80,16 @@ final class SpecialistSupervisor: ObservableObject {
         Task { await client.cancelTurn() }
     }
 
+    /// The provider of the assignment is blocked: stop its runtime and leave the assignment in
+    /// progress and in waiting, with its worktree and results intact.
+    func abandonForBlock(assignmentID: String) {
+        blockedAssignments.insert(assignmentID)
+        guard let runtime = runtimes.removeValue(forKey: assignmentID) else { return }
+        runtime.task?.cancel()
+        runtime.client.stop()
+        if let turnID = runtime.turnID { runningTurns.remove(turnID) }
+    }
+
     /// Stops every runtime, for example when another project opens or the app quits.
     func stopAll(reason: String) {
         for (assignmentID, runtime) in runtimes {
@@ -105,6 +118,10 @@ final class SpecialistSupervisor: ObservableObject {
     }
 
     private func finish(assignmentID: String, outcome: SpecialistAssignment.TurnEnd) {
+        if blockedAssignments.remove(assignmentID) != nil {
+            runtimes[assignmentID] = nil
+            return
+        }
         let runtime = runtimes.removeValue(forKey: assignmentID)
         runtime?.client.stop()
         if let turnID = runtime?.turnID { runningTurns.remove(turnID) }
@@ -249,6 +266,7 @@ extension ProjectStore {
         }
         do {
             _ = try document.resumeAssignment(assignmentID)
+            if document.team?.waitingAssignments.isEmpty ?? true { providerNotice = nil }
             saveDocument()
             specialists.start(assignmentID: assignmentID)
         } catch {
@@ -346,6 +364,17 @@ extension ProjectStore {
                 title: succeeded ? "Ha modificato \(paths.count == 1 ? "un file" : "\(paths.count) file")" : "Modifica dei file non riuscita",
                 detail: paths.joined(separator: ", ")
             )
+        case let .providerBlocked(block):
+            // A blocked provider is a normal state: the assignment stays in progress and in waiting.
+            try? document.recordProviderBlock(block, assignmentID: assignmentID)
+            document.conversation?.appendCard(
+                ConversationEvent.Card(kind: .providerBlocked, title: block.title, detail: block.reason.summary, referenceID: assignmentID),
+                origin: .trama,
+                requestID: nil,
+                assignmentID: assignmentID
+            )
+            providerNotice = block
+            specialists.abandonForBlock(assignmentID: assignmentID)
         case let .toolCallStarted(server, tool):
             document.conversation?.appendSpecialistActivity(assignmentID: assignmentID, turnID: turnID, title: "Strumento avviato", detail: "\(server) · \(tool)")
         case let .toolCallCompleted(server, tool, succeeded, error):

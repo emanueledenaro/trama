@@ -136,6 +136,7 @@ struct WorkspaceView: View {
 
     private var projectContent: some View {
         VStack(spacing: 0) {
+            if let block = store.providerNotice { ProviderStatusStrip(block: block); Divider() }
             if store.pendingApproval != nil { ApprovalView(); Divider() }
             switch store.section ?? .map {
             case .coordinator:

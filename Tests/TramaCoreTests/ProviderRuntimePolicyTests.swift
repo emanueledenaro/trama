@@ -220,6 +220,34 @@ struct ProviderRuntimePolicyTests {
         #expect(decoded.coordinatorModel(for: .grok) == nil)
     }
 
+    @Test("A blocked provider card resolves its reason from the assignment and offers the person's actions")
+    func blockedCardResolvesTheReason() throws {
+        var document = try AssignmentProviderTests.confirmedDocument()
+        let specialist = try #require(document.team?.specialists.first)
+        let assignment = try document.assign(AssignmentProviderTests.order(specialist.id, provider: .claudeAgent), mandateVersion: 1)
+        let block = ProviderBlock(provider: .claudeAgent, reason: .usageLimit(unblockAt: Self.unblock), observedAt: Self.start)
+        try document.recordProviderBlock(block, assignmentID: assignment.id, at: Self.start)
+        document.conversation?.appendCard(
+            ConversationEvent.Card(kind: .providerBlocked, title: block.title, detail: block.reason.summary, referenceID: assignment.id),
+            origin: .trama,
+            requestID: nil,
+            assignmentID: assignment.id
+        )
+
+        let row = try #require(ConversationTimeline.rows(for: document).compactMap { row -> ConversationRow.CardRow? in
+            if case .card(let card) = row, card.card.kind == .providerBlocked { return card } else { return nil }
+        }.first)
+        guard case let .providerBlocked(card) = ConversationCard.presenting(row, in: document) else {
+            Issue.record("expected a provider blocked card")
+            return
+        }
+        #expect(card.block == block)
+        #expect(card.assignmentID == assignment.id)
+        #expect(card.reason.contains("limite di utilizzo"))
+        #expect(card.proposedAction.contains("Scegli un altro provider"))
+        #expect(card.personActions == [.switchProvider, .retry])
+    }
+
     // MARK: Coordinator provider switch
 
     @Test("Switching the Coordinator provider keeps the thread and hands over transcript, memory and study")
