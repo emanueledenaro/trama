@@ -81,6 +81,12 @@ Oggetto `capabilities` (`AntigravityAdapter.ts:2764-2769`):
 
 Non ci sono altri campi. Capacità del composer (`:2783-2794`): `supportsSkillMentions: true`, `supportsSkillDiscovery: true`, `supportsNativeSlashCommandDiscovery: false`, `supportsPluginMentions: false`, `supportsPluginDiscovery: false`, `supportsRuntimeModelList: true`, `supportsThreadCompaction: false`, `supportsThreadImport: false`. Metodi oltre al minimo: `rollbackThread`, `listModels`, `getComposerCapabilities` (`:2770-2794`). `respondToRequest` e `respondToUserInput` esistono ma rispondono `unsupported` (`:2773-2774`); `didResumeSession`, `compactThread`, `forkThread`, `readExternalThread` non ci sono.
 
+Due comportamenti dichiarati altrove accompagnano queste capacità:
+
+- Il descrittore condiviso dichiara `supportsNativeTurnSteering: false`, `available: true`, `setupDocsHref: "https://trysynara.com/docs/providers/antigravity"` e `signInCommand: "agy"` (`packages/shared/src/providerMetadata.ts:69-79`).
+- Antigravity è nell'insieme `PROVIDERS_WITH_THREAD_SCOPED_SYNARA_MCP` (`apps/server/src/agentGateway/harnessPolicy.ts:73-81`), quindi riceve il controllo del gateway per thread.
+- `shouldInlineSkillForProvider("antigravity", ...)` restituisce sempre `true` (`apps/server/src/provider/skillPromptInjection.ts:38-42`): ogni skill invocata viene scritta per esteso nel prompt invece di essere referenziata per percorso.
+
 ### Ciclo di vita e cursore di ripresa
 
 - `startSession` installa prima il plugin di cattura, poi ferma una sessione già presente per lo stesso thread, uccide i suoi task in background e rilascia la lease del gateway (`:2209-2235`).
@@ -92,7 +98,7 @@ Non ci sono altri campi. Capacità del composer (`:2783-2794`): `supportsSkillMe
 - Il ripiego "stop hook": un turno senza uscita pulita può contare come completato solo se lo smontaggio è stato chiesto da Synara, il parser dichiara `completedResponse`, c'è già stato testo dell'assistente, stderr è vuoto e non restano strumenti o task in sospeso (`:2558-2565`).
 - Se l'assistente non ha mai parlato ma c'è testo, si emette un ultimo elemento di testo con indice `Number.MAX_SAFE_INTEGER` (`:2538-2550`).
 - `turn.completed` porta `resumeCursor` con l'id di conversazione (`:1423`).
-- `rollbackThread` taglia i turni locali e cancella id di conversazione, transcript e `resumeCursor`: Antigravity non ha un cursore di rollback (`:2703-2717`).
+- `rollbackThread` taglia i turni locali e cancella id di conversazione, transcript e `resumeCursor`: Antigravity non ha un cursore di rollback (`:2703-2717`). A differenza di Claude e Devin, che rifiutano il rollback con un errore di validazione, Antigravity lo esegue davvero, ma solo sul proprio stato locale.
 - `interruptTurn` ignora un `turnId` che non è quello attivo, registrando `antigravity.stale_interrupt_ignored` (`:2609-2620`).
 
 ### Iniezione degli strumenti host
