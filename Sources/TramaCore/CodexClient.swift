@@ -423,6 +423,21 @@ public final class CodexClient: @unchecked Sendable {
         try await restrictedCore.runSpecialistTurn(threadID: threadID, input: input, settings: settings, onEvent: onEvent)
     }
 
+    /// Steers the running turn of a thread, as Codex `turn/steer`; returns the turn it fed.
+    public func steerTurn(threadID: String, expectedTurnID: String?, input: [TurnInputItem]) async throws -> String {
+        try await restrictedCore.steerTurn(threadID: threadID, expectedTurnID: expectedTurnID, input: input)
+    }
+
+    /// Asks Codex to compact the context of a thread, as Synara's `compactThread`.
+    public func compactThread(threadID: String) async throws {
+        try await restrictedCore.compactThread(threadID: threadID)
+    }
+
+    /// Rolls back the last `numTurns` turns of a thread, Codex's native conversation rollback.
+    public func rollbackThread(threadID: String, numTurns: Int) async throws {
+        try await restrictedCore.rollbackThread(threadID: threadID, numTurns: numTurns)
+    }
+
     /// Delivers context usage and compaction of `threadID`, during and between turns; nil stops it.
     /// Notifications of other threads, subagents included, are not delivered.
     public func observeThread(_ threadID: String, _ handler: (@Sendable (ThreadEvent) -> Void)?) async {
@@ -1503,6 +1518,63 @@ private actor Core {
         try cancelApprovals(for: session, respondWithDecline: true)
         guard session.turnID != nil else { return }
         try await interrupt(session: session)
+    }
+
+    /// Steers the running turn with new input, as Synara's `turn/steer` with `expectedTurnId`.
+    func steerTurn(threadID: String, expectedTurnID: String?, input: [CodexClient.TurnInputItem]) async throws -> String {
+        let items = Self.turnInputItems(input)
+        guard !items.isEmpty else { throw CodexClient.ClientError.emptyPrompt }
+        try await ensureInitialized()
+        var params: [String: JSONValue] = [
+            "threadId": .string(threadID),
+            "input": .array(items)
+        ]
+        if let expectedTurnID, !expectedTurnID.isEmpty {
+            params["expectedTurnId"] = .string(expectedTurnID)
+        }
+        let result = try await request(method: "turn/steer", params: .object(params))
+        guard let turnID = result.objectValue?["turnId"]?.stringValue
+            ?? result.objectValue?["turn"]?.objectValue?["id"]?.stringValue else {
+            throw CodexClient.ClientError.malformedMessage("risposta turn/steer senza turnId")
+        }
+        return turnID
+    }
+
+    /// Asks Codex to compact the context of a thread, as Synara's `compactThread`.
+    func compactThread(threadID: String) async throws {
+        try await ensureInitialized()
+        _ = try await request(method: "thread/compact", params: .object(["threadId": .string(threadID)]))
+    }
+
+    /// Rolls back the last `numTurns` turns of a thread, Codex's native conversation rollback.
+    func rollbackThread(threadID: String, numTurns: Int) async throws {
+        guard numTurns > 0 else {
+            throw CodexClient.ClientError.rpcError(code: -32602, message: "numTurns must be positive")
+        }
+        try await ensureInitialized()
+        _ = try await request(method: "thread/rollback", params: .object([
+            "threadId": .string(threadID),
+            "numTurns": .integer(numTurns)
+        ]))
+    }
+
+    /// The turn items of Codex, shared by `runCoordinatorTurn` and `steerTurn`.
+    static func turnInputItems(_ input: [CodexClient.TurnInputItem]) -> [JSONValue] {
+        input.compactMap { item in
+            switch item {
+            case let .text(text):
+                let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                return trimmed.isEmpty ? nil : .object([
+                    "type": .string("text"),
+                    "text": .string(trimmed),
+                    "text_elements": .array([])
+                ])
+            case let .localImage(path):
+                return .object(["type": .string("localImage"), "path": .string(path)])
+            case let .skill(name, path):
+                return .object(["type": .string("skill"), "name": .string(name), "path": .string(path)])
+            }
+        }
     }
 
     func stop() {

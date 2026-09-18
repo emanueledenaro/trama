@@ -1445,7 +1445,7 @@ private final class LockedApprovalRequests: @unchecked Sendable {
     }
 }
 
-private final class FakeCodexTransport: CodexTransport, @unchecked Sendable {
+final class FakeCodexTransport: CodexTransport, @unchecked Sendable {
     private let lock = NSLock()
     private var continuation: AsyncStream<CodexTransportEvent>.Continuation?
     private var storedMessages: [[String: Any]] = []

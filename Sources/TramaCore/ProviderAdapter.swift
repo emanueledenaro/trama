@@ -546,6 +546,7 @@ public struct ProviderTokenUsage: Codable, Equatable, Sendable {
     public var outputTokens: Int?
     public var cachedInputTokens: Int?
     public var reasoningOutputTokens: Int?
+    public var totalProcessedTokens: Int?
     public var contextWindow: Int?
     public var compactsAutomatically: Bool
 
@@ -555,6 +556,7 @@ public struct ProviderTokenUsage: Codable, Equatable, Sendable {
         outputTokens: Int? = nil,
         cachedInputTokens: Int? = nil,
         reasoningOutputTokens: Int? = nil,
+        totalProcessedTokens: Int? = nil,
         contextWindow: Int? = nil,
         compactsAutomatically: Bool = false
     ) {
@@ -563,6 +565,7 @@ public struct ProviderTokenUsage: Codable, Equatable, Sendable {
         self.outputTokens = outputTokens
         self.cachedInputTokens = cachedInputTokens
         self.reasoningOutputTokens = reasoningOutputTokens
+        self.totalProcessedTokens = totalProcessedTokens
         self.contextWindow = contextWindow
         self.compactsAutomatically = compactsAutomatically
     }
@@ -644,6 +647,10 @@ public struct ProviderEvent: Codable, Equatable, Sendable, Identifiable {
         case threadStateChanged(state: String)
         case threadMetadataUpdated(name: String)
         case tokenUsage(ProviderTokenUsage)
+        /// The Coordinator thread's context window, from Codex `thread/tokenUsage/updated`.
+        case contextUsage(ContextUsageSnapshot)
+        /// A provider compaction Trama observed. The state is `ContextCompactionState`.
+        case contextCompaction(state: String)
         case turnStarted(model: String?, effort: String?)
         case turnCompleted(state: ProviderTurnState)
         case turnSteered
@@ -652,6 +659,13 @@ public struct ProviderEvent: Codable, Equatable, Sendable, Identifiable {
         case itemStarted(kind: String)
         case itemCompleted(kind: String)
         case contentDelta(ProviderContentDelta)
+        /// A note the agent wrote while working, before its reply. A Trama addition: Synara folds
+        /// this into assistant text, but the specialist timeline shows it as its own row.
+        case commentary(String)
+        case toolCallStarted(server: String, tool: String)
+        case toolCallCompleted(server: String, tool: String, succeeded: Bool, error: String?)
+        case commandCompleted(command: String, exitCode: Int?, output: String?, succeeded: Bool)
+        case fileChangeCompleted(paths: [String], succeeded: Bool)
         case toolProgress(detail: String?)
         case requestOpened(requestType: String, detail: String?)
         case requestResolved(decision: String)
