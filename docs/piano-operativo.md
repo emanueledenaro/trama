@@ -1,6 +1,6 @@
 # Piano operativo vigente di Trama
 
-Stato: incremento verticale del Coordinatore approvato da Emanuele il 16 settembre 2026. Questo piano sostituisce l'ordine C03, C04, C05 con i ticket V01-V09 e mantiene requisiti, ottimizzazioni e prove precedenti.
+Stato: incremento verticale del Coordinatore approvato da Emanuele il 16 settembre 2026. Questo piano sostituisce l'ordine C03, C04, C05 con i ticket V01-V09 e mantiene requisiti, ottimizzazioni e prove precedenti. Il 17 settembre 2026 Emanuele ha aggiunto i ticket P01-P09: Trama avrà gli stessi nove provider di Synara ([ADR 0008](adr/0008-provider-di-synara-in-swift.md)).
 
 [Specifica dell'incremento verticale](spec-coordinatore-verticale.md) · [Specifica del Coordinatore](spec-coordinatore.md) · [ADR 0006](adr/0006-coordinatore-thread-persistente-con-strumenti.md) · [ADR 0007](adr/0007-finestra-centrata-su-decisioni-team-e-verifiche.md) · [Riferimento visivo](reference/design-app-codex.md) · [Riferimento funzionale Synara](reference/synara-funzioni.md) · [Intervista approvata](progettazione/coordinatore-intervista.md) · [Piano iniziale conservato](pianificazione/piano-iniziale-2026-09-12.md).
 
@@ -10,9 +10,21 @@ Base pubblicata: `4507788`, con la cronologia del Coordinatore (C01, #33), la ch
 
 Il Coordinatore attuale apre un thread effimero a ogni messaggio, riceve solo la richiesta e le decisioni, può soltanto leggere file e non compone un team. Il Product Owner lo ha giudicato inutilizzabile rispetto alla specifica: da qui l'incremento verticale. Catalogo, scanner, Patto, sessioni, GitHub, modelli e monitor esistenti restano la base da estendere.
 
+## Stato al 18 settembre 2026
+
+Integrati in `main` a `8ba959e`: V01 (#64), V02 (#65), V03 (#66) e V07 (#70), con le PR #73, #75, #77 e #89.
+
+V04 (#67) è completo nel codice, nei test e nella misura della CPU, ma non è chiudibile. La prova diretta nell'app richiede turni reali di Codex (proposta del team, mandato, incarico, turni dello specialista), non sostituibili da fixture, e il 18 settembre 2026 l'account ChatGPT ha esaurito il limite di utilizzo di Codex. Si sblocca il 19 settembre 2026 alle 14:59. Il candidato è su `synara/project-team-worktree` a `83e3592`; la checklist di #67 è non spuntata e i limiti sono scritti in [docs/verifiche/v04-team-incarico-2026-09-18.md](verifiche/v04-team-incarico-2026-09-18.md). Il branch contiene ancora il commit `488db9d` con l'aggancio temporaneo della prova (`Sources/Trama/V04Proof.swift`), che deve sparire prima della PR.
+
+Lo stesso limite blocca V05 (#68), V06 (#69), V08 (#71) e V09 (#72): tutte richiedono esecuzioni reali. P01 (#80) è l'unico ticket senza dipendenze e senza bisogno di Codex, ed è in corso.
+
+## Regola di consumo dei thread di lavoro
+
+Decisa da Emanuele il 18 settembre 2026 per contenere il consumo: **un solo thread di implementazione alla volta**, nessun ticket in parallelo finché non lo chiede lui. I ticket di sola documentazione (P01 e simili) girano su `pi` con `openrouter/deepseek/deepseek-v4.1-flash` e `thinkingLevel: minimal`. L'orchestratore controlla i thread di lavoro ogni dieci minuti circa, con una sola attesa lunga per controllo e una lettura solo se serve. Ai thread di lavoro si chiedono commit intermedi frequenti, così un limite di sessione non perde lavoro.
+
 ## Ordine del lavoro
 
-I ticket V01-V09 costruiscono il Coordinatore vero per fette verticali, ognuna dimostrabile. V07 corre in parallelo con V03-V05; V06 in parallelo con V05. C03, C04 e C05 sono chiusi come sostituiti; #57, #58, #59 e #60 sono chiusi come assorbiti o realizzati.
+I ticket V01-V09 costruiscono il Coordinatore vero per fette verticali, ognuna dimostrabile. L'ordine è seriale secondo la regola di consumo sopra: un ticket per volta, nell'ordine di dipendenza della tabella. V07 e V06 hanno corso in parallelo con V03-V05 quando il piano è stato scritto; non accade più. P01 è solo documentazione e non ha dipendenze. I provider entrano dopo V08 e prima di V09: prima Claude Agent (P02), poi gli altri sette. C03, C04 e C05 sono chiusi come sostituiti; #57, #58, #59 e #60 sono chiusi come assorbiti o realizzati.
 
 | Ticket | Consegna | Bloccato da |
 | --- | --- | --- |
@@ -23,8 +35,17 @@ I ticket V01-V09 costruiscono il Coordinatore vero per fette verticali, ognuna d
 | [#68](https://github.com/emanueledenaro/trama/issues/68) | V05 Candidato verificato in chat | [#67](https://github.com/emanueledenaro/trama/issues/67) |
 | [#69](https://github.com/emanueledenaro/trama/issues/69) | V06 Impianto della finestra centrato su decisioni, team e verifiche | [#67](https://github.com/emanueledenaro/trama/issues/67) |
 | [#70](https://github.com/emanueledenaro/trama/issues/70) | V07 Composer con menzioni e misuratore della finestra di contesto | [#65](https://github.com/emanueledenaro/trama/issues/65) |
-| [#71](https://github.com/emanueledenaro/trama/issues/71) | V08 Forma dell'adattatore provider con Codex come unico adattatore | [#68](https://github.com/emanueledenaro/trama/issues/68), [#70](https://github.com/emanueledenaro/trama/issues/70) |
-| [#72](https://github.com/emanueledenaro/trama/issues/72) | V09 Prova reale Trama su Trama e chiusura dell'incremento | [#68](https://github.com/emanueledenaro/trama/issues/68), [#69](https://github.com/emanueledenaro/trama/issues/69), [#70](https://github.com/emanueledenaro/trama/issues/70), [#71](https://github.com/emanueledenaro/trama/issues/71) |
+| [#71](https://github.com/emanueledenaro/trama/issues/71) | V08 Forma dell'adattatore provider con Codex come unico adattatore | [#68](https://github.com/emanueledenaro/trama/issues/68), [#70](https://github.com/emanueledenaro/trama/issues/70), [#80](https://github.com/emanueledenaro/trama/issues/80) |
+| [#80](https://github.com/emanueledenaro/trama/issues/80) | P01 Riferimento Synara per tutti i provider e attribuzione | Nessuno |
+| [#81](https://github.com/emanueledenaro/trama/issues/81) | P02 Adattatore Claude Agent | [#71](https://github.com/emanueledenaro/trama/issues/71), [#80](https://github.com/emanueledenaro/trama/issues/80) |
+| [#82](https://github.com/emanueledenaro/trama/issues/82) | P03 Runtime ACP condiviso e adattatore Cursor | [#81](https://github.com/emanueledenaro/trama/issues/81) |
+| [#83](https://github.com/emanueledenaro/trama/issues/83) | P04 Adattatore Grok | [#82](https://github.com/emanueledenaro/trama/issues/82) |
+| [#84](https://github.com/emanueledenaro/trama/issues/84) | P05 Adattatore Droid | [#82](https://github.com/emanueledenaro/trama/issues/82) |
+| [#85](https://github.com/emanueledenaro/trama/issues/85) | P06 Adattatore Devin | [#82](https://github.com/emanueledenaro/trama/issues/82) |
+| [#86](https://github.com/emanueledenaro/trama/issues/86) | P07 Adattatore OpenCode | [#81](https://github.com/emanueledenaro/trama/issues/81) |
+| [#87](https://github.com/emanueledenaro/trama/issues/87) | P08 Adattatore Antigravity | [#81](https://github.com/emanueledenaro/trama/issues/81) |
+| [#88](https://github.com/emanueledenaro/trama/issues/88) | P09 Adattatore Pi | [#81](https://github.com/emanueledenaro/trama/issues/81), [#80](https://github.com/emanueledenaro/trama/issues/80) |
+| [#72](https://github.com/emanueledenaro/trama/issues/72) | V09 Prova reale Trama su Trama e chiusura dell'incremento | [#68](https://github.com/emanueledenaro/trama/issues/68), [#69](https://github.com/emanueledenaro/trama/issues/69), [#70](https://github.com/emanueledenaro/trama/issues/70), [#71](https://github.com/emanueledenaro/trama/issues/71), [#81](https://github.com/emanueledenaro/trama/issues/81), [#82](https://github.com/emanueledenaro/trama/issues/82), [#83](https://github.com/emanueledenaro/trama/issues/83), [#84](https://github.com/emanueledenaro/trama/issues/84), [#85](https://github.com/emanueledenaro/trama/issues/85), [#86](https://github.com/emanueledenaro/trama/issues/86), [#87](https://github.com/emanueledenaro/trama/issues/87), [#88](https://github.com/emanueledenaro/trama/issues/88) |
 | [#61](https://github.com/emanueledenaro/trama/issues/61) | Tastiera e scorciatoie sul nuovo impianto | [#69](https://github.com/emanueledenaro/trama/issues/69) |
 
 Le fasi successive restano i ticket C06-C16, riformulati sopra il nuovo Coordinatore. Le dipendenze aggiornate:
@@ -43,7 +64,7 @@ Le fasi successive restano i ticket C06-C16, riformulati sopra il nuovo Coordina
 | [#47](https://github.com/emanueledenaro/trama/issues/47) | C15 Migliorare i team con pratiche verificate e reversibili | [#67](https://github.com/emanueledenaro/trama/issues/67), [#42](https://github.com/emanueledenaro/trama/issues/42), [#39](https://github.com/emanueledenaro/trama/issues/39) |
 | [#48](https://github.com/emanueledenaro/trama/issues/48) | C16 Usare Trama funzionante per sviluppare Trama senza regressioni | [#41](https://github.com/emanueledenaro/trama/issues/41), [#43](https://github.com/emanueledenaro/trama/issues/43), [#46](https://github.com/emanueledenaro/trama/issues/46), [#47](https://github.com/emanueledenaro/trama/issues/47) |
 
-Un secondo adattatore provider (Claude Agent SDK) e le automazioni programmate sono ticket da aprire dopo V08 e V09.
+Le automazioni programmate sono un ticket da aprire dopo V09.
 
 ## Ticket precedenti e verifica finale
 
