@@ -273,6 +273,9 @@ public actor ClaudeProviderAdapter: ProviderAdapter {
 
     /// Opens a session with `--fork-session` from another thread's cursor.
     public func forkThread(sourceThreadID: String, newThreadID: String, sourceResumeCursor: Data, runtimeMode: ProviderRuntimeMode = .fullAccess) async throws -> ProviderSession {
+        if let source = threads[sourceThreadID], source.session.activeTurnID != nil {
+            throw ClaudeClient.ClientError.malformedMessage("cannot fork thread '\(sourceThreadID)' while a turn is running")
+        }
         let cursor = ClaudeResumeCursor.decode(sourceResumeCursor)
         guard let resume = cursor.resume else {
             throw ClaudeClient.ClientError.malformedMessage("the fork source cursor has no Claude session")

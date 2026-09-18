@@ -442,6 +442,30 @@ final class ClaudeProviderAdapterTests: XCTestCase {
         XCTAssertTrue(events.contains { if case .configWarning = $0.kind { return true } else { return false } }, "the malformed entries must be declared")
     }
 
+    func testForkIsRefusedWhileATurnRuns() async throws {
+        let (adapter, box) = makeAdapter()
+        _ = try await adapter.startSession(ProviderSessionStartInput(threadID: "t1", cwd: URL(fileURLWithPath: "/tmp"), runtimeMode: .approvalRequired))
+        let transport = try XCTUnwrap(box.transports.first)
+        transport.emit(.object(["type": .string("system"), "subtype": .string("init"), "session_id": .string("33333333-3333-3333-3333-333333333333")]))
+        _ = try await adapter.sendTurn(ProviderSendTurnInput(threadID: "t1", input: [.text("lavora")]))
+        let cursor = try XCTUnwrap(ClaudeResumeCursor(resume: "33333333-3333-3333-3333-333333333333").encoded())
+        do {
+            _ = try await adapter.forkThread(sourceThreadID: "t1", newThreadID: "t2", sourceResumeCursor: cursor)
+            XCTFail("a fork must be refused while a turn runs")
+        } catch let error as ClaudeClient.ClientError {
+            guard case .malformedMessage = error else { return XCTFail("unexpected error \(error)") }
+        }
+    }
+
+    func testStopIsIdempotent() async throws {
+        let (adapter, _) = makeAdapter()
+        _ = try await adapter.startSession(ProviderSessionStartInput(threadID: "t1", cwd: URL(fileURLWithPath: "/tmp"), runtimeMode: .approvalRequired))
+        await adapter.stopSession(threadID: "t1")
+        await adapter.stopSession(threadID: "t1")
+        let session = await adapter.session(for: "t1")
+        XCTAssertNil(session)
+    }
+
     func testCacheEvidenceSurvivesARestart() async throws {
         let (adapter, box) = makeAdapter()
         _ = try await adapter.startSession(ProviderSessionStartInput(threadID: "t1", cwd: URL(fileURLWithPath: "/tmp"), runtimeMode: .approvalRequired))

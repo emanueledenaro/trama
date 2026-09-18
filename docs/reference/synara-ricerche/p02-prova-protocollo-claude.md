@@ -117,3 +117,44 @@ controllo, che porta `totalTokens`, `autoCompactThreshold`, `rawMaxTokens` e
 - La prova non copre il Coordinatore dentro l'app: `CoordinatorSession` di Trama apre ancora solo
   Codex e la scelta del provider non esiste come parte di prodotto. La prova reale è a livello di
   adattatore, con il server strumenti vero di Trama.
+
+## Deviazioni dall'interfaccia di V08
+
+L'adattatore è conforme al controllo di conformità, che è verde. Le deviazioni sono additive o
+motivate dalla realtà del provider:
+
+- `ProviderSessionStartInput` guadagna `toolServerToken: String?`. Codex riceve il token del server
+  strumenti dall'ambiente del processo figlio; Claude lo porta in memoria dentro l'argomento
+  `--mcp-config`, quindi la credenziale deve arrivare all'adattatore. Il campo è opzionale e il
+  comportamento di Codex non cambia.
+- `ProviderAccessStatus` guadagna `screenState: String?` con i valori `ready`, `warning` e `error`.
+  V08 piega `warning` dentro `unknown`; Synara distingue i tre stati, e il criterio 2 li chiede.
+  Il campo è opzionale e i file di stato già scritti restano validi.
+- `ProviderCatalogue.claudeAgent.isAvailable` diventa `true`: da P02 esiste un adattatore completo.
+- I metodi obbligatori restano il sottoinsieme di V08 più `streamEvents`. Claude implementa anche
+  `steerTurn`, `listCommands`, `forkThread`, `respondToRequest` e `respondToUserInput`. Non
+  implementa `compactThread` né `rollbackThread`, perché dichiara `supportsThreadCompaction: false`
+  e `conversationRollback: .restartSession`, come Synara.
+- `--strict-mcp-config` viene passato quando Trama inietta un server. Synara non imposta
+  `strictMcpConfig`; Trama isola il server del mandato dagli altri server MCP della macchina, come
+  già fa Codex con la sua configurazione ristretta.
+- Un input `.skill` diventa un blocco di testo che nomina il file: Claude non ha il riferimento
+  `$skill` di Codex, e `supportsSkillMentions` è falso.
+- Quando un turno si chiude senza uso dei token, l'adattatore emette un avviso di runtime che lo
+  dichiara, invece di lasciare il misuratore su uno zero.
+
+## Stato dei criteri
+
+Verificati con prove reali: 2 e 10 (stato di accesso, falsi negativi compresi), 3 (catalogo runtime),
+8 (prova reale con `haiku`), 9 (trasporto nativo), e la prova di completamento a livello di
+adattatore (risposta, strumento del mandato chiamato, interruzione, ripresa dopo un riavvio).
+
+Verificati con trasporto simulato: 1 (conformità), 4 (ciclo di vita), 5 (iniezione degli strumenti),
+6 (normalizzazione e uso dei token), 7 (casi limite dei test di Synara), 11 (opzioni di Claude),
+12 (macchina a stati e compattazione osservata), 13 (uscite 130 e 143).
+
+Parziale: 14. I test di regressione, la revisione Standards e Spec e questa documentazione ci sono;
+la prova diretta nell'app è coperta solo dalla riga della schermata dei collegamenti, non da
+un'esecuzione grafica. La prova di completamento dentro l'app resta impossibile finché il
+Coordinatore non può scegliere Claude: `CoordinatorSession` apre solo Codex e la scelta del provider
+è una decisione di prodotto che non esiste ancora.
