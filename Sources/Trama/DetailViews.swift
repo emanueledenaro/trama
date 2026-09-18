@@ -212,6 +212,7 @@ struct ConnectionsView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                     }
                     ProviderConnectionsList(rows: ProviderConnectionPresentationBuilder.rows(statuses: store.providerAccess))
+                    providerPicker
                     VStack(alignment: .leading, spacing: TramaSpacing.control) {
                         Label("GitHub è consigliato per seguire PR e lavoro del gruppo.", systemImage: "arrow.triangle.branch").font(.callout).foregroundStyle(.secondary)
                         ForEach(store.connectedApps.filter { $0.name.localizedCaseInsensitiveContains("github") }.prefix(2)) { app in
@@ -237,6 +238,29 @@ struct ConnectionsView: View {
             Text("L’accesso avviene nel browser ufficiale. Trama non copia le credenziali.")
                 .font(.caption).foregroundStyle(.secondary).padding(TramaSpacing.content)
         }.task { await store.connectCodex() }
+    }
+
+    /// The Coordinator's provider. Only an authenticated provider can be chosen; the others stay
+    /// listed with their real state and reason (ADR 0009).
+    private var providerPicker: some View {
+        VStack(alignment: .leading, spacing: TramaSpacing.control) {
+            Text("Provider del Coordinatore").font(.headline)
+            Text("Il Coordinatore usa \(store.document.lastTurnProviderOrCodex.displayName). Scegliere un altro provider apre una sessione nuova e le passa trascrizione, memoria e studio.")
+                .font(.caption).foregroundStyle(.secondary)
+            ForEach(store.providerOptions) { option in
+                HStack(spacing: TramaSpacing.control) {
+                    Text(option.displayName).font(.subheadline)
+                    Spacer(minLength: 0)
+                    if option.isSelectable {
+                        Button("Usa per il Coordinatore") { store.switchCoordinatorProvider(to: option.provider) }
+                            .disabled(option.provider == store.document.lastTurnProviderOrCodex)
+                    } else {
+                        Text("Non selezionabile: \(option.reason ?? "stato non noto")")
+                            .font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+                    }
+                }
+            }
+        }
     }
 
     private func connectionState(_ app: CodexClient.App) -> some View {

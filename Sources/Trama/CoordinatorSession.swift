@@ -252,8 +252,25 @@ extension ProjectStore {
             modules: project.modules.map { .init(id: $0.id, name: $0.name, path: $0.relativePath) },
             availableChecks: ReadOnlyCheckRunner.availableChecks(root: root),
             models: models.map(\.model),
-            defaultSpecialistModel: selectedModel.isEmpty ? nil : selectedModel
+            defaultSpecialistModel: specialistDefaultModel ?? (selectedModel.isEmpty ? nil : selectedModel)
         )
+    }
+
+    /// A specialist starts from the cheapest model of the provider, or from the person's remembered
+    /// choice for that provider. ADR 0009.
+    var specialistDefaultModel: String? {
+        let catalog = ProviderModelCatalog(
+            models: models.map { model in
+                ProviderModelDescriptor(
+                    slug: model.model,
+                    resolvedModel: model.model,
+                    name: model.displayName,
+                    isDefault: model.isDefault
+                )
+            },
+            source: .runtime
+        )
+        return ProviderModelDefault.specialist(provider: .codex, catalog: catalog, preference: document.providerPreferences)
     }
 
     func writeCoordinatorMemory(projectID: UUID, text: String) throws -> CoordinatorMemory {
@@ -461,13 +478,21 @@ extension ProjectStore {
                 refreshCoordinatorStudy(rereadInstructions: true)
                 let (client, endpoint) = try await coordinator.prepare(projectID: projectID)
                 guard coordinatorGeneration == generation else { return }
+                var instructions = CoordinatorBriefing.developerInstructions(projectName: project.name)
+                if let handover = coordinatorHandover {
+                    // A provider switch keeps the thread: the new session opens with the handover.
+                    instructions += "\n\n" + handover.briefing
+                }
                 let settings = CodexClient.CoordinatorThreadSettings(
                     cwd: root,
                     model: model,
-                    developerInstructions: CoordinatorBriefing.developerInstructions(projectName: project.name),
+                    developerInstructions: instructions,
                     toolServerURL: endpoint
                 )
                 let opening = try await client.openCoordinatorThread(settings, resuming: coordinatorThreadID)
+                // The provider of the last Coordinator turn, so reopening resumes with it (ADR 0009).
+                document.lastTurnProvider = .codex
+                coordinatorHandover = nil
                 guard coordinatorGeneration == generation else { return }
                 await observeCoordinatorThread(client: client, threadID: opening.threadID)
                 coordinator.threadID = opening.threadID
@@ -503,6 +528,41 @@ extension ProjectStore {
                 saveDocument()
             }
         }
+    }
+
+    /// The person switches the Coordinator's provider. The thread survives: the session is not
+    /// transferred, so Trama opens a new one and hands it the transcript, the memory and the study.
+    func switchCoordinatorProvider(to provider: ProviderKind) {
+        guard stateWritable, let project else { return }
+        guard provider != document.lastTurnProviderOrCodex else { return }
+        let previous = document.lastTurnProviderOrCodex
+        let handover = CoordinatorProviderSwitch.plan(from: previous, to: provider, document: document)
+        coordinatorHandover = handover
+        document.lastTurnProvider = provider
+        document.coordinator?.providerBlock = nil
+        // The old session is not reused: the new provider opens its own.
+        coordinator.threadID = nil
+        document.coordinator?.thread = nil
+        document.conversation?.appendCard(
+            ConversationEvent.Card(
+                kind: .contextNotice,
+                title: "Provider del Coordinatore: \(provider.displayName)",
+                detail: "Il Coordinatore riparte da \(previous.displayName) a \(provider.displayName) in una sessione nuova, con la trascrizione, la memoria e lo studio del progetto.",
+                referenceID: nil
+            ),
+            origin: .trama,
+            requestID: nil
+        )
+        saveDocument()
+        stopCoordinator()
+        if provider == .codex {
+            retryCoordinator()
+        } else {
+            // The app's Coordinator runtime opens Codex only: the switch is recorded and the session
+            // resets, but the new provider cannot be opened here yet.
+            coordinatorPhase = .unavailable("Il Coordinatore dell'app apre ancora solo Codex. Il passaggio a \(provider.displayName) è registrato e il thread ripartirà da lì quando l'app lo supporterà.")
+        }
+        _ = project
     }
 
     /// The person retries after a provider block, from the status strip. Every waiting assignment

@@ -85,6 +85,11 @@ final class ProjectStore: ObservableObject {
     @Published var providerAccess: [ProviderKind: ProviderAccessStatus] = [:]
     /// The block that stopped work, shown by the status strip and by a card in the conversation.
     @Published var providerNotice: ProviderBlock?
+    /// The handover of a Coordinator provider switch, injected into the new session and then cleared.
+    var coordinatorHandover: CoordinatorHandover?
+    /// The providers Trama can offer, with their real access state. Only an authenticated provider
+    /// is selectable (ADR 0009).
+    @Published var providerOptions: [ProviderOption] = []
 
     static var providerStatusDirectory: URL {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
@@ -497,6 +502,8 @@ final class ProjectStore: ObservableObject {
                 codexConnected = false; accountLabel = "Accesso richiesto"
                 connectionDetail = "Accedi con ChatGPT per continuare."
             }
+            await recordCodexAccess()
+            await recordClaudeAccess()
             if codexConnected {
                 codexVersion = await codex.serverInfo()?.userAgent ?? ""
                 isLoadingModels = true
@@ -525,7 +532,8 @@ final class ProjectStore: ObservableObject {
                     modelsError = "Catalogo modelli non disponibile: \(error.localizedDescription)"
                 }
                 isLoadingModels = false
-                startCoordinator()
+                if applyResumeProviderDecision() { startCoordinator() }
+                await refreshProviderOptions()
                 do { connectedApps = try await codex.listApps(); appsError = nil }
                 catch { appsError = "Collegamenti non disponibili: \(error.localizedDescription)" }
             }
@@ -535,8 +543,39 @@ final class ProjectStore: ObservableObject {
             isLoadingModels = false
             connectionDetail = error.localizedDescription
         }
-        await recordCodexAccess()
-        await recordClaudeAccess()
+    }
+
+    /// Rebuilds the provider offering. The access check runs before a provider is offered, and an
+    /// unknown state is resolved by a real check first. A provider without an account stays listed
+    /// with its real status and reason, and is not selectable.
+    func refreshProviderOptions() async {
+        let options = ProviderOffering.options(statuses: providerAccess)
+        let resolved = await ProviderOffering.resolveUnknowns(options, shouldCheck: { [weak self] provider in
+            guard let self else { return false }
+            return self.providerAccess[provider] == nil && (provider == .codex || provider == .claudeAgent)
+        }) { [weak self] provider in
+            guard let self else { return ProviderAccessStatus(provider: provider, state: .unknown, isAvailable: false) }
+            if provider == .claudeAgent { return await self.claudeAdapter.checkAccess() }
+            return self.providerAccess[provider] ?? ProviderAccessStatus(provider: provider, state: .unknown, isAvailable: false)
+        }
+        providerOptions = resolved
+        for option in resolved { providerAccess[option.provider] = option.access }
+    }
+
+    /// On reopening, work resumes with the provider of the last turn. An unavailable provider stops
+    /// Trama and warns; the provider is never changed here (ADR 0009).
+    @discardableResult
+    func applyResumeProviderDecision() -> Bool {
+        switch ProviderRuntimePolicy.resumeDecision(lastProvider: document.lastTurnProvider, statuses: providerAccess) {
+        case .proceed:
+            if document.lastTurnProvider == nil, document.team?.waitingAssignments.isEmpty ?? true {
+                providerNotice = nil
+            }
+            return true
+        case let .stopAndWarn(block):
+            providerNotice = block
+            return false
+        }
     }
 
     /// Checks Claude Agent and keeps its status for the connections screen.
@@ -567,6 +606,7 @@ final class ProjectStore: ObservableObject {
         guard !isPlanning, !isExecuting, models.contains(where: { $0.model == model }) else { return }
         selectedModel = model
         document.selectedModel = model
+        document.rememberCoordinatorModel(model, for: .codex)
         modelsError = nil
         intelligence.invalidate()
         saveDocument()

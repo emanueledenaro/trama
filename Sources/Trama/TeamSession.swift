@@ -279,6 +279,7 @@ extension ProjectStore {
         guard stateWritable else { return }
         do {
             try document.setAssignmentModel(assignmentID, model: model)
+            document.rememberSpecialistModel(model, for: document.team?.assignment(assignmentID)?.resolvedProvider ?? .codex)
             document.conversation?.appendSpecialistActivity(assignmentID: assignmentID, turnID: nil, title: "Modello scelto dalla persona", detail: model)
             saveDocument()
         } catch {

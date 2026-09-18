@@ -79,4 +79,21 @@ public struct ProjectDocument: Codable, Sendable {
     public var lastTurnProvider: ProviderKind?
 
     public init() {}
+
+    /// Remembers the Coordinator model the person chose for a provider (ADR 0009).
+    public mutating func rememberCoordinatorModel(_ model: String?, for provider: ProviderKind) {
+        var preference = providerPreferences ?? ProviderModelPreference()
+        preference.rememberCoordinator(model, for: provider)
+        providerPreferences = preference
+    }
+
+    /// Remembers the specialist model the person chose for a provider (ADR 0009).
+    public mutating func rememberSpecialistModel(_ model: String?, for provider: ProviderKind) {
+        var preference = providerPreferences ?? ProviderModelPreference()
+        preference.rememberSpecialist(model, for: provider)
+        providerPreferences = preference
+    }
+
+    /// The provider of the last Coordinator turn, or Codex when the project never ran one.
+    public var lastTurnProviderOrCodex: ProviderKind { lastTurnProvider ?? .codex }
 }
