@@ -67,6 +67,13 @@ public struct CoordinatorToolContext: Sendable {
     public var models: [String]
     /// The model an assignment gets when the Coordinator does not propose one: the Coordinator's own.
     public var defaultSpecialistModel: String?
+    /// Models of the other providers a specialist may run on, keyed by `ProviderKind.rawValue`.
+    /// Only an authenticated provider appears here (ADR 0009); Codex keeps `models`.
+    public var providerModels: [String: [String]]
+    /// The model an assignment gets on each of those providers: the cheapest of the catalogue.
+    public var providerDefaultModels: [String: String]
+    /// The provider an assignment gets when the Coordinator does not name one: the Coordinator's own.
+    public var defaultSpecialistProvider: ProviderKind
 
     public init(
         projectName: String,
@@ -76,7 +83,10 @@ public struct CoordinatorToolContext: Sendable {
         modules: [Module] = [],
         availableChecks: [ReadOnlyCheck] = [],
         models: [String] = [],
-        defaultSpecialistModel: String? = nil
+        defaultSpecialistModel: String? = nil,
+        providerModels: [String: [String]] = [:],
+        providerDefaultModels: [String: String] = [:],
+        defaultSpecialistProvider: ProviderKind = .codex
     ) {
         self.projectName = projectName
         self.document = document
@@ -86,6 +96,9 @@ public struct CoordinatorToolContext: Sendable {
         self.availableChecks = availableChecks
         self.models = models
         self.defaultSpecialistModel = defaultSpecialistModel
+        self.providerModels = providerModels
+        self.providerDefaultModels = providerDefaultModels
+        self.defaultSpecialistProvider = defaultSpecialistProvider
     }
 }
 

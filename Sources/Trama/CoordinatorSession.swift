@@ -345,8 +345,24 @@ extension ProjectStore {
             modules: project.modules.map { .init(id: $0.id, name: $0.name, path: $0.relativePath) },
             availableChecks: ReadOnlyCheckRunner.availableChecks(root: root),
             models: models.map(\.model),
-            defaultSpecialistModel: specialistDefaultModel(for: .codex) ?? (selectedModel.isEmpty ? nil : selectedModel)
+            defaultSpecialistModel: specialistDefaultModel(for: .codex) ?? (selectedModel.isEmpty ? nil : selectedModel),
+            providerModels: claudeSpecialistModels.map { [ProviderKind.claudeAgent.rawValue: $0] } ?? [:],
+            providerDefaultModels: claudeSpecialistDefault.map { [ProviderKind.claudeAgent.rawValue: $0] } ?? [:],
+            defaultSpecialistProvider: coordinator.provider
         )
+    }
+
+    /// The Claude models a specialist may use, offered only while Claude Agent is authenticated
+    /// (ADR 0009: connected means authenticated).
+    private var claudeSpecialistModels: [String]? {
+        guard providerAccess[.claudeAgent]?.state == .authenticated,
+              let catalog = providerCatalogs[.claudeAgent], !catalog.models.isEmpty else { return nil }
+        return catalog.models.map(\.slug)
+    }
+
+    private var claudeSpecialistDefault: String? {
+        guard let catalog = providerCatalogs[.claudeAgent], claudeSpecialistModels != nil else { return nil }
+        return ProviderModelDefault.specialist(provider: .claudeAgent, catalog: catalog, preference: document.providerPreferences)
     }
 
     /// A specialist starts from the cheapest model of the provider, or from the person's remembered

@@ -25,7 +25,7 @@ extension CoordinatorTools {
                     ["name": text, "competence": text, "reason": text, "moduleIDs": modules],
                     ["name", "competence", "reason", "moduleIDs"])
         case .assignTask:
-            return ("Within the mandate (executeInWorktree), assign work to a specialist, named by id or name. Trama starts it in a Codex thread it owns, in its own worktree when tools include edits, without network. Give the objective, the issue or exercise, the modules, the assignments it depends on, the checks the result must pass and your instructions for the specialist. model defaults to yours; propose another only when the work needs it, the person can change it. Assign in parallel only independent work: different modules and no unfinished dependency. kind newFeature and tradeOff always go to the person.",
+            return ("Within the mandate (executeInWorktree), assign work to a specialist, named by id or name. Trama starts it in a provider thread it owns, in its own worktree when tools include edits, without network. Give the objective, the issue or exercise, the modules, the assignments it depends on, the checks the result must pass and your instructions for the specialist. provider defaults to yours (codex or claudeAgent); name another only when the work needs it, and only an authenticated one is offered. model defaults to the cheapest of that provider; propose another from its catalogue only when the work needs it, the person can change both. Assign in parallel only independent work: different modules and no unfinished dependency. kind newFeature and tradeOff always go to the person.",
                     ["specialist": text,
                      "kind": .object(["type": .string("string"), "enum": .array(ProjectMandate.PlanKind.allCases.map { .string($0.rawValue) })]),
                      "objective": text,
@@ -33,6 +33,7 @@ extension CoordinatorTools {
                      "exercise": text,
                      "moduleIDs": modules,
                      "dependencies": list(minimum: 0),
+                     "provider": .object(["type": .string("string"), "enum": .array(ProviderKind.allCases.map { .string($0.rawValue) })]),
                      "model": text,
                      "tools": .object(["type": .string("array"), "items": .object(["type": .string("string"), "enum": .array(SpecialistTool.allCases.map { .string($0.rawValue) })])]),
                      "requiredChecks": .object(["type": .string("array"), "items": .object(["type": .string("string"), "enum": .array(ReadOnlyCheck.allCases.map { .string($0.rawValue) })])]),
@@ -217,7 +218,7 @@ extension CoordinatorTools {
     }
 
     private static func assignIntent(_ arguments: [String: JSONValue], context: CoordinatorToolContext) throws -> Intent {
-        let reader = try ToolArguments(arguments, tool: .assignTask, allowed: ["specialist", "kind", "objective", "issueNumber", "exercise", "moduleIDs", "dependencies", "model", "tools", "requiredChecks", "instructions"])
+        let reader = try ToolArguments(arguments, tool: .assignTask, allowed: ["specialist", "kind", "objective", "issueNumber", "exercise", "moduleIDs", "dependencies", "provider", "model", "tools", "requiredChecks", "instructions"])
         guard let kind = arguments["kind"]?.stringValue.flatMap(ProjectMandate.PlanKind.init(rawValue:)) else {
             throw Failure.invalid("kind must be one of: \(ProjectMandate.PlanKind.allCases.map(\.rawValue).joined(separator: ", ")).")
         }
@@ -236,10 +237,24 @@ extension CoordinatorTools {
             }
             return tool
         }
-        guard let model = try reader.optionalString("model")?.trimmingCharacters(in: .whitespacesAndNewlines) ?? context.defaultSpecialistModel,
-              context.models.contains(model) else {
-            let available = context.models.joined(separator: ", ")
-            throw Failure("model_unavailable", "The model is not in this account's Codex catalogue. Available: \(available.isEmpty ? "none" : available).")
+        let provider: ProviderKind
+        if let named = try reader.optionalString("provider") {
+            guard let known = ProviderKind(rawValue: named) else {
+                throw Failure.invalid("Unknown provider \(named); use: \(ProviderKind.allCases.map(\.rawValue).joined(separator: ", ")).")
+            }
+            provider = known
+        } else {
+            provider = context.defaultSpecialistProvider
+        }
+        let offered = provider == .codex ? context.models : (context.providerModels[provider.rawValue] ?? [])
+        guard provider == .codex || context.providerModels[provider.rawValue] != nil else {
+            throw Failure("provider_unavailable", "\(provider.displayName) is not connected: only an authenticated provider can take an assignment. Offered: \((["codex"] + context.providerModels.keys.sorted()).joined(separator: ", ")).")
+        }
+        let defaultModel = provider == .codex ? context.defaultSpecialistModel : context.providerDefaultModels[provider.rawValue]
+        guard let model = try reader.optionalString("model")?.trimmingCharacters(in: .whitespacesAndNewlines) ?? defaultModel,
+              offered.contains(model) else {
+            let available = offered.joined(separator: ", ")
+            throw Failure("model_unavailable", "The model is not in this account's \(provider.displayName) catalogue. Available: \(available.isEmpty ? "none" : available).")
         }
         let order = AssignmentOrder(
             specialistID: specialist.id,
@@ -252,7 +267,8 @@ extension CoordinatorTools {
             model: model,
             tools: tools.isEmpty ? SpecialistTool.allCases : tools,
             requiredChecks: checks,
-            instructions: try reader.string("instructions")
+            instructions: try reader.string("instructions"),
+            provider: provider
         )
         return Intent(action: .executeInWorktree, moduleIDs: moduleIDs, workKind: kind) { host, projectID, mandate in
             let assignment = try await host.assignTask(projectID: projectID, order: order, mandate: mandate)
@@ -263,6 +279,7 @@ extension CoordinatorTools {
                 "specialistID": .string(assignment.specialistID),
                 "status": .string(assignment.status.rawValue),
                 "worktree": .string(assignment.needsWorktree ? "own" : "not_needed"),
+                "provider": .string(assignment.resolvedProvider.rawValue),
                 "model": .string(assignment.model),
                 "meaning": .string("Trama starts the specialist now and shows the assignment card; its activities are collected per turn. Tell the person what you assigned and why; read_team shows the progress.")
             ]))

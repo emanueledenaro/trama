@@ -356,7 +356,7 @@ extension ProjectStore {
             let model = assignment?.model ?? ""
             if let turnID {
                 // The provider that really produced the turn, never an inferred one.
-                try? document.beginSpecialistTurn(assignmentID: assignmentID, turnID: turnID, model: model, provider: .codex)
+                try? document.beginSpecialistTurn(assignmentID: assignmentID, turnID: turnID, model: model, provider: assignment?.resolvedProvider ?? .codex)
             }
             document.conversation?.appendSpecialistActivity(assignmentID: assignmentID, turnID: turnID, title: "Turno avviato", detail: model)
         case .contentDelta(.assistantText):
