@@ -96,7 +96,7 @@ final class SpecialistSupervisor: ObservableObject {
         case let .threadOpened(opening):
             store.recordSpecialistThread(opening, assignmentID: assignmentID)
         case let .turn(turnEvent):
-            if case let .turnStarted(turnID) = turnEvent {
+            if case .turnStarted = turnEvent.kind, let turnID = turnEvent.turnID {
                 runtimes[assignmentID]?.turnID = turnID
                 runningTurns.insert(turnID)
             }
@@ -312,21 +312,24 @@ extension ProjectStore {
         saveDocument()
     }
 
-    func receiveSpecialistTurnEvent(_ event: CodexClient.TurnEvent, assignmentID: String, turnID: String?) {
+    func receiveSpecialistTurnEvent(_ event: ProviderEvent, assignmentID: String, turnID: String?) {
         guard stateWritable else { return }
-        switch event {
-        case let .turnStarted(turnID):
+        switch event.kind {
+        case let .turnStarted(_, _):
+            let turnID = event.turnID ?? turnID
             let model = document.team?.assignment(assignmentID)?.model ?? ""
-            try? document.beginSpecialistTurn(assignmentID: assignmentID, turnID: turnID, model: model)
+            if let turnID {
+                try? document.beginSpecialistTurn(assignmentID: assignmentID, turnID: turnID, model: model)
+            }
             document.conversation?.appendSpecialistActivity(assignmentID: assignmentID, turnID: turnID, title: "Turno avviato", detail: model)
-        case .textDelta:
+        case .contentDelta(.assistantText):
             // The answer of the turn is recorded once, when the turn ends.
             return
         case let .commentary(note):
             document.conversation?.appendSpecialistActivity(assignmentID: assignmentID, turnID: turnID, title: "Nota dello specialista", detail: note)
-        case let .reasoning(summary):
+        case let .contentDelta(.reasoningSummaryText(summary)):
             document.conversation?.appendSpecialistActivity(assignmentID: assignmentID, turnID: turnID, title: "Ragionamento", detail: summary)
-        case let .commandCompleted(_, command, exitCode, output, succeeded):
+        case let .commandCompleted(command, exitCode, output, succeeded):
             var detail = command
             if let exitCode { detail += " · uscita \(exitCode)" }
             if let output, !output.isEmpty { detail += "\n" + Self.tail(output) }
@@ -336,22 +339,24 @@ extension ProjectStore {
                 title: succeeded ? "Ha eseguito un comando" : "Comando non riuscito",
                 detail: detail
             )
-        case let .fileChangeCompleted(_, paths, succeeded):
+        case let .fileChangeCompleted(paths, succeeded):
             document.conversation?.appendSpecialistActivity(
                 assignmentID: assignmentID,
                 turnID: turnID,
                 title: succeeded ? "Ha modificato \(paths.count == 1 ? "un file" : "\(paths.count) file")" : "Modifica dei file non riuscita",
                 detail: paths.joined(separator: ", ")
             )
-        case let .toolCallStarted(_, server, tool):
+        case let .toolCallStarted(server, tool):
             document.conversation?.appendSpecialistActivity(assignmentID: assignmentID, turnID: turnID, title: "Strumento avviato", detail: "\(server) · \(tool)")
-        case let .toolCallCompleted(_, server, tool, succeeded, error):
+        case let .toolCallCompleted(server, tool, succeeded, error):
             document.conversation?.appendSpecialistActivity(
                 assignmentID: assignmentID,
                 turnID: turnID,
                 title: succeeded ? "Strumento usato" : "Strumento non riuscito",
                 detail: [server, tool, error].compactMap { $0 }.joined(separator: " · ")
             )
+        default:
+            return
         }
         saveDocument()
     }

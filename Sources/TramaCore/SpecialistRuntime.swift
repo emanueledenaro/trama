@@ -98,7 +98,8 @@ public struct SpecialistLaunch: Sendable {
 public enum SpecialistRunEvent: Sendable {
     case workspaceReady(WorkspaceSession)
     case threadOpened(CodexClient.CoordinatorThreadOpening)
-    case turn(CodexClient.TurnEvent)
+    /// The review surface consumes the normalized provider event, not the Codex turn event.
+    case turn(ProviderEvent)
 }
 
 /// Runs one turn of a specialist: prepares its worktree, opens the thread Trama owns and sends the
@@ -128,8 +129,10 @@ public enum SpecialistRunner {
         let opening = try await client.openSpecialistThread(settings, resuming: launch.threadID)
         onEvent(.threadOpened(opening))
         try Task.checkCancellation()
-        return try await client.runSpecialistTurn(threadID: opening.threadID, input: launch.input, settings: settings) {
-            onEvent(.turn($0))
+        let tracker = TurnTracker()
+        return try await client.runSpecialistTurn(threadID: opening.threadID, input: launch.input, settings: settings) { event in
+            if case let .turnStarted(id) = event { tracker.turnID = id }
+            onEvent(.turn(CodexEventNormalizer.normalize(turnEvent: event, threadID: opening.threadID, turnID: tracker.turnID)))
         }
     }
 }

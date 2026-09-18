@@ -272,10 +272,11 @@ public actor CodexProviderAdapter: ProviderAdapter {
 }
 
 /// A tiny box so the synchronous event callback can remember the turn id.
-private final class TurnTracker: @unchecked Sendable {
+public final class TurnTracker: @unchecked Sendable {
+    public init() {}
     private let lock = NSLock()
     private var storage: String?
-    var turnID: String? {
+    public var turnID: String? {
         get { lock.lock(); defer { lock.unlock() }; return storage }
         set { lock.lock(); storage = newValue; lock.unlock() }
     }
