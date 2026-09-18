@@ -596,7 +596,7 @@ final class ProjectStore: ObservableObject {
     func coordinatorChoiceReason(_ option: ProviderOption) -> String? {
         guard option.isSelectable else { return option.reason }
         guard ProjectStore.appRunsCoordinator(option.provider) else {
-            return "Il Coordinatore dell'app apre ancora solo Codex."
+            return "Trama non ha ancora un adattatore completo per questo provider."
         }
         return nil
     }

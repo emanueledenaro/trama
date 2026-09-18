@@ -34,12 +34,22 @@ final class SpecialistSupervisor: ObservableObject {
               assignment.status == .preparing else { return }
         let provider = assignment.resolvedProvider
         if let reason = store.specialistProviderReason(provider) {
-            store.providerNotice = ProviderBlock(
+            let block = ProviderBlock(
                 provider: provider,
                 reason: .unknown(reason),
                 detail: "Il provider dell'incarico \(assignment.id) non è disponibile in Trama: il lavoro resta in attesa e la persona decide.",
                 observedAt: Date()
             )
+            // A provider that cannot open is a normal state: the assignment waits, with a card and the strip.
+            try? store.document.recordProviderBlock(block, assignmentID: assignmentID)
+            store.document.conversation?.appendCard(
+                ConversationEvent.Card(kind: .providerBlocked, title: block.title, detail: block.reason.summary, referenceID: assignmentID),
+                origin: .trama,
+                requestID: nil,
+                assignmentID: assignmentID
+            )
+            store.providerNotice = block
+            store.saveDocument()
             return
         }
         let isFirstTurn = assignment.turns.isEmpty
@@ -354,9 +364,9 @@ extension ProjectStore {
             let turnID = event.turnID ?? turnID
             let assignment = document.team?.assignment(assignmentID)
             let model = assignment?.model ?? ""
-            if let turnID {
+            if let turnID, let assignment {
                 // The provider that really produced the turn, never an inferred one.
-                try? document.beginSpecialistTurn(assignmentID: assignmentID, turnID: turnID, model: model, provider: assignment?.resolvedProvider ?? .codex)
+                try? document.beginSpecialistTurn(assignmentID: assignmentID, turnID: turnID, model: model, provider: assignment.resolvedProvider)
             }
             document.conversation?.appendSpecialistActivity(assignmentID: assignmentID, turnID: turnID, title: "Turno avviato", detail: model)
         case .contentDelta(.assistantText):

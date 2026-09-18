@@ -688,7 +688,13 @@ extension ProjectStore {
         guard stateWritable else { return }
         guard provider != document.lastTurnProviderOrCodex else { return }
         guard ProjectStore.appRunsCoordinator(provider) else {
-            coordinatorPhase = .unavailable("Il Coordinatore dell'app apre ancora solo Codex: il passaggio a \(provider.displayName) non è disponibile. Il thread resta su \(document.lastTurnProviderOrCodex.displayName).")
+            coordinatorPhase = .unavailable("Trama non ha ancora un adattatore completo per \(provider.displayName): il passaggio non è disponibile. Il thread resta su \(document.lastTurnProviderOrCodex.displayName).")
+            return
+        }
+        // Only a provider that can run is chosen: a refused switch keeps the thread and the provider.
+        let accessUnknown = provider == .claudeAgent && (providerAccess[.claudeAgent]?.state ?? .unknown) == .unknown
+        if let reason = coordinatorProviderReason(provider), !accessUnknown {
+            providerNotice = ProviderBlock(provider: provider, reason: .unknown(reason), detail: "Il thread resta su \(document.lastTurnProviderOrCodex.displayName): il cambio è una decisione della persona e il provider scelto non può girare adesso.", observedAt: Date())
             return
         }
         let previous = document.lastTurnProviderOrCodex
