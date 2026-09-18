@@ -5,10 +5,48 @@ import CryptoKit
 import TramaCore
 
 enum WorkspaceSection: String, CaseIterable, Identifiable {
-    case coordinator = "Coordinatore", map = "Mappa", changes = "Modifiche", decisions = "Decisioni", team = "Gruppo", issues = "Issue"
+    // The raw values are persisted in the document; "Gruppo" stays the GitHub group of the monitor.
+    case coordinator = "Coordinatore", team = "Team", map = "Mappa", changes = "Modifiche", decisions = "Decisioni", group = "Gruppo", issues = "Issue"
     var id: String { rawValue }
     var symbol: String {
-        switch self { case .coordinator: "bubble.left.and.bubble.right"; case .map: "square.3.layers.3d"; case .changes: "arrow.triangle.branch"; case .decisions: "checkmark.seal"; case .team: "person.2"; case .issues: "tray" }
+        switch self {
+        case .coordinator: "bubble.left.and.bubble.right"
+        case .team: "person.3"
+        case .map: "square.3.layers.3d"
+        case .changes: "arrow.triangle.branch"
+        case .decisions: "checkmark.seal"
+        case .group: "person.2"
+        case .issues: "tray"
+        }
+    }
+
+    /// The pane this section stores, the one it opens the inspector on, and the reverse.
+    ///
+    /// The sections are no longer what the window is made of: they survive as the storage format of
+    /// the document and as the surface the Coordinator cards already call (`store.section = .team`).
+    init(target: InspectorTarget?) {
+        switch target {
+        case nil: self = .coordinator
+        case .map, .module: self = .map
+        case .requests, .candidate: self = .changes
+        case .pact, .decision: self = .decisions
+        case .team, .specialist: self = .team
+        case .group: self = .group
+        case .issues, .issue: self = .issues
+        }
+    }
+
+    /// The inspector target the section opens; nil closes the inspector and shows the conversation.
+    func target(moduleID: String?, requestID: UUID?) -> InspectorTarget? {
+        switch self {
+        case .coordinator: nil
+        case .team: .team
+        case .map: moduleID.map(InspectorTarget.module) ?? .map
+        case .changes: requestID.map(InspectorTarget.candidate) ?? .requests
+        case .decisions: .pact
+        case .group: .group
+        case .issues: .issues
+        }
     }
 }
 
@@ -17,7 +55,8 @@ final class ProjectStore: ObservableObject {
     @Published var project: RepositorySnapshot?
     @Published var recentProjects: [RecentProject] = []
     @Published var selectedModuleID: String?
-    @Published var section: WorkspaceSection? = .coordinator
+    /// What the right-hand inspector shows; nil when no target is open.
+    @Published var inspectorTarget: InspectorTarget?
     @Published var query = ""
     @Published var mapStyle = "Mappa"
     @Published var showInspector = true
@@ -57,6 +96,8 @@ final class ProjectStore: ObservableObject {
     @Published var codexVersion = ""
     @Published var isPreparingSkills = false
     @Published var pendingApproval: CodexClient.ApprovalRequest?
+    /// Increases when the person asks for the keyboard focus on the composer.
+    @Published var composerFocusRequest = 0
     /// Readable streamed reply text per request while a Codex turn is running. Not persisted.
     @Published var streamingReplies: [UUID: String] = [:]
     /// Raw JSON streamed by the planner, from which `streamingReplies` shows the message.
@@ -68,6 +109,18 @@ final class ProjectStore: ObservableObject {
     @Published var projectIssues: [GitHubIssue]?
     var loadedSkills: [CodexClient.LoadedSkill] = []
     var lastIssuesRefresh: Date?
+    /// The on-disk provider status cache: read once at launch, written when a check changes it.
+    let providerStatuses = ProviderStatusStore(configuration: .init(directory: ProjectStore.providerStatusDirectory))
+    /// The shared model catalogue cache: fresh for 10 minutes, revalidated in the background.
+    let modelCatalog = ModelCatalogCache()
+    /// The last known status of every provider, shown by the connections screen.
+    @Published var providerAccess: [ProviderKind: ProviderAccessStatus] = [:]
+
+    static var providerStatusDirectory: URL {
+        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+            ?? FileManager.default.temporaryDirectory
+        return base.appendingPathComponent("Trama", isDirectory: true)
+    }
     let coordinator = CoordinatorRuntime()
     var coordinatorTask: Task<Void, Never>?
     var coordinatorGeneration = UUID()
@@ -90,6 +143,8 @@ final class ProjectStore: ObservableObject {
     private var watcherTask: Task<Void, Never>?
     let codex = CodexClient()
     let team = TeamViewModel()
+    /// The specialists of the open project at work.
+    let specialists = SpecialistSupervisor()
     let backgroundMonitor = BackgroundMonitorService()
     let intelligence = ProjectIntelligence()
     let remoteConflicts = RemoteConflictMonitor()
@@ -135,12 +190,62 @@ final class ProjectStore: ObservableObject {
                 Task { await self.refreshProjectIssues() }
             }
         }
-        for publisher in [team.objectWillChange, intelligence.objectWillChange, remoteConflicts.objectWillChange, notifications.objectWillChange] {
+        specialists.store = self
+        for publisher in [team.objectWillChange, intelligence.objectWillChange, remoteConflicts.objectWillChange, notifications.objectWillChange, specialists.objectWillChange] {
             publisher.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &observation)
+        }
+        Task { [weak self] in
+            guard let self else { return }
+            let stored = await providerStatuses.loadFromDisk()
+            providerAccess = Dictionary(uniqueKeysWithValues: stored.map { ($0.provider, $0) })
         }
     }
 
     var selectedModule: RepositoryModule? { project?.modules.first { $0.id == selectedModuleID } }
+
+    /// The pane stored in the document, kept as the compatibility surface of the Coordinator cards
+    /// and of `saveDocument`. The window itself reads `inspectorTarget`.
+    var section: WorkspaceSection? {
+        get { showInspector ? WorkspaceSection(target: inspectorTarget) : .coordinator }
+        set {
+            if let newValue, newValue != .coordinator {
+                inspectorTarget = newValue.target(moduleID: selectedModuleID, requestID: selectedRequestID)
+                showInspector = true
+            } else {
+                showInspector = false
+            }
+        }
+    }
+
+    /// Brings the keyboard focus to the composer field.
+    func focusComposer() {
+        composerFocusRequest += 1
+    }
+
+    /// Opens the inspector on a target, or closes it when the target is nil. The target stays
+    /// remembered, so reopening the inspector returns to what the person was reading.
+    func openInspector(_ target: InspectorTarget?) {
+        if let target {
+            inspectorTarget = target
+            showInspector = true
+        } else {
+            showInspector = false
+        }
+    }
+
+    /// Shows the inspector on the open target, closes it, or opens the work list when none was chosen.
+    func toggleInspector() {
+        if showInspector { showInspector = false }
+        else { openInspector(inspectorTarget ?? .requests) }
+    }
+
+    /// Opens the target of a sidebar row.
+    func open(_ destination: SidebarDestination) {
+        switch destination {
+        case let .inspector(target): openInspector(target)
+        case .conversation: openInspector(nil)
+        }
+    }
     var filteredModules: [RepositoryModule] {
         (project?.modules ?? []).filter { query.isEmpty || $0.name.localizedCaseInsensitiveContains(query) || $0.files.contains { $0.relativePath.localizedCaseInsensitiveContains(query) } }
     }
@@ -230,6 +335,7 @@ final class ProjectStore: ObservableObject {
             await codex.cancelTurn()
             streamingReplies = [:]; planStreams = [:]
             stopCoordinator(); projectIssues = nil; lastIssuesRefresh = nil
+            specialists.stopAll(reason: "Trama ha aperto un altro progetto.")
         }
         do {
             let snapshot = try await Task.detached { try RepositoryScanner().scan(root: root, isDemo: isDemo) }.value
@@ -248,6 +354,13 @@ final class ProjectStore: ObservableObject {
             project = snapshot
             if previousPath != snapshot.rootPath {
                 document = loadDocument(snapshot)
+                // Work of a previous launch has no runtime any more; the person can resume it.
+                if !(document.team?.activeAssignments.isEmpty ?? true) {
+                    let interrupted = document.stopOrphanedAssignments(note: "Trama è stato chiuso mentre lo specialista lavorava.")
+                    for assignmentID in interrupted {
+                        document.conversation?.appendSpecialistActivity(assignmentID: assignmentID, turnID: nil, title: "Arresto confermato", detail: "Trama è stato chiuso mentre lo specialista lavorava.")
+                    }
+                }
                 composer = document.composerDraft ?? ""
                 composerPastes = document.composerPastes ?? []
                 composerAttachments = (document.composerAttachments ?? []).filter { FileManager.default.fileExists(atPath: $0) }
@@ -336,11 +449,10 @@ final class ProjectStore: ObservableObject {
     func openInMap(_ request: WorkRequest) {
         selectedRequestID = request.id
         selectedModuleID = request.moduleID == "project" ? nil : request.moduleID
-        section = .map
-        showInspector = selectedModuleID != nil
+        openInspector(selectedModuleID.map(InspectorTarget.module) ?? .map)
     }
 
-    func returnToCoordinator() { section = .coordinator }
+    func returnToCoordinator() { openInspector(nil) }
 
     // MARK: Project mandate
 
@@ -438,6 +550,7 @@ final class ProjectStore: ObservableObject {
     }
 
     func revealProject() { if let root = localRoot { NSWorkspace.shared.activateFileViewerSelecting([root]) } }
+    func reveal(_ url: URL) { NSWorkspace.shared.activateFileViewerSelecting([url]) }
 
     func connectCodex() async {
         guard !isConnecting else { return }; isConnecting = true
@@ -459,8 +572,24 @@ final class ProjectStore: ObservableObject {
                 codexVersion = await codex.serverInfo()?.userAgent ?? ""
                 isLoadingModels = true
                 do {
-                    models = try await codex.listModels()
-                    modelsError = models.isEmpty ? "Codex non ha restituito modelli OpenAI disponibili." : nil
+                    let codexClient = codex
+                    let catalog = await modelCatalog.lookup(key: ProviderModelCatalogKey(provider: .codex, cwd: localRoot?.path)) {
+                        let list = try await codexClient.listModels()
+                        return ProviderModelCatalog(models: list.map { model in
+                            ProviderModelDescriptor(
+                                slug: model.model,
+                                resolvedModel: model.model,
+                                name: model.displayName,
+                                description: model.description,
+                                supportedReasoningEfforts: model.supportedReasoningEfforts,
+                                defaultReasoningEffort: model.defaultReasoningEffort,
+                                isDefault: model.isDefault
+                            )
+                        }, source: .runtime)
+                    }
+                    models = catalog.models.map(\.codexModel)
+                    modelsError = catalog.error.map { "Catalogo modelli non disponibile: \($0)" }
+                        ?? (models.isEmpty ? "Codex non ha restituito modelli OpenAI disponibili." : nil)
                     reconcileModelSelection()
                 } catch {
                     models = []
@@ -477,6 +606,24 @@ final class ProjectStore: ObservableObject {
             isLoadingModels = false
             connectionDetail = error.localizedDescription
         }
+        await recordCodexAccess()
+    }
+
+    /// Persists the Codex access state so the connections screen shows it right after a restart.
+    private func recordCodexAccess() async {
+        let state: ProviderAccessState = codexConnected
+            ? .authenticated
+            : (connectionDetail == "Accesso richiesto" ? .unauthenticated : .unknown)
+        let status = ProviderAccessStatus(
+            provider: .codex,
+            state: state,
+            isAvailable: true,
+            authLabel: codexConnected ? accountLabel : nil,
+            version: codexVersion.isEmpty ? nil : codexVersion,
+            message: connectionDetail
+        )
+        await providerStatuses.record(status)
+        providerAccess[.codex] = status
     }
 
     func selectModel(_ model: String) {

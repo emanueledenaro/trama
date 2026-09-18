@@ -67,9 +67,9 @@ struct MandateView: View {
                     }
                     Section {
                         if hasGrantedMandate {
-                            Button("Salva correzione") { saveCorrection() }.buttonStyle(.borderedProminent)
+                            Button("Salva correzione") { saveCorrection() }.buttonStyle(TramaPrimaryButtonStyle())
                         } else {
-                            Button("Concedi mandato") { grant() }.buttonStyle(.borderedProminent)
+                            Button("Concedi mandato") { grant() }.buttonStyle(TramaPrimaryButtonStyle())
                         }
                     }
                     if hasGrantedMandate {

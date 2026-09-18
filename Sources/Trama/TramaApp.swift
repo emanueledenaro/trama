@@ -13,7 +13,7 @@ struct TramaApp: App {
                 .environmentObject(store)
                 .preferredColorScheme(selectedColorScheme)
                 .frame(minWidth: 720, minHeight: 640)
-                .task { await store.restoreProject() }
+                .task { await store.restoreProject(); V04Proof.shared.start(store) }
                 .onAppear { delegate.willTerminate = { store.saveDocument() } }
         }
         .defaultSize(width: 1440, height: 900)
@@ -25,7 +25,20 @@ struct TramaApp: App {
             }
             CommandGroup(after: .toolbar) {
                 Button("Aggiorna progetto") { Task { await store.refresh() } }.keyboardShortcut("r")
-                Button("Mostra dettagli") { store.showInspector.toggle() }.keyboardShortcut("i", modifiers: [.command, .option])
+                Button("Mostra dettagli") { store.toggleInspector() }.keyboardShortcut("i", modifiers: [.command, .option])
+            }
+            // The six panes of the window (issue #61): the conversation, the three living lists of
+            // the sidebar and the two inspector tools the ADR keeps out of the central column.
+            CommandGroup(after: .sidebar) {
+                Divider()
+                Button("Coordinatore") { store.returnToCoordinator() }.keyboardShortcut("1")
+                Button("Team") { store.openInspector(.team) }.keyboardShortcut("2")
+                Button("Patto") { store.openInspector(.pact) }.keyboardShortcut("3")
+                Button("Lavoro") { store.openInspector(.requests) }.keyboardShortcut("4")
+                Button("Mappa") { store.openInspector(.map) }.keyboardShortcut("5")
+                Button("Gruppo") { store.openInspector(.group) }.keyboardShortcut("6")
+                Divider()
+                Button("Scrivi al Coordinatore") { store.focusComposer() }.keyboardShortcut("l")
             }
         }
         Settings {

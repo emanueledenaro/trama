@@ -7,21 +7,25 @@ extension CoordinatorTools {
     struct Failure: Error {
         var code: String
         var message: String
+        var details: [String: JSONValue]?
 
-        init(_ code: String, _ message: String) {
+        init(_ code: String, _ message: String, details: [String: JSONValue]? = nil) {
             self.code = code
             self.message = message
+            self.details = details
         }
 
         static func invalid(_ message: String) -> Failure { Failure("invalid_arguments", message) }
 
-        var result: JSONValue { failure(code, message) }
+        var result: JSONValue { failure(code, message, details: details) }
     }
 
     /// An action the Coordinator asked for, validated and waiting for the mandate check.
     struct Intent: Sendable {
         var action: ProjectMandate.Action
         var moduleIDs: [String]
+        /// The kind of work, when only the person may decide some kinds of it.
+        var workKind: ProjectMandate.PlanKind? = nil
         var perform: @Sendable (_ host: any CoordinatorToolHost, _ projectID: UUID, _ mandate: ProjectMandate) async throws -> JSONValue
     }
 
@@ -65,9 +69,9 @@ extension CoordinatorTools {
         }
     }
 
-    private static let text: JSONValue = .object(["type": .string("string")])
+    static let text: JSONValue = .object(["type": .string("string")])
 
-    private static func list(minimum: Int) -> JSONValue {
+    static func list(minimum: Int) -> JSONValue {
         .object(["type": .string("array"), "minItems": .integer(minimum), "items": text])
     }
 
@@ -100,12 +104,15 @@ extension CoordinatorTools {
         case .requestMandate: try await requestMandate(arguments, context: context, host: host, projectID: projectID)
         case .requestDecision: try await requestDecision(arguments, context: context, host: host, projectID: projectID)
         case .runReadOnlyCheck: try await runReadOnlyCheck(arguments, context: context, host: host, projectID: projectID)
+        case .proposeTeam: try await proposeTeam(arguments, context: context, host: host, projectID: projectID)
+        case .verifyCandidate: try await verifyCandidate(arguments, context: context, host: host, projectID: projectID)
+        case .reviewCandidate: try await reviewCandidate(arguments, context: context, host: host, projectID: projectID)
         default: throw Failure.invalid("\(tool.rawValue) does not ask the person or run a check.")
         }
     }
 
     private static func requestMandate(_ arguments: [String: JSONValue], context: CoordinatorToolContext, host: any CoordinatorToolHost, projectID: UUID) async throws -> JSONValue {
-        let reader = try Arguments(arguments, tool: .requestMandate, allowed: ["reason", "objectives", "priorities", "scopeModuleIDs", "authorizedActions", "limits"])
+        let reader = try ToolArguments(arguments, tool: .requestMandate, allowed: ["reason", "objectives", "priorities", "scopeModuleIDs", "authorizedActions", "limits"])
         let scope = try reader.strings("scopeModuleIDs")
         try requireKnownModules(scope, context: context)
         let actions = try reader.strings("authorizedActions").map { name in
@@ -138,7 +145,7 @@ extension CoordinatorTools {
     }
 
     private static func requestDecision(_ arguments: [String: JSONValue], context: CoordinatorToolContext, host: any CoordinatorToolHost, projectID: UUID) async throws -> JSONValue {
-        let reader = try Arguments(arguments, tool: .requestDecision, allowed: ["category", "question", "concreteCase", "alternatives", "revisesDecisionID"])
+        let reader = try ToolArguments(arguments, tool: .requestDecision, allowed: ["category", "question", "concreteCase", "alternatives", "revisesDecisionID"])
         guard let category = arguments["category"]?.stringValue.flatMap(DecisionRequest.Category.init(rawValue:)) else {
             throw Failure.invalid("category must be product or destructive. Technical choices you can resolve yourself are not questions for the person: decide them and say what you chose.")
         }
@@ -180,7 +187,7 @@ extension CoordinatorTools {
     }
 
     private static func runReadOnlyCheck(_ arguments: [String: JSONValue], context: CoordinatorToolContext, host: any CoordinatorToolHost, projectID: UUID) async throws -> JSONValue {
-        _ = try Arguments(arguments, tool: .runReadOnlyCheck, allowed: ["check"])
+        _ = try ToolArguments(arguments, tool: .runReadOnlyCheck, allowed: ["check"])
         guard let check = arguments["check"]?.stringValue.flatMap(ReadOnlyCheck.init(rawValue:)) else {
             throw Failure.invalid("check must be one of: \(ReadOnlyCheck.allCases.map(\.rawValue).joined(separator: ", ")).")
         }
@@ -212,8 +219,17 @@ extension CoordinatorTools {
     // MARK: Actions
 
     static func intent(_ tool: Tool, arguments: [String: JSONValue], context: CoordinatorToolContext) throws -> Intent {
-        guard tool == .preparePlan else { throw Failure.invalid("\(tool.rawValue) is not an action.") }
-        let reader = try Arguments(arguments, tool: tool, allowed: ["kind", "moduleIDs", "summary", "issueNumber", "decisionIDs"])
+        switch tool {
+        case .preparePlan: return try planIntent(arguments, context: context)
+        case .createSpecialist, .assignTask, .stopSpecialist: return try teamIntent(tool, arguments: arguments, context: context)
+        case .declareCandidate, .clearCandidate: return try candidateIntent(tool, arguments: arguments, context: context)
+        default: throw Failure.invalid("\(tool.rawValue) is not an action.")
+        }
+    }
+
+    private static func planIntent(_ arguments: [String: JSONValue], context: CoordinatorToolContext) throws -> Intent {
+        let tool = Tool.preparePlan
+        let reader = try ToolArguments(arguments, tool: tool, allowed: ["kind", "moduleIDs", "summary", "issueNumber", "decisionIDs"])
         guard let kind = arguments["kind"]?.stringValue.flatMap(ProjectMandate.PlanKind.init(rawValue:)) else {
             throw Failure.invalid("kind must be one of: \(ProjectMandate.PlanKind.allCases.map(\.rawValue).joined(separator: ", ")).")
         }
@@ -288,7 +304,7 @@ extension CoordinatorTools {
         }
     }
 
-    private static func requireKnownModules(_ moduleIDs: [String], context: CoordinatorToolContext) throws {
+    static func requireKnownModules(_ moduleIDs: [String], context: CoordinatorToolContext) throws {
         let known = Set(context.modules.map(\.id))
         let unknown = moduleIDs.filter { !known.contains($0) }
         guard unknown.isEmpty else {
@@ -298,7 +314,7 @@ extension CoordinatorTools {
 }
 
 /// Reads tool arguments by hand, refusing properties the tool does not declare.
-private struct Arguments {
+struct ToolArguments {
     let values: [String: JSONValue]
     let tool: CoordinatorTools.Tool
 
@@ -336,6 +352,12 @@ private struct Arguments {
             throw CoordinatorTools.Failure.invalid("\(tool.rawValue) needs at least one value in \(key).")
         }
         return strings
+    }
+
+    func optionalBool(_ key: String) throws -> Bool? {
+        guard let value = values[key], value != .null else { return nil }
+        guard let flag = value.boolValue else { throw CoordinatorTools.Failure.invalid("\(key) must be true or false.") }
+        return flag
     }
 
     func optionalInteger(_ key: String, minimum: Int) throws -> Int? {

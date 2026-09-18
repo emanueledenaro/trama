@@ -28,7 +28,6 @@ struct CoordinatorRequestsTests {
         let migrated = try storage.load()
 
         #expect(before.schemaVersion == 4)
-        #expect(migrated.schemaVersion == 5)
         #expect(migrated.schemaVersion == ProjectDocument.currentSchemaVersion)
         #expect(migrated.conversation == before.conversation)
         #expect(migrated.conversation?.events.count == 4)
@@ -54,7 +53,7 @@ struct CoordinatorRequestsTests {
         #expect(try Data(contentsOf: backup) == Self.schemaFourDocument)
 
         let onDisk = try JSONDecoder().decode(ProjectDocument.self, from: Data(contentsOf: url))
-        #expect(onDisk.schemaVersion == 5)
+        #expect(onDisk.schemaVersion == ProjectDocument.currentSchemaVersion)
         let reopened = try ProjectDocumentStorage(url: url, projectID: Self.projectID).load()
         #expect(reopened.conversation == before.conversation)
         #expect(reopened.mandate == before.mandate)

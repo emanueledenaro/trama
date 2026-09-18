@@ -34,14 +34,26 @@ struct CoordinatorToolAuthorizationTests {
     ]
 
     /// Valid arguments for every tool, so each can be called in every mandate state.
-    static let validArguments: [CoordinatorTool: [String: JSONValue]] = [
+    /// Candidate tools need a declared candidate, so the caller seeds one first.
+    static func validArguments(assignmentID: String, candidateID: String) -> [CoordinatorTool: [String: JSONValue]] {
+        [
         .readStudy: [:], .readPact: [:], .readMandate: [:], .readIssues: [:], .readHistory: [:],
         .writeMemory: ["text": .string("Nota")],
         .requestMandate: mandateArguments,
         .requestDecision: decisionArguments,
         .runReadOnlyCheck: ["check": .string("git_status")],
-        .preparePlan: planArguments
-    ]
+        .preparePlan: planArguments,
+        .readTeam: [:],
+        .proposeTeam: CoordinatorTeamToolsTests.proposeArguments,
+        .createSpecialist: CoordinatorTeamToolsTests.createArguments,
+        .assignTask: CoordinatorTeamToolsTests.assignArguments,
+        .stopSpecialist: CoordinatorTeamToolsTests.stopArguments,
+        .declareCandidate: ["assignment": .string(assignmentID), "decisionIDs": .array([.string("D-1")])],
+        .verifyCandidate: ["candidate": .string(candidateID), "check": .string("swift_test")],
+        .reviewCandidate: ["candidate": .string(candidateID)],
+        .clearCandidate: ["candidate": .string(candidateID)]
+        ]
+    }
 
     // MARK: One test per outcome
 
@@ -174,24 +186,34 @@ struct CoordinatorToolAuthorizationTests {
     @Test("Without a mandate no tool changes the project, and no tool writes the Pact")
     func noMandateNoChange() async throws {
         let (host, server, credential) = await Self.session()
-        #expect(Set(Self.validArguments.keys) == Set(CoordinatorTool.allCases))
-        let pact = await host.document.pact
+        let seeded = try await host.seedAssignmentAndCandidate()
+        let valid = Self.validArguments(assignmentID: seeded.assignmentID, candidateID: seeded.candidateID)
+        #expect(Set(valid.keys) == Set(CoordinatorTool.allCases))
+        let decisions = await host.document.pact?.decisions
 
+        let team = await host.document.team
         for mandate in [nil, try Self.mandate(actions: [.plan(.agreedTicket)]).revoked(by: "Product Owner", reason: "Stop")] {
             await host.setMandate(mandate)
             for tool in CoordinatorTool.allCases {
-                let result = try await Server.result(server, credential.token, Self.call(id: 10, tool, Self.validArguments[tool] ?? [:]))
+                let result = try await Server.result(server, credential.token, Self.call(id: 10, tool, valid[tool] ?? [:]))
                 if tool.access == .act {
                     let refused = try Self.refusal(from: result)
                     #expect(refused.code == (mandate == nil ? "mandate_missing" : "mandate_revoked"), "\(tool)")
+                } else if tool == .proposeTeam {
+                    // Proposing needs no mandate, but this project already has a team the person confirmed.
+                    #expect(try Self.refusal(from: result).code == "team_already_confirmed")
                 } else {
                     #expect(result["isError"] == nil, "\(tool)")
                 }
             }
         }
         #expect(await host.plans.isEmpty)
-        #expect(await host.document.pact == pact)
-        #expect(CoordinatorTool.allCases.filter { $0.access == .act } == [.preparePlan])
+        #expect(await host.startedAssignments.isEmpty)
+        #expect(await host.stopRequests.isEmpty)
+        // A read-only check and a candidate check record Trama's own evidence, never a Pact decision.
+        #expect(await host.document.pact?.decisions == decisions)
+        #expect(await host.document.team == team)
+        #expect(CoordinatorTool.allCases.filter { $0.access == .act } == [.preparePlan, .createSpecialist, .assignTask, .stopSpecialist, .declareCandidate, .clearCandidate])
     }
 
     // MARK: Asking the person

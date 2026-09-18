@@ -34,6 +34,15 @@ final class CoordinatorRuntime {
     var settings: CodexClient.CoordinatorThreadSettings?
     /// The conversation request whose Coordinator turn is running; cards and checks attach to it.
     var turnRequestID: UUID?
+    /// Cards written while the Coordinator studies: they wait for the study card that closes that turn.
+    var deferredCards: [DeferredCard] = []
+
+    struct DeferredCard {
+        var card: ConversationEvent.Card
+        var origin: ConversationEvent.Origin
+        var requestID: UUID?
+        var assignmentID: String?
+    }
 
     /// Returns a runtime for the project, replacing the one of another project.
     func prepare(projectID: UUID) async throws -> (client: CodexClient, endpoint: URL) {
@@ -71,6 +80,7 @@ final class CoordinatorRuntime {
         instructionFiles = nil
         settings = nil
         turnRequestID = nil
+        deferredCards = []
     }
 
     func beginTurn() async {
@@ -95,19 +105,23 @@ final class CoordinatorRuntime {
         threadID: String,
         input: [CodexClient.TurnInputItem],
         settings: CodexClient.CoordinatorThreadSettings,
-        onEvent: @escaping @MainActor (CodexClient.CoordinatorTurnEvent) async -> Void
+        onEvent: @escaping @MainActor (ProviderEvent) async -> Void
     ) async throws -> String {
-        let (events, continuation) = AsyncStream<CodexClient.CoordinatorTurnEvent>.makeStream()
+        let (events, continuation) = AsyncStream<ProviderEvent>.makeStream()
+        let tracker = TurnTracker()
         let consumer = Task { @MainActor in
             for await event in events {
-                if case let .turnStarted(turnID) = event { await self.bindTurn(turnID) }
+                if case .turnStarted = event.kind, let turnID = event.turnID { await self.bindTurn(turnID) }
                 await onEvent(event)
             }
         }
         await beginTurn()
         defer { continuation.finish() }
         do {
-            let reply = try await client.runCoordinatorTurn(threadID: threadID, input: input, settings: settings) { continuation.yield($0) }
+            let reply = try await client.runCoordinatorTurn(threadID: threadID, input: input, settings: settings) { event in
+                if case let .turnStarted(id) = event { tracker.turnID = id }
+                continuation.yield(CodexEventNormalizer.normalize(turnEvent: event, threadID: threadID, turnID: tracker.turnID))
+            }
             continuation.finish()
             await consumer.value
             await endTurn()
@@ -236,7 +250,9 @@ extension ProjectStore {
             issues: github == nil ? nil : projectIssues,
             github: github,
             modules: project.modules.map { .init(id: $0.id, name: $0.name, path: $0.relativePath) },
-            availableChecks: ReadOnlyCheckRunner.availableChecks(root: root)
+            availableChecks: ReadOnlyCheckRunner.availableChecks(root: root),
+            models: models.map(\.model),
+            defaultSpecialistModel: selectedModel.isEmpty ? nil : selectedModel
         )
     }
 
@@ -250,6 +266,25 @@ extension ProjectStore {
         return state.memory
     }
 
+    /// Writes a card of the running turn. During the opening study the cards wait, so the study
+    /// card that closes that turn stays the first line of the conversation.
+    func appendCoordinatorCard(_ card: ConversationEvent.Card, origin: ConversationEvent.Origin, requestID: UUID?, assignmentID: String? = nil) {
+        guard coordinatorPhase == .studying else {
+            document.conversation?.appendCard(card, origin: origin, requestID: requestID, assignmentID: assignmentID)
+            return
+        }
+        coordinator.deferredCards.append(.init(card: card, origin: origin, requestID: requestID, assignmentID: assignmentID))
+    }
+
+    /// Writes the cards the study turn produced, in the order the Coordinator asked for them.
+    func flushDeferredCards() {
+        let cards = coordinator.deferredCards
+        coordinator.deferredCards = []
+        for card in cards {
+            document.conversation?.appendCard(card.card, origin: card.origin, requestID: card.requestID, assignmentID: card.assignmentID)
+        }
+    }
+
     /// Keeps the Coordinator's mandate request and shows it as a mandate card in the running turn.
     func recordMandateRequest(projectID: UUID, request: MandateRequest) throws -> MandateRequest {
         guard projectID == activeProjectID, project != nil, stateWritable else { throw CoordinatorToolHostError.projectUnavailable }
@@ -258,7 +293,7 @@ extension ProjectStore {
         var state = document.coordinator ?? CoordinatorState()
         state.mandateRequests.append(request)
         document.coordinator = state
-        document.conversation?.appendCard(
+        appendCoordinatorCard(
             .init(kind: .mandate, title: "Richiesta di mandato", detail: request.reason, referenceID: request.id),
             origin: .coordinator,
             requestID: request.requestID
@@ -276,7 +311,7 @@ extension ProjectStore {
         var state = document.coordinator ?? CoordinatorState()
         state.decisionRequests.append(request)
         document.coordinator = state
-        document.conversation?.appendCard(
+        appendCoordinatorCard(
             .init(kind: .decision, title: request.question, detail: request.concreteCase, referenceID: request.id),
             origin: .coordinator,
             requestID: request.requestID
@@ -381,6 +416,8 @@ extension ProjectStore {
     /// Resolves the pending mandate cards with the person's change and tells the Coordinator.
     func announceMandateChange(_ resolution: MandateRequest.Resolution, reason: String? = nil) {
         document.resolvePendingMandateRequests(resolution)
+        // Work the changed mandate no longer covers is stopped, so running work is always authorized.
+        stopWorkOutsideMandate(reason: resolution == .revoked ? "Il mandato è stato revocato." : "Il mandato è stato corretto e non copre più questo incarico.")
         if resolution == .revoked {
             for index in document.requests.indices where isQueuedCoordinatorPlan(document.requests[index]) {
                 document.requests[index].state = .interrupted
@@ -392,7 +429,7 @@ extension ProjectStore {
     }
 
     /// Writes an act of the person as their message and sends it to the Coordinator, now or when the current work ends.
-    private func sayToCoordinator(_ text: String) {
+    func sayToCoordinator(_ text: String) {
         guard let project else { return }
         var request = WorkRequest(title: String(text.prefix(90)), moduleID: "project", moduleName: project.name, request: text, sourceFingerprint: fingerprint)
         request.model = selectedModel.isEmpty ? nil : selectedModel
@@ -511,6 +548,9 @@ extension ProjectStore {
             if coordinatorGeneration == generation {
                 isPlanning = false
                 coordinatorStudyText = nil
+                coordinatorPhase = .ready
+                flushDeferredCards()
+                saveDocument()
             }
         }
         let reply = try await coordinator.runTurn(
@@ -519,17 +559,19 @@ extension ProjectStore {
             input: CoordinatorBriefing.openingInput(study: study, memory: memory, replacing: reason).map { .text($0) },
             settings: settings
         ) { [weak self] event in
-            guard let self, self.coordinatorGeneration == generation, case let .textDelta(delta) = event else { return }
+            guard let self, self.coordinatorGeneration == generation, case let .contentDelta(.assistantText(delta)) = event.kind else { return }
             self.coordinatorStudyText? += delta
         }
         guard coordinatorGeneration == generation else { return }
         document.coordinator?.thread?.injectedStudy = study.fingerprints
         coordinator.memoryDelivered = true
+        coordinatorPhase = .ready
         document.conversation?.appendCard(
             .init(kind: .study, title: "Studio del progetto", detail: reply, referenceID: threadID),
             origin: .coordinator,
             requestID: nil
         )
+        flushDeferredCards()
         activity.insert("Studio del Coordinatore ricevuto per \(project?.name ?? "il progetto").", at: 0)
         saveDocument()
     }
@@ -578,7 +620,8 @@ extension ProjectStore {
             study: state.study,
             injected: state.thread?.injectedStudy ?? [:],
             memory: state.memory,
-            includeMemory: !coordinator.memoryDelivered
+            includeMemory: !coordinator.memoryDelivered,
+            team: document.team
         )
         let moduleLine = document.requests[index].moduleID == "project" ? nil : "Contesto scelto dalla persona: modulo \(moduleName)."
         // Images belong to the message that opened the request, not to later answers.
@@ -646,6 +689,7 @@ extension ProjectStore {
                         document.coordinator?.thread?.injectedStudy[part.rawValue] = study.section(part)?.fingerprint
                     }
                 }
+                if let update, update.includesTeam { document.markTeamReported(update.reportedAssignmentIDs) }
                 coordinator.memoryDelivered = true
                 let references = CoordinatorBriefing.references(in: reply, knownFiles: Array(knownFiles))
                 document.requests[i].replyKind = .explanation
@@ -672,23 +716,26 @@ extension ProjectStore {
         }
     }
 
-    private func receiveCoordinatorEvent(_ event: CodexClient.CoordinatorTurnEvent, requestID: UUID) {
-        switch event {
+    private func receiveCoordinatorEvent(_ event: ProviderEvent, requestID: UUID) {
+        switch event.kind {
         case .turnStarted:
             break
-        case let .textDelta(delta):
+        case let .contentDelta(.assistantText(delta)):
             streamingReplies[requestID, default: ""] += delta
         case let .commentary(note):
             document.conversation?.appendActivity(requestID: requestID, title: "Nota del Coordinatore", detail: note)
-        case .toolCallStarted:
+        case .toolCallStarted, .contentDelta, .commandCompleted, .fileChangeCompleted:
+            // The Coordinator runtime reads: its commands and reasoning stay out of the conversation.
             break
-        case let .toolCallCompleted(_, server, tool, succeeded, error):
+        case let .toolCallCompleted(server, tool, succeeded, error):
             let title: String = Self.toolTitle(tool)
             let refusal = error.flatMap(Self.mandateRefusal)
             let failure: String = refusal ?? error ?? "non riuscito"
             let detail: String = succeeded ? "\(server) · \(tool)" : "\(server) · \(tool) · \(failure)"
             let failedTitle = refusal == nil ? "\(title): non riuscito" : "Azione rifiutata dal mandato"
             document.conversation?.appendActivity(requestID: requestID, title: succeeded ? title : failedTitle, detail: detail)
+        default:
+            break
         }
     }
 
@@ -730,21 +777,22 @@ extension ProjectStore {
     /// Streams usage and compaction of the thread into the document, in the order Codex sent them.
     private func observeCoordinatorThread(client: CodexClient, threadID: String) async {
         coordinatorEventsTask?.cancel()
-        let (events, continuation) = AsyncStream<CodexClient.ThreadEvent>.makeStream()
+        let (events, continuation) = AsyncStream<ProviderEvent>.makeStream()
         coordinatorEventsTask = Task { [weak self] in
             for await event in events {
                 self?.receiveThreadEvent(event, threadID: threadID)
             }
         }
-        await client.observeThread(threadID) { continuation.yield($0) }
+        await client.observeThread(threadID) { continuation.yield(CodexEventNormalizer.normalize(threadEvent: $0, threadID: threadID)) }
     }
 
-    private func receiveThreadEvent(_ event: CodexClient.ThreadEvent, threadID: String) {
+    private func receiveThreadEvent(_ event: ProviderEvent, threadID: String) {
         guard coordinatorThreadID == threadID, project != nil, stateWritable else { return }
-        switch event {
+        switch event.kind {
         case let .contextUsage(snapshot):
             updateContext { context in context.record(snapshot, threadID: threadID) }
-        case let .compaction(phase):
+        case let .contextCompaction(state):
+            guard let phase = ContextCompactionState(rawValue: state) else { return }
             updateContext { context in
                 context.record(phase)
                 return nil
@@ -752,6 +800,8 @@ extension ProjectStore {
             // The running Coordinator turn owns the row; outside a turn it stands alone.
             document.conversation?.appendActivity(requestID: streamingReplies.keys.first, title: phase.activityTitle, detail: nil)
             if phase != .inProgress { activity.insert(phase.activityTitle + ".", at: 0) }
+        default:
+            return
         }
         saveDocument()
     }
@@ -780,6 +830,15 @@ extension ProjectStore {
         case .requestDecision: "Ha chiesto una decisione"
         case .runReadOnlyCheck: "Ha eseguito un controllo in sola lettura"
         case .preparePlan: "Ha ordinato un piano"
+        case .readTeam: "Ha letto il team"
+        case .proposeTeam: "Ha proposto il team"
+        case .createSpecialist: "Ha aggiunto uno specialista"
+        case .assignTask: "Ha assegnato un incarico"
+        case .stopSpecialist: "Ha chiesto di fermare uno specialista"
+        case .declareCandidate: "Ha dichiarato un candidato"
+        case .verifyCandidate: "Ha eseguito un controllo sul candidato"
+        case .reviewCandidate: "Ha chiesto una revisione tecnica"
+        case .clearCandidate: "Ha dato il via libera a un candidato"
         case nil: "Strumento \(tool)"
         }
     }
