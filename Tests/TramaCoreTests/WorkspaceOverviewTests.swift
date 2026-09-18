@@ -230,4 +230,17 @@ struct WorkspaceOverviewTests {
         #expect(ids.allSatisfy { !$0.isEmpty })
         #expect(InspectorTarget.candidate(UUID()).title == "Candidato")
     }
+
+    @Test("A decision knows the work that depends on it, by behavior and by plan version")
+    func decisionDependentWork() throws {
+        var document = try CoordinatorRequestsTests.documentWithDependentWork()
+        var running = Self.change("Segue il comportamento", .executing)
+        running.behaviorDecisionID = "D-1"
+        document.requests.append(running)
+
+        let depending = document.workDepending(on: "D-1")
+        #expect(depending.map(\.title) == ["Dipende da D-1", "In analisi", "Segue il comportamento"])
+        #expect(document.workDepending(on: "D-2").map(\.title) == ["Dipende da D-2"])
+        #expect(document.workDepending(on: "D-9").isEmpty)
+    }
 }
