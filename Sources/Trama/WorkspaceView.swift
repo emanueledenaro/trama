@@ -65,7 +65,6 @@ struct WorkspaceView: View {
             )) { preview in FilePreviewView(preview: preview) }
             .sheet(isPresented: $showingNewProject) { NewProjectView() }
             .tint(TramaInfo.solid)
-            .onAppear { V06Proof.shared.start(store) }
             .alert("Trama", isPresented: Binding(get: { store.errorMessage != nil }, set: { if !$0 { store.errorMessage = nil } })) {
                 if store.stateRecoveryNeeded { Button("Riprendi conservando il file originale") { store.recoverProjectState() } }
                 Button("Chiudi", role: .cancel) { store.errorMessage = nil }

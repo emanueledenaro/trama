@@ -570,7 +570,7 @@ struct CoordinatorView: View {
                         Text(card.specialists.map { "\($0.name) (\($0.id))" }.joined(separator: ", "))
                             .font(.callout)
                             .fixedSize(horizontal: false, vertical: true)
-                        Button("Apri il Team") { store.openInspector(.team) }
+                        Button("Apri il Team") { store.section = .team }
                             .accessibilityLabel("Apri la sezione Team")
                     }
                 }
@@ -757,7 +757,8 @@ struct CoordinatorView: View {
                     Button("Apri nella Mappa", systemImage: "square.3.layers.3d") { store.openInMap(request) }
                         .accessibilityLabel("Apri nella Mappa: \(request.title)")
                     Button("Vedi piano", systemImage: "arrow.up.forward.square") {
-                        store.openInspector(.candidate(request.id))
+                        store.selectedRequestID = request.id
+                        store.section = .changes
                     }
                     .accessibilityLabel("Vedi piano: \(request.title)")
                 }
