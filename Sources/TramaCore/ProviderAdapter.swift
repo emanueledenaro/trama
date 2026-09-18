@@ -478,6 +478,9 @@ public struct ProviderSessionStartInput: Sendable {
     /// its own options, as Claude does with `--mcp-config`, can be given the credential directly
     /// instead of through the child environment Codex uses.
     public var toolServerToken: String?
+    /// The only directory the session may write in, for a specialist. Codex enforces it with its
+    /// workspace-write sandbox; Claude receives it as its working directory and a written rule.
+    public var writableRoot: URL?
 
     public init(
         threadID: String,
@@ -489,7 +492,8 @@ public struct ProviderSessionStartInput: Sendable {
         developerInstructions: String? = nil,
         toolServerURL: URL? = nil,
         tokenEnvironmentVariable: String? = nil,
-        toolServerToken: String? = nil
+        toolServerToken: String? = nil,
+        writableRoot: URL? = nil
     ) {
         self.threadID = threadID
         self.cwd = cwd
@@ -501,6 +505,18 @@ public struct ProviderSessionStartInput: Sendable {
         self.toolServerURL = toolServerURL
         self.tokenEnvironmentVariable = tokenEnvironmentVariable
         self.toolServerToken = toolServerToken
+        self.writableRoot = writableRoot
+    }
+}
+
+public extension ProviderTurnInputItem {
+    /// The same shape as the Codex turn item the Coordinator composer already produces.
+    static func from(_ item: CodexClient.TurnInputItem) -> ProviderTurnInputItem {
+        switch item {
+        case let .text(text): return .text(text)
+        case let .localImage(path): return .localImage(path: path)
+        case let .skill(name, path): return .skill(name: name, path: path)
+        }
     }
 }
 

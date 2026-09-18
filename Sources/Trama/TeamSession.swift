@@ -6,7 +6,7 @@ import TramaCore
 @MainActor
 final class SpecialistSupervisor: ObservableObject {
     private struct Runtime {
-        let client: CodexClient
+        let runtime: ProviderSessionRuntime
         var task: Task<Void, Never>?
         var turnID: String?
     }
@@ -32,31 +32,35 @@ final class SpecialistSupervisor: ObservableObject {
               let assignment = team.assignment(assignmentID),
               let specialist = team.specialist(assignment.specialistID),
               assignment.status == .preparing else { return }
-        guard ProjectStore.appRunsSpecialist(assignment.resolvedProvider) else {
-            // Never run one provider's work in another's process: that would misattribute the turns.
+        let provider = assignment.resolvedProvider
+        if let reason = store.specialistProviderReason(provider) {
             store.providerNotice = ProviderBlock(
-                provider: assignment.resolvedProvider,
-                reason: .unknown("il runtime dell'app non apre ancora questo provider per gli specialisti"),
+                provider: provider,
+                reason: .unknown(reason),
                 detail: "Il provider dell'incarico \(assignment.id) non è disponibile in Trama: il lavoro resta in attesa e la persona decide.",
                 observedAt: Date()
             )
             return
         }
-        let client = CodexClient.specialistRuntime()
         let isFirstTurn = assignment.turns.isEmpty
+        let resumeCursor = assignment.resumeCursor.flatMap { try? JSONEncoder().encode($0) }
         let launch = SpecialistLaunch(
             assignmentID: assignment.id,
+            provider: provider,
             projectRoot: root,
             worktreeName: "\(specialist.name) \(assignment.id)",
             needsWorktree: assignment.needsWorktree,
             workspace: assignment.workspace,
-            threadID: assignment.threadID,
-            model: assignment.model,
+            threadID: "specialist-\(assignment.id)",
+            resumeCursor: resumeCursor,
+            modelSelection: store.specialistModelSelection(provider: provider, model: assignment.model),
+            runtimeMode: .fullAccess,
             developerInstructions: SpecialistBriefing.developerInstructions(projectName: project.name, specialist: specialist, assignment: assignment),
             input: isFirstTurn
                 ? SpecialistBriefing.openingInput(specialist: specialist, assignment: assignment)
                 : SpecialistBriefing.resumeInput(assignment: assignment)
         )
+        let runtime = ProviderSessionRuntime(adapter: CoordinatorRuntime.makeAdapter(provider: provider, token: ""))
         let (events, continuation) = AsyncStream<SpecialistRunEvent>.makeStream()
         let sessions = store.sessions
         let task = Task { [weak self] in
@@ -64,7 +68,7 @@ final class SpecialistSupervisor: ObservableObject {
                 for await event in events { self?.receive(event, assignmentID: assignmentID) }
             }
             do {
-                let reply = try await SpecialistRunner.run(launch, client: client, sessions: sessions) { continuation.yield($0) }
+                let reply = try await SpecialistRunner.run(launch, runtime: runtime, sessions: sessions) { continuation.yield($0) }
                 continuation.finish()
                 await consumer.value
                 await self?.finish(assignmentID: assignmentID, outcome: .completed(reply))
@@ -75,7 +79,7 @@ final class SpecialistSupervisor: ObservableObject {
                 await self?.finish(assignmentID: assignmentID, outcome: interrupted ? .interrupted : .failed(error.localizedDescription))
             }
         }
-        runtimes[assignmentID] = Runtime(client: client, task: task, turnID: nil)
+        runtimes[assignmentID] = Runtime(runtime: runtime, task: task, turnID: nil)
         store.noteSpecialistStart(assignmentID: assignmentID, resumed: !isFirstTurn)
     }
 
@@ -86,8 +90,8 @@ final class SpecialistSupervisor: ObservableObject {
             store?.confirmSpecialistStop(assignmentID: assignmentID, note: "Nessun turno in corso da interrompere.")
             return
         }
-        let client = runtime.client
-        Task { await client.cancelTurn() }
+        let sessionRuntime = runtime.runtime
+        Task { await sessionRuntime.interrupt() }
     }
 
     /// The provider of the assignment is blocked: stop its runtime and leave the assignment in
@@ -96,7 +100,8 @@ final class SpecialistSupervisor: ObservableObject {
         blockedAssignments.insert(assignmentID)
         guard let runtime = runtimes.removeValue(forKey: assignmentID) else { return }
         runtime.task?.cancel()
-        runtime.client.stop()
+        let sessionRuntime = runtime.runtime
+        Task { await sessionRuntime.stop() }
         if let turnID = runtime.turnID { runningTurns.remove(turnID) }
     }
 
@@ -104,7 +109,8 @@ final class SpecialistSupervisor: ObservableObject {
     func stopAll(reason: String) {
         for (assignmentID, runtime) in runtimes {
             runtime.task?.cancel()
-            runtime.client.stop()
+            let sessionRuntime = runtime.runtime
+            Task { await sessionRuntime.stop() }
             runtimes[assignmentID] = nil
             if let turnID = runtime.turnID { runningTurns.remove(turnID) }
         }
@@ -116,8 +122,8 @@ final class SpecialistSupervisor: ObservableObject {
         switch event {
         case let .workspaceReady(session):
             store.recordSpecialistWorkspace(session, assignmentID: assignmentID)
-        case let .threadOpened(opening):
-            store.recordSpecialistThread(opening, assignmentID: assignmentID)
+        case let .sessionOpened(session):
+            store.recordSpecialistSession(session, assignmentID: assignmentID)
         case let .turn(turnEvent):
             if case .turnStarted = turnEvent.kind, let turnID = turnEvent.turnID {
                 runtimes[assignmentID]?.turnID = turnID
@@ -133,7 +139,7 @@ final class SpecialistSupervisor: ObservableObject {
             return
         }
         let runtime = runtimes.removeValue(forKey: assignmentID)
-        runtime?.client.stop()
+        if let runtime { let sessionRuntime = runtime.runtime; Task { await sessionRuntime.stop() } }
         if let turnID = runtime?.turnID { runningTurns.remove(turnID) }
         store?.finishSpecialistTurn(assignmentID: assignmentID, turnID: runtime?.turnID, outcome: outcome)
     }

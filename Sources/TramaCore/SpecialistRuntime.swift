@@ -54,42 +54,49 @@ public enum SpecialistBriefing {
     }
 }
 
-/// One run of a specialist: its worktree, its Codex thread and one turn in it.
+/// One run of a specialist: its worktree, its provider session and one turn in it.
 public struct SpecialistLaunch: Sendable {
     public var assignmentID: String
+    public var provider: ProviderKind
     public var projectRoot: URL
     /// Name used for the worktree branch, when the assignment needs one.
     public var worktreeName: String
     public var needsWorktree: Bool
     /// The worktree of a previous turn; nil when it has to be created.
     public var workspace: WorkspaceSession?
-    /// The thread of a previous turn, resumed when Codex still has it.
+    /// The Trama session id of this specialist thread.
     public var threadID: String?
-    public var model: String
-    public var effort: String?
+    /// The opaque resume cursor of a previous turn.
+    public var resumeCursor: Data?
+    public var modelSelection: ModelSelection?
+    public var runtimeMode: ProviderRuntimeMode
     public var developerInstructions: String
     public var input: String
 
     public init(
         assignmentID: String,
+        provider: ProviderKind = .codex,
         projectRoot: URL,
         worktreeName: String,
         needsWorktree: Bool,
         workspace: WorkspaceSession?,
-        threadID: String?,
-        model: String,
-        effort: String? = nil,
+        threadID: String? = nil,
+        resumeCursor: Data? = nil,
+        modelSelection: ModelSelection? = nil,
+        runtimeMode: ProviderRuntimeMode = .fullAccess,
         developerInstructions: String,
         input: String
     ) {
         self.assignmentID = assignmentID
+        self.provider = provider
         self.projectRoot = projectRoot
         self.worktreeName = worktreeName
         self.needsWorktree = needsWorktree
         self.workspace = workspace
         self.threadID = threadID
-        self.model = model
-        self.effort = effort
+        self.resumeCursor = resumeCursor
+        self.modelSelection = modelSelection
+        self.runtimeMode = runtimeMode
         self.developerInstructions = developerInstructions
         self.input = input
     }
@@ -97,17 +104,19 @@ public struct SpecialistLaunch: Sendable {
 
 public enum SpecialistRunEvent: Sendable {
     case workspaceReady(WorkspaceSession)
-    case threadOpened(CodexClient.CoordinatorThreadOpening)
-    /// The review surface consumes the normalized provider event, not the Codex turn event.
+    /// The provider session Trama opened for this specialist.
+    case sessionOpened(ProviderSession)
+    /// The normalized provider event; the review surface consumes this, not a Codex turn event.
     case turn(ProviderEvent)
 }
 
-/// Runs one turn of a specialist: prepares its worktree, opens the thread Trama owns and sends the
-/// turn, passing the model explicitly every time. The caller decides what to do with the events.
+/// Runs one turn of a specialist: prepares its worktree, opens the session through the V08 adapter
+/// interface and sends the turn, passing the model explicitly every time. The caller decides what to
+/// do with the events.
 public enum SpecialistRunner {
     public static func run(
         _ launch: SpecialistLaunch,
-        client: CodexClient,
+        runtime: ProviderSessionRuntime,
         sessions: WorkspaceSessionManager,
         onEvent: @escaping @Sendable (SpecialistRunEvent) -> Void
     ) async throws -> String {
@@ -119,20 +128,19 @@ public enum SpecialistRunner {
         }
         try Task.checkCancellation()
         let cwd = launch.needsWorktree ? (workspace?.worktreeRoot ?? launch.projectRoot) : launch.projectRoot
-        let settings = CodexClient.SpecialistThreadSettings(
+        await runtime.observe { onEvent(.turn($0)) }
+        let session = try await runtime.open(ProviderSessionOpen(
+            threadID: launch.threadID ?? launch.assignmentID,
             cwd: cwd,
+            modelSelection: launch.modelSelection,
+            runtimeMode: launch.runtimeMode,
+            developerInstructions: launch.developerInstructions,
             writableRoot: launch.needsWorktree ? cwd : nil,
-            model: launch.model,
-            effort: launch.effort,
-            developerInstructions: launch.developerInstructions
-        )
-        let opening = try await client.openSpecialistThread(settings, resuming: launch.threadID)
-        onEvent(.threadOpened(opening))
+            resumeCursor: launch.resumeCursor
+        ))
+        onEvent(.sessionOpened(session))
         try Task.checkCancellation()
-        let tracker = TurnTracker()
-        return try await client.runSpecialistTurn(threadID: opening.threadID, input: launch.input, settings: settings) { event in
-            if case let .turnStarted(id) = event { tracker.turnID = id }
-            onEvent(.turn(CodexEventNormalizer.normalize(turnEvent: event, threadID: opening.threadID, turnID: tracker.turnID)))
-        }
+        let outcome = try await runtime.runTurn(ProviderTurn(input: [.text(launch.input)], modelSelection: launch.modelSelection))
+        return outcome.reply
     }
 }

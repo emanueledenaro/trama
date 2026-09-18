@@ -31,6 +31,7 @@ public struct ProviderSessionOpen: Sendable {
     public var developerInstructions: String?
     public var toolServerURL: URL?
     public var toolServerToken: String?
+    public var writableRoot: URL?
     public var resumeCursor: Data?
 
     public init(
@@ -41,6 +42,7 @@ public struct ProviderSessionOpen: Sendable {
         developerInstructions: String? = nil,
         toolServerURL: URL? = nil,
         toolServerToken: String? = nil,
+        writableRoot: URL? = nil,
         resumeCursor: Data? = nil
     ) {
         self.threadID = threadID
@@ -50,6 +52,7 @@ public struct ProviderSessionOpen: Sendable {
         self.developerInstructions = developerInstructions
         self.toolServerURL = toolServerURL
         self.toolServerToken = toolServerToken
+        self.writableRoot = writableRoot
         self.resumeCursor = resumeCursor
     }
 }
@@ -126,7 +129,8 @@ public actor ProviderSessionRuntime {
             runtimeMode: request.runtimeMode,
             developerInstructions: request.developerInstructions,
             toolServerURL: request.toolServerURL,
-            toolServerToken: request.toolServerToken
+            toolServerToken: request.toolServerToken,
+            writableRoot: request.writableRoot
         ))
         session = opened
         return opened
@@ -170,6 +174,18 @@ public actor ProviderSessionRuntime {
     public func contextUsage() async throws -> JSONValue? {
         guard let reporting = adapter as? ProviderContextUsageReporting, let session else { return nil }
         return try await reporting.contextUsage(threadID: session.threadID)
+    }
+
+    /// Answers one permission request of the running session, when the provider asks for one.
+    public func respondToRequest(requestID: String, decision: ClaudePermissionDecision) async throws {
+        guard let claude = adapter as? ClaudeProviderAdapter, let session else { return }
+        try await claude.respondToRequest(threadID: session.threadID, requestID: requestID, decision: decision)
+    }
+
+    /// Answers one question the provider put to the person.
+    public func respondToUserInput(requestID: String, answers: [String: String]) async throws {
+        guard let claude = adapter as? ClaudeProviderAdapter, let session else { return }
+        try await claude.respondToUserInput(threadID: session.threadID, requestID: requestID, answers: answers)
     }
 
     /// Events outside the running turn: usage, compaction, session state and blocks.

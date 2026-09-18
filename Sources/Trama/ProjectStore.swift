@@ -90,6 +90,8 @@ final class ProjectStore: ObservableObject {
     /// The providers Trama can offer, with their real access state. Only an authenticated provider
     /// is selectable (ADR 0009).
     @Published var providerOptions: [ProviderOption] = []
+    /// The model catalogue of each provider, so a turn on any of them can choose a real model.
+    @Published var providerCatalogs: [ProviderKind: ProviderModelCatalog] = [:]
 
     static var providerStatusDirectory: URL {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
@@ -534,6 +536,7 @@ final class ProjectStore: ObservableObject {
                 isLoadingModels = false
                 if applyResumeProviderDecision() { startCoordinator() }
                 await refreshProviderOptions()
+                await refreshProviderCatalogs()
                 do { connectedApps = try await codex.listApps(); appsError = nil }
                 catch { appsError = "Collegamenti non disponibili: \(error.localizedDescription)" }
             }
@@ -542,6 +545,28 @@ final class ProjectStore: ObservableObject {
             modelsError = nil
             isLoadingModels = false
             connectionDetail = error.localizedDescription
+        }
+    }
+
+    /// Loads the model catalogue of every provider the app can run, so a turn can pick a real model.
+    func refreshProviderCatalogs() async {
+        if codexConnected, !models.isEmpty {
+            providerCatalogs[.codex] = ProviderModelCatalog(
+                models: models.map { model in
+                    ProviderModelDescriptor(
+                        slug: model.model,
+                        resolvedModel: model.model,
+                        name: model.displayName,
+                        supportedReasoningEfforts: model.supportedReasoningEfforts,
+                        defaultReasoningEffort: model.defaultReasoningEffort,
+                        isDefault: model.isDefault
+                    )
+                },
+                source: .runtime
+            )
+        }
+        if let catalog = try? await claudeAdapter.listModels() {
+            providerCatalogs[.claudeAgent] = catalog
         }
     }
 
@@ -576,10 +601,46 @@ final class ProjectStore: ObservableObject {
         return nil
     }
 
-    /// The providers the app's own runtimes can open today. Codex is the only one until the
-    /// Coordinator and specialist runtimes become provider-agnostic.
-    static func appRunsCoordinator(_ provider: ProviderKind) -> Bool { provider == .codex }
-    static func appRunsSpecialist(_ provider: ProviderKind) -> Bool { provider == .codex }
+    /// The providers the app's runtimes can open: one with a complete adapter behind the V08
+    /// interface. Codex and Claude Agent today.
+    static func appRunsCoordinator(_ provider: ProviderKind) -> Bool {
+        ProviderCatalogue.descriptor(for: provider).isAvailable
+    }
+    static func appRunsSpecialist(_ provider: ProviderKind) -> Bool {
+        ProviderCatalogue.descriptor(for: provider).isAvailable
+    }
+
+    /// Why a specialist cannot start on this provider, or nil when it can.
+    func specialistProviderReason(_ provider: ProviderKind) -> String? {
+        guard ProjectStore.appRunsSpecialist(provider) else {
+            return "Trama non ha ancora un runtime per \(provider.displayName)."
+        }
+        guard providerAccess[provider]?.state == .authenticated else {
+            return "Collega l'account di \(provider.displayName) prima di assegnargli lavoro."
+        }
+        return nil
+    }
+
+    /// The model a specialist turn runs with, as the provider expects it.
+    func specialistModelSelection(provider: ProviderKind, model: String) -> ModelSelection? {
+        switch provider {
+        case .claudeAgent:
+            let catalog = providerCatalogs[.claudeAgent] ?? ProviderModelCatalog(models: [], source: .fallback)
+            let slug = catalog.models.contains(where: { $0.slug == model })
+                ? model
+                : ProviderModelDefault.specialist(provider: .claudeAgent, catalog: catalog, preference: document.providerPreferences)
+            guard let slug else { return nil }
+            return .claudeAgent(model: slug, options: nil)
+        default:
+            return .codex(model: model, options: nil)
+        }
+    }
+
+    /// Records the provider session Trama opened for the specialist.
+    func recordSpecialistSession(_ session: ProviderSession, assignmentID: String) {
+        let cursor = session.resumeCursor.flatMap { try? JSONDecoder().decode(JSONValue.self, from: $0) }
+        try? document.recordSpecialistCursor(assignmentID: assignmentID, cursor: cursor)
+    }
 
     /// On reopening, work resumes with the provider of the last turn. An unavailable provider, and a
     /// provider the app cannot open, stop Trama and warn; the provider is never changed here.
@@ -823,8 +884,7 @@ final class ProjectStore: ObservableObject {
 
     func stopPlanning() {
         activePlanTask?.cancel(); rejectAllApprovals()
-        let coordinatorClient = coordinator.client
-        Task { await codex.cancelTurn(); await coordinatorClient?.cancelTurn() }
+        Task { await codex.cancelTurn(); await coordinator.interrupt() }
     }
 
     func invalidateForSourceChange(_ fresh: RepositorySnapshot) {

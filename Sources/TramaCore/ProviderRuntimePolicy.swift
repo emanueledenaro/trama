@@ -276,6 +276,87 @@ public enum ProviderModelDefault {
     }
 }
 
+/// The model and options one Coordinator turn runs with, on the provider of the session.
+public struct CoordinatorTurnChoice: Equatable, Sendable {
+    public var selection: ModelSelection
+    public var model: String
+    public var effort: String?
+    public var overridesModel: Bool
+    public var overridesEffort: Bool
+
+    public init(selection: ModelSelection, model: String, effort: String?, overridesModel: Bool, overridesEffort: Bool) {
+        self.selection = selection
+        self.model = model
+        self.effort = effort
+        self.overridesModel = overridesModel
+        self.overridesEffort = overridesEffort
+    }
+}
+
+public enum CoordinatorTurnSelection {
+    /// Codex keeps Trama's preferred model and the open effort list; Claude takes the provider
+    /// default and its closed effort list. A model outside the provider's catalogue is refused.
+    public static func choice(
+        provider: ProviderKind,
+        coordinatorModel: String?,
+        override: TurnOverride,
+        codexModels: [CodexClient.Model],
+        claudeCatalog: ProviderModelCatalog,
+        preference: ProviderModelPreference? = nil
+    ) -> CoordinatorTurnChoice? {
+        switch provider {
+        case .claudeAgent:
+            let preferred = override.model
+                ?? ProviderModelDefault.coordinator(provider: .claudeAgent, catalog: claudeCatalog, preference: preference)
+                ?? claudeCatalog.models.first?.slug
+            guard let model = preferred, !model.isEmpty else { return nil }
+            if override.model != nil, !claudeCatalog.models.isEmpty, !claudeCatalog.models.contains(where: { $0.slug == model }) {
+                return nil
+            }
+            let effort = override.effort
+            if let effort, !ClaudeModelCatalog.isSupportedEffort(effort) { return nil }
+            return CoordinatorTurnChoice(
+                selection: .claudeAgent(model: model, options: ClaudeModelOptions(effort: effort)),
+                model: model,
+                effort: effort,
+                overridesModel: override.model != nil,
+                overridesEffort: override.effort != nil
+            )
+        default:
+            guard let selection = CoordinatorModelChoice.turnSelection(coordinatorModel: coordinatorModel ?? "", override: override, models: codexModels) else { return nil }
+            return CoordinatorTurnChoice(
+                selection: .codex(model: selection.model, options: CodexModelOptions(reasoningEffort: selection.effort)),
+                model: selection.model,
+                effort: selection.effort,
+                overridesModel: selection.overridesModel,
+                overridesEffort: selection.overridesEffort
+            )
+        }
+    }
+}
+
+/// What the Coordinator is allowed to do directly, on a provider that asks before acting.
+///
+/// The Codex Coordinator runs in a read-only sandbox where every change goes through Trama's
+/// mandate tools. A provider without that sandbox gets the same rule as a decision: Trama allows
+/// reading and Trama's own tools, and refuses the tools that write files or run a shell. Every
+/// change still has to pass the mandate gate of the tool server.
+public enum CoordinatorPermissionPolicy {
+    /// Tools the Coordinator may never run directly.
+    public static let refusedTools: Set<String> = [
+        "Write", "Edit", "NotebookEdit", "Bash", "BashOutput", "KillShell", "Task"
+    ]
+
+    public static func decision(forTool tool: String?) -> ClaudePermissionDecision {
+        guard let tool else { return .allow }
+        if tool.hasPrefix("mcp__") { return .allow }
+        if refusedTools.contains(tool) {
+            return .deny(message: "Il Coordinatore non modifica il progetto direttamente: usa gli strumenti di Trama entro il mandato.")
+        }
+        return .allow
+    }
+}
+
 /// The models the person chose, remembered per provider in the project document.
 public struct ProviderModelPreference: Codable, Equatable, Sendable {
     /// Remembered coordinator model per provider, keyed by `ProviderKind.rawValue`.

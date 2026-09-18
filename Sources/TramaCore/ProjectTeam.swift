@@ -621,6 +621,13 @@ extension ProjectDocument {
         }
     }
 
+    /// The opaque cursor of the provider session Trama opened for this specialist.
+    public mutating func recordSpecialistCursor(assignmentID: String, cursor: JSONValue?, at date: Date = Date()) throws {
+        try changeAssignment(assignmentID, at: date) { assignment in
+            assignment.resumeCursor = cursor
+        }
+    }
+
     /// The assignment stops because its provider is blocked. It stays in progress and in waiting:
     /// the worktree, the turns and the results are untouched, and no provider is substituted.
     public mutating func recordProviderBlock(_ block: ProviderBlock, assignmentID: String, at date: Date = Date()) throws {
