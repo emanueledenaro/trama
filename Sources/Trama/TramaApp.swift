@@ -13,7 +13,7 @@ struct TramaApp: App {
                 .environmentObject(store)
                 .preferredColorScheme(selectedColorScheme)
                 .frame(minWidth: 720, minHeight: 640)
-                .task { await store.restoreProject(); V04Proof.shared.start(store) }
+                .task { await store.restoreProject() }
                 .onAppear { delegate.willTerminate = { store.saveDocument() } }
         }
         .defaultSize(width: 1440, height: 900)
