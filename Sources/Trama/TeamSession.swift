@@ -81,11 +81,19 @@ final class SpecialistSupervisor: ObservableObject {
                 let reply = try await SpecialistRunner.run(launch, runtime: runtime, sessions: sessions) { continuation.yield($0) }
                 continuation.finish()
                 await consumer.value
+                if let session = await runtime.refreshSession() {
+                    store.recordSpecialistSession(session, assignmentID: assignmentID)
+                }
                 await self?.finish(assignmentID: assignmentID, outcome: .completed(reply))
             } catch {
                 continuation.finish()
                 await consumer.value
-                let interrupted = Task.isCancelled || (error as? CodexClient.ClientError) == .turnInterrupted
+                if let session = await runtime.refreshSession() {
+                    store.recordSpecialistSession(session, assignmentID: assignmentID)
+                }
+                let interrupted = Task.isCancelled
+                    || (error as? CodexClient.ClientError) == .turnInterrupted
+                    || (error as? ProviderRuntimeError) == .turnInterrupted
                 await self?.finish(assignmentID: assignmentID, outcome: interrupted ? .interrupted : .failed(error.localizedDescription))
             }
         }

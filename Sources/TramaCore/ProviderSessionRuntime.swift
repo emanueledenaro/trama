@@ -9,6 +9,8 @@ public protocol ProviderContextUsageReporting: Sendable {
 public enum ProviderRuntimeError: Error, Equatable, Sendable, LocalizedError {
     case noSession
     case turnAlreadyRunning
+    case turnInterrupted
+    case turnFailed
     case turnEndedWithoutCompletion
     case providerUnsupported(String)
 
@@ -16,6 +18,8 @@ public enum ProviderRuntimeError: Error, Equatable, Sendable, LocalizedError {
         switch self {
         case .noSession: return "no provider session is open"
         case .turnAlreadyRunning: return "a turn of this session is already running"
+        case .turnInterrupted: return "the provider turn was interrupted"
+        case .turnFailed: return "the provider turn failed"
         case .turnEndedWithoutCompletion: return "the provider session ended before the turn completed"
         case let .providerUnsupported(provider): return "the app has no runtime for \(provider)"
         }
@@ -202,6 +206,13 @@ public actor ProviderSessionRuntime {
 
     public func currentSession() -> ProviderSession? { session }
 
+    /// Refreshes the local session snapshot after provider events may have changed its cursor.
+    public func refreshSession() async -> ProviderSession? {
+        guard let session, let latest = await adapter.session(for: session.threadID) else { return session }
+        self.session = latest
+        return latest
+    }
+
     public func block() -> ProviderBlock? { lastBlock }
 
     public func stop() async {
@@ -260,15 +271,19 @@ public actor ProviderSessionRuntime {
                 let continuation = turn.continuation
                 pending = nil
                 observer?(event)
-                continuation?.resume(returning: ProviderTurnOutcome(
-                    threadID: turn.threadID,
-                    turnID: turn.turnID ?? event.turnID ?? "",
-                    reply: turn.text,
-                    interrupted: turn.interrupted,
-                    block: turn.block,
-                    observedModel: turn.observedModel,
-                    observedEffort: turn.observedEffort
-                ))
+                if state == .completed {
+                    continuation?.resume(returning: ProviderTurnOutcome(
+                        threadID: turn.threadID,
+                        turnID: turn.turnID ?? event.turnID ?? "",
+                        reply: turn.text,
+                        interrupted: false,
+                        block: turn.block,
+                        observedModel: turn.observedModel,
+                        observedEffort: turn.observedEffort
+                    ))
+                } else {
+                    continuation?.resume(throwing: state == .interrupted ? ProviderRuntimeError.turnInterrupted : ProviderRuntimeError.turnFailed)
+                }
                 return
             case let .providerBlocked(block):
                 turn.block = block

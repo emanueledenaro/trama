@@ -37,6 +37,7 @@ public enum ClaudePermissionDecision: Equatable, Sendable {
 /// Host tools arrive as the same HTTP MCP server Codex uses, carried in `--mcp-config` with a
 /// bearer header, and every tool call passes the mandate at the tool boundary.
 public actor ClaudeProviderAdapter: ProviderAdapter {
+    private static let defaultThinkingTokens = 16_000
     public nonisolated let provider = ProviderKind.claudeAgent
     public nonisolated let capabilities: ProviderCapabilities
     public nonisolated let implementedMethods: Set<ProviderMethod>
@@ -116,6 +117,8 @@ public actor ClaudeProviderAdapter: ProviderAdapter {
     }
 
     public func events() async -> AsyncStream<ProviderEvent> { eventStream }
+
+    public func session(for threadID: String) async -> ProviderSession? { threads[threadID]?.session }
 
     // MARK: - Access and catalogue
 
@@ -316,11 +319,17 @@ public actor ClaudeProviderAdapter: ProviderAdapter {
                 }
             }
             if let thinking = options?.thinking {
-                try await state.client.setMaxThinkingTokens(thinking ? (state.options.maxThinkingTokens ?? 0) : 0)
+                try await state.client.setMaxThinkingTokens(thinking ? (state.options.maxThinkingTokens ?? Self.defaultThinkingTokens) : 0)
+                state.options.thinking = thinking
             }
             if let fastMode = options?.fastMode, fastMode != state.options.fastMode {
                 try await state.client.applyFlagSettings(.object(["fastMode": .bool(fastMode)]))
                 state.options.fastMode = fastMode
+            }
+            if let autoCompactWindow = options?.autoCompactWindow, autoCompactWindow != state.options.autoCompactWindow {
+                try await state.client.applyFlagSettings(.object(["autoCompactWindow": .integer(autoCompactWindow)]))
+                state.options.autoCompactWindow = autoCompactWindow
+                state.accounting.setAutoCompactWindow(autoCompactWindow)
             }
         }
         if let runtimeMode = input.runtimeMode, runtimeMode != state.session.runtimeMode {
@@ -343,7 +352,7 @@ public actor ClaudeProviderAdapter: ProviderAdapter {
             provider: .claudeAgent,
             threadID: input.threadID,
             turnID: turnID,
-            kind: .turnStarted(model: state.session.model, effort: state.options.effort)
+            kind: .turnStarted(model: nil, effort: nil)
         ))
         return ProviderTurnStartResult(threadID: input.threadID, turnID: turnID, resumeCursor: state.session.resumeCursor)
     }
@@ -470,6 +479,7 @@ public actor ClaudeProviderAdapter: ProviderAdapter {
             ClaudeProcessTransport(
                 executableURL: options.binaryURL,
                 arguments: try options.arguments(),
+                workingDirectory: options.workingDirectory,
                 environment: options.environment
             )
         })
@@ -590,6 +600,9 @@ public actor ClaudeProviderAdapter: ProviderAdapter {
                 // The `system init` record is authoritative; the initialize response may arrive first.
                 state.nativeSessionID = sessionID
             }
+            if let sessionID = value.objectValue?["session_id"]?.stringValue {
+                state.nativeSessionID = sessionID
+            }
             let nativeSessionID = state.nativeSessionID
             var normalized = state.normalizer.normalize(
                 message: value,
@@ -626,6 +639,15 @@ public actor ClaudeProviderAdapter: ProviderAdapter {
             }
             switch normalized.signal {
             case let .assistant(messageID, usage, model):
+                if let model {
+                    emit(ProviderEvent(
+                        eventID: UUID().uuidString,
+                        provider: .claudeAgent,
+                        threadID: threadID,
+                        turnID: turnID,
+                        kind: .turnStarted(model: model, effort: nil)
+                    ))
+                }
                 if let usage, let update = state.accounting.recordAssistant(
                     messageID: messageID,
                     usage: usage,

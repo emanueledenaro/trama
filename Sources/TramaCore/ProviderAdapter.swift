@@ -793,10 +793,15 @@ public protocol ProviderAdapter: Sendable {
     func checkAccess() async -> ProviderAccessStatus
     func listModels() async throws -> ProviderModelCatalog
     func startSession(_ input: ProviderSessionStartInput) async throws -> ProviderSession
+    func session(for threadID: String) async -> ProviderSession?
     func sendTurn(_ input: ProviderSendTurnInput) async throws -> ProviderTurnStartResult
     func interruptTurn(threadID: String, turnID: String?) async
     func stopSession(threadID: String) async
     func events() async -> AsyncStream<ProviderEvent>
+}
+
+public extension ProviderAdapter {
+    func session(for threadID: String) async -> ProviderSession? { nil }
 }
 
 public extension ProviderAdapter {

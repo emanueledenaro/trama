@@ -314,11 +314,14 @@ struct ProviderRuntimePolicyTests {
 
     // MARK: Coordinator permission policy
 
-    @Test("The Coordinator may read and use Trama's tools, and may not write the project directly")
+    @Test("The Coordinator uses Trama for project reads and may not write directly")
     func coordinatorPermissionPolicy() {
-        #expect(CoordinatorPermissionPolicy.decision(forTool: "Read") == .allow)
+        #expect(CoordinatorPermissionPolicy.decision(forTool: "Read") != .allow)
+        #expect(CoordinatorPermissionPolicy.decision(forTool: "Grep") != .allow)
+        #expect(CoordinatorPermissionPolicy.decision(forTool: "Glob") != .allow)
         #expect(CoordinatorPermissionPolicy.decision(forTool: "mcp__trama__read_study") == .allow)
-        #expect(CoordinatorPermissionPolicy.decision(forTool: nil) == .allow)
+        #expect(CoordinatorPermissionPolicy.decision(forTool: nil) != .allow)
+        #expect(CoordinatorPermissionPolicy.decision(forTool: "UnknownNativeTool") != .allow)
         for tool in ["Write", "Edit", "NotebookEdit", "Bash"] {
             guard case .deny = CoordinatorPermissionPolicy.decision(forTool: tool) else {
                 Issue.record("\(tool) must be refused to the Coordinator")

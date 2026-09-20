@@ -60,6 +60,31 @@ final class ClaudeClientTests: XCTestCase {
 
     // MARK: Framing
 
+    func testProcessTransportStartsInTheRequestedWorkingDirectory() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let cwd = root.appendingPathComponent("worktree", isDirectory: true)
+        try FileManager.default.createDirectory(at: cwd, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let script = root.appendingPathComponent("print-cwd.sh")
+        try "#!/bin/sh\npwd\n".write(to: script, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: script.path)
+
+        let transport = ClaudeProcessTransport(executableURL: script, arguments: [], workingDirectory: cwd)
+        let stream = try transport.start()
+        var output = ""
+        for await event in stream {
+            if case let .stdout(data) = event {
+                output += String(decoding: data, as: UTF8.self)
+                if output.contains("\n") { break }
+            }
+        }
+        transport.stop()
+        XCTAssertEqual(
+            URL(fileURLWithPath: output.trimmingCharacters(in: .whitespacesAndNewlines)).resolvingSymlinksInPath().path,
+            cwd.resolvingSymlinksInPath().path
+        )
+    }
+
     func testStartSendsInitializeAndReadsTheAnswer() async throws {
         let transport = FakeClaudeTransport()
         let client = ClaudeClient(transport: transport)

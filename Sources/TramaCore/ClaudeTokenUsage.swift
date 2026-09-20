@@ -416,6 +416,11 @@ public struct ClaudeTokenAccounting: Equatable, Sendable {
         )
     }
 
+    public mutating func setAutoCompactWindow(_ value: Int?) {
+        currentAutoCompactWindow = value
+        lastKnownAutoCompactThreshold = value
+    }
+
     /// A `compact_boundary` message: the old context size is stale and the cache is invalidated.
     public mutating func recordCompactBoundary(at date: Date = Date()) {
         state = .skipCompactionCall

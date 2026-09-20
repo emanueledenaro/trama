@@ -22,15 +22,17 @@ public enum ClaudeTransportEvent: Sendable {
 public final class ClaudeProcessTransport: ClaudeTransport, @unchecked Sendable {
     private let executableURL: URL
     private let arguments: [String]
+    private let workingDirectory: URL
     private let environment: [String: String]
     private let lock = NSLock()
     private var process: Process?
     private var input: FileHandle?
     private var continuation: AsyncStream<ClaudeTransportEvent>.Continuation?
 
-    public init(executableURL: URL, arguments: [String], environment: [String: String] = [:]) {
+    public init(executableURL: URL, arguments: [String], workingDirectory: URL, environment: [String: String] = [:]) {
         self.executableURL = executableURL
         self.arguments = arguments
+        self.workingDirectory = workingDirectory
         self.environment = environment
     }
 
@@ -44,6 +46,7 @@ public final class ClaudeProcessTransport: ClaudeTransport, @unchecked Sendable 
         let stderr = Pipe()
         process.executableURL = executableURL
         process.arguments = arguments
+        process.currentDirectoryURL = workingDirectory
         process.standardInput = stdin
         process.standardOutput = stdout
         process.standardError = stderr
@@ -794,6 +797,7 @@ public enum ClaudeRuntimeProbe {
             ClaudeProcessTransport(
                 executableURL: options.binaryURL,
                 arguments: try options.arguments(),
+                workingDirectory: options.workingDirectory,
                 environment: options.environment
             )
         })

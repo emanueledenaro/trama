@@ -157,6 +157,22 @@ final class ProjectDocumentTests: XCTestCase {
         XCTAssertNil(document.providerPreferences)
     }
 
+    func testSchemaSevenClaudeProviderAndPreferenceSurviveMigration() throws {
+        let original = Data(#"{"schemaVersion":7,"requests":[],"selectedModel":"gpt-5.6-luna","lastTurnProvider":"claudeAgent","providerPreferences":{"coordinatorSelections":{"claudeAgent":{"modelSelection":{"claudeAgent":{"model":"haiku","options":{"thinking":true,"effort":"medium","fastMode":true,"autoCompactWindow":200000,"contextWindow":1000000}}}}}}}"#.utf8)
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let url = directory.appendingPathComponent("project.json")
+        try original.write(to: url)
+
+        let document = try ProjectDocumentStorage(url: url).load()
+
+        XCTAssertEqual(document.lastTurnProvider, .claudeAgent)
+        XCTAssertEqual(document.coordinatorSelection?.provider, .claudeAgent)
+        XCTAssertEqual(document.coordinatorSelection?.model, "haiku")
+        XCTAssertEqual(document.coordinatorSelection?.thinking, true)
+    }
+
     func testLegacyProviderPreferenceDecodesWithoutFullComposerSelections() throws {
         let data = Data(#"{"coordinatorModels":{"codex":"gpt-5.6-luna"},"specialistModels":{"codex":"gpt-5.6-luna"}}"#.utf8)
         let preference = try JSONDecoder().decode(ProviderModelPreference.self, from: data)

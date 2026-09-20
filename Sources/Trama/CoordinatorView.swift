@@ -78,6 +78,11 @@ struct CoordinatorView: View {
                 get: { openedCandidate.map(OpenedCandidate.init) },
                 set: { openedCandidate = $0?.id }
             )) { CandidateDetailView(candidateID: $0.id) }
+            .sheet(item: $store.pendingProviderQuestion) { question in
+                ProviderQuestionView(question: question) { answers in
+                    store.answerProviderQuestion(question, answers: answers)
+                }
+            }
     }
 
     private static let pendingStudyID = UUID()
@@ -915,6 +920,38 @@ struct CoordinatorView: View {
         } else {
             TramaStatusBadge(state: request.state)
         }
+    }
+}
+
+private struct ProviderQuestionView: View {
+    let question: ProviderUserQuestion
+    let submit: ([String: String]) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var answers: [String: String] = [:]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: TramaSpacing.section) {
+            Text("Domanda del provider").font(.headline)
+            ForEach(question.items) { item in
+                VStack(alignment: .leading, spacing: TramaSpacing.related) {
+                    Text(item.prompt)
+                    if item.options.isEmpty {
+                        TextField("Risposta", text: Binding(get: { answers[item.id, default: ""] }, set: { answers[item.id] = $0 }))
+                    } else {
+                        Picker("Risposta", selection: Binding(get: { answers[item.id, default: item.options.first ?? ""] }, set: { answers[item.id] = $0 })) {
+                            ForEach(item.options, id: \.self, content: Text.init)
+                        }
+                    }
+                }
+            }
+            HStack {
+                Spacer()
+                Button("Rispondi") { submit(answers); dismiss() }
+                    .keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(TramaSpacing.section)
+        .frame(minWidth: 420)
     }
 }
 

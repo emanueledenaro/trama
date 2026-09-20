@@ -78,6 +78,8 @@ public actor CodexProviderAdapter: ProviderAdapter {
 
     public func events() async -> AsyncStream<ProviderEvent> { eventStream }
 
+    public func session(for threadID: String) async -> ProviderSession? { sessions[threadID] }
+
     public func checkAccess() async -> ProviderAccessStatus {
         if CodexAccessProbe.hasCustomModelProvider(configText: CodexAccessProbe.configText(codexHome: codexHome)) {
             return ProviderAccessStatus(

@@ -116,7 +116,14 @@ public struct ProjectDocument: Codable, Sendable {
     /// Folds the pre-P02 `selectedModel` field into the provider-aware composer value.
     /// The operation is idempotent and preserves the old field for older readers.
     public mutating func migrateComposerSelection() {
-        guard coordinatorSelection == nil, let selectedModel, !selectedModel.isEmpty else { return }
+        guard coordinatorSelection == nil else { return }
+        let provider = lastTurnProvider ?? .codex
+        if let remembered = coordinatorSelection(for: provider) {
+            coordinatorSelection = remembered
+            if provider == .codex { selectedModel = remembered.model }
+            return
+        }
+        guard provider == .codex, let selectedModel, !selectedModel.isEmpty else { return }
         let selection = ComposerSelection(.codex(model: selectedModel, options: nil))
         coordinatorSelection = selection
         if var preference = providerPreferences, preference.coordinatorSelection(for: .codex) == nil {

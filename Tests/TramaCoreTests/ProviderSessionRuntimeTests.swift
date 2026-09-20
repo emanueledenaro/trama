@@ -48,7 +48,42 @@ final class ProviderSessionRuntimeTests: XCTestCase {
         XCTAssertEqual(outcome.reply, "PONG")
         XCTAssertFalse(outcome.interrupted)
         XCTAssertFalse(outcome.turnID.isEmpty)
-        XCTAssertEqual(outcome.observedModel, "haiku")
+        XCTAssertNil(outcome.observedModel)
+    }
+
+    func testAClaudeTurnUsesTheModelObservedInTheAssistantMessage() async throws {
+        let transport = FakeClaudeTransport()
+        let runtime = claudeRuntime(transport)
+        try await openClaudeSession(runtime)
+
+        let running = Task { try await runtime.runTurn(ProviderTurn(input: [.text("ciao")])) }
+        try await Task.sleep(nanoseconds: 50_000_000)
+        transport.emit(.object([
+            "type": .string("assistant"),
+            "message": .object([
+                "id": .string("msg-1"),
+                "model": .string("claude-sonnet-5"),
+                "content": .array([.object(["type": .string("text"), "text": .string("PONG")])])
+            ])
+        ]))
+        transport.emit(.object(["type": .string("result"), "subtype": .string("success"), "is_error": .bool(false)]))
+        let outcome = try await running.value
+        XCTAssertEqual(outcome.observedModel, "claude-sonnet-5")
+    }
+
+    func testAProviderFailureDoesNotBecomeACompletedTurn() async throws {
+        let transport = FakeClaudeTransport()
+        let runtime = claudeRuntime(transport)
+        try await openClaudeSession(runtime)
+        let running = Task { try await runtime.runTurn(ProviderTurn(input: [.text("ciao")])) }
+        try await Task.sleep(nanoseconds: 50_000_000)
+        transport.emit(.object(["type": .string("result"), "subtype": .string("error_during_execution"), "is_error": .bool(true)]))
+        do {
+            _ = try await running.value
+            XCTFail("a failed provider turn must not complete")
+        } catch let error as ProviderRuntimeError {
+            XCTAssertEqual(error, .turnFailed)
+        }
     }
 
     func testAClaudeInterruptEndsTheTurnAsInterrupted() async throws {
@@ -59,8 +94,12 @@ final class ProviderSessionRuntimeTests: XCTestCase {
         let running = Task { try await runtime.runTurn(ProviderTurn(input: [.text("lavora")])) }
         try await Task.sleep(nanoseconds: 50_000_000)
         await runtime.interrupt()
-        let outcome = try await running.value
-        XCTAssertTrue(outcome.interrupted)
+        do {
+            _ = try await running.value
+            XCTFail("an interrupted provider turn must not complete")
+        } catch let error as ProviderRuntimeError {
+            XCTAssertEqual(error, .turnInterrupted)
+        }
         XCTAssertNotNil(transport.controlRequest(subtype: "interrupt"))
     }
 
@@ -75,8 +114,11 @@ final class ProviderSessionRuntimeTests: XCTestCase {
             "type": .string("rate_limit_event"),
             "rate_limit_info": .object(["status": .string("rejected"), "resetsAt": .double(1_800_000_000)])
         ]))
-        let outcome = try await running.value
-        XCTAssertEqual(outcome.block?.reason, .usageLimit(unblockAt: Date(timeIntervalSince1970: 1_800_000_000)))
+        do {
+            _ = try await running.value
+        } catch {
+            XCTAssertEqual(error as? ProviderRuntimeError, .turnInterrupted, "unexpected runtime error: \(error)")
+        }
         let recorded = await runtime.block()
         XCTAssertEqual(recorded?.provider, .claudeAgent)
     }

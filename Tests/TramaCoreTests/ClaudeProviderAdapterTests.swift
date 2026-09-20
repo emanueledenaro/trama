@@ -326,14 +326,15 @@ final class ClaudeProviderAdapterTests: XCTestCase {
             "type": .string("result"),
             "subtype": .string("success"),
             "is_error": .bool(false),
-            "session_id": .string("s1"),
+            "session_id": .string("11111111-1111-1111-1111-111111111111"),
             "usage": .object(["input_tokens": .integer(10), "cache_read_input_tokens": .integer(100), "output_tokens": .integer(5)]),
             "modelUsage": .object(["claude-haiku-4-5": .object(["contextWindow": .integer(200_000)])])
         ]))
 
-        let events = await collect(adapter, count: 6)
+        let events = await collect(adapter, count: 7)
         let kinds = events.map { String(describing: $0.kind) }
         XCTAssertTrue(kinds.contains { $0.contains("assistantText") }, kinds.joined(separator: "\n"))
+        XCTAssertTrue(kinds.contains { $0.contains("turnStarted(model: Optional(\"claude-haiku-4-5\")") }, kinds.joined(separator: "\n"))
         XCTAssertTrue(kinds.contains { $0.contains("tokenUsage") }, kinds.joined(separator: "\n"))
         XCTAssertTrue(kinds.contains { $0.contains("contextUsage") }, kinds.joined(separator: "\n"))
         XCTAssertTrue(kinds.contains { $0.contains("turnCompleted") }, kinds.joined(separator: "\n"))
@@ -342,6 +343,14 @@ final class ClaudeProviderAdapterTests: XCTestCase {
             return nil
         }.last
         XCTAssertEqual(usage?.totalTokens, 115)
+        var session: ProviderSession?
+        for _ in 0..<20 {
+            session = await adapter.session(for: "t1")
+            if ClaudeResumeCursor.decode(session?.resumeCursor).resume == "11111111-1111-1111-1111-111111111111" { break }
+            try await Task.sleep(nanoseconds: 5_000_000)
+        }
+        let cursor = ClaudeResumeCursor.decode(session?.resumeCursor)
+        XCTAssertEqual(cursor.resume, "11111111-1111-1111-1111-111111111111")
     }
 
     func testInterruptClosesTheTurnOnce() async throws {
@@ -451,6 +460,31 @@ final class ClaudeProviderAdapterTests: XCTestCase {
             transport.controlRequest(subtype: "apply_flag_settings")?["settings"]?.objectValue?["fastMode"]?.boolValue,
             true
         )
+    }
+
+    func testThinkingAndAutoCompactAreAppliedToTheTurn() async throws {
+        let (adapter, box) = makeAdapter()
+        _ = try await adapter.startSession(ProviderSessionStartInput(
+            threadID: "t1",
+            cwd: URL(fileURLWithPath: "/tmp"),
+            modelSelection: .claudeAgent(model: "claude-opus-5", options: ClaudeModelOptions(thinking: true)),
+            runtimeMode: .approvalRequired
+        ))
+        let transport = try XCTUnwrap(box.transports.first)
+        _ = try await adapter.sendTurn(ProviderSendTurnInput(
+            threadID: "t1",
+            input: [.text("ciao")],
+            modelSelection: .claudeAgent(model: "claude-opus-5", options: ClaudeModelOptions(thinking: true, autoCompactWindow: 200_000))
+        ))
+        XCTAssertEqual(transport.controlRequest(subtype: "set_max_thinking_tokens")?["max_thinking_tokens"]?.intValue, 16_000)
+        XCTAssertEqual(transport.controlRequest(subtype: "apply_flag_settings")?["settings"]?.objectValue?["autoCompactWindow"]?.intValue, 200_000)
+
+        _ = try await adapter.sendTurn(ProviderSendTurnInput(
+            threadID: "t1",
+            input: [.text("ancora")],
+            modelSelection: .claudeAgent(model: "claude-opus-5", options: ClaudeModelOptions(thinking: false, autoCompactWindow: 0))
+        ))
+        XCTAssertEqual(transport.controlRequests().filter { $0["subtype"]?.stringValue == "set_max_thinking_tokens" }.last?["max_thinking_tokens"]?.intValue, 0)
     }
 
     func testAutoCompactWindowZeroMeansAuto() throws {

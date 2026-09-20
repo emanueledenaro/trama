@@ -205,7 +205,7 @@ struct CoordinatorComposer: View {
     private var canSend: Bool {
         let provider = store.document.coordinatorSelection?.provider ?? store.document.lastTurnProviderOrCodex
         let codexModelReady = provider != .codex || store.selectedModelInfo != nil
-        return store.canSubmit && !store.isPlanning && codexModelReady
+        return store.canSubmit && !store.isPlanning && codexModelReady && store.canSubmitCoordinatorDraft
     }
 
     private var bottomRow: some View {

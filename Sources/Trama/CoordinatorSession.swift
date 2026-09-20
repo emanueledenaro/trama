@@ -182,6 +182,10 @@ final class CoordinatorRuntime {
         await runtime?.interrupt()
     }
 
+    func refreshSession() async -> ProviderSession? {
+        await runtime?.refreshSession()
+    }
+
     private func installObserver() async {
         guard let runtime else { return }
         let channel = self.channel
@@ -470,7 +474,10 @@ extension ProjectStore {
         if !order.decisionIDs.isEmpty { lines.append("Decisioni da ripristinare: \(order.decisionIDs.joined(separator: ", ")).") }
         if order.moduleIDs.count > 1 { lines.append("Moduli: \(order.moduleIDs.joined(separator: ", ")).") }
         var request = WorkRequest(title: String(order.summary.prefix(90)), moduleID: module?.id ?? "project", moduleName: module?.name ?? project.name, request: lines.joined(separator: "\n"), sourceFingerprint: fingerprint)
-        request.model = selectedModel.isEmpty ? nil : selectedModel
+        if let selection = composerSelectionForEnqueue() {
+            request.coordinatorSelection = selection
+            request.model = selection.model
+        }
         request.state = .waitingForCoordinator
         request.allowedModuleIDs = order.moduleIDs
         document.requests.insert(request, at: 0)
@@ -690,23 +697,27 @@ extension ProjectStore {
     @discardableResult
     func switchCoordinatorProvider(to provider: ProviderKind, selection: ComposerSelection? = nil) -> Bool {
         guard stateWritable else { return false }
-        guard provider != coordinator.provider else { return true }
+        let currentProvider = coordinator.runtime == nil ? document.lastTurnProviderOrCodex : coordinator.provider
+        guard provider != currentProvider else {
+            if let selection { document.setCoordinatorSelection(selection); saveDocument() }
+            return true
+        }
         guard !isPlanning, !isExecuting,
               !document.requests.contains(where: { $0.state == .waitingForCoordinator }) else {
             providerNotice = ProviderBlock(provider: provider, reason: .unknown("Il cambio è disponibile quando non ci sono turni attivi o in coda."), detail: nil, observedAt: Date())
             return false
         }
         guard ProjectStore.appRunsCoordinator(provider) else {
-            coordinatorPhase = .unavailable("Trama non ha ancora un adattatore completo per \(provider.displayName): il passaggio non è disponibile. Il thread resta su \(coordinator.provider.displayName).")
+            coordinatorPhase = .unavailable("Trama non ha ancora un adattatore completo per \(provider.displayName): il passaggio non è disponibile. Il thread resta su \(currentProvider.displayName).")
             return false
         }
         // Only a provider that can run is chosen: a refused switch keeps the thread and the provider.
         let accessUnknown = provider == .claudeAgent && (providerAccess[.claudeAgent]?.state ?? .unknown) == .unknown
         if let reason = coordinatorProviderReason(provider), !accessUnknown {
-            providerNotice = ProviderBlock(provider: provider, reason: .unknown(reason), detail: "Il thread resta su \(coordinator.provider.displayName): il cambio è una decisione della persona e il provider scelto non può girare adesso.", observedAt: Date())
+            providerNotice = ProviderBlock(provider: provider, reason: .unknown(reason), detail: "Il thread resta su \(currentProvider.displayName): il cambio è una decisione della persona e il provider scelto non può girare adesso.", observedAt: Date())
             return false
         }
-        let previous = coordinator.provider
+        let previous = currentProvider
         let handover = CoordinatorProviderSwitch.plan(from: previous, to: provider, document: document)
         coordinatorHandover = handover
         if let selection {
@@ -784,6 +795,15 @@ extension ProjectStore {
         coordinator.shutdown()
     }
 
+    private func recordCoordinatorCursor(_ session: ProviderSession) {
+        guard var state = document.coordinator, var thread = state.thread else { return }
+        if let cursor = session.resumeCursor.flatMap({ try? JSONDecoder().decode(JSONValue.self, from: $0) }) {
+            thread.resumeCursor = cursor
+        }
+        state.thread = thread
+        document.coordinator = state
+    }
+
     private func recordCoordinatorThread(_ session: ProviderSession, model: String, provider: ProviderKind, replaced: Bool) {
         var state = document.coordinator ?? CoordinatorState()
         state.context?.resetForThread(session.threadID)
@@ -825,6 +845,9 @@ extension ProjectStore {
         let outcome = try await coordinator.runTurn(input: opening.map { .text($0) }, modelSelection: nil) { [weak self] event in
             guard let self, self.coordinatorGeneration == generation, case let .contentDelta(.assistantText(delta)) = event.kind else { return }
             self.coordinatorStudyText? += delta
+        }
+        if let session = await coordinator.refreshSession() {
+            recordCoordinatorCursor(session)
         }
         guard coordinatorGeneration == generation else { return }
         document.coordinator?.thread?.injectedStudy = study.fingerprints
@@ -949,6 +972,9 @@ extension ProjectStore {
                     guard let self, self.operationID == token, self.localRoot == root else { return }
                     self.receiveCoordinatorEvent(event, requestID: id)
                 }
+                if let session = await runtime.refreshSession() {
+                    recordCoordinatorCursor(session)
+                }
                 let reply = outcome.reply
                 guard operationID == token, localRoot == root, let i = document.requests.firstIndex(where: { $0.id == id }) else { return }
                 if let update, let study = state.study {
@@ -976,7 +1002,9 @@ extension ProjectStore {
                 activity.insert("Risposta del Coordinatore ricevuta per \(document.requests[i].moduleName).", at: 0)
             } catch {
                 guard operationID == token, localRoot == root, let i = document.requests.firstIndex(where: { $0.id == id }) else { return }
-                let interrupted = Task.isCancelled || (error as? CodexClient.ClientError) == .turnInterrupted
+                let interrupted = Task.isCancelled
+                    || (error as? CodexClient.ClientError) == .turnInterrupted
+                    || (error as? ProviderRuntimeError) == .turnInterrupted
                 document.requests[i].state = interrupted ? .interrupted : .failed
                 document.requests[i].failureDetail = error.localizedDescription
                 document.requests[i].plan = interrupted ? "Il messaggio è stato interrotto. Puoi riscriverlo quando vuoi." : "Il Coordinatore non ha risposto. Il progetto è conservato; puoi controllare il collegamento Codex e riprovare."
@@ -1012,6 +1040,29 @@ extension ProjectStore {
         default:
             break
         }
+    }
+
+    func receiveProviderQuestion(_ event: ProviderEvent) {
+        guard case .userInputRequested = event.kind,
+              let requestID = event.requestID,
+              let payload = event.raw?.payload?.objectValue,
+              let questions = payload["input"]?.objectValue?["questions"]?.arrayValue else { return }
+        let items = questions.enumerated().compactMap { index, value -> ProviderUserQuestion.Item? in
+            guard let object = value.objectValue,
+                  let prompt = object["question"]?.stringValue ?? object["header"]?.stringValue else { return nil }
+            let options = object["options"]?.arrayValue?.compactMap { $0.objectValue?["label"]?.stringValue } ?? []
+            return ProviderUserQuestion.Item(id: "\(requestID)-\(index)", prompt: prompt, options: options)
+        }
+        guard !items.isEmpty else { return }
+        pendingProviderQuestion = ProviderUserQuestion(id: requestID, items: items)
+        document.conversation?.appendActivity(requestID: coordinator.turnRequestID, title: "Domanda di Claude", detail: items.map(\.prompt).joined(separator: " · "))
+        saveDocument()
+    }
+
+    func answerProviderQuestion(_ question: ProviderUserQuestion, answers: [String: String]) {
+        guard pendingProviderQuestion?.id == question.id else { return }
+        pendingProviderQuestion = nil
+        Task { await coordinator.respondToQuestion(requestID: question.id, answers: answers) }
     }
 
     /// The Italian outcome of a tool refused by the mandate check, or nil for other failures.
@@ -1147,7 +1198,11 @@ extension ProjectStore {
 extension ProjectStore {
     /// The model one Coordinator turn runs with, on the provider of the session.
     func coordinatorTurnChoice(provider: ProviderKind, override: TurnOverride) -> CoordinatorTurnChoice? {
-        CoordinatorTurnSelection.choice(
+        if override.model == nil, override.effort == nil,
+           let selection = document.coordinatorSelection(for: provider) {
+            return coordinatorTurnChoice(selection: selection)
+        }
+        return CoordinatorTurnSelection.choice(
             provider: provider,
             coordinatorModel: selectedModel,
             override: override,
@@ -1159,7 +1214,8 @@ extension ProjectStore {
 
     /// Resolves an immutable queued selection against the active provider catalogue.
     func coordinatorTurnChoice(selection: ComposerSelection) -> CoordinatorTurnChoice? {
-        guard selection.provider == coordinator.provider else { return nil }
+        let activeProvider = coordinator.runtime == nil ? document.lastTurnProviderOrCodex : coordinator.provider
+        guard selection.provider == activeProvider else { return nil }
         switch selection.modelSelection {
         case let .codex(model, options):
             guard let selected = CoordinatorModelChoice.turnSelection(
@@ -1198,6 +1254,9 @@ extension ProjectStore {
         }
         if case let .requestOpened(requestType, detail) = event.kind, requestType == "canUseTool", let requestID = event.requestID {
             Task { await coordinator.respondToPermission(requestID: requestID, tool: detail) }
+        }
+        if case .userInputRequested = event.kind {
+            receiveProviderQuestion(event)
         }
     }
 }

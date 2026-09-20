@@ -344,16 +344,18 @@ public enum CoordinatorTurnSelection {
 public enum CoordinatorPermissionPolicy {
     /// Tools the Coordinator may never run directly.
     public static let refusedTools: Set<String> = [
-        "Write", "Edit", "NotebookEdit", "Bash", "BashOutput", "KillShell", "Task"
+        "Read", "Grep", "Glob", "Write", "Edit", "NotebookEdit", "Bash", "BashOutput", "KillShell", "Task"
     ]
 
     public static func decision(forTool tool: String?) -> ClaudePermissionDecision {
-        guard let tool else { return .allow }
-        if tool.hasPrefix("mcp__") { return .allow }
+        guard let tool else {
+            return .deny(message: "Trama non riconosce lo strumento richiesto: usa gli strumenti di Trama entro il mandato.")
+        }
+        if tool.hasPrefix("mcp__trama__") { return .allow }
         if refusedTools.contains(tool) {
             return .deny(message: "Il Coordinatore non modifica il progetto direttamente: usa gli strumenti di Trama entro il mandato.")
         }
-        return .allow
+        return .deny(message: "Trama non consente strumenti nativi del provider: usa gli strumenti di Trama entro il mandato.")
     }
 }
 

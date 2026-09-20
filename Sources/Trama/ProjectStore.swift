@@ -50,6 +50,17 @@ enum WorkspaceSection: String, CaseIterable, Identifiable {
     }
 }
 
+struct ProviderUserQuestion: Identifiable, Equatable {
+    struct Item: Identifiable, Equatable {
+        let id: String
+        let prompt: String
+        let options: [String]
+    }
+
+    let id: String
+    let items: [Item]
+}
+
 @MainActor
 final class ProjectStore: ObservableObject {
     @Published var project: RepositorySnapshot?
@@ -115,6 +126,7 @@ final class ProjectStore: ObservableObject {
     @Published var providerAccess: [ProviderKind: ProviderAccessStatus] = [:]
     /// The block that stopped work, shown by the status strip and by a card in the conversation.
     @Published var providerNotice: ProviderBlock?
+    @Published var pendingProviderQuestion: ProviderUserQuestion?
     /// The handover of a Coordinator provider switch, injected into the new session and then cleared.
     var coordinatorHandover: CoordinatorHandover?
     /// The providers Trama can offer, with their real access state. Only an authenticated provider
@@ -577,7 +589,11 @@ final class ProjectStore: ObservableObject {
         guard !isConnecting else { return }; isConnecting = true
         defer {
             isConnecting = false
-            if !codexConnected { connectedApps = []; models = [] }
+            if !codexConnected {
+                connectedApps = []
+                models = []
+                providerCatalogs[.codex] = nil
+            }
         }
         do {
             let account = try await codex.connect()
@@ -590,7 +606,6 @@ final class ProjectStore: ObservableObject {
                 connectionDetail = "Accedi con ChatGPT per continuare."
             }
             await recordCodexAccess()
-            await recordClaudeAccess()
             if codexConnected {
                 codexVersion = await codex.serverInfo()?.userAgent ?? ""
                 isLoadingModels = true
@@ -619,17 +634,23 @@ final class ProjectStore: ObservableObject {
                     modelsError = "Catalogo modelli non disponibile: \(error.localizedDescription)"
                 }
                 isLoadingModels = false
-                if applyResumeProviderDecision() { startCoordinator() }
-                await refreshProviderOptions()
-                await refreshProviderCatalogs()
                 do { connectedApps = try await codex.listApps(); appsError = nil }
                 catch { appsError = "Collegamenti non disponibili: \(error.localizedDescription)" }
             }
+            await recordClaudeAccess()
+            await refreshProviderOptions()
+            await refreshProviderCatalogs()
+            if applyResumeProviderDecision() { startCoordinator() }
         } catch {
             codexConnected = false
             modelsError = nil
             isLoadingModels = false
             connectionDetail = error.localizedDescription
+            await recordCodexAccess()
+            await recordClaudeAccess()
+            await refreshProviderOptions()
+            await refreshProviderCatalogs()
+            if applyResumeProviderDecision() { startCoordinator() }
         }
     }
 
@@ -711,11 +732,8 @@ final class ProjectStore: ObservableObject {
         switch provider {
         case .claudeAgent:
             let catalog = providerCatalogs[.claudeAgent] ?? ProviderModelCatalog(models: [], source: .fallback)
-            let slug = catalog.models.contains(where: { $0.slug == model })
-                ? model
-                : ProviderModelDefault.specialist(provider: .claudeAgent, catalog: catalog, preference: document.providerPreferences)
-            guard let slug else { return nil }
-            return .claudeAgent(model: slug, options: nil)
+            guard catalog.models.contains(where: { $0.slug == model }) else { return nil }
+            return .claudeAgent(model: model, options: nil)
         default:
             return .codex(model: model, options: nil)
         }
@@ -772,7 +790,8 @@ final class ProjectStore: ObservableObject {
     }
 
     func selectModel(_ model: String) {
-        guard !isPlanning, !isExecuting, models.contains(where: { $0.model == model }) else { return }
+        let activeProvider = coordinator.runtime == nil ? document.lastTurnProviderOrCodex : coordinator.provider
+        guard activeProvider == .codex, !isPlanning, !isExecuting, models.contains(where: { $0.model == model }) else { return }
         selectedModel = model
         document.selectedModel = model
         document.setCoordinatorSelection(ComposerSelection(.codex(model: model, options: nil)))
@@ -788,17 +807,26 @@ final class ProjectStore: ObservableObject {
               providerOptions.first(where: { $0.provider == provider }).map({ canChooseForCoordinator($0) }) == true,
               let catalog = providerCatalogs[provider],
               catalog.models.contains(where: { $0.slug == model }) else { return }
+        let remembered = document.coordinatorSelection(for: provider)
         let selection: ModelSelection
         switch provider {
         case .codex:
-            selection = .codex(model: model, options: CodexModelOptions(reasoningEffort: effort))
+            selection = .codex(model: model, options: CodexModelOptions(
+                reasoningEffort: effort ?? (remembered?.provider == .codex ? remembered?.effort : nil),
+                fastMode: remembered?.fastMode
+            ))
         case .claudeAgent:
-            selection = .claudeAgent(model: model, options: ClaudeModelOptions(effort: effort))
+            selection = .claudeAgent(model: model, options: ClaudeModelOptions(
+                thinking: remembered?.thinking,
+                effort: effort ?? remembered?.effort,
+                fastMode: remembered?.fastMode,
+                autoCompactWindow: remembered?.autoCompactWindow
+            ))
         default:
             return
         }
         let choice = ComposerSelection(selection)
-        let currentProvider = coordinator.provider
+        let currentProvider = coordinator.runtime == nil ? document.lastTurnProviderOrCodex : coordinator.provider
         if provider != currentProvider {
             guard switchCoordinatorProvider(to: provider, selection: choice) else { return }
         }
@@ -810,7 +838,8 @@ final class ProjectStore: ObservableObject {
     func selectCoordinatorSelection(_ selection: ComposerSelection) {
         guard !isPlanning, !isExecuting,
               providerOptions.first(where: { $0.provider == selection.provider }).map({ canChooseForCoordinator($0) }) == true else { return }
-        if selection.provider != coordinator.provider {
+        let currentProvider = coordinator.runtime == nil ? document.lastTurnProviderOrCodex : coordinator.provider
+        if selection.provider != currentProvider {
             guard switchCoordinatorProvider(to: selection.provider, selection: selection) else { return }
         }
         document.setCoordinatorSelection(selection)
@@ -830,9 +859,21 @@ final class ProjectStore: ObservableObject {
         !composer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !composerPastes.isEmpty || !composerAttachments.isEmpty
     }
 
+    var canSubmitCoordinatorDraft: Bool {
+        let provider = document.coordinatorSelection?.provider ?? document.lastTurnProviderOrCodex
+        guard let option = providerOptions.first(where: { $0.provider == provider }),
+              canChooseForCoordinator(option),
+              let selection = composerSelectionForEnqueue(),
+              let catalog = providerCatalogs[provider] else { return false }
+        return catalog.models.contains(where: { $0.slug == selection.model })
+    }
+
     func submitRequest() {
         let prompt = composer.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard canSubmit, let project, !isPlanning, !isPreparingSkills else { return }
+        guard canSubmit, canSubmitCoordinatorDraft, let project, !isPlanning, !isPreparingSkills else {
+            if canSubmit { showConnections = true }
+            return
+        }
         let module = selectedModule
         let message = PastedText.serialize(prompt: prompt, pastes: composerPastes)
         let title = prompt.isEmpty ? (composerPastes.first?.title ?? "Immagini allegate") : prompt
@@ -855,14 +896,26 @@ final class ProjectStore: ObservableObject {
 
     func runPlan(_ id: UUID) {
         guard let root = localRoot, let project, let index = document.requests.firstIndex(where: { $0.id == id }), !isPlanning, !isPreparingSkills else { return }
-        let model = selectedModel
-        guard models.contains(where: { $0.model == model }) else {
+        let selection = document.requests[index].coordinatorSelection
+        let activeProvider = coordinator.runtime == nil ? document.lastTurnProviderOrCodex : coordinator.provider
+        let choice = selection.flatMap(coordinatorTurnChoice(selection:))
+            ?? coordinatorTurnChoice(provider: activeProvider, override: TurnOverride())
+        guard let choice else {
+            let model = document.requests[index].model ?? selectedModel
             document.requests[index].state = .modelUnavailable
-            document.requests[index].failureDetail = "Scegli un modello OpenAI disponibile prima di avviare l’analisi. Il modello richiesto era \(model.isEmpty ? "non selezionato" : model)."
+            document.requests[index].failureDetail = "Scegli un provider e modello disponibili prima di avviare l’analisi. Il modello richiesto era \(model.isEmpty ? "non selezionato" : model)."
             document.conversation?.appendActivity(requestID: id, title: "Modello non disponibile", detail: model.isEmpty ? nil : model)
             saveDocument()
             return
         }
+        guard coordinatorPhase == .ready, coordinator.runtime != nil, choice.selection.provider == activeProvider else {
+            document.requests[index].state = .waitingForCoordinator
+            saveDocument()
+            startCoordinator()
+            return
+        }
+        let model = choice.model
+        document.requests[index].coordinatorSelection = selection ?? ComposerSelection(choice.selection)
         document.requests[index].model = model
         document.requests[index].sourceFingerprint = fingerprint
         let request = document.requests[index]
@@ -896,12 +949,22 @@ final class ProjectStore: ObservableObject {
             guard let self else { return }
             defer { if operationID == token { isPlanning = false; streamingReplies[id] = nil; planStreams[id] = nil; saveDocument() } }
             do {
-                let result = try await codex.plan(prompt: prompt, cwd: root, model: model, outputSchema: PlanningReply.outputSchema, onText: { [weak self] delta in Task { @MainActor in
+                let result = try await coordinator.runTurn(input: [.text(prompt)], modelSelection: choice.selection) { [weak self] event in
                     guard let self, self.operationID == token, self.localRoot == root else { return }
-                    self.planStreams[id, default: ""] += delta
-                    self.streamingReplies[id] = StreamingReplyPreview.message(fromPartialJSON: self.planStreams[id] ?? "") ?? ""
-                } })
-                let reply = try PlanningReply.parse(raw: result, sourceSnapshotID: request.sourceFingerprint, knownModuleIDs: moduleIDs, knownFiles: knownFiles, existingDecisionIDs: decisions.map(\.id))
+                    if case let .contentDelta(.assistantText(delta)) = event.kind {
+                        self.planStreams[id, default: ""] += delta
+                        self.streamingReplies[id] = StreamingReplyPreview.message(fromPartialJSON: self.planStreams[id] ?? "") ?? ""
+                    }
+                }
+                if let session = await coordinator.refreshSession() {
+                    let cursor = session.resumeCursor.flatMap { try? JSONDecoder().decode(JSONValue.self, from: $0) }
+                    if var state = document.coordinator, var thread = state.thread, let cursor {
+                        thread.resumeCursor = cursor
+                        state.thread = thread
+                        document.coordinator = state
+                    }
+                }
+                let reply = try PlanningReply.parse(raw: result.reply, sourceSnapshotID: request.sourceFingerprint, knownModuleIDs: moduleIDs, knownFiles: knownFiles, existingDecisionIDs: decisions.map(\.id))
                 guard operationID == token, localRoot == root, let i = document.requests.firstIndex(where: { $0.id == id }) else { return }
                 document.requests[i].replyKind = reply.kind
                 document.requests[i].replyReferences = reply.references
@@ -930,7 +993,7 @@ final class ProjectStore: ObservableObject {
                     document.requests[i].state = unchanged ? (reply.kind == .clarification ? .clarificationNeeded : .replyAvailable) : .stale
                 }
                 document.conversation?.appendActivity(requestID: id, title: "Risposta ricevuta", detail: reply.references.count == 1 ? "1 fonte" : "\(reply.references.count) fonti")
-                document.conversation?.recordReply(requestID: id, text: document.requests[i].plan, model: model, provider: .codex, references: reply.references)
+                document.conversation?.recordReply(requestID: id, text: document.requests[i].plan, model: result.observedModel, provider: coordinator.provider, requestedProvider: choice.selection.provider, requestedModel: choice.model, references: reply.references)
                 activity.insert("Risposta del Coordinatore ricevuta per \(request.moduleName).", at: 0)
             } catch {
                 guard operationID == token, localRoot == root, let i = document.requests.firstIndex(where: { $0.id == id }) else { return }
