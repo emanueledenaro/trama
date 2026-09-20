@@ -266,6 +266,9 @@ public actor ProviderSessionRuntime {
             case let .turnStarted(model, effort):
                 turn.observedModel = model
                 turn.observedEffort = effort
+            case let .modelObserved(model, effort):
+                turn.observedModel = model
+                turn.observedEffort = effort
             case let .turnCompleted(state):
                 turn.interrupted = state == .interrupted
                 let continuation = turn.continuation

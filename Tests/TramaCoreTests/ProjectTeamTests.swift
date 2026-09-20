@@ -276,6 +276,30 @@ struct ProjectTeamTests {
         #expect(try Self.specialist("Ada", in: document).status == .available)
     }
 
+    @Test("A missing specialist model waits without substituting a different model")
+    func missingModelWaitsWithoutFallback() throws {
+        var document = try Self.confirmedDocument()
+        let ada = try Self.specialist("Ada", in: document)
+        let assignment = try document.assign(Self.order(ada.id), mandateVersion: 1)
+        try document.recordModelUnavailable(assignmentID: assignment.id, detail: "model unavailable", at: Self.start)
+        let waiting = try #require(document.team?.assignment(assignment.id))
+        #expect(waiting.status == .waiting)
+        #expect(waiting.model == "gpt-5.6-luna")
+        #expect(waiting.failure == "model unavailable")
+    }
+
+    @Test("Observed specialist attribution updates the existing turn")
+    func observedAttributionUpdatesExistingTurn() throws {
+        var document = try Self.confirmedDocument()
+        let ada = try Self.specialist("Ada", in: document)
+        let assignment = try document.assign(Self.order(ada.id), mandateVersion: 1)
+        try document.beginSpecialistTurn(assignmentID: assignment.id, turnID: "turn-1", model: assignment.model, at: Self.start)
+        try document.recordSpecialistObservation(assignmentID: assignment.id, turnID: "turn-1", model: "claude-haiku-4-5", effort: "medium", at: Self.start)
+        let turn = try #require(document.team?.assignment(assignment.id)?.turns.first)
+        #expect(turn.observedModel == "claude-haiku-4-5")
+        #expect(turn.observedEffort == "medium")
+    }
+
     // MARK: Stop
 
     @Test("Stopping is first a request, then a confirmation; results and history stay")

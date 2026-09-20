@@ -802,7 +802,7 @@ final class ProjectStore: ObservableObject {
     }
 
     /// Selects one provider/model pair from the single Coordinator composer menu.
-    func selectCoordinatorSelection(provider: ProviderKind, model: String, effort: String? = nil) {
+    func selectCoordinatorSelection(provider: ProviderKind, model: String, effort: String? = nil, clearEffort: Bool = false) {
         guard !isPlanning, !isExecuting,
               providerOptions.first(where: { $0.provider == provider }).map({ canChooseForCoordinator($0) }) == true,
               let catalog = providerCatalogs[provider],
@@ -812,13 +812,13 @@ final class ProjectStore: ObservableObject {
         switch provider {
         case .codex:
             selection = .codex(model: model, options: CodexModelOptions(
-                reasoningEffort: effort ?? (remembered?.provider == .codex ? remembered?.effort : nil),
+                reasoningEffort: clearEffort ? nil : (effort ?? (remembered?.provider == .codex ? remembered?.effort : nil)),
                 fastMode: remembered?.fastMode
             ))
         case .claudeAgent:
             selection = .claudeAgent(model: model, options: ClaudeModelOptions(
                 thinking: remembered?.thinking,
-                effort: effort ?? remembered?.effort,
+                effort: clearEffort ? nil : (effort ?? remembered?.effort),
                 fastMode: remembered?.fastMode,
                 autoCompactWindow: remembered?.autoCompactWindow
             ))
@@ -898,8 +898,12 @@ final class ProjectStore: ObservableObject {
         guard let root = localRoot, let project, let index = document.requests.firstIndex(where: { $0.id == id }), !isPlanning, !isPreparingSkills else { return }
         let selection = document.requests[index].coordinatorSelection
         let activeProvider = coordinator.runtime == nil ? document.lastTurnProviderOrCodex : coordinator.provider
-        let choice = selection.flatMap(coordinatorTurnChoice(selection:))
-            ?? coordinatorTurnChoice(provider: activeProvider, override: TurnOverride())
+        let choice: CoordinatorTurnChoice?
+        if let selection {
+            choice = coordinatorTurnChoice(selection: selection)
+        } else {
+            choice = coordinatorTurnChoice(provider: activeProvider, override: TurnOverride())
+        }
         guard let choice else {
             let model = document.requests[index].model ?? selectedModel
             document.requests[index].state = .modelUnavailable
@@ -997,10 +1001,11 @@ final class ProjectStore: ObservableObject {
                 activity.insert("Risposta del Coordinatore ricevuta per \(request.moduleName).", at: 0)
             } catch {
                 guard operationID == token, localRoot == root, let i = document.requests.firstIndex(where: { $0.id == id }) else { return }
-                document.requests[i].state = Task.isCancelled ? .interrupted : .failed
+                let interrupted = Task.isCancelled || (error as? ProviderRuntimeError) == .turnInterrupted
+                document.requests[i].state = interrupted ? .interrupted : .failed
                 document.requests[i].failureDetail = error.localizedDescription
-                document.conversation?.appendActivity(requestID: id, title: Task.isCancelled ? "Analisi interrotta" : "Analisi non completata", detail: error.localizedDescription)
-                document.requests[i].plan = Task.isCancelled ? "L’analisi è stata interrotta. Puoi riprenderla quando vuoi." : "Il Coordinatore non ha completato l’analisi. Il progetto è conservato; puoi controllare il collegamento Codex e riprovare."
+                document.conversation?.appendActivity(requestID: id, title: interrupted ? "Analisi interrotta" : "Analisi non completata", detail: error.localizedDescription)
+                document.requests[i].plan = interrupted ? "L’analisi è stata interrotta. Puoi riprenderla quando vuoi." : "Il Coordinatore non ha completato l’analisi. Il progetto è conservato; puoi controllare il collegamento del provider e riprovare."
             }
         }
     }

@@ -38,6 +38,14 @@ final class ClaudeClientTests: XCTestCase {
         XCTAssertFalse(arguments.contains("--dangerously-skip-permissions"))
     }
 
+    func testCoordinatorArgumentsDisallowNativeProjectReads() throws {
+        var coordinator = options()
+        coordinator.disallowedTools = ["Read", "Grep", "Glob"]
+        let arguments = try coordinator.arguments()
+        let index = try XCTUnwrap(arguments.firstIndex(of: "--disallowed-tools"))
+        XCTAssertEqual(arguments[index + 1], "Read,Grep,Glob")
+    }
+
     func testBypassUsesTheAllowFlagAndTheMcpConfigIsStrict() throws {
         var bypass = options(mcp: [.http(name: "trama", url: URL(string: "http://127.0.0.1:9/mcp")!, bearerToken: "tok")])
         bypass.permissionMode = .bypassPermissions

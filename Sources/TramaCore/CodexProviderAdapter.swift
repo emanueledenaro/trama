@@ -209,7 +209,7 @@ public actor CodexProviderAdapter: ProviderAdapter {
             continuation?.yield(CodexEventNormalizer.normalize(turnEvent: event, threadID: threadID, turnID: tracker.turnID))
         }
         guard let turnID = tracker.turnID else {
-            throw CodexClient.ClientError.malformedMessage("turno senza turn.id")
+            throw CodexClient.ClientError.malformedMessage("turn without turn.id")
         }
         // A turn that did not stream still has a reply; publish it so a caller that reads the event
         // stream, as the provider session runtime does, sees the whole answer.
@@ -270,7 +270,7 @@ public actor CodexProviderAdapter: ProviderAdapter {
             continuation?.yield(CodexEventNormalizer.normalize(turnEvent: event, threadID: input.threadID, turnID: tracker.turnID))
         }
         guard let turnID = tracker.turnID else {
-            throw CodexClient.ClientError.malformedMessage("turno senza turn.id")
+            throw CodexClient.ClientError.malformedMessage("turn without turn.id")
         }
         if streamed.value.isEmpty, !reply.isEmpty {
             continuation?.yield(ProviderEvent(

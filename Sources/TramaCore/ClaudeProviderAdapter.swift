@@ -308,28 +308,39 @@ public actor ClaudeProviderAdapter: ProviderAdapter {
                 try await state.client.setModel(model)
                 state.session.model = model
             }
-            if let effort = options?.effort {
-                if ClaudeModelCatalog.isSupportedEffort(effort) {
-                    try await state.client.applyFlagSettings(.object(["effort": .string(effort)]))
-                } else {
+            if let options {
+                if let effort = options.effort, !ClaudeModelCatalog.isSupportedEffort(effort) {
                     emit(ProviderEvent(
                         eventID: UUID().uuidString, provider: .claudeAgent, threadID: input.threadID,
                         kind: .configWarning(message: "Sforzo «\(effort)» non valido per Claude: la lista ammessa è \(ClaudeModelCatalog.closedEffortLevels.joined(separator: ", ")).")
                     ))
+                    throw ClaudeClient.ClientError.malformedMessage("unsupported Claude effort \(effort)")
+                } else if options.effort == "max", state.options.effort != "max" {
+                    throw ClaudeClient.ClientError.malformedMessage("Claude effort max requires a new session")
+                } else if options.effort != state.options.effort {
+                    try await state.client.applyFlagSettings(.object(["effortLevel": .string(options.effort ?? "default")]))
+                    state.options.effort = options.effort
                 }
-            }
-            if let thinking = options?.thinking {
-                try await state.client.setMaxThinkingTokens(thinking ? (state.options.maxThinkingTokens ?? Self.defaultThinkingTokens) : 0)
-                state.options.thinking = thinking
-            }
-            if let fastMode = options?.fastMode, fastMode != state.options.fastMode {
-                try await state.client.applyFlagSettings(.object(["fastMode": .bool(fastMode)]))
-                state.options.fastMode = fastMode
-            }
-            if let autoCompactWindow = options?.autoCompactWindow, autoCompactWindow != state.options.autoCompactWindow {
-                try await state.client.applyFlagSettings(.object(["autoCompactWindow": .integer(autoCompactWindow)]))
-                state.options.autoCompactWindow = autoCompactWindow
-                state.accounting.setAutoCompactWindow(autoCompactWindow)
+                if let thinking = options.thinking {
+                    try await state.client.setMaxThinkingTokens(thinking ? (state.options.maxThinkingTokens ?? Self.defaultThinkingTokens) : 0)
+                } else {
+                    try await state.client.applyFlagSettings(.object(["thinking": .string("default")]))
+                    try await state.client.setMaxThinkingTokens(nil)
+                }
+                state.options.thinking = options.thinking
+                if let fastMode = options.fastMode {
+                    try await state.client.applyFlagSettings(.object(["fastMode": .bool(fastMode)]))
+                } else {
+                    try await state.client.applyFlagSettings(.object(["fastMode": .string("default")]))
+                }
+                state.options.fastMode = options.fastMode
+                if let autoCompactWindow = options.autoCompactWindow {
+                    try await state.client.applyFlagSettings(.object(["autoCompactWindow": .integer(autoCompactWindow)]))
+                } else {
+                    try await state.client.applyFlagSettings(.object(["autoCompactWindow": .string("auto")]))
+                }
+                state.options.autoCompactWindow = options.autoCompactWindow
+                state.accounting.setAutoCompactWindow(options.autoCompactWindow)
             }
         }
         if let runtimeMode = input.runtimeMode, runtimeMode != state.session.runtimeMode {
@@ -524,6 +535,7 @@ public actor ClaudeProviderAdapter: ProviderAdapter {
             maxThinkingTokens: nil,
             fastMode: modelOptions?.fastMode,
             autoCompactWindow: modelOptions?.autoCompactWindow,
+            disallowedTools: input.runtimeMode == .approvalRequired ? ["Read", "Grep", "Glob"] : [],
             permissionMode: ClaudePermissionMode.from(runtimeMode: input.runtimeMode),
             developerInstructions: input.developerInstructions,
             mcpServers: servers,
@@ -645,7 +657,7 @@ public actor ClaudeProviderAdapter: ProviderAdapter {
                         provider: .claudeAgent,
                         threadID: threadID,
                         turnID: turnID,
-                        kind: .turnStarted(model: model, effort: nil)
+                        kind: .modelObserved(model: model, effort: nil)
                     ))
                 }
                 if let usage, let update = state.accounting.recordAssistant(

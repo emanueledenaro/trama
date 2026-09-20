@@ -203,6 +203,8 @@ public struct ClaudeSessionOptions: Equatable, Sendable {
     public var maxThinkingTokens: Int?
     public var fastMode: Bool?
     public var autoCompactWindow: Int?
+    /// Native tools Claude must refuse before Trama's MCP boundary is reached.
+    public var disallowedTools: [String]
     public var permissionMode: ClaudePermissionMode
     public var developerInstructions: String?
     public var mcpServers: [ClaudeMcpServer]
@@ -225,6 +227,7 @@ public struct ClaudeSessionOptions: Equatable, Sendable {
         maxThinkingTokens: Int? = nil,
         fastMode: Bool? = nil,
         autoCompactWindow: Int? = nil,
+        disallowedTools: [String] = [],
         permissionMode: ClaudePermissionMode = .default,
         developerInstructions: String? = nil,
         mcpServers: [ClaudeMcpServer] = [],
@@ -246,6 +249,7 @@ public struct ClaudeSessionOptions: Equatable, Sendable {
         self.maxThinkingTokens = maxThinkingTokens
         self.fastMode = fastMode
         self.autoCompactWindow = autoCompactWindow
+        self.disallowedTools = disallowedTools
         self.permissionMode = permissionMode
         self.developerInstructions = developerInstructions
         self.mcpServers = mcpServers
@@ -284,6 +288,9 @@ public struct ClaudeSessionOptions: Equatable, Sendable {
         }
         if let autoCompactWindow {
             args += ["--autocompact", autoCompactWindow > 0 ? String(autoCompactWindow) : "auto"]
+        }
+        if !disallowedTools.isEmpty {
+            args += ["--disallowed-tools", disallowedTools.joined(separator: ",")]
         }
         args += ["--permission-prompt-tool", "stdio"]
         args += ["--permission-mode", permissionMode.rawValue]

@@ -692,6 +692,8 @@ public struct ProviderEvent: Codable, Equatable, Sendable, Identifiable {
         /// A provider compaction Trama observed. The state is `ContextCompactionState`.
         case contextCompaction(state: String)
         case turnStarted(model: String?, effort: String?)
+        /// The provider supplied a model after the turn identity was opened.
+        case modelObserved(model: String?, effort: String?)
         case turnCompleted(state: ProviderTurnState)
         case turnSteered
         case turnTasks(count: Int)

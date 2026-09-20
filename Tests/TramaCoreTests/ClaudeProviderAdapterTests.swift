@@ -334,7 +334,8 @@ final class ClaudeProviderAdapterTests: XCTestCase {
         let events = await collect(adapter, count: 7)
         let kinds = events.map { String(describing: $0.kind) }
         XCTAssertTrue(kinds.contains { $0.contains("assistantText") }, kinds.joined(separator: "\n"))
-        XCTAssertTrue(kinds.contains { $0.contains("turnStarted(model: Optional(\"claude-haiku-4-5\")") }, kinds.joined(separator: "\n"))
+        XCTAssertEqual(kinds.filter { $0.contains("turnStarted") }.count, 1, kinds.joined(separator: "\n"))
+        XCTAssertEqual(kinds.filter { $0.contains("modelObserved") }.count, 1, kinds.joined(separator: "\n"))
         XCTAssertTrue(kinds.contains { $0.contains("tokenUsage") }, kinds.joined(separator: "\n"))
         XCTAssertTrue(kinds.contains { $0.contains("contextUsage") }, kinds.joined(separator: "\n"))
         XCTAssertTrue(kinds.contains { $0.contains("turnCompleted") }, kinds.joined(separator: "\n"))
@@ -360,7 +361,7 @@ final class ClaudeProviderAdapterTests: XCTestCase {
         _ = try await adapter.sendTurn(ProviderSendTurnInput(threadID: "t1", input: [.text("lavora")]))
         await adapter.interruptTurn(threadID: "t1", turnID: nil)
         transport.emit(.object([
-            "type": .string("result"), "subtype": .string("success"), "is_error": .bool(false), "session_id": .string("s1")
+            "type": .string("result"), "subtype": .string("success"), "is_error": .bool(false), "session_id": .string("33333333-3333-3333-3333-333333333333")
         ]))
         let events = await collect(adapter, count: 4)
         let completions = events.filter { if case .turnCompleted = $0.kind { return true } else { return false } }
@@ -371,6 +372,8 @@ final class ClaudeProviderAdapterTests: XCTestCase {
             XCTFail("expected an interrupted turn")
         }
         XCTAssertEqual(transport.controlRequest(subtype: "interrupt") != nil, true)
+        let session = await adapter.session(for: "t1")
+        XCTAssertEqual(ClaudeResumeCursor.decode(session?.resumeCursor).resume, "33333333-3333-3333-3333-333333333333")
     }
 
     func testASuspensionKeepsTheSessionForResume() async throws {
@@ -437,14 +440,17 @@ final class ClaudeProviderAdapterTests: XCTestCase {
             runtimeMode: .approvalRequired
         ))
         let transport = try XCTUnwrap(box.transports.first)
-        _ = try await adapter.sendTurn(ProviderSendTurnInput(
-            threadID: "t1",
-            input: [.text("ciao")],
-            modelSelection: .claudeAgent(model: "claude-haiku-4-5", options: ClaudeModelOptions(effort: "ultracode"))
-        ))
+        do {
+            _ = try await adapter.sendTurn(ProviderSendTurnInput(
+                threadID: "t1",
+                input: [.text("ciao")],
+                modelSelection: .claudeAgent(model: "claude-haiku-4-5", options: ClaudeModelOptions(effort: "ultracode"))
+            ))
+            XCTFail("invalid effort must be rejected")
+        } catch let error as ClaudeClient.ClientError {
+            guard case .malformedMessage = error else { XCTFail("unexpected error \(error)"); return }
+        }
         XCTAssertNil(transport.controlRequest(subtype: "apply_flag_settings"))
-        let events = await collect(adapter, count: 2)
-        XCTAssertTrue(events.contains { if case .configWarning = $0.kind { return true } else { return false } })
     }
 
     func testFastModeIsRequestedThroughFlagSettings() async throws {
@@ -473,11 +479,20 @@ final class ClaudeProviderAdapterTests: XCTestCase {
         let transport = try XCTUnwrap(box.transports.first)
         _ = try await adapter.sendTurn(ProviderSendTurnInput(
             threadID: "t1",
+            input: [.text("effort")],
+            modelSelection: .claudeAgent(model: "claude-opus-5", options: ClaudeModelOptions(effort: "low"))
+        ))
+        XCTAssertEqual(transport.controlRequests().first { $0["settings"]?.objectValue?["effortLevel"]?.stringValue != nil }?["settings"]?.objectValue?["effortLevel"]?.stringValue, "low")
+        _ = try await adapter.sendTurn(ProviderSendTurnInput(
+            threadID: "t1",
             input: [.text("ciao")],
             modelSelection: .claudeAgent(model: "claude-opus-5", options: ClaudeModelOptions(thinking: true, autoCompactWindow: 200_000))
         ))
-        XCTAssertEqual(transport.controlRequest(subtype: "set_max_thinking_tokens")?["max_thinking_tokens"]?.intValue, 16_000)
-        XCTAssertEqual(transport.controlRequest(subtype: "apply_flag_settings")?["settings"]?.objectValue?["autoCompactWindow"]?.intValue, 200_000)
+        XCTAssertTrue(transport.controlRequests().contains { $0["subtype"]?.stringValue == "set_max_thinking_tokens" && $0["max_thinking_tokens"]?.intValue == 16_000 })
+        XCTAssertEqual(
+            transport.controlRequests().first { $0["settings"]?.objectValue?["autoCompactWindow"]?.intValue != nil }?["settings"]?.objectValue?["autoCompactWindow"]?.intValue,
+            200_000
+        )
 
         _ = try await adapter.sendTurn(ProviderSendTurnInput(
             threadID: "t1",
@@ -485,6 +500,20 @@ final class ClaudeProviderAdapterTests: XCTestCase {
             modelSelection: .claudeAgent(model: "claude-opus-5", options: ClaudeModelOptions(thinking: false, autoCompactWindow: 0))
         ))
         XCTAssertEqual(transport.controlRequests().filter { $0["subtype"]?.stringValue == "set_max_thinking_tokens" }.last?["max_thinking_tokens"]?.intValue, 0)
+        let settings = transport.controlRequests().compactMap { $0["settings"]?.objectValue }
+        XCTAssertTrue(settings.contains { $0["thinking"]?.stringValue == "default" })
+        XCTAssertTrue(settings.contains { $0["fastMode"]?.stringValue == "default" })
+        XCTAssertTrue(settings.contains { $0["autoCompactWindow"]?.stringValue == "auto" })
+        do {
+            _ = try await adapter.sendTurn(ProviderSendTurnInput(
+                threadID: "t1",
+                input: [.text("max")],
+                modelSelection: .claudeAgent(model: "claude-opus-5", options: ClaudeModelOptions(effort: "max"))
+            ))
+            XCTFail("changing to max effort requires a new session")
+        } catch let error as ClaudeClient.ClientError {
+            guard case .malformedMessage = error else { XCTFail("unexpected error \(error)"); return }
+        }
     }
 
     func testAutoCompactWindowZeroMeansAuto() throws {

@@ -52,6 +52,18 @@ final class SpecialistSupervisor: ObservableObject {
             store.saveDocument()
             return
         }
+        guard let modelSelection = store.specialistModelSelection(provider: provider, model: assignment.model) else {
+            let detail = "Il modello (assignment.model) del provider (provider.displayName) non è disponibile: l'incarico resta in attesa senza sostituzione automatica."
+            try? store.document.recordModelUnavailable(assignmentID: assignmentID, detail: detail)
+            store.document.conversation?.appendCard(
+                ConversationEvent.Card(kind: .providerBlocked, title: "Modello non disponibile", detail: detail, referenceID: assignmentID),
+                origin: .trama,
+                requestID: nil,
+                assignmentID: assignmentID
+            )
+            store.saveDocument()
+            return
+        }
         let isFirstTurn = assignment.turns.isEmpty
         let resumeCursor = assignment.resumeCursor.flatMap { try? JSONEncoder().encode($0) }
         let launch = SpecialistLaunch(
@@ -63,7 +75,7 @@ final class SpecialistSupervisor: ObservableObject {
             workspace: assignment.workspace,
             threadID: "specialist-\(assignment.id)",
             resumeCursor: resumeCursor,
-            modelSelection: store.specialistModelSelection(provider: provider, model: assignment.model),
+            modelSelection: modelSelection,
             runtimeMode: .fullAccess,
             developerInstructions: SpecialistBriefing.developerInstructions(projectName: project.name, specialist: specialist, assignment: assignment),
             input: isFirstTurn
@@ -377,6 +389,10 @@ extension ProjectStore {
                 try? document.beginSpecialistTurn(assignmentID: assignmentID, turnID: turnID, model: model, provider: event.provider, observedModel: observedModel, observedEffort: effort)
             }
             document.conversation?.appendSpecialistActivity(assignmentID: assignmentID, turnID: turnID, title: "Turno avviato", detail: [observedModel, effort].compactMap { $0 }.joined(separator: " · "))
+        case let .modelObserved(observedModel, effort):
+            if let turnID {
+                try? document.recordSpecialistObservation(assignmentID: assignmentID, turnID: turnID, model: observedModel, effort: effort)
+            }
         case .contentDelta(.assistantText):
             // The answer of the turn is recorded once, when the turn ends.
             return

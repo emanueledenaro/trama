@@ -1001,6 +1001,9 @@ extension ProjectStore {
                 )
                 activity.insert("Risposta del Coordinatore ricevuta per \(document.requests[i].moduleName).", at: 0)
             } catch {
+                if let session = await runtime.refreshSession() {
+                    recordCoordinatorCursor(session)
+                }
                 guard operationID == token, localRoot == root, let i = document.requests.firstIndex(where: { $0.id == id }) else { return }
                 let interrupted = Task.isCancelled
                     || (error as? CodexClient.ClientError) == .turnInterrupted
@@ -1051,7 +1054,7 @@ extension ProjectStore {
             guard let object = value.objectValue,
                   let prompt = object["question"]?.stringValue ?? object["header"]?.stringValue else { return nil }
             let options = object["options"]?.arrayValue?.compactMap { $0.objectValue?["label"]?.stringValue } ?? []
-            return ProviderUserQuestion.Item(id: "\(requestID)-\(index)", prompt: prompt, options: options)
+            return ProviderUserQuestion.Item(id: prompt, prompt: prompt, options: options)
         }
         guard !items.isEmpty else { return }
         pendingProviderQuestion = ProviderUserQuestion(id: requestID, items: items)

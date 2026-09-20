@@ -927,7 +927,13 @@ private struct ProviderQuestionView: View {
     let question: ProviderUserQuestion
     let submit: ([String: String]) -> Void
     @Environment(\.dismiss) private var dismiss
-    @State private var answers: [String: String] = [:]
+    @State private var answers: [String: String]
+
+    init(question: ProviderUserQuestion, submit: @escaping ([String: String]) -> Void) {
+        self.question = question
+        self.submit = submit
+        _answers = State(initialValue: Dictionary(uniqueKeysWithValues: question.items.map { ($0.id, $0.options.first ?? "") }))
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: TramaSpacing.section) {
@@ -946,7 +952,11 @@ private struct ProviderQuestionView: View {
             }
             HStack {
                 Spacer()
-                Button("Rispondi") { submit(answers); dismiss() }
+                Button("Rispondi") {
+                    guard answers.count == question.items.count, answers.values.allSatisfy({ !$0.isEmpty }) else { return }
+                    submit(answers)
+                    dismiss()
+                }
                     .keyboardShortcut(.defaultAction)
             }
         }

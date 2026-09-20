@@ -631,6 +631,15 @@ extension ProjectDocument {
         }
     }
 
+    public mutating func recordModelUnavailable(assignmentID: String, detail: String, at date: Date = Date()) throws {
+        try changeAssignment(assignmentID, at: date) { assignment in
+            guard assignment.status.isActive else { return }
+            assignment.status = .waiting
+            assignment.failure = detail
+            assignment.lastUpdate = detail
+        }
+    }
+
     /// The assignment stops because its provider is blocked. It stays in progress and in waiting:
     /// the worktree, the turns and the results are untouched, and no provider is substituted.
     public mutating func recordProviderBlock(_ block: ProviderBlock, assignmentID: String, at date: Date = Date()) throws {
@@ -706,6 +715,14 @@ extension ProjectDocument {
                     assignment.lastUpdate = "Turno non riuscito: \(message)"
                 }
             }
+        }
+    }
+
+    public mutating func recordSpecialistObservation(assignmentID: String, turnID: String, model: String?, effort: String?, at date: Date = Date()) throws {
+        try changeAssignment(assignmentID, at: date) { assignment in
+            guard let index = assignment.turns.lastIndex(where: { $0.id == turnID }) else { return }
+            assignment.turns[index].observedModel = model
+            assignment.turns[index].observedEffort = effort
         }
     }
 

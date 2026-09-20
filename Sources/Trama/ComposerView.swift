@@ -266,7 +266,7 @@ struct CoordinatorComposer: View {
                             ForEach(catalog) { model in
                                 Menu(model.name) {
                                     Button {
-                                        store.selectCoordinatorSelection(provider: option.provider, model: model.slug)
+                                        store.selectCoordinatorSelection(provider: option.provider, model: model.slug, clearEffort: true)
                                     } label: {
                                         let selected = store.document.coordinatorSelection?.provider == option.provider
                                             && store.document.coordinatorSelection?.model == model.slug

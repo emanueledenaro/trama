@@ -192,4 +192,13 @@ final class ProjectDocumentTests: XCTestCase {
         XCTAssertEqual(try JSONDecoder().decode(ComposerSelection.self, from: JSONEncoder().encode(changed)), changed)
     }
 
+    func testClearingEffortRemovesTheRememberedClaudeValueWithoutTouchingOtherOptions() {
+        let original = ComposerSelection(.claudeAgent(model: "haiku", options: ClaudeModelOptions(thinking: true, effort: "high", fastMode: true, autoCompactWindow: 200_000)))
+        let cleared = ComposerSelection(original.modelSelection.changing(effort: .some(nil)))
+        XCTAssertNil(cleared.effort)
+        XCTAssertEqual(cleared.thinking, true)
+        XCTAssertEqual(cleared.fastMode, true)
+        XCTAssertEqual(cleared.autoCompactWindow, 200_000)
+    }
+
 }
