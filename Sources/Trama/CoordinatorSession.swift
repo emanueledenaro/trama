@@ -64,7 +64,6 @@ final class CoordinatorRuntime {
 
     private let channel = TurnChannel()
     /// The Coordinator may ask before acting; Trama answers with its own policy.
-    private var permissionHandler: (@Sendable (ProviderEvent) -> Void)?
     private var auxiliaryHandler: (@Sendable (ProviderEvent) -> Void)?
 
     /// Prepares the tool server and the provider runtime for the project.
@@ -144,7 +143,6 @@ final class CoordinatorRuntime {
         developerInstructions = nil
         turnRequestID = nil
         deferredCards = []
-        permissionHandler = nil
         auxiliaryHandler = nil
     }
 
@@ -504,7 +502,8 @@ extension ProjectStore {
     /// Starts the work waiting for the Coordinator once nothing else runs: first the plans it
     /// ordered, oldest first, then the person's latest waiting message.
     func continueCoordinatorWork() {
-        guard !isPlanning, !isExecuting, !isPreparingSkills, codexConnected, stateWritable else { return }
+        guard !isPlanning, !isExecuting, !isPreparingSkills, stateWritable,
+              coordinatorProviderReason(document.lastTurnProviderOrCodex) == nil else { return }
         if let plan = document.requests.last(where: isQueuedCoordinatorPlan) {
             runPlan(plan.id)
             return
@@ -559,6 +558,10 @@ extension ProjectStore {
         guard let project else { return }
         var request = WorkRequest(title: String(text.prefix(90)), moduleID: "project", moduleName: project.name, request: text, sourceFingerprint: fingerprint)
         request.model = selectedModel.isEmpty ? nil : selectedModel
+        if let selection = composerSelectionForEnqueue() {
+            request.coordinatorSelection = selection
+            request.model = selection.model
+        }
         request.state = .waitingForCoordinator
         document.requests.insert(request, at: 0)
         document.conversation?.appendPersonMessage(for: request)
@@ -706,7 +709,19 @@ extension ProjectStore {
         let previous = coordinator.provider
         let handover = CoordinatorProviderSwitch.plan(from: previous, to: provider, document: document)
         coordinatorHandover = handover
-        if let selection { document.setCoordinatorSelection(selection) }
+        if let selection {
+            document.setCoordinatorSelection(selection)
+        } else if let remembered = document.coordinatorSelection(for: provider) {
+            document.setCoordinatorSelection(remembered)
+        } else if let catalog = providerCatalogs[provider], let model = catalog.models.first(where: { $0.isDefault }) ?? catalog.models.first {
+            let modelSelection: ModelSelection
+            switch provider {
+            case .codex: modelSelection = .codex(model: model.slug, options: nil)
+            case .claudeAgent: modelSelection = .claudeAgent(model: model.slug, options: nil)
+            default: modelSelection = .codex(model: model.slug, options: nil)
+            }
+            document.setCoordinatorSelection(ComposerSelection(modelSelection))
+        }
         document.lastTurnProvider = provider
         document.coordinator?.providerBlock = nil
         // The old session is not reused: the new provider opens its own.

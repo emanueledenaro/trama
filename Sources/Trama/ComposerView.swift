@@ -268,34 +268,42 @@ struct CoordinatorComposer: View {
                                     } label: {
                                         let selected = store.document.coordinatorSelection?.provider == option.provider
                                             && store.document.coordinatorSelection?.model == model.slug
-                                        let selectedEffort: String? = {
-                                            guard selected else { return nil }
-                                            switch store.document.coordinatorSelection?.modelSelection {
-                                            case let .codex(_, options): return options?.reasoningEffort
-                                            case let .claudeAgent(_, options): return options?.effort
-                                            default: return nil
-                                            }
-                                        }()
+                                        let selectedEffort = selected ? store.document.coordinatorSelection?.effort : nil
                                         if selected && selectedEffort == nil { Label("Predefinito", systemImage: "checkmark") } else { Text("Predefinito") }
                                     }
                                     ForEach(model.supportedReasoningEfforts, id: \.self) { effort in
                                         Button {
                                             store.selectCoordinatorSelection(provider: option.provider, model: model.slug, effort: effort)
                                         } label: {
-                                            let selectedEffort: String? = {
-                                                guard store.document.coordinatorSelection?.provider == option.provider,
-                                                      store.document.coordinatorSelection?.model == model.slug else { return nil }
-                                                switch store.document.coordinatorSelection?.modelSelection {
-                                                case let .codex(_, options): return options?.reasoningEffort
-                                                case let .claudeAgent(_, options): return options?.effort
-                                                default: return nil
-                                                }
-                                            }()
+                                            let selectedEffort = store.document.coordinatorSelection?.provider == option.provider && store.document.coordinatorSelection?.model == model.slug ? store.document.coordinatorSelection?.effort : nil
+                                            let effortLabel = CoordinatorModelChoice.effortLabel(effort)
                                             if selectedEffort == effort {
-                                                Label(CoordinatorModelChoice.effortLabel(effort), systemImage: "checkmark")
+                                                Label(effortLabel, systemImage: "checkmark")
                                             } else {
-                                                Text(CoordinatorModelChoice.effortLabel(effort))
+                                                Text(effortLabel)
                                             }
+                                        }
+                                    }
+                                    if option.provider == .claudeAgent,
+                                       let current = store.document.coordinatorSelection,
+                                       current.provider == option.provider, current.model == model.slug {
+                                        let thinkingLabel = current.thinking.map { $0 ? "attivo" : "disattivo" } ?? "predefinito"
+                                        Button("Pensiero: \(thinkingLabel)") {
+                                            store.selectCoordinatorSelection(current.withThinking(!(current.thinking ?? false)))
+                                        }
+                                        Button("Pensiero predefinito") {
+                                            store.selectCoordinatorSelection(current.withThinking(nil))
+                                        }
+                                        Button("Modalità rapida: \(current.fastMode == nil ? "predefinita" : (current.fastMode == true ? "attiva" : "disattiva"))") {
+                                            store.selectCoordinatorSelection(current.withFastMode(!(current.fastMode ?? false)))
+                                        }
+                                        Button("Modalità rapida predefinita") {
+                                            store.selectCoordinatorSelection(current.withFastMode(nil))
+                                        }
+                                        Menu("Finestra di compattazione") {
+                                            Button("Predefinita") { store.selectCoordinatorSelection(current.withAutoCompactWindow(nil)) }
+                                            Button("200.000 token") { store.selectCoordinatorSelection(current.withAutoCompactWindow(200_000)) }
+                                            Button("1.000.000 token") { store.selectCoordinatorSelection(current.withAutoCompactWindow(1_000_000)) }
                                         }
                                     }
                                 }

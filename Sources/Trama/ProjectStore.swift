@@ -807,6 +807,17 @@ final class ProjectStore: ObservableObject {
         saveDocument()
     }
 
+    func selectCoordinatorSelection(_ selection: ComposerSelection) {
+        guard !isPlanning, !isExecuting,
+              providerOptions.first(where: { $0.provider == selection.provider }).map({ canChooseForCoordinator($0) }) == true else { return }
+        if selection.provider != coordinator.provider {
+            guard switchCoordinatorProvider(to: selection.provider, selection: selection) else { return }
+        }
+        document.setCoordinatorSelection(selection)
+        if selection.provider == .codex { selectedModel = selection.model }
+        saveDocument()
+    }
+
     func signIn() async {
         do {
             let url = try await codex.startLogin()
@@ -839,7 +850,7 @@ final class ProjectStore: ObservableObject {
         composerNotice = nil
         composer = ""; composerPastes = []; composerAttachments = []
         section = .coordinator; showInspector = false; saveDocument()
-        if codexConnected { sendToCoordinator(request.id) } else { showConnections = true }
+        if coordinatorProviderReason(document.lastTurnProviderOrCodex) == nil { sendToCoordinator(request.id) } else { showConnections = true }
     }
 
     func runPlan(_ id: UUID) {
@@ -1104,7 +1115,7 @@ final class ProjectStore: ObservableObject {
     }
 
     /// Captures the provider/model/options currently shown by the composer before a request is queued.
-    private func composerSelectionForEnqueue() -> ComposerSelection? {
+    func composerSelectionForEnqueue() -> ComposerSelection? {
         if let selection = document.coordinatorSelection { return selection }
         let provider = coordinatorPhase == .ready ? coordinator.provider : document.lastTurnProviderOrCodex
         switch provider {

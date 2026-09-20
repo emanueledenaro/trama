@@ -165,16 +165,15 @@ final class ProjectDocumentTests: XCTestCase {
         XCTAssertEqual(preference.specialistModel(for: .codex), "gpt-5.6-luna")
     }
 
-    func testQueuedTurnKeepsTheSelectionCapturedAtEnqueue() throws {
-        var queue = CoordinatorTurnQueue()
-        let first = ComposerSelection(.codex(model: "gpt-5.6-luna", options: CodexModelOptions(reasoningEffort: "medium")))
-        queue.enqueue(requestID: UUID(uuidString: "11111111-1111-1111-1111-111111111111")!, selection: first)
+    func testComposerSelectionOptionMutationPreservesOtherClaudeOptions() throws {
+        let original = ComposerSelection(.claudeAgent(model: "haiku", options: ClaudeModelOptions(thinking: true, effort: "high", fastMode: true, autoCompactWindow: 200_000, contextWindow: 1_000_000)))
+        let changed = original.withEffort("low")
 
-        var changed = first
-        changed.modelSelection = .codex(model: "gpt-5.6-terra", options: CodexModelOptions(reasoningEffort: "high"))
-
-        let queued = try XCTUnwrap(queue.dequeue())
-        XCTAssertEqual(queued.selection, first)
-        XCTAssertNotEqual(queued.selection, changed)
+        XCTAssertEqual(changed.thinking, true)
+        XCTAssertEqual(changed.fastMode, true)
+        XCTAssertEqual(changed.autoCompactWindow, 200_000)
+        XCTAssertEqual(changed.effort, "low")
+        XCTAssertEqual(try JSONDecoder().decode(ComposerSelection.self, from: JSONEncoder().encode(changed)), changed)
     }
+
 }

@@ -59,6 +59,17 @@ struct AssignmentProviderTests {
         #expect(turn.model == "haiku")
     }
 
+    @Test("A turn keeps observed model absent when the provider reports none")
+    func turnObservedModelCanBeAbsent() throws {
+        var (document, assignment) = try Self.assigned(provider: .claudeAgent)
+        try document.beginSpecialistTurn(assignmentID: assignment.id, turnID: "turn-1", model: "haiku", provider: .claudeAgent, observedModel: nil, observedEffort: nil, at: Self.start)
+        let data = try JSONEncoder().encode(document)
+        let reopened = try JSONDecoder().decode(ProjectDocument.self, from: data)
+        let turn = try #require(reopened.team?.assignment(assignment.id)?.turns.first)
+        #expect(turn.observedModel == nil)
+        #expect(turn.observedEffort == nil)
+    }
+
     @Test("A turn without an explicit provider uses the assignment provider")
     func turnFallsBackToTheAssignmentProvider() throws {
         var (document, assignment) = try Self.assigned(provider: .claudeAgent)

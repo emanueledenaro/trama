@@ -281,6 +281,9 @@ public struct SpecialistAssignment: Codable, Equatable, Identifiable, Sendable {
         public let id: String
         public let number: Int
         public let model: String
+        /// The model reported by the provider at turn start, when the provider reports one.
+        public var observedModel: String? = nil
+        public var observedEffort: String? = nil
         /// The provider that produced the turn. Nil only for turns recorded before schema 7.
         public var provider: ProviderKind? = nil
         public let startedAt: Date
@@ -665,12 +668,12 @@ extension ProjectDocument {
     }
 
     /// A turn started; a pending stop request stays pending.
-    public mutating func beginSpecialistTurn(assignmentID: String, turnID: String, model: String, provider: ProviderKind? = nil, at date: Date = Date()) throws {
+    public mutating func beginSpecialistTurn(assignmentID: String, turnID: String, model: String, provider: ProviderKind? = nil, observedModel: String? = nil, observedEffort: String? = nil, at date: Date = Date()) throws {
         try changeAssignment(assignmentID, at: date) { assignment in
             guard assignment.status.isActive else { throw ProjectTeamError.notRunning(assignment.specialistID) }
             if assignment.status == .preparing { assignment.status = .running }
             let recorded = provider ?? assignment.provider
-            assignment.turns.append(.init(id: turnID, number: assignment.turns.count + 1, model: model, provider: recorded, startedAt: date))
+            assignment.turns.append(.init(id: turnID, number: assignment.turns.count + 1, model: model, observedModel: observedModel, observedEffort: observedEffort, provider: recorded, startedAt: date))
             assignment.lastUpdate = "Turno \(assignment.turns.count) in corso con \(model)"
         }
     }

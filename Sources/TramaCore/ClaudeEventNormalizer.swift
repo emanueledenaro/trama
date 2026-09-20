@@ -150,7 +150,7 @@ public struct ClaudeEventNormalizer: Sendable {
         at date: Date = Date()
     ) -> ProviderEvent {
         make(
-            kind: .runtimeError(message: stderr.isEmpty ? "Il processo claude è uscito con codice \(status)." : stderr),
+            kind: .runtimeError(message: stderr.isEmpty ? "Claude process exited with status \(status)." : stderr),
             threadID: threadID, nativeSessionID: nativeSessionID, turnID: nil, at: date,
             raw: .object(["type": .string("process_exit"), "status": .integer(Int(status))])
         )

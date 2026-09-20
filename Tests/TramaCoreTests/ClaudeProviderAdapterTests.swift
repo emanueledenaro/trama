@@ -515,8 +515,17 @@ final class ClaudeProviderAdapterTests: XCTestCase {
         let (adapter, box) = makeAdapter()
         _ = try await adapter.startSession(ProviderSessionStartInput(threadID: "t1", cwd: URL(fileURLWithPath: "/tmp"), runtimeMode: .approvalRequired))
         let transport = try XCTUnwrap(box.transports.first)
+        let eventStream = await adapter.events()
+        let usageObserved = Task {
+            for await event in eventStream {
+                if case .tokenUsage = event.kind { return true }
+            }
+            return false
+        }
         transport.emit(.object(["type": .string("system"), "subtype": .string("init"), "session_id": .string("11111111-1111-1111-1111-111111111111")]))
+        try await Task.sleep(nanoseconds: 20_000_000)
         _ = try await adapter.sendTurn(ProviderSendTurnInput(threadID: "t1", input: [.text("ciao")]))
+        try await Task.sleep(nanoseconds: 20_000_000)
         transport.emit(.object([
             "type": .string("assistant"),
             "message": .object([
@@ -531,8 +540,14 @@ final class ClaudeProviderAdapterTests: XCTestCase {
                 ])
             ])
         ]))
-        _ = await collect(adapter, count: 4)
-        let session = await adapter.session(for: "t1")
+        let didObserveUsage = await usageObserved.value
+        XCTAssertTrue(didObserveUsage)
+        let deadline = Date().addingTimeInterval(2)
+        var session = await adapter.session(for: "t1")
+        while ClaudeResumeCursor.decode(session?.resumeCursor).claudeCache == nil, Date() < deadline {
+            try await Task.sleep(nanoseconds: 10_000_000)
+            session = await adapter.session(for: "t1")
+        }
         let cursor = ClaudeResumeCursor.decode(session?.resumeCursor)
         XCTAssertEqual(cursor.resume, "11111111-1111-1111-1111-111111111111")
         XCTAssertEqual(cursor.claudeCache?.state, .likelyWarm)

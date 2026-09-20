@@ -390,7 +390,7 @@ extension ConversationTimeline {
                 }
                 rows.append(.activityGroup(.init(
                     id: event.id, requestID: event.requestID, assignmentID: turn.assignmentID, turnID: turn.turnID,
-                    provider: turnRecord?.provider, model: turnRecord?.model,
+                    provider: turnRecord?.provider, model: turnRecord?.observedModel ?? turnRecord?.model,
                     activities: collected, isConcluded: !isRunning, duration: duration
                 )))
             case .card(let card):

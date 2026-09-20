@@ -360,15 +360,15 @@ extension ProjectStore {
     func receiveSpecialistTurnEvent(_ event: ProviderEvent, assignmentID: String, turnID: String?) {
         guard stateWritable else { return }
         switch event.kind {
-        case let .turnStarted(_, _):
+        case let .turnStarted(observedModel, effort):
             let turnID = event.turnID ?? turnID
             let assignment = document.team?.assignment(assignmentID)
             let model = assignment?.model ?? ""
-            if let turnID, let assignment {
-                // The provider that really produced the turn, never an inferred one.
-                try? document.beginSpecialistTurn(assignmentID: assignmentID, turnID: turnID, model: model, provider: assignment.resolvedProvider)
+            if let turnID {
+                // The provider and model reported by the runtime are the observed attribution.
+                try? document.beginSpecialistTurn(assignmentID: assignmentID, turnID: turnID, model: model, provider: event.provider, observedModel: observedModel, observedEffort: effort)
             }
-            document.conversation?.appendSpecialistActivity(assignmentID: assignmentID, turnID: turnID, title: "Turno avviato", detail: model)
+            document.conversation?.appendSpecialistActivity(assignmentID: assignmentID, turnID: turnID, title: "Turno avviato", detail: [observedModel, effort].compactMap { $0 }.joined(separator: " · "))
         case .contentDelta(.assistantText):
             // The answer of the turn is recorded once, when the turn ends.
             return
