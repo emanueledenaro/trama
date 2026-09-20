@@ -405,7 +405,7 @@ struct AssignmentBlock: View {
         ForEach(assignment.turns, id: \.id) { turn in
             HStack(spacing: TramaSpacing.control) {
                 Text("Turno \(turn.number)").font(.caption.weight(.medium))
-                Text(turn.observedModel ?? turn.model).font(.caption.monospaced())
+                Text(turn.observedModel ?? "Modello non osservato").font(.caption.monospaced())
                 if let outcome = turn.outcome {
                     Text(outcomeLabel(outcome)).font(.caption).foregroundStyle(TramaText.secondary)
                 } else {

@@ -40,10 +40,10 @@ final class ClaudeClientTests: XCTestCase {
 
     func testCoordinatorArgumentsDisallowNativeProjectReads() throws {
         var coordinator = options()
-        coordinator.disallowedTools = ["Read", "Grep", "Glob"]
+        coordinator.disallowedTools = ["Read", "Grep", "Glob", "Bash"]
         let arguments = try coordinator.arguments()
         let index = try XCTUnwrap(arguments.firstIndex(of: "--disallowed-tools"))
-        XCTAssertEqual(arguments[index + 1], "Read,Grep,Glob")
+        XCTAssertEqual(arguments[index + 1], "Read,Grep,Glob,Bash")
     }
 
     func testBypassUsesTheAllowFlagAndTheMcpConfigIsStrict() throws {

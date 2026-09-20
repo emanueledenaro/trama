@@ -53,7 +53,7 @@ final class SpecialistSupervisor: ObservableObject {
             return
         }
         guard let modelSelection = store.specialistModelSelection(provider: provider, model: assignment.model) else {
-            let detail = "Il modello (assignment.model) del provider (provider.displayName) non è disponibile: l'incarico resta in attesa senza sostituzione automatica."
+            let detail = "Il modello \(assignment.model) del provider \(provider.displayName) non è disponibile: l'incarico resta in attesa senza sostituzione automatica."
             try? store.document.recordModelUnavailable(assignmentID: assignmentID, detail: detail)
             store.document.conversation?.appendCard(
                 ConversationEvent.Card(kind: .providerBlocked, title: "Modello non disponibile", detail: detail, referenceID: assignmentID),

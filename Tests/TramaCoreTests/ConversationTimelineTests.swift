@@ -359,7 +359,7 @@ struct ConversationTimelineTests {
         #expect(pending.provider == .claudeAgent)
     }
 
-    @Test("A specialist group names the provider and model of its recorded turn")
+    @Test("A specialist group leaves the model absent until the provider observes it")
     func specialistGroupNamesTheTurnProvider() throws {
         var (document, assignment) = try AssignmentProviderTests.assigned(provider: .claudeAgent)
         try document.beginSpecialistTurn(assignmentID: assignment.id, turnID: "turn-1", model: "haiku")
@@ -368,7 +368,7 @@ struct ConversationTimelineTests {
         let rows = ConversationTimeline.rows(for: document)
         guard case .activityGroup(let group) = rows.first else { Issue.record("expected an activity group"); return }
         #expect(group.provider == .claudeAgent)
-        #expect(group.model == "haiku")
+        #expect(group.model == nil)
     }
 
     @Test("A turn never recorded shows no provider instead of an invented one")

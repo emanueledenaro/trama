@@ -37,7 +37,6 @@ public enum ClaudePermissionDecision: Equatable, Sendable {
 /// Host tools arrive as the same HTTP MCP server Codex uses, carried in `--mcp-config` with a
 /// bearer header, and every tool call passes the mandate at the tool boundary.
 public actor ClaudeProviderAdapter: ProviderAdapter {
-    private static let defaultThinkingTokens = 16_000
     public nonisolated let provider = ProviderKind.claudeAgent
     public nonisolated let capabilities: ProviderCapabilities
     public nonisolated let implementedMethods: Set<ProviderMethod>
@@ -315,29 +314,28 @@ public actor ClaudeProviderAdapter: ProviderAdapter {
                         kind: .configWarning(message: "Sforzo «\(effort)» non valido per Claude: la lista ammessa è \(ClaudeModelCatalog.closedEffortLevels.joined(separator: ", ")).")
                     ))
                     throw ClaudeClient.ClientError.malformedMessage("unsupported Claude effort \(effort)")
-                } else if options.effort == "max", state.options.effort != "max" {
+                } else if (options.effort == "max") != (state.options.effort == "max") {
                     throw ClaudeClient.ClientError.malformedMessage("Claude effort max requires a new session")
                 } else if options.effort != state.options.effort {
-                    try await state.client.applyFlagSettings(.object(["effortLevel": .string(options.effort ?? "default")]))
+                    try await state.client.applyFlagSettings(.object(["effortLevel": options.effort.map { .string($0) } ?? .null]))
                     state.options.effort = options.effort
                 }
                 if let thinking = options.thinking {
-                    try await state.client.setMaxThinkingTokens(thinking ? (state.options.maxThinkingTokens ?? Self.defaultThinkingTokens) : 0)
+                    try await state.client.applyFlagSettings(.object(["alwaysThinkingEnabled": .bool(thinking)]))
                 } else {
-                    try await state.client.applyFlagSettings(.object(["thinking": .string("default")]))
-                    try await state.client.setMaxThinkingTokens(nil)
+                    try await state.client.applyFlagSettings(.object(["alwaysThinkingEnabled": .null]))
                 }
                 state.options.thinking = options.thinking
                 if let fastMode = options.fastMode {
                     try await state.client.applyFlagSettings(.object(["fastMode": .bool(fastMode)]))
                 } else {
-                    try await state.client.applyFlagSettings(.object(["fastMode": .string("default")]))
+                    try await state.client.applyFlagSettings(.object(["fastMode": .null]))
                 }
                 state.options.fastMode = options.fastMode
                 if let autoCompactWindow = options.autoCompactWindow {
                     try await state.client.applyFlagSettings(.object(["autoCompactWindow": .integer(autoCompactWindow)]))
                 } else {
-                    try await state.client.applyFlagSettings(.object(["autoCompactWindow": .string("auto")]))
+                    try await state.client.applyFlagSettings(.object(["autoCompactWindow": .null]))
                 }
                 state.options.autoCompactWindow = options.autoCompactWindow
                 state.accounting.setAutoCompactWindow(options.autoCompactWindow)
@@ -535,7 +533,7 @@ public actor ClaudeProviderAdapter: ProviderAdapter {
             maxThinkingTokens: nil,
             fastMode: modelOptions?.fastMode,
             autoCompactWindow: modelOptions?.autoCompactWindow,
-            disallowedTools: input.runtimeMode == .approvalRequired ? ["Read", "Grep", "Glob"] : [],
+            disallowedTools: input.runtimeMode == .approvalRequired ? ["Read", "Grep", "Glob", "Bash"] : [],
             permissionMode: ClaudePermissionMode.from(runtimeMode: input.runtimeMode),
             developerInstructions: input.developerInstructions,
             mcpServers: servers,

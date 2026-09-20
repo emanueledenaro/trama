@@ -842,9 +842,17 @@ extension ProjectStore {
             memory: memory,
             replacing: replaced ? "il thread precedente non è più disponibile" : nil
         )
-        let outcome = try await coordinator.runTurn(input: opening.map { .text($0) }, modelSelection: nil) { [weak self] event in
-            guard let self, self.coordinatorGeneration == generation, case let .contentDelta(.assistantText(delta)) = event.kind else { return }
-            self.coordinatorStudyText? += delta
+        let outcome: ProviderTurnOutcome
+        do {
+            outcome = try await coordinator.runTurn(input: opening.map { .text($0) }, modelSelection: nil) { [weak self] event in
+                guard let self, self.coordinatorGeneration == generation, case let .contentDelta(.assistantText(delta)) = event.kind else { return }
+                self.coordinatorStudyText? += delta
+            }
+        } catch {
+            if let session = await coordinator.refreshSession() {
+                recordCoordinatorCursor(session)
+            }
+            throw error
         }
         if let session = await coordinator.refreshSession() {
             recordCoordinatorCursor(session)
