@@ -536,6 +536,38 @@ final class ClaudeProviderAdapterTests: XCTestCase {
         }
     }
 
+    func testCrossModelMaxTransitionValidatesBeforeChangingTheProcess() async throws {
+        let (adapter, box) = makeAdapter()
+        _ = try await adapter.startSession(ProviderSessionStartInput(
+            threadID: "t1",
+            cwd: URL(fileURLWithPath: "/tmp"),
+            modelSelection: .claudeAgent(model: "claude-opus-5", options: ClaudeModelOptions(effort: "max")),
+            runtimeMode: .approvalRequired
+        ))
+        let transport = try XCTUnwrap(box.transports.first)
+
+        do {
+            _ = try await adapter.sendTurn(ProviderSendTurnInput(
+                threadID: "t1",
+                input: [.text("rifiutato")],
+                modelSelection: .claudeAgent(model: "claude-sonnet-5", options: ClaudeModelOptions(effort: "low"))
+            ))
+            XCTFail("cross-model max transition must be rejected")
+        } catch let error as ClaudeClient.ClientError {
+            guard case .malformedMessage = error else { XCTFail("unexpected error \(error)"); return }
+        }
+        XCTAssertNil(transport.controlRequest(subtype: "set_model"))
+        XCTAssertTrue(transport.userMessages().isEmpty)
+
+        _ = try await adapter.sendTurn(ProviderSendTurnInput(
+            threadID: "t1",
+            input: [.text("coerente")],
+            modelSelection: .claudeAgent(model: "claude-opus-5", options: ClaudeModelOptions(effort: "max"))
+        ))
+        XCTAssertEqual(transport.userMessages().last?["message"]?.objectValue?["content"]?.arrayValue?.first?.objectValue?["text"]?.stringValue, "coerente")
+        XCTAssertNil(transport.controlRequest(subtype: "set_model"))
+    }
+
     func testAutoCompactWindowZeroMeansAuto() throws {
         var options = ClaudeSessionOptions(
             binaryURL: URL(fileURLWithPath: "/tmp/claude"),

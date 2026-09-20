@@ -303,10 +303,6 @@ public actor ClaudeProviderAdapter: ProviderAdapter {
         state.pendingPermissions.removeAll()
 
         if let selection = input.modelSelection, case let .claudeAgent(model, options) = selection {
-            if !model.isEmpty, model != state.session.model {
-                try await state.client.setModel(model)
-                state.session.model = model
-            }
             if let options {
                 if let effort = options.effort, !ClaudeModelCatalog.isSupportedEffort(effort) {
                     emit(ProviderEvent(
@@ -314,9 +310,17 @@ public actor ClaudeProviderAdapter: ProviderAdapter {
                         kind: .configWarning(message: "Sforzo «\(effort)» non valido per Claude: la lista ammessa è \(ClaudeModelCatalog.closedEffortLevels.joined(separator: ", ")).")
                     ))
                     throw ClaudeClient.ClientError.malformedMessage("unsupported Claude effort \(effort)")
-                } else if (options.effort == "max") != (state.options.effort == "max") {
+                }
+                if (options.effort == "max") != (state.options.effort == "max") {
                     throw ClaudeClient.ClientError.malformedMessage("Claude effort max requires a new session")
-                } else if options.effort != state.options.effort {
+                }
+            }
+            if !model.isEmpty, model != state.session.model {
+                try await state.client.setModel(model)
+                state.session.model = model
+            }
+            if let options {
+                if options.effort != state.options.effort {
                     try await state.client.applyFlagSettings(.object(["effortLevel": options.effort.map { .string($0) } ?? .null]))
                     state.options.effort = options.effort
                 }
