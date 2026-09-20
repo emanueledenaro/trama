@@ -38,15 +38,15 @@ final class ClaudeProviderAdapterTests: XCTestCase {
 
     // MARK: Conformance
 
-    func testTheAdapterIsConformant() async {
+    func testTheAdapterIsConformant() {
         let (adapter, _) = makeAdapter()
-        let issues = await adapter.conformanceIssues()
+        let issues = adapter.conformanceIssues()
         XCTAssertEqual(issues, [])
     }
 
-    func testDeclaredCapabilitiesMatchTheReference() async {
+    func testDeclaredCapabilitiesMatchTheReference() {
         let (adapter, _) = makeAdapter()
-        let capabilities = await adapter.capabilities
+        let capabilities = adapter.capabilities
         XCTAssertEqual(capabilities.sessionModelSwitch, .inSession)
         XCTAssertEqual(capabilities.conversationRollback, .restartSession)
         XCTAssertTrue(capabilities.supportsNativeSlashCommandDiscovery)
@@ -65,7 +65,7 @@ final class ClaudeProviderAdapterTests: XCTestCase {
         XCTAssertFalse(capabilities.supportsLiveTurnDiffPatch)
         XCTAssertFalse(capabilities.supportsThreadCompaction)
 
-        let methods = await adapter.implementedMethods
+        let methods = adapter.implementedMethods
         XCTAssertTrue(methods.contains(.respondToRequest))
         XCTAssertTrue(methods.contains(.respondToUserInput))
         XCTAssertTrue(methods.contains(.listCommands))
@@ -74,9 +74,9 @@ final class ClaudeProviderAdapterTests: XCTestCase {
         XCTAssertFalse(methods.contains(.listSkills))
     }
 
-    func testTheAdapterCapabilitiesEqualTheCatalogueEntry() async {
+    func testTheAdapterCapabilitiesEqualTheCatalogueEntry() {
         let (adapter, _) = makeAdapter()
-        let capabilities = await adapter.capabilities
+        let capabilities = adapter.capabilities
         XCTAssertEqual(capabilities, ProviderCatalogue.claudeAgent.capabilities)
     }
 

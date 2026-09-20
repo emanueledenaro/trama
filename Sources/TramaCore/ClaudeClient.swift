@@ -541,7 +541,7 @@ public actor ClaudeClient {
     @discardableResult
     public func start(options: ClaudeSessionOptions, initializeTimeout: TimeInterval = 30) async throws -> ClaudeInitialization {
         guard transport == nil else { throw ClientError.alreadyStarted }
-        let arguments = try options.arguments()
+        _ = try options.arguments()
         let transport = try transportFactory()
         let stream = try transport.start()
         self.transport = transport

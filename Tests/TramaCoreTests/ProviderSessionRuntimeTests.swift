@@ -141,4 +141,11 @@ final class ProviderSessionRuntimeTests: XCTestCase {
             XCTFail("unexpected error \(error)")
         }
     }
+
+    func testUnsupportedProviderErrorDescribesTheProvider() {
+        let error = ProviderRuntimeError.providerUnsupported("Claude Agent")
+
+        XCTAssertEqual(error.errorDescription, "the app has no runtime for Claude Agent")
+        XCTAssertEqual(error.localizedDescription, "the app has no runtime for Claude Agent")
+    }
 }

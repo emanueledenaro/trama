@@ -874,7 +874,7 @@ extension ProjectStore {
             saveDocument()
             return
         }
-        guard coordinatorPhase == .ready, let threadID = coordinator.threadID, coordinator.runtime != nil else {
+        guard coordinatorPhase == .ready, coordinator.threadID != nil, coordinator.runtime != nil else {
             document.requests[index].state = .waitingForCoordinator
             saveDocument()
             startCoordinator()

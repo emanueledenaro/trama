@@ -203,7 +203,9 @@ struct CoordinatorComposer: View {
     // MARK: Bottom row
 
     private var canSend: Bool {
-        store.canSubmit && !store.isPlanning && !(store.codexConnected && store.selectedModelInfo == nil)
+        let provider = store.document.coordinatorSelection?.provider ?? store.document.lastTurnProviderOrCodex
+        let codexModelReady = provider != .codex || store.selectedModelInfo != nil
+        return store.canSubmit && !store.isPlanning && codexModelReady
     }
 
     private var bottomRow: some View {

@@ -17,7 +17,7 @@ public enum ProviderRuntimeError: Error, Equatable, Sendable, LocalizedError {
         case .noSession: return "no provider session is open"
         case .turnAlreadyRunning: return "a turn of this session is already running"
         case .turnEndedWithoutCompletion: return "the provider session ended before the turn completed"
-        case let .providerUnsupported(provider): return "the app has no runtime for \\(provider)"
+        case let .providerUnsupported(provider): return "the app has no runtime for \(provider)"
         }
     }
 }
