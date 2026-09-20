@@ -1,0 +1,3 @@
+# Il composer conserva la selezione per dialogo come Synara
+
+Stato: accettata il 20 settembre 2026 da Emanuele. Trama associa provider, modello e opzioni alla bozza e al dialogo, conserva preferenze separate per provider e fotografa la selezione quando un turno entra in coda. Questa forma sostituisce i due menu concorrenti per modello persistente e override del prossimo messaggio, che mostravano una scelta diversa dall'esecuzione effettiva. Il cambio provider richiede turno e coda vuoti e conserva il dialogo tramite il passaggio di consegne dell'ADR 0009; indisponibilità e differenze fra selezione e attribuzione restano visibili senza fallback automatico.
