@@ -79,13 +79,18 @@ public struct ProviderTurnOutcome: Sendable {
     public var interrupted: Bool
     /// The block the provider reported during the turn, if any. A block is a normal state.
     public var block: ProviderBlock?
+    /// Model and effort reported by the provider when the turn actually started.
+    public var observedModel: String?
+    public var observedEffort: String?
 
-    public init(threadID: String, turnID: String, reply: String, interrupted: Bool, block: ProviderBlock? = nil) {
+    public init(threadID: String, turnID: String, reply: String, interrupted: Bool, block: ProviderBlock? = nil, observedModel: String? = nil, observedEffort: String? = nil) {
         self.threadID = threadID
         self.turnID = turnID
         self.reply = reply
         self.interrupted = interrupted
         self.block = block
+        self.observedModel = observedModel
+        self.observedEffort = observedEffort
     }
 }
 
@@ -107,6 +112,8 @@ public actor ProviderSessionRuntime {
         var text = ""
         var interrupted = false
         var block: ProviderBlock?
+        var observedModel: String?
+        var observedEffort: String?
         var continuation: CheckedContinuation<ProviderTurnOutcome, Error>?
     }
 
@@ -245,6 +252,9 @@ public actor ProviderSessionRuntime {
             switch event.kind {
             case let .contentDelta(.assistantText(text)):
                 turn.text += text
+            case let .turnStarted(model, effort):
+                turn.observedModel = model
+                turn.observedEffort = effort
             case let .turnCompleted(state):
                 turn.interrupted = state == .interrupted
                 let continuation = turn.continuation
@@ -255,7 +265,9 @@ public actor ProviderSessionRuntime {
                     turnID: turn.turnID ?? event.turnID ?? "",
                     reply: turn.text,
                     interrupted: turn.interrupted,
-                    block: turn.block
+                    block: turn.block,
+                    observedModel: turn.observedModel,
+                    observedEffort: turn.observedEffort
                 ))
                 return
             case let .providerBlocked(block):

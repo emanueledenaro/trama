@@ -48,6 +48,7 @@ final class ProviderSessionRuntimeTests: XCTestCase {
         XCTAssertEqual(outcome.reply, "PONG")
         XCTAssertFalse(outcome.interrupted)
         XCTAssertFalse(outcome.turnID.isEmpty)
+        XCTAssertEqual(outcome.observedModel, "haiku")
     }
 
     func testAClaudeInterruptEndsTheTurnAsInterrupted() async throws {

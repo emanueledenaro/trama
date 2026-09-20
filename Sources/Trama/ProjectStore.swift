@@ -67,8 +67,6 @@ final class ProjectStore: ObservableObject {
     /// Long pastes and image files of the draft; they are sent with the next message.
     @Published var composerPastes: [PastedText] = [] { didSet { saveViewState() } }
     @Published var composerAttachments: [String] = [] { didSet { saveViewState() } }
-    /// A model or effort for the next message only; the Coordinator model does not change.
-    @Published var turnOverride = TurnOverride()
     /// A short composer message, for example a rejected attachment.
     @Published var composerNotice: String?
     @Published var document = ProjectDocument()
@@ -135,8 +133,6 @@ final class ProjectStore: ObservableObject {
     var coordinatorGeneration = UUID()
     /// Delivers usage and compaction of the open Coordinator thread.
     var coordinatorEventsTask: Task<Void, Never>?
-    /// The one-message overrides of requests not sent yet.
-    var pendingTurnOverrides: [UUID: TurnOverride] = [:]
     /// Pact decisions and mandate the study was last refreshed for on save.
     private var studiedDecisions: [PactDecision] = []
     private var studiedMandate: ProjectMandate?
@@ -268,6 +264,19 @@ final class ProjectStore: ObservableObject {
     var selectedModelDisplayName: String {
         selectedModelInfo?.displayName ?? (selectedModel.isEmpty ? "Scegli un modello" : selectedModel)
     }
+    var coordinatorSelectionDisplayName: String {
+        guard let selection = document.coordinatorSelection else { return selectedModelDisplayName }
+        let provider = selection.provider.displayName
+        let model = providerCatalogs[selection.provider]?.models.first(where: { $0.slug == selection.model })?.name ?? selection.model
+        let effort: String? = {
+            switch selection.modelSelection {
+            case let .codex(_, options): return options?.reasoningEffort
+            case let .claudeAgent(_, options): return options?.effort
+            default: return nil
+            }
+        }()
+        return [provider, model, effort.map(CoordinatorModelChoice.effortLabel)].compactMap { $0 }.joined(separator: " · ")
+    }
     var fingerprint: String {
         guard let project else { return "" }
         let contextHashes = (project.contextualInputHashes ?? [:]).map { "\($0.key):\($0.value)" }.sorted().joined(separator: "|")
@@ -375,14 +384,15 @@ final class ProjectStore: ObservableObject {
                 composer = document.composerDraft ?? ""
                 composerPastes = document.composerPastes ?? []
                 composerAttachments = (document.composerAttachments ?? []).filter { FileManager.default.fileExists(atPath: $0) }
-                turnOverride = TurnOverride()
-                pendingTurnOverrides = [:]
                 selectedModel = document.selectedModel ?? ""
                 selectedRequestID = document.lastSelectedRequestID ?? document.requests.first?.id
                 if document.lastContextWasProject == true { selectedModuleID = nil }
                 else { selectedModuleID = snapshot.modules.first(where: { $0.id == document.lastSelectedModuleID })?.id ?? snapshot.modules.first(where: { $0.name.lowercased().contains("ordin") || $0.name.lowercased().contains("order") })?.id ?? snapshot.modules.first?.id }
                 section = WorkspaceSection(rawValue: document.lastSection ?? "") ?? .coordinator
                 reconcileModelSelection()
+                if document.coordinatorSelection == nil, !selectedModel.isEmpty {
+                    document.migrateComposerSelection()
+                }
                 Task {
                     guard token == self.loadToken, self.localRoot == root else { return }
                     await self.team.setProject(root, isDemo: isDemo)
@@ -765,11 +775,36 @@ final class ProjectStore: ObservableObject {
         guard !isPlanning, !isExecuting, models.contains(where: { $0.model == model }) else { return }
         selectedModel = model
         document.selectedModel = model
-        document.rememberCoordinatorModel(model, for: .codex)
+        document.setCoordinatorSelection(ComposerSelection(.codex(model: model, options: nil)))
         modelsError = nil
         intelligence.invalidate()
         saveDocument()
         if case .unavailable = coordinatorPhase { retryCoordinator() }
+    }
+
+    /// Selects one provider/model pair from the single Coordinator composer menu.
+    func selectCoordinatorSelection(provider: ProviderKind, model: String, effort: String? = nil) {
+        guard !isPlanning, !isExecuting,
+              providerOptions.first(where: { $0.provider == provider }).map({ canChooseForCoordinator($0) }) == true,
+              let catalog = providerCatalogs[provider],
+              catalog.models.contains(where: { $0.slug == model }) else { return }
+        let selection: ModelSelection
+        switch provider {
+        case .codex:
+            selection = .codex(model: model, options: CodexModelOptions(reasoningEffort: effort))
+        case .claudeAgent:
+            selection = .claudeAgent(model: model, options: ClaudeModelOptions(effort: effort))
+        default:
+            return
+        }
+        let choice = ComposerSelection(selection)
+        let currentProvider = coordinator.provider
+        if provider != currentProvider {
+            guard switchCoordinatorProvider(to: provider, selection: choice) else { return }
+        }
+        document.setCoordinatorSelection(choice)
+        if provider == .codex { selectedModel = model }
+        saveDocument()
     }
 
     func signIn() async {
@@ -792,12 +827,15 @@ final class ProjectStore: ObservableObject {
         let title = prompt.isEmpty ? (composerPastes.first?.title ?? "Immagini allegate") : prompt
         var request = WorkRequest(title: String(title.prefix(90)), moduleID: module?.id ?? "project", moduleName: module?.name ?? project.name, request: message, sourceFingerprint: fingerprint)
         request.model = selectedModel.isEmpty ? nil : selectedModel
+        if let selection = composerSelectionForEnqueue() {
+            request.coordinatorSelection = selection
+            request.model = selection.model
+            document.setCoordinatorSelection(selection)
+        }
         request.attachments = composerAttachments.isEmpty ? nil : composerAttachments
         request.state = .waitingForCoordinator
         document.requests.insert(request, at: 0); selectedRequestID = request.id
         document.conversation?.appendPersonMessage(for: request)
-        if !turnOverride.isEmpty { pendingTurnOverrides[request.id] = turnOverride }
-        turnOverride = TurnOverride()
         composerNotice = nil
         composer = ""; composerPastes = []; composerAttachments = []
         section = .coordinator; showInspector = false; saveDocument()
@@ -1063,6 +1101,22 @@ final class ProjectStore: ObservableObject {
         do {
             try ProjectDocumentStorage(url: stateURL(project)).save(document)
         } catch { errorMessage = "Salvataggio non riuscito: \(error.localizedDescription)" }
+    }
+
+    /// Captures the provider/model/options currently shown by the composer before a request is queued.
+    private func composerSelectionForEnqueue() -> ComposerSelection? {
+        if let selection = document.coordinatorSelection { return selection }
+        let provider = coordinatorPhase == .ready ? coordinator.provider : document.lastTurnProviderOrCodex
+        switch provider {
+        case .codex:
+            guard !selectedModel.isEmpty else { return nil }
+            return ComposerSelection(.codex(model: selectedModel, options: selectedModelInfo.map { CodexModelOptions(reasoningEffort: $0.defaultReasoningEffort) }))
+        case .claudeAgent:
+            guard let selection = document.coordinatorSelection(for: .claudeAgent) else { return nil }
+            return selection
+        default:
+            return nil
+        }
     }
 
     /// True when the project has no model and the catalogue lacks Trama's preferred one.

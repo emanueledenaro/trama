@@ -31,6 +31,8 @@ public struct WorkRequest: Identifiable, Codable, Sendable {
     public var setupBaselineHashes: [String: String]?
     /// Image files sent with the latest message of the request.
     public var attachments: [String]?
+    /// Provider and model captured when this request entered the Coordinator queue.
+    public var coordinatorSelection: ComposerSelection?
 
     /// True when the Coordinator answered with a plan or the request already carries work (candidate, session, PR).
     /// Explanations and clarifications are conversation only.
@@ -78,6 +80,8 @@ public struct ProjectDocument: Codable, Sendable {
     public var importedRequestIDs: [UUID]?
     /// The models the person chose per provider, for the Coordinator and for the specialists.
     public var providerPreferences: ProviderModelPreference?
+    /// The current provider and model shown by the Coordinator composer.
+    public var coordinatorSelection: ComposerSelection?
     /// The provider that produced the last Coordinator turn, so reopening resumes with it.
     public var lastTurnProvider: ProviderKind?
 
@@ -88,6 +92,37 @@ public struct ProjectDocument: Codable, Sendable {
         var preference = providerPreferences ?? ProviderModelPreference()
         preference.rememberCoordinator(model, for: provider)
         providerPreferences = preference
+    }
+
+    /// Stores the current composer choice and its provider-scoped remembered value.
+    public mutating func setCoordinatorSelection(_ selection: ComposerSelection?) {
+        coordinatorSelection = selection
+        if let selection { rememberCoordinatorSelection(selection) }
+        if selection?.provider == .codex { selectedModel = selection?.model }
+    }
+
+    /// Remembers the full provider-specific model options for a future composer selection.
+    public mutating func rememberCoordinatorSelection(_ selection: ComposerSelection) {
+        var preference = providerPreferences ?? ProviderModelPreference()
+        preference.rememberCoordinator(selection)
+        providerPreferences = preference
+    }
+
+    /// Returns the last full selection remembered for a provider.
+    public func coordinatorSelection(for provider: ProviderKind) -> ComposerSelection? {
+        providerPreferences?.coordinatorSelection(for: provider)
+    }
+
+    /// Folds the pre-P02 `selectedModel` field into the provider-aware composer value.
+    /// The operation is idempotent and preserves the old field for older readers.
+    public mutating func migrateComposerSelection() {
+        guard coordinatorSelection == nil, let selectedModel, !selectedModel.isEmpty else { return }
+        let selection = ComposerSelection(.codex(model: selectedModel, options: nil))
+        coordinatorSelection = selection
+        if var preference = providerPreferences, preference.coordinatorSelection(for: .codex) == nil {
+            preference.rememberCoordinator(selection)
+            providerPreferences = preference
+        }
     }
 
     /// Remembers the specialist model the person chose for a provider (ADR 0009).

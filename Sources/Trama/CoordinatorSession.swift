@@ -684,22 +684,29 @@ extension ProjectStore {
         guard let previous else { return false }
         return session.threadID != previous
     }
-    func switchCoordinatorProvider(to provider: ProviderKind) {
-        guard stateWritable else { return }
-        guard provider != document.lastTurnProviderOrCodex else { return }
+    @discardableResult
+    func switchCoordinatorProvider(to provider: ProviderKind, selection: ComposerSelection? = nil) -> Bool {
+        guard stateWritable else { return false }
+        guard provider != coordinator.provider else { return true }
+        guard !isPlanning, !isExecuting,
+              !document.requests.contains(where: { $0.state == .waitingForCoordinator }) else {
+            providerNotice = ProviderBlock(provider: provider, reason: .unknown("Il cambio è disponibile quando non ci sono turni attivi o in coda."), detail: nil, observedAt: Date())
+            return false
+        }
         guard ProjectStore.appRunsCoordinator(provider) else {
-            coordinatorPhase = .unavailable("Trama non ha ancora un adattatore completo per \(provider.displayName): il passaggio non è disponibile. Il thread resta su \(document.lastTurnProviderOrCodex.displayName).")
-            return
+            coordinatorPhase = .unavailable("Trama non ha ancora un adattatore completo per \(provider.displayName): il passaggio non è disponibile. Il thread resta su \(coordinator.provider.displayName).")
+            return false
         }
         // Only a provider that can run is chosen: a refused switch keeps the thread and the provider.
         let accessUnknown = provider == .claudeAgent && (providerAccess[.claudeAgent]?.state ?? .unknown) == .unknown
         if let reason = coordinatorProviderReason(provider), !accessUnknown {
-            providerNotice = ProviderBlock(provider: provider, reason: .unknown(reason), detail: "Il thread resta su \(document.lastTurnProviderOrCodex.displayName): il cambio è una decisione della persona e il provider scelto non può girare adesso.", observedAt: Date())
-            return
+            providerNotice = ProviderBlock(provider: provider, reason: .unknown(reason), detail: "Il thread resta su \(coordinator.provider.displayName): il cambio è una decisione della persona e il provider scelto non può girare adesso.", observedAt: Date())
+            return false
         }
-        let previous = document.lastTurnProviderOrCodex
+        let previous = coordinator.provider
         let handover = CoordinatorProviderSwitch.plan(from: previous, to: provider, document: document)
         coordinatorHandover = handover
+        if let selection { document.setCoordinatorSelection(selection) }
         document.lastTurnProvider = provider
         document.coordinator?.providerBlock = nil
         // The old session is not reused: the new provider opens its own.
@@ -718,6 +725,7 @@ extension ProjectStore {
         saveDocument()
         stopCoordinator()
         retryCoordinator()
+        return true
     }
 
     /// The person retries after a provider block, from the status strip. Every waiting assignment
@@ -835,10 +843,16 @@ extension ProjectStore {
     func sendToCoordinator(_ id: UUID) {
         guard let index = document.requests.firstIndex(where: { $0.id == id }),
               let project, let root = localRoot, !isPlanning, !isPreparingSkills else { return }
-        let override = pendingTurnOverrides[id] ?? TurnOverride()
-        let requestedModel = override.model ?? selectedModel
-        guard let choice = coordinatorTurnChoice(provider: coordinator.provider, override: override) else {
-            pendingTurnOverrides[id] = nil
+        let selection = document.requests[index].coordinatorSelection
+        let requestedModel = selection?.model ?? selectedModel
+        let choice: CoordinatorTurnChoice?
+        if let selection {
+            choice = coordinatorTurnChoice(selection: selection)
+        } else {
+            // Requests written before P02 have no snapshot and use the current provider choice once.
+            choice = coordinatorTurnChoice(provider: coordinator.provider, override: TurnOverride())
+        }
+        guard let choice else {
             document.requests[index].state = .modelUnavailable
             document.requests[index].failureDetail = "Scegli un modello disponibile per \(coordinator.provider.displayName) prima di scrivere al Coordinatore. Il modello richiesto era \(requestedModel.isEmpty ? "non selezionato" : requestedModel)."
             document.conversation?.appendActivity(requestID: id, title: "Modello non disponibile", detail: requestedModel.isEmpty ? nil : requestedModel)
@@ -876,7 +890,6 @@ extension ProjectStore {
             sources: mentionSources,
             skills: loadedSkills
         )
-        pendingTurnOverrides[id] = nil
         var knownFiles: Set<String> = Set(project.modules.flatMap(\.files).map(\.relativePath))
         knownFiles.formUnion((project.contextualInputHashes ?? [:]).keys)
         knownFiles.formUnion((coordinator.instructionFiles ?? []).map(\.path))
@@ -936,7 +949,15 @@ extension ProjectStore {
                 document.requests[i].replyReferences = references
                 document.requests[i].state = .replyAvailable
                 document.conversation?.appendActivity(requestID: id, title: "Risposta ricevuta", detail: references.count == 1 ? "1 fonte" : "\(references.count) fonti")
-                document.conversation?.recordReply(requestID: id, text: reply, model: choice.model, provider: runtime.provider, references: references)
+                document.conversation?.recordReply(
+                    requestID: id,
+                    text: reply,
+                    model: outcome.observedModel,
+                    provider: runtime.provider,
+                    requestedProvider: selection?.provider,
+                    requestedModel: selection?.model,
+                    references: references
+                )
                 activity.insert("Risposta del Coordinatore ricevuta per \(document.requests[i].moduleName).", at: 0)
             } catch {
                 guard operationID == token, localRoot == root, let i = document.requests.firstIndex(where: { $0.id == id }) else { return }
@@ -1119,6 +1140,39 @@ extension ProjectStore {
             claudeCatalog: providerCatalogs[.claudeAgent] ?? ProviderModelCatalog(models: [], source: .fallback),
             preference: document.providerPreferences
         )
+    }
+
+    /// Resolves an immutable queued selection against the active provider catalogue.
+    func coordinatorTurnChoice(selection: ComposerSelection) -> CoordinatorTurnChoice? {
+        guard selection.provider == coordinator.provider else { return nil }
+        switch selection.modelSelection {
+        case let .codex(model, options):
+            guard let selected = CoordinatorModelChoice.turnSelection(
+                coordinatorModel: model,
+                override: TurnOverride(effort: options?.reasoningEffort),
+                models: models
+            ), selected.model == model else { return nil }
+            return CoordinatorTurnChoice(
+                selection: selection.modelSelection,
+                model: model,
+                effort: selected.effort,
+                overridesModel: false,
+                overridesEffort: options?.reasoningEffort != nil
+            )
+        case let .claudeAgent(model, options):
+            let catalog = providerCatalogs[.claudeAgent] ?? ProviderModelCatalog(models: [], source: .fallback)
+            guard catalog.models.contains(where: { $0.slug == model }) else { return nil }
+            if let effort = options?.effort, !ClaudeModelCatalog.isSupportedEffort(effort) { return nil }
+            return CoordinatorTurnChoice(
+                selection: selection.modelSelection,
+                model: model,
+                effort: options?.effort,
+                overridesModel: false,
+                overridesEffort: options?.effort != nil
+            )
+        default:
+            return CoordinatorTurnChoice(selection: selection.modelSelection, model: selection.model, effort: nil, overridesModel: false, overridesEffort: false)
+        }
     }
 
     /// Routes one Coordinator event: context, compaction and blocks to the thread state, permission

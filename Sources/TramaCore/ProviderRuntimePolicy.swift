@@ -361,10 +361,21 @@ public enum CoordinatorPermissionPolicy {
 public struct ProviderModelPreference: Codable, Equatable, Sendable {
     /// Remembered coordinator model per provider, keyed by `ProviderKind.rawValue`.
     public var coordinatorModels: [String: String] = [:]
+    /// Full provider-scoped composer selections. `coordinatorModels` remains for old documents.
+    public var coordinatorSelections: [String: ComposerSelection] = [:]
     /// Remembered specialist model per provider, keyed by `ProviderKind.rawValue`.
     public var specialistModels: [String: String] = [:]
 
     public init() {}
+
+    private enum CodingKeys: String, CodingKey { case coordinatorModels, coordinatorSelections, specialistModels }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        coordinatorModels = try container.decodeIfPresent([String: String].self, forKey: .coordinatorModels) ?? [:]
+        coordinatorSelections = try container.decodeIfPresent([String: ComposerSelection].self, forKey: .coordinatorSelections) ?? [:]
+        specialistModels = try container.decodeIfPresent([String: String].self, forKey: .specialistModels) ?? [:]
+    }
 
     public func coordinatorModel(for provider: ProviderKind) -> String? {
         coordinatorModels[provider.rawValue]
@@ -376,6 +387,29 @@ public struct ProviderModelPreference: Codable, Equatable, Sendable {
 
     public mutating func rememberCoordinator(_ model: String?, for provider: ProviderKind) {
         coordinatorModels[provider.rawValue] = model
+    }
+
+    public func coordinatorSelection(for provider: ProviderKind) -> ComposerSelection? {
+        if let selection = coordinatorSelections[provider.rawValue] { return selection }
+        guard let model = coordinatorModels[provider.rawValue], !model.isEmpty else { return nil }
+        let modelSelection: ModelSelection
+        switch provider {
+        case .codex: modelSelection = .codex(model: model, options: nil)
+        case .claudeAgent: modelSelection = .claudeAgent(model: model, options: nil)
+        case .cursor: modelSelection = .cursor(model: model, options: nil)
+        case .antigravity: modelSelection = .antigravity(model: model, options: nil)
+        case .grok: modelSelection = .grok(model: model, options: nil)
+        case .droid: modelSelection = .droid(model: model, options: nil)
+        case .devin: modelSelection = .devin(model: model, options: nil)
+        case .opencode: modelSelection = .opencode(model: model, options: nil)
+        case .pi: modelSelection = .pi(model: model, options: nil)
+        }
+        return ComposerSelection(modelSelection)
+    }
+
+    public mutating func rememberCoordinator(_ selection: ComposerSelection) {
+        coordinatorSelections[selection.provider.rawValue] = selection
+        coordinatorModels[selection.provider.rawValue] = selection.model
     }
 
     public mutating func rememberSpecialist(_ model: String?, for provider: ProviderKind) {

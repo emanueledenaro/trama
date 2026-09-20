@@ -213,9 +213,8 @@ struct CoordinatorComposer: View {
                 .help("Allega immagini")
                 .accessibilityLabel("Allega immagini")
             ViewThatFits(in: .horizontal) {
-                HStack(spacing: TramaSpacing.control) { scopeMenu; modelMenu; turnMenu }
-                HStack(spacing: TramaSpacing.control) { modelMenu; turnMenu }
-                turnMenu
+                HStack(spacing: TramaSpacing.control) { scopeMenu; modelMenu }
+                modelMenu
             }
             Spacer(minLength: 0)
             if store.isPlanning {
@@ -247,73 +246,71 @@ struct CoordinatorComposer: View {
             .help("Il contesto del messaggio")
     }
 
-    /// The Coordinator's own model, kept for every message.
+    /// The single provider and model selector used for every subsequent Coordinator message.
     private var modelMenu: some View {
         Menu {
-            if store.models.isEmpty {
-                Button(store.isLoadingModels ? "Caricamento modelli…" : "Nessun modello disponibile") { }.disabled(true)
+            let options = store.providerOptions
+            if options.isEmpty {
+                Button("Nessun provider collegato") { }.disabled(true)
             } else {
-                Section("Modello del Coordinatore") {
-                    ForEach(store.models) { model in
-                        Button { store.selectModel(model.model) } label: {
-                            if model.model == store.selectedModel { Label(model.displayName, systemImage: "checkmark") } else { Text(model.displayName) }
+                ForEach(options) { option in
+                    Section(option.provider.displayName) {
+                        let catalog = store.providerCatalogs[option.provider]?.models ?? []
+                        if !store.canChooseForCoordinator(option) {
+                            Button(store.coordinatorChoiceReason(option) ?? "Provider non disponibile") { }.disabled(true)
+                        } else if catalog.isEmpty {
+                            Button("Catalogo non disponibile") { }.disabled(true)
+                        } else {
+                            ForEach(catalog) { model in
+                                Menu(model.name) {
+                                    Button {
+                                        store.selectCoordinatorSelection(provider: option.provider, model: model.slug)
+                                    } label: {
+                                        let selected = store.document.coordinatorSelection?.provider == option.provider
+                                            && store.document.coordinatorSelection?.model == model.slug
+                                        let selectedEffort: String? = {
+                                            guard selected else { return nil }
+                                            switch store.document.coordinatorSelection?.modelSelection {
+                                            case let .codex(_, options): return options?.reasoningEffort
+                                            case let .claudeAgent(_, options): return options?.effort
+                                            default: return nil
+                                            }
+                                        }()
+                                        if selected && selectedEffort == nil { Label("Predefinito", systemImage: "checkmark") } else { Text("Predefinito") }
+                                    }
+                                    ForEach(model.supportedReasoningEfforts, id: \.self) { effort in
+                                        Button {
+                                            store.selectCoordinatorSelection(provider: option.provider, model: model.slug, effort: effort)
+                                        } label: {
+                                            let selectedEffort: String? = {
+                                                guard store.document.coordinatorSelection?.provider == option.provider,
+                                                      store.document.coordinatorSelection?.model == model.slug else { return nil }
+                                                switch store.document.coordinatorSelection?.modelSelection {
+                                                case let .codex(_, options): return options?.reasoningEffort
+                                                case let .claudeAgent(_, options): return options?.effort
+                                                default: return nil
+                                                }
+                                            }()
+                                            if selectedEffort == effort {
+                                                Label(CoordinatorModelChoice.effortLabel(effort), systemImage: "checkmark")
+                                            } else {
+                                                Text(CoordinatorModelChoice.effortLabel(effort))
+                                            }
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }
             }
         } label: {
-            Label(store.selectedModelDisplayName, systemImage: "cpu").lineLimit(1).truncationMode(.middle)
+            Label(store.coordinatorSelectionDisplayName, systemImage: "cpu").lineLimit(1).truncationMode(.middle)
         }
         .menuStyle(.borderlessButton).fixedSize()
-        .disabled(store.isPlanning || store.isExecuting || store.models.isEmpty)
-        .help(store.selectedModelInfo?.description ?? store.modelsError ?? "Catalogo modelli di Codex")
-        .accessibilityLabel("Modello del Coordinatore: \(store.selectedModelDisplayName)")
-    }
-
-    /// Effort and model for the next message only.
-    private var turnMenu: some View {
-        let effective = store.models.first { $0.model == (store.turnOverride.model ?? store.selectedModel) }
-        let defaultEffort = effective?.defaultReasoningEffort
-        return Menu {
-            Section("Sforzo per il prossimo messaggio") {
-                Button { store.turnOverride.effort = nil } label: {
-                    let title = "Predefinito" + (defaultEffort.map { " (\(CoordinatorModelChoice.effortLabel($0)))" } ?? "")
-                    if store.turnOverride.effort == nil { Label(title, systemImage: "checkmark") } else { Text(title) }
-                }
-                ForEach(effective?.supportedReasoningEfforts ?? [], id: \.self) { effort in
-                    Button { store.turnOverride.effort = effort } label: {
-                        let title = CoordinatorModelChoice.effortLabel(effort)
-                        if store.turnOverride.effort == effort { Label(title, systemImage: "checkmark") } else { Text(title) }
-                    }
-                }
-            }
-            Section("Modello per il prossimo messaggio") {
-                Button { store.turnOverride.model = nil } label: {
-                    if store.turnOverride.model == nil { Label("Modello del Coordinatore", systemImage: "checkmark") } else { Text("Modello del Coordinatore") }
-                }
-                ForEach(store.models.filter { $0.model != store.selectedModel }) { model in
-                    Button { store.turnOverride.model = model.model } label: {
-                        if store.turnOverride.model == model.model { Label(model.displayName, systemImage: "checkmark") } else { Text(model.displayName) }
-                    }
-                }
-            }
-        } label: {
-            Label(turnLabel(defaultEffort: defaultEffort), systemImage: "gauge.with.dots.needle.50percent")
-                .lineLimit(1)
-                .foregroundStyle(store.turnOverride.isEmpty ? TramaText.secondary : TramaInfo.text)
-        }
-        .menuStyle(.borderlessButton).fixedSize()
-        .disabled(store.isPlanning || store.models.isEmpty)
-        .help("Sforzo e modello valgono solo per il prossimo messaggio; il modello del Coordinatore non cambia")
-        .accessibilityLabel("Impostazioni del prossimo messaggio: \(turnLabel(defaultEffort: defaultEffort))")
-    }
-
-    private func turnLabel(defaultEffort: String?) -> String {
-        let override = store.turnOverride
-        let effort = (override.effort ?? defaultEffort).map(CoordinatorModelChoice.effortLabel) ?? "Sforzo"
-        guard !override.isEmpty else { return effort }
-        let model = override.model.flatMap { name in store.models.first { $0.model == name }?.displayName }
-        return ([model, effort].compactMap { $0 }).joined(separator: " · ") + " · solo il prossimo"
+        .disabled(store.isPlanning || store.isExecuting || store.providerOptions.isEmpty)
+        .help("Provider e modello del Coordinatore per i messaggi successivi")
+        .accessibilityLabel("Provider e modello del Coordinatore: \(store.coordinatorSelectionDisplayName)")
     }
 }
 

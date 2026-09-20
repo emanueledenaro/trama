@@ -29,7 +29,7 @@ struct CoordinatorView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            TramaScreenHeader("Coordinatore", subtitle: "\(store.project?.name ?? "Progetto") · \(store.selectedModelDisplayName)") {
+            TramaScreenHeader("Coordinatore", subtitle: "\(store.project?.name ?? "Progetto") · \(store.coordinatorSelectionDisplayName)") {
                 Button("Memoria", systemImage: "brain") { showMemory = true }
                     .help("Le note che il Coordinatore conserva per questo progetto")
                     .popover(isPresented: $showMemory, arrowEdge: .bottom) { memoryPopover }
@@ -843,6 +843,11 @@ struct CoordinatorView: View {
                 Text("Coordinatore")
                 if let provider = reply.provider { Text("· \(provider.displayName)") }
                 if let model = reply.model, !model.isEmpty { Text("· \(model)") }
+                if let requestedProvider = reply.requestedProvider,
+                   requestedProvider != reply.provider || reply.requestedModel != reply.model {
+                    let requested = [requestedProvider.displayName, reply.requestedModel].compactMap { $0 }.joined(separator: " · ")
+                    Text("· richiesto: \(requested)")
+                }
             }.font(.caption).foregroundStyle(.secondary)
 
             if reply.showsRequestStatus {

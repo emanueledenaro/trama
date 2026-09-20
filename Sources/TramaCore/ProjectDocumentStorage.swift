@@ -48,6 +48,7 @@ public struct ProjectDocumentStorage {
         } else if document.conversation?.projectID == nil {
             document.conversation?.projectID = projectID
         }
+        document.migrateComposerSelection()
         return document
     }
 

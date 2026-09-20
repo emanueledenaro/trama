@@ -49,6 +49,9 @@ public struct ConversationEvent: Codable, Identifiable, Equatable, Sendable {
     public var turnID: String?
     /// The provider that produced the event. Nil for events recorded before it was tracked.
     public var provider: ProviderKind?
+    /// The selection requested when the turn was queued, if known.
+    public var requestedProvider: ProviderKind?
+    public var requestedModel: String?
     public var createdAt: Date
     public var content: Content
 }
@@ -98,13 +101,17 @@ public struct ConversationTimeline: Codable, Equatable, Sendable {
     /// A new analysis of the same turn replaces the previous reply: the event keeps its identifier
     /// and moves to the end with a new sequence. After a new person message the reply is a new event.
     public mutating func recordReply(requestID: UUID, text: String, model: String?, provider: ProviderKind? = nil, references: [String], at date: Date = Date()) {
+        recordReply(requestID: requestID, text: text, model: model, provider: provider, requestedProvider: nil, requestedModel: nil, references: references, at: date)
+    }
+
+    public mutating func recordReply(requestID: UUID, text: String, model: String?, provider: ProviderKind? = nil, requestedProvider: ProviderKind?, requestedModel: String?, references: [String], at date: Date = Date()) {
         let content = ConversationEvent.Content.coordinatorText(text: text, model: model, references: references)
         let turn = events.lastIndex { $0.requestID == requestID && $0.origin == .person }
         if let previous = lastReplyIndex(requestID: requestID), previous > (turn ?? -1) {
             let id = events.remove(at: previous).id
-            append(content, origin: .coordinator, requestID: requestID, provider: provider, at: date, id: id)
+            append(content, origin: .coordinator, requestID: requestID, provider: provider, requestedProvider: requestedProvider, requestedModel: requestedModel, at: date, id: id)
         } else {
-            append(content, origin: .coordinator, requestID: requestID, provider: provider, at: date)
+            append(content, origin: .coordinator, requestID: requestID, provider: provider, requestedProvider: requestedProvider, requestedModel: requestedModel, at: date)
         }
     }
 
@@ -148,6 +155,8 @@ public struct ConversationTimeline: Codable, Equatable, Sendable {
         assignmentID: String? = nil,
         turnID: String? = nil,
         provider: ProviderKind? = nil,
+        requestedProvider: ProviderKind? = nil,
+        requestedModel: String? = nil,
         at date: Date,
         id: UUID = UUID()
     ) {
@@ -161,6 +170,8 @@ public struct ConversationTimeline: Codable, Equatable, Sendable {
             assignmentID: assignmentID,
             turnID: turnID,
             provider: provider,
+            requestedProvider: requestedProvider,
+            requestedModel: requestedModel,
             createdAt: date,
             content: content
         ))
@@ -192,6 +203,8 @@ public enum ConversationRow: Identifiable, Equatable, Sendable {
         public var model: String?
         /// The provider that produced the reply; nil for turns recorded before it was tracked.
         public var provider: ProviderKind?
+        public var requestedProvider: ProviderKind?
+        public var requestedModel: String?
         public var references: [String]
         /// True for the latest reply of the request, which carries its live status and actions.
         public var showsRequestStatus: Bool
@@ -350,7 +363,7 @@ extension ConversationTimeline {
             case .coordinatorText(let text, let model, let references):
                 guard let requestID = event.requestID else { continue }
                 rows.append(.coordinatorReply(.init(
-                    id: event.id, requestID: requestID, text: text, model: model, provider: event.provider, references: references,
+                    id: event.id, requestID: requestID, text: text, model: model, provider: event.provider, requestedProvider: event.requestedProvider, requestedModel: event.requestedModel, references: references,
                     showsRequestStatus: latestReply[requestID] == event.id && !pendingRequests.contains(requestID)
                 )))
             case .activity:
