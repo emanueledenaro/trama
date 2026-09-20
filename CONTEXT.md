@@ -24,6 +24,10 @@ Specialista: un agente con una competenza e un incarico motivato all'interno di 
 
 Provider: il programma esterno con cui Trama parla per far lavorare un agente, per esempio Codex o Claude Agent. È distinto dal modello, che è una scelta interna al provider, e dal ruolo dello specialista, che non dipende da nessuno dei due. Un provider è collegato quando la persona ha reso disponibile il suo account.
 
+Selezione del composer: il provider, il modello e le opzioni del provider scelti per i prossimi turni di un dialogo. Resta associata alla bozza e al dialogo, conserva preferenze separate per provider e viene fotografata quando un turno entra in coda.
+
+Attribuzione del turno: il provider e il modello che hanno effettivamente eseguito un turno. È distinta dalla selezione mostrata nel composer; una differenza viene conservata e resa visibile.
+
 Stato di accesso: la condizione di un provider rispetto all'account della persona: autenticato, non autenticato o sconosciuto. È distinto dall'essere collegato, perché un provider collegato può essere non autenticato, per esempio dopo la scadenza di un token.
 
 Incarico: un lavoro assegnato dal Coordinatore a uno specialista, con obiettivo, perimetro, dipendenze e verifiche richieste. Un incarico produce candidati; la delega è il legame tra quell'incarico, le decisioni applicabili e il mandato.
@@ -37,6 +41,10 @@ Scheda: un atto del metodo mostrato nella conversazione: studio, proposta di tea
 Ispettore: la superficie che mostra il dettaglio di ciò che la persona tocca nella conversazione o nella sidebar: decisione, candidato, specialista, modulo, issue, gruppo. Non è una sezione da visitare a sé.
 
 Progetto attivo: il progetto cui si riferisce il dialogo corrente con il Coordinatore. È distinto dai progetti che hanno lavoro in corso.
+
+Dialogo del progetto: la conversazione con il Coordinatore dedicata a priorità e questioni che riguardano più obiettivi. Conserva anche la conversazione storica cui non è stato attribuito un obiettivo.
+
+Dialogo di obiettivo: la conversazione con il Coordinatore dedicata a un singolo obiettivo, con bozza, selezione del composer e sessione tecnica proprie. Condivide con gli altri dialoghi l'autorità, il mandato, le decisioni e la memoria del progetto.
 
 Mandato di progetto: l'autorizzazione persistente del Product Owner a perseguire obiettivi entro limiti definiti per un progetto. La delega di un singolo incarico deve rientrare nel mandato e nelle decisioni applicabili.
 

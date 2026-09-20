@@ -24,7 +24,7 @@ Decisa da Emanuele il 18 settembre 2026 per contenere il consumo: **un solo thre
 
 ## Ordine del lavoro
 
-I ticket V01-V09 costruiscono il Coordinatore vero per fette verticali, ognuna dimostrabile. L'ordine è seriale secondo la regola di consumo sopra: un ticket per volta, nell'ordine di dipendenza della tabella. V07 e V06 hanno corso in parallelo con V03-V05 quando il piano è stato scritto; non accade più. P01 è solo documentazione e non ha dipendenze. I provider entrano dopo V08 e prima di V09: prima Claude Agent (P02), poi gli altri sette. C03, C04 e C05 sono chiusi come sostituiti; #57, #58, #59 e #60 sono chiusi come assorbiti o realizzati.
+I ticket V01-V09 costruiscono il Coordinatore vero per fette verticali, ognuna dimostrabile. L'ordine è seriale secondo la regola di consumo sopra: un ticket per volta, nell'ordine di dipendenza. Il 20 settembre 2026 Emanuele ha scelto questo percorso: completare P02 con Codex e Claude coerenti, validare UX00 e realizzare UX01-UX08, poi aggiungere gli altri provider P03-P09 e concludere con V09. C03, C04 e C05 sono chiusi come sostituiti; #57, #58, #59 e #60 sono chiusi come assorbiti o realizzati.
 
 | Ticket | Consegna | Bloccato da |
 | --- | --- | --- |
