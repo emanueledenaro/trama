@@ -1,5 +1,28 @@
 # P02: in-app proof with Claude Agent
 
+## Nuova prova sulla build release, 20 settembre 2026
+
+La build release del worktree è stata aperta davvero da `build/Trama.app`. Il commit locale `fa6dc66` e la head della PR `28444f5` identificano lo stesso tree `24d71df3284575cea7fb10326298dd99311c9843`.
+
+### Osservato
+
+- Il progetto si è riaperto con la cronologia esistente e il Coordinatore ripreso su Codex. La schermata mostrava `Codex di OpenAI · GPT-5.6-Luna` e il composer era disponibile.
+- Il composer è un selettore unico. Il menu ha mostrato provider, modelli e opzioni per provider. Codex esponeva gli sforzi `Predefinito`, `Basso`, `Medio`, `Alto`, `Molto alto`, `max` e `ultra`.
+- Claude Agent era presente nello stesso menu, ma disabilitato con il motivo `Claude non è autenticato. Esegui \`claude auth login\` e riprova.`
+- La schermata Collegamenti ha mostrato Codex collegato e Claude Agent come `Accesso richiesto`, con la stessa motivazione. Il testo della schermata dichiara che Trama non copia le credenziali.
+- È stata selezionata nel composer la combinazione `Codex di OpenAI · GPT-5.6-Luna · Medio`. La selezione è stata letta subito dopo l’azione dal testo accessibile del composer.
+- `claude auth status` eseguito senza modificare credenziali ha restituito `loggedIn: false`, `authMethod: none`, `apiProvider: firstParty`.
+
+Schermata realmente osservata del composer release: [09](p02-in-app/p02-09-release-composer-codex.jpeg).
+
+### Non eseguito per blocco di accesso
+
+Non ho inviato un turno Claude, non ho verificato la preferenza Claude separata, il passaggio di consegne, l’attribuzione effettiva Claude, la riapertura dopo un turno Claude o l’indisponibilità di un modello Claude senza fallback. Questi passaggi richiedono un account Claude autenticato.
+
+Passaggio umano esatto: eseguire `claude auth login` con il comando ufficiale e completare l’accesso nel browser. Non ho inserito, copiato o letto credenziali. Dopo l’accesso occorre riaprire `build/Trama.app` e ripetere la prova con `haiku`; il confronto Codex deve usare `gpt-5.6-luna` con sforzo `medium`.
+
+Questa sezione è una prova nuova e parziale. La prova completa del 18 settembre resta sotto e non viene riutilizzata come evidenza della build corrente.
+
 Run of 18 September 2026 for #81, on the head of PR #95. Real component: the `claude` CLI 2.1.276 with the account of the person, model `haiku` for the Coordinator and for the specialist. Codex was used only for the switch step, which hit its real usage limit (see below).
 
 ## Setup
