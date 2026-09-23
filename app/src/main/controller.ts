@@ -27,11 +27,29 @@ import { resolveCodexExecutable } from "./core/codexClient";
 import { CodexRuntime } from "./core/providers/codex";
 import { createRuntime, hasAdapter } from "./core/providers/registry";
 import { type AgentRuntime, extractJsonAnswer } from "./core/providers/types";
-import { COORDINATOR_TOOLS, developerInstructions, runCoordinatorTool, TOOL_SERVER_INSTRUCTIONS } from "./core/coordinatorTools";
+import {
+  COORDINATOR_TOOLS,
+  developerInstructions,
+  runCoordinatorTool,
+  type TicketUpdate,
+  type TicketUpdateResult,
+  TicketRefusal,
+  TOOL_SERVER_INSTRUCTIONS,
+} from "./core/coordinatorTools";
+import { checkItems, closeBlockers, evidenceProblems, parseChecklist, progressComment, progressKey, progressMarker } from "./core/tickets";
 import { openingInput, resumeInput, specialistInstructions } from "./core/specialistBriefing";
 import { prepareDemoProject } from "./core/demoProject";
 import { appendEvent, emptyDocument, handoverTranscript, moveEvent, recordReply, referencedPaths } from "./core/document";
-import { createIssue, listIssues, readGitHubRepository } from "./core/github";
+import {
+  closeIssue,
+  commentOnIssue,
+  createIssue,
+  listIssues,
+  readGitHubRepository,
+  readIssue,
+  readPullRequestStatus,
+  updateIssueBody,
+} from "./core/github";
 import { convertLegacyDocument, readLegacyDocument, readLegacyRecentProjects } from "./core/legacyImport";
 import { type MonitorCheckpoint, MonitorStore, pollRepository } from "./core/monitor";
 import {
@@ -793,6 +811,7 @@ export class TramaController {
           startAssignment: (id) => void this.startAssignment(id),
           stopAssignment: (id) => void this.stopAssignmentRuntime(id),
           decisionChanged: (id) => this.stopWorkDependingOn(id),
+          updateTicket: (input) => this.updateTicket(input, current.runningRequestId),
           runCheck: (check) => this.runCheck(check, current.rootPath, current.runningRequestId),
           availableChecks: availableChecks(current.rootPath),
           reviewWorkspace: async (assignmentId) => {
@@ -1732,6 +1751,77 @@ export class TramaController {
     appendEvent(document, "trama", { type: "activity", title: `Pull request #${published.number} pubblicata`, detail: published.url, tone: "tool" });
     this.changed();
     await this.send(`Ho pubblicato il candidato ${candidate.id} come pull request #${published.number}: ${published.url}`, null, null, null);
+  }
+
+  // MARK: Tickets
+
+  /**
+   * Reports progress on an issue with evidence Trama can see (C10). Comment and checklist are
+   * idempotent, so a retry after a timeout duplicates nothing; the issue closes only when every
+   * criterion is ticked and a merged pull request has green checks.
+   */
+  async updateTicket(input: TicketUpdate, requestId: string | null = null): Promise<TicketUpdateResult> {
+    const project = this.requireProject();
+    const document = project.document;
+    const repository = project.github.repository;
+    if (!repository) throw new TicketRefusal("no_repository", "The project has no GitHub remote.");
+    if (!input.summary.trim()) throw new TicketRefusal("invalid_arguments", "summary is required.");
+    const issue = await readIssue(repository, input.issueNumber);
+    const items = parseChecklist(issue.body);
+    const outOfRange = input.criteria.filter((c) => c.index < 0 || c.index >= items.length);
+    if (outOfRange.length) {
+      throw new TicketRefusal("invalid_arguments", `The issue has ${items.length} criteria; unknown indexes: ${outOfRange.map((c) => c.index).join(", ")}.`);
+    }
+    const head = await this.headSHA(project.rootPath);
+    const candidates = new Map(
+      document.candidates.map((c) => [c.id, { report: candidateReport(document, c, head), pullRequestNumber: c.pullRequest?.number ?? null }]),
+    );
+    const pullRequests = new Set(document.candidates.flatMap((c) => (c.pullRequest ? [c.pullRequest.number] : [])));
+    const problems = input.criteria.flatMap((c) => evidenceProblems(c, { candidates, pullRequests }));
+    if (problems.length) throw new TicketRefusal("evidence_insufficient", problems.join(" "));
+
+    const key = progressKey(input.issueNumber, input.criteria, input.summary);
+    const duplicate = issue.comments.some((c) => c.includes(progressMarker(key)));
+    if (!duplicate) await commentOnIssue(repository, input.issueNumber, progressComment(key, items, input.criteria, input.summary, input.openParts));
+    const met = input.criteria.filter((c) => c.outcome === "met" && !items[c.index]!.checked).map((c) => c.index);
+    let body = issue.body;
+    if (met.length) {
+      body = checkItems(issue.body, met);
+      await updateIssueBody(repository, input.issueNumber, body);
+    }
+    let closed = issue.state === "closed";
+    let blockers: string[] = [];
+    if (input.close && !closed) {
+      const numbers = new Set<number>();
+      for (const criterion of input.criteria) {
+        for (const reference of criterion.evidence) {
+          const pull = /^#(\d+)$/.exec(reference);
+          if (pull) numbers.add(Number(pull[1]));
+          const number = candidates.get(reference)?.pullRequestNumber;
+          if (number) numbers.add(number);
+        }
+      }
+      const statuses = await Promise.all([...numbers].map((n) => readPullRequestStatus(repository, n)));
+      blockers = closeBlockers(parseChecklist(body), statuses);
+      if (!blockers.length) {
+        await closeIssue(repository, input.issueNumber);
+        closed = true;
+      }
+    }
+    appendEvent(
+      document,
+      "trama",
+      {
+        type: "activity",
+        title: `Issue #${input.issueNumber}: ${closed && input.close ? "chiusa con le prove" : duplicate ? "avanzamento già registrato" : "avanzamento registrato"}`,
+        detail: blockers.length ? `Resta aperta: ${blockers.join(" ")}` : met.length ? `Criteri spuntati: ${met.map((i) => i + 1).join(", ")}` : null,
+        tone: "tool",
+      },
+      requestId,
+    );
+    this.changed();
+    void this.refreshGitHub();
+    return { commentPosted: !duplicate, duplicate, checkedCriteria: met, closed, closeBlockers: blockers };
   }
 
   // MARK: Team monitor

@@ -16,3 +16,14 @@ describe("github", () => {
     delete process.env.GITHUB_TOKEN;
   });
 });
+
+describe("checksConclusion", () => {
+  it("is green only when every check succeeded or was skipped", async () => {
+    const { checksConclusion } = await import("./github");
+    expect(checksConclusion([])).toBe("none");
+    expect(checksConclusion([{ status: "COMPLETED", conclusion: "SUCCESS" }, { status: "COMPLETED", conclusion: "SKIPPED" }])).toBe("success");
+    expect(checksConclusion([{ status: "COMPLETED", conclusion: "SUCCESS" }, { status: "IN_PROGRESS", conclusion: null }])).toBe("pending");
+    expect(checksConclusion([{ status: "COMPLETED", conclusion: "FAILURE" }])).toBe("failure");
+    expect(checksConclusion([{ state: "SUCCESS" }])).toBe("success");
+  });
+});

@@ -24,6 +24,33 @@ import {
   TeamError,
 } from "./team";
 import { type ToolDefinition, type ToolResult, toolFailure, toolSuccess } from "./toolServer";
+import type { CriterionReport } from "./tickets";
+
+export interface TicketUpdate {
+  issueNumber: number;
+  summary: string;
+  criteria: CriterionReport[];
+  openParts: string[];
+  close: boolean;
+}
+
+export interface TicketUpdateResult {
+  commentPosted: boolean;
+  duplicate: boolean;
+  checkedCriteria: number[];
+  closed: boolean;
+  closeBlockers: string[];
+}
+
+/** A ticket update Trama refuses before touching GitHub. */
+export class TicketRefusal extends Error {
+  constructor(
+    readonly code: "invalid_arguments" | "evidence_insufficient" | "no_repository",
+    message: string,
+  ) {
+    super(message);
+  }
+}
 
 type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
 type JsonObject = { [key: string]: Json };
@@ -177,6 +204,32 @@ export const COORDINATOR_TOOLS: ToolDefinition[] = [
     readOnly: false,
   },
   {
+    name: "update_ticket",
+    description:
+      "Report progress on a GitHub issue of this project with evidence (C10). For each checklist criterion (0-based index) give outcome met, partial or notMet, the evidence (candidate ids, pull requests as #N, commit SHAs) and the limits. A criterion counts as met only with a verified candidate, a pull request Trama published or a commit: code on disk or the end of a turn is not evidence. Trama posts one comment per distinct report (a retry posts nothing new) and ticks only the met criteria. With close true, Trama closes the issue only when every criterion is ticked and a merged pull request has green checks; otherwise it stays open and you get the blockers. Needs the mandate openPullRequest, and integrateCandidate to close.",
+    properties: {
+      issueNumber: { type: "integer", minimum: 1 },
+      summary: text,
+      criteria: {
+        type: "array",
+        items: {
+          type: "object",
+          properties: {
+            index: { type: "integer", minimum: 0 },
+            outcome: { type: "string", enum: ["met", "partial", "notMet"] },
+            evidence: { type: "array", items: { type: "string" } },
+            limits: { type: "string" },
+          },
+          required: ["index", "outcome", "evidence"],
+        },
+      },
+      openParts: { type: "array", items: { type: "string" } },
+      close: { type: "boolean" },
+    },
+    required: ["issueNumber", "summary", "criteria"],
+    readOnly: false,
+  },
+  {
     name: "stop_specialist",
     description:
       "Within the mandate, stop a specialist's work (executeInWorktree), or with remove take the specialist out of the team once its work has stopped (composeTeam). A stop is first requested and then confirmed when the provider ends the turn; work and history are kept. Say it in the conversation.",
@@ -249,6 +302,8 @@ export interface ToolContext {
   providers: { id: ProviderId; models: string[] }[];
   /** Starts the runtime of an assignment that was just recorded. */
   startAssignment(id: string): void;
+  /** Reports progress on a GitHub issue with evidence; throws on refused evidence or a GitHub error. */
+  updateTicket(input: TicketUpdate): Promise<TicketUpdateResult>;
   /** Stops running work that relies on a decision that changed or is being revised; returns the stopped assignment ids. */
   decisionChanged(decisionId: string): string[];
   /** Interrupts the running turn of an assignment, or confirms the stop when none runs. */
@@ -534,6 +589,36 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
         context.changed();
         context.startAssignment(assignment.id);
         return toolSuccess({ assignmentID: assignment.id, specialistID: assignment.specialistId, status: assignment.status, provider: assignment.provider ?? "codex", model: assignment.model });
+      }
+      case "update_ticket": {
+        const issueNumber = typeof args.issueNumber === "number" ? args.issueNumber : 0;
+        if (!issueNumber) return toolFailure("invalid_arguments", "issueNumber is required.");
+        const close = args.close === true;
+        const authorization = authorize(document.mandate, close ? "integrateCandidate" : "openPullRequest");
+        if (authorization !== "authorized") return refused(authorization, close ? "integrateCandidate" : "openPullRequest");
+        const criteria = (Array.isArray(args.criteria) ? args.criteria : []).map((c) => {
+          const item = (c && typeof c === "object" && !Array.isArray(c) ? c : {}) as JsonObject;
+          const outcome = item.outcome === "met" || item.outcome === "partial" ? item.outcome : "notMet";
+          return {
+            index: typeof item.index === "number" ? item.index : -1,
+            outcome: outcome as "met" | "partial" | "notMet",
+            evidence: strings(item.evidence),
+            limits: typeof item.limits === "string" && item.limits.trim() ? item.limits.trim() : null,
+          };
+        });
+        try {
+          const result = await context.updateTicket({
+            issueNumber,
+            summary: typeof args.summary === "string" ? args.summary : "",
+            criteria,
+            openParts: strings(args.openParts),
+            close,
+          });
+          return toolSuccess(result as unknown as JsonObject);
+        } catch (error) {
+          const message = (error as Error).message;
+          return toolFailure(error instanceof TicketRefusal ? error.code : "github_failed", message);
+        }
       }
       case "stop_specialist": {
         const specialist = findSpecialist(document, typeof args.specialist === "string" ? args.specialist : "");

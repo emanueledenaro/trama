@@ -92,3 +92,76 @@ export async function createIssue(repository: string, title: string, body: strin
     { env: ghEnvironment(), timeout: 20_000 },
   );
 }
+
+export interface IssueDetail {
+  number: number;
+  state: "open" | "closed";
+  body: string;
+  comments: string[];
+}
+
+export async function readIssue(repository: string, number: number): Promise<IssueDetail> {
+  const issue = JSON.parse(
+    await run("gh", ["api", "--method", "GET", `repos/${repository}/issues/${number}`], { env: ghEnvironment(), timeout: 20_000 }),
+  ) as RawIssue;
+  const comments: string[] = [];
+  for (let page = 1; page <= 10; page++) {
+    const rows = JSON.parse(
+      await run("gh", ["api", "--method", "GET", `repos/${repository}/issues/${number}/comments?per_page=100&page=${page}`], {
+        env: ghEnvironment(),
+        timeout: 20_000,
+      }),
+    ) as { body?: string | null }[];
+    comments.push(...rows.map((r) => r.body ?? ""));
+    if (rows.length < 100) break;
+  }
+  return { number: issue.number, state: issue.state === "closed" ? "closed" : "open", body: issue.body ?? "", comments };
+}
+
+export async function commentOnIssue(repository: string, number: number, body: string): Promise<void> {
+  await run("gh", ["api", "--method", "POST", `repos/${repository}/issues/${number}/comments`, "--raw-field", `body=${body}`], {
+    env: ghEnvironment(),
+    timeout: 20_000,
+  });
+}
+
+export async function updateIssueBody(repository: string, number: number, body: string): Promise<void> {
+  await run("gh", ["api", "--method", "PATCH", `repos/${repository}/issues/${number}`, "--raw-field", `body=${body}`], {
+    env: ghEnvironment(),
+    timeout: 20_000,
+  });
+}
+
+export async function closeIssue(repository: string, number: number): Promise<void> {
+  await run(
+    "gh",
+    ["api", "--method", "PATCH", `repos/${repository}/issues/${number}`, "--raw-field", "state=closed", "--raw-field", "state_reason=completed"],
+    { env: ghEnvironment(), timeout: 20_000 },
+  );
+}
+
+/** State of a pull request and the rollup of its checks, from gh. */
+export async function readPullRequestStatus(repository: string, number: number): Promise<import("./tickets").PullRequestStatus> {
+  const raw = JSON.parse(
+    await run("gh", ["pr", "view", String(number), "--repo", repository, "--json", "number,state,mergedAt,statusCheckRollup"], {
+      env: ghEnvironment(),
+      timeout: 20_000,
+    }),
+  ) as { number: number; state: string; mergedAt: string | null; statusCheckRollup?: { conclusion?: string | null; state?: string | null; status?: string | null }[] };
+  return {
+    number: raw.number,
+    state: raw.state === "MERGED" ? "MERGED" : raw.state === "CLOSED" ? "CLOSED" : "OPEN",
+    mergedAt: raw.mergedAt,
+    checks: checksConclusion(raw.statusCheckRollup ?? []),
+  };
+}
+
+export function checksConclusion(rollup: { conclusion?: string | null; state?: string | null; status?: string | null }[]): "success" | "failure" | "pending" | "none" {
+  if (!rollup.length) return "none";
+  const outcomes = rollup.map((c) => (c.conclusion ?? c.state ?? "").toUpperCase());
+  if (outcomes.some((o) => ["FAILURE", "ERROR", "CANCELLED", "TIMED_OUT", "ACTION_REQUIRED", "STARTUP_FAILURE"].includes(o))) return "failure";
+  if (rollup.some((c) => (c.status ?? "").toUpperCase() !== "COMPLETED" && !c.state) || outcomes.some((o) => o === "" || o === "PENDING" || o === "EXPECTED")) {
+    return "pending";
+  }
+  return "success";
+}
