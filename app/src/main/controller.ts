@@ -4,7 +4,7 @@ import { mkdir, realpath, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { isUsableAccount, type ProviderAccount, type ProviderId, type ProviderModel, type TurnEvent } from "@shared/codex";
-import { PROVIDERS } from "@shared/providers";
+import { PROVIDERS, supportsReadOnly } from "@shared/providers";
 import { shortId } from "@shared/ids";
 import { mentionContextBlock } from "@shared/mentions";
 import { codexSkillText, skillInvocations } from "@shared/skills";
@@ -920,7 +920,9 @@ export class TramaController {
     const document = project.document;
     const provider = this.coordinatorProvider(document);
     if (!this.state.providers[provider].account) await this.refreshProvider(provider);
-    const reason = providerUnavailableReason(provider, this.state.providers[provider].account);
+    const reason = supportsReadOnly(provider)
+      ? providerUnavailableReason(provider, this.state.providers[provider].account)
+      : `${providerName(provider)} lavora solo con un worktree e non può fare da Coordinatore. Scegli un altro provider dal composer.`;
     if (reason) {
       project.phase = { kind: "unavailable", message: reason };
       this.publish();
@@ -1743,8 +1745,11 @@ export class TramaController {
     if (!candidate) throw new Error(`Unknown candidate ${candidateId}.`);
     const assignment = findAssignment(document, candidate.assignmentId);
     if (!assignment?.workspace) throw new Error(`Candidate ${candidateId} has no worktree.`);
-    const provider = assignment.provider ?? "codex";
-    const model = assignment.model;
+    // The reviewer reads only: a worktree-only provider hands the review to the Coordinator's provider.
+    const authorProvider = assignment.provider ?? "codex";
+    const provider = supportsReadOnly(authorProvider) ? authorProvider : this.coordinatorProvider(document);
+    const model = provider === authorProvider ? assignment.model : (document.coordinator.threadModel ?? this.coordinatorModel(document, provider));
+    if (!model) throw new Error(this.coordinatorModelProblem(document, provider));
     const client = createRuntime(provider, { executable: provider === "codex" ? this.host.codexExecutable : null, requestTimeoutMs: 15_000 });
     try {
       const opening = await client.openThread({

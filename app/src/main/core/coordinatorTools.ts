@@ -1,4 +1,5 @@
 import type { ProviderId } from "@shared/codex";
+import { supportsReadOnly } from "@shared/providers";
 import type { MandateAction, ProjectDocument, SpecialistTool, TechnicalReview, WorkKind } from "@shared/domain";
 import type { WorkspaceReview } from "./workspace";
 import { MEMORY_BYTE_LIMIT } from "@shared/domain";
@@ -558,6 +559,9 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
             "provider_not_connected",
             `Provider ${providerId} is not connected. Connected providers: ${context.providers.map((p) => p.id).join(", ") || "none"}.`,
           );
+        }
+        if (!supportsReadOnly(providerId) && !strings(args.tools).includes("edits")) {
+          return toolFailure("provider_needs_worktree", `Provider ${providerId} runs only with edits in a worktree; choose another provider for read-only work.`);
         }
         const requestedModel = typeof args.model === "string" && args.model.trim() ? args.model.trim() : null;
         const model = requestedModel ?? (providerId === context.defaultProvider ? context.defaultModel : provider.models[0] ?? null);

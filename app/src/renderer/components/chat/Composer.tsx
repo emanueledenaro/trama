@@ -1,7 +1,7 @@
 // Layout and classes follow Synara (github.com/Emanuele-web04/synara, MIT License, Copyright (c) 2026 T3 Tools Inc. and Emanuele Di Pietro).
 import { IconArrowUp, IconAt, IconChevronDown, IconPhotoPlus, IconSparkles, IconX } from "@tabler/icons-react";
 import { isUsableAccount, type ProviderId } from "@shared/codex";
-import { PROVIDERS } from "@shared/providers";
+import { PROVIDERS, supportsReadOnly } from "@shared/providers";
 import type { ImageAttachmentInput } from "@shared/ipc";
 import { type MentionCandidate, mentionCandidates, mentionToken } from "@shared/mentions";
 import { normalizePaste, pasteSizeLabel, pasteTitle, serializePastes, shouldCollapsePaste } from "@shared/pastedText";
@@ -361,13 +361,19 @@ export function Composer() {
                   >
                     {PROVIDERS.map((p) => {
                       const account = providers[p.id as ProviderId]?.account ?? null;
-                      const usable = isUsableAccount(account);
+                      const usable = isUsableAccount(account) && supportsReadOnly(p.id);
                       return (
                         <MenuRadioItem key={p.id} value={p.id} disabled={!usable || busy}>
                           <span className="block truncate">{p.name}</span>
                           {!usable ? (
                             <span className="block truncate text-ui-xs text-muted-foreground">
-                              {account?.kind === "blocked" ? "Bloccato" : account?.kind === "signedOut" ? "Accesso richiesto" : "Non collegato"}
+                              {!supportsReadOnly(p.id)
+                                ? "Solo per specialisti con worktree"
+                                : account?.kind === "blocked"
+                                  ? "Bloccato"
+                                  : account?.kind === "signedOut"
+                                    ? "Accesso richiesto"
+                                    : "Non collegato"}
                             </span>
                           ) : null}
                         </MenuRadioItem>
