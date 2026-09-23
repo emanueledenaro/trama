@@ -8,7 +8,15 @@ const shared = {
   target: "node22",
   format: "cjs",
   sourcemap: true,
-  external: ["electron"],
+  // Provider SDKs stay in node_modules: they spawn bundled CLIs and are loaded lazily with import().
+  external: [
+    "electron",
+    "@anthropic-ai/claude-agent-sdk",
+    "@agentclientprotocol/sdk",
+    "@opencode-ai/sdk",
+    "@opencode-ai/sdk/*",
+    "@earendil-works/*",
+  ],
   logLevel: "info",
 };
 

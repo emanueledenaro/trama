@@ -1,10 +1,21 @@
-export type AccountStatus =
+export type ProviderId = "codex" | "claudeAgent" | "cursor" | "antigravity" | "grok" | "droid" | "devin" | "opencode" | "pi";
+
+/** The account state of one provider. `chatgpt` is Codex's only accepted account; other providers report `authenticated`. */
+export type ProviderAccount =
   | { kind: "chatgpt"; email: string | null; plan: string }
+  | { kind: "authenticated"; label: string | null }
   | { kind: "signedOut" }
   | { kind: "unsupported"; type: string }
-  | { kind: "unavailable"; message: string };
+  | { kind: "unavailable"; message: string }
+  | { kind: "blocked"; message: string; until: string | null };
 
-export interface CodexModel {
+export type AccountStatus = ProviderAccount;
+
+/** True when the provider can run turns now. */
+export const isUsableAccount = (account: ProviderAccount | null | undefined): boolean =>
+  account?.kind === "chatgpt" || account?.kind === "authenticated";
+
+export interface ProviderModel {
   id: string;
   model: string;
   displayName: string;
@@ -13,6 +24,8 @@ export interface CodexModel {
   supportedReasoningEfforts: string[];
   defaultReasoningEffort: string | null;
 }
+
+export type CodexModel = ProviderModel;
 
 /** A normalized event from one running turn, forwarded to the renderer. */
 export type TurnEvent =
