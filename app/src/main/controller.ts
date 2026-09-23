@@ -65,7 +65,8 @@ import {
   type TurnEnd,
 } from "./core/team";
 import { prepareWorktree, reviewWorktree, validateWorktree } from "./core/workspace";
-import { approveCandidate, candidateReport, findCandidate, recordEvidence, recordTechnicalReview } from "./core/candidates";
+import { approveCandidate, candidateReport, findCandidate, latestCandidate, recordEvidence, recordTechnicalReview } from "./core/candidates";
+import { assessConflict } from "./core/conflicts";
 import { pullRequestBody, publishCandidate } from "./core/publication";
 import { git } from "./core/process";
 import { AppStorage } from "./core/storage";
@@ -451,6 +452,69 @@ export class TramaController {
     };
     this.updateMonitorStatus(repository, checkpoint);
     this.publish();
+    void this.assessRemoteConflicts();
+  }
+
+  private assessingConflicts = false;
+
+  /**
+   * Compares every unpublished candidate with the colleagues' remote heads (open pull requests and
+   * the default branch) through a temporary merge. At most eight new comparisons per run.
+   */
+  async assessRemoteConflicts(): Promise<void> {
+    const project = this.state.project;
+    const snapshot = project?.github.snapshot;
+    const repository = project?.github.repository;
+    if (!project || !snapshot || !repository || this.assessingConflicts || snapshot.warnings.length) return;
+    const document = project.document;
+    const candidates = document.candidates.filter(
+      (c) => !c.pullRequest && latestCandidate(document, c.assignmentId)?.id === c.id && findAssignment(document, c.assignmentId)?.workspace,
+    );
+    if (!candidates.length) return;
+    this.assessingConflicts = true;
+    try {
+      document.conflicts ??= [];
+      const heads = new Map<string, string[]>();
+      const defaultHead = snapshot.branches.find((b) => b.name === snapshot.defaultBranch);
+      if (defaultHead) heads.set(defaultHead.sha.toLowerCase(), [snapshot.defaultBranch]);
+      for (const pull of snapshot.pullRequests) {
+        const sha = pull.headSHA.toLowerCase();
+        heads.set(sha, [...(heads.get(sha) ?? []), `#${pull.number} ${pull.headRef}`]);
+      }
+      let budget = 8;
+      for (const candidate of candidates) {
+        const assignment = findAssignment(document, candidate.assignmentId)!;
+        const session = assignment.workspace!;
+        for (const [sha, references] of heads) {
+          if (budget <= 0) return;
+          if (sha === session.baseSHA.toLowerCase() || references.some((r) => r.endsWith(session.branch))) continue;
+          if (document.conflicts.some((a) => a.id === `${candidate.snapshotId}:${sha}`)) continue;
+          budget -= 1;
+          const assessment = await assessConflict({
+            candidateId: candidate.id,
+            snapshotId: candidate.snapshotId,
+            session,
+            changedFiles: candidate.changedFiles,
+            remoteSHA: sha,
+            references,
+            source: { kind: "github", repository },
+            cacheRoot: join(this.storage.root, "RemoteCache"),
+            probeRoot: join(this.storage.root, "ConflictProbe"),
+          });
+          if (this.state.project !== project) return;
+          document.conflicts.push(assessment);
+          if (assessment.classification === "conflict" || assessment.classification === "overlap") {
+            appendEvent(document, "trama", { type: "card", kind: "conflict", title: "Conflitto", detail: null, referenceId: assessment.id });
+            if (assessment.classification === "conflict") {
+              this.host.notify("Trama: conflitto con il lavoro di un collega", `Il candidato ${candidate.id} entra in conflitto con ${references.join(", ")}.`);
+            }
+          }
+          this.changed();
+        }
+      }
+    } finally {
+      this.assessingConflicts = false;
+    }
   }
 
   async createGitHubIssue(title: string, body: string): Promise<void> {
@@ -1370,6 +1434,7 @@ export class TramaController {
         const project = this.state.project;
         if (project && project.github.repository?.toLowerCase() === repository.toLowerCase()) {
           project.github = { ...project.github, snapshot: checkpoint.snapshot, events: checkpoint.events };
+          void this.assessRemoteConflicts();
         }
         if (incoming.length) {
           this.host.notify("Trama: aggiornamenti condivisi", `${incoming.length === 1 ? "Una novità" : `${incoming.length} novità`} su ${repository}. Apri Trama per valutarne l'impatto sul tuo lavoro.`);

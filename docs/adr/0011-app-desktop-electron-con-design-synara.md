@@ -38,5 +38,7 @@ Conseguenze: Trama gira anche su Linux e Windows, perché nulla nel processo pri
 | Verifiche in sola lettura (`run_readonly_check`) | Portato, con la sandbox di Codex |
 | Candidati, verifiche, revisione tecnica, via libera | Portato: `declare_candidate`, `verify_candidate`, `review_candidate`, `clear_candidate`, blocchi del Patto, approvazione della persona |
 | Pubblicazione di pull request | Portato: commit nel worktree del candidato, push del branch `trama/` e pull request con `gh`, solo dopo l'approvazione della persona |
+| Conflitti con il lavoro dei colleghi | Portato: cache Git locale delle revisioni remote e prova di fusione con `git merge-tree` su un clone temporaneo; conflitti e sovrapposizioni diventano schede |
 | Monitor in background e notifiche | Portato nel processo principale: lettura di branch e pull request con `gh`, novità, notifiche di sistema, avvio all'accesso su macOS e Windows. Sostituisce l'helper `SMAppService` |
-| Skill AI Hero e altri provider oltre Codex | Da portare |
+| Skill AI Hero | Portato: preparazione del metodo di lavoro dalle impostazioni; skill di Codex nel composer con `$` e `/` |
+| Provider oltre Codex | Come nella versione SwiftUI: catalogo dei nove provider con capacità e comando di accesso; solo Codex ha un adattatore |

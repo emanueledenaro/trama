@@ -507,6 +507,18 @@ export function CandidateCard({ candidateId }: { candidateId: string }) {
           </ul>
         </Field>
       ) : null}
+      {(() => {
+        const conflicts = (project.document.conflicts ?? []).filter((a) => a.candidateId === candidate.id && a.classification !== "clean");
+        return conflicts.length ? (
+          <Field label="Lavoro dei colleghi">
+            {conflicts.map((a) => (
+              <div key={a.id} className="text-ui-sm">
+                {CONFLICT_LABEL[a.classification].label} con {a.references.join(", ")}
+              </div>
+            ))}
+          </Field>
+        ) : null;
+      })()}
       {candidate.clearance ? (
         <p className="mt-2 text-ui-sm text-muted-foreground">
           {report.clearanceInvalidated ? "Il via libera del Coordinatore non vale più: sono cambiate evidenze o decisioni." : "Via libera del Coordinatore."}
@@ -615,6 +627,44 @@ export function PlanCard({ planId }: { planId: string }) {
             </Button>
           </div>
         </>
+      ) : null}
+    </CardFrame>
+  );
+}
+
+const CONFLICT_LABEL = {
+  conflict: { label: "Conflitto", tone: "destructive" as const },
+  overlap: { label: "Stessi file", tone: "warning" as const },
+  clean: { label: "Nessun conflitto", tone: "success" as const },
+  unknown: { label: "Non verificato", tone: "secondary" as const },
+};
+
+export function ConflictCard({ assessmentId }: { assessmentId: string }) {
+  const project = useUi((s) => s.app?.project)!;
+  const setInspector = useUi((s) => s.setInspector);
+  const assessment = project.document.conflicts?.find((a) => a.id === assessmentId);
+  if (!assessment) return null;
+  const label = CONFLICT_LABEL[assessment.classification];
+  return (
+    <CardFrame icon={<IconGitBranch stroke={1.8} />} title="Lavoro dei colleghi" aside={<Badge tone={label.tone}>{label.label}</Badge>}>
+      <p className="text-ui text-foreground/90">
+        Candidato{" "}
+        <button type="button" className="font-mono text-[11.5px] text-[var(--color-text-accent)] hover:underline" onClick={() => setInspector({ kind: "candidate", id: assessment.candidateId })}>
+          {assessment.candidateId}
+        </button>{" "}
+        e {assessment.references.join(", ")} ({assessment.remoteSHA.slice(0, 7)}).
+      </p>
+      <p className="mt-1 text-ui-sm text-muted-foreground">{assessment.detail}</p>
+      {assessment.conflictingFiles.length ? (
+        <Field label={assessment.classification === "conflict" ? "File in conflitto" : "File cambiati da entrambi"}>
+          <div className="flex flex-wrap gap-1">
+            {assessment.conflictingFiles.map((file) => (
+              <span key={file} className="rounded-md bg-[var(--color-background-button-secondary)] px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground">
+                {file}
+              </span>
+            ))}
+          </div>
+        </Field>
       ) : null}
     </CardFrame>
   );

@@ -107,14 +107,21 @@ function githubSection(github: GitHubState): string {
   return lines.join("\n");
 }
 
-function monitorSection(github: GitHubState): string {
+function monitorSection(github: GitHubState, document: ProjectDocument): string {
   if (!github.snapshot) return "Nessuna lettura di branch e pull request dei colleghi.";
+  const conflicts = (document.conflicts ?? []).filter((a) => a.classification === "conflict" || a.classification === "overlap");
   const lines = [
     `Branch: ${github.snapshot.branches.length}. Pull request aperte: ${github.snapshot.pullRequests.length}. Lettura del ${github.snapshot.fetchedAt}.`,
     ...github.snapshot.pullRequests.slice(0, 20).map((p) => `- #${p.number} ${p.title} (${p.author ?? "?"}, ${p.headRef} → ${p.baseRef})`),
   ];
   const recent = github.events.slice(-20);
   if (recent.length) lines.push("Novità recenti:", ...recent.map((e) => `- ${e.observedAt}: ${e.title}${e.author ? ` (${e.author})` : ""}`));
+  if (conflicts.length) {
+    lines.push(
+      "Prove di fusione dei candidati con il lavoro remoto:",
+      ...conflicts.slice(-10).map((a) => `- ${a.candidateId} con ${a.references.join(", ")}: ${a.classification === "conflict" ? "conflitto" : "stessi file"} (${a.conflictingFiles.join(", ")})`),
+    );
+  }
   return lines.join("\n");
 }
 
@@ -159,7 +166,7 @@ export async function buildStudy(
     code: codeSection(snapshot),
     instructions: await instructionsSection(snapshot.rootPath),
     github: githubSection(github),
-    monitor: monitorSection(github),
+    monitor: monitorSection(github, document),
     pact: pactSection(document),
     mandate: mandateSection(document),
     history: historySection(document),

@@ -11,7 +11,19 @@ export interface RecentProject {
 
 export type EventOrigin = "person" | "coordinator" | "trama" | "specialist";
 
-export type CardKind = "study" | "mandate" | "decision" | "contextNotice" | "teamProposal" | "assignment" | "candidate" | "plan";
+export type CardKind = "study" | "mandate" | "decision" | "contextNotice" | "teamProposal" | "assignment" | "candidate" | "plan" | "conflict";
+
+export interface ConflictAssessment {
+  id: string;
+  candidateId: string;
+  snapshotId: string;
+  remoteSHA: string;
+  references: string[];
+  classification: "conflict" | "overlap" | "clean" | "unknown";
+  conflictingFiles: string[];
+  detail: string;
+  checkedAt: string;
+}
 
 export type EventContent =
   | { type: "personMessage"; text: string; moduleId: string | null; moduleName: string | null; imageCount?: number }
@@ -349,6 +361,7 @@ export interface ProjectDocument {
   team: ProjectTeam;
   candidates: Candidate[];
   plans: WorkPlan[];
+  conflicts?: ConflictAssessment[];
 }
 
 export type CoordinatorPhase =
