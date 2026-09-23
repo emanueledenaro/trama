@@ -1,6 +1,8 @@
 import { IconArrowLeft } from "@tabler/icons-react";
 import { useState } from "react";
-import type { Specialist } from "@shared/domain";
+import { isUsableAccount, type ProviderId } from "@shared/codex";
+import type { Specialist, SpecialistAssignment } from "@shared/domain";
+import { PROVIDERS } from "@shared/providers";
 import { ASSIGNMENT_STATUS, AssignmentCard, CandidateCard, TeamProposalCard } from "@/components/chat/Cards";
 import { Spinner } from "@/components/Spinner";
 import { Button } from "@/components/ui/button";
@@ -143,6 +145,7 @@ export function SpecialistView({ id }: { id: string }) {
           {specialist.origin === "teamProposal" ? "Dalla proposta confermata" : "Aggiunto dal Coordinatore"} · {formatRelativeTime(specialist.createdAt)}
         </p>
       </InspectorSection>
+      {current && ["stopped", "failed"].includes(current.status) ? <AssignmentProvider assignment={current} /> : null}
       {project.document.candidates.some((c) => c.specialistId === specialist.id) ? (
         <InspectorSection title="Candidati">
           {project.document.candidates
@@ -168,5 +171,65 @@ export function SpecialistView({ id }: { id: string }) {
         )}
       </InspectorSection>
     </>
+  );
+}
+
+const providerLabel = (id: ProviderId) => PROVIDERS.find((p) => p.id === id)?.name ?? id;
+
+/** The person changes the provider of a stopped assignment (ADR 0009): assignment and worktree stay. */
+function AssignmentProvider({ assignment }: { assignment: SpecialistAssignment }) {
+  const providers = useUi((s) => s.app!.providers);
+  const current = assignment.provider ?? "codex";
+  const [provider, setProvider] = useState<ProviderId>(current);
+  const models = providers[provider]?.models ?? [];
+  const [model, setModel] = useState(assignment.model);
+  const connected = PROVIDERS.map((p) => p.id as ProviderId).filter((id) => isUsableAccount(providers[id]?.account));
+  const validModel = models.length === 0 || models.some((m) => m.model === model);
+  const unchanged = provider === current && model === assignment.model;
+  return (
+    <InspectorSection title="Provider dell'incarico">
+      <p className="text-ui-sm text-muted-foreground">
+        Ora: {providerLabel(current)} · {assignment.model}. Puoi cambiarlo prima della ripresa: incarico e worktree restano, riparte solo la sessione.
+      </p>
+      <div className="mt-2 flex flex-wrap items-center gap-2 text-ui-sm">
+        <select
+          aria-label="Provider"
+          className="h-7 rounded-lg border border-[color:var(--color-border)] bg-transparent px-2"
+          value={provider}
+          onChange={(e) => {
+            const next = e.target.value as ProviderId;
+            setProvider(next);
+            setModel(providers[next]?.models.find((m) => m.isDefault)?.model ?? providers[next]?.models[0]?.model ?? "");
+          }}
+        >
+          {connected.map((id) => (
+            <option key={id} value={id}>
+              {providerLabel(id)}
+            </option>
+          ))}
+        </select>
+        <select
+          aria-label="Modello"
+          className="h-7 min-w-0 flex-1 rounded-lg border border-[color:var(--color-border)] bg-transparent px-2"
+          value={model}
+          onChange={(e) => setModel(e.target.value)}
+        >
+          {!validModel ? <option value={model}>{model} (non disponibile)</option> : null}
+          {models.map((m) => (
+            <option key={m.model} value={m.model}>
+              {m.displayName}
+            </option>
+          ))}
+        </select>
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={unchanged || !model || !validModel || !connected.includes(provider)}
+          onClick={() => void act("assignment:changeProvider", { assignmentId: assignment.id, provider, model })}
+        >
+          Cambia
+        </Button>
+      </div>
+    </InspectorSection>
   );
 }
