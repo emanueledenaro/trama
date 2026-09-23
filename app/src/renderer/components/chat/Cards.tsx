@@ -717,8 +717,21 @@ export function ConflictCard({ assessmentId }: { assessmentId: string }) {
   const assessment = project.document.conflicts?.find((a) => a.id === assessmentId);
   if (!assessment) return null;
   const label = CONFLICT_LABEL[assessment.classification];
+  // A comparison made on an older snapshot of the candidate, or against a head that moved on, is obsolete (T13).
+  const candidate = project.document.candidates.find((c) => c.id === assessment.candidateId);
+  const heads = project.github.snapshot
+    ? new Set([...project.github.snapshot.branches.map((b) => b.sha.toLowerCase()), ...project.github.snapshot.pullRequests.map((p) => p.headSHA.toLowerCase())])
+    : null;
+  const obsolete = (candidate && candidate.snapshotId !== assessment.snapshotId) || (heads !== null && !heads.has(assessment.remoteSHA.toLowerCase()));
   return (
-    <CardFrame icon={<IconGitBranch stroke={1.8} />} title="Lavoro dei colleghi" aside={<Badge tone={label.tone}>{label.label}</Badge>}>
+    <CardFrame
+      icon={<IconGitBranch stroke={1.8} />}
+      title="Lavoro dei colleghi"
+      aside={obsolete ? <Badge tone="secondary">Obsoleto</Badge> : <Badge tone={label.tone}>{label.label}</Badge>}
+    >
+      {obsolete ? (
+        <p className="mb-1 text-ui-xs text-muted-foreground">Il candidato o il lavoro del collega sono cambiati dopo questo confronto: Trama ne farà uno nuovo.</p>
+      ) : null}
       <p className="text-ui text-foreground/90">
         Candidato{" "}
         <button type="button" className="font-mono text-[11.5px] text-[var(--color-text-accent)] hover:underline" onClick={() => setInspector({ kind: "candidate", id: assessment.candidateId })}>

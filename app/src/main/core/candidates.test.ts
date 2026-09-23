@@ -97,4 +97,16 @@ describe("candidates", () => {
     expect(report.state).toBe("building");
     expect(report.blockers.map((b) => b.code)).toEqual(["REMOTE_CONFLICT"]);
   });
+
+  it("is not blocked by a decision it does not rely on (T09)", () => {
+    const { document, candidate } = setup();
+    recordEvidence(document, candidate.id, { check: "git_status", passed: true, command: "git status", output: "", snapshotId: "snap" });
+    recordTechnicalReview(document, candidate.id, { reviewerThreadId: "r", authorThreadId: "a", verdict: "approved", summary: "ok" });
+    clearCandidate(document, candidate.id, "Coordinatore", "base");
+    approveCandidate(document, candidate.id, "Persona", "base");
+    decide(document, { id: null, value: "Valuta in euro", acceptedExample: "e", rationale: "r" });
+    const report = candidateReport(document, candidate, "base");
+    expect(report.state).toBe("decided");
+    expect(report.approvalInvalidated).toBe(false);
+  });
 });
