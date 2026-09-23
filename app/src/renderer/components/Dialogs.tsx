@@ -41,6 +41,7 @@ function SettingsDialog() {
             ))}
           </div>
         </section>
+        <MonitorSettings />
         <section>
           <h4 className="mb-2 text-ui-sm font-medium text-muted-foreground">Codex di OpenAI</h4>
           <Button variant="outline" size="sm" onClick={() => setDialog("connections")}>
@@ -49,6 +50,65 @@ function SettingsDialog() {
         </section>
       </div>
     </Dialog>
+  );
+}
+
+function Toggle({ checked, onChange, label }: { checked: boolean; onChange: (value: boolean) => void; label: string }) {
+  return (
+    <label className="flex cursor-pointer items-center justify-between gap-3 py-1 text-ui text-foreground/90">
+      <span>{label}</span>
+      <button
+        type="button"
+        role="switch"
+        aria-checked={checked}
+        aria-label={label}
+        onClick={() => onChange(!checked)}
+        className={cn(
+          "relative inline-flex h-[18px] w-[30px] shrink-0 items-center rounded-full transition-colors",
+          checked ? "bg-[var(--color-text-accent)]" : "bg-[var(--color-border-heavy)]",
+        )}
+      >
+        <span className={cn("inline-block size-[14px] rounded-full bg-white shadow-sm transition-transform", checked ? "translate-x-[14px]" : "translate-x-[2px]")} />
+      </button>
+    </label>
+  );
+}
+
+function MonitorSettings() {
+  const monitor = useUi((s) => s.app!.monitor);
+  const repository = useUi((s) => s.app?.project?.github.repository ?? null);
+  const platform = useUi((s) => s.app!.platform);
+  const monitored = repository ? monitor.repositories.includes(repository) : false;
+  return (
+    <section>
+      <h4 className="mb-1 text-ui-sm font-medium text-muted-foreground">Monitor in background</h4>
+      <p className="mb-2 text-ui-xs text-muted-foreground">
+        Legge branch e pull request dei colleghi con GitHub CLI e ti avvisa delle novità mentre Trama è aperto o in background.
+      </p>
+      <Toggle checked={monitor.enabled} onChange={(enabled) => void act("monitor:update", { enabled })} label="Monitor attivo" />
+      {platform !== "linux" ? (
+        <Toggle checked={monitor.openAtLogin} onChange={(openAtLogin) => void act("monitor:update", { openAtLogin })} label="Avvia Trama all'accesso, in background" />
+      ) : null}
+      <div className="mt-2 space-y-1">
+        {monitor.repositories.map((repo) => {
+          const status = monitor.status[repo];
+          return (
+            <div key={repo} className="flex items-center gap-2 text-ui">
+              <span className="min-w-0 flex-1 truncate font-mono text-[11.5px]">{repo}</span>
+              <span className="text-ui-xs text-muted-foreground">{status?.lastError ? "errore" : status?.lastSuccessAt ? "aggiornato" : ""}</span>
+              <button type="button" className="text-ui-xs text-muted-foreground hover:text-destructive" onClick={() => void act("monitor:update", { removeRepository: repo })}>
+                Togli
+              </button>
+            </div>
+          );
+        })}
+      </div>
+      {repository && !monitored ? (
+        <Button size="sm" variant="outline" className="mt-2" onClick={() => void act("monitor:update", { enabled: true, addRepository: repository })}>
+          Abilita per il repository corrente
+        </Button>
+      ) : null}
+    </section>
   );
 }
 

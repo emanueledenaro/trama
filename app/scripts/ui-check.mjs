@@ -108,4 +108,7 @@ await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
 await shot("10-dark");
 await page.getByRole("button", { name: /Codex di OpenAI/ }).click();
 await shot("11-connections");
+await page.keyboard.press("Escape");
+await page.getByRole("button", { name: "Impostazioni" }).click();
+await shot("12-settings");
 await app.close();

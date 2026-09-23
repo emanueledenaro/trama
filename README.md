@@ -75,7 +75,7 @@ Il raggruppamento dei moduli deriva dai percorsi reali, con un trattamento speci
 ## Limiti attuali
 
 - L'app Electron è stata provata con un app-server Codex di prova (`app/test-fixtures/fake-codex.mjs`), nei test e con `npm run ui-check` sotto Linux. Una sessione con Codex reale e un account ChatGPT non è ancora stata eseguita con l'app Electron.
-- Monitor in background, skill AI Hero e provider diversi da Codex esistono solo nella versione SwiftUI. La pubblicazione di pull request dall'app Electron è provata fino al push del branch; la creazione con `gh` non è ancora stata provata su un repository reale. L'elenco è nell'[ADR 0011](docs/adr/0011-app-desktop-electron-con-design-synara.md).
+- Skill AI Hero e provider diversi da Codex esistono solo nella versione SwiftUI. La pubblicazione di pull request dall'app Electron è provata fino al push del branch; la creazione con `gh` non è ancora stata provata su un repository reale. L'elenco è nell'[ADR 0011](docs/adr/0011-app-desktop-electron-con-design-synara.md).
 - I pacchetti firmati dell'app Electron (Developer ID, notarizzazione) non sono ancora configurati.
 - La CI verifica build e test di entrambe le versioni. Le prove locali della versione SwiftUI sono descritte in [docs/verifiche-locali.md](docs/verifiche-locali.md).
 - Trama è distribuito con licenza MIT. L'interfaccia riprende il design di Synara, anch'esso MIT, con l'attribuzione in [docs/synara-attribution.md](docs/synara-attribution.md). Le skill Matt Pocock includono licenza MIT e attribuzione. Codex CLI viene installato separatamente e non è incluso nell'app.

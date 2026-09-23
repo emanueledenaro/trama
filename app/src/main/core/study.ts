@@ -15,6 +15,7 @@ const HEADINGS: Record<StudyPart, string> = {
   code: "## Codice",
   instructions: "## File di istruzione",
   github: "## GitHub",
+  monitor: "## Monitor dei colleghi",
   pact: "## Patto",
   mandate: "## Mandato",
   history: "## Cronologia",
@@ -106,6 +107,17 @@ function githubSection(github: GitHubState): string {
   return lines.join("\n");
 }
 
+function monitorSection(github: GitHubState): string {
+  if (!github.snapshot) return "Nessuna lettura di branch e pull request dei colleghi.";
+  const lines = [
+    `Branch: ${github.snapshot.branches.length}. Pull request aperte: ${github.snapshot.pullRequests.length}. Lettura del ${github.snapshot.fetchedAt}.`,
+    ...github.snapshot.pullRequests.slice(0, 20).map((p) => `- #${p.number} ${p.title} (${p.author ?? "?"}, ${p.headRef} → ${p.baseRef})`),
+  ];
+  const recent = github.events.slice(-20);
+  if (recent.length) lines.push("Novità recenti:", ...recent.map((e) => `- ${e.observedAt}: ${e.title}${e.author ? ` (${e.author})` : ""}`));
+  return lines.join("\n");
+}
+
 function pactSection(document: ProjectDocument): string {
   if (!document.decisions.length) return "Nessuna decisione registrata nel Patto.";
   return document.decisions
@@ -147,6 +159,7 @@ export async function buildStudy(
     code: codeSection(snapshot),
     instructions: await instructionsSection(snapshot.rootPath),
     github: githubSection(github),
+    monitor: monitorSection(github),
     pact: pactSection(document),
     mandate: mandateSection(document),
     history: historySection(document),

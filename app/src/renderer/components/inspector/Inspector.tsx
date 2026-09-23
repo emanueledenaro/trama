@@ -2,6 +2,7 @@ import { IconX } from "@tabler/icons-react";
 import { Tooltip } from "@/components/ui/tooltip";
 import { useUi } from "@/lib/store";
 import { CandidateView } from "./CandidateView";
+import { GroupView } from "./GroupView";
 import { IssueDetail, IssuesView } from "./IssuesView";
 import { MandateView } from "./MandateView";
 import { MemoryView } from "./MemoryView";
@@ -20,6 +21,7 @@ const TITLES = {
   team: "Team del progetto",
   specialist: "Specialista",
   candidate: "Candidato",
+  group: "Il lavoro del gruppo",
   issues: "Issue del progetto",
   issue: "Issue",
 } as const;
@@ -48,6 +50,7 @@ export function Inspector() {
         {target.kind === "team" ? <TeamView /> : null}
         {target.kind === "specialist" ? <SpecialistView id={target.id} /> : null}
         {target.kind === "candidate" ? <CandidateView id={target.id} /> : null}
+        {target.kind === "group" ? <GroupView /> : null}
         {target.kind === "issues" ? <IssuesView /> : null}
         {target.kind === "issue" ? <IssueDetail number={target.number} /> : null}
       </div>

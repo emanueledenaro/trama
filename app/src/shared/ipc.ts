@@ -44,6 +44,8 @@ export interface ActionMap {
   "github:refresh": [void, void];
   "github:createIssue": [{ title: string; body: string }, void];
   "settings:update": [Partial<AppSettings>, void];
+  "monitor:update": [{ enabled?: boolean; openAtLogin?: boolean; intervalSeconds?: number; addRepository?: string; removeRepository?: string }, void];
+  "monitor:poll": [void, void];
   "app:dismissError": [void, void];
   "shell:openExternal": [{ url: string }, void];
 }

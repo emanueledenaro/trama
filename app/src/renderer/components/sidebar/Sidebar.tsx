@@ -4,6 +4,7 @@ import {
   IconFolder,
   IconFolderOpen,
   IconFolderPlus,
+  IconGitPullRequest,
   IconLayoutSidebar,
   IconMessageCircle,
   IconPencilPlus,
@@ -166,6 +167,12 @@ export function Sidebar({ isMac }: { isMac: boolean }) {
               active={isActive("team") || isActive("specialist")}
               badge={pendingTeam ? 1 : 0}
               onClick={() => setInspector({ kind: "team" })}
+            />
+            <SidebarRow
+              icon={<IconGitPullRequest className="size-3.5" stroke={1.8} />}
+              label="Gruppo"
+              active={isActive("group")}
+              onClick={() => setInspector({ kind: "group" })}
             />
             <SidebarRow
               icon={<IconCircleDot className="size-3.5" stroke={1.8} />}

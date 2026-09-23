@@ -1,10 +1,11 @@
 import { join } from "node:path";
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, shell, type MenuItemConstructorOptions } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, Notification, shell, type MenuItemConstructorOptions } from "electron";
 import type { AppSettings } from "@shared/domain";
 import type { ActionMap, ActionName } from "@shared/ipc";
 import { TramaController } from "./controller";
 
 app.setName("Trama");
+if (!app.requestSingleInstanceLock()) app.exit(0);
 const isMac = process.platform === "darwin";
 const rendererUrl = process.env.TRAMA_RENDERER_URL;
 let window: BrowserWindow | null = null;
@@ -19,6 +20,20 @@ const controller = new TramaController(process.env.TRAMA_DATA_DIR ?? join(app.ge
   applyTheme: (theme: AppSettings["theme"]) => {
     nativeTheme.themeSource = theme;
     if (!isMac) window?.setBackgroundColor(surfaceColor());
+  },
+  notify: (title, body) => {
+    if (window?.isFocused() || !Notification.isSupported()) return;
+    const notification = new Notification({ title, body });
+    notification.on("click", () => {
+      if (!window) createWindow();
+      window?.show();
+      window?.focus();
+    });
+    notification.show();
+  },
+  setOpenAtLogin: (enabled) => {
+    if (process.platform === "linux") return;
+    app.setLoginItemSettings({ openAtLogin: enabled, args: ["--hidden"] });
   },
   demoResourceDirectory: app.isPackaged
     ? join(process.resourcesPath, "DemoProject")
@@ -116,6 +131,8 @@ const handlers: { [K in ActionName]: Handler<K> } = {
   "github:refresh": () => controller.refreshGitHub(),
   "github:createIssue": ({ title, body }) => controller.createGitHubIssue(title, body),
   "settings:update": (update) => controller.updateSettings(update),
+  "monitor:update": (update) => controller.updateMonitor(update),
+  "monitor:poll": () => controller.pollMonitor(),
   "app:dismissError": () => controller.dismissError(),
   "shell:openExternal": async ({ url }) => {
     if (/^https:\/\//.test(url)) await shell.openExternal(url);
@@ -202,9 +219,19 @@ function buildMenu(): void {
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
+// Started by the login item: stay in the background with the monitor until the person opens the window.
+const startedHidden = process.argv.includes("--hidden") || (isMac && app.getLoginItemSettings().wasOpenedAtLogin);
+
+app.on("second-instance", () => {
+  if (!window) createWindow();
+  if (window?.isMinimized()) window.restore();
+  window?.show();
+  window?.focus();
+});
+
 app.whenReady().then(async () => {
   buildMenu();
-  createWindow();
+  if (!startedHidden) createWindow();
   await controller.start();
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();

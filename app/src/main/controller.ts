@@ -22,6 +22,7 @@ import { openingInput, resumeInput, specialistInstructions } from "./core/specia
 import { prepareDemoProject } from "./core/demoProject";
 import { appendEvent, emptyDocument, moveEvent, recordReply, referencedPaths } from "./core/document";
 import { createIssue, listIssues, readGitHubRepository } from "./core/github";
+import { type MonitorCheckpoint, MonitorStore, pollRepository } from "./core/monitor";
 import {
   answerDecisionRequest,
   decide,
@@ -69,6 +70,8 @@ export interface ControllerHost {
   publish(state: AppState): void;
   openExternal(url: string): Promise<void>;
   applyTheme(theme: AppSettings["theme"]): void;
+  notify(title: string, body: string): void;
+  setOpenAtLogin(enabled: boolean): void;
   demoResourceDirectory: string;
   codexExecutable: string | null;
 }
@@ -87,6 +90,8 @@ export class TramaController {
   private saveTimer: NodeJS.Timeout | null = null;
   private publishTimer: NodeJS.Timeout | null = null;
   private lastProjectId: string | null = null;
+  private readonly monitorStore: MonitorStore;
+  private monitorTimer: NodeJS.Timeout | null = null;
   /** Messages sent while a turn was running; they leave in order when it ends. */
   private queue: {
     projectId: string;
@@ -106,7 +111,9 @@ export class TramaController {
       executable: host.codexExecutable,
       onAccountChanged: () => void this.refreshCodex(),
     });
+    this.monitorStore = new MonitorStore(storageRoot);
     this.state = {
+      monitor: { enabled: false, openAtLogin: false, intervalSeconds: 300, repositories: [], status: {} },
       recentProjects: [],
       project: null,
       loadingProject: null,
@@ -139,6 +146,8 @@ export class TramaController {
       sidebarWidth: typeof settings.sidebarWidth === "number" ? settings.sidebarWidth : 256,
     };
     this.lastProjectId = settings.lastProjectId ?? null;
+    if (settings.monitor) this.state.monitor = { ...this.state.monitor, ...settings.monitor, status: {} };
+    this.scheduleMonitor();
     this.host.applyTheme(this.state.settings.theme);
     this.state.recentProjects = await this.storage.loadRecentProjects();
     this.publishNow();
@@ -150,6 +159,8 @@ export class TramaController {
   }
 
   async stop(): Promise<void> {
+    if (this.monitorTimer) clearTimeout(this.monitorTimer);
+    this.monitorTimer = null;
     await this.flushSave();
     this.stopRuntime();
     this.discovery.stop();
@@ -196,7 +207,8 @@ export class TramaController {
   }
 
   private async saveSettings(): Promise<void> {
-    await this.storage.saveSettings({ ...this.state.settings, lastProjectId: this.lastProjectId });
+    const { status: _status, ...monitor } = this.state.monitor;
+    await this.storage.saveSettings({ ...this.state.settings, lastProjectId: this.lastProjectId, monitor });
   }
 
   // MARK: Codex account
@@ -276,7 +288,14 @@ export class TramaController {
         streaming: null,
         runningRequestId: null,
         contextUsage: null,
-        github: { repository: null, status: isDemo ? "unavailable" : "loading", message: isDemo ? "Progetto di esempio senza GitHub." : null, issues: [] },
+        github: {
+          repository: null,
+          status: isDemo ? "unavailable" : "loading",
+          message: isDemo ? "Progetto di esempio senza GitHub." : null,
+          issues: [],
+          snapshot: null,
+          events: [],
+        },
         stateWritable: loaded.writable,
         runningWork: [],
         candidateReports: {},
@@ -358,24 +377,32 @@ export class TramaController {
   async refreshGitHub(): Promise<void> {
     const project = this.state.project;
     if (!project || project.isDemo) return;
-    const github: GitHubState = { ...project.github, status: "loading" };
-    project.github = github;
+    project.github = { ...project.github, status: "loading" };
     this.publish();
-    github.repository = await readGitHubRepository(project.rootPath);
-    if (!github.repository) {
-      project.github = { repository: null, status: "unavailable", message: "Il remoto origin non punta a GitHub.", issues: [] };
-    } else {
-      try {
-        project.github = { repository: github.repository, status: "ready", message: null, issues: await listIssues(github.repository) };
-      } catch (error) {
-        project.github = {
-          repository: github.repository,
-          status: "unavailable",
-          message: `GitHub CLI non ha letto le issue: ${(error as Error).message.split("\n")[0]}`,
-          issues: [],
-        };
-      }
+    const repository = await readGitHubRepository(project.rootPath);
+    if (!repository) {
+      project.github = { repository: null, status: "unavailable", message: "Il remoto origin non punta a GitHub.", issues: [], snapshot: null, events: [] };
+      this.publish();
+      return;
     }
+    let issues = project.github.issues;
+    let message: string | null = null;
+    try {
+      issues = await listIssues(repository);
+    } catch (error) {
+      message = `GitHub CLI non ha letto le issue: ${(error as Error).message.split("\n")[0]}`;
+    }
+    const { checkpoint } = await pollRepository(this.monitorStore, repository);
+    if (this.state.project !== project) return;
+    project.github = {
+      repository,
+      status: message ? "unavailable" : "ready",
+      message,
+      issues: message ? [] : issues,
+      snapshot: checkpoint.snapshot,
+      events: checkpoint.events,
+    };
+    this.updateMonitorStatus(repository, checkpoint);
     this.publish();
   }
 
@@ -1222,6 +1249,66 @@ export class TramaController {
     appendEvent(document, "trama", { type: "activity", title: `Pull request #${published.number} pubblicata`, detail: published.url, tone: "tool" });
     this.changed();
     await this.send(`Ho pubblicato il candidato ${candidate.id} come pull request #${published.number}: ${published.url}`, null, null, null);
+  }
+
+  // MARK: Team monitor
+
+  private scheduleMonitor(): void {
+    if (this.monitorTimer) clearTimeout(this.monitorTimer);
+    this.monitorTimer = null;
+    const monitor = this.state.monitor;
+    if (!monitor.enabled || monitor.repositories.length === 0) return;
+    this.monitorTimer = setTimeout(() => void this.pollMonitor(), Math.max(60, monitor.intervalSeconds) * 1_000);
+    this.monitorTimer.unref?.();
+  }
+
+  private updateMonitorStatus(repository: string, checkpoint: MonitorCheckpoint): void {
+    this.state.monitor.status[repository] = {
+      lastSuccessAt: checkpoint.lastSuccessAt,
+      lastError: checkpoint.lastError,
+      consecutiveFailures: checkpoint.consecutiveFailures,
+    };
+  }
+
+  /** Polls every enabled repository; new events of other people become a notification. */
+  async pollMonitor(): Promise<void> {
+    const monitor = this.state.monitor;
+    try {
+      for (const repository of monitor.repositories) {
+        if (!this.state.monitor.enabled) break;
+        const { checkpoint, incoming } = await pollRepository(this.monitorStore, repository);
+        this.updateMonitorStatus(repository, checkpoint);
+        const project = this.state.project;
+        if (project && project.github.repository?.toLowerCase() === repository.toLowerCase()) {
+          project.github = { ...project.github, snapshot: checkpoint.snapshot, events: checkpoint.events };
+        }
+        if (incoming.length) {
+          this.host.notify("Trama: aggiornamenti condivisi", `${incoming.length === 1 ? "Una novità" : `${incoming.length} novità`} su ${repository}. Apri Trama per valutarne l'impatto sul tuo lavoro.`);
+        }
+      }
+    } finally {
+      this.publish();
+      this.scheduleMonitor();
+    }
+  }
+
+  async updateMonitor(update: { enabled?: boolean; openAtLogin?: boolean; intervalSeconds?: number; addRepository?: string; removeRepository?: string }) {
+    const monitor = this.state.monitor;
+    if (update.enabled !== undefined) monitor.enabled = update.enabled;
+    if (update.intervalSeconds !== undefined) monitor.intervalSeconds = Math.min(3_600, Math.max(60, Math.round(update.intervalSeconds)));
+    if (update.addRepository && !monitor.repositories.some((r) => r.toLowerCase() === update.addRepository!.toLowerCase())) {
+      if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(update.addRepository)) throw new DomainError("Repository non valido.");
+      monitor.repositories = [...monitor.repositories, update.addRepository];
+    }
+    if (update.removeRepository) monitor.repositories = monitor.repositories.filter((r) => r !== update.removeRepository);
+    if (update.openAtLogin !== undefined) {
+      monitor.openAtLogin = update.openAtLogin;
+      this.host.setOpenAtLogin(update.openAtLogin);
+    }
+    await this.saveSettings();
+    this.publish();
+    if (monitor.enabled && (update.enabled || update.addRepository)) void this.pollMonitor();
+    else this.scheduleMonitor();
   }
 
   // MARK: Settings

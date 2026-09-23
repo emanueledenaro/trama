@@ -119,7 +119,7 @@ export interface StudySection {
   text: string;
 }
 
-export type StudyPart = "code" | "instructions" | "github" | "pact" | "mandate" | "history";
+export type StudyPart = "code" | "instructions" | "github" | "monitor" | "pact" | "mandate" | "history";
 
 export interface ProjectStudy {
   sections: StudySection[];
@@ -330,11 +330,61 @@ export interface GitHubIssue {
   updatedAt: string;
 }
 
+export interface GitHubBranch {
+  name: string;
+  sha: string;
+}
+
+export interface GitHubPullRequest {
+  number: number;
+  title: string;
+  author: string | null;
+  headRef: string;
+  headSHA: string;
+  baseRef: string;
+  url: string;
+  draft: boolean;
+  updatedAt: string;
+}
+
+export interface GitHubSnapshot {
+  repository: string;
+  defaultBranch: string;
+  branches: GitHubBranch[];
+  pullRequests: GitHubPullRequest[];
+  fetchedAt: string;
+  warnings: string[];
+}
+
+export interface TeamEvent {
+  id: string;
+  repository: string;
+  entity: "branch" | "pullRequest";
+  change: "created" | "updated" | "deleted";
+  reference: string;
+  title: string;
+  author: string | null;
+  beforeSHA: string | null;
+  afterSHA: string | null;
+  url: string | null;
+  observedAt: string;
+}
+
+export interface MonitorState {
+  enabled: boolean;
+  openAtLogin: boolean;
+  intervalSeconds: number;
+  repositories: string[];
+  status: Record<string, { lastSuccessAt: string | null; lastError: string | null; consecutiveFailures: number }>;
+}
+
 export interface GitHubState {
   repository: string | null;
   status: "idle" | "loading" | "ready" | "unavailable";
   message: string | null;
   issues: GitHubIssue[];
+  snapshot: GitHubSnapshot | null;
+  events: TeamEvent[];
 }
 
 export interface ActiveProjectState {
@@ -364,6 +414,7 @@ export interface AppSettings {
 }
 
 export interface AppState {
+  monitor: MonitorState;
   recentProjects: RecentProject[];
   project: ActiveProjectState | null;
   loadingProject: string | null;

@@ -39,7 +39,7 @@ export const COORDINATOR_TOOLS: ToolDefinition[] = [
   {
     name: "read_study",
     description: "Read the study Trama wrote about this project, whole or one part.",
-    properties: { part: { type: "string", enum: ["code", "instructions", "github", "pact", "mandate", "history"] } },
+    properties: { part: { type: "string", enum: ["code", "instructions", "github", "monitor", "pact", "mandate", "history"] } },
     required: [],
     readOnly: true,
   },
@@ -53,7 +53,7 @@ export const COORDINATOR_TOOLS: ToolDefinition[] = [
   },
   {
     name: "read_issues",
-    description: "Read GitHub issues; pass number to read one issue with its body.",
+    description: "Read GitHub issues and open pull requests; pass number to read one issue with its body.",
     properties: { number: { type: "integer", minimum: 1 }, state: { type: "string", enum: ["open", "closed", "all"] } },
     required: [],
     readOnly: true,
@@ -299,7 +299,15 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
         const issues = context.github.issues
           .filter((i) => state === "all" || i.state === state)
           .map((i) => ({ number: i.number, title: i.title, state: i.state, labels: i.labels, updatedAt: i.updatedAt }));
-        return toolSuccess({ repository: context.github.repository, issues });
+        const pullRequests = (context.github.snapshot?.pullRequests ?? []).map((p) => ({
+          number: p.number,
+          title: p.title,
+          author: p.author,
+          head: p.headRef,
+          base: p.baseRef,
+          draft: p.draft,
+        }));
+        return toolSuccess({ repository: context.github.repository, issues, openPullRequests: pullRequests });
       }
       case "read_history": {
         const limit = typeof args.limit === "number" ? Math.min(100, Math.max(1, args.limit)) : 30;

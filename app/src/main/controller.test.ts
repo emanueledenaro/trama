@@ -31,6 +31,8 @@ async function setup() {
     },
     openExternal: async () => undefined,
     applyTheme: () => undefined,
+      notify: () => undefined,
+      setOpenAtLogin: () => undefined,
     demoResourceDirectory: join(root, "resources/DemoProject"),
     codexExecutable: join(root, "test-fixtures/fake-codex.mjs"),
   });
@@ -80,6 +82,8 @@ describe("TramaController", () => {
       publish: () => undefined,
       openExternal: async () => undefined,
       applyTheme: () => undefined,
+      notify: () => undefined,
+      setOpenAtLogin: () => undefined,
       demoResourceDirectory: "",
       codexExecutable: join(root, "test-fixtures/fake-codex.mjs"),
     });

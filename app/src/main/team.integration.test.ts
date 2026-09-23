@@ -33,6 +33,8 @@ describe("team flow", () => {
       publish: () => undefined,
       openExternal: async () => undefined,
       applyTheme: () => undefined,
+      notify: () => undefined,
+      setOpenAtLogin: () => undefined,
       demoResourceDirectory: "",
       codexExecutable: join(root, "test-fixtures/fake-codex.mjs"),
     });
@@ -115,6 +117,8 @@ describe("team flow", () => {
       publish: () => undefined,
       openExternal: async () => undefined,
       applyTheme: () => undefined,
+      notify: () => undefined,
+      setOpenAtLogin: () => undefined,
       demoResourceDirectory: "",
       codexExecutable: join(root, "test-fixtures/fake-codex.mjs"),
     });

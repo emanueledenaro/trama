@@ -15,7 +15,7 @@ Regole che restano invariate:
 
 Alternative scartate: tenere SwiftUI e imitare Synara a mano (due linguaggi di design e nessun riuso dei componenti); includere l'intero monorepo di Synara (porterebbe server, provider e funzioni che Trama non usa).
 
-Conseguenze: Trama gira anche su Linux e Windows, perché nulla nel processo principale dipende da macOS. Il monitor in background basato su `SMAppService` e le prove con `sandbox-exec` non hanno ancora un equivalente. Le icone "Central Icons" di Synara non sono incluse perché il repository non ne dichiara la licenza: Trama usa Tabler Icons (MIT) con le stesse misure. I sorgenti Swift restano nel repository come riferimento finché le funzioni elencate sotto non sono portate; poi si rimuovono con un ticket separato.
+Conseguenze: Trama gira anche su Linux e Windows, perché nulla nel processo principale dipende da macOS. Il monitor in background non è più un helper separato registrato con `SMAppService`: gira nel processo principale di Trama, che può partire all'accesso senza finestra. Le verifiche usano la sandbox di Codex (`codex sandbox`) come nella versione SwiftUI. Le icone "Central Icons" di Synara non sono incluse perché il repository non ne dichiara la licenza: Trama usa Tabler Icons (MIT) con le stesse misure. I sorgenti Swift restano nel repository come riferimento finché le funzioni elencate sotto non sono portate; poi si rimuovono con un ticket separato.
 
 ## Stato del porting
 
@@ -35,5 +35,5 @@ Conseguenze: Trama gira anche su Linux e Windows, perché nulla nel processo pri
 | Verifiche in sola lettura (`run_readonly_check`) | Portato, con la sandbox di Codex |
 | Candidati, verifiche, revisione tecnica, via libera | Portato: `declare_candidate`, `verify_candidate`, `review_candidate`, `clear_candidate`, blocchi del Patto, approvazione della persona |
 | Pubblicazione di pull request | Portato: commit nel worktree del candidato, push del branch `trama/` e pull request con `gh`, solo dopo l'approvazione della persona |
-| Monitor in background e notifiche | Da portare |
+| Monitor in background e notifiche | Portato nel processo principale: lettura di branch e pull request con `gh`, novità, notifiche di sistema, avvio all'accesso su macOS e Windows. Sostituisce l'helper `SMAppService` |
 | Skill AI Hero e altri provider oltre Codex | Da portare |

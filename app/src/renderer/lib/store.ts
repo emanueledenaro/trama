@@ -13,6 +13,7 @@ export type InspectorTarget =
   | { kind: "team" }
   | { kind: "specialist"; id: string }
   | { kind: "candidate"; id: string }
+  | { kind: "group" }
   | { kind: "issues" }
   | { kind: "issue"; number: number };
 

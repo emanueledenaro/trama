@@ -2,7 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { chmod, lstat, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import type { AppSettings, ProjectDocument, RecentProject } from "@shared/domain";
+import type { AppSettings, MonitorState, ProjectDocument, RecentProject } from "@shared/domain";
 import type { ImageAttachmentInput } from "@shared/ipc";
 import { normalizeDocument } from "./document";
 
@@ -54,7 +54,7 @@ export class AppStorage {
     await writeAtomically(join(this.root, "recent-projects.json"), JSON.stringify(sorted, null, 2));
   }
 
-  async loadSettings(): Promise<Partial<AppSettings> & { lastProjectId?: string | null }> {
+  async loadSettings(): Promise<Partial<AppSettings> & { lastProjectId?: string | null; monitor?: Partial<Omit<MonitorState, "status">> }> {
     try {
       return (await readJson(join(this.root, "settings.json"))) ?? {};
     } catch {
@@ -62,7 +62,7 @@ export class AppStorage {
     }
   }
 
-  async saveSettings(settings: AppSettings & { lastProjectId: string | null }): Promise<void> {
+  async saveSettings(settings: AppSettings & { lastProjectId: string | null; monitor: Omit<MonitorState, "status"> }): Promise<void> {
     await writeAtomically(join(this.root, "settings.json"), JSON.stringify(settings, null, 2));
   }
 
