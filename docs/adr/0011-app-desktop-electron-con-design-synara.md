@@ -48,7 +48,7 @@ Conseguenze: Trama gira anche su Linux e Windows, perché nulla nel processo pri
 
 Il 23 settembre 2026, su Linux in un container senza Codex reale:
 
-- 60 test Vitest del processo principale e della logica condivisa, compresi scanner, client JSON-RPC, server MCP, Patto, mandato, team, worktree, verifiche nella sandbox, candidati, pubblicazione fino al push, monitor, conflitti con `git merge-tree`, piani e import dei dati Swift.
+- 58 test Vitest del processo principale e della logica condivisa, compresi scanner, client JSON-RPC, server MCP, Patto, mandato, team, worktree, verifiche nella sandbox, candidati, pubblicazione fino al push, monitor, conflitti con `git merge-tree`, piani e import dei dati Swift.
 - `npm run ui-check`: l'app Electron costruita, pilotata con Playwright e un app-server Codex di prova, attraversa studio, messaggio, piano, decisione, proposta del team, mandato, incarico in un worktree, candidato, ricerca e impostazioni, in tema chiaro e scuro.
 - Il pacchetto Linux di electron-builder si avvia e apre il progetto di esempio.
 
