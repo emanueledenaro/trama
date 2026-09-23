@@ -43,3 +43,13 @@ Conseguenze: Trama gira anche su Linux e Windows, perché nulla nel processo pri
 | Monitor in background e notifiche | Portato nel processo principale: lettura di branch e pull request con `gh`, novità, notifiche di sistema, avvio all'accesso su macOS e Windows. Sostituisce l'helper `SMAppService` |
 | Skill AI Hero | Portato: preparazione del metodo di lavoro dalle impostazioni; skill di Codex nel composer con `$` e `/` |
 | Provider oltre Codex | Come nella versione SwiftUI: catalogo dei nove provider con capacità e comando di accesso; solo Codex ha un adattatore |
+
+## Verifiche eseguite
+
+Il 23 settembre 2026, su Linux in un container senza Codex reale:
+
+- 60 test Vitest del processo principale e della logica condivisa, compresi scanner, client JSON-RPC, server MCP, Patto, mandato, team, worktree, verifiche nella sandbox, candidati, pubblicazione fino al push, monitor, conflitti con `git merge-tree`, piani e import dei dati Swift.
+- `npm run ui-check`: l'app Electron costruita, pilotata con Playwright e un app-server Codex di prova, attraversa studio, messaggio, piano, decisione, proposta del team, mandato, incarico in un worktree, candidato, ricerca e impostazioni, in tema chiaro e scuro.
+- Il pacchetto Linux di electron-builder si avvia e apre il progetto di esempio.
+
+Non ancora verificato: una sessione con Codex reale e un account ChatGPT, la creazione di una pull request con `gh` su un repository reale, i pacchetti firmati per macOS e Windows, l'avvio all'accesso.

@@ -109,6 +109,7 @@ const handlers: { [K in ActionName]: Handler<K> } = {
   "project:revealInFolder": ({ relativePath }) => {
     const project = controller.snapshot.project;
     if (!project) return;
+    if (relativePath && (relativePath.startsWith("/") || relativePath.split("/").includes(".."))) return;
     const target = relativePath ? join(project.rootPath, relativePath) : project.rootPath;
     if (relativePath) shell.showItemInFolder(target);
     else void shell.openPath(target);
