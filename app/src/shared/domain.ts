@@ -362,6 +362,16 @@ export interface ProjectDocument {
   candidates: Candidate[];
   plans: WorkPlan[];
   conflicts?: ConflictAssessment[];
+  /** The review cycle scenario of the example project, run on a local model of an order. */
+  pactDemo?: PactDemo | null;
+}
+
+export interface PactDemo {
+  candidateId: string;
+  decisionId: string;
+  decisionVersion: number;
+  evidence: { check: string; result: "pass" | "fail" | "notRun"; output: string }[];
+  approval: { actor: string; decisionVersion: number; at: string } | null;
 }
 
 export type CoordinatorPhase =
@@ -454,6 +464,8 @@ export interface ActiveProjectState {
   stateWritable: boolean;
   /** Work keys of specialist turns that are running now. */
   runningWork: string[];
+  /** What the example project's review scenario still needs. */
+  pactDemoBlockers: CandidateBlocker[];
   /** Skills Codex loads for this project. */
   skills: import("./skills").LoadedSkill[];
   /** The current verdict of each candidate, computed by the main process. */

@@ -39,6 +39,8 @@ export interface ActionMap {
   "assignment:resume": [{ assignmentId: string }, void];
   "specialist:remove": [{ specialistId: string; reason: string }, void];
   "plan:prepare": [{ requestId: string }, void];
+  "pactDemo:run": [void, void];
+  "pactDemo:approve": [void, void];
   "candidate:approve": [{ candidateId: string }, void];
   "candidate:publish": [{ candidateId: string }, void];
   "codex:refresh": [void, void];

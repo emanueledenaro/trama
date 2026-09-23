@@ -53,6 +53,7 @@ export function PactView() {
   const pending = decisionRequests.filter((r) => !r.outcome);
   return (
     <>
+      {project.isDemo ? <PactDemoBox /> : null}
       <InspectorSection title="Il legame tra decisioni, deleghe e verifiche">
         <p className="text-ui-sm text-muted-foreground">
           Ogni decisione registra un comportamento, un esempio e una motivazione. Ogni modifica incrementa la sua versione.
@@ -95,6 +96,53 @@ export function PactView() {
         </div>
       </InspectorSection>
     </>
+  );
+}
+
+const DEMO_BLOCKERS: Record<string, string> = {
+  HUMAN_APPROVAL_REQUIRED: "Serve una revisione umana di questa versione.",
+  DECISION_CHANGED: "Una decisione è cambiata. Lo scenario precedente è da riallineare.",
+  EVIDENCE_STALE: "Le verifiche si riferiscono a una versione precedente.",
+  CHECK_NOT_RUN: "La decisione modificata richiede un nuovo scenario eseguibile.",
+};
+
+function PactDemoBox() {
+  const project = useUi((s) => s.app?.project)!;
+  const demo = project.document.pactDemo;
+  const blockers = project.pactDemoBlockers;
+  const verifiable = blockers.every((b) => b.code === "HUMAN_APPROVAL_REQUIRED");
+  return (
+    <InspectorSection title="Prova il ciclo di revisione">
+      <p className="text-ui-sm text-muted-foreground">
+        Simulazione locale: un ordine pagato entra in revisione, mentre pagamento e disponibilità restano invariati. I controlli qui sotto riguardano il
+        modello dimostrativo, non il codice del tuo progetto.
+      </p>
+      <div className="mt-2 flex flex-wrap gap-2">
+        <Button size="sm" variant="outline" onClick={() => void act("pactDemo:run", undefined)}>
+          Esegui lo scenario
+        </Button>
+        {demo ? (
+          <Button size="sm" variant="outline" disabled={!verifiable || blockers.length === 0} onClick={() => void act("pactDemo:approve", undefined)}>
+            Registra revisione locale
+          </Button>
+        ) : null}
+      </div>
+      {demo ? (
+        <div className="mt-2 space-y-1">
+          <Badge tone={blockers.length === 0 ? "success" : "warning"}>{blockers.length === 0 ? "Simulazione verificata e revisionata" : "Revisione da completare"}</Badge>
+          {demo.evidence.map((e) => (
+            <p key={e.check} className="text-ui-xs text-muted-foreground">
+              {e.check}: {e.result === "pass" ? "superata" : e.result === "fail" ? "non superata" : "non eseguita"} · {e.output}
+            </p>
+          ))}
+          {blockers.map((b) => (
+            <p key={`${b.code}-${b.detail}`} className="text-ui-xs text-muted-foreground">
+              {DEMO_BLOCKERS[b.code] ?? `${b.code}: ${b.detail}`}
+            </p>
+          ))}
+        </div>
+      ) : null}
+    </InspectorSection>
   );
 }
 

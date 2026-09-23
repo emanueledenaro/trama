@@ -4,6 +4,7 @@ import {
   IconFolder,
   IconFolderOpen,
   IconFolderPlus,
+  IconFileDiff,
   IconGitPullRequest,
   IconLayoutSidebar,
   IconMessageCircle,
@@ -111,6 +112,8 @@ export function Sidebar({ isMac }: { isMac: boolean }) {
   const pendingMandate = document?.mandateRequests.find((r) => !r.resolution) ?? null;
   const openIssues = project?.github.issues.filter((i) => i.state === "open").length ?? 0;
   const pendingTeam = document?.team.proposals.some((p) => !p.resolution) ?? false;
+  const activeWork = document?.team.specialists.filter((s) => s.status === "working" || s.status === "stopping").length ?? 0;
+  const verifiedCandidates = project ? Object.values(project.candidateReports).filter((r) => r.state !== "building").length : 0;
   const specialists = document?.team.specialists.filter((s) => s.status !== "removed") ?? [];
   const running = Boolean(project?.runningRequestId) || project?.phase.kind === "studying" || project?.phase.kind === "opening";
   const account = app.codex.account;
@@ -165,8 +168,15 @@ export function Sidebar({ isMac }: { isMac: boolean }) {
               icon={<IconUsersGroup className="size-3.5" stroke={1.8} />}
               label="Team"
               active={isActive("team") || isActive("specialist")}
-              badge={pendingTeam ? 1 : 0}
+              badge={pendingTeam ? 1 : activeWork}
               onClick={() => setInspector({ kind: "team" })}
+            />
+            <SidebarRow
+              icon={<IconFileDiff className="size-3.5" stroke={1.8} />}
+              label="Lavoro"
+              active={isActive("work") || isActive("candidate")}
+              badge={verifiedCandidates}
+              onClick={() => setInspector({ kind: "work" })}
             />
             <SidebarRow
               icon={<IconGitPullRequest className="size-3.5" stroke={1.8} />}

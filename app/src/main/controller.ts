@@ -42,6 +42,7 @@ import {
 } from "./core/pact";
 import { availableChecks, CHECKS, type ReadOnlyCheck, runReadOnlyCheck } from "./core/checks";
 import { parsePlan, PLAN_SCHEMA, PLANNING_INSTRUCTIONS, planPrompt } from "./core/plan";
+import { approvePactDemo, inspectPactDemo, runPactDemo } from "./core/pactDemo";
 import { readRepositoryFile, scanRepository } from "./core/repositoryScanner";
 import { prepareSkills, type SetupReport } from "./core/skillSetup";
 import {
@@ -150,6 +151,7 @@ export class TramaController {
     project.candidateReports = Object.fromEntries(
       project.document.candidates.map((c) => [c.id, candidateReport(project.document, c, project.snapshot.headSHA)]),
     );
+    project.pactDemoBlockers = project.document.pactDemo ? inspectPactDemo(project.document, project.document.pactDemo) : [];
   }
 
   async start(): Promise<void> {
@@ -336,6 +338,7 @@ export class TramaController {
         runningWork: [],
         candidateReports: {},
         skills: [],
+        pactDemoBlockers: [],
       };
       this.state.project = project;
       this.state.loadingProject = null;
@@ -1568,6 +1571,21 @@ export class TramaController {
       plan.updatedAt = new Date().toISOString();
       if (this.state.project === project) this.changed();
     }
+  }
+
+  // MARK: Example project
+
+  runPactDemo(): void {
+    const project = this.requireProject();
+    if (!project.isDemo) throw new DomainError("Lo scenario vale solo per il progetto di esempio.");
+    runPactDemo(project.document);
+    this.changed();
+  }
+
+  approvePactDemo(): void {
+    const project = this.requireProject();
+    approvePactDemo(project.document, "Utente locale di Trama, simulazione");
+    this.changed();
   }
 
   // MARK: Working method

@@ -29,7 +29,8 @@ Conseguenze: Trama gira anche su Linux e Windows, perché nulla nel processo pri
 | Coordinatore: thread persistente, studio, aggiornamenti di contesto, memoria | Portato |
 | Strumenti MCP: `read_study`, `read_pact`, `read_mandate`, `read_issues`, `read_history`, `write_memory`, `request_mandate`, `request_decision` | Portato |
 | Schede di studio, decisione, mandato e avviso di contesto | Portato |
-| Patto: decisioni versionate e risposte alle domande | Portato |
+| Patto: decisioni versionate e risposte alle domande | Portato, con la prova del ciclo di revisione nel progetto di esempio |
+| Lavoro: candidati per stato e piani | Portato |
 | Mandato: concessione, correzione, revoca, versioni | Portato |
 | Issue GitHub tramite `gh` | Portato (lettura e creazione) |
 | Immagini nel composer | Portato |
