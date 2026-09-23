@@ -10,6 +10,8 @@ export type InspectorTarget =
   | { kind: "decision"; id: string }
   | { kind: "mandate" }
   | { kind: "memory" }
+  | { kind: "team" }
+  | { kind: "specialist"; id: string }
   | { kind: "issues" }
   | { kind: "issue"; number: number };
 

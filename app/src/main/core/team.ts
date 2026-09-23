@@ -1,0 +1,525 @@
+import { randomUUID } from "node:crypto";
+import type {
+  AssignmentStatus,
+  MandateAction,
+  ProjectDocument,
+  ProjectMandate,
+  ProposedSpecialist,
+  Specialist,
+  SpecialistAssignment,
+  SpecialistStatus,
+  SpecialistTool,
+  TeamProposal,
+  WorkKind,
+  WorktreeSession,
+} from "@shared/domain";
+import { shortId } from "@shared/ids";
+
+export class TeamError extends Error {
+  constructor(
+    readonly code: string,
+    message: string,
+  ) {
+    super(message);
+  }
+}
+
+const key = (text: string) => text.trim().toLowerCase().replace(/\s+/g, " ");
+const cleaned = (values: string[]) => [...new Set(values.map((v) => v.trim()).filter(Boolean))];
+const required = (value: string | undefined | null, field: string) => {
+  const trimmed = value?.trim() ?? "";
+  if (!trimmed) throw new TeamError("invalid_arguments", `${field} is required.`);
+  return trimmed;
+};
+
+export const ACTIVE_STATUSES: AssignmentStatus[] = ["preparing", "running", "stopRequested"];
+export const isActive = (assignment: SpecialistAssignment) => ACTIVE_STATUSES.includes(assignment.status);
+export const needsWorktree = (assignment: SpecialistAssignment) => assignment.tools.includes("edits");
+export const currentAssignment = (specialist: Specialist) => specialist.assignments.at(-1) ?? null;
+export const pendingStop = (assignment: SpecialistAssignment) => assignment.stops.find((s) => !s.confirmedAt) ?? null;
+
+export function isTeamConfirmed(document: ProjectDocument): boolean {
+  return document.team.confirmedAt !== null;
+}
+
+export function teamMembers(document: ProjectDocument): Specialist[] {
+  return document.team.specialists.filter((s) => s.status !== "removed");
+}
+
+export function findAssignment(document: ProjectDocument, id: string): SpecialistAssignment | null {
+  for (const specialist of document.team.specialists) {
+    const found = specialist.assignments.find((a) => a.id === id);
+    if (found) return found;
+  }
+  return null;
+}
+
+export function findSpecialist(document: ProjectDocument, reference: string): Specialist | null {
+  const byId = document.team.specialists.find((s) => s.id === reference.trim());
+  if (byId) return byId;
+  return document.team.specialists.find((s) => key(s.name) === key(reference)) ?? null;
+}
+
+export function activeAssignments(document: ProjectDocument): SpecialistAssignment[] {
+  return document.team.specialists.flatMap((s) => s.assignments.filter(isActive));
+}
+
+function specialistStatus(status: AssignmentStatus): SpecialistStatus {
+  switch (status) {
+    case "preparing":
+    case "running":
+      return "working";
+    case "stopRequested":
+      return "stopping";
+    case "stopped":
+      return "stopped";
+    default:
+      return "available";
+  }
+}
+
+function updateAssignment(
+  document: ProjectDocument,
+  id: string,
+  now: Date,
+  change: (assignment: SpecialistAssignment, specialist: Specialist) => void,
+): SpecialistAssignment {
+  for (const specialist of document.team.specialists) {
+    const assignment = specialist.assignments.find((a) => a.id === id);
+    if (!assignment) continue;
+    change(assignment, specialist);
+    assignment.updatedAt = now.toISOString();
+    if (specialist.status !== "removed" && currentAssignment(specialist)?.id === id) {
+      specialist.status = specialistStatus(assignment.status);
+    }
+    specialist.updatedAt = now.toISOString();
+    specialist.lastUpdate = assignment.lastUpdate;
+    return assignment;
+  }
+  throw new TeamError("unknown_assignment", `Unknown assignment: ${id}.`);
+}
+
+// MARK: Proposal
+
+export function proposeTeam(
+  document: ProjectDocument,
+  input: { requestId: string | null; summary: string | null; members: ProposedSpecialist[] },
+  now = new Date(),
+): TeamProposal {
+  if (isTeamConfirmed(document)) {
+    throw new TeamError("team_already_confirmed", "The person already confirmed the team; change it one specialist at a time.");
+  }
+  const members = input.members.map((m) => ({
+    name: required(m.name, "name"),
+    competence: required(m.competence, "competence"),
+    reason: required(m.reason, "reason"),
+    moduleIds: cleaned(m.moduleIds),
+  }));
+  if (members.length === 0) throw new TeamError("invalid_arguments", "A team needs at least one specialist.");
+  const names = new Set<string>();
+  for (const member of members) {
+    if (names.has(key(member.name))) throw new TeamError("invalid_arguments", `A specialist named ${member.name} is already in the team.`);
+    names.add(key(member.name));
+  }
+  for (const pending of document.team.proposals) {
+    if (!pending.resolution) pending.resolution = { kind: "superseded", resolvedAt: now.toISOString() };
+  }
+  const proposal: TeamProposal = {
+    id: shortId("T", randomUUID()),
+    requestId: input.requestId,
+    summary: input.summary?.trim() || null,
+    members,
+    askedAt: now.toISOString(),
+    resolution: null,
+  };
+  document.team.proposals.push(proposal);
+  return proposal;
+}
+
+function newSpecialist(member: ProposedSpecialist, origin: Specialist["origin"], now: Date): Specialist {
+  return {
+    id: shortId("S", randomUUID()),
+    name: member.name,
+    competence: member.competence,
+    reason: member.reason,
+    moduleIds: member.moduleIds,
+    origin,
+    createdAt: now.toISOString(),
+    status: "available",
+    model: null,
+    tools: ["commands"],
+    updatedAt: now.toISOString(),
+    lastUpdate: "Nel team",
+    assignments: [],
+    removal: null,
+  };
+}
+
+/** The person's one answer: `keeping` null confirms everyone; a subset or a note is a correction. */
+export function confirmTeam(
+  document: ProjectDocument,
+  proposalId: string,
+  keeping: string[] | null,
+  note: string | null,
+  now = new Date(),
+): Specialist[] {
+  const proposal = document.team.proposals.find((p) => p.id === proposalId);
+  if (!proposal) throw new TeamError("unknown_proposal", `Unknown team proposal: ${proposalId}.`);
+  if (proposal.resolution || isTeamConfirmed(document)) throw new TeamError("proposal_resolved", "The person already answered this team proposal.");
+  let kept = proposal.members;
+  if (keeping) {
+    const keys = new Set(keeping.map(key));
+    const unknown = keeping.find((name) => !proposal.members.some((m) => key(m.name) === key(name)));
+    if (unknown) throw new TeamError("unknown_member", `The proposal has no specialist named ${unknown}.`);
+    kept = proposal.members.filter((m) => keys.has(key(m.name)));
+  }
+  if (kept.length === 0) throw new TeamError("invalid_arguments", "A team needs at least one specialist.");
+  const created = kept.map((m) => newSpecialist(m, "teamProposal", now));
+  const removedNames = proposal.members.filter((m) => !kept.includes(m)).map((m) => m.name);
+  const trimmedNote = note?.trim() || null;
+  proposal.resolution =
+    removedNames.length === 0 && !trimmedNote
+      ? { kind: "confirmed", specialistIds: created.map((s) => s.id), resolvedAt: now.toISOString() }
+      : { kind: "corrected", specialistIds: created.map((s) => s.id), removedNames, note: trimmedNote, resolvedAt: now.toISOString() };
+  document.team.specialists.push(...created);
+  document.team.confirmedAt = now.toISOString();
+  return created;
+}
+
+export function teamMessage(document: ProjectDocument, proposal: TeamProposal): string {
+  const resolution = proposal.resolution;
+  const members = document.team.specialists
+    .filter((s) => resolution && resolution.kind !== "superseded" && resolution.specialistIds.includes(s.id))
+    .map((s) => `${s.name} (${s.id}, ${s.competence})`)
+    .join(", ");
+  if (resolution?.kind === "confirmed") return `Ho confermato il team che hai proposto: ${members}.`;
+  if (resolution?.kind === "corrected") {
+    let text = `Ho corretto il team: resta ${members}.`;
+    if (resolution.removedNames.length) text += ` Ho tolto ${resolution.removedNames.join(", ")}.`;
+    if (resolution.note) text += ` ${resolution.note}`;
+    return text;
+  }
+  return "La proposta di team precedente non vale più.";
+}
+
+// MARK: Specialists
+
+export function addSpecialist(document: ProjectDocument, draft: ProposedSpecialist, now = new Date()): Specialist {
+  if (!isTeamConfirmed(document)) throw new TeamError("team_not_confirmed", "The person has not confirmed a team yet.");
+  const name = required(draft.name, "name");
+  const competence = required(draft.competence, "competence");
+  const reason = required(draft.reason, "reason");
+  if (teamMembers(document).some((s) => key(s.name) === key(name))) {
+    throw new TeamError("duplicate_name", `A specialist named ${name} is already in the team.`);
+  }
+  const free = teamMembers(document).find((s) => s.status === "available" && key(s.competence) === key(competence));
+  if (free) throw new TeamError("specialist_available", `Specialist ${free.id} already has this competence and is free.`);
+  const specialist = newSpecialist({ name, competence, reason, moduleIds: cleaned(draft.moduleIds) }, "coordinator", now);
+  document.team.specialists.push(specialist);
+  return specialist;
+}
+
+export function removeSpecialist(document: ProjectDocument, id: string, reason: string, actor: string, now = new Date()): Specialist {
+  const specialist = document.team.specialists.find((s) => s.id === id);
+  if (!specialist) throw new TeamError("unknown_specialist", `Unknown specialist: ${id}.`);
+  if (specialist.status === "removed") throw new TeamError("specialist_removed", `Specialist ${id} was removed from the team.`);
+  const current = currentAssignment(specialist);
+  if (current && isActive(current)) {
+    throw new TeamError("specialist_busy", `Specialist ${id} is still working on ${current.id}.`);
+  }
+  const why = required(reason, "reason");
+  specialist.status = "removed";
+  specialist.removal = { removedBy: actor, reason: why, removedAt: now.toISOString() };
+  specialist.updatedAt = now.toISOString();
+  specialist.lastUpdate = `Uscito dal team: ${why}`;
+  return specialist;
+}
+
+// MARK: Assignments
+
+export interface AssignmentOrder {
+  specialist: string;
+  kind: WorkKind;
+  objective: string;
+  issueNumber: number | null;
+  exercise: string | null;
+  moduleIds: string[];
+  dependencies: string[];
+  model: string;
+  tools: SpecialistTool[];
+  requiredChecks: string[];
+  instructions: string;
+}
+
+function requireIndependent(document: ProjectDocument, moduleIds: string[], specialistId: string): void {
+  for (const other of activeAssignments(document)) {
+    if (other.specialistId === specialistId) continue;
+    const shared = other.moduleIds.filter((id) => moduleIds.includes(id));
+    if (shared.length) {
+      throw new TeamError("work_not_independent", `Assignment ${other.id} is already working on ${shared.join(", ")}.`);
+    }
+  }
+}
+
+export function assign(
+  document: ProjectDocument,
+  order: AssignmentOrder,
+  mandateVersion: number,
+  requestId: string | null,
+  now = new Date(),
+): SpecialistAssignment {
+  if (!isTeamConfirmed(document)) throw new TeamError("team_not_confirmed", "The person has not confirmed a team yet.");
+  const specialist = findSpecialist(document, order.specialist);
+  if (!specialist) throw new TeamError("unknown_specialist", `Unknown specialist: ${order.specialist}.`);
+  if (specialist.status === "removed") throw new TeamError("specialist_removed", `Specialist ${specialist.id} was removed from the team.`);
+  const current = currentAssignment(specialist);
+  if (current && isActive(current)) {
+    throw new TeamError("specialist_busy", `Specialist ${specialist.id} is still working on ${current.id}.`);
+  }
+  const objective = required(order.objective, "objective");
+  const instructions = required(order.instructions, "instructions");
+  const model = required(order.model, "model");
+  if (model.includes("/")) throw new TeamError("invalid_model", `Invalid model: ${model}.`);
+  const moduleIds = cleaned(order.moduleIds);
+  if (moduleIds.length === 0) throw new TeamError("invalid_arguments", "moduleIDs is required.");
+  const dependencies = cleaned(order.dependencies);
+  const pending: string[] = [];
+  for (const dependency of dependencies) {
+    const found = findAssignment(document, dependency);
+    if (!found) throw new TeamError("unknown_assignment", `Unknown assignment: ${dependency}.`);
+    if (found.status !== "completed") pending.push(dependency);
+  }
+  if (pending.length) throw new TeamError("dependencies_pending", `These assignments are not completed yet: ${pending.join(", ")}.`);
+  requireIndependent(document, moduleIds, specialist.id);
+  const tools: SpecialistTool[] = ["commands", ...(order.tools.includes("edits") ? (["edits"] as const) : [])];
+  const assignment: SpecialistAssignment = {
+    id: shortId("A", randomUUID()),
+    specialistId: specialist.id,
+    requestId,
+    kind: order.kind,
+    objective,
+    issueNumber: order.issueNumber,
+    exercise: order.exercise?.trim() || null,
+    moduleIds,
+    dependencies,
+    model,
+    tools,
+    requiredChecks: cleaned(order.requiredChecks),
+    instructions,
+    mandateVersion,
+    createdAt: now.toISOString(),
+    status: "preparing",
+    workspace: null,
+    threadId: null,
+    turns: [],
+    stops: [],
+    result: null,
+    failure: null,
+    updatedAt: now.toISOString(),
+    lastUpdate: `Incarico ricevuto: ${objective}`,
+    reportedStatus: null,
+  };
+  specialist.assignments.push(assignment);
+  specialist.status = "working";
+  specialist.model = model;
+  specialist.tools = tools;
+  specialist.updatedAt = now.toISOString();
+  specialist.lastUpdate = assignment.lastUpdate;
+  return assignment;
+}
+
+export function recordWorkspace(document: ProjectDocument, id: string, workspace: WorktreeSession, now = new Date()): void {
+  updateAssignment(document, id, now, (assignment) => {
+    assignment.workspace = workspace;
+    assignment.lastUpdate = `Worktree pronto sul branch ${workspace.branch}`;
+  });
+}
+
+export function recordThread(document: ProjectDocument, id: string, threadId: string, now = new Date()): void {
+  updateAssignment(document, id, now, (assignment) => {
+    assignment.threadId = threadId;
+  });
+}
+
+export function beginTurn(document: ProjectDocument, id: string, turnId: string, model: string, now = new Date()): void {
+  updateAssignment(document, id, now, (assignment) => {
+    if (!isActive(assignment)) throw new TeamError("not_running", `Specialist ${assignment.specialistId} has no work in progress.`);
+    if (assignment.status === "preparing") assignment.status = "running";
+    assignment.turns.push({ id: turnId, number: assignment.turns.length + 1, model, startedAt: now.toISOString(), endedAt: null, outcome: null });
+    assignment.lastUpdate = `Turno ${assignment.turns.length} in corso con ${model}`;
+  });
+}
+
+function confirmStop(assignment: SpecialistAssignment, note: string, now: Date): void {
+  const stop = pendingStop(assignment);
+  if (stop) stop.confirmedAt = now.toISOString();
+  assignment.status = "stopped";
+  assignment.lastUpdate = `Fermato: ${note}`;
+}
+
+export type TurnEnd = { kind: "completed"; text: string } | { kind: "interrupted" } | { kind: "failed"; message: string };
+
+/** A turn ended. An interruption, or a failure after a stop request, confirms the stop. */
+export function endTurn(document: ProjectDocument, id: string, turnId: string | null, outcome: TurnEnd, now = new Date()): SpecialistAssignment {
+  return updateAssignment(document, id, now, (assignment) => {
+    const turn = turnId ? assignment.turns.findLast((t) => t.id === turnId) : assignment.turns.at(-1);
+    if (turn && !turn.endedAt) {
+      turn.endedAt = now.toISOString();
+      turn.outcome = outcome.kind;
+    }
+    if (outcome.kind === "completed") {
+      assignment.status = "completed";
+      assignment.result = outcome.text;
+      assignment.failure = null;
+      assignment.lastUpdate = "Incarico concluso";
+    } else if (outcome.kind === "interrupted") {
+      confirmStop(assignment, "Codex ha interrotto il turno.", now);
+    } else if (pendingStop(assignment)) {
+      confirmStop(assignment, outcome.message, now);
+    } else {
+      assignment.status = "failed";
+      assignment.failure = outcome.message;
+      assignment.lastUpdate = `Turno non riuscito: ${outcome.message}`;
+    }
+  });
+}
+
+export function requestStop(
+  document: ProjectDocument,
+  specialistId: string,
+  actor: string,
+  reason: string,
+  thenRemove = false,
+  now = new Date(),
+): SpecialistAssignment {
+  const specialist = findSpecialist(document, specialistId);
+  if (!specialist) throw new TeamError("unknown_specialist", `Unknown specialist: ${specialistId}.`);
+  const current = currentAssignment(specialist);
+  if (!current || !isActive(current)) throw new TeamError("not_running", `Specialist ${specialist.id} has no work in progress.`);
+  const why = required(reason, "reason");
+  return updateAssignment(document, current.id, now, (assignment) => {
+    if (pendingStop(assignment)) return;
+    assignment.status = "stopRequested";
+    assignment.stops.push({ requestedBy: actor, reason: why, requestedAt: now.toISOString(), thenRemove, confirmedAt: null });
+    assignment.lastUpdate = `Arresto richiesto da ${actor}: ${why}`;
+  });
+}
+
+/** Trama confirms the stop of work with no turn running, for example while it was being prepared. */
+export function confirmStopWithoutTurn(document: ProjectDocument, id: string, note: string, now = new Date()): void {
+  updateAssignment(document, id, now, (assignment) => {
+    if (isActive(assignment)) confirmStop(assignment, note, now);
+  });
+}
+
+/** Active work left from a previous launch has no runtime: it is stopped and can be resumed. */
+export function stopOrphanedAssignments(document: ProjectDocument, note: string, now = new Date()): string[] {
+  const ids = activeAssignments(document).map((a) => a.id);
+  for (const id of ids) {
+    updateAssignment(document, id, now, (assignment) => {
+      const turn = assignment.turns.at(-1);
+      if (turn && !turn.endedAt) {
+        turn.endedAt = now.toISOString();
+        turn.outcome = "interrupted";
+      }
+      if (!pendingStop(assignment)) {
+        assignment.stops.push({ requestedBy: "Trama", reason: note, requestedAt: now.toISOString(), thenRemove: false, confirmedAt: null });
+      }
+      confirmStop(assignment, note, now);
+    });
+  }
+  return ids;
+}
+
+export function resumeAssignment(document: ProjectDocument, id: string, now = new Date()): SpecialistAssignment {
+  const assignment = findAssignment(document, id);
+  if (!assignment) throw new TeamError("unknown_assignment", `Unknown assignment: ${id}.`);
+  const specialist = document.team.specialists.find((s) => s.id === assignment.specialistId)!;
+  if (!["stopped", "failed"].includes(assignment.status) || currentAssignment(specialist)?.id !== id) {
+    throw new TeamError("cannot_resume", `Assignment ${id} is not stopped or failed.`);
+  }
+  if (specialist.status === "removed") throw new TeamError("specialist_removed", `Specialist ${specialist.id} was removed from the team.`);
+  requireIndependent(document, assignment.moduleIds, specialist.id);
+  return updateAssignment(document, id, now, (a) => {
+    a.status = "preparing";
+    a.failure = null;
+    a.lastUpdate = `Ripresa dell'incarico con ${a.model}`;
+  });
+}
+
+/** Assignments whose status changed since the Coordinator was last told. */
+export function unreportedAssignments(document: ProjectDocument): SpecialistAssignment[] {
+  return document.team.specialists.flatMap((s) => s.assignments).filter((a) => a.reportedStatus !== a.status && !isActive(a));
+}
+
+export function markReported(document: ProjectDocument, ids: string[]): void {
+  for (const specialist of document.team.specialists) {
+    for (const assignment of specialist.assignments) {
+      if (ids.includes(assignment.id)) assignment.reportedStatus = assignment.status;
+    }
+  }
+}
+
+export const ASSIGNMENT_STATUS_TEXT: Record<AssignmentStatus, string> = {
+  preparing: "in preparazione",
+  running: "al lavoro",
+  stopRequested: "arresto richiesto",
+  stopped: "fermato",
+  completed: "concluso",
+  failed: "non riuscito",
+};
+
+export function teamReport(document: ProjectDocument): { text: string; ids: string[] } | null {
+  const pending = unreportedAssignments(document);
+  if (!pending.length) return null;
+  const clip = (text: string) => (text.length > 1_200 ? `${text.slice(0, 1_200)}…` : text);
+  const lines = ["Aggiornamenti del team dall'ultimo messaggio:"];
+  for (const assignment of pending) {
+    const name = document.team.specialists.find((s) => s.id === assignment.specialistId)?.name ?? assignment.specialistId;
+    let line = `- ${name} · incarico ${assignment.id} · ${ASSIGNMENT_STATUS_TEXT[assignment.status]}: ${assignment.objective}`;
+    if (assignment.result) line += `\n  Risultato: ${clip(assignment.result)}`;
+    if (assignment.failure) line += `\n  Errore: ${clip(assignment.failure)}`;
+    const stop = assignment.stops.at(-1);
+    if (stop) line += `\n  Arresto chiesto da ${stop.requestedBy} (${stop.reason})${stop.confirmedAt ? ", confermato" : ", non ancora confermato"}.`;
+    lines.push(line);
+  }
+  lines.push("Con read_team vedi il dettaglio del team.");
+  return { text: lines.join("\n"), ids: pending.map((a) => a.id) };
+}
+
+// MARK: Mandate authorization
+
+export type Authorization = "authorized" | "mandate_missing" | "mandate_revoked" | "person_required" | "not_in_mandate" | "outside_scope";
+
+export const PERSON_ONLY_KINDS: WorkKind[] = ["newFeature", "tradeOff"];
+
+export function authorize(
+  mandate: ProjectMandate | null,
+  action: MandateAction,
+  moduleIds: string[] = [],
+  kind: WorkKind | null = null,
+): Authorization {
+  if (!mandate) return "mandate_missing";
+  if (mandate.status !== "granted") return "mandate_revoked";
+  if (kind && PERSON_ONLY_KINDS.includes(kind)) return "person_required";
+  if (!mandate.authorizedActions.includes(action)) return "not_in_mandate";
+  if (moduleIds.some((id) => !mandate.scopeModuleIds.includes(id))) return "outside_scope";
+  return "authorized";
+}
+
+export function refusalMessage(authorization: Authorization, action: MandateAction, outside: string[] = []): string {
+  switch (authorization) {
+    case "mandate_missing":
+      return "No mandate is granted for this project. Without one you read, run read-only checks and propose; ask the person with request_mandate.";
+    case "mandate_revoked":
+      return "The person revoked the mandate. Act on nothing; if the work still needs it, ask with request_mandate.";
+    case "person_required":
+      return "New features and trade-offs belong to the person: put the concrete case to them with request_decision.";
+    case "not_in_mandate":
+      return `The mandate does not grant ${action}. Propose the work, or ask for a correction with request_mandate.`;
+    case "outside_scope":
+      return `The mandate does not cover ${outside.join(", ")}. Propose the work, or ask for a correction with request_mandate.`;
+    default:
+      return "";
+  }
+}

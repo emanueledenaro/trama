@@ -77,7 +77,7 @@ export function resolveCodexExecutable(configured?: string | null): string {
  * Arguments of the restricted runtime: every global MCP server of the person is disabled, and apps,
  * plugins, hooks and sub-agents are off, so the Coordinator only reaches Trama's own tools.
  */
-export function restrictedAppServerArguments(executable: string, reservedServerName: string): Promise<string[]> {
+export function restrictedAppServerArguments(executable: string, reservedServerName: string | null): Promise<string[]> {
   return new Promise((resolve, reject) => {
     execFile(
       executable,
@@ -138,6 +138,8 @@ export interface ThreadOptions {
   cwd: string;
   developerInstructions: string;
   config?: JsonObject;
+  /** Defaults to read-only; a specialist with its own worktree gets workspace-write. */
+  sandbox?: "read-only" | "workspace-write";
   /** Resume this thread when it still exists; otherwise start a new one. */
   resumeThreadId?: string | null;
 }
@@ -150,6 +152,8 @@ export interface TurnOptions {
   effort?: string | null;
   /** Absolute paths of images attached to this message. */
   images?: string[];
+  /** The only directory the turn may write; the turn is read-only when absent. */
+  writableRoot?: string | null;
   onEvent: (event: TurnEvent) => void;
 }
 
@@ -252,7 +256,7 @@ export class CodexClient {
       model: options.model,
       cwd: options.cwd,
       approvalPolicy: "never",
-      sandbox: "read-only",
+      sandbox: options.sandbox ?? "read-only",
       developerInstructions: options.developerInstructions,
     };
     if (options.config) common.config = options.config;
@@ -315,7 +319,15 @@ export class CodexClient {
         cwd: options.cwd,
         model: options.model,
         approvalPolicy: "never",
-        sandboxPolicy: { type: "readOnly", networkAccess: false },
+        sandboxPolicy: options.writableRoot
+          ? {
+              type: "workspaceWrite",
+              writableRoots: [options.writableRoot],
+              networkAccess: false,
+              excludeTmpdirEnvVar: true,
+              excludeSlashTmp: true,
+            }
+          : { type: "readOnly", networkAccess: false },
       };
       if (options.effort) params.effort = options.effort;
       this.request("turn/start", params)

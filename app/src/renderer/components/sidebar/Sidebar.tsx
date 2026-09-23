@@ -12,8 +12,11 @@ import {
   IconSettings,
   IconShieldCheck,
   IconSitemap,
+  IconUser,
+  IconUsersGroup,
   IconX,
 } from "@tabler/icons-react";
+import { StatusDot } from "@/components/inspector/TeamView";
 import type * as React from "react";
 import { Spinner } from "@/components/Spinner";
 import { Tooltip } from "@/components/ui/tooltip";
@@ -106,6 +109,8 @@ export function Sidebar({ isMac }: { isMac: boolean }) {
   const pendingDecisions = document?.decisionRequests.filter((r) => !r.outcome) ?? [];
   const pendingMandate = document?.mandateRequests.find((r) => !r.resolution) ?? null;
   const openIssues = project?.github.issues.filter((i) => i.state === "open").length ?? 0;
+  const pendingTeam = document?.team.proposals.some((p) => !p.resolution) ?? false;
+  const specialists = document?.team.specialists.filter((s) => s.status !== "removed") ?? [];
   const running = Boolean(project?.runningRequestId) || project?.phase.kind === "studying" || project?.phase.kind === "opening";
   const account = app.codex.account;
   const isActive = (kind: InspectorTarget["kind"]) => inspector?.kind === kind;
@@ -154,6 +159,13 @@ export function Sidebar({ isMac }: { isMac: boolean }) {
               active={isActive("mandate")}
               badge={pendingMandate ? 1 : 0}
               onClick={() => setInspector({ kind: "mandate" })}
+            />
+            <SidebarRow
+              icon={<IconUsersGroup className="size-3.5" stroke={1.8} />}
+              label="Team"
+              active={isActive("team") || isActive("specialist")}
+              badge={pendingTeam ? 1 : 0}
+              onClick={() => setInspector({ kind: "team" })}
             />
             <SidebarRow
               icon={<IconCircleDot className="size-3.5" stroke={1.8} />}
@@ -218,6 +230,20 @@ export function Sidebar({ isMac }: { isMac: boolean }) {
                           {running ? <Spinner /> : null}
                         </span>
                       </button>
+                      {specialists.map((specialist) => (
+                        <button
+                          key={specialist.id}
+                          type="button"
+                          onClick={() => setInspector({ kind: "specialist", id: specialist.id })}
+                          className={cn(SIDEBAR_ROW, "pl-8", inspector?.kind === "specialist" && inspector.id === specialist.id ? ROW_ACTIVE : ROW_IDLE)}
+                        >
+                          <IconUser className="size-3 shrink-0 text-muted-foreground" stroke={1.8} />
+                          <span className="min-w-0 flex-1 truncate text-ui leading-5 text-foreground/95">{specialist.name}</span>
+                          <span className="flex w-[15px] shrink-0 items-center justify-center">
+                            <StatusDot status={specialist.status} />
+                          </span>
+                        </button>
+                      ))}
                       {pendingDecisions.map((request) => (
                         <button
                           key={request.id}

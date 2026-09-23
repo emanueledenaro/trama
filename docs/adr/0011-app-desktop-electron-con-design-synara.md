@@ -31,7 +31,8 @@ Conseguenze: Trama gira anche su Linux e Windows, perché nulla nel processo pri
 | Mandato: concessione, correzione, revoca, versioni | Portato |
 | Issue GitHub tramite `gh` | Portato (lettura e creazione) |
 | Immagini nel composer | Portato |
-| Team, specialisti, incarichi, worktree | Da portare |
+| Team, specialisti, incarichi, worktree | Portato: proposta e conferma, `create_specialist`, `assign_task`, `stop_specialist`, `read_team`, runtime Codex con worktree proprio |
+| Verifiche in sola lettura (`run_readonly_check`) | Portato, con la sandbox di Codex |
 | Candidati, verifiche, revisione tecnica, via libera | Da portare |
 | Pubblicazione di pull request | Da portare |
 | Monitor in background e notifiche | Da portare |

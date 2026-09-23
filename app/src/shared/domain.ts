@@ -9,9 +9,9 @@ export interface RecentProject {
   lastOpenedAt: string;
 }
 
-export type EventOrigin = "person" | "coordinator" | "trama";
+export type EventOrigin = "person" | "coordinator" | "trama" | "specialist";
 
-export type CardKind = "study" | "mandate" | "decision" | "contextNotice";
+export type CardKind = "study" | "mandate" | "decision" | "contextNotice" | "teamProposal" | "assignment" | "candidate";
 
 export type EventContent =
   | { type: "personMessage"; text: string; moduleId: string | null; moduleName: string | null; imageCount?: number }
@@ -24,6 +24,9 @@ export interface ConversationEvent {
   sequence: number;
   origin: EventOrigin;
   requestId: string | null;
+  /** Specialist work: the assignment and turn the activity belongs to. */
+  assignmentId?: string | null;
+  workKey?: string | null;
   createdAt: string;
   content: EventContent;
 }
@@ -132,6 +135,107 @@ export interface CoordinatorState {
   memorySentToThread: string | null;
 }
 
+export type WorkKind = "agreedTicket" | "decidedBehaviorCorrection" | "newFeature" | "tradeOff";
+export type SpecialistTool = "commands" | "edits";
+
+export interface ProposedSpecialist {
+  name: string;
+  competence: string;
+  reason: string;
+  moduleIds: string[];
+}
+
+export interface TeamProposal {
+  id: string;
+  requestId: string | null;
+  summary: string | null;
+  members: ProposedSpecialist[];
+  askedAt: string;
+  resolution:
+    | { kind: "confirmed"; specialistIds: string[]; resolvedAt: string }
+    | { kind: "corrected"; specialistIds: string[]; removedNames: string[]; note: string | null; resolvedAt: string }
+    | { kind: "superseded"; resolvedAt: string }
+    | null;
+}
+
+export type SpecialistStatus = "available" | "working" | "stopping" | "stopped" | "removed";
+export type AssignmentStatus = "preparing" | "running" | "stopRequested" | "stopped" | "completed" | "failed";
+
+export interface WorktreeSession {
+  sourceRoot: string;
+  worktreeRoot: string;
+  branch: string;
+  baseSHA: string;
+}
+
+export interface AssignmentTurn {
+  id: string;
+  number: number;
+  model: string;
+  startedAt: string;
+  endedAt: string | null;
+  outcome: "completed" | "interrupted" | "failed" | null;
+}
+
+export interface AssignmentStop {
+  requestedBy: string;
+  reason: string;
+  requestedAt: string;
+  thenRemove: boolean;
+  confirmedAt: string | null;
+}
+
+export interface SpecialistAssignment {
+  id: string;
+  specialistId: string;
+  requestId: string | null;
+  kind: WorkKind;
+  objective: string;
+  issueNumber: number | null;
+  exercise: string | null;
+  moduleIds: string[];
+  dependencies: string[];
+  model: string;
+  tools: SpecialistTool[];
+  requiredChecks: string[];
+  instructions: string;
+  mandateVersion: number;
+  createdAt: string;
+  status: AssignmentStatus;
+  workspace: WorktreeSession | null;
+  threadId: string | null;
+  turns: AssignmentTurn[];
+  stops: AssignmentStop[];
+  result: string | null;
+  failure: string | null;
+  updatedAt: string;
+  lastUpdate: string;
+  reportedStatus: AssignmentStatus | null;
+}
+
+export interface Specialist {
+  id: string;
+  name: string;
+  competence: string;
+  reason: string;
+  moduleIds: string[];
+  origin: "teamProposal" | "coordinator";
+  createdAt: string;
+  status: SpecialistStatus;
+  model: string | null;
+  tools: SpecialistTool[];
+  updatedAt: string;
+  lastUpdate: string;
+  assignments: SpecialistAssignment[];
+  removal: { removedBy: string; reason: string; removedAt: string } | null;
+}
+
+export interface ProjectTeam {
+  proposals: TeamProposal[];
+  specialists: Specialist[];
+  confirmedAt: string | null;
+}
+
 export interface ProjectDocument {
   schemaVersion: 1;
   projectId: string;
@@ -147,6 +251,7 @@ export interface ProjectDocument {
   selectedModel: string | null;
   selectedEffort: string | null;
   composerDraft: string;
+  team: ProjectTeam;
 }
 
 export type CoordinatorPhase =
@@ -187,6 +292,8 @@ export interface ActiveProjectState {
   contextUsage: { usedTokens: number; contextWindow: number | null } | null;
   github: GitHubState;
   stateWritable: boolean;
+  /** Work keys of specialist turns that are running now. */
+  runningWork: string[];
 }
 
 export type ThemePreference = "system" | "light" | "dark";

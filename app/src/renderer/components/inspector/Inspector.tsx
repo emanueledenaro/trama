@@ -4,6 +4,7 @@ import { useUi } from "@/lib/store";
 import { IssueDetail, IssuesView } from "./IssuesView";
 import { MandateView } from "./MandateView";
 import { MemoryView } from "./MemoryView";
+import { SpecialistView, TeamView } from "./TeamView";
 import { FilePreview, MapView, ModuleView } from "./MapView";
 import { DecisionView, PactView } from "./PactView";
 
@@ -15,6 +16,8 @@ const TITLES = {
   decision: "Decisione",
   mandate: "Mandato del Coordinatore",
   memory: "Memoria del Coordinatore",
+  team: "Team del progetto",
+  specialist: "Specialista",
   issues: "Issue del progetto",
   issue: "Issue",
 } as const;
@@ -40,6 +43,8 @@ export function Inspector() {
         {target.kind === "decision" ? <DecisionView id={target.id} /> : null}
         {target.kind === "mandate" ? <MandateView /> : null}
         {target.kind === "memory" ? <MemoryView /> : null}
+        {target.kind === "team" ? <TeamView /> : null}
+        {target.kind === "specialist" ? <SpecialistView id={target.id} /> : null}
         {target.kind === "issues" ? <IssuesView /> : null}
         {target.kind === "issue" ? <IssueDetail number={target.number} /> : null}
       </div>

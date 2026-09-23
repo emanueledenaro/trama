@@ -81,7 +81,7 @@ export function MandateView() {
           <div className="space-y-3">
             <div>
               <Label>Obiettivi, uno per riga</Label>
-              <TextArea value={objectives} onChange={(e) => setObjectives(e.target.value)} />
+              <TextArea value={objectives} onChange={(e) => setObjectives(e.target.value)} aria-label="Obiettivi" />
             </div>
             <div>
               <Label>Priorità</Label>

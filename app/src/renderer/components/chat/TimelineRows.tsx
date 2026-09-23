@@ -16,7 +16,7 @@ import { formatDuration, type TimelineRow } from "@shared/timeline";
 import { cn } from "@/lib/cn";
 import { formatTime } from "@/lib/format";
 import { useUi } from "@/lib/store";
-import { ContextNoticeCard, DecisionCard, MandateCard, StudyCard } from "./Cards";
+import { AssignmentCard, ContextNoticeCard, DecisionCard, MandateCard, StudyCard, TeamProposalCard } from "./Cards";
 import { ChatMarkdown } from "./ChatMarkdown";
 
 function DisclosureChevron({ open }: { open: boolean }) {
@@ -104,12 +104,18 @@ function ActivityRow({ event }: { event: ConversationEvent }) {
 
 function WorkGroup({ row }: { row: Extract<TimelineRow, { kind: "work" }> }) {
   const [open, setOpen] = useState(false);
+  const specialistName = useUi((s) =>
+    row.assignmentId ? (s.app?.project?.document.team.specialists.find((sp) => sp.assignments.some((a) => a.id === row.assignmentId))?.name ?? null) : null,
+  );
   const tools = row.activities.filter((e) => e.content.type === "activity" && e.content.tone !== "info").length;
+  const author = specialistName ?? "Il Coordinatore";
   const label = row.running
-    ? "Il Coordinatore sta lavorando"
+    ? `${author} sta lavorando`
     : row.durationMs !== null
-      ? `Ha lavorato per ${formatDuration(row.durationMs)}`
-      : "Attività";
+      ? `${specialistName ? `${specialistName} ha` : "Ha"} lavorato per ${formatDuration(row.durationMs)}`
+      : specialistName
+        ? `${specialistName} · attività`
+        : "Attività";
   return (
     <div className="mb-3 text-chat">
       <button
@@ -199,6 +205,8 @@ export function TimelineRowView({ row, streaming = false }: { row: TimelineRow; 
       if (row.cardKind === "study") return <StudyCard title={content.title} text={content.detail ?? ""} streaming={streaming} />;
       if (row.cardKind === "mandate" && content.referenceId) return <MandateCard requestId={content.referenceId} />;
       if (row.cardKind === "decision" && content.referenceId) return <DecisionCard requestId={content.referenceId} />;
+      if (row.cardKind === "teamProposal" && content.referenceId) return <TeamProposalCard proposalId={content.referenceId} />;
+      if (row.cardKind === "assignment" && content.referenceId) return <AssignmentCard assignmentId={content.referenceId} />;
       return <ContextNoticeCard title={content.title} detail={content.detail} />;
     }
   }

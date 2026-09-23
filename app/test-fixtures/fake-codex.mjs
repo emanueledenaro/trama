@@ -2,6 +2,14 @@
 // Minimal stand-in for `codex app-server --stdio`, used by tests and local UI checks only.
 import { createInterface } from "node:readline";
 
+if (process.argv[2] === "sandbox") {
+  // No real sandbox here: run what follows "--" so the plumbing can be tested.
+  const { spawnSync } = await import("node:child_process");
+  const rest = process.argv.slice(process.argv.indexOf("--") + 1);
+  const result = spawnSync(rest[0], rest.slice(1), { stdio: "inherit" });
+  process.exit(result.status ?? 1);
+}
+
 if (process.argv[2] === "mcp" && process.argv[3] === "list") {
   process.stdout.write(JSON.stringify([{ name: "github", transport: { type: "stdio" } }]));
   process.exit(0);
@@ -23,7 +31,7 @@ async function callTool(threadId, name, args) {
 }
 let turns = 0;
 
-createInterface({ input: process.stdin }).on("line", (line) => {
+createInterface({ input: process.stdin }).on("line", async (line) => {
   const { id, method, params } = JSON.parse(line);
   switch (method) {
     case "initialize":
@@ -56,6 +64,55 @@ createInterface({ input: process.stdin }).on("line", (line) => {
       const threadId = params.threadId;
       send({ id, result: { turn: { id: turnId } } });
       const text = params.input[0].text;
+      const finish = (reply) => {
+        send({ method: "item/completed", params: { threadId, turnId, item: { id: "msg", type: "agentMessage", phase: "final_answer", text: reply } } });
+        send({ method: "turn/completed", params: { threadId, turn: { id: turnId, status: "completed" } } });
+      };
+      const toolDone = (tool, result) =>
+        send({ method: "item/completed", params: { threadId, turnId, item: { id: `tool-${tool}`, type: "mcpToolCall", server: "trama", tool, status: "completed", result } } });
+      if (params.sandboxPolicy?.type === "workspaceWrite") {
+        // A specialist with its own worktree: write one file there, as Codex would.
+        const { writeFileSync } = await import("node:fs");
+        const { join } = await import("node:path");
+        const root = params.sandboxPolicy.writableRoots[0];
+        writeFileSync(join(root, "NOTE.md"), "Lavoro dello specialista\n");
+        send({ method: "item/completed", params: { threadId, turnId, item: { id: "fc", type: "fileChange", status: "completed", changes: [{ path: "NOTE.md" }] } } });
+        if (text.includes("[lento]")) return; // stays running until interrupted
+        setTimeout(() => finish("Ho scritto NOTE.md nel worktree."), 30);
+        return;
+      }
+      if (text.includes("[proponi-team]")) {
+        callTool(threadId, "propose_team", {
+          summary: "Un solo specialista per il modulo Orders",
+          specialists: [{ name: "Ada", competence: "Swift", reason: "Il dominio è in Swift", moduleIDs: ["Sources/Orders"] }],
+        }).then((result) => {
+          toolDone("propose_team", result);
+          finish("Ti ho proposto il team.");
+        });
+        return;
+      }
+      if (text.includes("[assegna]")) {
+        callTool(threadId, "assign_task", {
+          specialist: "Ada",
+          kind: "agreedTicket",
+          objective: "Documenta l'annullamento",
+          moduleIDs: ["Sources/Orders"],
+          requiredChecks: ["git_status"],
+          tools: ["edits"],
+          instructions: text.includes("[lento]") ? "[lento] Scrivi una nota" : "Scrivi una nota",
+        }).then((result) => {
+          toolDone("assign_task", result);
+          finish(result.isError ? `Rifiutato: ${result.content[0].text}` : "Ho assegnato il lavoro ad Ada.");
+        });
+        return;
+      }
+      if (text.includes("[verifica]")) {
+        callTool(threadId, "run_readonly_check", { check: "git_status" }).then((result) => {
+          toolDone("run_readonly_check", result);
+          finish("Ho eseguito la verifica.");
+        });
+        return;
+      }
       if (text.includes("[chiedi-decisione]")) {
         callTool(threadId, "request_decision", {
           category: "product",
@@ -89,7 +146,8 @@ createInterface({ input: process.stdin }).on("line", (line) => {
       return;
     }
     case "turn/interrupt":
-      return send({ id, result: {} });
+      send({ id, result: {} });
+      return send({ method: "turn/completed", params: { threadId: params.threadId, turn: { id: params.turnId, status: "interrupted" } } });
     default:
       if (id !== undefined) send({ id, error: { code: -32601, message: `unknown ${method}` } });
   }

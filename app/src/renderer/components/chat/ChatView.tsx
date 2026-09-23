@@ -8,6 +8,7 @@ import {
   IconRosetteDiscountCheck,
   IconShieldCheck,
   IconSitemap,
+  IconUsersGroup,
 } from "@tabler/icons-react";
 import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import { deriveTimelineRows } from "@shared/timeline";
@@ -59,6 +60,7 @@ function ChatHeader({ isMac }: { isMac: boolean }) {
   const pendingDecisions = project?.document.decisionRequests.filter((r) => !r.outcome).length ?? 0;
   const pendingMandate = project?.document.mandateRequests.some((r) => !r.resolution) ? 1 : 0;
   const openIssues = project?.github.issues.filter((i) => i.state === "open").length ?? 0;
+  const pendingTeam = project?.document.team.proposals.some((p) => !p.resolution) ? 1 : 0;
   const model = project?.document.coordinator.threadModel ?? project?.document.selectedModel ?? null;
 
   return (
@@ -98,6 +100,7 @@ function ChatHeader({ isMac }: { isMac: boolean }) {
           <HeaderChip target={{ kind: "map" }} label="Mappa" icon={<IconSitemap stroke={1.8} />} />
           <HeaderChip target={{ kind: "pact" }} label="Patto" icon={<IconRosetteDiscountCheck stroke={1.8} />} count={pendingDecisions} />
           <HeaderChip target={{ kind: "mandate" }} label="Mandato" icon={<IconShieldCheck stroke={1.8} />} count={pendingMandate} />
+          <HeaderChip target={{ kind: "team" }} label="Team" icon={<IconUsersGroup stroke={1.8} />} count={pendingTeam} />
           <HeaderChip target={{ kind: "issues" }} label="Issue" icon={<IconCircleDot stroke={1.8} />} count={openIssues} />
           <HeaderChip target={{ kind: "memory" }} label="Memoria" icon={<IconBrain stroke={1.8} />} />
           <Tooltip label="Aggiorna progetto">
@@ -204,7 +207,11 @@ function ProjectIntro() {
 function Timeline() {
   const project = useUi((s) => s.app?.project)!;
   const { events, requests } = project.document;
-  const rows = useMemo(() => deriveTimelineRows(events, requests, project.streaming), [events, requests, project.streaming]);
+  const runningWork = project.runningWork;
+  const rows = useMemo(
+    () => deriveTimelineRows(events, requests, project.streaming, new Set(runningWork)),
+    [events, requests, project.streaming, runningWork],
+  );
   const scroller = useRef<HTMLDivElement>(null);
   const pinned = useRef(true);
   const studying = project.phase.kind === "studying";

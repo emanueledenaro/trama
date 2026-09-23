@@ -33,6 +33,10 @@ export interface ActionMap {
     void,
   ];
   "mandate:revoke": [{ reason: string; requestId: string | null }, void];
+  "team:answer": [{ proposalId: string; keeping: string[] | null; note: string | null }, void];
+  "assignment:stop": [{ assignmentId: string }, void];
+  "assignment:resume": [{ assignmentId: string }, void];
+  "specialist:remove": [{ specialistId: string; reason: string }, void];
   "codex:refresh": [void, void];
   "codex:login": [void, void];
   "github:refresh": [void, void];

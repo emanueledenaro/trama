@@ -24,6 +24,7 @@ export function emptyDocument(projectId: string): ProjectDocument {
     selectedModel: null,
     selectedEffort: null,
     composerDraft: "",
+    team: { proposals: [], specialists: [], confirmedAt: null },
   };
 }
 
@@ -36,6 +37,7 @@ export function normalizeDocument(raw: Partial<ProjectDocument>, projectId: stri
     schemaVersion: 1,
     projectId,
     coordinator: { ...base.coordinator, ...(raw.coordinator ?? {}) },
+    team: { ...base.team, ...(raw.team ?? {}) },
   };
   for (const request of document.requests) {
     if (request.state === "running") {
@@ -52,6 +54,7 @@ export function appendEvent(
   content: EventContent,
   requestId: string | null = null,
   now = new Date(),
+  work: { assignmentId: string; workKey: string } | null = null,
 ): ConversationEvent {
   document.lastSequence += 1;
   const event: ConversationEvent = {
@@ -61,6 +64,7 @@ export function appendEvent(
     requestId,
     createdAt: now.toISOString(),
     content,
+    ...(work ? { assignmentId: work.assignmentId, workKey: work.workKey } : {}),
   };
   document.events.push(event);
   return event;

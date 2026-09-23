@@ -1,4 +1,15 @@
-import { IconChevronRight, IconInfoCircle, IconRosetteDiscountCheck, IconShieldCheck, IconTelescope } from "@tabler/icons-react";
+import {
+  IconBriefcase,
+  IconChevronRight,
+  IconGitBranch,
+  IconInfoCircle,
+  IconRosetteDiscountCheck,
+  IconShieldCheck,
+  IconTelescope,
+  IconUsersGroup,
+} from "@tabler/icons-react";
+import type { AssignmentStatus } from "@shared/domain";
+import { Spinner } from "@/components/Spinner";
 import { useState } from "react";
 import type * as React from "react";
 import { Button } from "@/components/ui/button";
@@ -254,6 +265,165 @@ export function DecisionCard({ requestId }: { requestId: string }) {
           </Button>
         </div>
       )}
+    </CardFrame>
+  );
+}
+
+export const ASSIGNMENT_STATUS: Record<AssignmentStatus, { label: string; tone: "info" | "success" | "warning" | "destructive" | "secondary" }> = {
+  preparing: { label: "In preparazione", tone: "info" },
+  running: { label: "Al lavoro", tone: "info" },
+  stopRequested: { label: "Arresto richiesto", tone: "warning" },
+  stopped: { label: "Fermato", tone: "secondary" },
+  completed: { label: "Concluso", tone: "success" },
+  failed: { label: "Non riuscito", tone: "destructive" },
+};
+
+export function TeamProposalCard({ proposalId }: { proposalId: string }) {
+  const project = useUi((s) => s.app?.project)!;
+  const proposal = project.document.team.proposals.find((p) => p.id === proposalId);
+  const [kept, setKept] = useState<string[] | null>(null);
+  const [note, setNote] = useState("");
+  if (!proposal) return null;
+  const selected = kept ?? proposal.members.map((m) => m.name);
+  const resolution = proposal.resolution;
+  const moduleName = (id: string) => project.snapshot.modules.find((m) => m.id === id)?.name ?? id;
+  const corrected = selected.length !== proposal.members.length || note.trim().length > 0;
+  return (
+    <CardFrame
+      icon={<IconUsersGroup stroke={1.8} />}
+      title="Proposta del team"
+      aside={
+        resolution ? (
+          <Badge tone={resolution.kind === "superseded" ? "secondary" : "success"}>
+            {resolution.kind === "confirmed" ? "Team confermato" : resolution.kind === "corrected" ? "Team corretto" : "Proposta sostituita"}
+          </Badge>
+        ) : (
+          <Badge tone="info">In attesa</Badge>
+        )
+      }
+    >
+      {proposal.summary ? <p className="text-ui text-foreground/90">{proposal.summary}</p> : null}
+      <div className="mt-2 space-y-1.5">
+        {proposal.members.map((member) => {
+          const checked = selected.includes(member.name);
+          return (
+            <label
+              key={member.name}
+              className={cn(
+                "flex cursor-pointer items-start gap-2.5 rounded-lg border border-[color:var(--color-border)] px-3 py-2",
+                resolution && "cursor-default",
+                resolution && !checked && "opacity-60",
+              )}
+            >
+              {!resolution ? (
+                <input
+                  type="checkbox"
+                  className="mt-1 accent-[var(--color-text-accent)]"
+                  checked={checked}
+                  onChange={(e) => setKept(e.target.checked ? [...selected, member.name] : selected.filter((n) => n !== member.name))}
+                />
+              ) : null}
+              <span className="min-w-0 flex-1">
+                <span className="block text-ui text-foreground">
+                  {member.name} <span className="text-muted-foreground">· {member.competence}</span>
+                </span>
+                <span className="block text-ui-sm text-muted-foreground">{member.reason}</span>
+                {member.moduleIds.length ? (
+                  <span className="block text-ui-xs text-muted-foreground/70">Moduli: {member.moduleIds.map(moduleName).join(", ")}</span>
+                ) : null}
+              </span>
+            </label>
+          );
+        })}
+      </div>
+      {resolution?.kind === "corrected" && resolution.note ? <Field label="Correzione">{resolution.note}</Field> : null}
+      {!resolution ? (
+        <div className="mt-3 space-y-2">
+          <TextArea value={note} onChange={(e) => setNote(e.target.value)} placeholder="Correzione (facoltativa)" aria-label="Correzione" className="min-h-12" />
+          <Button
+            size="sm"
+            disabled={selected.length === 0}
+            onClick={() =>
+              void act("team:answer", {
+                proposalId,
+                keeping: selected.length === proposal.members.length ? null : selected,
+                note: note.trim() || null,
+              })
+            }
+          >
+            {corrected ? "Conferma con le correzioni" : "Conferma il team"}
+          </Button>
+        </div>
+      ) : null}
+    </CardFrame>
+  );
+}
+
+export function AssignmentCard({ assignmentId }: { assignmentId: string }) {
+  const project = useUi((s) => s.app?.project)!;
+  const specialist = project.document.team.specialists.find((s) => s.assignments.some((a) => a.id === assignmentId));
+  const assignment = specialist?.assignments.find((a) => a.id === assignmentId);
+  const [showResult, setShowResult] = useState(false);
+  if (!specialist || !assignment) return null;
+  const status = ASSIGNMENT_STATUS[assignment.status];
+  const active = ["preparing", "running", "stopRequested"].includes(assignment.status);
+  const isCurrent = specialist.assignments.at(-1)?.id === assignment.id;
+  const moduleName = (id: string) => project.snapshot.modules.find((m) => m.id === id)?.name ?? id;
+  return (
+    <CardFrame
+      icon={<IconBriefcase stroke={1.8} />}
+      title={`Incarico ${assignment.id}`}
+      aside={
+        <span className="flex items-center gap-1.5">
+          {active ? <Spinner /> : null}
+          <Badge tone={status.tone}>{status.label}</Badge>
+        </span>
+      }
+    >
+      <Field label="Specialista">
+        {specialist.name} <span className="text-muted-foreground">· {specialist.competence}</span>
+      </Field>
+      <Field label="Obiettivo">{assignment.objective}</Field>
+      {assignment.exercise ? <Field label="Esercizio">{assignment.exercise}</Field> : null}
+      <Field label="Perimetro">{assignment.moduleIds.map(moduleName).join(", ")}</Field>
+      {assignment.dependencies.length ? <Field label="Dipendenze">{assignment.dependencies.join(", ")}</Field> : null}
+      <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-ui-sm text-muted-foreground">
+        <span>Modello {assignment.model}</span>
+        <span>{assignment.tools.includes("edits") ? "Worktree proprio" : "Sola lettura"}</span>
+        {assignment.requiredChecks.length ? <span>Verifiche: {assignment.requiredChecks.join(", ")}</span> : null}
+      </div>
+      {assignment.workspace ? (
+        <div className="mt-1.5 flex items-center gap-1 font-mono text-[11px] text-muted-foreground">
+          <IconGitBranch className="size-3" /> {assignment.workspace.branch}
+        </div>
+      ) : null}
+      <p className="mt-2 text-ui-sm text-muted-foreground">{assignment.lastUpdate}</p>
+      {assignment.failure ? <Field label="Errore">{assignment.failure}</Field> : null}
+      {assignment.result ? (
+        <div className="mt-2">
+          <button type="button" className="inline-flex items-center gap-1 text-ui-sm text-muted-foreground hover:text-foreground" onClick={() => setShowResult(!showResult)}>
+            Risultato <IconChevronRight className={cn("size-3.5 transition-transform", showResult && "rotate-90")} />
+          </button>
+          {showResult ? (
+            <div className="mt-1 rounded-lg bg-[var(--app-chat-code-surface)] px-3 py-2">
+              <ChatMarkdown text={assignment.result} />
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+      {isCurrent && (active || assignment.status === "stopped" || assignment.status === "failed") ? (
+        <div className="mt-3 flex gap-2">
+          {active ? (
+            <Button size="sm" variant="outline" disabled={assignment.status === "stopRequested"} onClick={() => void act("assignment:stop", { assignmentId })}>
+              Ferma
+            </Button>
+          ) : (
+            <Button size="sm" variant="outline" onClick={() => void act("assignment:resume", { assignmentId })}>
+              Riprendi
+            </Button>
+          )}
+        </div>
+      ) : null}
     </CardFrame>
   );
 }

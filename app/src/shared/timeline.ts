@@ -6,6 +6,8 @@ export type TimelineRow =
       kind: "work";
       id: string;
       requestId: string | null;
+      /** Set when the group is a specialist's turn rather than the Coordinator's. */
+      assignmentId: string | null;
       activities: ConversationEvent[];
       running: boolean;
       durationMs: number | null;
@@ -21,6 +23,7 @@ export function deriveTimelineRows(
   events: ConversationEvent[],
   requests: CoordinatorRequest[],
   streaming: { requestId: string | null; text: string } | null,
+  runningWork: Set<string> = new Set(),
 ): TimelineRow[] {
   const rows: TimelineRow[] = [];
   const requestsById = new Map(requests.map((r) => [r.id, r]));
@@ -34,10 +37,18 @@ export function deriveTimelineRows(
         rows.push({ kind: "person", id: event.id, event, text: content.text, moduleName: content.moduleName, imageCount: content.imageCount ?? 0 });
         break;
       case "activity": {
-        const key = event.requestId ?? `free-${event.id}`;
+        const key = event.workKey ? `specialist-${event.workKey}` : (event.requestId ?? `free-${event.id}`);
         let group = workByRequest.get(key);
         if (!group) {
-          group = { kind: "work", id: `work-${event.id}`, requestId: event.requestId, activities: [], running: false, durationMs: null };
+          group = {
+            kind: "work",
+            id: `work-${event.id}`,
+            requestId: event.workKey ? null : event.requestId,
+            assignmentId: event.assignmentId ?? null,
+            activities: [],
+            running: false,
+            durationMs: null,
+          };
           workByRequest.set(key, group);
           rows.push(group);
         }
@@ -64,7 +75,16 @@ export function deriveTimelineRows(
   }
 
   for (const row of rows) {
-    if (row.kind !== "work" || !row.requestId) continue;
+    if (row.kind !== "work") continue;
+    if (row.assignmentId) {
+      const key = row.activities[0]?.workKey ?? "";
+      row.running = runningWork.has(key);
+      const first = row.activities[0];
+      const last = row.activities.at(-1);
+      if (!row.running && first && last) row.durationMs = Math.max(0, Date.parse(last.createdAt) - Date.parse(first.createdAt));
+      continue;
+    }
+    if (!row.requestId) continue;
     const request = requestsById.get(row.requestId);
     row.running = request?.state === "running";
     const first = row.activities[0];

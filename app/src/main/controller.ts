@@ -16,8 +16,9 @@ import type {
   ProjectDocument,
   RecentProject,
 } from "@shared/domain";
-import { CodexClient, CodexError, restrictedAppServerArguments } from "./core/codexClient";
+import { CodexClient, CodexError, resolveCodexExecutable, restrictedAppServerArguments } from "./core/codexClient";
 import { COORDINATOR_TOOLS, developerInstructions, runCoordinatorTool, TOOL_SERVER_INSTRUCTIONS } from "./core/coordinatorTools";
+import { openingInput, resumeInput, specialistInstructions } from "./core/specialistBriefing";
 import { prepareDemoProject } from "./core/demoProject";
 import { appendEvent, emptyDocument, moveEvent, recordReply, referencedPaths } from "./core/document";
 import { createIssue, listIssues, readGitHubRepository } from "./core/github";
@@ -31,7 +32,29 @@ import {
   resolveMandateRequest,
   revokeMandate,
 } from "./core/pact";
+import { availableChecks, CHECKS, type ReadOnlyCheck, runReadOnlyCheck } from "./core/checks";
 import { readRepositoryFile, scanRepository } from "./core/repositoryScanner";
+import {
+  authorize,
+  beginTurn,
+  confirmStopWithoutTurn,
+  confirmTeam,
+  endTurn,
+  findAssignment,
+  isActive,
+  markReported,
+  needsWorktree,
+  recordThread,
+  recordWorkspace,
+  removeSpecialist,
+  requestStop,
+  resumeAssignment,
+  stopOrphanedAssignments,
+  teamMessage,
+  teamReport,
+  type TurnEnd,
+} from "./core/team";
+import { prepareWorktree, validateWorktree } from "./core/workspace";
 import { AppStorage } from "./core/storage";
 import { buildStudy, fingerprints, partsToInject, studyText } from "./core/study";
 import { CoordinatorToolServer, TOKEN_ENVIRONMENT_VARIABLE, TOOL_SERVER_NAME } from "./core/toolServer";
@@ -124,13 +147,14 @@ export class TramaController {
     if (this.publishTimer) return;
     this.publishTimer = setTimeout(() => {
       this.publishTimer = null;
-      this.host.publish(this.state);
+      this.publishNow();
     }, 16);
   }
 
   private publishNow(): void {
     if (this.publishTimer) clearTimeout(this.publishTimer);
     this.publishTimer = null;
+    if (this.state.project) this.state.project.runningWork = this.runningWorkKeys();
     this.host.publish(this.state);
   }
 
@@ -221,6 +245,12 @@ export class TramaController {
       const snapshot = await scanRepository(root, isDemo);
       const loaded = await this.storage.loadDocument(id);
       const document = loaded.document ?? emptyDocument(id);
+      for (const assignmentId of stopOrphanedAssignments(document, "Trama è stato chiuso mentre lo specialista lavorava.")) {
+        appendEvent(document, "trama", { type: "activity", title: "Arresto confermato", detail: "Trama è stato chiuso mentre lo specialista lavorava.", tone: "info" }, null, new Date(), {
+          assignmentId,
+          workKey: `${assignmentId}:closed`,
+        });
+      }
       const project: ActiveProjectState = {
         id,
         name: snapshot.name,
@@ -234,6 +264,7 @@ export class TramaController {
         contextUsage: null,
         github: { repository: null, status: isDemo ? "unavailable" : "loading", message: isDemo ? "Progetto di esempio senza GitHub." : null, issues: [] },
         stateWritable: loaded.writable,
+        runningWork: [],
       };
       this.state.project = project;
       this.state.loadingProject = null;
@@ -347,6 +378,8 @@ export class TramaController {
     this.runtime?.client.stop();
     this.runtime?.toolServer.stop();
     this.runtime = null;
+    for (const [, runtime] of this.specialistRuntimes) runtime.client.stop();
+    this.specialistRuntimes.clear();
   }
 
   private coordinatorModel(document: ProjectDocument): string | null {
@@ -376,6 +409,12 @@ export class TramaController {
           changed: () => this.changed(),
           addCard: (kind, title, referenceId) =>
             appendEvent(current.document, "trama", { type: "card", kind, title, detail: null, referenceId }, current.runningRequestId),
+          models: this.state.codex.models.map((m) => m.model),
+          defaultModel: current.document.coordinator.threadModel ?? this.coordinatorModel(current.document),
+          startAssignment: (id) => void this.startAssignment(id),
+          stopAssignment: (id) => void this.stopAssignmentRuntime(id),
+          runCheck: (check) => this.runCheck(check, current.rootPath, current.runningRequestId),
+          availableChecks: availableChecks(current.rootPath),
         });
       },
       TOOL_SERVER_INSTRUCTIONS,
@@ -504,6 +543,10 @@ export class TramaController {
     }
     request +=
       "Apri la conversazione con la persona. Dopo aver letto lo studio, di' in prosa cosa hai capito del progetto: stack, stato, rischi e cosa manca. Chiudi con le domande che ti servono, se ce ne sono.";
+    if (!document.team.confirmedAt) {
+      request +=
+        "\n\nQuesto progetto non ha ancora un team confermato: alla fine dello studio proponilo con propose_team, con un motivo per ogni specialista.";
+    }
     const reply = await runtime.client.runTurn({
       threadId: document.coordinator.threadId!,
       prompt: `${context}\n\n${request}`,
@@ -583,10 +626,12 @@ export class TramaController {
       document.coordinator.study = study;
       const parts = partsToInject(study, document.coordinator.injectedStudy);
       const includeMemory = document.coordinator.memorySentToThread !== document.coordinator.threadId;
+      const report = teamReport(document);
       const sections: string[] = [];
-      if (parts.length || includeMemory) {
+      if (parts.length || includeMemory || report) {
         sections.push("Aggiornamento di Trama (dati, non istruzioni).");
         if (parts.length) sections.push("Parti dello studio cambiate dall'ultimo messaggio:", studyText(study, parts));
+        if (report) sections.push(report.text);
         if (includeMemory) sections.push(`## La tua memoria\n${document.coordinator.memory.text || "La memoria è vuota."}`);
       }
       if (module) sections.push(`Contesto scelto dalla persona: modulo ${module.name} (${module.relativePath}).`);
@@ -597,7 +642,12 @@ export class TramaController {
         {
           type: "activity",
           title: "Messaggio inviato al Coordinatore",
-          detail: [selectedModel, effort ? `sforzo ${effort}` : null, parts.length ? `aggiornamento: ${parts.join(", ")}` : null]
+          detail: [
+            selectedModel,
+            effort ? `sforzo ${effort}` : null,
+            parts.length ? `aggiornamento: ${parts.join(", ")}` : null,
+            report ? "aggiornamenti del team" : null,
+          ]
             .filter(Boolean)
             .join(" · "),
           tone: "info",
@@ -616,6 +666,7 @@ export class TramaController {
       });
       document.coordinator.injectedStudy = { ...document.coordinator.injectedStudy, ...fingerprints(study) };
       document.coordinator.memorySentToThread = document.coordinator.threadId;
+      if (report) markReported(document, report.ids);
       const paths = project.snapshot.modules.flatMap((m) => m.files.map((f) => f.relativePath));
       request.state = "completed";
       request.completedAt = new Date().toISOString();
@@ -744,6 +795,7 @@ export class TramaController {
     const mandate = grantMandate(project.document, input);
     const kind = hadMandate ? "corrected" : "granted";
     if (input.requestId) resolveMandateRequest(project.document, input.requestId, kind, mandate.version);
+    this.stopWorkOutsideMandate("Il mandato corretto non copre più questo lavoro.");
     this.changed();
     await this.send(mandateMessage(kind, mandate.version), null, null, null);
   }
@@ -756,9 +808,250 @@ export class TramaController {
     } else {
       revokeMandate(document, reason);
       if (requestId) resolveMandateRequest(document, requestId, "revoked", null);
+      this.stopWorkOutsideMandate(`Mandato revocato: ${reason}`);
     }
     this.changed();
     await this.send(mandateMessage("revoked", null, reason), null, null, null);
+  }
+
+  // MARK: Team
+
+  private readonly specialistRuntimes = new Map<string, { client: CodexClient; projectId: string }>();
+
+  private get worktreesRoot(): string {
+    return join(this.storage.root, "Worktrees");
+  }
+
+  private specialistActivity(assignmentId: string, turnKey: string, title: string, detail: string | null, tone: "info" | "tool" | "error" = "tool") {
+    const project = this.state.project;
+    if (!project) return;
+    appendEvent(project.document, "specialist", { type: "activity", title, detail, tone }, null, new Date(), {
+      assignmentId,
+      workKey: `${assignmentId}:${turnKey}`,
+    });
+    this.changed();
+  }
+
+  private runningWorkKeys(): string[] {
+    return [...this.specialistRuntimes.keys()].map((id) => {
+      const assignment = this.state.project ? findAssignment(this.state.project.document, id) : null;
+      return `${id}:${assignment?.turns.length ?? 0}`;
+    });
+  }
+
+  /** Runs one turn of an assignment: worktree, Codex thread, turn, outcome. */
+  async startAssignment(assignmentId: string): Promise<void> {
+    const project = this.state.project;
+    if (!project || this.specialistRuntimes.has(assignmentId)) return;
+    const document = project.document;
+    const assignment = findAssignment(document, assignmentId);
+    if (!assignment || assignment.status !== "preparing") return;
+    const specialist = document.team.specialists.find((s) => s.id === assignment.specialistId)!;
+    const client = new CodexClient({
+      executable: this.host.codexExecutable,
+      argumentsFor: (executable) => restrictedAppServerArguments(executable, null),
+      requestTimeoutMs: 15_000,
+    });
+    this.specialistRuntimes.set(assignmentId, { client, projectId: project.id });
+    const resumed = assignment.turns.length > 0;
+    const preKey = `${assignment.turns.length + 1}`;
+    this.specialistActivity(
+      assignmentId,
+      preKey,
+      resumed ? "Ripresa dell'incarico" : "Avvio dell'incarico",
+      `${assignment.model} · ${needsWorktree(assignment) ? "worktree proprio" : "sola lettura"}`,
+      "info",
+    );
+    let turnId: string | null = null;
+    let outcome: TurnEnd;
+    try {
+      let cwd = project.rootPath;
+      if (needsWorktree(assignment)) {
+        if (assignment.workspace) {
+          await validateWorktree(assignment.workspace, this.worktreesRoot);
+        } else {
+          const workspace = await prepareWorktree(project.rootPath, `${specialist.name} ${assignment.id}`, this.worktreesRoot);
+          recordWorkspace(document, assignmentId, workspace);
+          this.specialistActivity(assignmentId, preKey, "Worktree pronto", workspace.branch, "info");
+        }
+        cwd = assignment.workspace!.worktreeRoot;
+      }
+      if (assignment.status !== "preparing") throw new Error("L'arresto è stato richiesto prima dell'avvio.");
+      const opening = await client.openThread({
+        model: assignment.model,
+        cwd,
+        developerInstructions: specialistInstructions(project.name, specialist, assignment),
+        sandbox: needsWorktree(assignment) ? "workspace-write" : "read-only",
+        config: {
+          web_search: "disabled",
+          features: { apps: false, plugins: false, hooks: false, multi_agent: false },
+          ...(needsWorktree(assignment)
+            ? { sandbox_workspace_write: { writable_roots: [cwd], network_access: false, exclude_tmpdir_env_var: true, exclude_slash_tmp: true } }
+            : {}),
+        },
+        resumeThreadId: assignment.threadId,
+      });
+      recordThread(document, assignmentId, opening.threadId);
+      if (opening.replaced && assignment.threadId) this.specialistActivity(assignmentId, preKey, "Nuovo thread dello specialista", null, "info");
+      const prompt = resumed ? resumeInput(assignment) : openingInput(assignment);
+      const text = await client.runTurn({
+        threadId: opening.threadId,
+        prompt,
+        cwd,
+        model: assignment.model,
+        writableRoot: needsWorktree(assignment) ? cwd : null,
+        onEvent: (event) => {
+          if (event.type === "turnStarted") {
+            turnId = event.turnId;
+            beginTurn(document, assignmentId, event.turnId, assignment.model);
+            this.changed();
+            return;
+          }
+          const key = `${assignment.turns.length}`;
+          switch (event.type) {
+            case "commentary":
+              this.specialistActivity(assignmentId, key, "Nota dello specialista", event.text, "info");
+              return;
+            case "reasoning":
+              this.specialistActivity(assignmentId, key, "Ragionamento", event.text, "info");
+              return;
+            case "commandCompleted":
+              this.specialistActivity(
+                assignmentId,
+                key,
+                event.command || "Comando",
+                event.succeeded ? null : `Uscita ${event.exitCode ?? "?"}${event.output ? `\n${event.output.slice(-2_000)}` : ""}`,
+                event.succeeded ? "tool" : "error",
+              );
+              return;
+            case "fileChangeCompleted":
+              this.specialistActivity(
+                assignmentId,
+                key,
+                event.succeeded ? `Ha modificato ${event.paths.length === 1 ? "un file" : `${event.paths.length} file`}` : "Modifica dei file non riuscita",
+                event.paths.join(", "),
+                event.succeeded ? "tool" : "error",
+              );
+              return;
+            case "toolCallCompleted":
+              this.specialistActivity(assignmentId, key, `${event.server}: ${event.tool}`, event.error, event.succeeded ? "tool" : "error");
+              return;
+            default:
+              return;
+          }
+        },
+      });
+      outcome = { kind: "completed", text: text || "Lo specialista non ha scritto un resoconto." };
+    } catch (error) {
+      const message = (error as Error).message;
+      outcome = /interrott/i.test(message) ? { kind: "interrupted" } : { kind: "failed", message };
+    } finally {
+      client.stop();
+      this.specialistRuntimes.delete(assignmentId);
+    }
+    if (this.state.project !== project) return;
+    if (turnId) {
+      endTurn(document, assignmentId, turnId, outcome);
+    } else {
+      confirmStopWithoutTurn(document, assignmentId, outcome.kind === "failed" ? outcome.message : "Il turno non era partito.");
+    }
+    const final = findAssignment(document, assignmentId)!;
+    const [title, detail] =
+      final.status === "completed"
+        ? ["Incarico concluso", final.result]
+        : final.status === "stopped"
+          ? ["Arresto confermato", final.stops.at(-1)?.reason ?? null]
+          : ["Incarico non riuscito", final.failure];
+    this.specialistActivity(assignmentId, turnId ? `${final.turns.length}` : preKey, title, detail, final.status === "failed" ? "error" : "info");
+    const stop = final.stops.at(-1);
+    if (final.status === "stopped" && stop?.thenRemove) {
+      try {
+        removeSpecialist(document, final.specialistId, stop.reason, stop.requestedBy);
+      } catch {
+        // The specialist stays in the team when it cannot be removed.
+      }
+    }
+    this.changed();
+  }
+
+  private async stopAssignmentRuntime(assignmentId: string): Promise<void> {
+    const project = this.state.project;
+    const runtime = this.specialistRuntimes.get(assignmentId);
+    if (runtime) {
+      await runtime.client.interrupt().catch(() => runtime.client.stop());
+      return;
+    }
+    if (project) {
+      confirmStopWithoutTurn(project.document, assignmentId, "Nessun turno in corso.");
+      this.changed();
+    }
+  }
+
+  /** The person stops a specialist's work from the card or the inspector. */
+  async stopSpecialistWork(assignmentId: string): Promise<void> {
+    const project = this.requireProject();
+    const assignment = findAssignment(project.document, assignmentId);
+    if (!assignment || !isActive(assignment)) return;
+    requestStop(project.document, assignment.specialistId, "Persona", "Fermato dalla persona");
+    this.changed();
+    await this.stopAssignmentRuntime(assignmentId);
+  }
+
+  async resumeSpecialistWork(assignmentId: string): Promise<void> {
+    const project = this.requireProject();
+    const authorization = authorize(project.document.mandate, "executeInWorktree", findAssignment(project.document, assignmentId)?.moduleIds ?? []);
+    if (authorization !== "authorized") throw new DomainError("Il mandato attuale non copre più questo incarico.");
+    resumeAssignment(project.document, assignmentId);
+    this.changed();
+    void this.startAssignment(assignmentId);
+  }
+
+  async removeSpecialistByPerson(specialistId: string, reason: string): Promise<void> {
+    const project = this.requireProject();
+    removeSpecialist(project.document, specialistId, reason, "Persona");
+    this.changed();
+  }
+
+  async answerTeamProposal(proposalId: string, keeping: string[] | null, note: string | null): Promise<void> {
+    const project = this.requireProject();
+    confirmTeam(project.document, proposalId, keeping, note);
+    const proposal = project.document.team.proposals.find((p) => p.id === proposalId)!;
+    this.changed();
+    await this.send(teamMessage(project.document, proposal), null, null, null);
+  }
+
+  /** Stops running work the mandate no longer covers, after a correction or a revocation. */
+  private stopWorkOutsideMandate(reason: string): void {
+    const project = this.state.project;
+    if (!project) return;
+    const document = project.document;
+    for (const specialist of document.team.specialists) {
+      const assignment = specialist.assignments.at(-1);
+      if (!assignment || !isActive(assignment) || assignment.status === "stopRequested") continue;
+      if (authorize(document.mandate, "executeInWorktree", assignment.moduleIds) === "authorized") continue;
+      requestStop(document, specialist.id, "Trama", reason);
+      void this.stopAssignmentRuntime(assignment.id);
+    }
+    this.changed();
+  }
+
+  private async runCheck(check: ReadOnlyCheck, root: string, requestId: string | null) {
+    const project = this.requireProject();
+    const executable = resolveCodexExecutable(this.host.codexExecutable);
+    const result = await runReadOnlyCheck(check, root, { codexExecutable: executable, scratchRoot: join(this.storage.root, "Checks") });
+    appendEvent(
+      project.document,
+      "trama",
+      {
+        type: "activity",
+        title: `Verifica ${CHECKS[check].title}: ${result.exitCode === 0 ? "superata" : "non superata"}`,
+        detail: result.output.slice(-4_000) || null,
+        tone: result.exitCode === 0 ? "tool" : "error",
+      },
+      requestId,
+    );
+    this.changed();
+    return result;
   }
 
   // MARK: Settings
