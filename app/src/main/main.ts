@@ -35,6 +35,7 @@ const controller = new TramaController(process.env.TRAMA_DATA_DIR ?? join(app.ge
     if (process.platform === "linux") return;
     app.setLoginItemSettings({ openAtLogin: enabled, args: ["--hidden"] });
   },
+  aiHeroResourceDirectory: app.isPackaged ? join(process.resourcesPath, "AIHero") : join(app.getAppPath(), "resources", "AIHero"),
   demoResourceDirectory: app.isPackaged
     ? join(process.resourcesPath, "DemoProject")
     : join(app.getAppPath(), "resources", "DemoProject"),
@@ -133,6 +134,7 @@ const handlers: { [K in ActionName]: Handler<K> } = {
   "settings:update": (update) => controller.updateSettings(update),
   "monitor:update": (update) => controller.updateMonitor(update),
   "monitor:poll": () => controller.pollMonitor(),
+  "skills:prepare": () => controller.prepareSkills(),
   "app:dismissError": () => controller.dismissError(),
   "shell:openExternal": async ({ url }) => {
     if (/^https:\/\//.test(url)) await shell.openExternal(url);

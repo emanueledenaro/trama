@@ -59,6 +59,10 @@
       {
         "from": "resources/DemoProject",
         "to": "DemoProject"
+      },
+      {
+        "from": "resources/AIHero",
+        "to": "AIHero"
       }
     ],
     "mac": {

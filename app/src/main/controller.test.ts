@@ -33,7 +33,8 @@ async function setup() {
     applyTheme: () => undefined,
       notify: () => undefined,
       setOpenAtLogin: () => undefined,
-    demoResourceDirectory: join(root, "resources/DemoProject"),
+    aiHeroResourceDirectory: join(root, "resources/AIHero"),
+      demoResourceDirectory: join(root, "resources/DemoProject"),
     codexExecutable: join(root, "test-fixtures/fake-codex.mjs"),
   });
   await controller.start();
@@ -84,6 +85,7 @@ describe("TramaController", () => {
       applyTheme: () => undefined,
       notify: () => undefined,
       setOpenAtLogin: () => undefined,
+      aiHeroResourceDirectory: join(root, "resources/AIHero"),
       demoResourceDirectory: "",
       codexExecutable: join(root, "test-fixtures/fake-codex.mjs"),
     });

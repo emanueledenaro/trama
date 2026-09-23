@@ -42,6 +42,7 @@ function SettingsDialog() {
           </div>
         </section>
         <MonitorSettings />
+        <MethodSettings />
         <section>
           <h4 className="mb-2 text-ui-sm font-medium text-muted-foreground">Codex di OpenAI</h4>
           <Button variant="outline" size="sm" onClick={() => setDialog("connections")}>
@@ -107,6 +108,38 @@ function MonitorSettings() {
         <Button size="sm" variant="outline" className="mt-2" onClick={() => void act("monitor:update", { enabled: true, addRepository: repository })}>
           Abilita per il repository corrente
         </Button>
+      ) : null}
+    </section>
+  );
+}
+
+function MethodSettings() {
+  const project = useUi((s) => s.app?.project ?? null);
+  const [report, setReport] = useState<{ pathsCreated: string[]; existingPreserved: string[]; warnings: string[]; version: string } | null>(null);
+  const [running, setRunning] = useState(false);
+  return (
+    <section>
+      <h4 className="mb-1 text-ui-sm font-medium text-muted-foreground">Metodo di lavoro</h4>
+      <p className="mb-2 text-ui-xs text-muted-foreground">
+        Copia nel progetto un sottoinsieme fissato delle skill AI Hero di Matt Pocock (licenza MIT), senza installer e senza cambiare le impostazioni globali di Codex. I file esistenti restano invariati.
+      </p>
+      <Button
+        size="sm"
+        variant="outline"
+        disabled={!project || project.isDemo || running}
+        onClick={async () => {
+          setRunning(true);
+          setReport((await act("skills:prepare", undefined)) ?? null);
+          setRunning(false);
+        }}
+      >
+        {running ? <Spinner /> : null} Prepara il metodo di lavoro nel progetto
+      </Button>
+      {report ? (
+        <p className="mt-2 text-ui-xs text-muted-foreground">
+          AI Hero {report.version}: {report.pathsCreated.length} percorsi creati, {report.existingPreserved.length} preservati.
+          {report.warnings.length ? ` ${report.warnings.join(" ")}` : ""}
+        </p>
       ) : null}
     </section>
   );

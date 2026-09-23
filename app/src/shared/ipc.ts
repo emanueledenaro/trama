@@ -46,6 +46,7 @@ export interface ActionMap {
   "settings:update": [Partial<AppSettings>, void];
   "monitor:update": [{ enabled?: boolean; openAtLogin?: boolean; intervalSeconds?: number; addRepository?: string; removeRepository?: string }, void];
   "monitor:poll": [void, void];
+  "skills:prepare": [void, { pathsCreated: string[]; existingPreserved: string[]; warnings: string[]; version: string }];
   "app:dismissError": [void, void];
   "shell:openExternal": [{ url: string }, void];
 }

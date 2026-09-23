@@ -35,6 +35,7 @@ import {
 } from "./core/pact";
 import { availableChecks, CHECKS, type ReadOnlyCheck, runReadOnlyCheck } from "./core/checks";
 import { readRepositoryFile, scanRepository } from "./core/repositoryScanner";
+import { prepareSkills, type SetupReport } from "./core/skillSetup";
 import {
   authorize,
   beginTurn,
@@ -73,6 +74,7 @@ export interface ControllerHost {
   notify(title: string, body: string): void;
   setOpenAtLogin(enabled: boolean): void;
   demoResourceDirectory: string;
+  aiHeroResourceDirectory: string;
   codexExecutable: string | null;
 }
 
@@ -1309,6 +1311,22 @@ export class TramaController {
     this.publish();
     if (monitor.enabled && (update.enabled || update.addRepository)) void this.pollMonitor();
     else this.scheduleMonitor();
+  }
+
+  // MARK: Working method
+
+  async prepareSkills(): Promise<SetupReport> {
+    const project = this.requireProject();
+    const report = await prepareSkills(project.rootPath, this.host.aiHeroResourceDirectory, project.github.repository);
+    appendEvent(project.document, "trama", {
+      type: "activity",
+      title: `Metodo di lavoro AI Hero: ${report.pathsCreated.length} file creati`,
+      detail: [report.version, ...report.warnings].join("\n"),
+      tone: "info",
+    });
+    this.changed();
+    void this.refreshProject();
+    return report;
   }
 
   // MARK: Settings

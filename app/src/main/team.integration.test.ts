@@ -35,6 +35,7 @@ describe("team flow", () => {
       applyTheme: () => undefined,
       notify: () => undefined,
       setOpenAtLogin: () => undefined,
+      aiHeroResourceDirectory: join(root, "resources/AIHero"),
       demoResourceDirectory: "",
       codexExecutable: join(root, "test-fixtures/fake-codex.mjs"),
     });
@@ -119,6 +120,7 @@ describe("team flow", () => {
       applyTheme: () => undefined,
       notify: () => undefined,
       setOpenAtLogin: () => undefined,
+      aiHeroResourceDirectory: join(root, "resources/AIHero"),
       demoResourceDirectory: "",
       codexExecutable: join(root, "test-fixtures/fake-codex.mjs"),
     });
