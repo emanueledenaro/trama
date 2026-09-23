@@ -1,4 +1,8 @@
 import type { ProviderId } from "@shared/codex";
+import { CursorRuntime } from "./acp/cursor";
+import { DevinRuntime } from "./acp/devin";
+import { DroidRuntime } from "./acp/droid";
+import { GrokRuntime } from "./acp/grok";
 import { ClaudeAgentRuntime } from "./claudeAgent";
 import { CodexRuntime } from "./codex";
 import { OpenCodeRuntime } from "./opencode";
@@ -10,6 +14,10 @@ const FACTORIES: Partial<Record<ProviderId, Factory>> = {
   codex: (options) => new CodexRuntime(options),
   claudeAgent: (options) => new ClaudeAgentRuntime(options),
   opencode: (options) => new OpenCodeRuntime(options),
+  cursor: (options) => new CursorRuntime(options),
+  grok: (options) => new GrokRuntime(options),
+  droid: (options) => new DroidRuntime(options),
+  devin: (options) => new DevinRuntime(options),
 };
 
 /** Providers with an adapter in this build. */
