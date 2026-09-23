@@ -193,3 +193,75 @@ describe("switching project (C07)", () => {
     await until(() => assignment.status === "stopped");
   }, 30_000);
 });
+
+describe("quit and provider waits (C11)", () => {
+  async function running() {
+    const data = await mkdtemp(join(tmpdir(), "trama-data-"));
+    const repo = await mkdtemp(join(tmpdir(), "trama-repo-"));
+    await cp(join(root, "resources/DemoProject"), repo, { recursive: true });
+    await git(["init", "-b", "main"], repo, false);
+    await git(["add", "."], repo, false);
+    await git(["-c", "user.name=T", "-c", "user.email=t@t", "commit", "-m", "init"], repo, false);
+    controller = new TramaController(data, {
+      publish: () => undefined,
+      openExternal: async () => undefined,
+      applyTheme: () => undefined,
+      notify: () => undefined,
+      setOpenAtLogin: () => undefined,
+      aiHeroResourceDirectory: join(root, "resources/AIHero"),
+      demoResourceDirectory: "",
+      codexExecutable: join(root, "test-fixtures/fake-codex.mjs"),
+    });
+    await controller.start();
+    await controller.openProject(repo);
+    await until(() => controller!.snapshot.project?.phase.kind === "ready");
+    const document = controller.snapshot.project!.document;
+    await controller.send("[proponi-team]", null, null, null);
+    await controller.answerTeamProposal(document.team.proposals[0]!.id, null, null);
+    await controller.grantMandate({
+      requestId: null,
+      objectives: ["Nota"],
+      priorities: [],
+      scopeModuleIds: ["Sources/Orders"],
+      authorizedActions: ["executeInWorktree"],
+      limits: [],
+    });
+    await controller.send("[assegna] [lento]", null, null, null);
+    const assignment = document.team.specialists[0]!.assignments[0]!;
+    await until(() => assignment.status === "running");
+    return { data, document, assignment };
+  }
+
+  it("Esci stops running work in a controlled way and keeps it on disk", async () => {
+    const { data, document, assignment } = await running();
+    await controller!.stop();
+    controller = null;
+    expect(assignment.status).toBe("stopped");
+    expect(assignment.stops.at(-1)?.reason).toMatch(/Esci/);
+    const { AppStorage } = await import("./core/storage");
+    const saved = (await new AppStorage(data).loadDocument(document.projectId)).document!;
+    expect(saved.team.specialists[0]!.assignments[0]!.status).toBe("stopped");
+  }, 30_000);
+
+  it("resumes only waiting work when the provider is available again", async () => {
+    const { assignment } = await running();
+    await controller!.stopSpecialistWork(assignment.id);
+    await until(() => assignment.status === "stopped");
+    await controller!.resumeWaitingWork("codex");
+    expect(assignment.status).toBe("stopped");
+    assignment.waitingForProvider = { provider: "codex", until: null, since: new Date().toISOString() };
+    await controller!.resumeWaitingWork("codex");
+    expect(assignment.waitingForProvider).toBeNull();
+    await until(() => assignment.status === "running");
+    await controller!.stopSpecialistWork(assignment.id);
+    await until(() => assignment.status === "stopped");
+  }, 30_000);
+});
+
+describe("describeFailure", () => {
+  it("names network failures", async () => {
+    const { describeFailure } = await import("./controller");
+    expect(describeFailure("getaddrinfo ENOTFOUND api.example.com")).toMatch(/^Rete non raggiungibile/);
+    expect(describeFailure("modello non valido")).toBe("modello non valido");
+  });
+});

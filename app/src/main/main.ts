@@ -23,9 +23,9 @@ const controller = new TramaController(process.env.TRAMA_DATA_DIR ?? join(app.ge
     nativeTheme.themeSource = theme;
     if (!isMac) window?.setBackgroundColor(surfaceColor());
   },
-  notify: (title, body) => {
+  notify: (title, body, sound) => {
     if (window?.isFocused() || !Notification.isSupported()) return;
-    const notification = new Notification({ title, body });
+    const notification = new Notification({ title, body, silent: !sound });
     notification.on("click", () => {
       if (!window) createWindow();
       window?.show();

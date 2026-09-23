@@ -164,6 +164,14 @@ export async function initializeRepository(root: string): Promise<void> {
   }
 }
 
+/** A failure message the person can act on: network problems are named as such (C11). */
+export function describeFailure(message: string): string {
+  if (/ENOTFOUND|EAI_AGAIN|ECONNREFUSED|ECONNRESET|ETIMEDOUT|getaddrinfo|network|offline|fetch failed/i.test(message)) {
+    return `Rete non raggiungibile: ${message}. Trama riprova quando la rete torna e la persona riprende il lavoro.`;
+  }
+  return message;
+}
+
 const errorCode = (error: unknown): string | null => {
   const code = (error as { code?: unknown } | null)?.code;
   return typeof code === "string" ? code : null;
@@ -173,7 +181,7 @@ export interface ControllerHost {
   publish(state: AppState): void;
   openExternal(url: string): Promise<void>;
   applyTheme(theme: AppSettings["theme"]): void;
-  notify(title: string, body: string): void;
+  notify(title: string, body: string, sound?: boolean): void;
   setOpenAtLogin(enabled: boolean): void;
   demoResourceDirectory: string;
   aiHeroResourceDirectory: string;
@@ -269,6 +277,7 @@ export class TramaController {
     this.state.settings = {
       theme: settings.theme ?? "system",
       sidebarWidth: typeof settings.sidebarWidth === "number" ? settings.sidebarWidth : 256,
+      sounds: settings.sounds === true,
     };
     this.lastProjectId = settings.lastProjectId ?? null;
     if (settings.monitor) this.state.monitor = { ...this.state.monitor, ...settings.monitor, status: {} };
@@ -293,7 +302,14 @@ export class TramaController {
     }
   }
 
+  /** Set by Esci: no new work starts, running work stops in a controlled way (C11). */
+  private quitting = false;
+
   async stop(): Promise<void> {
+    this.quitting = true;
+    for (const [, timer] of this.providerWaits) clearTimeout(timer);
+    this.providerWaits.clear();
+    await this.stopSpecialistsForQuit();
     if (this.monitorTimer) clearTimeout(this.monitorTimer);
     this.monitorTimer = null;
     this.unwatchProject();
@@ -517,8 +533,9 @@ export class TramaController {
         }
       }
       document ??= emptyDocument(id);
-      for (const assignmentId of stopOrphanedAssignments(document, "Trama è stato chiuso mentre lo specialista lavorava.")) {
-        appendEvent(document, "trama", { type: "activity", title: "Arresto confermato", detail: "Trama è stato chiuso mentre lo specialista lavorava.", tone: "info" }, null, new Date(), {
+      const orphanNote = "Trama si è interrotto senza un arresto controllato (crash o chiusura forzata) mentre lo specialista lavorava.";
+      for (const assignmentId of stopOrphanedAssignments(document, orphanNote)) {
+        appendEvent(document, "trama", { type: "activity", title: "Arresto confermato", detail: orphanNote, tone: "info" }, null, new Date(), {
           assignmentId,
           workKey: `${assignmentId}:closed`,
         });
@@ -752,7 +769,11 @@ export class TramaController {
           if (assessment.classification === "conflict" || assessment.classification === "overlap") {
             appendEvent(document, "trama", { type: "card", kind: "conflict", title: "Conflitto", detail: null, referenceId: assessment.id });
             if (assessment.classification === "conflict") {
-              this.host.notify("Trama: conflitto con il lavoro di un collega", `Il candidato ${candidate.id} entra in conflitto con ${references.join(", ")}.`);
+              this.host.notify(
+                "Trama: conflitto con il lavoro di un collega",
+                `Il candidato ${candidate.id} entra in conflitto con ${references.join(", ")}.`,
+                this.state.settings.sounds === true,
+              );
             }
           }
           this.changed();
@@ -777,6 +798,79 @@ export class TramaController {
     this.stopCoordinatorRuntime();
     for (const [, runtime] of this.specialistRuntimes) runtime.client.stop();
     this.specialistRuntimes.clear();
+  }
+
+  private projectById(id: string): ActiveProjectState | null {
+    return this.state.project?.id === id ? this.state.project : (this.parkedProjects.get(id) ?? null);
+  }
+
+  /**
+   * Esci: every running specialist gets a stop request and an interrupt, so its turn ends as
+   * "fermato" with chat, team, candidates and worktree preserved. Waits a few seconds at most.
+   */
+  private async stopSpecialistsForQuit(): Promise<void> {
+    const entries = [...this.specialistRuntimes.entries()];
+    if (!entries.length) return;
+    for (const [assignmentId, runtime] of entries) {
+      const project = this.projectById(runtime.projectId);
+      const assignment = project ? findAssignment(project.document, assignmentId) : null;
+      if (project && assignment && isActive(assignment) && assignment.status !== "stopRequested") {
+        requestStop(project.document, assignment.specialistId, "Trama", "Esci: Trama si sta chiudendo. Riprendi l'incarico quando vuoi.");
+      }
+    }
+    await Promise.all(entries.map(([, r]) => withTimeout(r.client.interrupt(), 5_000, "timeout").catch(() => r.client.stop())));
+    const deadline = Date.now() + 6_000;
+    while (this.specialistRuntimes.size && Date.now() < deadline) await new Promise((r) => setTimeout(r, 50));
+  }
+
+  // MARK: Waiting for a blocked provider (C11)
+
+  private readonly providerWaits = new Map<ProviderId, NodeJS.Timeout>();
+
+  /** One timer per provider: no burst of retries while it is blocked. */
+  private scheduleProviderWait(provider: ProviderId): void {
+    if (this.quitting || this.providerWaits.has(provider)) return;
+    const account = this.state.providers[provider]?.account;
+    const until = account?.kind === "blocked" && account.until ? Date.parse(account.until) : Number.NaN;
+    const delay = Number.isFinite(until) ? Math.max(60_000, until - Date.now() + 30_000) : 15 * 60_000;
+    const timer = setTimeout(() => {
+      this.providerWaits.delete(provider);
+      void this.resumeWaitingWork(provider);
+    }, delay);
+    timer.unref?.();
+    this.providerWaits.set(provider, timer);
+  }
+
+  /** When the provider unblocks, resumes only the waiting work the mandate still authorizes. */
+  async resumeWaitingWork(provider: ProviderId): Promise<void> {
+    if (this.quitting) return;
+    await this.refreshProvider(provider);
+    if (!isUsableAccount(this.state.providers[provider]?.account)) {
+      this.scheduleProviderWait(provider);
+      return;
+    }
+    const projects = [this.state.project, ...this.parkedProjects.values()].filter((p): p is ActiveProjectState => Boolean(p));
+    for (const project of projects) {
+      for (const specialist of project.document.team.specialists) {
+        const assignment = specialist.assignments.at(-1);
+        if (!assignment?.waitingForProvider || assignment.waitingForProvider.provider !== provider) continue;
+        assignment.waitingForProvider = null;
+        if (!["failed", "stopped"].includes(assignment.status)) continue;
+        if (authorize(project.document.mandate, "executeInWorktree", assignment.moduleIds) !== "authorized") {
+          this.specialistActivity(project, assignment.id, `${assignment.turns.length + 1}`, "Ripresa non eseguita", "Il mandato non copre più questo incarico.", "info");
+          continue;
+        }
+        try {
+          resumeAssignment(project.document, assignment.id);
+        } catch (error) {
+          this.specialistActivity(project, assignment.id, `${assignment.turns.length + 1}`, "Ripresa non eseguita", (error as Error).message, "info");
+          continue;
+        }
+        refreshDecisionVersions(project.document, assignment.id);
+        this.specialistActivity(project, assignment.id, `${assignment.turns.length + 1}`, `${providerName(provider)} è di nuovo disponibile`, "Trama riprende l'incarico.", "info");
+        if (project === this.state.project) void this.startAssignment(assignment.id);
+      }
+    }
   }
 
   /** Projects that are not selected but whose authorized team is still working (C07). */
@@ -1451,7 +1545,7 @@ export class TramaController {
   /** Runs one turn of an assignment: worktree, Codex thread, turn, outcome. */
   async startAssignment(assignmentId: string): Promise<void> {
     const project = this.state.project;
-    if (!project || this.specialistRuntimes.has(assignmentId)) return;
+    if (!project || this.quitting || this.specialistRuntimes.has(assignmentId)) return;
     const document = project.document;
     const assignment = findAssignment(document, assignmentId);
     if (!assignment || assignment.status !== "preparing") return;
@@ -1555,7 +1649,7 @@ export class TramaController {
       outcome = { kind: "completed", text: text || "Lo specialista non ha scritto un resoconto." };
     } catch (error) {
       const message = (error as Error).message;
-      outcome = /interrott/i.test(message) ? { kind: "interrupted" } : { kind: "failed", message };
+      outcome = /interrott/i.test(message) ? { kind: "interrupted" } : { kind: "failed", message: describeFailure(message) };
     } finally {
       client.stop();
       this.specialistRuntimes.delete(assignmentId);
@@ -1579,6 +1673,23 @@ export class TramaController {
         removeSpecialist(document, final.specialistId, stop.reason, stop.requestedBy);
       } catch {
         // The specialist stays in the team when it cannot be removed.
+      }
+    }
+    if (final.status === "failed" && outcome.kind === "failed" && /limit|quota|rate|usage|utilizzo/i.test(outcome.message)) {
+      await this.refreshProvider(provider);
+      const account = this.state.providers[provider]?.account;
+      if (account?.kind === "blocked") {
+        final.waitingForProvider = { provider, until: account.until, since: new Date().toISOString() };
+        this.specialistActivity(
+          project,
+          assignmentId,
+          `${final.turns.length}`,
+          `In attesa che ${providerName(provider)} si sblocchi`,
+          `${providerUnavailableReason(provider, account)} Trama riprende da solo l'incarico quando torna disponibile, se il mandato lo copre ancora.`,
+          "info",
+        );
+        this.host.notify(`Trama: ${providerName(provider)} bloccato`, `L'incarico ${assignmentId} aspetta che ${providerName(provider)} si sblocchi.`, this.state.settings.sounds === true);
+        this.scheduleProviderWait(provider);
       }
     }
     this.changedIn(project);

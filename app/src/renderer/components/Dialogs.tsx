@@ -15,6 +15,7 @@ function SettingsDialog() {
   const open = useUi((s) => s.dialog === "settings");
   const setDialog = useUi((s) => s.setDialog);
   const theme = useUi((s) => s.app?.settings.theme ?? "system");
+  const sounds = useUi((s) => s.app?.settings.sounds === true);
   const options: { value: ThemePreference; label: string; icon: React.ReactNode }[] = [
     { value: "system", label: "Sistema", icon: <IconDeviceDesktop className="size-4" stroke={1.7} /> },
     { value: "light", label: "Chiaro", icon: <IconSun className="size-4" stroke={1.7} /> },
@@ -47,7 +48,12 @@ function SettingsDialog() {
         <MonitorSettings />
         <MethodSettings />
         <section>
-          <h4 className="mb-2 text-ui-sm font-medium text-muted-foreground">Codex di OpenAI</h4>
+          <h4 className="mb-2 text-ui-sm font-medium text-muted-foreground">Avvisi</h4>
+          <Toggle checked={sounds} onChange={(value) => void act("settings:update", { sounds: value })} label="Suono con gli avvisi utili" />
+          <p className="text-ui-xs text-muted-foreground">Solo per conflitti, provider bloccati e lavoro in attesa; mai per sincronizzazioni o consumo di token.</p>
+        </section>
+        <section>
+          <h4 className="mb-2 text-ui-sm font-medium text-muted-foreground">Provider</h4>
           <Button variant="outline" size="sm" onClick={() => setDialog("connections")}>
             Apri Collegamenti
           </Button>

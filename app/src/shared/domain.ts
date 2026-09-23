@@ -220,6 +220,8 @@ export interface SpecialistAssignment {
   moduleIds: string[];
   dependencies: string[];
   model: string;
+  /** Set when the provider hit a usage limit: Trama resumes the work by itself when it unblocks (C11). */
+  waitingForProvider?: { provider: ProviderId; until: string | null; since: string } | null;
   /** Pact decisions the work relies on, with the version it was delegated against (C06). */
   decisionVersions?: Record<string, number>;
   /** The provider recorded at assignment; the person can change it (ADR 0009). Absent means Codex. */
@@ -497,6 +499,8 @@ export type ThemePreference = "system" | "light" | "dark";
 export interface AppSettings {
   theme: ThemePreference;
   sidebarWidth: number;
+  /** A sound with useful alerts only (conflicts, blocked providers, finished work). Off by default. */
+  sounds?: boolean;
 }
 
 export interface AppState {
