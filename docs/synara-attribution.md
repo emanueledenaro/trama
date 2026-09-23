@@ -1,6 +1,6 @@
 # Attribuzione di Synara
 
-Trama porta logica e comportamento dei provider da [Synara](https://github.com/Emanuele-web04/synara), come deciso nell'[ADR 0008](adr/0008-provider-di-synara-in-swift.md). La logica è riscritta in Swift: Trama non include il server Node né il codice TypeScript di Synara.
+Trama porta logica e comportamento dei provider da [Synara](https://github.com/Emanuele-web04/synara), come deciso nell'[ADR 0008](adr/0008-provider-di-synara-in-swift.md) e nell'[ADR 0012](adr/0012-provider-di-synara-in-typescript.md). Dal 23 settembre 2026 gli adattatori sono in TypeScript in `app/src/main/core/providers`, portati da `apps/server/src/provider` al commit `eaa61eded31b6755d4f30ba8eabc5d905cf817cb` senza il livello Effect; ogni file indica in testa i file di Synara da cui deriva. Trama non include il server di Synara.
 
 La fonte di riferimento è il commit `9f91d59f182ec03722cb7fe8fe2244ef268c2c39` del repository `https://github.com/Emanuele-web04/synara`. Il [riferimento funzionale](reference/synara-funzioni.md) collega i comportamenti di Synara ai ticket di Trama; le sue prime sezioni erano state scritte sul commit `dd88d9272f97e4dda5735281e73ce14de388ad25`.
 
@@ -8,7 +8,7 @@ Dal 23 settembre 2026 l'app desktop di Trama è in Electron (ADR 0011) e riprend
 
 Synara è distribuito con licenza MIT. Il file `LICENSE` di quel commit indica due titolari: `Copyright (c) 2026 T3 Tools Inc.` e `Copyright (c) 2026 Emanuele Di Pietro`. La logica portata da Synara conserva questa nota.
 
-La copia della licenza sta in [synara-LICENSE](synara-LICENSE), copiata senza modifiche da `LICENSE` al commit `9f91d59f182ec03722cb7fe8fe2244ef268c2c39`. Il suo SHA-256 è `305724dd050ca7ded99c662de813d755bc4ec3887c4543a37159c6662ca36d1b`. Trama non copia file interi di Synara, quindi non c'è una licenza di terze parti da installare nei progetti configurati come per AI Hero. Il testo è ripetuto qui sotto perché resti leggibile accanto all'attribuzione.
+La copia della licenza sta in [synara-LICENSE](synara-LICENSE), copiata senza modifiche da `LICENSE` al commit `9f91d59f182ec03722cb7fe8fe2244ef268c2c39`. Il suo SHA-256 è `305724dd050ca7ded99c662de813d755bc4ec3887c4543a37159c6662ca36d1b`. Trama non copia file interi di Synara, ma adatta porzioni della sua logica; per questo non c'è una licenza di terze parti da installare nei progetti configurati come per AI Hero. Il testo è ripetuto qui sotto perché resti leggibile accanto all'attribuzione.
 
 ```text
 MIT License

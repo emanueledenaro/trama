@@ -42,7 +42,7 @@ Conseguenze: Trama gira anche su Linux e Windows, perché nulla nel processo pri
 | Conflitti con il lavoro dei colleghi | Portato: cache Git locale delle revisioni remote e prova di fusione con `git merge-tree` su un clone temporaneo; conflitti e sovrapposizioni diventano schede |
 | Monitor in background e notifiche | Portato nel processo principale: lettura di branch e pull request con `gh`, novità, notifiche di sistema, avvio all'accesso su macOS e Windows. Sostituisce l'helper `SMAppService` |
 | Skill AI Hero | Portato: preparazione del metodo di lavoro dalle impostazioni; skill di Codex nel composer con `$` e `/` |
-| Provider oltre Codex | Come nella versione SwiftUI: catalogo dei nove provider con capacità e comando di accesso; solo Codex ha un adattatore |
+| Provider oltre Codex | Portato (ADR 0012): i nove provider hanno un adattatore in `app/src/main/core/providers` dietro la forma comune `AgentRuntime`; il composer sceglie provider e modello per dialogo, incarichi e turni registrano il provider |
 
 ## Verifiche eseguite
 
@@ -52,4 +52,6 @@ Il 23 settembre 2026, su Linux in un container senza Codex reale:
 - `npm run ui-check`: l'app Electron costruita, pilotata con Playwright e un app-server Codex di prova, attraversa studio, messaggio, piano, decisione, proposta del team, mandato, incarico in un worktree, candidato, ricerca e impostazioni, in tema chiaro e scuro.
 - Il pacchetto Linux di electron-builder si avvia e apre il progetto di esempio.
 
-Non ancora verificato: una sessione con Codex reale e un account ChatGPT, la creazione di una pull request con `gh` su un repository reale, i pacchetti firmati per macOS e Windows, l'avvio all'accesso.
+Il 23 settembre 2026, dopo i provider: la lettura dell'account e dei modelli di Claude Agent è stata provata sulla CLI `claude` reale presente nel container (5 modelli). Gli altri provider sono provati con CLI, server e SDK finti.
+
+Non ancora verificato: turni reali con i provider diversi da Codex, una sessione con Codex reale e un account ChatGPT, la creazione di una pull request con `gh` su un repository reale, i pacchetti firmati per macOS e Windows, l'avvio all'accesso.
