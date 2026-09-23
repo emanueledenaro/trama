@@ -86,3 +86,22 @@ export async function reviewWorktree(session: WorktreeSession): Promise<Workspac
   }
   return { snapshotId: hash.digest("hex"), baseSHA: session.baseSHA, diff: parts.join(""), changedFiles, excludedSensitiveFiles };
 }
+
+/**
+ * Removes a finished assignment's worktree without losing work (T08). The worktree must be clean, and
+ * commits beyond the base must already be on a pushed branch; otherwise the removal is refused. The
+ * trama/ branch is deleted only when it carries no commit of its own.
+ */
+export async function removeWorktree(session: WorktreeSession, worktreesRoot: string, published: boolean): Promise<{ branchDeleted: boolean }> {
+  await validateWorktree(session, worktreesRoot);
+  const root = session.worktreeRoot;
+  if ((await git(["status", "--porcelain"], root)).trim()) {
+    throw new Error("Il worktree ha modifiche non salvate in un commit: rimuoverlo le perderebbe.");
+  }
+  const ahead = (await git(["rev-list", `${session.baseSHA}..HEAD`], root)).trim();
+  if (ahead && !published) throw new Error("Il worktree ha commit non pubblicati: pubblica il candidato o tienilo.");
+  await git(["worktree", "remove", root], session.sourceRoot, false);
+  if (ahead) return { branchDeleted: false };
+  await git(["branch", "-d", session.branch], session.sourceRoot, false);
+  return { branchDeleted: true };
+}

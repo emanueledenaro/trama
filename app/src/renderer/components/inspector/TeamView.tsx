@@ -146,6 +146,16 @@ export function SpecialistView({ id }: { id: string }) {
         </p>
       </InspectorSection>
       {current && ["stopped", "failed"].includes(current.status) ? <AssignmentProvider assignment={current} /> : null}
+      {current?.workspace && !current.workspaceRemovedAt && ["stopped", "failed", "completed"].includes(current.status) ? (
+        <InspectorSection title="Worktree">
+          <p className="text-ui-sm text-muted-foreground">
+            <span className="font-mono">{current.workspace.branch}</span>. Trama lo rimuove solo se non perdi lavoro: nessuna modifica fuori da un commit e commit già pubblicati.
+          </p>
+          <Button size="sm" variant="ghost" className="mt-2" onClick={() => void act("assignment:removeWorktree", { assignmentId: current.id })}>
+            Rimuovi il worktree
+          </Button>
+        </InspectorSection>
+      ) : null}
       {project.document.candidates.some((c) => c.specialistId === specialist.id) ? (
         <InspectorSection title="Candidati">
           {project.document.candidates

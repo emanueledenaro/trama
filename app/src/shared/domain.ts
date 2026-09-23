@@ -233,6 +233,8 @@ export interface SpecialistAssignment {
   createdAt: string;
   status: AssignmentStatus;
   workspace: WorktreeSession | null;
+  /** When the person removed the worktree after the work ended (T08); the session stays for history. */
+  workspaceRemovedAt?: string | null;
   threadId: string | null;
   turns: AssignmentTurn[];
   stops: AssignmentStop[];

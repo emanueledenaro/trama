@@ -93,7 +93,7 @@ import {
   teamReport,
   type TurnEnd,
 } from "./core/team";
-import { prepareWorktree, reviewWorktree, validateWorktree } from "./core/workspace";
+import { prepareWorktree, removeWorktree, reviewWorktree, validateWorktree } from "./core/workspace";
 import { approveCandidate, candidateReport, findCandidate, latestCandidate, recordEvidence, recordTechnicalReview } from "./core/candidates";
 import { assessConflict } from "./core/conflicts";
 import { pullRequestBody, publishCandidate } from "./core/publication";
@@ -1723,6 +1723,31 @@ export class TramaController {
     await this.stopAssignmentRuntime(assignmentId);
   }
 
+  /** The person removes the worktree of finished work; refused when it would lose work (T08). */
+  async removeAssignmentWorktree(assignmentId: string): Promise<void> {
+    const project = this.requireProject();
+    const assignment = findAssignment(project.document, assignmentId);
+    if (!assignment?.workspace || assignment.workspaceRemovedAt) throw new DomainError("L'incarico non ha un worktree da rimuovere.");
+    if (isActive(assignment)) throw new DomainError("Ferma l'incarico prima di rimuovere il worktree.");
+    const published = project.document.candidates.some((c) => c.assignmentId === assignmentId && c.pullRequest);
+    const { branchDeleted } = await removeWorktree(assignment.workspace, this.worktreesRoot, published);
+    assignment.workspaceRemovedAt = new Date().toISOString();
+    appendEvent(
+      project.document,
+      "trama",
+      {
+        type: "activity",
+        title: "Worktree rimosso",
+        detail: branchDeleted ? `Anche il branch ${assignment.workspace.branch} è stato eliminato: non aveva commit.` : `Il branch ${assignment.workspace.branch} resta.`,
+        tone: "info",
+      },
+      null,
+      new Date(),
+      { assignmentId, workKey: `${assignmentId}:${assignment.turns.length}` },
+    );
+    this.changed();
+  }
+
   /** The person changes the provider or model of a stopped assignment (ADR 0009). */
   async changeAssignmentProvider(assignmentId: string, provider: ProviderId, model: string): Promise<void> {
     const project = this.requireProject();
@@ -1746,6 +1771,9 @@ export class TramaController {
     const project = this.requireProject();
     const authorization = authorize(project.document.mandate, "executeInWorktree", findAssignment(project.document, assignmentId)?.moduleIds ?? []);
     if (authorization !== "authorized") throw new DomainError("Il mandato attuale non copre più questo incarico.");
+    if (findAssignment(project.document, assignmentId)?.workspaceRemovedAt) {
+      throw new DomainError("Il worktree di questo incarico è stato rimosso: assegna un nuovo incarico.");
+    }
     resumeAssignment(project.document, assignmentId);
     const moved = refreshDecisionVersions(project.document, assignmentId);
     if (moved.length) {
