@@ -19,6 +19,7 @@ export interface ActionMap {
   "coordinator:retry": [void, void];
   "coordinator:selectModel": [{ model: string; effort: string | null }, void];
   "coordinator:saveDraft": [{ text: string }, void];
+  "coordinator:setContextThreshold": [{ percent: number }, void];
   "pact:decide": [{ id: string | null; value: string; acceptedExample: string; rationale: string }, void];
   "decision:answer": [{ requestId: string; alternativeIndex: number | null; freeText: string | null }, void];
   "mandate:grant": [

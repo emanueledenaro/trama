@@ -133,6 +133,10 @@ export interface CoordinatorState {
   memory: CoordinatorMemory;
   study: ProjectStudy | null;
   memorySentToThread: string | null;
+  /** Percent of the context window above which the chat shows a notice (5-95). */
+  contextThreshold?: number;
+  /** The threshold the last notice was given for; cleared by a compaction or a new thread. */
+  contextWarnedAt?: number | null;
 }
 
 export type WorkKind = "agreedTicket" | "decidedBehaviorCorrection" | "newFeature" | "tradeOff";
@@ -437,6 +441,8 @@ export interface ActiveProjectState {
   stateWritable: boolean;
   /** Work keys of specialist turns that are running now. */
   runningWork: string[];
+  /** Skills Codex loads for this project. */
+  skills: import("./skills").LoadedSkill[];
   /** The current verdict of each candidate, computed by the main process. */
   candidateReports: Record<string, CandidateReport>;
 }

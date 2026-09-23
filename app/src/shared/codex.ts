@@ -25,6 +25,7 @@ export type TurnEvent =
   | { type: "toolCallStarted"; itemId: string; server: string; tool: string }
   | { type: "toolCallCompleted"; itemId: string; server: string; tool: string; succeeded: boolean; error: string | null }
   | { type: "tokenUsage"; usedTokens: number; contextWindow: number | null }
+  | { type: "compacted" }
   | { type: "completed"; text: string }
   | { type: "failed"; message: string }
   | { type: "interrupted" };

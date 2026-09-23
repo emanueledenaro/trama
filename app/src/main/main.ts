@@ -119,6 +119,7 @@ const handlers: { [K in ActionName]: Handler<K> } = {
   "coordinator:retry": () => controller.startCoordinator(),
   "coordinator:selectModel": ({ model, effort }) => controller.selectModel(model, effort),
   "coordinator:saveDraft": ({ text }) => controller.saveDraft(text),
+  "coordinator:setContextThreshold": ({ percent }) => controller.setContextThreshold(percent),
   "pact:decide": (input) => controller.recordDecision(input),
   "decision:answer": ({ requestId, alternativeIndex, freeText }) => controller.answerDecision(requestId, alternativeIndex, freeText),
   "mandate:grant": (input) => controller.grantMandate(input),

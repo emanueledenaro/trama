@@ -4,6 +4,7 @@ import { homedir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
 import { createInterface } from "node:readline";
 import type { AccountStatus, CodexModel, TurnEvent } from "@shared/codex";
+import type { LoadedSkill } from "@shared/skills";
 
 type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
 export type JsonObject = { [key: string]: Json };
@@ -156,6 +157,8 @@ export interface TurnOptions {
   images?: string[];
   /** The only directory the turn may write; the turn is read-only when absent. */
   writableRoot?: string | null;
+  /** Skills the person invoked, sent as skill input items. */
+  skills?: LoadedSkill[];
   /** JSON schema the final answer must follow. */
   outputSchema?: JsonObject;
   onEvent: (event: TurnEvent) => void;
@@ -252,6 +255,24 @@ export class CodexClient {
     return models;
   }
 
+  async listSkills(cwd: string): Promise<LoadedSkill[]> {
+    await this.ensureInitialized();
+    const result = asObject(await this.request("skills/list", { cwds: [cwd], forceReload: true }));
+    const skills: LoadedSkill[] = [];
+    for (const entry of asArray(result?.data)) {
+      for (const value of asArray(asObject(entry)?.skills)) {
+        const skill = asObject(value);
+        const name = asString(skill?.name);
+        const path = asString(skill?.path);
+        if (!skill || !name || !path || typeof skill.enabled !== "boolean") continue;
+        const description =
+          asString(asObject(skill.interface)?.shortDescription) ?? asString(skill.shortDescription) ?? asString(skill.description);
+        skills.push({ name, path, enabled: skill.enabled, description });
+      }
+    }
+    return skills.sort((a, b) => a.name.localeCompare(b.name) || a.path.localeCompare(b.path));
+  }
+
   /** Opens a persistent, read-only thread. Returns the thread id actually in use. */
   async openThread(options: ThreadOptions): Promise<{ threadId: string; replaced: boolean }> {
     validateModel(options.model);
@@ -319,6 +340,7 @@ export class CodexClient {
         input: [
           { type: "text", text: prompt, text_elements: [] },
           ...(options.images ?? []).map((path) => ({ type: "localImage", path })),
+          ...(options.skills ?? []).map((skill) => ({ type: "skill", name: skill.name, path: skill.path })),
         ],
         cwd: options.cwd,
         model: options.model,
@@ -538,6 +560,10 @@ export class CodexClient {
         const used = typeof total?.totalTokens === "number" ? total.totalTokens : null;
         const window = typeof usage?.modelContextWindow === "number" ? usage.modelContextWindow : null;
         if (turn && used !== null) turn.onEvent({ type: "tokenUsage", usedTokens: used, contextWindow: window });
+        return;
+      }
+      case "thread/compacted": {
+        this.matchingTurn(params)?.onEvent({ type: "compacted" });
         return;
       }
       case "item/agentMessage/delta":

@@ -3,6 +3,7 @@ import { IconArrowUp, IconAt, IconChevronDown, IconPhotoPlus, IconSparkles, Icon
 import type { ImageAttachmentInput } from "@shared/ipc";
 import { type MentionCandidate, mentionCandidates, mentionToken } from "@shared/mentions";
 import { normalizePaste, pasteSizeLabel, pasteTitle, serializePastes, shouldCollapsePaste } from "@shared/pastedText";
+import { skillCandidates } from "@shared/skills";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Menu, MenuGroupLabel, MenuPopup, MenuRadioGroup, MenuRadioItem, MenuSeparator, MenuTrigger } from "@/components/ui/menu";
@@ -57,7 +58,7 @@ export function Composer() {
   const [images, setImages] = useState<DraftImage[]>([]);
   const [pastes, setPastes] = useState<{ id: string; text: string }[]>([]);
   const [dragging, setDragging] = useState(false);
-  const [mention, setMention] = useState<{ start: number; query: string; index: number } | null>(null);
+  const [mention, setMention] = useState<{ start: number; query: string; index: number; sigil: "@" | "$" | "/" } | null>(null);
   const textarea = useRef<HTMLTextAreaElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const setToast = useUi((s) => s.setToast);
@@ -99,21 +100,28 @@ export function Composer() {
   }, [text]);
 
   const mentionSources = { modules: project.snapshot.modules, issues: project.github.issues, decisions: project.document.decisions };
-  const candidates: MentionCandidate[] = mention ? mentionCandidates(mention.query, mentionSources).slice(0, 12) : [];
+  const candidates: MentionCandidate[] = !mention
+    ? []
+    : mention.sigil === "@"
+      ? mentionCandidates(mention.query, mentionSources).slice(0, 12)
+      : skillCandidates(mention.query, project.skills)
+          .slice(0, 12)
+          .map((skill) => ({ mention: { kind: "file" as const, key: `$${skill.name}` }, title: `$${skill.name}`, subtitle: skill.description ?? "Skill" }));
 
   /** Opens the mention menu while the word before the cursor starts with @. */
   const trackMention = (value: string, cursor: number) => {
     const before = value.slice(0, cursor);
-    const match = before.match(/(^|\s)@([^\s@"]*)$/);
-    if (match) setMention({ start: cursor - match[2]!.length - 1, query: match[2]!, index: 0 });
-    else setMention(null);
+    const match = before.match(/(^|\s)([@$/])([^\s@"$/]*)$/);
+    if (match && (match[2] === "@" || project.skills.length)) {
+      setMention({ start: cursor - match[3]!.length - 1, query: match[3]!, index: 0, sigil: match[2] as "@" | "$" | "/" });
+    } else setMention(null);
   };
 
   const insertMention = (candidate: MentionCandidate) => {
     if (!mention) return;
     const element = textarea.current;
     const cursor = element?.selectionStart ?? text.length;
-    const token = `${mentionToken(candidate.mention)} `;
+    const token = `${candidate.mention.key.startsWith("$") ? candidate.mention.key : mentionToken(candidate.mention)} `;
     const next = text.slice(0, mention.start) + token + text.slice(cursor);
     updateText(next);
     setMention(null);
@@ -147,7 +155,7 @@ export function Composer() {
         {mention && candidates.length ? (
           <div
             role="listbox"
-            aria-label="Menzioni"
+            aria-label={mention.sigil === "@" ? "Menzioni" : "Skill"}
             className="translucent-popup absolute inset-x-0 bottom-full z-20 mb-2 max-h-72 overflow-y-auto rounded-[0.875rem] p-1 shadow-[0_4px_18px_-6px_color-mix(in_srgb,var(--foreground)_12%,transparent)]"
           >
             {candidates.map((candidate, index) => (
@@ -281,7 +289,7 @@ export function Composer() {
               placeholder={
                 running
                   ? "Aggiungi un messaggio: partirà quando il Coordinatore avrà finito"
-                  : "Messaggio al Coordinatore. Usa @ per citare moduli, file, issue e decisioni"
+                  : "Messaggio al Coordinatore. Usa @ per citare moduli, file, issue e decisioni, $ per una skill"
               }
               aria-label="Messaggio al Coordinatore"
               className="block max-h-60 min-h-[2lh] w-full resize-none bg-transparent font-system-ui text-chat leading-relaxed text-foreground outline-none placeholder:text-muted-foreground/40"

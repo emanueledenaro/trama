@@ -51,6 +51,11 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
           ],
         },
       });
+    case "skills/list":
+      return send({
+        id,
+        result: { data: [{ cwd: params.cwds[0], errors: [], skills: [{ name: "tdd", path: "/skills/tdd/SKILL.md", enabled: true, interface: { shortDescription: "Test-driven development" } }] }] },
+      });
     case "thread/resume":
       return send({ id, error: { code: -32000, message: "thread not found" } });
     case "thread/start": {
@@ -185,6 +190,7 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
         });
         return;
       }
+      send({ method: "thread/tokenUsage/updated", params: { threadId, turnId, tokenUsage: { total: { totalTokens: text.includes("[pieno]") ? 230_000 : 12_000 }, modelContextWindow: 258_000 } } });
       const reply = text.startsWith("Studio del progetto scritto da Trama")
         ? "Ho letto lo studio: è un progetto Swift con i moduli Catalog, Inventory, Orders, Payments e Users. Vedi Sources/Orders/CancelPaidOrder.swift."
         : `Ho ricevuto: **${text.slice(0, 200)}**. Questa risposta arriva dal server di prova. Vedi Sources/Orders/CancelPaidOrder.swift.`;

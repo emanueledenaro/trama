@@ -1,17 +1,23 @@
-import { Tooltip } from "@/components/ui/tooltip";
-import { useUi } from "@/lib/store";
+import { Popover } from "@base-ui/react/popover";
+import { act, useUi } from "@/lib/store";
 
-/** Ring that shows how much of the model's context window the thread uses. */
+const format = (n: number) => n.toLocaleString("it-IT");
+
+/** Ring that shows how much of the Coordinator's context window the thread uses, with its threshold. */
 export function ContextMeter() {
   const usage = useUi((s) => s.app?.project?.contextUsage ?? null);
+  const threshold = useUi((s) => s.app?.project?.document.coordinator.contextThreshold ?? 80);
   if (!usage || !usage.contextWindow) return null;
   const fraction = Math.min(1, usage.usedTokens / usage.contextWindow);
   const radius = 6;
   const circumference = 2 * Math.PI * radius;
   const percent = Math.round(fraction * 100);
   return (
-    <Tooltip label={`Finestra di contesto: ${percent}% (${usage.usedTokens.toLocaleString("it-IT")} di ${usage.contextWindow.toLocaleString("it-IT")} token)`}>
-      <span className="inline-flex h-7 items-center gap-1 px-1.5 text-ui-xs text-muted-foreground" aria-label={`Contesto usato ${percent}%`}>
+    <Popover.Root>
+      <Popover.Trigger
+        className="inline-flex h-7 items-center gap-1 rounded-lg px-1.5 text-ui-xs text-muted-foreground transition-colors hover:bg-[var(--color-background-button-secondary-hover)] hover:text-foreground"
+        aria-label={`Finestra di contesto: ${percent}%, soglia di avviso ${threshold}%`}
+      >
         <svg viewBox="0 0 16 16" className="size-3.5 -rotate-90">
           <circle cx="8" cy="8" r={radius} fill="none" stroke="currentColor" strokeOpacity="0.18" strokeWidth="2" />
           <circle
@@ -19,7 +25,7 @@ export function ContextMeter() {
             cy="8"
             r={radius}
             fill="none"
-            stroke={fraction > 0.85 ? "var(--warning)" : "currentColor"}
+            stroke={percent >= threshold ? "var(--warning)" : "var(--color-text-accent)"}
             strokeWidth="2"
             strokeDasharray={circumference}
             strokeDashoffset={circumference * (1 - fraction)}
@@ -27,7 +33,36 @@ export function ContextMeter() {
           />
         </svg>
         {percent}%
-      </span>
-    </Tooltip>
+      </Popover.Trigger>
+      <Popover.Portal>
+        <Popover.Positioner side="bottom" align="end" sideOffset={6} className="z-50">
+          <Popover.Popup className="translucent-popup w-80 rounded-2xl p-4 text-ui outline-none transition-[opacity,scale] data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0">
+            <div className="font-medium text-foreground">Finestra di contesto</div>
+            <p className="mt-1 text-ui-sm text-muted-foreground">
+              {percent}% usato · {format(usage.usedTokens)} su {format(usage.contextWindow)} token
+            </p>
+            <p className="text-ui-sm text-muted-foreground">Codex compatta il contesto automaticamente quando serve.</p>
+            <div className="my-3 h-px bg-border" />
+            <label className="flex items-center justify-between gap-2 text-ui-sm">
+              <span>Avviso sopra</span>
+              <select
+                value={threshold}
+                onChange={(e) => void act("coordinator:setContextThreshold", { percent: Number(e.target.value) })}
+                className="rounded-md border border-input bg-transparent px-1.5 py-0.5 font-sans text-ui-sm"
+              >
+                {Array.from({ length: 19 }, (_, i) => 5 + i * 5).map((value) => (
+                  <option key={value} value={value}>
+                    {value}%
+                  </option>
+                ))}
+              </select>
+            </label>
+            <p className="mt-2 text-ui-xs text-muted-foreground">
+              La soglia vale per questo progetto. Oltre la soglia la chat mostra un avviso; dopo una compattazione l'avviso può tornare.
+            </p>
+          </Popover.Popup>
+        </Popover.Positioner>
+      </Popover.Portal>
+    </Popover.Root>
   );
 }

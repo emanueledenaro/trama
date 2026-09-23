@@ -75,6 +75,27 @@ describe("TramaController", () => {
     expect(last).toMatchObject({ text: expect.stringContaining("Ho risposto alla domanda") });
   });
 
+  it("warns once when the context passes the threshold", async () => {
+    await setup();
+    const project = controller!.snapshot.project!;
+    await controller!.send("[pieno] uno", null, null, null);
+    await controller!.send("[pieno] due", null, null, null);
+    const notices = project.document.events.filter((e) => e.content.type === "card" && e.content.title === "Contesto oltre la soglia");
+    expect(notices).toHaveLength(1);
+    expect(project.contextUsage).toEqual({ usedTokens: 230_000, contextWindow: 258_000 });
+    controller!.setContextThreshold(95);
+    expect(project.document.coordinator.contextThreshold).toBe(95);
+  });
+
+  it("loads project skills and sends invoked ones", async () => {
+    await setup();
+    const project = controller!.snapshot.project!;
+    await until(() => project.skills.length > 0);
+    await controller!.send("Usa /tdd per il test", null, null, null);
+    const activity = project.document.events.find((e) => e.content.type === "activity" && e.content.title === "Messaggio inviato al Coordinatore");
+    expect(activity?.content).toMatchObject({ detail: expect.stringContaining("skill: tdd") });
+  });
+
   it("prepares a plan for a request and turns its questions into decision cards", async () => {
     await setup();
     const project = controller!.snapshot.project!;

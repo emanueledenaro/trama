@@ -6,6 +6,7 @@ import { join } from "node:path";
 import type { CodexModel, TurnEvent } from "@shared/codex";
 import { shortId } from "@shared/ids";
 import { mentionContextBlock } from "@shared/mentions";
+import { codexSkillText, skillInvocations } from "@shared/skills";
 import type { ImageAttachmentInput } from "@shared/ipc";
 import type {
   ActiveProjectState,
@@ -258,6 +259,7 @@ export class TramaController {
     this.publish();
     const project = this.state.project;
     if (account.kind === "chatgpt" && project && (!wasConnected || project.phase.kind === "unavailable")) {
+      void this.loadSkills();
       void this.startCoordinator();
     }
   }
@@ -332,6 +334,7 @@ export class TramaController {
         stateWritable: loaded.writable,
         runningWork: [],
         candidateReports: {},
+        skills: [],
       };
       this.state.project = project;
       this.state.loadingProject = null;
@@ -349,6 +352,7 @@ export class TramaController {
       await this.saveSettings();
       this.publishNow();
       if (!isDemo) void this.refreshGitHub();
+      void this.loadSkills();
       void this.startCoordinator();
     } catch (error) {
       this.state.loadingProject = null;
@@ -403,6 +407,16 @@ export class TramaController {
   private requireProject(): ActiveProjectState {
     if (!this.state.project) throw new DomainError("Apri un progetto.");
     return this.state.project;
+  }
+
+  private async loadSkills(): Promise<void> {
+    const project = this.state.project;
+    if (!project || this.state.codex.account?.kind !== "chatgpt") return;
+    const skills = await this.discovery.listSkills(project.rootPath).catch(() => []);
+    if (this.state.project === project) {
+      project.skills = skills;
+      this.publish();
+    }
   }
 
   // MARK: GitHub
@@ -586,6 +600,7 @@ export class TramaController {
       if (opening.replaced) {
         document.coordinator.injectedStudy = {};
         document.coordinator.memorySentToThread = null;
+        document.coordinator.contextWarnedAt = null;
         appendEvent(document, "trama", {
           type: "card",
           kind: "contextNotice",
@@ -726,7 +741,8 @@ export class TramaController {
         decisions: document.decisions,
       });
       if (mentioned) sections.push(mentioned);
-      sections.push(trimmed);
+      const skills = skillInvocations(trimmed, project.skills);
+      sections.push(codexSkillText(trimmed, project.skills));
       appendEvent(
         document,
         "trama",
@@ -738,6 +754,7 @@ export class TramaController {
             effort ? `sforzo ${effort}` : null,
             parts.length ? `aggiornamento: ${parts.join(", ")}` : null,
             report ? "aggiornamenti del team" : null,
+            skills.length ? `skill: ${skills.map((s) => s.name).join(", ")}` : null,
           ]
             .filter(Boolean)
             .join(" · "),
@@ -753,6 +770,7 @@ export class TramaController {
         model: selectedModel,
         effort,
         images: attachments,
+        skills,
         onEvent: (event) => this.handleTurnEvent(project, request, event),
       });
       document.coordinator.injectedStudy = { ...document.coordinator.injectedStudy, ...fingerprints(study) };
@@ -814,7 +832,11 @@ export class TramaController {
         return;
       case "tokenUsage":
         project.contextUsage = { usedTokens: event.usedTokens, contextWindow: event.contextWindow };
+        this.checkContextThreshold(project);
         this.publish();
+        return;
+      case "compacted":
+        project.document.coordinator.contextWarnedAt = null;
         return;
       case "commandCompleted":
         activity(event.command || "Comando", event.succeeded ? null : `Uscita ${event.exitCode ?? "?"}`, event.succeeded ? "tool" : "error");
@@ -838,6 +860,33 @@ export class TramaController {
       default:
         return;
     }
+  }
+
+  /** Adds the notice once when the Coordinator's context passes the person's threshold. */
+  private checkContextThreshold(project: ActiveProjectState): void {
+    const usage = project.contextUsage;
+    const coordinator = project.document.coordinator;
+    if (!usage?.contextWindow) return;
+    const threshold = coordinator.contextThreshold ?? 80;
+    const percent = (usage.usedTokens / usage.contextWindow) * 100;
+    if (percent < threshold || coordinator.contextWarnedAt === threshold) return;
+    coordinator.contextWarnedAt = threshold;
+    const format = (n: number) => n.toLocaleString("it-IT");
+    appendEvent(project.document, "trama", {
+      type: "card",
+      kind: "contextNotice",
+      title: "Contesto oltre la soglia",
+      detail: `La finestra di contesto del Coordinatore è piena al ${Math.round(percent)}% (${format(usage.usedTokens)} su ${format(usage.contextWindow)} token), sopra la soglia impostata del ${threshold}%. Codex la compatta da solo quando serve; puoi cambiare la soglia dal misuratore.`,
+      referenceId: coordinator.threadId,
+    });
+    this.changed();
+  }
+
+  setContextThreshold(percent: number): void {
+    const project = this.requireProject();
+    project.document.coordinator.contextThreshold = Math.min(95, Math.max(5, Math.round(percent / 5) * 5));
+    this.checkContextThreshold(project);
+    this.changed();
   }
 
   async interrupt(): Promise<void> {
@@ -1469,6 +1518,7 @@ export class TramaController {
     });
     this.changed();
     void this.refreshProject();
+    void this.loadSkills();
     return report;
   }
 
