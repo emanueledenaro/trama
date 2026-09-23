@@ -1,0 +1,167 @@
+import { IconDeviceDesktop, IconMoon, IconSun } from "@tabler/icons-react";
+import { useState } from "react";
+import type { ThemePreference } from "@shared/domain";
+import { Button } from "@/components/ui/button";
+import { Input, Label, TextArea } from "@/components/ui/field";
+import { Dialog } from "@/components/ui/dialog";
+import { Spinner } from "@/components/Spinner";
+import { cn } from "@/lib/cn";
+import { act, useUi } from "@/lib/store";
+
+function SettingsDialog() {
+  const open = useUi((s) => s.dialog === "settings");
+  const setDialog = useUi((s) => s.setDialog);
+  const theme = useUi((s) => s.app?.settings.theme ?? "system");
+  const options: { value: ThemePreference; label: string; icon: React.ReactNode }[] = [
+    { value: "system", label: "Sistema", icon: <IconDeviceDesktop className="size-4" stroke={1.7} /> },
+    { value: "light", label: "Chiaro", icon: <IconSun className="size-4" stroke={1.7} /> },
+    { value: "dark", label: "Scuro", icon: <IconMoon className="size-4" stroke={1.7} /> },
+  ];
+  return (
+    <Dialog open={open} onOpenChange={(value) => setDialog(value ? "settings" : null)} title="Impostazioni di Trama">
+      <div className="space-y-5 pt-2">
+        <section>
+          <h4 className="mb-2 text-ui-sm font-medium text-muted-foreground">Aspetto</h4>
+          <div className="grid grid-cols-3 gap-2">
+            {options.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                onClick={() => void act("settings:update", { theme: option.value })}
+                className={cn(
+                  "flex flex-col items-center gap-1.5 rounded-xl border px-3 py-3 text-ui transition-colors",
+                  theme === option.value
+                    ? "border-[color:var(--color-text-accent)] bg-[color-mix(in_srgb,var(--color-text-accent)_6%,transparent)] text-foreground"
+                    : "border-[color:var(--color-border)] text-muted-foreground hover:bg-[var(--color-background-button-secondary-hover)]",
+                )}
+              >
+                {option.icon}
+                {option.label}
+              </button>
+            ))}
+          </div>
+        </section>
+        <section>
+          <h4 className="mb-2 text-ui-sm font-medium text-muted-foreground">Codex di OpenAI</h4>
+          <Button variant="outline" size="sm" onClick={() => setDialog("connections")}>
+            Apri Collegamenti
+          </Button>
+        </section>
+      </div>
+    </Dialog>
+  );
+}
+
+function ConnectionsDialog() {
+  const open = useUi((s) => s.dialog === "connections");
+  const setDialog = useUi((s) => s.setDialog);
+  const codex = useUi((s) => s.app!.codex);
+  const account = codex.account;
+  const status =
+    account === null
+      ? "Verifica in corso"
+      : account.kind === "chatgpt"
+        ? `Account riconosciuto${account.email ? `: ${account.email}` : ""} · piano ${account.plan}`
+        : account.kind === "signedOut"
+          ? "Nessun account collegato"
+          : account.kind === "unsupported"
+            ? `Codex usa un account di tipo ${account.type}. Trama accetta solo un account ChatGPT per evitare la fatturazione API.`
+            : account.message;
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(value) => setDialog(value ? "connections" : null)}
+      title="Collegamenti"
+      description="L'accesso avviene nel browser ufficiale. Trama non copia le credenziali."
+      footer={
+        <>
+          <Button variant="ghost" size="sm" onClick={() => void act("codex:refresh", undefined)}>
+            Verifica collegamento
+          </Button>
+          {account?.kind === "signedOut" ? (
+            <Button size="sm" onClick={() => void act("codex:login", undefined)}>
+              Accedi con ChatGPT
+            </Button>
+          ) : null}
+        </>
+      }
+    >
+      <div className="mt-2 flex items-start gap-3 rounded-xl border border-[color:var(--color-border)] p-3">
+        <span
+          className={cn(
+            "mt-1.5 size-2 shrink-0 rounded-full",
+            account?.kind === "chatgpt" ? "bg-success" : account === null || codex.checking ? "bg-muted-foreground/40" : "bg-warning",
+          )}
+        />
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2 text-ui text-foreground">
+            Codex di OpenAI {codex.checking ? <Spinner /> : null}
+          </div>
+          <p className="mt-0.5 text-ui-sm text-muted-foreground">{status}</p>
+          {account?.kind === "chatgpt" ? (
+            <p className="mt-1 text-ui-xs text-muted-foreground/70">{codex.models.length} modelli disponibili.</p>
+          ) : null}
+        </div>
+      </div>
+      <p className="mt-3 text-ui-xs text-muted-foreground">
+        Per GitHub, Trama usa GitHub CLI: esegui <code className="font-mono">gh auth login</code> nel terminale.
+      </p>
+    </Dialog>
+  );
+}
+
+function CreateProjectDialog() {
+  const open = useUi((s) => s.dialog === "createProject");
+  const setDialog = useUi((s) => s.setDialog);
+  const [name, setName] = useState("");
+  const [idea, setIdea] = useState("");
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(value) => setDialog(value ? "createProject" : null)}
+      title="Crea un progetto"
+      description="Trama crea la cartella con un README che descrive l'idea."
+      footer={
+        <>
+          <Button variant="ghost" size="sm" onClick={() => setDialog(null)}>
+            Annulla
+          </Button>
+          <Button
+            size="sm"
+            disabled={!name.trim()}
+            onClick={() =>
+              void act("project:create", { name, idea }).then(() => {
+                setName("");
+                setIdea("");
+                setDialog(null);
+              })
+            }
+          >
+            Scegli la cartella
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-3 pt-2">
+        <div>
+          <Label>Nome del progetto</Label>
+          <Input value={name} onChange={(e) => setName(e.target.value)} autoFocus />
+        </div>
+        <div>
+          <Label>Cosa vuoi costruire?</Label>
+          <TextArea value={idea} onChange={(e) => setIdea(e.target.value)} />
+        </div>
+      </div>
+    </Dialog>
+  );
+}
+
+export function Dialogs() {
+  return (
+    <>
+      <SettingsDialog />
+      <ConnectionsDialog />
+      <CreateProjectDialog />
+    </>
+  );
+}

@@ -1,0 +1,86 @@
+import { createHash, randomUUID } from "node:crypto";
+import { existsSync } from "node:fs";
+import { chmod, lstat, mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
+import type { AppSettings, ProjectDocument, RecentProject } from "@shared/domain";
+import { normalizeDocument } from "./document";
+
+const MAXIMUM_RECENT_PROJECTS = 20;
+
+/** Writes through a temporary file and a rename, so a crash never leaves half a file. */
+export async function writeAtomically(path: string, contents: string): Promise<void> {
+  await mkdir(dirname(path), { recursive: true });
+  const temporary = `${path}.${randomUUID()}.tmp`;
+  await writeFile(temporary, contents, { mode: 0o600 });
+  await rename(temporary, path);
+  await chmod(path, 0o600).catch(() => undefined);
+}
+
+async function readJson<T>(path: string): Promise<T | null> {
+  if (!existsSync(path)) return null;
+  if ((await lstat(path)).isSymbolicLink()) throw new Error(`Il file di stato è un collegamento simbolico: ${path}`);
+  return JSON.parse(await readFile(path, "utf8")) as T;
+}
+
+export class AppStorage {
+  constructor(readonly root: string) {}
+
+  get examplesDirectory(): string {
+    return join(this.root, "Examples");
+  }
+
+  async loadRecentProjects(): Promise<RecentProject[]> {
+    try {
+      const projects = (await readJson<RecentProject[]>(join(this.root, "recent-projects.json"))) ?? [];
+      return projects.filter((p) => p && typeof p.id === "string" && typeof p.path === "string");
+    } catch {
+      return [];
+    }
+  }
+
+  async saveRecentProjects(projects: RecentProject[]): Promise<void> {
+    const sorted = [...projects]
+      .sort((a, b) => b.lastOpenedAt.localeCompare(a.lastOpenedAt))
+      .slice(0, MAXIMUM_RECENT_PROJECTS);
+    await writeAtomically(join(this.root, "recent-projects.json"), JSON.stringify(sorted, null, 2));
+  }
+
+  async loadSettings(): Promise<Partial<AppSettings> & { lastProjectId?: string | null }> {
+    try {
+      return (await readJson(join(this.root, "settings.json"))) ?? {};
+    } catch {
+      return {};
+    }
+  }
+
+  async saveSettings(settings: AppSettings & { lastProjectId: string | null }): Promise<void> {
+    await writeAtomically(join(this.root, "settings.json"), JSON.stringify(settings, null, 2));
+  }
+
+  documentPath(projectId: string): string {
+    const hash = createHash("sha256").update(projectId).digest("hex");
+    return join(this.root, "Projects", `${hash}.json`);
+  }
+
+  /**
+   * Loads a project document. An unreadable file is kept untouched and reported as not writable,
+   * so Trama never overwrites state it could not read.
+   */
+  async loadDocument(projectId: string): Promise<{ document: ProjectDocument | null; writable: boolean; error: string | null }> {
+    const path = this.documentPath(projectId);
+    try {
+      const raw = await readJson<Partial<ProjectDocument>>(path);
+      return { document: raw ? normalizeDocument(raw, projectId) : null, writable: true, error: null };
+    } catch (error) {
+      return {
+        document: null,
+        writable: false,
+        error: `Lo stato del progetto non è leggibile e resta invariato in ${path}. ${(error as Error).message}`,
+      };
+    }
+  }
+
+  async saveDocument(document: ProjectDocument): Promise<void> {
+    await writeAtomically(this.documentPath(document.projectId), JSON.stringify(document));
+  }
+}
