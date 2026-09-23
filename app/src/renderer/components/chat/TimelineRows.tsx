@@ -16,7 +16,7 @@ import { formatDuration, type TimelineRow } from "@shared/timeline";
 import { cn } from "@/lib/cn";
 import { formatTime } from "@/lib/format";
 import { useUi } from "@/lib/store";
-import { AssignmentCard, ContextNoticeCard, DecisionCard, MandateCard, StudyCard, TeamProposalCard } from "./Cards";
+import { AssignmentCard, CandidateCard, ContextNoticeCard, DecisionCard, MandateCard, StudyCard, TeamProposalCard } from "./Cards";
 import { ChatMarkdown } from "./ChatMarkdown";
 
 function DisclosureChevron({ open }: { open: boolean }) {
@@ -207,6 +207,7 @@ export function TimelineRowView({ row, streaming = false }: { row: TimelineRow; 
       if (row.cardKind === "decision" && content.referenceId) return <DecisionCard requestId={content.referenceId} />;
       if (row.cardKind === "teamProposal" && content.referenceId) return <TeamProposalCard proposalId={content.referenceId} />;
       if (row.cardKind === "assignment" && content.referenceId) return <AssignmentCard assignmentId={content.referenceId} />;
+      if (row.cardKind === "candidate" && content.referenceId) return <CandidateCard candidateId={content.referenceId} />;
       return <ContextNoticeCard title={content.title} detail={content.detail} />;
     }
   }

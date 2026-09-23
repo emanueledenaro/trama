@@ -33,7 +33,7 @@ Conseguenze: Trama gira anche su Linux e Windows, perché nulla nel processo pri
 | Immagini nel composer | Portato |
 | Team, specialisti, incarichi, worktree | Portato: proposta e conferma, `create_specialist`, `assign_task`, `stop_specialist`, `read_team`, runtime Codex con worktree proprio |
 | Verifiche in sola lettura (`run_readonly_check`) | Portato, con la sandbox di Codex |
-| Candidati, verifiche, revisione tecnica, via libera | Da portare |
-| Pubblicazione di pull request | Da portare |
+| Candidati, verifiche, revisione tecnica, via libera | Portato: `declare_candidate`, `verify_candidate`, `review_candidate`, `clear_candidate`, blocchi del Patto, approvazione della persona |
+| Pubblicazione di pull request | Portato: commit nel worktree del candidato, push del branch `trama/` e pull request con `gh`, solo dopo l'approvazione della persona |
 | Monitor in background e notifiche | Da portare |
 | Skill AI Hero e altri provider oltre Codex | Da portare |

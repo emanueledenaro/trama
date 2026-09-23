@@ -236,6 +236,63 @@ export interface ProjectTeam {
   confirmedAt: string | null;
 }
 
+export interface CandidateEvidence {
+  check: string;
+  result: "pass" | "fail";
+  command: string;
+  output: string;
+  snapshotId: string;
+  decisionVersions: Record<string, number>;
+  recordedAt: string;
+}
+
+export interface TechnicalReview {
+  id: string;
+  reviewerThreadId: string;
+  authorThreadId: string | null;
+  verdict: "approved" | "changesRequested";
+  summary: string;
+  at: string;
+}
+
+export interface Candidate {
+  id: string;
+  assignmentId: string;
+  specialistId: string;
+  snapshotId: string;
+  baseSHA: string;
+  diff: string;
+  changedFiles: string[];
+  touchedModules: string[];
+  requiredDecisionIds: string[];
+  /** Decision versions the candidate was delegated against (the lease). */
+  decisionVersions: Record<string, number>;
+  requiredChecks: string[];
+  unresolvedChoices: string[];
+  externalEffects: string[];
+  declaredAt: string;
+  updatedAt: string;
+  evidence: Record<string, CandidateEvidence>;
+  technicalReview: TechnicalReview | null;
+  clearance: { actor: string; fingerprint: string; at: string } | null;
+  humanApproval: { actor: string; fingerprint: string; at: string } | null;
+  pullRequest: { url: string; number: number; branch: string; at: string } | null;
+}
+
+export type CandidateState = "building" | "verified" | "decided";
+
+export interface CandidateBlocker {
+  code: string;
+  detail: string;
+}
+
+export interface CandidateReport {
+  state: CandidateState;
+  blockers: CandidateBlocker[];
+  clearanceInvalidated: boolean;
+  approvalInvalidated: boolean;
+}
+
 export interface ProjectDocument {
   schemaVersion: 1;
   projectId: string;
@@ -252,6 +309,7 @@ export interface ProjectDocument {
   selectedEffort: string | null;
   composerDraft: string;
   team: ProjectTeam;
+  candidates: Candidate[];
 }
 
 export type CoordinatorPhase =
@@ -294,6 +352,8 @@ export interface ActiveProjectState {
   stateWritable: boolean;
   /** Work keys of specialist turns that are running now. */
   runningWork: string[];
+  /** The current verdict of each candidate, computed by the main process. */
+  candidateReports: Record<string, CandidateReport>;
 }
 
 export type ThemePreference = "system" | "light" | "dark";

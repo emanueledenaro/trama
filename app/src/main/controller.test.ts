@@ -47,7 +47,7 @@ describe("TramaController", () => {
     const project = controller!.snapshot.project!;
     const study = project.document.events.find((e) => e.content.type === "card" && e.content.kind === "study");
     expect(study?.content).toMatchObject({ title: "Studio del progetto" });
-    expect(project.document.coordinator.threadId).toBe("thread-1");
+    expect(project.document.coordinator.threadId).toMatch(/^thread-\d+-1$/);
 
     await controller!.send("Come funziona l'annullamento?", "Sources/Orders", null, null);
     const request = project.document.requests[0]!;

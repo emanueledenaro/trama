@@ -54,7 +54,10 @@ import {
   teamReport,
   type TurnEnd,
 } from "./core/team";
-import { prepareWorktree, validateWorktree } from "./core/workspace";
+import { prepareWorktree, reviewWorktree, validateWorktree } from "./core/workspace";
+import { approveCandidate, candidateReport, findCandidate, recordEvidence, recordTechnicalReview } from "./core/candidates";
+import { pullRequestBody, publishCandidate } from "./core/publication";
+import { git } from "./core/process";
 import { AppStorage } from "./core/storage";
 import { buildStudy, fingerprints, partsToInject, studyText } from "./core/study";
 import { CoordinatorToolServer, TOKEN_ENVIRONMENT_VARIABLE, TOOL_SERVER_NAME } from "./core/toolServer";
@@ -115,7 +118,18 @@ export class TramaController {
   }
 
   get snapshot(): AppState {
+    this.refreshDerived();
     return this.state;
+  }
+
+  /** State derived from the document: running specialist turns and candidate verdicts. */
+  private refreshDerived(): void {
+    const project = this.state.project;
+    if (!project) return;
+    project.runningWork = this.runningWorkKeys();
+    project.candidateReports = Object.fromEntries(
+      project.document.candidates.map((c) => [c.id, candidateReport(project.document, c, project.snapshot.headSHA)]),
+    );
   }
 
   async start(): Promise<void> {
@@ -154,7 +168,7 @@ export class TramaController {
   private publishNow(): void {
     if (this.publishTimer) clearTimeout(this.publishTimer);
     this.publishTimer = null;
-    if (this.state.project) this.state.project.runningWork = this.runningWorkKeys();
+    this.refreshDerived();
     this.host.publish(this.state);
   }
 
@@ -265,6 +279,7 @@ export class TramaController {
         github: { repository: null, status: isDemo ? "unavailable" : "loading", message: isDemo ? "Progetto di esempio senza GitHub." : null, issues: [] },
         stateWritable: loaded.writable,
         runningWork: [],
+        candidateReports: {},
       };
       this.state.project = project;
       this.state.loadingProject = null;
@@ -415,6 +430,15 @@ export class TramaController {
           stopAssignment: (id) => void this.stopAssignmentRuntime(id),
           runCheck: (check) => this.runCheck(check, current.rootPath, current.runningRequestId),
           availableChecks: availableChecks(current.rootPath),
+          reviewWorkspace: async (assignmentId) => {
+            const assignment = findAssignment(current.document, assignmentId);
+            if (!assignment?.workspace) throw new Error(`Assignment ${assignmentId} has no worktree.`);
+            await validateWorktree(assignment.workspace, this.worktreesRoot);
+            return reviewWorktree(assignment.workspace);
+          },
+          verifyCandidate: (candidateId, check) => this.verifyCandidate(candidateId, check, current.runningRequestId),
+          reviewCandidate: (candidateId) => this.reviewCandidate(candidateId, current.runningRequestId),
+          headSHA: () => this.headSHA(current.rootPath),
         });
       },
       TOOL_SERVER_INSTRUCTIONS,
@@ -1052,6 +1076,152 @@ export class TramaController {
     );
     this.changed();
     return result;
+  }
+
+  // MARK: Candidates
+
+  private async headSHA(root: string): Promise<string | null> {
+    return (await git(["rev-parse", "--verify", "HEAD"], root).catch(() => "")).trim() || null;
+  }
+
+  private async verifyCandidate(candidateId: string, check: ReadOnlyCheck, requestId: string | null) {
+    const project = this.requireProject();
+    const document = project.document;
+    const candidate = findCandidate(document, candidateId);
+    if (!candidate) throw new Error(`Unknown candidate ${candidateId}.`);
+    const assignment = findAssignment(document, candidate.assignmentId);
+    if (!assignment?.workspace) throw new Error(`Candidate ${candidateId} has no worktree.`);
+    await validateWorktree(assignment.workspace, this.worktreesRoot);
+    const executable = resolveCodexExecutable(this.host.codexExecutable);
+    const result = await runReadOnlyCheck(check, assignment.workspace.worktreeRoot, {
+      codexExecutable: executable,
+      scratchRoot: join(this.storage.root, "Checks"),
+    });
+    const snapshot = await reviewWorktree(assignment.workspace);
+    recordEvidence(document, candidateId, {
+      check,
+      passed: result.exitCode === 0,
+      command: result.command.join(" "),
+      output: result.output,
+      snapshotId: snapshot.snapshotId,
+    });
+    appendEvent(
+      document,
+      "trama",
+      {
+        type: "activity",
+        title: `Verifica ${CHECKS[check].title} su ${candidateId}: ${result.exitCode === 0 ? "superata" : "non superata"}`,
+        detail: result.output.slice(-4_000) || null,
+        tone: result.exitCode === 0 ? "tool" : "error",
+      },
+      requestId,
+    );
+    this.changed();
+    return result;
+  }
+
+  /** A technical review from a thread distinct from the author's, read-only in the candidate's worktree. */
+  private async reviewCandidate(candidateId: string, requestId: string | null) {
+    const project = this.requireProject();
+    const document = project.document;
+    const candidate = findCandidate(document, candidateId);
+    if (!candidate) throw new Error(`Unknown candidate ${candidateId}.`);
+    const assignment = findAssignment(document, candidate.assignmentId);
+    if (!assignment?.workspace) throw new Error(`Candidate ${candidateId} has no worktree.`);
+    const model = assignment.model;
+    const client = new CodexClient({
+      executable: this.host.codexExecutable,
+      argumentsFor: (executable) => restrictedAppServerArguments(executable, null),
+      requestTimeoutMs: 15_000,
+    });
+    try {
+      const opening = await client.openThread({
+        model,
+        cwd: assignment.workspace.worktreeRoot,
+        developerInstructions:
+          "You are the technical reviewer of a candidate in Trama, distinct from its author. Read the diff and the worktree, read-only. Judge whether the change does what the assignment asks and respects the Pact decisions listed. Answer in Italian. You never approve on behalf of the person and you never merge.",
+        config: { web_search: "disabled", features: { apps: false, plugins: false, hooks: false, multi_agent: false } },
+      });
+      const decisions = candidate.requiredDecisionIds
+        .map((id) => document.decisions.find((d) => d.id === id))
+        .filter((d) => d !== undefined)
+        .map((d) => `- ${d.id} v${d.version}: ${d.value} (esempio: ${d.acceptedExample})`)
+        .join("\n");
+      const prompt = [
+        `Revisione tecnica del candidato ${candidate.id} per l'incarico ${assignment.id}: ${assignment.objective}`,
+        `Decisioni del Patto da rispettare:\n${decisions}`,
+        `Diff catturato da Trama:\n\`\`\`diff\n${candidate.diff.slice(0, 60_000)}\n\`\`\``,
+        "Rispondi con verdict approved oppure changesRequested e un riassunto breve.",
+      ].join("\n\n");
+      const answer = await client.runTurn({
+        threadId: opening.threadId,
+        prompt,
+        cwd: assignment.workspace.worktreeRoot,
+        model,
+        outputSchema: {
+          type: "object",
+          properties: { verdict: { type: "string", enum: ["approved", "changesRequested"] }, summary: { type: "string" } },
+          required: ["verdict", "summary"],
+          additionalProperties: false,
+        },
+        onEvent: () => undefined,
+      });
+      let parsed: { verdict?: string; summary?: string };
+      try {
+        parsed = JSON.parse(answer) as { verdict?: string; summary?: string };
+      } catch {
+        throw new Error("La revisione tecnica non ha restituito un verdetto leggibile.");
+      }
+      const review = recordTechnicalReview(document, candidateId, {
+        reviewerThreadId: opening.threadId,
+        authorThreadId: assignment.threadId,
+        verdict: parsed.verdict === "approved" ? "approved" : "changesRequested",
+        summary: parsed.summary?.trim() || "",
+      });
+      appendEvent(
+        document,
+        "trama",
+        { type: "activity", title: `Revisione tecnica di ${candidateId}: ${review.verdict === "approved" ? "approvata" : "modifiche richieste"}`, detail: review.summary, tone: "tool" },
+        requestId,
+      );
+      this.changed();
+      return review;
+    } finally {
+      client.stop();
+    }
+  }
+
+  async approveCandidateByPerson(candidateId: string): Promise<void> {
+    const project = this.requireProject();
+    approveCandidate(project.document, candidateId, "Persona", await this.headSHA(project.rootPath));
+    this.changed();
+  }
+
+  async publishCandidateByPerson(candidateId: string): Promise<void> {
+    const project = this.requireProject();
+    const document = project.document;
+    const candidate = findCandidate(document, candidateId);
+    if (!candidate) throw new DomainError("Candidato non trovato.");
+    const report = candidateReport(document, candidate, await this.headSHA(project.rootPath));
+    if (report.blockers.length) throw new DomainError(`Il candidato non è verificato: ${report.blockers.map((b) => b.code).join(", ")}.`);
+    if (!candidate.humanApproval || report.approvalInvalidated) throw new DomainError("Rivedi e approva il candidato prima di pubblicarlo.");
+    if (candidate.pullRequest) throw new DomainError(`Il candidato è già pubblicato: ${candidate.pullRequest.url}`);
+    const repository = project.github.repository;
+    if (!repository) throw new DomainError("Il progetto non ha un remoto GitHub.");
+    const assignment = findAssignment(document, candidate.assignmentId)!;
+    const baseBranch = project.snapshot.branch ?? "main";
+    const published = await publishCandidate({
+      candidate,
+      assignment,
+      repository,
+      baseBranch,
+      title: assignment.objective,
+      body: pullRequestBody(candidate, assignment, document.decisions),
+    });
+    candidate.pullRequest = { ...published, at: new Date().toISOString() };
+    appendEvent(document, "trama", { type: "activity", title: `Pull request #${published.number} pubblicata`, detail: published.url, tone: "tool" });
+    this.changed();
+    await this.send(`Ho pubblicato il candidato ${candidate.id} come pull request #${published.number}: ${published.url}`, null, null, null);
   }
 
   // MARK: Settings

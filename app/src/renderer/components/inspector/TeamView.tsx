@@ -1,7 +1,7 @@
 import { IconArrowLeft } from "@tabler/icons-react";
 import { useState } from "react";
 import type { Specialist } from "@shared/domain";
-import { ASSIGNMENT_STATUS, AssignmentCard, TeamProposalCard } from "@/components/chat/Cards";
+import { ASSIGNMENT_STATUS, AssignmentCard, CandidateCard, TeamProposalCard } from "@/components/chat/Cards";
 import { Spinner } from "@/components/Spinner";
 import { Button } from "@/components/ui/button";
 import { Badge, TextArea } from "@/components/ui/field";
@@ -143,6 +143,16 @@ export function SpecialistView({ id }: { id: string }) {
           {specialist.origin === "teamProposal" ? "Dalla proposta confermata" : "Aggiunto dal Coordinatore"} · {formatRelativeTime(specialist.createdAt)}
         </p>
       </InspectorSection>
+      {project.document.candidates.some((c) => c.specialistId === specialist.id) ? (
+        <InspectorSection title="Candidati">
+          {project.document.candidates
+            .filter((c) => c.specialistId === specialist.id)
+            .reverse()
+            .map((c) => (
+              <CandidateCard key={c.id} candidateId={c.id} />
+            ))}
+        </InspectorSection>
+      ) : null}
       <InspectorSection title={`Incarichi (${specialist.assignments.length})`}>
         {specialist.assignments.length === 0 ? <EmptyNote>Nessun incarico.</EmptyNote> : null}
         {[...specialist.assignments].reverse().map((assignment) =>

@@ -54,7 +54,7 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
     case "thread/resume":
       return send({ id, error: { code: -32000, message: "thread not found" } });
     case "thread/start": {
-      const threadId = `thread-${++threads}`;
+      const threadId = `thread-${process.pid}-${++threads}`;
       const server = params.config?.["mcp_servers.trama"];
       if (server) toolServers.set(threadId, server);
       return send({ id, result: { thread: { id: threadId } } });
@@ -70,6 +70,11 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
       };
       const toolDone = (tool, result) =>
         send({ method: "item/completed", params: { threadId, turnId, item: { id: `tool-${tool}`, type: "mcpToolCall", server: "trama", tool, status: "completed", result } } });
+      if (params.outputSchema) {
+        const verdict = text.includes("RIFIUTA") ? "changesRequested" : "approved";
+        setTimeout(() => finish(JSON.stringify({ verdict, summary: "Il diff rispetta le decisioni indicate." })), 10);
+        return;
+      }
       if (params.sandboxPolicy?.type === "workspaceWrite") {
         // A specialist with its own worktree: write one file there, as Codex would.
         const { writeFileSync } = await import("node:fs");
@@ -103,6 +108,22 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
         }).then((result) => {
           toolDone("assign_task", result);
           finish(result.isError ? `Rifiutato: ${result.content[0].text}` : "Ho assegnato il lavoro ad Ada.");
+        });
+        return;
+      }
+      const candidateMatch = text.match(/\[candidato:(A-[0-9A-F]+):(D-[0-9A-F]+)\]/);
+      if (candidateMatch) {
+        callTool(threadId, "declare_candidate", { assignment: candidateMatch[1], decisionIDs: [candidateMatch[2]] }).then(async (declared) => {
+          toolDone("declare_candidate", declared);
+          if (declared.isError) return finish(`Rifiutato: ${declared.content[0].text}`);
+          const { candidateID } = JSON.parse(declared.content[0].text);
+          const verified = await callTool(threadId, "verify_candidate", { candidate: candidateID, check: "git_status" });
+          toolDone("verify_candidate", verified);
+          const reviewed = await callTool(threadId, "review_candidate", { candidate: candidateID });
+          toolDone("review_candidate", reviewed);
+          const cleared = await callTool(threadId, "clear_candidate", { candidate: candidateID });
+          toolDone("clear_candidate", cleared);
+          finish(cleared.isError ? `Via libera rifiutato: ${cleared.content[0].text}` : `Candidato ${candidateID} verificato e con via libera.`);
         });
         return;
       }

@@ -68,6 +68,28 @@ await shot("04d-assignment-done");
 await page.getByRole("button", { name: /^Team/ }).first().click();
 await shot("04e-team-inspector");
 await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
+
+// Candidate: correct the mandate to allow integration, then declare, verify, review and clear.
+await page.getByRole("button", { name: /^Mandato/ }).first().click();
+await page.getByRole("button", { name: "Correggi", exact: true }).click();
+await page.getByRole("checkbox", { name: /Integrare candidati/ }).check();
+await page.getByRole("button", { name: "Salva correzione" }).click();
+await page.getByText(/Mandato v2/).first().waitFor({ timeout: 20_000 });
+await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
+const body = await page.locator("body").innerText();
+const assignmentId = body.match(/Incarico (A-[0-9A-F]{8})/)[1];
+const decisionId = body.match(/Decisione (D-[0-9A-F]{8})/)[1];
+await page.getByLabel("Messaggio al Coordinatore").fill(`[candidato:${assignmentId}:${decisionId}]`);
+await page.keyboard.press("Enter");
+await page.getByText("Deciso", { exact: true }).first().waitFor({ timeout: 30_000 });
+await page.waitForTimeout(500);
+await shot("04f-candidate");
+await page.getByRole("button", { name: "Apri il diff" }).first().click();
+await shot("04g-candidate-diff");
+await page.getByRole("button", { name: "Approva questo candidato" }).first().click();
+await page.waitForTimeout(500);
+await shot("04h-candidate-approved");
+await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
 await page.getByRole("button", { name: "Mappa del progetto" }).click();
 await shot("05-map");
 await page.getByRole("button", { name: /Orders/ }).first().click();

@@ -1,5 +1,9 @@
 import {
   IconBriefcase,
+  IconCircleCheck,
+  IconCircleX,
+  IconFileDiff,
+  IconGitPullRequest,
   IconChevronRight,
   IconGitBranch,
   IconInfoCircle,
@@ -8,7 +12,7 @@ import {
   IconTelescope,
   IconUsersGroup,
 } from "@tabler/icons-react";
-import type { AssignmentStatus } from "@shared/domain";
+import type { AssignmentStatus, CandidateState } from "@shared/domain";
 import { Spinner } from "@/components/Spinner";
 import { useState } from "react";
 import type * as React from "react";
@@ -424,6 +428,113 @@ export function AssignmentCard({ assignmentId }: { assignmentId: string }) {
           )}
         </div>
       ) : null}
+    </CardFrame>
+  );
+}
+
+export const CANDIDATE_STATE: Record<CandidateState, { label: string; tone: "info" | "success" | "secondary" }> = {
+  building: { label: "In costruzione", tone: "secondary" },
+  verified: { label: "Verificato", tone: "info" },
+  decided: { label: "Deciso", tone: "success" },
+};
+
+const BLOCKER_TEXT: Record<string, string> = {
+  BASE_CHANGED: "La base del progetto è cambiata",
+  DECISION_CHANGED: "Una decisione è cambiata",
+  UNRESOLVED_CHOICE: "Scelta non risolta",
+  EXTERNAL_EFFECT_UNSUPPORTED: "Effetto esterno non supportato",
+  EVIDENCE_MISSING: "Verifica da eseguire",
+  EVIDENCE_STALE: "Verifica non più valida",
+  CHECK_FAILED: "Verifica non superata",
+};
+
+export function CandidateCard({ candidateId }: { candidateId: string }) {
+  const project = useUi((s) => s.app?.project)!;
+  const setInspector = useUi((s) => s.setInspector);
+  const candidate = project.document.candidates.find((c) => c.id === candidateId);
+  const report = project.candidateReports[candidateId];
+  if (!candidate || !report) return null;
+  const state = CANDIDATE_STATE[report.state];
+  const specialist = project.document.team.specialists.find((s) => s.id === candidate.specialistId);
+  const approved = candidate.humanApproval && !report.approvalInvalidated;
+  return (
+    <CardFrame icon={<IconFileDiff stroke={1.8} />} title={`Candidato ${candidate.id}`} aside={<Badge tone={state.tone}>{state.label}</Badge>}>
+      <p className="text-ui-sm text-muted-foreground">
+        {specialist?.name ?? candidate.specialistId} · incarico {candidate.assignmentId} · {candidate.changedFiles.length === 1 ? "1 file" : `${candidate.changedFiles.length} file`}
+      </p>
+      <Field label="Decisioni pertinenti">
+        {candidate.requiredDecisionIds.map((id) => (
+          <button key={id} type="button" className="mr-2 font-mono text-[11.5px] text-[var(--color-text-accent)] hover:underline" onClick={() => setInspector({ kind: "decision", id })}>
+            {id} v{candidate.decisionVersions[id]}
+          </button>
+        ))}
+      </Field>
+      <Field label="Evidenze delle verifiche">
+        <div className="space-y-0.5">
+          {candidate.requiredChecks.map((check) => {
+            const evidence = candidate.evidence[check];
+            return (
+              <div key={check} className="flex items-center gap-1.5 text-ui-sm">
+                {evidence?.result === "pass" ? (
+                  <IconCircleCheck className="size-3.5 text-success" />
+                ) : evidence?.result === "fail" ? (
+                  <IconCircleX className="size-3.5 text-destructive" />
+                ) : (
+                  <span className="inline-block size-3.5 rounded-full border border-dashed border-muted-foreground/50" />
+                )}
+                <span className="font-mono text-[11.5px]">{check}</span>
+                <span className="text-muted-foreground">{evidence ? (evidence.result === "pass" ? "superata" : "non superata") : "non eseguita"}</span>
+              </div>
+            );
+          })}
+        </div>
+      </Field>
+      {candidate.technicalReview ? (
+        <Field label={`Revisione tecnica · ${candidate.technicalReview.verdict === "approved" ? "approvata" : "modifiche richieste"}`}>
+          {candidate.technicalReview.summary}
+        </Field>
+      ) : null}
+      {report.blockers.length ? (
+        <Field label="Cosa manca">
+          <ul className="space-y-0.5 text-ui-sm">
+            {report.blockers.map((b) => (
+              <li key={`${b.code}-${b.detail}`}>
+                {BLOCKER_TEXT[b.code] ?? b.code}
+                {b.code === "BASE_CHANGED" ? null : <span className="text-muted-foreground"> · {b.detail}</span>}
+              </li>
+            ))}
+          </ul>
+        </Field>
+      ) : null}
+      {candidate.clearance ? (
+        <p className="mt-2 text-ui-sm text-muted-foreground">
+          {report.clearanceInvalidated ? "Il via libera del Coordinatore non vale più: sono cambiate evidenze o decisioni." : "Via libera del Coordinatore."}
+        </p>
+      ) : null}
+      {candidate.pullRequest ? (
+        <button
+          type="button"
+          className="mt-2 inline-flex items-center gap-1 text-ui-sm text-[var(--color-text-accent)] hover:underline"
+          onClick={() => void act("shell:openExternal", { url: candidate.pullRequest!.url })}
+        >
+          <IconGitPullRequest className="size-3.5" /> Pull request #{candidate.pullRequest.number}
+        </button>
+      ) : null}
+      <div className="mt-3 flex flex-wrap gap-2">
+        <Button size="sm" variant="outline" onClick={() => setInspector({ kind: "candidate", id: candidate.id })}>
+          Apri il diff
+        </Button>
+        {report.blockers.length === 0 && !approved ? (
+          <Button size="sm" variant="outline" onClick={() => void act("candidate:approve", { candidateId })}>
+            Approva questo candidato
+          </Button>
+        ) : null}
+        {approved && !candidate.pullRequest && project.github.repository ? (
+          <Button size="sm" onClick={() => void act("candidate:publish", { candidateId })}>
+            <IconGitPullRequest /> Pubblica pull request
+          </Button>
+        ) : null}
+      </div>
     </CardFrame>
   );
 }

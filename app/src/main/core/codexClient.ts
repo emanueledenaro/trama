@@ -154,6 +154,8 @@ export interface TurnOptions {
   images?: string[];
   /** The only directory the turn may write; the turn is read-only when absent. */
   writableRoot?: string | null;
+  /** JSON schema the final answer must follow. */
+  outputSchema?: JsonObject;
   onEvent: (event: TurnEvent) => void;
 }
 
@@ -330,6 +332,7 @@ export class CodexClient {
           : { type: "readOnly", networkAccess: false },
       };
       if (options.effort) params.effort = options.effort;
+      if (options.outputSchema) params.outputSchema = options.outputSchema;
       this.request("turn/start", params)
         .then((result) => {
           const turnId = asString(asObject(asObject(result)?.turn)?.id);
@@ -629,7 +632,7 @@ export class CodexClient {
           server: asString(item.server) ?? "",
           tool: asString(item.tool) ?? "",
           succeeded: !failed,
-          error: asString(asObject(item.error)?.message),
+          error: asString(asObject(item.error)?.message) ?? (failed ? refusalText(item.result) : null),
         });
         return;
       }
@@ -646,6 +649,20 @@ export class CodexClient {
         return;
       }
     }
+  }
+}
+
+/** The error a tool put in the text of a refused result, as Trama's tools do. */
+function refusalText(result: Json | undefined): string | null {
+  const text = asString(asObject(asArray(asObject(result)?.content)[0])?.text);
+  if (!text) return null;
+  try {
+    const error = asObject(asObject(JSON.parse(text) as Json)?.error);
+    const code = asString(error?.code);
+    const message = asString(error?.message);
+    return code ? `${code}${message ? `: ${message}` : ""}` : null;
+  } catch {
+    return null;
   }
 }
 

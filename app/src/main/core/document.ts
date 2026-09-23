@@ -25,6 +25,7 @@ export function emptyDocument(projectId: string): ProjectDocument {
     selectedEffort: null,
     composerDraft: "",
     team: { proposals: [], specialists: [], confirmedAt: null },
+    candidates: [],
   };
 }
 

@@ -71,8 +71,30 @@ describe("team flow", () => {
       true,
     );
 
+    // Candidate: declared on the finished work, verified, reviewed and cleared within the mandate.
+    controller.recordDecision({ id: null, value: "Un ordine pagato va in revisione", acceptedExample: "Ordine 42", rationale: "Evita rimborsi errati" });
+    const decision = document.decisions[0]!;
+    await controller.grantMandate({
+      requestId: null,
+      objectives: ["Documentare l'annullamento"],
+      priorities: [],
+      scopeModuleIds: ["Sources/Orders"],
+      authorizedActions: ["executeInWorktree", "integrateCandidate"],
+      limits: [],
+    });
+    await controller.send(`[candidato:${assignment.id}:${decision.id}]`, null, null, null);
+    const candidate = document.candidates[0]!;
+    expect(candidate.changedFiles).toEqual(["NOTE.md"]);
+    expect(candidate.evidence.git_status?.result).toBe("pass");
+    expect(candidate.technicalReview?.verdict).toBe("approved");
+    expect(candidate.technicalReview?.reviewerThreadId).not.toBe(assignment.threadId);
+    expect(candidate.clearance).not.toBeNull();
+    expect(controller.snapshot.project!.candidateReports[candidate.id]?.state).toBe("decided");
+    await controller.approveCandidateByPerson(candidate.id);
+    expect(candidate.humanApproval?.actor).toBe("Persona");
+    await expect(controller.publishCandidateByPerson(candidate.id)).rejects.toThrow(/remoto GitHub/);
+
     // The next message carries the team report once.
-    await controller.send("Com'è andata?", null, null, null);
     expect(assignment.reportedStatus).toBe("completed");
 
     await controller.send("[assegna] [lento]", null, null, null);

@@ -1,15 +1,18 @@
-import type { MandateAction, ProjectDocument, SpecialistTool, WorkKind } from "@shared/domain";
+import type { MandateAction, ProjectDocument, SpecialistTool, TechnicalReview, WorkKind } from "@shared/domain";
+import type { WorkspaceReview } from "./workspace";
 import { MEMORY_BYTE_LIMIT } from "@shared/domain";
 import type { RepositorySnapshot } from "@shared/repository";
 import type { GitHubState } from "@shared/domain";
 import { createDecisionRequest, createMandateRequest, DELEGABLE_ACTIONS, DomainError, MAXIMUM_ALTERNATIVES } from "./pact";
 import { ALL_CHECKS, CHECKS, type CheckResult, type ReadOnlyCheck } from "./checks";
+import { candidateReport, CandidateError, clearCandidate, declareCandidate, findCandidate } from "./candidates";
 import { studyText } from "./study";
 import {
   addSpecialist,
   assign,
   authorize,
   currentAssignment,
+  findAssignment,
   findSpecialist,
   isActive,
   isTeamConfirmed,
@@ -178,6 +181,37 @@ export const COORDINATOR_TOOLS: ToolDefinition[] = [
     required: ["specialist", "reason"],
     readOnly: false,
   },
+  {
+    name: "declare_candidate",
+    description:
+      "Within the mandate (executeInWorktree), declare a candidate from a specialist's work: Trama captures the exact content of the assignment's worktree now and binds it to the assignment's modules and required checks and to the Pact decisions you name. The diff, the checks and the evidence are Trama's, not yours. A correction is a new candidate, never a new run on an old one.",
+    properties: { assignment: text, decisionIDs: list(1), unresolvedChoices: list(0), externalEffects: list(0) },
+    required: ["assignment", "decisionIDs"],
+    readOnly: false,
+  },
+  {
+    name: "verify_candidate",
+    description: `Run one of the candidate's required checks in the Codex sandbox on the candidate's own worktree and record the result as evidence of that exact candidate. Allowed without a mandate; the output is Trama's evidence, not yours. A failed check keeps its original output and blocks the green light; changing the work means declaring a new candidate. Checks: ${ALL_CHECKS.join(", ")}.`,
+    properties: { candidate: text, check: { type: "string", enum: ALL_CHECKS } },
+    required: ["candidate", "check"],
+    readOnly: true,
+  },
+  {
+    name: "review_candidate",
+    description:
+      "Ask Trama for a technical review of the candidate from a thread distinct from its author. The review refers to the candidate; it is neither a human review of the Pact nor a merge, and it never replaces the person's approval.",
+    properties: { candidate: text },
+    required: ["candidate"],
+    readOnly: true,
+  },
+  {
+    name: "clear_candidate",
+    description:
+      "Within the mandate (integrateCandidate), give the Coordinator's green light to a candidate that passed every required check and whose technical review approves it. New evidence or a changed relevant decision invalidates a previous green light, and the candidate card shows it.",
+    properties: { candidate: text },
+    required: ["candidate"],
+    readOnly: false,
+  },
 ];
 
 export interface ToolContext {
@@ -188,7 +222,7 @@ export interface ToolContext {
   /** Called after a tool changed the document: persist and publish. */
   changed(): void;
   /** Adds a conversation card for a request the Coordinator put to the person. */
-  addCard(kind: "mandate" | "decision" | "teamProposal" | "assignment", title: string, referenceId: string): void;
+  addCard(kind: "mandate" | "decision" | "teamProposal" | "assignment" | "candidate", title: string, referenceId: string): void;
   /** Models of the Codex catalogue a specialist may use, and the Coordinator's own. */
   models: string[];
   defaultModel: string | null;
@@ -198,6 +232,13 @@ export interface ToolContext {
   stopAssignment(id: string): void;
   runCheck(check: ReadOnlyCheck): Promise<CheckResult>;
   availableChecks: ReadOnlyCheck[];
+  /** Captures what an assignment's worktree changed, as Trama sees it now. */
+  reviewWorkspace(assignmentId: string): Promise<WorkspaceReview>;
+  /** Runs a required check on a candidate's worktree and records the evidence. */
+  verifyCandidate(candidateId: string, check: ReadOnlyCheck): Promise<CheckResult>;
+  /** Runs a technical review in a thread distinct from the author's. */
+  reviewCandidate(candidateId: string): Promise<TechnicalReview>;
+  headSHA(): Promise<string | null>;
 }
 
 function refused(authorization: ReturnType<typeof authorize>, action: MandateAction, outside: string[] = []): ToolResult {
@@ -463,10 +504,74 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
         context.changed();
         return toolSuccess({ specialistID: specialist.id, status: "removed" });
       }
+      case "declare_candidate": {
+        const assignment = findAssignment(document, typeof args.assignment === "string" ? args.assignment : "");
+        if (!assignment) return toolFailure("unknown_assignment", `Unknown assignment: ${String(args.assignment)}.`);
+        const authorization = authorize(document.mandate, "executeInWorktree", assignment.moduleIds);
+        if (authorization !== "authorized") return refused(authorization, "executeInWorktree");
+        if (!assignment.workspace) return toolFailure("missing_worktree", `Assignment ${assignment.id} has no worktree to capture a candidate from.`);
+        if (isActive(assignment)) return toolFailure("assignment_running", `Assignment ${assignment.id} is still running; declare the candidate when it ends.`);
+        const review = await context.reviewWorkspace(assignment.id);
+        if (review.changedFiles.length === 0) return toolFailure("empty_candidate", `The worktree of ${assignment.id} has no changes.`);
+        const candidate = declareCandidate(
+          document,
+          {
+            assignmentId: assignment.id,
+            decisionIds: strings(args.decisionIDs),
+            unresolvedChoices: strings(args.unresolvedChoices),
+            externalEffects: strings(args.externalEffects),
+          },
+          review,
+        );
+        context.addCard("candidate", "Candidato", candidate.id);
+        context.changed();
+        return toolSuccess({
+          candidateID: candidate.id,
+          snapshot: candidate.snapshotId,
+          changedFiles: candidate.changedFiles,
+          requiredChecks: candidate.requiredChecks,
+          excludedSensitiveFiles: review.excludedSensitiveFiles,
+        });
+      }
+      case "verify_candidate": {
+        const candidate = findCandidate(document, typeof args.candidate === "string" ? args.candidate : "");
+        if (!candidate) return toolFailure("unknown_candidate", `There is no candidate ${String(args.candidate)}.`);
+        const check = args.check as ReadOnlyCheck;
+        if (!candidate.requiredChecks.includes(check)) {
+          return toolFailure("check_not_required", `${String(args.check)} is not one of the required checks of candidate ${candidate.id}.`);
+        }
+        const result = await context.verifyCandidate(candidate.id, check);
+        const report = candidateReport(document, candidate, await context.headSHA());
+        return toolSuccess({
+          candidateID: candidate.id,
+          check,
+          passed: result.exitCode === 0,
+          exitCode: result.exitCode,
+          output: result.output,
+          state: report.state,
+          blockers: report.blockers as unknown as Json,
+        });
+      }
+      case "review_candidate": {
+        const candidate = findCandidate(document, typeof args.candidate === "string" ? args.candidate : "");
+        if (!candidate) return toolFailure("unknown_candidate", `There is no candidate ${String(args.candidate)}.`);
+        const review = await context.reviewCandidate(candidate.id);
+        return toolSuccess({ candidateID: candidate.id, reviewID: review.id, verdict: review.verdict, summary: review.summary });
+      }
+      case "clear_candidate": {
+        const candidate = findCandidate(document, typeof args.candidate === "string" ? args.candidate : "");
+        if (!candidate) return toolFailure("unknown_candidate", `There is no candidate ${String(args.candidate)}.`);
+        const authorization = authorize(document.mandate, "integrateCandidate", candidate.touchedModules);
+        if (authorization !== "authorized") return refused(authorization, "integrateCandidate");
+        clearCandidate(document, candidate.id, "Coordinatore", await context.headSHA());
+        context.changed();
+        return toolSuccess({ candidateID: candidate.id, state: "decided", note: "The person still reviews and publishes the candidate." });
+      }
       default:
         return toolFailure("unknown_tool", `Unknown tool ${name}.`);
     }
   } catch (error) {
+    if (error instanceof CandidateError) return toolFailure(error.code, error.message);
     if (error instanceof DomainError) return toolFailure("invalid_arguments", error.message);
     if (error instanceof TeamError) return toolFailure(error.code, error.message);
     throw error;
@@ -486,6 +591,7 @@ export function developerInstructions(projectName: string): string {
     "At the end of your study propose the project team with propose_team: one specialist per real need, each with a competence and the reason this project needs it, never one to fill a role. The person confirms or corrects it once, and only that answer creates the specialists. From then on you change the team yourself within the mandate, with create_specialist and stop_specialist, and you say it in the conversation.",
     "Within the mandate, assign_task gives a specialist work in a Codex thread and worktree that Trama owns: objective, ticket or exercise, modules, dependencies, required checks, your instructions and the model you propose for it. Assign in parallel only work that is independent, and read_team to see where each specialist stands. stop_specialist asks Trama to stop work: the stop is first requested and then confirmed, and what was done is kept.",
     "run_readonly_check runs a check on the project checkout without writing to it; you may use it without a mandate.",
+    "When a specialist's work is done, declare_candidate captures its worktree and binds it to the Pact decisions it must respect; verify_candidate runs its required checks and review_candidate asks a distinct reviewer. Within the mandate, clear_candidate gives your green light to a verified and approved candidate. The person always reviews and publishes it: never claim that work is merged or published.",
     "When the person answers a card or changes the mandate, Trama writes it to you as the person's message.",
     "When you rely on a repository file, name its path relative to the project root.",
   ].join("\n");
