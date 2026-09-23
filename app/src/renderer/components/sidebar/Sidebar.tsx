@@ -241,6 +241,7 @@ export function Sidebar({ isMac }: { isMac: boolean }) {
             {app.recentProjects.map((recent) => {
               const open = project?.id === recent.id;
               const loading = app.loadingProject === recent.path;
+              const background = app.backgroundProjects.find((b) => b.id === recent.id);
               return (
                 <div key={recent.id}>
                   <div className="group/thread-row relative">
@@ -254,9 +255,17 @@ export function Sidebar({ isMac }: { isMac: boolean }) {
                         {open ? <IconFolderOpen className="size-4" stroke={1.6} /> : <IconFolder className="size-4" stroke={1.6} />}
                       </LeadingIcon>
                       <span className="min-w-0 flex-1 truncate font-system-ui text-ui font-normal text-foreground/95">{recent.name}</span>
+                      {background ? (
+                        <span
+                          className="shrink-0 text-ui-xs text-muted-foreground"
+                          title={`${background.runningAssignments} incarichi in corso${background.pendingDecisions ? ` · ${background.pendingDecisions} decisioni da prendere` : ""}`}
+                        >
+                          {background.runningAssignments} al lavoro
+                        </span>
+                      ) : null}
                     </button>
                     <div className="absolute top-1/2 right-1.5 flex -translate-y-1/2 items-center">
-                      {loading ? (
+                      {loading || background ? (
                         <Spinner />
                       ) : !open ? (
                         <button

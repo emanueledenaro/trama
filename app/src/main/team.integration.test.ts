@@ -132,3 +132,64 @@ describe("team flow", () => {
     expect(titles).toContain("Verifica stato Git: superata");
   });
 });
+
+describe("switching project (C07)", () => {
+  it("keeps the previous project's authorized work running and its history separate", async () => {
+    const data = await mkdtemp(join(tmpdir(), "trama-data-"));
+    const makeRepo = async () => {
+      const repo = await mkdtemp(join(tmpdir(), "trama-repo-"));
+      await cp(join(root, "resources/DemoProject"), repo, { recursive: true });
+      await git(["init", "-b", "main"], repo, false);
+      await git(["add", "."], repo, false);
+      await git(["-c", "user.name=T", "-c", "user.email=t@t", "commit", "-m", "init"], repo, false);
+      return repo;
+    };
+    const first = await makeRepo();
+    const second = await makeRepo();
+    controller = new TramaController(data, {
+      publish: () => undefined,
+      openExternal: async () => undefined,
+      applyTheme: () => undefined,
+      notify: () => undefined,
+      setOpenAtLogin: () => undefined,
+      aiHeroResourceDirectory: join(root, "resources/AIHero"),
+      demoResourceDirectory: "",
+      codexExecutable: join(root, "test-fixtures/fake-codex.mjs"),
+    });
+    await controller.start();
+    await controller.openProject(first);
+    await until(() => controller!.snapshot.project?.phase.kind === "ready");
+    const document = controller.snapshot.project!.document;
+    await controller.send("[proponi-team]", null, null, null);
+    await controller.answerTeamProposal(document.team.proposals[0]!.id, null, null);
+    await controller.grantMandate({
+      requestId: null,
+      objectives: ["Nota"],
+      priorities: [],
+      scopeModuleIds: ["Sources/Orders"],
+      authorizedActions: ["executeInWorktree"],
+      limits: [],
+    });
+    await controller.send("[assegna] [lento]", null, null, null);
+    const assignment = document.team.specialists[0]!.assignments[0]!;
+    await until(() => assignment.status === "running");
+    const eventsBefore = document.events.length;
+
+    await controller.openProject(second);
+    await until(() => controller!.snapshot.project?.phase.kind === "ready");
+    const other = controller.snapshot.project!;
+    expect(other.rootPath).not.toBe(controller.snapshot.backgroundProjects[0]?.rootPath);
+    expect(controller.snapshot.backgroundProjects).toMatchObject([{ runningAssignments: 1 }]);
+    expect(assignment.status).toBe("running");
+    expect(other.document.events.some((e) => e.assignmentId === assignment.id)).toBe(false);
+    expect(other.runningWork).toEqual([]);
+
+    await controller.openProject(first);
+    await until(() => controller!.snapshot.project?.phase.kind === "ready");
+    expect(controller.snapshot.project!.document).toBe(document);
+    expect(controller.snapshot.backgroundProjects).toEqual([]);
+    expect(document.events.length).toBeGreaterThanOrEqual(eventsBefore);
+    await controller.stopSpecialistWork(assignment.id);
+    await until(() => assignment.status === "stopped");
+  }, 30_000);
+});

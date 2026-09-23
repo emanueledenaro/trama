@@ -506,6 +506,8 @@ export interface AppState {
   providers: Record<ProviderId, ProviderState>;
   settings: AppSettings;
   error: string | null;
+  /** Projects not selected whose team is still working (C07). */
+  backgroundProjects: BackgroundProject[];
   platform: NodeJS.Platform;
 }
 
@@ -513,4 +515,13 @@ export interface ProviderState {
   account: ProviderAccount | null;
   models: ProviderModel[];
   checking: boolean;
+}
+
+export interface BackgroundProject {
+  id: string;
+  name: string;
+  rootPath: string;
+  runningAssignments: number;
+  pendingDecisions: number;
+  lastUpdate: string | null;
 }

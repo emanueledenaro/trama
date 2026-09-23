@@ -234,6 +234,7 @@ export class TramaController {
       >,
       settings: { theme: "system", sidebarWidth: 256 },
       error: null,
+      backgroundProjects: [],
       platform: process.platform,
     };
     this.state.codex = this.state.providers.codex;
@@ -246,6 +247,14 @@ export class TramaController {
 
   /** State derived from the document: running specialist turns and candidate verdicts. */
   private refreshDerived(): void {
+    this.state.backgroundProjects = [...this.parkedProjects.values()].map((p) => ({
+      id: p.id,
+      name: p.name,
+      rootPath: p.rootPath,
+      runningAssignments: [...this.specialistRuntimes.values()].filter((r) => r.projectId === p.id).length,
+      pendingDecisions: p.document.decisionRequests.filter((d) => !d.outcome).length,
+      lastUpdate: p.document.team.specialists.map((s) => s.updatedAt).sort().at(-1) ?? null,
+    }));
     const project = this.state.project;
     if (!project) return;
     project.runningWork = this.runningWorkKeys();
@@ -290,6 +299,10 @@ export class TramaController {
     this.unwatchProject();
     await this.flushSave();
     this.stopRuntime();
+    for (const [, parked] of this.parkedProjects) {
+      if (parked.stateWritable) await this.storage.saveDocument(parked.document).catch(() => undefined);
+    }
+    this.parkedProjects.clear();
     this.discovery.stop();
     for (const [, runtime] of this.providerDiscovery) runtime.stop();
     this.providerDiscovery.clear();
@@ -456,7 +469,8 @@ export class TramaController {
       throw new DomainError("Scegli la cartella di un progetto, non la radice del disco o la cartella Inizio.");
     }
     await this.flushSave();
-    this.stopRuntime();
+    this.parkSelectedProject();
+    this.unwatchProject();
     this.state.loadingProject = root;
     this.state.project = null;
     this.publishNow();
@@ -465,6 +479,27 @@ export class TramaController {
       const existing = this.state.recentProjects.find((p) => p.path === root);
       const id = existing?.id ?? randomUUID();
       const snapshot = await scanRepository(root, isDemo);
+      const parked = this.parkedProjects.get(id);
+      if (parked) {
+        // Its team kept working: resume the same state instead of reading an older copy from disk.
+        this.parkedProjects.delete(id);
+        parked.snapshot = snapshot;
+        this.state.project = parked;
+        this.state.loadingProject = null;
+        this.lastProjectId = id;
+        this.state.recentProjects = [
+          { ...(existing ?? { id, name: snapshot.name, path: root, isDemo }), lastOpenedAt: new Date().toISOString() },
+          ...this.state.recentProjects.filter((p) => p.id !== id),
+        ];
+        await this.storage.saveRecentProjects(this.state.recentProjects);
+        await this.saveSettings();
+        this.publishNow();
+        if (!isDemo) void this.refreshGitHub();
+        this.watchProject(root);
+        void this.loadSkills();
+        void this.startCoordinator();
+        return;
+      }
       const loaded = await this.storage.loadDocument(id);
       let document = loaded.document;
       if (!document && loaded.writable && this.legacyRoot && existing) {
@@ -557,7 +592,7 @@ export class TramaController {
 
   async closeProject(): Promise<void> {
     await this.flushSave();
-    this.stopRuntime();
+    this.parkSelectedProject();
     this.unwatchProject();
     this.state.project = null;
     this.lastProjectId = null;
@@ -742,6 +777,35 @@ export class TramaController {
     this.stopCoordinatorRuntime();
     for (const [, runtime] of this.specialistRuntimes) runtime.client.stop();
     this.specialistRuntimes.clear();
+  }
+
+  /** Projects that are not selected but whose authorized team is still working (C07). */
+  private readonly parkedProjects = new Map<string, ActiveProjectState>();
+
+  private hasRunningWork(projectId: string): boolean {
+    return [...this.specialistRuntimes.values()].some((r) => r.projectId === projectId);
+  }
+
+  /**
+   * Leaves the selected project: its Coordinator stops, while specialists already authorized keep
+   * working in their own runtime and write to their own project's history.
+   */
+  private parkSelectedProject(): void {
+    this.stopCoordinatorRuntime();
+    const project = this.state.project;
+    if (!project) return;
+    project.phase = { kind: "idle" };
+    project.streaming = null;
+    if (this.hasRunningWork(project.id)) this.parkedProjects.set(project.id, project);
+  }
+
+  /** A parked project whose last running work ended is saved and let go. */
+  private releaseParkedProject(project: ActiveProjectState): void {
+    if (project === this.state.project || this.hasRunningWork(project.id)) return;
+    if (this.parkedProjects.get(project.id) !== project) return;
+    this.parkedProjects.delete(project.id);
+    if (project.stateWritable) void this.storage.saveDocument(project.document).catch((error) => this.fail(error));
+    this.publish();
   }
 
   private stopCoordinatorRuntime(): void {
@@ -1349,18 +1413,34 @@ export class TramaController {
     return join(this.storage.root, "Worktrees");
   }
 
-  private specialistActivity(assignmentId: string, turnKey: string, title: string, detail: string | null, tone: "info" | "tool" | "error" = "tool") {
-    const project = this.state.project;
-    if (!project) return;
+  private specialistActivity(
+    project: ActiveProjectState,
+    assignmentId: string,
+    turnKey: string,
+    title: string,
+    detail: string | null,
+    tone: "info" | "tool" | "error" = "tool",
+  ) {
     appendEvent(project.document, "specialist", { type: "activity", title, detail, tone }, null, new Date(), {
       assignmentId,
       workKey: `${assignmentId}:${turnKey}`,
     });
-    this.changed();
+    this.changedIn(project);
+  }
+
+  /** Persists a change of any open project: the selected one, or one whose team keeps working in the background (C07). */
+  private changedIn(project: ActiveProjectState): void {
+    if (project === this.state.project) {
+      this.changed();
+      return;
+    }
+    if (project.stateWritable) void this.storage.saveDocument(project.document).catch((error) => this.fail(error));
+    this.publish();
   }
 
   private runningWorkKeys(): string[] {
-    return [...this.specialistRuntimes.keys()].map((id) => {
+    const projectId = this.state.project?.id;
+    return [...this.specialistRuntimes.entries()].filter(([, r]) => r.projectId === projectId).map(([id]) => {
       const assignment = this.state.project ? findAssignment(this.state.project.document, id) : null;
       return `${id}:${assignment?.turns.length ?? 0}`;
     });
@@ -1378,7 +1458,7 @@ export class TramaController {
     const blocked = hasAdapter(provider) ? providerUnavailableReason(provider, this.state.providers[provider]?.account ?? null) : `${providerName(provider)} non ha un adattatore.`;
     if (blocked) {
       confirmStopWithoutTurn(document, assignmentId, `${providerName(provider)} non può lavorare ora: ${blocked}`);
-      this.specialistActivity(assignmentId, `${assignment.turns.length + 1}`, "Incarico in attesa del provider", blocked, "error");
+      this.specialistActivity(project, assignmentId, `${assignment.turns.length + 1}`, "Incarico in attesa del provider", blocked, "error");
       return;
     }
     const client = createRuntime(provider, {
@@ -1389,6 +1469,7 @@ export class TramaController {
     const resumed = assignment.turns.length > 0;
     const preKey = `${assignment.turns.length + 1}`;
     this.specialistActivity(
+        project,
       assignmentId,
       preKey,
       resumed ? "Ripresa dell'incarico" : "Avvio dell'incarico",
@@ -1405,7 +1486,7 @@ export class TramaController {
         } else {
           const workspace = await prepareWorktree(project.rootPath, `${specialist.name} ${assignment.id}`, this.worktreesRoot);
           recordWorkspace(document, assignmentId, workspace);
-          this.specialistActivity(assignmentId, preKey, "Worktree pronto", workspace.branch, "info");
+          this.specialistActivity(project, assignmentId, preKey, "Worktree pronto", workspace.branch, "info");
         }
         cwd = assignment.workspace!.worktreeRoot;
       }
@@ -1418,7 +1499,7 @@ export class TramaController {
         resumeThreadId: assignment.threadId,
       });
       recordThread(document, assignmentId, opening.threadId);
-      if (opening.replaced && assignment.threadId) this.specialistActivity(assignmentId, preKey, "Nuovo thread dello specialista", null, "info");
+      if (opening.replaced && assignment.threadId) this.specialistActivity(project, assignmentId, preKey, "Nuovo thread dello specialista", null, "info");
       const prompt = resumed ? resumeInput(assignment, document.decisions) : openingInput(assignment, document.decisions);
       const text = await client.runTurn({
         threadId: opening.threadId,
@@ -1430,19 +1511,20 @@ export class TramaController {
           if (event.type === "turnStarted") {
             turnId = event.turnId;
             beginTurn(document, assignmentId, event.turnId, assignment.model, new Date(), provider);
-            this.changed();
+            this.changedIn(project);
             return;
           }
           const key = `${assignment.turns.length}`;
           switch (event.type) {
             case "commentary":
-              this.specialistActivity(assignmentId, key, "Nota dello specialista", event.text, "info");
+              this.specialistActivity(project, assignmentId, key, "Nota dello specialista", event.text, "info");
               return;
             case "reasoning":
-              this.specialistActivity(assignmentId, key, "Ragionamento", event.text, "info");
+              this.specialistActivity(project, assignmentId, key, "Ragionamento", event.text, "info");
               return;
             case "commandCompleted":
               this.specialistActivity(
+        project,
                 assignmentId,
                 key,
                 event.command || "Comando",
@@ -1452,6 +1534,7 @@ export class TramaController {
               return;
             case "fileChangeCompleted":
               this.specialistActivity(
+        project,
                 assignmentId,
                 key,
                 event.succeeded ? `Ha modificato ${event.paths.length === 1 ? "un file" : `${event.paths.length} file`}` : "Modifica dei file non riuscita",
@@ -1460,7 +1543,7 @@ export class TramaController {
               );
               return;
             case "toolCallCompleted":
-              this.specialistActivity(assignmentId, key, `${event.server}: ${event.tool}`, event.error, event.succeeded ? "tool" : "error");
+              this.specialistActivity(project, assignmentId, key, `${event.server}: ${event.tool}`, event.error, event.succeeded ? "tool" : "error");
               return;
             default:
               return;
@@ -1475,7 +1558,6 @@ export class TramaController {
       client.stop();
       this.specialistRuntimes.delete(assignmentId);
     }
-    if (this.state.project !== project) return;
     if (turnId) {
       endTurn(document, assignmentId, turnId, outcome);
     } else {
@@ -1488,7 +1570,7 @@ export class TramaController {
         : final.status === "stopped"
           ? ["Arresto confermato", final.stops.at(-1)?.reason ?? null]
           : ["Incarico non riuscito", final.failure];
-    this.specialistActivity(assignmentId, turnId ? `${final.turns.length}` : preKey, title, detail, final.status === "failed" ? "error" : "info");
+    this.specialistActivity(project, assignmentId, turnId ? `${final.turns.length}` : preKey, title, detail, final.status === "failed" ? "error" : "info");
     const stop = final.stops.at(-1);
     if (final.status === "stopped" && stop?.thenRemove) {
       try {
@@ -1497,7 +1579,8 @@ export class TramaController {
         // The specialist stays in the team when it cannot be removed.
       }
     }
-    this.changed();
+    this.changedIn(project);
+    this.releaseParkedProject(project);
   }
 
   private async stopAssignmentRuntime(assignmentId: string): Promise<void> {
