@@ -38,6 +38,10 @@ export class AppStorage {
     return join(this.root, "Examples");
   }
 
+  async hasRecentProjects(): Promise<boolean> {
+    return existsSync(join(this.root, "recent-projects.json"));
+  }
+
   async loadRecentProjects(): Promise<RecentProject[]> {
     try {
       const projects = (await readJson<RecentProject[]>(join(this.root, "recent-projects.json"))) ?? [];

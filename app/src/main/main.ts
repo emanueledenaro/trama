@@ -14,7 +14,9 @@ function surfaceColor(): string {
   return nativeTheme.shouldUseDarkColors ? "#111111" : "#ffffff";
 }
 
-const controller = new TramaController(process.env.TRAMA_DATA_DIR ?? join(app.getPath("appData"), "Trama"), {
+// The desktop app keeps its state in Trama/Desktop; the SwiftUI app's files in Trama are only read.
+const legacyRoot = process.env.TRAMA_DATA_DIR ? (process.env.TRAMA_LEGACY_DIR ?? null) : join(app.getPath("appData"), "Trama");
+const controller = new TramaController(process.env.TRAMA_DATA_DIR ?? join(app.getPath("appData"), "Trama", "Desktop"), {
   publish: (state) => window?.webContents.send("trama:state", state),
   openExternal: (url) => shell.openExternal(url),
   applyTheme: (theme: AppSettings["theme"]) => {
@@ -40,7 +42,7 @@ const controller = new TramaController(process.env.TRAMA_DATA_DIR ?? join(app.ge
     ? join(process.resourcesPath, "DemoProject")
     : join(app.getAppPath(), "resources", "DemoProject"),
   codexExecutable: process.env.TRAMA_CODEX_PATH ?? null,
-});
+}, legacyRoot);
 
 function createWindow(): void {
   window = new BrowserWindow({

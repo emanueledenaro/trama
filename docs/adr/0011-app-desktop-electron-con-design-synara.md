@@ -22,6 +22,8 @@ Conseguenze: Trama gira anche su Linux e Windows, perché nulla nel processo pri
 | Area | App Electron |
 |---|---|
 | Progetti recenti, apertura, creazione, progetto di esempio | Portato |
+| Dati della versione SwiftUI | Importati in sola lettura: progetti recenti, conversazione, Patto, mandato, memoria e thread del Coordinatore. Team, candidati e richieste di modifica restano nei file Swift |
+| Menzioni `@` e testi incollati nel composer | Portato, con il punteggio di ricerca di Synara |
 | Scansione del repository e mappa dei moduli | Portato, con gli stessi limiti ed esclusioni |
 | Codex: account ChatGPT, accesso, modelli, sforzo | Portato |
 | Coordinatore: thread persistente, studio, aggiornamenti di contesto, memoria | Portato |

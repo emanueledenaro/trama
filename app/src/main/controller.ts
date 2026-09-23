@@ -26,6 +26,7 @@ import { openingInput, resumeInput, specialistInstructions } from "./core/specia
 import { prepareDemoProject } from "./core/demoProject";
 import { appendEvent, emptyDocument, moveEvent, recordReply, referencedPaths } from "./core/document";
 import { createIssue, listIssues, readGitHubRepository } from "./core/github";
+import { convertLegacyDocument, readLegacyDocument, readLegacyRecentProjects } from "./core/legacyImport";
 import { type MonitorCheckpoint, MonitorStore, pollRepository } from "./core/monitor";
 import {
   answerDecisionRequest,
@@ -113,6 +114,8 @@ export class TramaController {
   constructor(
     storageRoot: string,
     private readonly host: ControllerHost,
+    /** The SwiftUI app's folder, read once to import its projects; never written. */
+    private readonly legacyRoot: string | null = null,
   ) {
     this.storage = new AppStorage(storageRoot);
     this.discovery = new CodexClient({
@@ -158,6 +161,13 @@ export class TramaController {
     this.scheduleMonitor();
     this.host.applyTheme(this.state.settings.theme);
     this.state.recentProjects = await this.storage.loadRecentProjects();
+    if (this.legacyRoot && !(await this.storage.hasRecentProjects())) {
+      const imported = await readLegacyRecentProjects(this.legacyRoot).catch(() => []);
+      if (imported.length) {
+        this.state.recentProjects = imported;
+        await this.storage.saveRecentProjects(imported);
+      }
+    }
     this.publishNow();
     void this.refreshCodex();
     const last = this.state.recentProjects.find((p) => p.id === this.lastProjectId);
@@ -278,7 +288,22 @@ export class TramaController {
       const id = existing?.id ?? randomUUID();
       const snapshot = await scanRepository(root, isDemo);
       const loaded = await this.storage.loadDocument(id);
-      const document = loaded.document ?? emptyDocument(id);
+      let document = loaded.document;
+      if (!document && loaded.writable && this.legacyRoot && existing) {
+        const legacy = await readLegacyDocument(this.legacyRoot, existing).catch(() => null);
+        if (legacy) {
+          document = convertLegacyDocument(legacy, id);
+          appendEvent(document, "trama", {
+            type: "card",
+            kind: "contextNotice",
+            title: "Conversazione importata dalla versione SwiftUI",
+            detail: "Conversazione, Patto, mandato, memoria e thread del Coordinatore vengono dall'app precedente. Il file originale resta invariato.",
+            referenceId: null,
+          });
+          await this.storage.saveDocument(document);
+        }
+      }
+      document ??= emptyDocument(id);
       for (const assignmentId of stopOrphanedAssignments(document, "Trama è stato chiuso mentre lo specialista lavorava.")) {
         appendEvent(document, "trama", { type: "activity", title: "Arresto confermato", detail: "Trama è stato chiuso mentre lo specialista lavorava.", tone: "info" }, null, new Date(), {
           assignmentId,

@@ -122,3 +122,45 @@ describe("TramaController", () => {
     expect(project.document.events.some((e) => e.content.type === "card" && e.content.kind === "contextNotice")).toBe(true);
   });
 });
+
+describe("import from the SwiftUI app", () => {
+  it("imports recent projects and a conversation without touching the Swift files", async () => {
+    const { createHash } = await import("node:crypto");
+    const { readFile, writeFile, mkdir } = await import("node:fs/promises");
+    const legacy = await mkdtemp(join(tmpdir(), "trama-swift-"));
+    const project = await mkdtemp(join(tmpdir(), "trama-project-"));
+    await cp(join(root, "resources/DemoProject"), project, { recursive: true });
+    const id = "0A1B2C3D-0000-0000-0000-000000000000";
+    await mkdir(join(legacy, "Projects"));
+    const documentPath = join(legacy, "Projects", `${createHash("sha256").update(id).digest("hex")}.json`);
+    const swift = JSON.stringify({
+      conversation: { events: [{ id: "E1", sequence: 1, origin: "person", createdAt: 0, content: { personMessage: { text: "Ciao dalla versione Swift", moduleID: "", moduleName: "" } } }] },
+      coordinator: { memory: { text: "Nota", updatedAt: 0, revision: 1 } },
+    });
+    await writeFile(documentPath, swift);
+    await writeFile(join(legacy, "recent-projects.json"), JSON.stringify([{ id, name: "Negozio", path: project, isDemo: false, lastOpenedAt: 0 }]));
+
+    const data = await mkdtemp(join(tmpdir(), "trama-data-"));
+    controller = new TramaController(
+      data,
+      {
+        publish: () => undefined,
+        openExternal: async () => undefined,
+        applyTheme: () => undefined,
+        notify: () => undefined,
+        setOpenAtLogin: () => undefined,
+        aiHeroResourceDirectory: "",
+        demoResourceDirectory: "",
+        codexExecutable: join(root, "test-fixtures/fake-codex.mjs"),
+      },
+      legacy,
+    );
+    await controller.start();
+    expect(controller.snapshot.recentProjects.map((p) => p.id)).toEqual([id]);
+    await controller.openProject(project);
+    const document = controller.snapshot.project!.document;
+    expect(document.events[0]!.content).toMatchObject({ text: "Ciao dalla versione Swift" });
+    expect(document.coordinator.memory.text).toBe("Nota");
+    expect(await readFile(documentPath, "utf8")).toBe(swift);
+  });
+});

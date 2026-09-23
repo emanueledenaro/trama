@@ -64,7 +64,7 @@ Questo percorso non è ancora stato eseguito con Developer ID. La prova di insta
 4. Leggi lo studio del Coordinatore e scrivigli. Puoi scegliere un modulo come contesto dal composer.
 5. Rispondi alle schede di decisione e di mandato: solo le tue risposte entrano nel Patto e nel mandato.
 
-Trama salva progetti recenti, conversazioni e stato operativo nella cartella dati dell'utente (`Application Support/Trama` su macOS, `~/.config/Trama` su Linux, `%APPDATA%\Trama` su Windows). Le credenziali ChatGPT restano nel componente ufficiale Codex. L'app non legge `auth.json` e non copia token.
+Trama salva progetti recenti, conversazioni e stato operativo nella cartella dati dell'utente, sotto `Trama/Desktop` (`~/Library/Application Support/Trama/Desktop` su macOS, `~/.config/Trama/Desktop` su Linux, `%APPDATA%\Trama\Desktop` su Windows). Al primo avvio l'app legge i progetti recenti della versione SwiftUI in `Trama/` e, all'apertura di un progetto, ne importa conversazione, Patto, mandato, memoria e thread del Coordinatore. I file della versione SwiftUI non vengono modificati. Le credenziali ChatGPT restano nel componente ufficiale Codex. L'app non legge `auth.json` e non copia token.
 
 ## Repository supportati
 
