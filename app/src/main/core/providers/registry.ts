@@ -3,9 +3,11 @@ import { CursorRuntime } from "./acp/cursor";
 import { DevinRuntime } from "./acp/devin";
 import { DroidRuntime } from "./acp/droid";
 import { GrokRuntime } from "./acp/grok";
+import { AntigravityRuntime } from "./antigravity";
 import { ClaudeAgentRuntime } from "./claudeAgent";
 import { CodexRuntime } from "./codex";
 import { OpenCodeRuntime } from "./opencode";
+import { PiRuntime } from "./pi";
 import type { AgentRuntime, RuntimeOptions } from "./types";
 
 type Factory = (options: RuntimeOptions) => AgentRuntime;
@@ -18,6 +20,8 @@ const FACTORIES: Partial<Record<ProviderId, Factory>> = {
   grok: (options) => new GrokRuntime(options),
   droid: (options) => new DroidRuntime(options),
   devin: (options) => new DevinRuntime(options),
+  antigravity: (options) => new AntigravityRuntime(options),
+  pi: (options) => new PiRuntime(options),
 };
 
 /** Providers with an adapter in this build. */

@@ -87,7 +87,8 @@ export class ProviderError extends Error {
       | "emptyPrompt"
       | "invalidModel"
       | "turnAlreadyRunning"
-      | "blocked",
+      | "blocked"
+      | "unsupportedSandbox",
     message: string,
   ) {
     super(message);
