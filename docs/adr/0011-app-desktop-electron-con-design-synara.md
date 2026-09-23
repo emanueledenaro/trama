@@ -15,7 +15,7 @@ Regole che restano invariate:
 
 Alternative scartate: tenere SwiftUI e imitare Synara a mano (due linguaggi di design e nessun riuso dei componenti); includere l'intero monorepo di Synara (porterebbe server, provider e funzioni che Trama non usa).
 
-Conseguenze: Trama gira anche su Linux e Windows, perché nulla nel processo principale dipende da macOS. Il monitor in background non è più un helper separato registrato con `SMAppService`: gira nel processo principale di Trama, che può partire all'accesso senza finestra. Le verifiche usano la sandbox di Codex (`codex sandbox`) come nella versione SwiftUI. Le icone "Central Icons" di Synara non sono incluse perché il repository non ne dichiara la licenza: Trama usa Tabler Icons (MIT) con le stesse misure. I sorgenti Swift restano nel repository come riferimento finché le funzioni elencate sotto non sono portate; poi si rimuovono con un ticket separato.
+Conseguenze: Trama gira anche su Linux e Windows, perché nulla nel processo principale dipende da macOS. Il monitor in background non è più un helper separato registrato con `SMAppService`: gira nel processo principale di Trama, che può partire all'accesso senza finestra. Le verifiche usano la sandbox di Codex (`codex sandbox`) come nella versione SwiftUI. Le icone "Central Icons" di Synara non sono incluse perché il repository non ne dichiara la licenza: Trama usa Tabler Icons (MIT) con le stesse misure. I sorgenti Swift sono stati rimossi dal repository il 23 settembre 2026, su richiesta del Product Owner, e restano nella cronologia git. Le funzioni non ancora portate sono elencate sotto.
 
 ## Stato del porting
 

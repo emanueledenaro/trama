@@ -1,6 +1,6 @@
 # Stato dell'alpha locale
 
-Dal 23 settembre 2026 l'app desktop è in Electron, in `app/`, con l'interfaccia di Synara. Cosa è stato portato e cosa è stato verificato è nell'[ADR 0011](adr/0011-app-desktop-electron-con-design-synara.md). Questa pagina descrive la versione SwiftUI.
+Dal 23 settembre 2026 l'app desktop è in Electron, in `app/`, con l'interfaccia di Synara. Cosa è stato portato e cosa è stato verificato è nell'[ADR 0011](adr/0011-app-desktop-electron-con-design-synara.md). Questa pagina descrive la versione SwiftUI, i cui sorgenti sono stati rimossi e restano nella cronologia git.
 
 Questa pagina conserva il bilancio dell'alpha iniziale. Per il piano vigente approvato dopo l'intervista sul Coordinatore leggere [piano operativo](piano-operativo.md), [specifica Coordinatore](spec-coordinatore.md) e [raccordo aggiornato di ogni criterio](verifiche/roadmap-coordinatore.md). Le prove riportate qui restano storiche e non attestano le nuove funzioni.
 

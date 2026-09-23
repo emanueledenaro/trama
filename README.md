@@ -2,7 +2,7 @@
 
 Trama è un'app desktop per leggere un repository, collegare una richiesta ai moduli del progetto e conservare decisioni, lavoro e verifiche sullo stesso candidato. Usa Codex App Server di OpenAI come motore del Coordinatore e GitHub CLI per le operazioni GitHub esplicite.
 
-L'app è scritta in Electron e riprende l'interfaccia di [Synara](https://github.com/Emanuele-web04/synara) (vedi [ADR 0011](docs/adr/0011-app-desktop-electron-con-design-synara.md)). Il codice è in [`app/`](app). La versione SwiftUI resta in `Sources/` come riferimento finché le funzioni non ancora portate non sono passate all'app Electron; l'elenco è nell'ADR.
+L'app è scritta in Electron e riprende l'interfaccia di [Synara](https://github.com/Emanuele-web04/synara) (vedi [ADR 0011](docs/adr/0011-app-desktop-electron-con-design-synara.md)). Il codice è in [`app/`](app). I sorgenti della versione SwiftUI sono stati rimossi il 23 settembre 2026 e restano nella cronologia git.
 
 Il progetto è in alpha. Il repository pubblico è [emanueledenaro/trama](https://github.com/emanueledenaro/trama) e il lavoro pianificato è registrato nelle [GitHub Issues](https://github.com/emanueledenaro/trama/issues).
 
@@ -44,18 +44,6 @@ npm run dist        # pacchetto con electron-builder
 - `app/src/shared`: tipi e logica condivisa, come la timeline della conversazione.
 - `app/test-fixtures/fake-codex.mjs`: un app-server di prova per i test e per `ui-check`. Le sue risposte non sono risultati di Codex.
 
-## Versione SwiftUI
-
-La versione SwiftUI si compila ancora con `swift test` e `bash scripts/build-app.sh release` su macOS 14 con Xcode Command Line Tools.
-
-### Distribuzione firmata della versione SwiftUI
-
-`bash scripts/package-release.sh --help` descrive il percorso di distribuzione. Lo script richiede `TRAMA_SIGNING_IDENTITY` con il nome completo di un certificato Developer ID Application e `TRAMA_NOTARY_PROFILE` con il nome di un profilo già presente nel Portachiavi. Le credenziali non vengono passate negli argomenti dello script.
-
-Il commit corrente deve essere pubblicato nella storia di main. Lo script crea un clone separato di quel commit, esegue test e build Release, firma helper e app e invia l’archivio al servizio di notarizzazione Apple. Produce `Trama.zip` soltanto dopo accettazione, stapling e verifica Gatekeeper. Conserva log, risultato della notarizzazione, commit e checksum in una nuova cartella `build/Distribution/release.*`.
-
-Questo percorso non è ancora stato eseguito con Developer ID. La prova di installazione e del percorso completo su un secondo Mac rimane separata.
-
 ## Primo uso
 
 1. Apri un progetto esistente oppure il progetto di esempio.
@@ -77,7 +65,7 @@ Il raggruppamento dei moduli deriva dai percorsi reali, con un trattamento speci
 - L'app Electron è stata provata con un app-server Codex di prova (`app/test-fixtures/fake-codex.mjs`), nei test e con `npm run ui-check` sotto Linux. Una sessione con Codex reale e un account ChatGPT non è ancora stata eseguita con l'app Electron.
 - Come nella versione SwiftUI, solo Codex ha un adattatore completo; gli altri otto provider sono descritti in Collegamenti ma non selezionabili. La pubblicazione di pull request dall'app Electron è provata fino al push del branch; la creazione con `gh` non è ancora stata provata su un repository reale. L'elenco è nell'[ADR 0011](docs/adr/0011-app-desktop-electron-con-design-synara.md).
 - I pacchetti firmati dell'app Electron (Developer ID, notarizzazione) non sono ancora configurati.
-- La CI verifica build e test di entrambe le versioni. Le prove locali della versione SwiftUI sono descritte in [docs/verifiche-locali.md](docs/verifiche-locali.md).
+- La CI verifica build e test dell'app Electron. Le prove locali della versione SwiftUI, ormai rimossa, restano in [docs/verifiche-locali.md](docs/verifiche-locali.md) come registro storico.
 - Trama è distribuito con licenza MIT. L'interfaccia riprende il design di Synara, anch'esso MIT, con l'attribuzione in [docs/synara-attribution.md](docs/synara-attribution.md). Le skill Matt Pocock includono licenza MIT e attribuzione. Codex CLI viene installato separatamente e non è incluso nell'app.
 
 Questi limiti sono tracciati nei ticket T01-T18. La presenza del codice o di un test locale non chiude da sola un ticket.
