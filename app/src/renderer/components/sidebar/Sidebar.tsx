@@ -4,7 +4,10 @@ import {
   IconFolder,
   IconFolderOpen,
   IconFolderPlus,
+  IconArrowNarrowLeft,
+  IconArrowNarrowRight,
   IconFileDiff,
+  IconSearch,
   IconGitPullRequest,
   IconLayoutSidebar,
   IconMessageCircle,
@@ -100,6 +103,29 @@ export function SidebarTrigger({ className }: { className?: string }) {
   );
 }
 
+export function NavigationButtons() {
+  const canGoBack = useUi((s) => s.historyIndex > 0);
+  const canGoForward = useUi((s) => s.historyIndex < s.history.length - 1);
+  const goBack = useUi((s) => s.goBack);
+  const goForward = useUi((s) => s.goForward);
+  const button =
+    "inline-flex size-7 items-center justify-center rounded-lg text-muted-foreground/75 transition-colors hover:bg-[var(--color-background-button-secondary-hover)] hover:text-foreground disabled:opacity-40 disabled:hover:bg-transparent";
+  return (
+    <div className="no-drag flex shrink-0 items-center gap-0.5">
+      <Tooltip label="Indietro">
+        <button type="button" aria-label="Indietro" disabled={!canGoBack} onClick={goBack} className={button}>
+          <IconArrowNarrowLeft className="size-[18px]" stroke={1.6} />
+        </button>
+      </Tooltip>
+      <Tooltip label="Avanti">
+        <button type="button" aria-label="Avanti" disabled={!canGoForward} onClick={goForward} className={button}>
+          <IconArrowNarrowRight className="size-[18px]" stroke={1.6} />
+        </button>
+      </Tooltip>
+    </div>
+  );
+}
+
 export function Sidebar({ isMac }: { isMac: boolean }) {
   const app = useUi((s) => s.app)!;
   const inspector = useUi((s) => s.inspector);
@@ -124,6 +150,7 @@ export function Sidebar({ isMac }: { isMac: boolean }) {
       <div className={cn("drag-region flex h-[46px] shrink-0 flex-row items-center gap-2 py-0 ps-4 pe-3 font-system-ui", isMac && "desktop-top-bar-traffic-light-gutter")}>
         <div className="flex shrink-0 items-center gap-0.5">
           <SidebarTrigger />
+          <NavigationButtons />
         </div>
       </div>
 
@@ -132,6 +159,11 @@ export function Sidebar({ isMac }: { isMac: boolean }) {
           <span className="min-w-0 truncate font-display text-[17px] text-foreground">Trama</span>
         </div>
         <div className="ml-auto flex items-center gap-1.5">
+          <Tooltip label="Cerca (⌘K)">
+            <button type="button" className="sidebar-icon-button size-6 rounded-md" aria-label="Cerca" onClick={() => setDialog("search")}>
+              <IconSearch className="size-[15px]" stroke={1.7} />
+            </button>
+          </Tooltip>
           <Tooltip label="Apri progetto">
             <button type="button" className="sidebar-icon-button size-6 rounded-md" aria-label="Apri progetto" onClick={() => void act("project:openDialog", undefined)}>
               <IconFolderPlus className="size-[15px]" stroke={1.7} />

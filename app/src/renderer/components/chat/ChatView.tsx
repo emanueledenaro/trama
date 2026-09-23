@@ -12,7 +12,7 @@ import {
 } from "@tabler/icons-react";
 import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import { deriveTimelineRows } from "@shared/timeline";
-import { SidebarTrigger } from "@/components/sidebar/Sidebar";
+import { NavigationButtons, SidebarTrigger } from "@/components/sidebar/Sidebar";
 import { Spinner } from "@/components/Spinner";
 import { TramaLogo } from "@/components/TramaLogo";
 import { Button } from "@/components/ui/button";
@@ -70,7 +70,12 @@ function ChatHeader({ isMac }: { isMac: boolean }) {
         !sidebarOpen && isMac && "desktop-top-bar-traffic-light-gutter",
       )}
     >
-      {!sidebarOpen ? <SidebarTrigger className="-ml-1.5" /> : null}
+      {!sidebarOpen ? (
+        <div className="-ml-1.5 flex shrink-0 items-center gap-0.5">
+          <SidebarTrigger />
+          <NavigationButtons />
+        </div>
+      ) : null}
       <div className="flex min-w-0 flex-1 items-center gap-2">
         {project ? (
           <>

@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input, Label, TextArea } from "@/components/ui/field";
 import { Dialog } from "@/components/ui/dialog";
 import { Spinner } from "@/components/Spinner";
+import { SearchPalette } from "@/components/SearchPalette";
 import { cn } from "@/lib/cn";
 import { act, useUi } from "@/lib/store";
 
@@ -301,6 +302,7 @@ export function Dialogs() {
       <SettingsDialog />
       <ConnectionsDialog />
       <CreateProjectDialog />
+      <SearchPalette />
     </>
   );
 }

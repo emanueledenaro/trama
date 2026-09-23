@@ -116,6 +116,14 @@ await app.evaluate(({ nativeTheme }) => {
 await page.evaluate(() => document.documentElement.classList.add("dark"));
 await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
 await shot("10-dark");
+await page.keyboard.press("Control+K");
+await page.getByRole("textbox", { name: "Cerca in Trama" }).fill("cancel");
+await page.getByRole("option").first().waitFor();
+await shot("10b-search");
+await page.keyboard.press("Enter");
+await page.waitForTimeout(300);
+await shot("10c-search-result");
+await page.getByRole("button", { name: "Indietro" }).first().click();
 await page.getByRole("button", { name: /Codex di OpenAI/ }).click();
 await shot("11-connections");
 await page.keyboard.press("Escape");
