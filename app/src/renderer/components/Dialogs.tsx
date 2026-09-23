@@ -1,6 +1,7 @@
 import { IconDeviceDesktop, IconMoon, IconSun } from "@tabler/icons-react";
 import { useState } from "react";
 import type { ThemePreference } from "@shared/domain";
+import { capabilityLines, PROVIDERS, type ProviderDescriptor } from "@shared/providers";
 import { Button } from "@/components/ui/button";
 import { Input, Label, TextArea } from "@/components/ui/field";
 import { Dialog } from "@/components/ui/dialog";
@@ -145,6 +146,45 @@ function MethodSettings() {
   );
 }
 
+function ProviderRow({ provider }: { provider: ProviderDescriptor }) {
+  const [open, setOpen] = useState(false);
+  const account = useUi((s) => s.app!.codex.account);
+  const state = !provider.available
+    ? "Non disponibile"
+    : account?.kind === "chatgpt"
+      ? "Collegato"
+      : account?.kind === "signedOut" || account?.kind === "unsupported"
+        ? "Accesso richiesto"
+        : "Stato sconosciuto";
+  return (
+    <div className="py-2">
+      <div className="flex items-center gap-2 text-ui">
+        <span className="text-foreground">{provider.name}</span>
+        {!provider.available ? <span className="text-ui-xs text-muted-foreground">adattatore non ancora disponibile</span> : null}
+        <span className={cn("ml-auto text-ui-xs", state === "Collegato" ? "text-success" : "text-muted-foreground")}>{state}</span>
+      </div>
+      <div className="mt-0.5 flex items-center gap-2 text-ui-xs text-muted-foreground">
+        <span>
+          Accesso: <code className="font-mono">{provider.signInCommand}</code>
+        </span>
+        <button type="button" className="ml-auto hover:text-foreground" onClick={() => setOpen(!open)}>
+          {open ? "Nascondi capacità" : "Capacità"}
+        </button>
+      </div>
+      {open ? (
+        <div className="mt-1.5 grid grid-cols-2 gap-x-4 gap-y-0.5 text-ui-xs">
+          {capabilityLines(provider.capabilities).map((line) => (
+            <div key={line.label} className="flex justify-between gap-2">
+              <span className="text-muted-foreground">{line.label}</span>
+              <span className="text-foreground/90">{line.value}</span>
+            </div>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function ConnectionsDialog() {
   const open = useUi((s) => s.dialog === "connections");
   const setDialog = useUi((s) => s.setDialog);
@@ -199,6 +239,12 @@ function ConnectionsDialog() {
       <p className="mt-3 text-ui-xs text-muted-foreground">
         Per GitHub, Trama usa GitHub CLI: esegui <code className="font-mono">gh auth login</code> nel terminale.
       </p>
+      <h4 className="mt-4 mb-1 text-ui-sm font-medium text-muted-foreground">Provider</h4>
+      <div className="divide-y divide-[color:var(--app-surface-divider)]">
+        {PROVIDERS.map((provider) => (
+          <ProviderRow key={provider.id} provider={provider} />
+        ))}
+      </div>
     </Dialog>
   );
 }
