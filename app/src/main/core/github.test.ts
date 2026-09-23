@@ -27,3 +27,15 @@ describe("checksConclusion", () => {
     expect(checksConclusion([{ state: "SUCCESS" }])).toBe("success");
   });
 });
+
+describe("classifyGitHubError (T03)", () => {
+  it("tells apart the failures the person can act on", async () => {
+    const { classifyGitHubError } = await import("./github");
+    expect(classifyGitHubError("spawn gh ENOENT").status).toBe("ghMissing");
+    expect(classifyGitHubError("To get started with GitHub CLI, please run:  gh auth login").status).toBe("signedOut");
+    expect(classifyGitHubError("Resource protected by organization SAML enforcement").status).toBe("sso");
+    expect(classifyGitHubError("HTTP 403: API rate limit exceeded").status).toBe("rateLimited");
+    expect(classifyGitHubError("gh: Not Found (HTTP 404)").status).toBe("notFound");
+    expect(classifyGitHubError("boom\nmore").message).toBe("boom");
+  });
+});

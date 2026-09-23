@@ -469,6 +469,8 @@ export interface GitHubState {
   issues: GitHubIssue[];
   snapshot: GitHubSnapshot | null;
   events: TeamEvent[];
+  /** What the person's gh session can do on this repository (T03). */
+  capabilities?: GitHubCapabilities | null;
 }
 
 export interface ActiveProjectState {
@@ -532,3 +534,18 @@ export interface BackgroundProject {
   pendingDecisions: number;
   lastUpdate: string | null;
 }
+
+/** What Trama can do on the project's GitHub repository with the person's gh session (T03). */
+export interface GitHubCapabilities {
+  status: "ready" | "ghMissing" | "signedOut" | "sso" | "notFound" | "rateLimited" | "error";
+  message: string | null;
+  login: string | null;
+  private: boolean | null;
+  canRead: boolean;
+  canPush: boolean;
+  canAdmin: boolean;
+  /** Pull requests, reviews and checks are readable when the repository is. */
+  canReadChecks: boolean;
+  rateRemaining: number | null;
+}
+

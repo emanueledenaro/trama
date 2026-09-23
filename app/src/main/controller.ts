@@ -46,6 +46,8 @@ import {
   createIssue,
   listIssues,
   readGitHubRepository,
+  classifyGitHubError,
+  readGitHubCapabilities,
   readIssue,
   readPullRequestStatus,
   updateIssueBody,
@@ -698,10 +700,11 @@ export class TramaController {
     }
     let issues = project.github.issues;
     let message: string | null = null;
+    const capabilities = await readGitHubCapabilities(repository);
     try {
       issues = await listIssues(repository);
     } catch (error) {
-      message = `GitHub CLI non ha letto le issue: ${(error as Error).message.split("\n")[0]}`;
+      message = `GitHub CLI non ha letto le issue: ${classifyGitHubError((error as Error).message).message}`;
     }
     const { checkpoint } = await pollRepository(this.monitorStore, repository);
     if (this.state.project !== project) return;
@@ -712,6 +715,7 @@ export class TramaController {
       issues: message ? [] : issues,
       snapshot: checkpoint.snapshot,
       events: checkpoint.events,
+      capabilities,
     };
     this.updateMonitorStatus(repository, checkpoint);
     this.publish();
@@ -1957,6 +1961,9 @@ export class TramaController {
     if (candidate.pullRequest) throw new DomainError(`Il candidato è già pubblicato: ${candidate.pullRequest.url}`);
     const repository = project.github.repository;
     if (!repository) throw new DomainError("Il progetto non ha un remoto GitHub.");
+    const capabilities = await readGitHubCapabilities(repository);
+    if (capabilities.status !== "ready") throw new DomainError(capabilities.message ?? "GitHub non è raggiungibile.");
+    if (!capabilities.canPush) throw new DomainError(`Il tuo account GitHub non ha il permesso di push su ${repository}.`);
     const assignment = findAssignment(document, candidate.assignmentId)!;
     const baseBranch = project.snapshot.branch ?? "main";
     const published = await publishCandidate({
