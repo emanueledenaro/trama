@@ -149,6 +149,11 @@ const handlers: { [K in ActionName]: Handler<K> } = {
   "monitor:poll": () => controller.pollMonitor(),
   "skills:prepare": () => controller.prepareSkills(),
   "app:dismissError": () => controller.dismissError(),
+  "onboarding:update": (update) => controller.updateOnboarding(update),
+  "onboarding:checkGitHub": () => controller.checkGitHubCli(),
+  "exercise:start": ({ exercise }) => controller.startExercise(exercise),
+  "exercise:observe": ({ step }) => controller.observeExercise(step),
+  "exercise:simulateRemoteChanges": () => controller.simulateRemoteChanges(),
   "shell:openExternal": async ({ url }) => {
     if (/^https:\/\//.test(url)) await shell.openExternal(url);
   },
@@ -234,6 +239,14 @@ function buildMenu(): void {
       ],
     },
     { role: "windowMenu", label: "Finestra" },
+    {
+      role: "help",
+      label: "Aiuto",
+      submenu: [
+        { label: "Guida introduttiva", click: () => sendMenu("guide") },
+        { label: "Esercizi sul progetto di esempio", click: () => sendMenu("exercises") },
+      ],
+    },
   ];
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }

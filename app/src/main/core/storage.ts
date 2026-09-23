@@ -4,6 +4,7 @@ import { chmod, lstat, mkdir, readFile, rename, writeFile } from "node:fs/promis
 import { dirname, join } from "node:path";
 import type { AppSettings, MonitorState, ProjectDocument, RecentProject } from "@shared/domain";
 import type { ImageAttachmentInput } from "@shared/ipc";
+import type { OnboardingState } from "@shared/onboarding";
 import { normalizeDocument } from "./document";
 
 const MAXIMUM_RECENT_PROJECTS = 20;
@@ -58,7 +59,9 @@ export class AppStorage {
     await writeAtomically(join(this.root, "recent-projects.json"), JSON.stringify(sorted, null, 2));
   }
 
-  async loadSettings(): Promise<Partial<AppSettings> & { lastProjectId?: string | null; monitor?: Partial<Omit<MonitorState, "status">> }> {
+  async loadSettings(): Promise<
+    Partial<AppSettings> & { lastProjectId?: string | null; monitor?: Partial<Omit<MonitorState, "status">>; onboarding?: Partial<OnboardingState> }
+  > {
     try {
       return (await readJson(join(this.root, "settings.json"))) ?? {};
     } catch {
@@ -66,7 +69,9 @@ export class AppStorage {
     }
   }
 
-  async saveSettings(settings: AppSettings & { lastProjectId: string | null; monitor: Omit<MonitorState, "status"> }): Promise<void> {
+  async saveSettings(
+    settings: AppSettings & { lastProjectId: string | null; monitor: Omit<MonitorState, "status">; onboarding?: OnboardingState },
+  ): Promise<void> {
     await writeAtomically(join(this.root, "settings.json"), JSON.stringify(settings, null, 2));
   }
 
