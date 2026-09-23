@@ -429,6 +429,10 @@ export interface GitHubPullRequest {
   url: string;
   draft: boolean;
   updatedAt: string;
+  /** Opened from a fork: its head lives in another repository. */
+  fromFork?: boolean;
+  checks?: "success" | "failure" | "pending" | "none";
+  reviewState?: "approved" | "changesRequested" | "commented" | "none";
 }
 
 export interface GitHubSnapshot {
@@ -438,6 +442,10 @@ export interface GitHubSnapshot {
   pullRequests: GitHubPullRequest[];
   fetchedAt: string;
   warnings: string[];
+  /** Branches whose new head does not contain the old one: history was rewritten. */
+  forcePushed?: string[];
+  /** GitHub now answers with another name for the repository. */
+  renamedTo?: string | null;
 }
 
 export interface TeamEvent {

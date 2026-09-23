@@ -55,3 +55,26 @@ describe("team monitor", () => {
     expect(skipped.checkpoint.consecutiveFailures).toBe(1);
   });
 });
+
+describe("team monitor details (T12)", () => {
+  it("reports force pushes, forks, reviews and CI changes once", () => {
+    const before = snapshot([["main", "a"]], [[1, "p1"]]);
+    before.pullRequests[0]!.checks = "pending";
+    before.pullRequests[0]!.reviewState = "none";
+    const after = snapshot([["main", "b"]], [[1, "p1"], [2, "q"]]);
+    after.forcePushed = ["main"];
+    after.pullRequests[0]!.checks = "failure";
+    after.pullRequests[0]!.reviewState = "changesRequested";
+    after.pullRequests[1]!.fromFork = true;
+    const titles = diffSnapshots(before, after).map((e) => e.title);
+    expect(titles).toContain("Riscrittura forzata di main");
+    expect(titles).toContain("Aperta #2 PR 2 (da un fork)");
+    expect(titles).toContain("Revisione di #1: modifiche richieste");
+    expect(titles).toContain("CI di #1: fallita");
+    const again = snapshot([["main", "b"]], [[1, "p1"], [2, "q"]]);
+    again.pullRequests[0]!.checks = "failure";
+    again.pullRequests[0]!.reviewState = "changesRequested";
+    again.pullRequests[1]!.fromFork = true;
+    expect(diffSnapshots(after, again)).toEqual([]);
+  });
+});

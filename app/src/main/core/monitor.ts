@@ -3,7 +3,7 @@ import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { GitHubPullRequest, GitHubSnapshot, TeamEvent } from "@shared/domain";
-import { ghEnvironment } from "./github";
+import { checksConclusion, ghEnvironment } from "./github";
 import { runProcess } from "./process";
 import { writeAtomically } from "./storage";
 
@@ -32,21 +32,40 @@ interface RawPullRequest {
   number: number;
   title: string;
   user?: { login?: string } | null;
-  head: { ref: string; sha: string };
+  head: { ref: string; sha: string; repo?: { full_name?: string } | null };
   base: { ref: string };
   html_url: string;
   draft?: boolean;
   updated_at: string;
 }
 
-export async function fetchGitHubSnapshot(repository: string): Promise<GitHubSnapshot> {
-  const metadata = await ghJson<{ default_branch: string }>(`repos/${repository}`);
+/** At most this many pull requests get their reviews and checks read in one poll. */
+const DETAIL_BUDGET = 10;
+
+async function pullDetails(repository: string, pull: GitHubPullRequest): Promise<Pick<GitHubPullRequest, "checks" | "reviewState">> {
+  const reviews = await ghJson<{ state: string; user?: { login?: string } | null }[]>(`repos/${repository}/pulls/${pull.number}/reviews?per_page=100`);
+  const latest = new Map<string, string>();
+  for (const review of reviews) if (review.state !== "PENDING") latest.set(review.user?.login ?? "?", review.state);
+  const states = [...latest.values()];
+  const reviewState = states.includes("CHANGES_REQUESTED")
+    ? "changesRequested"
+    : states.includes("APPROVED")
+      ? "approved"
+      : states.length
+        ? "commented"
+        : "none";
+  const runs = await ghJson<{ check_runs: { status: string; conclusion: string | null }[] }>(`repos/${repository}/commits/${pull.headSHA}/check-runs?per_page=100`);
+  return { reviewState, checks: checksConclusion(runs.check_runs.map((r) => ({ status: r.status, conclusion: r.conclusion }))) };
+}
+
+export async function fetchGitHubSnapshot(repository: string, previous: GitHubSnapshot | null = null): Promise<GitHubSnapshot> {
+  const metadata = await ghJson<{ default_branch: string; full_name?: string }>(`repos/${repository}`);
   const branches = await paged<{ name: string; commit: { sha: string } }>(`repos/${repository}/branches`);
   const pulls = await paged<RawPullRequest>(`repos/${repository}/pulls?state=open`);
   const warnings: string[] = [];
   if (branches.reachedLimit) warnings.push(`Elenco branch limitato ai primi ${PAGE_SIZE * MAXIMUM_PAGES} risultati.`);
   if (pulls.reachedLimit) warnings.push(`Elenco pull request limitato ai primi ${PAGE_SIZE * MAXIMUM_PAGES} risultati.`);
-  return {
+  const snapshot: GitHubSnapshot = {
     repository,
     defaultBranch: metadata.default_branch,
     branches: branches.values.map((b) => ({ name: b.name, sha: b.commit.sha })).sort((a, b) => a.name.localeCompare(b.name)),
@@ -62,12 +81,46 @@ export async function fetchGitHubSnapshot(repository: string): Promise<GitHubSna
           url: p.html_url,
           draft: p.draft === true,
           updatedAt: p.updated_at,
+          fromFork: Boolean(p.head.repo?.full_name && p.head.repo.full_name.toLowerCase() !== repository.toLowerCase()),
         }),
       )
       .sort((a, b) => a.number - b.number),
     fetchedAt: new Date().toISOString(),
     warnings,
   };
+  const renamed = metadata.full_name && metadata.full_name.toLowerCase() !== repository.toLowerCase() ? metadata.full_name : null;
+  if (renamed) warnings.push(`Il repository è stato rinominato in ${renamed}: aggiorna il remoto origin.`);
+  snapshot.renamedTo = renamed;
+
+  // Reviews and checks: read again only for pull requests that changed, within a budget per poll.
+  const before = new Map(previous?.pullRequests.map((p) => [p.number, p]) ?? []);
+  let budget = DETAIL_BUDGET;
+  for (const pull of snapshot.pullRequests) {
+    const old = before.get(pull.number);
+    if (old && old.updatedAt === pull.updatedAt && old.headSHA === pull.headSHA && old.checks !== "pending") {
+      pull.checks = old.checks;
+      pull.reviewState = old.reviewState;
+      continue;
+    }
+    if (budget-- <= 0) {
+      pull.checks = old?.checks;
+      pull.reviewState = old?.reviewState;
+      continue;
+    }
+    Object.assign(pull, await pullDetails(repository, pull).catch(() => ({ checks: old?.checks, reviewState: old?.reviewState })));
+  }
+
+  // A moved branch whose new head does not contain the old one was force-pushed.
+  const oldBranches = new Map(previous?.branches.map((b) => [b.name, b.sha]) ?? []);
+  snapshot.forcePushed = [];
+  let compares = DETAIL_BUDGET;
+  for (const branch of snapshot.branches) {
+    const oldSHA = oldBranches.get(branch.name);
+    if (!oldSHA || oldSHA === branch.sha || compares-- <= 0) continue;
+    const comparison = await ghJson<{ status: string }>(`repos/${repository}/compare/${oldSHA}...${branch.sha}`).catch(() => null);
+    if (comparison && (comparison.status === "diverged" || comparison.status === "behind")) snapshot.forcePushed.push(branch.name);
+  }
+  return snapshot;
 }
 
 const eventId = (parts: (string | number | null)[]) => createHash("sha256").update(parts.join("\0")).digest("hex").slice(0, 16);
@@ -89,7 +142,11 @@ export function diffSnapshots(previous: GitHubSnapshot | null, next: GitHubSnaps
         entity: "branch",
         change: before ? "updated" : "created",
         reference: branch.name,
-        title: before ? `Nuovi commit su ${branch.name}` : `Nuovo branch ${branch.name}`,
+        title: !before
+          ? `Nuovo branch ${branch.name}`
+          : next.forcePushed?.includes(branch.name)
+            ? `Riscrittura forzata di ${branch.name}`
+            : `Nuovi commit su ${branch.name}`,
         author: null,
         beforeSHA: before?.sha ?? null,
         afterSHA: branch.sha,
@@ -124,9 +181,42 @@ export function diffSnapshots(previous: GitHubSnapshot | null, next: GitHubSnaps
         entity: "pullRequest",
         change: before ? "updated" : "created",
         reference: `#${pull.number}`,
-        title: before ? `Aggiornata #${pull.number} ${pull.title}` : `Aperta #${pull.number} ${pull.title}`,
+        title: `${before ? "Aggiornata" : "Aperta"} #${pull.number} ${pull.title}${pull.fromFork ? " (da un fork)" : ""}`,
         author: pull.author,
         beforeSHA: before?.headSHA ?? null,
+        afterSHA: pull.headSHA,
+        url: pull.url,
+      });
+    }
+  }
+  for (const pull of next.pullRequests) {
+    const before = oldPulls.get(pull.number);
+    if (!before) continue;
+    if (pull.reviewState && before.reviewState !== pull.reviewState && pull.reviewState !== "none") {
+      const label = pull.reviewState === "approved" ? "approvata" : pull.reviewState === "changesRequested" ? "modifiche richieste" : "commentata";
+      events.push({
+        ...base,
+        id: eventId(["review", pull.number, pull.headSHA, pull.reviewState]),
+        entity: "pullRequest",
+        change: "updated",
+        reference: `#${pull.number}`,
+        title: `Revisione di #${pull.number}: ${label}`,
+        author: pull.author,
+        beforeSHA: pull.headSHA,
+        afterSHA: pull.headSHA,
+        url: pull.url,
+      });
+    }
+    if (pull.checks && before.checks !== pull.checks && (pull.checks === "failure" || pull.checks === "success")) {
+      events.push({
+        ...base,
+        id: eventId(["checks", pull.number, pull.headSHA, pull.checks]),
+        entity: "pullRequest",
+        change: "updated",
+        reference: `#${pull.number}`,
+        title: `CI di #${pull.number}: ${pull.checks === "success" ? "verde" : "fallita"}`,
+        author: pull.author,
+        beforeSHA: pull.headSHA,
         afterSHA: pull.headSHA,
         url: pull.url,
       });
@@ -188,7 +278,7 @@ export class MonitorStore {
 export async function pollRepository(
   store: MonitorStore,
   repository: string,
-  fetch: (repository: string) => Promise<GitHubSnapshot> = fetchGitHubSnapshot,
+  fetch: (repository: string, previous: GitHubSnapshot | null) => Promise<GitHubSnapshot> = fetchGitHubSnapshot,
   now = new Date(),
 ): Promise<{ checkpoint: MonitorCheckpoint; incoming: TeamEvent[] }> {
   const checkpoint = await store.load(repository);
@@ -196,7 +286,7 @@ export async function pollRepository(
     return { checkpoint, incoming: [] };
   }
   try {
-    const snapshot = await fetch(repository);
+    const snapshot = await fetch(repository, checkpoint.snapshot);
     const known = new Set(checkpoint.events.map((e) => e.id));
     const incoming = diffSnapshots(checkpoint.snapshot, snapshot, now).filter((e) => !known.has(e.id));
     const next: MonitorCheckpoint = {
