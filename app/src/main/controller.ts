@@ -478,7 +478,7 @@ export class TramaController {
 
   // MARK: Projects
 
-  async openProject(path: string, isDemo = false): Promise<void> {
+  async openProject(path: string, isDemo = false, idea: string | null = null): Promise<void> {
     const root = await realpath(path).catch(() => {
       throw new DomainError(`La cartella non è leggibile: ${path}`);
     });
@@ -535,6 +535,7 @@ export class TramaController {
         }
       }
       document ??= emptyDocument(id);
+      if (idea && !document.events.length) document.createdFromIdea = idea;
       const orphanNote = "Trama si è interrotto senza un arresto controllato (crash o chiusura forzata) mentre lo specialista lavorava.";
       for (const assignmentId of stopOrphanedAssignments(document, orphanNote)) {
         appendEvent(document, "trama", { type: "activity", title: "Arresto confermato", detail: orphanNote, tone: "info" }, null, new Date(), {
@@ -606,7 +607,7 @@ export class TramaController {
     await mkdir(root, { recursive: true });
     await writeFile(join(root, "README.md"), `# ${trimmed}\n\n${idea.trim()}\n`);
     await initializeRepository(root);
-    await this.openProject(root);
+    await this.openProject(root, false, idea.trim() || null);
   }
 
   async closeProject(): Promise<void> {
@@ -1110,6 +1111,12 @@ export class TramaController {
     }
     request +=
       "Apri la conversazione con la persona. Dopo aver letto lo studio, di' in prosa cosa hai capito del progetto: stack, stato, rischi e cosa manca. Chiudi con le domande che ti servono, se ce ne sono.";
+    if (document.createdFromIdea && !document.mandate) {
+      request +=
+        "\n\nIl progetto è appena nato da questa idea della persona: " +
+        JSON.stringify(document.createdFromIdea) +
+        ". Prima di generare qualunque file proponi scopo, struttura delle cartelle e primi passi, e chiedi il mandato con request_mandate: niente viene creato senza la risposta della persona.";
+    }
     if (!document.team.confirmedAt) {
       request +=
         "\n\nQuesto progetto non ha ancora un team confermato: alla fine dello studio proponilo con propose_team, con un motivo per ogni specialista.";

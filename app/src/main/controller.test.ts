@@ -45,6 +45,16 @@ async function setup() {
 }
 
 describe("TramaController", () => {
+  it("creates a project from an idea as a Git repository and remembers the idea (T10)", async () => {
+    await setup();
+    const parent = await mkdtemp(join(tmpdir(), "trama-parent-"));
+    await controller!.createProject(parent, "Ricette", "Un'app per salvare ricette di famiglia");
+    await until(() => controller!.snapshot.project?.name === "Ricette" && controller!.snapshot.project.phase.kind === "ready");
+    const project = controller!.snapshot.project!;
+    expect(project.document.createdFromIdea).toBe("Un'app per salvare ricette di famiglia");
+    expect(project.snapshot.headSHA).toMatch(/^[0-9a-f]{40}$/);
+  });
+
   it("studies the project, answers a message and records references", async () => {
     await setup();
     const project = controller!.snapshot.project!;

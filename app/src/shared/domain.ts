@@ -386,6 +386,8 @@ export interface ProjectDocument {
   candidates: Candidate[];
   plans: WorkPlan[];
   conflicts?: ConflictAssessment[];
+  /** The idea the person started this project from (T10); the Coordinator proposes purpose and structure first. */
+  createdFromIdea?: string | null;
   /** The review cycle scenario of the example project, run on a local model of an order. */
   pactDemo?: PactDemo | null;
 }
