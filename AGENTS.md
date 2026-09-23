@@ -10,6 +10,18 @@ Scrivere in italiano semplice. Conservare fatti e significato. Usare frasi diret
 
 Il codice sorgente è in inglese: nomi di tipi, funzioni, proprietà, test, commenti tecnici, errori tecnici, messaggi di log e testi dei commit. I messaggi di commit usano verbi inglesi e descrivono il cambiamento in modo concreto.
 
+## Commit e branch
+
+I messaggi di commit seguono [Conventional Commits 1.0.0](https://www.conventionalcommits.org/en/v1.0.0/): `<tipo>[ambito opzionale]: <descrizione>`, per esempio `feat(app): add the search palette` o `fix(app): guard reveal paths`. Tipi usati: `feat`, `fix`, `docs`, `refactor`, `test`, `build`, `ci`, `chore`, `perf`, `style`, `revert`. Una modifica incompatibile usa `!` dopo il tipo o il footer `BREAKING CHANGE:`.
+
+I nomi dei branch usano un prefisso per il tipo di lavoro:
+
+- `feature/<descrizione-breve>` per nuove funzioni;
+- `bugfix/<descrizione-breve>` per correzioni ordinarie;
+- `hotfix/<descrizione-breve>` per correzioni urgenti da portare subito su `main`.
+
+La descrizione è in inglese, minuscola, con parole separate da trattini, per esempio `feature/electron-app`.
+
 L'interfaccia dell'app, la documentazione di prodotto, le issue, le pull request e le comunicazioni con la persona restano in italiano, salvo quando un termine tecnico o una fonte richiedono l'inglese. Non tradurre retroattivamente dati persistiti, contenuti storici, nomi di API esterne o testo già pubblicato soltanto per applicare questa regola.
 
 ## Agent skills
