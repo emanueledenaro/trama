@@ -3,6 +3,7 @@ import { Tooltip } from "@/components/ui/tooltip";
 import { useUi } from "@/lib/store";
 import { IssueDetail, IssuesView } from "./IssuesView";
 import { MandateView } from "./MandateView";
+import { MemoryView } from "./MemoryView";
 import { FilePreview, MapView, ModuleView } from "./MapView";
 import { DecisionView, PactView } from "./PactView";
 
@@ -13,6 +14,7 @@ const TITLES = {
   pact: "Patto Vivo",
   decision: "Decisione",
   mandate: "Mandato del Coordinatore",
+  memory: "Memoria del Coordinatore",
   issues: "Issue del progetto",
   issue: "Issue",
 } as const;
@@ -37,6 +39,7 @@ export function Inspector() {
         {target.kind === "pact" ? <PactView /> : null}
         {target.kind === "decision" ? <DecisionView id={target.id} /> : null}
         {target.kind === "mandate" ? <MandateView /> : null}
+        {target.kind === "memory" ? <MemoryView /> : null}
         {target.kind === "issues" ? <IssuesView /> : null}
         {target.kind === "issue" ? <IssueDetail number={target.number} /> : null}
       </div>

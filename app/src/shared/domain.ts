@@ -14,7 +14,7 @@ export type EventOrigin = "person" | "coordinator" | "trama";
 export type CardKind = "study" | "mandate" | "decision" | "contextNotice";
 
 export type EventContent =
-  | { type: "personMessage"; text: string; moduleId: string | null; moduleName: string | null }
+  | { type: "personMessage"; text: string; moduleId: string | null; moduleName: string | null; imageCount?: number }
   | { type: "coordinatorText"; text: string; model: string | null; references: string[] }
   | { type: "activity"; title: string; detail: string | null; tone: "info" | "tool" | "error" }
   | { type: "card"; kind: CardKind; title: string; detail: string | null; referenceId: string | null };
@@ -41,6 +41,7 @@ export interface CoordinatorRequest {
   createdAt: string;
   completedAt: string | null;
   failure: string | null;
+  attachments?: string[];
 }
 
 export interface PactDecision {

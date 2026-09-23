@@ -1,6 +1,6 @@
 # Trama
 
-App macOS nativa in SwiftUI. Il motore AI è Codex App Server di OpenAI. Seguire i controlli e i materiali di sistema Apple.
+App desktop in Electron (`app/`), con l'interfaccia di Synara: seguire i token, le misure e i componenti in `app/src/renderer` (ADR 0011). Il motore AI è Codex App Server di OpenAI. I sorgenti SwiftUI in `Sources/` restano come riferimento finché il porting non è completo.
 
 ## Humanizer
 

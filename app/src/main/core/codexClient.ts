@@ -148,6 +148,8 @@ export interface TurnOptions {
   cwd: string;
   model: string;
   effort?: string | null;
+  /** Absolute paths of images attached to this message. */
+  images?: string[];
   onEvent: (event: TurnEvent) => void;
 }
 
@@ -306,7 +308,10 @@ export class CodexClient {
       this.activeTurn = turn;
       const params: JsonObject = {
         threadId: options.threadId,
-        input: [{ type: "text", text: prompt, text_elements: [] }],
+        input: [
+          { type: "text", text: prompt, text_elements: [] },
+          ...(options.images ?? []).map((path) => ({ type: "localImage", path })),
+        ],
         cwd: options.cwd,
         model: options.model,
         approvalPolicy: "never",

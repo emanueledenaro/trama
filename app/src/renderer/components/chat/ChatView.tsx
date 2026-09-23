@@ -1,4 +1,6 @@
+// Layout and classes follow Synara (github.com/Emanuele-web04/synara, MIT License, Copyright (c) 2026 T3 Tools Inc. and Emanuele Di Pietro).
 import {
+  IconBrain,
   IconCircleDot,
   IconFolderOpen,
   IconLayoutSidebarRight,
@@ -97,6 +99,7 @@ function ChatHeader({ isMac }: { isMac: boolean }) {
           <HeaderChip target={{ kind: "pact" }} label="Patto" icon={<IconRosetteDiscountCheck stroke={1.8} />} count={pendingDecisions} />
           <HeaderChip target={{ kind: "mandate" }} label="Mandato" icon={<IconShieldCheck stroke={1.8} />} count={pendingMandate} />
           <HeaderChip target={{ kind: "issues" }} label="Issue" icon={<IconCircleDot stroke={1.8} />} count={openIssues} />
+          <HeaderChip target={{ kind: "memory" }} label="Memoria" icon={<IconBrain stroke={1.8} />} />
           <Tooltip label="Aggiorna progetto">
             <button type="button" className={HEADER_CHIP} aria-label="Aggiorna progetto" onClick={() => void act("project:refresh", undefined)}>
               <IconRefresh className="size-3.5 opacity-70" stroke={1.8} />

@@ -96,7 +96,7 @@ const handlers: { [K in ActionName]: Handler<K> } = {
     else void shell.openPath(target);
   },
   "project:readFile": ({ relativePath }) => controller.readFile(relativePath),
-  "coordinator:send": ({ text, moduleId, model, effort }) => controller.send(text, moduleId, model, effort),
+  "coordinator:send": ({ text, moduleId, model, effort, images }) => controller.send(text, moduleId, model, effort, images ?? []),
   "coordinator:interrupt": () => controller.interrupt(),
   "coordinator:retry": () => controller.startCoordinator(),
   "coordinator:selectModel": ({ model, effort }) => controller.selectModel(model, effort),

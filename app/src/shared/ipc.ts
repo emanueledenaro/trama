@@ -11,7 +11,10 @@ export interface ActionMap {
   "project:forgetRecent": [{ id: string }, void];
   "project:revealInFolder": [{ relativePath?: string }, void];
   "project:readFile": [{ relativePath: string }, string];
-  "coordinator:send": [{ text: string; moduleId: string | null; model: string | null; effort: string | null }, void];
+  "coordinator:send": [
+    { text: string; moduleId: string | null; model: string | null; effort: string | null; images?: ImageAttachmentInput[] },
+    void,
+  ];
   "coordinator:interrupt": [void, void];
   "coordinator:retry": [void, void];
   "coordinator:selectModel": [{ model: string; effort: string | null }, void];
@@ -37,6 +40,13 @@ export interface ActionMap {
   "settings:update": [Partial<AppSettings>, void];
   "app:dismissError": [void, void];
   "shell:openExternal": [{ url: string }, void];
+}
+
+/** An image pasted or dropped into the composer, sent to the main process as base64. */
+export interface ImageAttachmentInput {
+  name: string;
+  mimeType: string;
+  dataBase64: string;
 }
 
 export type ActionName = keyof ActionMap;

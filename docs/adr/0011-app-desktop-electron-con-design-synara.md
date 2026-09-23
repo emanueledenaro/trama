@@ -1,0 +1,38 @@
+# Trama diventa un'app desktop Electron con l'interfaccia di Synara
+
+Stato: richiesta dal Product Owner il 23 settembre 2026. Sostituisce l'ADR 0001 per l'interfaccia e la piattaforma. Il porting è in corso: la tabella in fondo dice cosa è già passato nell'app Electron.
+
+L'ADR 0001 aveva scelto un'app macOS nativa in SwiftUI. Il Product Owner ha chiesto di convertire Trama in un'app Electron con lo stesso design di [Synara](https://github.com/Emanuele-web04/synara). Synara è un'app Electron con licenza MIT: la sua interfaccia React e i suoi token di design sono il riferimento visivo.
+
+Decisione: l'app desktop vive in `app/`. Il processo principale (Node, TypeScript) contiene il dominio di Trama: scansione del repository, client di Codex App Server, Coordinatore, server MCP locale degli strumenti, Patto, mandato, GitHub e persistenza. Il renderer (React, Tailwind CSS 4, primitive `@base-ui/react`) riproduce layout, misure, colori e tipografia di Synara: barra laterale traslucida, bordo del contenuto, intestazione di 46 px, timeline con gruppi di lavoro, composer flottante. Il renderer non ha accesso a Node: parla con il processo principale attraverso un bridge IPC con azioni tipizzate.
+
+Regole che restano invariate:
+
+- Codex resta collegato direttamente al suo app-server, con il runtime ristretto: server MCP globali disattivati, app, plugin, hook e sub-agenti spenti, sandbox in sola lettura.
+- Trama accetta solo un account ChatGPT e non legge `auth.json`.
+- Le letture del repository escludono segreti e collegamenti simbolici.
+- Una decisione chiesta dal Coordinatore entra nel Patto solo con la risposta della persona.
+
+Alternative scartate: tenere SwiftUI e imitare Synara a mano (due linguaggi di design e nessun riuso dei componenti); includere l'intero monorepo di Synara (porterebbe server, provider e funzioni che Trama non usa).
+
+Conseguenze: Trama gira anche su Linux e Windows, perché nulla nel processo principale dipende da macOS. Il monitor in background basato su `SMAppService` e le prove con `sandbox-exec` non hanno ancora un equivalente. Le icone "Central Icons" di Synara non sono incluse perché il repository non ne dichiara la licenza: Trama usa Tabler Icons (MIT) con le stesse misure. I sorgenti Swift restano nel repository come riferimento finché le funzioni elencate sotto non sono portate; poi si rimuovono con un ticket separato.
+
+## Stato del porting
+
+| Area | App Electron |
+|---|---|
+| Progetti recenti, apertura, creazione, progetto di esempio | Portato |
+| Scansione del repository e mappa dei moduli | Portato, con gli stessi limiti ed esclusioni |
+| Codex: account ChatGPT, accesso, modelli, sforzo | Portato |
+| Coordinatore: thread persistente, studio, aggiornamenti di contesto, memoria | Portato |
+| Strumenti MCP: `read_study`, `read_pact`, `read_mandate`, `read_issues`, `read_history`, `write_memory`, `request_mandate`, `request_decision` | Portato |
+| Schede di studio, decisione, mandato e avviso di contesto | Portato |
+| Patto: decisioni versionate e risposte alle domande | Portato |
+| Mandato: concessione, correzione, revoca, versioni | Portato |
+| Issue GitHub tramite `gh` | Portato (lettura e creazione) |
+| Immagini nel composer | Portato |
+| Team, specialisti, incarichi, worktree | Da portare |
+| Candidati, verifiche, revisione tecnica, via libera | Da portare |
+| Pubblicazione di pull request | Da portare |
+| Monitor in background e notifiche | Da portare |
+| Skill AI Hero e altri provider oltre Codex | Da portare |

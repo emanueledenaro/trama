@@ -4,6 +4,7 @@ import { mkdir, realpath, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { CodexModel, TurnEvent } from "@shared/codex";
+import type { ImageAttachmentInput } from "@shared/ipc";
 import type {
   ActiveProjectState,
   AppSettings,
@@ -61,7 +62,14 @@ export class TramaController {
   private publishTimer: NodeJS.Timeout | null = null;
   private lastProjectId: string | null = null;
   /** Messages sent while a turn was running; they leave in order when it ends. */
-  private queue: { projectId: string; text: string; moduleId: string | null; model: string | null; effort: string | null }[] = [];
+  private queue: {
+    projectId: string;
+    text: string;
+    moduleId: string | null;
+    model: string | null;
+    effort: string | null;
+    images: ImageAttachmentInput[];
+  }[] = [];
 
   constructor(
     storageRoot: string,
@@ -519,14 +527,21 @@ export class TramaController {
     this.changed();
   }
 
-  async send(text: string, moduleId: string | null, model: string | null, effort: string | null): Promise<void> {
+  async send(
+    text: string,
+    moduleId: string | null,
+    model: string | null,
+    effort: string | null,
+    images: ImageAttachmentInput[] = [],
+  ): Promise<void> {
     const project = this.requireProject();
     const trimmed = text.trim();
     if (!trimmed) return;
     if (project.runningRequestId) {
-      this.queue.push({ projectId: project.id, text: trimmed, moduleId, model, effort });
+      this.queue.push({ projectId: project.id, text: trimmed, moduleId, model, effort, images });
       return;
     }
+    const attachments = await this.storage.saveAttachments(project.id, images);
     const document = project.document;
     const module = moduleId ? project.snapshot.modules.find((m) => m.id === moduleId) : undefined;
     const selectedModel = model ?? this.coordinatorModel(document);
@@ -540,10 +555,16 @@ export class TramaController {
       createdAt: new Date().toISOString(),
       completedAt: null,
       failure: null,
+      attachments,
     };
     document.requests.push(request);
     document.composerDraft = "";
-    appendEvent(document, "person", { type: "personMessage", text: trimmed, moduleId: module?.id ?? null, moduleName: module?.name ?? null }, request.id);
+    appendEvent(
+      document,
+      "person",
+      { type: "personMessage", text: trimmed, moduleId: module?.id ?? null, moduleName: module?.name ?? null, imageCount: attachments.length },
+      request.id,
+    );
     project.runningRequestId = request.id;
     this.changed();
 
@@ -590,6 +611,7 @@ export class TramaController {
         cwd: project.rootPath,
         model: selectedModel,
         effort,
+        images: attachments,
         onEvent: (event) => this.handleTurnEvent(project, request, event),
       });
       document.coordinator.injectedStudy = { ...document.coordinator.injectedStudy, ...fingerprints(study) };
@@ -632,7 +654,7 @@ export class TramaController {
     const project = this.state.project;
     this.queue = this.queue.filter((item) => item.projectId === project?.id);
     const next = this.queue.shift();
-    if (next) void this.send(next.text, next.moduleId, next.model, next.effort).catch((error) => this.fail(error));
+    if (next) void this.send(next.text, next.moduleId, next.model, next.effort, next.images).catch((error) => this.fail(error));
   }
 
   private handleTurnEvent(project: ActiveProjectState, request: CoordinatorRequest, event: TurnEvent): void {

@@ -1,4 +1,6 @@
-import { IconArrowUp, IconAt, IconChevronDown, IconSparkles } from "@tabler/icons-react";
+// Layout and classes follow Synara (github.com/Emanuele-web04/synara, MIT License, Copyright (c) 2026 T3 Tools Inc. and Emanuele Di Pietro).
+import { IconArrowUp, IconAt, IconChevronDown, IconPhotoPlus, IconSparkles, IconX } from "@tabler/icons-react";
+import type { ImageAttachmentInput } from "@shared/ipc";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Menu, MenuGroupLabel, MenuPopup, MenuRadioGroup, MenuRadioItem, MenuSeparator, MenuTrigger } from "@/components/ui/menu";
@@ -14,6 +16,32 @@ const EFFORT_LABELS: Record<string, string> = {
   xhigh: "Molto alto",
 };
 
+const IMAGE_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp"];
+const MAXIMUM_IMAGES = 4;
+
+interface DraftImage extends ImageAttachmentInput {
+  id: string;
+  previewUrl: string;
+}
+
+function readImage(file: File): Promise<DraftImage> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(reader.error);
+    reader.onload = () => {
+      const url = String(reader.result);
+      resolve({
+        id: crypto.randomUUID(),
+        name: file.name || "immagine",
+        mimeType: file.type,
+        dataBase64: url.slice(url.indexOf(",") + 1),
+        previewUrl: url,
+      });
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
 const PILL =
   "inline-flex h-7 min-w-0 shrink-0 cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-lg px-2 text-ui-sm font-normal text-[var(--color-text-foreground-secondary)] transition-colors hover:bg-[var(--color-background-elevated-secondary)] hover:text-[var(--color-text-foreground)] data-[popup-open]:bg-[var(--color-background-elevated-secondary)] data-[popup-open]:text-[var(--color-text-foreground)] sm:px-2.5";
 
@@ -24,7 +52,20 @@ export function Composer() {
   const moduleId = useUi((s) => s.composerModuleId);
   const setModule = useUi((s) => s.setComposerModule);
   const [text, setText] = useState(project.document.composerDraft);
+  const [images, setImages] = useState<DraftImage[]>([]);
+  const [dragging, setDragging] = useState(false);
   const textarea = useRef<HTMLTextAreaElement>(null);
+  const fileInput = useRef<HTMLInputElement>(null);
+  const setToast = useUi((s) => s.setToast);
+
+  const addFiles = async (files: File[]) => {
+    const accepted = files.filter((f) => IMAGE_TYPES.includes(f.type));
+    if (accepted.length < files.length) setToast("Trama accetta immagini PNG, JPEG, GIF o WebP.");
+    const room = MAXIMUM_IMAGES - images.length;
+    if (accepted.length > room) setToast(`Puoi allegare al massimo ${MAXIMUM_IMAGES} immagini per messaggio.`);
+    const read = await Promise.all(accepted.slice(0, Math.max(0, room)).map(readImage));
+    setImages((current) => [...current, ...read].slice(0, MAXIMUM_IMAGES));
+  };
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const running = Boolean(project.runningRequestId);
@@ -35,6 +76,7 @@ export function Composer() {
   const module = moduleId ? project.snapshot.modules.find((m) => m.id === moduleId) : null;
 
   useEffect(() => {
+    setImages([]);
     setText(project.document.composerDraft);
     // Only when switching project: the draft on disk follows local edits, not the other way round.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -61,25 +103,65 @@ export function Composer() {
     const message = text.trim();
     if (!message) return;
     setText("");
-    void act("coordinator:send", { text: message, moduleId, model: selectedModel, effort });
+    const attached = images.map(({ name, mimeType, dataBase64 }) => ({ name, mimeType, dataBase64 }));
+    setImages([]);
+    void act("coordinator:send", { text: message, moduleId, model: selectedModel, effort, images: attached });
   };
 
   return (
     <div className="mx-auto w-full max-w-[var(--app-chat-max-width)] min-w-0">
       <div className="group relative z-[1] chat-composer-shell transition-colors duration-200">
         <form
-          className="chat-composer-surface border border-[color:var(--surface-border)] shadow-[0_4px_18px_-6px_color-mix(in_srgb,var(--foreground)_7%,transparent)] transition-colors duration-200 dark:shadow-[0_6px_24px_-10px_rgba(0,0,0,0.30)]"
+          className={cn(
+            "chat-composer-surface border border-[color:var(--surface-border)] shadow-[0_4px_18px_-6px_color-mix(in_srgb,var(--foreground)_7%,transparent)] transition-colors duration-200 dark:shadow-[0_6px_24px_-10px_rgba(0,0,0,0.30)]",
+            dragging && "border-[color:var(--color-text-accent)]",
+          )}
           onSubmit={(event) => {
             event.preventDefault();
             submit();
           }}
+          onDragOver={(event) => {
+            if (!event.dataTransfer.types.includes("Files")) return;
+            event.preventDefault();
+            setDragging(true);
+          }}
+          onDragLeave={() => setDragging(false)}
+          onDrop={(event) => {
+            event.preventDefault();
+            setDragging(false);
+            void addFiles([...event.dataTransfer.files]);
+          }}
         >
+          {images.length ? (
+            <div className="flex flex-wrap gap-2 px-3 pt-3">
+              {images.map((image) => (
+                <div key={image.id} className="group/image relative size-12 overflow-hidden rounded-lg border border-[color:var(--color-border)]">
+                  <img src={image.previewUrl} alt={image.name} className="size-full object-cover" />
+                  <button
+                    type="button"
+                    aria-label={`Rimuovi ${image.name}`}
+                    onClick={() => setImages((current) => current.filter((i) => i.id !== image.id))}
+                    className="absolute top-0.5 right-0.5 hidden size-4 items-center justify-center rounded-full bg-black/60 text-white group-hover/image:flex"
+                  >
+                    <IconX className="size-3" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          ) : null}
           <div className="relative pt-3 pr-3.5 pb-2 pl-3">
             <textarea
               ref={textarea}
               value={text}
               rows={2}
               onChange={(event) => updateText(event.target.value)}
+              onPaste={(event) => {
+                const files = [...event.clipboardData.files];
+                if (files.length) {
+                  event.preventDefault();
+                  void addFiles(files);
+                }
+              }}
               onKeyDown={(event) => {
                 if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
                   event.preventDefault();
@@ -93,6 +175,22 @@ export function Composer() {
           </div>
           <div className="flex flex-wrap items-center justify-between gap-1.5 pr-2 pb-1.5 pl-1.5 sm:flex-nowrap sm:gap-0">
             <div className="flex min-w-0 flex-1 items-center gap-1">
+              <Tooltip label="Allega immagini">
+                <Button variant="chrome" size="icon-sm" className="shrink-0 rounded-md" aria-label="Allega immagini" onClick={() => fileInput.current?.click()}>
+                  <IconPhotoPlus className="size-4 text-primary" stroke={1.7} />
+                </Button>
+              </Tooltip>
+              <input
+                ref={fileInput}
+                type="file"
+                accept={IMAGE_TYPES.join(",")}
+                multiple
+                hidden
+                onChange={(event) => {
+                  void addFiles([...(event.target.files ?? [])]);
+                  event.target.value = "";
+                }}
+              />
               <Menu>
                 <MenuTrigger className={cn(PILL, "max-w-56")} aria-label="Contesto del messaggio">
                   <IconAt className="size-3.5 shrink-0 opacity-70" stroke={1.8} />

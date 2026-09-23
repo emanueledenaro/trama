@@ -1,3 +1,4 @@
+// Layout and classes follow Synara (github.com/Emanuele-web04/synara, MIT License, Copyright (c) 2026 T3 Tools Inc. and Emanuele Di Pietro).
 import {
   IconAlertTriangle,
   IconBolt,
@@ -32,7 +33,13 @@ function PersonMessage({ row }: { row: Extract<TimelineRow, { kind: "person" }> 
   return (
     <div className="chat-message-send-enter flex w-full justify-end py-2">
       <div className="group flex max-w-[80%] flex-col items-end gap-px">
-        {row.moduleName ? <div className="pr-1 pb-1 text-ui-xs text-muted-foreground/60">Modulo {row.moduleName}</div> : null}
+        {row.moduleName || row.imageCount ? (
+          <div className="pr-1 pb-1 text-ui-xs text-muted-foreground/60">
+            {[row.moduleName ? `Modulo ${row.moduleName}` : null, row.imageCount ? (row.imageCount === 1 ? "1 immagine" : `${row.imageCount} immagini`) : null]
+              .filter(Boolean)
+              .join(" · ")}
+          </div>
+        ) : null}
         <div className="w-max max-w-full min-w-0 self-end rounded-[var(--radius-user-message)] border border-transparent bg-[var(--app-user-message-background)] px-3.5 py-2.5">
           <ChatMarkdown text={row.text} user />
         </div>

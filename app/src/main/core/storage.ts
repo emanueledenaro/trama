@@ -3,9 +3,18 @@ import { existsSync } from "node:fs";
 import { chmod, lstat, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import type { AppSettings, ProjectDocument, RecentProject } from "@shared/domain";
+import type { ImageAttachmentInput } from "@shared/ipc";
 import { normalizeDocument } from "./document";
 
 const MAXIMUM_RECENT_PROJECTS = 20;
+const MAXIMUM_IMAGES = 4;
+const MAXIMUM_IMAGE_BYTES = 10 * 1_048_576;
+const IMAGE_EXTENSIONS: Record<string, string> = {
+  "image/png": "png",
+  "image/jpeg": "jpg",
+  "image/gif": "gif",
+  "image/webp": "webp",
+};
 
 /** Writes through a temporary file and a rename, so a crash never leaves half a file. */
 export async function writeAtomically(path: string, contents: string): Promise<void> {
@@ -78,6 +87,24 @@ export class AppStorage {
         error: `Lo stato del progetto non è leggibile e resta invariato in ${path}. ${(error as Error).message}`,
       };
     }
+  }
+
+  /** Stores composer images inside Trama's folder and returns their absolute paths. */
+  async saveAttachments(projectId: string, images: ImageAttachmentInput[]): Promise<string[]> {
+    if (images.length > MAXIMUM_IMAGES) throw new Error(`Puoi allegare al massimo ${MAXIMUM_IMAGES} immagini per messaggio.`);
+    const directory = join(this.root, "Attachments", createHash("sha256").update(projectId).digest("hex").slice(0, 16));
+    const paths: string[] = [];
+    for (const image of images) {
+      const extension = IMAGE_EXTENSIONS[image.mimeType];
+      if (!extension) throw new Error(`Formato immagine non supportato: ${image.name}.`);
+      const data = Buffer.from(image.dataBase64, "base64");
+      if (data.length === 0 || data.length > MAXIMUM_IMAGE_BYTES) throw new Error(`L'immagine ${image.name} supera 10 MB o è vuota.`);
+      const path = join(directory, `${randomUUID()}.${extension}`);
+      await mkdir(directory, { recursive: true });
+      await writeFile(path, data, { mode: 0o600 });
+      paths.push(path);
+    }
+    return paths;
   }
 
   async saveDocument(document: ProjectDocument): Promise<void> {

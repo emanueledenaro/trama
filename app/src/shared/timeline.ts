@@ -1,7 +1,7 @@
 import type { CardKind, ConversationEvent, CoordinatorRequest } from "./domain";
 
 export type TimelineRow =
-  | { kind: "person"; id: string; event: ConversationEvent; text: string; moduleName: string | null }
+  | { kind: "person"; id: string; event: ConversationEvent; text: string; moduleName: string | null; imageCount: number }
   | {
       kind: "work";
       id: string;
@@ -31,7 +31,7 @@ export function deriveTimelineRows(
     const content = event.content;
     switch (content.type) {
       case "personMessage":
-        rows.push({ kind: "person", id: event.id, event, text: content.text, moduleName: content.moduleName });
+        rows.push({ kind: "person", id: event.id, event, text: content.text, moduleName: content.moduleName, imageCount: content.imageCount ?? 0 });
         break;
       case "activity": {
         const key = event.requestId ?? `free-${event.id}`;

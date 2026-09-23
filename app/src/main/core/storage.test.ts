@@ -1,0 +1,32 @@
+import { mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { describe, expect, it } from "vitest";
+import { emptyDocument } from "./document";
+import { AppStorage } from "./storage";
+
+describe("AppStorage", () => {
+  it("saves documents privately and marks unreadable state as not writable", async () => {
+    const storage = new AppStorage(await mkdtemp(join(tmpdir(), "trama-storage-")));
+    const document = emptyDocument("p1");
+    document.requests.push({ id: "r", text: "t", moduleId: null, state: "running", model: null, effort: null, createdAt: "", completedAt: null, failure: null });
+    await storage.saveDocument(document);
+    expect((await stat(storage.documentPath("p1"))).mode & 0o777).toBe(0o600);
+    const loaded = await storage.loadDocument("p1");
+    expect(loaded.document?.requests[0]?.state).toBe("interrupted");
+
+    await writeFile(storage.documentPath("p1"), "{ non è json");
+    const broken = await storage.loadDocument("p1");
+    expect(broken).toMatchObject({ document: null, writable: false });
+    expect(await readFile(storage.documentPath("p1"), "utf8")).toBe("{ non è json");
+  });
+
+  it("accepts only supported images within the limits", async () => {
+    const storage = new AppStorage(await mkdtemp(join(tmpdir(), "trama-storage-")));
+    const png = { name: "a.png", mimeType: "image/png", dataBase64: Buffer.from("png").toString("base64") };
+    const [path] = await storage.saveAttachments("p1", [png]);
+    expect(await readFile(path!, "utf8")).toBe("png");
+    await expect(storage.saveAttachments("p1", [{ ...png, mimeType: "image/svg+xml" }])).rejects.toThrow(/non supportato/);
+    await expect(storage.saveAttachments("p1", Array(5).fill(png))).rejects.toThrow(/al massimo/);
+  });
+});
