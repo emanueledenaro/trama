@@ -27,6 +27,6 @@ describe("AppStorage", () => {
     const [path] = await storage.saveAttachments("p1", [png]);
     expect(await readFile(path!, "utf8")).toBe("png");
     await expect(storage.saveAttachments("p1", [{ ...png, mimeType: "image/svg+xml" }])).rejects.toThrow(/non supportato/);
-    await expect(storage.saveAttachments("p1", Array(5).fill(png))).rejects.toThrow(/al massimo/);
+    await expect(storage.saveAttachments("p1", Array(9).fill(png))).rejects.toThrow(/al massimo/);
   });
 });

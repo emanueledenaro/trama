@@ -7,7 +7,7 @@ import type { ImageAttachmentInput } from "@shared/ipc";
 import { normalizeDocument } from "./document";
 
 const MAXIMUM_RECENT_PROJECTS = 20;
-const MAXIMUM_IMAGES = 4;
+const MAXIMUM_IMAGES = 8;
 const MAXIMUM_IMAGE_BYTES = 10 * 1_048_576;
 const IMAGE_EXTENSIONS: Record<string, string> = {
   "image/png": "png",

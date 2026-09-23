@@ -1,6 +1,8 @@
 // Layout and classes follow Synara (github.com/Emanuele-web04/synara, MIT License, Copyright (c) 2026 T3 Tools Inc. and Emanuele Di Pietro).
 import { IconArrowUp, IconAt, IconChevronDown, IconPhotoPlus, IconSparkles, IconX } from "@tabler/icons-react";
 import type { ImageAttachmentInput } from "@shared/ipc";
+import { type MentionCandidate, mentionCandidates, mentionToken } from "@shared/mentions";
+import { normalizePaste, pasteSizeLabel, pasteTitle, serializePastes, shouldCollapsePaste } from "@shared/pastedText";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Menu, MenuGroupLabel, MenuPopup, MenuRadioGroup, MenuRadioItem, MenuSeparator, MenuTrigger } from "@/components/ui/menu";
@@ -17,7 +19,7 @@ const EFFORT_LABELS: Record<string, string> = {
 };
 
 const IMAGE_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp"];
-const MAXIMUM_IMAGES = 4;
+const MAXIMUM_IMAGES = 8;
 
 interface DraftImage extends ImageAttachmentInput {
   id: string;
@@ -53,7 +55,9 @@ export function Composer() {
   const setModule = useUi((s) => s.setComposerModule);
   const [text, setText] = useState(project.document.composerDraft);
   const [images, setImages] = useState<DraftImage[]>([]);
+  const [pastes, setPastes] = useState<{ id: string; text: string }[]>([]);
   const [dragging, setDragging] = useState(false);
+  const [mention, setMention] = useState<{ start: number; query: string; index: number } | null>(null);
   const textarea = useRef<HTMLTextAreaElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const setToast = useUi((s) => s.setToast);
@@ -77,6 +81,7 @@ export function Composer() {
 
   useEffect(() => {
     setImages([]);
+    setPastes([]);
     setText(project.document.composerDraft);
     // Only when switching project: the draft on disk follows local edits, not the other way round.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -93,6 +98,32 @@ export function Composer() {
     element.style.height = `${Math.min(element.scrollHeight, 240)}px`;
   }, [text]);
 
+  const mentionSources = { modules: project.snapshot.modules, issues: project.github.issues, decisions: project.document.decisions };
+  const candidates: MentionCandidate[] = mention ? mentionCandidates(mention.query, mentionSources).slice(0, 12) : [];
+
+  /** Opens the mention menu while the word before the cursor starts with @. */
+  const trackMention = (value: string, cursor: number) => {
+    const before = value.slice(0, cursor);
+    const match = before.match(/(^|\s)@([^\s@"]*)$/);
+    if (match) setMention({ start: cursor - match[2]!.length - 1, query: match[2]!, index: 0 });
+    else setMention(null);
+  };
+
+  const insertMention = (candidate: MentionCandidate) => {
+    if (!mention) return;
+    const element = textarea.current;
+    const cursor = element?.selectionStart ?? text.length;
+    const token = `${mentionToken(candidate.mention)} `;
+    const next = text.slice(0, mention.start) + token + text.slice(cursor);
+    updateText(next);
+    setMention(null);
+    requestAnimationFrame(() => {
+      const position = mention.start + token.length;
+      element?.focus();
+      element?.setSelectionRange(position, position);
+    });
+  };
+
   const updateText = (value: string) => {
     setText(value);
     if (saveTimer.current) clearTimeout(saveTimer.current);
@@ -100,8 +131,10 @@ export function Composer() {
   };
 
   const submit = () => {
-    const message = text.trim();
-    if (!message) return;
+    const prompt = text.trim();
+    if (!prompt && !pastes.length) return;
+    const message = serializePastes(prompt || "Leggi il testo incollato.", pastes.map((p) => p.text));
+    setPastes([]);
     setText("");
     const attached = images.map(({ name, mimeType, dataBase64 }) => ({ name, mimeType, dataBase64 }));
     setImages([]);
@@ -111,6 +144,34 @@ export function Composer() {
   return (
     <div className="mx-auto w-full max-w-[var(--app-chat-max-width)] min-w-0">
       <div className="group relative z-[1] chat-composer-shell transition-colors duration-200">
+        {mention && candidates.length ? (
+          <div
+            role="listbox"
+            aria-label="Menzioni"
+            className="translucent-popup absolute inset-x-0 bottom-full z-20 mb-2 max-h-72 overflow-y-auto rounded-[0.875rem] p-1 shadow-[0_4px_18px_-6px_color-mix(in_srgb,var(--foreground)_12%,transparent)]"
+          >
+            {candidates.map((candidate, index) => (
+              <button
+                key={`${candidate.mention.kind}:${candidate.mention.key}`}
+                type="button"
+                role="option"
+                aria-selected={index === mention.index}
+                onMouseDown={(event) => {
+                  event.preventDefault();
+                  insertMention(candidate);
+                }}
+                onMouseEnter={() => setMention({ ...mention, index })}
+                className={cn(
+                  "flex min-h-[26px] w-full items-center gap-2 rounded-[0.625rem] px-2 py-1 text-left text-ui",
+                  index === mention.index && "bg-[var(--color-background-button-secondary-hover)]",
+                )}
+              >
+                <span className="min-w-0 flex-1 truncate text-[var(--color-text-foreground)]">{candidate.title}</span>
+                <span className="max-w-[45%] shrink-0 truncate text-ui-xs text-muted-foreground">{candidate.subtitle}</span>
+              </button>
+            ))}
+          </div>
+        ) : null}
         <form
           className={cn(
             "chat-composer-surface border border-[color:var(--surface-border)] shadow-[0_4px_18px_-6px_color-mix(in_srgb,var(--foreground)_7%,transparent)] transition-colors duration-200 dark:shadow-[0_6px_24px_-10px_rgba(0,0,0,0.30)]",
@@ -132,6 +193,27 @@ export function Composer() {
             void addFiles([...event.dataTransfer.files]);
           }}
         >
+          {pastes.length ? (
+            <div className="flex flex-wrap gap-2 px-3 pt-3">
+              {pastes.map((paste) => (
+                <div
+                  key={paste.id}
+                  className="group/paste relative flex max-w-64 min-w-0 flex-col rounded-lg border border-[color:var(--color-border)] bg-[var(--color-background-button-secondary)] px-2.5 py-1.5"
+                >
+                  <span className="truncate text-ui-sm text-foreground">{pasteTitle(paste.text) || "Testo incollato"}</span>
+                  <span className="text-ui-xs text-muted-foreground">Testo incollato · {pasteSizeLabel(paste.text)}</span>
+                  <button
+                    type="button"
+                    aria-label="Rimuovi testo incollato"
+                    onClick={() => setPastes((current) => current.filter((p) => p.id !== paste.id))}
+                    className="absolute -top-1.5 -right-1.5 hidden size-4 items-center justify-center rounded-full bg-foreground text-background group-hover/paste:flex"
+                  >
+                    <IconX className="size-3" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          ) : null}
           {images.length ? (
             <div className="flex flex-wrap gap-2 px-3 pt-3">
               {images.map((image) => (
@@ -154,21 +236,53 @@ export function Composer() {
               ref={textarea}
               value={text}
               rows={2}
-              onChange={(event) => updateText(event.target.value)}
+              onChange={(event) => {
+                updateText(event.target.value);
+                trackMention(event.target.value, event.target.selectionStart);
+              }}
+              onBlur={() => setTimeout(() => setMention(null), 120)}
               onPaste={(event) => {
                 const files = [...event.clipboardData.files];
                 if (files.length) {
                   event.preventDefault();
                   void addFiles(files);
+                  return;
+                }
+                const pasted = event.clipboardData.getData("text/plain");
+                if (pasted && shouldCollapsePaste(pasted)) {
+                  event.preventDefault();
+                  setPastes((current) => [...current, { id: crypto.randomUUID(), text: normalizePaste(pasted) }]);
                 }
               }}
               onKeyDown={(event) => {
+                if (mention && candidates.length) {
+                  if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+                    event.preventDefault();
+                    const step = event.key === "ArrowDown" ? 1 : -1;
+                    setMention({ ...mention, index: (mention.index + step + candidates.length) % candidates.length });
+                    return;
+                  }
+                  if (event.key === "Enter" || event.key === "Tab") {
+                    event.preventDefault();
+                    insertMention(candidates[mention.index] ?? candidates[0]!);
+                    return;
+                  }
+                  if (event.key === "Escape") {
+                    event.preventDefault();
+                    setMention(null);
+                    return;
+                  }
+                }
                 if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
                   event.preventDefault();
                   submit();
                 }
               }}
-              placeholder={running ? "Aggiungi un messaggio: partirà quando il Coordinatore avrà finito" : "Messaggio al Coordinatore"}
+              placeholder={
+                running
+                  ? "Aggiungi un messaggio: partirà quando il Coordinatore avrà finito"
+                  : "Messaggio al Coordinatore. Usa @ per citare moduli, file, issue e decisioni"
+              }
               aria-label="Messaggio al Coordinatore"
               className="block max-h-60 min-h-[2lh] w-full resize-none bg-transparent font-system-ui text-chat leading-relaxed text-foreground outline-none placeholder:text-muted-foreground/40"
             />
@@ -254,7 +368,7 @@ export function Composer() {
               </Menu>
             </div>
             <div className="flex shrink-0 items-center gap-2">
-              {busy && !text.trim() ? (
+              {busy && !text.trim() && !pastes.length ? (
                 <Tooltip label="Interrompi">
                   <Button
                     variant="prominent"
@@ -268,7 +382,7 @@ export function Composer() {
                 </Tooltip>
               ) : (
                 <Tooltip label="Invia al Coordinatore">
-                  <Button type="submit" variant="prominent" size="icon-xs" className="size-7 rounded-full" disabled={!text.trim()} aria-label="Invia al Coordinatore">
+                  <Button type="submit" variant="prominent" size="icon-xs" className="size-7 rounded-full" disabled={!text.trim() && !pastes.length} aria-label="Invia al Coordinatore">
                     <IconArrowUp className="size-4.5 shrink-0" stroke={2.2} />
                   </Button>
                 </Tooltip>

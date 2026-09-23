@@ -13,6 +13,7 @@ import {
 } from "@tabler/icons-react";
 import { useState } from "react";
 import type { ConversationEvent } from "@shared/domain";
+import { extractPastes, pasteSizeLabel, pasteTitle } from "@shared/pastedText";
 import { formatDuration, type TimelineRow } from "@shared/timeline";
 import { cn } from "@/lib/cn";
 import { formatTime } from "@/lib/format";
@@ -32,6 +33,8 @@ function DisclosureChevron({ open }: { open: boolean }) {
 
 function PersonMessage({ row }: { row: Extract<TimelineRow, { kind: "person" }> }) {
   const [copied, setCopied] = useState(false);
+  const [openPaste, setOpenPaste] = useState<number | null>(null);
+  const { prompt, pastes } = extractPastes(row.text);
   return (
     <div className="chat-message-send-enter flex w-full justify-end py-2">
       <div className="group flex max-w-[80%] flex-col items-end gap-px">
@@ -43,7 +46,26 @@ function PersonMessage({ row }: { row: Extract<TimelineRow, { kind: "person" }> 
           </div>
         ) : null}
         <div className="w-max max-w-full min-w-0 self-end rounded-[var(--radius-user-message)] border border-transparent bg-[var(--app-user-message-background)] px-3.5 py-2.5">
-          <ChatMarkdown text={row.text} user />
+          <ChatMarkdown text={prompt} user />
+          {pastes.length ? (
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {pastes.map((paste, index) => (
+                <button
+                  key={paste.slice(0, 40) + String(index)}
+                  type="button"
+                  onClick={() => setOpenPaste(openPaste === index ? null : index)}
+                  className="rounded-md bg-[color-mix(in_srgb,var(--foreground)_7%,transparent)] px-2 py-1 text-left text-ui-xs text-muted-foreground hover:text-foreground"
+                >
+                  {pasteTitle(paste) || "Testo incollato"} · {pasteSizeLabel(paste)}
+                </button>
+              ))}
+            </div>
+          ) : null}
+          {openPaste !== null && pastes[openPaste] ? (
+            <pre className="mt-2 max-h-64 overflow-auto rounded-lg bg-[color-mix(in_srgb,var(--foreground)_5%,transparent)] p-2 font-mono text-[11px] whitespace-pre-wrap">
+              {pastes[openPaste]}
+            </pre>
+          ) : null}
         </div>
         <div className="flex items-center justify-end gap-2 pt-1 pr-0.5 font-system-ui text-[11px] font-normal text-muted-foreground/45">
           <span className="pointer-events-none opacity-0 transition-opacity group-hover:pointer-events-auto group-hover:opacity-100">

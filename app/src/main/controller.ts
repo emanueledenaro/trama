@@ -5,6 +5,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import type { CodexModel, TurnEvent } from "@shared/codex";
 import { shortId } from "@shared/ids";
+import { mentionContextBlock } from "@shared/mentions";
 import type { ImageAttachmentInput } from "@shared/ipc";
 import type {
   ActiveProjectState,
@@ -694,6 +695,12 @@ export class TramaController {
         if (includeMemory) sections.push(`## La tua memoria\n${document.coordinator.memory.text || "La memoria è vuota."}`);
       }
       if (module) sections.push(`Contesto scelto dalla persona: modulo ${module.name} (${module.relativePath}).`);
+      const mentioned = mentionContextBlock(trimmed, {
+        modules: project.snapshot.modules,
+        issues: project.github.issues,
+        decisions: document.decisions,
+      });
+      if (mentioned) sections.push(mentioned);
       sections.push(trimmed);
       appendEvent(
         document,
