@@ -1,6 +1,7 @@
 import type { ProviderId } from "@shared/codex";
 import { ClaudeAgentRuntime } from "./claudeAgent";
 import { CodexRuntime } from "./codex";
+import { OpenCodeRuntime } from "./opencode";
 import type { AgentRuntime, RuntimeOptions } from "./types";
 
 type Factory = (options: RuntimeOptions) => AgentRuntime;
@@ -8,6 +9,7 @@ type Factory = (options: RuntimeOptions) => AgentRuntime;
 const FACTORIES: Partial<Record<ProviderId, Factory>> = {
   codex: (options) => new CodexRuntime(options),
   claudeAgent: (options) => new ClaudeAgentRuntime(options),
+  opencode: (options) => new OpenCodeRuntime(options),
 };
 
 /** Providers with an adapter in this build. */
