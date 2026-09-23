@@ -157,7 +157,7 @@ export const COORDINATOR_TOOLS: ToolDefinition[] = [
   {
     name: "assign_task",
     description:
-      "Within the mandate (executeInWorktree), assign work to a specialist, named by id or name. Trama starts it in a provider session it owns, in its own worktree when tools include edits, without network. Give the objective, the issue or exercise, the modules, the assignments it depends on, the checks the result must pass and your instructions for the specialist. provider and model default to yours; propose another connected provider or model only when the work needs it (read_team lists them). Assign in parallel only independent work: different modules and no unfinished dependency. kind newFeature and tradeOff always go to the person.",
+      "Within the mandate (executeInWorktree), assign work to a specialist, named by id or name. Trama starts it in a provider session it owns, in its own worktree when tools include edits, without network. Give the objective, the issue or exercise, the modules, the assignments it depends on, the Pact decisions the work relies on (decisionIDs: the work stops if one changes), the checks the result must pass and your instructions for the specialist. provider and model default to yours; propose another connected provider or model only when the work needs it (read_team lists them). Assign in parallel only independent work: different modules and no unfinished dependency. kind newFeature and tradeOff always go to the person.",
     properties: {
       specialist: text,
       kind: { type: "string", enum: WORK_KINDS },
@@ -166,6 +166,7 @@ export const COORDINATOR_TOOLS: ToolDefinition[] = [
       exercise: text,
       moduleIDs: list(1),
       dependencies: list(0),
+      decisionIDs: list(0),
       provider: text,
       model: text,
       tools: { type: "array", items: { type: "string", enum: ["commands", "edits"] } },
@@ -248,6 +249,8 @@ export interface ToolContext {
   providers: { id: ProviderId; models: string[] }[];
   /** Starts the runtime of an assignment that was just recorded. */
   startAssignment(id: string): void;
+  /** Stops running work that relies on a decision that changed or is being revised; returns the stopped assignment ids. */
+  decisionChanged(decisionId: string): string[];
   /** Interrupts the running turn of an assignment, or confirms the stop when none runs. */
   stopAssignment(id: string): void;
   runCheck(check: ReadOnlyCheck): Promise<CheckResult>;
@@ -386,8 +389,14 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
           revisesDecisionId: typeof args.revisesDecisionID === "string" && args.revisesDecisionID ? args.revisesDecisionID : null,
         });
         context.addCard("decision", "Decisione", request.id);
+        const paused = request.revisesDecisionId ? context.decisionChanged(request.revisesDecisionId) : [];
         context.changed();
-        return toolSuccess({ requestID: request.id, status: "shown_to_person", note: "Wait for the person's answer." });
+        return toolSuccess({
+          requestID: request.id,
+          status: "shown_to_person",
+          note: "Wait for the person's answer.",
+          stoppedAssignments: paused,
+        });
       }
       case "run_readonly_check": {
         const check = typeof args.check === "string" ? (args.check as ReadOnlyCheck) : null;
@@ -511,6 +520,7 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
             exercise: typeof args.exercise === "string" ? args.exercise : null,
             moduleIds,
             dependencies: strings(args.dependencies),
+            decisionIds: strings(args.decisionIDs),
             model,
             provider: providerId,
             tools: strings(args.tools) as SpecialistTool[],

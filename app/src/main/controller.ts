@@ -64,7 +64,9 @@ import {
   recordWorkspace,
   removeSpecialist,
   requestStop,
+  assignmentsAffectedByDecision,
   changeAssignmentProvider,
+  refreshDecisionVersions,
   resumeAssignment,
   stopOrphanedAssignments,
   teamMessage,
@@ -790,6 +792,7 @@ export class TramaController {
           providers: this.connectedProviders(),
           startAssignment: (id) => void this.startAssignment(id),
           stopAssignment: (id) => void this.stopAssignmentRuntime(id),
+          decisionChanged: (id) => this.stopWorkDependingOn(id),
           runCheck: (check) => this.runCheck(check, current.rootPath, current.runningRequestId),
           availableChecks: availableChecks(current.rootPath),
           reviewWorkspace: async (assignmentId) => {
@@ -1260,13 +1263,29 @@ export class TramaController {
 
   recordDecision(input: { id: string | null; value: string; acceptedExample: string; rationale: string }): void {
     const project = this.requireProject();
-    decide(project.document, input);
+    const decision = decide(project.document, input);
+    this.stopWorkDependingOn(decision.id);
     this.changed();
+  }
+
+  /** Stops only the work that relies on a decision that changed or is being revised (C06). */
+  private stopWorkDependingOn(decisionId: string): string[] {
+    const project = this.state.project;
+    if (!project) return [];
+    const stopped: string[] = [];
+    for (const assignment of assignmentsAffectedByDecision(project.document, decisionId)) {
+      if (assignment.status === "stopRequested") continue;
+      requestStop(project.document, assignment.specialistId, "Trama", `La decisione ${decisionId} è cambiata o è in revisione.`);
+      void this.stopAssignmentRuntime(assignment.id);
+      stopped.push(assignment.id);
+    }
+    return stopped;
   }
 
   async answerDecision(requestId: string, alternativeIndex: number | null, freeText: string | null): Promise<void> {
     const project = this.requireProject();
     const { request, decision } = answerDecisionRequest(project.document, requestId, { alternativeIndex, freeText });
+    this.stopWorkDependingOn(decision.id);
     this.changed();
     await this.send(decisionMessage(request, decision), null, null, null);
   }
@@ -1381,7 +1400,7 @@ export class TramaController {
       });
       recordThread(document, assignmentId, opening.threadId);
       if (opening.replaced && assignment.threadId) this.specialistActivity(assignmentId, preKey, "Nuovo thread dello specialista", null, "info");
-      const prompt = resumed ? resumeInput(assignment) : openingInput(assignment);
+      const prompt = resumed ? resumeInput(assignment, document.decisions) : openingInput(assignment, document.decisions);
       const text = await client.runTurn({
         threadId: opening.threadId,
         prompt,
@@ -1509,6 +1528,17 @@ export class TramaController {
     const authorization = authorize(project.document.mandate, "executeInWorktree", findAssignment(project.document, assignmentId)?.moduleIds ?? []);
     if (authorization !== "authorized") throw new DomainError("Il mandato attuale non copre più questo incarico.");
     resumeAssignment(project.document, assignmentId);
+    const moved = refreshDecisionVersions(project.document, assignmentId);
+    if (moved.length) {
+      appendEvent(
+        project.document,
+        "trama",
+        { type: "activity", title: "Incarico ridelegato sulle decisioni attuali", detail: moved.join(", "), tone: "info" },
+        null,
+        new Date(),
+        { assignmentId, workKey: `${assignmentId}:${(findAssignment(project.document, assignmentId)?.turns.length ?? 0) + 1}` },
+      );
+    }
     this.changed();
     void this.startAssignment(assignmentId);
   }

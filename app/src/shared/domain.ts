@@ -220,6 +220,8 @@ export interface SpecialistAssignment {
   moduleIds: string[];
   dependencies: string[];
   model: string;
+  /** Pact decisions the work relies on, with the version it was delegated against (C06). */
+  decisionVersions?: Record<string, number>;
   /** The provider recorded at assignment; the person can change it (ADR 0009). Absent means Codex. */
   provider?: ProviderId;
   tools: SpecialistTool[];

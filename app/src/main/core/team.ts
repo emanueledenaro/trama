@@ -248,6 +248,8 @@ export interface AssignmentOrder {
   dependencies: string[];
   model: string;
   provider?: ProviderId;
+  /** Pact decisions the work relies on. */
+  decisionIds?: string[];
   tools: SpecialistTool[];
   requiredChecks: string[];
   instructions: string;
@@ -294,6 +296,12 @@ export function assign(
   }
   if (pending.length) throw new TeamError("dependencies_pending", `These assignments are not completed yet: ${pending.join(", ")}.`);
   requireIndependent(document, moduleIds, specialist.id);
+  const decisionVersions: Record<string, number> = {};
+  for (const id of cleaned(order.decisionIds ?? [])) {
+    const decision = document.decisions.find((d) => d.id === id);
+    if (!decision) throw new TeamError("unknown_decision", `Unknown decision: ${id}.`);
+    decisionVersions[id] = decision.version;
+  }
   const tools: SpecialistTool[] = ["commands", ...(order.tools.includes("edits") ? (["edits"] as const) : [])];
   const assignment: SpecialistAssignment = {
     id: shortId("A", randomUUID()),
@@ -307,6 +315,7 @@ export function assign(
     dependencies,
     model,
     provider,
+    decisionVersions,
     tools,
     requiredChecks: cleaned(order.requiredChecks),
     instructions,
@@ -560,4 +569,32 @@ export function changeAssignmentProvider(
     if (changed) a.threadId = null;
     a.lastUpdate = `Provider impostato dalla persona: ${provider} · ${trimmed}`;
   });
+}
+
+/**
+ * Active assignments that rely on a decision that changed version or is being revised (C06). Work
+ * on other decisions keeps going.
+ */
+export function assignmentsAffectedByDecision(document: ProjectDocument, decisionId: string): SpecialistAssignment[] {
+  const current = document.decisions.find((d) => d.id === decisionId)?.version;
+  const revising = document.decisionRequests.some((r) => !r.outcome && r.revisesDecisionId === decisionId);
+  return activeAssignments(document).filter((assignment) => {
+    const version = assignment.decisionVersions?.[decisionId];
+    return version !== undefined && (revising || version !== current);
+  });
+}
+
+/** Resuming work whose decisions moved on delegates it against the current versions. */
+export function refreshDecisionVersions(document: ProjectDocument, id: string): string[] {
+  const assignment = findAssignment(document, id);
+  if (!assignment?.decisionVersions) return [];
+  const changed: string[] = [];
+  for (const [decisionId, version] of Object.entries(assignment.decisionVersions)) {
+    const current = document.decisions.find((d) => d.id === decisionId)?.version;
+    if (current !== undefined && current !== version) {
+      assignment.decisionVersions[decisionId] = current;
+      changed.push(decisionId);
+    }
+  }
+  return changed;
 }
