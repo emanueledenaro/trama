@@ -1,5 +1,7 @@
 // Layout and classes follow Synara (github.com/Emanuele-web04/synara, MIT License, Copyright (c) 2026 T3 Tools Inc. and Emanuele Di Pietro).
 import { IconArrowUp, IconAt, IconChevronDown, IconPhotoPlus, IconSparkles, IconX } from "@tabler/icons-react";
+import { isUsableAccount, type ProviderId } from "@shared/codex";
+import { PROVIDERS } from "@shared/providers";
 import type { ImageAttachmentInput } from "@shared/ipc";
 import { type MentionCandidate, mentionCandidates, mentionToken } from "@shared/mentions";
 import { normalizePaste, pasteSizeLabel, pasteTitle, serializePastes, shouldCollapsePaste } from "@shared/pastedText";
@@ -50,7 +52,9 @@ const PILL =
 
 export function Composer() {
   const project = useUi((s) => s.app?.project)!;
-  const models = useUi((s) => s.app?.codex.models ?? []);
+  const providers = useUi((s) => s.app!.providers);
+  const selectedProvider: ProviderId = project.document.selectedProvider ?? project.document.coordinator.threadProvider ?? "codex";
+  const models = providers[selectedProvider]?.models ?? [];
   const focusRequest = useUi((s) => s.composerFocusRequest);
   const moduleId = useUi((s) => s.composerModuleId);
   const setModule = useUi((s) => s.setComposerModule);
@@ -75,8 +79,12 @@ export function Composer() {
 
   const running = Boolean(project.runningRequestId);
   const busy = running || project.phase.kind === "studying";
-  const selectedModel = project.document.selectedModel ?? project.document.coordinator.threadModel ?? models.find((m) => m.isDefault)?.model ?? null;
+  const threadModel =
+    (project.document.coordinator.threadProvider ?? "codex") === selectedProvider ? project.document.coordinator.threadModel : null;
+  const selectedModel = project.document.selectedModel ?? threadModel ?? models.find((m) => m.isDefault)?.model ?? models[0]?.model ?? null;
   const modelInfo = models.find((m) => m.model === selectedModel);
+  // A chosen model the catalogue no longer offers stays visible as unavailable: never replaced silently (ADR 0010).
+  const modelMissing = Boolean(selectedModel && models.length && !modelInfo);
   const effort = project.document.selectedEffort ?? modelInfo?.defaultReasoningEffort ?? null;
   const module = moduleId ? project.snapshot.modules.find((m) => m.id === moduleId) : null;
 
@@ -146,7 +154,7 @@ export function Composer() {
     setText("");
     const attached = images.map(({ name, mimeType, dataBase64 }) => ({ name, mimeType, dataBase64 }));
     setImages([]);
-    void act("coordinator:send", { text: message, moduleId, model: selectedModel, effort, images: attached });
+    void act("coordinator:send", { text: message, moduleId, model: selectedModel, effort, images: attached, provider: selectedProvider });
   };
 
   return (
@@ -334,19 +342,48 @@ export function Composer() {
                 </MenuPopup>
               </Menu>
               <Menu>
-                <MenuTrigger className={PILL} aria-label="Modello del Coordinatore" disabled={models.length === 0}>
+                <MenuTrigger className={PILL} aria-label="Provider e modello del Coordinatore">
                   <IconSparkles className="size-3.5 shrink-0 opacity-70" stroke={1.8} />
-                  <span className="min-w-0 truncate text-[var(--color-text-foreground)]">{modelInfo?.displayName ?? selectedModel ?? "Scegli un modello"}</span>
+                  {selectedProvider !== "codex" ? (
+                    <span className="shrink-0 text-muted-foreground">{PROVIDERS.find((p) => p.id === selectedProvider)?.name}</span>
+                  ) : null}
+                  <span className={cn("min-w-0 truncate", modelMissing ? "text-warning line-through" : "text-[var(--color-text-foreground)]")}>
+                    {modelInfo?.displayName ?? selectedModel ?? "Scegli un modello"}
+                  </span>
                   {effort ? <span className="shrink-0 text-muted-foreground">{EFFORT_LABELS[effort] ?? effort}</span> : null}
                   <IconChevronDown className="ms-0.5 size-3 shrink-0 opacity-60" />
                 </MenuTrigger>
                 <MenuPopup side="top" composer className="w-72">
-                  <MenuGroupLabel>Modello del Coordinatore</MenuGroupLabel>
+                  <MenuGroupLabel>Provider</MenuGroupLabel>
+                  <MenuRadioGroup
+                    value={selectedProvider}
+                    onValueChange={(value) => void act("coordinator:selectProvider", { provider: value as ProviderId })}
+                  >
+                    {PROVIDERS.map((p) => {
+                      const account = providers[p.id as ProviderId]?.account ?? null;
+                      const usable = isUsableAccount(account);
+                      return (
+                        <MenuRadioItem key={p.id} value={p.id} disabled={!usable || busy}>
+                          <span className="block truncate">{p.name}</span>
+                          {!usable ? (
+                            <span className="block truncate text-ui-xs text-muted-foreground">
+                              {account?.kind === "blocked" ? "Bloccato" : account?.kind === "signedOut" ? "Accesso richiesto" : "Non collegato"}
+                            </span>
+                          ) : null}
+                        </MenuRadioItem>
+                      );
+                    })}
+                  </MenuRadioGroup>
+                  <MenuSeparator />
+                  <MenuGroupLabel>Modello</MenuGroupLabel>
+                  {modelMissing ? (
+                    <p className="px-2 pb-1 text-ui-xs text-warning">{selectedModel} non è più disponibile: scegline un altro.</p>
+                  ) : null}
                   <MenuRadioGroup
                     value={selectedModel ?? ""}
                     onValueChange={(value) => {
                       const next = models.find((m) => m.model === value);
-                      void act("coordinator:selectModel", { model: value as string, effort: next?.defaultReasoningEffort ?? null });
+                      void act("coordinator:selectModel", { model: value as string, effort: next?.defaultReasoningEffort ?? null, provider: selectedProvider });
                     }}
                   >
                     {models.map((m) => (
@@ -362,7 +399,7 @@ export function Composer() {
                       <MenuGroupLabel>Sforzo</MenuGroupLabel>
                       <MenuRadioGroup
                         value={effort ?? ""}
-                        onValueChange={(value) => void act("coordinator:selectModel", { model: modelInfo.model, effort: value as string })}
+                        onValueChange={(value) => void act("coordinator:selectModel", { model: modelInfo.model, effort: value as string, provider: selectedProvider })}
                       >
                         {modelInfo.supportedReasoningEfforts.map((level) => (
                           <MenuRadioItem key={level} value={level}>

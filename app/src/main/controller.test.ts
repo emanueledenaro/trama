@@ -185,3 +185,16 @@ describe("import from the SwiftUI app", () => {
     expect(await readFile(documentPath, "utf8")).toBe(swift);
   });
 });
+
+describe("initializeRepository", () => {
+  it("makes a new project a Git repository with a first commit", async () => {
+    const { initializeRepository } = await import("./controller");
+    const { writeFile } = await import("node:fs/promises");
+    const { git } = await import("./core/process");
+    const project = await mkdtemp(join(tmpdir(), "trama-new-"));
+    await writeFile(join(project, "README.md"), "# Nuovo\n");
+    await initializeRepository(project);
+    expect((await git(["rev-parse", "--abbrev-ref", "HEAD"], project)).trim()).toBe("main");
+    expect((await git(["log", "--format=%s"], project)).trim()).toBe("Start the project");
+  });
+});

@@ -1,3 +1,4 @@
+import type { ProviderId } from "./codex";
 import type { AppSettings, DecisionAlternative, MandateAction } from "./domain";
 
 /** Every action the renderer can ask the main process to perform. */
@@ -12,12 +13,21 @@ export interface ActionMap {
   "project:revealInFolder": [{ relativePath?: string }, void];
   "project:readFile": [{ relativePath: string }, string];
   "coordinator:send": [
-    { text: string; moduleId: string | null; model: string | null; effort: string | null; images?: ImageAttachmentInput[] },
+    {
+      text: string;
+      moduleId: string | null;
+      model: string | null;
+      effort: string | null;
+      images?: ImageAttachmentInput[];
+      /** The composer's provider; a different one moves the Coordinator (ADR 0009). */
+      provider?: ProviderId | null;
+    },
     void,
   ];
   "coordinator:interrupt": [void, void];
   "coordinator:retry": [void, void];
-  "coordinator:selectModel": [{ model: string; effort: string | null }, void];
+  "coordinator:selectModel": [{ model: string; effort: string | null; provider?: ProviderId | null }, void];
+  "coordinator:selectProvider": [{ provider: ProviderId }, void];
   "coordinator:saveDraft": [{ text: string }, void];
   "coordinator:setContextThreshold": [{ percent: number }, void];
   "pact:decide": [{ id: string | null; value: string; acceptedExample: string; rationale: string }, void];
@@ -37,6 +47,7 @@ export interface ActionMap {
   "team:answer": [{ proposalId: string; keeping: string[] | null; note: string | null }, void];
   "assignment:stop": [{ assignmentId: string }, void];
   "assignment:resume": [{ assignmentId: string }, void];
+  "assignment:changeProvider": [{ assignmentId: string; provider: ProviderId; model: string }, void];
   "specialist:remove": [{ specialistId: string; reason: string }, void];
   "plan:prepare": [{ requestId: string }, void];
   "pactDemo:run": [void, void];
@@ -45,6 +56,8 @@ export interface ActionMap {
   "candidate:publish": [{ candidateId: string }, void];
   "codex:refresh": [void, void];
   "codex:login": [void, void];
+  "providers:refresh": [{ provider?: ProviderId }, void];
+  "provider:login": [{ provider: ProviderId }, { url: string | null; command: string | null }];
   "github:refresh": [void, void];
   "github:createIssue": [{ title: string; body: string }, void];
   "settings:update": [Partial<AppSettings>, void];

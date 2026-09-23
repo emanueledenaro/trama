@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import type { ProviderId } from "@shared/codex";
 import type { ConversationEvent, EventContent, EventOrigin, ProjectDocument } from "@shared/domain";
 
 export function emptyDocument(projectId: string): ProjectDocument {
@@ -79,12 +80,39 @@ export function recordReply(
   text: string,
   model: string | null,
   references: string[],
+  provider: ProviderId | null = null,
   now = new Date(),
 ): ConversationEvent {
   document.events = document.events.filter(
     (e) => !(e.requestId === requestId && e.content.type === "coordinatorText"),
   );
-  return appendEvent(document, "coordinator", { type: "coordinatorText", text, model, references }, requestId, now);
+  return appendEvent(document, "coordinator", { type: "coordinatorText", text, model, references, provider }, requestId, now);
+}
+
+/**
+ * The conversation so far, written by Trama for a new provider session (ADR 0009): the person's
+ * messages and the Coordinator's answers, newest last, within a character budget.
+ */
+export function handoverTranscript(document: ProjectDocument, budget = 24_000): string {
+  const lines: string[] = [];
+  let used = 0;
+  for (const event of [...document.events].reverse()) {
+    const content = event.content;
+    const line =
+      content.type === "personMessage"
+        ? `Persona: ${content.text}`
+        : content.type === "coordinatorText"
+          ? `Coordinatore: ${content.text}`
+          : content.type === "card" && content.detail
+            ? `[${content.title}] ${content.detail}`
+            : null;
+    if (!line) continue;
+    const clipped = line.length > 4_000 ? `${line.slice(0, 4_000)}…` : line;
+    if (used + clipped.length > budget) break;
+    used += clipped.length;
+    lines.push(clipped);
+  }
+  return lines.reverse().join("\n\n") || "La conversazione è vuota.";
 }
 
 /** Repository paths named in a reply, in order of appearance. */

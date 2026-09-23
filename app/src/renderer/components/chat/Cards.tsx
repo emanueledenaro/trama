@@ -447,6 +447,7 @@ const BLOCKER_TEXT: Record<string, string> = {
   EVIDENCE_MISSING: "Verifica da eseguire",
   EVIDENCE_STALE: "Verifica non più valida",
   CHECK_FAILED: "Verifica non superata",
+  REMOTE_CONFLICT: "Conflitto con il lavoro di un collega",
 };
 
 export function CandidateCard({ candidateId }: { candidateId: string }) {

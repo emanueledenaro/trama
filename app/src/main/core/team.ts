@@ -13,6 +13,7 @@ import type {
   WorkKind,
   WorktreeSession,
 } from "@shared/domain";
+import type { ProviderId } from "@shared/codex";
 import { shortId } from "@shared/ids";
 
 export class TeamError extends Error {
@@ -246,6 +247,7 @@ export interface AssignmentOrder {
   moduleIds: string[];
   dependencies: string[];
   model: string;
+  provider?: ProviderId;
   tools: SpecialistTool[];
   requiredChecks: string[];
   instructions: string;
@@ -279,7 +281,8 @@ export function assign(
   const objective = required(order.objective, "objective");
   const instructions = required(order.instructions, "instructions");
   const model = required(order.model, "model");
-  if (model.includes("/")) throw new TeamError("invalid_model", `Invalid model: ${model}.`);
+  const provider = order.provider ?? "codex";
+  if (provider === "codex" && model.includes("/")) throw new TeamError("invalid_model", `Invalid model: ${model}.`);
   const moduleIds = cleaned(order.moduleIds);
   if (moduleIds.length === 0) throw new TeamError("invalid_arguments", "moduleIDs is required.");
   const dependencies = cleaned(order.dependencies);
@@ -303,6 +306,7 @@ export function assign(
     moduleIds,
     dependencies,
     model,
+    provider,
     tools,
     requiredChecks: cleaned(order.requiredChecks),
     instructions,
@@ -322,6 +326,7 @@ export function assign(
   specialist.assignments.push(assignment);
   specialist.status = "working";
   specialist.model = model;
+  specialist.provider = provider;
   specialist.tools = tools;
   specialist.updatedAt = now.toISOString();
   specialist.lastUpdate = assignment.lastUpdate;
@@ -341,11 +346,18 @@ export function recordThread(document: ProjectDocument, id: string, threadId: st
   });
 }
 
-export function beginTurn(document: ProjectDocument, id: string, turnId: string, model: string, now = new Date()): void {
+export function beginTurn(
+  document: ProjectDocument,
+  id: string,
+  turnId: string,
+  model: string,
+  now = new Date(),
+  provider: ProviderId = "codex",
+): void {
   updateAssignment(document, id, now, (assignment) => {
     if (!isActive(assignment)) throw new TeamError("not_running", `Specialist ${assignment.specialistId} has no work in progress.`);
     if (assignment.status === "preparing") assignment.status = "running";
-    assignment.turns.push({ id: turnId, number: assignment.turns.length + 1, model, startedAt: now.toISOString(), endedAt: null, outcome: null });
+    assignment.turns.push({ id: turnId, number: assignment.turns.length + 1, model, provider, startedAt: now.toISOString(), endedAt: null, outcome: null });
     assignment.lastUpdate = `Turno ${assignment.turns.length} in corso con ${model}`;
   });
 }
@@ -522,4 +534,30 @@ export function refusalMessage(authorization: Authorization, action: MandateActi
     default:
       return "";
   }
+}
+
+/**
+ * The person changes the provider or model of an assignment (ADR 0009). Assignment and worktree stay;
+ * the next turn opens a new session on the new provider.
+ */
+export function changeAssignmentProvider(
+  document: ProjectDocument,
+  id: string,
+  provider: ProviderId,
+  model: string,
+  now = new Date(),
+): SpecialistAssignment {
+  const assignment = findAssignment(document, id);
+  if (!assignment) throw new TeamError("unknown_assignment", `Unknown assignment: ${id}.`);
+  if (["preparing", "running", "stopRequested"].includes(assignment.status)) {
+    throw new TeamError("assignment_running", `Assignment ${id} is running: stop it before changing provider.`);
+  }
+  const trimmed = required(model, "model");
+  const changed = (assignment.provider ?? "codex") !== provider;
+  return updateAssignment(document, id, now, (a) => {
+    a.provider = provider;
+    a.model = trimmed;
+    if (changed) a.threadId = null;
+    a.lastUpdate = `Provider impostato dalla persona: ${provider} · ${trimmed}`;
+  });
 }

@@ -1,3 +1,4 @@
+import type { ProviderId } from "@shared/codex";
 import type { MandateAction, ProjectDocument, SpecialistTool, TechnicalReview, WorkKind } from "@shared/domain";
 import type { WorkspaceReview } from "./workspace";
 import { MEMORY_BYTE_LIMIT } from "@shared/domain";
@@ -156,7 +157,7 @@ export const COORDINATOR_TOOLS: ToolDefinition[] = [
   {
     name: "assign_task",
     description:
-      "Within the mandate (executeInWorktree), assign work to a specialist, named by id or name. Trama starts it in a Codex thread it owns, in its own worktree when tools include edits, without network. Give the objective, the issue or exercise, the modules, the assignments it depends on, the checks the result must pass and your instructions for the specialist. model defaults to yours; propose another only when the work needs it. Assign in parallel only independent work: different modules and no unfinished dependency. kind newFeature and tradeOff always go to the person.",
+      "Within the mandate (executeInWorktree), assign work to a specialist, named by id or name. Trama starts it in a provider session it owns, in its own worktree when tools include edits, without network. Give the objective, the issue or exercise, the modules, the assignments it depends on, the checks the result must pass and your instructions for the specialist. provider and model default to yours; propose another connected provider or model only when the work needs it (read_team lists them). Assign in parallel only independent work: different modules and no unfinished dependency. kind newFeature and tradeOff always go to the person.",
     properties: {
       specialist: text,
       kind: { type: "string", enum: WORK_KINDS },
@@ -165,6 +166,7 @@ export const COORDINATOR_TOOLS: ToolDefinition[] = [
       exercise: text,
       moduleIDs: list(1),
       dependencies: list(0),
+      provider: text,
       model: text,
       tools: { type: "array", items: { type: "string", enum: ["commands", "edits"] } },
       requiredChecks: { type: "array", items: { type: "string", enum: ALL_CHECKS } },
@@ -176,7 +178,7 @@ export const COORDINATOR_TOOLS: ToolDefinition[] = [
   {
     name: "stop_specialist",
     description:
-      "Within the mandate, stop a specialist's work (executeInWorktree), or with remove take the specialist out of the team once its work has stopped (composeTeam). A stop is first requested and then confirmed when Codex ends the turn; work and history are kept. Say it in the conversation.",
+      "Within the mandate, stop a specialist's work (executeInWorktree), or with remove take the specialist out of the team once its work has stopped (composeTeam). A stop is first requested and then confirmed when the provider ends the turn; work and history are kept. Say it in the conversation.",
     properties: { specialist: text, reason: text, remove: { type: "boolean" } },
     required: ["specialist", "reason"],
     readOnly: false,
@@ -237,9 +239,13 @@ export interface ToolContext {
   changed(): void;
   /** Adds a conversation card for a request the Coordinator put to the person. */
   addCard(kind: "mandate" | "decision" | "teamProposal" | "assignment" | "candidate", title: string, referenceId: string): void;
-  /** Models of the Codex catalogue a specialist may use, and the Coordinator's own. */
+  /** Models of the Coordinator's provider, and the Coordinator's own model. */
   models: string[];
   defaultModel: string | null;
+  /** The Coordinator's provider: the default for new assignments. */
+  defaultProvider: ProviderId;
+  /** Providers the person connected (authenticated), with their models. Only these may run specialists (ADR 0008). */
+  providers: { id: ProviderId; models: string[] }[];
   /** Starts the runtime of an assignment that was just recorded. */
   startAssignment(id: string): void;
   /** Interrupts the running turn of an assignment, or confirms the stop when none runs. */
@@ -432,6 +438,8 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
             executeInWorktree: authorize(document.mandate, "executeInWorktree"),
           },
           models: context.models,
+          providers: context.providers as unknown as Json,
+          defaultProvider: context.defaultProvider,
         });
       }
       case "propose_team": {
@@ -479,10 +487,19 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
         const checks = strings(args.requiredChecks);
         const invalidChecks = checks.filter((c) => !ALL_CHECKS.includes(c as ReadOnlyCheck));
         if (invalidChecks.length) return toolFailure("invalid_arguments", `Unknown checks: ${invalidChecks.join(", ")}.`);
-        const model = typeof args.model === "string" && args.model.trim() ? args.model.trim() : context.defaultModel;
+        const providerId = (typeof args.provider === "string" && args.provider.trim() ? args.provider.trim() : context.defaultProvider) as ProviderId;
+        const provider = context.providers.find((p) => p.id === providerId);
+        if (!provider) {
+          return toolFailure(
+            "provider_not_connected",
+            `Provider ${providerId} is not connected. Connected providers: ${context.providers.map((p) => p.id).join(", ") || "none"}.`,
+          );
+        }
+        const requestedModel = typeof args.model === "string" && args.model.trim() ? args.model.trim() : null;
+        const model = requestedModel ?? (providerId === context.defaultProvider ? context.defaultModel : provider.models[0] ?? null);
         if (!model) return toolFailure("invalid_arguments", "model is required: no default model is available.");
-        if (context.models.length && !context.models.includes(model)) {
-          return toolFailure("invalid_model", `Model ${model} is not in the Codex catalogue: ${context.models.join(", ")}.`);
+        if (provider.models.length && !provider.models.includes(model)) {
+          return toolFailure("invalid_model", `Model ${model} is not in the ${providerId} catalogue: ${provider.models.join(", ")}.`);
         }
         const assignment = assign(
           document,
@@ -495,6 +512,7 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
             moduleIds,
             dependencies: strings(args.dependencies),
             model,
+            provider: providerId,
             tools: strings(args.tools) as SpecialistTool[],
             requiredChecks: checks,
             instructions: typeof args.instructions === "string" ? args.instructions : "",
@@ -505,7 +523,7 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
         context.addCard("assignment", "Incarico", assignment.id);
         context.changed();
         context.startAssignment(assignment.id);
-        return toolSuccess({ assignmentID: assignment.id, specialistID: assignment.specialistId, status: assignment.status, model: assignment.model });
+        return toolSuccess({ assignmentID: assignment.id, specialistID: assignment.specialistId, status: assignment.status, provider: assignment.provider ?? "codex", model: assignment.model });
       }
       case "stop_specialist": {
         const specialist = findSpecialist(document, typeof args.specialist === "string" ? args.specialist : "");
@@ -627,7 +645,7 @@ export function developerInstructions(projectName: string): string {
     "read_mandate tells whether a mandate exists and which modules the project has. Without a mandate you read and propose; you do not act. When the person asks for a change you cannot start without a mandate, propose one with request_mandate: the reason, objectives, scope and actions the work needs, nothing broader.",
     "New features, trade-offs, product behavior and serious destructive cases belong to the person: put them to the person with request_decision, on a concrete case with real alternatives. Never record a decision for the person and never treat a question as answered until Trama tells you the answer. Resolve technical choices yourself and do not ask about them, nor ask for generic confirmations.",
     "At the end of your study propose the project team with propose_team: one specialist per real need, each with a competence and the reason this project needs it, never one to fill a role. The person confirms or corrects it once, and only that answer creates the specialists. From then on you change the team yourself within the mandate, with create_specialist and stop_specialist, and you say it in the conversation.",
-    "Within the mandate, assign_task gives a specialist work in a Codex thread and worktree that Trama owns: objective, ticket or exercise, modules, dependencies, required checks, your instructions and the model you propose for it. Assign in parallel only work that is independent, and read_team to see where each specialist stands. stop_specialist asks Trama to stop work: the stop is first requested and then confirmed, and what was done is kept.",
+    "Within the mandate, assign_task gives a specialist work in a provider session and worktree that Trama owns: objective, ticket or exercise, modules, dependencies, required checks, your instructions and the provider and model you propose for it. Assign in parallel only work that is independent, and read_team to see where each specialist stands. stop_specialist asks Trama to stop work: the stop is first requested and then confirmed, and what was done is kept.",
     "run_readonly_check runs a check on the project checkout without writing to it; you may use it without a mandate.",
     "When a specialist's work is done, declare_candidate captures its worktree and binds it to the Pact decisions it must respect; verify_candidate runs its required checks and review_candidate asks a distinct reviewer. Within the mandate, clear_candidate gives your green light to a verified and approved candidate. The person always reviews and publishes it: never claim that work is merged or published.",
     "When the person answers a card or changes the mandate, Trama writes it to you as the person's message.",

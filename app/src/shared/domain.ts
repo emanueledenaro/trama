@@ -1,4 +1,4 @@
-import type { AccountStatus, CodexModel } from "./codex";
+import type { ProviderAccount, ProviderId, ProviderModel } from "./codex";
 import type { RepositorySnapshot } from "./repository";
 
 export interface RecentProject {
@@ -27,7 +27,7 @@ export interface ConflictAssessment {
 
 export type EventContent =
   | { type: "personMessage"; text: string; moduleId: string | null; moduleName: string | null; imageCount?: number }
-  | { type: "coordinatorText"; text: string; model: string | null; references: string[] }
+  | { type: "coordinatorText"; text: string; model: string | null; references: string[]; provider?: ProviderId | null }
   | { type: "activity"; title: string; detail: string | null; tone: "info" | "tool" | "error" }
   | { type: "card"; kind: CardKind; title: string; detail: string | null; referenceId: string | null };
 
@@ -51,6 +51,8 @@ export interface CoordinatorRequest {
   text: string;
   moduleId: string | null;
   state: RequestState;
+  /** The provider the turn ran on; absent in documents written before providers existed (Codex). */
+  provider?: ProviderId;
   model: string | null;
   effort: string | null;
   createdAt: string;
@@ -141,6 +143,10 @@ export interface ProjectStudy {
 export interface CoordinatorState {
   threadId: string | null;
   threadModel: string | null;
+  /** The provider that owns `threadId`; absent means Codex. */
+  threadProvider?: ProviderId;
+  /** Set when the person moved the Coordinator to another provider: the next study hands the conversation over. */
+  pendingHandover?: { from: ProviderId; reason: string } | null;
   injectedStudy: Partial<Record<StudyPart, string>>;
   memory: CoordinatorMemory;
   study: ProjectStudy | null;
@@ -188,6 +194,8 @@ export interface AssignmentTurn {
   id: string;
   number: number;
   model: string;
+  /** The provider that produced this turn (ADR 0009); absent means Codex. */
+  provider?: ProviderId;
   startedAt: string;
   endedAt: string | null;
   outcome: "completed" | "interrupted" | "failed" | null;
@@ -212,6 +220,8 @@ export interface SpecialistAssignment {
   moduleIds: string[];
   dependencies: string[];
   model: string;
+  /** The provider recorded at assignment; the person can change it (ADR 0009). Absent means Codex. */
+  provider?: ProviderId;
   tools: SpecialistTool[];
   requiredChecks: string[];
   instructions: string;
@@ -239,6 +249,7 @@ export interface Specialist {
   createdAt: string;
   status: SpecialistStatus;
   model: string | null;
+  provider?: ProviderId | null;
   tools: SpecialistTool[];
   updatedAt: string;
   lastUpdate: string;
@@ -355,8 +366,12 @@ export interface ProjectDocument {
   mandateRequests: MandateRequest[];
   decisionRequests: DecisionRequest[];
   coordinator: CoordinatorState;
+  /** The composer's selection for the project dialog (ADR 0010). Absent provider means Codex. */
+  selectedProvider?: ProviderId;
   selectedModel: string | null;
   selectedEffort: string | null;
+  /** The last model and effort chosen for each provider, restored when the person switches back. */
+  providerPreferences?: Partial<Record<ProviderId, { model: string | null; effort: string | null }>>;
   composerDraft: string;
   team: ProjectTeam;
   candidates: Candidate[];
@@ -484,8 +499,16 @@ export interface AppState {
   recentProjects: RecentProject[];
   project: ActiveProjectState | null;
   loadingProject: string | null;
-  codex: { account: AccountStatus | null; models: CodexModel[]; checking: boolean };
+  /** Codex's state; the same object as `providers.codex`. */
+  codex: ProviderState;
+  providers: Record<ProviderId, ProviderState>;
   settings: AppSettings;
   error: string | null;
   platform: NodeJS.Platform;
+}
+
+export interface ProviderState {
+  account: ProviderAccount | null;
+  models: ProviderModel[];
+  checking: boolean;
 }

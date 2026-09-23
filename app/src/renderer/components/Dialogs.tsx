@@ -1,5 +1,6 @@
 import { IconDeviceDesktop, IconMoon, IconSun } from "@tabler/icons-react";
 import { useState } from "react";
+import type { ProviderAccount, ProviderId } from "@shared/codex";
 import type { ThemePreference } from "@shared/domain";
 import { capabilityLines, PROVIDERS, type ProviderDescriptor } from "@shared/providers";
 import { Button } from "@/components/ui/button";
@@ -147,31 +148,71 @@ function MethodSettings() {
   );
 }
 
+function providerStatus(account: ProviderAccount | null, checking: boolean): { label: string; detail: string | null; ok: boolean } {
+  if (checking && !account) return { label: "Verifica in corso", detail: null, ok: false };
+  switch (account?.kind) {
+    case "chatgpt":
+      return { label: "Collegato", detail: account.email, ok: true };
+    case "authenticated":
+      return { label: "Collegato", detail: account.label, ok: true };
+    case "signedOut":
+      return { label: "Accesso richiesto", detail: null, ok: false };
+    case "unsupported":
+      return { label: "Account non supportato", detail: account.type, ok: false };
+    case "blocked":
+      return {
+        label: "Bloccato",
+        detail: `${account.message}${account.until ? ` Si sblocca il ${new Date(account.until).toLocaleString("it-IT")}.` : ""}`,
+        ok: false,
+      };
+    case "unavailable":
+      return { label: "Non disponibile", detail: account.message, ok: false };
+    default:
+      return { label: "Stato sconosciuto", detail: null, ok: false };
+  }
+}
+
 function ProviderRow({ provider }: { provider: ProviderDescriptor }) {
   const [open, setOpen] = useState(false);
-  const account = useUi((s) => s.app!.codex.account);
-  const state = !provider.available
-    ? "Non disponibile"
-    : account?.kind === "chatgpt"
-      ? "Collegato"
-      : account?.kind === "signedOut" || account?.kind === "unsupported"
-        ? "Accesso richiesto"
-        : "Stato sconosciuto";
+  const [hint, setHint] = useState<string | null>(null);
+  const state = useUi((s) => s.app!.providers[provider.id as ProviderId]);
+  const status = providerStatus(state?.account ?? null, state?.checking ?? false);
+  const id = provider.id as ProviderId;
   return (
     <div className="py-2">
       <div className="flex items-center gap-2 text-ui">
+        <span className={cn("size-1.5 shrink-0 rounded-full", status.ok ? "bg-success" : "bg-muted-foreground/40")} />
         <span className="text-foreground">{provider.name}</span>
-        {!provider.available ? <span className="text-ui-xs text-muted-foreground">adattatore non ancora disponibile</span> : null}
-        <span className={cn("ml-auto text-ui-xs", state === "Collegato" ? "text-success" : "text-muted-foreground")}>{state}</span>
+        {state?.checking ? <Spinner /> : null}
+        <span className={cn("ml-auto text-ui-xs", status.ok ? "text-success" : "text-muted-foreground")}>{status.label}</span>
       </div>
-      <div className="mt-0.5 flex items-center gap-2 text-ui-xs text-muted-foreground">
+      {status.detail ? <p className="mt-0.5 text-ui-xs text-muted-foreground">{status.detail}</p> : null}
+      {status.ok && state ? <p className="mt-0.5 text-ui-xs text-muted-foreground/70">{state.models.length} modelli disponibili.</p> : null}
+      <div className="mt-0.5 flex items-center gap-3 text-ui-xs text-muted-foreground">
         <span>
           Accesso: <code className="font-mono">{provider.signInCommand}</code>
         </span>
-        <button type="button" className="ml-auto hover:text-foreground" onClick={() => setOpen(!open)}>
+        <button type="button" className="ml-auto hover:text-foreground" onClick={() => void act("providers:refresh", { provider: id })}>
+          Verifica
+        </button>
+        {!status.ok && state?.account?.kind === "signedOut" && id !== "codex" ? (
+          <button
+            type="button"
+            className="hover:text-foreground"
+            onClick={() =>
+              void act("provider:login", { provider: id }).then((result) =>
+                setHint(result?.command ? `Esegui ${result.command} nel terminale, poi premi Verifica.` : null),
+              )
+            }
+          >
+            Accedi
+          </button>
+        ) : null}
+        <button type="button" className="hover:text-foreground" onClick={() => setOpen(!open)}>
           {open ? "Nascondi capacità" : "Capacità"}
         </button>
       </div>
+      {hint ? <p className="mt-1 text-ui-xs text-muted-foreground">{hint}</p> : null}
       {open ? (
         <div className="mt-1.5 grid grid-cols-2 gap-x-4 gap-y-0.5 text-ui-xs">
           {capabilityLines(provider.capabilities).map((line) => (
@@ -200,7 +241,9 @@ function ConnectionsDialog() {
           ? "Nessun account collegato"
           : account.kind === "unsupported"
             ? `Codex usa un account di tipo ${account.type}. Trama accetta solo un account ChatGPT per evitare la fatturazione API.`
-            : account.message;
+            : account.kind === "unavailable" || account.kind === "blocked"
+              ? account.message
+              : "Account collegato";
   return (
     <Dialog
       open={open}
@@ -209,8 +252,15 @@ function ConnectionsDialog() {
       description="L'accesso avviene nel browser ufficiale. Trama non copia le credenziali."
       footer={
         <>
-          <Button variant="ghost" size="sm" onClick={() => void act("codex:refresh", undefined)}>
-            Verifica collegamento
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              void act("codex:refresh", undefined);
+              void act("providers:refresh", {});
+            }}
+          >
+            Verifica collegamenti
           </Button>
           {account?.kind === "signedOut" ? (
             <Button size="sm" onClick={() => void act("codex:login", undefined)}>
@@ -242,7 +292,7 @@ function ConnectionsDialog() {
       </p>
       <h4 className="mt-4 mb-1 text-ui-sm font-medium text-muted-foreground">Provider</h4>
       <div className="divide-y divide-[color:var(--app-surface-divider)]">
-        {PROVIDERS.map((provider) => (
+        {PROVIDERS.filter((provider) => provider.id !== "codex").map((provider) => (
           <ProviderRow key={provider.id} provider={provider} />
         ))}
       </div>
