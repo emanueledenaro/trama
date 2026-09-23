@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { existsSync } from "node:fs";
+import { existsSync, type FSWatcher, watch } from "node:fs";
 import { mkdir, realpath, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -267,6 +267,7 @@ export class TramaController {
   async stop(): Promise<void> {
     if (this.monitorTimer) clearTimeout(this.monitorTimer);
     this.monitorTimer = null;
+    this.unwatchProject();
     await this.flushSave();
     this.stopRuntime();
     this.discovery.stop();
@@ -508,6 +509,7 @@ export class TramaController {
       await this.saveSettings();
       this.publishNow();
       if (!isDemo) void this.refreshGitHub();
+      this.watchProject(root);
       void this.loadSkills();
       void this.startCoordinator();
     } catch (error) {
@@ -536,18 +538,51 @@ export class TramaController {
   async closeProject(): Promise<void> {
     await this.flushSave();
     this.stopRuntime();
+    this.unwatchProject();
     this.state.project = null;
     this.lastProjectId = null;
     await this.saveSettings();
     this.publishNow();
   }
 
-  async refreshProject(): Promise<void> {
+  private scanGeneration = 0;
+  private watcher: FSWatcher | null = null;
+  private watchTimer: NodeJS.Timeout | null = null;
+
+  /** Rescans the project. A scan that finishes after a newer one started is discarded. */
+  async refreshProject(refreshGitHub = true): Promise<void> {
     const project = this.state.project;
     if (!project) return;
-    project.snapshot = await scanRepository(project.rootPath, project.isDemo);
+    const generation = ++this.scanGeneration;
+    const snapshot = await scanRepository(project.rootPath, project.isDemo);
+    if (generation !== this.scanGeneration || this.state.project !== project) return;
+    project.snapshot = snapshot;
     this.publish();
-    if (!project.isDemo) void this.refreshGitHub();
+    if (refreshGitHub && !project.isDemo) void this.refreshGitHub();
+  }
+
+  /** Watches the project folder and rescans a second after the last change, outside .git and dependencies. */
+  private watchProject(root: string): void {
+    this.unwatchProject();
+    try {
+      this.watcher = watch(root, { recursive: true }, (_event, name) => {
+        const path = String(name ?? "");
+        if (/(^|[\\/])(\.git|node_modules|\.build|dist|build|\.next|target)([\\/]|$)/.test(path)) return;
+        if (this.watchTimer) clearTimeout(this.watchTimer);
+        this.watchTimer = setTimeout(() => void this.refreshProject(false).catch(() => undefined), 1_000);
+      });
+      this.watcher.on("error", () => this.unwatchProject());
+    } catch {
+      // Without a watcher the map still refreshes with Cmd+R.
+      this.watcher = null;
+    }
+  }
+
+  private unwatchProject(): void {
+    this.watcher?.close();
+    this.watcher = null;
+    if (this.watchTimer) clearTimeout(this.watchTimer);
+    this.watchTimer = null;
   }
 
   async forgetRecent(id: string): Promise<void> {

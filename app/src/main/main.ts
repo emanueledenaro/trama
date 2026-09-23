@@ -1,5 +1,5 @@
 import { join } from "node:path";
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, Notification, shell, type MenuItemConstructorOptions } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, Notification, powerMonitor, shell, type MenuItemConstructorOptions } from "electron";
 import type { AppSettings } from "@shared/domain";
 import type { ActionMap, ActionName } from "@shared/ipc";
 import { TramaController } from "./controller";
@@ -219,6 +219,10 @@ function buildMenu(): void {
         { label: "Patto", accelerator: "CmdOrCtrl+2", click: () => sendMenu("inspector:pact") },
         { label: "Mandato", accelerator: "CmdOrCtrl+3", click: () => sendMenu("inspector:mandate") },
         { label: "Issue", accelerator: "CmdOrCtrl+4", click: () => sendMenu("inspector:issues") },
+        { label: "Team", accelerator: "CmdOrCtrl+5", click: () => sendMenu("inspector:team") },
+        { label: "Lavoro", accelerator: "CmdOrCtrl+6", click: () => sendMenu("inspector:work") },
+        { label: "Gruppo", accelerator: "CmdOrCtrl+7", click: () => sendMenu("inspector:group") },
+        { label: "Memoria", accelerator: "CmdOrCtrl+8", click: () => sendMenu("inspector:memory") },
         { type: "separator" },
         { role: "resetZoom", label: "Dimensione reale" },
         { role: "zoomIn", label: "Ingrandisci" },
@@ -247,6 +251,12 @@ app.whenReady().then(async () => {
   buildMenu();
   if (!startedHidden) createWindow();
   await controller.start();
+  // After sleep the monitor's timer and the providers' state are stale: check again at once.
+  powerMonitor.on("resume", () => {
+    void controller.pollMonitor().catch(() => undefined);
+    void controller.refreshCodex();
+    void controller.refreshProviders();
+  });
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });

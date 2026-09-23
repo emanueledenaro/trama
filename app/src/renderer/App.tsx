@@ -38,7 +38,7 @@ export function App() {
       else if (command === "focusComposer") ui.focusComposer();
       else if (command === "toggleInspector") ui.setInspector(ui.inspector ? null : { kind: "map" });
       else if (command.startsWith("inspector:") && ui.app?.project) {
-        ui.setInspector({ kind: command.slice("inspector:".length) as "map" | "pact" | "mandate" | "issues" });
+        ui.setInspector({ kind: command.slice("inspector:".length) as "map" | "pact" | "mandate" | "issues" | "team" | "work" | "group" | "memory" });
       }
     });
     return () => {
