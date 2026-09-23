@@ -236,9 +236,9 @@ function Timeline() {
     >
       <div className="mx-auto w-full max-w-[var(--app-chat-max-width)] min-w-0 px-3 pb-40 sm:px-5">
         {empty ? <ProjectIntro /> : null}
-        {rows.map((row) => (
+        {rows.map((row, index) => (
           <div key={row.id} className="px-1">
-            <TimelineRowView row={row} />
+            <TimelineRowView row={row} latest={row.kind === "reply" && !rows.slice(index + 1).some((r) => r.kind === "reply")} />
           </div>
         ))}
         {studying ? (

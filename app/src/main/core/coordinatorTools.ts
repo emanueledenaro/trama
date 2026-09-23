@@ -182,6 +182,20 @@ export const COORDINATOR_TOOLS: ToolDefinition[] = [
     readOnly: false,
   },
   {
+    name: "prepare_plan",
+    description:
+      "Within the mandate, have Trama's planner write a plan for a change the person asked for, for the person to review in the conversation. kind says what the work is: agreedTicket, decidedBehaviorCorrection (name the decisionIDs it restores), newFeature or tradeOff (these two always go to the person). The plan runs in the background and appears as a card; its behavior questions become decision cards.",
+    properties: {
+      kind: { type: "string", enum: WORK_KINDS },
+      moduleIDs: list(1),
+      summary: text,
+      issueNumber: { type: "integer", minimum: 1 },
+      decisionIDs: list(0),
+    },
+    required: ["kind", "moduleIDs", "summary"],
+    readOnly: false,
+  },
+  {
     name: "declare_candidate",
     description:
       "Within the mandate (executeInWorktree), declare a candidate from a specialist's work: Trama captures the exact content of the assignment's worktree now and binds it to the assignment's modules and required checks and to the Pact decisions you name. The diff, the checks and the evidence are Trama's, not yours. A correction is a new candidate, never a new run on an old one.",
@@ -239,6 +253,8 @@ export interface ToolContext {
   /** Runs a technical review in a thread distinct from the author's. */
   reviewCandidate(candidateId: string): Promise<TechnicalReview>;
   headSHA(): Promise<string | null>;
+  /** Starts Trama's planner in the background and returns the plan id. */
+  orderPlan(order: { kind: WorkKind; moduleIds: string[]; summary: string; issueNumber: number | null }): string;
 }
 
 function refused(authorization: ReturnType<typeof authorize>, action: MandateAction, outside: string[] = []): ToolResult {
@@ -511,6 +527,20 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
         removeSpecialist(document, specialist.id, reason, "Coordinatore");
         context.changed();
         return toolSuccess({ specialistID: specialist.id, status: "removed" });
+      }
+      case "prepare_plan": {
+        const kind = WORK_KINDS.includes(args.kind as WorkKind) ? (args.kind as WorkKind) : null;
+        if (!kind) return toolFailure("invalid_arguments", `kind must be one of: ${WORK_KINDS.join(", ")}.`);
+        const moduleIds = strings(args.moduleIDs);
+        const known = new Set(context.snapshot.modules.map((m) => m.id));
+        const unknown = moduleIds.filter((id) => !known.has(id));
+        if (unknown.length) return toolFailure("invalid_arguments", `Unknown module ids: ${unknown.join(", ")}.`);
+        const authorization = authorize(document.mandate, "plan", moduleIds, kind);
+        if (authorization !== "authorized") return refused(authorization, "plan", moduleIds.filter((id) => !document.mandate?.scopeModuleIds.includes(id)));
+        const summary = typeof args.summary === "string" ? args.summary.trim() : "";
+        if (!summary) return toolFailure("invalid_arguments", "summary is required.");
+        const planId = context.orderPlan({ kind, moduleIds, summary, issueNumber: typeof args.issueNumber === "number" ? args.issueNumber : null });
+        return toolSuccess({ planID: planId, status: "planning", note: "The plan appears as a card when the planner ends." });
       }
       case "declare_candidate": {
         const assignment = findAssignment(document, typeof args.assignment === "string" ? args.assignment : "");

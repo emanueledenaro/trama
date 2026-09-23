@@ -125,6 +125,7 @@ const handlers: { [K in ActionName]: Handler<K> } = {
   "assignment:stop": ({ assignmentId }) => controller.stopSpecialistWork(assignmentId),
   "assignment:resume": ({ assignmentId }) => controller.resumeSpecialistWork(assignmentId),
   "specialist:remove": ({ specialistId, reason }) => controller.removeSpecialistByPerson(specialistId, reason),
+  "plan:prepare": ({ requestId }) => controller.preparePlanForRequest(requestId),
   "candidate:approve": ({ candidateId }) => controller.approveCandidateByPerson(candidateId),
   "candidate:publish": ({ candidateId }) => controller.publishCandidateByPerson(candidateId),
   "codex:refresh": () => controller.refreshCodex(),

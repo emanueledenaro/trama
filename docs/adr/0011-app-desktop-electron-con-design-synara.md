@@ -31,6 +31,7 @@ Conseguenze: Trama gira anche su Linux e Windows, perché nulla nel processo pri
 | Mandato: concessione, correzione, revoca, versioni | Portato |
 | Issue GitHub tramite `gh` | Portato (lettura e creazione) |
 | Immagini nel composer | Portato |
+| Piani (`prepare_plan` e "Prepara un piano") | Portato: pianificatore in sola lettura con lo schema `PlanProposal`; le domande del piano diventano schede di decisione. L'esecuzione passa dal team, non dalla vecchia sessione singola |
 | Team, specialisti, incarichi, worktree | Portato: proposta e conferma, `create_specialist`, `assign_task`, `stop_specialist`, `read_team`, runtime Codex con worktree proprio |
 | Verifiche in sola lettura (`run_readonly_check`) | Portato, con la sandbox di Codex |
 | Candidati, verifiche, revisione tecnica, via libera | Portato: `declare_candidate`, `verify_candidate`, `review_candidate`, `clear_candidate`, blocchi del Patto, approvazione della persona |

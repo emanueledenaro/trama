@@ -7,6 +7,7 @@ import {
   IconCopy,
   IconFileText,
   IconInfoCircle,
+  IconListCheck,
   IconTerminal2,
   IconTool,
 } from "@tabler/icons-react";
@@ -15,8 +16,9 @@ import type { ConversationEvent } from "@shared/domain";
 import { formatDuration, type TimelineRow } from "@shared/timeline";
 import { cn } from "@/lib/cn";
 import { formatTime } from "@/lib/format";
-import { useUi } from "@/lib/store";
-import { AssignmentCard, CandidateCard, ContextNoticeCard, DecisionCard, MandateCard, StudyCard, TeamProposalCard } from "./Cards";
+import { act, useUi } from "@/lib/store";
+import { Button } from "@/components/ui/button";
+import { AssignmentCard, CandidateCard, ContextNoticeCard, DecisionCard, MandateCard, PlanCard, StudyCard, TeamProposalCard } from "./Cards";
 import { ChatMarkdown } from "./ChatMarkdown";
 
 function DisclosureChevron({ open }: { open: boolean }) {
@@ -139,7 +141,7 @@ function WorkGroup({ row }: { row: Extract<TimelineRow, { kind: "work" }> }) {
   );
 }
 
-function Reply({ row }: { row: Extract<TimelineRow, { kind: "reply" }> }) {
+function Reply({ row, latest }: { row: Extract<TimelineRow, { kind: "reply" }>; latest: boolean }) {
   const setInspector = useUi((s) => s.setInspector);
   const [copied, setCopied] = useState(false);
   const request = row.request;
@@ -169,6 +171,13 @@ function Reply({ row }: { row: Extract<TimelineRow, { kind: "reply" }> }) {
           ))}
         </div>
       ) : null}
+      {latest && !row.streaming && request?.state === "completed" ? (
+        <div className="mt-2">
+          <Button size="xs" variant="outline" onClick={() => void act("plan:prepare", { requestId: request.id })}>
+            <IconListCheck stroke={1.8} /> Prepara un piano
+          </Button>
+        </div>
+      ) : null}
       {!row.streaming ? (
         <div className="mt-1.5 flex items-center gap-2 text-[11px] text-muted-foreground/45 opacity-0 transition-opacity group-hover:opacity-100">
           {row.model ? <span>Coordinatore · {row.model}</span> : null}
@@ -191,14 +200,14 @@ function Reply({ row }: { row: Extract<TimelineRow, { kind: "reply" }> }) {
   );
 }
 
-export function TimelineRowView({ row, streaming = false }: { row: TimelineRow; streaming?: boolean }) {
+export function TimelineRowView({ row, streaming = false, latest = false }: { row: TimelineRow; streaming?: boolean; latest?: boolean }) {
   switch (row.kind) {
     case "person":
       return <PersonMessage row={row} />;
     case "work":
       return <WorkGroup row={row} />;
     case "reply":
-      return <Reply row={row} />;
+      return <Reply row={row} latest={latest} />;
     case "card": {
       const content = row.event.content;
       if (content.type !== "card") return null;
@@ -208,6 +217,7 @@ export function TimelineRowView({ row, streaming = false }: { row: TimelineRow; 
       if (row.cardKind === "teamProposal" && content.referenceId) return <TeamProposalCard proposalId={content.referenceId} />;
       if (row.cardKind === "assignment" && content.referenceId) return <AssignmentCard assignmentId={content.referenceId} />;
       if (row.cardKind === "candidate" && content.referenceId) return <CandidateCard candidateId={content.referenceId} />;
+      if (row.cardKind === "plan" && content.referenceId) return <PlanCard planId={content.referenceId} />;
       return <ContextNoticeCard title={content.title} detail={content.detail} />;
     }
   }

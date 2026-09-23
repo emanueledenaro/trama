@@ -138,6 +138,8 @@ export interface ThreadOptions {
   cwd: string;
   developerInstructions: string;
   config?: JsonObject;
+  /** An ephemeral thread is not kept by Codex after the process ends. */
+  ephemeral?: boolean;
   /** Defaults to read-only; a specialist with its own worktree gets workspace-write. */
   sandbox?: "read-only" | "workspace-write";
   /** Resume this thread when it still exists; otherwise start a new one. */
@@ -276,7 +278,7 @@ export class CodexClient {
     const result = asObject(
       await this.request(
         "thread/start",
-        { ...common, modelProvider: "openai", serviceName: "trama", ephemeral: false },
+        { ...common, modelProvider: "openai", serviceName: "trama", ephemeral: options.ephemeral ?? false },
         60_000,
       ),
     );

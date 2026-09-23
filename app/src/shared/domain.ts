@@ -11,7 +11,7 @@ export interface RecentProject {
 
 export type EventOrigin = "person" | "coordinator" | "trama" | "specialist";
 
-export type CardKind = "study" | "mandate" | "decision" | "contextNotice" | "teamProposal" | "assignment" | "candidate";
+export type CardKind = "study" | "mandate" | "decision" | "contextNotice" | "teamProposal" | "assignment" | "candidate" | "plan";
 
 export type EventContent =
   | { type: "personMessage"; text: string; moduleId: string | null; moduleName: string | null; imageCount?: number }
@@ -293,6 +293,40 @@ export interface CandidateReport {
   approvalInvalidated: boolean;
 }
 
+export interface PlanProposal {
+  sourceSnapshotID: string;
+  summary: string;
+  steps: string[];
+  affectedModuleIDs: string[];
+  references: string[];
+  requiredDecisionIDs: string[];
+  proposedBehavior: string;
+  acceptedExample: string;
+  rationale: string;
+  questions: {
+    scenario: string;
+    question: string;
+    options: { label: string; behavior: string; example: string; rationale: string }[];
+    revisesDecisionID: string | null;
+  }[];
+}
+
+export interface WorkPlan {
+  id: string;
+  requestId: string | null;
+  orderedBy: "person" | "coordinator";
+  kind: WorkKind;
+  moduleIds: string[];
+  summary: string;
+  issueNumber: number | null;
+  status: "planning" | "ready" | "failed";
+  proposal: PlanProposal | null;
+  failure: string | null;
+  decisionRequestIds: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface ProjectDocument {
   schemaVersion: 1;
   projectId: string;
@@ -310,6 +344,7 @@ export interface ProjectDocument {
   composerDraft: string;
   team: ProjectTeam;
   candidates: Candidate[];
+  plans: WorkPlan[];
 }
 
 export type CoordinatorPhase =

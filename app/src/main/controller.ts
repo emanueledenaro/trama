@@ -4,6 +4,7 @@ import { mkdir, realpath, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { CodexModel, TurnEvent } from "@shared/codex";
+import { shortId } from "@shared/ids";
 import type { ImageAttachmentInput } from "@shared/ipc";
 import type {
   ActiveProjectState,
@@ -14,6 +15,8 @@ import type {
   GitHubState,
   MandateAction,
   ProjectDocument,
+  WorkKind,
+  WorkPlan,
   RecentProject,
 } from "@shared/domain";
 import { CodexClient, CodexError, resolveCodexExecutable, restrictedAppServerArguments } from "./core/codexClient";
@@ -25,6 +28,7 @@ import { createIssue, listIssues, readGitHubRepository } from "./core/github";
 import { type MonitorCheckpoint, MonitorStore, pollRepository } from "./core/monitor";
 import {
   answerDecisionRequest,
+  createDecisionRequest,
   decide,
   decisionMessage,
   DomainError,
@@ -34,6 +38,7 @@ import {
   revokeMandate,
 } from "./core/pact";
 import { availableChecks, CHECKS, type ReadOnlyCheck, runReadOnlyCheck } from "./core/checks";
+import { parsePlan, PLAN_SCHEMA, PLANNING_INSTRUCTIONS, planPrompt } from "./core/plan";
 import { readRepositoryFile, scanRepository } from "./core/repositoryScanner";
 import { prepareSkills, type SetupReport } from "./core/skillSetup";
 import {
@@ -468,6 +473,7 @@ export class TramaController {
           verifyCandidate: (candidateId, check) => this.verifyCandidate(candidateId, check, current.runningRequestId),
           reviewCandidate: (candidateId) => this.reviewCandidate(candidateId, current.runningRequestId),
           headSHA: () => this.headSHA(current.rootPath),
+          orderPlan: (order) => this.orderPlan({ ...order, requestId: current.runningRequestId, orderedBy: "coordinator" }).id,
         });
       },
       TOOL_SERVER_INSTRUCTIONS,
@@ -1311,6 +1317,111 @@ export class TramaController {
     this.publish();
     if (monitor.enabled && (update.enabled || update.addRepository)) void this.pollMonitor();
     else this.scheduleMonitor();
+  }
+
+  // MARK: Plans
+
+  /** Asks the planner for a plan; it runs in the background and ends in the plan card. */
+  orderPlan(input: { requestId: string | null; orderedBy: "person" | "coordinator"; kind: WorkKind; moduleIds: string[]; summary: string; issueNumber: number | null }): WorkPlan {
+    const project = this.requireProject();
+    const now = new Date().toISOString();
+    const plan: WorkPlan = {
+      id: shortId("P", randomUUID()),
+      requestId: input.requestId,
+      orderedBy: input.orderedBy,
+      kind: input.kind,
+      moduleIds: input.moduleIds,
+      summary: input.summary,
+      issueNumber: input.issueNumber,
+      status: "planning",
+      proposal: null,
+      failure: null,
+      decisionRequestIds: [],
+      createdAt: now,
+      updatedAt: now,
+    };
+    project.document.plans.push(plan);
+    appendEvent(project.document, "trama", { type: "card", kind: "plan", title: "Piano", detail: null, referenceId: plan.id }, input.requestId);
+    this.changed();
+    void this.runPlanner(project, plan);
+    return plan;
+  }
+
+  async preparePlanForRequest(requestId: string): Promise<void> {
+    const project = this.requireProject();
+    const request = project.document.requests.find((r) => r.id === requestId);
+    if (!request) throw new DomainError("Richiesta non trovata.");
+    if (project.document.plans.some((p) => p.requestId === requestId && p.status === "planning")) return;
+    appendEvent(project.document, "person", { type: "personMessage", text: "Prepara un piano per questa richiesta.", moduleId: request.moduleId, moduleName: null }, requestId);
+    this.orderPlan({
+      requestId,
+      orderedBy: "person",
+      kind: "agreedTicket",
+      moduleIds: request.moduleId ? [request.moduleId] : [],
+      summary: request.text,
+      issueNumber: null,
+    });
+  }
+
+  private async runPlanner(project: ActiveProjectState, plan: WorkPlan): Promise<void> {
+    const document = project.document;
+    const model = document.coordinator.threadModel ?? this.coordinatorModel(document);
+    const client = new CodexClient({
+      executable: this.host.codexExecutable,
+      argumentsFor: (executable) => restrictedAppServerArguments(executable, null),
+      requestTimeoutMs: 15_000,
+    });
+    try {
+      if (!model) throw new Error("Nessun modello disponibile per il pianificatore.");
+      const snapshot = project.snapshot;
+      const sources = {
+        sourceSnapshotID: snapshot.headSHA ?? snapshot.scannedAt,
+        knownModuleIDs: snapshot.modules.map((m) => m.id),
+        knownFiles: snapshot.modules.flatMap((m) => m.files.map((f) => f.relativePath)),
+        existingDecisionIDs: document.decisions.map((d) => d.id),
+      };
+      const moduleNames = plan.moduleIds.length
+        ? plan.moduleIds.map((id) => snapshot.modules.find((m) => m.id === id)?.name ?? id).join(", ")
+        : "Intero progetto";
+      const decisions = document.decisions.map((d) => `${d.id} v${d.version}: ${d.value}. Esempio: ${d.acceptedExample}`).join("\n");
+      const opening = await client.openThread({
+        model,
+        cwd: project.rootPath,
+        developerInstructions: PLANNING_INSTRUCTIONS,
+        ephemeral: true,
+        config: { web_search: "disabled", features: { apps: false, plugins: false, hooks: false, multi_agent: false } },
+      });
+      const raw = await client.runTurn({
+        threadId: opening.threadId,
+        prompt: planPrompt(plan.summary + (plan.issueNumber ? ` (issue #${plan.issueNumber})` : ""), moduleNames, decisions, sources),
+        cwd: project.rootPath,
+        model,
+        outputSchema: PLAN_SCHEMA,
+        onEvent: () => undefined,
+      });
+      const proposal = parsePlan(raw, sources);
+      plan.proposal = proposal;
+      plan.status = "ready";
+      for (const question of proposal.questions) {
+        const request = createDecisionRequest(document, {
+          requestId: plan.requestId,
+          category: "product",
+          question: question.question,
+          concreteCase: question.scenario || proposal.summary,
+          alternatives: question.options.map((o) => ({ behavior: o.behavior, example: o.example, consequence: o.rationale || null })),
+          revisesDecisionId: question.revisesDecisionID,
+        });
+        plan.decisionRequestIds.push(request.id);
+        appendEvent(document, "trama", { type: "card", kind: "decision", title: "Decisione", detail: null, referenceId: request.id }, plan.requestId);
+      }
+    } catch (error) {
+      plan.status = "failed";
+      plan.failure = (error as Error).message;
+    } finally {
+      client.stop();
+      plan.updatedAt = new Date().toISOString();
+      if (this.state.project === project) this.changed();
+    }
   }
 
   // MARK: Working method

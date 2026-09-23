@@ -4,6 +4,7 @@ import {
   IconCircleX,
   IconFileDiff,
   IconGitPullRequest,
+  IconListCheck,
   IconChevronRight,
   IconGitBranch,
   IconInfoCircle,
@@ -535,6 +536,86 @@ export function CandidateCard({ candidateId }: { candidateId: string }) {
           </Button>
         ) : null}
       </div>
+    </CardFrame>
+  );
+}
+
+export function PlanCard({ planId }: { planId: string }) {
+  const project = useUi((s) => s.app?.project)!;
+  const setInspector = useUi((s) => s.setInspector);
+  const plan = project.document.plans.find((p) => p.id === planId);
+  if (!plan) return null;
+  const proposal = plan.proposal;
+  const moduleName = (id: string) => project.snapshot.modules.find((m) => m.id === id)?.name ?? id;
+  const pendingQuestions = project.document.decisionRequests.filter((r) => plan.decisionRequestIds.includes(r.id) && !r.outcome).length;
+  return (
+    <CardFrame
+      icon={<IconListCheck stroke={1.8} />}
+      title={`Piano ${plan.id}`}
+      aside={
+        plan.status === "planning" ? (
+          <span className="flex items-center gap-1.5 text-ui-sm text-muted-foreground">
+            <Spinner /> In preparazione
+          </span>
+        ) : plan.status === "failed" ? (
+          <Badge tone="destructive">Non riuscito</Badge>
+        ) : (
+          <Badge tone="info">Da rivedere</Badge>
+        )
+      }
+    >
+      <p className="text-ui-sm text-muted-foreground">
+        {plan.orderedBy === "coordinator" ? "Chiesto dal Coordinatore" : "Chiesto da te"} · {plan.summary}
+      </p>
+      {plan.failure ? <Field label="Errore">{plan.failure}</Field> : null}
+      {proposal ? (
+        <>
+          <Field label="Sintesi">{proposal.summary}</Field>
+          <Field label="Passi">
+            <ol className="list-decimal space-y-0.5 pl-4">
+              {proposal.steps.map((step) => (
+                <li key={step}>{step}</li>
+              ))}
+            </ol>
+          </Field>
+          <Field label="Comportamento proposto">{proposal.proposedBehavior}</Field>
+          <Field label="Esempio accettato">{proposal.acceptedExample}</Field>
+          {proposal.affectedModuleIDs.length ? <Field label="Moduli">{proposal.affectedModuleIDs.map(moduleName).join(", ")}</Field> : null}
+          {proposal.requiredDecisionIDs.length ? <Field label="Decisioni da rispettare">{proposal.requiredDecisionIDs.join(", ")}</Field> : null}
+          {proposal.references.length ? (
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {proposal.references.slice(0, 10).map((path) => (
+                <button
+                  key={path}
+                  type="button"
+                  onClick={() => setInspector({ kind: "file", path })}
+                  className="rounded-md bg-[var(--color-background-button-secondary)] px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground hover:text-foreground"
+                >
+                  {path}
+                </button>
+              ))}
+            </div>
+          ) : null}
+          {pendingQuestions ? <p className="mt-2 text-ui-sm text-[var(--color-text-accent)]">{pendingQuestions === 1 ? "Una domanda aspetta" : `${pendingQuestions} domande aspettano`} la tua risposta.</p> : null}
+          <div className="mt-3">
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={pendingQuestions > 0}
+              onClick={() =>
+                void act("coordinator:send", {
+                  text: `Ho rivisto il piano ${plan.id} e va bene. Realizzalo con il team entro il mandato.`,
+                  moduleId: null,
+                  model: null,
+                  effort: null,
+                })
+              }
+            >
+              Approva il piano e chiedi di realizzarlo
+            </Button>
+          </div>
+        </>
+      ) : null}
     </CardFrame>
   );
 }

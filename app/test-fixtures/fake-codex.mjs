@@ -70,6 +70,33 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
       };
       const toolDone = (tool, result) =>
         send({ method: "item/completed", params: { threadId, turnId, item: { id: `tool-${tool}`, type: "mcpToolCall", server: "trama", tool, status: "completed", result } } });
+      if (params.outputSchema?.required?.includes("sourceSnapshotID")) {
+        const sources = JSON.parse(text.slice(text.indexOf("Fonti: ") + 7));
+        const plan = {
+          sourceSnapshotID: sources.sourceSnapshotID,
+          summary: "Mandare in revisione gli ordini pagati annullati",
+          steps: ["Leggere CancelPaidOrder.swift", "Cambiare lo stato", "Aggiungere un test"],
+          affectedModuleIDs: sources.knownModuleIDs.slice(0, 1),
+          references: sources.knownFiles.slice(0, 1),
+          requiredDecisionIDs: [],
+          proposedBehavior: "Un ordine pagato annullato va in revisione",
+          acceptedExample: "Ordine 42 pagato e annullato: stato review",
+          rationale: "Evita rimborsi automatici errati",
+          questions: [
+            {
+              scenario: "Ordine pagato con carta",
+              question: "Il cliente riceve una email?",
+              options: [
+                { label: "Sì", behavior: "Email immediata", example: "Email alle 10:01", rationale: "Trasparenza" },
+                { label: "No", behavior: "Nessuna email", example: "Nessun messaggio", rationale: "Meno rumore" },
+              ],
+              revisesDecisionID: null,
+            },
+          ],
+        };
+        setTimeout(() => finish(JSON.stringify(plan)), 10);
+        return;
+      }
       if (params.outputSchema) {
         const verdict = text.includes("RIFIUTA") ? "changesRequested" : "approved";
         setTimeout(() => finish(JSON.stringify({ verdict, summary: "Il diff rispetta le decisioni indicate." })), 10);
@@ -124,6 +151,13 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
           const cleared = await callTool(threadId, "clear_candidate", { candidate: candidateID });
           toolDone("clear_candidate", cleared);
           finish(cleared.isError ? `Via libera rifiutato: ${cleared.content[0].text}` : `Candidato ${candidateID} verificato e con via libera.`);
+        });
+        return;
+      }
+      if (text.includes("[piano]")) {
+        callTool(threadId, "prepare_plan", { kind: "agreedTicket", moduleIDs: ["Sources/Orders"], summary: "Revisione degli ordini pagati annullati" }).then((result) => {
+          toolDone("prepare_plan", result);
+          finish(result.isError ? `Rifiutato: ${result.content[0].text}` : "Ho chiesto un piano al pianificatore.");
         });
         return;
       }

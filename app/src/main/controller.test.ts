@@ -75,6 +75,30 @@ describe("TramaController", () => {
     expect(last).toMatchObject({ text: expect.stringContaining("Ho risposto alla domanda") });
   });
 
+  it("prepares a plan for a request and turns its questions into decision cards", async () => {
+    await setup();
+    const project = controller!.snapshot.project!;
+    await controller!.send("Come si annulla un ordine pagato?", null, null, null);
+    await controller!.preparePlanForRequest(project.document.requests[0]!.id);
+    const plan = project.document.plans[0]!;
+    await until(() => plan.status !== "planning");
+    expect(plan.status).toBe("ready");
+    expect(plan.proposal?.steps).toHaveLength(3);
+    expect(plan.decisionRequestIds).toHaveLength(1);
+    expect(project.document.decisionRequests[0]!.question).toBe("Il cliente riceve una email?");
+  });
+
+  it("refuses prepare_plan without a mandate and runs it within one", async () => {
+    await setup();
+    const project = controller!.snapshot.project!;
+    await controller!.send("[piano]", null, null, null);
+    expect(project.document.plans).toHaveLength(0);
+    await controller!.grantMandate({ requestId: null, objectives: ["o"], priorities: [], scopeModuleIds: ["Sources/Orders"], authorizedActions: ["plan"], limits: [] });
+    await controller!.send("[piano]", null, null, null);
+    expect(project.document.plans[0]?.orderedBy).toBe("coordinator");
+    await until(() => project.document.plans[0]!.status === "ready");
+  });
+
   it("persists the conversation and resumes it after a restart", async () => {
     const { data, project: path } = await setup();
     await controller!.send("Ciao", null, null, null);
