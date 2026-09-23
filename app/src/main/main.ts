@@ -48,8 +48,8 @@ function createWindow(): void {
   window = new BrowserWindow({
     width: 1100,
     height: 780,
-    minWidth: 840,
-    minHeight: 620,
+    minWidth: 720,
+    minHeight: 600,
     show: false,
     title: "Trama",
     ...(isMac
