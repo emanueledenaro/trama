@@ -1814,6 +1814,21 @@ export class TramaController {
     this.changed();
   }
 
+  /** What publishing will send: shown to the person before the push (T11). */
+  previewPullRequest(candidateId: string): { repository: string | null; head: string | null; base: string; title: string; body: string } {
+    const project = this.requireProject();
+    const candidate = findCandidate(project.document, candidateId);
+    if (!candidate) throw new DomainError("Candidato non trovato.");
+    const assignment = findAssignment(project.document, candidate.assignmentId)!;
+    return {
+      repository: project.github.repository,
+      head: assignment.workspace?.branch ?? null,
+      base: project.snapshot.branch ?? "main",
+      title: assignment.objective,
+      body: pullRequestBody(candidate, assignment, project.document.decisions),
+    };
+  }
+
   async publishCandidateByPerson(candidateId: string): Promise<void> {
     const project = this.requireProject();
     const document = project.document;

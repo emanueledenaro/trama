@@ -139,6 +139,7 @@ const handlers: { [K in ActionName]: Handler<K> } = {
   "candidate:publish": ({ candidateId }) => controller.publishCandidateByPerson(candidateId),
   "codex:refresh": () => controller.refreshCodex(),
   "codex:login": () => controller.login(),
+  "candidate:previewPullRequest": async ({ candidateId }) => controller.previewPullRequest(candidateId),
   "providers:refresh": ({ provider }) => (provider ? controller.refreshProvider(provider) : controller.refreshProviders()),
   "provider:login": ({ provider }) => controller.loginProvider(provider),
   "github:refresh": () => controller.refreshGitHub(),

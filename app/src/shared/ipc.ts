@@ -54,6 +54,10 @@ export interface ActionMap {
   "pactDemo:approve": [void, void];
   "candidate:approve": [{ candidateId: string }, void];
   "candidate:publish": [{ candidateId: string }, void];
+  "candidate:previewPullRequest": [
+    { candidateId: string },
+    { repository: string | null; head: string | null; base: string; title: string; body: string },
+  ];
   "codex:refresh": [void, void];
   "codex:login": [void, void];
   "providers:refresh": [{ provider?: ProviderId }, void];

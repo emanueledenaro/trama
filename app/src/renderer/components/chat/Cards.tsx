@@ -14,6 +14,7 @@ import {
   IconUsersGroup,
 } from "@tabler/icons-react";
 import type { AssignmentStatus, CandidateState } from "@shared/domain";
+import type { ActionResult } from "@shared/ipc";
 import { Spinner } from "@/components/Spinner";
 import { useState } from "react";
 import type * as React from "react";
@@ -455,6 +456,7 @@ export function CandidateCard({ candidateId }: { candidateId: string }) {
   const setInspector = useUi((s) => s.setInspector);
   const candidate = project.document.candidates.find((c) => c.id === candidateId);
   const report = project.candidateReports[candidateId];
+  const [preview, setPreview] = useState<ActionResult<"candidate:previewPullRequest"> | null>(null);
   if (!candidate || !report) return null;
   const state = CANDIDATE_STATE[report.state];
   const specialist = project.document.team.specialists.find((s) => s.id === candidate.specialistId);
@@ -543,12 +545,29 @@ export function CandidateCard({ candidateId }: { candidateId: string }) {
             Approva questo candidato
           </Button>
         ) : null}
-        {approved && !candidate.pullRequest && project.github.repository ? (
-          <Button size="sm" onClick={() => void act("candidate:publish", { candidateId })}>
-            <IconGitPullRequest /> Pubblica pull request
+        {approved && !candidate.pullRequest && project.github.repository && !preview ? (
+          <Button size="sm" onClick={() => void act("candidate:previewPullRequest", { candidateId }).then((p) => setPreview(p ?? null))}>
+            <IconGitPullRequest /> Prepara la pull request
           </Button>
         ) : null}
       </div>
+      {preview && !candidate.pullRequest ? (
+        <div className="mt-2 space-y-1.5 rounded-lg border border-[color:var(--color-border)] p-2.5 text-ui-sm">
+          <p className="text-muted-foreground">
+            {preview.repository} · <span className="font-mono">{preview.head}</span> → <span className="font-mono">{preview.base}</span>
+          </p>
+          <p className="font-medium text-foreground">{preview.title}</p>
+          <pre className="max-h-48 overflow-auto whitespace-pre-wrap font-sans text-ui-xs text-foreground/85">{preview.body}</pre>
+          <div className="flex gap-2">
+            <Button size="sm" onClick={() => void act("candidate:publish", { candidateId }).then(() => setPreview(null))}>
+              <IconGitPullRequest /> Pubblica
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => setPreview(null)}>
+              Annulla
+            </Button>
+          </div>
+        </div>
+      ) : null}
     </CardFrame>
   );
 }
