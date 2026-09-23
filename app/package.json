@@ -17,31 +17,29 @@
     "ui-check": "npm run build && node scripts/ui-check.mjs ui-check"
   },
   "devDependencies": {
+    "@base-ui/react": "^1.8.0",
+    "@fontsource-variable/jetbrains-mono": "^5.3.0",
+    "@tabler/icons-react": "^3.48.0",
     "@tailwindcss/vite": "^4.3.3",
     "@types/node": "^22.20.4",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.1.1",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
     "electron": "^44.4.5",
     "electron-builder": "^26.15.3",
     "esbuild": "^0.28.2",
     "playwright": "^1.63.0",
-    "tailwindcss": "^4.3.3",
-    "typescript": "5.9",
-    "vite": "^8.3.0",
-    "vitest": "^5.0.1"
-  },
-  "dependencies": {
-    "@base-ui/react": "^1.8.0",
-    "@fontsource-variable/jetbrains-mono": "^5.3.0",
-    "@tabler/icons-react": "^3.48.0",
-    "class-variance-authority": "^0.7.1",
-    "clsx": "^2.1.1",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1",
     "tailwind-merge": "^3.7.0",
+    "tailwindcss": "^4.3.3",
+    "typescript": "5.9",
+    "vite": "^8.3.0",
+    "vitest": "^5.0.1",
     "zustand": "^5.0.15"
   },
   "build": {
@@ -82,6 +80,12 @@
       "target": [
         "nsis"
       ]
-    }
+    },
+    "publish": null
+  },
+  "author": "Emanuele Denaro",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/emanueledenaro/trama.git"
   }
 }
