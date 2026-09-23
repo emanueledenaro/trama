@@ -1,0 +1,264 @@
+import { join } from "node:path";
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, Notification, shell, type MenuItemConstructorOptions } from "electron";
+import type { AppSettings } from "@shared/domain";
+import type { ActionMap, ActionName } from "@shared/ipc";
+import { TramaController } from "./controller";
+
+app.setName("Trama");
+if (!app.requestSingleInstanceLock()) app.exit(0);
+const isMac = process.platform === "darwin";
+const rendererUrl = process.env.TRAMA_RENDERER_URL;
+let window: BrowserWindow | null = null;
+
+function surfaceColor(): string {
+  return nativeTheme.shouldUseDarkColors ? "#111111" : "#ffffff";
+}
+
+// The desktop app keeps its state in Trama/Desktop; the SwiftUI app's files in Trama are only read.
+const legacyRoot = process.env.TRAMA_DATA_DIR ? (process.env.TRAMA_LEGACY_DIR ?? null) : join(app.getPath("appData"), "Trama");
+const controller = new TramaController(process.env.TRAMA_DATA_DIR ?? join(app.getPath("appData"), "Trama", "Desktop"), {
+  publish: (state) => window?.webContents.send("trama:state", state),
+  openExternal: (url) => shell.openExternal(url),
+  applyTheme: (theme: AppSettings["theme"]) => {
+    nativeTheme.themeSource = theme;
+    if (!isMac) window?.setBackgroundColor(surfaceColor());
+  },
+  notify: (title, body) => {
+    if (window?.isFocused() || !Notification.isSupported()) return;
+    const notification = new Notification({ title, body });
+    notification.on("click", () => {
+      if (!window) createWindow();
+      window?.show();
+      window?.focus();
+    });
+    notification.show();
+  },
+  setOpenAtLogin: (enabled) => {
+    if (process.platform === "linux") return;
+    app.setLoginItemSettings({ openAtLogin: enabled, args: ["--hidden"] });
+  },
+  aiHeroResourceDirectory: app.isPackaged ? join(process.resourcesPath, "AIHero") : join(app.getAppPath(), "resources", "AIHero"),
+  demoResourceDirectory: app.isPackaged
+    ? join(process.resourcesPath, "DemoProject")
+    : join(app.getAppPath(), "resources", "DemoProject"),
+  codexExecutable: process.env.TRAMA_CODEX_PATH ?? null,
+}, legacyRoot);
+
+function createWindow(): void {
+  window = new BrowserWindow({
+    width: 1100,
+    height: 780,
+    minWidth: 840,
+    minHeight: 620,
+    show: false,
+    title: "Trama",
+    ...(isMac
+      ? {
+          titleBarStyle: "hiddenInset" as const,
+          trafficLightPosition: { x: 16, y: 16 },
+          vibrancy: "under-window" as const,
+          visualEffectState: "followWindow" as const,
+          backgroundColor: "#00000000",
+        }
+      : { backgroundColor: surfaceColor(), autoHideMenuBar: true }),
+    webPreferences: {
+      preload: join(__dirname, "preload.cjs"),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      spellcheck: false,
+    },
+  });
+  window.once("ready-to-show", () => window?.show());
+  window.on("closed", () => {
+    window = null;
+  });
+  window.on("focus", () => void controller.refreshCodex());
+  window.webContents.setWindowOpenHandler(({ url }) => {
+    if (/^https?:\/\//.test(url)) void shell.openExternal(url);
+    return { action: "deny" };
+  });
+  window.webContents.on("will-navigate", (event, url) => {
+    if (url !== window?.webContents.getURL()) event.preventDefault();
+  });
+  if (rendererUrl) void window.loadURL(rendererUrl);
+  else void window.loadFile(join(__dirname, "../dist/index.html"));
+}
+
+async function chooseFolder(title: string): Promise<string | null> {
+  const options = { title, properties: ["openDirectory", "createDirectory"] as ("openDirectory" | "createDirectory")[] };
+  const result = window ? await dialog.showOpenDialog(window, options) : await dialog.showOpenDialog(options);
+  return result.canceled ? null : (result.filePaths[0] ?? null);
+}
+
+type Handler<K extends ActionName> = (payload: ActionMap[K][0]) => Promise<ActionMap[K][1]> | ActionMap[K][1];
+const handlers: { [K in ActionName]: Handler<K> } = {
+  "project:openDialog": async () => {
+    const path = await chooseFolder("Apri progetto");
+    if (path) await controller.openProject(path);
+  },
+  "project:open": ({ path }) => controller.openProject(path),
+  "project:openDemo": () => controller.openDemo(),
+  "project:create": async ({ name, idea }) => {
+    const parent = await chooseFolder("Scegli la cartella");
+    if (parent) await controller.createProject(parent, name, idea);
+  },
+  "project:close": () => controller.closeProject(),
+  "project:refresh": () => controller.refreshProject(),
+  "project:forgetRecent": ({ id }) => controller.forgetRecent(id),
+  "project:revealInFolder": ({ relativePath }) => {
+    const project = controller.snapshot.project;
+    if (!project) return;
+    if (relativePath && (relativePath.startsWith("/") || relativePath.split("/").includes(".."))) return;
+    const target = relativePath ? join(project.rootPath, relativePath) : project.rootPath;
+    if (relativePath) shell.showItemInFolder(target);
+    else void shell.openPath(target);
+  },
+  "project:readFile": ({ relativePath }) => controller.readFile(relativePath),
+  "coordinator:send": ({ text, moduleId, model, effort, images }) => controller.send(text, moduleId, model, effort, images ?? []),
+  "coordinator:interrupt": () => controller.interrupt(),
+  "coordinator:retry": () => controller.startCoordinator(),
+  "coordinator:selectModel": ({ model, effort }) => controller.selectModel(model, effort),
+  "coordinator:saveDraft": ({ text }) => controller.saveDraft(text),
+  "coordinator:setContextThreshold": ({ percent }) => controller.setContextThreshold(percent),
+  "pact:decide": (input) => controller.recordDecision(input),
+  "decision:answer": ({ requestId, alternativeIndex, freeText }) => controller.answerDecision(requestId, alternativeIndex, freeText),
+  "mandate:grant": (input) => controller.grantMandate(input),
+  "mandate:revoke": ({ reason, requestId }) => controller.revokeMandate(reason, requestId),
+  "team:answer": ({ proposalId, keeping, note }) => controller.answerTeamProposal(proposalId, keeping, note),
+  "assignment:stop": ({ assignmentId }) => controller.stopSpecialistWork(assignmentId),
+  "assignment:resume": ({ assignmentId }) => controller.resumeSpecialistWork(assignmentId),
+  "specialist:remove": ({ specialistId, reason }) => controller.removeSpecialistByPerson(specialistId, reason),
+  "plan:prepare": ({ requestId }) => controller.preparePlanForRequest(requestId),
+  "pactDemo:run": () => controller.runPactDemo(),
+  "pactDemo:approve": () => controller.approvePactDemo(),
+  "candidate:approve": ({ candidateId }) => controller.approveCandidateByPerson(candidateId),
+  "candidate:publish": ({ candidateId }) => controller.publishCandidateByPerson(candidateId),
+  "codex:refresh": () => controller.refreshCodex(),
+  "codex:login": () => controller.login(),
+  "github:refresh": () => controller.refreshGitHub(),
+  "github:createIssue": ({ title, body }) => controller.createGitHubIssue(title, body),
+  "settings:update": (update) => controller.updateSettings(update),
+  "monitor:update": (update) => controller.updateMonitor(update),
+  "monitor:poll": () => controller.pollMonitor(),
+  "skills:prepare": () => controller.prepareSkills(),
+  "app:dismissError": () => controller.dismissError(),
+  "shell:openExternal": async ({ url }) => {
+    if (/^https:\/\//.test(url)) await shell.openExternal(url);
+  },
+};
+
+ipcMain.handle("trama:state", () => controller.snapshot);
+ipcMain.handle("trama:action", async (_event, action: ActionName, payload: unknown) => {
+  const handler = handlers[action] as Handler<ActionName> | undefined;
+  if (!handler) throw new Error(`Unknown action ${action}`);
+  return handler(payload as never);
+});
+
+function sendMenu(command: string): void {
+  window?.webContents.send("trama:menu", command);
+}
+
+function buildMenu(): void {
+  const template: MenuItemConstructorOptions[] = [
+    ...(isMac
+      ? [
+          {
+            label: "Trama",
+            submenu: [
+              { role: "about" as const, label: "Informazioni su Trama" },
+              { type: "separator" as const },
+              { label: "Impostazioni…", accelerator: "CmdOrCtrl+,", click: () => sendMenu("settings") },
+              { type: "separator" as const },
+              { role: "hide" as const, label: "Nascondi Trama" },
+              { role: "hideOthers" as const, label: "Nascondi altre" },
+              { role: "unhide" as const, label: "Mostra tutte" },
+              { type: "separator" as const },
+              { role: "quit" as const, label: "Esci da Trama" },
+            ],
+          },
+        ]
+      : []),
+    {
+      label: "Archivio",
+      submenu: [
+        { label: "Apri progetto…", accelerator: "CmdOrCtrl+O", click: () => void handlers["project:openDialog"]() },
+        { label: "Apri progetto di esempio", click: () => void controller.openDemo().catch(() => undefined) },
+        { label: "Crea un progetto…", click: () => sendMenu("createProject") },
+        { type: "separator" },
+        { label: "Aggiorna progetto", accelerator: "CmdOrCtrl+R", click: () => void controller.refreshProject() },
+        ...(isMac ? [] : [{ type: "separator" as const }, { label: "Impostazioni…", accelerator: "CmdOrCtrl+,", click: () => sendMenu("settings") }]),
+        ...(isMac ? [{ role: "close" as const, label: "Chiudi finestra" }] : [{ role: "quit" as const, label: "Esci" }]),
+      ],
+    },
+    {
+      label: "Composizione",
+      submenu: [
+        { role: "undo", label: "Annulla" },
+        { role: "redo", label: "Ripeti" },
+        { type: "separator" },
+        { role: "cut", label: "Taglia" },
+        { role: "copy", label: "Copia" },
+        { role: "paste", label: "Incolla" },
+        { role: "selectAll", label: "Seleziona tutto" },
+      ],
+    },
+    {
+      label: "Vista",
+      submenu: [
+        { label: "Scrivi al Coordinatore", accelerator: "CmdOrCtrl+L", click: () => sendMenu("focusComposer") },
+        { label: "Mostra o nascondi la barra laterale", accelerator: "CmdOrCtrl+B", click: () => sendMenu("toggleSidebar") },
+        { label: "Mostra dettagli", accelerator: "Alt+CmdOrCtrl+I", click: () => sendMenu("toggleInspector") },
+        { type: "separator" },
+        { label: "Mappa", accelerator: "CmdOrCtrl+1", click: () => sendMenu("inspector:map") },
+        { label: "Patto", accelerator: "CmdOrCtrl+2", click: () => sendMenu("inspector:pact") },
+        { label: "Mandato", accelerator: "CmdOrCtrl+3", click: () => sendMenu("inspector:mandate") },
+        { label: "Issue", accelerator: "CmdOrCtrl+4", click: () => sendMenu("inspector:issues") },
+        { type: "separator" },
+        { role: "resetZoom", label: "Dimensione reale" },
+        { role: "zoomIn", label: "Ingrandisci" },
+        { role: "zoomOut", label: "Riduci" },
+        { type: "separator" },
+        { role: "togglefullscreen", label: "Schermo intero" },
+        ...(app.isPackaged ? [] : [{ role: "toggleDevTools" as const, label: "Strumenti per sviluppatori" }]),
+      ],
+    },
+    { role: "windowMenu", label: "Finestra" },
+  ];
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+}
+
+// Started by the login item: stay in the background with the monitor until the person opens the window.
+const startedHidden = process.argv.includes("--hidden") || (isMac && app.getLoginItemSettings().wasOpenedAtLogin);
+
+app.on("second-instance", () => {
+  if (!window) createWindow();
+  if (window?.isMinimized()) window.restore();
+  window?.show();
+  window?.focus();
+});
+
+app.whenReady().then(async () => {
+  buildMenu();
+  if (!startedHidden) createWindow();
+  await controller.start();
+  app.on("activate", () => {
+    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+  });
+});
+
+nativeTheme.on("updated", () => {
+  if (!isMac) window?.setBackgroundColor(surfaceColor());
+});
+
+app.on("window-all-closed", () => {
+  if (!isMac) app.quit();
+});
+
+let quitting = false;
+app.on("before-quit", (event) => {
+  if (quitting) return;
+  quitting = true;
+  event.preventDefault();
+  void controller.stop().finally(() => app.quit());
+});

@@ -1,60 +1,58 @@
 # Trama
 
-Trama è un'app macOS nativa in SwiftUI per leggere un repository, collegare una richiesta ai moduli del progetto e conservare decisioni, lavoro e verifiche sullo stesso candidato. Usa Codex App Server di OpenAI per pianificazione ed esecuzione e usa GitHub CLI per le operazioni GitHub esplicite.
+Trama è un'app desktop per leggere un repository, collegare una richiesta ai moduli del progetto e conservare decisioni, lavoro e verifiche sullo stesso candidato. Usa Codex App Server di OpenAI come motore del Coordinatore e GitHub CLI per le operazioni GitHub esplicite.
 
-Il progetto è in alpha. Il repository pubblico è [emanueledenaro/trama](https://github.com/emanueledenaro/trama) e il lavoro pianificato è registrato nelle [GitHub Issues](https://github.com/emanueledenaro/trama/issues). La matrice aggiornata di ciò che esiste e di ciò che deve ancora essere provato è in [docs/stato-beta.md](docs/stato-beta.md).
+L'app è scritta in Electron e riprende l'interfaccia di [Synara](https://github.com/Emanuele-web04/synara) (vedi [ADR 0011](docs/adr/0011-app-desktop-electron-con-design-synara.md)). Il codice è in [`app/`](app). I sorgenti della versione SwiftUI sono stati rimossi il 23 settembre 2026 e restano nella cronologia git.
+
+Il progetto è in alpha. Il repository pubblico è [emanueledenaro/trama](https://github.com/emanueledenaro/trama) e il lavoro pianificato è registrato nelle [GitHub Issues](https://github.com/emanueledenaro/trama/issues).
 
 ## Requisiti
 
-- macOS 14 o successivo.
-- Xcode Command Line Tools con toolchain Swift 6. Il package usa `swift-tools-version: 6.0` e compila il sorgente in modalità Swift 5.
+- macOS, Linux o Windows.
+- Node.js 22 e npm.
 - Git.
-- [GitHub CLI](https://cli.github.com/) per leggere o pubblicare dati GitHub. Le operazioni che scrivono sul remoto richiedono un accesso `gh` valido e un'azione esplicita nell'app.
-- Codex CLI 0.148.0 con un account ChatGPT. Trama rifiuta account API key e provider diversi da OpenAI per evitare un passaggio implicito alla fatturazione API.
+- [GitHub CLI](https://cli.github.com/) per leggere o pubblicare issue. Le operazioni che scrivono sul remoto richiedono un accesso `gh` valido e un'azione esplicita nell'app.
+- Codex CLI con un account ChatGPT. Trama rifiuta account API key e provider diversi da OpenAI per evitare un passaggio implicito alla fatturazione API.
 
-Il workflow CI installa Codex 0.148.0 tramite npm e usa Node 22. Per installare la stessa versione tramite npm in locale serve anche Node.js.
-
-Puoi controllare gli strumenti prima della compilazione:
-
-```bash
-xcode-select -p
-swift --version
-gh --version
-gh auth status
-codex --version
-```
-
-## Compilazione locale
-
-In un checkout che contiene il sorgente dell'alpha:
+## Avvio in sviluppo
 
 ```bash
 git clone https://github.com/emanueledenaro/trama.git
-cd trama
-swift test
-bash scripts/build-app.sh release
-open build/Trama.app
+cd trama/app
+npm install
+npm run dev
 ```
 
-`scripts/build-app.sh` compila `Trama`, `TramaMonitor` e le risorse, crea `build/Trama.app` e applica una firma ad hoc locale. Lo script non registra il monitor in background. Questa app non è firmata con Developer ID e non è notarizzata.
+`npm run dev` avvia Vite per l'interfaccia, compila il processo principale e apre Electron. `TRAMA_CODEX_PATH` indica un eseguibile Codex diverso da quello trovato nel `PATH`; `TRAMA_DATA_DIR` sposta la cartella dei dati.
 
-## Distribuzione firmata
+Altri comandi, sempre in `app/`:
 
-`bash scripts/package-release.sh --help` descrive il percorso di distribuzione. Lo script richiede `TRAMA_SIGNING_IDENTITY` con il nome completo di un certificato Developer ID Application e `TRAMA_NOTARY_PROFILE` con il nome di un profilo già presente nel Portachiavi. Le credenziali non vengono passate negli argomenti dello script.
+```bash
+npm run typecheck   # controllo dei tipi
+npm test            # test del processo principale e della logica condivisa
+npm run build       # build di interfaccia e processo principale
+npm start           # build e avvio
+npm run ui-check    # avvia l'app con un Codex di prova e salva le schermate in ui-check/
+npm run dist        # pacchetto con electron-builder
+```
 
-Il commit corrente deve essere pubblicato nella storia di main. Lo script crea un clone separato di quel commit, esegue test e build Release, firma helper e app e invia l’archivio al servizio di notarizzazione Apple. Produce `Trama.zip` soltanto dopo accettazione, stapling e verifica Gatekeeper. Conserva log, risultato della notarizzazione, commit e checksum in una nuova cartella `build/Distribution/release.*`.
+## Struttura
 
-Questo percorso non è ancora stato eseguito con Developer ID. La prova di installazione e del percorso completo su un secondo Mac rimane separata.
+- `app/src/main`: processo principale. Scansione del repository, client di Codex App Server, Coordinatore, server MCP degli strumenti su `127.0.0.1`, Patto, mandato, GitHub e persistenza.
+- `app/src/preload`: bridge IPC con azioni tipizzate. Il renderer non ha accesso a Node.
+- `app/src/renderer`: interfaccia React con Tailwind CSS 4 e `@base-ui/react`, costruita sui token di design di Synara.
+- `app/src/shared`: tipi e logica condivisa, come la timeline della conversazione.
+- `app/test-fixtures/fake-codex.mjs`: un app-server di prova per i test e per `ui-check`. Le sue risposte non sono risultati di Codex.
 
 ## Primo uso
 
 1. Apri un progetto esistente oppure il progetto di esempio.
 2. Apri Collegamenti e verifica l'account ChatGPT riconosciuto da Codex.
 3. Se vuoi usare GitHub, esegui prima `gh auth login` nel terminale e controlla il repository mostrato dall'app.
-4. Seleziona un modulo, descrivi il comportamento richiesto e genera un piano.
-5. Rivedi il piano e conferma ogni decisione prima di avviare una sessione di modifica.
+4. Leggi lo studio del Coordinatore e scrivigli. Puoi scegliere un modulo come contesto dal composer.
+5. Rispondi alle schede di decisione e di mandato: solo le tue risposte entrano nel Patto e nel mandato.
 
-Trama salva progetti recenti, richieste e stato operativo in `Application Support/Trama`. Le credenziali ChatGPT restano nel componente ufficiale Codex. L'app non legge `auth.json` e non copia token.
+Trama salva progetti recenti, conversazioni e stato operativo nella cartella dati dell'utente, sotto `Trama/Desktop` (`~/Library/Application Support/Trama/Desktop` su macOS, `~/.config/Trama/Desktop` su Linux, `%APPDATA%\Trama\Desktop` su Windows). Al primo avvio l'app legge i progetti recenti della versione SwiftUI in `Trama/` e, all'apertura di un progetto, ne importa conversazione, Patto, mandato, memoria e thread del Coordinatore. I file della versione SwiftUI non vengono modificati. Le credenziali ChatGPT restano nel componente ufficiale Codex. L'app non legge `auth.json` e non copia token.
 
 ## Repository supportati
 
@@ -64,10 +62,10 @@ Il raggruppamento dei moduli deriva dai percorsi reali, con un trattamento speci
 
 ## Limiti attuali
 
-- Il riconoscimento dell'account ChatGPT e una risposta reale attraverso CodexClient sono stati verificati. Piano ed esecuzione usano un processo distinto, con app e server MCP disabilitati. Il flusso nell'interfaccia è in verifica.
-- Il monitor in background è implementato e resta disattivato al primo avvio. L'helper non è stato registrato sul Mac di prova.
-- La CI macOS verifica build e test delle revisioni pubblicate. Le prove locali sono descritte in [docs/verifiche-locali.md](docs/verifiche-locali.md).
-- Firma Developer ID, notarizzazione e installazione su un secondo Mac non sono state eseguite.
-- Trama è distribuito con licenza MIT. Le skill Matt Pocock includono licenza MIT e attribuzione. Codex CLI viene installato separatamente e non è incluso nell'app.
+- L'app Electron è stata provata con un app-server Codex di prova (`app/test-fixtures/fake-codex.mjs`), nei test e con `npm run ui-check` sotto Linux. Una sessione con Codex reale e un account ChatGPT non è ancora stata eseguita con l'app Electron.
+- Come nella versione SwiftUI, solo Codex ha un adattatore completo; gli altri otto provider sono descritti in Collegamenti ma non selezionabili. La pubblicazione di pull request dall'app Electron è provata fino al push del branch; la creazione con `gh` non è ancora stata provata su un repository reale. L'elenco è nell'[ADR 0011](docs/adr/0011-app-desktop-electron-con-design-synara.md).
+- I pacchetti firmati dell'app Electron (Developer ID, notarizzazione) non sono ancora configurati.
+- La CI verifica build e test dell'app Electron. Le prove locali della versione SwiftUI, ormai rimossa, restano in [docs/verifiche-locali.md](docs/verifiche-locali.md) come registro storico.
+- Trama è distribuito con licenza MIT. L'interfaccia riprende il design di Synara, anch'esso MIT, con l'attribuzione in [docs/synara-attribution.md](docs/synara-attribution.md). Le skill Matt Pocock includono licenza MIT e attribuzione. Codex CLI viene installato separatamente e non è incluso nell'app.
 
 Questi limiti sono tracciati nei ticket T01-T18. La presenza del codice o di un test locale non chiude da sola un ticket.

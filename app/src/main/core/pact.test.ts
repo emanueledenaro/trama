@@ -1,0 +1,92 @@
+import { describe, expect, it } from "vitest";
+import { deriveTimelineRows, formatDuration } from "@shared/timeline";
+import { appendEvent, emptyDocument, recordReply, referencedPaths } from "./document";
+import {
+  answerDecisionRequest,
+  createDecisionRequest,
+  createMandateRequest,
+  decide,
+  DomainError,
+  grantMandate,
+  revokeMandate,
+} from "./pact";
+
+describe("Pact", () => {
+  it("increments the version of a decision and keeps its history", () => {
+    const document = emptyDocument("p");
+    const first = decide(document, { id: null, value: "A", acceptedExample: "e", rationale: "r" });
+    const second = decide(document, { id: first.id, value: "B", acceptedExample: "e", rationale: "r" });
+    expect(first.id).toMatch(/^D-[0-9A-F]{8}$/);
+    expect(second.version).toBe(2);
+    expect(document.decisions).toHaveLength(1);
+    expect(document.decisionHistory.map((d) => d.value)).toEqual(["A", "B"]);
+    expect(() => decide(document, { id: null, value: " ", acceptedExample: "e", rationale: "r" })).toThrow(DomainError);
+  });
+
+  it("records an answered question as a decision only once", () => {
+    const document = emptyDocument("p");
+    const request = createDecisionRequest(document, {
+      requestId: null,
+      category: "product",
+      question: "Cosa succede a un ordine pagato?",
+      concreteCase: "Ordine 42 pagato e annullato",
+      alternatives: [
+        { behavior: "Va in revisione", example: "stato review", consequence: null },
+        { behavior: "Si rimborsa", example: "rimborso", consequence: null },
+      ],
+      revisesDecisionId: null,
+    });
+    const { decision } = answerDecisionRequest(document, request.id, { alternativeIndex: 0, freeText: null });
+    expect(decision.value).toBe("Va in revisione");
+    expect(request.outcome?.decisionId).toBe(decision.id);
+    expect(() => answerDecisionRequest(document, request.id, { alternativeIndex: 1, freeText: null })).toThrow();
+  });
+
+  it("versions, corrects and revokes a mandate", () => {
+    const document = emptyDocument("p");
+    const input = { objectives: ["o"], priorities: [], scopeModuleIds: ["src/app"], authorizedActions: ["plan" as const], limits: [] };
+    expect(grantMandate(document, input).version).toBe(1);
+    const corrected = grantMandate(document, { ...input, objectives: ["o2"] });
+    expect(corrected.version).toBe(2);
+    expect(corrected.history).toHaveLength(1);
+    expect(revokeMandate(document, "basta").status).toBe("revoked");
+    expect(() => grantMandate(document, { ...input, objectives: [] })).toThrow(DomainError);
+  });
+
+  it("replaces a pending mandate request with a newer one", () => {
+    const document = emptyDocument("p");
+    const base = { requestId: null, reason: "r", objectives: ["o"], priorities: [], scopeModuleIds: ["m"], authorizedActions: ["plan" as const], limits: [] };
+    const first = createMandateRequest(document, base);
+    createMandateRequest(document, base);
+    expect(first.resolution?.kind).toBe("revoked");
+  });
+});
+
+describe("timeline", () => {
+  it("groups activities per turn and adds a pending reply for a running request", () => {
+    const document = emptyDocument("p");
+    const t0 = new Date("2026-01-01T10:00:00Z");
+    document.requests.push({ id: "r1", text: "ciao", moduleId: null, state: "running", model: "m", effort: null, createdAt: t0.toISOString(), completedAt: null, failure: null });
+    appendEvent(document, "person", { type: "personMessage", text: "ciao", moduleId: null, moduleName: null }, "r1", t0);
+    appendEvent(document, "trama", { type: "activity", title: "Messaggio inviato", detail: null, tone: "info" }, "r1", t0);
+    appendEvent(document, "trama", { type: "activity", title: "git status", detail: null, tone: "tool" }, "r1", t0);
+    let rows = deriveTimelineRows(document.events, document.requests, { requestId: "r1", text: "Sto" });
+    expect(rows.map((r) => r.kind)).toEqual(["person", "work", "reply"]);
+    expect(rows[2]).toMatchObject({ streaming: true, text: "Sto" });
+
+    document.requests[0]!.state = "completed";
+    document.requests[0]!.completedAt = new Date(t0.getTime() + 2_500).toISOString();
+    recordReply(document, "r1", "Ciao! Vedi src/app/main.ts", "m", referencedPaths("Ciao! Vedi src/app/main.ts", ["src/app/main.ts"]));
+    rows = deriveTimelineRows(document.events, document.requests, null);
+    expect(rows.map((r) => r.kind)).toEqual(["person", "work", "reply"]);
+    expect(rows[1]).toMatchObject({ running: false, durationMs: 2_500 });
+    expect(rows[2]).toMatchObject({ references: ["src/app/main.ts"] });
+  });
+
+  it("formats durations like the Swift app", () => {
+    expect(formatDuration(450)).toBe("450 ms");
+    expect(formatDuration(2_500)).toBe("2,5 s");
+    expect(formatDuration(12_000)).toBe("12 s");
+    expect(formatDuration(65_000)).toBe("1m 5s");
+  });
+});

@@ -4,9 +4,11 @@ Trama porta logica e comportamento dei provider da [Synara](https://github.com/E
 
 La fonte di riferimento è il commit `9f91d59f182ec03722cb7fe8fe2244ef268c2c39` del repository `https://github.com/Emanuele-web04/synara`. Il [riferimento funzionale](reference/synara-funzioni.md) collega i comportamenti di Synara ai ticket di Trama; le sue prime sezioni erano state scritte sul commit `dd88d9272f97e4dda5735281e73ce14de388ad25`.
 
+Dal 23 settembre 2026 l'app desktop di Trama è in Electron (ADR 0011) e riprende il design di Synara: token di colore, tipografia, misure e classi dell'interfaccia sono riscritti in `app/src/renderer` a partire dal commit `eaa61eded31b6755d4f30ba8eabc5d905cf817cb` di Synara: `apps/web/src/index.css`, `theme/theme.logic.ts` e i componenti dell'interfaccia. I file che derivano da Synara lo indicano in testa. Le icone "Central Icons" di Synara non sono incluse perché il repository di Synara non ne dichiara la licenza.
+
 Synara è distribuito con licenza MIT. Il file `LICENSE` di quel commit indica due titolari: `Copyright (c) 2026 T3 Tools Inc.` e `Copyright (c) 2026 Emanuele Di Pietro`. La logica portata da Synara conserva questa nota.
 
-La copia della licenza sta in [synara-LICENSE](synara-LICENSE), copiata senza modifiche da `LICENSE` al commit `9f91d59f182ec03722cb7fe8fe2244ef268c2c39`. Il suo SHA-256 è `305724dd050ca7ded99c662de813d755bc4ec3887c4543a37159c6662ca36d1b`. Trama non include file di Synara, quindi non c'è una licenza di terze parti da installare nei progetti configurati come per AI Hero. Il testo è ripetuto qui sotto perché resti leggibile accanto all'attribuzione.
+La copia della licenza sta in [synara-LICENSE](synara-LICENSE), copiata senza modifiche da `LICENSE` al commit `9f91d59f182ec03722cb7fe8fe2244ef268c2c39`. Il suo SHA-256 è `305724dd050ca7ded99c662de813d755bc4ec3887c4543a37159c6662ca36d1b`. Trama non copia file interi di Synara, quindi non c'è una licenza di terze parti da installare nei progetti configurati come per AI Hero. Il testo è ripetuto qui sotto perché resti leggibile accanto all'attribuzione.
 
 ```text
 MIT License

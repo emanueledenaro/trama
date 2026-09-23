@@ -1,6 +1,6 @@
 # Trama
 
-App macOS nativa in SwiftUI. Il motore AI è Codex App Server di OpenAI. Seguire i controlli e i materiali di sistema Apple.
+App desktop in Electron (`app/`), con l'interfaccia di Synara: seguire i token, le misure e i componenti in `app/src/renderer` (ADR 0011). Il motore AI è Codex App Server di OpenAI. I sorgenti SwiftUI sono stati rimossi e restano nella cronologia git.
 
 ## Humanizer
 
@@ -9,6 +9,18 @@ Scrivere in italiano semplice. Conservare fatti e significato. Usare frasi diret
 ## Lingua del codice
 
 Il codice sorgente è in inglese: nomi di tipi, funzioni, proprietà, test, commenti tecnici, errori tecnici, messaggi di log e testi dei commit. I messaggi di commit usano verbi inglesi e descrivono il cambiamento in modo concreto.
+
+## Commit e branch
+
+I messaggi di commit seguono [Conventional Commits 1.0.0](https://www.conventionalcommits.org/en/v1.0.0/): `<tipo>[ambito opzionale]: <descrizione>`, per esempio `feat(app): add the search palette` o `fix(app): guard reveal paths`. Tipi usati: `feat`, `fix`, `docs`, `refactor`, `test`, `build`, `ci`, `chore`, `perf`, `style`, `revert`. Una modifica incompatibile usa `!` dopo il tipo o il footer `BREAKING CHANGE:`.
+
+I nomi dei branch usano un prefisso per il tipo di lavoro:
+
+- `feature/<descrizione-breve>` per nuove funzioni;
+- `bugfix/<descrizione-breve>` per correzioni ordinarie;
+- `hotfix/<descrizione-breve>` per correzioni urgenti da portare subito su `main`.
+
+La descrizione è in inglese, minuscola, con parole separate da trattini, per esempio `feature/electron-app`.
 
 L'interfaccia dell'app, la documentazione di prodotto, le issue, le pull request e le comunicazioni con la persona restano in italiano, salvo quando un termine tecnico o una fonte richiedono l'inglese. Non tradurre retroattivamente dati persistiti, contenuti storici, nomi di API esterne o testo già pubblicato soltanto per applicare questa regola.
 

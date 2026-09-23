@@ -1,0 +1,511 @@
+/*
+ * Design tokens and surfaces follow Synara (github.com/Emanuele-web04/synara at eaa61eded31b6755d4f30ba8eabc5d905cf817cb, apps/web/src/index.css
+ * and theme/theme.logic.ts, MIT License, Copyright (c) 2026 T3 Tools Inc. and Emanuele Di Pietro).
+ * Values are those of Synara's default "codex" theme.
+ */
+@import "tailwindcss";
+
+@custom-variant dark (&:is(.dark, .dark *));
+
+@theme inline {
+  --animate-spin-stepped: spin-stepped 1.3s steps(26, end) infinite;
+  --font-sans: var(--font-ui-family);
+  --font-mono: var(--font-mono-family);
+  --font-display: var(--font-display-family);
+  --text-ui: 13px;
+  --text-ui-lg: 14px;
+  --text-ui-sm: 12px;
+  --text-ui-xs: 11px;
+  --text-ui-2xs: 10px;
+  --text-ui-meta: 11px;
+  --text-ui-timestamp: 9px;
+  --text-chat: 13px;
+  --text-chat-code: 12px;
+  --text-chat-meta: 9px;
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-info: var(--info);
+  --color-info-foreground: var(--info-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-foreground: var(--foreground);
+  --color-background: var(--background);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-border: var(--sidebar-border);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  @keyframes spin-stepped {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+}
+
+:root {
+  color-scheme: light;
+  --radius: 0.625rem;
+  --radius-user-message: 1rem;
+  --composer-radius: 1.2rem;
+  --font-ui-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  --font-display-family: "Cal Sans", var(--font-ui-family);
+  --font-mono-family: "JetBrains Mono Variable", "JetBrains Mono", "SF Mono", "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+
+  /* Codex seed: surface #ffffff, ink #0d0d0d, accent #0169cc. */
+  --ink: #0d0d0d;
+  --surface: #ffffff;
+  --color-background-surface: var(--surface);
+  --color-text-foreground: var(--ink);
+  --color-text-accent: #0169cc;
+  --color-border-heavy: rgb(13 13 13 / 0.09);
+  --color-border-light: rgb(13 13 13 / 0.07);
+  --color-text-foreground-secondary: rgb(13 13 13 / 0.65);
+  --color-text-foreground-tertiary: rgb(13 13 13 / 0.45);
+  --color-background-button-secondary: rgb(13 13 13 / 0.03);
+  --color-background-button-secondary-hover: rgb(13 13 13 / 0.03);
+  --color-background-elevated-secondary: rgb(13 13 13 / 0.03);
+  --color-token-text-link-foreground: var(--color-text-accent);
+
+  --background: var(--surface);
+  --foreground: var(--ink);
+  --card: var(--surface);
+  --card-foreground: var(--ink);
+  --popover: #ffffff;
+  --popover-foreground: var(--ink);
+  --primary: var(--ink);
+  --primary-foreground: var(--surface);
+  --secondary: rgb(13 13 13 / 0.03);
+  --secondary-foreground: var(--ink);
+  --muted: rgb(13 13 13 / 0.04);
+  --muted-foreground: var(--color-text-foreground-secondary);
+  --accent: rgb(13 13 13 / 0.04);
+  --accent-foreground: var(--ink);
+  --border: rgb(13 13 13 / 0.09);
+  --input: rgb(13 13 13 / 0.09);
+  --ring: #a3a3a3;
+  --destructive: #ef4444;
+  --destructive-foreground: var(--surface);
+  --info: var(--color-text-accent);
+  --info-foreground: var(--color-text-accent);
+  --success: #10b981;
+  --success-foreground: var(--surface);
+  --warning: #f59e0b;
+  --warning-foreground: var(--surface);
+
+  --sidebar: var(--card);
+  --sidebar-foreground: var(--foreground);
+  --sidebar-accent: var(--color-background-button-secondary-hover);
+  --sidebar-selected: var(--color-background-button-secondary);
+  --sidebar-accent-foreground: var(--color-text-foreground);
+  --sidebar-border: var(--border);
+
+  --app-user-message-background: var(--color-background-button-secondary);
+  --app-chat-code-surface: var(--color-background-button-secondary);
+  --app-surface-divider: color-mix(in srgb, var(--color-border) 60%, transparent);
+  --app-chat-max-width: 46rem;
+
+  /* Opaque shell off macOS; the macOS window draws vibrancy under a translucent sidebar. */
+  --app-shell-background: var(--surface);
+  --app-sidebar-surface: var(--card);
+  --app-sidebar-backdrop-filter: none;
+}
+
+:root.dark {
+  color-scheme: dark;
+  --ink: #fcfcfc;
+  --surface: #111111;
+  --color-border-heavy: rgb(252 252 252 / 0.16);
+  --color-border-light: rgb(252 252 252 / 0.06);
+  --color-text-foreground-secondary: rgb(252 252 252 / 0.65);
+  --color-text-foreground-tertiary: rgb(252 252 252 / 0.42);
+  --color-background-button-secondary: rgb(252 252 252 / 0.04);
+  --color-background-button-secondary-hover: rgb(252 252 252 / 0.06);
+  --color-background-elevated-secondary: rgb(252 252 252 / 0.06);
+  --popover: color-mix(in srgb, #111111 92%, #fcfcfc);
+  --secondary: rgb(252 252 252 / 0.04);
+  --muted: rgb(252 252 252 / 0.04);
+  --accent: rgb(252 252 252 / 0.04);
+  --border: rgb(252 252 252 / 0.1);
+  --input: rgb(252 252 252 / 0.1);
+  --ring: #737373;
+  --destructive: color-mix(in srgb, #ef4444 90%, white);
+}
+
+:root[data-platform="darwin"] {
+  --app-shell-background: transparent;
+  --app-sidebar-surface: color-mix(in srgb, var(--surface) 38%, transparent);
+  --app-sidebar-backdrop-filter: blur(4px) saturate(130%);
+}
+
+:root.dark[data-platform="darwin"] {
+  --app-sidebar-surface: color-mix(in srgb, color-mix(in srgb, var(--surface) 80%, black) 72%, transparent);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/30;
+  }
+  body {
+    @apply text-foreground relative;
+    background: var(--app-shell-background, transparent);
+    font-family: var(--font-ui-family);
+    letter-spacing: normal;
+    margin: 0;
+    padding: 0;
+    min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+  }
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+  overscroll-behavior-y: none;
+}
+
+pre,
+code,
+textarea.font-mono,
+.font-mono {
+  font-family: var(--font-mono-family);
+}
+
+button {
+  cursor: pointer;
+}
+
+.font-system-ui {
+  font-family: var(--font-ui-family);
+  letter-spacing: normal;
+}
+
+@layer components {
+  .sidebar-icon-button {
+    @apply inline-flex items-center justify-center rounded-sm p-0.5 text-muted-foreground/60 transition-colors hover:text-foreground/82 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring;
+    background: transparent;
+  }
+  .sidebar-icon-button:hover {
+    background: var(--color-background-button-secondary-hover);
+  }
+
+  .app-sidebar-surface {
+    background: var(--app-sidebar-surface, var(--card));
+    -webkit-backdrop-filter: var(--app-sidebar-backdrop-filter, none);
+    backdrop-filter: var(--app-sidebar-backdrop-filter, none);
+  }
+
+  .chat-content-card {
+    --seam-line: rgb(0 0 0 / 5%);
+  }
+  .dark .chat-content-card {
+    --seam-line: rgb(255 255 255 / 5%);
+  }
+  .chat-content-card::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    pointer-events: none;
+    box-shadow: inset 0.5px 0 0 var(--seam-line);
+    transition: opacity 300ms cubic-bezier(0.32, 0.72, 0, 1);
+  }
+  [data-sidebar-state="collapsed"] .chat-content-card::before {
+    opacity: 0;
+  }
+  [data-sidebar-state="expanded"]:has([data-placement="content-seam"]:hover) .chat-content-card {
+    --seam-line: color-mix(in srgb, var(--foreground) 30%, transparent);
+  }
+
+  .chat-surface-divider {
+    background-image: linear-gradient(var(--app-surface-divider), var(--app-surface-divider));
+    background-repeat: no-repeat;
+    background-position: left bottom;
+    background-size: 100% 1px;
+  }
+
+  .chat-composer-shell,
+  .chat-composer-surface {
+    border-radius: var(--composer-radius);
+  }
+  .chat-composer-surface {
+    --surface-border: color-mix(in srgb, color-mix(in srgb, var(--color-border-heavy) 95%, var(--foreground) 5%) 55%, transparent);
+    position: relative;
+    isolation: isolate;
+    background: color-mix(in srgb, var(--popover) 55%, transparent);
+  }
+  .dark .chat-composer-surface {
+    --surface-border: color-mix(in srgb, var(--border) 55%, transparent);
+  }
+  .chat-composer-surface::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    border-radius: inherit;
+    -webkit-backdrop-filter: blur(40px) saturate(150%);
+    backdrop-filter: blur(40px) saturate(150%);
+  }
+
+  .translucent-popup {
+    @apply relative overflow-hidden border border-border bg-popover/70 text-popover-foreground shadow-xl;
+  }
+  .translucent-popup::before {
+    content: "";
+    pointer-events: none;
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    border-radius: inherit;
+    -webkit-backdrop-filter: blur(40px) saturate(150%);
+    backdrop-filter: blur(40px) saturate(150%);
+  }
+}
+
+.drag-region {
+  -webkit-app-region: drag;
+}
+.drag-region button,
+.drag-region input,
+.drag-region textarea,
+.drag-region select,
+.drag-region a,
+.no-drag {
+  -webkit-app-region: no-drag;
+}
+
+.desktop-top-bar-traffic-light-gutter {
+  padding-left: 90px !important;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background-color: rgba(0, 0, 0, 0.1);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+  border-radius: 999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(0, 0, 0, 0.18);
+}
+.dark ::-webkit-scrollbar-thumb {
+  background-color: rgba(255, 255, 255, 0.07);
+}
+.dark ::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(255, 255, 255, 0.14);
+}
+
+@keyframes chat-pane-enter {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.chat-pane-enter {
+  animation: chat-pane-enter 140ms ease-out;
+}
+
+@keyframes chat-message-send-enter {
+  from {
+    opacity: 0;
+    transform: translateY(3px) scale(0.992);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+.chat-message-send-enter {
+  animation: chat-message-send-enter 180ms ease-out both;
+}
+
+@keyframes shimmer {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: -100% 0;
+  }
+}
+.shimmer-text {
+  background: linear-gradient(90deg, var(--muted-foreground) 35%, var(--foreground) 50%, var(--muted-foreground) 65%);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: shimmer 2s steps(40, end) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-pane-enter,
+  .chat-message-send-enter,
+  .shimmer-text {
+    animation: none;
+  }
+}
+
+/* Chat markdown, as in Synara. */
+.chat-markdown {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  font-size: 13px;
+  line-height: 21.125px;
+}
+.chat-markdown strong,
+.chat-markdown b {
+  font-weight: 500;
+  font-synthesis: none;
+}
+.chat-markdown > :first-child {
+  margin-top: 0;
+}
+.chat-markdown > :last-child {
+  margin-bottom: 0;
+}
+.chat-markdown p,
+.chat-markdown ul,
+.chat-markdown ol,
+.chat-markdown blockquote,
+.chat-markdown pre,
+.chat-markdown table {
+  margin: 0.65rem 0;
+}
+.chat-markdown--user p,
+.chat-markdown--user ul,
+.chat-markdown--user ol,
+.chat-markdown--user pre {
+  margin: 0.45rem 0;
+}
+.chat-markdown ul {
+  padding-left: 1.25rem;
+  list-style-type: disc;
+}
+.chat-markdown ol {
+  padding-left: 1.25rem;
+  list-style-type: decimal;
+}
+.chat-markdown ul ul {
+  list-style-type: circle;
+}
+.chat-markdown ol ol {
+  list-style-type: lower-alpha;
+}
+.chat-markdown li + li {
+  margin-top: 0.25rem;
+}
+.chat-markdown h1,
+.chat-markdown h2,
+.chat-markdown h3,
+.chat-markdown h4,
+.chat-markdown h5,
+.chat-markdown h6 {
+  margin: 1.1em 0 0.35em;
+  font-weight: 600;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+}
+.chat-markdown h1 {
+  font-size: 1.75em;
+}
+.chat-markdown h2 {
+  font-size: 1.55em;
+}
+.chat-markdown h3 {
+  font-size: 1.35em;
+}
+.chat-markdown h4 {
+  font-size: 1.2em;
+}
+.chat-markdown h5 {
+  font-size: 1.1em;
+}
+.chat-markdown h6 {
+  font-size: 1em;
+  color: var(--muted-foreground);
+}
+.chat-markdown :is(h1, h2, h3, h4, h5, h6) + :is(h1, h2, h3, h4, h5, h6) {
+  margin-top: 0.5em;
+}
+.chat-markdown a {
+  color: var(--color-token-text-link-foreground);
+  text-decoration: none;
+}
+.chat-markdown a:hover {
+  text-decoration: underline;
+  text-underline-offset: 0.18em;
+}
+.chat-markdown hr {
+  margin: 1.5rem 0;
+  border: 0;
+  border-top: 1px solid var(--border);
+}
+.chat-markdown blockquote {
+  border-left: 2px solid var(--border);
+  padding-left: 0.8rem;
+  color: var(--muted-foreground);
+}
+.chat-markdown code {
+  border-radius: 0.4rem;
+  background: var(--app-user-message-background);
+  padding: 0.1rem 0.35rem;
+  font-size: 12px;
+  font-family: var(--font-mono-family);
+}
+.chat-markdown--user code {
+  background: color-mix(in srgb, var(--foreground) 9%, transparent);
+}
+.chat-markdown pre {
+  border-radius: 0.65rem;
+  background: var(--app-chat-code-surface);
+  padding: 0.5rem 0.6rem;
+  overflow-x: auto;
+}
+.chat-markdown pre code {
+  background: transparent;
+  padding: 0;
+  line-height: 1.5;
+  font-size: 12px;
+}
+.chat-markdown table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.chat-markdown th,
+.chat-markdown td {
+  border: 1px solid var(--border);
+  padding: 0.35rem 0.45rem;
+  text-align: left;
+}
