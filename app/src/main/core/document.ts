@@ -1,6 +1,15 @@
 import { randomUUID } from "node:crypto";
 import type { ProviderId } from "@shared/codex";
 import type { ConversationEvent, EventContent, EventOrigin, ProjectDocument } from "@shared/domain";
+import { requestGoalId } from "@shared/goals";
+
+function assignmentGoalId(document: ProjectDocument, assignmentId: string): string | null {
+  for (const specialist of document.team.specialists) {
+    const found = specialist.assignments.find((a) => a.id === assignmentId);
+    if (found) return found.goalId ?? null;
+  }
+  return null;
+}
 
 export function emptyDocument(projectId: string): ProjectDocument {
   return {
@@ -58,8 +67,11 @@ export function appendEvent(
   requestId: string | null = null,
   now = new Date(),
   work: { assignmentId: string; workKey: string } | null = null,
+  goalId: string | null = null,
 ): ConversationEvent {
   document.lastSequence += 1;
+  // The dialog is fixed by the request or the assignment the event belongs to, never by what the UI shows (UX02).
+  const dialog = goalId ?? requestGoalId(document, requestId) ?? (work ? assignmentGoalId(document, work.assignmentId) : null);
   const event: ConversationEvent = {
     id: randomUUID(),
     sequence: document.lastSequence,
@@ -68,6 +80,7 @@ export function appendEvent(
     createdAt: now.toISOString(),
     content,
     ...(work ? { assignmentId: work.assignmentId, workKey: work.workKey } : {}),
+    ...(dialog ? { goalId: dialog } : {}),
   };
   document.events.push(event);
   return event;

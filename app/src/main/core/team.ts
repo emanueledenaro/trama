@@ -248,6 +248,10 @@ export interface AssignmentOrder {
   dependencies: string[];
   model: string;
   provider?: ProviderId;
+  /** The Coordinator's reason for the provider and model (UX05). */
+  modelReason?: string | null;
+  /** The goal the work serves (UX02). */
+  goalId?: string | null;
   /** Pact decisions the work relies on. */
   decisionIds?: string[];
   tools: SpecialistTool[];
@@ -315,6 +319,8 @@ export function assign(
     dependencies,
     model,
     provider,
+    modelReason: order.modelReason?.trim() || null,
+    ...(order.goalId ? { goalId: order.goalId } : {}),
     decisionVersions,
     tools,
     requiredChecks: cleaned(order.requiredChecks),

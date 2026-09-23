@@ -9,6 +9,8 @@ import { createDecisionRequest, createMandateRequest, DELEGABLE_ACTIONS, DomainE
 import { ALL_CHECKS, CHECKS, type CheckResult, type ReadOnlyCheck } from "./checks";
 import { candidateReport, CandidateError, clearCandidate, declareCandidate, findCandidate } from "./candidates";
 import { studyText } from "./study";
+import { findGoal, requestGoalId } from "@shared/goals";
+import { goalsForTool, proposeGoal } from "./goals";
 import {
   addSpecialist,
   assign,
@@ -155,6 +157,22 @@ export const COORDINATOR_TOOLS: ToolDefinition[] = [
     readOnly: true,
   },
   {
+    name: "read_goals",
+    description:
+      "Read the project's goals: title, status, desired outcome, accepted and refused examples and linked decisions, plus the goal of the dialog you are answering (null for the project dialog).",
+    properties: {},
+    required: [],
+    readOnly: true,
+  },
+  {
+    name: "propose_goal",
+    description:
+      "Propose a goal to the person: a short title, the desired outcome and concrete examples of behavior that must happen (acceptedExamples) or must not (refusedExamples). The goal stays proposed until the person confirms or edits it; proposing grants no mandate. Propose one goal at a time, from what the person asked or from your study.",
+    properties: { title: text, outcome: text, acceptedExamples: list(0), refusedExamples: list(0) },
+    required: ["title", "outcome", "acceptedExamples"],
+    readOnly: false,
+  },
+  {
     name: "propose_team",
     description:
       "Propose the project team to the person, once, at the end of your study: for each specialist a name, a competence, the reason this project needs it and the modules it would work on. Propose only specialists that real work needs, never one to fill a role. Trama shows a card; the person confirms or corrects it once and only that answer creates the specialists. Afterwards change the team with create_specialist and stop_specialist.",
@@ -185,7 +203,7 @@ export const COORDINATOR_TOOLS: ToolDefinition[] = [
   {
     name: "assign_task",
     description:
-      "Within the mandate (executeInWorktree), assign work to a specialist, named by id or name. Trama starts it in a provider session it owns, in its own worktree when tools include edits, without network. Give the objective, the issue or exercise, the modules, the assignments it depends on, the Pact decisions the work relies on (decisionIDs: the work stops if one changes), the checks the result must pass and your instructions for the specialist. provider and model default to yours; propose another connected provider or model only when the work needs it (read_team lists them). Assign in parallel only independent work: different modules and no unfinished dependency. kind newFeature and tradeOff always go to the person.",
+      "Within the mandate (executeInWorktree), assign work to a specialist, named by id or name. Trama starts it in a provider session it owns, in its own worktree when tools include edits, without network. Give the objective, the issue or exercise, the modules, the assignments it depends on, the Pact decisions the work relies on (decisionIDs: the work stops if one changes), the checks the result must pass and your instructions for the specialist. provider and model default to yours; propose another connected provider or model only when the work needs it (read_team lists them). In modelReason say why this provider and model fit the work: first the quality the work needs, then the cost among adequate models; say so when you lack evidence. goalID names the goal the work serves; it defaults to the goal of the dialog you are answering. Assign in parallel only independent work: different modules and no unfinished dependency. kind newFeature and tradeOff always go to the person.",
     properties: {
       specialist: text,
       kind: { type: "string", enum: WORK_KINDS },
@@ -197,6 +215,8 @@ export const COORDINATOR_TOOLS: ToolDefinition[] = [
       decisionIDs: list(0),
       provider: text,
       model: text,
+      modelReason: text,
+      goalID: text,
       tools: { type: "array", items: { type: "string", enum: ["commands", "edits"] } },
       requiredChecks: { type: "array", items: { type: "string", enum: ALL_CHECKS } },
       instructions: text,
@@ -293,7 +313,7 @@ export interface ToolContext {
   /** Called after a tool changed the document: persist and publish. */
   changed(): void;
   /** Adds a conversation card for a request the Coordinator put to the person. */
-  addCard(kind: "mandate" | "decision" | "teamProposal" | "assignment" | "candidate", title: string, referenceId: string): void;
+  addCard(kind: "mandate" | "decision" | "teamProposal" | "assignment" | "candidate" | "goal", title: string, referenceId: string): void;
   /** Models of the Coordinator's provider, and the Coordinator's own model. */
   models: string[];
   defaultModel: string | null;
@@ -443,6 +463,7 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
             };
           }),
           revisesDecisionId: typeof args.revisesDecisionID === "string" && args.revisesDecisionID ? args.revisesDecisionID : null,
+          goalId: requestGoalId(document, context.runningRequestId),
         });
         context.addCard("decision", "Decisione", request.id);
         const paused = request.revisesDecisionId ? context.decisionChanged(request.revisesDecisionId) : [];
@@ -491,6 +512,8 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
                     objective: current.objective,
                     moduleIDs: current.moduleIds,
                     model: current.model,
+                    modelReason: current.modelReason ?? null,
+                    goalID: current.goalId ?? null,
                     worktreeBranch: current.workspace?.branch ?? null,
                     result: current.result,
                     failure: current.failure,
@@ -569,6 +592,9 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
         if (provider.models.length && !provider.models.includes(model)) {
           return toolFailure("invalid_model", `Model ${model} is not in the ${providerId} catalogue: ${provider.models.join(", ")}.`);
         }
+        const namedGoal = typeof args.goalID === "string" && args.goalID.trim() ? args.goalID.trim() : null;
+        if (namedGoal && !findGoal(document, namedGoal)) return toolFailure("unknown_goal", `Unknown goal ${namedGoal}. Read the goals with read_goals.`);
+        const goalId = namedGoal ?? requestGoalId(document, context.runningRequestId);
         const assignment = assign(
           document,
           {
@@ -582,6 +608,8 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
             decisionIds: strings(args.decisionIDs),
             model,
             provider: providerId,
+            modelReason: typeof args.modelReason === "string" ? args.modelReason : null,
+            goalId,
             tools: strings(args.tools) as SpecialistTool[],
             requiredChecks: checks,
             instructions: typeof args.instructions === "string" ? args.instructions : "",
@@ -592,7 +620,27 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
         context.addCard("assignment", "Incarico", assignment.id);
         context.changed();
         context.startAssignment(assignment.id);
-        return toolSuccess({ assignmentID: assignment.id, specialistID: assignment.specialistId, status: assignment.status, provider: assignment.provider ?? "codex", model: assignment.model });
+        return toolSuccess({
+          assignmentID: assignment.id,
+          specialistID: assignment.specialistId,
+          status: assignment.status,
+          provider: assignment.provider ?? "codex",
+          model: assignment.model,
+          goalID: assignment.goalId ?? null,
+        });
+      }
+      case "read_goals":
+        return toolSuccess({ goals: goalsForTool(document), dialogGoalID: requestGoalId(document, context.runningRequestId) });
+      case "propose_goal": {
+        const examples = (kind: "accepted" | "refused", value: Json | undefined) => strings(value).map((text) => ({ kind, text }));
+        const goal = proposeGoal(document, {
+          title: typeof args.title === "string" ? args.title : "",
+          outcome: typeof args.outcome === "string" ? args.outcome : "",
+          examples: [...examples("accepted", args.acceptedExamples), ...examples("refused", args.refusedExamples)],
+        });
+        context.addCard("goal", "Obiettivo proposto", goal.id);
+        context.changed();
+        return toolSuccess({ goalID: goal.id, status: "proposed", note: "The person confirms, edits or discards it. Do not assign work for it before it is open." });
       }
       case "update_ticket": {
         const issueNumber = typeof args.issueNumber === "number" ? args.issueNumber : 0;
@@ -746,6 +794,7 @@ export function developerInstructions(projectName: string): string {
     "At the end of your study propose the project team with propose_team: one specialist per real need, each with a competence and the reason this project needs it, never one to fill a role. The person confirms or corrects it once, and only that answer creates the specialists. From then on you change the team yourself within the mandate, with create_specialist and stop_specialist, and you say it in the conversation.",
     "Within the mandate, assign_task gives a specialist work in a provider session and worktree that Trama owns: objective, ticket or exercise, modules, dependencies, required checks, your instructions and the provider and model you propose for it. Assign in parallel only work that is independent, and read_team to see where each specialist stands. stop_specialist asks Trama to stop work: the stop is first requested and then confirmed, and what was done is kept.",
     "run_readonly_check runs a check on the project checkout without writing to it; you may use it without a mandate.",
+    "The person works by goals: a goal has a desired outcome and accepted and refused examples. Each goal has its own dialog with you, and the project dialog holds priorities and cross-goal questions; you stay one Coordinator with one mandate and one Pact for all of them. When a message comes from a goal dialog Trama says so and gives you the goal; answer about that goal, and the work you assign there is linked to it. read_goals lists the goals; propose_goal proposes a new one that the person confirms.",
     "When a specialist's work is done, declare_candidate captures its worktree and binds it to the Pact decisions it must respect; verify_candidate runs its required checks and review_candidate asks a distinct reviewer. Within the mandate, clear_candidate gives your green light to a verified and approved candidate. The person always reviews and publishes it: never claim that work is merged or published.",
     "When the person answers a card or changes the mandate, Trama writes it to you as the person's message.",
     "When you rely on a repository file, name its path relative to the project root.",

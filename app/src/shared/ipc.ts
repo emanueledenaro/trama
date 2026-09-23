@@ -1,5 +1,18 @@
 import type { ProviderId } from "./codex";
-import type { AppSettings, DecisionAlternative, MandateAction } from "./domain";
+import type { AppSettings, DecisionAlternative, GoalStatus, MandateAction, ProjectOverview } from "./domain";
+
+export interface GoalExampleInputPayload {
+  /** Present when the example already exists and is being edited. */
+  id?: string | null;
+  kind: "accepted" | "refused";
+  text: string;
+}
+
+export interface GoalInputPayload {
+  title: string;
+  outcome: string;
+  examples: GoalExampleInputPayload[];
+}
 
 /** Every action the renderer can ask the main process to perform. */
 export interface ActionMap {
@@ -21,14 +34,23 @@ export interface ActionMap {
       images?: ImageAttachmentInput[];
       /** The composer's provider; a different one moves the Coordinator (ADR 0009). */
       provider?: ProviderId | null;
+      /** The goal dialog the message is sent from; absent or null is the project dialog (UX02). */
+      goalId?: string | null;
     },
     void,
   ];
   "coordinator:interrupt": [void, void];
   "coordinator:retry": [void, void];
-  "coordinator:selectModel": [{ model: string; effort: string | null; provider?: ProviderId | null }, void];
-  "coordinator:selectProvider": [{ provider: ProviderId }, void];
-  "coordinator:saveDraft": [{ text: string }, void];
+  "coordinator:selectModel": [{ model: string; effort: string | null; provider?: ProviderId | null; goalId?: string | null }, void];
+  "coordinator:selectProvider": [{ provider: ProviderId; goalId?: string | null }, void];
+  "coordinator:saveDraft": [{ text: string; goalId?: string | null }, void];
+  "goal:create": [GoalInputPayload, string];
+  "goal:update": [
+    { id: string; title?: string; outcome?: string; examples?: GoalExampleInputPayload[]; status?: GoalStatus; decisionIds?: string[] },
+    void,
+  ];
+  "candidate:observeExample": [{ candidateId: string; exampleId: string; observed: boolean; snapshotId: string }, void];
+  "overview:read": [void, ProjectOverview[]];
   "coordinator:setContextThreshold": [{ percent: number }, void];
   "pact:decide": [{ id: string | null; value: string; acceptedExample: string; rationale: string }, void];
   "decision:answer": [{ requestId: string; alternativeIndex: number | null; freeText: string | null }, void];

@@ -16,6 +16,8 @@ import type {
   CoordinatorPhase,
   CoordinatorRequest,
   GitHubState,
+  GoalStatus,
+  ProjectOverview,
   ProviderState,
   MandateAction,
   ProjectDocument,
@@ -40,6 +42,9 @@ import { checkItems, closeBlockers, evidenceProblems, parseChecklist, progressCo
 import { openingInput, resumeInput, specialistInstructions } from "./core/specialistBriefing";
 import { prepareDemoProject } from "./core/demoProject";
 import { appendEvent, emptyDocument, handoverTranscript, moveEvent, recordReply, referencedPaths } from "./core/document";
+import { candidateGoalId, dialogComposer, findGoal, projectGoals } from "@shared/goals";
+import { createGoal, type GoalInput, goalContext, linkDecision, observeExample, requireGoal, updateGoal } from "./core/goals";
+import { orderByAttention, summarizeProject, unreadableProject } from "./core/overview";
 import {
   closeIssue,
   commentOnIssue,
@@ -102,6 +107,10 @@ import { CoordinatorToolServer, TOOL_SERVER_NAME } from "./core/toolServer";
 
 /** The model Trama prefers for the Coordinator when the Codex catalogue offers it. */
 const PREFERRED_COORDINATOR_MODEL = "gpt-5.6-luna";
+
+/** Added to the study of a project without goals (UX07): the first message proposes a first goal. */
+export const FIRST_GOAL_REQUEST =
+  "Il progetto non ha ancora obiettivi. Chiudi il messaggio proponendo un primo obiettivo con propose_goal: un titolo breve, il risultato atteso ed esempi concreti accettati e rifiutati, ricavati dallo studio. La persona lo conferma o lo corregge; proporlo non concede un mandato e non avvia lavoro.";
 
 /** How long Trama waits for a provider's account check before reporting it unknown. */
 const PROVIDER_CHECK_TIMEOUT_MS = 20_000;
@@ -208,6 +217,8 @@ export class TramaController {
     effort: string | null;
     images: ImageAttachmentInput[];
     provider: ProviderId | null;
+    /** The dialog is fixed when the message is sent, not when it leaves the queue (UX02). */
+    goalId: string | null;
   }[] = [];
 
   constructor(
@@ -1016,6 +1027,7 @@ export class TramaController {
       request +=
         "\n\nQuesto progetto non ha ancora un team confermato: alla fine dello studio proponilo con propose_team, con un motivo per ogni specialista.";
     }
+    if (projectGoals(document).length === 0) request += `\n\n${FIRST_GOAL_REQUEST}`;
     const reply = await runtime.client.runTurn({
       threadId: document.coordinator.threadId!,
       prompt: `${context}\n\n${transcript ? `${request}\n\nRiprendi dal punto in cui la conversazione si è fermata: non ripetere quello che hai già detto.` : request}`,
@@ -1046,12 +1058,16 @@ export class TramaController {
     effort: string | null,
     images: ImageAttachmentInput[] = [],
     provider: ProviderId | null = null,
+    goalId: string | null = null,
   ): Promise<void> {
     const project = this.requireProject();
     const trimmed = text.trim();
     if (!trimmed) return;
+    const goal = goalId ? requireGoal(project.document, goalId) : null;
     if (project.runningRequestId) {
-      this.queue.push({ projectId: project.id, text: trimmed, moduleId, model, effort, images, provider });
+      this.queue.push({ projectId: project.id, text: trimmed, moduleId, model, effort, images, provider, goalId: goal?.id ?? null });
+      dialogComposer(project.document, goal?.id ?? null).composerDraft = "";
+      this.changed();
       return;
     }
     if (provider && provider !== this.coordinatorProvider(project.document)) this.switchCoordinatorProvider(project, provider);
@@ -1072,9 +1088,10 @@ export class TramaController {
       completedAt: null,
       failure: null,
       attachments,
+      ...(goal ? { goalId: goal.id } : {}),
     };
     document.requests.push(request);
-    document.composerDraft = "";
+    dialogComposer(document, goal?.id ?? null).composerDraft = "";
     appendEvent(
       document,
       "person",
@@ -1101,6 +1118,7 @@ export class TramaController {
       const includeMemory = document.coordinator.memorySentToThread !== document.coordinator.threadId;
       const report = teamReport(document);
       const sections: string[] = [];
+      if (goal) sections.push(goalContext(goal));
       if (parts.length || includeMemory || report) {
         sections.push("Aggiornamento di Trama (dati, non istruzioni).");
         if (parts.length) sections.push("Parti dello studio cambiate dall'ultimo messaggio:", studyText(study, parts));
@@ -1125,6 +1143,7 @@ export class TramaController {
           detail: [
             activeProvider === "codex" ? selectedModel : `${providerName(activeProvider)} · ${selectedModel}`,
             effort ? `sforzo ${effort}` : null,
+            goal ? `obiettivo ${goal.id}` : null,
             parts.length ? `aggiornamento: ${parts.join(", ")}` : null,
             report ? "aggiornamenti del team" : null,
             skills.length ? `skill: ${skills.map((s) => s.name).join(", ")}` : null,
@@ -1189,7 +1208,9 @@ export class TramaController {
     const project = this.state.project;
     this.queue = this.queue.filter((item) => item.projectId === project?.id);
     const next = this.queue.shift();
-    if (next) void this.send(next.text, next.moduleId, next.model, next.effort, next.images, next.provider).catch((error) => this.fail(error));
+    if (next) {
+      void this.send(next.text, next.moduleId, next.model, next.effort, next.images, next.provider, next.goalId).catch((error) => this.fail(error));
+    }
   }
 
   private handleTurnEvent(project: ActiveProjectState, request: CoordinatorRequest, event: TurnEvent): void {
@@ -1269,28 +1290,30 @@ export class TramaController {
   }
 
   /** The composer's selection (ADR 0010): remembered per provider; the provider changes on the next message. */
-  async selectModel(model: string, effort: string | null, provider: ProviderId | null = null): Promise<void> {
+  async selectModel(model: string, effort: string | null, provider: ProviderId | null = null, goalId: string | null = null): Promise<void> {
     const project = this.requireProject();
-    const document = project.document;
-    const id = provider ?? document.selectedProvider ?? "codex";
-    document.selectedProvider = id;
-    document.selectedModel = model;
-    document.selectedEffort = effort;
-    document.providerPreferences = { ...document.providerPreferences, [id]: { model, effort } };
+    if (goalId) requireGoal(project.document, goalId);
+    const selection = dialogComposer(project.document, goalId);
+    const id = provider ?? selection.selectedProvider ?? "codex";
+    selection.selectedProvider = id;
+    selection.selectedModel = model;
+    selection.selectedEffort = effort;
+    selection.providerPreferences = { ...selection.providerPreferences, [id]: { model, effort } };
     this.changed();
   }
 
   /** Chooses the provider in the composer; the model is the one last used with it, if any. */
-  async selectProvider(provider: ProviderId): Promise<void> {
+  async selectProvider(provider: ProviderId, goalId: string | null = null): Promise<void> {
     const project = this.requireProject();
-    const document = project.document;
+    if (goalId) requireGoal(project.document, goalId);
+    const selection = dialogComposer(project.document, goalId);
     if (project.runningRequestId || this.queue.some((q) => q.projectId === project.id)) {
       throw new DomainError("Aspetta la fine del turno e della coda prima di cambiare provider.");
     }
-    const preference = document.providerPreferences?.[provider];
-    document.selectedProvider = provider;
-    document.selectedModel = preference?.model ?? null;
-    document.selectedEffort = preference?.effort ?? null;
+    const preference = selection.providerPreferences?.[provider];
+    selection.selectedProvider = provider;
+    selection.selectedModel = preference?.model ?? null;
+    selection.selectedEffort = preference?.effort ?? null;
     this.changed();
   }
 
@@ -1337,11 +1360,77 @@ export class TramaController {
     this.changed();
   }
 
-  saveDraft(text: string): void {
+  saveDraft(text: string, goalId: string | null = null): void {
     const project = this.state.project;
     if (!project) return;
-    project.document.composerDraft = text;
+    if (goalId && !findGoal(project.document, goalId)) return;
+    dialogComposer(project.document, goalId).composerDraft = text;
     this.scheduleSave();
+  }
+
+  // MARK: Goals
+
+  createGoal(input: GoalInput): string {
+    const project = this.requireProject();
+    const goal = createGoal(project.document, input);
+    appendEvent(project.document, "person", { type: "card", kind: "goal", title: "Obiettivo", detail: null, referenceId: goal.id }, null, new Date(), null, goal.id);
+    this.changed();
+    return goal.id;
+  }
+
+  updateGoal(id: string, change: Partial<GoalInput> & { status?: GoalStatus; decisionIds?: string[] }): void {
+    const project = this.requireProject();
+    updateGoal(project.document, id, change);
+    this.changed();
+  }
+
+  observeExample(input: { candidateId: string; exampleId: string; observed: boolean; snapshotId: string }): void {
+    const project = this.requireProject();
+    const document = project.document;
+    observeExample(document, input, (candidateId) => {
+      const candidate = document.candidates.find((c) => c.id === candidateId);
+      return candidate ? candidateGoalId(document, candidate) : null;
+    });
+    this.changed();
+  }
+
+  /** The projects overview (UX03): in-memory projects are live, the others are read from their last save. */
+  async projectsOverview(): Promise<ProjectOverview[]> {
+    const live = new Map<string, ActiveProjectState>([...this.parkedProjects].map(([id, p]) => [id, p]));
+    if (this.state.project) live.set(this.state.project.id, this.state.project);
+    const entries: ProjectOverview[] = [];
+    for (const recent of this.state.recentProjects) {
+      const project = live.get(recent.id);
+      if (project) {
+        const reports = project.document.candidates.map((c) => candidateReport(project.document, c, project.snapshot.headSHA));
+        entries.push(
+          summarizeProject(recent, project.document, {
+            source: "live",
+            selected: project === this.state.project,
+            runningAssignments: [...this.specialistRuntimes.values()].filter((r) => r.projectId === project.id).length,
+            candidateReports: reports,
+          }),
+        );
+        continue;
+      }
+      const loaded = await this.storage.loadDocument(recent.id).catch((error: Error) => ({ document: null, writable: false, error: error.message }));
+      if (loaded.error && !loaded.document) {
+        entries.push(unreadableProject(recent, loaded.error));
+      } else if (!loaded.document) {
+        entries.push(unreadableProject(recent, null));
+      } else {
+        const document = loaded.document;
+        entries.push(
+          summarizeProject(recent, document, {
+            source: "saved",
+            selected: false,
+            runningAssignments: 0,
+            candidateReports: document.candidates.map((c) => candidateReport(document, c, null)),
+          }),
+        );
+      }
+    }
+    return orderByAttention(entries);
   }
 
   // MARK: Pact and mandate
@@ -1370,9 +1459,12 @@ export class TramaController {
   async answerDecision(requestId: string, alternativeIndex: number | null, freeText: string | null): Promise<void> {
     const project = this.requireProject();
     const { request, decision } = answerDecisionRequest(project.document, requestId, { alternativeIndex, freeText });
+    const goalId = request.goalId && findGoal(project.document, request.goalId) ? request.goalId : null;
+    if (goalId) linkDecision(project.document, goalId, decision.id);
     this.stopWorkDependingOn(decision.id);
     this.changed();
-    await this.send(decisionMessage(request, decision), null, null, null);
+    // The answer goes back to the dialog the question was asked in, whatever the person is looking at.
+    await this.send(decisionMessage(request, decision), null, null, null, [], null, goalId);
   }
 
   async grantMandate(input: {

@@ -115,13 +115,17 @@ const handlers: { [K in ActionName]: Handler<K> } = {
     else void shell.openPath(target);
   },
   "project:readFile": ({ relativePath }) => controller.readFile(relativePath),
-  "coordinator:send": ({ text, moduleId, model, effort, images, provider }) =>
-    controller.send(text, moduleId, model, effort, images ?? [], provider ?? null),
+  "coordinator:send": ({ text, moduleId, model, effort, images, provider, goalId }) =>
+    controller.send(text, moduleId, model, effort, images ?? [], provider ?? null, goalId ?? null),
   "coordinator:interrupt": () => controller.interrupt(),
   "coordinator:retry": () => controller.startCoordinator(),
-  "coordinator:selectModel": ({ model, effort, provider }) => controller.selectModel(model, effort, provider ?? null),
-  "coordinator:selectProvider": ({ provider }) => controller.selectProvider(provider),
-  "coordinator:saveDraft": ({ text }) => controller.saveDraft(text),
+  "coordinator:selectModel": ({ model, effort, provider, goalId }) => controller.selectModel(model, effort, provider ?? null, goalId ?? null),
+  "coordinator:selectProvider": ({ provider, goalId }) => controller.selectProvider(provider, goalId ?? null),
+  "coordinator:saveDraft": ({ text, goalId }) => controller.saveDraft(text, goalId ?? null),
+  "goal:create": (input) => controller.createGoal(input),
+  "goal:update": ({ id, ...change }) => controller.updateGoal(id, change),
+  "candidate:observeExample": (input) => controller.observeExample(input),
+  "overview:read": () => controller.projectsOverview(),
   "coordinator:setContextThreshold": ({ percent }) => controller.setContextThreshold(percent),
   "pact:decide": (input) => controller.recordDecision(input),
   "decision:answer": ({ requestId, alternativeIndex, freeText }) => controller.answerDecision(requestId, alternativeIndex, freeText),

@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { AppState } from "@shared/domain";
+import { decisionDependents, dialogEvents, findGoal, projectGoals } from "@shared/goals";
 import { TramaController } from "./controller";
 
 const root = join(import.meta.dirname, "../..");
@@ -56,9 +57,108 @@ describe("TramaController", () => {
     const request = project.document.requests[0]!;
     expect(request.state).toBe("completed");
     const kinds = project.document.events.map((e) => e.content.type);
-    expect(kinds).toEqual(["card", "personMessage", "activity", "activity", "coordinatorText"]);
+    // The study card, then the first goal the Coordinator proposed in it (UX07).
+    expect(kinds).toEqual(["card", "card", "personMessage", "activity", "activity", "coordinatorText"]);
     const reply = project.document.events.at(-1)!.content;
     expect(reply).toMatchObject({ references: ["Sources/Orders/CancelPaidOrder.swift"] });
+  });
+
+  it("proposes a first goal after the study of a project without goals", async () => {
+    await setup();
+    const document = controller!.snapshot.project!.document;
+    expect(document.goals).toHaveLength(1);
+    expect(document.goals![0]).toMatchObject({ status: "proposed", origin: "coordinator" });
+    expect(document.goals![0]!.examples.map((e) => e.kind)).toEqual(["accepted", "refused"]);
+    const card = document.events.find((e) => e.content.type === "card" && e.content.kind === "goal");
+    expect(card?.content).toMatchObject({ referenceId: document.goals![0]!.id });
+    expect(card?.goalId ?? null).toBeNull();
+    // Proposing a goal grants nothing and starts nothing.
+    expect(document.mandate).toBeNull();
+    expect(document.team.specialists).toHaveLength(0);
+  });
+
+  it("keeps two goal dialogs apart from the project dialog and gives the Coordinator the goal", async () => {
+    const { data } = await setup();
+    const first = controller!.createGoal({
+      title: "Revisione degli ordini",
+      outcome: "Gli ordini pagati annullati vanno in revisione",
+      examples: [{ kind: "accepted", text: "Ordine 42: stato review" }],
+    });
+    const second = controller!.createGoal({ title: "Catalogo più veloce", outcome: "La ricerca risponde in meno di un secondo", examples: [] });
+    const project = controller!.snapshot.project!;
+    const document = project.document;
+
+    controller!.saveDraft("bozza del primo", first);
+    controller!.saveDraft("bozza del progetto", null);
+    await controller!.selectModel("gpt-5.5", "high", "codex", second);
+    expect(findGoal(document, first)!.dialog.composerDraft).toBe("bozza del primo");
+    expect(document.composerDraft).toBe("bozza del progetto");
+    expect(findGoal(document, second)!.dialog).toMatchObject({ selectedModel: "gpt-5.5", selectedEffort: "high" });
+    expect(document.selectedEffort).toBeNull();
+
+    await controller!.send("Da dove partiamo?", null, null, null, [], null, first);
+    const request = document.requests.at(-1)!;
+    expect(request.goalId).toBe(first);
+    expect(findGoal(document, first)!.dialog.composerDraft).toBe("");
+    expect(document.composerDraft).toBe("bozza del progetto");
+    const goalEvents = dialogEvents(document.events, first);
+    expect(goalEvents.map((e) => e.content.type)).toEqual(["card", "personMessage", "activity", "activity", "coordinatorText"]);
+    const reply = goalEvents.at(-1)!.content;
+    expect(reply).toMatchObject({ text: expect.stringContaining(`Dialogo dell'obiettivo ${first}`) });
+    expect(dialogEvents(document.events, second).map((e) => e.content.type)).toEqual(["card"]);
+    expect(dialogEvents(document.events, null).some((e) => e.content.type === "personMessage")).toBe(false);
+
+    // A message queued in one dialog stays there even if the person moves on before it leaves.
+    const running = controller!.send("Primo messaggio", null, null, null, [], null, null);
+    await until(() => project.runningRequestId !== null);
+    await controller!.send("In coda per il secondo obiettivo", null, null, null, [], null, second);
+    await running;
+    await until(() => document.requests.filter((r) => r.state === "completed").length === 3);
+    const queued = document.requests.find((r) => r.text === "In coda per il secondo obiettivo")!;
+    expect(queued.goalId).toBe(second);
+    expect(document.requests.find((r) => r.text === "Primo messaggio")!.goalId ?? null).toBeNull();
+
+    // Goals, dialogs and drafts survive a restart.
+    await controller!.stop();
+    let state: AppState | null = null;
+    controller = new TramaController(data, {
+      publish: (s) => {
+        state = s;
+      },
+      openExternal: async () => undefined,
+      applyTheme: () => undefined,
+      notify: () => undefined,
+      setOpenAtLogin: () => undefined,
+      aiHeroResourceDirectory: join(root, "resources/AIHero"),
+      demoResourceDirectory: join(root, "resources/DemoProject"),
+      codexExecutable: join(root, "test-fixtures/fake-codex.mjs"),
+    });
+    await controller.start();
+    await until(() => state?.project?.document !== undefined);
+    const reopened = controller.snapshot.project!.document;
+    expect(projectGoals(reopened).map((g) => g.id)).toEqual(projectGoals(document).map((g) => g.id));
+    expect(dialogEvents(reopened.events, first)).toHaveLength(goalEvents.length);
+    expect(findGoal(reopened, second)!.dialog.selectedModel).toBe("gpt-5.5");
+  });
+
+  it("links a decision asked in a goal dialog to that goal and answers there", async () => {
+    await setup();
+    const goalId = controller!.createGoal({ title: "Revisione", outcome: "Ordini in revisione", examples: [] });
+    const document = controller!.snapshot.project!.document;
+    await controller!.send("[chiedi-decisione]", null, null, null, [], null, goalId);
+    const question = document.decisionRequests[0]!;
+    expect(question.goalId).toBe(goalId);
+    await controller!.answerDecision(question.id, 0, null);
+    const decisionId = question.outcome!.decisionId;
+    expect(findGoal(document, goalId)!.decisionIds).toEqual([decisionId]);
+    const answer = document.requests.at(-1)!;
+    expect(answer.goalId).toBe(goalId);
+    expect(decisionDependents(document, decisionId).goals.map((g) => g.id)).toEqual([goalId]);
+  });
+
+  it("refuses a message to a goal that does not exist", async () => {
+    await setup();
+    await expect(controller!.send("Ciao", null, null, null, [], null, "G-00000000")).rejects.toThrow(/non trovato/);
   });
 
   it("turns a request_decision tool call into a card and a Pact decision", async () => {

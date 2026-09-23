@@ -190,6 +190,16 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
         });
         return;
       }
+      if (text.startsWith("Studio del progetto scritto da Trama") && text.includes("propose_goal")) {
+        // A project without goals: the study closes with a first goal (UX07).
+        const result = await callTool(threadId, "propose_goal", {
+          title: "Annullare un ordine pagato senza rimborso automatico",
+          outcome: "Un ordine pagato e annullato va in revisione invece di essere rimborsato subito.",
+          acceptedExamples: ["Ordine 42 pagato e annullato: lo stato diventa review"],
+          refusedExamples: ["Ordine 42 pagato e annullato: il pagamento viene stornato subito"],
+        });
+        toolDone("propose_goal", result);
+      }
       send({ method: "thread/tokenUsage/updated", params: { threadId, turnId, tokenUsage: { total: { totalTokens: text.includes("[pieno]") ? 230_000 : 12_000 }, modelContextWindow: 258_000 } } });
       const reply = text.startsWith("Studio del progetto scritto da Trama")
         ? "Ho letto lo studio: è un progetto Swift con i moduli Catalog, Inventory, Orders, Payments e Users. Vedi Sources/Orders/CancelPaidOrder.swift."
