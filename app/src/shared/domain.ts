@@ -348,8 +348,11 @@ export interface WorkPlan {
   moduleIds: string[];
   summary: string;
   issueNumber: number | null;
-  status: "planning" | "ready" | "failed";
+  /** stale: the repository changed while the planner read it; the plan must be re-evaluated (T06). */
+  status: "planning" | "ready" | "failed" | "stale";
   proposal: PlanProposal | null;
+  /** Set when the person corrected the proposal. */
+  editedAt?: string | null;
   failure: string | null;
   decisionRequestIds: string[];
   createdAt: string;

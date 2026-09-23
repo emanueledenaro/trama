@@ -576,6 +576,7 @@ export function PlanCard({ planId }: { planId: string }) {
   const project = useUi((s) => s.app?.project)!;
   const setInspector = useUi((s) => s.setInspector);
   const plan = project.document.plans.find((p) => p.id === planId);
+  const [editing, setEditing] = useState<{ steps: string; behavior: string; example: string } | null>(null);
   if (!plan) return null;
   const proposal = plan.proposal;
   const moduleName = (id: string) => project.snapshot.modules.find((m) => m.id === id)?.name ?? id;
@@ -588,7 +589,12 @@ export function PlanCard({ planId }: { planId: string }) {
         plan.status === "planning" ? (
           <span className="flex items-center gap-1.5 text-ui-sm text-muted-foreground">
             <Spinner /> In preparazione
+            <button type="button" className="hover:text-foreground" onClick={() => void act("plan:cancel", { planId: plan.id })}>
+              Annulla
+            </button>
           </span>
+        ) : plan.status === "stale" ? (
+          <Badge tone="warning">Da rivalutare</Badge>
         ) : plan.status === "failed" ? (
           <Badge tone="destructive">Non riuscito</Badge>
         ) : (
@@ -603,6 +609,41 @@ export function PlanCard({ planId }: { planId: string }) {
       {proposal ? (
         <>
           <Field label="Sintesi">{proposal.summary}</Field>
+          {plan.editedAt ? <p className="text-ui-xs text-muted-foreground">Corretto da te</p> : null}
+          {editing ? (
+            <div className="mt-2 space-y-2">
+              <label className="block text-ui-xs text-muted-foreground">
+                Passi, uno per riga
+                <TextArea value={editing.steps} onChange={(e) => setEditing({ ...editing, steps: e.target.value })} className="mt-1 min-h-20" />
+              </label>
+              <label className="block text-ui-xs text-muted-foreground">
+                Comportamento proposto
+                <TextArea value={editing.behavior} onChange={(e) => setEditing({ ...editing, behavior: e.target.value })} className="mt-1 min-h-12" />
+              </label>
+              <label className="block text-ui-xs text-muted-foreground">
+                Esempio accettato
+                <TextArea value={editing.example} onChange={(e) => setEditing({ ...editing, example: e.target.value })} className="mt-1 min-h-12" />
+              </label>
+              <div className="flex gap-2">
+                <Button
+                  size="sm"
+                  onClick={() =>
+                    void act("plan:edit", {
+                      planId: plan.id,
+                      steps: editing.steps.split("\n"),
+                      proposedBehavior: editing.behavior,
+                      acceptedExample: editing.example,
+                    }).then(() => setEditing(null))
+                  }
+                >
+                  Salva il piano
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => setEditing(null)}>
+                  Annulla
+                </Button>
+              </div>
+            </div>
+          ) : null}
           <Field label="Passi">
             <ol className="list-decimal space-y-0.5 pl-4">
               {proposal.steps.map((step) => (
@@ -629,11 +670,22 @@ export function PlanCard({ planId }: { planId: string }) {
             </div>
           ) : null}
           {pendingQuestions ? <p className="mt-2 text-ui-sm text-[var(--color-text-accent)]">{pendingQuestions === 1 ? "Una domanda aspetta" : `${pendingQuestions} domande aspettano`} la tua risposta.</p> : null}
-          <div className="mt-3">
+          <div className="mt-3 flex flex-wrap gap-2">
+            {!editing && plan.status !== "planning" ? (
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() =>
+                  setEditing({ steps: proposal.steps.join("\n"), behavior: proposal.proposedBehavior, example: proposal.acceptedExample })
+                }
+              >
+                Correggi il piano
+              </Button>
+            ) : null}
             <Button
               size="sm"
               variant="outline"
-              disabled={pendingQuestions > 0}
+              disabled={pendingQuestions > 0 || plan.status === "stale"}
               onClick={() =>
                 void act("coordinator:send", {
                   text: `Ho rivisto il piano ${plan.id} e va bene. Realizzalo con il team entro il mandato.`,

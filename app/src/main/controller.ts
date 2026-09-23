@@ -1697,6 +1697,12 @@ export class TramaController {
 
   // MARK: Candidates
 
+  /** HEAD plus the working tree status: changes when a commit or an uncommitted edit happens. */
+  private async repositoryState(root: string): Promise<string> {
+    const status = await git(["status", "--porcelain=v1", "--untracked-files=normal"], root).catch(() => "");
+    return `${await this.headSHA(root)}\n${status}`;
+  }
+
   private async headSHA(root: string): Promise<string | null> {
     return (await git(["rev-parse", "--verify", "HEAD"], root).catch(() => "")).trim() || null;
   }
@@ -2032,11 +2038,44 @@ export class TramaController {
     });
   }
 
+  private readonly planners = new Map<string, AgentRuntime>();
+
+  /** The person stops a plan that is still being prepared; the request stays. */
+  cancelPlan(planId: string): void {
+    const project = this.requireProject();
+    const plan = project.document.plans.find((p) => p.id === planId);
+    if (!plan || plan.status !== "planning") return;
+    const client = this.planners.get(planId);
+    this.planners.delete(planId);
+    client?.stop();
+    plan.status = "failed";
+    plan.failure = "Annullato dalla persona.";
+    plan.updatedAt = new Date().toISOString();
+    this.changed();
+  }
+
+  /** The person corrects a ready plan: steps, behavior and example (T06). */
+  editPlan(input: { planId: string; steps: string[]; proposedBehavior: string; acceptedExample: string }): void {
+    const project = this.requireProject();
+    const plan = project.document.plans.find((p) => p.id === input.planId);
+    if (!plan?.proposal) throw new DomainError("Il piano non ha ancora una proposta da correggere.");
+    const steps = input.steps.map((s) => s.trim()).filter(Boolean);
+    if (!steps.length || !input.proposedBehavior.trim()) throw new DomainError("Un piano corretto ha almeno un passo e un comportamento.");
+    plan.proposal = { ...plan.proposal, steps, proposedBehavior: input.proposedBehavior.trim(), acceptedExample: input.acceptedExample.trim() };
+    plan.editedAt = new Date().toISOString();
+    plan.updatedAt = plan.editedAt;
+    appendEvent(project.document, "person", { type: "activity", title: `Piano ${plan.id} corretto`, detail: steps.join("\n"), tone: "info" }, plan.requestId);
+    this.changed();
+  }
+
   private async runPlanner(project: ActiveProjectState, plan: WorkPlan): Promise<void> {
     const document = project.document;
+    const startState = await this.repositoryState(project.rootPath);
+    if (plan.status !== "planning") return;
     const provider = this.coordinatorProvider(document);
     const model = document.coordinator.threadModel ?? this.coordinatorModel(document, provider);
     const client = createRuntime(provider, { executable: provider === "codex" ? this.host.codexExecutable : null, requestTimeoutMs: 15_000 });
+    this.planners.set(plan.id, client);
     try {
       if (!model) throw new Error("Nessun modello disponibile per il pianificatore.");
       const snapshot = project.snapshot;
@@ -2064,8 +2103,14 @@ export class TramaController {
         outputSchema: PLAN_SCHEMA,
         onEvent: () => undefined,
       });
+      if (plan.status !== "planning") return; // cancelled meanwhile: a late result does not come back
       const proposal = parsePlan(extractJsonAnswer(raw), sources);
       plan.proposal = proposal;
+      if ((await this.repositoryState(project.rootPath)) !== startState) {
+        plan.status = "stale";
+        plan.failure = "Il repository è cambiato durante l'analisi: rivaluta il piano o chiedine uno nuovo.";
+        return;
+      }
       plan.status = "ready";
       for (const question of proposal.questions) {
         const request = createDecisionRequest(document, {
@@ -2080,9 +2125,12 @@ export class TramaController {
         appendEvent(document, "trama", { type: "card", kind: "decision", title: "Decisione", detail: null, referenceId: request.id }, plan.requestId);
       }
     } catch (error) {
+      if (plan.status !== "planning") return;
       plan.status = "failed";
       plan.failure = (error as Error).message;
+      void this.noticeIfBlocked(project, provider, plan.failure, plan.requestId);
     } finally {
+      this.planners.delete(plan.id);
       client.stop();
       plan.updatedAt = new Date().toISOString();
       if (this.state.project === project) this.changed();

@@ -109,6 +109,28 @@ describe("TramaController", () => {
     expect(project.document.decisionRequests[0]!.question).toBe("Il cliente riceve una email?");
   });
 
+  it("lets the person correct a plan and cancel one being prepared (T06)", async () => {
+    await setup();
+    const project = controller!.snapshot.project!;
+    await controller!.send("Come si annulla un ordine pagato?", null, null, null);
+    const requestId = project.document.requests[0]!.id;
+    await controller!.preparePlanForRequest(requestId);
+    const plan = project.document.plans[0]!;
+    await until(() => plan.status !== "planning");
+    expect(() => controller!.editPlan({ planId: plan.id, steps: [" "], proposedBehavior: "x", acceptedExample: "" })).toThrow(/almeno un passo/);
+    controller!.editPlan({ planId: plan.id, steps: ["Blocca l'annullamento", ""], proposedBehavior: "Serve una revisione", acceptedExample: "Ordine 42" });
+    expect(plan.proposal?.steps).toEqual(["Blocca l'annullamento"]);
+    expect(plan.editedAt).toBeTruthy();
+
+    const second = controller!.orderPlan({ requestId, orderedBy: "person", kind: "agreedTicket", moduleIds: [], summary: "Altro", issueNumber: null });
+    controller!.cancelPlan(second.id);
+    expect(second.status).toBe("failed");
+    expect(second.failure).toMatch(/Annullato/);
+    await new Promise((r) => setTimeout(r, 300));
+    expect(second.status).toBe("failed");
+    expect(second.proposal).toBeNull();
+  });
+
   it("refuses prepare_plan without a mandate and runs it within one", async () => {
     await setup();
     const project = controller!.snapshot.project!;

@@ -50,6 +50,8 @@ export interface ActionMap {
   "assignment:changeProvider": [{ assignmentId: string; provider: ProviderId; model: string }, void];
   "specialist:remove": [{ specialistId: string; reason: string }, void];
   "plan:prepare": [{ requestId: string }, void];
+  "plan:cancel": [{ planId: string }, void];
+  "plan:edit": [{ planId: string; steps: string[]; proposedBehavior: string; acceptedExample: string }, void];
   "pactDemo:run": [void, void];
   "pactDemo:approve": [void, void];
   "candidate:approve": [{ candidateId: string }, void];
