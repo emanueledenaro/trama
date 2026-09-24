@@ -1,5 +1,6 @@
 import { IconX } from "@tabler/icons-react";
 import { Tooltip } from "@/components/ui/tooltip";
+import { cn } from "@/lib/cn";
 import { useUi } from "@/lib/store";
 import { CandidateView } from "./CandidateView";
 import { GoalView, GoalsView } from "./GoalsView";
@@ -35,7 +36,18 @@ export function Inspector() {
   const target = useUi((s) => s.inspector)!;
   const setInspector = useUi((s) => s.setInspector);
   return (
-    <aside className="relative flex w-[380px] shrink-0 flex-col border-l border-[color:var(--app-surface-divider)] bg-[var(--color-background-surface)] xl:w-[420px]">
+    <aside
+      aria-label={TITLES[target.kind]}
+      data-testid="inspector"
+      onKeyDown={(event) => {
+        if (event.key === "Escape" && !event.defaultPrevented) setInspector(null);
+      }}
+      className={cn(
+        "relative flex w-[380px] shrink-0 flex-col border-l border-[color:var(--app-surface-divider)] bg-[var(--color-background-surface)] xl:w-[420px]",
+        // Below this width a docked inspector would squeeze the dialog, so it floats over the chat instead.
+        "@max-[859px]/main:absolute @max-[859px]/main:inset-y-0 @max-[859px]/main:right-0 @max-[859px]/main:z-30 @max-[859px]/main:max-w-full @max-[859px]/main:shadow-2xl",
+      )}
+    >
       <div className="chat-surface-divider drag-region flex h-[46px] shrink-0 items-center gap-2 px-4">
         <h3 className="min-w-0 flex-1 truncate font-system-ui text-ui text-foreground">{TITLES[target.kind]}</h3>
         <Tooltip label="Chiudi l'ispettore">

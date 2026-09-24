@@ -73,7 +73,7 @@ await page.getByRole("button", { name: "Conferma il team" }).click();
 await page.getByText("Team confermato").first().waitFor({ timeout: 20_000 });
 await page.getByRole("button", { name: /^Mandato/ }).first().click();
 await page.getByRole("button", { name: "Scrivi", exact: true }).click();
-await page.getByLabel("Obiettivi").fill("Documentare l'annullamento degli ordini");
+await page.getByRole("textbox", { name: "Obiettivi" }).fill("Documentare l'annullamento degli ordini");
 await page.getByRole("checkbox", { name: /Orders/ }).check();
 await page.getByRole("checkbox", { name: /worktree/ }).check();
 await page.getByRole("button", { name: "Concedi mandato" }).click();
@@ -193,4 +193,25 @@ await shot("12-settings");
 await page.getByRole("button", { name: "Apri la guida" }).click();
 await guide.waitFor();
 await shot("12a-guide-resume-dark");
+await guide.getByRole("button", { name: "Continua più tardi" }).click();
+await guide.waitFor({ state: "hidden" });
+
+// T19: the window sizes the layout is checked at, from the minimum (720x640) to full HD.
+// A narrow dialog gets the inspector floating over it, so the chat and the composer keep their width.
+for (const [width, height] of [[720, 640], [1040, 700], [1280, 800], [1440, 900], [1920, 1080]]) {
+  await page.setViewportSize({ width, height });
+  await page.waitForTimeout(400);
+  if (await page.getByTestId("inspector").count()) await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
+  const composer = await page.getByLabel("Messaggio al Coordinatore").boundingBox();
+  if (!composer || composer.width < 300) throw new Error(`Composer squeezed at ${width}x${height}: ${JSON.stringify(composer)}`);
+  if (await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)) throw new Error(`Horizontal page scroll at ${width}x${height}`);
+  await page.getByRole("button", { name: "Mappa del progetto" }).click();
+  await page.getByRole("listbox", { name: "Moduli" }).getByRole("option", { name: /Orders/ }).click();
+  await shot(`13-size-${width}x${height}-module`);
+  // Escape inside the inspector closes it, at every size.
+  await page.getByTestId("inspector").getByRole("button", { name: "Chiudi l'ispettore" }).focus();
+  await page.keyboard.press("Escape");
+  await page.getByTestId("inspector").waitFor({ state: "detached" });
+  await shot(`13-size-${width}x${height}-chat`);
+}
 await app.close();
