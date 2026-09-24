@@ -2,7 +2,7 @@ import { lstat, mkdir, mkdtemp, readlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { availableChecks, lendNodeDependencies, nodePackage, runReadOnlyCheck, sandboxedCommand } from "./checks";
+import { availableChecks, detectLocalSandbox, lendNodeDependencies, localSandboxedCommand, nodePackage, runReadOnlyCheck, sandboxedCommand } from "./checks";
 import { git } from "./process";
 
 const fake = join(import.meta.dirname, "../../../test-fixtures/fake-codex.mjs");
@@ -60,5 +60,43 @@ describe("read-only checks", () => {
     const drifted = await make("{\"v\":2}");
     expect(await lendNodeDependencies(drifted, project)).toMatch(/package-lock\.json/);
     await expect(lstat(join(drifted, "node_modules"))).rejects.toThrow();
+  });
+
+  it("wraps Node checks in Trama's sandbox with the scratch folder as the only writable path", () => {
+    const seatbelt = localSandboxedCommand({ kind: "seatbelt", executable: "/usr/bin/sandbox-exec" }, ["npm", "test"], "/tmp/s");
+    expect(seatbelt.slice(0, 2)).toEqual(["/usr/bin/sandbox-exec", "-p"]);
+    expect(seatbelt[2]).toContain('(allow network-outbound (remote ip "localhost:*"))');
+    expect(seatbelt.slice(3, 5)).toEqual(["-D", "SCRATCH=/tmp/s"]);
+    const bubblewrap = localSandboxedCommand({ kind: "bubblewrap", executable: "/usr/bin/bwrap" }, ["npm", "test"], "/tmp/s");
+    expect(bubblewrap).toEqual(expect.arrayContaining(["--ro-bind", "/", "--unshare-net", "--bind", "/tmp/s"]));
+    expect(bubblewrap.slice(-2)).toEqual(["npm", "test"]);
+  });
+
+  it("lets a Node test use 127.0.0.1 but not internet or the checkout", async (context) => {
+    const sandbox = await detectLocalSandbox();
+    if (!sandbox) return context.skip();
+    const repo = await mkdtemp(join(tmpdir(), "trama-local-net-"));
+    await git(["init", "-b", "main"], repo, false);
+    await writeFile(join(repo, "package.json"), JSON.stringify({ scripts: { test: "node probe.mjs" } }));
+    await writeFile(
+      join(repo, "probe.mjs"),
+      `import net from "node:net";
+import { writeFileSync } from "node:fs";
+const reach = (port, host) => new Promise((ok) => net.connect(port, host).on("connect", function () { this.destroy(); ok(true); }).on("error", () => ok(false)));
+const server = net.createServer((c) => c.end()).listen(0, "127.0.0.1");
+await new Promise((ok) => server.on("listening", ok));
+console.log("loopback", await reach(server.address().port, "127.0.0.1"));
+server.close();
+console.log("internet", await reach(443, "1.1.1.1"));
+try { writeFileSync("escaped.txt", "x"); console.log("write", true); } catch { console.log("write", false); }
+`,
+    );
+    await git(["add", "."], repo, false);
+    await git(["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-m", "probe"], repo, false);
+    const result = await runReadOnlyCheck("node_test", repo, { codexExecutable: fake, scratchRoot: await mkdtemp(join(tmpdir(), "trama-scratch-")) });
+    expect(result.output).toContain("loopback true");
+    expect(result.output).toContain("internet false");
+    expect(result.output).toContain("write false");
+    expect(result.checkoutUnchanged).toBe(true);
   });
 });

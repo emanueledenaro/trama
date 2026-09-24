@@ -84,14 +84,10 @@ selettore di provider, modello e sforzo, modalità veloce di Codex): `53e0595`..
 ## Limiti e lavoro aperto
 
 - Percorso completo con Codex: da ripetere dopo il reset del 24 ottobre 2026, con `gpt-5.6-luna`.
-- Verifiche Node (aggiunte dopo la prova): `node_test` e `node_typecheck` girano nella sandbox di
-  Codex sul worktree, con le dipendenze prestate dal checkout quando `package-lock.json` coincide.
-  Il worktree dello specialista riceve le stesse dipendenze. Provate sul worktree del primo
-  incarico: `node_typecheck` trova l'errore di tipo nel test dello specialista
-  (`controller.test.ts:436`); `node_test` esegue la suite in circa 100 secondi, ma 29 test di Trama
-  falliscono perché aprono un server su `127.0.0.1` e la sandbox senza rete blocca anche la rete
-  locale. La sandbox di Codex permette la rete locale solo aprendo anche internet: la scelta resta
-  alla persona. L'output lo segnala.
+- Verifiche Node (aggiunte dopo la prova): `node_test` e `node_typecheck` girano sul worktree, con le
+  dipendenze prestate dal checkout quando `package-lock.json` coincide. Il worktree dello specialista
+  riceve le stesse dipendenze. Su Windows i test che aprono un server locale falliscono ancora (vedi
+  sotto).
 - Un risultato AI non è un'evidenza: lo specialista aveva dichiarato test mai eseguiti.
 - Documenti di pianificazione non aggiornati (`docs/piano-operativo.md`, spec del verticale):
   il Coordinatore li legge e ne trae un quadro sbagliato.
@@ -99,3 +95,55 @@ selettore di provider, modello e sforzo, modalità veloce di Codex): `53e0595`..
 - Il passaggio di provider non ha un test automatico: il Codex finto dei test gestisce un solo
   provider. È verificato solo dal vivo.
 - CI: verde sulla PR [#112](https://github.com/emanueledenaro/trama/pull/112) al commit `a1989e6` (test, build e prova dell'interfaccia). Il primo giro era fallito sulla prova dell'interfaccia per un selettore ambiguo, corretto in `a1989e6`.
+
+## Sandbox delle verifiche Node
+
+Il problema: Trama deve eseguire i test del candidato da sola, senza fidarsi di quello che dice il
+modello. I test girano in una sandbox che non può scrivere nel progetto e non può andare su internet.
+La sandbox di Codex blocca anche la rete locale (127.0.0.1), e molti test di Trama aprono un server
+locale: nel primo giro 29 test fallivano per questo, con il codice corretto.
+
+Ora le verifiche Node usano una sandbox di Trama che lascia solo la rete locale:
+
+- macOS: `sandbox-exec` con un profilo che permette la scrittura solo nella cartella temporanea della
+  verifica e la rete solo verso localhost. Provato con una connessione diretta a 1.1.1.1: una regola
+  ampia sulla rete locale (`network*` con `local ip`) riapriva anche internet, quindi bind, ingresso e
+  uscita sono permessi uno per uno. Un test automatico controlla i tre casi (rete locale sì, internet
+  no, scrittura nel checkout no) a ogni esecuzione della suite su macOS;
+- Linux: `bubblewrap` con tutto il sistema in sola lettura, la cartella temporanea scrivibile e una
+  rete privata (`--unshare-net`) che contiene solo il loopback. Trama lo prova all'avvio della prima
+  verifica; se manca o il kernel lo rifiuta (alcune distribuzioni bloccano i namespace senza
+  privilegi), torna alla sandbox di Codex. Non provato su una macchina Linux reale;
+- Windows: resta la sandbox di Codex, senza rete locale. L'output lo dice.
+
+Esito sul worktree del primo incarico, con il codice di Trama: 383 test verdi su 386, in 35 secondi
+invece di 100. Nessun fallimento di rete. I tre rimasti: due superano i 5 secondi del worktree (che
+parte da un commit senza il limite a 20 secondi), uno è il test sbagliato dello specialista. Checkout
+invariato.
+
+Come fanno altri progetti:
+
+- Synara confina con `sandbox-exec` solo l'helper del simulatore iOS, e solo su macOS; su Linux e
+  Windows lo esegue senza sandbox. Da Synara vengono due scelte: i percorsi passati al profilo sono
+  risolti (Seatbelt confronta il percorso reale, `/var` è `/private/var`), e l'output nomina la
+  sandbox quando può essere la causa di un fallimento. Synara però, se il profilo manca, parte senza
+  sandbox; Trama invece torna alla sandbox di Codex, perché una verifica non deve poter scrivere.
+- Pi usa `@anthropic-ai/sandbox-runtime` (Apache 2.0): `sandbox-exec` su macOS, `bubblewrap` su
+  Linux, un proxy per i domini permessi. Su Linux toglie la rete come Trama; su macOS la rete locale
+  è un'opzione (`allowLocalBinding`). Su Windows l'estensione di Pi non si attiva.
+- La stessa libreria ha un supporto Windows in alpha: un utente locale dedicato e un filtro della
+  Windows Filtering Platform, installati una volta con i permessi di amministratore. Il filtro lascia
+  la rete locale solo verso le porte del proxy, quindi un test che apre un server su una porta
+  qualsiasi resterebbe bloccato anche lì.
+- Hermes esegue i comandi in un container (Docker, e altri backend remoti) con `--network=none`: il
+  container ha solo il loopback, che è proprio la rete locale che serve ai test. Su Windows passa da
+  Docker.
+
+Opzioni per Windows, da decidere:
+
+1. lasciare la sandbox di Codex e segnalare i test che falliscono per la rete (stato attuale);
+2. eseguire le verifiche in WSL 2 con `bubblewrap`, quando WSL è installato: stessa sandbox di Linux;
+3. eseguirle in un container con `--network=none`, come Hermes, quando c'è Docker;
+4. un utente dedicato con un filtro WFP scritto per Trama, che permetta tutto il loopback: richiede
+   i permessi di amministratore una volta ed è il lavoro più grande.
+
