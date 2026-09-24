@@ -42,6 +42,7 @@ Conseguenze: Trama gira anche su Linux e Windows, perché nulla nel processo pri
 | Conflitti con il lavoro dei colleghi | Portato: cache Git locale delle revisioni remote e prova di fusione con `git merge-tree` su un clone temporaneo; conflitti e sovrapposizioni diventano schede |
 | Monitor in background e notifiche | Portato nel processo principale: lettura di branch e pull request con `gh`, novità, notifiche di sistema, avvio all'accesso su macOS e Windows. Sostituisce l'helper `SMAppService` |
 | Skill AI Hero | Portato: preparazione del metodo di lavoro dalle impostazioni; skill di Codex nel composer con `$` e `/` |
+| Obiettivi, dialoghi di obiettivo e panoramica dei progetti (UX01-UX07) | Nuovo nell'app Electron (ADR 0013): obiettivi con esempi nel documento del progetto, dialogo per obiettivo sullo stesso thread del Coordinatore, panoramica per attenzione, lavori dipendenti di una decisione, motivazione del modello, osservazione degli esempi sul candidato |
 | Provider oltre Codex | Portato (ADR 0012): i nove provider hanno un adattatore in `app/src/main/core/providers` dietro la forma comune `AgentRuntime`; il composer sceglie provider e modello per dialogo, incarichi e turni registrano il provider |
 
 ## Verifiche eseguite
