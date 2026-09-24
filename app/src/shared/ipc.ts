@@ -88,6 +88,13 @@ export interface ActionMap {
   "codex:login": [void, void];
   "skills:rollback": [void, string[]];
   "practice:change": [{ action: "adopt" | "retire" | "rollback"; id: string; reason?: string }, void];
+  /** The person corrects what the Coordinator learned (ADR 0014). */
+  "learning:memory": [{ target: "memory" | "user"; action: "add" | "replace" | "remove"; oldText?: string; content?: string }, { success: boolean; error: string | null }];
+  "learning:proposal": [{ id: string; approve: boolean }, void];
+  "learning:skill": [{ name: string; action: "pin" | "unpin" | "adopt" | "archive" | "restore" | "delete" | "edit"; content?: string }, void];
+  "learning:skillContent": [{ name: string }, string];
+  "learning:review": [{ focus: string }, void];
+  "learning:curator": [{ action: "run" | "dryRun" | "pause" | "resume" | "rollback"; backupId?: string | null }, void];
   "providers:refresh": [{ provider?: ProviderId }, void];
   "provider:login": [{ provider: ProviderId }, { url: string | null; command: string | null }];
   "github:refresh": [void, void];

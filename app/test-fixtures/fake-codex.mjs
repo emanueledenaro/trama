@@ -123,6 +123,36 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
         setTimeout(() => finish("Ho scritto NOTE.md nel worktree."), 30);
         return;
       }
+      if (text.includes("Review the conversation above")) {
+        // A learning review: add a profile fact, propose to remove a note, create a skill (ADR 0014).
+        const calls = [];
+        if (text.includes("[comando]")) {
+          // A provider that runs one of its own tools anyway: Trama must stop the review and save nothing.
+          send({ method: "item/completed", params: { threadId, turnId, item: { id: "cmd", type: "commandExecution", command: "cat notes.txt", status: "completed", exitCode: 0 } } });
+          await new Promise((r) => setTimeout(r, 50));
+        }
+        if (text.includes("You can only call memory and skill")) {
+          calls.push(["memory", { target: "user", action: "add", content: "La persona preferisce risposte brevi in italiano" }]);
+          calls.push(["memory", { target: "memory", action: "remove", old_text: "pnpm" }]);
+        }
+        calls.push([
+          "skill_manage",
+          { operations: [{ action: "create", name: "release-flow", content: "---\nname: release-flow\ndescription: Use when releasing. Tag, build, publish.\n---\n\n# Release\n\n## When to Use\n- releasing\n" }] },
+        ]);
+        calls.push(["run_readonly_check", { check: "git_status" }]);
+        for (const [tool, args] of calls) toolDone(tool, await callTool(threadId, tool, args));
+        finish("Saved what stood out.");
+        return;
+      }
+      if (text.includes("[memoria]")) {
+        callTool(threadId, "memory", { target: "memory", action: "add", content: "Il progetto usa pnpm 9" }).then(async (result) => {
+          toolDone("memory", result);
+          const search = await callTool(threadId, "session_search", { query: "annullamento" });
+          toolDone("session_search", search);
+          finish(`Salvato. ${search.content[0].text}`);
+        });
+        return;
+      }
       if (text.includes("[proponi-team]")) {
         callTool(threadId, "propose_team", {
           summary: "Un solo specialista per il modulo Orders",

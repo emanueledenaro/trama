@@ -28,6 +28,11 @@ export interface OpenThreadOptions {
   resumeThreadId?: string | null;
   /** An ephemeral session is not kept by the provider after the runtime stops. */
   ephemeral?: boolean;
+  /**
+   * Only Trama's tools: the provider's own shell, file and web tools are turned off where the adapter
+   * can do it. The learning review relies on this and also stops a session that uses one (ADR 0014).
+   */
+  hostToolsOnly?: boolean;
 }
 
 export interface RunTurnOptions {

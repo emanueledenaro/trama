@@ -41,6 +41,7 @@ npm run dist        # pacchetto con electron-builder
 - `app/src/main`: processo principale. Scansione del repository, Coordinatore, server MCP degli strumenti su `127.0.0.1`, Patto, mandato, GitHub e persistenza.
 - `app/src/main/core/providers`: gli adattatori dei nove provider portati da Synara (ADR 0012) dietro la forma comune `AgentRuntime`: Codex, Claude Agent, Cursor, Grok, Droid, Devin, OpenCode, Antigravity e Pi.
 - `app/src/preload`: bridge IPC con azioni tipizzate. Il renderer non ha accesso a Node.
+- `app/src/main/core/learning`: l'apprendimento del Coordinatore portato da [Hermes Agent](https://github.com/NousResearch/hermes-agent) (ADR 0014, [attribuzione](docs/hermes-attribution.md)): memoria `MEMORY.md` e `USER.md`, ricerca nei dialoghi passati, skill apprese, revisione dell'esperienza e manutenzione delle skill.
 - `app/src/renderer`: interfaccia React con Tailwind CSS 4 e `@base-ui/react`, costruita sui token di design di Synara.
 - `app/src/shared`: tipi e logica condivisa, come la timeline della conversazione.
 - `app/test-fixtures/fake-codex.mjs`: un app-server di prova per i test e per `ui-check`. Le sue risposte non sono risultati di Codex.
@@ -53,7 +54,7 @@ npm run dist        # pacchetto con electron-builder
 4. Leggi lo studio del Coordinatore e scrivigli. Puoi scegliere un modulo come contesto dal composer.
 5. Rispondi alle schede di decisione e di mandato: solo le tue risposte entrano nel Patto e nel mandato.
 
-Trama salva progetti recenti, conversazioni e stato operativo nella cartella dati dell'utente, sotto `Trama/Desktop` (`~/Library/Application Support/Trama/Desktop` su macOS, `~/.config/Trama/Desktop` su Linux, `%APPDATA%\Trama\Desktop` su Windows). Al primo avvio l'app legge i progetti recenti della versione SwiftUI in `Trama/` e, all'apertura di un progetto, ne importa conversazione, Patto, mandato, memoria e thread del Coordinatore. I file della versione SwiftUI non vengono modificati. Le credenziali ChatGPT restano nel componente ufficiale Codex. L'app non legge `auth.json` e non copia token.
+Trama salva progetti recenti, conversazioni e stato operativo nella cartella dati dell'utente, sotto `Trama/Desktop` (`~/Library/Application Support/Trama/Desktop` su macOS, `~/.config/Trama/Desktop` su Linux, `%APPDATA%\Trama\Desktop` su Windows). Al primo avvio l'app legge i progetti recenti della versione SwiftUI in `Trama/` e, all'apertura di un progetto, ne importa conversazione, Patto, mandato, memoria e thread del Coordinatore. I file della versione SwiftUI non vengono modificati. Quello che il Coordinatore impara sta nella stessa cartella, sotto `Learning/`, e mai nel repository del progetto. Le credenziali ChatGPT restano nel componente ufficiale Codex. L'app non legge `auth.json` e non copia token.
 
 ## Repository supportati
 

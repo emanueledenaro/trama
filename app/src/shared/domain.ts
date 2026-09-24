@@ -173,6 +173,21 @@ export interface CoordinatorState {
   contextThreshold?: number;
   /** The threshold the last notice was given for; cleared by a compaction or a new thread. */
   contextWarnedAt?: number | null;
+  /** The learning loop ported from Hermes (ADR 0014); absent in documents written before it. */
+  learning?: CoordinatorLearning;
+}
+
+export interface CoordinatorLearning {
+  /** Person turns since the Coordinator last wrote memory or a memory review ran. */
+  turnsSinceMemory: number;
+  /** Tool iterations since the Coordinator last wrote a skill or a skill review ran. */
+  itersSinceSkill: number;
+  /** Events from this sequence on are in the Coordinator's live thread: session search skips them. */
+  liveFromSequence: number;
+  /** The old single-text memory was moved into MEMORY.md. */
+  memoryMigrated?: boolean;
+  /** The skills index last sent to the thread. */
+  skillsIndexSent?: string | null;
 }
 
 export type WorkKind = "agreedTicket" | "decidedBehaviorCorrection" | "newFeature" | "tradeOff";
@@ -601,6 +616,73 @@ export interface AppSettings {
   autoPrepareMethod?: boolean;
   /** A sound with useful alerts only (conflicts, blocked providers, finished work). Off by default. */
   sounds?: boolean;
+  /** What the learning loop may do (ADR 0014); missing keys take the defaults. */
+  learning?: Partial<LearningSettings>;
+}
+
+export interface LearningSettings {
+  /** MEMORY.md: the Coordinator's notes about this project. */
+  memory: boolean;
+  /** USER.md: who the person is, shared by their projects. */
+  userProfile: boolean;
+  /** The unattended review after enough turns or tool iterations. */
+  backgroundReview: boolean;
+  /** The weekly deterministic pass that stales and archives unused learned skills. */
+  curator: boolean;
+  /** The curator's optional model pass that merges narrow skills. Off by default. */
+  consolidate: boolean;
+}
+
+export const DEFAULT_LEARNING_SETTINGS: LearningSettings = { memory: true, userProfile: true, backgroundReview: true, curator: true, consolidate: false };
+
+export interface LearningReviewRun {
+  id: string;
+  /** What started it: the counters, the person, or the curator. */
+  trigger: "memory" | "skills" | "memory+skills" | "person" | "curator";
+  startedAt: string;
+  endedAt: string | null;
+  status: "running" | "completed" | "failed" | "cancelled";
+  provider: import("./codex").ProviderId | null;
+  model: string | null;
+  /** Writes the review made, one line each; empty when it saved nothing. */
+  actions: string[];
+  toolCalls: number;
+  usedTokens: number | null;
+  error: string | null;
+}
+
+export interface LearnedSkillView {
+  name: string;
+  category: string | null;
+  description: string;
+  /** "agent": written by the unattended review, maintained by the curator; "learn": written in a turn with the person. */
+  createdBy: "agent" | "learn" | null;
+  state: "active" | "stale" | "archived";
+  pinned: boolean;
+  useCount: number;
+  viewCount: number;
+  patchCount: number;
+  lastActivityAt: string | null;
+  createdAt: string;
+}
+
+export interface MemoryStoreView {
+  enabled: boolean;
+  entries: string[];
+  chars: number;
+  limit: number;
+}
+
+export interface LearningView {
+  memory: MemoryStoreView;
+  user: MemoryStoreView;
+  skills: LearnedSkillView[];
+  archivedSkills: string[];
+  /** Replacements and removals an unattended review proposed; only the person applies them. */
+  proposals: { id: string; target: "memory" | "user"; summary: string; createdAt: string; operations: string[] }[];
+  reviews: LearningReviewRun[];
+  curator: { lastRunAt: string | null; lastRunSummary: string | null; paused: boolean; runCount: number; backups: string[] };
+  counters: { turnsSinceMemory: number; itersSinceSkill: number; memoryInterval: number; skillInterval: number };
 }
 
 export interface AppState {
@@ -615,6 +697,8 @@ export interface AppState {
   error: string | null;
   /** General practices as the selected project may see them (C15). */
   practices: PracticeView[];
+  /** What the selected project's Coordinator learned (ADR 0014); null without a project. */
+  learning?: LearningView | null;
   /** Projects not selected whose team is still working (C07). */
   backgroundProjects: BackgroundProject[];
   platform: NodeJS.Platform;

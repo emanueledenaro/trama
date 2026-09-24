@@ -221,6 +221,11 @@ describe("query options", () => {
     expect((options.systemPrompt as { append: string }).append).toContain("Sei il Coordinatore.");
   });
 
+  it("turns every built-in tool off for a session that may use only Trama's tools", () => {
+    expect(buildQueryOptions({ ...base, hostToolsOnly: true, policy: { cwd: "/tmp/x", writableRoot: null, hostServer: null } }).tools).toEqual([]);
+    expect(buildQueryOptions({ ...base, policy: { cwd: "/repo", writableRoot: null, hostServer: null } }).tools).toBeUndefined();
+  });
+
   it("adds the host MCP server in process, the sandbox and the output schema", () => {
     const options = buildQueryOptions({
       ...base,
