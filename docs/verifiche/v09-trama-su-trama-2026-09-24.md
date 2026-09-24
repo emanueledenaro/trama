@@ -94,4 +94,4 @@ selettore di provider, modello e sforzo, modalità veloce di Codex): `53e0595`..
 - Provider non provati: Cursor, Antigravity, Grok, Devin, OpenCode. Droid non è collegato.
 - Il passaggio di provider non ha un test automatico: il Codex finto dei test gestisce un solo
   provider. È verificato solo dal vivo.
-- CI: da verificare sulla PR del ramo.
+- CI: verde sulla PR [#112](https://github.com/emanueledenaro/trama/pull/112) al commit `a1989e6` (test, build e prova dell'interfaccia). Il primo giro era fallito sulla prova dell'interfaccia per un selettore ambiguo, corretto in `a1989e6`.
