@@ -93,6 +93,7 @@ import { availableChecks, CHECKS, lendNodeDependencies, type ReadOnlyCheck, runR
 import { parsePlan, PLAN_SCHEMA, PLANNING_INSTRUCTIONS, planPrompt } from "./core/plan";
 import { approvePactDemo, inspectPactDemo, runPactDemo } from "./core/pactDemo";
 import { readRepositoryFile, scanRepository } from "./core/repositoryScanner";
+import { messageStyle } from "./core/messageStyle";
 import { installedSkillVersion, prepareSkills, rollbackSkills, SELECTED_SKILLS, SKILL_VERSION, type SetupReport, updateSkills } from "./core/skillSetup";
 import {
   authorize,
@@ -1264,6 +1265,8 @@ export class TramaController {
         // A new thread holds none of the earlier events: session search may return all of them.
         learningState.liveFromSequence = document.lastSequence + 1;
         learningState.skillsIndexSent = null;
+        // A new thread received the current writing rules with its instructions.
+        document.coordinator.messageStyleSent = messageStyle("the person");
       }
       document.coordinator.threadId = opening.threadId;
       document.coordinator.threadModel = model;
@@ -1462,6 +1465,11 @@ export class TramaController {
       if (skillsIndex !== (this.coordinatorLearning(document).skillsIndexSent ?? "")) {
         sections.push(skillsIndex || "## Skills\nThe skill library of this project is empty now.");
         this.coordinatorLearning(document).skillsIndexSent = skillsIndex;
+      }
+      const style = messageStyle("the person");
+      if (document.coordinator.messageStyleSent !== style) {
+        sections.push(`## Come scrivere nella chat di Trama\nThese rules replace the earlier ones about the form of your messages:\n${style}`);
+        document.coordinator.messageStyleSent = style;
       }
       if (module) sections.push(`Contesto scelto dalla persona: modulo ${module.name} (${module.relativePath}).`);
       const mentioned = mentionContextBlock(trimmed, {

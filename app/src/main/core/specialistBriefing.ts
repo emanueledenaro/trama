@@ -1,4 +1,5 @@
 import type { PactDecision, Specialist, SpecialistAssignment } from "@shared/domain";
+import { messageStyle } from "./messageStyle";
 import { CHECKS, type ReadOnlyCheck } from "./checks";
 import { needsWorktree } from "./team";
 
@@ -12,7 +13,8 @@ export function specialistInstructions(projectName: string, specialist: Speciali
       : "This assignment is read-only: read the project and report. Do not change files and do not use the network.",
     `Stay inside these modules: ${assignment.moduleIds.join(", ")}.`,
     "Do not start other agents and do not ask for broader permissions. If the sandbox stops you, say so in your answer instead of working around it.",
-    "Write to the Coordinator in Italian, in plain prose; name the files you touched with their path relative to the worktree root.",
+    messageStyle("the Coordinator"),
+    "Name the files you touched with their path relative to the worktree root.",
   ];
   if (assignment.requiredChecks.length) {
     const checks = assignment.requiredChecks.map((c) => CHECKS[c as ReadOnlyCheck]?.summary ?? c);
