@@ -14,11 +14,9 @@ import {
 } from "@tabler/icons-react";
 import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import { deriveTimelineRows } from "@shared/timeline";
-import type { ProviderId } from "@shared/codex";
-import { dialogComposer, dialogEvents, dialogRequests, findGoal } from "@shared/goals";
+import { dialogEvents, dialogRequests, findGoal } from "@shared/goals";
 import { GoalDialogHeader } from "@/components/inspector/GoalsView";
 import { OverviewView } from "@/components/OverviewView";
-import { ProviderIcon } from "@/components/ProviderIcon";
 import { NavigationButtons, SidebarTrigger } from "@/components/sidebar/Sidebar";
 import { Spinner } from "@/components/Spinner";
 import { TramaLogo } from "@/components/TramaLogo";
@@ -30,7 +28,6 @@ import { act, type InspectorTarget, useUi } from "@/lib/store";
 import { ExercisePanel } from "@/components/onboarding/ExercisePanel";
 import { Composer } from "./Composer";
 import { TimelineRowView } from "./TimelineRows";
-import { Sep } from "@/components/ui/sep";
 
 const HEADER_CHIP =
   "!h-7 shrink-0 rounded-lg gap-1.5 border-0 px-1.5 text-ui-sm font-normal transition-colors text-[var(--color-text-foreground-secondary)] hover:bg-[var(--color-background-button-secondary-hover)] hover:text-[var(--color-text-foreground)] inline-flex items-center";
@@ -88,17 +85,6 @@ function ChatHeader({ isMac }: { isMac: boolean }) {
   const mainView = useUi((s) => s.mainView);
   const openDialog = useUi((s) => s.openDialog);
   const goal = useUi((s) => (project ? findGoal(project.document, s.dialogGoalId) : null));
-  // The provider and model the next turn of this dialog uses, read the same way as the composer (ADR 0010).
-  const selection = project ? dialogComposer(project.document, goal?.id ?? null) : null;
-  const threadProvider = project?.document.coordinator.threadProvider ?? "codex";
-  const provider: ProviderId = selection?.selectedProvider ?? threadProvider;
-  const catalogue = app.providers[provider]?.models ?? [];
-  const modelId =
-    selection?.selectedModel ??
-    (threadProvider === provider ? project?.document.coordinator.threadModel : null) ??
-    catalogue.find((m) => m.isDefault)?.model ??
-    null;
-  const model = modelId ? (catalogue.find((m) => m.model === modelId)?.displayName ?? modelId) : null;
   const proposedGoals = project?.document.goals?.filter((g) => g.status === "proposed").length ?? 0;
 
   return (
@@ -139,13 +125,6 @@ function ChatHeader({ isMac }: { isMac: boolean }) {
             </h2>
             <div className="flex min-w-0 items-center gap-1 overflow-hidden text-ui-sm text-muted-foreground/55">
               {project.snapshot.branch ? <span className="truncate">{project.snapshot.branch}</span> : null}
-              {model ? (
-                <>
-                  <Sep />
-                  <ProviderIcon provider={provider} className="size-3 opacity-80" />
-                  <span className="truncate">{model}</span>
-                </>
-              ) : null}
             </div>
           </>
         ) : (
