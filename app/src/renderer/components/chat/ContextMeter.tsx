@@ -36,7 +36,7 @@ export function ContextMeter() {
         {percent}%
       </Popover.Trigger>
       <Popover.Portal>
-        <Popover.Positioner side="bottom" align="end" sideOffset={6} className="z-50">
+        <Popover.Positioner side="top" align="start" sideOffset={8} className="z-50">
           <Popover.Popup className="translucent-popup w-80 rounded-2xl p-4 text-ui outline-none transition-[opacity,scale] data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0">
             <div className="font-medium text-foreground">Finestra di contesto</div>
             <p className="mt-1 text-ui-sm text-muted-foreground">

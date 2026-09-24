@@ -7,6 +7,7 @@ import { normalizePaste, pasteSizeLabel, pasteTitle, serializePastes, shouldColl
 import { skillCandidates } from "@shared/skills";
 import { dialogComposer, findGoal } from "@shared/goals";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { ContextMeter } from "./ContextMeter";
 import { ModelPicker } from "./ModelPicker";
 import { Button } from "@/components/ui/button";
 import { Menu, MenuGroupLabel, MenuPopup, MenuRadioGroup, MenuRadioItem, MenuSeparator, MenuTrigger } from "@/components/ui/menu";
@@ -362,6 +363,7 @@ export function Composer() {
                 goalId={goal?.id ?? null}
                 fastMode={selection.selectedFastMode === true}
               />
+              <ContextMeter />
             </div>
             <div className="flex shrink-0 items-center gap-2">
               {busy && !text.trim() && !pastes.length ? (

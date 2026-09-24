@@ -14,9 +14,11 @@ import {
 } from "@tabler/icons-react";
 import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import { deriveTimelineRows } from "@shared/timeline";
-import { dialogEvents, dialogRequests, findGoal } from "@shared/goals";
+import type { ProviderId } from "@shared/codex";
+import { dialogComposer, dialogEvents, dialogRequests, findGoal } from "@shared/goals";
 import { GoalDialogHeader } from "@/components/inspector/GoalsView";
 import { OverviewView } from "@/components/OverviewView";
+import { ProviderIcon } from "@/components/ProviderIcon";
 import { NavigationButtons, SidebarTrigger } from "@/components/sidebar/Sidebar";
 import { Spinner } from "@/components/Spinner";
 import { TramaLogo } from "@/components/TramaLogo";
@@ -27,7 +29,6 @@ import { formatRelativeTime } from "@/lib/format";
 import { act, type InspectorTarget, useUi } from "@/lib/store";
 import { ExercisePanel } from "@/components/onboarding/ExercisePanel";
 import { Composer } from "./Composer";
-import { ContextMeter } from "./ContextMeter";
 import { TimelineRowView } from "./TimelineRows";
 import { Sep } from "@/components/ui/sep";
 
@@ -84,10 +85,20 @@ function ChatHeader({ isMac }: { isMac: boolean }) {
   const pendingMandate = project?.document.mandateRequests.some((r) => !r.resolution) ? 1 : 0;
   const openIssues = project?.github.issues.filter((i) => i.state === "open").length ?? 0;
   const pendingTeam = project?.document.team.proposals.some((p) => !p.resolution) ? 1 : 0;
-  const model = project?.document.coordinator.threadModel ?? project?.document.selectedModel ?? null;
   const mainView = useUi((s) => s.mainView);
   const openDialog = useUi((s) => s.openDialog);
   const goal = useUi((s) => (project ? findGoal(project.document, s.dialogGoalId) : null));
+  // The provider and model the next turn of this dialog uses, read the same way as the composer (ADR 0010).
+  const selection = project ? dialogComposer(project.document, goal?.id ?? null) : null;
+  const threadProvider = project?.document.coordinator.threadProvider ?? "codex";
+  const provider: ProviderId = selection?.selectedProvider ?? threadProvider;
+  const catalogue = app.providers[provider]?.models ?? [];
+  const modelId =
+    selection?.selectedModel ??
+    (threadProvider === provider ? project?.document.coordinator.threadModel : null) ??
+    catalogue.find((m) => m.isDefault)?.model ??
+    null;
+  const model = modelId ? (catalogue.find((m) => m.model === modelId)?.displayName ?? modelId) : null;
   const proposedGoals = project?.document.goals?.filter((g) => g.status === "proposed").length ?? 0;
 
   return (
@@ -131,6 +142,7 @@ function ChatHeader({ isMac }: { isMac: boolean }) {
               {model ? (
                 <>
                   <Sep />
+                  <ProviderIcon provider={provider} className="size-3 opacity-80" />
                   <span className="truncate">{model}</span>
                 </>
               ) : null}
@@ -143,7 +155,6 @@ function ChatHeader({ isMac }: { isMac: boolean }) {
       {project && mainView === "dialog" ? (
         <div className="no-drag flex shrink-0 items-center gap-1">
           {project.isDemo ? <ExercisesChip /> : null}
-          <ContextMeter />
           <HeaderChip target={{ kind: "goals" }} label="Obiettivi" icon={<IconTarget stroke={1.8} />} count={proposedGoals} />
           <HeaderChip target={{ kind: "map" }} label="Mappa" icon={<IconSitemap stroke={1.8} />} />
           <HeaderChip target={{ kind: "pact" }} label="Patto" icon={<IconRosetteDiscountCheck stroke={1.8} />} count={pendingDecisions} />
