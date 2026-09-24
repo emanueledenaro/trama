@@ -11,7 +11,17 @@ export interface RecentProject {
 
 export type EventOrigin = "person" | "coordinator" | "trama" | "specialist";
 
-export type CardKind = "study" | "mandate" | "decision" | "contextNotice" | "teamProposal" | "assignment" | "candidate" | "plan" | "conflict";
+export type CardKind =
+  | "study"
+  | "mandate"
+  | "decision"
+  | "contextNotice"
+  | "teamProposal"
+  | "assignment"
+  | "candidate"
+  | "plan"
+  | "conflict"
+  | "goal";
 
 export interface ConflictAssessment {
   id: string;
@@ -39,6 +49,8 @@ export interface ConversationEvent {
   /** Specialist work: the assignment and turn the activity belongs to. */
   assignmentId?: string | null;
   workKey?: string | null;
+  /** The goal dialog the event belongs to; absent or null means the project dialog (UX02). */
+  goalId?: string | null;
   createdAt: string;
   content: EventContent;
 }
@@ -59,6 +71,8 @@ export interface CoordinatorRequest {
   completedAt: string | null;
   failure: string | null;
   attachments?: string[];
+  /** The goal dialog the message was sent from, fixed when the request is created (UX02). */
+  goalId?: string | null;
 }
 
 export interface PactDecision {
@@ -115,6 +129,8 @@ export interface DecisionRequest {
   concreteCase: string;
   alternatives: DecisionAlternative[];
   revisesDecisionId: string | null;
+  /** The goal dialog the question was asked in; its answer links the decision to that goal. */
+  goalId?: string | null;
   askedAt: string;
   outcome: { answer: string; alternativeIndex: number | null; decisionId: string; version: number; answeredAt: string } | null;
 }
@@ -228,6 +244,10 @@ export interface SpecialistAssignment {
   decisionVersions?: Record<string, number>;
   /** The provider recorded at assignment; the person can change it (ADR 0009). Absent means Codex. */
   provider?: ProviderId;
+  /** Why the Coordinator chose this provider and model, in its own words (UX05); absent in older documents. */
+  modelReason?: string | null;
+  /** The goal the work serves (UX02); absent when it was assigned outside a goal. */
+  goalId?: string | null;
   tools: SpecialistTool[];
   requiredChecks: string[];
   instructions: string;
@@ -312,6 +332,22 @@ export interface Candidate {
   clearance: { actor: string; fingerprint: string; at: string } | null;
   humanApproval: { actor: string; fingerprint: string; at: string } | null;
   pullRequest: { url: string; number: number; branch: string; at: string } | null;
+  /** The goal of the assignment, copied when the candidate is declared. */
+  goalId?: string | null;
+  /** The person's observations of the goal's examples on this exact snapshot (UX06). */
+  exampleObservations?: ExampleObservation[];
+}
+
+/** The person observed, or did not observe, a goal example on one candidate snapshot. */
+export interface ExampleObservation {
+  goalId: string;
+  exampleId: string;
+  /** The example text observed: an edited example no longer matches. */
+  exampleText: string;
+  snapshotId: string;
+  observed: boolean;
+  actor: string;
+  at: string;
 }
 
 export type CandidateState = "building" | "verified" | "decided";
@@ -365,6 +401,44 @@ export interface WorkPlan {
   updatedAt: string;
 }
 
+/** A behavior example of a goal: accepted means it must happen, refused means it must not. */
+export interface GoalExample {
+  id: string;
+  kind: "accepted" | "refused";
+  text: string;
+}
+
+/** Proposed by the Coordinator and not yet confirmed, open, achieved or abandoned by the person. */
+export type GoalStatus = "proposed" | "open" | "achieved" | "abandoned";
+
+/** The composer's selection and draft of one dialog (ADR 0010). */
+export interface DialogComposer {
+  selectedProvider?: ProviderId;
+  selectedModel: string | null;
+  selectedEffort: string | null;
+  providerPreferences?: Partial<Record<ProviderId, { model: string | null; effort: string | null }>>;
+  composerDraft: string;
+}
+
+/**
+ * A project result with a stable identity and verifiable examples (UX01). It is distinct from a
+ * message, an assignment and a candidate; relations to them are explicit ids.
+ */
+export interface ProjectGoal {
+  id: string;
+  title: string;
+  outcome: string;
+  examples: GoalExample[];
+  status: GoalStatus;
+  origin: "person" | "coordinator";
+  createdAt: string;
+  updatedAt: string;
+  /** Pact decisions the person or the goal dialog linked to this goal. */
+  decisionIds: string[];
+  /** The goal dialog's composer. */
+  dialog: DialogComposer;
+}
+
 export interface ProjectDocument {
   schemaVersion: 1;
   projectId: string;
@@ -390,6 +464,8 @@ export interface ProjectDocument {
   conflicts?: ConflictAssessment[];
   /** The idea the person started this project from (T10); the Coordinator proposes purpose and structure first. */
   createdFromIdea?: string | null;
+  /** Goals of the project (UX01); absent in documents written before goals. */
+  goals?: ProjectGoal[];
   /** The review cycle scenario of the example project, run on a local model of an order. */
   pactDemo?: PactDemo | null;
   /** Progress of the guided exercises, kept only in the example project (C13, C14). */
@@ -552,6 +628,31 @@ export interface ProviderState {
   account: ProviderAccount | null;
   models: ProviderModel[];
   checking: boolean;
+}
+
+export type AttentionReason = "decision" | "blocked" | "approval" | "running";
+
+/**
+ * One project in the overview (UX03), built from records only. `live` comes from the project in
+ * memory, `saved` from its last save on disk; `unreadable` and `notSaved` have no data to show.
+ */
+export interface ProjectOverview {
+  id: string;
+  name: string;
+  path: string;
+  isDemo: boolean;
+  source: "live" | "saved" | "unreadable" | "notSaved";
+  selected: boolean;
+  /** The time of the last recorded event, null when unknown. */
+  updatedAt: string | null;
+  pendingDecisions: number;
+  blockedWork: number;
+  toApprove: number;
+  runningWork: number;
+  goals: { id: string; title: string; status: GoalStatus }[];
+  attention: AttentionReason | null;
+  reasons: string[];
+  problem: string | null;
 }
 
 export interface BackgroundProject {

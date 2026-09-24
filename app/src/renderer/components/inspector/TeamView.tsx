@@ -2,6 +2,7 @@ import { IconArrowLeft } from "@tabler/icons-react";
 import { useState } from "react";
 import { isUsableAccount, type ProviderId } from "@shared/codex";
 import type { Specialist, SpecialistAssignment } from "@shared/domain";
+import { findGoal } from "@shared/goals";
 import { PROVIDERS } from "@shared/providers";
 import { ASSIGNMENT_STATUS, AssignmentCard, CandidateCard, TeamProposalCard } from "@/components/chat/Cards";
 import { Spinner } from "@/components/Spinner";
@@ -73,6 +74,18 @@ export function TeamView() {
                 <span className="block truncate text-ui-sm text-muted-foreground">
                   {STATUS_LABEL[specialist.status]} · {specialist.lastUpdate}
                 </span>
+                {(() => {
+                  const current = specialist.assignments.at(-1);
+                  if (!current) return null;
+                  const goal = findGoal(project.document, current.goalId);
+                  return (
+                    <span className="block truncate text-ui-xs text-muted-foreground/80" title={current.modelReason ?? "Motivazione non registrata"}>
+                      {providerLabel(current.provider ?? "codex")} · {current.model}
+                      {current.modelReason ? " · motivato" : " · motivazione non registrata"}
+                      {goal ? ` · per ${goal.title}` : ""}
+                    </span>
+                  );
+                })()}
               </span>
             </button>
           ))}
@@ -174,7 +187,14 @@ export function SpecialistView({ id }: { id: string }) {
           ) : (
             <div key={assignment.id} className="flex items-center gap-2 py-1 text-ui-sm">
               <span className="font-mono text-[11px] text-muted-foreground">{assignment.id}</span>
-              <span className="min-w-0 flex-1 truncate text-foreground/90">{assignment.objective}</span>
+              <span className="min-w-0 flex-1 truncate text-foreground/90" title={assignment.modelReason ?? undefined}>
+                {assignment.objective}
+                <span className="text-muted-foreground">
+                  {" "}
+                  · {providerLabel(assignment.provider ?? "codex")} {assignment.model}
+                  {assignment.goalId ? ` · ${findGoal(project.document, assignment.goalId)?.title ?? assignment.goalId}` : ""}
+                </span>
+              </span>
               <Badge tone={ASSIGNMENT_STATUS[assignment.status].tone}>{ASSIGNMENT_STATUS[assignment.status].label}</Badge>
             </div>
           ),

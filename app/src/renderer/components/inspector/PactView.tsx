@@ -1,6 +1,7 @@
-import { IconArrowLeft, IconPlus } from "@tabler/icons-react";
+import { IconArrowLeft, IconPlus, IconTarget } from "@tabler/icons-react";
 import { useState } from "react";
-import { DecisionCard } from "@/components/chat/Cards";
+import { decisionDependents } from "@shared/goals";
+import { ASSIGNMENT_STATUS, DecisionCard } from "@/components/chat/Cards";
 import { Button } from "@/components/ui/button";
 import { Badge, Input, Label, TextArea } from "@/components/ui/field";
 import { formatDate } from "@/lib/format";
@@ -146,6 +147,62 @@ function PactDemoBox() {
   );
 }
 
+/** The work that relies on a decision (UX04): what a change would suspend, and the goals it serves. */
+function DecisionDependentsSection({ id }: { id: string }) {
+  const project = useUi((s) => s.app?.project)!;
+  const setInspector = useUi((s) => s.setInspector);
+  const openDialog = useUi((s) => s.openDialog);
+  const dependents = decisionDependents(project.document, id);
+  const none = !dependents.assignments.length && !dependents.candidates.length && !dependents.goals.length;
+  const row = "-mx-2 flex w-[calc(100%+1rem)] items-center gap-2 rounded-lg px-2 py-1 text-left text-ui hover:bg-[var(--sidebar-accent)]";
+  return (
+    <InspectorSection title="Lavori dipendenti">
+      {dependents.revisions.length ? (
+        <p className="mb-1.5 text-ui-sm text-warning">
+          In revisione: {dependents.revisions.map((r) => r.question).join("; ")}. Il lavoro attivo che dipende da questa decisione resta fermo fino alla risposta.
+        </p>
+      ) : null}
+      {none ? (
+        <EmptyNote>
+          Nessun incarico, candidato o obiettivo dichiara di dipendere da questa decisione. Un lavoro che non la dichiara non viene sospeso quando cambia.
+        </EmptyNote>
+      ) : null}
+      {dependents.assignments.map(({ assignment, specialist, version, current }) => (
+        <button key={assignment.id} type="button" className={row} onClick={() => setInspector({ kind: "specialist", id: specialist.id })}>
+          <span className="min-w-0 flex-1 truncate">
+            <span className="font-mono text-[11px] text-muted-foreground">{assignment.id}</span> {specialist.name} · {assignment.objective}
+          </span>
+          <Badge tone={current ? "secondary" : "warning"}>{current ? `v${version}` : `delegato su v${version}`}</Badge>
+          <Badge tone={ASSIGNMENT_STATUS[assignment.status].tone}>{ASSIGNMENT_STATUS[assignment.status].label}</Badge>
+        </button>
+      ))}
+      {dependents.candidates.map(({ candidate, version, current }) => (
+        <button key={candidate.id} type="button" className={row} onClick={() => setInspector({ kind: "candidate", id: candidate.id })}>
+          <span className="min-w-0 flex-1 truncate">
+            <span className="font-mono text-[11px] text-muted-foreground">{candidate.id}</span> candidato · {candidate.changedFiles.length} file
+          </span>
+          <Badge tone={current ? "secondary" : "warning"}>{current ? `v${version}` : `evidenze su v${version}: da riverificare`}</Badge>
+        </button>
+      ))}
+      {dependents.goals.map((goal) => (
+        <button
+          key={goal.id}
+          type="button"
+          className={row}
+          onClick={() => {
+            openDialog(goal.id);
+            setInspector({ kind: "goal", id: goal.id });
+          }}
+        >
+          <IconTarget className="size-3.5 shrink-0 text-muted-foreground" stroke={1.8} />
+          <span className="min-w-0 flex-1 truncate">{goal.title}</span>
+          <Badge>obiettivo</Badge>
+        </button>
+      ))}
+    </InspectorSection>
+  );
+}
+
 export function DecisionView({ id }: { id: string }) {
   const project = useUi((s) => s.app?.project)!;
   const setInspector = useUi((s) => s.setInspector);
@@ -175,6 +232,7 @@ export function DecisionView({ id }: { id: string }) {
           </>
         )}
       </InspectorSection>
+      <DecisionDependentsSection id={decision.id} />
       <InspectorSection title="Versioni">
         <ol className="space-y-2">
           {history.map((version) => (

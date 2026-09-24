@@ -64,6 +64,7 @@ export function declareCandidate(
     clearance: null,
     humanApproval: null,
     pullRequest: null,
+    ...(assignment.goalId ? { goalId: assignment.goalId } : {}),
   };
   document.candidates.push(candidate);
   return candidate;

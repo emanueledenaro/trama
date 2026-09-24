@@ -143,6 +143,29 @@ await app.evaluate(({ nativeTheme }) => {
 await page.evaluate(() => document.documentElement.classList.add("dark"));
 await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
 await shot("10-dark");
+// Goals (UX01, UX02, UX07): the project has only the goal the Coordinator proposed, so it offers the first one.
+await page.getByTestId("goal-card").first().waitFor();
+await page.getByRole("button", { name: "Formula il primo obiettivo" }).first().click();
+await page.getByLabel("Titolo dell'obiettivo").fill("Ordini annullati in revisione");
+await page.getByLabel("Risultato atteso").fill("Un ordine pagato e annullato resta in revisione finché una persona non decide.");
+await page.getByLabel("Esempio 1").fill("Ordine 42 pagato e annullato: stato review");
+await page.getByRole("button", { name: "Crea l'obiettivo" }).click();
+await page.getByTestId("dialog-title").filter({ hasText: "Ordini annullati in revisione" }).waitFor();
+await page.getByTestId("goal-dialog-header").waitFor();
+await page.getByLabel("Messaggio al Coordinatore").fill("Da dove partiamo per questo obiettivo?");
+await page.keyboard.press("Enter");
+await page.getByText(/Dialogo dell'obiettivo G-/).first().waitFor({ timeout: 20_000 });
+await shot("10d-goal-dialog");
+// The project dialog keeps its own conversation.
+await page.getByRole("button", { name: "Dialogo del progetto" }).click();
+await page.getByText("Ho letto lo studio").first().waitFor();
+if (await page.getByText(/Dialogo dell'obiettivo G-/).count()) throw new Error("The goal dialog leaked into the project dialog");
+// The overview (UX03) lists the project with its open goals.
+await page.getByRole("button", { name: "Panoramica dei progetti" }).click();
+await page.getByTestId("overview-project").first().getByText("Ordini annullati in revisione").waitFor({ timeout: 10_000 });
+await shot("10e-overview");
+await page.getByRole("button", { name: "Panoramica dei progetti" }).click();
+await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
 await page.keyboard.press("Control+K");
 await page.getByRole("textbox", { name: "Cerca in Trama" }).fill("cancel");
 await page.getByRole("option").first().waitFor();

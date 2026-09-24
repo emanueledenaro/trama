@@ -9,10 +9,14 @@ import {
   IconSchool,
   IconShieldCheck,
   IconSitemap,
+  IconTarget,
   IconUsersGroup,
 } from "@tabler/icons-react";
 import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import { deriveTimelineRows } from "@shared/timeline";
+import { dialogEvents, dialogRequests, findGoal } from "@shared/goals";
+import { GoalDialogHeader } from "@/components/inspector/GoalsView";
+import { OverviewView } from "@/components/OverviewView";
 import { NavigationButtons, SidebarTrigger } from "@/components/sidebar/Sidebar";
 import { Spinner } from "@/components/Spinner";
 import { TramaLogo } from "@/components/TramaLogo";
@@ -80,6 +84,10 @@ function ChatHeader({ isMac }: { isMac: boolean }) {
   const openIssues = project?.github.issues.filter((i) => i.state === "open").length ?? 0;
   const pendingTeam = project?.document.team.proposals.some((p) => !p.resolution) ? 1 : 0;
   const model = project?.document.coordinator.threadModel ?? project?.document.selectedModel ?? null;
+  const mainView = useUi((s) => s.mainView);
+  const openDialog = useUi((s) => s.openDialog);
+  const goal = useUi((s) => (project ? findGoal(project.document, s.dialogGoalId) : null));
+  const proposedGoals = project?.document.goals?.filter((g) => g.status === "proposed").length ?? 0;
 
   return (
     <div
@@ -95,13 +103,27 @@ function ChatHeader({ isMac }: { isMac: boolean }) {
         </div>
       ) : null}
       <div className="flex min-w-0 flex-1 items-center gap-2">
-        {project ? (
+        {mainView === "overview" ? (
+          <h2 className="truncate font-system-ui text-ui font-normal text-foreground">Panoramica dei progetti</h2>
+        ) : project ? (
           <>
             <span className="inline-flex size-3.5 shrink-0 items-center justify-center text-muted-foreground">
               <IconFolderOpen className="size-3.5" stroke={1.7} />
             </span>
-            <h2 className="max-w-[clamp(12rem,42vw,36rem)] truncate font-system-ui text-ui font-normal text-foreground">
-              {project.isDemo ? "Progetto di esempio" : project.name}
+            {/* Where the next message goes: the project, and the goal when a goal dialog is open (UX02). */}
+            {goal ? (
+              <button
+                type="button"
+                className="no-drag max-w-[14rem] truncate font-system-ui text-ui font-normal text-muted-foreground hover:text-foreground"
+                onClick={() => openDialog(null)}
+                title="Torna al dialogo del progetto"
+              >
+                {project.isDemo ? "Progetto di esempio" : project.name}
+              </button>
+            ) : null}
+            {goal ? <span className="text-muted-foreground/60">›</span> : null}
+            <h2 className="max-w-[clamp(12rem,42vw,36rem)] truncate font-system-ui text-ui font-normal text-foreground" data-testid="dialog-title">
+              {goal ? goal.title : project.isDemo ? "Progetto di esempio" : project.name}
             </h2>
             <div className="flex min-w-0 items-center gap-1 overflow-hidden text-ui-sm text-muted-foreground/55">
               {project.snapshot.branch ? <span className="truncate">{project.snapshot.branch}</span> : null}
@@ -117,10 +139,11 @@ function ChatHeader({ isMac }: { isMac: boolean }) {
           <h2 className="truncate font-system-ui text-ui font-normal text-foreground">Trama</h2>
         )}
       </div>
-      {project ? (
+      {project && mainView === "dialog" ? (
         <div className="no-drag flex shrink-0 items-center gap-1">
           {project.isDemo ? <ExercisesChip /> : null}
           <ContextMeter />
+          <HeaderChip target={{ kind: "goals" }} label="Obiettivi" icon={<IconTarget stroke={1.8} />} count={proposedGoals} />
           <HeaderChip target={{ kind: "map" }} label="Mappa" icon={<IconSitemap stroke={1.8} />} />
           <HeaderChip target={{ kind: "pact" }} label="Patto" icon={<IconRosetteDiscountCheck stroke={1.8} />} count={pendingDecisions} />
           <HeaderChip target={{ kind: "mandate" }} label="Mandato" icon={<IconShieldCheck stroke={1.8} />} count={pendingMandate} />
@@ -227,21 +250,49 @@ function ProjectIntro() {
           Riprova
         </Button>
       ) : null}
+      {!hasConfirmedGoal(project.document.goals) ? (
+        <Button variant="outline" size="sm" onClick={() => useUi.getState().setInspector({ kind: "goals", create: true })}>
+          <IconTarget /> Formula il primo obiettivo
+        </Button>
+      ) : null}
     </div>
   );
 }
 
+/** Offered in the project dialog while the project has no goal the person confirmed (UX07). */
+function FirstGoalPrompt() {
+  const setInspector = useUi((s) => s.setInspector);
+  return (
+    <div className="my-3 flex flex-wrap items-center gap-3 rounded-xl border border-dashed border-[color:var(--color-border)] px-3.5 py-3" data-testid="first-goal">
+      <IconTarget className="size-4 shrink-0 text-muted-foreground" stroke={1.8} />
+      <p className="min-w-0 flex-1 text-ui text-muted-foreground">
+        Descrivi un risultato e qualche esempio verificabile: il Coordinatore lo discute con te nel suo dialogo. Non concede un mandato.
+      </p>
+      <Button size="sm" variant="outline" onClick={() => setInspector({ kind: "goals", create: true })}>
+        Formula il primo obiettivo
+      </Button>
+    </div>
+  );
+}
+
+const hasConfirmedGoal = (goals: { status: string }[] | undefined) => (goals ?? []).some((g) => g.status !== "proposed");
+
 function Timeline() {
   const project = useUi((s) => s.app?.project)!;
-  const { events, requests } = project.document;
+  const goalId = useUi((s) => s.dialogGoalId);
+  const { requests: allRequests, events: allEvents } = project.document;
+  const events = useMemo(() => dialogEvents(allEvents, goalId), [allEvents, goalId]);
+  const requests = useMemo(() => dialogRequests(allRequests, goalId), [allRequests, goalId]);
   const runningWork = project.runningWork;
-  const rows = useMemo(
-    () => deriveTimelineRows(events, requests, project.streaming, new Set(runningWork)),
-    [events, requests, project.streaming, runningWork],
-  );
+  // A reply streams only in the dialog of its request; the study belongs to the project dialog.
+  const streaming =
+    project.streaming && (project.streaming.requestId === null ? goalId === null : requests.some((r) => r.id === project.streaming!.requestId))
+      ? project.streaming
+      : null;
+  const rows = useMemo(() => deriveTimelineRows(events, requests, streaming, new Set(runningWork)), [events, requests, streaming, runningWork]);
   const scroller = useRef<HTMLDivElement>(null);
   const pinned = useRef(true);
-  const studying = project.phase.kind === "studying";
+  const studying = project.phase.kind === "studying" && goalId === null;
 
   useLayoutEffect(() => {
     const element = scroller.current;
@@ -249,9 +300,10 @@ function Timeline() {
   });
   useEffect(() => {
     pinned.current = true;
-  }, [project.id]);
+  }, [project.id, goalId]);
 
-  const empty = rows.length === 0 && !studying;
+  const empty = rows.length === 0 && !studying && goalId === null;
+  const offerFirstGoal = goalId === null && !empty && !studying && !hasConfirmedGoal(project.document.goals);
   return (
     <div
       ref={scroller}
@@ -263,6 +315,7 @@ function Timeline() {
     >
       <div className="mx-auto w-full max-w-[var(--app-chat-max-width)] min-w-0 px-3 pb-40 sm:px-5">
         {empty ? <ProjectIntro /> : null}
+        {goalId ? <GoalDialogHeader goalId={goalId} /> : null}
         {rows.map((row, index) => (
           <div key={row.id} className="px-1">
             <TimelineRowView row={row} latest={row.kind === "reply" && !rows.slice(index + 1).some((r) => r.kind === "reply")} />
@@ -288,6 +341,11 @@ function Timeline() {
             />
           </div>
         ) : null}
+        {offerFirstGoal ? (
+          <div className="px-1">
+            <FirstGoalPrompt />
+          </div>
+        ) : null}
       </div>
     </div>
   );
@@ -295,11 +353,15 @@ function Timeline() {
 
 export function ChatView({ isMac }: { isMac: boolean }) {
   const project = useUi((s) => s.app?.project);
+  const mainView = useUi((s) => s.mainView);
+  const goalId = useUi((s) => s.dialogGoalId);
   return (
     <div className="relative flex min-w-0 flex-1 flex-col">
       <ChatHeader isMac={isMac} />
-      {project ? (
-        <div key={project.id} className="chat-pane-enter relative flex min-h-0 flex-1 flex-col">
+      {mainView === "overview" ? (
+        <OverviewView />
+      ) : project ? (
+        <div key={`${project.id}:${goalId ?? "project"}`} className="chat-pane-enter relative flex min-h-0 flex-1 flex-col">
           <Timeline />
           <ExercisePanel />
           <div className="pointer-events-none absolute inset-x-0 bottom-0 px-3 pb-3 sm:px-5 sm:pb-4">
