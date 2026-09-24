@@ -20,6 +20,7 @@ import { delimiter, dirname, extname, join, resolve } from "node:path";
 import type {
   CanUseTool,
   HookCallback,
+  McpSdkServerConfigWithInstance,
   ModelInfo,
   Options as ClaudeQueryOptions,
   PermissionResult,
@@ -506,14 +507,15 @@ export function buildQueryOptions(input: QueryOptionsInput): ClaudeQueryOptions 
     permissionMode: "default",
     disallowedTools: writable ? [...ALWAYS_DISALLOWED_TOOLS] : [...ALWAYS_DISALLOWED_TOOLS, ...READ_ONLY_DISALLOWED_TOOLS],
     ...(input.toolServer ? { allowedTools: [`mcp__${input.toolServer.name}`] } : {}),
+    // An in-process SDK server: the CLI sees only `{type: "sdk", name}`, so the bearer token never
+    // reaches its argv (`--mcp-config`) or environment.
     mcpServers: input.toolServer
       ? {
           [input.toolServer.name]: {
-            type: "http",
-            url: input.toolServer.url,
-            headers: { Authorization: `Bearer ${input.toolServer.token}` },
+            type: "sdk",
+            name: input.toolServer.name,
+            instance: createHostToolBridge(input.toolServer) as unknown as McpSdkServerConfigWithInstance["instance"],
             timeout: 120_000,
-            alwaysLoad: true,
           },
         }
       : {},
@@ -535,6 +537,98 @@ export function buildQueryOptions(input: QueryOptionsInput): ClaudeQueryOptions 
     abortController: input.abortController,
     stderr: () => undefined,
   };
+}
+
+// ── Host tools bridge ───────────────────────────────────────────────
+
+/** The MCP transport the SDK hands to an in-process server (`@modelcontextprotocol/sdk` Transport). */
+export interface HostToolTransport {
+  onmessage?: (message: unknown) => void;
+  onclose?: () => void;
+  onerror?: (error: Error) => void;
+  start(): Promise<void>;
+  send(message: unknown): Promise<void>;
+  close(): Promise<void>;
+}
+
+/** The part of `McpServer` the SDK uses for a `type: "sdk"` server: it only calls `connect`. */
+export interface HostToolBridge {
+  connect(transport: HostToolTransport): Promise<void>;
+  close(): Promise<void>;
+}
+
+/**
+ * Forwards every JSON-RPC message from the Claude CLI to Trama's loopback tool server, adding the
+ * bearer token here in the main process. Tools are marked `anthropic/alwaysLoad`, as the HTTP
+ * server used to be.
+ */
+export function createHostToolBridge(server: HostToolServer, fetchImpl: typeof fetch = fetch): HostToolBridge {
+  let transport: HostToolTransport | null = null;
+  const inflight = new Set<AbortController>();
+  const reply = async (message: unknown) => {
+    await transport?.send(message).catch(() => undefined);
+  };
+  const forward = async (message: unknown) => {
+    const request = asRecord(message);
+    const id = request?.id;
+    const expectsReply = id !== undefined && id !== null && typeof request?.method === "string";
+    const controller = new AbortController();
+    inflight.add(controller);
+    try {
+      const response = await fetchImpl(server.url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json, text/event-stream",
+          Authorization: `Bearer ${server.token}`,
+        },
+        body: JSON.stringify(message),
+        signal: controller.signal,
+      });
+      if (response.status === 202 || !expectsReply) return;
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const payload = (await response.json()) as unknown;
+      for (const entry of Array.isArray(payload) ? payload : [payload]) {
+        await reply(request?.method === "tools/list" ? withAlwaysLoad(entry) : entry);
+      }
+    } catch (error) {
+      if (expectsReply && !controller.signal.aborted) {
+        await reply({
+          jsonrpc: "2.0",
+          id,
+          error: { code: -32603, message: `Il server degli strumenti di Trama non ha risposto: ${(error as Error).message}` },
+        });
+      }
+    } finally {
+      inflight.delete(controller);
+    }
+  };
+  return {
+    async connect(next) {
+      transport = next;
+      next.onmessage = (message) => void forward(message);
+      next.onclose = () => {
+        for (const controller of inflight) controller.abort();
+        inflight.clear();
+        if (transport === next) transport = null;
+      };
+      await next.start();
+    },
+    async close() {
+      await transport?.close();
+    },
+  };
+}
+
+function withAlwaysLoad(message: unknown): unknown {
+  const record = asRecord(message);
+  const result = asRecord(record?.result);
+  if (!record || !result || !Array.isArray(result.tools)) return message;
+  const tools = result.tools.map((tool) => {
+    const entry = asRecord(tool);
+    return entry ? { ...entry, _meta: { ...asRecord(entry._meta), "anthropic/alwaysLoad": true } } : tool;
+  });
+  return { ...record, result: { ...result, tools } };
 }
 
 // ── Prompt ──────────────────────────────────────────────────────────

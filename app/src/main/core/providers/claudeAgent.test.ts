@@ -17,6 +17,7 @@ import {
   buildQueryOptions,
   claudeAccountLabel,
   clearUsageLimitForTests,
+  createHostToolBridge,
   currentUsageLimit,
   decideToolPermission,
   isStructuredAuthFalseNegative,
@@ -195,7 +196,7 @@ describe("query options", () => {
     expect((options.systemPrompt as { append: string }).append).toContain("Sei il Coordinatore.");
   });
 
-  it("adds the host MCP server with a bearer token, the sandbox and the output schema", () => {
+  it("adds the host MCP server in process, the sandbox and the output schema", () => {
     const options = buildQueryOptions({
       ...base,
       effort: "xhigh",
@@ -204,11 +205,8 @@ describe("query options", () => {
       policy: { cwd: "/work", writableRoot: "/work", hostServer: "trama" },
       outputSchema: { type: "object" },
     });
-    expect(options.mcpServers?.trama).toMatchObject({
-      type: "http",
-      url: "http://127.0.0.1:4000/mcp",
-      headers: { Authorization: "Bearer secret" },
-    });
+    expect(options.mcpServers?.trama).toMatchObject({ type: "sdk", name: "trama", timeout: 120_000 });
+    expect(typeof (options.mcpServers?.trama as { instance?: { connect?: unknown } }).instance?.connect).toBe("function");
     expect(options.allowedTools).toEqual(["mcp__trama"]);
     expect(options.resume).toBe("22222222-2222-4222-8222-222222222222");
     expect(options.sessionId).toBeUndefined();
@@ -216,6 +214,81 @@ describe("query options", () => {
     expect(options.disallowedTools).not.toContain("Edit");
     expect(options.sandbox).toMatchObject({ enabled: true, allowUnsandboxedCommands: false, filesystem: { allowWrite: ["/work"] } });
     expect(options.outputFormat).toEqual({ type: "json_schema", schema: { type: "object" } });
+  });
+});
+
+describe("host tool token", () => {
+  it("never puts the bearer token in the options the CLI receives", () => {
+    const token = "tool-token-5f0c9e";
+    const options = buildQueryOptions({
+      executable: "/usr/local/bin/claude",
+      env: { PATH: "/usr/bin" },
+      cwd: "/repo",
+      model: "sonnet",
+      developerInstructions: "",
+      session: { sessionId: "11111111-1111-4111-8111-111111111111" },
+      persistSession: true,
+      toolServer: { name: "trama", url: "http://127.0.0.1:4000/mcp", token },
+      policy: { cwd: "/repo", writableRoot: null, hostServer: "trama" },
+      abortController: new AbortController(),
+      canUseTool: async () => ({ behavior: "deny" as const, message: "no" }),
+      preToolUse: async () => ({}),
+    });
+    // The SDK serializes mcpServers (without `instance`) into `--mcp-config` and passes env to the child.
+    const { instance: _instance, ...serialized } = options.mcpServers!.trama as Record<string, unknown>;
+    expect(JSON.stringify(serialized)).not.toContain(token);
+    expect(JSON.stringify(options.env)).not.toContain(token);
+    expect(JSON.stringify(options)).not.toContain(token);
+  });
+
+  it("forwards MCP messages to the tool server with the bearer token", async () => {
+    const calls: Array<{ url: string; headers: Record<string, string>; body: unknown }> = [];
+    const fetchImpl = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body)) as { id?: number; method?: string };
+      calls.push({ url: String(url), headers: init?.headers as Record<string, string>, body });
+      if (body.id === undefined) return new Response(null, { status: 202 });
+      const result = body.method === "tools/list" ? { tools: [{ name: "propose_plan", inputSchema: { type: "object" } }] } : {};
+      return new Response(JSON.stringify({ jsonrpc: "2.0", id: body.id, result }), { status: 200 });
+    }) as unknown as typeof fetch;
+    const bridge = createHostToolBridge({ name: "trama", url: "http://127.0.0.1:4000/mcp", token: "secret" }, fetchImpl);
+    const sent: unknown[] = [];
+    const transport = {
+      onmessage: undefined as ((message: unknown) => void) | undefined,
+      start: vi.fn(async () => undefined),
+      send: vi.fn(async (message: unknown) => void sent.push(message)),
+      close: vi.fn(async () => undefined),
+    };
+    await bridge.connect(transport);
+    expect(transport.start).toHaveBeenCalled();
+    transport.onmessage!({ jsonrpc: "2.0", id: 1, method: "tools/list", params: {} });
+    transport.onmessage!({ jsonrpc: "2.0", method: "notifications/initialized" });
+    await vi.waitFor(() => expect(sent).toHaveLength(1));
+    expect(calls[0]).toMatchObject({ url: "http://127.0.0.1:4000/mcp", headers: { Authorization: "Bearer secret" } });
+    expect(sent[0]).toEqual({
+      jsonrpc: "2.0",
+      id: 1,
+      result: { tools: [{ name: "propose_plan", inputSchema: { type: "object" }, _meta: { "anthropic/alwaysLoad": true } }] },
+    });
+    await vi.waitFor(() => expect(calls).toHaveLength(2));
+    expect(sent).toHaveLength(1);
+  });
+
+  it("answers with a JSON-RPC error when the tool server is unreachable", async () => {
+    const fetchImpl = vi.fn(async () => {
+      throw new Error("connection refused");
+    }) as unknown as typeof fetch;
+    const bridge = createHostToolBridge({ name: "trama", url: "http://127.0.0.1:1/mcp", token: "secret" }, fetchImpl);
+    const sent: unknown[] = [];
+    const transport = {
+      onmessage: undefined as ((message: unknown) => void) | undefined,
+      start: async () => undefined,
+      send: async (message: unknown) => void sent.push(message),
+      close: async () => undefined,
+    };
+    await bridge.connect(transport);
+    transport.onmessage!({ jsonrpc: "2.0", id: 7, method: "tools/call", params: { name: "x" } });
+    await vi.waitFor(() => expect(sent).toHaveLength(1));
+    expect(sent[0]).toMatchObject({ id: 7, error: { code: -32603 } });
   });
 });
 
