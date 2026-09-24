@@ -27,6 +27,7 @@ import {
   ConflictCard,
   ContextNoticeCard,
   DecisionCard,
+  GrillingRoundCard,
   MandateCard,
   PlanCard,
   StudyCard,
@@ -283,6 +284,8 @@ export function TimelineRowView({ row, streaming = false, latest = false }: { ro
       return <Reply row={row} latest={latest} />;
     case "failure":
       return <TurnFailure row={row} />;
+    case "grillingRound":
+      return <GrillingRoundCard round={row.round} questionIds={row.questionIds} />;
     case "card": {
       const content = row.event.content;
       if (content.type !== "card") return null;

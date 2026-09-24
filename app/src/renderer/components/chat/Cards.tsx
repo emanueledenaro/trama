@@ -209,11 +209,13 @@ export function DecisionCard({ requestId }: { requestId: string }) {
   const request = project.document.decisionRequests.find((r) => r.id === requestId);
   if (!request) return null;
   const outcome = request.outcome;
+  const grilling = request.grilling ?? null;
 
   return (
     <CardFrame
       icon={<IconRosetteDiscountCheck stroke={1.8} />}
-      title="Decisione"
+      title={grilling ? `Domanda ${grilling.number}` : "Decisione"}
+      className={grilling ? "my-2" : undefined}
       aside={<Badge tone={request.category === "destructive" ? "destructive" : "info"}>{request.category === "destructive" ? "Caso distruttivo" : "Scelta di prodotto"}</Badge>}
     >
       <p className="text-ui font-medium text-foreground">{request.question}</p>
@@ -238,7 +240,10 @@ export function DecisionCard({ requestId }: { requestId: string }) {
                 outcome && !chosen && "opacity-60",
               )}
             >
-              <div className="text-ui text-foreground">{alternative.behavior}</div>
+              <div className="flex items-start gap-2">
+                <span className="min-w-0 flex-1 text-ui text-foreground">{alternative.behavior}</span>
+                {grilling?.recommendedIndex === index ? <Badge tone="success">Consigliata</Badge> : null}
+              </div>
               <div className="mt-0.5 text-ui-sm text-muted-foreground">Esempio: {alternative.example}</div>
               {alternative.consequence ? <div className="mt-0.5 text-ui-sm text-muted-foreground">Conseguenza: {alternative.consequence}</div> : null}
             </button>
@@ -283,6 +288,28 @@ export function DecisionCard({ requestId }: { requestId: string }) {
         </div>
       )}
     </CardFrame>
+  );
+}
+
+/** The questions of one grilling round (M01), together under the round they belong to. */
+export function GrillingRoundCard({ round, questionIds }: { round: number; questionIds: string[] }) {
+  const project = useUi((s) => s.app?.project)!;
+  const questions = questionIds.map((id) => project.document.decisionRequests.find((r) => r.id === id)).filter((r) => r !== undefined);
+  const answered = questions.filter((q) => q.outcome).length;
+  const complete = answered === questions.length;
+  return (
+    <section aria-label={`Chiarimento, turno ${round}`} className="my-3 rounded-xl border border-dashed border-[color:var(--color-border)] px-2.5 pt-2 pb-0.5">
+      <div className="flex items-center gap-2 px-1 text-ui-sm">
+        <IconListCheck className="size-3.5 shrink-0 text-muted-foreground" stroke={1.8} />
+        <span className="min-w-0 flex-1 truncate font-medium text-foreground">Chiarimento prima del piano, turno {round}</span>
+        <Badge tone={complete ? "success" : "info"}>
+          {complete ? "Turno completo" : `${answered} di ${questions.length} risposte`}
+        </Badge>
+      </div>
+      {questions.map((q) => (
+        <DecisionCard key={q.id} requestId={q.id} />
+      ))}
+    </section>
   );
 }
 

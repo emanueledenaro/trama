@@ -62,6 +62,7 @@ import { openingInput, resumeInput, specialistInstructions } from "./core/specia
 import { prepareDemoProject } from "./core/demoProject";
 import { appendEvent, emptyDocument, handoverTranscript, moveEvent, recordReply, referencedPaths } from "./core/document";
 import { candidateGoalId, dialogComposer, findGoal, projectGoals, requestGoalId } from "@shared/goals";
+import { openGrillingQuestions } from "@shared/grilling";
 import { createGoal, type GoalInput, goalContext, linkDecision, observeExample, requireGoal, updateGoal } from "./core/goals";
 import { orderByAttention, summarizeProject, unreadableProject } from "./core/overview";
 import {
@@ -2628,6 +2629,14 @@ export class TramaController {
     const request = project.document.requests.find((r) => r.id === requestId);
     if (!request) throw new DomainError("Richiesta non trovata.");
     if (project.document.plans.some((p) => p.requestId === requestId && p.status === "planning")) return;
+    const open = openGrillingQuestions(project.document, requestId);
+    if (open.length) {
+      throw new DomainError(
+        open.length === 1
+          ? "Il piano parte dopo il chiarimento: rispondi prima alla domanda aperta del Coordinatore."
+          : `Il piano parte dopo il chiarimento: rispondi prima alle ${open.length} domande aperte del Coordinatore.`,
+      );
+    }
     appendEvent(project.document, "person", { type: "personMessage", text: "Prepara un piano per questa richiesta.", moduleId: request.moduleId, moduleName: null }, requestId);
     this.orderPlan({
       requestId,

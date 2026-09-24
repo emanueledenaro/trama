@@ -223,6 +223,30 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
         });
         return;
       }
+      const grillingMatch = text.match(/\[grilling:(\d+)\]/);
+      if (grillingMatch) {
+        // A grilling round (M01): round 1 asks two questions of the frontier, later rounds one.
+        const round = Number(grillingMatch[1]);
+        const questions = round === 1 ? ["Chi vede gli ordini in revisione?", "Il cliente riceve una email?"] : [`Domanda del turno ${round}`];
+        const answers = [];
+        for (const question of questions) {
+          const result = await callTool(threadId, "request_decision", {
+            category: "product",
+            question,
+            concreteCase: "Ordine 42, già pagato, annullato dal cliente",
+            alternatives: [
+              { behavior: "Solo il supporto", example: "Il supporto vede l'ordine 42" },
+              { behavior: "Anche il cliente", example: "Il cliente vede lo stato review" },
+            ],
+            grillingRound: round,
+            recommendedAlternative: 1,
+          });
+          toolDone("request_decision", result);
+          answers.push(result.isError ? `Rifiutato: ${result.content[0].text}` : "ok");
+        }
+        finish(answers.join(" | "));
+        return;
+      }
       if (text.includes("[chiedi-decisione]")) {
         callTool(threadId, "request_decision", {
           category: "product",

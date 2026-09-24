@@ -1,4 +1,4 @@
-import type { CardKind, ConversationEvent, CoordinatorRequest } from "./domain";
+import type { CardKind, ConversationEvent, CoordinatorRequest, DecisionRequest } from "./domain";
 
 export type TimelineRow =
   | { kind: "person"; id: string; event: ConversationEvent; text: string; moduleName: string | null; imageCount: number }
@@ -14,20 +14,26 @@ export type TimelineRow =
     }
   | { kind: "reply"; id: string; requestId: string | null; text: string | null; model: string | null; references: string[]; request: CoordinatorRequest | null; streaming: boolean }
   | { kind: "card"; id: string; cardKind: CardKind; event: ConversationEvent }
+  /** The decision cards of one grilling round (M01), shown together where the round's first card was. */
+  | { kind: "grillingRound"; id: string; subjectRequestId: string; round: number; questionIds: string[] }
   /** A turn that ended in an error or was interrupted: shown in place of the reply, never only inside the collapsed work group. */
   | { kind: "failure"; id: string; requestId: string; message: string; text: string; goalId: string | null; interrupted: boolean };
 
 /**
  * Groups the conversation into rows: the person's message, one collapsed work group per turn,
- * the reply, and cards. A running request without a reply gets a pending reply row.
+ * the reply, and cards. A running request without a reply gets a pending reply row. The decision cards of a
+ * grilling round become one row.
  */
 export function deriveTimelineRows(
   events: ConversationEvent[],
   requests: CoordinatorRequest[],
   streaming: { requestId: string | null; text: string } | null,
   runningWork: Set<string> = new Set(),
+  decisionRequests: DecisionRequest[] = [],
 ): TimelineRow[] {
   const rows: TimelineRow[] = [];
+  const questionsById = new Map(decisionRequests.map((q) => [q.id, q]));
+  const rounds = new Map<string, Extract<TimelineRow, { kind: "grillingRound" }>>();
   const requestsById = new Map(requests.map((r) => [r.id, r]));
   const workByRequest = new Map<string, Extract<TimelineRow, { kind: "work" }>>();
   const replied = new Set<string>();
@@ -82,9 +88,22 @@ export function deriveTimelineRows(
           streaming: false,
         });
         break;
-      case "card":
-        rows.push({ kind: "card", id: event.id, cardKind: content.kind, event });
+      case "card": {
+        const grilling = content.kind === "decision" && content.referenceId ? questionsById.get(content.referenceId)?.grilling : null;
+        if (!grilling || !content.referenceId) {
+          rows.push({ kind: "card", id: event.id, cardKind: content.kind, event });
+          break;
+        }
+        const key = `${grilling.subjectRequestId}/${grilling.round}`;
+        let round = rounds.get(key);
+        if (!round) {
+          round = { kind: "grillingRound", id: `round-${event.id}`, subjectRequestId: grilling.subjectRequestId, round: grilling.round, questionIds: [] };
+          rounds.set(key, round);
+          rows.push(round);
+        }
+        round.questionIds.push(content.referenceId);
         break;
+      }
     }
   }
 

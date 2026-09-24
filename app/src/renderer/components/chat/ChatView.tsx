@@ -280,7 +280,11 @@ function Timeline() {
     project.streaming && (project.streaming.requestId === null ? goalId === null : requests.some((r) => r.id === project.streaming!.requestId))
       ? project.streaming
       : null;
-  const rows = useMemo(() => deriveTimelineRows(events, requests, streaming, new Set(runningWork)), [events, requests, streaming, runningWork]);
+  const decisionRequests = project.document.decisionRequests;
+  const rows = useMemo(
+    () => deriveTimelineRows(events, requests, streaming, new Set(runningWork), decisionRequests),
+    [events, requests, streaming, runningWork, decisionRequests],
+  );
   const scroller = useRef<HTMLDivElement>(null);
   const pinned = useRef(true);
   const studying = project.phase.kind === "studying" && goalId === null;
