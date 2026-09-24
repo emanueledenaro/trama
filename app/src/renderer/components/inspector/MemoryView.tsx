@@ -65,7 +65,7 @@ function PracticeRow({ practice }: { practice: PracticeView }) {
         </span>
       </div>
       <p className="mt-1 text-foreground/90">{practice.method}</p>
-      <p className="mt-1 text-ui-xs text-muted-foreground">Perché: {practice.rationale}</p>
+      {practice.rationale ? <p className="mt-1 text-ui-xs text-muted-foreground">Perché: {practice.rationale}</p> : null}
       {practice.evidence.length ? <p className="mt-1 text-ui-xs text-muted-foreground">Prove: {practice.evidence.join("; ")}</p> : null}
       {!practice.fromThisProject ? <p className="mt-1 text-ui-xs text-muted-foreground">Nata in un altro progetto: verificane l'utilità qui prima di adottarla.</p> : null}
       {practice.retiredHere ? <p className="mt-1 text-ui-xs text-muted-foreground">Ritirata: {practice.retiredHere.reason}</p> : null}

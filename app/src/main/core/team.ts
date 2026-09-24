@@ -400,7 +400,7 @@ export function endTurn(document: ProjectDocument, id: string, turnId: string | 
       assignment.failure = null;
       assignment.lastUpdate = "Incarico concluso";
     } else if (outcome.kind === "interrupted") {
-      confirmStop(assignment, "Codex ha interrotto il turno.", now);
+      confirmStop(assignment, "Il provider ha interrotto il turno.", now);
     } else if (pendingStop(assignment)) {
       confirmStop(assignment, outcome.message, now);
     } else {

@@ -53,7 +53,10 @@ describe("publication retry", () => {
     await git(["config", "user.name", "T"], workspace.worktreeRoot, false);
     await git(["config", "user.email", "t@t"], workspace.worktreeRoot, false);
     await writeFile(join(workspace.worktreeRoot, "a.txt"), "due\n");
+    // An excluded file stays untracked: it must not block the retry (review #2).
+    await writeFile(join(workspace.worktreeRoot, ".env"), "SECRET=1\n");
     const review = await reviewWorktree(workspace);
+    expect(review.excludedSensitiveFiles).toContain(".env");
     const candidate = { id: "C-1", snapshotId: review.snapshotId, changedFiles: review.changedFiles } as unknown as Candidate;
     const assignment = { id: "A-1", objective: "Cambia a", workspace } as unknown as SpecialistAssignment;
     const input = { candidate, assignment, repository: "o/r", baseBranch: "main", title: "Cambia a", body: "b" };

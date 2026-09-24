@@ -58,7 +58,7 @@ import { checkItems, closeBlockers, evidenceProblems, parseChecklist, progressCo
 import { openingInput, resumeInput, specialistInstructions } from "./core/specialistBriefing";
 import { prepareDemoProject } from "./core/demoProject";
 import { appendEvent, emptyDocument, handoverTranscript, moveEvent, recordReply, referencedPaths } from "./core/document";
-import { candidateGoalId, dialogComposer, findGoal, projectGoals } from "@shared/goals";
+import { candidateGoalId, dialogComposer, findGoal, projectGoals, requestGoalId } from "@shared/goals";
 import { createGoal, type GoalInput, goalContext, linkDecision, observeExample, requireGoal, updateGoal } from "./core/goals";
 import { orderByAttention, summarizeProject, unreadableProject } from "./core/overview";
 import {
@@ -318,7 +318,7 @@ export class TramaController {
         status: p.status,
         version: version.version,
         method: version.method,
-        rationale: version.rationale,
+        rationale: fromThisProject ? version.rationale : "",
         evidence: fromThisProject ? version.evidence.map((e) => e.summary) : [],
         fromThisProject,
         adoptedVersion: adoption?.version ?? null,
@@ -338,7 +338,7 @@ export class TramaController {
       return found;
     });
     const paths = project.snapshot.modules.flatMap((m) => [m.relativePath, ...m.files.map((f) => f.relativePath)]);
-    const leaked = privateContent(`${input.title}\n${input.method}`, project.document, paths);
+    const leaked = privateContent(`${input.title}\n${input.method}\n${input.rationale}`, project.document, paths);
     if (leaked.length) throw new PracticeError("private_content", `The method names project-specific content: ${leaked.join(", ")}. Write it as a general method.`);
     const practice = input.practiceId
       ? revisePractice(this.practices, input.practiceId, { method: input.method, rationale: input.rationale, evidence })
@@ -424,6 +424,8 @@ export class TramaController {
 
   async stop(): Promise<void> {
     this.quitting = true;
+    for (const [, planner] of this.planners) planner.stop();
+    this.planners.clear();
     for (const [, timer] of this.providerWaits) clearTimeout(timer);
     this.providerWaits.clear();
     await this.stopSpecialistsForQuit();
@@ -632,6 +634,9 @@ export class TramaController {
         this.watchProject(root);
         void this.loadSkills();
         void this.startCoordinator();
+        // Work that waited for a provider while the project was parked is checked again now.
+        const waiting = new Set(parked.document.team.specialists.flatMap((sp) => sp.assignments.flatMap((a) => (a.waitingForProvider ? [a.waitingForProvider.provider] : []))));
+        for (const provider of waiting) void this.resumeWaitingWork(provider);
         return;
       }
       const loaded = await this.storage.loadDocument(id);
@@ -708,6 +713,8 @@ export class TramaController {
       }
       void this.loadSkills();
       void this.startCoordinator();
+      const waiting = new Set(document.team.specialists.flatMap((sp) => sp.assignments.flatMap((a) => (a.waitingForProvider ? [a.waitingForProvider.provider] : []))));
+      for (const provider of waiting) void this.resumeWaitingWork(provider);
     } catch (error) {
       this.state.loadingProject = null;
       this.publishNow();
@@ -977,7 +984,8 @@ export class TramaController {
       this.scheduleProviderWait(provider);
       return;
     }
-    const projects = [this.state.project, ...this.parkedProjects.values()].filter((p): p is ActiveProjectState => Boolean(p));
+    // Only the selected project starts work; parked projects keep waiting until the person comes back (review #8).
+    const projects = this.state.project ? [this.state.project] : [];
     for (const project of projects) {
       for (const specialist of project.document.team.specialists) {
         const assignment = specialist.assignments.at(-1);
@@ -1018,6 +1026,12 @@ export class TramaController {
     if (!project) return;
     project.phase = { kind: "idle" };
     project.streaming = null;
+    const queued = this.queue.filter((q) => q.projectId === project.id);
+    if (queued.length) {
+      project.document.composerDraft = [project.document.composerDraft, ...queued.map((q) => q.text)].filter(Boolean).join("\n\n");
+      this.queue = this.queue.filter((q) => q.projectId !== project.id);
+      if (project.stateWritable) void this.storage.saveDocument(project.document).catch((error) => this.fail(error));
+    }
     if (this.hasRunningWork(project.id)) this.parkedProjects.set(project.id, project);
   }
 
@@ -1164,6 +1178,7 @@ export class TramaController {
       const runtime = await this.ensureRuntime(project);
       const study = await buildStudy(project.snapshot, document, project.github);
       document.coordinator.study = study;
+      if (this.runtime !== runtime) return;
       const previous = document.coordinator.threadId;
       const opening = await runtime.client.openThread({
         model,
@@ -1171,7 +1186,8 @@ export class TramaController {
         developerInstructions: developerInstructions(project.name),
         resumeThreadId: previous,
       });
-      if (this.state.project !== project) return;
+      // A provider switch during the opening replaced this runtime: its result must not come back (review #1).
+      if (this.state.project !== project || this.runtime !== runtime) return;
       document.coordinator.threadId = opening.threadId;
       document.coordinator.threadModel = model;
       document.coordinator.threadProvider = provider;
@@ -1199,11 +1215,11 @@ export class TramaController {
         );
         document.coordinator.pendingHandover = null;
       }
-      if (this.state.project !== project) return;
+      if (this.state.project !== project || this.runtime !== runtime) return;
       project.phase = { kind: "ready" };
       this.changed();
     } catch (error) {
-      if (this.state.project !== project) return;
+      if (this.state.project !== project || this.coordinatorProvider(document) !== provider) return;
       project.phase = { kind: "unavailable", message: (error as Error).message };
       project.streaming = null;
       this.changed();
@@ -1290,7 +1306,11 @@ export class TramaController {
       this.changed();
       return;
     }
-    if (provider && provider !== this.coordinatorProvider(project.document)) this.switchCoordinatorProvider(project, provider);
+    if (provider && provider !== this.coordinatorProvider(project.document)) {
+      // Let an opening or a study in progress end first, so the switch is not undone by its late result.
+      if (this.starting) await this.starting.catch(() => undefined);
+      if (provider !== this.coordinatorProvider(project.document)) this.switchCoordinatorProvider(project, provider, model, effort);
+    }
     const attachments = await this.storage.saveAttachments(project.id, images);
     const document = project.document;
     const module = moduleId ? project.snapshot.modules.find((m) => m.id === moduleId) : undefined;
@@ -1431,6 +1451,14 @@ export class TramaController {
 
   private dispatchQueued(): void {
     const project = this.state.project;
+    // Messages queued in a project the person left go back to that project's draft instead of vanishing (review #14).
+    for (const item of this.queue.filter((q) => q.projectId !== project?.id)) {
+      const owner = this.parkedProjects.get(item.projectId);
+      if (owner) {
+        owner.document.composerDraft = [owner.document.composerDraft, item.text].filter(Boolean).join("\n\n");
+        this.changedIn(owner);
+      }
+    }
     this.queue = this.queue.filter((item) => item.projectId === project?.id);
     const next = this.queue.shift();
     if (next) {
@@ -1546,7 +1574,7 @@ export class TramaController {
    * The person moved the Coordinator to another provider (ADR 0009): the conversation stays, the new
    * provider opens a new session and receives study, memory and transcript.
    */
-  private switchCoordinatorProvider(project: ActiveProjectState, provider: ProviderId): void {
+  private switchCoordinatorProvider(project: ActiveProjectState, provider: ProviderId, model: string | null = null, effort: string | null = null): void {
     const document = project.document;
     const from = this.coordinatorProvider(document);
     this.stopCoordinatorRuntime();
@@ -1559,6 +1587,10 @@ export class TramaController {
     document.coordinator.contextWarnedAt = null;
     document.coordinator.pendingHandover = { from, reason: `la persona ha spostato il Coordinatore da ${providerName(from)} a ${providerName(provider)}` };
     document.selectedProvider = provider;
+    // The previous provider's model means nothing on the new one (review #5).
+    const preference = document.providerPreferences?.[provider];
+    document.selectedModel = model ?? preference?.model ?? null;
+    document.selectedEffort = model ? effort : (preference?.effort ?? null);
     project.phase = { kind: "idle" };
     project.contextUsage = null;
     appendEvent(document, "trama", {
@@ -1819,6 +1851,8 @@ export class TramaController {
         resumeThreadId: assignment.threadId,
       });
       recordThread(document, assignmentId, opening.threadId);
+      // A stop requested while the session was opening ends the work here (review #6).
+      if ((assignment.status as string) === "stopRequested") throw new Error("L'arresto è stato richiesto prima dell'avvio del turno.");
       if (opening.replaced && assignment.threadId) this.specialistActivity(project, assignmentId, preKey, "Nuovo thread dello specialista", null, "info");
       const prompt = resumed ? resumeInput(assignment, document.decisions) : openingInput(assignment, document.decisions);
       const text = await client.runTurn({
@@ -1832,6 +1866,8 @@ export class TramaController {
             turnId = event.turnId;
             beginTurn(document, assignmentId, event.turnId, assignment.model, new Date(), provider);
             this.changedIn(project);
+            // A stop requested before the turn id was known reaches the provider now.
+            if (assignment.status === "stopRequested") void client.interrupt().catch(() => client.stop());
             return;
           }
           const key = `${assignment.turns.length}`;
@@ -2102,7 +2138,8 @@ export class TramaController {
       },
       requestId,
     );
-    this.changed();
+    // The person may have switched project meanwhile: the evidence belongs to this one (review #10).
+    this.changedIn(project);
     return result;
   }
 
@@ -2170,7 +2207,7 @@ export class TramaController {
         { type: "activity", title: `Revisione tecnica di ${candidateId}: ${review.verdict === "approved" ? "approvata" : "modifiche richieste"}`, detail: review.summary, tone: "tool" },
         requestId,
       );
-      this.changed();
+      this.changedIn(project);
       return review;
     } finally {
       client.stop();
@@ -2268,10 +2305,10 @@ export class TramaController {
     let blockers: string[] = [];
     if (input.close && !closed) {
       const numbers = new Set<number>();
-      for (const criterion of input.criteria) {
+      for (const criterion of input.criteria.filter((c) => c.outcome === "met")) {
         for (const reference of criterion.evidence) {
           const pull = /^#(\d+)$/.exec(reference);
-          if (pull) numbers.add(Number(pull[1]));
+          if (pull && pullRequests.has(Number(pull[1]))) numbers.add(Number(pull[1]));
           const number = candidates.get(reference)?.pullRequestNumber;
           if (number) numbers.add(number);
         }
@@ -2472,7 +2509,9 @@ export class TramaController {
       if (plan.status !== "planning") return; // cancelled meanwhile: a late result does not come back
       const proposal = parsePlan(extractJsonAnswer(raw), sources);
       plan.proposal = proposal;
-      if ((await this.repositoryState(project.rootPath)) !== startState) {
+      const changedMeanwhile = (await this.repositoryState(project.rootPath)) !== startState;
+      if (plan.status !== "planning") return; // cancelled during the last check (review #12)
+      if (changedMeanwhile) {
         plan.status = "stale";
         plan.failure = "Il repository è cambiato durante l'analisi: rivaluta il piano o chiedine uno nuovo.";
         return;
@@ -2486,8 +2525,11 @@ export class TramaController {
           concreteCase: question.scenario || proposal.summary,
           alternatives: question.options.map((o) => ({ behavior: o.behavior, example: o.example, consequence: o.rationale || null })),
           revisesDecisionId: question.revisesDecisionID,
+          goalId: requestGoalId(document, plan.requestId),
         });
         plan.decisionRequestIds.push(request.id);
+        // A question that revises a decision pauses the work relying on it, as request_decision does (review #7).
+        if (request.revisesDecisionId) this.stopWorkDependingOn(request.revisesDecisionId);
         appendEvent(document, "trama", { type: "card", kind: "decision", title: "Decisione", detail: null, referenceId: request.id }, plan.requestId);
       }
     } catch (error) {
@@ -2499,7 +2541,7 @@ export class TramaController {
       this.planners.delete(plan.id);
       client.stop();
       plan.updatedAt = new Date().toISOString();
-      if (this.state.project === project) this.changed();
+      this.changedIn(project);
     }
   }
 
@@ -2549,8 +2591,13 @@ export class TramaController {
   /** Restores the files replaced by the last update of the method. */
   async rollbackSkills(): Promise<string[]> {
     const project = this.requireProject();
-    const restored = await rollbackSkills(project.rootPath);
-    appendEvent(project.document, "trama", { type: "activity", title: "Aggiornamento del metodo AI Hero annullato", detail: restored.join("\n") || null, tone: "info" });
+    const { restored, preserved } = await rollbackSkills(project.rootPath);
+    appendEvent(project.document, "trama", {
+      type: "activity",
+      title: "Aggiornamento del metodo AI Hero annullato",
+      detail: [...restored, ...preserved.map((p) => `Modificato da te dopo l'aggiornamento, non ripristinato: ${p}`)].join("\n") || null,
+      tone: "info",
+    });
     this.changed();
     void this.refreshProject();
     void this.loadSkills();

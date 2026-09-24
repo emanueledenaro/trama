@@ -47,7 +47,7 @@ describe("AI Hero update and rollback (T04)", () => {
     expect(await readFile(join(root, ".agents/skills/grilling/SKILL.md"), "utf8")).toBe("# La mia versione\n");
     expect(await installedSkillVersion(root)).toBe(SKILL_VERSION);
 
-    expect(await rollbackSkills(root)).toEqual([".agents/skills/tdd/SKILL.md"]);
+    expect(await rollbackSkills(root)).toEqual({ restored: [".agents/skills/tdd/SKILL.md"], preserved: [] });
     expect(await readFile(join(root, ".agents/skills/tdd/SKILL.md"), "utf8")).toBe(old);
     expect(await installedSkillVersion(root)).toBe("v1.0.0");
     await expect(rollbackSkills(root)).rejects.toThrow(/da annullare/);

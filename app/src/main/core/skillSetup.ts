@@ -252,14 +252,19 @@ export async function updateSkills(projectRoot: string, resourcesRoot: string, r
   return report;
 }
 
-/** Restores the files and the manifest saved by the last update. */
-export async function rollbackSkills(projectRoot: string): Promise<string[]> {
+/**
+ * Restores the files and the manifest saved by the last update. A file the person edited after the
+ * update is kept and reported instead of being overwritten.
+ */
+export async function rollbackSkills(projectRoot: string): Promise<{ restored: string[]; preserved: string[] }> {
   const root = await realpath(projectRoot);
   const backups = existsSync(join(root, BACKUPS)) ? (await readdir(join(root, BACKUPS))).sort() : [];
   const latest = backups.at(-1);
   if (!latest) throw new Error("Non c'è un aggiornamento del metodo da annullare.");
   const directory = join(root, BACKUPS, latest);
   const restored: string[] = [];
+  const preserved: string[] = [];
+  const current = await readManifest(root);
   const walk = async (dir: string): Promise<void> => {
     for (const entry of await readdir(dir, { withFileTypes: true })) {
       const path = join(dir, entry.name);
@@ -268,6 +273,10 @@ export async function rollbackSkills(projectRoot: string): Promise<string[]> {
         const relativePath = relative(directory, path).split("\\").join("/");
         const target = join(root, relativePath);
         if (!(await isInside(target, root))) continue;
+        if (existsSync(target) && current.files[relativePath] !== sha(await readFile(target))) {
+          preserved.push(relativePath);
+          continue;
+        }
         await copyFile(path, target);
         restored.push(relativePath);
       }
@@ -276,5 +285,5 @@ export async function rollbackSkills(projectRoot: string): Promise<string[]> {
   await walk(directory);
   await copyFile(join(directory, "AIHERO-MANIFEST.json"), join(root, MANIFEST));
   await rm(directory, { recursive: true, force: true });
-  return restored;
+  return { restored, preserved };
 }

@@ -57,6 +57,13 @@ export function normalizeDocument(raw: Partial<ProjectDocument>, projectId: stri
       request.failure = "Trama è stato chiuso mentre il Coordinatore lavorava.";
     }
   }
+  // A plan still "planning" on disk lost its planner: it would block a new plan for the same request.
+  for (const plan of document.plans) {
+    if (plan.status === "planning") {
+      plan.status = "failed";
+      plan.failure = "La preparazione si è interrotta prima della fine: chiedi di nuovo il piano.";
+    }
+  }
   return document;
 }
 
