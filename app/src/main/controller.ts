@@ -178,6 +178,8 @@ export const FIRST_GOAL_REQUEST =
 
 /** How long Trama waits for a provider's account check before reporting it unknown. */
 const PROVIDER_CHECK_TIMEOUT_MS = 20_000;
+/** Why a Coordinator turn ended when the person opened or closed another project during it (C02). */
+const LEFT_PROJECT_NOTE = "Hai lasciato il progetto mentre il Coordinatore rispondeva.";
 
 /** Codex reads its skill catalogue from disk, so a signed-in account with its usage exhausted still lists it. */
 const canListSkills = (account: ProviderAccount | null | undefined) => isUsableAccount(account) || account?.kind === "blocked";
@@ -1081,8 +1083,18 @@ export class TramaController {
    * working in their own runtime and write to their own project's history.
    */
   private parkSelectedProject(): void {
-    this.stopCoordinatorRuntime();
     const project = this.state.project;
+    // The Coordinator's turn stops with its runtime: it ends here, in its own project, before the late rejection arrives.
+    const left = project?.runningRequestId ? project.document.requests.find((r) => r.id === project.runningRequestId) : undefined;
+    const closeLeft = project !== null && left?.state === "running";
+    if (project && left && closeLeft) {
+      left.state = "interrupted";
+      left.completedAt = new Date().toISOString();
+      left.failure = LEFT_PROJECT_NOTE;
+      appendEvent(project.document, "trama", { type: "activity", title: "Turno interrotto", detail: LEFT_PROJECT_NOTE, tone: "info" }, left.id);
+      project.runningRequestId = null;
+    }
+    this.stopCoordinatorRuntime();
     if (!project) return;
     project.phase = { kind: "idle" };
     project.streaming = null;
@@ -1090,7 +1102,9 @@ export class TramaController {
     if (queued.length) {
       project.document.composerDraft = [project.document.composerDraft, ...queued.map((q) => q.text)].filter(Boolean).join("\n\n");
       this.queue = this.queue.filter((q) => q.projectId !== project.id);
-      if (project.stateWritable) void this.storage.saveDocument(project.document).catch((error) => this.fail(error));
+    }
+    if ((queued.length || closeLeft) && project.stateWritable) {
+      void this.storage.saveDocument(project.document).catch((error) => this.fail(error));
     }
     if (this.hasRunningWork(project.id)) this.parkedProjects.set(project.id, project);
   }
@@ -1434,10 +1448,13 @@ export class TramaController {
     const reviewMemory = tickMemoryNudge(this.coordinatorLearning(document), learning.memoryAvailable);
     this.turnToolIterations.set(request.id, 0);
     this.changed();
+    // The person left the project during the turn: parkSelectedProject already closed the request there (C02).
+    const closed = () => request.state !== "running";
 
     try {
       if (project.phase.kind !== "ready") {
         await this.startCoordinator();
+        if (closed()) return;
         const phase = project.phase as CoordinatorPhase;
         if (phase.kind !== "ready") {
           throw new Error(phase.kind === "unavailable" ? phase.message : "Il Coordinatore non è pronto.");
@@ -1447,6 +1464,7 @@ export class TramaController {
       project.streaming = { requestId: request.id, text: "" };
       const runtime = await this.ensureRuntime(project);
       const study = await buildStudy(project.snapshot, document, project.github);
+      if (closed()) return;
       document.coordinator.study = study;
       const parts = partsToInject(study, document.coordinator.injectedStudy);
       const includeMemory = document.coordinator.memorySentToThread !== document.coordinator.threadId;
@@ -1517,6 +1535,7 @@ export class TramaController {
         skills,
         onEvent: (event) => this.handleTurnEvent(project, request, event),
       });
+      if (closed()) return;
       document.coordinator.injectedStudy = { ...document.coordinator.injectedStudy, ...fingerprints(study) };
       document.coordinator.memorySentToThread = document.coordinator.threadId;
       if (report) markReported(document, report.ids);
@@ -1537,6 +1556,7 @@ export class TramaController {
         appendEvent(document, "trama", { type: "activity", title: "Il Coordinatore non ha scritto una risposta", detail: null, tone: "info" }, request.id);
       }
     } catch (error) {
+      if (closed()) return;
       const message = (error as Error).message;
       const interrupted = /interrott/i.test(message);
       request.state = interrupted ? "interrupted" : "failed";
