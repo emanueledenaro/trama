@@ -182,8 +182,8 @@ export interface CoordinatorState {
   memorySentToThread: string | null;
   /** Fingerprint of the adopted practices last sent to the thread. */
   practicesSent?: string | null;
-  /** The writing rules the thread holds: a thread opened before they changed receives them in a turn. */
-  messageStyleSent?: string | null;
+  /** The late rules (writing, grilling) the thread holds: a thread opened before they changed receives them in a turn. */
+  rulesSent?: string | null;
   /** Percent of the context window above which the chat shows a notice (5-95). */
   contextThreshold?: number;
   /** The threshold the last notice was given for; cleared by a compaction or a new thread. */

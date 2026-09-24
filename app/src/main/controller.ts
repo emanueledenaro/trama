@@ -37,6 +37,7 @@ import {
   COORDINATOR_TOOLS,
   learningTools,
   developerInstructions,
+  GRILLING_INSTRUCTIONS,
   runCoordinatorTool,
   type TicketUpdate,
   type TicketUpdateResult,
@@ -181,6 +182,9 @@ export const FIRST_GOAL_REQUEST =
 const PROVIDER_CHECK_TIMEOUT_MS = 20_000;
 /** Why a Coordinator turn ended when the person opened or closed another project during it (C02). */
 const LEFT_PROJECT_NOTE = "Hai lasciato il progetto mentre il Coordinatore rispondeva.";
+
+/** Coordinator rules added after threads were opened: a resumed thread receives them once, in a turn. */
+const lateRules = () => [messageStyle("the person"), GRILLING_INSTRUCTIONS].join("\n\n");
 
 /** Codex reads its skill catalogue from disk, so a signed-in account with its usage exhausted still lists it. */
 const canListSkills = (account: ProviderAccount | null | undefined) => isUsableAccount(account) || account?.kind === "blocked";
@@ -1281,7 +1285,7 @@ export class TramaController {
         learningState.liveFromSequence = document.lastSequence + 1;
         learningState.skillsIndexSent = null;
         // A new thread received the current writing rules with its instructions.
-        document.coordinator.messageStyleSent = messageStyle("the person");
+        document.coordinator.rulesSent = lateRules();
       }
       document.coordinator.threadId = opening.threadId;
       document.coordinator.threadModel = model;
@@ -1485,10 +1489,10 @@ export class TramaController {
         sections.push(skillsIndex || "## Skills\nThe skill library of this project is empty now.");
         this.coordinatorLearning(document).skillsIndexSent = skillsIndex;
       }
-      const style = messageStyle("the person");
-      if (document.coordinator.messageStyleSent !== style) {
-        sections.push(`## Come scrivere nella chat di Trama\nThese rules replace the earlier ones about the form of your messages:\n${style}`);
-        document.coordinator.messageStyleSent = style;
+      const rules = lateRules();
+      if (document.coordinator.rulesSent !== rules) {
+        sections.push(`## Regole aggiornate da Trama\nThese rules replace the earlier ones on the same subjects:\n${rules}`);
+        document.coordinator.rulesSent = rules;
       }
       if (module) sections.push(`Contesto scelto dalla persona: modulo ${module.name} (${module.relativePath}).`);
       const mentioned = mentionContextBlock(trimmed, {
