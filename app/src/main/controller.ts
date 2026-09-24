@@ -1542,7 +1542,7 @@ export class TramaController {
 
   private handleTurnEvent(project: ActiveProjectState, request: CoordinatorRequest, event: TurnEvent): void {
     const document = project.document;
-    if (event.type === "commandCompleted" || event.type === "fileChangeCompleted" || event.type === "toolCallCompleted") {
+    if ((event.type === "commandCompleted" || event.type === "fileChangeCompleted" || event.type === "toolCallCompleted") && this.turnToolIterations.has(request.id)) {
       this.turnToolIterations.set(request.id, (this.turnToolIterations.get(request.id) ?? 0) + 1);
     }
     const activity = (title: string, detail: string | null, tone: "info" | "tool" | "error" = "tool") => {
@@ -2830,8 +2830,16 @@ export class TramaController {
     return learning;
   }
 
+  /**
+   * The learning counters of a project. A project from before learning keeps its thread: the live part
+   * starts at the last study card, which opens each thread, so earlier threads are searchable.
+   */
   private coordinatorLearning(document: ProjectDocument) {
-    document.coordinator.learning ??= { turnsSinceMemory: 0, itersSinceSkill: 0, liveFromSequence: 0 };
+    if (!document.coordinator.learning) {
+      const studyIndex = document.events.findLastIndex((e) => e.content.type === "card" && e.content.kind === "study");
+      const liveFromSequence = studyIndex >= 0 ? Math.min(...document.events.slice(studyIndex).map((e) => e.sequence)) : 0;
+      document.coordinator.learning = { turnsSinceMemory: 0, itersSinceSkill: 0, liveFromSequence };
+    }
     return document.coordinator.learning;
   }
 
@@ -2856,7 +2864,7 @@ export class TramaController {
   private reviewMessages(document: ProjectDocument): TranscriptMessage[] {
     const messages: TranscriptMessage[] = [];
     for (const event of document.events) {
-      if (event.assignmentId) continue;
+      if (event.assignmentId || event.origin === "specialist") continue;
       const content = event.content;
       if (content.type === "personMessage") messages.push({ role: "user", text: content.text });
       else if (content.type === "coordinatorText") messages.push({ role: "assistant", text: content.text });
@@ -2907,7 +2915,6 @@ export class TramaController {
         provider,
         model,
         executable: provider === "codex" ? this.host.codexExecutable : null,
-        cwd: project.rootPath,
         allowedTools: reviewToolNames(scope, learning.memoryAvailable),
         prompt: `${transcript}\n\n${reviewPrompt(scope, learning.memoryAvailable, focus)}`,
         maxToolCalls: REVIEW_MAX_TOOL_CALLS,
@@ -2985,7 +2992,6 @@ export class TramaController {
             provider,
             model,
             executable: provider === "codex" ? this.host.codexExecutable : null,
-            cwd: project.rootPath,
             allowedTools: dryRun ? ["skills_list", "skill_view"] : ["skills_list", "skill_view", "skill_manage"],
             prompt: `${dryRun ? `${CURATOR_DRY_RUN_BANNER}\n\n` : ""}${CURATOR_REVIEW_PROMPT}\n\n${candidates}`,
             maxToolCalls: 200,
@@ -3020,14 +3026,16 @@ export class TramaController {
       lastRunDurationSeconds: Math.round((Date.now() - started.getTime()) / 10) / 100,
       lastReport: { startedAt: started.toISOString(), dryRun, autoTransitions: counts, ...report, llmSummary, llmError, backupId },
     });
-    if (counts.markedStale || counts.archived || report.consolidated.length || report.pruned.length) {
+    const owner = this.projectById(project.id);
+    if (owner && (counts.markedStale || counts.archived || report.consolidated.length || report.pruned.length)) {
       const archived = [...report.consolidated.map((c) => `${c.name} → ${c.into}`), ...report.pruned.map((p) => `${p.name} (ritirata)`)];
-      appendEvent(project.document, "trama", {
+      appendEvent(owner.document, "trama", {
         type: "activity",
         title: "Manutenzione delle skill apprese",
         detail: [summary, archived.length ? `Archiviate: ${archived.join(", ")}` : null, "Le skill archiviate si ripristinano da Memoria."].filter(Boolean).join("\n"),
         tone: "info",
       });
+      this.changedIn(owner);
     }
     this.learningChanged();
   }
@@ -3118,6 +3126,8 @@ export class TramaController {
     const learning = update.learning ? learningSettings({ ...this.state.settings.learning, ...update.learning }) : this.state.settings.learning;
     this.state.settings = { ...this.state.settings, ...update, learning };
     if (update.learning) {
+      // A pass that started under the old settings stops and saves nothing more.
+      for (const [, review] of this.learningReviews) review.abort();
       this.learningCache.clear();
       this.learningChanged();
     }

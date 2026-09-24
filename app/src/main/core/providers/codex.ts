@@ -51,7 +51,13 @@ export class CodexRuntime implements AgentRuntime {
       resumeThreadId: options.resumeThreadId,
       config: {
         web_search: "disabled",
-        features: { apps: false, plugins: false, hooks: false, multi_agent: false },
+        features: {
+          apps: false,
+          plugins: false,
+          hooks: false,
+          multi_agent: false,
+          ...(options.hostToolsOnly ? { shell_tool: false, unified_exec: false, apply_patch_freeform: false } : {}),
+        },
         ...(writable
           ? {
               sandbox_workspace_write: {

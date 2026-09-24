@@ -11,6 +11,7 @@ export const MAX_SKILL_FILE_BYTES = 1_048_576;
 export const PROMPT_DESCRIPTION_LIMIT = 60;
 export const ALLOWED_SUBDIRS = ["assets", "references", "scripts", "templates"];
 const VALID_NAME = /^[a-z0-9][a-z0-9._-]*$/;
+const RESERVED_CATEGORIES = ["assets", "references", "scripts", "templates", "node_modules", "venv", "site-packages", "__pycache__"];
 const FRONTMATTER_END = /\n---\s*\n/;
 const NAME_RULE = "Use lowercase letters, numbers, hyphens, dots, and underscores.";
 
@@ -53,6 +54,8 @@ export function validateCategory(category: unknown): string | null {
   const invalid = `Invalid category '${value}'. ${NAME_RULE} Categories must be a single directory name.`;
   if (value.includes("/") || value.includes("\\")) return invalid;
   if (length(value) > MAX_NAME_LENGTH) return `Category exceeds ${MAX_NAME_LENGTH} characters.`;
+  // A category named like a support or skipped folder would hide its skills from the library.
+  if (RESERVED_CATEGORIES.includes(value)) return `Category '${value}' is reserved. Choose another category name.`;
   return VALID_NAME.test(value) ? null : invalid;
 }
 

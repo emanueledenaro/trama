@@ -26,6 +26,8 @@ export interface SkillUsageRecord {
   archivedAt: string | null;
   /** When the curator anchored the inactivity clock of a skill it met without a record. */
   firstSeenAt: string | null;
+  /** Where the skill lived before its archive, relative to the library: a restore puts it back there. */
+  archivedFrom?: string | null;
 }
 
 export const emptyRecord = (now = new Date()): SkillUsageRecord => ({
@@ -59,10 +61,11 @@ export class SkillUsageStore {
   constructor(private readonly path: string) {}
 
   load(): Record<string, SkillUsageRecord> {
-    if (!existsSync(this.path)) return {};
+    if (!existsSync(this.path)) return Object.create(null) as Record<string, SkillUsageRecord>;
     try {
       const raw = JSON.parse(readFileSync(this.path, "utf8")) as Record<string, unknown>;
-      const result: Record<string, SkillUsageRecord> = {};
+      // No prototype: a skill named "constructor" or "__proto__" is a plain key.
+      const result = Object.create(null) as Record<string, SkillUsageRecord>;
       for (const [name, value] of Object.entries(raw)) {
         if (!value || typeof value !== "object" || Array.isArray(value)) continue;
         const record = { ...emptyRecord(), ...(value as Partial<SkillUsageRecord>) };
@@ -71,7 +74,7 @@ export class SkillUsageStore {
       }
       return result;
     } catch {
-      return {};
+      return Object.create(null) as Record<string, SkillUsageRecord>;
     }
   }
 
@@ -85,19 +88,21 @@ export class SkillUsageStore {
 
   /** A record with defaults filled in; fresh defaults when the skill has none. */
   get(name: string): SkillUsageRecord {
-    return this.load()[name] ?? emptyRecord();
+    const records = this.load();
+    return Object.hasOwn(records, name) ? records[name]! : emptyRecord();
   }
 
   has(name: string): boolean {
-    return name in this.load();
+    return Object.hasOwn(this.load(), name);
   }
 
   /** Every bump is best effort: telemetry never fails the tool call. */
   private update(name: string, change: (record: SkillUsageRecord) => void, create = true): void {
     try {
       const records = this.load();
-      if (!records[name] && !create) return;
-      const record = records[name] ?? emptyRecord();
+      const existing = Object.hasOwn(records, name) ? records[name]! : null;
+      if (!existing && !create) return;
+      const record = existing ?? emptyRecord();
       change(record);
       records[name] = record;
       this.save(records);
@@ -151,9 +156,10 @@ export class SkillUsageStore {
     });
   }
 
-  setState(name: string, state: SkillState, now = new Date()): void {
+  setState(name: string, state: SkillState, now = new Date(), archivedFrom: string | null = null): void {
     this.update(name, (r) => {
       r.state = state;
+      if (state === "archived") r.archivedFrom = archivedFrom;
       if (state === "archived") r.archivedAt = now.toISOString();
       if (state === "active") r.archivedAt = null;
     });
@@ -184,7 +190,7 @@ export class SkillUsageStore {
   forget(name: string): void {
     try {
       const records = this.load();
-      if (!(name in records)) return;
+      if (!Object.hasOwn(records, name)) return;
       delete records[name];
       this.save(records);
     } catch {

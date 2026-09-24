@@ -335,6 +335,18 @@ describe("learning ported from Hermes (ADR 0014)", () => {
     expect(controller!.editLearnedMemory({ target: "user", action: "replace", oldText: "brevi", content: "La persona preferisce risposte dirette" })).toEqual({ success: true, error: null });
   });
 
+  it("stops a review whose provider runs its own tool, and saves nothing", async () => {
+    await setup();
+    await controller!.send("[comando] prova", null, null, null);
+    const project = controller!.snapshot.project!;
+    const internal = controller as unknown as { runLearningReview(p: unknown, scope: { memory: boolean; skills: boolean }): Promise<void> };
+    await internal.runLearningReview(project, { memory: true, skills: true });
+    const learning = controller!.snapshot.learning!;
+    expect(learning.reviews[0]).toMatchObject({ status: "failed", error: "The review used a tool outside memory and skills.", actions: [] });
+    expect(learning.user.entries).toEqual([]);
+    expect(learning.skills).toEqual([]);
+  });
+
   it("gives a skill-only review no memory tool", async () => {
     await setup();
     const project = controller!.snapshot.project!;

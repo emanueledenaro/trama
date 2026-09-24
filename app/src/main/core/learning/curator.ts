@@ -103,7 +103,7 @@ export function curatedNames(library: SkillLibrary): string[] {
   return library
     .entries()
     .map((e) => e.dirName)
-    .filter((name) => isCuratorManaged(records[name] ?? null));
+    .filter((name) => isCuratorManaged(Object.hasOwn(records, name) ? records[name]! : null));
 }
 
 /** Hermes' `apply_automatic_transitions`: no model, only the inactivity clock. */
@@ -114,7 +114,8 @@ export function applyAutomaticTransitions(library: SkillLibrary, config: Curator
   const records = library.usage.load();
   for (const name of curatedNames(library)) {
     counts.checked += 1;
-    const record = records[name]!;
+    const record = Object.hasOwn(records, name) ? records[name]! : null;
+    if (!record) continue;
     if (record.pinned) continue;
     const anchorText = lastActivityAt(record) ?? record.createdAt;
     const anchor = anchorText ? Date.parse(anchorText) : now.getTime();
@@ -230,7 +231,7 @@ export function candidateList(library: SkillLibrary): string {
   const names = curatedNames(library);
   if (!names.length) return "No agent-created skills to review.";
   const lines = names.map((name) => {
-    const r = records[name]!;
+    const r = records[name]!; // curatedNames only returns names with an own record
     const activity = r.useCount + r.viewCount + r.patchCount;
     return `- ${name}  state=${r.state}  pinned=${r.pinned ? "yes" : "no"}  activity=${activity}  use=${r.useCount}  view=${r.viewCount}  patches=${r.patchCount}  last_activity=${lastActivityAt(r) ?? "never"}`;
   });

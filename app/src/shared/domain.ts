@@ -679,7 +679,7 @@ export interface LearningView {
   skills: LearnedSkillView[];
   archivedSkills: string[];
   /** Replacements and removals an unattended review proposed; only the person applies them. */
-  proposals: { id: string; target: "memory" | "user"; summary: string; createdAt: string }[];
+  proposals: { id: string; target: "memory" | "user"; summary: string; createdAt: string; operations: string[] }[];
   reviews: LearningReviewRun[];
   curator: { lastRunAt: string | null; lastRunSummary: string | null; paused: boolean; runCount: number; backups: string[] };
   counters: { turnsSinceMemory: number; itersSinceSkill: number; memoryInterval: number; skillInterval: number };

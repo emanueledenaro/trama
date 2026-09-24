@@ -33,7 +33,7 @@ const thousands = (n: number) => n.toLocaleString("en-US");
 const error = (message: string, extra: JsonRecord = {}): JsonRecord => ({ success: false, error: message, ...extra });
 const truncateError = (message: string) => (message.length > MAX_TOOL_ERROR_CHARS ? `${message.slice(0, MAX_TOOL_ERROR_CHARS)}… [truncated]` : message);
 
-function findUniqueMatch(entries: string[], oldText: string): { index: number | null; ambiguous: boolean } {
+export function findUniqueMatch(entries: string[], oldText: string): { index: number | null; ambiguous: boolean } {
   const exact = entries.flatMap((e, i) => (e === oldText ? [i] : []));
   const matches = exact.length ? exact : entries.flatMap((e, i) => (e.includes(oldText) ? [i] : []));
   if (new Set(matches.map((i) => entries[i])).size > 1) return { index: null, ambiguous: true };
@@ -377,7 +377,7 @@ export interface MemoryToolContext {
   stage?: (proposal: { target: MemoryTarget; summary: string; payload: JsonRecord }) => string;
 }
 
-const batchOpLine = (op: JsonRecord) => {
+export const batchOpLine = (op: JsonRecord) => {
   const action = String(op.action ?? "");
   const old = String(op.old_text ?? "");
   const content = String(op.content ?? op.new_text ?? "");

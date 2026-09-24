@@ -340,7 +340,7 @@ export class SkillLibrary {
   }
 
   writeFile(name: string, filePath: string, fileContent: string | null, context: SkillCallContext): JsonRecord {
-    const pathProblem = validateFilePath(filePath);
+    const pathProblem = validateFilePath(filePath) ?? reviewSkillMdProblem(filePath, "write_file", context);
     if (pathProblem) return error(pathProblem);
     if (fileContent === null || fileContent === undefined) return error("file_content is required.");
     const bytes = Buffer.byteLength(fileContent, "utf8");
@@ -361,7 +361,7 @@ export class SkillLibrary {
   }
 
   removeFile(name: string, filePath: string, context: SkillCallContext): JsonRecord {
-    const pathProblem = validateFilePath(filePath);
+    const pathProblem = validateFilePath(filePath) ?? reviewSkillMdProblem(filePath, "remove_file", context);
     if (pathProblem) return error(pathProblem);
     const { dir, refusal } = this.locateForWrite(name, "remove_file", context);
     if (refusal || !dir) return refusal!;
@@ -491,6 +491,7 @@ export class SkillLibrary {
     }
     const snapshots = new Map<string, string | null>();
     const staging = mkdtempSync(join(tmpdir(), "trama-skill-batch-"));
+    let keepStaging = false;
     try {
       for (const name of new Set(resolvedOps.map((op) => String(op.name)))) {
         const dir = this.findSkill(name);
@@ -510,7 +511,9 @@ export class SkillLibrary {
       for (const [i, op] of resolvedOps.entries()) {
         const result = this.runAction(op, context);
         if (result.success !== true) {
-          const note = this.rollback(snapshots);
+          const rollback = this.rollback(snapshots);
+          keepStaging = !rollback.ok;
+          const note = rollback.note;
           const { success: _success, error: message, ...rest } = result;
           return {
             success: false,
@@ -530,11 +533,13 @@ export class SkillLibrary {
       }
       return { success: true, operations_applied: resolvedOps.length, results };
     } finally {
-      rmSync(staging, { recursive: true, force: true });
+      if (!keepStaging) rmSync(staging, { recursive: true, force: true });
     }
   }
 
-  private rollback(snapshots: Map<string, string | null>): string {
+  /** Restores every touched skill; a failure is reported and its snapshot is kept, the others still roll back. */
+  private rollback(snapshots: Map<string, string | null>): { ok: boolean; note: string } {
+    const failures: string[] = [];
     for (const [name, snapshot] of snapshots) {
       try {
         const dir = this.findSkill(name);
@@ -552,10 +557,10 @@ export class SkillLibrary {
         cpSync(snapshot, destination, { recursive: true });
         rmSync(aside, { recursive: true, force: true });
       } catch (cause) {
-        return `ROLLBACK FAILED for '${name}' (${(cause as Error).message}); snapshot preserved at '${snapshot}'`;
+        failures.push(`ROLLBACK FAILED for '${name}' (${(cause as Error).message}); snapshot preserved at '${snapshot}'`);
       }
     }
-    return "all touched skills rolled back";
+    return failures.length ? { ok: false, note: failures.join("; ") } : { ok: true, note: "all touched skills rolled back" };
   }
 
   skillsList(category: string | null = null): JsonRecord {
@@ -597,6 +602,16 @@ export class SkillLibrary {
     return Object.values(files).some((l) => l.length) ? files : null;
   }
 
+  /**
+   * A view counts as a use (Hermes: loading a skill is acting on it). The review and the curator only
+   * inspect the library, so their reads do not keep a skill alive or touch its record.
+   */
+  private countView(name: string, context: SkillCallContext): void {
+    if (context.origin === "backgroundReview") return;
+    this.usage.bumpView(name);
+    this.usage.bumpUse(name);
+  }
+
   /** `skill_view`: SKILL.md with its linked files, or one supporting file. Viewing counts as use. */
   skillView(name: string, filePath: string | null, context: SkillCallContext): JsonRecord {
     if (!name) return error("Skill name is required.");
@@ -621,8 +636,7 @@ export class SkillLibrary {
       context.readMarks?.add(realTarget(resolved.target));
       const buffer = readFileSync(resolved.target);
       const binary = buffer.subarray(0, 8000).includes(0);
-      this.usage.bumpView(skill.dirName);
-      this.usage.bumpUse(skill.dirName);
+      this.countView(skill.dirName, context);
       return binary
         ? { success: true, name: skill.name, file: filePath, is_binary: true, content: `[Binary file: ${basename(filePath)}, size: ${buffer.length} bytes]` }
         : { success: true, name: skill.name, file: filePath, content: buffer.toString("utf8"), file_type: extname(filePath) };
@@ -634,8 +648,7 @@ export class SkillLibrary {
     const metadata = frontmatter.metadata && typeof frontmatter.metadata === "object" ? (frontmatter.metadata as JsonRecord) : {};
     const scoped = (metadata.hermes && typeof metadata.hermes === "object" ? metadata.hermes : metadata) as JsonRecord;
     const linked = this.linkedFiles(skill.dir);
-    this.usage.bumpView(skill.dirName);
-    this.usage.bumpUse(skill.dirName);
+    this.countView(skill.dirName, context);
     return {
       success: true,
       name: skill.name,
@@ -694,7 +707,7 @@ export class SkillLibrary {
     } catch (cause) {
       return { ok: false, message: `failed to archive: ${(cause as Error).message}` };
     }
-    this.usage.setState(entry.dirName, "archived", now);
+    this.usage.setState(entry.dirName, "archived", now, relative(this.root, entry.dir).split(sep).join("/"));
     return { ok: true, message: `archived to ${relative(this.root, destination)}` };
   }
 
@@ -706,6 +719,11 @@ export class SkillLibrary {
       .sort();
   }
 
+  /**
+   * Restores an archive: `name` is an archive directory (`name-YYYYMMDDhhmmss` picks that exact copy)
+   * or a skill name (its plain archive, else its newest stamped copy). The skill goes back to the
+   * category it was archived from when that place is free.
+   */
   restore(name: string): { ok: boolean; message: string } {
     const invalid = validateName(name);
     if (invalid) return { ok: false, message: invalid };
@@ -717,12 +735,25 @@ export class SkillLibrary {
       dirs.filter((d) => stamped.test(d)).sort().reverse()[0] ??
       dirs.find((d) => existsSync(join(this.archiveRoot, d, "SKILL.md")) && parseFrontmatter(readFileSync(join(this.archiveRoot, d, "SKILL.md"), "utf8")).frontmatter.name === name);
     if (!candidate) return { ok: false, message: `no archived skill named '${name}'` };
-    const destination = join(this.root, name);
+    const skillName = candidate.replace(/-\d{14}$/, "");
+    const from = this.usage.get(skillName).archivedFrom;
+    const previous = from && from.split("/").every((part) => !validateName(part)) && from.split("/").at(-1) === skillName ? join(this.root, ...from.split("/")) : null;
+    const destination = previous && !existsSync(previous) ? previous : join(this.root, skillName);
     if (existsSync(destination)) return { ok: false, message: `destination already exists: ${relative(this.root, destination)}` };
+    mkdirSync(dirname(destination), { recursive: true });
     renameSync(join(this.archiveRoot, candidate), destination);
-    this.usage.setState(name, "active");
+    this.usage.setState(skillName, "active");
     return { ok: true, message: `restored to ${relative(this.root, destination)}` };
   }
+}
+
+/**
+ * Hermes lets `write_file` and `remove_file` reach SKILL.md. For the unattended review that would skip
+ * the frontmatter checks or empty a skill without the archive-only delete, so it must use patch or edit.
+ */
+function reviewSkillMdProblem(filePath: string, action: string, context: SkillCallContext): string | null {
+  if (context.origin !== "backgroundReview" || filePath.split(/[\\/]+/).filter(Boolean).at(-1) !== "SKILL.md") return null;
+  return `The background review may not ${action} SKILL.md: change it with action='patch', or archive the skill with action='delete' and absorbed_into.`;
 }
 
 /** Hermes' `_op_shape_error`: the arguments each action needs, and where misfiled text belongs. */

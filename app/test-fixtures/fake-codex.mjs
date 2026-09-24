@@ -126,6 +126,11 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
       if (text.includes("Review the conversation above")) {
         // A learning review: add a profile fact, propose to remove a note, create a skill (ADR 0014).
         const calls = [];
+        if (text.includes("[comando]")) {
+          // A provider that runs one of its own tools anyway: Trama must stop the review and save nothing.
+          send({ method: "item/completed", params: { threadId, turnId, item: { id: "cmd", type: "commandExecution", command: "cat notes.txt", status: "completed", exitCode: 0 } } });
+          await new Promise((r) => setTimeout(r, 50));
+        }
         if (text.includes("You can only call memory and skill")) {
           calls.push(["memory", { target: "user", action: "add", content: "La persona preferisce risposte brevi in italiano" }]);
           calls.push(["memory", { target: "memory", action: "remove", old_text: "pnpm" }]);

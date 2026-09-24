@@ -121,7 +121,13 @@ function ProposalsSection({ learning }: { learning: LearningView }) {
             <p className="text-ui-xs text-muted-foreground">
               {proposal.target === "user" ? "Profilo" : "Note sul progetto"} · {formatDate(proposal.createdAt)}
             </p>
-            <p className="mt-1 whitespace-pre-wrap text-foreground/90">{proposal.summary}</p>
+            <ul className="mt-1 space-y-0.5 text-foreground/90">
+              {proposal.operations.map((line, index) => (
+                <li key={index} className="whitespace-pre-wrap">
+                  {line.replace(/^- /, "")}
+                </li>
+              ))}
+            </ul>
             <div className="mt-2 flex gap-2">
               <Button size="sm" variant="outline" onClick={() => void act("learning:proposal", { id: proposal.id, approve: true })}>
                 Applica
@@ -156,7 +162,7 @@ function SkillsSection({ learning }: { learning: LearningView }) {
           {learning.archivedSkills.map((name) => (
             <div key={name} className="flex items-center gap-2 py-0.5 text-ui-sm">
               <span className="text-foreground/80">{name}</span>
-              <Button className="ml-auto" size="sm" variant="ghost" onClick={() => void act("learning:skill", { name: name.replace(/-\d{14}$/, ""), action: "restore" })}>
+              <Button className="ml-auto" size="sm" variant="ghost" onClick={() => void act("learning:skill", { name, action: "restore" })}>
                 Ripristina
               </Button>
             </div>

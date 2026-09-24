@@ -16,7 +16,18 @@ import { dirname, join } from "node:path";
 import type { LearnedSkillView, LearningReviewRun, LearningSettings, LearningView } from "@shared/domain";
 import { DEFAULT_LEARNING_SETTINGS } from "@shared/domain";
 import { CuratorStateStore, DEFAULT_CURATOR_CONFIG, type CuratorConfig } from "./curator";
-import { applyMemoryProposal, ENTRY_DELIMITER, MemoryStore, parseEntries, readRaw, writeEntries, type JsonRecord, type MemoryTarget } from "./memoryStore";
+import {
+  applyMemoryProposal,
+  batchOpLine,
+  ENTRY_DELIMITER,
+  findUniqueMatch,
+  MemoryStore,
+  parseEntries,
+  readRaw,
+  writeEntries,
+  type JsonRecord,
+  type MemoryTarget,
+} from "./memoryStore";
 import { MEMORY_GUIDANCE, MEMORY_NUDGE_INTERVAL, SKILL_NUDGE_INTERVAL, SKILLS_GUIDANCE } from "./review";
 import { SESSION_SEARCH_GUIDANCE } from "./sessionSearch";
 import { SkillLibrary } from "./skillLibrary";
@@ -30,7 +41,14 @@ export interface MemoryProposal {
   summary: string;
   createdAt: string;
   payload: JsonRecord;
+  /** Every operation, as the person reads it before approving. */
+  operations?: string[];
+  /** The entry each old_text matched when the review proposed it: approval needs the same match. */
+  expected?: { oldText: string; entry: string | null }[];
 }
+
+const payloadOperations = (payload: JsonRecord): JsonRecord[] =>
+  Array.isArray(payload.operations) ? (payload.operations as JsonRecord[]).map((op) => (op && typeof op === "object" ? op : {})) : [payload];
 
 function readJson<T>(path: string, fallback: T): T {
   try {
@@ -84,13 +102,25 @@ export class ProjectLearning {
   }
 
   /**
-   * Moves the Coordinator's old single-text memory into MEMORY.md once, one entry per paragraph. An
-   * old text over the limit stays whole, as Hermes keeps an oversized file loaded.
+   * Moves the Coordinator's old single-text memory (up to 16 KB) into MEMORY.md once. Each paragraph
+   * becomes an entry; a paragraph over the limit is split by lines, and a line over it in pieces, so
+   * no entry trips the drift guard. A whole text over the limit stays loaded, as Hermes keeps an
+   * oversized file: additions wait until the Coordinator or the person consolidates.
    */
   migrateLegacyMemory(text: string): boolean {
     const path = this.memory.pathFor("memory");
     if (!text.trim() || existsSync(path)) return false;
-    writeEntries(path, [...new Set(parseEntries(text.split(/\n\s*\n/).join(ENTRY_DELIMITER)))]);
+    const limit = this.memory.limitFor("memory");
+    const fits = (entry: string) => [...entry].length <= limit;
+    const pieces = (line: string) => {
+      const chars = [...line];
+      return Array.from({ length: Math.ceil(chars.length / limit) }, (_, i) => chars.slice(i * limit, (i + 1) * limit).join(""));
+    };
+    const entries = text
+      .split(/\n\s*\n/)
+      .flatMap((paragraph) => (fits(paragraph) ? [paragraph] : paragraph.split("\n").flatMap((line) => (fits(line) ? [line] : pieces(line)))))
+      .flatMap((entry) => parseEntries(entry));
+    writeEntries(path, [...new Set(entries)]);
     return true;
   }
 
@@ -109,9 +139,26 @@ export class ProjectLearning {
     return readJson<MemoryProposal[]>(join(this.projectDir, "proposals.json"), []);
   }
 
+  private currentEntries(target: MemoryTarget): string[] {
+    return [...new Set(parseEntries(readRaw(this.memory.pathFor(target)).raw))];
+  }
+
+  private matches(target: MemoryTarget, payload: JsonRecord): { oldText: string; entry: string | null }[] {
+    const entries = this.currentEntries(target);
+    return payloadOperations(payload)
+      .map((op) => (typeof op.old_text === "string" ? op.old_text.trim() : ""))
+      .filter(Boolean)
+      .map((oldText) => {
+        const { index } = findUniqueMatch(entries, oldText);
+        return { oldText, entry: index === null ? null : entries[index]! };
+      });
+  }
+
   stageProposal(proposal: { target: MemoryTarget; summary: string; payload: JsonRecord }): string {
     const id = randomUUID().slice(0, 8);
-    writeJson(join(this.projectDir, "proposals.json"), [...this.proposals(), { id, createdAt: new Date().toISOString(), ...proposal }]);
+    const operations = payloadOperations(proposal.payload).map(batchOpLine);
+    const expected = this.matches(proposal.target, proposal.payload);
+    writeJson(join(this.projectDir, "proposals.json"), [...this.proposals(), { id, createdAt: new Date().toISOString(), ...proposal, operations, expected }]);
     return id;
   }
 
@@ -120,6 +167,11 @@ export class ProjectLearning {
     const all = this.proposals();
     const proposal = all.find((p) => p.id === id);
     if (!proposal) return { success: false, error: `Unknown proposal ${id}.` };
+    if (approve && proposal.expected) {
+      const now = this.matches(proposal.target, proposal.payload);
+      const changed = proposal.expected.some((e, i) => now[i]?.entry !== e.entry);
+      if (changed) return { success: false, error: "La memoria è cambiata dopo la proposta: le voci che toccava non sono più le stesse. Scartala." };
+    }
     const result = approve ? applyMemoryProposal(this.memory, proposal.payload) : { success: true, message: "Discarded." };
     if (result.success === true) writeJson(join(this.projectDir, "proposals.json"), all.filter((p) => p.id !== id));
     return result;
@@ -137,7 +189,7 @@ export class ProjectLearning {
   skillViews(): LearnedSkillView[] {
     const records = this.skills.usage.load();
     return this.skills.entries().map((entry) => {
-      const record = records[entry.dirName];
+      const record = Object.hasOwn(records, entry.dirName) ? records[entry.dirName] : undefined;
       return {
         name: entry.dirName,
         category: entry.category,
@@ -165,7 +217,13 @@ export class ProjectLearning {
       user: store("user"),
       skills: this.skillViews(),
       archivedSkills: this.skills.archivedNames(),
-      proposals: this.proposals().map(({ id, target, summary, createdAt }) => ({ id, target, summary, createdAt })),
+      proposals: this.proposals().map(({ id, target, summary, createdAt, operations, payload }) => ({
+        id,
+        target,
+        summary,
+        createdAt,
+        operations: operations ?? payloadOperations(payload).map(batchOpLine),
+      })),
       reviews: this.reviews(),
       curator: {
         lastRunAt: curator.lastRunAt,

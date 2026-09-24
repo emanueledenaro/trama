@@ -455,6 +455,8 @@ export interface QueryOptionsInput {
   model: string;
   effort?: string | null;
   developerInstructions: string;
+  /** No built-in tool at all: only Trama's MCP server. */
+  hostToolsOnly?: boolean;
   session: { sessionId: string } | { resume: string };
   persistSession: boolean;
   policy: ToolPolicy;
@@ -489,6 +491,7 @@ export function buildQueryOptions(input: QueryOptionsInput): ClaudeQueryOptions 
     includePartialMessages: true,
     permissionMode: "default",
     disallowedTools: writable ? [...ALWAYS_DISALLOWED_TOOLS] : [...ALWAYS_DISALLOWED_TOOLS, ...READ_ONLY_DISALLOWED_TOOLS],
+    ...(input.hostToolsOnly ? { tools: [] } : {}),
     ...(input.toolServer ? { allowedTools: [`mcp__${input.toolServer.name}`] } : {}),
     // An in-process SDK server: the CLI sees only `{type: "sdk", name}`, so the bearer token never
     // reaches its argv (`--mcp-config`) or environment.
@@ -945,6 +948,7 @@ interface ThreadState {
   cwd: string;
   developerInstructions: string;
   ephemeral: boolean;
+  hostToolsOnly: boolean;
 }
 
 interface ActiveTurn {
@@ -1087,6 +1091,7 @@ export class ClaudeAgentRuntime implements AgentRuntime {
       cwd: options.cwd,
       developerInstructions: options.developerInstructions,
       ephemeral: options.ephemeral ?? false,
+      hostToolsOnly: options.hostToolsOnly ?? false,
     } as const;
     if (options.resumeThreadId) {
       let exists = false;
@@ -1115,7 +1120,7 @@ export class ClaudeAgentRuntime implements AgentRuntime {
     const thread: ThreadState =
       this.thread?.sessionId === options.threadId
         ? this.thread
-        : { sessionId: options.threadId, started: true, cwd: options.cwd, developerInstructions: "", ephemeral: false };
+        : { sessionId: options.threadId, started: true, cwd: options.cwd, developerInstructions: "", ephemeral: false, hostToolsOnly: false };
     const pending = new PendingTurn(options.onEvent, "Claude Agent è stato chiuso.");
     this.pending = pending;
     let executable: string;
@@ -1176,6 +1181,7 @@ export class ClaudeAgentRuntime implements AgentRuntime {
         model: options.model,
         effort: options.effort,
         developerInstructions: thread.developerInstructions,
+        hostToolsOnly: thread.hostToolsOnly,
         session: thread.started ? { resume: thread.sessionId } : { sessionId: thread.sessionId },
         persistSession: true,
         policy,

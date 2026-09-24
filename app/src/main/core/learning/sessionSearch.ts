@@ -85,7 +85,8 @@ export interface SessionSearchContext {
 }
 
 function messageOf(event: ConversationEvent): StoredMessage | null {
-  if (event.assignmentId) return null;
+  // Specialist work stays out, including events imported from the SwiftUI app without an assignment id.
+  if (event.assignmentId || event.origin === "specialist") return null;
   const content = event.content;
   const base = { id: event.sequence, sessionId: event.goalId ?? PROJECT_DIALOG_ID, timestamp: Date.parse(event.createdAt) / 1000 };
   switch (content.type) {

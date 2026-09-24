@@ -165,3 +165,37 @@ describe("archive paths", () => {
     expect(library.restore("../odd-skill").ok).toBe(false);
   });
 });
+
+describe("fixes from the review of the port", () => {
+  it("keeps a skill named like an Object property in its own record", () => {
+    library.create("constructor", SKILL("constructor"), null, person);
+    library.usage.setPinned("constructor", true);
+    expect(library.usage.get("constructor").pinned).toBe(true);
+    expect(({} as { createdBy?: unknown }).createdBy).toBeUndefined();
+    expect(JSON.parse(readFileSync(join(root, "skills", ".usage.json"), "utf8")).constructor.pinned).toBe(true);
+  });
+
+  it("rejects categories named like reserved folders", () => {
+    expect(library.create("x-skill", SKILL("x-skill"), "references", person).error).toContain("reserved");
+  });
+
+  it("restores the exact archived copy into its category", () => {
+    library.create("foo", SKILL("foo"), "devops", person);
+    library.archive("foo", new Date(Date.UTC(2026, 0, 1)));
+    library.create("foo", SKILL("foo").replace("Tag, build", "Version two"), "devops", person);
+    library.archive("foo", new Date(Date.UTC(2026, 1, 1)));
+    expect(library.archivedNames()).toEqual(["foo", "foo-20260201000000"]);
+    expect(library.restore("foo-20260201000000").ok).toBe(true);
+    expect(readFileSync(join(root, "skills", "devops", "foo", "SKILL.md"), "utf8")).toContain("Version two");
+  });
+
+  it("keeps the review off SKILL.md through file actions, and its reads do not count as use", () => {
+    const context = review();
+    library.skillManage({ operations: [{ action: "create", name: "agent-skill", content: SKILL("agent-skill") }] }, context);
+    library.skillView("agent-skill", null, context);
+    expect(library.usage.get("agent-skill").useCount).toBe(0);
+    expect(library.removeFile("agent-skill", "SKILL.md", context).error).toContain("may not remove_file SKILL.md");
+    expect(library.writeFile("agent-skill", "SKILL.md", "x", context).error).toContain("may not write_file SKILL.md");
+    expect(existsSync(join(root, "skills", "agent-skill", "SKILL.md"))).toBe(true);
+  });
+});
