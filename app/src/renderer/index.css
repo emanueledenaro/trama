@@ -224,6 +224,7 @@ button {
 
   .chat-content-card {
     --seam-line: rgb(0 0 0 / 5%);
+    background: var(--color-background-surface);
   }
   .dark .chat-content-card {
     --seam-line: rgb(255 255 255 / 5%);
@@ -242,6 +243,34 @@ button {
   }
   [data-sidebar-state="expanded"]:has([data-placement="content-seam"]:hover) .chat-content-card {
     --seam-line: color-mix(in srgb, var(--foreground) 30%, transparent);
+  }
+
+  /* visionOS-like pane: the content floats on the native glass as a nearly opaque slab, so text stays easy to read. */
+  :root[data-platform="darwin"] .chat-content-card,
+  :root[data-platform="win32"] .chat-content-card {
+    margin: 8px 8px 8px 0;
+    border-radius: 18px;
+    background: color-mix(in srgb, var(--surface) 86%, transparent);
+    box-shadow:
+      0 0 0 0.5px var(--pane-edge),
+      inset 0 1px 0 var(--pane-highlight),
+      0 10px 30px -12px rgb(0 0 0 / 0.18);
+    --pane-edge: rgb(0 0 0 / 0.08);
+    --pane-highlight: rgb(255 255 255 / 0.7);
+  }
+  :root.dark[data-platform="darwin"] .chat-content-card,
+  :root.dark[data-platform="win32"] .chat-content-card {
+    background: color-mix(in srgb, var(--surface) 80%, transparent);
+    --pane-edge: rgb(255 255 255 / 0.1);
+    --pane-highlight: rgb(255 255 255 / 0.08);
+  }
+  :root[data-platform="darwin"] [data-sidebar-state="collapsed"] .chat-content-card,
+  :root[data-platform="win32"] [data-sidebar-state="collapsed"] .chat-content-card {
+    margin-left: 8px;
+  }
+  :root[data-platform="darwin"] .chat-content-card::before,
+  :root[data-platform="win32"] .chat-content-card::before {
+    display: none;
   }
 
   .chat-surface-divider {
