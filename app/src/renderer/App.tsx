@@ -81,6 +81,7 @@ export function App() {
 
   if (!app) return null;
   const isMac = app.platform === "darwin";
+  const hasGlass = isMac || app.platform === "win32";
 
   return (
     <TooltipProvider delay={500}>
@@ -96,8 +97,10 @@ export function App() {
         >
           <div
             className={cn(
-              "app-sidebar-surface absolute inset-y-0 left-0 flex w-64 flex-col transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]",
-              !sidebarOpen && "-translate-x-full",
+              "app-sidebar-surface absolute flex flex-col transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]",
+              // On native glass the sidebar floats as a rounded pane, as in macOS 26; elsewhere it fills its column.
+              hasGlass ? "app-sidebar-floating inset-y-2 left-2 w-[calc(16rem-1rem)] rounded-2xl" : "inset-y-0 left-0 w-64",
+              !sidebarOpen && (hasGlass ? "-translate-x-[calc(100%+0.5rem)]" : "-translate-x-full"),
             )}
           >
             <Sidebar isMac={isMac} />
