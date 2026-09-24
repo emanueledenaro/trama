@@ -168,21 +168,28 @@ export function ModelPicker({
               ) : (
                 visible.map((m) => {
                   const active = browsing === selectedProvider && m.model === selectedModel;
+                  const refused = providers[browsing]?.unsupportedModels?.includes(m.model) ?? false;
                   return (
                     <button
                       key={m.model}
                       type="button"
                       role="option"
                       aria-selected={active}
+                      aria-disabled={refused}
+                      disabled={refused}
                       onClick={() => choose(m.model)}
                       className={cn(
-                        "flex w-full shrink-0 items-start gap-2 rounded-lg px-2.5 py-2 text-left transition-colors hover:bg-[var(--color-background-button-secondary-hover)]",
+                        "flex w-full shrink-0 items-start gap-2 rounded-lg px-2.5 py-2 text-left transition-colors hover:bg-[var(--color-background-button-secondary-hover)] disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:bg-transparent",
                         active && "bg-[var(--color-background-elevated-secondary)]",
                       )}
                     >
                       <span className="min-w-0 flex-1">
                         <span className="block truncate text-ui-sm">{m.displayName}</span>
-                        {m.description ? <span className="block truncate text-ui-xs text-muted-foreground">{plainDescription(m.description)}</span> : null}
+                        {refused ? (
+                          <span className="block truncate text-ui-xs text-warning">Non disponibile con questo account</span>
+                        ) : m.description ? (
+                          <span className="block truncate text-ui-xs text-muted-foreground">{plainDescription(m.description)}</span>
+                        ) : null}
                       </span>
                       {active ? <IconCheck className="mt-0.5 size-3.5 shrink-0 text-[var(--color-text-accent)]" stroke={2} /> : null}
                     </button>

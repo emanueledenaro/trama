@@ -716,6 +716,8 @@ export interface ProviderState {
   account: ProviderAccount | null;
   models: ProviderModel[];
   checking: boolean;
+  /** Models the provider refused for this account in this session; the picker shows them disabled. */
+  unsupportedModels?: string[];
 }
 
 export type AttentionReason = "decision" | "blocked" | "approval" | "running";

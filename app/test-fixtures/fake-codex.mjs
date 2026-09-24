@@ -42,6 +42,15 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
       if (account === "none") return send({ id, result: { account: null } });
       if (account === "apikey") return send({ id, result: { account: { type: "apiKey" } } });
       return send({ id, result: { account: { type: "chatgpt", email: "persona@example.com", planType: "plus" } } });
+    case "account/rateLimits/read":
+      if (process.env.FAKE_CODEX_LIMITS === "none") return send({ id, error: { code: -32601, message: "method not found" } });
+      return send({
+        id,
+        result: {
+          ordinaryUsageAllowed: process.env.FAKE_CODEX_LIMITS !== "exhausted",
+          rateLimits: { limitId: "codex", primary: { usedPercent: 100, windowDurationMins: 43200, resetsAt: 1792820871 }, planType: process.env.FAKE_CODEX_LIMITS === "exhausted" ? "free" : "plus" },
+        },
+      });
     case "model/list":
       return send({
         id,

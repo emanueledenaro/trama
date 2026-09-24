@@ -13,7 +13,9 @@ export type TimelineRow =
       durationMs: number | null;
     }
   | { kind: "reply"; id: string; requestId: string | null; text: string | null; model: string | null; references: string[]; request: CoordinatorRequest | null; streaming: boolean }
-  | { kind: "card"; id: string; cardKind: CardKind; event: ConversationEvent };
+  | { kind: "card"; id: string; cardKind: CardKind; event: ConversationEvent }
+  /** A turn that ended in an error: shown in place of the reply, never only inside the collapsed work group. */
+  | { kind: "failure"; id: string; requestId: string; message: string; text: string; goalId: string | null };
 
 /**
  * Groups the conversation into rows: the person's message, one collapsed work group per turn,
@@ -53,6 +55,17 @@ export function deriveTimelineRows(
           rows.push(group);
         }
         group.activities.push(event);
+        const failed = event.requestId ? requestsById.get(event.requestId) : undefined;
+        if (content.tone === "error" && failed?.state === "failed" && !event.workKey) {
+          rows.push({
+            kind: "failure",
+            id: `failure-${event.id}`,
+            requestId: failed.id,
+            message: failed.failure ?? content.detail ?? "",
+            text: failed.text,
+            goalId: failed.goalId ?? null,
+          });
+        }
         break;
       }
       case "coordinatorText":
@@ -109,4 +122,30 @@ export function formatDuration(ms: number): string {
   if (seconds < 60) return `${Math.round(seconds)} s`;
   const minutes = Math.floor(seconds / 60);
   return `${minutes}m ${Math.round(seconds - minutes * 60)}s`;
+}
+
+/** The provider refused the model for this account (Codex with ChatGPT, unknown or inaccessible models). */
+export function isUnsupportedModelError(message: string): boolean {
+  return /model.*not supported|not supported.*model|model_not_found|does not exist or you do not have access/i.test(message);
+}
+
+/**
+ * A provider error in the person's words. Known cases get a plain sentence; others keep the provider's own
+ * message, taken out of its JSON envelope when there is one.
+ */
+export function turnFailureText(raw: string): { title: string; detail: string | null } {
+  let message = raw.trim();
+  try {
+    const parsed = JSON.parse(message) as { error?: { message?: string }; message?: string };
+    message = parsed.error?.message ?? parsed.message ?? message;
+  } catch {
+    // Not JSON: keep the text as it is.
+  }
+  if (isUnsupportedModelError(message)) {
+    return { title: "Il modello scelto non è disponibile con questo account", detail: "Scegli un altro modello dal selettore e riprova." };
+  }
+  if (/usage limit|rate limit|hit your limit|quota/i.test(message)) {
+    return { title: "Hai raggiunto il limite di utilizzo di questo provider", detail: message };
+  }
+  return { title: "Il Coordinatore non ha potuto rispondere", detail: message || null };
 }

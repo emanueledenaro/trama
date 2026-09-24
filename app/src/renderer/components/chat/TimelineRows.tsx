@@ -14,7 +14,7 @@ import {
 import { useState } from "react";
 import type { ConversationEvent } from "@shared/domain";
 import { extractPastes, pasteSizeLabel, pasteTitle } from "@shared/pastedText";
-import { formatDuration, type TimelineRow } from "@shared/timeline";
+import { formatDuration, type TimelineRow, turnFailureText } from "@shared/timeline";
 import { cn } from "@/lib/cn";
 import { formatTime } from "@/lib/format";
 import { act, useUi } from "@/lib/store";
@@ -234,6 +234,29 @@ function Reply({ row, latest }: { row: Extract<TimelineRow, { kind: "reply" }>; 
   );
 }
 
+function TurnFailure({ row }: { row: Extract<TimelineRow, { kind: "failure" }> }) {
+  const { title, detail } = turnFailureText(row.message);
+  return (
+    <div role="alert" className="mb-4 flex items-start gap-2.5 rounded-xl border border-[color:color-mix(in_srgb,var(--destructive)_35%,transparent)] bg-[color-mix(in_srgb,var(--destructive)_8%,transparent)] px-3.5 py-3">
+      <IconAlertTriangle className="mt-0.5 size-4 shrink-0 text-[var(--destructive)]" stroke={1.8} />
+      <div className="min-w-0 flex-1">
+        <div className="text-ui font-medium text-foreground">{title}</div>
+        {detail ? <p className="mt-0.5 text-ui-sm break-words text-muted-foreground">{detail}</p> : null}
+      </div>
+      <Button
+        size="xs"
+        variant="outline"
+        className="shrink-0"
+        onClick={() =>
+          void act("coordinator:send", { text: row.text, moduleId: null, model: null, effort: null, images: [], provider: null, goalId: row.goalId })
+        }
+      >
+        Riprova
+      </Button>
+    </div>
+  );
+}
+
 export function TimelineRowView({ row, streaming = false, latest = false }: { row: TimelineRow; streaming?: boolean; latest?: boolean }) {
   switch (row.kind) {
     case "person":
@@ -242,6 +265,8 @@ export function TimelineRowView({ row, streaming = false, latest = false }: { ro
       return <WorkGroup row={row} />;
     case "reply":
       return <Reply row={row} latest={latest} />;
+    case "failure":
+      return <TurnFailure row={row} />;
     case "card": {
       const content = row.event.content;
       if (content.type !== "card") return null;
