@@ -591,6 +591,15 @@ class AcpConnection {
     child.stderr.on("data", (chunk: Buffer) => {
       this.stderrTail = (this.stderrTail + chunk.toString("utf8")).slice(-4_000);
     });
+    // An agent that closes its stdin makes the next write fail with EPIPE; without these listeners
+    // the stream error would crash the main process.
+    const streamFailed = (stream: string) => (error: Error) => {
+      this.close(new ProviderError("processExited", `${label} ha chiuso ${stream}: ${error.message}`));
+      this.terminate();
+    };
+    child.stdin.on("error", streamFailed("l'input"));
+    child.stdout.on("error", streamFailed("l'output"));
+    child.stderr.on("error", () => undefined);
     child.on("error", (error) => this.close(new ProviderError("processExited", `${label} non si è avviato: ${error.message}`)));
     child.on("exit", (code, signal) => {
       const detail = this.stderrTail.trim().split("\n").slice(-3).join(" ").slice(0, 500);
@@ -614,7 +623,11 @@ class AcpConnection {
               reject(new ProviderError("timedOut", `${this.label} non ha risposto a ${method} entro ${Math.round(timeoutMs / 1000)} s.`));
             }, timeoutMs);
       this.pending.set(id, { resolve: resolvePromise, reject, timer });
-      this.send({ id, method, params });
+      if (!this.send({ id, method, params })) {
+        this.pending.delete(id);
+        if (timer) clearTimeout(timer);
+        reject(this.exitError ?? new ProviderError("processExited", `${this.label} non accetta più messaggi.`));
+      }
     });
   }
 
@@ -622,8 +635,12 @@ class AcpConnection {
     if (!this.closed) this.send({ method, params });
   }
 
-  private send(message: JsonObject): void {
-    this.child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", ...message })}\n`);
+  /** False when the agent's stdin can no longer be written. */
+  private send(message: JsonObject): boolean {
+    const stdin = this.child.stdin;
+    if (this.closed || !stdin.writable || stdin.destroyed) return false;
+    stdin.write(`${JSON.stringify({ jsonrpc: "2.0", ...message })}\n`);
+    return true;
   }
 
   private receive(text: string): void {
@@ -693,8 +710,12 @@ class AcpConnection {
 
   /** Kills the process group (POSIX) or tree (Windows). */
   kill(): void {
-    const pid = this.child.pid;
     this.close(new ProviderError("processExited", `${this.label} è stato chiuso.`));
+    this.terminate();
+  }
+
+  private terminate(): void {
+    const pid = this.child.pid;
     if (!pid) return;
     if (process.platform === "win32") {
       execFile("taskkill", ["/pid", String(pid), "/T", "/F"], () => undefined);

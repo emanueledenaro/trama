@@ -1002,6 +1002,9 @@ export class AntigravityRuntime implements AgentRuntime {
       });
       child.stdout!.setEncoding("utf8");
       child.stderr!.setEncoding("utf8");
+      // A broken pipe must not crash the main process; the close handler settles the turn.
+      child.stdout!.on("error", () => undefined);
+      child.stderr!.on("error", () => undefined);
       child.stdout!.on("data", (chunk: string) => {
         stdout += chunk;
         parser.write(chunk);

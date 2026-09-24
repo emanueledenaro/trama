@@ -219,6 +219,9 @@ export async function startOpenCodeServer(input: StartServerInput): Promise<Open
   let stderr = "";
   const exitListeners: ((code: number | null) => void)[] = [];
   child.on("exit", (code) => exitListeners.forEach((listener) => listener(code)));
+  // A broken pipe must not crash the main process; the exit handler reports the stop.
+  child.stdout?.on("error", () => undefined);
+  child.stderr?.on("error", () => undefined);
 
   const url = await new Promise<string>((resolve, reject) => {
     const detail = () =>

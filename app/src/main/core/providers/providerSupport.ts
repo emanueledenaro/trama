@@ -244,6 +244,8 @@ export function runHelper(
     child.stderr.on("data", (chunk: Buffer) => {
       stderr = (stderr + chunk.toString("utf8")).slice(-HELPER_OUTPUT_MAX_CHARS);
     });
+    child.stdout.on("error", () => undefined);
+    child.stderr.on("error", () => undefined);
     child.once("error", (error) => finish(() => reject(error)));
     child.once("close", (code) => finish(() => resolvePromise({ code: code ?? 1, stdout, stderr, timedOut: false })));
   });

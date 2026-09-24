@@ -154,6 +154,33 @@ describe("AcpAgentRuntime", () => {
     await expect(runtime.runTurn({ threadId, prompt: "ciao", cwd: dir, model: "m1", onEvent: () => undefined })).rejects.toMatchObject({ code: "blocked" });
   });
 
+  it("fails cleanly when the agent closes its stdin", async () => {
+    // Answers initialize, then closes stdin and stays alive: the next write hits EPIPE.
+    const script = `
+      const readline = require("node:readline");
+      const lines = readline.createInterface({ input: process.stdin });
+      lines.once("line", (line) => {
+        const { id } = JSON.parse(line);
+        lines.close();
+        process.stdin.destroy();
+        require("node:fs").closeSync(0);
+        process.stdout.write(JSON.stringify({ jsonrpc: "2.0", id, result: { protocolVersion: 1, agentCapabilities: {} } }) + "\\n");
+        setTimeout(() => undefined, 10_000);
+      });
+    `;
+    const profile: AcpProviderProfile = {
+      ...testProfile,
+      authPolicy: "on-demand",
+      async launch(executable) {
+        return { command: executable, args: ["-e", script], env: buildChildEnvironment(executable, []) };
+      },
+    };
+    runtime = new AcpAgentRuntime(profile);
+    const opened = runtime.openThread({ model: "m1", cwd: dir, developerInstructions: "" });
+    await expect(opened).rejects.toMatchObject({ code: "processExited" });
+    expect(runtime.isRunningTurn).toBe(false);
+  });
+
   it("cancels a running turn", async () => {
     runtime = new AcpAgentRuntime(testProfile);
     const { threadId } = await runtime.openThread({ model: "m1", cwd: dir, developerInstructions: "" });

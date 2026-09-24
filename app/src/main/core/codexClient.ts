@@ -427,19 +427,27 @@ export class CodexClient {
     child.stderr.on("data", (chunk: Buffer) => {
       this.stderrTail = (this.stderrTail + chunk.toString("utf8")).slice(-4_000);
     });
-    child.on("exit", (code) => {
+    const fail = (error: CodexError) => {
       if (this.child !== child) return;
       this.child = null;
       this.initializing = null;
-      const error = new CodexError("processExited", `Codex app-server è terminato (codice ${code ?? "?"}).`);
       for (const [, pending] of this.pending) {
         clearTimeout(pending.timer);
         pending.reject(error);
       }
       this.pending.clear();
       this.activeTurn?.reject(error);
-    });
+    };
+    child.on("exit", (code) => fail(new CodexError("processExited", `Codex app-server è terminato (codice ${code ?? "?"}).`)));
     child.on("error", () => undefined);
+    // A closed pipe (EPIPE) must not crash the main process: treat it as the end of app-server.
+    const streamFailed = (error: Error) => {
+      fail(new CodexError("processExited", `Codex app-server ha chiuso la comunicazione: ${error.message}`));
+      child.kill();
+    };
+    child.stdin.on("error", streamFailed);
+    child.stdout.on("error", streamFailed);
+    child.stderr.on("error", () => undefined);
 
     const result = asObject(
       await this.request("initialize", {
@@ -454,7 +462,7 @@ export class CodexClient {
   }
 
   private send(message: JsonObject): void {
-    if (!this.child) throw new CodexError("processExited", "Codex app-server non è attivo.");
+    if (!this.child || !this.child.stdin.writable) throw new CodexError("processExited", "Codex app-server non è attivo.");
     this.child.stdin.write(`${JSON.stringify(message)}\n`);
   }
 
