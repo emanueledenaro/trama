@@ -22,6 +22,7 @@ import {
   IconUser,
   IconUsersGroup,
   IconX,
+  IconListCheck,
 } from "@tabler/icons-react";
 import { StatusDot } from "@/components/inspector/TeamView";
 import type * as React from "react";
@@ -139,6 +140,8 @@ export function Sidebar({ isMac }: { isMac: boolean }) {
   const project = app.project;
   const document = project?.document;
   const pendingDecisions = document?.decisionRequests.filter((r) => !r.outcome) ?? [];
+  // A grilling round is one row with its count, not one row per question.
+  const pendingRows = sidebarDecisionRows(pendingDecisions);
   const pendingMandate = document?.mandateRequests.find((r) => !r.resolution) ?? null;
   const openIssues = project?.github.issues.filter((i) => i.state === "open").length ?? 0;
   const pendingTeam = document?.team.proposals.some((p) => !p.resolution) ?? false;
@@ -356,15 +359,16 @@ export function Sidebar({ isMac }: { isMac: boolean }) {
                           </span>
                         </button>
                       ))}
-                      {pendingDecisions.map((request) => (
+                      {pendingRows.map((row) => (
                         <button
-                          key={request.id}
+                          key={row.id}
                           type="button"
                           onClick={() => setInspector({ kind: "pact" })}
+                          title={row.title}
                           className={cn(SIDEBAR_ROW, "pl-8", ROW_IDLE)}
                         >
-                          <span className="size-3 shrink-0" />
-                          <span className="min-w-0 flex-1 truncate text-ui leading-5 text-foreground/95">{request.question}</span>
+                          {row.round ? <IconListCheck className="size-3 shrink-0 text-muted-foreground" stroke={1.8} /> : <span className="size-3 shrink-0" />}
+                          <span className="min-w-0 flex-1 truncate text-ui leading-5 text-foreground/95">{row.title}</span>
                           <span className="flex w-[15px] shrink-0 items-center justify-center">
                             <span className="size-[7px] rounded-full bg-[var(--color-text-accent)]" />
                           </span>
@@ -403,4 +407,29 @@ export function Sidebar({ isMac }: { isMac: boolean }) {
       </div>
     </div>
   );
+}
+
+/** Pending decisions as sidebar rows: each grilling round becomes one row, other decisions keep their own. */
+export function sidebarDecisionRows(pending: { id: string; question: string; grilling?: { subjectRequestId: string; round: number } | null }[]) {
+  const rows: { id: string; title: string; round: number | null }[] = [];
+  const rounds = new Map<string, { id: string; round: number; count: number }>();
+  for (const request of pending) {
+    if (!request.grilling) {
+      rows.push({ id: request.id, title: request.question, round: null });
+      continue;
+    }
+    const key = `${request.grilling.subjectRequestId}:${request.grilling.round}`;
+    const existing = rounds.get(key);
+    if (existing) existing.count += 1;
+    else {
+      const entry = { id: `round-${key}`, round: request.grilling.round, count: 1 };
+      rounds.set(key, entry);
+      rows.push({ id: entry.id, title: "", round: entry.round });
+    }
+  }
+  return rows.map((row) => {
+    if (row.round === null) return row;
+    const entry = [...rounds.values()].find((r) => r.id === row.id)!;
+    return { ...row, title: `Chiarimento, turno ${entry.round} · ${entry.count} ${entry.count === 1 ? "domanda" : "domande"}` };
+  });
 }

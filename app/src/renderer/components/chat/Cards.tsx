@@ -46,7 +46,7 @@ function CardFrame({
   anchor?: string;
 }) {
   return (
-    <div data-anchor={anchor} className={cn("my-3 overflow-hidden rounded-xl border border-[color:var(--color-border)] bg-[var(--card)]", className)}>
+    <div data-anchor={anchor} className={cn("chat-card my-3 overflow-hidden", className)}>
       <div className="flex items-center gap-2 px-3.5 pt-2.5 pb-1 text-ui">
         <span className="flex size-4 shrink-0 items-center justify-center text-muted-foreground [&>svg]:size-3.5">{icon}</span>
         <span className="min-w-0 flex-1 truncate font-medium text-foreground">{title}</span>

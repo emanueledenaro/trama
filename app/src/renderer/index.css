@@ -827,3 +827,15 @@ button {
 .cta-row > :is([data-variant="default"], [data-variant="destructive"]) {
   order: 1;
 }
+
+/* Chat cards (decisions, mandate, team, candidate): glass over the provider's light, like the rest of the chat. */
+.chat-card {
+  border: 1px solid color-mix(in srgb, var(--foreground) 12%, transparent);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--foreground) 5%, color-mix(in srgb, var(--background) 34%, transparent));
+  box-shadow: inset 0 1px 0 color-mix(in srgb, white 12%, transparent), 0 10px 30px -18px color-mix(in srgb, black 60%, transparent);
+  backdrop-filter: blur(20px) saturate(1.35);
+}
+.chat-card :is(textarea, input) {
+  background: color-mix(in srgb, var(--background) 30%, transparent);
+}
