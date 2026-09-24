@@ -1,9 +1,9 @@
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { CursorRuntime, cursorProfile, parseCursorModels, parseCursorStatus } from "./cursor";
-import { DevinRuntime, parseDevinCredentialsToml, parseDevinModels, resolveDevinAuthMethod, validateDevinApiServerUrl } from "./devin";
+import { DevinRuntime, devinProfile, parseDevinModels, resolveDevinAuthMethod, validateDevinApiServerUrl } from "./devin";
 import { DroidRuntime, droidProfile, resolveDroidAuthMethod } from "./droid";
 import { GrokRuntime, grokHookResponse, grokProfile, parseGrokModels, resolveGrokAuthMethod } from "./grok";
 
@@ -137,12 +137,35 @@ describe("Devin", () => {
     expect(() => resolveDevinAuthMethod(["devin-browser"], false)).toThrow(/devin auth login/);
   });
 
-  it("parses the stored credentials and validates the server URL", () => {
-    expect(parseDevinCredentialsToml('# c\nwindsurf_api_key = "abc"\napi_server_url = \'https://x.example\'\nother = 1')).toEqual({
-      apiKey: "abc",
-      apiServerUrl: "https://x.example",
-    });
-    expect(parseDevinCredentialsToml("nothing = 1")).toBeUndefined();
+  it("never reads the stored credentials: it only checks that they exist", async () => {
+    const saved = { ...process.env };
+    const data = mkdtempSync(join(tmpdir(), "trama-devin-"));
+    dirs.push(data);
+    try {
+      for (const key of ["WINDSURF_API_KEY", "DEVIN_API_KEY", "windsurf_api_key", "WINDSURF_API_SERVER_URL", "DEVIN_API_SERVER_URL"]) delete process.env[key];
+      process.env.XDG_DATA_HOME = data;
+      const cli = fakeCli("devin", { "--version": { stdout: "devin 3000.3.1" } });
+      expect(await devinProfile.readAccount(cli)).toEqual({ kind: "signedOut" });
+      mkdirSync(join(data, "devin"));
+      writeFileSync(join(data, "devin", "credentials.toml"), 'windsurf_api_key = "stored-secret"\n');
+      expect(await devinProfile.readAccount(cli)).toEqual({ kind: "authenticated", label: "Accesso Devin CLI" });
+      // With stored credentials Devin signs in by itself; the key never goes into authenticate.
+      await expect(devinProfile.validateInitialize!({ authMethods: [{ id: "devin-browser" }] })).resolves.toBeUndefined();
+      const choice = await devinProfile.resolveAuth({ authMethods: [{ id: "devin-browser" }, { id: "cached_token" }] });
+      expect(choice).toEqual({ methodId: "cached_token", meta: { headless: true } });
+      expect(JSON.stringify(choice)).not.toContain("stored-secret");
+      process.env.WINDSURF_API_KEY = "env-key";
+      expect(await devinProfile.resolveAuth({ authMethods: [{ id: "devin-browser" }] })).toEqual({
+        methodId: "windsurf-api-key",
+        meta: { headless: true, api_key: "env-key" },
+      });
+    } finally {
+      for (const key of Object.keys(process.env)) if (!(key in saved)) delete process.env[key];
+      Object.assign(process.env, saved);
+    }
+  });
+
+  it("validates the server URL", () => {
     expect(validateDevinApiServerUrl("https://api.example.com/")).toBe("https://api.example.com");
     expect(validateDevinApiServerUrl("http://127.0.0.1:8080")).toBe("http://127.0.0.1:8080");
     expect(validateDevinApiServerUrl("http://api.example.com")).toBe("rejected");

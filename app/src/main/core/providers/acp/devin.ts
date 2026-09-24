@@ -5,7 +5,6 @@
  * and Emanuele Di Pietro): acp/DevinAcpSupport.ts, DevinSessionConfig.ts, Layers/DevinAdapter.ts and
  * the Devin part of Layers/ProviderHealth.ts.
  */
-import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { ProviderError, type ProviderModel, type RuntimeOptions } from "../types";
@@ -16,6 +15,7 @@ import {
   asObject,
   asString,
   buildChildEnvironment,
+  fileExists,
   firstEnv,
   pathSegments,
   probeCliVersion,
@@ -33,56 +33,16 @@ const DEVIN_PRIMARY_API_KEY_AUTH_METHOD_ID = "windsurf-api-key";
 const DEVIN_CACHED_TOKEN_AUTH_METHOD_ID = "cached_token";
 const DEVIN_INTERACTIVE_AUTH_METHOD_IDS = new Set(["browser_login", "devin-browser", "devin.com", "oauth"]);
 
-export interface DevinCredentials {
-  apiKey?: string;
-  apiServerUrl?: string;
-}
-
-function parseTomlString(raw: string): string | undefined {
-  const value = raw.trim();
-  if (value.startsWith('"')) {
-    const end = value.lastIndexOf('"');
-    if (end <= 0) return undefined;
-    try {
-      const parsed: unknown = JSON.parse(value.slice(0, end + 1));
-      return typeof parsed === "string" && parsed.trim() ? parsed.trim() : undefined;
-    } catch {
-      return undefined;
-    }
-  }
-  if (value.startsWith("'")) {
-    const end = value.lastIndexOf("'");
-    return end > 0 ? value.slice(1, end).trim() || undefined : undefined;
-  }
-  return value.split("#", 1)[0]?.trim() || undefined;
-}
-
-/** Reads only the two stable fields of the TOML store written by `devin auth login`. */
-export function parseDevinCredentialsToml(raw: string): DevinCredentials | undefined {
-  let apiKey: string | undefined;
-  let apiServerUrl: string | undefined;
-  for (const line of raw.split(/\r?\n/)) {
-    const text = line.trimStart();
-    if (text.startsWith("#")) continue;
-    const match = /^(windsurf_api_key|api_server_url)\s*=\s*(.+)$/.exec(text);
-    const value = match ? parseTomlString(match[2] ?? "") : undefined;
-    if (!value) continue;
-    if (match![1] === "windsurf_api_key") apiKey = value;
-    else apiServerUrl = value;
-  }
-  return apiKey || apiServerUrl ? { ...(apiKey ? { apiKey } : {}), ...(apiServerUrl ? { apiServerUrl } : {}) } : undefined;
-}
-
 export function devinCredentialsPath(env: NodeJS.ProcessEnv = process.env, platform: NodeJS.Platform = process.platform): string | undefined {
   if (platform === "win32" && env.APPDATA?.trim()) return join(env.APPDATA.trim(), "devin", "credentials.toml");
   const home = env.HOME?.trim() || env.USERPROFILE?.trim() || homedir();
   return join(env.XDG_DATA_HOME?.trim() || join(home, ".local", "share"), "devin", "credentials.toml");
 }
 
-async function readDevinCredentials(): Promise<DevinCredentials | undefined> {
+/** True when `devin auth login` has stored credentials. Trama checks only that the file exists. */
+function hasDevinCredentials(): boolean {
   const path = devinCredentialsPath();
-  const raw = path ? await readFile(path, "utf8").catch(() => undefined) : undefined;
-  return raw === undefined ? undefined : parseDevinCredentialsToml(raw);
+  return path ? fileExists(path) : false;
 }
 
 function isLoopbackHost(host: string): boolean {
@@ -130,11 +90,14 @@ export function resolveDevinAuthMethod(advertised: string[], hasApiKey: boolean)
   throw new ProviderError("authenticationRequired", `Devin non offre un metodo di accesso senza browser (metodi offerti: ${list}). Aggiorna Devin.`);
 }
 
-/** `_meta` of the authenticate request (buildDevinAcpAuthenticateMeta). */
-async function devinAuthenticateMeta(): Promise<{ meta: JsonObject; apiKey: string | undefined }> {
-  const stored = firstEnv(DEVIN_API_KEY_ENV_KEYS) ? undefined : await readDevinCredentials();
-  const apiKey = firstEnv(DEVIN_API_KEY_ENV_KEYS) ?? stored?.apiKey;
-  const url = validateDevinApiServerUrl(firstEnv(DEVIN_API_SERVER_URL_ENV_KEYS) ?? stored?.apiServerUrl);
+/**
+ * `_meta` of the authenticate request (buildDevinAcpAuthenticateMeta). The API key and server URL come
+ * only from environment variables: the credentials written by `devin auth login` stay with Devin,
+ * which authenticates with its own cached method.
+ */
+function devinAuthenticateMeta(): { meta: JsonObject; apiKey: string | undefined } {
+  const apiKey = firstEnv(DEVIN_API_KEY_ENV_KEYS);
+  const url = validateDevinApiServerUrl(firstEnv(DEVIN_API_SERVER_URL_ENV_KEYS));
   if (url === "rejected") {
     throw new ProviderError(
       "authenticationRequired",
@@ -218,11 +181,13 @@ export const devinProfile: AcpProviderProfile = {
   modelAtLaunch: true,
   authPolicy: "on-demand",
   async validateInitialize(initializeResult) {
-    const { apiKey } = await devinAuthenticateMeta();
+    const { apiKey } = devinAuthenticateMeta();
+    // With stored credentials `devin acp` signs in by itself; authenticate runs only if it asks.
+    if (apiKey === undefined && hasDevinCredentials()) return;
     resolveDevinAuthMethod(authMethodIds(initializeResult), apiKey !== undefined);
   },
   async resolveAuth(initializeResult) {
-    const { meta, apiKey } = await devinAuthenticateMeta();
+    const { meta, apiKey } = devinAuthenticateMeta();
     return { methodId: resolveDevinAuthMethod(authMethodIds(initializeResult), apiKey !== undefined), meta };
   },
   // Devin reconciles its native Plan tracker from `_meta.mode`; Trama turns are always "agent".
@@ -240,7 +205,7 @@ export const devinProfile: AcpProviderProfile = {
     const missing = await probeCliVersion(executable, buildChildEnvironment(executable, ["WINDSURF_API_KEY", "DEVIN_API_KEY"]), LABEL);
     if (missing) return missing;
     if (firstEnv(DEVIN_API_KEY_ENV_KEYS)) return { kind: "authenticated", label: "Chiave API Devin" };
-    return (await readDevinCredentials())?.apiKey ? { kind: "authenticated", label: "Accesso Devin CLI" } : { kind: "signedOut" };
+    return hasDevinCredentials() ? { kind: "authenticated", label: "Accesso Devin CLI" } : { kind: "signedOut" };
   },
   async listModelsFromCli(executable) {
     const result = await runCli(executable, ["models", "list", "--format", "json"], buildChildEnvironment(executable, ["WINDSURF_API_KEY", "DEVIN_API_KEY"]));
