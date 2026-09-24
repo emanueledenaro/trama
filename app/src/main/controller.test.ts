@@ -39,12 +39,24 @@ async function setup() {
   });
   await controller.start();
   await until(() => state?.codex.account?.kind === "chatgpt");
+  await controller.updateSettings({ autoPrepareMethod: false });
   await controller.openProject(project);
   await until(() => controller!.snapshot.project?.phase.kind === "ready");
   return { data, project };
 }
 
 describe("TramaController", () => {
+  it("prepares the AI Hero method when a project without it opens (T04)", async () => {
+    const { project } = await setup();
+    const { existsSync } = await import("node:fs");
+    expect(existsSync(join(project, ".agents/skills/AIHERO-VERSION.md"))).toBe(false);
+    await controller!.updateSettings({ autoPrepareMethod: true });
+    await controller!.openProject(project);
+    await until(() => existsSync(join(project, ".agents/skills/AIHERO-MANIFEST.json")));
+    const events = controller!.snapshot.project!.document.events;
+    await until(() => events.some((e) => e.content.type === "activity" && e.content.title.startsWith("Metodo di lavoro AI Hero")));
+  });
+
   it("creates a project from an idea as a Git repository and remembers the idea (T10)", async () => {
     await setup();
     const parent = await mkdtemp(join(tmpdir(), "trama-parent-"));

@@ -64,6 +64,7 @@ export interface ActionMap {
   ];
   "codex:refresh": [void, void];
   "codex:login": [void, void];
+  "skills:rollback": [void, string[]];
   "practice:change": [{ action: "adopt" | "retire" | "rollback"; id: string; reason?: string }, void];
   "providers:refresh": [{ provider?: ProviderId }, void];
   "provider:login": [{ provider: ProviderId }, { url: string | null; command: string | null }];

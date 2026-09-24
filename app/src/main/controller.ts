@@ -85,7 +85,7 @@ import { availableChecks, CHECKS, type ReadOnlyCheck, runReadOnlyCheck } from ".
 import { parsePlan, PLAN_SCHEMA, PLANNING_INSTRUCTIONS, planPrompt } from "./core/plan";
 import { approvePactDemo, inspectPactDemo, runPactDemo } from "./core/pactDemo";
 import { readRepositoryFile, scanRepository } from "./core/repositoryScanner";
-import { prepareSkills, type SetupReport } from "./core/skillSetup";
+import { installedSkillVersion, prepareSkills, rollbackSkills, SELECTED_SKILLS, SKILL_VERSION, type SetupReport, updateSkills } from "./core/skillSetup";
 import {
   authorize,
   beginTurn,
@@ -381,6 +381,7 @@ export class TramaController {
       theme: settings.theme ?? "system",
       sidebarWidth: typeof settings.sidebarWidth === "number" ? settings.sidebarWidth : 256,
       sounds: settings.sounds === true,
+      autoPrepareMethod: settings.autoPrepareMethod !== false,
     };
     this.lastProjectId = settings.lastProjectId ?? null;
     this.practices = await this.practiceStore.load();
@@ -690,6 +691,10 @@ export class TramaController {
       this.publishNow();
       if (!isDemo) void this.refreshGitHub();
       this.watchProject(root);
+      if (!isDemo && loaded.writable && this.state.settings.autoPrepareMethod !== false && !hasAiHero(root)) {
+        // T04: the method is ready when the project opens; existing files are never overwritten.
+        void this.prepareSkills().catch((error) => this.fail(error));
+      }
       void this.loadSkills();
       void this.startCoordinator();
     } catch (error) {
@@ -784,9 +789,11 @@ export class TramaController {
   private async loadSkills(): Promise<void> {
     const project = this.state.project;
     if (!project || !isUsableAccount(this.state.codex.account)) return;
-    const skills = await this.discovery.listSkills(project.rootPath).catch(() => []);
-    if (this.state.project === project) {
+    const skills = await this.discovery.listSkills(project.rootPath).catch(() => null);
+    if (this.state.project === project && skills) {
       project.skills = skills;
+      // The method counts as ready only when Codex's catalogue actually loads its skills.
+      project.missingMethodSkills = hasAiHero(project.rootPath) ? SELECTED_SKILLS.filter((name) => !skills.some((s) => s.name === name)) : null;
       this.publish();
     }
   }
@@ -2423,10 +2430,16 @@ export class TramaController {
 
   async prepareSkills(): Promise<SetupReport> {
     const project = this.requireProject();
-    const report = await prepareSkills(project.rootPath, this.host.aiHeroResourceDirectory, project.github.repository);
+    const installed = await installedSkillVersion(project.rootPath);
+    const updating = installed !== null && installed !== SKILL_VERSION;
+    const report = updating
+      ? await updateSkills(project.rootPath, this.host.aiHeroResourceDirectory, project.github.repository)
+      : await prepareSkills(project.rootPath, this.host.aiHeroResourceDirectory, project.github.repository);
     appendEvent(project.document, "trama", {
       type: "activity",
-      title: `Metodo di lavoro AI Hero: ${report.pathsCreated.length} file creati`,
+      title: updating
+        ? `Metodo di lavoro AI Hero aggiornato da ${installed}: ${report.pathsCreated.length} file`
+        : `Metodo di lavoro AI Hero: ${report.pathsCreated.length} file creati`,
       detail: [report.version, ...report.warnings].join("\n"),
       tone: "info",
     });
@@ -2439,6 +2452,17 @@ export class TramaController {
     void this.refreshProject();
     void this.loadSkills();
     return report;
+  }
+
+  /** Restores the files replaced by the last update of the method. */
+  async rollbackSkills(): Promise<string[]> {
+    const project = this.requireProject();
+    const restored = await rollbackSkills(project.rootPath);
+    appendEvent(project.document, "trama", { type: "activity", title: "Aggiornamento del metodo AI Hero annullato", detail: restored.join("\n") || null, tone: "info" });
+    this.changed();
+    void this.refreshProject();
+    void this.loadSkills();
+    return restored;
   }
 
   // MARK: First-run guide and exercises (C12, C13, C14)

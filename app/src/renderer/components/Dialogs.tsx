@@ -132,6 +132,7 @@ function MonitorSettings() {
 
 function MethodSettings() {
   const project = useUi((s) => s.app?.project ?? null);
+  const autoPrepare = useUi((s) => s.app?.settings.autoPrepareMethod !== false);
   const [report, setReport] = useState<{ pathsCreated: string[]; existingPreserved: string[]; warnings: string[]; version: string } | null>(null);
   const [running, setRunning] = useState(false);
   return (
@@ -158,6 +159,21 @@ function MethodSettings() {
           {report.warnings.length ? ` ${report.warnings.join(" ")}` : ""}
         </p>
       ) : null}
+      {project?.missingMethodSkills?.length ? (
+        <p className="mt-2 text-ui-xs text-warning">Codex non ha caricato queste skill del metodo: {project.missingMethodSkills.join(", ")}.</p>
+      ) : project?.missingMethodSkills ? (
+        <p className="mt-2 text-ui-xs text-muted-foreground">Codex ha caricato tutte le skill del metodo.</p>
+      ) : null}
+      <div className="mt-2">
+        <Toggle
+          checked={autoPrepare}
+          onChange={(value) => void act("settings:update", { autoPrepareMethod: value })}
+          label="Prepara il metodo all'apertura di un progetto"
+        />
+        <Button size="sm" variant="ghost" disabled={!project || project.isDemo} onClick={() => void act("skills:rollback", undefined)}>
+          Annulla l'ultimo aggiornamento del metodo
+        </Button>
+      </div>
     </section>
   );
 }

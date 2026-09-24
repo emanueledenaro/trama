@@ -139,6 +139,7 @@ const handlers: { [K in ActionName]: Handler<K> } = {
   "candidate:publish": ({ candidateId }) => controller.publishCandidateByPerson(candidateId),
   "codex:refresh": () => controller.refreshCodex(),
   "codex:login": () => controller.login(),
+  "skills:rollback": () => controller.rollbackSkills(),
   "practice:change": ({ action, id, reason }) => controller.changePractice(action, id, reason ?? ""),
   "assignment:removeWorktree": ({ assignmentId }) => controller.removeAssignmentWorktree(assignmentId),
   "plan:cancel": async ({ planId }) => controller.cancelPlan(planId),

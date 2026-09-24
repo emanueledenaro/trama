@@ -506,6 +506,8 @@ export interface ActiveProjectState {
   runningWork: string[];
   /** What the example project's review scenario still needs. */
   pactDemoBlockers: CandidateBlocker[];
+  /** Skills of the AI Hero method that Codex's catalogue did not load (T04); null when not checked. */
+  missingMethodSkills?: string[] | null;
   /** Skills Codex loads for this project. */
   skills: import("./skills").LoadedSkill[];
   /** The current verdict of each candidate, computed by the main process. */
@@ -519,6 +521,8 @@ export type ThemePreference = "system" | "light" | "dark";
 export interface AppSettings {
   theme: ThemePreference;
   sidebarWidth: number;
+  /** Prepare the AI Hero method when a project without it opens (T04). On unless the person turns it off. */
+  autoPrepareMethod?: boolean;
   /** A sound with useful alerts only (conflicts, blocked providers, finished work). Off by default. */
   sounds?: boolean;
 }

@@ -21,3 +21,35 @@ describe("AI Hero skills", () => {
     expect(again.pathsCreated).toEqual([]);
   });
 });
+
+describe("AI Hero update and rollback (T04)", () => {
+  it("updates untouched managed files, keeps the person's edits and rolls back", async () => {
+    const { createHash } = await import("node:crypto");
+    const { installedSkillVersion, rollbackSkills, SKILL_VERSION, updateSkills } = await import("./skillSetup");
+    const root = await mkdtemp(join(tmpdir(), "trama-skills-"));
+    await prepareSkills(root, resources, null);
+    expect(await installedSkillVersion(root)).toBe(SKILL_VERSION);
+
+    // Simulate an older managed install: tdd came from Trama, grilling was edited by the person.
+    const manifestPath = join(root, ".agents/skills/AIHERO-MANIFEST.json");
+    const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+    const old = "# tdd, versione precedente\n";
+    await writeFile(join(root, ".agents/skills/tdd/SKILL.md"), old);
+    manifest.files[".agents/skills/tdd/SKILL.md"] = createHash("sha256").update(old).digest("hex");
+    manifest.version = "v1.0.0";
+    await writeFile(manifestPath, JSON.stringify(manifest));
+    await writeFile(join(root, ".agents/skills/grilling/SKILL.md"), "# La mia versione\n");
+
+    const report = await updateSkills(root, resources, null);
+    expect(report.pathsCreated).toContain(".agents/skills/tdd/SKILL.md");
+    expect(report.warnings).toEqual(["Modificato da te, non aggiornato: .agents/skills/grilling/SKILL.md."]);
+    expect(await readFile(join(root, ".agents/skills/tdd/SKILL.md"), "utf8")).not.toBe(old);
+    expect(await readFile(join(root, ".agents/skills/grilling/SKILL.md"), "utf8")).toBe("# La mia versione\n");
+    expect(await installedSkillVersion(root)).toBe(SKILL_VERSION);
+
+    expect(await rollbackSkills(root)).toEqual([".agents/skills/tdd/SKILL.md"]);
+    expect(await readFile(join(root, ".agents/skills/tdd/SKILL.md"), "utf8")).toBe(old);
+    expect(await installedSkillVersion(root)).toBe("v1.0.0");
+    await expect(rollbackSkills(root)).rejects.toThrow(/da annullare/);
+  });
+});
