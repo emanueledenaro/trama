@@ -1774,18 +1774,45 @@ export class TramaController {
 
   // MARK: Goals
 
-  createGoal(input: GoalInput): string {
+  /** Resolves only once the goal is on disk, so the person never sees a success that a restart would lose. */
+  async createGoal(input: GoalInput): Promise<string> {
     const project = this.requireProject();
-    const goal = createGoal(project.document, input);
-    appendEvent(project.document, "person", { type: "card", kind: "goal", title: "Obiettivo", detail: null, referenceId: goal.id }, null, new Date(), null, goal.id);
-    this.changed();
+    const document = project.document;
+    const previous = structuredClone(document.goals);
+    const goal = createGoal(document, input);
+    const card = appendEvent(document, "person", { type: "card", kind: "goal", title: "Obiettivo", detail: null, referenceId: goal.id }, null, new Date(), null, goal.id);
+    await this.saveGoalChange(project, previous, card.id);
     return goal.id;
   }
 
-  updateGoal(id: string, change: Partial<GoalInput> & { status?: GoalStatus; decisionIds?: string[] }): void {
+  async updateGoal(id: string, change: Partial<GoalInput> & { status?: GoalStatus; decisionIds?: string[] }): Promise<string> {
     const project = this.requireProject();
+    const previous = structuredClone(project.document.goals);
     updateGoal(project.document, id, change);
-    this.changed();
+    await this.saveGoalChange(project, previous, null);
+    return id;
+  }
+
+  /** Saves a goal change now; on failure the goals and the new card go back to what is on disk. */
+  private async saveGoalChange(project: ActiveProjectState, previousGoals: ProjectDocument["goals"], cardId: string | null): Promise<void> {
+    const document = project.document;
+    const rollBack = () => {
+      if (previousGoals === undefined) delete document.goals;
+      else document.goals = previousGoals;
+      if (cardId) document.events = document.events.filter((e) => e.id !== cardId);
+    };
+    if (!project.stateWritable) {
+      rollBack();
+      throw new Error("L'obiettivo non è stato salvato: lo stato del progetto non è leggibile e Trama non lo sovrascrive.");
+    }
+    try {
+      await this.storage.saveDocument(document);
+    } catch (error) {
+      rollBack();
+      this.publish();
+      throw new Error(`L'obiettivo non è stato salvato: ${(error as Error).message}`);
+    }
+    this.publish();
   }
 
   observeExample(input: { candidateId: string; exampleId: string; observed: boolean; snapshotId: string }): void {

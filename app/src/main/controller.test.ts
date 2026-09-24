@@ -1,10 +1,11 @@
-import { cp, mkdtemp } from "node:fs/promises";
+import { chmod, cp, mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { AppState } from "@shared/domain";
 import { decisionDependents, dialogEvents, findGoal, projectGoals } from "@shared/goals";
 import { TramaController } from "./controller";
+import { AppStorage } from "./core/storage";
 
 const root = join(import.meta.dirname, "../..");
 let controller: TramaController | null = null;
@@ -101,12 +102,12 @@ describe("TramaController", () => {
 
   it("keeps two goal dialogs apart from the project dialog and gives the Coordinator the goal", async () => {
     const { data } = await setup();
-    const first = controller!.createGoal({
+    const first = await controller!.createGoal({
       title: "Revisione degli ordini",
       outcome: "Gli ordini pagati annullati vanno in revisione",
       examples: [{ kind: "accepted", text: "Ordine 42: stato review" }],
     });
-    const second = controller!.createGoal({ title: "Catalogo più veloce", outcome: "La ricerca risponde in meno di un secondo", examples: [] });
+    const second = await controller!.createGoal({ title: "Catalogo più veloce", outcome: "La ricerca risponde in meno di un secondo", examples: [] });
     const project = controller!.snapshot.project!;
     const document = project.document;
 
@@ -165,7 +166,7 @@ describe("TramaController", () => {
 
   it("links a decision asked in a goal dialog to that goal and answers there", async () => {
     await setup();
-    const goalId = controller!.createGoal({ title: "Revisione", outcome: "Ordini in revisione", examples: [] });
+    const goalId = await controller!.createGoal({ title: "Revisione", outcome: "Ordini in revisione", examples: [] });
     const document = controller!.snapshot.project!.document;
     await controller!.send("[chiedi-decisione]", null, null, null, [], null, goalId);
     const question = document.decisionRequests[0]!;
@@ -176,6 +177,33 @@ describe("TramaController", () => {
     const answer = document.requests.at(-1)!;
     expect(answer.goalId).toBe(goalId);
     expect(decisionDependents(document, decisionId).goals.map((g) => g.id)).toEqual([goalId]);
+  });
+
+  it("saves a goal before reporting it and keeps nothing when the save fails (UX01)", async () => {
+    const { data } = await setup();
+    const project = controller!.snapshot.project!;
+    const document = project.document;
+    const storage = new AppStorage(data);
+
+    // Success is reported only once the goal is on disk, without waiting for the deferred save.
+    const id = await controller!.createGoal({ title: "Revisione", outcome: "Ordini in revisione", examples: [] });
+    expect(findGoal((await storage.loadDocument(project.id)).document!, id)).toMatchObject({ title: "Revisione" });
+    await controller!.updateGoal(id, { title: "Revisione degli ordini" });
+    expect(findGoal((await storage.loadDocument(project.id)).document!, id)!.title).toBe("Revisione degli ordini");
+
+    const goalsBefore = structuredClone(document.goals);
+    const eventsBefore = document.events.length;
+    const projects = dirname(storage.documentPath(project.id));
+    await chmod(projects, 0o500);
+    try {
+      await expect(controller!.createGoal({ title: "Catalogo", outcome: "Ricerca veloce", examples: [] })).rejects.toThrow(/non è stato salvato/);
+      await expect(controller!.updateGoal(id, { title: "Titolo perso" })).rejects.toThrow(/non è stato salvato/);
+    } finally {
+      await chmod(projects, 0o700);
+    }
+    expect(document.goals).toEqual(goalsBefore);
+    expect(document.events).toHaveLength(eventsBefore);
+    expect(findGoal((await storage.loadDocument(project.id)).document!, id)!.title).toBe("Revisione degli ordini");
   });
 
   it("refuses a message to a goal that does not exist", async () => {
