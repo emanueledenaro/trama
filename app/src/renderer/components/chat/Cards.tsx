@@ -14,6 +14,7 @@ import {
   IconUsersGroup,
 } from "@tabler/icons-react";
 import type { AssignmentStatus, CandidateState } from "@shared/domain";
+import { isExerciseAssessment } from "@shared/onboarding";
 import type { ActionResult } from "@shared/ipc";
 import { Spinner } from "@/components/Spinner";
 import { useState } from "react";
@@ -31,15 +32,18 @@ function CardFrame({
   aside,
   children,
   className,
+  anchor,
 }: {
   icon: React.ReactNode;
   title: string;
   aside?: React.ReactNode;
   children: React.ReactNode;
   className?: string;
+  /** Lets the exercise guide find the card in the timeline. */
+  anchor?: string;
 }) {
   return (
-    <div className={cn("my-3 overflow-hidden rounded-xl border border-[color:var(--color-border)] bg-[var(--card)]", className)}>
+    <div data-anchor={anchor} className={cn("my-3 overflow-hidden rounded-xl border border-[color:var(--color-border)] bg-[var(--card)]", className)}>
       <div className="flex items-center gap-2 px-3.5 pt-2.5 pb-1 text-ui">
         <span className="flex size-4 shrink-0 items-center justify-center text-muted-foreground [&>svg]:size-3.5">{icon}</span>
         <span className="min-w-0 flex-1 truncate font-medium text-foreground">{title}</span>
@@ -63,6 +67,7 @@ export function StudyCard({ title, text, streaming }: { title: string; text: str
   const [open, setOpen] = useState(true);
   return (
     <CardFrame
+      anchor={streaming ? undefined : "study"}
       icon={<IconTelescope stroke={1.8} />}
       title={title}
       aside={
@@ -665,8 +670,21 @@ export function ConflictCard({ assessmentId }: { assessmentId: string }) {
   const assessment = project.document.conflicts?.find((a) => a.id === assessmentId);
   if (!assessment) return null;
   const label = CONFLICT_LABEL[assessment.classification];
+  const exercise = isExerciseAssessment(assessment);
   return (
-    <CardFrame icon={<IconGitBranch stroke={1.8} />} title="Lavoro dei colleghi" aside={<Badge tone={label.tone}>{label.label}</Badge>}>
+    <CardFrame
+      icon={<IconGitBranch stroke={1.8} />}
+      title={exercise ? "Esercizio di conflitto" : "Lavoro dei colleghi"}
+      aside={
+        <>
+          {exercise ? <Badge tone="info">Esercizio</Badge> : null}
+          <Badge tone={label.tone}>{label.label}</Badge>
+        </>
+      }
+    >
+      {exercise ? (
+        <p className="mb-1 text-ui-sm text-muted-foreground">Modifica simulata da Trama in una copia locale separata: non è il lavoro di un collaboratore reale.</p>
+      ) : null}
       <p className="text-ui text-foreground/90">
         Candidato{" "}
         <button type="button" className="font-mono text-[11.5px] text-[var(--color-text-accent)] hover:underline" onClick={() => setInspector({ kind: "candidate", id: assessment.candidateId })}>

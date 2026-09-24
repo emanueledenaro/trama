@@ -8,6 +8,7 @@ import { Input, Label, TextArea } from "@/components/ui/field";
 import { Dialog } from "@/components/ui/dialog";
 import { Spinner } from "@/components/Spinner";
 import { SearchPalette } from "@/components/SearchPalette";
+import { GuideDialog } from "@/components/onboarding/GuideDialog";
 import { cn } from "@/lib/cn";
 import { act, useUi } from "@/lib/store";
 
@@ -43,6 +44,13 @@ function SettingsDialog() {
               </button>
             ))}
           </div>
+        </section>
+        <section>
+          <h4 className="mb-1 text-ui-sm font-medium text-muted-foreground">Guida introduttiva</h4>
+          <p className="mb-2 text-ui-xs text-muted-foreground">Collegamenti, progetto, metodo AI Hero ed esercizi sulla copia di esempio. Riprende dal punto in cui ti eri fermato.</p>
+          <Button variant="outline" size="sm" onClick={() => setDialog("guide")}>
+            Apri la guida
+          </Button>
         </section>
         <MonitorSettings />
         <MethodSettings />
@@ -353,6 +361,7 @@ export function Dialogs() {
       <ConnectionsDialog />
       <CreateProjectDialog />
       <SearchPalette />
+      <GuideDialog />
     </>
   );
 }
