@@ -26,6 +26,7 @@ export function App() {
   const setApp = useUi((s) => s.setApp);
   const sidebarOpen = useUi((s) => s.sidebarOpen);
   const inspector = useUi((s) => s.inspector);
+  const mainView = useUi((s) => s.mainView);
 
   useEffect(() => {
     void window.trama.getState().then(setApp);
@@ -88,7 +89,7 @@ export function App() {
           ) : null}
           <main className="chat-content-card relative z-[15] flex min-w-0 flex-1 overflow-hidden bg-[var(--color-background-surface)]">
             <ChatView isMac={isMac} />
-            {inspector && app.project ? <Inspector /> : null}
+            {inspector && app.project && mainView === "dialog" ? <Inspector /> : null}
           </main>
         </div>
       </div>

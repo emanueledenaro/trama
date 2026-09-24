@@ -16,7 +16,12 @@ export type InspectorTarget =
   | { kind: "group" }
   | { kind: "work" }
   | { kind: "issues" }
-  | { kind: "issue"; number: number };
+  | { kind: "issue"; number: number }
+  | { kind: "goals"; create?: boolean }
+  | { kind: "goal"; id: string };
+
+/** The main pane: a dialog with the Coordinator, or the projects overview (UX03). */
+export type MainView = "dialog" | "overview";
 
 export type DialogName = "settings" | "connections" | "createProject" | "search" | null;
 
@@ -28,6 +33,14 @@ interface UiState {
   toast: string | null;
   composerFocusRequest: number;
   composerModuleId: string | null;
+  mainView: MainView;
+  /** The goal whose dialog is shown; null is the project dialog (UX02). */
+  dialogGoalId: string | null;
+  /** A goal to open once its project is the selected one, after a switch from the overview. */
+  pendingGoal: { projectId: string; goalId: string } | null;
+  setMainView(view: MainView): void;
+  openDialog(goalId: string | null): void;
+  openGoalOf(projectId: string, goalId: string): void;
   /** Inspector history for the back and forward buttons, as Synara's app navigation. */
   history: (InspectorTarget | null)[];
   historyIndex: number;
@@ -59,6 +72,15 @@ export const useUi = create<UiState>((set, get) => ({
   toast: null,
   composerFocusRequest: 0,
   composerModuleId: null,
+  mainView: "dialog",
+  dialogGoalId: null,
+  pendingGoal: null,
+  setMainView: (mainView) => set({ mainView }),
+  openDialog: (dialogGoalId) => set({ dialogGoalId, mainView: "dialog" }),
+  openGoalOf: (projectId, goalId) => {
+    if (get().app?.project?.id === projectId) set({ dialogGoalId: goalId, mainView: "dialog", pendingGoal: null });
+    else set({ pendingGoal: { projectId, goalId }, mainView: "dialog" });
+  },
   history: [null],
   historyIndex: 0,
   goBack: () => {
@@ -72,7 +94,14 @@ export const useUi = create<UiState>((set, get) => ({
   setApp: (app) => {
     const previous = get().app;
     // A different project resets the panels that point into the old one.
-    if (previous?.project?.id !== app.project?.id) set({ inspector: null, composerModuleId: null, history: [null], historyIndex: 0 });
+    if (previous?.project?.id !== app.project?.id) {
+      const pending = get().pendingGoal;
+      const goal = pending && pending.projectId === app.project?.id ? pending.goalId : null;
+      set({ inspector: null, composerModuleId: null, history: [null], historyIndex: 0, dialogGoalId: goal, pendingGoal: goal ? null : pending });
+    }
+    // A goal that no longer exists falls back to the project dialog.
+    const goalId = get().dialogGoalId;
+    if (goalId && !app.project?.document.goals?.some((g) => g.id === goalId)) set({ dialogGoalId: null });
     set({ app });
   },
   toggleSidebar: () => {
@@ -86,6 +115,8 @@ export const useUi = create<UiState>((set, get) => ({
   },
   setInspector: (inspector) => {
     const { history, historyIndex, inspector: current } = get();
+    // Details belong to a project dialog: opening one leaves the overview.
+    if (inspector) set({ mainView: "dialog" });
     if (JSON.stringify(current) === JSON.stringify(inspector)) return;
     const next = [...history.slice(0, historyIndex + 1), inspector].slice(-50);
     set({ inspector, history: next, historyIndex: next.length - 1 });

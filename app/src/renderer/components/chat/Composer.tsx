@@ -6,6 +6,7 @@ import type { ImageAttachmentInput } from "@shared/ipc";
 import { type MentionCandidate, mentionCandidates, mentionToken } from "@shared/mentions";
 import { normalizePaste, pasteSizeLabel, pasteTitle, serializePastes, shouldCollapsePaste } from "@shared/pastedText";
 import { skillCandidates } from "@shared/skills";
+import { dialogComposer, findGoal } from "@shared/goals";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Menu, MenuGroupLabel, MenuPopup, MenuRadioGroup, MenuRadioItem, MenuSeparator, MenuTrigger } from "@/components/ui/menu";
@@ -50,15 +51,22 @@ function readImage(file: File): Promise<DraftImage> {
 const PILL =
   "inline-flex h-7 min-w-0 shrink-0 cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-lg px-2 text-ui-sm font-normal text-[var(--color-text-foreground-secondary)] transition-colors hover:bg-[var(--color-background-elevated-secondary)] hover:text-[var(--color-text-foreground)] data-[popup-open]:bg-[var(--color-background-elevated-secondary)] data-[popup-open]:text-[var(--color-text-foreground)] sm:px-2.5";
 
+/** Images and pasted texts not yet sent, kept per dialog while the app runs (UX02). */
+const unsentByDialog = new Map<string, { images: DraftImage[]; pastes: { id: string; text: string }[] }>();
+
 export function Composer() {
   const project = useUi((s) => s.app?.project)!;
   const providers = useUi((s) => s.app!.providers);
-  const selectedProvider: ProviderId = project.document.selectedProvider ?? project.document.coordinator.threadProvider ?? "codex";
+  const goalId = useUi((s) => s.dialogGoalId);
+  const goal = findGoal(project.document, goalId);
+  // Each dialog has its own draft and selection (ADR 0010).
+  const selection = dialogComposer(project.document, goal?.id ?? null);
+  const selectedProvider: ProviderId = selection.selectedProvider ?? project.document.coordinator.threadProvider ?? "codex";
   const models = providers[selectedProvider]?.models ?? [];
   const focusRequest = useUi((s) => s.composerFocusRequest);
   const moduleId = useUi((s) => s.composerModuleId);
   const setModule = useUi((s) => s.setComposerModule);
-  const [text, setText] = useState(project.document.composerDraft);
+  const [text, setText] = useState(selection.composerDraft);
   const [images, setImages] = useState<DraftImage[]>([]);
   const [pastes, setPastes] = useState<{ id: string; text: string }[]>([]);
   const [dragging, setDragging] = useState(false);
@@ -81,20 +89,28 @@ export function Composer() {
   const busy = running || project.phase.kind === "studying";
   const threadModel =
     (project.document.coordinator.threadProvider ?? "codex") === selectedProvider ? project.document.coordinator.threadModel : null;
-  const selectedModel = project.document.selectedModel ?? threadModel ?? models.find((m) => m.isDefault)?.model ?? models[0]?.model ?? null;
+  const selectedModel = selection.selectedModel ?? threadModel ?? models.find((m) => m.isDefault)?.model ?? models[0]?.model ?? null;
   const modelInfo = models.find((m) => m.model === selectedModel);
   // A chosen model the catalogue no longer offers stays visible as unavailable: never replaced silently (ADR 0010).
   const modelMissing = Boolean(selectedModel && models.length && !modelInfo);
-  const effort = project.document.selectedEffort ?? modelInfo?.defaultReasoningEffort ?? null;
+  const effort = selection.selectedEffort ?? modelInfo?.defaultReasoningEffort ?? null;
   const module = moduleId ? project.snapshot.modules.find((m) => m.id === moduleId) : null;
+  const dialogKey = `${project.id}:${goal?.id ?? ""}`;
+  const unsent = useRef({ images, pastes });
+  unsent.current = { images, pastes };
 
   useEffect(() => {
-    setImages([]);
-    setPastes([]);
-    setText(project.document.composerDraft);
-    // Only when switching project: the draft on disk follows local edits, not the other way round.
+    const restored = unsentByDialog.get(dialogKey);
+    setImages(restored?.images ?? []);
+    setPastes(restored?.pastes ?? []);
+    setText(selection.composerDraft);
+    // Keep what was not sent when the person moves to another dialog.
+    return () => {
+      unsentByDialog.set(dialogKey, unsent.current);
+    };
+    // Only when switching dialog: the draft on disk follows local edits, not the other way round.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [project.id]);
+  }, [dialogKey]);
 
   useEffect(() => {
     if (focusRequest) textarea.current?.focus();
@@ -143,7 +159,7 @@ export function Composer() {
   const updateText = (value: string) => {
     setText(value);
     if (saveTimer.current) clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(() => void act("coordinator:saveDraft", { text: value }), 400);
+    saveTimer.current = setTimeout(() => void act("coordinator:saveDraft", { text: value, goalId: goal?.id ?? null }), 400);
   };
 
   const submit = () => {
@@ -154,7 +170,7 @@ export function Composer() {
     setText("");
     const attached = images.map(({ name, mimeType, dataBase64 }) => ({ name, mimeType, dataBase64 }));
     setImages([]);
-    void act("coordinator:send", { text: message, moduleId, model: selectedModel, effort, images: attached, provider: selectedProvider });
+    void act("coordinator:send", { text: message, moduleId, model: selectedModel, effort, images: attached, provider: selectedProvider, goalId: goal?.id ?? null });
   };
 
   return (
@@ -297,7 +313,9 @@ export function Composer() {
               placeholder={
                 running
                   ? "Aggiungi un messaggio: partirà quando il Coordinatore avrà finito"
-                  : "Messaggio al Coordinatore. Usa @ per citare moduli, file, issue e decisioni, $ per una skill"
+                  : goal
+                    ? `Messaggio al Coordinatore sull'obiettivo «${goal.title}». Usa @ per citare moduli, file, issue e decisioni`
+                    : "Messaggio al Coordinatore. Usa @ per citare moduli, file, issue e decisioni, $ per una skill"
               }
               aria-label="Messaggio al Coordinatore"
               className="block max-h-60 min-h-[2lh] w-full resize-none bg-transparent font-system-ui text-chat leading-relaxed text-foreground outline-none placeholder:text-muted-foreground/40"
@@ -357,7 +375,7 @@ export function Composer() {
                   <MenuGroupLabel>Provider</MenuGroupLabel>
                   <MenuRadioGroup
                     value={selectedProvider}
-                    onValueChange={(value) => void act("coordinator:selectProvider", { provider: value as ProviderId })}
+                    onValueChange={(value) => void act("coordinator:selectProvider", { provider: value as ProviderId, goalId: goal?.id ?? null })}
                   >
                     {PROVIDERS.map((p) => {
                       const account = providers[p.id as ProviderId]?.account ?? null;
@@ -389,7 +407,7 @@ export function Composer() {
                     value={selectedModel ?? ""}
                     onValueChange={(value) => {
                       const next = models.find((m) => m.model === value);
-                      void act("coordinator:selectModel", { model: value as string, effort: next?.defaultReasoningEffort ?? null, provider: selectedProvider });
+                      void act("coordinator:selectModel", { model: value as string, effort: next?.defaultReasoningEffort ?? null, provider: selectedProvider, goalId: goal?.id ?? null });
                     }}
                   >
                     {models.map((m) => (
@@ -405,7 +423,7 @@ export function Composer() {
                       <MenuGroupLabel>Sforzo</MenuGroupLabel>
                       <MenuRadioGroup
                         value={effort ?? ""}
-                        onValueChange={(value) => void act("coordinator:selectModel", { model: modelInfo.model, effort: value as string, provider: selectedProvider })}
+                        onValueChange={(value) => void act("coordinator:selectModel", { model: modelInfo.model, effort: value as string, provider: selectedProvider, goalId: goal?.id ?? null })}
                       >
                         {modelInfo.supportedReasoningEfforts.map((level) => (
                           <MenuRadioItem key={level} value={level}>
