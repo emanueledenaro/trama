@@ -166,6 +166,10 @@ describe("Pi account and models", () => {
     expect(models[0]).toMatchObject({ supportedReasoningEfforts: ["off", "minimal", "low", "medium", "high"], defaultReasoningEffort: "medium" });
     expect(models[1]).toMatchObject({ isDefault: true, supportedReasoningEfforts: [], defaultReasoningEffort: null });
     expect(piSupportedThinkingLevels(nested as never)).toEqual(["minimal", "low", "medium", "high", "xhigh"]);
+    // Discovery loads no extension, skill or prompt template from the person's Pi setup.
+    expect(state.servicesOptions.at(-1)).toMatchObject({
+      resourceLoaderOptions: { noExtensions: true, noSkills: true, noPromptTemplates: true },
+    });
   });
 
   it("keeps only active, complete OpenCode Zen catalog models", () => {
@@ -207,6 +211,7 @@ describe("Pi sessions and tool gating", () => {
     const loader = (state.servicesOptions.at(-1) as { resourceLoaderOptions: { appendSystemPromptOverride: (base: string[]) => string[] } })
       .resourceLoaderOptions;
     expect(loader.appendSystemPromptOverride(["base"])).toEqual(["base", "Sei il Coordinatore."]);
+    expect(loader).toMatchObject({ noExtensions: true, noSkills: true, noPromptTemplates: true });
 
     const missing = await runtime.openThread({ model: "anthropic/claude-x", cwd: root, developerInstructions: "", resumeThreadId: join(root, "gone.jsonl") });
     expect(missing.replaced).toBe(true);

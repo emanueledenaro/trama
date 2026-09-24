@@ -66,6 +66,12 @@ function loadPiSdk(): Promise<PiSdk> {
 const DEFAULT_THINKING_LEVEL: ThinkingLevel = "medium";
 export const PI_READ_ONLY_TOOLS = ["read", "grep", "find", "ls"];
 export const PI_WRITE_TOOLS = ["edit", "write"];
+/**
+ * Pi extensions run arbitrary code in Trama's main process and could add tools, hooks or network
+ * access; skills and prompt templates come from the person's setup. None of them is loaded: Trama
+ * inlines the skills the person invoked.
+ */
+export const PI_RESOURCE_ISOLATION = { noExtensions: true, noSkills: true, noPromptTemplates: true } as const;
 
 // ── Thinking levels and models (PiAdapter.ts) ─────────────────────────────
 
@@ -527,7 +533,9 @@ export class PiRuntime implements AgentRuntime {
     const sdk = await this.requireSdk();
     const agentDir = this.agentDir(sdk);
     const modelRuntime = await createPiModelRuntime(sdk, agentDir, true);
-    const services = await sdk.createAgentSessionServices({ cwd: process.cwd(), agentDir, modelRuntime });
+    // No extensions, skills or prompt templates: discovery must not run code from the person's Pi setup.
+    // The services hold no process or handle to dispose once nothing is loaded.
+    const services = await sdk.createAgentSessionServices({ cwd: process.cwd(), agentDir, modelRuntime, resourceLoaderOptions: PI_RESOURCE_ISOLATION });
     const registry = new sdk.ModelRegistry(services.modelRuntime);
     const models = ensurePiAnthropicCatalogModels(registry.getAvailable(), registry.getAll()).flatMap((model) => {
       const descriptor = toProviderModel(model, registry.getProviderDisplayName.bind(registry));
@@ -634,7 +642,10 @@ export class PiRuntime implements AgentRuntime {
             cwd: sessionCwd,
             agentDir: sessionAgentDir,
             modelRuntime,
-            resourceLoaderOptions: instructions ? { appendSystemPromptOverride: (base) => [...base, instructions] } : {},
+            resourceLoaderOptions: {
+              ...PI_RESOURCE_ISOLATION,
+              ...(instructions ? { appendSystemPromptOverride: (base: string[]) => [...base, instructions] } : {}),
+            },
           });
           const sessionRegistry = new sdk.ModelRegistry(services.modelRuntime);
           registry = sessionRegistry;

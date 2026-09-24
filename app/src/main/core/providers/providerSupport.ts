@@ -10,7 +10,7 @@ import { type ChildProcess, spawn } from "node:child_process";
 import { accessSync, constants, constants as fsConstants, lstatSync, readdirSync, realpathSync } from "node:fs";
 import { open, readFile, stat } from "node:fs/promises";
 import { homedir } from "node:os";
-import { basename, delimiter, dirname, extname, isAbsolute, join, normalize, parse, resolve, sep } from "node:path";
+import { basename, delimiter, dirname, extname, isAbsolute, join, parse, resolve, sep } from "node:path";
 import type { LoadedSkill } from "@shared/skills";
 import type { ProviderId } from "@shared/codex";
 import { isInside, ProviderError } from "./types";
@@ -24,21 +24,12 @@ const INLINE_SKILLS_HEADER =
   "The user invoked the following agent skill(s) for this request. Follow each " +
   "skill's instructions. File paths referenced inside a skill are relative to its " +
   '"dir" attribute.';
-const CROSS_PROVIDER_SKILL_DIR_NAMES = [".synara", ".codex", ".cursor", ".claude", ".agents"];
-
-function pathSegments(path: string): Set<string> {
-  return new Set(
-    normalize(path)
-      .split(/[\\/]+/)
-      .map((segment) => segment.toLowerCase()),
-  );
-}
-
-/** Antigravity has no native skills; Pi loads its own and needs only cross-provider skills inlined. */
-export function shouldInlineSkill(provider: "antigravity" | "pi", skillPath: string): boolean {
-  if (provider === "antigravity") return true;
-  const segments = pathSegments(skillPath);
-  return CROSS_PROVIDER_SKILL_DIR_NAMES.some((dir) => segments.has(dir));
+/**
+ * Antigravity has no native skills, and Trama starts Pi without its skill loader (PI_RESOURCE_ISOLATION
+ * in pi.ts), so every invoked skill is inlined for both.
+ */
+export function shouldInlineSkill(_provider: "antigravity" | "pi", _skillPath: string): boolean {
+  return true;
 }
 
 export async function inlineSkillInstructions(
