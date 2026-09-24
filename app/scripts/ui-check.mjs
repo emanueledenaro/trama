@@ -7,19 +7,24 @@ import { _electron as electron } from "playwright";
 
 const out = resolve(process.argv[2] ?? "ui-check");
 const dataDir = await mkdtemp(join(tmpdir(), "trama-ui-"));
-const app = await electron.launch({
-  // Its own Electron profile, so the check runs next to an open Trama instead of hitting its single-instance lock.
-  args: [".", "--no-sandbox", `--user-data-dir=${await mkdtemp(join(tmpdir(), "trama-ui-profile-"))}`],
-  env: {
-    ...process.env,
-    TRAMA_DATA_DIR: dataDir,
-    TRAMA_CODEX_PATH: resolve("test-fixtures/fake-codex.mjs"),
-  },
-});
-const page = await app.firstWindow();
-page.on("console", (m) => console.log("[renderer]", m.type(), m.text()));
-page.on("pageerror", (e) => console.log("[pageerror]", e.message));
-await page.setViewportSize({ width: 1280, height: 820 });
+// Each launch uses the same Trama data folder, so a second launch is a real reopening.
+const launch = async () => {
+  const app = await electron.launch({
+    // Its own Electron profile, so the check runs next to an open Trama instead of hitting its single-instance lock.
+    args: [".", "--no-sandbox", `--user-data-dir=${await mkdtemp(join(tmpdir(), "trama-ui-profile-"))}`],
+    env: {
+      ...process.env,
+      TRAMA_DATA_DIR: dataDir,
+      TRAMA_CODEX_PATH: resolve("test-fixtures/fake-codex.mjs"),
+    },
+  });
+  const page = await app.firstWindow();
+  page.on("console", (m) => console.log("[renderer]", m.type(), m.text()));
+  page.on("pageerror", (e) => console.log("[pageerror]", e.message));
+  await page.setViewportSize({ width: 1280, height: 820 });
+  return { app, page };
+};
+let { app, page } = await launch();
 const shot = async (name) => {
   await page.waitForTimeout(400);
   await page.screenshot({ path: join(out, `${name}.png`) });
@@ -172,6 +177,9 @@ await page.getByLabel("Esempio 1").fill("Ordine 42 pagato e annullato: stato rev
 await page.getByRole("button", { name: "Crea l'obiettivo" }).click();
 await page.getByTestId("dialog-title").filter({ hasText: "Ordini annullati in revisione" }).waitFor();
 await page.getByTestId("goal-dialog-header").waitFor();
+// The goal is saved before the dialog opens; its detail shows the stable id used after the restart.
+const goalTitle = "Ordini annullati in revisione";
+const goalId = (await page.getByText(/^G-[0-9A-F]{8}$/).first().textContent()).trim();
 await page.getByLabel("Messaggio al Coordinatore").fill("Da dove partiamo per questo obiettivo?");
 await page.keyboard.press("Enter");
 await page.getByText(/Dialogo dell'obiettivo G-/).first().waitFor({ timeout: 20_000 });
@@ -202,4 +210,25 @@ await shot("12-settings");
 await page.getByRole("button", { name: "Apri la guida" }).click();
 await guide.waitFor();
 await shot("12a-guide-resume-dark");
+await app.close();
+
+// Reopening (UX01): after a restart the same goal is in the list and opens from the keyboard alone.
+({ app, page } = await launch());
+const goalsRow = page.getByRole("button", { name: /^Obiettivi/ }).first();
+await goalsRow.waitFor({ timeout: 30_000 });
+await goalsRow.focus();
+await page.keyboard.press("Enter");
+await page.getByRole("button", { name: "Nuovo obiettivo" }).focus();
+let reached = false;
+for (let step = 0; step < 12 && !reached; step++) {
+  await page.keyboard.press("Tab");
+  reached = await page.evaluate((title) => document.activeElement?.textContent?.includes(title) ?? false, goalTitle);
+}
+if (!reached) throw new Error("The goal is not reachable with Tab after reopening");
+await shot("13-goals-reopened");
+await page.keyboard.press("Enter");
+await page.getByText(goalId, { exact: true }).waitFor();
+await page.getByRole("heading", { name: goalTitle }).waitFor();
+await shot("13a-goal-reopened");
+console.log("reopened goal", goalId);
 await app.close();

@@ -35,21 +35,19 @@ export function GoalEditor({ goal, onDone }: { goal?: ProjectGoal; onDone: (id: 
     goal?.examples.map((e) => ({ id: e.id, kind: e.kind, text: e.text })) ?? [{ kind: "accepted", text: "" }],
   );
   const [saving, setSaving] = useState(false);
+  const [failed, setFailed] = useState(false);
   const valid = title.trim() && outcome.trim();
   const update = (index: number, change: Partial<GoalExampleInputPayload>) =>
     setExamples((current) => current.map((e, i) => (i === index ? { ...e, ...change } : e)));
+  // The main process answers only after the goal is saved; on a refusal the form keeps what the person wrote.
   const save = async () => {
     setSaving(true);
+    setFailed(false);
     const payload = { title, outcome, examples: examples.filter((e) => e.text.trim()) };
-    if (goal) {
-      await act("goal:update", { id: goal.id, ...payload });
-      setSaving(false);
-      onDone(goal.id);
-    } else {
-      const id = await act("goal:create", payload);
-      setSaving(false);
-      if (id) onDone(id);
-    }
+    const id = goal ? await act("goal:update", { id: goal.id, ...payload }) : await act("goal:create", payload);
+    setSaving(false);
+    if (id) onDone(id);
+    else setFailed(true);
   };
   return (
     <div className="space-y-2.5 rounded-xl border border-[color:var(--color-border)] p-3" data-testid="goal-editor">
@@ -111,6 +109,11 @@ export function GoalEditor({ goal, onDone }: { goal?: ProjectGoal; onDone: (id: 
           Annulla
         </Button>
       </div>
+      {failed ? (
+        <p role="alert" className="text-ui-sm text-warning">
+          L'obiettivo non è stato salvato. Il testo resta qui: correggilo o riprova.
+        </p>
+      ) : null}
       <p className="text-ui-xs text-muted-foreground">Creare un obiettivo non concede un mandato e non avvia specialisti.</p>
     </div>
   );
@@ -174,7 +177,7 @@ export function GoalsView({ create }: { create?: boolean }) {
                   <span className="min-w-0 flex-1">
                     <span className="block text-ui text-foreground">{goal.title}</span>
                     <span className="block truncate text-ui-sm text-muted-foreground">
-                      {goal.examples.length ? `${goal.examples.length} esempi` : "esempi da definire"}<Sep />{goalWorkSummary(project.document, goal.id)}
+                      {goal.examples.length ? `${goal.examples.length} ${goal.examples.length === 1 ? "esempio" : "esempi"}` : "esempi da definire"}<Sep />{goalWorkSummary(project.document, goal.id)}
                     </span>
                   </span>
                 </button>

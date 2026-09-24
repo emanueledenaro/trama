@@ -1,9 +1,20 @@
-import { mkdtemp } from "node:fs/promises";
+import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { Candidate, ProjectDocument, RecentProject } from "@shared/domain";
-import { candidateGoalId, decisionDependents, dialogComposer, exampleChecks, findGoal, goalLinks, projectGoals } from "@shared/goals";
+import {
+  candidateGoalId,
+  decisionDependents,
+  dialogComposer,
+  dialogEvents,
+  dialogRequests,
+  exampleChecks,
+  findGoal,
+  goalLinks,
+  goalWorkSummary,
+  projectGoals,
+} from "@shared/goals";
 import type { RepositorySnapshot } from "@shared/repository";
 import { runCoordinatorTool, type ToolContext } from "./coordinatorTools";
 import { appendEvent, emptyDocument, normalizeDocument } from "./document";
@@ -125,6 +136,65 @@ describe("goals (UX01)", () => {
     await storage.saveDocument(document);
     const reopened = (await storage.loadDocument("p")).document!;
     expect(reopened.goals).toEqual(document.goals);
+  });
+
+  it("keeps every record of a document written before goals readable, in the project dialog, with no guessed goal", async () => {
+    // A project as the integrated schema stored it before goals: conversation, request, draft,
+    // mandate, decision, team with a running assignment, candidate with evidence.
+    const document = teamDocument();
+    grantMandate(document, { objectives: ["Ordini"], priorities: [], scopeModuleIds: ["Sources/Orders"], authorizedActions: ["executeInWorktree"], limits: [] });
+    const decision = decide(document, { id: null, value: "Revisione", acceptedExample: "Ordine 42", rationale: "r" });
+    document.requests.push({ id: "r1", text: "Annulla ordine 42", moduleId: null, state: "completed", model: null, effort: null, createdAt: "", completedAt: null, failure: null });
+    appendEvent(document, "person", { type: "personMessage", text: "Annulla ordine 42", moduleId: null, moduleName: null }, "r1");
+    appendEvent(document, "coordinator", { type: "coordinatorText", text: "Va in revisione.", model: null, references: [] }, "r1");
+    const assignment = assign(
+      document,
+      {
+        kind: "agreedTicket",
+        objective: "o",
+        issueNumber: null,
+        exercise: null,
+        dependencies: [],
+        model: "gpt-5.5",
+        tools: ["edits"],
+        requiredChecks: [],
+        instructions: "i",
+        specialist: "Ada",
+        moduleIds: ["Sources/Orders"],
+        decisionIds: [decision.id],
+      },
+      1,
+      null,
+    );
+    const earlier = candidate(document, assignment.id, [decision.id]);
+    earlier.evidence = {
+      test: { check: "test", result: "pass", command: "swift test", output: "ok", snapshotId: earlier.snapshotId, decisionVersions: { [decision.id]: 1 }, recordedAt: "2026-09-23T10:00:00.000Z" },
+    };
+    document.composerDraft = "bozza precedente";
+    const stored = JSON.parse(JSON.stringify(document)) as Partial<ProjectDocument>;
+    delete stored.goals;
+
+    const storage = new AppStorage(await mkdtemp(join(tmpdir(), "trama-goals-legacy-")));
+    await mkdir(dirname(storage.documentPath("p")), { recursive: true });
+    await writeFile(storage.documentPath("p"), JSON.stringify(stored));
+    const loaded = await storage.loadDocument("p");
+    expect(loaded).toMatchObject({ writable: true, error: null });
+    const reopened = loaded.document!;
+    for (const key of ["events", "requests", "decisions", "mandate", "team", "candidates", "composerDraft"] as const) {
+      expect(reopened[key]).toEqual(stored[key]);
+    }
+    expect(reopened.goals).toBeUndefined();
+    expect(JSON.stringify(reopened)).not.toContain('"goalId"');
+    // History stays reachable in the project dialog; no goal claims it.
+    expect(dialogEvents(reopened.events, null)).toHaveLength(reopened.events.length);
+    expect(dialogRequests(reopened.requests, null)).toHaveLength(1);
+    expect(candidateGoalId(reopened, reopened.candidates[0]!)).toBeNull();
+
+    // A goal created afterwards starts empty: it takes none of the earlier work.
+    const goal = createGoal(reopened, input);
+    const links = goalLinks(reopened, goal.id);
+    expect([links.assignments, links.candidates, links.decisions, links.openQuestions]).toEqual([[], [], [], []]);
+    expect(goalWorkSummary(reopened, goal.id)).toBe("nessun incarico");
   });
 
   it("gives the Coordinator the goal context", () => {

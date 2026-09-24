@@ -49,7 +49,8 @@ export interface ActionMap {
   "goal:create": [GoalInputPayload, string];
   "goal:update": [
     { id: string; title?: string; outcome?: string; examples?: GoalExampleInputPayload[]; status?: GoalStatus; decisionIds?: string[] },
-    void,
+    /** The goal id, returned once the change is saved. */
+    string,
   ];
   "candidate:observeExample": [{ candidateId: string; exampleId: string; observed: boolean; snapshotId: string }, void];
   "overview:read": [void, ProjectOverview[]];
