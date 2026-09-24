@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { AppState } from "@shared/domain";
 import { decisionDependents, dialogEvents, findGoal, projectGoals } from "@shared/goals";
+import { deriveTimelineRows } from "@shared/timeline";
 import { TramaController } from "./controller";
 
 const root = join(import.meta.dirname, "../..");
@@ -277,6 +278,44 @@ describe("TramaController", () => {
     await new Promise((r) => setTimeout(r, 300));
     expect(second.status).toBe("failed");
     expect(second.proposal).toBeNull();
+  });
+
+  it("grills a request in rounds and starts the plan only when no question is open (M01)", async () => {
+    await setup();
+    const project = controller!.snapshot.project!;
+    const document = project.document;
+    await controller!.send("[grilling:1] Gli ordini pagati annullati vanno in revisione", null, null, null);
+    const subject = document.requests[0]!.id;
+    const round1 = document.decisionRequests;
+    expect(round1.map((q) => q.grilling)).toEqual([
+      { subjectRequestId: subject, round: 1, number: 1, recommendedIndex: 1 },
+      { subjectRequestId: subject, round: 1, number: 2, recommendedIndex: 1 },
+    ]);
+    const rows = deriveTimelineRows(document.events, document.requests, null, new Set(), document.decisionRequests);
+    expect(rows.filter((r) => r.kind === "grillingRound")).toEqual([expect.objectContaining({ round: 1, questionIds: round1.map((q) => q.id) })]);
+
+    // Neither the person nor the Coordinator can start the plan while the round is open.
+    await expect(controller!.preparePlanForRequest(subject)).rejects.toThrow(/rispondi prima alle 2 domande aperte/);
+    await controller!.grantMandate({ requestId: null, objectives: ["o"], priorities: [], scopeModuleIds: ["Sources/Orders"], authorizedActions: ["plan"], limits: [] });
+    await controller!.send("[piano]", null, null, null);
+    expect(document.plans).toHaveLength(0);
+    expect(document.events.at(-1)!.content).toMatchObject({ text: expect.stringContaining("grilling_open") });
+
+    // The next round waits for the whole frontier; the answers stay recorded as Pact decisions.
+    await controller!.answerDecision(round1[0]!.id, 0, null);
+    await controller!.send("[grilling:2]", null, null, null);
+    expect(document.events.at(-1)!.content).toMatchObject({ text: expect.stringContaining("still has open questions") });
+    await controller!.answerDecision(round1[1]!.id, 1, null);
+    await controller!.send("[grilling:2]", null, null, null);
+    const round2 = document.decisionRequests[2]!;
+    expect(round2.grilling).toMatchObject({ subjectRequestId: subject, round: 2, number: 1 });
+    await expect(controller!.preparePlanForRequest(subject)).rejects.toThrow(/rispondi prima alla domanda aperta/);
+    await controller!.answerDecision(round2.id, 1, null);
+    expect(document.decisions.map((d) => d.value)).toEqual(["Solo il supporto", "Anche il cliente", "Anche il cliente"]);
+
+    await controller!.preparePlanForRequest(subject);
+    expect(document.plans).toHaveLength(1);
+    await until(() => document.plans[0]!.status !== "planning");
   });
 
   it("refuses prepare_plan without a mandate and runs it within one", async () => {

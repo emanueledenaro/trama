@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { ConversationEvent, CoordinatorRequest } from "./domain";
+import type { ConversationEvent, CoordinatorRequest, DecisionRequest } from "./domain";
 import { deriveTimelineRows, turnFailureText } from "./timeline";
 
 const at = "2026-09-24T12:00:00.000Z";
@@ -21,6 +21,27 @@ describe("deriveTimelineRows", () => {
     const rows = deriveTimelineRows([message, failed], [request("failed", error)], null);
     expect(rows.map((r) => r.kind)).toEqual(["person", "work", "failure"]);
     expect(rows[2]).toMatchObject({ kind: "failure", requestId: "R1", text: "ciao", message: error });
+  });
+
+  it("groups the decision cards of a grilling round into one row per round (M01)", () => {
+    const question = (id: string, round: number | null): DecisionRequest => ({
+      id,
+      requestId: "R1",
+      category: "product",
+      question: id,
+      concreteCase: "Ordine 42",
+      alternatives: [],
+      revisesDecisionId: null,
+      grilling: round ? { subjectRequestId: "R1", round, number: 1, recommendedIndex: 0 } : null,
+      askedAt: at,
+      outcome: null,
+    });
+    const card = (sequence: number, referenceId: string) => event(sequence, { type: "card", kind: "decision", title: "Decisione", detail: null, referenceId });
+    const questions = [question("Q1", 1), question("Q2", 1), question("Q3", null), question("Q4", 2)];
+    const rows = deriveTimelineRows([message, card(2, "Q1"), card(3, "Q2"), card(4, "Q3"), card(5, "Q4")], [request("completed")], null, new Set(), questions);
+    expect(rows.map((r) => r.kind)).toEqual(["person", "grillingRound", "card", "grillingRound"]);
+    expect(rows[1]).toMatchObject({ round: 1, subjectRequestId: "R1", questionIds: ["Q1", "Q2"] });
+    expect(rows[3]).toMatchObject({ round: 2, questionIds: ["Q4"] });
   });
 
   it("adds no failure row for a turn that completed", () => {

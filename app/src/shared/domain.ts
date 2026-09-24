@@ -121,6 +121,17 @@ export interface DecisionAlternative {
   consequence: string | null;
 }
 
+/** Where a grilling question sits: the request being clarified, its round, its number and the recommended answer. */
+export interface GrillingPlace {
+  /** The request whose work the grilling clarifies: the one where round 1 was asked. */
+  subjectRequestId: string;
+  round: number;
+  /** 1-based position of the question within its round. */
+  number: number;
+  /** Index of the alternative the Coordinator recommends. */
+  recommendedIndex: number;
+}
+
 export interface DecisionRequest {
   id: string;
   requestId: string | null;
@@ -131,6 +142,8 @@ export interface DecisionRequest {
   revisesDecisionId: string | null;
   /** The goal dialog the question was asked in; its answer links the decision to that goal. */
   goalId?: string | null;
+  /** Set when the question belongs to a grilling round before a plan (M01). */
+  grilling?: GrillingPlace | null;
   askedAt: string;
   outcome: { answer: string; alternativeIndex: number | null; decisionId: string; version: number; answeredAt: string } | null;
 }
