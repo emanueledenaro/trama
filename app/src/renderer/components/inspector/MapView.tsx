@@ -66,7 +66,7 @@ export function ModuleView({ id }: { id: string }) {
         </button>
         <h3 className="mt-2 text-ui-lg font-medium text-foreground">{module.name}</h3>
         <p className="mt-0.5 font-mono text-[11px] text-muted-foreground">{module.relativePath}</p>
-        <div className="mt-3 flex flex-wrap gap-2">
+        <div className="cta-row mt-3">
           <Button size="sm" variant="outline" onClick={() => focusComposer(module.id)}>
             <IconMessageCircle stroke={1.8} /> Chiedi al Coordinatore su questo modulo
           </Button>

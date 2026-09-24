@@ -815,3 +815,15 @@ button {
 .chat-markdown :is(th, td) + :is(th, td) {
   border-left: 1px solid color-mix(in srgb, var(--foreground) 8%, transparent);
 }
+
+/* A row of actions: always on the right, the primary (and destructive) action last, secondary ones before it. */
+.cta-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+.cta-row > :is([data-variant="default"], [data-variant="destructive"]) {
+  order: 1;
+}

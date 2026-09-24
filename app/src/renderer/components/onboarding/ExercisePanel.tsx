@@ -142,7 +142,7 @@ export function ExercisePanel() {
         {completed[exercise] || !current ? (
           <div className="mt-3 rounded-lg border border-[color:var(--color-border)] px-2.5 py-2">
             <p className="text-ui-sm text-foreground/90">Esercizio completato.</p>
-            <div className="mt-1.5 flex flex-wrap gap-2">
+            <div className="cta-row mt-1.5">
               <Button size="xs" onClick={() => void act("project:openDialog", undefined)}>
                 Apri il mio progetto
               </Button>

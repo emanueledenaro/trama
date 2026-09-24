@@ -208,7 +208,7 @@ function Reply({ row, latest }: { row: Extract<TimelineRow, { kind: "reply" }>; 
         </div>
       ) : null}
       {latest && !row.streaming && request?.state === "completed" ? (
-        <div className="mt-2">
+        <div className="cta-row mt-2">
           <Button size="xs" variant="outline" onClick={() => void act("plan:prepare", { requestId: request.id })}>
             <IconListCheck stroke={1.8} /> Prepara un piano
           </Button>

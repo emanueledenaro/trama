@@ -59,7 +59,7 @@ function MemorySection({ title, target, store, empty }: { title: string; target:
           <MemoryEntry key={entry} target={target} entry={entry} />
         ))}
       </div>
-      <div className="mt-2 flex gap-2">
+      <div className="cta-row mt-2">
         <TextArea value={adding} onChange={(e) => setAdding(e.target.value)} placeholder="Aggiungi un fatto" className="min-h-9" />
         <Button
           size="sm"
@@ -93,7 +93,7 @@ function MemoryEntry({ target, entry }: { target: "memory" | "user"; entry: stri
       ) : (
         <TextArea value={editing} onChange={(e) => setEditing(e.target.value)} className="min-h-12" />
       )}
-      <div className="mt-1.5 flex gap-2">
+      <div className="cta-row mt-1.5">
         {editing === null ? (
           <Button size="sm" variant="ghost" onClick={() => setEditing(entry)}>
             Correggi
@@ -129,7 +129,7 @@ function ProposalsSection({ learning }: { learning: LearningView }) {
                 </li>
               ))}
             </ul>
-            <div className="mt-2 flex gap-2">
+            <div className="cta-row mt-2">
               <Button size="sm" variant="outline" onClick={() => void act("learning:proposal", { id: proposal.id, approve: true })}>
                 Applica
               </Button>
@@ -197,7 +197,7 @@ function SkillRow({ skill }: { skill: LearnedSkillView }) {
       {content !== null ? (
         <div className="mt-2 space-y-2">
           <TextArea value={content} onChange={(e) => setContent(e.target.value)} className="min-h-40 font-mono text-ui-xs" />
-          <div className="flex gap-2">
+          <div className="cta-row">
             <Button size="sm" variant="outline" onClick={() => void change("edit", { content }).then(() => setContent(null))}>
               Salva la skill
             </Button>
@@ -207,7 +207,7 @@ function SkillRow({ skill }: { skill: LearnedSkillView }) {
           </div>
         </div>
       ) : null}
-      <div className="mt-2 flex flex-wrap gap-2">
+      <div className="cta-row mt-2">
         {content === null ? (
           <Button size="sm" variant="ghost" onClick={() => void act("learning:skillContent", { name: skill.name }).then((text) => setContent(text ?? ""))}>
             Apri
@@ -263,7 +263,7 @@ function ReviewsSection({ learning }: { learning: LearningView }) {
         Prossima revisione della memoria tra {plural(counters.memoryInterval - counters.turnsSinceMemory, "tuo messaggio", "tuoi messaggi")}, delle skill tra{" "}
         {plural(counters.skillInterval - counters.itersSinceSkill, "azione", "azioni")} del Coordinatore.
       </p>
-      <div className="mb-3 flex gap-2">
+      <div className="cta-row mb-3">
         <TextArea value={focus} onChange={(e) => setFocus(e.target.value)} placeholder="Su cosa concentrarsi (facoltativo)" className="min-h-9" />
         <Button size="sm" variant="outline" disabled={running} onClick={() => void act("learning:review", { focus }).then(() => setFocus(""))}>
           Rivedi ora
@@ -301,7 +301,7 @@ function CuratorSection({ learning }: { learning: LearningView }) {
         {curator.lastRunAt ? `Ultimo controllo ${formatDate(curator.lastRunAt)}.` : "Non ha ancora controllato."} {curator.lastRunSummary ?? ""}
         {curator.paused ? " In pausa." : ""}
       </p>
-      <div className="flex flex-wrap gap-2">
+      <div className="cta-row">
         <Button size="sm" variant="outline" onClick={() => void act("learning:curator", { action: "run" })}>
           Controlla ora
         </Button>
@@ -357,7 +357,7 @@ function PracticeRow({ practice }: { practice: PracticeView }) {
       {practice.evidence.length ? <p className="mt-1 text-ui-xs text-muted-foreground">Prove: {practice.evidence.join("; ")}</p> : null}
       {!practice.fromThisProject ? <p className="mt-1 text-ui-xs text-muted-foreground">Nata in un altro progetto: verificane l'utilità qui prima di adottarla.</p> : null}
       {practice.retiredHere ? <p className="mt-1 text-ui-xs text-muted-foreground">Ritirata: {practice.retiredHere.reason}</p> : null}
-      <div className="mt-2 flex flex-wrap gap-2">
+      <div className="cta-row mt-2">
         {!adopted || (practice.adoptedVersion ?? 0) < practice.version ? (
           <Button size="sm" variant="outline" onClick={() => void act("practice:change", { action: "adopt", id: practice.id })}>
             {adopted ? `Passa alla v${practice.version}` : "Adotta in questo progetto"}
@@ -377,7 +377,7 @@ function PracticeRow({ practice }: { practice: PracticeView }) {
       {retiring ? (
         <div className="mt-2 space-y-2">
           <TextArea value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Perché la ritiri" className="min-h-12" />
-          <Button
+          <Button className="ml-auto flex"
             size="sm"
             variant="destructive"
             onClick={() => void act("practice:change", { action: "retire", id: practice.id, reason }).then(() => setRetiring(false))}

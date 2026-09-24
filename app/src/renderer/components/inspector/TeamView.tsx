@@ -131,7 +131,7 @@ export function SpecialistView({ id }: { id: string }) {
           </span>
         </div>
         <p className="mt-0.5 text-ui text-muted-foreground">{specialist.competence}</p>
-        <div className="mt-3 flex gap-2">
+        <div className="cta-row mt-3">
           <Button size="sm" variant="outline" onClick={() => focusComposer()}>
             Vai alla conversazione
           </Button>
@@ -144,7 +144,7 @@ export function SpecialistView({ id }: { id: string }) {
         {removing ? (
           <div className="mt-2 space-y-2">
             <TextArea value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Motivo" className="min-h-12" />
-            <Button
+            <Button className="ml-auto flex"
               size="sm"
               variant="destructive"
               disabled={!reason.trim()}

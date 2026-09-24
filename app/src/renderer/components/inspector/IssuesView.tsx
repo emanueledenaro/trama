@@ -82,7 +82,7 @@ export function IssuesView() {
               <TextArea value={body} onChange={(e) => setBody(e.target.value)} />
             </div>
             <p className="text-ui-xs text-muted-foreground">La issue viene pubblicata su GitHub con l'accesso di GitHub CLI.</p>
-            <div className="flex gap-2">
+            <div className="cta-row">
               <Button
                 size="sm"
                 disabled={!title.trim()}
@@ -154,7 +154,7 @@ export function IssueDetail({ number }: { number: number }) {
             </Badge>
           ))}
         </div>
-        <div className="mt-3 flex gap-2">
+        <div className="cta-row mt-3">
           <Button size="sm" variant="outline" onClick={() => focusComposer()}>
             <IconMessageCircle stroke={1.8} /> Chiedi al Coordinatore
           </Button>

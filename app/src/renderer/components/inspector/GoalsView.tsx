@@ -101,7 +101,7 @@ export function GoalEditor({ goal, onDone }: { goal?: ProjectGoal; onDone: (id: 
           <IconPlus /> Aggiungi un esempio
         </Button>
       </div>
-      <div className="flex gap-2">
+      <div className="cta-row">
         <Button size="sm" disabled={!valid || saving} onClick={() => void save()}>
           {goal ? "Salva l'obiettivo" : "Crea l'obiettivo"}
         </Button>
@@ -234,7 +234,7 @@ export function GoalView({ id }: { id: string }) {
         <p className="mt-0.5 text-ui-xs text-muted-foreground">
           <span className="font-mono">{goal.id}</span><Sep />{goal.origin === "person" ? "creato da te" : "proposto dal Coordinatore"}<Sep />{formatRelativeTime(goal.createdAt)}
         </p>
-        <div className="mt-3 flex flex-wrap gap-2">
+        <div className="cta-row mt-3">
           <Button size="sm" variant={dialogGoalId === goal.id ? "ghost" : "outline"} disabled={dialogGoalId === goal.id} onClick={() => openDialog(goal.id)}>
             <IconMessageCircle /> {dialogGoalId === goal.id ? "Dialogo aperto" : "Apri il dialogo"}
           </Button>
@@ -400,7 +400,7 @@ export function GoalCard({ goalId }: { goalId: string }) {
         <div className="mt-2">
           <ExampleList examples={goal.examples} />
         </div>
-        <div className="mt-3 flex flex-wrap gap-2">
+        <div className="cta-row mt-3">
           {goal.status === "proposed" ? (
             <Button size="sm" onClick={() => void act("goal:update", { id: goal.id, status: "open" })}>
               Conferma l'obiettivo

@@ -28,7 +28,7 @@ function DecisionEditor({ initial, onDone }: { initial?: { id: string; value: st
         <Label>Motivazione</Label>
         <Input value={rationale} onChange={(e) => setRationale(e.target.value)} placeholder="Perché" />
       </div>
-      <div className="flex gap-2">
+      <div className="cta-row">
         <Button
           size="sm"
           disabled={!valid}
@@ -119,7 +119,7 @@ function PactDemoBox() {
         Simulazione locale: un ordine pagato entra in revisione, mentre pagamento e disponibilità restano invariati. I controlli qui sotto riguardano il
         modello dimostrativo, non il codice del tuo progetto.
       </p>
-      <div className="mt-2 flex flex-wrap gap-2">
+      <div className="cta-row mt-2">
         <Button size="sm" variant="outline" onClick={() => void act("pactDemo:run", undefined)}>
           Esegui lo scenario
         </Button>

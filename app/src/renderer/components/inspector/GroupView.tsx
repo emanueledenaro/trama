@@ -46,7 +46,7 @@ export function GroupView() {
             <p className="text-ui-sm text-muted-foreground">
               {snapshot ? `Letto ${formatRelativeTime(snapshot.fetchedAt)} fa, ramo principale ${snapshot.defaultBranch}` : "Nessuna lettura ancora."}
             </p>
-            <div className="mt-2 flex flex-wrap gap-2">
+            <div className="cta-row mt-2">
               <Button size="sm" variant="outline" onClick={askImpact}>
                 Chiedi al Coordinatore l'impatto
               </Button>

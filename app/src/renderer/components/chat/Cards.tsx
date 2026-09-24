@@ -94,7 +94,7 @@ export function StudyCard({ title, text, streaming }: { title: string; text: str
         <p className="line-clamp-2 text-ui text-muted-foreground">{text}</p>
       )}
       {streaming ? (
-        <div className="mt-2">
+        <div className="cta-row mt-2">
           <Button variant="outline" size="xs" onClick={() => void act("coordinator:interrupt", undefined)}>
             Interrompi
           </Button>
@@ -157,7 +157,7 @@ export function MandateCard({ requestId }: { requestId: string }) {
         revoking ? (
           <div className="mt-3 space-y-2">
             <TextArea value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Motivo" aria-label="Motivo della revoca" />
-            <div className="flex gap-2">
+            <div className="cta-row">
               <Button
                 size="sm"
                 variant="destructive"
@@ -172,7 +172,7 @@ export function MandateCard({ requestId }: { requestId: string }) {
             </div>
           </div>
         ) : (
-          <div className="mt-3 flex flex-wrap gap-2">
+          <div className="cta-row mt-3">
             <Button
               size="sm"
               onClick={() =>
@@ -272,7 +272,7 @@ export function DecisionCard({ requestId }: { requestId: string }) {
             aria-label="La tua decisione"
             className="min-h-12"
           />
-          <Button
+          <Button className="ml-auto flex"
             size="sm"
             disabled={choice === null && !freeText.trim()}
             onClick={() =>
@@ -384,7 +384,7 @@ export function TeamProposalCard({ proposalId }: { proposalId: string }) {
       {!resolution ? (
         <div className="mt-3 space-y-2">
           <TextArea value={note} onChange={(e) => setNote(e.target.value)} placeholder="Correzione (facoltativa)" aria-label="Correzione" className="min-h-12" />
-          <Button
+          <Button className="ml-auto flex"
             size="sm"
             disabled={selected.length === 0}
             onClick={() =>
@@ -476,7 +476,7 @@ export function AssignmentCard({ assignmentId }: { assignmentId: string }) {
         </div>
       ) : null}
       {isCurrent && (active || assignment.status === "stopped" || assignment.status === "failed") ? (
-        <div className="mt-3 flex gap-2">
+        <div className="cta-row mt-3">
           {active ? (
             <Button size="sm" variant="outline" disabled={assignment.status === "stopRequested"} onClick={() => void act("assignment:stop", { assignmentId })}>
               Ferma
@@ -594,7 +594,7 @@ export function CandidateCard({ candidateId }: { candidateId: string }) {
           <IconGitPullRequest className="size-3.5" /> Pull request #{candidate.pullRequest.number}
         </button>
       ) : null}
-      <div className="mt-3 flex flex-wrap gap-2">
+      <div className="cta-row mt-3">
         <Button size="sm" variant="outline" onClick={() => setInspector({ kind: "candidate", id: candidate.id })}>
           Apri il diff
         </Button>
@@ -616,7 +616,7 @@ export function CandidateCard({ candidateId }: { candidateId: string }) {
           </p>
           <p className="font-medium text-foreground">{preview.title}</p>
           <pre className="max-h-48 overflow-auto whitespace-pre-wrap font-sans text-ui-xs text-foreground/85">{preview.body}</pre>
-          <div className="flex gap-2">
+          <div className="cta-row">
             <Button size="sm" onClick={() => void act("candidate:publish", { candidateId }).then(() => setPreview(null))}>
               <IconGitPullRequest /> Pubblica
             </Button>
@@ -682,7 +682,7 @@ export function PlanCard({ planId }: { planId: string }) {
                 Esempio accettato
                 <TextArea value={editing.example} onChange={(e) => setEditing({ ...editing, example: e.target.value })} className="mt-1 min-h-12" />
               </label>
-              <div className="flex gap-2">
+              <div className="cta-row">
                 <Button
                   size="sm"
                   onClick={() =>
@@ -728,7 +728,7 @@ export function PlanCard({ planId }: { planId: string }) {
             </div>
           ) : null}
           {pendingQuestions ? <p className="mt-2 text-ui-sm text-[var(--color-text-accent)]">{pendingQuestions === 1 ? "Una domanda aspetta" : `${pendingQuestions} domande aspettano`} la tua risposta.</p> : null}
-          <div className="mt-3 flex flex-wrap gap-2">
+          <div className="cta-row mt-3">
             {!editing && plan.status !== "planning" ? (
               <Button
                 size="sm"

@@ -126,7 +126,7 @@ export function MandateView() {
               <Label>Limiti</Label>
               <TextArea value={limits} onChange={(e) => setLimits(e.target.value)} className="min-h-12" />
             </div>
-            <div className="flex gap-2">
+            <div className="cta-row">
               <Button size="sm" disabled={!valid} onClick={() => void grant()}>
                 {mandate?.status === "granted" ? "Salva correzione" : "Concedi mandato"}
               </Button>
