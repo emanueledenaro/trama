@@ -8,7 +8,8 @@ import { _electron as electron } from "playwright";
 const out = resolve(process.argv[2] ?? "ui-check");
 const dataDir = await mkdtemp(join(tmpdir(), "trama-ui-"));
 const app = await electron.launch({
-  args: [".", "--no-sandbox"],
+  // Its own Electron profile, so the check runs next to an open Trama instead of hitting its single-instance lock.
+  args: [".", "--no-sandbox", `--user-data-dir=${await mkdtemp(join(tmpdir(), "trama-ui-profile-"))}`],
   env: {
     ...process.env,
     TRAMA_DATA_DIR: dataDir,
@@ -184,7 +185,7 @@ await page.keyboard.press("Enter");
 await page.waitForTimeout(300);
 await shot("10c-search-result");
 await page.getByRole("button", { name: "Indietro" }).first().click();
-await page.getByRole("button", { name: /ChatGPT/ }).click();
+await page.getByRole("button", { name: /^ChatGPT/ }).click();
 await shot("11-connections");
 await page.keyboard.press("Escape");
 await page.getByRole("button", { name: "Impostazioni" }).click();
