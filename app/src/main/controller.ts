@@ -89,7 +89,7 @@ import {
   resolveMandateRequest,
   revokeMandate,
 } from "./core/pact";
-import { availableChecks, CHECKS, type ReadOnlyCheck, runReadOnlyCheck } from "./core/checks";
+import { availableChecks, CHECKS, lendNodeDependencies, type ReadOnlyCheck, runReadOnlyCheck } from "./core/checks";
 import { parsePlan, PLAN_SCHEMA, PLANNING_INSTRUCTIONS, planPrompt } from "./core/plan";
 import { approvePactDemo, inspectPactDemo, runPactDemo } from "./core/pactDemo";
 import { readRepositoryFile, scanRepository } from "./core/repositoryScanner";
@@ -1973,6 +1973,9 @@ export class TramaController {
           const workspace = await prepareWorktree(project.rootPath, `${specialist.name} ${assignment.id}`, this.worktreesRoot);
           recordWorkspace(document, assignmentId, workspace);
           this.specialistActivity(project, assignmentId, preKey, "Worktree pronto", workspace.branch, "info");
+          // The specialist can run the project's tests only with its dependencies; lent from the checkout.
+          const missing = await lendNodeDependencies(workspace.worktreeRoot, project.rootPath).catch((error: Error) => error.message);
+          if (missing) this.specialistActivity(project, assignmentId, preKey, "Dipendenze non disponibili", missing, "info");
         }
         cwd = assignment.workspace!.worktreeRoot;
       }
@@ -2252,6 +2255,8 @@ export class TramaController {
     const result = await runReadOnlyCheck(check, assignment.workspace.worktreeRoot, {
       codexExecutable: executable,
       scratchRoot: join(this.storage.root, "Checks"),
+      // The worktree has no node_modules: Node checks borrow the project checkout's, when the lockfiles match.
+      dependencyRoot: project.rootPath,
     });
     const snapshot = await reviewWorktree(assignment.workspace);
     recordEvidence(document, candidateId, {

@@ -84,11 +84,15 @@ selettore di provider, modello e sforzo, modalità veloce di Codex): `53e0595`..
 ## Limiti e lavoro aperto
 
 - Percorso completo con Codex: da ripetere dopo il reset del 24 ottobre 2026, con `gpt-5.6-luna`.
-- Verifiche del candidato per progetti Node: servono controlli di test e typecheck che girino nel
-  worktree, con le dipendenze. Senza, il passo "controllo fallito e corretto" non è possibile dentro
-  Trama sul suo stesso repository.
-- Gli specialisti non hanno le dipendenze nel worktree e possono dichiarare test mai eseguiti:
-  un risultato AI non è un'evidenza.
+- Verifiche Node (aggiunte dopo la prova): `node_test` e `node_typecheck` girano nella sandbox di
+  Codex sul worktree, con le dipendenze prestate dal checkout quando `package-lock.json` coincide.
+  Il worktree dello specialista riceve le stesse dipendenze. Provate sul worktree del primo
+  incarico: `node_typecheck` trova l'errore di tipo nel test dello specialista
+  (`controller.test.ts:436`); `node_test` esegue la suite in circa 100 secondi, ma 29 test di Trama
+  falliscono perché aprono un server su `127.0.0.1` e la sandbox senza rete blocca anche la rete
+  locale. La sandbox di Codex permette la rete locale solo aprendo anche internet: la scelta resta
+  alla persona. L'output lo segnala.
+- Un risultato AI non è un'evidenza: lo specialista aveva dichiarato test mai eseguiti.
 - Documenti di pianificazione non aggiornati (`docs/piano-operativo.md`, spec del verticale):
   il Coordinatore li legge e ne trae un quadro sbagliato.
 - Provider non provati: Cursor, Antigravity, Grok, Devin, OpenCode. Droid non è collegato.
