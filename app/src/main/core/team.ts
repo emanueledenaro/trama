@@ -573,7 +573,7 @@ export function changeAssignmentProvider(
     a.provider = provider;
     a.model = trimmed;
     if (changed) a.threadId = null;
-    a.lastUpdate = `Provider impostato dalla persona: ${provider} · ${trimmed}`;
+    a.lastUpdate = `Provider impostato dalla persona: ${provider} ${trimmed}`;
   });
 }
 

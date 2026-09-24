@@ -97,7 +97,7 @@ export function parseGhAuthStatus(result: { exitCode: number; stdout: string; st
 
 // MARK: First-run guide
 
-const providerNames: Partial<Record<ProviderId, string>> = { codex: "Codex", claudeAgent: "Claude Agent" };
+const providerNames: Partial<Record<ProviderId, string>> = { codex: "ChatGPT", claudeAgent: "Claude" };
 
 function providerStep(app: AppState): StepState {
   const entries = Object.entries(app.providers) as [ProviderId, AppState["providers"][ProviderId]][];

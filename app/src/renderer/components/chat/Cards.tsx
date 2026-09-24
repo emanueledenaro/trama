@@ -27,6 +27,7 @@ import { cn } from "@/lib/cn";
 import { act, useUi } from "@/lib/store";
 import { ACTION_LABELS } from "@/lib/labels";
 import { ChatMarkdown } from "./ChatMarkdown";
+import { Sep } from "@/components/ui/sep";
 
 function CardFrame({
   icon,
@@ -133,7 +134,7 @@ export function MandateCard({ requestId }: { requestId: string }) {
       aside={
         resolution ? (
           <Badge tone={resolution.kind === "revoked" ? "secondary" : "success"}>
-            {resolution.kind === "granted" ? `Concesso · v${resolution.version}` : resolution.kind === "corrected" ? `Corretto · v${resolution.version}` : "Non concesso"}
+            {resolution.kind === "granted" ? `Concesso, v${resolution.version}` : resolution.kind === "corrected" ? `Corretto, v${resolution.version}` : "Non concesso"}
           </Badge>
         ) : (
           <Badge tone="info">In attesa</Badge>
@@ -148,10 +149,10 @@ export function MandateCard({ requestId }: { requestId: string }) {
           ))}
         </ul>
       </Field>
-      {request.priorities.length ? <Field label="Priorità">{request.priorities.join(" · ")}</Field> : null}
+      {request.priorities.length ? <Field label="Priorità">{request.priorities.join(", ")}</Field> : null}
       <Field label="Perimetro">{request.scopeModuleIds.map(moduleName).join(", ")}</Field>
-      <Field label="Azioni autorizzate">{request.authorizedActions.map((a) => ACTION_LABELS[a]).join(" · ")}</Field>
-      {request.limits.length ? <Field label="Limiti">{request.limits.join(" · ")}</Field> : null}
+      <Field label="Azioni autorizzate">{request.authorizedActions.map((a) => ACTION_LABELS[a]).join(", ")}</Field>
+      {request.limits.length ? <Field label="Limiti">{request.limits.join(", ")}</Field> : null}
       {!resolution ? (
         revoking ? (
           <div className="mt-3 space-y-2">
@@ -247,12 +248,12 @@ export function DecisionCard({ requestId }: { requestId: string }) {
       {outcome ? (
         <div className="mt-3 flex items-center gap-2 text-ui-sm text-muted-foreground">
           <span>
-            Decisione {outcome.decisionId} · versione {outcome.version}
+            Decisione {outcome.decisionId}<Sep />versione {outcome.version}
           </span>
           <button type="button" className="text-[var(--color-text-accent)] hover:underline" onClick={() => setInspector({ kind: "decision", id: outcome.decisionId })}>
             Apri nel Patto
           </button>
-          {outcome.alternativeIndex === null ? <span className="truncate">· «{outcome.answer}»</span> : null}
+          {outcome.alternativeIndex === null ? <span className="truncate"><Sep />«{outcome.answer}»</span> : null}
         </div>
       ) : (
         <div className="mt-3 space-y-2">
@@ -341,7 +342,7 @@ export function TeamProposalCard({ proposalId }: { proposalId: string }) {
               ) : null}
               <span className="min-w-0 flex-1">
                 <span className="block text-ui text-foreground">
-                  {member.name} <span className="text-muted-foreground">· {member.competence}</span>
+                  {member.name} <span className="text-muted-foreground"><Sep />{member.competence}</span>
                 </span>
                 <span className="block text-ui-sm text-muted-foreground">{member.reason}</span>
                 {member.moduleIds.length ? (
@@ -400,7 +401,7 @@ export function AssignmentCard({ assignmentId }: { assignmentId: string }) {
       }
     >
       <Field label="Specialista">
-        {specialist.name} <span className="text-muted-foreground">· {specialist.competence}</span>
+        {specialist.name} <span className="text-muted-foreground"><Sep />{specialist.competence}</span>
       </Field>
       <Field label="Obiettivo">{assignment.objective}</Field>
       {assignment.exercise ? <Field label="Esercizio">{assignment.exercise}</Field> : null}
@@ -414,12 +415,12 @@ export function AssignmentCard({ assignmentId }: { assignmentId: string }) {
         </Field>
       ) : null}
       <Field label="Provider e modello scelti all'assegnazione">
-        {providerLabel(assignment.provider)} · {assignment.model}
+        {providerLabel(assignment.provider)}<Sep />{assignment.model}
         <div className="mt-0.5 text-ui-sm text-muted-foreground">
           {assignment.modelReason ? `Motivazione del Coordinatore: ${assignment.modelReason}` : "Il Coordinatore non ha registrato una motivazione per questa scelta."}
         </div>
         {lastTurn && (lastTurn.provider ?? "codex") !== (assignment.provider ?? "codex") ? (
-          <div className="mt-0.5 text-ui-sm text-warning">Ultimo turno eseguito con {providerLabel(lastTurn.provider)} · {lastTurn.model}</div>
+          <div className="mt-0.5 text-ui-sm text-warning">Ultimo turno eseguito con {providerLabel(lastTurn.provider)}<Sep />{lastTurn.model}</div>
         ) : lastTurn && lastTurn.model !== assignment.model ? (
           <div className="mt-0.5 text-ui-sm text-warning">Ultimo turno eseguito con {lastTurn.model}</div>
         ) : null}
@@ -494,7 +495,7 @@ export function CandidateCard({ candidateId }: { candidateId: string }) {
   return (
     <CardFrame icon={<IconFileDiff stroke={1.8} />} title={`Candidato ${candidate.id}`} aside={<Badge tone={state.tone}>{state.label}</Badge>}>
       <p className="text-ui-sm text-muted-foreground">
-        {specialist?.name ?? candidate.specialistId} · incarico {candidate.assignmentId} · {candidate.changedFiles.length === 1 ? "1 file" : `${candidate.changedFiles.length} file`}
+        {specialist?.name ?? candidate.specialistId}<Sep />incarico {candidate.assignmentId}<Sep />{candidate.changedFiles.length === 1 ? "1 file" : `${candidate.changedFiles.length} file`}
       </p>
       <Field label="Decisioni pertinenti">
         {candidate.requiredDecisionIds.map((id) => (
@@ -524,7 +525,7 @@ export function CandidateCard({ candidateId }: { candidateId: string }) {
         </div>
       </Field>
       {candidate.technicalReview ? (
-        <Field label={`Revisione tecnica · ${candidate.technicalReview.verdict === "approved" ? "approvata" : "modifiche richieste"}`}>
+        <Field label={`Revisione tecnica, ${candidate.technicalReview.verdict === "approved" ? "approvata" : "modifiche richieste"}`}>
           {candidate.technicalReview.summary}
         </Field>
       ) : null}
@@ -534,7 +535,7 @@ export function CandidateCard({ candidateId }: { candidateId: string }) {
             {report.blockers.map((b) => (
               <li key={`${b.code}-${b.detail}`}>
                 {BLOCKER_TEXT[b.code] ?? b.code}
-                {b.code === "BASE_CHANGED" ? null : <span className="text-muted-foreground"> · {b.detail}</span>}
+                {b.code === "BASE_CHANGED" ? null : <span className="text-muted-foreground"><Sep />{b.detail}</span>}
               </li>
             ))}
           </ul>
@@ -584,7 +585,7 @@ export function CandidateCard({ candidateId }: { candidateId: string }) {
       {preview && !candidate.pullRequest ? (
         <div className="mt-2 space-y-1.5 rounded-lg border border-[color:var(--color-border)] p-2.5 text-ui-sm">
           <p className="text-muted-foreground">
-            {preview.repository} · <span className="font-mono">{preview.head}</span> → <span className="font-mono">{preview.base}</span>
+            {preview.repository}<Sep /><span className="font-mono">{preview.head}</span> → <span className="font-mono">{preview.base}</span>
           </p>
           <p className="font-medium text-foreground">{preview.title}</p>
           <pre className="max-h-48 overflow-auto whitespace-pre-wrap font-sans text-ui-xs text-foreground/85">{preview.body}</pre>
@@ -633,7 +634,7 @@ export function PlanCard({ planId }: { planId: string }) {
       }
     >
       <p className="text-ui-sm text-muted-foreground">
-        {plan.orderedBy === "coordinator" ? "Chiesto dal Coordinatore" : "Chiesto da te"} · {plan.summary}
+        {plan.orderedBy === "coordinator" ? "Chiesto dal Coordinatore" : "Chiesto da te"}<Sep />{plan.summary}
       </p>
       {plan.failure ? <Field label="Errore">{plan.failure}</Field> : null}
       {proposal ? (

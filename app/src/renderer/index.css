@@ -155,15 +155,125 @@
 
 :root[data-platform="darwin"],
 :root[data-platform="win32"] {
-  /* Native glass under a see-through sidebar: the macOS sidebar material, Acrylic on Windows 11. */
+  /* The whole window is glass: the native material (macOS under-window, Acrylic on Windows 11) shows the
+     windows behind, blurred. Content and cards are layered translucent surfaces, opaque enough for text. */
   --app-shell-background: transparent;
-  --app-sidebar-surface: color-mix(in srgb, var(--surface) 45%, transparent);
+  --app-content-glass: color-mix(in srgb, var(--surface) 60%, transparent);
+  --card: color-mix(in srgb, var(--surface) 60%, transparent);
+  --app-sidebar-surface: color-mix(in srgb, var(--surface) 30%, transparent);
   --app-sidebar-backdrop-filter: none;
 }
 
 :root.dark[data-platform="darwin"],
 :root.dark[data-platform="win32"] {
-  --app-sidebar-surface: color-mix(in srgb, color-mix(in srgb, var(--surface) 80%, black) 60%, transparent);
+  --app-content-glass: color-mix(in srgb, var(--surface) 45%, transparent);
+  --card: color-mix(in srgb, var(--surface) 55%, transparent);
+  --app-sidebar-surface: color-mix(in srgb, color-mix(in srgb, var(--surface) 80%, black) 20%, transparent);
+}
+
+:root[data-platform="darwin"] body,
+:root[data-platform="win32"] body {
+  /* One even, steady veil of the Coordinator's provider light over the glass (useProviderGlow in App.tsx).
+     It does not animate: repainting the whole window over the native material every frame made it lag. */
+  background: color-mix(in srgb, var(--glow-1) 18%, transparent) !important;
+}
+:root.dark[data-platform="darwin"] body,
+:root.dark[data-platform="win32"] body {
+  background: color-mix(in srgb, var(--glow-1) 32%, transparent) !important;
+}
+
+/* Neutral light for providers with a monochrome mark. */
+:root {
+  --glow-neutral: rgb(100 116 139);
+}
+:root.dark {
+  --glow-neutral: rgb(255 255 255);
+}
+
+/* Registered so the light fades from one provider to the next instead of jumping. */
+@property --glow-1 {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: transparent;
+}
+:root {
+  transition: --glow-1 1.4s ease;
+}
+
+/* The effort slider as an energy beam (ModelPicker): a flickering beam with a white core and a solid white knob,
+   as in the Codex app, that stays still over a glowing halo, in the provider's color. The core width and a slow glow come from the effort level. */
+.effort-beam {
+  position: absolute;
+  inset-inline-start: -1rem;
+  inset-block: 0;
+  margin-inline-end: -1rem;
+  box-sizing: content-box;
+  /* 1rem cancels the start offset; 16px more carries the rounded end past the knob's center, so it wraps the knob. */
+  padding-inline-end: calc(1rem + 16px);
+  transition: width 150ms;
+}
+.effort-beam-core,
+.effort-beam-aura {
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+}
+.effort-beam-core {
+  background: linear-gradient(
+    to bottom,
+    var(--slider-accent) 0%,
+    color-mix(in srgb, var(--slider-accent) 35%, white) calc(50% - var(--beam-core, 8%) - 10%),
+    color-mix(in srgb, var(--slider-accent) 12%, white) calc(50% - var(--beam-core, 8%)),
+    color-mix(in srgb, var(--slider-accent) 12%, white) calc(50% + var(--beam-core, 8%)),
+    color-mix(in srgb, var(--slider-accent) 35%, white) calc(50% + var(--beam-core, 8%) + 10%),
+    var(--slider-accent) 100%
+  );
+  animation: effort-glow var(--beam-flicker, 2s) ease-in-out infinite alternate;
+}
+.effort-beam-aura {
+  inset-block: -6px;
+  background: var(--slider-accent);
+  opacity: 0.3;
+  filter: blur(8px);
+  animation: effort-aura var(--beam-flicker, 2s) ease-in-out infinite alternate;
+}
+@keyframes effort-glow {
+  from { filter: brightness(0.94); }
+  to { filter: brightness(1.06); }
+}
+@keyframes effort-aura {
+  from { opacity: 0.18; }
+  to { opacity: 0.38; }
+}
+.effort-orb {
+  position: absolute;
+  top: 50%;
+  z-index: 2;
+  width: var(--orb-size, 26px);
+  height: var(--orb-size, 26px);
+  translate: -50% -50%;
+  border-radius: 50%;
+  background: white;
+  box-shadow:
+    0 1px 4px rgb(0 0 0 / 0.3),
+    0 0 14px 5px color-mix(in srgb, var(--slider-accent) 45%, transparent);
+  transition: left 150ms;
+}
+.effort-particle {
+  position: absolute;
+  z-index: 3;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: white;
+  filter: blur(0.6px);
+  pointer-events: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .effort-beam-core,
+  .effort-beam-aura {
+    animation: none;
+  }
 }
 
 @layer base {
@@ -222,25 +332,9 @@ button {
     backdrop-filter: var(--app-sidebar-backdrop-filter, none);
   }
 
-  /* Floating glass pane as in the macOS 26 sidebar: hairline edge, thin top highlight, and the content
-     color flooding the column around it, so the native glass shows only inside the pane. */
-  .app-sidebar-floating {
-    box-shadow:
-      0 0 0 0.5px rgb(0 0 0 / 0.1),
-      inset 0 0.5px 0 rgb(255 255 255 / 0.6),
-      0 2px 10px -4px rgb(0 0 0 / 0.12),
-      0 0 0 100vmax var(--color-background-surface);
-  }
-  .dark .app-sidebar-floating {
-    box-shadow:
-      0 0 0 0.5px rgb(255 255 255 / 0.1),
-      inset 0 0.5px 0 rgb(255 255 255 / 0.12),
-      0 2px 10px -4px rgb(0 0 0 / 0.5),
-      0 0 0 100vmax var(--color-background-surface);
-  }
-
   .chat-content-card {
     --seam-line: rgb(0 0 0 / 5%);
+    background: var(--color-background-surface);
   }
   .dark .chat-content-card {
     --seam-line: rgb(255 255 255 / 5%);
@@ -254,7 +348,27 @@ button {
     box-shadow: inset 0.5px 0 0 var(--seam-line);
     transition: opacity 300ms cubic-bezier(0.32, 0.72, 0, 1);
   }
-  /* The floating sidebar needs no seam line against the content. */
+  /* The content adds no surface of its own: the same steady veil colors the whole window evenly. */
+  :root[data-platform="darwin"] .chat-content-card,
+  :root[data-platform="win32"] .chat-content-card {
+    background: transparent;
+  }
+  /* On glass the composer is nearly opaque. Instead of a scrim, which drew a band of shade, the timeline
+     fades out toward the composer; the composer keeps 12px from the bottom of the window. */
+  :root[data-platform="darwin"] .chat-composer-dock,
+  :root[data-platform="win32"] .chat-composer-dock {
+    padding-bottom: 12px !important;
+  }
+  :root[data-platform="darwin"] .chat-timeline-scroll,
+  :root[data-platform="win32"] .chat-timeline-scroll {
+    -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 9rem), transparent calc(100% - 5rem));
+    mask-image: linear-gradient(to bottom, #000 calc(100% - 9rem), transparent calc(100% - 5rem));
+  }
+  :root[data-platform="darwin"] .chat-composer-surface,
+  :root[data-platform="win32"] .chat-composer-surface {
+    background: color-mix(in srgb, var(--popover) 88%, transparent);
+  }
+  /* On glass the change of material already separates sidebar and content: no seam line. */
   :root[data-platform="darwin"] .chat-content-card::before,
   :root[data-platform="win32"] .chat-content-card::before {
     display: none;

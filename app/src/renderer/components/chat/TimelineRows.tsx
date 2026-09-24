@@ -32,6 +32,7 @@ import {
   TeamProposalCard,
 } from "./Cards";
 import { ChatMarkdown } from "./ChatMarkdown";
+import { Sep } from "@/components/ui/sep";
 
 function DisclosureChevron({ open }: { open: boolean }) {
   return (
@@ -53,7 +54,7 @@ function PersonMessage({ row }: { row: Extract<TimelineRow, { kind: "person" }> 
           <div className="pr-1 pb-1 text-ui-xs text-muted-foreground/60">
             {[row.moduleName ? `Modulo ${row.moduleName}` : null, row.imageCount ? (row.imageCount === 1 ? "1 immagine" : `${row.imageCount} immagini`) : null]
               .filter(Boolean)
-              .join(" · ")}
+              .join(", ")}
           </div>
         ) : null}
         <div className="w-max max-w-full min-w-0 self-end rounded-[var(--radius-user-message)] border border-transparent bg-[var(--app-user-message-background)] px-3.5 py-2.5">
@@ -67,7 +68,7 @@ function PersonMessage({ row }: { row: Extract<TimelineRow, { kind: "person" }> 
                   onClick={() => setOpenPaste(openPaste === index ? null : index)}
                   className="rounded-md bg-[color-mix(in_srgb,var(--foreground)_7%,transparent)] px-2 py-1 text-left text-ui-xs text-muted-foreground hover:text-foreground"
                 >
-                  {pasteTitle(paste) || "Testo incollato"} · {pasteSizeLabel(paste)}
+                  {pasteTitle(paste) || "Testo incollato"}<Sep />{pasteSizeLabel(paste)}
                 </button>
               ))}
             </div>
@@ -149,7 +150,7 @@ function WorkGroup({ row }: { row: Extract<TimelineRow, { kind: "work" }> }) {
     : row.durationMs !== null
       ? `${specialistName ? `${specialistName} ha` : "Ha"} lavorato per ${formatDuration(row.durationMs)}`
       : specialistName
-        ? `${specialistName} · attività`
+        ? `${specialistName}, attività`
         : "Attività";
   return (
     <div className="mb-3 text-chat">
@@ -159,7 +160,7 @@ function WorkGroup({ row }: { row: Extract<TimelineRow, { kind: "work" }> }) {
         className="-ml-0.5 inline-flex items-center gap-1 pb-2 text-left text-muted-foreground transition-colors duration-200 hover:text-foreground"
       >
         <span className={cn(row.running && "shimmer-text")}>{label}</span>
-        {tools ? <span className="text-muted-foreground/60">· {tools === 1 ? "1 strumento" : `${tools} strumenti`}</span> : null}
+        {tools ? <span className="text-muted-foreground/60"><Sep />{tools === 1 ? "1 strumento" : `${tools} strumenti`}</span> : null}
         <DisclosureChevron open={open} />
       </button>
       {open ? (
@@ -213,7 +214,7 @@ function Reply({ row, latest }: { row: Extract<TimelineRow, { kind: "reply" }>; 
       ) : null}
       {!row.streaming ? (
         <div className="mt-1.5 flex items-center gap-2 text-[11px] text-muted-foreground/45 opacity-0 transition-opacity group-hover:opacity-100">
-          {row.model ? <span>Coordinatore · {row.model}</span> : null}
+          {row.model ? <span>Coordinatore<Sep />{row.model}</span> : null}
           {request?.completedAt ? <span>{formatTime(request.completedAt)}</span> : null}
           <button
             type="button"

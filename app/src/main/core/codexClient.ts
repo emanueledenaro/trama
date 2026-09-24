@@ -155,6 +155,8 @@ export interface TurnOptions {
   cwd: string;
   model: string;
   effort?: string | null;
+  /** Fast service tier for this turn; absent keeps the thread's current tier. */
+  fastMode?: boolean | null;
   /** Absolute paths of images attached to this message. */
   images?: string[];
   /** The only directory the turn may write; the turn is read-only when absent. */
@@ -244,6 +246,7 @@ export class CodexClient {
           .map((effort) => asString(effort) ?? asString(asObject(effort)?.reasoningEffort))
           .filter((effort): effort is string => Boolean(effort));
         const defaultEffort = asString(item.defaultReasoningEffort);
+        const speedTiers = asArray(item.additionalSpeedTiers ?? item.additional_speed_tiers).map((tier) => asString(tier)?.toLowerCase());
         models.push({
           id: asString(item.id) ?? model,
           model,
@@ -252,6 +255,7 @@ export class CodexClient {
           isDefault: item.isDefault === true,
           supportedReasoningEfforts: efforts,
           defaultReasoningEffort: defaultEffort && efforts.includes(defaultEffort) ? defaultEffort : null,
+          supportsFastMode: item.supportsFastMode === true || speedTiers.includes("fast"),
         });
       }
       cursor = asString(result.nextCursor);
@@ -360,6 +364,7 @@ export class CodexClient {
         ],
         cwd: options.cwd,
         model: options.model,
+        ...(typeof options.fastMode === "boolean" ? { serviceTier: options.fastMode ? "fast" : "default" } : {}),
         approvalPolicy: "never",
         sandboxPolicy: options.writableRoot
           ? {

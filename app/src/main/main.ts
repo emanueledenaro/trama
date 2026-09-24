@@ -59,7 +59,7 @@ function createWindow(): void {
       ? {
           titleBarStyle: "hiddenInset" as const,
           trafficLightPosition: { x: 16, y: 16 },
-          vibrancy: "sidebar" as const,
+          vibrancy: "under-window" as const,
           visualEffectState: "active" as const,
           backgroundColor: "#00000000",
         }
@@ -125,6 +125,7 @@ const handlers: { [K in ActionName]: Handler<K> } = {
   "coordinator:interrupt": () => controller.interrupt(),
   "coordinator:retry": () => controller.startCoordinator(),
   "coordinator:selectModel": ({ model, effort, provider, goalId }) => controller.selectModel(model, effort, provider ?? null, goalId ?? null),
+  "coordinator:setFastMode": ({ enabled, goalId }) => controller.setFastMode(enabled, goalId ?? null),
   "coordinator:selectProvider": ({ provider, goalId }) => controller.selectProvider(provider, goalId ?? null),
   "coordinator:saveDraft": ({ text, goalId }) => controller.saveDraft(text, goalId ?? null),
   "goal:create": (input) => controller.createGoal(input),

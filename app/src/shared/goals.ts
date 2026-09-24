@@ -91,7 +91,7 @@ export function goalWorkSummary(document: ProjectDocument, goalId: string): stri
   if (running) parts.push(`${running} incarichi in corso`);
   if (links.candidates.length) parts.push(`${links.candidates.length} candidati`);
   if (!links.assignments.length) parts.push("nessun incarico");
-  return parts.join(" · ");
+  return parts.join(", ");
 }
 
 export interface DecisionDependents {

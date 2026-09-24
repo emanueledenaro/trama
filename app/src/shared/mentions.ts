@@ -234,7 +234,7 @@ export function mentionCandidates(query: string, sources: MentionSources): Menti
           [m.id, 0],
           [m.relativePath, 5],
           [m.summary, 200],
-        ]).map((m) => ({ mention: { kind: "module" as const, key: m.id }, title: m.name, subtitle: `Modulo · ${m.relativePath}` })),
+        ]).map((m) => ({ mention: { kind: "module" as const, key: m.id }, title: m.name, subtitle: `Modulo ${m.relativePath}` })),
       );
     } else if (kind === "issue") {
       result.push(
@@ -254,7 +254,7 @@ export function mentionCandidates(query: string, sources: MentionSources): Menti
           [d.id, 0],
           [d.value, 0],
           [d.acceptedExample, 200],
-        ]).map((d) => ({ mention: { kind: "decision" as const, key: d.id }, title: `${d.id} · ${d.value}`, subtitle: `Decisione v${d.version}` })),
+        ]).map((d) => ({ mention: { kind: "decision" as const, key: d.id }, title: `${d.id} ${d.value}`, subtitle: `Decisione v${d.version}` })),
       );
     } else {
       const paths = files(sources).map((f) => f.file.relativePath);

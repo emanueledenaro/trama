@@ -1,8 +1,11 @@
 import { useEffect, useRef } from "react";
+import type { ProviderId } from "@shared/codex";
+import { dialogComposer, findGoal } from "@shared/goals";
 import { shouldOpenGuideOnLaunch } from "@shared/onboarding";
 import { ChatView } from "@/components/chat/ChatView";
 import { Dialogs } from "@/components/Dialogs";
 import { Inspector } from "@/components/inspector/Inspector";
+import { PROVIDER_GLOW } from "@/components/ProviderIcon";
 import { Sidebar } from "@/components/sidebar/Sidebar";
 import { Toast } from "@/components/Toast";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -22,8 +25,23 @@ function useThemeClass(theme: "system" | "light" | "dark" | undefined) {
   }, [theme]);
 }
 
+/** The window glass takes the light of the Coordinator's provider in the open dialog, steady. */
+function useProviderGlow() {
+  const project = useUi((s) => s.app?.project ?? null);
+  const goalId = useUi((s) => s.dialogGoalId);
+  useEffect(() => {
+    const provider: ProviderId | null = project
+      ? (dialogComposer(project.document, findGoal(project.document, goalId)?.id ?? null).selectedProvider ??
+        project.document.coordinator.threadProvider ??
+        "codex")
+      : null;
+    document.documentElement.style.setProperty("--glow-1", provider ? PROVIDER_GLOW[provider] : "transparent");
+  }, [project, goalId]);
+}
+
 export function App() {
   const app = useUi((s) => s.app);
+  useProviderGlow();
   const setApp = useUi((s) => s.setApp);
   const sidebarOpen = useUi((s) => s.sidebarOpen);
   const inspector = useUi((s) => s.inspector);
@@ -81,7 +99,6 @@ export function App() {
 
   if (!app) return null;
   const isMac = app.platform === "darwin";
-  const hasGlass = isMac || app.platform === "win32";
 
   return (
     <TooltipProvider delay={500}>
@@ -97,10 +114,8 @@ export function App() {
         >
           <div
             className={cn(
-              "app-sidebar-surface absolute flex flex-col transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]",
-              // On native glass the sidebar floats as a rounded pane, as in macOS 26; elsewhere it fills its column.
-              hasGlass ? "app-sidebar-floating inset-y-2 left-2 w-[calc(16rem-1rem)] rounded-2xl" : "inset-y-0 left-0 w-64",
-              !sidebarOpen && (hasGlass ? "-translate-x-[calc(100%+0.5rem)]" : "-translate-x-full"),
+              "app-sidebar-surface absolute inset-y-0 left-0 flex w-64 flex-col transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]",
+              !sidebarOpen && "-translate-x-full",
             )}
           >
             <Sidebar isMac={isMac} />
@@ -116,7 +131,7 @@ export function App() {
               className="absolute inset-y-0 -left-1 z-20 w-2 cursor-ew-resize"
             />
           ) : null}
-          <main className="chat-content-card relative z-[15] flex min-w-0 flex-1 overflow-hidden bg-[var(--color-background-surface)]">
+          <main className="chat-content-card relative z-[15] flex min-w-0 flex-1 overflow-hidden">
             <ChatView isMac={isMac} />
             {inspector && app.project && mainView === "dialog" ? <Inspector /> : null}
           </main>

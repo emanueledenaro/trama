@@ -11,6 +11,7 @@ import { cn } from "@/lib/cn";
 import { formatRelativeTime } from "@/lib/format";
 import { act, useUi } from "@/lib/store";
 import { EmptyNote, InspectorSection } from "./Inspector";
+import { Sep } from "@/components/ui/sep";
 
 const STATUS_TONE: Record<GoalStatus, "warning" | "info" | "success" | "secondary"> = {
   proposed: "warning",
@@ -171,7 +172,7 @@ export function GoalsView({ create }: { create?: boolean }) {
                   <span className="min-w-0 flex-1">
                     <span className="block text-ui text-foreground">{goal.title}</span>
                     <span className="block truncate text-ui-sm text-muted-foreground">
-                      {goal.examples.length ? `${goal.examples.length} esempi` : "esempi da definire"} · {goalWorkSummary(project.document, goal.id)}
+                      {goal.examples.length ? `${goal.examples.length} esempi` : "esempi da definire"}<Sep />{goalWorkSummary(project.document, goal.id)}
                     </span>
                   </span>
                 </button>
@@ -226,7 +227,7 @@ export function GoalView({ id }: { id: string }) {
           <GoalStatusBadge status={goal.status} />
         </div>
         <p className="mt-0.5 text-ui-xs text-muted-foreground">
-          <span className="font-mono">{goal.id}</span> · {goal.origin === "person" ? "creato da te" : "proposto dal Coordinatore"} · {formatRelativeTime(goal.createdAt)}
+          <span className="font-mono">{goal.id}</span><Sep />{goal.origin === "person" ? "creato da te" : "proposto dal Coordinatore"}<Sep />{formatRelativeTime(goal.createdAt)}
         </p>
         <div className="mt-3 flex flex-wrap gap-2">
           <Button size="sm" variant={dialogGoalId === goal.id ? "ghost" : "outline"} disabled={dialogGoalId === goal.id} onClick={() => openDialog(goal.id)}>
@@ -314,7 +315,7 @@ export function GoalView({ id }: { id: string }) {
               <option value="">Collega una decisione del Patto…</option>
               {linkable.map((d) => (
                 <option key={d.id} value={d.id}>
-                  {d.id} · {d.value.slice(0, 60)}
+                  {d.id}<Sep />{d.value.slice(0, 60)}
                 </option>
               ))}
             </select>
@@ -342,12 +343,12 @@ export function GoalView({ id }: { id: string }) {
           >
             <span className="flex items-center gap-2 text-ui">
               <span className="min-w-0 flex-1 truncate text-foreground">
-                {specialist.name} <span className="text-muted-foreground">· {assignment.objective}</span>
+                {specialist.name} <span className="text-muted-foreground"><Sep />{assignment.objective}</span>
               </span>
               <Badge tone={ASSIGNMENT_STATUS[assignment.status].tone}>{ASSIGNMENT_STATUS[assignment.status].label}</Badge>
             </span>
             <span className="block truncate text-ui-sm text-muted-foreground">
-              {providerName(assignment.provider)} · {assignment.model}
+              {providerName(assignment.provider)}<Sep />{assignment.model}
             </span>
           </button>
         ))}
@@ -433,7 +434,7 @@ export function GoalDialogHeader({ goalId }: { goalId: string }) {
       </div>
       <p className="mt-1 line-clamp-2 text-ui-sm text-muted-foreground">{goal.outcome}</p>
       <p className="mt-1 text-ui-xs text-muted-foreground">
-        {goal.examples.length ? `${accepted} esempi accettati · ${refused} rifiutati` : "Esempi da definire"} · {goalWorkSummary(project.document, goal.id)} ·{" "}
+        {goal.examples.length ? `${accepted} esempi accettati, ${refused} rifiutati` : "Esempi da definire"}<Sep />{goalWorkSummary(project.document, goal.id)}<Sep />{" "}
         <button type="button" className="text-[var(--color-text-accent)] hover:underline" onClick={() => setInspector({ kind: "goal", id: goal.id })}>
           dettagli
         </button>

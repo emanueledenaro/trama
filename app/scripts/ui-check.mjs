@@ -184,7 +184,7 @@ await page.keyboard.press("Enter");
 await page.waitForTimeout(300);
 await shot("10c-search-result");
 await page.getByRole("button", { name: "Indietro" }).first().click();
-await page.getByRole("button", { name: /Codex di OpenAI/ }).click();
+await page.getByRole("button", { name: /ChatGPT/ }).click();
 await shot("11-connections");
 await page.keyboard.press("Escape");
 await page.getByRole("button", { name: "Impostazioni" }).click();

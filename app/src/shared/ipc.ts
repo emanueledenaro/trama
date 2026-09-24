@@ -43,6 +43,7 @@ export interface ActionMap {
   "coordinator:interrupt": [void, void];
   "coordinator:retry": [void, void];
   "coordinator:selectModel": [{ model: string; effort: string | null; provider?: ProviderId | null; goalId?: string | null }, void];
+  "coordinator:setFastMode": [{ enabled: boolean; goalId?: string | null }, void];
   "coordinator:selectProvider": [{ provider: ProviderId; goalId?: string | null }, void];
   "coordinator:saveDraft": [{ text: string; goalId?: string | null }, void];
   "goal:create": [GoalInputPayload, string];

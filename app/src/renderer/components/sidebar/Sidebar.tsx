@@ -160,14 +160,14 @@ export function Sidebar({ isMac }: { isMac: boolean }) {
 
   return (
     <div className="flex h-full min-h-0 flex-col text-foreground">
-      <div className={cn("drag-region flex h-[46px] shrink-0 flex-row items-center gap-2 py-0 ps-4 pe-3 font-system-ui", isMac && "desktop-top-bar-traffic-light-gutter")}>
+      <div className={cn("sidebar-top-bar drag-region flex h-[46px] shrink-0 flex-row items-center gap-2 py-0 ps-4 pe-3 font-system-ui", isMac && "desktop-top-bar-traffic-light-gutter")}>
         <div className="flex shrink-0 items-center gap-0.5">
           <SidebarTrigger />
           <NavigationButtons />
         </div>
       </div>
 
-      <div className="flex items-center gap-1 pt-0 pr-2.5 pb-1 pl-1.5">
+      <div className="flex items-center gap-1 pt-0 pr-3 pb-1 pl-1.5">
         <div className="flex h-8 min-w-0 items-center gap-1.5 rounded-lg px-2.5">
           <span className="min-w-0 truncate font-display text-[17px] text-foreground">Trama</span>
         </div>
@@ -186,7 +186,7 @@ export function Sidebar({ isMac }: { isMac: boolean }) {
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="flex flex-col gap-0.5 px-1.5 pt-1">
+        <div className="flex flex-col gap-0.5 px-2 pt-1">
           <SidebarRow
             icon={<IconLayoutList className="size-3.5" stroke={1.8} />}
             label="Panoramica dei progetti"
@@ -195,7 +195,7 @@ export function Sidebar({ isMac }: { isMac: boolean }) {
           />
         </div>
         {project ? (
-          <div className="flex flex-col gap-0.5 px-1.5 pt-0.5 pb-1.5">
+          <div className="flex flex-col gap-0.5 px-2 pt-0.5 pb-1.5">
             <SidebarRow icon={<IconPencilPlus className="size-3.5" stroke={1.8} />} label="Scrivi al Coordinatore" onClick={() => focusComposer()} />
             <SidebarRow
               icon={<IconTarget className="size-3.5" stroke={1.8} />}
@@ -254,7 +254,7 @@ export function Sidebar({ isMac }: { isMac: boolean }) {
           </div>
         ) : null}
 
-        <div className="px-1.5 pb-2">
+        <div className="px-2 pb-2">
           <SectionHeader label="Progetti">
             <Tooltip label="Crea un progetto">
               <button type="button" className="sidebar-icon-button size-5" aria-label="Crea un progetto" onClick={() => setDialog("createProject")}>
@@ -289,7 +289,7 @@ export function Sidebar({ isMac }: { isMac: boolean }) {
                       {background ? (
                         <span
                           className="shrink-0 text-ui-xs text-muted-foreground"
-                          title={`${background.runningAssignments} incarichi in corso${background.pendingDecisions ? ` · ${background.pendingDecisions} decisioni da prendere` : ""}`}
+                          title={`${background.runningAssignments} incarichi in corso${background.pendingDecisions ? `, ${background.pendingDecisions} decisioni da prendere` : ""}`}
                         >
                           {background.runningAssignments} al lavoro
                         </span>

@@ -29,6 +29,7 @@ import { ExercisePanel } from "@/components/onboarding/ExercisePanel";
 import { Composer } from "./Composer";
 import { ContextMeter } from "./ContextMeter";
 import { TimelineRowView } from "./TimelineRows";
+import { Sep } from "@/components/ui/sep";
 
 const HEADER_CHIP =
   "!h-7 shrink-0 rounded-lg gap-1.5 border-0 px-1.5 text-ui-sm font-normal transition-colors text-[var(--color-text-foreground-secondary)] hover:bg-[var(--color-background-button-secondary-hover)] hover:text-[var(--color-text-foreground)] inline-flex items-center";
@@ -129,7 +130,7 @@ function ChatHeader({ isMac }: { isMac: boolean }) {
               {project.snapshot.branch ? <span className="truncate">{project.snapshot.branch}</span> : null}
               {model ? (
                 <>
-                  <span>·</span>
+                  <Sep />
                   <span className="truncate">{model}</span>
                 </>
               ) : null}
@@ -311,7 +312,7 @@ function Timeline() {
         const element = event.currentTarget;
         pinned.current = element.scrollHeight - element.scrollTop - element.clientHeight < 48;
       }}
-      className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-y-contain py-3 [scrollbar-gutter:stable] sm:py-4"
+      className="chat-timeline-scroll min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-y-contain py-3 [scrollbar-gutter:stable] sm:py-4"
     >
       <div className="mx-auto w-full max-w-[var(--app-chat-max-width)] min-w-0 px-3 pb-40 sm:px-5">
         {empty ? <ProjectIntro /> : null}
@@ -364,7 +365,7 @@ export function ChatView({ isMac }: { isMac: boolean }) {
         <div key={`${project.id}:${goalId ?? "project"}`} className="chat-pane-enter relative flex min-h-0 flex-1 flex-col">
           <Timeline />
           <ExercisePanel />
-          <div className="pointer-events-none absolute inset-x-0 bottom-0 px-3 pb-3 sm:px-5 sm:pb-4">
+          <div className="chat-composer-dock pointer-events-none absolute inset-x-0 bottom-0 px-3 pb-3 sm:px-5 sm:pb-4">
             <div className="pointer-events-auto">
               <Composer />
             </div>

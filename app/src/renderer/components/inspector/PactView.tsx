@@ -7,6 +7,7 @@ import { Badge, Input, Label, TextArea } from "@/components/ui/field";
 import { formatDate } from "@/lib/format";
 import { act, useUi } from "@/lib/store";
 import { EmptyNote, InspectorSection } from "./Inspector";
+import { Sep } from "@/components/ui/sep";
 
 function DecisionEditor({ initial, onDone }: { initial?: { id: string; value: string; acceptedExample: string; rationale: string }; onDone: () => void }) {
   const [value, setValue] = useState(initial?.value ?? "");
@@ -133,7 +134,7 @@ function PactDemoBox() {
           <Badge tone={blockers.length === 0 ? "success" : "warning"}>{blockers.length === 0 ? "Simulazione verificata e revisionata" : "Revisione da completare"}</Badge>
           {demo.evidence.map((e) => (
             <p key={e.check} className="text-ui-xs text-muted-foreground">
-              {e.check}: {e.result === "pass" ? "superata" : e.result === "fail" ? "non superata" : "non eseguita"} · {e.output}
+              {e.check}: {e.result === "pass" ? "superata" : e.result === "fail" ? "non superata" : "non eseguita"}<Sep />{e.output}
             </p>
           ))}
           {blockers.map((b) => (
@@ -170,7 +171,7 @@ function DecisionDependentsSection({ id }: { id: string }) {
       {dependents.assignments.map(({ assignment, specialist, version, current }) => (
         <button key={assignment.id} type="button" className={row} onClick={() => setInspector({ kind: "specialist", id: specialist.id })}>
           <span className="min-w-0 flex-1 truncate">
-            <span className="font-mono text-[11px] text-muted-foreground">{assignment.id}</span> {specialist.name} · {assignment.objective}
+            <span className="font-mono text-[11px] text-muted-foreground">{assignment.id}</span> {specialist.name}<Sep />{assignment.objective}
           </span>
           <Badge tone={current ? "secondary" : "warning"}>{current ? `v${version}` : `delegato su v${version}`}</Badge>
           <Badge tone={ASSIGNMENT_STATUS[assignment.status].tone}>{ASSIGNMENT_STATUS[assignment.status].label}</Badge>
@@ -179,7 +180,7 @@ function DecisionDependentsSection({ id }: { id: string }) {
       {dependents.candidates.map(({ candidate, version, current }) => (
         <button key={candidate.id} type="button" className={row} onClick={() => setInspector({ kind: "candidate", id: candidate.id })}>
           <span className="min-w-0 flex-1 truncate">
-            <span className="font-mono text-[11px] text-muted-foreground">{candidate.id}</span> candidato · {candidate.changedFiles.length} file
+            <span className="font-mono text-[11px] text-muted-foreground">{candidate.id}</span> candidato<Sep />{candidate.changedFiles.length} file
           </span>
           <Badge tone={current ? "secondary" : "warning"}>{current ? `v${version}` : `evidenze su v${version}: da riverificare`}</Badge>
         </button>
@@ -238,7 +239,7 @@ export function DecisionView({ id }: { id: string }) {
           {history.map((version) => (
             <li key={version.version} className="text-ui-sm">
               <span className="text-foreground/90">v{version.version}</span>
-              <span className="text-muted-foreground"> · {formatDate(version.decidedAt)}</span>
+              <span className="text-muted-foreground"><Sep />{formatDate(version.decidedAt)}</span>
               <p className="text-muted-foreground">{version.value}</p>
             </li>
           ))}

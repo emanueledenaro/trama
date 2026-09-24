@@ -1,5 +1,6 @@
 import { Popover } from "@base-ui/react/popover";
 import { act, useUi } from "@/lib/store";
+import { Sep } from "@/components/ui/sep";
 
 const format = (n: number) => n.toLocaleString("it-IT");
 
@@ -39,7 +40,7 @@ export function ContextMeter() {
           <Popover.Popup className="translucent-popup w-80 rounded-2xl p-4 text-ui outline-none transition-[opacity,scale] data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0">
             <div className="font-medium text-foreground">Finestra di contesto</div>
             <p className="mt-1 text-ui-sm text-muted-foreground">
-              {percent}% usato · {format(usage.usedTokens)} su {format(usage.contextWindow)} token
+              {percent}% usato<Sep />{format(usage.usedTokens)} su {format(usage.contextWindow)} token
             </p>
             <p className="text-ui-sm text-muted-foreground">Codex compatta il contesto automaticamente quando serve.</p>
             <div className="my-3 h-px bg-border" />

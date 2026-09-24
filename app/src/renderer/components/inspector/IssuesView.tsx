@@ -8,6 +8,7 @@ import { cn } from "@/lib/cn";
 import { formatRelativeTime } from "@/lib/format";
 import { act, useUi } from "@/lib/store";
 import { EmptyNote, InspectorSection } from "./Inspector";
+import { Sep } from "@/components/ui/sep";
 
 export function IssuesView() {
   const github = useUi((s) => s.app?.project?.github)!;
@@ -42,7 +43,7 @@ export function IssuesView() {
                   github.capabilities.rateRemaining !== null ? `${github.capabilities.rateRemaining} richieste API rimaste` : null,
                 ]
                   .filter(Boolean)
-                  .join(" · ")
+                  .join(", ")
               : github.capabilities.message}
           </p>
         ) : null}
@@ -120,7 +121,7 @@ export function IssuesView() {
               <span className="min-w-0 flex-1">
                 <span className="block text-ui text-foreground/90">{issue.title}</span>
                 <span className="block text-ui-xs text-muted-foreground">
-                  #{issue.number} · {formatRelativeTime(issue.updatedAt)}
+                  #{issue.number}<Sep />{formatRelativeTime(issue.updatedAt)}
                 </span>
               </span>
             </button>
@@ -146,7 +147,7 @@ export function IssueDetail({ number }: { number: number }) {
         <div className="mt-1 flex flex-wrap items-center gap-1.5 text-ui-sm text-muted-foreground">
           <Badge tone={issue.state === "open" ? "success" : "secondary"}>{issue.state === "open" ? "Aperta" : "Chiusa"}</Badge>
           <span>#{issue.number}</span>
-          {issue.author ? <span>· {issue.author}</span> : null}
+          {issue.author ? <span><Sep />{issue.author}</span> : null}
           {issue.labels.map((label) => (
             <Badge key={label} tone="outline">
               {label}

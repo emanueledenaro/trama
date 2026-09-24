@@ -41,6 +41,8 @@ export interface RunTurnOptions {
   cwd: string;
   model: string;
   effort?: string | null;
+  /** Fast service tier, where the provider offers one (Codex); others ignore it. */
+  fastMode?: boolean | null;
   /** Absolute paths of images attached to this message. */
   images?: string[];
   /** The only directory the turn may write; the turn is read-only when absent. */

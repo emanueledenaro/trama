@@ -431,6 +431,8 @@ export interface DialogComposer {
   selectedProvider?: ProviderId;
   selectedModel: string | null;
   selectedEffort: string | null;
+  /** Fast mode for models that offer it; absent means off. */
+  selectedFastMode?: boolean;
   providerPreferences?: Partial<Record<ProviderId, { model: string | null; effort: string | null }>>;
   composerDraft: string;
 }
@@ -470,6 +472,8 @@ export interface ProjectDocument {
   selectedProvider?: ProviderId;
   selectedModel: string | null;
   selectedEffort: string | null;
+  /** Fast mode for models that offer it; absent means off. */
+  selectedFastMode?: boolean;
   /** The last model and effort chosen for each provider, restored when the person switches back. */
   providerPreferences?: Partial<Record<ProviderId, { model: string | null; effort: string | null }>>;
   composerDraft: string;

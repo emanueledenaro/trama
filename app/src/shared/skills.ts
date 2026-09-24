@@ -11,7 +11,11 @@ const INVOCATION = /(^|\s)([/$])([A-Za-z0-9_:-]+)(?=\s|$|[,.;!?)])/g;
 
 /** Enabled skills matching `query`, by name first and then description. */
 export function skillCandidates(query: string, skills: LoadedSkill[]): LoadedSkill[] {
-  const enabled = skills.filter((s) => s.enabled).sort((a, b) => a.name.localeCompare(b.name));
+  // The same skill can come from two folders; the person picks a name, so each name appears once.
+  const seen = new Set<string>();
+  const enabled = skills
+    .filter((s) => s.enabled && !seen.has(s.name) && Boolean(seen.add(s.name)))
+    .sort((a, b) => a.name.localeCompare(b.name));
   const text = query.toLowerCase();
   if (!text) return enabled;
   return enabled

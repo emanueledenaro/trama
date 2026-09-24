@@ -6,6 +6,7 @@ import { Spinner } from "@/components/Spinner";
 import { cn } from "@/lib/cn";
 import { act, useUi } from "@/lib/store";
 import { StepRow } from "./StepRow";
+import { Sep } from "@/components/ui/sep";
 
 const DECISION_PROMPT =
   "Esercizio: fammi una domanda di prodotto sul caso dell'ordine pagato annullato, con alternative concrete, usando request_decision. Non modificare nulla.";
@@ -102,7 +103,7 @@ export function ExercisePanel() {
       className="no-drag absolute top-[54px] right-3 z-20 flex max-h-[calc(100%-170px)] w-[320px] flex-col overflow-hidden rounded-xl border border-[color:var(--color-border)] bg-popover text-popover-foreground shadow-lg"
     >
       <div className="flex items-center gap-2 px-3.5 pt-3">
-        <span className="min-w-0 flex-1 truncate text-ui-xs text-muted-foreground">Esercizio · copia locale di esempio</span>
+        <span className="min-w-0 flex-1 truncate text-ui-xs text-muted-foreground">Esercizio<Sep />copia locale di esempio</span>
         <button type="button" className="sidebar-icon-button size-5 rounded-md" aria-label="Chiudi l'esercizio" onClick={() => setExercise(null)}>
           <IconX className="size-3.5" />
         </button>

@@ -1466,7 +1466,7 @@ export class TramaController {
           type: "activity",
           title: "Messaggio inviato al Coordinatore",
           detail: [
-            activeProvider === "codex" ? selectedModel : `${providerName(activeProvider)} · ${selectedModel}`,
+            activeProvider === "codex" ? selectedModel : `${providerName(activeProvider)} ${selectedModel}`,
             effort ? `sforzo ${effort}` : null,
             goal ? `obiettivo ${goal.id}` : null,
             parts.length ? `aggiornamento: ${parts.join(", ")}` : null,
@@ -1474,7 +1474,7 @@ export class TramaController {
             skills.length ? `skill: ${skills.map((s) => s.name).join(", ")}` : null,
           ]
             .filter(Boolean)
-            .join(" · "),
+            .join("; "),
           tone: "info",
         },
         request.id,
@@ -1486,6 +1486,7 @@ export class TramaController {
         cwd: project.rootPath,
         model: selectedModel,
         effort,
+        fastMode: this.fastModeFor(dialogComposer(document, goal?.id ?? null), activeProvider, selectedModel),
         images: attachments,
         skills,
         onEvent: (event) => this.handleTurnEvent(project, request, event),
@@ -1648,6 +1649,21 @@ export class TramaController {
     selection.selectedModel = model;
     selection.selectedEffort = effort;
     selection.providerPreferences = { ...selection.providerPreferences, [id]: { model, effort } };
+    this.changed();
+  }
+
+  /** The fast tier to send with a turn: only for a model that offers it, and only once the person chose. */
+  private fastModeFor(selection: { selectedFastMode?: boolean }, provider: ProviderId, model: string): boolean | null {
+    if (selection.selectedFastMode === undefined) return null;
+    const offered = this.state.providers[provider]?.models.find((m) => m.model === model)?.supportsFastMode === true;
+    return offered ? selection.selectedFastMode : null;
+  }
+
+  /** Turns fast mode on or off for the dialog; it applies to models that offer a fast tier. */
+  async setFastMode(enabled: boolean, goalId: string | null = null): Promise<void> {
+    const project = this.requireProject();
+    if (goalId) requireGoal(project.document, goalId);
+    dialogComposer(project.document, goalId).selectedFastMode = enabled;
     this.changed();
   }
 
@@ -1921,7 +1937,7 @@ export class TramaController {
       assignmentId,
       preKey,
       resumed ? "Ripresa dell'incarico" : "Avvio dell'incarico",
-      `${provider === "codex" ? "" : `${providerName(provider)} · `}${assignment.model} · ${needsWorktree(assignment) ? "worktree proprio" : "sola lettura"}`,
+      `${provider === "codex" ? "" : `${providerName(provider)} `}${assignment.model}, ${needsWorktree(assignment) ? "worktree proprio" : "sola lettura"}`,
       "info",
     );
     let turnId: string | null = null;
@@ -2111,7 +2127,7 @@ export class TramaController {
     appendEvent(
       project.document,
       "trama",
-      { type: "activity", title: "Provider dell'incarico cambiato", detail: `${providerName(provider)} · ${model}. Incarico e worktree restano; la prossima ripresa apre una sessione nuova.`, tone: "info" },
+      { type: "activity", title: "Provider dell'incarico cambiato", detail: `${providerName(provider)} ${model}. Incarico e worktree restano; la prossima ripresa apre una sessione nuova.`, tone: "info" },
       null,
       new Date(),
       { assignmentId, workKey: `${assignmentId}:${assignment.turns.length + 1}` },
@@ -2956,7 +2972,7 @@ export class TramaController {
         appendEvent(owner.document, "trama", {
           type: "activity",
           title: run.status === "failed" ? "La revisione dell'esperienza non è riuscita" : "Revisione dell'esperienza",
-          detail: run.status === "failed" ? run.error : `${run.actions.join(" · ")}\nLo trovi in Memoria: puoi correggere o ritirare quanto appreso.`,
+          detail: run.status === "failed" ? run.error : `${run.actions.join(", ")}\nLo trovi in Memoria: puoi correggere o ritirare quanto appreso.`,
           tone: run.status === "failed" ? "error" : "info",
         });
         this.changedIn(owner);

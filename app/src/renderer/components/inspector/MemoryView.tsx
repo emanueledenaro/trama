@@ -5,6 +5,7 @@ import { Badge, TextArea } from "@/components/ui/field";
 import { formatDate } from "@/lib/format";
 import { act, useUi } from "@/lib/store";
 import { EmptyNote, InspectorSection } from "./Inspector";
+import { Sep } from "@/components/ui/sep";
 
 /** What the Coordinator learned in this project, visible and correctable by the person (ADR 0014, C15). */
 export function MemoryView() {
@@ -119,7 +120,7 @@ function ProposalsSection({ learning }: { learning: LearningView }) {
         {learning.proposals.map((proposal) => (
           <div key={proposal.id} className="rounded-xl border border-[color:var(--color-border)] p-2.5 text-ui-sm">
             <p className="text-ui-xs text-muted-foreground">
-              {proposal.target === "user" ? "Profilo" : "Note sul progetto"} · {formatDate(proposal.createdAt)}
+              {proposal.target === "user" ? "Profilo" : "Note sul progetto"}<Sep />{formatDate(proposal.createdAt)}
             </p>
             <ul className="mt-1 space-y-0.5 text-foreground/90">
               {proposal.operations.map((line, index) => (
@@ -191,7 +192,7 @@ function SkillRow({ skill }: { skill: LearnedSkillView }) {
       </div>
       <p className="mt-1 text-foreground/90">{skill.description}</p>
       <p className="mt-1 text-ui-xs text-muted-foreground">
-        Usata {skill.useCount} volte · modificata {skill.patchCount} volte · {skill.lastActivityAt ? `ultimo uso ${formatDate(skill.lastActivityAt)}` : "mai usata"}
+        Usata {skill.useCount} volte<Sep />modificata {skill.patchCount} volte<Sep />{skill.lastActivityAt ? `ultimo uso ${formatDate(skill.lastActivityAt)}` : "mai usata"}
       </p>
       {content !== null ? (
         <div className="mt-2 space-y-2">
@@ -278,12 +279,12 @@ function ReviewsSection({ learning }: { learning: LearningView }) {
               <span className="ml-auto text-muted-foreground">{formatDate(run.startedAt)}</span>
             </div>
             <p className="mt-1 text-muted-foreground">
-              {run.actions.length ? run.actions.join(" · ") : run.status === "completed" ? "Niente da salvare." : ""}
+              {run.actions.length ? run.actions.join(", ") : run.status === "completed" ? "Niente da salvare." : ""}
               {run.error ? ` ${run.error}` : ""}
             </p>
             <p className="mt-0.5 text-muted-foreground/80">
-              {run.toolCalls} chiamate{run.usedTokens !== null ? ` · ${run.usedTokens.toLocaleString("it-IT")} token` : ""}
-              {run.model ? ` · ${run.model}` : ""}
+              {run.toolCalls} chiamate{run.usedTokens !== null ? `, ${run.usedTokens.toLocaleString("it-IT")} token` : ""}
+              {run.model ? `, ${run.model}` : ""}
             </p>
           </div>
         ))}

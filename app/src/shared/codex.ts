@@ -23,6 +23,8 @@ export interface ProviderModel {
   isDefault: boolean;
   supportedReasoningEfforts: string[];
   defaultReasoningEffort: string | null;
+  /** The model offers a fast service tier (Codex `additionalSpeedTiers` contains "fast"). */
+  supportsFastMode?: boolean;
 }
 
 export type CodexModel = ProviderModel;

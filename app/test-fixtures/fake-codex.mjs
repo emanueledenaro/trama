@@ -48,6 +48,7 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
         result: {
           data: [
             { id: "gpt-5.5", model: "gpt-5.5", displayName: "GPT-5.5", description: "Modello di prova", isDefault: true, hidden: false, supportedReasoningEfforts: ["low", "medium", "high"], defaultReasoningEffort: "medium" },
+            { id: "gpt-5.5-fast", model: "gpt-5.5-fast", displayName: "GPT-5.5 Fast", description: "Modello con livello veloce", isDefault: false, hidden: false, supportedReasoningEfforts: ["low"], defaultReasoningEffort: "low", additionalSpeedTiers: ["fast"] },
           ],
         },
       });
@@ -80,6 +81,11 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
       };
       const toolDone = (tool, result) =>
         send({ method: "item/completed", params: { threadId, turnId, item: { id: `tool-${tool}`, type: "mcpToolCall", server: "trama", tool, status: "completed", result } } });
+      if (text.includes("[tier]")) {
+        // Echoes the service tier the turn asked for.
+        setTimeout(() => finish(`tier:${params.serviceTier ?? "none"}`), 10);
+        return;
+      }
       if (params.outputSchema?.required?.includes("sourceSnapshotID")) {
         const sources = JSON.parse(text.slice(text.indexOf("Fonti: ") + 7));
         const plan = {

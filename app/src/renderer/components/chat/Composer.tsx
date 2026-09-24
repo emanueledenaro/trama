@@ -1,26 +1,19 @@
 // Layout and classes follow Synara (github.com/Emanuele-web04/synara, MIT License, Copyright (c) 2026 T3 Tools Inc. and Emanuele Di Pietro).
-import { IconArrowUp, IconAt, IconChevronDown, IconPhotoPlus, IconSparkles, IconX } from "@tabler/icons-react";
-import { isUsableAccount, type ProviderId } from "@shared/codex";
-import { PROVIDERS, supportsReadOnly } from "@shared/providers";
+import { IconArrowUp, IconAt, IconChevronDown, IconPhotoPlus, IconX } from "@tabler/icons-react";
+import type { ProviderId } from "@shared/codex";
 import type { ImageAttachmentInput } from "@shared/ipc";
 import { type MentionCandidate, mentionCandidates, mentionToken } from "@shared/mentions";
 import { normalizePaste, pasteSizeLabel, pasteTitle, serializePastes, shouldCollapsePaste } from "@shared/pastedText";
 import { skillCandidates } from "@shared/skills";
 import { dialogComposer, findGoal } from "@shared/goals";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { ModelPicker } from "./ModelPicker";
 import { Button } from "@/components/ui/button";
 import { Menu, MenuGroupLabel, MenuPopup, MenuRadioGroup, MenuRadioItem, MenuSeparator, MenuTrigger } from "@/components/ui/menu";
 import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/cn";
 import { act, useUi } from "@/lib/store";
-
-const EFFORT_LABELS: Record<string, string> = {
-  minimal: "Minimo",
-  low: "Basso",
-  medium: "Medio",
-  high: "Alto",
-  xhigh: "Molto alto",
-};
+import { Sep } from "@/components/ui/sep";
 
 const IMAGE_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp"];
 const MAXIMUM_IMAGES = 8;
@@ -130,7 +123,7 @@ export function Composer() {
       ? mentionCandidates(mention.query, mentionSources).slice(0, 12)
       : skillCandidates(mention.query, project.skills)
           .slice(0, 12)
-          .map((skill) => ({ mention: { kind: "file" as const, key: `$${skill.name}` }, title: `$${skill.name}`, subtitle: skill.description ?? "Skill" }));
+          .map((skill) => ({ mention: { kind: "file" as const, key: `/${skill.name}` }, title: `/${skill.name}`, subtitle: skill.description ?? "Skill" }));
 
   /** Opens the mention menu while the word before the cursor starts with @. */
   const trackMention = (value: string, cursor: number) => {
@@ -233,7 +226,7 @@ export function Composer() {
                   className="group/paste relative flex max-w-64 min-w-0 flex-col rounded-lg border border-[color:var(--color-border)] bg-[var(--color-background-button-secondary)] px-2.5 py-1.5"
                 >
                   <span className="truncate text-ui-sm text-foreground">{pasteTitle(paste.text) || "Testo incollato"}</span>
-                  <span className="text-ui-xs text-muted-foreground">Testo incollato · {pasteSizeLabel(paste.text)}</span>
+                  <span className="text-ui-xs text-muted-foreground">Testo incollato<Sep />{pasteSizeLabel(paste.text)}</span>
                   <button
                     type="button"
                     aria-label="Rimuovi testo incollato"
@@ -315,7 +308,7 @@ export function Composer() {
                   ? "Aggiungi un messaggio: partirà quando il Coordinatore avrà finito"
                   : goal
                     ? `Messaggio al Coordinatore sull'obiettivo «${goal.title}». Usa @ per citare moduli, file, issue e decisioni`
-                    : "Messaggio al Coordinatore. Usa @ per citare moduli, file, issue e decisioni, $ per una skill"
+                    : "Messaggio al Coordinatore. Usa @ per citare moduli, file, issue e decisioni, / per una skill"
               }
               aria-label="Messaggio al Coordinatore"
               className="block max-h-60 min-h-[2lh] w-full resize-none bg-transparent font-system-ui text-chat leading-relaxed text-foreground outline-none placeholder:text-muted-foreground/40"
@@ -359,82 +352,16 @@ export function Composer() {
                   </MenuRadioGroup>
                 </MenuPopup>
               </Menu>
-              <Menu>
-                <MenuTrigger className={PILL} aria-label="Provider e modello del Coordinatore">
-                  <IconSparkles className="size-3.5 shrink-0 opacity-70" stroke={1.8} />
-                  {selectedProvider !== "codex" ? (
-                    <span className="shrink-0 text-muted-foreground">{PROVIDERS.find((p) => p.id === selectedProvider)?.name}</span>
-                  ) : null}
-                  <span className={cn("min-w-0 truncate", modelMissing ? "text-warning line-through" : "text-[var(--color-text-foreground)]")}>
-                    {modelInfo?.displayName ?? selectedModel ?? "Scegli un modello"}
-                  </span>
-                  {effort ? <span className="shrink-0 text-muted-foreground">{EFFORT_LABELS[effort] ?? effort}</span> : null}
-                  <IconChevronDown className="ms-0.5 size-3 shrink-0 opacity-60" />
-                </MenuTrigger>
-                <MenuPopup side="top" composer className="w-72">
-                  <MenuGroupLabel>Provider</MenuGroupLabel>
-                  <MenuRadioGroup
-                    value={selectedProvider}
-                    onValueChange={(value) => void act("coordinator:selectProvider", { provider: value as ProviderId, goalId: goal?.id ?? null })}
-                  >
-                    {PROVIDERS.map((p) => {
-                      const account = providers[p.id as ProviderId]?.account ?? null;
-                      const usable = isUsableAccount(account) && supportsReadOnly(p.id);
-                      return (
-                        <MenuRadioItem key={p.id} value={p.id} disabled={!usable || busy}>
-                          <span className="block truncate">{p.name}</span>
-                          {!usable ? (
-                            <span className="block truncate text-ui-xs text-muted-foreground">
-                              {!supportsReadOnly(p.id)
-                                ? "Solo per specialisti con worktree"
-                                : account?.kind === "blocked"
-                                  ? "Bloccato"
-                                  : account?.kind === "signedOut"
-                                    ? "Accesso richiesto"
-                                    : "Non collegato"}
-                            </span>
-                          ) : null}
-                        </MenuRadioItem>
-                      );
-                    })}
-                  </MenuRadioGroup>
-                  <MenuSeparator />
-                  <MenuGroupLabel>Modello</MenuGroupLabel>
-                  {modelMissing ? (
-                    <p className="px-2 pb-1 text-ui-xs text-warning">{selectedModel} non è più disponibile: scegline un altro.</p>
-                  ) : null}
-                  <MenuRadioGroup
-                    value={selectedModel ?? ""}
-                    onValueChange={(value) => {
-                      const next = models.find((m) => m.model === value);
-                      void act("coordinator:selectModel", { model: value as string, effort: next?.defaultReasoningEffort ?? null, provider: selectedProvider, goalId: goal?.id ?? null });
-                    }}
-                  >
-                    {models.map((m) => (
-                      <MenuRadioItem key={m.model} value={m.model}>
-                        <span className="block truncate">{m.displayName}</span>
-                        {m.description ? <span className="block truncate text-ui-xs text-muted-foreground">{m.description}</span> : null}
-                      </MenuRadioItem>
-                    ))}
-                  </MenuRadioGroup>
-                  {modelInfo && modelInfo.supportedReasoningEfforts.length ? (
-                    <>
-                      <MenuSeparator />
-                      <MenuGroupLabel>Sforzo</MenuGroupLabel>
-                      <MenuRadioGroup
-                        value={effort ?? ""}
-                        onValueChange={(value) => void act("coordinator:selectModel", { model: modelInfo.model, effort: value as string, provider: selectedProvider, goalId: goal?.id ?? null })}
-                      >
-                        {modelInfo.supportedReasoningEfforts.map((level) => (
-                          <MenuRadioItem key={level} value={level}>
-                            {EFFORT_LABELS[level] ?? level}
-                          </MenuRadioItem>
-                        ))}
-                      </MenuRadioGroup>
-                    </>
-                  ) : null}
-                </MenuPopup>
-              </Menu>
+              <ModelPicker
+                className={PILL}
+                selectedProvider={selectedProvider}
+                selectedModel={selectedModel}
+                effort={effort}
+                modelMissing={modelMissing}
+                busy={busy}
+                goalId={goal?.id ?? null}
+                fastMode={selection.selectedFastMode === true}
+              />
             </div>
             <div className="flex shrink-0 items-center gap-2">
               {busy && !text.trim() && !pastes.length ? (

@@ -12,6 +12,7 @@ import { cn } from "@/lib/cn";
 import { formatRelativeTime } from "@/lib/format";
 import { act, useUi } from "@/lib/store";
 import { EmptyNote, InspectorSection } from "./Inspector";
+import { Sep } from "@/components/ui/sep";
 
 const STATUS_LABEL: Record<Specialist["status"], string> = {
   available: "libero",
@@ -69,10 +70,10 @@ export function TeamView() {
               </span>
               <span className="min-w-0 flex-1">
                 <span className="block text-ui text-foreground">
-                  {specialist.name} <span className="text-muted-foreground">· {specialist.competence}</span>
+                  {specialist.name} <span className="text-muted-foreground"><Sep />{specialist.competence}</span>
                 </span>
                 <span className="block truncate text-ui-sm text-muted-foreground">
-                  {STATUS_LABEL[specialist.status]} · {specialist.lastUpdate}
+                  {STATUS_LABEL[specialist.status]}<Sep />{specialist.lastUpdate}
                 </span>
                 {(() => {
                   const current = specialist.assignments.at(-1);
@@ -80,9 +81,9 @@ export function TeamView() {
                   const goal = findGoal(project.document, current.goalId);
                   return (
                     <span className="block truncate text-ui-xs text-muted-foreground/80" title={current.modelReason ?? "Motivazione non registrata"}>
-                      {providerLabel(current.provider ?? "codex")} · {current.model}
-                      {current.modelReason ? " · motivato" : " · motivazione non registrata"}
-                      {goal ? ` · per ${goal.title}` : ""}
+                      {providerLabel(current.provider ?? "codex")}<Sep />{current.model}
+                      {current.modelReason ? ", motivato" : ", motivazione non registrata"}
+                      {goal ? `, per ${goal.title}` : ""}
                     </span>
                   );
                 })()}
@@ -95,7 +96,7 @@ export function TeamView() {
         <InspectorSection title="Usciti dal team">
           {former.map((s) => (
             <p key={s.id} className="text-ui-sm text-muted-foreground">
-              {s.name} · {s.removal?.reason}
+              {s.name}<Sep />{s.removal?.reason}
             </p>
           ))}
         </InspectorSection>
@@ -155,7 +156,7 @@ export function SpecialistView({ id }: { id: string }) {
       <InspectorSection title="Perché è nel team">
         <p className="text-ui text-foreground/90">{specialist.reason}</p>
         <p className="mt-1 text-ui-xs text-muted-foreground">
-          {specialist.origin === "teamProposal" ? "Dalla proposta confermata" : "Aggiunto dal Coordinatore"} · {formatRelativeTime(specialist.createdAt)}
+          {specialist.origin === "teamProposal" ? "Dalla proposta confermata" : "Aggiunto dal Coordinatore"}<Sep />{formatRelativeTime(specialist.createdAt)}
         </p>
       </InspectorSection>
       {current && ["stopped", "failed"].includes(current.status) ? <AssignmentProvider assignment={current} /> : null}
@@ -191,8 +192,8 @@ export function SpecialistView({ id }: { id: string }) {
                 {assignment.objective}
                 <span className="text-muted-foreground">
                   {" "}
-                  · {providerLabel(assignment.provider ?? "codex")} {assignment.model}
-                  {assignment.goalId ? ` · ${findGoal(project.document, assignment.goalId)?.title ?? assignment.goalId}` : ""}
+                  <Sep />{providerLabel(assignment.provider ?? "codex")} {assignment.model}
+                  {assignment.goalId ? `, ${findGoal(project.document, assignment.goalId)?.title ?? assignment.goalId}` : ""}
                 </span>
               </span>
               <Badge tone={ASSIGNMENT_STATUS[assignment.status].tone}>{ASSIGNMENT_STATUS[assignment.status].label}</Badge>
@@ -219,7 +220,7 @@ function AssignmentProvider({ assignment }: { assignment: SpecialistAssignment }
   return (
     <InspectorSection title="Provider dell'incarico">
       <p className="text-ui-sm text-muted-foreground">
-        Ora: {providerLabel(current)} · {assignment.model}. Puoi cambiarlo prima della ripresa: incarico e worktree restano, riparte solo la sessione.
+        Ora: {providerLabel(current)}<Sep />{assignment.model}. Puoi cambiarlo prima della ripresa: incarico e worktree restano, riparte solo la sessione.
       </p>
       <div className="mt-2 flex flex-wrap items-center gap-2 text-ui-sm">
         <select

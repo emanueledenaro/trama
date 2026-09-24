@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/field";
 import { Button } from "@/components/ui/button";
 import { formatRelativeTime } from "@/lib/format";
 import { act, useUi } from "@/lib/store";
+import { Sep } from "@/components/ui/sep";
 
 const ATTENTION: Record<AttentionReason, { label: string; tone: "warning" | "destructive" | "success" | "info" }> = {
   decision: { label: "Decisione richiesta", tone: "warning" },
@@ -17,9 +18,9 @@ const ATTENTION: Record<AttentionReason, { label: string; tone: "warning" | "des
 function sourceLabel(entry: ProjectOverview): string {
   switch (entry.source) {
     case "live":
-      return entry.selected ? "Aperto ora · dati aggiornati" : "In memoria · dati aggiornati";
+      return entry.selected ? "Aperto ora, dati aggiornati" : "In memoria, dati aggiornati";
     case "saved":
-      return entry.updatedAt ? `Dati dell'ultimo salvataggio · ${formatRelativeTime(entry.updatedAt)}` : "Dati dell'ultimo salvataggio";
+      return entry.updatedAt ? `Dati dell'ultimo salvataggio, ${formatRelativeTime(entry.updatedAt)}` : "Dati dell'ultimo salvataggio";
     case "unreadable":
       return "Stato non leggibile";
     case "notSaved":
@@ -96,7 +97,7 @@ export function OverviewView() {
                   ) : null}
                 </div>
                 <p className="mt-1 text-ui-sm text-muted-foreground">
-                  {entry.reasons.length ? entry.reasons.join(" · ") : entry.source === "live" || entry.source === "saved" ? "Niente in attesa" : null}
+                  {entry.reasons.length ? entry.reasons.join(", ") : entry.source === "live" || entry.source === "saved" ? "Niente in attesa" : null}
                 </p>
                 {entry.problem ? <p className="mt-1 text-ui-xs text-destructive">{entry.problem}</p> : null}
                 <p className="mt-1 text-ui-xs text-muted-foreground/70">{sourceLabel(entry)}</p>
@@ -114,7 +115,7 @@ export function OverviewView() {
                       >
                         <IconTarget className="size-3 shrink-0 text-muted-foreground" stroke={1.8} />
                         <span className="truncate">{goal.title}</span>
-                        {goal.status === "proposed" ? <span className="text-muted-foreground">· proposto</span> : null}
+                        {goal.status === "proposed" ? <span className="text-muted-foreground"><Sep />proposto</span> : null}
                       </button>
                     ))}
                   </div>

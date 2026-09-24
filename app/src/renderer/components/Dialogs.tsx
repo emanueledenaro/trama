@@ -287,7 +287,7 @@ function ConnectionsDialog() {
     account === null
       ? "Verifica in corso"
       : account.kind === "chatgpt"
-        ? `Account riconosciuto${account.email ? `: ${account.email}` : ""} · piano ${account.plan}`
+        ? `Account riconosciuto${account.email ? `: ${account.email}` : ""}, piano ${account.plan}`
         : account.kind === "signedOut"
           ? "Nessun account collegato"
           : account.kind === "unsupported"
@@ -330,7 +330,7 @@ function ConnectionsDialog() {
         />
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 text-ui text-foreground">
-            Codex di OpenAI {codex.checking ? <Spinner /> : null}
+            ChatGPT {codex.checking ? <Spinner /> : null}
           </div>
           <p className="mt-0.5 text-ui-sm text-muted-foreground">{status}</p>
           {account?.kind === "chatgpt" ? (
