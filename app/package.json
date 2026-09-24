@@ -51,7 +51,8 @@
     "files": [
       "dist/**",
       "dist-electron/**",
-      "package.json"
+      "package.json",
+      "!node_modules/@anthropic-ai/claude-agent-sdk-*/**"
     ],
     "extraResources": [
       {
@@ -68,7 +69,9 @@
       "target": [
         "dmg",
         "zip"
-      ]
+      ],
+      "hardenedRuntime": true,
+      "notarize": false
     },
     "linux": {
       "target": [
@@ -81,11 +84,23 @@
         "nsis"
       ]
     },
-    "publish": null
+    "publish": null,
+    "asarUnpack": [
+      "node_modules/@anthropic-ai/claude-agent-sdk/**",
+      "node_modules/@earendil-works/**"
+    ]
   },
   "author": "Emanuele Denaro",
   "repository": {
     "type": "git",
     "url": "https://github.com/emanueledenaro/trama.git"
+  },
+  "dependencies": {
+    "@agentclientprotocol/sdk": "1.2.1",
+    "@anthropic-ai/claude-agent-sdk": "0.3.259",
+    "@earendil-works/pi-agent-core": "0.85.1",
+    "@earendil-works/pi-ai": "0.85.1",
+    "@earendil-works/pi-coding-agent": "0.85.1",
+    "@opencode-ai/sdk": "1.18.31"
   }
 }

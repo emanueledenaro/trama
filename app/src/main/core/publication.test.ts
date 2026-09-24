@@ -38,3 +38,31 @@ describe("publication", () => {
     expect(branches).toContain(workspace.branch);
   });
 });
+
+describe("publication retry", () => {
+  it("does not commit twice when a retry finds the first attempt's commit", async () => {
+    const remote = await mkdtemp(join(tmpdir(), "trama-remote-"));
+    await git(["init", "--bare", "-b", "main"], remote, false);
+    const repo = await mkdtemp(join(tmpdir(), "trama-repo-"));
+    await git(["init", "-b", "main"], repo, false);
+    await writeFile(join(repo, "a.txt"), "uno\n");
+    await git(["add", "."], repo, false);
+    await git(["-c", "user.name=T", "-c", "user.email=t@t", "commit", "-m", "init"], repo, false);
+    await git(["remote", "add", "origin", remote], repo, false);
+    const workspace = await prepareWorktree(repo, "Ada", await mkdtemp(join(tmpdir(), "trama-wt-")));
+    await git(["config", "user.name", "T"], workspace.worktreeRoot, false);
+    await git(["config", "user.email", "t@t"], workspace.worktreeRoot, false);
+    await writeFile(join(workspace.worktreeRoot, "a.txt"), "due\n");
+    // An excluded file stays untracked: it must not block the retry (review #2).
+    await writeFile(join(workspace.worktreeRoot, ".env"), "SECRET=1\n");
+    const review = await reviewWorktree(workspace);
+    expect(review.excludedSensitiveFiles).toContain(".env");
+    const candidate = { id: "C-1", snapshotId: review.snapshotId, changedFiles: review.changedFiles } as unknown as Candidate;
+    const assignment = { id: "A-1", objective: "Cambia a", workspace } as unknown as SpecialistAssignment;
+    const input = { candidate, assignment, repository: "o/r", baseBranch: "main", title: "Cambia a", body: "b" };
+    await expect(publishCandidate(input)).rejects.toThrow();
+    await expect(publishCandidate(input)).rejects.toThrow();
+    const commits = (await git(["rev-list", `${workspace.baseSHA}..HEAD`], workspace.worktreeRoot)).trim().split("\n");
+    expect(commits).toHaveLength(1);
+  });
+});

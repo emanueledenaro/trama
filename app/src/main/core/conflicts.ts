@@ -89,6 +89,8 @@ export async function probeConflict(
         });
         child.on("error", reject);
         child.on("close", (code: number) => resolve(code));
+        // git exits early on a bad patch; the rest of the write then fails with EPIPE.
+        child.stdin.on("error", () => undefined);
         child.stdin.end(diff.stdout);
       });
       if (apply !== 0) throw new Error("Il candidato non si applica alla sua base.");

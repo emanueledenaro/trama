@@ -1,6 +1,9 @@
 import { IconArrowLeft } from "@tabler/icons-react";
 import { useState } from "react";
-import type { Specialist } from "@shared/domain";
+import { isUsableAccount, type ProviderId } from "@shared/codex";
+import type { Specialist, SpecialistAssignment } from "@shared/domain";
+import { findGoal } from "@shared/goals";
+import { PROVIDERS } from "@shared/providers";
 import { ASSIGNMENT_STATUS, AssignmentCard, CandidateCard, TeamProposalCard } from "@/components/chat/Cards";
 import { Spinner } from "@/components/Spinner";
 import { Button } from "@/components/ui/button";
@@ -71,6 +74,18 @@ export function TeamView() {
                 <span className="block truncate text-ui-sm text-muted-foreground">
                   {STATUS_LABEL[specialist.status]} · {specialist.lastUpdate}
                 </span>
+                {(() => {
+                  const current = specialist.assignments.at(-1);
+                  if (!current) return null;
+                  const goal = findGoal(project.document, current.goalId);
+                  return (
+                    <span className="block truncate text-ui-xs text-muted-foreground/80" title={current.modelReason ?? "Motivazione non registrata"}>
+                      {providerLabel(current.provider ?? "codex")} · {current.model}
+                      {current.modelReason ? " · motivato" : " · motivazione non registrata"}
+                      {goal ? ` · per ${goal.title}` : ""}
+                    </span>
+                  );
+                })()}
               </span>
             </button>
           ))}
@@ -143,6 +158,17 @@ export function SpecialistView({ id }: { id: string }) {
           {specialist.origin === "teamProposal" ? "Dalla proposta confermata" : "Aggiunto dal Coordinatore"} · {formatRelativeTime(specialist.createdAt)}
         </p>
       </InspectorSection>
+      {current && ["stopped", "failed"].includes(current.status) ? <AssignmentProvider assignment={current} /> : null}
+      {current?.workspace && !current.workspaceRemovedAt && ["stopped", "failed", "completed"].includes(current.status) ? (
+        <InspectorSection title="Worktree">
+          <p className="text-ui-sm text-muted-foreground">
+            <span className="font-mono">{current.workspace.branch}</span>. Trama lo rimuove solo se non perdi lavoro: nessuna modifica fuori da un commit e commit già pubblicati.
+          </p>
+          <Button size="sm" variant="ghost" className="mt-2" onClick={() => void act("assignment:removeWorktree", { assignmentId: current.id })}>
+            Rimuovi il worktree
+          </Button>
+        </InspectorSection>
+      ) : null}
       {project.document.candidates.some((c) => c.specialistId === specialist.id) ? (
         <InspectorSection title="Candidati">
           {project.document.candidates
@@ -161,12 +187,79 @@ export function SpecialistView({ id }: { id: string }) {
           ) : (
             <div key={assignment.id} className="flex items-center gap-2 py-1 text-ui-sm">
               <span className="font-mono text-[11px] text-muted-foreground">{assignment.id}</span>
-              <span className="min-w-0 flex-1 truncate text-foreground/90">{assignment.objective}</span>
+              <span className="min-w-0 flex-1 truncate text-foreground/90" title={assignment.modelReason ?? undefined}>
+                {assignment.objective}
+                <span className="text-muted-foreground">
+                  {" "}
+                  · {providerLabel(assignment.provider ?? "codex")} {assignment.model}
+                  {assignment.goalId ? ` · ${findGoal(project.document, assignment.goalId)?.title ?? assignment.goalId}` : ""}
+                </span>
+              </span>
               <Badge tone={ASSIGNMENT_STATUS[assignment.status].tone}>{ASSIGNMENT_STATUS[assignment.status].label}</Badge>
             </div>
           ),
         )}
       </InspectorSection>
     </>
+  );
+}
+
+const providerLabel = (id: ProviderId) => PROVIDERS.find((p) => p.id === id)?.name ?? id;
+
+/** The person changes the provider of a stopped assignment (ADR 0009): assignment and worktree stay. */
+function AssignmentProvider({ assignment }: { assignment: SpecialistAssignment }) {
+  const providers = useUi((s) => s.app!.providers);
+  const current = assignment.provider ?? "codex";
+  const [provider, setProvider] = useState<ProviderId>(current);
+  const models = providers[provider]?.models ?? [];
+  const [model, setModel] = useState(assignment.model);
+  const connected = PROVIDERS.map((p) => p.id as ProviderId).filter((id) => isUsableAccount(providers[id]?.account));
+  const validModel = models.length === 0 || models.some((m) => m.model === model);
+  const unchanged = provider === current && model === assignment.model;
+  return (
+    <InspectorSection title="Provider dell'incarico">
+      <p className="text-ui-sm text-muted-foreground">
+        Ora: {providerLabel(current)} · {assignment.model}. Puoi cambiarlo prima della ripresa: incarico e worktree restano, riparte solo la sessione.
+      </p>
+      <div className="mt-2 flex flex-wrap items-center gap-2 text-ui-sm">
+        <select
+          aria-label="Provider"
+          className="h-7 rounded-lg border border-[color:var(--color-border)] bg-transparent px-2"
+          value={provider}
+          onChange={(e) => {
+            const next = e.target.value as ProviderId;
+            setProvider(next);
+            setModel(providers[next]?.models.find((m) => m.isDefault)?.model ?? providers[next]?.models[0]?.model ?? "");
+          }}
+        >
+          {connected.map((id) => (
+            <option key={id} value={id}>
+              {providerLabel(id)}
+            </option>
+          ))}
+        </select>
+        <select
+          aria-label="Modello"
+          className="h-7 min-w-0 flex-1 rounded-lg border border-[color:var(--color-border)] bg-transparent px-2"
+          value={model}
+          onChange={(e) => setModel(e.target.value)}
+        >
+          {!validModel ? <option value={model}>{model} (non disponibile)</option> : null}
+          {models.map((m) => (
+            <option key={m.model} value={m.model}>
+              {m.displayName}
+            </option>
+          ))}
+        </select>
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={unchanged || !model || !validModel || !connected.includes(provider)}
+          onClick={() => void act("assignment:changeProvider", { assignmentId: assignment.id, provider, model })}
+        >
+          Cambia
+        </Button>
+      </div>
+    </InspectorSection>
   );
 }

@@ -2,6 +2,7 @@ import { IconX } from "@tabler/icons-react";
 import { Tooltip } from "@/components/ui/tooltip";
 import { useUi } from "@/lib/store";
 import { CandidateView } from "./CandidateView";
+import { GoalView, GoalsView } from "./GoalsView";
 import { GroupView } from "./GroupView";
 import { WorkView } from "./WorkView";
 import { IssueDetail, IssuesView } from "./IssuesView";
@@ -26,6 +27,8 @@ const TITLES = {
   work: "Lavoro",
   issues: "Issue del progetto",
   issue: "Issue",
+  goals: "Obiettivi",
+  goal: "Obiettivo",
 } as const;
 
 export function Inspector() {
@@ -56,6 +59,8 @@ export function Inspector() {
         {target.kind === "work" ? <WorkView /> : null}
         {target.kind === "issues" ? <IssuesView /> : null}
         {target.kind === "issue" ? <IssueDetail number={target.number} /> : null}
+        {target.kind === "goals" ? <GoalsView key={String(target.create)} create={target.create} /> : null}
+        {target.kind === "goal" ? <GoalView key={target.id} id={target.id} /> : null}
       </div>
     </aside>
   );

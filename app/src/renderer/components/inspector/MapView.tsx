@@ -30,9 +30,16 @@ export function MapView() {
       </InspectorSection>
       <InspectorSection title="Moduli">
         {snapshot.modules.length === 0 ? <EmptyNote>Nessun file sorgente riconosciuto.</EmptyNote> : null}
-        <div className="-mx-2 flex flex-col gap-0.5">
+        <div className="-mx-2 flex flex-col gap-0.5" role="listbox" aria-label="Moduli" onKeyDown={moveFocusWithArrows}>
           {snapshot.modules.map((module) => (
-            <button key={module.id} type="button" className={ROW} onClick={() => setInspector({ kind: "module", id: module.id })}>
+            <button
+              key={module.id}
+              type="button"
+              role="option"
+              aria-selected={false}
+              className={ROW}
+              onClick={() => setInspector({ kind: "module", id: module.id })}
+            >
               <IconFolder className="size-4 shrink-0 text-muted-foreground" stroke={1.6} />
               <span className="min-w-0 flex-1 truncate">{module.name}</span>
               <span className="shrink-0 text-ui-xs text-muted-foreground/70">{module.files.length} file</span>
@@ -151,4 +158,22 @@ export function FilePreview({ path }: { path: string }) {
       </div>
     </div>
   );
+}
+
+/** Up and down arrows move the focus between the options of a list, as in a native list. */
+function moveFocusWithArrows(event: React.KeyboardEvent<HTMLElement>) {
+  if (event.key !== "ArrowDown" && event.key !== "ArrowUp" && event.key !== "Home" && event.key !== "End") return;
+  const options = [...event.currentTarget.querySelectorAll<HTMLElement>('[role="option"]')];
+  if (!options.length) return;
+  const index = options.indexOf(document.activeElement as HTMLElement);
+  const next =
+    event.key === "Home"
+      ? 0
+      : event.key === "End"
+        ? options.length - 1
+        : event.key === "ArrowDown"
+          ? Math.min(options.length - 1, index + 1)
+          : Math.max(0, index < 0 ? 0 : index - 1);
+  options[next]!.focus();
+  event.preventDefault();
 }

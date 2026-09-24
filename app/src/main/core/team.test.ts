@@ -110,3 +110,46 @@ describe("team", () => {
     expect(authorize({ ...mandate, status: "revoked" }, "executeInWorktree", [], "newFeature")).toBe("mandate_revoked");
   });
 });
+
+describe("decision dependencies (C06)", () => {
+  it("stops only the work that relies on a changed or revised decision", async () => {
+    const { emptyDocument } = await import("./document");
+    const { decide, createDecisionRequest } = await import("./pact");
+    const { assign, assignmentsAffectedByDecision, confirmTeam, proposeTeam, refreshDecisionVersions } = await import("./team");
+    const document = emptyDocument("p");
+    const refunds = decide(document, { id: null, value: "Rimborso entro 14 giorni", acceptedExample: "e", rationale: "r" });
+    const other = decide(document, { id: null, value: "Valuta in euro", acceptedExample: "e", rationale: "r" });
+    const proposal = proposeTeam(document, {
+      requestId: null,
+      summary: null,
+      members: [
+        { name: "Ada", competence: "c", reason: "r", moduleIds: [] },
+        { name: "Bea", competence: "c", reason: "r", moduleIds: [] },
+      ],
+    });
+    confirmTeam(document, proposal.id, null, null);
+    const order = { kind: "agreedTicket" as const, objective: "o", issueNumber: null, exercise: null, dependencies: [], model: "m", tools: [], requiredChecks: [], instructions: "i" };
+    const a = assign(document, { ...order, specialist: "Ada", moduleIds: ["m1"], decisionIds: [refunds.id] }, 1, null);
+    const b = assign(document, { ...order, specialist: "Bea", moduleIds: ["m2"], decisionIds: [other.id] }, 1, null);
+    expect(assignmentsAffectedByDecision(document, refunds.id)).toEqual([]);
+
+    createDecisionRequest(document, {
+      requestId: null,
+      category: "product",
+      question: "q",
+      concreteCase: "c",
+      alternatives: [
+        { behavior: "a", example: "e", consequence: null },
+        { behavior: "b", example: "e", consequence: null },
+      ],
+      revisesDecisionId: refunds.id,
+    });
+    expect(assignmentsAffectedByDecision(document, refunds.id).map((x) => x.id)).toEqual([a.id]);
+
+    decide(document, { id: refunds.id, value: "Rimborso entro 30 giorni", acceptedExample: "e", rationale: "r" });
+    expect(assignmentsAffectedByDecision(document, refunds.id).map((x) => x.id)).toEqual([a.id]);
+    expect(assignmentsAffectedByDecision(document, other.id)).toEqual([]);
+    expect(refreshDecisionVersions(document, a.id)).toEqual([refunds.id]);
+    expect(b.decisionVersions).toEqual({ [other.id]: 1 });
+  });
+});

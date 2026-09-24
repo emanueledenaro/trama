@@ -1,3 +1,5 @@
+import type { ProviderId } from "@shared/codex";
+import { supportsReadOnly } from "@shared/providers";
 import type { MandateAction, ProjectDocument, SpecialistTool, TechnicalReview, WorkKind } from "@shared/domain";
 import type { WorkspaceReview } from "./workspace";
 import { MEMORY_BYTE_LIMIT } from "@shared/domain";
@@ -7,6 +9,8 @@ import { createDecisionRequest, createMandateRequest, DELEGABLE_ACTIONS, DomainE
 import { ALL_CHECKS, CHECKS, type CheckResult, type ReadOnlyCheck } from "./checks";
 import { candidateReport, CandidateError, clearCandidate, declareCandidate, findCandidate } from "./candidates";
 import { studyText } from "./study";
+import { findGoal, requestGoalId } from "@shared/goals";
+import { goalsForTool, proposeGoal } from "./goals";
 import {
   addSpecialist,
   assign,
@@ -23,6 +27,33 @@ import {
   TeamError,
 } from "./team";
 import { type ToolDefinition, type ToolResult, toolFailure, toolSuccess } from "./toolServer";
+import type { CriterionReport } from "./tickets";
+
+export interface TicketUpdate {
+  issueNumber: number;
+  summary: string;
+  criteria: CriterionReport[];
+  openParts: string[];
+  close: boolean;
+}
+
+export interface TicketUpdateResult {
+  commentPosted: boolean;
+  duplicate: boolean;
+  checkedCriteria: number[];
+  closed: boolean;
+  closeBlockers: string[];
+}
+
+/** A ticket update Trama refuses before touching GitHub. */
+export class TicketRefusal extends Error {
+  constructor(
+    readonly code: "invalid_arguments" | "evidence_insufficient" | "no_repository",
+    message: string,
+  ) {
+    super(message);
+  }
+}
 
 type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
 type JsonObject = { [key: string]: Json };
@@ -126,6 +157,22 @@ export const COORDINATOR_TOOLS: ToolDefinition[] = [
     readOnly: true,
   },
   {
+    name: "read_goals",
+    description:
+      "Read the project's goals: title, status, desired outcome, accepted and refused examples and linked decisions, plus the goal of the dialog you are answering (null for the project dialog).",
+    properties: {},
+    required: [],
+    readOnly: true,
+  },
+  {
+    name: "propose_goal",
+    description:
+      "Propose a goal to the person: a short title, the desired outcome and concrete examples of behavior that must happen (acceptedExamples) or must not (refusedExamples). The goal stays proposed until the person confirms or edits it; proposing grants no mandate. Propose one goal at a time, from what the person asked or from your study.",
+    properties: { title: text, outcome: text, acceptedExamples: list(0), refusedExamples: list(0) },
+    required: ["title", "outcome", "acceptedExamples"],
+    readOnly: false,
+  },
+  {
     name: "propose_team",
     description:
       "Propose the project team to the person, once, at the end of your study: for each specialist a name, a competence, the reason this project needs it and the modules it would work on. Propose only specialists that real work needs, never one to fill a role. Trama shows a card; the person confirms or corrects it once and only that answer creates the specialists. Afterwards change the team with create_specialist and stop_specialist.",
@@ -156,7 +203,7 @@ export const COORDINATOR_TOOLS: ToolDefinition[] = [
   {
     name: "assign_task",
     description:
-      "Within the mandate (executeInWorktree), assign work to a specialist, named by id or name. Trama starts it in a Codex thread it owns, in its own worktree when tools include edits, without network. Give the objective, the issue or exercise, the modules, the assignments it depends on, the checks the result must pass and your instructions for the specialist. model defaults to yours; propose another only when the work needs it. Assign in parallel only independent work: different modules and no unfinished dependency. kind newFeature and tradeOff always go to the person.",
+      "Within the mandate (executeInWorktree), assign work to a specialist, named by id or name. Trama starts it in a provider session it owns, in its own worktree when tools include edits, without network. Give the objective, the issue or exercise, the modules, the assignments it depends on, the Pact decisions the work relies on (decisionIDs: the work stops if one changes), the checks the result must pass and your instructions for the specialist. provider and model default to yours; propose another connected provider or model only when the work needs it (read_team lists them). In modelReason say why this provider and model fit the work: first the quality the work needs, then the cost among adequate models; say so when you lack evidence. goalID names the goal the work serves; it defaults to the goal of the dialog you are answering. Assign in parallel only independent work: different modules and no unfinished dependency. kind newFeature and tradeOff always go to the person.",
     properties: {
       specialist: text,
       kind: { type: "string", enum: WORK_KINDS },
@@ -165,7 +212,11 @@ export const COORDINATOR_TOOLS: ToolDefinition[] = [
       exercise: text,
       moduleIDs: list(1),
       dependencies: list(0),
+      decisionIDs: list(0),
+      provider: text,
       model: text,
+      modelReason: text,
+      goalID: text,
       tools: { type: "array", items: { type: "string", enum: ["commands", "edits"] } },
       requiredChecks: { type: "array", items: { type: "string", enum: ALL_CHECKS } },
       instructions: text,
@@ -174,9 +225,50 @@ export const COORDINATOR_TOOLS: ToolDefinition[] = [
     readOnly: false,
   },
   {
+    name: "propose_practice",
+    description:
+      "Propose a general working practice for teams (C15), derived from problems of this project: give the evidence ids (a technical review id with changes requested, candidateId:check for a failed check, a failed or waiting assignment id, a conflict assessment id). The method must be general: no file paths, decision ids or issue numbers of this project, because other projects may adopt it. With practiceID you propose a new version of an existing practice. Only the person adopts, retires or rolls back a practice.",
+    properties: { title: text, method: text, rationale: text, evidence: list(1), practiceID: text },
+    required: ["title", "method", "rationale", "evidence"],
+    readOnly: false,
+  },
+  {
+    name: "read_practices",
+    description: "List the general practices Trama knows, which ones the person adopted in this project and at which version.",
+    properties: {},
+    required: [],
+    readOnly: true,
+  },
+  {
+    name: "update_ticket",
+    description:
+      "Report progress on a GitHub issue of this project with evidence (C10). For each checklist criterion (0-based index) give outcome met, partial or notMet, the evidence (candidate ids, pull requests as #N, commit SHAs) and the limits. A criterion counts as met only with a verified candidate, a pull request Trama published or a commit: code on disk or the end of a turn is not evidence. Trama posts one comment per distinct report (a retry posts nothing new) and ticks only the met criteria. With close true, Trama closes the issue only when every criterion is ticked and a merged pull request has green checks; otherwise it stays open and you get the blockers. Needs the mandate openPullRequest, and integrateCandidate to close.",
+    properties: {
+      issueNumber: { type: "integer", minimum: 1 },
+      summary: text,
+      criteria: {
+        type: "array",
+        items: {
+          type: "object",
+          properties: {
+            index: { type: "integer", minimum: 0 },
+            outcome: { type: "string", enum: ["met", "partial", "notMet"] },
+            evidence: { type: "array", items: { type: "string" } },
+            limits: { type: "string" },
+          },
+          required: ["index", "outcome", "evidence"],
+        },
+      },
+      openParts: { type: "array", items: { type: "string" } },
+      close: { type: "boolean" },
+    },
+    required: ["issueNumber", "summary", "criteria"],
+    readOnly: false,
+  },
+  {
     name: "stop_specialist",
     description:
-      "Within the mandate, stop a specialist's work (executeInWorktree), or with remove take the specialist out of the team once its work has stopped (composeTeam). A stop is first requested and then confirmed when Codex ends the turn; work and history are kept. Say it in the conversation.",
+      "Within the mandate, stop a specialist's work (executeInWorktree), or with remove take the specialist out of the team once its work has stopped (composeTeam). A stop is first requested and then confirmed when the provider ends the turn; work and history are kept. Say it in the conversation.",
     properties: { specialist: text, reason: text, remove: { type: "boolean" } },
     required: ["specialist", "reason"],
     readOnly: false,
@@ -236,12 +328,23 @@ export interface ToolContext {
   /** Called after a tool changed the document: persist and publish. */
   changed(): void;
   /** Adds a conversation card for a request the Coordinator put to the person. */
-  addCard(kind: "mandate" | "decision" | "teamProposal" | "assignment" | "candidate", title: string, referenceId: string): void;
-  /** Models of the Codex catalogue a specialist may use, and the Coordinator's own. */
+  addCard(kind: "mandate" | "decision" | "teamProposal" | "assignment" | "candidate" | "goal", title: string, referenceId: string): void;
+  /** Models of the Coordinator's provider, and the Coordinator's own model. */
   models: string[];
   defaultModel: string | null;
+  /** The Coordinator's provider: the default for new assignments. */
+  defaultProvider: ProviderId;
+  /** Providers the person connected (authenticated), with their models. Only these may run specialists (ADR 0008). */
+  providers: { id: ProviderId; models: string[] }[];
   /** Starts the runtime of an assignment that was just recorded. */
   startAssignment(id: string): void;
+  /** Proposes a practice or a new version of one; throws PracticeError on refused input. */
+  proposePractice(input: { title: string; method: string; rationale: string; evidence: string[]; practiceId: string | null }): Promise<{ practiceID: string; version: number }>;
+  readPractices(): Promise<JsonObject>;
+  /** Reports progress on a GitHub issue with evidence; throws on refused evidence or a GitHub error. */
+  updateTicket(input: TicketUpdate): Promise<TicketUpdateResult>;
+  /** Stops running work that relies on a decision that changed or is being revised; returns the stopped assignment ids. */
+  decisionChanged(decisionId: string): string[];
   /** Interrupts the running turn of an assignment, or confirms the stop when none runs. */
   stopAssignment(id: string): void;
   runCheck(check: ReadOnlyCheck): Promise<CheckResult>;
@@ -378,10 +481,17 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
             };
           }),
           revisesDecisionId: typeof args.revisesDecisionID === "string" && args.revisesDecisionID ? args.revisesDecisionID : null,
+          goalId: requestGoalId(document, context.runningRequestId),
         });
         context.addCard("decision", "Decisione", request.id);
+        const paused = request.revisesDecisionId ? context.decisionChanged(request.revisesDecisionId) : [];
         context.changed();
-        return toolSuccess({ requestID: request.id, status: "shown_to_person", note: "Wait for the person's answer." });
+        return toolSuccess({
+          requestID: request.id,
+          status: "shown_to_person",
+          note: "Wait for the person's answer.",
+          stoppedAssignments: paused,
+        });
       }
       case "run_readonly_check": {
         const check = typeof args.check === "string" ? (args.check as ReadOnlyCheck) : null;
@@ -420,6 +530,8 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
                     objective: current.objective,
                     moduleIDs: current.moduleIds,
                     model: current.model,
+                    modelReason: current.modelReason ?? null,
+                    goalID: current.goalId ?? null,
                     worktreeBranch: current.workspace?.branch ?? null,
                     result: current.result,
                     failure: current.failure,
@@ -432,6 +544,8 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
             executeInWorktree: authorize(document.mandate, "executeInWorktree"),
           },
           models: context.models,
+          providers: context.providers as unknown as Json,
+          defaultProvider: context.defaultProvider,
         });
       }
       case "propose_team": {
@@ -479,11 +593,26 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
         const checks = strings(args.requiredChecks);
         const invalidChecks = checks.filter((c) => !ALL_CHECKS.includes(c as ReadOnlyCheck));
         if (invalidChecks.length) return toolFailure("invalid_arguments", `Unknown checks: ${invalidChecks.join(", ")}.`);
-        const model = typeof args.model === "string" && args.model.trim() ? args.model.trim() : context.defaultModel;
-        if (!model) return toolFailure("invalid_arguments", "model is required: no default model is available.");
-        if (context.models.length && !context.models.includes(model)) {
-          return toolFailure("invalid_model", `Model ${model} is not in the Codex catalogue: ${context.models.join(", ")}.`);
+        const providerId = (typeof args.provider === "string" && args.provider.trim() ? args.provider.trim() : context.defaultProvider) as ProviderId;
+        const provider = context.providers.find((p) => p.id === providerId);
+        if (!provider) {
+          return toolFailure(
+            "provider_not_connected",
+            `Provider ${providerId} is not connected. Connected providers: ${context.providers.map((p) => p.id).join(", ") || "none"}.`,
+          );
         }
+        if (!supportsReadOnly(providerId) && !strings(args.tools).includes("edits")) {
+          return toolFailure("provider_needs_worktree", `Provider ${providerId} runs only with edits in a worktree; choose another provider for read-only work.`);
+        }
+        const requestedModel = typeof args.model === "string" && args.model.trim() ? args.model.trim() : null;
+        const model = requestedModel ?? (providerId === context.defaultProvider ? context.defaultModel : provider.models[0] ?? null);
+        if (!model) return toolFailure("invalid_arguments", "model is required: no default model is available.");
+        if (provider.models.length && !provider.models.includes(model)) {
+          return toolFailure("invalid_model", `Model ${model} is not in the ${providerId} catalogue: ${provider.models.join(", ")}.`);
+        }
+        const namedGoal = typeof args.goalID === "string" && args.goalID.trim() ? args.goalID.trim() : null;
+        if (namedGoal && !findGoal(document, namedGoal)) return toolFailure("unknown_goal", `Unknown goal ${namedGoal}. Read the goals with read_goals.`);
+        const goalId = namedGoal ?? requestGoalId(document, context.runningRequestId);
         const assignment = assign(
           document,
           {
@@ -494,7 +623,11 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
             exercise: typeof args.exercise === "string" ? args.exercise : null,
             moduleIds,
             dependencies: strings(args.dependencies),
+            decisionIds: strings(args.decisionIDs),
             model,
+            provider: providerId,
+            modelReason: typeof args.modelReason === "string" ? args.modelReason : null,
+            goalId,
             tools: strings(args.tools) as SpecialistTool[],
             requiredChecks: checks,
             instructions: typeof args.instructions === "string" ? args.instructions : "",
@@ -505,7 +638,74 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
         context.addCard("assignment", "Incarico", assignment.id);
         context.changed();
         context.startAssignment(assignment.id);
-        return toolSuccess({ assignmentID: assignment.id, specialistID: assignment.specialistId, status: assignment.status, model: assignment.model });
+        return toolSuccess({
+          assignmentID: assignment.id,
+          specialistID: assignment.specialistId,
+          status: assignment.status,
+          provider: assignment.provider ?? "codex",
+          model: assignment.model,
+          goalID: assignment.goalId ?? null,
+        });
+      }
+      case "read_goals":
+        return toolSuccess({ goals: goalsForTool(document), dialogGoalID: requestGoalId(document, context.runningRequestId) });
+      case "propose_goal": {
+        const examples = (kind: "accepted" | "refused", value: Json | undefined) => strings(value).map((text) => ({ kind, text }));
+        const goal = proposeGoal(document, {
+          title: typeof args.title === "string" ? args.title : "",
+          outcome: typeof args.outcome === "string" ? args.outcome : "",
+          examples: [...examples("accepted", args.acceptedExamples), ...examples("refused", args.refusedExamples)],
+        });
+        context.addCard("goal", "Obiettivo proposto", goal.id);
+        context.changed();
+        return toolSuccess({ goalID: goal.id, status: "proposed", note: "The person confirms, edits or discards it. Do not assign work for it before it is open." });
+      }
+      case "propose_practice": {
+        try {
+          const result = await context.proposePractice({
+            title: typeof args.title === "string" ? args.title : "",
+            method: typeof args.method === "string" ? args.method : "",
+            rationale: typeof args.rationale === "string" ? args.rationale : "",
+            evidence: strings(args.evidence),
+            practiceId: typeof args.practiceID === "string" && args.practiceID ? args.practiceID : null,
+          });
+          return toolSuccess({ ...result, status: "shown_to_person", note: "Only the person adopts it." });
+        } catch (error) {
+          const code = (error as { code?: string }).code ?? "invalid_arguments";
+          return toolFailure(code, (error as Error).message);
+        }
+      }
+      case "read_practices":
+        return toolSuccess(await context.readPractices());
+      case "update_ticket": {
+        const issueNumber = typeof args.issueNumber === "number" ? args.issueNumber : 0;
+        if (!issueNumber) return toolFailure("invalid_arguments", "issueNumber is required.");
+        const close = args.close === true;
+        const authorization = authorize(document.mandate, close ? "integrateCandidate" : "openPullRequest");
+        if (authorization !== "authorized") return refused(authorization, close ? "integrateCandidate" : "openPullRequest");
+        const criteria = (Array.isArray(args.criteria) ? args.criteria : []).map((c) => {
+          const item = (c && typeof c === "object" && !Array.isArray(c) ? c : {}) as JsonObject;
+          const outcome = item.outcome === "met" || item.outcome === "partial" ? item.outcome : "notMet";
+          return {
+            index: typeof item.index === "number" ? item.index : -1,
+            outcome: outcome as "met" | "partial" | "notMet",
+            evidence: strings(item.evidence),
+            limits: typeof item.limits === "string" && item.limits.trim() ? item.limits.trim() : null,
+          };
+        });
+        try {
+          const result = await context.updateTicket({
+            issueNumber,
+            summary: typeof args.summary === "string" ? args.summary : "",
+            criteria,
+            openParts: strings(args.openParts),
+            close,
+          });
+          return toolSuccess(result as unknown as JsonObject);
+        } catch (error) {
+          const message = (error as Error).message;
+          return toolFailure(error instanceof TicketRefusal ? error.code : "github_failed", message);
+        }
       }
       case "stop_specialist": {
         const specialist = findSpecialist(document, typeof args.specialist === "string" ? args.specialist : "");
@@ -627,8 +827,9 @@ export function developerInstructions(projectName: string): string {
     "read_mandate tells whether a mandate exists and which modules the project has. Without a mandate you read and propose; you do not act. When the person asks for a change you cannot start without a mandate, propose one with request_mandate: the reason, objectives, scope and actions the work needs, nothing broader.",
     "New features, trade-offs, product behavior and serious destructive cases belong to the person: put them to the person with request_decision, on a concrete case with real alternatives. Never record a decision for the person and never treat a question as answered until Trama tells you the answer. Resolve technical choices yourself and do not ask about them, nor ask for generic confirmations.",
     "At the end of your study propose the project team with propose_team: one specialist per real need, each with a competence and the reason this project needs it, never one to fill a role. The person confirms or corrects it once, and only that answer creates the specialists. From then on you change the team yourself within the mandate, with create_specialist and stop_specialist, and you say it in the conversation.",
-    "Within the mandate, assign_task gives a specialist work in a Codex thread and worktree that Trama owns: objective, ticket or exercise, modules, dependencies, required checks, your instructions and the model you propose for it. Assign in parallel only work that is independent, and read_team to see where each specialist stands. stop_specialist asks Trama to stop work: the stop is first requested and then confirmed, and what was done is kept.",
+    "Within the mandate, assign_task gives a specialist work in a provider session and worktree that Trama owns: objective, ticket or exercise, modules, dependencies, required checks, your instructions and the provider and model you propose for it. Assign in parallel only work that is independent, and read_team to see where each specialist stands. stop_specialist asks Trama to stop work: the stop is first requested and then confirmed, and what was done is kept.",
     "run_readonly_check runs a check on the project checkout without writing to it; you may use it without a mandate.",
+    "The person works by goals: a goal has a desired outcome and accepted and refused examples. Each goal has its own dialog with you, and the project dialog holds priorities and cross-goal questions; you stay one Coordinator with one mandate and one Pact for all of them. When a message comes from a goal dialog Trama says so and gives you the goal; answer about that goal, and the work you assign there is linked to it. read_goals lists the goals; propose_goal proposes a new one that the person confirms.",
     "When a specialist's work is done, declare_candidate captures its worktree and binds it to the Pact decisions it must respect; verify_candidate runs its required checks and review_candidate asks a distinct reviewer. Within the mandate, clear_candidate gives your green light to a verified and approved candidate. The person always reviews and publishes it: never claim that work is merged or published.",
     "When the person answers a card or changes the mandate, Trama writes it to you as the person's message.",
     "When you rely on a repository file, name its path relative to the project root.",

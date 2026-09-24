@@ -1,5 +1,15 @@
 import { randomUUID } from "node:crypto";
+import type { ProviderId } from "@shared/codex";
 import type { ConversationEvent, EventContent, EventOrigin, ProjectDocument } from "@shared/domain";
+import { requestGoalId } from "@shared/goals";
+
+function assignmentGoalId(document: ProjectDocument, assignmentId: string): string | null {
+  for (const specialist of document.team.specialists) {
+    const found = specialist.assignments.find((a) => a.id === assignmentId);
+    if (found) return found.goalId ?? null;
+  }
+  return null;
+}
 
 export function emptyDocument(projectId: string): ProjectDocument {
   return {
@@ -47,6 +57,13 @@ export function normalizeDocument(raw: Partial<ProjectDocument>, projectId: stri
       request.failure = "Trama è stato chiuso mentre il Coordinatore lavorava.";
     }
   }
+  // A plan still "planning" on disk lost its planner: it would block a new plan for the same request.
+  for (const plan of document.plans) {
+    if (plan.status === "planning") {
+      plan.status = "failed";
+      plan.failure = "La preparazione si è interrotta prima della fine: chiedi di nuovo il piano.";
+    }
+  }
   return document;
 }
 
@@ -57,8 +74,11 @@ export function appendEvent(
   requestId: string | null = null,
   now = new Date(),
   work: { assignmentId: string; workKey: string } | null = null,
+  goalId: string | null = null,
 ): ConversationEvent {
   document.lastSequence += 1;
+  // The dialog is fixed by the request or the assignment the event belongs to, never by what the UI shows (UX02).
+  const dialog = goalId ?? requestGoalId(document, requestId) ?? (work ? assignmentGoalId(document, work.assignmentId) : null);
   const event: ConversationEvent = {
     id: randomUUID(),
     sequence: document.lastSequence,
@@ -67,6 +87,7 @@ export function appendEvent(
     createdAt: now.toISOString(),
     content,
     ...(work ? { assignmentId: work.assignmentId, workKey: work.workKey } : {}),
+    ...(dialog ? { goalId: dialog } : {}),
   };
   document.events.push(event);
   return event;
@@ -79,12 +100,39 @@ export function recordReply(
   text: string,
   model: string | null,
   references: string[],
+  provider: ProviderId | null = null,
   now = new Date(),
 ): ConversationEvent {
   document.events = document.events.filter(
     (e) => !(e.requestId === requestId && e.content.type === "coordinatorText"),
   );
-  return appendEvent(document, "coordinator", { type: "coordinatorText", text, model, references }, requestId, now);
+  return appendEvent(document, "coordinator", { type: "coordinatorText", text, model, references, provider }, requestId, now);
+}
+
+/**
+ * The conversation so far, written by Trama for a new provider session (ADR 0009): the person's
+ * messages and the Coordinator's answers, newest last, within a character budget.
+ */
+export function handoverTranscript(document: ProjectDocument, budget = 24_000): string {
+  const lines: string[] = [];
+  let used = 0;
+  for (const event of [...document.events].reverse()) {
+    const content = event.content;
+    const line =
+      content.type === "personMessage"
+        ? `Persona: ${content.text}`
+        : content.type === "coordinatorText"
+          ? `Coordinatore: ${content.text}`
+          : content.type === "card" && content.detail
+            ? `[${content.title}] ${content.detail}`
+            : null;
+    if (!line) continue;
+    const clipped = line.length > 4_000 ? `${line.slice(0, 4_000)}…` : line;
+    if (used + clipped.length > budget) break;
+    used += clipped.length;
+    lines.push(clipped);
+  }
+  return lines.reverse().join("\n\n") || "La conversazione è vuota.";
 }
 
 /** Repository paths named in a reply, in order of appearance. */

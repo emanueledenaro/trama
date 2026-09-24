@@ -125,6 +125,8 @@ export function restrictedAppServerArguments(executable: string, reservedServerN
 interface ActiveTurn {
   threadId: string;
   turnId: string | null;
+  /** interrupt() arrived before Codex returned the turn id: sent as soon as the id is known. */
+  interruptRequested: boolean;
   streamedText: string;
   finalText: string | null;
   failureMessage: string | null;
@@ -174,6 +176,8 @@ export class CodexClient {
   private nextId = 1;
   private readonly pending = new Map<RpcId, { resolve: (v: Json) => void; reject: (e: Error) => void; timer: NodeJS.Timeout }>();
   private activeTurn: ActiveTurn | null = null;
+  /** A turn waiting for app-server to start: nothing to interrupt yet. */
+  private pendingTurn: { interrupted: boolean; stopped: boolean } | null = null;
   private stderrTail = "";
 
   constructor(
@@ -188,7 +192,7 @@ export class CodexClient {
   ) {}
 
   get isRunningTurn(): boolean {
-    return this.activeTurn !== null;
+    return this.activeTurn !== null || this.pendingTurn !== null;
   }
 
   async readAccount(): Promise<AccountStatus> {
@@ -313,13 +317,25 @@ export class CodexClient {
     const prompt = options.prompt.trim();
     if (!prompt) throw new CodexError("emptyPrompt", "Il messaggio è vuoto.");
     validateModel(options.model);
-    if (this.activeTurn) throw new CodexError("turnAlreadyRunning", "Un turno è già in corso.");
-    await this.ensureInitialized();
+    if (this.activeTurn || this.pendingTurn) throw new CodexError("turnAlreadyRunning", "Un turno è già in corso.");
+    const pending = { interrupted: false, stopped: false };
+    this.pendingTurn = pending;
+    try {
+      await this.ensureInitialized();
+    } finally {
+      if (this.pendingTurn === pending) this.pendingTurn = null;
+    }
+    if (pending.stopped) throw new CodexError("processExited", "Codex è stato chiuso.");
+    if (pending.interrupted) {
+      options.onEvent({ type: "interrupted" });
+      throw new Error("Turno interrotto.");
+    }
 
     return new Promise<string>((resolve, reject) => {
       const turn: ActiveTurn = {
         threadId: options.threadId,
         turnId: null,
+        interruptRequested: false,
         streamedText: "",
         finalText: null,
         failureMessage: null,
@@ -361,10 +377,7 @@ export class CodexClient {
         .then((result) => {
           const turnId = asString(asObject(asObject(result)?.turn)?.id);
           if (!turnId) throw new CodexError("malformedMessage", "risposta turn/start senza turn.id");
-          if (!turn.turnId) {
-            turn.turnId = turnId;
-            turn.onEvent({ type: "turnStarted", turnId });
-          }
+          this.adoptTurnId(turn, turnId);
         })
         .catch((error: Error) => {
           if (this.activeTurn === turn) turn.reject(error);
@@ -373,12 +386,29 @@ export class CodexClient {
   }
 
   async interrupt(): Promise<void> {
+    if (this.pendingTurn) this.pendingTurn.interrupted = true;
     const turn = this.activeTurn;
-    if (!turn?.turnId) return;
+    if (!turn) return;
+    if (!turn.turnId) {
+      // turn/start has not answered yet: send turn/interrupt once the id is known.
+      turn.interruptRequested = true;
+      return;
+    }
     await this.request("turn/interrupt", { threadId: turn.threadId, turnId: turn.turnId });
   }
 
+  private adoptTurnId(turn: ActiveTurn, turnId: string): void {
+    if (turn.turnId) return;
+    turn.turnId = turnId;
+    turn.onEvent({ type: "turnStarted", turnId });
+    if (turn.interruptRequested && this.activeTurn === turn) {
+      void this.request("turn/interrupt", { threadId: turn.threadId, turnId }).catch(() => undefined);
+    }
+  }
+
   stop(): void {
+    if (this.pendingTurn) this.pendingTurn.stopped = true;
+    this.pendingTurn = null;
     this.activeTurn?.reject(new CodexError("processExited", "Codex è stato chiuso."));
     this.child?.kill();
     this.child = null;
@@ -427,19 +457,27 @@ export class CodexClient {
     child.stderr.on("data", (chunk: Buffer) => {
       this.stderrTail = (this.stderrTail + chunk.toString("utf8")).slice(-4_000);
     });
-    child.on("exit", (code) => {
+    const fail = (error: CodexError) => {
       if (this.child !== child) return;
       this.child = null;
       this.initializing = null;
-      const error = new CodexError("processExited", `Codex app-server è terminato (codice ${code ?? "?"}).`);
       for (const [, pending] of this.pending) {
         clearTimeout(pending.timer);
         pending.reject(error);
       }
       this.pending.clear();
       this.activeTurn?.reject(error);
-    });
+    };
+    child.on("exit", (code) => fail(new CodexError("processExited", `Codex app-server è terminato (codice ${code ?? "?"}).`)));
     child.on("error", () => undefined);
+    // A closed pipe (EPIPE) must not crash the main process: treat it as the end of app-server.
+    const streamFailed = (error: Error) => {
+      fail(new CodexError("processExited", `Codex app-server ha chiuso la comunicazione: ${error.message}`));
+      child.kill();
+    };
+    child.stdin.on("error", streamFailed);
+    child.stdout.on("error", streamFailed);
+    child.stderr.on("error", () => undefined);
 
     const result = asObject(
       await this.request("initialize", {
@@ -454,7 +492,7 @@ export class CodexClient {
   }
 
   private send(message: JsonObject): void {
-    if (!this.child) throw new CodexError("processExited", "Codex app-server non è attivo.");
+    if (!this.child || !this.child.stdin.writable) throw new CodexError("processExited", "Codex app-server non è attivo.");
     this.child.stdin.write(`${JSON.stringify(message)}\n`);
   }
 
@@ -547,10 +585,7 @@ export class CodexClient {
       case "turn/started": {
         const turn = this.matchingTurn(params);
         const turnId = asString(asObject(params.turn)?.id);
-        if (turn && turnId && !turn.turnId) {
-          turn.turnId = turnId;
-          turn.onEvent({ type: "turnStarted", turnId });
-        }
+        if (turn && turnId) this.adoptTurnId(turn, turnId);
         return;
       }
       case "thread/tokenUsage/updated": {

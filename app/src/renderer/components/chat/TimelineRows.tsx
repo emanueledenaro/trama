@@ -19,6 +19,7 @@ import { cn } from "@/lib/cn";
 import { formatTime } from "@/lib/format";
 import { act, useUi } from "@/lib/store";
 import { Button } from "@/components/ui/button";
+import { GoalCard } from "@/components/inspector/GoalsView";
 import {
   AssignmentCard,
   CandidateCard,
@@ -251,6 +252,7 @@ export function TimelineRowView({ row, streaming = false, latest = false }: { ro
       if (row.cardKind === "candidate" && content.referenceId) return <CandidateCard candidateId={content.referenceId} />;
       if (row.cardKind === "plan" && content.referenceId) return <PlanCard planId={content.referenceId} />;
       if (row.cardKind === "conflict" && content.referenceId) return <ConflictCard assessmentId={content.referenceId} />;
+      if (row.cardKind === "goal" && content.referenceId) return <GoalCard goalId={content.referenceId} />;
       return <ContextNoticeCard title={content.title} detail={content.detail} />;
     }
   }

@@ -14,6 +14,10 @@ import {
   IconUsersGroup,
 } from "@tabler/icons-react";
 import type { AssignmentStatus, CandidateState } from "@shared/domain";
+import { isExerciseAssessment } from "@shared/onboarding";
+import { findGoal } from "@shared/goals";
+import { PROVIDERS } from "@shared/providers";
+import type { ActionResult } from "@shared/ipc";
 import { Spinner } from "@/components/Spinner";
 import { useState } from "react";
 import type * as React from "react";
@@ -30,15 +34,18 @@ function CardFrame({
   aside,
   children,
   className,
+  anchor,
 }: {
   icon: React.ReactNode;
   title: string;
   aside?: React.ReactNode;
   children: React.ReactNode;
   className?: string;
+  /** Lets the exercise guide find the card in the timeline. */
+  anchor?: string;
 }) {
   return (
-    <div className={cn("my-3 overflow-hidden rounded-xl border border-[color:var(--color-border)] bg-[var(--card)]", className)}>
+    <div data-anchor={anchor} className={cn("my-3 overflow-hidden rounded-xl border border-[color:var(--color-border)] bg-[var(--card)]", className)}>
       <div className="flex items-center gap-2 px-3.5 pt-2.5 pb-1 text-ui">
         <span className="flex size-4 shrink-0 items-center justify-center text-muted-foreground [&>svg]:size-3.5">{icon}</span>
         <span className="min-w-0 flex-1 truncate font-medium text-foreground">{title}</span>
@@ -48,6 +55,9 @@ function CardFrame({
     </div>
   );
 }
+
+/** The provider's name; an absent provider is Codex, as in documents written before providers. */
+const providerLabel = (id: string | undefined | null) => PROVIDERS.find((p) => p.id === (id ?? "codex"))?.name ?? id ?? "Codex";
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -62,6 +72,7 @@ export function StudyCard({ title, text, streaming }: { title: string; text: str
   const [open, setOpen] = useState(true);
   return (
     <CardFrame
+      anchor={streaming ? undefined : "study"}
       icon={<IconTelescope stroke={1.8} />}
       title={title}
       aside={
@@ -369,7 +380,10 @@ export function AssignmentCard({ assignmentId }: { assignmentId: string }) {
   const specialist = project.document.team.specialists.find((s) => s.assignments.some((a) => a.id === assignmentId));
   const assignment = specialist?.assignments.find((a) => a.id === assignmentId);
   const [showResult, setShowResult] = useState(false);
+  const setInspector = useUi((s) => s.setInspector);
   if (!specialist || !assignment) return null;
+  const goal = findGoal(project.document, assignment.goalId);
+  const lastTurn = assignment.turns.at(-1);
   const status = ASSIGNMENT_STATUS[assignment.status];
   const active = ["preparing", "running", "stopRequested"].includes(assignment.status);
   const isCurrent = specialist.assignments.at(-1)?.id === assignment.id;
@@ -392,8 +406,25 @@ export function AssignmentCard({ assignmentId }: { assignmentId: string }) {
       {assignment.exercise ? <Field label="Esercizio">{assignment.exercise}</Field> : null}
       <Field label="Perimetro">{assignment.moduleIds.map(moduleName).join(", ")}</Field>
       {assignment.dependencies.length ? <Field label="Dipendenze">{assignment.dependencies.join(", ")}</Field> : null}
+      {goal ? (
+        <Field label="Obiettivo del progetto">
+          <button type="button" className="text-left text-[var(--color-text-accent)] hover:underline" onClick={() => setInspector({ kind: "goal", id: goal.id })}>
+            {goal.title}
+          </button>
+        </Field>
+      ) : null}
+      <Field label="Provider e modello scelti all'assegnazione">
+        {providerLabel(assignment.provider)} · {assignment.model}
+        <div className="mt-0.5 text-ui-sm text-muted-foreground">
+          {assignment.modelReason ? `Motivazione del Coordinatore: ${assignment.modelReason}` : "Il Coordinatore non ha registrato una motivazione per questa scelta."}
+        </div>
+        {lastTurn && (lastTurn.provider ?? "codex") !== (assignment.provider ?? "codex") ? (
+          <div className="mt-0.5 text-ui-sm text-warning">Ultimo turno eseguito con {providerLabel(lastTurn.provider)} · {lastTurn.model}</div>
+        ) : lastTurn && lastTurn.model !== assignment.model ? (
+          <div className="mt-0.5 text-ui-sm text-warning">Ultimo turno eseguito con {lastTurn.model}</div>
+        ) : null}
+      </Field>
       <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-ui-sm text-muted-foreground">
-        <span>Modello {assignment.model}</span>
         <span>{assignment.tools.includes("edits") ? "Worktree proprio" : "Sola lettura"}</span>
         {assignment.requiredChecks.length ? <span>Verifiche: {assignment.requiredChecks.join(", ")}</span> : null}
       </div>
@@ -447,6 +478,7 @@ const BLOCKER_TEXT: Record<string, string> = {
   EVIDENCE_MISSING: "Verifica da eseguire",
   EVIDENCE_STALE: "Verifica non più valida",
   CHECK_FAILED: "Verifica non superata",
+  REMOTE_CONFLICT: "Conflitto con il lavoro di un collega",
 };
 
 export function CandidateCard({ candidateId }: { candidateId: string }) {
@@ -454,6 +486,7 @@ export function CandidateCard({ candidateId }: { candidateId: string }) {
   const setInspector = useUi((s) => s.setInspector);
   const candidate = project.document.candidates.find((c) => c.id === candidateId);
   const report = project.candidateReports[candidateId];
+  const [preview, setPreview] = useState<ActionResult<"candidate:previewPullRequest"> | null>(null);
   if (!candidate || !report) return null;
   const state = CANDIDATE_STATE[report.state];
   const specialist = project.document.team.specialists.find((s) => s.id === candidate.specialistId);
@@ -542,12 +575,29 @@ export function CandidateCard({ candidateId }: { candidateId: string }) {
             Approva questo candidato
           </Button>
         ) : null}
-        {approved && !candidate.pullRequest && project.github.repository ? (
-          <Button size="sm" onClick={() => void act("candidate:publish", { candidateId })}>
-            <IconGitPullRequest /> Pubblica pull request
+        {approved && !candidate.pullRequest && project.github.repository && !preview ? (
+          <Button size="sm" onClick={() => void act("candidate:previewPullRequest", { candidateId }).then((p) => setPreview(p ?? null))}>
+            <IconGitPullRequest /> Prepara la pull request
           </Button>
         ) : null}
       </div>
+      {preview && !candidate.pullRequest ? (
+        <div className="mt-2 space-y-1.5 rounded-lg border border-[color:var(--color-border)] p-2.5 text-ui-sm">
+          <p className="text-muted-foreground">
+            {preview.repository} · <span className="font-mono">{preview.head}</span> → <span className="font-mono">{preview.base}</span>
+          </p>
+          <p className="font-medium text-foreground">{preview.title}</p>
+          <pre className="max-h-48 overflow-auto whitespace-pre-wrap font-sans text-ui-xs text-foreground/85">{preview.body}</pre>
+          <div className="flex gap-2">
+            <Button size="sm" onClick={() => void act("candidate:publish", { candidateId }).then(() => setPreview(null))}>
+              <IconGitPullRequest /> Pubblica
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => setPreview(null)}>
+              Annulla
+            </Button>
+          </div>
+        </div>
+      ) : null}
     </CardFrame>
   );
 }
@@ -556,6 +606,7 @@ export function PlanCard({ planId }: { planId: string }) {
   const project = useUi((s) => s.app?.project)!;
   const setInspector = useUi((s) => s.setInspector);
   const plan = project.document.plans.find((p) => p.id === planId);
+  const [editing, setEditing] = useState<{ steps: string; behavior: string; example: string } | null>(null);
   if (!plan) return null;
   const proposal = plan.proposal;
   const moduleName = (id: string) => project.snapshot.modules.find((m) => m.id === id)?.name ?? id;
@@ -568,7 +619,12 @@ export function PlanCard({ planId }: { planId: string }) {
         plan.status === "planning" ? (
           <span className="flex items-center gap-1.5 text-ui-sm text-muted-foreground">
             <Spinner /> In preparazione
+            <button type="button" className="hover:text-foreground" onClick={() => void act("plan:cancel", { planId: plan.id })}>
+              Annulla
+            </button>
           </span>
+        ) : plan.status === "stale" ? (
+          <Badge tone="warning">Da rivalutare</Badge>
         ) : plan.status === "failed" ? (
           <Badge tone="destructive">Non riuscito</Badge>
         ) : (
@@ -583,6 +639,41 @@ export function PlanCard({ planId }: { planId: string }) {
       {proposal ? (
         <>
           <Field label="Sintesi">{proposal.summary}</Field>
+          {plan.editedAt ? <p className="text-ui-xs text-muted-foreground">Corretto da te</p> : null}
+          {editing ? (
+            <div className="mt-2 space-y-2">
+              <label className="block text-ui-xs text-muted-foreground">
+                Passi, uno per riga
+                <TextArea value={editing.steps} onChange={(e) => setEditing({ ...editing, steps: e.target.value })} className="mt-1 min-h-20" />
+              </label>
+              <label className="block text-ui-xs text-muted-foreground">
+                Comportamento proposto
+                <TextArea value={editing.behavior} onChange={(e) => setEditing({ ...editing, behavior: e.target.value })} className="mt-1 min-h-12" />
+              </label>
+              <label className="block text-ui-xs text-muted-foreground">
+                Esempio accettato
+                <TextArea value={editing.example} onChange={(e) => setEditing({ ...editing, example: e.target.value })} className="mt-1 min-h-12" />
+              </label>
+              <div className="flex gap-2">
+                <Button
+                  size="sm"
+                  onClick={() =>
+                    void act("plan:edit", {
+                      planId: plan.id,
+                      steps: editing.steps.split("\n"),
+                      proposedBehavior: editing.behavior,
+                      acceptedExample: editing.example,
+                    }).then(() => setEditing(null))
+                  }
+                >
+                  Salva il piano
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => setEditing(null)}>
+                  Annulla
+                </Button>
+              </div>
+            </div>
+          ) : null}
           <Field label="Passi">
             <ol className="list-decimal space-y-0.5 pl-4">
               {proposal.steps.map((step) => (
@@ -609,11 +700,22 @@ export function PlanCard({ planId }: { planId: string }) {
             </div>
           ) : null}
           {pendingQuestions ? <p className="mt-2 text-ui-sm text-[var(--color-text-accent)]">{pendingQuestions === 1 ? "Una domanda aspetta" : `${pendingQuestions} domande aspettano`} la tua risposta.</p> : null}
-          <div className="mt-3">
+          <div className="mt-3 flex flex-wrap gap-2">
+            {!editing && plan.status !== "planning" ? (
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() =>
+                  setEditing({ steps: proposal.steps.join("\n"), behavior: proposal.proposedBehavior, example: proposal.acceptedExample })
+                }
+              >
+                Correggi il piano
+              </Button>
+            ) : null}
             <Button
               size="sm"
               variant="outline"
-              disabled={pendingQuestions > 0}
+              disabled={pendingQuestions > 0 || plan.status === "stale"}
               onClick={() =>
                 void act("coordinator:send", {
                   text: `Ho rivisto il piano ${plan.id} e va bene. Realizzalo con il team entro il mandato.`,
@@ -645,8 +747,31 @@ export function ConflictCard({ assessmentId }: { assessmentId: string }) {
   const assessment = project.document.conflicts?.find((a) => a.id === assessmentId);
   if (!assessment) return null;
   const label = CONFLICT_LABEL[assessment.classification];
+  const exercise = isExerciseAssessment(assessment);
+  // A comparison made on an older snapshot of the candidate, or against a head that moved on, is obsolete (T13).
+  const candidate = project.document.candidates.find((c) => c.id === assessment.candidateId);
+  const heads =
+    project.github.snapshot && !exercise
+      ? new Set([...project.github.snapshot.branches.map((b) => b.sha.toLowerCase()), ...project.github.snapshot.pullRequests.map((p) => p.headSHA.toLowerCase())])
+      : null;
+  const obsolete = (candidate && candidate.snapshotId !== assessment.snapshotId) || (heads !== null && !heads.has(assessment.remoteSHA.toLowerCase()));
   return (
-    <CardFrame icon={<IconGitBranch stroke={1.8} />} title="Lavoro dei colleghi" aside={<Badge tone={label.tone}>{label.label}</Badge>}>
+    <CardFrame
+      icon={<IconGitBranch stroke={1.8} />}
+      title={exercise ? "Esercizio di conflitto" : "Lavoro dei colleghi"}
+      aside={
+        <>
+          {exercise ? <Badge tone="info">Esercizio</Badge> : null}
+          {obsolete ? <Badge tone="secondary">Obsoleto</Badge> : <Badge tone={label.tone}>{label.label}</Badge>}
+        </>
+      }
+    >
+      {obsolete ? (
+        <p className="mb-1 text-ui-xs text-muted-foreground">Il candidato o il lavoro del collega sono cambiati dopo questo confronto: Trama ne farà uno nuovo.</p>
+      ) : null}
+      {exercise ? (
+        <p className="mb-1 text-ui-sm text-muted-foreground">Modifica simulata da Trama in una copia locale separata: non è il lavoro di un collaboratore reale.</p>
+      ) : null}
       <p className="text-ui text-foreground/90">
         Candidato{" "}
         <button type="button" className="font-mono text-[11.5px] text-[var(--color-text-accent)] hover:underline" onClick={() => setInspector({ kind: "candidate", id: assessment.candidateId })}>

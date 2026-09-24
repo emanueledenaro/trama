@@ -67,8 +67,13 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
     case "turn/start": {
       const turnId = `turn-${++turns}`;
       const threadId = params.threadId;
-      send({ id, result: { turn: { id: turnId } } });
       const text = params.input[0].text;
+      if (text.includes("[attesa]")) {
+        // Answers turn/start late and then keeps running until interrupted.
+        setTimeout(() => send({ id, result: { turn: { id: turnId } } }), 150);
+        return;
+      }
+      send({ id, result: { turn: { id: turnId } } });
       const finish = (reply) => {
         send({ method: "item/completed", params: { threadId, turnId, item: { id: "msg", type: "agentMessage", phase: "final_answer", text: reply } } });
         send({ method: "turn/completed", params: { threadId, turn: { id: turnId, status: "completed" } } });
@@ -189,6 +194,16 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
           send({ method: "turn/completed", params: { threadId, turn: { id: turnId, status: "completed" } } });
         });
         return;
+      }
+      if (text.startsWith("Studio del progetto scritto da Trama") && text.includes("propose_goal")) {
+        // A project without goals: the study closes with a first goal (UX07).
+        const result = await callTool(threadId, "propose_goal", {
+          title: "Annullare un ordine pagato senza rimborso automatico",
+          outcome: "Un ordine pagato e annullato va in revisione invece di essere rimborsato subito.",
+          acceptedExamples: ["Ordine 42 pagato e annullato: lo stato diventa review"],
+          refusedExamples: ["Ordine 42 pagato e annullato: il pagamento viene stornato subito"],
+        });
+        toolDone("propose_goal", result);
       }
       send({ method: "thread/tokenUsage/updated", params: { threadId, turnId, tokenUsage: { total: { totalTokens: text.includes("[pieno]") ? 230_000 : 12_000 }, modelContextWindow: 258_000 } } });
       const reply = text.startsWith("Studio del progetto scritto da Trama")

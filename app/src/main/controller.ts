@@ -1,9 +1,10 @@
 import { randomUUID } from "node:crypto";
-import { existsSync } from "node:fs";
+import { existsSync, type FSWatcher, watch } from "node:fs";
 import { mkdir, realpath, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import type { CodexModel, TurnEvent } from "@shared/codex";
+import { isUsableAccount, type ProviderAccount, type ProviderId, type ProviderModel, type TurnEvent } from "@shared/codex";
+import { PROVIDERS, supportsReadOnly } from "@shared/providers";
 import { shortId } from "@shared/ids";
 import { mentionContextBlock } from "@shared/mentions";
 import { codexSkillText, skillInvocations } from "@shared/skills";
@@ -15,18 +16,63 @@ import type {
   CoordinatorPhase,
   CoordinatorRequest,
   GitHubState,
+  Practice,
+  PracticeView,
+  GoalStatus,
+  ProjectOverview,
+  ProviderState,
   MandateAction,
   ProjectDocument,
   WorkKind,
   WorkPlan,
   RecentProject,
 } from "@shared/domain";
-import { CodexClient, CodexError, resolveCodexExecutable, restrictedAppServerArguments } from "./core/codexClient";
-import { COORDINATOR_TOOLS, developerInstructions, runCoordinatorTool, TOOL_SERVER_INSTRUCTIONS } from "./core/coordinatorTools";
+import { resolveCodexExecutable } from "./core/codexClient";
+import { CodexRuntime } from "./core/providers/codex";
+import { createRuntime, hasAdapter } from "./core/providers/registry";
+import { type AgentRuntime, extractJsonAnswer } from "./core/providers/types";
+import {
+  COORDINATOR_TOOLS,
+  developerInstructions,
+  runCoordinatorTool,
+  type TicketUpdate,
+  type TicketUpdateResult,
+  TicketRefusal,
+  TOOL_SERVER_INSTRUCTIONS,
+} from "./core/coordinatorTools";
+import {
+  adoptPractice,
+  currentVersion,
+  PracticeError,
+  PracticeStore,
+  practicesText,
+  privateContent,
+  problemEvidence,
+  projectHash,
+  proposePractice,
+  retirePractice,
+  revisePractice,
+  rollbackPractice,
+} from "./core/practices";
+import { checkItems, closeBlockers, evidenceProblems, parseChecklist, progressComment, progressKey, progressMarker } from "./core/tickets";
 import { openingInput, resumeInput, specialistInstructions } from "./core/specialistBriefing";
 import { prepareDemoProject } from "./core/demoProject";
-import { appendEvent, emptyDocument, moveEvent, recordReply, referencedPaths } from "./core/document";
-import { createIssue, listIssues, readGitHubRepository } from "./core/github";
+import { appendEvent, emptyDocument, handoverTranscript, moveEvent, recordReply, referencedPaths } from "./core/document";
+import { candidateGoalId, dialogComposer, findGoal, projectGoals, requestGoalId } from "@shared/goals";
+import { createGoal, type GoalInput, goalContext, linkDecision, observeExample, requireGoal, updateGoal } from "./core/goals";
+import { orderByAttention, summarizeProject, unreadableProject } from "./core/overview";
+import {
+  closeIssue,
+  commentOnIssue,
+  createIssue,
+  listIssues,
+  readGitHubRepository,
+  classifyGitHubError,
+  readGitHubCapabilities,
+  readIssue,
+  readPullRequestStatus,
+  updateIssueBody,
+} from "./core/github";
 import { convertLegacyDocument, readLegacyDocument, readLegacyRecentProjects } from "./core/legacyImport";
 import { type MonitorCheckpoint, MonitorStore, pollRepository } from "./core/monitor";
 import {
@@ -44,7 +90,7 @@ import { availableChecks, CHECKS, type ReadOnlyCheck, runReadOnlyCheck } from ".
 import { parsePlan, PLAN_SCHEMA, PLANNING_INSTRUCTIONS, planPrompt } from "./core/plan";
 import { approvePactDemo, inspectPactDemo, runPactDemo } from "./core/pactDemo";
 import { readRepositoryFile, scanRepository } from "./core/repositoryScanner";
-import { prepareSkills, type SetupReport } from "./core/skillSetup";
+import { installedSkillVersion, prepareSkills, rollbackSkills, SELECTED_SKILLS, SKILL_VERSION, type SetupReport, updateSkills } from "./core/skillSetup";
 import {
   authorize,
   beginTurn,
@@ -59,29 +105,125 @@ import {
   recordWorkspace,
   removeSpecialist,
   requestStop,
+  assignmentsAffectedByDecision,
+  changeAssignmentProvider,
+  refreshDecisionVersions,
   resumeAssignment,
   stopOrphanedAssignments,
   teamMessage,
   teamReport,
   type TurnEnd,
 } from "./core/team";
-import { prepareWorktree, reviewWorktree, validateWorktree } from "./core/workspace";
+import { prepareWorktree, removeWorktree, reviewWorktree, validateWorktree } from "./core/workspace";
 import { approveCandidate, candidateReport, findCandidate, latestCandidate, recordEvidence, recordTechnicalReview } from "./core/candidates";
 import { assessConflict } from "./core/conflicts";
 import { pullRequestBody, publishCandidate } from "./core/publication";
 import { git } from "./core/process";
 import { AppStorage } from "./core/storage";
+import { hasAiHero, readGitHubCliStatus, simulateColleagueChanges } from "./core/onboarding";
+import {
+  EMPTY_ONBOARDING,
+  EXERCISE_IDS,
+  type ExerciseId,
+  exerciseSteps,
+  type GuideStepId,
+  hasUsableProvider,
+  isComplete,
+  isExerciseAssessment,
+  isObservedStep,
+  normalizeOnboarding,
+  type ObservedStep,
+  UNKNOWN_GITHUB_CLI,
+} from "@shared/onboarding";
 import { buildStudy, fingerprints, partsToInject, studyText } from "./core/study";
-import { CoordinatorToolServer, TOKEN_ENVIRONMENT_VARIABLE, TOOL_SERVER_NAME } from "./core/toolServer";
+import { CoordinatorToolServer, TOOL_SERVER_NAME } from "./core/toolServer";
 
-/** The model Trama prefers for the Coordinator when the catalogue offers it. */
+/** The model Trama prefers for the Coordinator when the Codex catalogue offers it. */
 const PREFERRED_COORDINATOR_MODEL = "gpt-5.6-luna";
+
+/** Added to the study of a project without goals (UX07): the first message proposes a first goal. */
+export const FIRST_GOAL_REQUEST =
+  "Il progetto non ha ancora obiettivi. Chiudi il messaggio proponendo un primo obiettivo con propose_goal: un titolo breve, il risultato atteso ed esempi concreti accettati e rifiutati, ricavati dallo studio. La persona lo conferma o lo corregge; proporlo non concede un mandato e non avvia lavoro.";
+
+/** How long Trama waits for a provider's account check before reporting it unknown. */
+const PROVIDER_CHECK_TIMEOUT_MS = 20_000;
+
+const providerName = (id: ProviderId) => PROVIDERS.find((p) => p.id === id)?.name ?? id;
+
+/** Why a provider cannot run a turn now, in the person's words; null when it can. */
+export function providerUnavailableReason(id: ProviderId, account: ProviderAccount | null): string | null {
+  const name = providerName(id);
+  switch (account?.kind) {
+    case "chatgpt":
+    case "authenticated":
+      return null;
+    case "unsupported":
+      return id === "codex"
+        ? `Trama accetta solo un account ChatGPT; Codex usa un account di tipo ${account.type}.`
+        : `${name} usa un account di tipo ${account.type}, che Trama non supporta.`;
+    case "unavailable":
+      return account.message;
+    case "blocked":
+      return `${name} è bloccato: ${account.message}${account.until ? ` Si sblocca il ${new Date(account.until).toLocaleString("it-IT")}.` : ""} Puoi aspettare o scegliere un altro provider.`;
+    case "signedOut": {
+      const command = PROVIDERS.find((p) => p.id === id)?.signInCommand;
+      return id === "codex"
+        ? "Collega ChatGPT da Collegamenti per parlare con il Coordinatore."
+        : `Accedi a ${name}${command ? ` con \`${command}\` nel terminale` : ""}, poi aggiorna i collegamenti.`;
+    }
+    default:
+      return `Stato di ${name} non ancora verificato.`;
+  }
+}
+
+function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(message)), ms);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
+}
+
+/**
+ * A new project is a Git repository with a first commit, so worktrees, candidates and conflict checks
+ * work from the start. The person's Git identity signs the commit; without one, Trama signs it.
+ */
+export async function initializeRepository(root: string): Promise<void> {
+  await git(["init", "-b", "main"], root, false);
+  await git(["add", "README.md"], root, false);
+  try {
+    await git(["commit", "-m", "Start the project"], root, false);
+  } catch {
+    await git(["-c", "user.name=Trama", "-c", "user.email=trama@localhost", "commit", "-m", "Start the project"], root, false);
+  }
+}
+
+/** A failure message the person can act on: network problems are named as such (C11). */
+export function describeFailure(message: string): string {
+  if (/ENOTFOUND|EAI_AGAIN|ECONNREFUSED|ECONNRESET|ETIMEDOUT|getaddrinfo|network|offline|fetch failed/i.test(message)) {
+    return `Rete non raggiungibile: ${message}. Trama riprova quando la rete torna e la persona riprende il lavoro.`;
+  }
+  return message;
+}
+
+const errorCode = (error: unknown): string | null => {
+  const code = (error as { code?: unknown } | null)?.code;
+  return typeof code === "string" ? code : null;
+};
 
 export interface ControllerHost {
   publish(state: AppState): void;
   openExternal(url: string): Promise<void>;
   applyTheme(theme: AppSettings["theme"]): void;
-  notify(title: string, body: string): void;
+  notify(title: string, body: string, sound?: boolean): void;
   setOpenAtLogin(enabled: boolean): void;
   demoResourceDirectory: string;
   aiHeroResourceDirectory: string;
@@ -89,7 +231,8 @@ export interface ControllerHost {
 }
 
 interface CoordinatorRuntime {
-  client: CodexClient;
+  client: AgentRuntime;
+  provider: ProviderId;
   toolServer: CoordinatorToolServer;
   projectId: string;
 }
@@ -97,7 +240,9 @@ interface CoordinatorRuntime {
 export class TramaController {
   private state: AppState;
   private readonly storage: AppStorage;
-  private readonly discovery: CodexClient;
+  private readonly discovery: CodexRuntime;
+  /** Account and model checks of the providers other than Codex. */
+  private readonly providerDiscovery = new Map<ProviderId, AgentRuntime>();
   private runtime: CoordinatorRuntime | null = null;
   private saveTimer: NodeJS.Timeout | null = null;
   private publishTimer: NodeJS.Timeout | null = null;
@@ -112,6 +257,9 @@ export class TramaController {
     model: string | null;
     effort: string | null;
     images: ImageAttachmentInput[];
+    provider: ProviderId | null;
+    /** The dialog is fixed when the message is sent, not when it leaves the queue (UX02). */
+    goalId: string | null;
   }[] = [];
 
   constructor(
@@ -121,21 +269,31 @@ export class TramaController {
     private readonly legacyRoot: string | null = null,
   ) {
     this.storage = new AppStorage(storageRoot);
-    this.discovery = new CodexClient({
+    this.discovery = new CodexRuntime({
       executable: host.codexExecutable,
       onAccountChanged: () => void this.refreshCodex(),
     });
     this.monitorStore = new MonitorStore(storageRoot);
+    this.practiceStore = new PracticeStore(storageRoot);
     this.state = {
       monitor: { enabled: false, openAtLogin: false, intervalSeconds: 300, repositories: [], status: {} },
       recentProjects: [],
       project: null,
       loadingProject: null,
-      codex: { account: null, models: [], checking: false },
+      codex: null as unknown as ProviderState,
+      providers: Object.fromEntries(PROVIDERS.map((p) => [p.id, { account: null, models: [], checking: false }])) as unknown as Record<
+        ProviderId,
+        ProviderState
+      >,
       settings: { theme: "system", sidebarWidth: 256 },
       error: null,
+      backgroundProjects: [],
+      practices: [],
       platform: process.platform,
+      onboarding: { ...EMPTY_ONBOARDING },
+      gitHubCli: { ...UNKNOWN_GITHUB_CLI },
     };
+    this.state.codex = this.state.providers.codex;
   }
 
   get snapshot(): AppState {
@@ -144,7 +302,80 @@ export class TramaController {
   }
 
   /** State derived from the document: running specialist turns and candidate verdicts. */
+  private readonly practiceStore: PracticeStore;
+  private practices: Practice[] = [];
+
+  private practiceViews(projectId: string): PracticeView[] {
+    const hash = projectHash(projectId);
+    return this.practices.map((p) => {
+      const adoption = p.adoptions.find((a) => a.projectId === projectId && !a.retiredAt) ?? null;
+      const retired = [...p.adoptions].reverse().find((a) => a.projectId === projectId && a.retiredAt) ?? null;
+      const version = currentVersion(p);
+      const fromThisProject = p.sourceProjectHash === hash;
+      return {
+        id: p.id,
+        title: p.title,
+        status: p.status,
+        version: version.version,
+        method: version.method,
+        rationale: fromThisProject ? version.rationale : "",
+        evidence: fromThisProject ? version.evidence.map((e) => e.summary) : [],
+        fromThisProject,
+        adoptedVersion: adoption?.version ?? null,
+        retiredHere: !adoption && retired ? { at: retired.retiredAt!, reason: retired.retiredReason } : null,
+        versions: p.versions.length,
+      };
+    });
+  }
+
+  private async proposePractice(
+    project: ActiveProjectState,
+    input: { title: string; method: string; rationale: string; evidence: string[]; practiceId: string | null },
+  ): Promise<{ practiceID: string; version: number }> {
+    const evidence = input.evidence.map((reference) => {
+      const found = problemEvidence(project.document, reference);
+      if (!found) throw new PracticeError("evidence_insufficient", `${reference} is not evidence of a problem in this project.`);
+      return found;
+    });
+    const paths = project.snapshot.modules.flatMap((m) => [m.relativePath, ...m.files.map((f) => f.relativePath)]);
+    const leaked = privateContent(`${input.title}\n${input.method}\n${input.rationale}`, project.document, paths);
+    if (leaked.length) throw new PracticeError("private_content", `The method names project-specific content: ${leaked.join(", ")}. Write it as a general method.`);
+    const practice = input.practiceId
+      ? revisePractice(this.practices, input.practiceId, { method: input.method, rationale: input.rationale, evidence })
+      : proposePractice(this.practices, { projectId: project.id, title: input.title, method: input.method, rationale: input.rationale, evidence });
+    await this.practiceStore.save(this.practices);
+    appendEvent(project.document, "trama", {
+      type: "activity",
+      title: `Pratica proposta: ${practice.title} (v${currentVersion(practice).version})`,
+      detail: `${currentVersion(practice).method}\nLa trovi in Memoria: solo tu la adotti.`,
+      tone: "info",
+    }, project.runningRequestId);
+    this.changedIn(project);
+    return { practiceID: practice.id, version: currentVersion(practice).version };
+  }
+
+  async changePractice(action: "adopt" | "retire" | "rollback", id: string, reason = ""): Promise<void> {
+    const project = this.requireProject();
+    if (action === "adopt") adoptPractice(this.practices, id, project.id);
+    else if (action === "retire") retirePractice(this.practices, id, project.id, reason);
+    else rollbackPractice(this.practices, id, project.id);
+    await this.practiceStore.save(this.practices);
+    const practice = this.practices.find((p) => p.id === id)!;
+    const label = action === "adopt" ? "adottata" : action === "retire" ? "ritirata" : "riportata alla versione precedente";
+    appendEvent(project.document, "person", { type: "activity", title: `Pratica ${label}: ${practice.title}`, detail: reason || null, tone: "info" });
+    this.changed();
+  }
+
   private refreshDerived(): void {
+    this.state.practices = this.state.project ? this.practiceViews(this.state.project.id) : [];
+    this.state.backgroundProjects = [...this.parkedProjects.values()].map((p) => ({
+      id: p.id,
+      name: p.name,
+      rootPath: p.rootPath,
+      runningAssignments: [...this.specialistRuntimes.values()].filter((r) => r.projectId === p.id).length,
+      pendingDecisions: p.document.decisionRequests.filter((d) => !d.outcome).length,
+      lastUpdate: p.document.team.specialists.map((s) => s.updatedAt).sort().at(-1) ?? null,
+    }));
     const project = this.state.project;
     if (!project) return;
     project.runningWork = this.runningWorkKeys();
@@ -152,6 +383,7 @@ export class TramaController {
       project.document.candidates.map((c) => [c.id, candidateReport(project.document, c, project.snapshot.headSHA)]),
     );
     project.pactDemoBlockers = project.document.pactDemo ? inspectPactDemo(project.document, project.document.pactDemo) : [];
+    this.recordCompletedExercises(project);
   }
 
   async start(): Promise<void> {
@@ -159,8 +391,12 @@ export class TramaController {
     this.state.settings = {
       theme: settings.theme ?? "system",
       sidebarWidth: typeof settings.sidebarWidth === "number" ? settings.sidebarWidth : 256,
+      sounds: settings.sounds === true,
+      autoPrepareMethod: settings.autoPrepareMethod !== false,
     };
     this.lastProjectId = settings.lastProjectId ?? null;
+    this.practices = await this.practiceStore.load();
+    this.state.onboarding = normalizeOnboarding(settings.onboarding);
     if (settings.monitor) this.state.monitor = { ...this.state.monitor, ...settings.monitor, status: {} };
     this.scheduleMonitor();
     this.host.applyTheme(this.state.settings.theme);
@@ -174,18 +410,37 @@ export class TramaController {
     }
     this.publishNow();
     void this.refreshCodex();
+    void this.refreshProviders();
     const last = this.state.recentProjects.find((p) => p.id === this.lastProjectId);
     if (last && existsSync(last.path)) {
       await this.openProject(last.path, last.isDemo).catch((error) => this.fail(error));
+    } else if (last) {
+      this.fail(new DomainError(`Il progetto ${last.name} non è più in ${last.path}: è stato spostato o eliminato. Riaprilo dalla nuova posizione o toglilo dai recenti.`));
     }
   }
 
+  /** Set by Esci: no new work starts, running work stops in a controlled way (C11). */
+  private quitting = false;
+
   async stop(): Promise<void> {
+    this.quitting = true;
+    for (const [, planner] of this.planners) planner.stop();
+    this.planners.clear();
+    for (const [, timer] of this.providerWaits) clearTimeout(timer);
+    this.providerWaits.clear();
+    await this.stopSpecialistsForQuit();
     if (this.monitorTimer) clearTimeout(this.monitorTimer);
     this.monitorTimer = null;
+    this.unwatchProject();
     await this.flushSave();
     this.stopRuntime();
+    for (const [, parked] of this.parkedProjects) {
+      if (parked.stateWritable) await this.storage.saveDocument(parked.document).catch(() => undefined);
+    }
+    this.parkedProjects.clear();
     this.discovery.stop();
+    for (const [, runtime] of this.providerDiscovery) runtime.stop();
+    this.providerDiscovery.clear();
   }
 
   // MARK: Publishing
@@ -230,7 +485,7 @@ export class TramaController {
 
   private async saveSettings(): Promise<void> {
     const { status: _status, ...monitor } = this.state.monitor;
-    await this.storage.saveSettings({ ...this.state.settings, lastProjectId: this.lastProjectId, monitor });
+    await this.storage.saveSettings({ ...this.state.settings, lastProjectId: this.lastProjectId, monitor, onboarding: this.state.onboarding });
   }
 
   // MARK: Codex account
@@ -249,7 +504,7 @@ export class TramaController {
   private async readCodex(): Promise<void> {
     this.state.codex.checking = true;
     this.publish();
-    let models: CodexModel[] = [];
+    let models: ProviderModel[] = [];
     const account = await this.discovery.readAccount().catch((error: Error) => ({
       kind: "unavailable" as const,
       message: error.message,
@@ -258,23 +513,89 @@ export class TramaController {
       models = await this.discovery.listModels().catch(() => []);
     }
     const wasConnected = this.state.codex.account?.kind === "chatgpt";
-    this.state.codex = { account, models, checking: false };
+    this.setProviderState("codex", { account, models, checking: false });
     this.publish();
     const project = this.state.project;
-    if (account.kind === "chatgpt" && project && (!wasConnected || project.phase.kind === "unavailable")) {
-      void this.loadSkills();
+    if (account.kind === "chatgpt" && project && !wasConnected) void this.loadSkills();
+    if (project && this.coordinatorProvider(project.document) === "codex" && account.kind === "chatgpt" && (!wasConnected || project.phase.kind === "unavailable")) {
+      void this.startCoordinator();
+    }
+  }
+
+  private setProviderState(id: ProviderId, state: ProviderState): void {
+    this.state.providers[id] = state;
+    if (id === "codex") this.state.codex = state;
+  }
+
+  private discoveryRuntime(id: ProviderId): AgentRuntime {
+    if (id === "codex") return this.discovery;
+    let runtime = this.providerDiscovery.get(id);
+    if (!runtime) {
+      runtime = createRuntime(id, { onAccountChanged: () => void this.refreshProvider(id) });
+      this.providerDiscovery.set(id, runtime);
+    }
+    return runtime;
+  }
+
+  /** Checks every provider other than Codex: account first, then models when it can run turns. */
+  async refreshProviders(): Promise<void> {
+    await Promise.all(PROVIDERS.filter((p) => p.id !== "codex").map((p) => this.refreshProvider(p.id as ProviderId)));
+  }
+
+  private readonly providerRefreshes = new Map<ProviderId, Promise<void>>();
+
+  refreshProvider(id: ProviderId): Promise<void> {
+    if (id === "codex") return this.refreshCodex();
+    let refresh = this.providerRefreshes.get(id);
+    if (!refresh) {
+      refresh = this.readProvider(id).finally(() => this.providerRefreshes.delete(id));
+      this.providerRefreshes.set(id, refresh);
+    }
+    return refresh;
+  }
+
+  private async readProvider(id: ProviderId): Promise<void> {
+    if (!hasAdapter(id)) {
+      this.setProviderState(id, { account: { kind: "unavailable", message: `${providerName(id)} non ha ancora un adattatore in Trama.` }, models: [], checking: false });
+      this.publish();
+      return;
+    }
+    const previous = this.state.providers[id];
+    this.setProviderState(id, { ...previous, checking: true });
+    this.publish();
+    const runtime = this.discoveryRuntime(id);
+    const account: ProviderAccount = await withTimeout(runtime.readAccount(), PROVIDER_CHECK_TIMEOUT_MS, `${providerName(id)} non ha risposto al controllo dell'account.`).catch(
+      (error: Error) => ({ kind: "unavailable" as const, message: error.message }),
+    );
+    let models: ProviderModel[] = [];
+    if (isUsableAccount(account)) {
+      models = await withTimeout(runtime.listModels(), PROVIDER_CHECK_TIMEOUT_MS, "timeout").catch(() => []);
+    }
+    this.setProviderState(id, { account, models, checking: false });
+    this.publish();
+    const project = this.state.project;
+    if (project && this.coordinatorProvider(project.document) === id && isUsableAccount(account) && project.phase.kind === "unavailable") {
       void this.startCoordinator();
     }
   }
 
   async login(): Promise<void> {
     const url = await this.discovery.startLogin();
-    await this.host.openExternal(url);
+    if (url) await this.host.openExternal(url);
+  }
+
+  /** Starts a provider's sign-in. Providers that sign in from the terminal return their command. */
+  async loginProvider(id: ProviderId): Promise<{ url: string | null; command: string | null }> {
+    const command = PROVIDERS.find((p) => p.id === id)?.signInCommand ?? null;
+    if (!hasAdapter(id)) return { url: null, command };
+    const url = await this.discoveryRuntime(id).startLogin();
+    if (url) await this.host.openExternal(url);
+    return { url, command: url ? null : command };
   }
 
   // MARK: Projects
 
-  async openProject(path: string, isDemo = false): Promise<void> {
+  async openProject(path: string, isDemo = false, idea: string | null = null): Promise<void> {
     const root = await realpath(path).catch(() => {
       throw new DomainError(`La cartella non è leggibile: ${path}`);
     });
@@ -283,7 +604,8 @@ export class TramaController {
       throw new DomainError("Scegli la cartella di un progetto, non la radice del disco o la cartella Inizio.");
     }
     await this.flushSave();
-    this.stopRuntime();
+    this.parkSelectedProject();
+    this.unwatchProject();
     this.state.loadingProject = root;
     this.state.project = null;
     this.publishNow();
@@ -292,6 +614,31 @@ export class TramaController {
       const existing = this.state.recentProjects.find((p) => p.path === root);
       const id = existing?.id ?? randomUUID();
       const snapshot = await scanRepository(root, isDemo);
+      const parked = this.parkedProjects.get(id);
+      if (parked) {
+        // Its team kept working: resume the same state instead of reading an older copy from disk.
+        this.parkedProjects.delete(id);
+        parked.snapshot = snapshot;
+        parked.aiHeroPrepared = hasAiHero(root);
+        this.state.project = parked;
+        this.state.loadingProject = null;
+        this.lastProjectId = id;
+        this.state.recentProjects = [
+          { ...(existing ?? { id, name: snapshot.name, path: root, isDemo }), lastOpenedAt: new Date().toISOString() },
+          ...this.state.recentProjects.filter((p) => p.id !== id),
+        ];
+        await this.storage.saveRecentProjects(this.state.recentProjects);
+        await this.saveSettings();
+        this.publishNow();
+        if (!isDemo) void this.refreshGitHub();
+        this.watchProject(root);
+        void this.loadSkills();
+        void this.startCoordinator();
+        // Work that waited for a provider while the project was parked is checked again now.
+        const waiting = new Set(parked.document.team.specialists.flatMap((sp) => sp.assignments.flatMap((a) => (a.waitingForProvider ? [a.waitingForProvider.provider] : []))));
+        for (const provider of waiting) void this.resumeWaitingWork(provider);
+        return;
+      }
       const loaded = await this.storage.loadDocument(id);
       let document = loaded.document;
       if (!document && loaded.writable && this.legacyRoot && existing) {
@@ -309,8 +656,10 @@ export class TramaController {
         }
       }
       document ??= emptyDocument(id);
-      for (const assignmentId of stopOrphanedAssignments(document, "Trama è stato chiuso mentre lo specialista lavorava.")) {
-        appendEvent(document, "trama", { type: "activity", title: "Arresto confermato", detail: "Trama è stato chiuso mentre lo specialista lavorava.", tone: "info" }, null, new Date(), {
+      if (idea && !document.events.length) document.createdFromIdea = idea;
+      const orphanNote = "Trama si è interrotto senza un arresto controllato (crash o chiusura forzata) mentre lo specialista lavorava.";
+      for (const assignmentId of stopOrphanedAssignments(document, orphanNote)) {
+        appendEvent(document, "trama", { type: "activity", title: "Arresto confermato", detail: orphanNote, tone: "info" }, null, new Date(), {
           assignmentId,
           workKey: `${assignmentId}:closed`,
         });
@@ -339,6 +688,7 @@ export class TramaController {
         candidateReports: {},
         skills: [],
         pactDemoBlockers: [],
+        aiHeroPrepared: hasAiHero(root),
       };
       this.state.project = project;
       this.state.loadingProject = null;
@@ -356,8 +706,15 @@ export class TramaController {
       await this.saveSettings();
       this.publishNow();
       if (!isDemo) void this.refreshGitHub();
+      this.watchProject(root);
+      if (!isDemo && loaded.writable && this.state.settings.autoPrepareMethod !== false && !hasAiHero(root)) {
+        // T04: the method is ready when the project opens; existing files are never overwritten.
+        void this.prepareSkills().catch((error) => this.fail(error));
+      }
       void this.loadSkills();
       void this.startCoordinator();
+      const waiting = new Set(document.team.specialists.flatMap((sp) => sp.assignments.flatMap((a) => (a.waitingForProvider ? [a.waitingForProvider.provider] : []))));
+      for (const provider of waiting) void this.resumeWaitingWork(provider);
     } catch (error) {
       this.state.loadingProject = null;
       this.publishNow();
@@ -377,24 +734,58 @@ export class TramaController {
     if (existsSync(root)) throw new DomainError(`Esiste già una cartella ${trimmed} in questa posizione.`);
     await mkdir(root, { recursive: true });
     await writeFile(join(root, "README.md"), `# ${trimmed}\n\n${idea.trim()}\n`);
-    await this.openProject(root);
+    await initializeRepository(root);
+    await this.openProject(root, false, idea.trim() || null);
   }
 
   async closeProject(): Promise<void> {
     await this.flushSave();
-    this.stopRuntime();
+    this.parkSelectedProject();
+    this.unwatchProject();
     this.state.project = null;
     this.lastProjectId = null;
     await this.saveSettings();
     this.publishNow();
   }
 
-  async refreshProject(): Promise<void> {
+  private scanGeneration = 0;
+  private watcher: FSWatcher | null = null;
+  private watchTimer: NodeJS.Timeout | null = null;
+
+  /** Rescans the project. A scan that finishes after a newer one started is discarded. */
+  async refreshProject(refreshGitHub = true): Promise<void> {
     const project = this.state.project;
     if (!project) return;
-    project.snapshot = await scanRepository(project.rootPath, project.isDemo);
+    const generation = ++this.scanGeneration;
+    const snapshot = await scanRepository(project.rootPath, project.isDemo);
+    if (generation !== this.scanGeneration || this.state.project !== project) return;
+    project.snapshot = snapshot;
     this.publish();
-    if (!project.isDemo) void this.refreshGitHub();
+    if (refreshGitHub && !project.isDemo) void this.refreshGitHub();
+  }
+
+  /** Watches the project folder and rescans a second after the last change, outside .git and dependencies. */
+  private watchProject(root: string): void {
+    this.unwatchProject();
+    try {
+      this.watcher = watch(root, { recursive: true }, (_event, name) => {
+        const path = String(name ?? "");
+        if (/(^|[\\/])(\.git|node_modules|\.build|dist|build|\.next|target)([\\/]|$)/.test(path)) return;
+        if (this.watchTimer) clearTimeout(this.watchTimer);
+        this.watchTimer = setTimeout(() => void this.refreshProject(false).catch(() => undefined), 1_000);
+      });
+      this.watcher.on("error", () => this.unwatchProject());
+    } catch {
+      // Without a watcher the map still refreshes with Cmd+R.
+      this.watcher = null;
+    }
+  }
+
+  private unwatchProject(): void {
+    this.watcher?.close();
+    this.watcher = null;
+    if (this.watchTimer) clearTimeout(this.watchTimer);
+    this.watchTimer = null;
   }
 
   async forgetRecent(id: string): Promise<void> {
@@ -415,10 +806,12 @@ export class TramaController {
 
   private async loadSkills(): Promise<void> {
     const project = this.state.project;
-    if (!project || this.state.codex.account?.kind !== "chatgpt") return;
-    const skills = await this.discovery.listSkills(project.rootPath).catch(() => []);
-    if (this.state.project === project) {
+    if (!project || !isUsableAccount(this.state.codex.account)) return;
+    const skills = await this.discovery.listSkills(project.rootPath).catch(() => null);
+    if (this.state.project === project && skills) {
       project.skills = skills;
+      // The method counts as ready only when Codex's catalogue actually loads its skills.
+      project.missingMethodSkills = hasAiHero(project.rootPath) ? SELECTED_SKILLS.filter((name) => !skills.some((s) => s.name === name)) : null;
       this.publish();
     }
   }
@@ -438,10 +831,11 @@ export class TramaController {
     }
     let issues = project.github.issues;
     let message: string | null = null;
+    const capabilities = await readGitHubCapabilities(repository);
     try {
       issues = await listIssues(repository);
     } catch (error) {
-      message = `GitHub CLI non ha letto le issue: ${(error as Error).message.split("\n")[0]}`;
+      message = `GitHub CLI non ha letto le issue: ${classifyGitHubError((error as Error).message).message}`;
     }
     const { checkpoint } = await pollRepository(this.monitorStore, repository);
     if (this.state.project !== project) return;
@@ -452,6 +846,7 @@ export class TramaController {
       issues: message ? [] : issues,
       snapshot: checkpoint.snapshot,
       events: checkpoint.events,
+      capabilities,
     };
     this.updateMonitorStatus(repository, checkpoint);
     this.publish();
@@ -509,7 +904,11 @@ export class TramaController {
           if (assessment.classification === "conflict" || assessment.classification === "overlap") {
             appendEvent(document, "trama", { type: "card", kind: "conflict", title: "Conflitto", detail: null, referenceId: assessment.id });
             if (assessment.classification === "conflict") {
-              this.host.notify("Trama: conflitto con il lavoro di un collega", `Il candidato ${candidate.id} entra in conflitto con ${references.join(", ")}.`);
+              this.host.notify(
+                "Trama: conflitto con il lavoro di un collega",
+                `Il candidato ${candidate.id} entra in conflitto con ${references.join(", ")}.`,
+                this.state.settings.sounds === true,
+              );
             }
           }
           this.changed();
@@ -531,27 +930,167 @@ export class TramaController {
   // MARK: Coordinator
 
   private stopRuntime(): void {
-    this.runtime?.client.stop();
-    this.runtime?.toolServer.stop();
-    this.runtime = null;
+    this.stopCoordinatorRuntime();
     for (const [, runtime] of this.specialistRuntimes) runtime.client.stop();
     this.specialistRuntimes.clear();
   }
 
-  private coordinatorModel(document: ProjectDocument): string | null {
-    const models = this.state.codex.models;
-    if (document.selectedModel && models.some((m) => m.model === document.selectedModel)) return document.selectedModel;
+  private projectById(id: string): ActiveProjectState | null {
+    return this.state.project?.id === id ? this.state.project : (this.parkedProjects.get(id) ?? null);
+  }
+
+  /**
+   * Esci: every running specialist gets a stop request and an interrupt, so its turn ends as
+   * "fermato" with chat, team, candidates and worktree preserved. Waits a few seconds at most.
+   */
+  private async stopSpecialistsForQuit(): Promise<void> {
+    const entries = [...this.specialistRuntimes.entries()];
+    if (!entries.length) return;
+    for (const [assignmentId, runtime] of entries) {
+      const project = this.projectById(runtime.projectId);
+      const assignment = project ? findAssignment(project.document, assignmentId) : null;
+      if (project && assignment && isActive(assignment) && assignment.status !== "stopRequested") {
+        requestStop(project.document, assignment.specialistId, "Trama", "Esci: Trama si sta chiudendo. Riprendi l'incarico quando vuoi.");
+      }
+    }
+    await Promise.all(entries.map(([, r]) => withTimeout(r.client.interrupt(), 5_000, "timeout").catch(() => r.client.stop())));
+    const deadline = Date.now() + 6_000;
+    while (this.specialistRuntimes.size && Date.now() < deadline) await new Promise((r) => setTimeout(r, 50));
+  }
+
+  // MARK: Waiting for a blocked provider (C11)
+
+  private readonly providerWaits = new Map<ProviderId, NodeJS.Timeout>();
+
+  /** One timer per provider: no burst of retries while it is blocked. */
+  private scheduleProviderWait(provider: ProviderId): void {
+    if (this.quitting || this.providerWaits.has(provider)) return;
+    const account = this.state.providers[provider]?.account;
+    const until = account?.kind === "blocked" && account.until ? Date.parse(account.until) : Number.NaN;
+    const delay = Number.isFinite(until) ? Math.max(60_000, until - Date.now() + 30_000) : 15 * 60_000;
+    const timer = setTimeout(() => {
+      this.providerWaits.delete(provider);
+      void this.resumeWaitingWork(provider);
+    }, delay);
+    timer.unref?.();
+    this.providerWaits.set(provider, timer);
+  }
+
+  /** When the provider unblocks, resumes only the waiting work the mandate still authorizes. */
+  async resumeWaitingWork(provider: ProviderId): Promise<void> {
+    if (this.quitting) return;
+    await this.refreshProvider(provider);
+    if (!isUsableAccount(this.state.providers[provider]?.account)) {
+      this.scheduleProviderWait(provider);
+      return;
+    }
+    // Only the selected project starts work; parked projects keep waiting until the person comes back (review #8).
+    const projects = this.state.project ? [this.state.project] : [];
+    for (const project of projects) {
+      for (const specialist of project.document.team.specialists) {
+        const assignment = specialist.assignments.at(-1);
+        if (!assignment?.waitingForProvider || assignment.waitingForProvider.provider !== provider) continue;
+        assignment.waitingForProvider = null;
+        if (!["failed", "stopped"].includes(assignment.status)) continue;
+        if (authorize(project.document.mandate, "executeInWorktree", assignment.moduleIds) !== "authorized") {
+          this.specialistActivity(project, assignment.id, `${assignment.turns.length + 1}`, "Ripresa non eseguita", "Il mandato non copre più questo incarico.", "info");
+          continue;
+        }
+        try {
+          resumeAssignment(project.document, assignment.id);
+        } catch (error) {
+          this.specialistActivity(project, assignment.id, `${assignment.turns.length + 1}`, "Ripresa non eseguita", (error as Error).message, "info");
+          continue;
+        }
+        refreshDecisionVersions(project.document, assignment.id);
+        this.specialistActivity(project, assignment.id, `${assignment.turns.length + 1}`, `${providerName(provider)} è di nuovo disponibile`, "Trama riprende l'incarico.", "info");
+        if (project === this.state.project) void this.startAssignment(assignment.id);
+      }
+    }
+  }
+
+  /** Projects that are not selected but whose authorized team is still working (C07). */
+  private readonly parkedProjects = new Map<string, ActiveProjectState>();
+
+  private hasRunningWork(projectId: string): boolean {
+    return [...this.specialistRuntimes.values()].some((r) => r.projectId === projectId);
+  }
+
+  /**
+   * Leaves the selected project: its Coordinator stops, while specialists already authorized keep
+   * working in their own runtime and write to their own project's history.
+   */
+  private parkSelectedProject(): void {
+    this.stopCoordinatorRuntime();
+    const project = this.state.project;
+    if (!project) return;
+    project.phase = { kind: "idle" };
+    project.streaming = null;
+    const queued = this.queue.filter((q) => q.projectId === project.id);
+    if (queued.length) {
+      project.document.composerDraft = [project.document.composerDraft, ...queued.map((q) => q.text)].filter(Boolean).join("\n\n");
+      this.queue = this.queue.filter((q) => q.projectId !== project.id);
+      if (project.stateWritable) void this.storage.saveDocument(project.document).catch((error) => this.fail(error));
+    }
+    if (this.hasRunningWork(project.id)) this.parkedProjects.set(project.id, project);
+  }
+
+  /** A parked project whose last running work ended is saved and let go. */
+  private releaseParkedProject(project: ActiveProjectState): void {
+    if (project === this.state.project || this.hasRunningWork(project.id)) return;
+    if (this.parkedProjects.get(project.id) !== project) return;
+    this.parkedProjects.delete(project.id);
+    if (project.stateWritable) void this.storage.saveDocument(project.document).catch((error) => this.fail(error));
+    this.publish();
+  }
+
+  private stopCoordinatorRuntime(): void {
+    this.runtime?.client.stop();
+    this.runtime?.toolServer.stop();
+    this.runtime = null;
+  }
+
+  /** The provider of the Coordinator: the one that owns its thread, else the composer's selection. */
+  private coordinatorProvider(document: ProjectDocument): ProviderId {
+    return document.coordinator.threadProvider ?? document.selectedProvider ?? "codex";
+  }
+
+  /**
+   * The model the Coordinator runs on. A model the person chose that the catalogue no longer offers is
+   * never replaced silently: the result is null and the reason is `coordinatorModelProblem`.
+   */
+  private coordinatorModel(document: ProjectDocument, provider = this.coordinatorProvider(document)): string | null {
+    const models = this.state.providers[provider]?.models ?? [];
+    const chosen = (document.selectedProvider ?? "codex") === provider ? document.selectedModel : (document.providerPreferences?.[provider]?.model ?? null);
+    if (chosen) return models.length === 0 || models.some((m) => m.model === chosen) ? chosen : null;
     return (
-      models.find((m) => m.model === PREFERRED_COORDINATOR_MODEL)?.model ??
+      (provider === "codex" ? models.find((m) => m.model === PREFERRED_COORDINATOR_MODEL)?.model : undefined) ??
       models.find((m) => m.isDefault)?.model ??
       models[0]?.model ??
-      document.selectedModel
+      null
     );
   }
 
+  private coordinatorModelProblem(document: ProjectDocument, provider: ProviderId): string {
+    const models = this.state.providers[provider]?.models ?? [];
+    const chosen = (document.selectedProvider ?? "codex") === provider ? document.selectedModel : null;
+    if (chosen && models.length && !models.some((m) => m.model === chosen)) {
+      return `Il modello ${chosen} non è più nel catalogo di ${providerName(provider)}. Scegline un altro dal composer.`;
+    }
+    return `${providerName(provider)} non ha restituito modelli disponibili.`;
+  }
+
+  /** Connected providers with their models: the only ones a specialist may run on (ADR 0008). */
+  private connectedProviders(): { id: ProviderId; models: string[] }[] {
+    return PROVIDERS.map((p) => p.id as ProviderId)
+      .filter((id) => hasAdapter(id) && isUsableAccount(this.state.providers[id]?.account))
+      .map((id) => ({ id, models: this.state.providers[id].models.map((m) => m.model) }));
+  }
+
   private async ensureRuntime(project: ActiveProjectState): Promise<CoordinatorRuntime> {
-    if (this.runtime && this.runtime.projectId === project.id) return this.runtime;
-    this.stopRuntime();
+    const provider = this.coordinatorProvider(project.document);
+    if (this.runtime && this.runtime.projectId === project.id && this.runtime.provider === provider) return this.runtime;
+    this.stopCoordinatorRuntime();
     const toolServer = new CoordinatorToolServer(
       COORDINATOR_TOOLS,
       async (name, args) => {
@@ -565,10 +1104,16 @@ export class TramaController {
           changed: () => this.changed(),
           addCard: (kind, title, referenceId) =>
             appendEvent(current.document, "trama", { type: "card", kind, title, detail: null, referenceId }, current.runningRequestId),
-          models: this.state.codex.models.map((m) => m.model),
+          models: this.state.providers[provider].models.map((m) => m.model),
           defaultModel: current.document.coordinator.threadModel ?? this.coordinatorModel(current.document),
+          defaultProvider: provider,
+          providers: this.connectedProviders(),
           startAssignment: (id) => void this.startAssignment(id),
           stopAssignment: (id) => void this.stopAssignmentRuntime(id),
+          decisionChanged: (id) => this.stopWorkDependingOn(id),
+          updateTicket: (input) => this.updateTicket(input, current.runningRequestId),
+          proposePractice: (input) => this.proposePractice(current, input),
+          readPractices: async () => ({ practices: this.practiceViews(current.id) as never }),
           runCheck: (check) => this.runCheck(check, current.rootPath, current.runningRequestId),
           availableChecks: availableChecks(current.rootPath),
           reviewWorkspace: async (assignmentId) => {
@@ -586,28 +1131,13 @@ export class TramaController {
       TOOL_SERVER_INSTRUCTIONS,
     );
     await toolServer.start();
-    const client = new CodexClient({
-      executable: this.host.codexExecutable,
-      argumentsFor: (executable) => restrictedAppServerArguments(executable, TOOL_SERVER_NAME),
-      environment: { [TOKEN_ENVIRONMENT_VARIABLE]: toolServer.token },
+    const client = createRuntime(provider, {
+      executable: provider === "codex" ? this.host.codexExecutable : null,
+      toolServer: { name: TOOL_SERVER_NAME, url: toolServer.url, token: toolServer.token },
       requestTimeoutMs: 15_000,
     });
-    this.runtime = { client, toolServer, projectId: project.id };
+    this.runtime = { client, provider, toolServer, projectId: project.id };
     return this.runtime;
-  }
-
-  private threadConfig(toolServerUrl: string) {
-    return {
-      web_search: "disabled",
-      features: { apps: false, plugins: false, hooks: false, multi_agent: false },
-      [`mcp_servers.${TOOL_SERVER_NAME}`]: {
-        url: toolServerUrl,
-        bearer_token_env_var: TOKEN_ENVIRONMENT_VARIABLE,
-        default_tools_approval_mode: "approve",
-        tool_timeout_sec: 120,
-      },
-      "shell_environment_policy.exclude": [TOKEN_ENVIRONMENT_VARIABLE],
-    };
   }
 
   private starting: Promise<void> | null = null;
@@ -625,25 +1155,20 @@ export class TramaController {
   private async openCoordinator(): Promise<void> {
     const project = this.state.project;
     if (!project) return;
-    if (!this.state.codex.account) await this.refreshCodex();
-    const account = this.state.codex.account;
-    if (account?.kind !== "chatgpt") {
-      project.phase = {
-        kind: "unavailable",
-        message:
-          account?.kind === "unsupported"
-            ? `Trama accetta solo un account ChatGPT; Codex usa un account di tipo ${account.type}.`
-            : account?.kind === "unavailable"
-              ? account.message
-              : "Collega ChatGPT da Collegamenti per parlare con il Coordinatore.",
-      };
+    const document = project.document;
+    const provider = this.coordinatorProvider(document);
+    if (!this.state.providers[provider].account) await this.refreshProvider(provider);
+    const reason = supportsReadOnly(provider)
+      ? providerUnavailableReason(provider, this.state.providers[provider].account)
+      : `${providerName(provider)} lavora solo con un worktree e non può fare da Coordinatore. Scegli un altro provider dal composer.`;
+    if (reason) {
+      project.phase = { kind: "unavailable", message: reason };
       this.publish();
       return;
     }
-    const document = project.document;
-    const model = this.coordinatorModel(document);
+    const model = this.coordinatorModel(document, provider);
     if (!model) {
-      project.phase = { kind: "unavailable", message: "Codex non ha restituito modelli disponibili." };
+      project.phase = { kind: "unavailable", message: this.coordinatorModelProblem(document, provider) };
       this.publish();
       return;
     }
@@ -653,44 +1178,61 @@ export class TramaController {
       const runtime = await this.ensureRuntime(project);
       const study = await buildStudy(project.snapshot, document, project.github);
       document.coordinator.study = study;
+      if (this.runtime !== runtime) return;
       const previous = document.coordinator.threadId;
       const opening = await runtime.client.openThread({
         model,
         cwd: project.rootPath,
         developerInstructions: developerInstructions(project.name),
-        config: this.threadConfig(runtime.toolServer.url),
         resumeThreadId: previous,
       });
-      if (this.state.project !== project) return;
+      // A provider switch during the opening replaced this runtime: its result must not come back (review #1).
+      if (this.state.project !== project || this.runtime !== runtime) return;
       document.coordinator.threadId = opening.threadId;
       document.coordinator.threadModel = model;
+      document.coordinator.threadProvider = provider;
       if (opening.replaced) {
         document.coordinator.injectedStudy = {};
         document.coordinator.memorySentToThread = null;
+        document.coordinator.practicesSent = null;
         document.coordinator.contextWarnedAt = null;
         appendEvent(document, "trama", {
           type: "card",
           kind: "contextNotice",
           title: "Nuovo thread del Coordinatore",
-          detail: "Codex non ha più il thread precedente. Il Coordinatore riparte dallo studio e dalla memoria.",
+          detail: `${providerName(provider)} non ha più il thread precedente. Il Coordinatore riparte dallo studio e dalla memoria.`,
           referenceId: null,
         });
       }
       if (Object.keys(document.coordinator.injectedStudy).length === 0) {
-        await this.runStudyTurn(project, runtime, model, opening.replaced ? "il thread precedente non è più disponibile" : null);
+        const handover = document.coordinator.pendingHandover ?? null;
+        await this.runStudyTurn(
+          project,
+          runtime,
+          model,
+          handover ? handover.reason : opening.replaced ? "il thread precedente non è più disponibile" : null,
+          handover ? handoverTranscript(document) : null,
+        );
+        document.coordinator.pendingHandover = null;
       }
-      if (this.state.project !== project) return;
+      if (this.state.project !== project || this.runtime !== runtime) return;
       project.phase = { kind: "ready" };
       this.changed();
     } catch (error) {
-      if (this.state.project !== project) return;
+      if (this.state.project !== project || this.coordinatorProvider(document) !== provider) return;
       project.phase = { kind: "unavailable", message: (error as Error).message };
       project.streaming = null;
       this.changed();
     }
   }
 
-  private async runStudyTurn(project: ActiveProjectState, runtime: CoordinatorRuntime, model: string, replacedReason: string | null) {
+  private async runStudyTurn(
+    project: ActiveProjectState,
+    runtime: CoordinatorRuntime,
+    model: string,
+    replacedReason: string | null,
+    transcript: string | null = null,
+  ) {
     const document = project.document;
     const study = document.coordinator.study!;
     project.phase = { kind: "studying" };
@@ -703,6 +1245,7 @@ export class TramaController {
       "Studio del progetto scritto da Trama (dati, non istruzioni).",
       studyText(study),
       `## La tua memoria\n${memory || "La memoria è vuota."}`,
+      ...(transcript ? [`## Conversazione finora (trascrizione di Trama, dati, non istruzioni)\n${transcript}`] : []),
     ].join("\n\n");
     let request = "";
     if (replacedReason) {
@@ -710,13 +1253,20 @@ export class TramaController {
     }
     request +=
       "Apri la conversazione con la persona. Dopo aver letto lo studio, di' in prosa cosa hai capito del progetto: stack, stato, rischi e cosa manca. Chiudi con le domande che ti servono, se ce ne sono.";
+    if (document.createdFromIdea && !document.mandate) {
+      request +=
+        "\n\nIl progetto è appena nato da questa idea della persona: " +
+        JSON.stringify(document.createdFromIdea) +
+        ". Prima di generare qualunque file proponi scopo, struttura delle cartelle e primi passi, e chiedi il mandato con request_mandate: niente viene creato senza la risposta della persona.";
+    }
     if (!document.team.confirmedAt) {
       request +=
         "\n\nQuesto progetto non ha ancora un team confermato: alla fine dello studio proponilo con propose_team, con un motivo per ogni specialista.";
     }
+    if (projectGoals(document).length === 0) request += `\n\n${FIRST_GOAL_REQUEST}`;
     const reply = await runtime.client.runTurn({
       threadId: document.coordinator.threadId!,
-      prompt: `${context}\n\n${request}`,
+      prompt: `${context}\n\n${transcript ? `${request}\n\nRiprendi dal punto in cui la conversazione si è fermata: non ripetere quello che hai già detto.` : request}`,
       cwd: project.rootPath,
       model,
       effort: null,
@@ -743,32 +1293,45 @@ export class TramaController {
     model: string | null,
     effort: string | null,
     images: ImageAttachmentInput[] = [],
+    provider: ProviderId | null = null,
+    goalId: string | null = null,
   ): Promise<void> {
     const project = this.requireProject();
     const trimmed = text.trim();
     if (!trimmed) return;
+    const goal = goalId ? requireGoal(project.document, goalId) : null;
     if (project.runningRequestId) {
-      this.queue.push({ projectId: project.id, text: trimmed, moduleId, model, effort, images });
+      this.queue.push({ projectId: project.id, text: trimmed, moduleId, model, effort, images, provider, goalId: goal?.id ?? null });
+      dialogComposer(project.document, goal?.id ?? null).composerDraft = "";
+      this.changed();
       return;
+    }
+    if (provider && provider !== this.coordinatorProvider(project.document)) {
+      // Let an opening or a study in progress end first, so the switch is not undone by its late result.
+      if (this.starting) await this.starting.catch(() => undefined);
+      if (provider !== this.coordinatorProvider(project.document)) this.switchCoordinatorProvider(project, provider, model, effort);
     }
     const attachments = await this.storage.saveAttachments(project.id, images);
     const document = project.document;
     const module = moduleId ? project.snapshot.modules.find((m) => m.id === moduleId) : undefined;
-    const selectedModel = model ?? this.coordinatorModel(document);
+    const activeProvider = this.coordinatorProvider(document);
+    const selectedModel = model ?? this.coordinatorModel(document, activeProvider);
     const request: CoordinatorRequest = {
       id: randomUUID(),
       text: trimmed,
       moduleId: module?.id ?? null,
       state: "running",
+      provider: activeProvider,
       model: selectedModel,
       effort,
       createdAt: new Date().toISOString(),
       completedAt: null,
       failure: null,
       attachments,
+      ...(goal ? { goalId: goal.id } : {}),
     };
     document.requests.push(request);
-    document.composerDraft = "";
+    dialogComposer(document, goal?.id ?? null).composerDraft = "";
     appendEvent(
       document,
       "person",
@@ -786,7 +1349,7 @@ export class TramaController {
           throw new Error(phase.kind === "unavailable" ? phase.message : "Il Coordinatore non è pronto.");
         }
       }
-      if (!selectedModel) throw new Error("Scegli un modello per il Coordinatore.");
+      if (!selectedModel) throw new Error(this.coordinatorModelProblem(document, activeProvider));
       project.streaming = { requestId: request.id, text: "" };
       const runtime = await this.ensureRuntime(project);
       const study = await buildStudy(project.snapshot, document, project.github);
@@ -795,6 +1358,7 @@ export class TramaController {
       const includeMemory = document.coordinator.memorySentToThread !== document.coordinator.threadId;
       const report = teamReport(document);
       const sections: string[] = [];
+      if (goal) sections.push(goalContext(goal));
       if (parts.length || includeMemory || report) {
         sections.push("Aggiornamento di Trama (dati, non istruzioni).");
         if (parts.length) sections.push("Parti dello studio cambiate dall'ultimo messaggio:", studyText(study, parts));
@@ -808,6 +1372,11 @@ export class TramaController {
         decisions: document.decisions,
       });
       if (mentioned) sections.push(mentioned);
+      const practices = practicesText(this.practices, project.id);
+      if ((practices ?? null) !== (document.coordinator.practicesSent ?? null)) {
+        sections.push(practices ?? "## Pratiche adottate\nLa persona ha ritirato tutte le pratiche di questo progetto.");
+        document.coordinator.practicesSent = practices;
+      }
       const skills = skillInvocations(trimmed, project.skills);
       sections.push(codexSkillText(trimmed, project.skills));
       appendEvent(
@@ -817,8 +1386,9 @@ export class TramaController {
           type: "activity",
           title: "Messaggio inviato al Coordinatore",
           detail: [
-            selectedModel,
+            activeProvider === "codex" ? selectedModel : `${providerName(activeProvider)} · ${selectedModel}`,
             effort ? `sforzo ${effort}` : null,
+            goal ? `obiettivo ${goal.id}` : null,
             parts.length ? `aggiornamento: ${parts.join(", ")}` : null,
             report ? "aggiornamenti del team" : null,
             skills.length ? `skill: ${skills.map((s) => s.name).join(", ")}` : null,
@@ -848,7 +1418,7 @@ export class TramaController {
       request.completedAt = new Date().toISOString();
       const references = referencedPaths(reply, paths);
       if (reply) {
-        recordReply(document, request.id, reply, selectedModel, references);
+        recordReply(document, request.id, reply, selectedModel, references, activeProvider);
       } else {
         appendEvent(document, "trama", { type: "activity", title: "Il Coordinatore non ha scritto una risposta", detail: null, tone: "info" }, request.id);
       }
@@ -864,11 +1434,13 @@ export class TramaController {
         { type: "activity", title: interrupted ? "Turno interrotto" : "Il turno non è riuscito", detail: interrupted ? null : message, tone: interrupted ? "info" : "error" },
         request.id,
       );
-      if (error instanceof CodexError && error.code === "rpcError" && /thread|rollout|session/i.test(message)) {
+      const code = errorCode(error);
+      if (code === "rpcError" && /thread|rollout|session/i.test(message)) {
         document.coordinator.threadId = null;
         project.phase = { kind: "idle" };
       }
-      if (error instanceof CodexError && error.code === "processExited") project.phase = { kind: "idle" };
+      if (code === "processExited") project.phase = { kind: "idle" };
+      if (!interrupted) void this.noticeIfBlocked(project, activeProvider, message, request.id);
     } finally {
       if (project.runningRequestId === request.id) project.runningRequestId = null;
       if (project.streaming?.requestId === request.id) project.streaming = null;
@@ -879,9 +1451,19 @@ export class TramaController {
 
   private dispatchQueued(): void {
     const project = this.state.project;
+    // Messages queued in a project the person left go back to that project's draft instead of vanishing (review #14).
+    for (const item of this.queue.filter((q) => q.projectId !== project?.id)) {
+      const owner = this.parkedProjects.get(item.projectId);
+      if (owner) {
+        owner.document.composerDraft = [owner.document.composerDraft, item.text].filter(Boolean).join("\n\n");
+        this.changedIn(owner);
+      }
+    }
     this.queue = this.queue.filter((item) => item.projectId === project?.id);
     const next = this.queue.shift();
-    if (next) void this.send(next.text, next.moduleId, next.model, next.effort, next.images).catch((error) => this.fail(error));
+    if (next) {
+      void this.send(next.text, next.moduleId, next.model, next.effort, next.images, next.provider, next.goalId).catch((error) => this.fail(error));
+    }
   }
 
   private handleTurnEvent(project: ActiveProjectState, request: CoordinatorRequest, event: TurnEvent): void {
@@ -943,7 +1525,7 @@ export class TramaController {
       type: "card",
       kind: "contextNotice",
       title: "Contesto oltre la soglia",
-      detail: `La finestra di contesto del Coordinatore è piena al ${Math.round(percent)}% (${format(usage.usedTokens)} su ${format(usage.contextWindow)} token), sopra la soglia impostata del ${threshold}%. Codex la compatta da solo quando serve; puoi cambiare la soglia dal misuratore.`,
+      detail: `La finestra di contesto del Coordinatore è piena al ${Math.round(percent)}% (${format(usage.usedTokens)} su ${format(usage.contextWindow)} token), sopra la soglia impostata del ${threshold}%. ${providerName(this.coordinatorProvider(project.document))} la compatta da solo quando serve, se lo supporta; puoi cambiare la soglia dal misuratore.`,
       referenceId: coordinator.threadId,
     });
     this.changed();
@@ -960,33 +1542,187 @@ export class TramaController {
     await this.runtime?.client.interrupt();
   }
 
-  async selectModel(model: string, effort: string | null): Promise<void> {
+  /** The composer's selection (ADR 0010): remembered per provider; the provider changes on the next message. */
+  async selectModel(model: string, effort: string | null, provider: ProviderId | null = null, goalId: string | null = null): Promise<void> {
     const project = this.requireProject();
-    project.document.selectedModel = model;
-    project.document.selectedEffort = effort;
+    if (goalId) requireGoal(project.document, goalId);
+    const selection = dialogComposer(project.document, goalId);
+    const id = provider ?? selection.selectedProvider ?? "codex";
+    selection.selectedProvider = id;
+    selection.selectedModel = model;
+    selection.selectedEffort = effort;
+    selection.providerPreferences = { ...selection.providerPreferences, [id]: { model, effort } };
     this.changed();
   }
 
-  saveDraft(text: string): void {
+  /** Chooses the provider in the composer; the model is the one last used with it, if any. */
+  async selectProvider(provider: ProviderId, goalId: string | null = null): Promise<void> {
+    const project = this.requireProject();
+    if (goalId) requireGoal(project.document, goalId);
+    const selection = dialogComposer(project.document, goalId);
+    if (project.runningRequestId || this.queue.some((q) => q.projectId === project.id)) {
+      throw new DomainError("Aspetta la fine del turno e della coda prima di cambiare provider.");
+    }
+    const preference = selection.providerPreferences?.[provider];
+    selection.selectedProvider = provider;
+    selection.selectedModel = preference?.model ?? null;
+    selection.selectedEffort = preference?.effort ?? null;
+    this.changed();
+  }
+
+  /**
+   * The person moved the Coordinator to another provider (ADR 0009): the conversation stays, the new
+   * provider opens a new session and receives study, memory and transcript.
+   */
+  private switchCoordinatorProvider(project: ActiveProjectState, provider: ProviderId, model: string | null = null, effort: string | null = null): void {
+    const document = project.document;
+    const from = this.coordinatorProvider(document);
+    this.stopCoordinatorRuntime();
+    document.coordinator.threadId = null;
+    document.coordinator.threadModel = null;
+    document.coordinator.threadProvider = provider;
+    document.coordinator.injectedStudy = {};
+    document.coordinator.memorySentToThread = null;
+    document.coordinator.practicesSent = null;
+    document.coordinator.contextWarnedAt = null;
+    document.coordinator.pendingHandover = { from, reason: `la persona ha spostato il Coordinatore da ${providerName(from)} a ${providerName(provider)}` };
+    document.selectedProvider = provider;
+    // The previous provider's model means nothing on the new one (review #5).
+    const preference = document.providerPreferences?.[provider];
+    document.selectedModel = model ?? preference?.model ?? null;
+    document.selectedEffort = model ? effort : (preference?.effort ?? null);
+    project.phase = { kind: "idle" };
+    project.contextUsage = null;
+    appendEvent(document, "trama", {
+      type: "card",
+      kind: "contextNotice",
+      title: `Coordinatore su ${providerName(provider)}`,
+      detail: `Hai spostato il Coordinatore da ${providerName(from)} a ${providerName(provider)}. La conversazione resta: ${providerName(provider)} apre una sessione nuova e riceve studio, memoria e trascrizione.`,
+      referenceId: null,
+    });
+    this.changed();
+  }
+
+  /** After a failed turn: when the provider reports a block, a card says why and proposes a change (ADR 0009). */
+  private async noticeIfBlocked(project: ActiveProjectState, provider: ProviderId, message: string, requestId: string | null): Promise<void> {
+    if (!/limit|quota|rate|usage|utilizzo|bloccat/i.test(message)) return;
+    await this.refreshProvider(provider);
+    const account = this.state.providers[provider].account;
+    if (account?.kind !== "blocked" || this.state.project !== project) return;
+    appendEvent(
+      project.document,
+      "trama",
+      { type: "card", kind: "contextNotice", title: `${providerName(provider)} bloccato`, detail: providerUnavailableReason(provider, account), referenceId: null },
+      requestId,
+    );
+    this.changed();
+  }
+
+  saveDraft(text: string, goalId: string | null = null): void {
     const project = this.state.project;
     if (!project) return;
-    project.document.composerDraft = text;
+    if (goalId && !findGoal(project.document, goalId)) return;
+    dialogComposer(project.document, goalId).composerDraft = text;
     this.scheduleSave();
+  }
+
+  // MARK: Goals
+
+  createGoal(input: GoalInput): string {
+    const project = this.requireProject();
+    const goal = createGoal(project.document, input);
+    appendEvent(project.document, "person", { type: "card", kind: "goal", title: "Obiettivo", detail: null, referenceId: goal.id }, null, new Date(), null, goal.id);
+    this.changed();
+    return goal.id;
+  }
+
+  updateGoal(id: string, change: Partial<GoalInput> & { status?: GoalStatus; decisionIds?: string[] }): void {
+    const project = this.requireProject();
+    updateGoal(project.document, id, change);
+    this.changed();
+  }
+
+  observeExample(input: { candidateId: string; exampleId: string; observed: boolean; snapshotId: string }): void {
+    const project = this.requireProject();
+    const document = project.document;
+    observeExample(document, input, (candidateId) => {
+      const candidate = document.candidates.find((c) => c.id === candidateId);
+      return candidate ? candidateGoalId(document, candidate) : null;
+    });
+    this.changed();
+  }
+
+  /** The projects overview (UX03): in-memory projects are live, the others are read from their last save. */
+  async projectsOverview(): Promise<ProjectOverview[]> {
+    const live = new Map<string, ActiveProjectState>([...this.parkedProjects].map(([id, p]) => [id, p]));
+    if (this.state.project) live.set(this.state.project.id, this.state.project);
+    const entries: ProjectOverview[] = [];
+    for (const recent of this.state.recentProjects) {
+      const project = live.get(recent.id);
+      if (project) {
+        const reports = project.document.candidates.map((c) => candidateReport(project.document, c, project.snapshot.headSHA));
+        entries.push(
+          summarizeProject(recent, project.document, {
+            source: "live",
+            selected: project === this.state.project,
+            runningAssignments: [...this.specialistRuntimes.values()].filter((r) => r.projectId === project.id).length,
+            candidateReports: reports,
+          }),
+        );
+        continue;
+      }
+      const loaded = await this.storage.loadDocument(recent.id).catch((error: Error) => ({ document: null, writable: false, error: error.message }));
+      if (loaded.error && !loaded.document) {
+        entries.push(unreadableProject(recent, loaded.error));
+      } else if (!loaded.document) {
+        entries.push(unreadableProject(recent, null));
+      } else {
+        const document = loaded.document;
+        entries.push(
+          summarizeProject(recent, document, {
+            source: "saved",
+            selected: false,
+            runningAssignments: 0,
+            candidateReports: document.candidates.map((c) => candidateReport(document, c, null)),
+          }),
+        );
+      }
+    }
+    return orderByAttention(entries);
   }
 
   // MARK: Pact and mandate
 
   recordDecision(input: { id: string | null; value: string; acceptedExample: string; rationale: string }): void {
     const project = this.requireProject();
-    decide(project.document, input);
+    const decision = decide(project.document, input);
+    this.stopWorkDependingOn(decision.id);
     this.changed();
+  }
+
+  /** Stops only the work that relies on a decision that changed or is being revised (C06). */
+  private stopWorkDependingOn(decisionId: string): string[] {
+    const project = this.state.project;
+    if (!project) return [];
+    const stopped: string[] = [];
+    for (const assignment of assignmentsAffectedByDecision(project.document, decisionId)) {
+      if (assignment.status === "stopRequested") continue;
+      requestStop(project.document, assignment.specialistId, "Trama", `La decisione ${decisionId} è cambiata o è in revisione.`);
+      void this.stopAssignmentRuntime(assignment.id);
+      stopped.push(assignment.id);
+    }
+    return stopped;
   }
 
   async answerDecision(requestId: string, alternativeIndex: number | null, freeText: string | null): Promise<void> {
     const project = this.requireProject();
     const { request, decision } = answerDecisionRequest(project.document, requestId, { alternativeIndex, freeText });
+    const goalId = request.goalId && findGoal(project.document, request.goalId) ? request.goalId : null;
+    if (goalId) linkDecision(project.document, goalId, decision.id);
+    this.stopWorkDependingOn(decision.id);
     this.changed();
-    await this.send(decisionMessage(request, decision), null, null, null);
+    // The answer goes back to the dialog the question was asked in, whatever the person is looking at.
+    await this.send(decisionMessage(request, decision), null, null, null, [], null, goalId);
   }
 
   async grantMandate(input: {
@@ -1023,24 +1759,40 @@ export class TramaController {
 
   // MARK: Team
 
-  private readonly specialistRuntimes = new Map<string, { client: CodexClient; projectId: string }>();
+  private readonly specialistRuntimes = new Map<string, { client: AgentRuntime; projectId: string }>();
 
   private get worktreesRoot(): string {
     return join(this.storage.root, "Worktrees");
   }
 
-  private specialistActivity(assignmentId: string, turnKey: string, title: string, detail: string | null, tone: "info" | "tool" | "error" = "tool") {
-    const project = this.state.project;
-    if (!project) return;
+  private specialistActivity(
+    project: ActiveProjectState,
+    assignmentId: string,
+    turnKey: string,
+    title: string,
+    detail: string | null,
+    tone: "info" | "tool" | "error" = "tool",
+  ) {
     appendEvent(project.document, "specialist", { type: "activity", title, detail, tone }, null, new Date(), {
       assignmentId,
       workKey: `${assignmentId}:${turnKey}`,
     });
-    this.changed();
+    this.changedIn(project);
+  }
+
+  /** Persists a change of any open project: the selected one, or one whose team keeps working in the background (C07). */
+  private changedIn(project: ActiveProjectState): void {
+    if (project === this.state.project) {
+      this.changed();
+      return;
+    }
+    if (project.stateWritable) void this.storage.saveDocument(project.document).catch((error) => this.fail(error));
+    this.publish();
   }
 
   private runningWorkKeys(): string[] {
-    return [...this.specialistRuntimes.keys()].map((id) => {
+    const projectId = this.state.project?.id;
+    return [...this.specialistRuntimes.entries()].filter(([, r]) => r.projectId === projectId).map(([id]) => {
       const assignment = this.state.project ? findAssignment(this.state.project.document, id) : null;
       return `${id}:${assignment?.turns.length ?? 0}`;
     });
@@ -1049,24 +1801,31 @@ export class TramaController {
   /** Runs one turn of an assignment: worktree, Codex thread, turn, outcome. */
   async startAssignment(assignmentId: string): Promise<void> {
     const project = this.state.project;
-    if (!project || this.specialistRuntimes.has(assignmentId)) return;
+    if (!project || this.quitting || this.specialistRuntimes.has(assignmentId)) return;
     const document = project.document;
     const assignment = findAssignment(document, assignmentId);
     if (!assignment || assignment.status !== "preparing") return;
     const specialist = document.team.specialists.find((s) => s.id === assignment.specialistId)!;
-    const client = new CodexClient({
-      executable: this.host.codexExecutable,
-      argumentsFor: (executable) => restrictedAppServerArguments(executable, null),
+    const provider = assignment.provider ?? "codex";
+    const blocked = hasAdapter(provider) ? providerUnavailableReason(provider, this.state.providers[provider]?.account ?? null) : `${providerName(provider)} non ha un adattatore.`;
+    if (blocked) {
+      confirmStopWithoutTurn(document, assignmentId, `${providerName(provider)} non può lavorare ora: ${blocked}`);
+      this.specialistActivity(project, assignmentId, `${assignment.turns.length + 1}`, "Incarico in attesa del provider", blocked, "error");
+      return;
+    }
+    const client = createRuntime(provider, {
+      executable: provider === "codex" ? this.host.codexExecutable : null,
       requestTimeoutMs: 15_000,
     });
     this.specialistRuntimes.set(assignmentId, { client, projectId: project.id });
     const resumed = assignment.turns.length > 0;
     const preKey = `${assignment.turns.length + 1}`;
     this.specialistActivity(
+        project,
       assignmentId,
       preKey,
       resumed ? "Ripresa dell'incarico" : "Avvio dell'incarico",
-      `${assignment.model} · ${needsWorktree(assignment) ? "worktree proprio" : "sola lettura"}`,
+      `${provider === "codex" ? "" : `${providerName(provider)} · `}${assignment.model} · ${needsWorktree(assignment) ? "worktree proprio" : "sola lettura"}`,
       "info",
     );
     let turnId: string | null = null;
@@ -1079,7 +1838,7 @@ export class TramaController {
         } else {
           const workspace = await prepareWorktree(project.rootPath, `${specialist.name} ${assignment.id}`, this.worktreesRoot);
           recordWorkspace(document, assignmentId, workspace);
-          this.specialistActivity(assignmentId, preKey, "Worktree pronto", workspace.branch, "info");
+          this.specialistActivity(project, assignmentId, preKey, "Worktree pronto", workspace.branch, "info");
         }
         cwd = assignment.workspace!.worktreeRoot;
       }
@@ -1089,18 +1848,13 @@ export class TramaController {
         cwd,
         developerInstructions: specialistInstructions(project.name, specialist, assignment),
         sandbox: needsWorktree(assignment) ? "workspace-write" : "read-only",
-        config: {
-          web_search: "disabled",
-          features: { apps: false, plugins: false, hooks: false, multi_agent: false },
-          ...(needsWorktree(assignment)
-            ? { sandbox_workspace_write: { writable_roots: [cwd], network_access: false, exclude_tmpdir_env_var: true, exclude_slash_tmp: true } }
-            : {}),
-        },
         resumeThreadId: assignment.threadId,
       });
       recordThread(document, assignmentId, opening.threadId);
-      if (opening.replaced && assignment.threadId) this.specialistActivity(assignmentId, preKey, "Nuovo thread dello specialista", null, "info");
-      const prompt = resumed ? resumeInput(assignment) : openingInput(assignment);
+      // A stop requested while the session was opening ends the work here (review #6).
+      if ((assignment.status as string) === "stopRequested") throw new Error("L'arresto è stato richiesto prima dell'avvio del turno.");
+      if (opening.replaced && assignment.threadId) this.specialistActivity(project, assignmentId, preKey, "Nuovo thread dello specialista", null, "info");
+      const prompt = resumed ? resumeInput(assignment, document.decisions) : openingInput(assignment, document.decisions);
       const text = await client.runTurn({
         threadId: opening.threadId,
         prompt,
@@ -1110,20 +1864,23 @@ export class TramaController {
         onEvent: (event) => {
           if (event.type === "turnStarted") {
             turnId = event.turnId;
-            beginTurn(document, assignmentId, event.turnId, assignment.model);
-            this.changed();
+            beginTurn(document, assignmentId, event.turnId, assignment.model, new Date(), provider);
+            this.changedIn(project);
+            // A stop requested before the turn id was known reaches the provider now.
+            if (assignment.status === "stopRequested") void client.interrupt().catch(() => client.stop());
             return;
           }
           const key = `${assignment.turns.length}`;
           switch (event.type) {
             case "commentary":
-              this.specialistActivity(assignmentId, key, "Nota dello specialista", event.text, "info");
+              this.specialistActivity(project, assignmentId, key, "Nota dello specialista", event.text, "info");
               return;
             case "reasoning":
-              this.specialistActivity(assignmentId, key, "Ragionamento", event.text, "info");
+              this.specialistActivity(project, assignmentId, key, "Ragionamento", event.text, "info");
               return;
             case "commandCompleted":
               this.specialistActivity(
+        project,
                 assignmentId,
                 key,
                 event.command || "Comando",
@@ -1133,6 +1890,7 @@ export class TramaController {
               return;
             case "fileChangeCompleted":
               this.specialistActivity(
+        project,
                 assignmentId,
                 key,
                 event.succeeded ? `Ha modificato ${event.paths.length === 1 ? "un file" : `${event.paths.length} file`}` : "Modifica dei file non riuscita",
@@ -1141,7 +1899,7 @@ export class TramaController {
               );
               return;
             case "toolCallCompleted":
-              this.specialistActivity(assignmentId, key, `${event.server}: ${event.tool}`, event.error, event.succeeded ? "tool" : "error");
+              this.specialistActivity(project, assignmentId, key, `${event.server}: ${event.tool}`, event.error, event.succeeded ? "tool" : "error");
               return;
             default:
               return;
@@ -1151,12 +1909,11 @@ export class TramaController {
       outcome = { kind: "completed", text: text || "Lo specialista non ha scritto un resoconto." };
     } catch (error) {
       const message = (error as Error).message;
-      outcome = /interrott/i.test(message) ? { kind: "interrupted" } : { kind: "failed", message };
+      outcome = /interrott/i.test(message) ? { kind: "interrupted" } : { kind: "failed", message: describeFailure(message) };
     } finally {
       client.stop();
       this.specialistRuntimes.delete(assignmentId);
     }
-    if (this.state.project !== project) return;
     if (turnId) {
       endTurn(document, assignmentId, turnId, outcome);
     } else {
@@ -1169,7 +1926,7 @@ export class TramaController {
         : final.status === "stopped"
           ? ["Arresto confermato", final.stops.at(-1)?.reason ?? null]
           : ["Incarico non riuscito", final.failure];
-    this.specialistActivity(assignmentId, turnId ? `${final.turns.length}` : preKey, title, detail, final.status === "failed" ? "error" : "info");
+    this.specialistActivity(project, assignmentId, turnId ? `${final.turns.length}` : preKey, title, detail, final.status === "failed" ? "error" : "info");
     const stop = final.stops.at(-1);
     if (final.status === "stopped" && stop?.thenRemove) {
       try {
@@ -1178,7 +1935,25 @@ export class TramaController {
         // The specialist stays in the team when it cannot be removed.
       }
     }
-    this.changed();
+    if (final.status === "failed" && outcome.kind === "failed" && /limit|quota|rate|usage|utilizzo/i.test(outcome.message)) {
+      await this.refreshProvider(provider);
+      const account = this.state.providers[provider]?.account;
+      if (account?.kind === "blocked") {
+        final.waitingForProvider = { provider, until: account.until, since: new Date().toISOString() };
+        this.specialistActivity(
+          project,
+          assignmentId,
+          `${final.turns.length}`,
+          `In attesa che ${providerName(provider)} si sblocchi`,
+          `${providerUnavailableReason(provider, account)} Trama riprende da solo l'incarico quando torna disponibile, se il mandato lo copre ancora.`,
+          "info",
+        );
+        this.host.notify(`Trama: ${providerName(provider)} bloccato`, `L'incarico ${assignmentId} aspetta che ${providerName(provider)} si sblocchi.`, this.state.settings.sounds === true);
+        this.scheduleProviderWait(provider);
+      }
+    }
+    this.changedIn(project);
+    this.releaseParkedProject(project);
   }
 
   private async stopAssignmentRuntime(assignmentId: string): Promise<void> {
@@ -1204,11 +1979,69 @@ export class TramaController {
     await this.stopAssignmentRuntime(assignmentId);
   }
 
+  /** The person removes the worktree of finished work; refused when it would lose work (T08). */
+  async removeAssignmentWorktree(assignmentId: string): Promise<void> {
+    const project = this.requireProject();
+    const assignment = findAssignment(project.document, assignmentId);
+    if (!assignment?.workspace || assignment.workspaceRemovedAt) throw new DomainError("L'incarico non ha un worktree da rimuovere.");
+    if (isActive(assignment)) throw new DomainError("Ferma l'incarico prima di rimuovere il worktree.");
+    const published = project.document.candidates.some((c) => c.assignmentId === assignmentId && c.pullRequest);
+    const { branchDeleted } = await removeWorktree(assignment.workspace, this.worktreesRoot, published);
+    assignment.workspaceRemovedAt = new Date().toISOString();
+    appendEvent(
+      project.document,
+      "trama",
+      {
+        type: "activity",
+        title: "Worktree rimosso",
+        detail: branchDeleted ? `Anche il branch ${assignment.workspace.branch} è stato eliminato: non aveva commit.` : `Il branch ${assignment.workspace.branch} resta.`,
+        tone: "info",
+      },
+      null,
+      new Date(),
+      { assignmentId, workKey: `${assignmentId}:${assignment.turns.length}` },
+    );
+    this.changed();
+  }
+
+  /** The person changes the provider or model of a stopped assignment (ADR 0009). */
+  async changeAssignmentProvider(assignmentId: string, provider: ProviderId, model: string): Promise<void> {
+    const project = this.requireProject();
+    const reason = providerUnavailableReason(provider, this.state.providers[provider]?.account ?? null);
+    if (reason) throw new DomainError(reason);
+    const models = this.state.providers[provider].models;
+    if (models.length && !models.some((m) => m.model === model)) throw new DomainError(`Il modello ${model} non è nel catalogo di ${providerName(provider)}.`);
+    const assignment = changeAssignmentProvider(project.document, assignmentId, provider, model);
+    appendEvent(
+      project.document,
+      "trama",
+      { type: "activity", title: "Provider dell'incarico cambiato", detail: `${providerName(provider)} · ${model}. Incarico e worktree restano; la prossima ripresa apre una sessione nuova.`, tone: "info" },
+      null,
+      new Date(),
+      { assignmentId, workKey: `${assignmentId}:${assignment.turns.length + 1}` },
+    );
+    this.changed();
+  }
+
   async resumeSpecialistWork(assignmentId: string): Promise<void> {
     const project = this.requireProject();
     const authorization = authorize(project.document.mandate, "executeInWorktree", findAssignment(project.document, assignmentId)?.moduleIds ?? []);
     if (authorization !== "authorized") throw new DomainError("Il mandato attuale non copre più questo incarico.");
+    if (findAssignment(project.document, assignmentId)?.workspaceRemovedAt) {
+      throw new DomainError("Il worktree di questo incarico è stato rimosso: assegna un nuovo incarico.");
+    }
     resumeAssignment(project.document, assignmentId);
+    const moved = refreshDecisionVersions(project.document, assignmentId);
+    if (moved.length) {
+      appendEvent(
+        project.document,
+        "trama",
+        { type: "activity", title: "Incarico ridelegato sulle decisioni attuali", detail: moved.join(", "), tone: "info" },
+        null,
+        new Date(),
+        { assignmentId, workKey: `${assignmentId}:${(findAssignment(project.document, assignmentId)?.turns.length ?? 0) + 1}` },
+      );
+    }
     this.changed();
     void this.startAssignment(assignmentId);
   }
@@ -1263,6 +2096,12 @@ export class TramaController {
 
   // MARK: Candidates
 
+  /** HEAD plus the working tree status: changes when a commit or an uncommitted edit happens. */
+  private async repositoryState(root: string): Promise<string> {
+    const status = await git(["status", "--porcelain=v1", "--untracked-files=normal"], root).catch(() => "");
+    return `${await this.headSHA(root)}\n${status}`;
+  }
+
   private async headSHA(root: string): Promise<string | null> {
     return (await git(["rev-parse", "--verify", "HEAD"], root).catch(() => "")).trim() || null;
   }
@@ -1299,7 +2138,8 @@ export class TramaController {
       },
       requestId,
     );
-    this.changed();
+    // The person may have switched project meanwhile: the evidence belongs to this one (review #10).
+    this.changedIn(project);
     return result;
   }
 
@@ -1311,19 +2151,19 @@ export class TramaController {
     if (!candidate) throw new Error(`Unknown candidate ${candidateId}.`);
     const assignment = findAssignment(document, candidate.assignmentId);
     if (!assignment?.workspace) throw new Error(`Candidate ${candidateId} has no worktree.`);
-    const model = assignment.model;
-    const client = new CodexClient({
-      executable: this.host.codexExecutable,
-      argumentsFor: (executable) => restrictedAppServerArguments(executable, null),
-      requestTimeoutMs: 15_000,
-    });
+    // The reviewer reads only: a worktree-only provider hands the review to the Coordinator's provider.
+    const authorProvider = assignment.provider ?? "codex";
+    const provider = supportsReadOnly(authorProvider) ? authorProvider : this.coordinatorProvider(document);
+    const model = provider === authorProvider ? assignment.model : (document.coordinator.threadModel ?? this.coordinatorModel(document, provider));
+    if (!model) throw new Error(this.coordinatorModelProblem(document, provider));
+    const client = createRuntime(provider, { executable: provider === "codex" ? this.host.codexExecutable : null, requestTimeoutMs: 15_000 });
     try {
       const opening = await client.openThread({
         model,
         cwd: assignment.workspace.worktreeRoot,
+        ephemeral: true,
         developerInstructions:
           "You are the technical reviewer of a candidate in Trama, distinct from its author. Read the diff and the worktree, read-only. Judge whether the change does what the assignment asks and respects the Pact decisions listed. Answer in Italian. You never approve on behalf of the person and you never merge.",
-        config: { web_search: "disabled", features: { apps: false, plugins: false, hooks: false, multi_agent: false } },
       });
       const decisions = candidate.requiredDecisionIds
         .map((id) => document.decisions.find((d) => d.id === id))
@@ -1351,7 +2191,7 @@ export class TramaController {
       });
       let parsed: { verdict?: string; summary?: string };
       try {
-        parsed = JSON.parse(answer) as { verdict?: string; summary?: string };
+        parsed = JSON.parse(extractJsonAnswer(answer)) as { verdict?: string; summary?: string };
       } catch {
         throw new Error("La revisione tecnica non ha restituito un verdetto leggibile.");
       }
@@ -1367,7 +2207,7 @@ export class TramaController {
         { type: "activity", title: `Revisione tecnica di ${candidateId}: ${review.verdict === "approved" ? "approvata" : "modifiche richieste"}`, detail: review.summary, tone: "tool" },
         requestId,
       );
-      this.changed();
+      this.changedIn(project);
       return review;
     } finally {
       client.stop();
@@ -1378,6 +2218,21 @@ export class TramaController {
     const project = this.requireProject();
     approveCandidate(project.document, candidateId, "Persona", await this.headSHA(project.rootPath));
     this.changed();
+  }
+
+  /** What publishing will send: shown to the person before the push (T11). */
+  previewPullRequest(candidateId: string): { repository: string | null; head: string | null; base: string; title: string; body: string } {
+    const project = this.requireProject();
+    const candidate = findCandidate(project.document, candidateId);
+    if (!candidate) throw new DomainError("Candidato non trovato.");
+    const assignment = findAssignment(project.document, candidate.assignmentId)!;
+    return {
+      repository: project.github.repository,
+      head: assignment.workspace?.branch ?? null,
+      base: project.snapshot.branch ?? "main",
+      title: assignment.objective,
+      body: pullRequestBody(candidate, assignment, project.document.decisions),
+    };
   }
 
   async publishCandidateByPerson(candidateId: string): Promise<void> {
@@ -1391,6 +2246,9 @@ export class TramaController {
     if (candidate.pullRequest) throw new DomainError(`Il candidato è già pubblicato: ${candidate.pullRequest.url}`);
     const repository = project.github.repository;
     if (!repository) throw new DomainError("Il progetto non ha un remoto GitHub.");
+    const capabilities = await readGitHubCapabilities(repository);
+    if (capabilities.status !== "ready") throw new DomainError(capabilities.message ?? "GitHub non è raggiungibile.");
+    if (!capabilities.canPush) throw new DomainError(`Il tuo account GitHub non ha il permesso di push su ${repository}.`);
     const assignment = findAssignment(document, candidate.assignmentId)!;
     const baseBranch = project.snapshot.branch ?? "main";
     const published = await publishCandidate({
@@ -1405,6 +2263,77 @@ export class TramaController {
     appendEvent(document, "trama", { type: "activity", title: `Pull request #${published.number} pubblicata`, detail: published.url, tone: "tool" });
     this.changed();
     await this.send(`Ho pubblicato il candidato ${candidate.id} come pull request #${published.number}: ${published.url}`, null, null, null);
+  }
+
+  // MARK: Tickets
+
+  /**
+   * Reports progress on an issue with evidence Trama can see (C10). Comment and checklist are
+   * idempotent, so a retry after a timeout duplicates nothing; the issue closes only when every
+   * criterion is ticked and a merged pull request has green checks.
+   */
+  async updateTicket(input: TicketUpdate, requestId: string | null = null): Promise<TicketUpdateResult> {
+    const project = this.requireProject();
+    const document = project.document;
+    const repository = project.github.repository;
+    if (!repository) throw new TicketRefusal("no_repository", "The project has no GitHub remote.");
+    if (!input.summary.trim()) throw new TicketRefusal("invalid_arguments", "summary is required.");
+    const issue = await readIssue(repository, input.issueNumber);
+    const items = parseChecklist(issue.body);
+    const outOfRange = input.criteria.filter((c) => c.index < 0 || c.index >= items.length);
+    if (outOfRange.length) {
+      throw new TicketRefusal("invalid_arguments", `The issue has ${items.length} criteria; unknown indexes: ${outOfRange.map((c) => c.index).join(", ")}.`);
+    }
+    const head = await this.headSHA(project.rootPath);
+    const candidates = new Map(
+      document.candidates.map((c) => [c.id, { report: candidateReport(document, c, head), pullRequestNumber: c.pullRequest?.number ?? null }]),
+    );
+    const pullRequests = new Set(document.candidates.flatMap((c) => (c.pullRequest ? [c.pullRequest.number] : [])));
+    const problems = input.criteria.flatMap((c) => evidenceProblems(c, { candidates, pullRequests }));
+    if (problems.length) throw new TicketRefusal("evidence_insufficient", problems.join(" "));
+
+    const key = progressKey(input.issueNumber, input.criteria, input.summary);
+    const duplicate = issue.comments.some((c) => c.includes(progressMarker(key)));
+    if (!duplicate) await commentOnIssue(repository, input.issueNumber, progressComment(key, items, input.criteria, input.summary, input.openParts));
+    const met = input.criteria.filter((c) => c.outcome === "met" && !items[c.index]!.checked).map((c) => c.index);
+    let body = issue.body;
+    if (met.length) {
+      body = checkItems(issue.body, met);
+      await updateIssueBody(repository, input.issueNumber, body);
+    }
+    let closed = issue.state === "closed";
+    let blockers: string[] = [];
+    if (input.close && !closed) {
+      const numbers = new Set<number>();
+      for (const criterion of input.criteria.filter((c) => c.outcome === "met")) {
+        for (const reference of criterion.evidence) {
+          const pull = /^#(\d+)$/.exec(reference);
+          if (pull && pullRequests.has(Number(pull[1]))) numbers.add(Number(pull[1]));
+          const number = candidates.get(reference)?.pullRequestNumber;
+          if (number) numbers.add(number);
+        }
+      }
+      const statuses = await Promise.all([...numbers].map((n) => readPullRequestStatus(repository, n)));
+      blockers = closeBlockers(parseChecklist(body), statuses);
+      if (!blockers.length) {
+        await closeIssue(repository, input.issueNumber);
+        closed = true;
+      }
+    }
+    appendEvent(
+      document,
+      "trama",
+      {
+        type: "activity",
+        title: `Issue #${input.issueNumber}: ${closed && input.close ? "chiusa con le prove" : duplicate ? "avanzamento già registrato" : "avanzamento registrato"}`,
+        detail: blockers.length ? `Resta aperta: ${blockers.join(" ")}` : met.length ? `Criteri spuntati: ${met.map((i) => i + 1).join(", ")}` : null,
+        tone: "tool",
+      },
+      requestId,
+    );
+    this.changed();
+    void this.refreshGitHub();
+    return { commentPosted: !duplicate, duplicate, checkedCriteria: met, closed, closeBlockers: blockers };
   }
 
   // MARK: Team monitor
@@ -1512,14 +2441,44 @@ export class TramaController {
     });
   }
 
+  private readonly planners = new Map<string, AgentRuntime>();
+
+  /** The person stops a plan that is still being prepared; the request stays. */
+  cancelPlan(planId: string): void {
+    const project = this.requireProject();
+    const plan = project.document.plans.find((p) => p.id === planId);
+    if (!plan || plan.status !== "planning") return;
+    const client = this.planners.get(planId);
+    this.planners.delete(planId);
+    client?.stop();
+    plan.status = "failed";
+    plan.failure = "Annullato dalla persona.";
+    plan.updatedAt = new Date().toISOString();
+    this.changed();
+  }
+
+  /** The person corrects a ready plan: steps, behavior and example (T06). */
+  editPlan(input: { planId: string; steps: string[]; proposedBehavior: string; acceptedExample: string }): void {
+    const project = this.requireProject();
+    const plan = project.document.plans.find((p) => p.id === input.planId);
+    if (!plan?.proposal) throw new DomainError("Il piano non ha ancora una proposta da correggere.");
+    const steps = input.steps.map((s) => s.trim()).filter(Boolean);
+    if (!steps.length || !input.proposedBehavior.trim()) throw new DomainError("Un piano corretto ha almeno un passo e un comportamento.");
+    plan.proposal = { ...plan.proposal, steps, proposedBehavior: input.proposedBehavior.trim(), acceptedExample: input.acceptedExample.trim() };
+    plan.editedAt = new Date().toISOString();
+    plan.updatedAt = plan.editedAt;
+    appendEvent(project.document, "person", { type: "activity", title: `Piano ${plan.id} corretto`, detail: steps.join("\n"), tone: "info" }, plan.requestId);
+    this.changed();
+  }
+
   private async runPlanner(project: ActiveProjectState, plan: WorkPlan): Promise<void> {
     const document = project.document;
-    const model = document.coordinator.threadModel ?? this.coordinatorModel(document);
-    const client = new CodexClient({
-      executable: this.host.codexExecutable,
-      argumentsFor: (executable) => restrictedAppServerArguments(executable, null),
-      requestTimeoutMs: 15_000,
-    });
+    const startState = await this.repositoryState(project.rootPath);
+    if (plan.status !== "planning") return;
+    const provider = this.coordinatorProvider(document);
+    const model = document.coordinator.threadModel ?? this.coordinatorModel(document, provider);
+    const client = createRuntime(provider, { executable: provider === "codex" ? this.host.codexExecutable : null, requestTimeoutMs: 15_000 });
+    this.planners.set(plan.id, client);
     try {
       if (!model) throw new Error("Nessun modello disponibile per il pianificatore.");
       const snapshot = project.snapshot;
@@ -1538,7 +2497,6 @@ export class TramaController {
         cwd: project.rootPath,
         developerInstructions: PLANNING_INSTRUCTIONS,
         ephemeral: true,
-        config: { web_search: "disabled", features: { apps: false, plugins: false, hooks: false, multi_agent: false } },
       });
       const raw = await client.runTurn({
         threadId: opening.threadId,
@@ -1548,8 +2506,16 @@ export class TramaController {
         outputSchema: PLAN_SCHEMA,
         onEvent: () => undefined,
       });
-      const proposal = parsePlan(raw, sources);
+      if (plan.status !== "planning") return; // cancelled meanwhile: a late result does not come back
+      const proposal = parsePlan(extractJsonAnswer(raw), sources);
       plan.proposal = proposal;
+      const changedMeanwhile = (await this.repositoryState(project.rootPath)) !== startState;
+      if (plan.status !== "planning") return; // cancelled during the last check (review #12)
+      if (changedMeanwhile) {
+        plan.status = "stale";
+        plan.failure = "Il repository è cambiato durante l'analisi: rivaluta il piano o chiedine uno nuovo.";
+        return;
+      }
       plan.status = "ready";
       for (const question of proposal.questions) {
         const request = createDecisionRequest(document, {
@@ -1559,17 +2525,23 @@ export class TramaController {
           concreteCase: question.scenario || proposal.summary,
           alternatives: question.options.map((o) => ({ behavior: o.behavior, example: o.example, consequence: o.rationale || null })),
           revisesDecisionId: question.revisesDecisionID,
+          goalId: requestGoalId(document, plan.requestId),
         });
         plan.decisionRequestIds.push(request.id);
+        // A question that revises a decision pauses the work relying on it, as request_decision does (review #7).
+        if (request.revisesDecisionId) this.stopWorkDependingOn(request.revisesDecisionId);
         appendEvent(document, "trama", { type: "card", kind: "decision", title: "Decisione", detail: null, referenceId: request.id }, plan.requestId);
       }
     } catch (error) {
+      if (plan.status !== "planning") return;
       plan.status = "failed";
       plan.failure = (error as Error).message;
+      void this.noticeIfBlocked(project, provider, plan.failure, plan.requestId);
     } finally {
+      this.planners.delete(plan.id);
       client.stop();
       plan.updatedAt = new Date().toISOString();
-      if (this.state.project === project) this.changed();
+      this.changedIn(project);
     }
   }
 
@@ -1592,17 +2564,160 @@ export class TramaController {
 
   async prepareSkills(): Promise<SetupReport> {
     const project = this.requireProject();
-    const report = await prepareSkills(project.rootPath, this.host.aiHeroResourceDirectory, project.github.repository);
+    const installed = await installedSkillVersion(project.rootPath);
+    const updating = installed !== null && installed !== SKILL_VERSION;
+    const report = updating
+      ? await updateSkills(project.rootPath, this.host.aiHeroResourceDirectory, project.github.repository)
+      : await prepareSkills(project.rootPath, this.host.aiHeroResourceDirectory, project.github.repository);
     appendEvent(project.document, "trama", {
       type: "activity",
-      title: `Metodo di lavoro AI Hero: ${report.pathsCreated.length} file creati`,
+      title: updating
+        ? `Metodo di lavoro AI Hero aggiornato da ${installed}: ${report.pathsCreated.length} file`
+        : `Metodo di lavoro AI Hero: ${report.pathsCreated.length} file creati`,
       detail: [report.version, ...report.warnings].join("\n"),
+      tone: "info",
+    });
+    project.aiHeroPrepared = hasAiHero(project.rootPath);
+    if (project.aiHeroPrepared && !this.state.onboarding.aiHeroPreparedAt) {
+      this.state.onboarding.aiHeroPreparedAt = new Date().toISOString();
+      await this.saveSettings();
+    }
+    this.changed();
+    void this.refreshProject();
+    void this.loadSkills();
+    return report;
+  }
+
+  /** Restores the files replaced by the last update of the method. */
+  async rollbackSkills(): Promise<string[]> {
+    const project = this.requireProject();
+    const { restored, preserved } = await rollbackSkills(project.rootPath);
+    appendEvent(project.document, "trama", {
+      type: "activity",
+      title: "Aggiornamento del metodo AI Hero annullato",
+      detail: [...restored, ...preserved.map((p) => `Modificato da te dopo l'aggiornamento, non ripristinato: ${p}`)].join("\n") || null,
       tone: "info",
     });
     this.changed();
     void this.refreshProject();
     void this.loadSkills();
-    return report;
+    return restored;
+  }
+
+  // MARK: First-run guide and exercises (C12, C13, C14)
+
+  async updateOnboarding(update: { shown?: boolean; dismissed?: boolean; skipStep?: GuideStepId; unskipStep?: GuideStepId }): Promise<void> {
+    const onboarding = this.state.onboarding;
+    const now = new Date().toISOString();
+    if (update.shown) onboarding.firstRunShownAt ??= now;
+    if (update.dismissed === true) onboarding.dismissedAt = now;
+    else if (update.dismissed === false) onboarding.dismissedAt = null;
+    if (update.skipStep) onboarding.skippedSteps = [...new Set([...onboarding.skippedSteps, update.skipStep])];
+    if (update.unskipStep) onboarding.skippedSteps = onboarding.skippedSteps.filter((s) => s !== update.unskipStep);
+    this.state.onboarding = normalizeOnboarding(onboarding);
+    this.publish();
+    await this.saveSettings();
+  }
+
+  private gitHubCliCheck: Promise<void> | null = null;
+
+  checkGitHubCli(): Promise<void> {
+    this.gitHubCliCheck ??= (async () => {
+      this.state.gitHubCli = { ...this.state.gitHubCli, status: "checking" };
+      this.publish();
+      this.state.gitHubCli = await readGitHubCliStatus();
+      this.publish();
+    })().finally(() => {
+      this.gitHubCliCheck = null;
+    });
+    return this.gitHubCliCheck;
+  }
+
+  /** Opens the example project, a local copy marked as an exercise, and records the start. */
+  async startExercise(exercise: ExerciseId): Promise<void> {
+    if (!EXERCISE_IDS.includes(exercise)) throw new DomainError("Esercizio sconosciuto.");
+    if (!this.state.project?.isDemo) await this.openDemo();
+    const project = this.requireProject();
+    const record = (project.document.exercises ??= { startedAt: {}, observed: {} });
+    record.startedAt[exercise] ??= new Date().toISOString();
+    this.changed();
+  }
+
+  /** Records navigation an exercise step waits for; only in the example project, once. */
+  observeExercise(step: ObservedStep): void {
+    const project = this.state.project;
+    if (!project?.isDemo || !isObservedStep(step)) return;
+    const document = project.document;
+    if (document.exercises?.observed[step]) return;
+    if (step === "studyRead" && !document.events.some((e) => e.content.type === "card" && e.content.kind === "study")) return;
+    const record = (document.exercises ??= { startedAt: {}, observed: {} });
+    record.observed[step] = new Date().toISOString();
+    this.changed();
+  }
+
+  /** Remembers an exercise once its steps are all observed in the example project's document. */
+  private recordCompletedExercises(project: ActiveProjectState): void {
+    if (!project.isDemo) return;
+    const completed = this.state.onboarding.completedExercises;
+    let changed = false;
+    for (const id of EXERCISE_IDS) {
+      if (completed[id]) continue;
+      if (isComplete(exerciseSteps(id, project.document, { providerReady: hasUsableProvider(this.state) }))) {
+        completed[id] = new Date().toISOString();
+        changed = true;
+      }
+    }
+    if (changed) void this.saveSettings().catch((error) => this.fail(error));
+  }
+
+  private simulatingConflicts = false;
+
+  /**
+   * The conflict exercise: compares the latest unpublished candidate of the example project with two
+   * changes of a simulated colleague, made in a separate local clone. No network, no real colleague.
+   */
+  async simulateRemoteChanges(): Promise<void> {
+    const project = this.requireProject();
+    if (!project.isDemo) throw new DomainError("L'esercizio di conflitto vale solo per il progetto di esempio.");
+    if (this.simulatingConflicts) return;
+    const document = project.document;
+    const eligible = document.candidates
+      .filter((c) => !c.pullRequest && latestCandidate(document, c.assignmentId)?.id === c.id && findAssignment(document, c.assignmentId)?.workspace)
+      .sort((a, b) => {
+        const exercise = (c: typeof a) => (findAssignment(document, c.assignmentId)?.exercise ? 1 : 0);
+        return exercise(b) - exercise(a) || b.declaredAt.localeCompare(a.declaredAt);
+      });
+    const candidate = eligible[0];
+    if (!candidate) throw new DomainError("Serve un candidato non pubblicato in un worktree: completa prima l'esercizio di modifica.");
+    const done = (document.conflicts ?? []).filter((a) => a.candidateId === candidate.id && a.snapshotId === candidate.snapshotId && isExerciseAssessment(a));
+    if (done.some((a) => a.classification === "clean") && done.some((a) => a.classification === "conflict")) {
+      throw new DomainError(`Il confronto di esercizio è già stato fatto sul candidato ${candidate.id}.`);
+    }
+    this.simulatingConflicts = true;
+    try {
+      appendEvent(document, "trama", {
+        type: "activity",
+        title: "Esercizio di conflitto",
+        detail: `Trama crea due modifiche simulate in una copia locale separata e le confronta con il candidato ${candidate.id}. Non c'è un collaboratore reale e non si usa la rete.`,
+        tone: "info",
+      });
+      this.changed();
+      const assessments = await simulateColleagueChanges({
+        candidate,
+        session: findAssignment(document, candidate.assignmentId)!.workspace!,
+        exerciseRoot: join(this.storage.root, "Exercises"),
+        cacheRoot: join(this.storage.root, "RemoteCache"),
+        probeRoot: join(this.storage.root, "ConflictProbe"),
+      });
+      document.conflicts ??= [];
+      for (const assessment of assessments) {
+        document.conflicts.push(assessment);
+        appendEvent(document, "trama", { type: "card", kind: "conflict", title: "Esercizio di conflitto", detail: null, referenceId: assessment.id });
+      }
+      this.changed();
+    } finally {
+      this.simulatingConflicts = false;
+    }
   }
 
   // MARK: Settings

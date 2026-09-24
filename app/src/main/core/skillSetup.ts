@@ -1,11 +1,12 @@
+import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
-import { lstat, mkdir, readdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import { copyFile, lstat, mkdir, readdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { join, relative } from "node:path";
 
 export const SKILL_VERSION = "v1.2.3 (6acc160e4e0cd062dbbbd7a1b26ae92855edf07e)";
 export const SKILL_SOURCE = "https://github.com/mattpocock/skills";
 const MAXIMUM_PACKAGED_BYTES = 3 * 1_024 * 1_024;
-const SELECTED_SKILLS = [
+export const SELECTED_SKILLS = [
   "ask-matt",
   "setup-matt-pocock-skills",
   "to-spec",
@@ -145,6 +146,7 @@ export async function prepareSkills(projectRoot: string, resourcesRoot: string, 
   ].sort((a, b) => a.relativePath.localeCompare(b.relativePath));
 
   const report: SetupReport = { pathsCreated: [], existingPreserved: [], warnings: [], version: SKILL_VERSION };
+  const manifest = await readManifest(root);
   const missing: PlannedWrite[] = [];
   for (const write of writes) {
     const target = join(root, write.relativePath);
@@ -169,5 +171,119 @@ export async function prepareSkills(projectRoot: string, resourcesRoot: string, 
     for (const path of created.reverse()) await rm(path, { force: true });
     throw error;
   }
+  if (missing.length) {
+    for (const write of missing) manifest.files[write.relativePath] = sha(write.data);
+    manifest.version = SKILL_VERSION;
+    await writeManifest(root, manifest);
+  }
   return report;
+}
+
+const MANIFEST = ".agents/skills/AIHERO-MANIFEST.json";
+const BACKUPS = ".agents/skills/.trama-backup";
+
+/** What Trama wrote, by path and content hash: a managed file is one whose content still matches. */
+interface Manifest {
+  version: string | null;
+  files: Record<string, string>;
+}
+
+const sha = (data: Buffer) => createHash("sha256").update(data).digest("hex");
+
+async function readManifest(root: string): Promise<Manifest> {
+  try {
+    return JSON.parse(await readFile(join(root, MANIFEST), "utf8")) as Manifest;
+  } catch {
+    return { version: null, files: {} };
+  }
+}
+
+async function writeManifest(root: string, manifest: Manifest): Promise<void> {
+  await mkdir(join(root, ".agents/skills"), { recursive: true });
+  await writeFile(join(root, MANIFEST), `${JSON.stringify(manifest, null, 2)}\n`);
+}
+
+/** The installed version, from the manifest; null when Trama never prepared the method here. */
+export async function installedSkillVersion(projectRoot: string): Promise<string | null> {
+  return (await readManifest(await realpath(projectRoot))).version;
+}
+
+/**
+ * Moves a project to the bundled version (T04). Managed files the person did not touch are backed up
+ * and replaced; files the person changed stay and are reported. Works offline from the local bundle.
+ */
+export async function updateSkills(projectRoot: string, resourcesRoot: string, repository: string | null, now = new Date()): Promise<SetupReport> {
+  const root = await realpath(projectRoot);
+  const manifest = await readManifest(root);
+  if (manifest.version === SKILL_VERSION) return prepareSkills(root, resourcesRoot, repository);
+  const bundle = await bundledFiles(resourcesRoot);
+  const backup = join(root, BACKUPS, now.toISOString().replace(/[:.]/g, "-"));
+  const report: SetupReport = { pathsCreated: [], existingPreserved: [], warnings: [], version: SKILL_VERSION };
+  const replaced: { relativePath: string; data: Buffer }[] = [];
+  for (const write of bundle) {
+    const target = join(root, write.relativePath);
+    if (!(await isInside(target, root))) throw new Error(`Il setup non può usare il percorso: ${write.relativePath}`);
+    if (!existsSync(target)) continue;
+    const current = await readFile(target);
+    if (current.equals(write.data)) continue;
+    if (manifest.files[write.relativePath] !== sha(current)) {
+      report.existingPreserved.push(write.relativePath);
+      report.warnings.push(`Modificato da te, non aggiornato: ${write.relativePath}.`);
+      continue;
+    }
+    replaced.push(write);
+  }
+  for (const write of replaced) {
+    const saved = join(backup, write.relativePath);
+    await mkdir(join(saved, ".."), { recursive: true });
+    await copyFile(join(root, write.relativePath), saved);
+  }
+  await mkdir(backup, { recursive: true });
+  await writeFile(join(backup, "AIHERO-MANIFEST.json"), JSON.stringify(manifest, null, 2));
+  for (const write of replaced) {
+    await writeFile(join(root, write.relativePath), write.data);
+    manifest.files[write.relativePath] = sha(write.data);
+    report.pathsCreated.push(write.relativePath);
+  }
+  manifest.version = SKILL_VERSION;
+  await writeManifest(root, manifest);
+  const added = await prepareSkills(root, resourcesRoot, repository);
+  report.pathsCreated.push(...added.pathsCreated);
+  return report;
+}
+
+/**
+ * Restores the files and the manifest saved by the last update. A file the person edited after the
+ * update is kept and reported instead of being overwritten.
+ */
+export async function rollbackSkills(projectRoot: string): Promise<{ restored: string[]; preserved: string[] }> {
+  const root = await realpath(projectRoot);
+  const backups = existsSync(join(root, BACKUPS)) ? (await readdir(join(root, BACKUPS))).sort() : [];
+  const latest = backups.at(-1);
+  if (!latest) throw new Error("Non c'è un aggiornamento del metodo da annullare.");
+  const directory = join(root, BACKUPS, latest);
+  const restored: string[] = [];
+  const preserved: string[] = [];
+  const current = await readManifest(root);
+  const walk = async (dir: string): Promise<void> => {
+    for (const entry of await readdir(dir, { withFileTypes: true })) {
+      const path = join(dir, entry.name);
+      if (entry.isDirectory()) await walk(path);
+      else if (entry.isFile() && entry.name !== "AIHERO-MANIFEST.json") {
+        const relativePath = relative(directory, path).split("\\").join("/");
+        const target = join(root, relativePath);
+        if (!(await isInside(target, root))) continue;
+        if (existsSync(target) && current.files[relativePath] !== sha(await readFile(target))) {
+          preserved.push(relativePath);
+          continue;
+        }
+        await copyFile(path, target);
+        restored.push(relativePath);
+      }
+    }
+  };
+  await walk(directory);
+  await copyFile(join(directory, "AIHERO-MANIFEST.json"), join(root, MANIFEST));
+  await rm(directory, { recursive: true, force: true });
+  return { restored, preserved };
 }

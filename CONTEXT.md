@@ -42,13 +42,17 @@ Ispettore: la superficie che mostra il dettaglio di ciò che la persona tocca ne
 
 Progetto attivo: il progetto cui si riferisce il dialogo corrente con il Coordinatore. È distinto dai progetti che hanno lavoro in corso.
 
+Obiettivo: un risultato di progetto con identità stabile, un titolo, il risultato atteso ed esempi verificabili, accettati (deve succedere) o rifiutati (non deve succedere). È distinto da un messaggio, da un incarico e da un candidato: incarichi, candidati e decisioni vi si collegano con identificativi espliciti, mai per deduzione. Lo stato è proposto, aperto, raggiunto o abbandonato; un obiettivo proposto dal Coordinatore resta tale finché la persona non lo conferma. Creare o confermare un obiettivo non concede un mandato e non avvia specialisti.
+
+Osservazione di un esempio: la persona segna un esempio dell'obiettivo come osservato o non osservato su un candidato preciso. Vale solo per quella versione del candidato e per quel testo dell'esempio; un'altra versione o un testo cambiato la rendono storica. Non è un'evidenza delle verifiche.
+
 Dialogo del progetto: la conversazione con il Coordinatore dedicata a priorità e questioni che riguardano più obiettivi. Conserva anche la conversazione storica cui non è stato attribuito un obiettivo.
 
-Dialogo di obiettivo: la conversazione con il Coordinatore dedicata a un singolo obiettivo, con bozza, selezione del composer e sessione tecnica proprie. Condivide con gli altri dialoghi l'autorità, il mandato, le decisioni e la memoria del progetto.
+Dialogo di obiettivo: la conversazione con il Coordinatore dedicata a un singolo obiettivo, con bozza e selezione del composer proprie. Condivide con gli altri dialoghi l'autorità, il mandato, le decisioni e la memoria del progetto. Nell'app Electron il dialogo è una vista della cronologia del progetto: ogni messaggio porta l'obiettivo di origine, fissato all'invio, e gli eventi, le domande e gli incarichi nati da quel turno lo ereditano. La sessione tecnica del Coordinatore resta una per progetto: ogni turno di un dialogo di obiettivo riceve titolo, risultato atteso ed esempi dell'obiettivo. Così resta un solo Coordinatore responsabile e le decisioni comuni non vengono aggiornate da sessioni concorrenti (ADR 0013).
 
 Mandato di progetto: l'autorizzazione persistente del Product Owner a perseguire obiettivi entro limiti definiti per un progetto. La delega di un singolo incarico deve rientrare nel mandato e nelle decisioni applicabili.
 
-Panoramica globale: il riepilogo di avanzamento, blocchi e decisioni richieste dei progetti registrati. È distinta dalle conversazioni e dai contenuti privati dei singoli progetti.
+Panoramica globale: il riepilogo di avanzamento, blocchi e decisioni richieste dei progetti registrati. È distinta dalle conversazioni e dai contenuti privati dei singoli progetti. Ordina i progetti per attenzione: decisioni richieste, lavoro fermo o fallito, risultati da approvare, lavoro in corso. Distingue i dati aggiornati dei progetti in memoria dai dati dell'ultimo salvataggio e dagli stati non leggibili, e non apre sessioni AI per aggiornarsi.
 
 Revisione tecnica: la valutazione di un candidato da parte di un revisore distinto dall'autore, riferita ai requisiti e alle verifiche di quel lavoro. Non è una decisione di prodotto né una revisione umana.
 

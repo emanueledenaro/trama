@@ -64,6 +64,7 @@ export function declareCandidate(
     clearance: null,
     humanApproval: null,
     pullRequest: null,
+    ...(assignment.goalId ? { goalId: assignment.goalId } : {}),
   };
   document.candidates.push(candidate);
   return candidate;
@@ -123,6 +124,13 @@ export function inspectCandidate(document: ProjectDocument, candidate: Candidate
       continue;
     }
     if (evidence.result === "fail") blockers.push({ code: "CHECK_FAILED", detail: check });
+  }
+  // A merge conflict reproduced against a colleague's work on this exact snapshot blocks the green light.
+  for (const assessment of document.conflicts ?? []) {
+    if (assessment.candidateId !== candidate.id || assessment.snapshotId !== candidate.snapshotId) continue;
+    if (assessment.classification === "conflict") {
+      blockers.push({ code: "REMOTE_CONFLICT", detail: `${assessment.references.join(", ")}: ${assessment.conflictingFiles.join(", ")}` });
+    }
   }
   return blockers;
 }

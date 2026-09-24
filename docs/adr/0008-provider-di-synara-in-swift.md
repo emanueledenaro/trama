@@ -1,6 +1,6 @@
 # Trama collega gli stessi nove provider di Synara, riscritti in Swift
 
-Stato: accettata il 17 settembre 2026 da Emanuele. Implementazione da verificare con i ticket P01-P09 (#80-#88).
+Stato: accettata il 17 settembre 2026 da Emanuele. La scelta di riscrivere i provider in Swift è sostituita dall'[ADR 0012](0012-provider-di-synara-in-typescript.md): con l'app Electron i provider entrano in TypeScript. La scelta dei nove provider e la sezione sui ruoli restano valide.
 
 La specifica del verticale prevedeva un solo adattatore completo, Codex, e rimandava Claude a un ticket successivo. Synara, progetto open source con licenza MIT, ha già nove adattatori provati da test: Codex, Claude Agent, Cursor, Antigravity, Grok, Droid, OpenCode, Pi e Devin. Il Product Owner vuole la stessa copertura in Trama, riusando la logica già messa alla prova invece di reinventarla.
 

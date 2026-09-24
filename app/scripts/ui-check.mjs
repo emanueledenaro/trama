@@ -26,6 +26,15 @@ const shot = async (name) => {
 };
 
 await page.getByText("Su cosa vuoi lavorare?").waitFor();
+// First launch: the guide opens by itself once, with the real state of each step.
+const guide = page.getByRole("dialog", { name: "Guida introduttiva" });
+await guide.waitFor();
+await guide.locator('[data-step="github"][data-status]:not([data-status="checking"])').waitFor();
+await shot("00-guide-first-run");
+await guide.getByRole("button", { name: /Collega GitHub CLI/ }).click();
+await shot("00b-guide-github");
+await guide.getByRole("button", { name: "Continua più tardi" }).click();
+await guide.waitFor({ state: "hidden" });
 await shot("01-landing");
 await page.getByText("Esplora il progetto di esempio").click();
 await page.getByText("Ho letto lo studio").first().waitFor({ timeout: 20_000 });
@@ -106,6 +115,24 @@ await page.getByRole("button", { name: /Orders/ }).first().click();
 await shot("06-module");
 await page.getByRole("button", { name: /CancelPaidOrder.swift/ }).first().click();
 await shot("07-file");
+// C13: the first exercise's steps come from the document and from observed navigation.
+await page.getByRole("button", { name: "Esercizi", exact: true }).click();
+const exercise = page.getByRole("complementary", { name: "Esercizio" });
+await exercise.getByRole("button", { name: "Mostra la scheda di studio" }).click();
+await exercise.getByRole("button", { name: "Scegli un modulo nella mappa" }).click();
+await shot("07a-exercise-first");
+await page.getByRole("listbox", { name: "Moduli" }).getByRole("option", { name: /Orders/ }).click();
+await exercise.getByText("Esercizio completato.").waitFor({ timeout: 10_000 });
+await shot("07b-exercise-first-done");
+// C14: the conflict exercise compares the candidate with two simulated local changes.
+await exercise.getByRole("tab", { name: "4" }).click();
+await exercise.getByRole("button", { name: "Crea le modifiche simulate" }).click();
+await exercise.getByText("Esercizio completato.").waitFor({ timeout: 30_000 });
+await page.getByText("Modifica simulata da Trama in una copia locale separata").first().waitFor();
+await shot("07c-exercise-conflict");
+await exercise.getByRole("tab", { name: "2" }).click();
+await shot("07d-exercise-change");
+await exercise.getByRole("button", { name: "Chiudi l'esercizio" }).click();
 await page.getByRole("button", { name: /^Patto/ }).first().click();
 await shot("08-pact");
 await page.getByRole("button", { name: /^Mandato/ }).first().click();
@@ -116,6 +143,29 @@ await app.evaluate(({ nativeTheme }) => {
 await page.evaluate(() => document.documentElement.classList.add("dark"));
 await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
 await shot("10-dark");
+// Goals (UX01, UX02, UX07): the project has only the goal the Coordinator proposed, so it offers the first one.
+await page.getByTestId("goal-card").first().waitFor();
+await page.getByRole("button", { name: "Formula il primo obiettivo" }).first().click();
+await page.getByLabel("Titolo dell'obiettivo").fill("Ordini annullati in revisione");
+await page.getByLabel("Risultato atteso").fill("Un ordine pagato e annullato resta in revisione finché una persona non decide.");
+await page.getByLabel("Esempio 1").fill("Ordine 42 pagato e annullato: stato review");
+await page.getByRole("button", { name: "Crea l'obiettivo" }).click();
+await page.getByTestId("dialog-title").filter({ hasText: "Ordini annullati in revisione" }).waitFor();
+await page.getByTestId("goal-dialog-header").waitFor();
+await page.getByLabel("Messaggio al Coordinatore").fill("Da dove partiamo per questo obiettivo?");
+await page.keyboard.press("Enter");
+await page.getByText(/Dialogo dell'obiettivo G-/).first().waitFor({ timeout: 20_000 });
+await shot("10d-goal-dialog");
+// The project dialog keeps its own conversation.
+await page.getByRole("button", { name: "Dialogo del progetto" }).click();
+await page.getByText("Ho letto lo studio").first().waitFor();
+if (await page.getByText(/Dialogo dell'obiettivo G-/).count()) throw new Error("The goal dialog leaked into the project dialog");
+// The overview (UX03) lists the project with its open goals.
+await page.getByRole("button", { name: "Panoramica dei progetti" }).click();
+await page.getByTestId("overview-project").first().getByText("Ordini annullati in revisione").waitFor({ timeout: 10_000 });
+await shot("10e-overview");
+await page.getByRole("button", { name: "Panoramica dei progetti" }).click();
+await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
 await page.keyboard.press("Control+K");
 await page.getByRole("textbox", { name: "Cerca in Trama" }).fill("cancel");
 await page.getByRole("option").first().waitFor();
@@ -129,4 +179,7 @@ await shot("11-connections");
 await page.keyboard.press("Escape");
 await page.getByRole("button", { name: "Impostazioni" }).click();
 await shot("12-settings");
+await page.getByRole("button", { name: "Apri la guida" }).click();
+await guide.waitFor();
+await shot("12a-guide-resume-dark");
 await app.close();

@@ -32,6 +32,20 @@ export function IssuesView() {
         }
       >
         {github.status === "unavailable" ? <EmptyNote>{github.message}</EmptyNote> : null}
+        {github.capabilities ? (
+          <p className="mb-2 text-ui-xs text-muted-foreground">
+            {github.capabilities.status === "ready"
+              ? [
+                  github.capabilities.login ? `Accesso come ${github.capabilities.login}` : "Accesso con gh",
+                  github.capabilities.private ? "repository privato" : "repository pubblico",
+                  github.capabilities.canPush ? "puoi pubblicare branch e pull request" : "sola lettura: niente push",
+                  github.capabilities.rateRemaining !== null ? `${github.capabilities.rateRemaining} richieste API rimaste` : null,
+                ]
+                  .filter(Boolean)
+                  .join(" · ")
+              : github.capabilities.message}
+          </p>
+        ) : null}
         {github.status === "ready" ? (
           <div className="flex items-center gap-2">
             <div className="inline-flex rounded-lg bg-[var(--color-background-button-secondary)] p-0.5">

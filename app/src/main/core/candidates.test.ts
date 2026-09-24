@@ -75,4 +75,38 @@ describe("candidates", () => {
     recordEvidence(document, candidate.id, { check: "git_status", passed: false, command: "git status", output: "x", snapshotId: "snap" });
     expect(candidateReport(document, candidate, "base").blockers.map((b) => b.code)).toEqual(["UNRESOLVED_CHOICE", "CHECK_FAILED"]);
   });
+
+  it("blocks a conflict reproduced on the same snapshot, not an overlap or an older snapshot", () => {
+    const { document, candidate } = setup();
+    recordEvidence(document, candidate.id, { check: "git_status", passed: true, command: "git status", output: "", snapshotId: "snap" });
+    const assessment = {
+      candidateId: candidate.id,
+      remoteSHA: "abc",
+      references: ["#7 feature"],
+      conflictingFiles: ["a"],
+      detail: "",
+      checkedAt: "2026-09-23T00:00:00Z",
+    };
+    document.conflicts = [
+      { ...assessment, id: "old:abc", snapshotId: "older", classification: "conflict" },
+      { ...assessment, id: "snap:def", snapshotId: "snap", classification: "overlap" },
+    ];
+    expect(candidateReport(document, candidate, "base").state).toBe("verified");
+    document.conflicts.push({ ...assessment, id: "snap:abc", snapshotId: "snap", classification: "conflict" });
+    const report = candidateReport(document, candidate, "base");
+    expect(report.state).toBe("building");
+    expect(report.blockers.map((b) => b.code)).toEqual(["REMOTE_CONFLICT"]);
+  });
+
+  it("is not blocked by a decision it does not rely on (T09)", () => {
+    const { document, candidate } = setup();
+    recordEvidence(document, candidate.id, { check: "git_status", passed: true, command: "git status", output: "", snapshotId: "snap" });
+    recordTechnicalReview(document, candidate.id, { reviewerThreadId: "r", authorThreadId: "a", verdict: "approved", summary: "ok" });
+    clearCandidate(document, candidate.id, "Coordinatore", "base");
+    approveCandidate(document, candidate.id, "Persona", "base");
+    decide(document, { id: null, value: "Valuta in euro", acceptedExample: "e", rationale: "r" });
+    const report = candidateReport(document, candidate, "base");
+    expect(report.state).toBe("decided");
+    expect(report.approvalInvalidated).toBe(false);
+  });
 });

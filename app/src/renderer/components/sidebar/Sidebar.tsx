@@ -9,7 +9,9 @@ import {
   IconFileDiff,
   IconSearch,
   IconGitPullRequest,
+  IconLayoutList,
   IconLayoutSidebar,
+  IconTarget,
   IconMessageCircle,
   IconPencilPlus,
   IconPlugConnected,
@@ -24,6 +26,8 @@ import {
 import { StatusDot } from "@/components/inspector/TeamView";
 import type * as React from "react";
 import { Spinner } from "@/components/Spinner";
+import { isUsableAccount, type ProviderId } from "@shared/codex";
+import { PROVIDERS } from "@shared/providers";
 import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/cn";
 import { act, type InspectorTarget, useUi } from "@/lib/store";
@@ -142,8 +146,17 @@ export function Sidebar({ isMac }: { isMac: boolean }) {
   const verifiedCandidates = project ? Object.values(project.candidateReports).filter((r) => r.state !== "building").length : 0;
   const specialists = document?.team.specialists.filter((s) => s.status !== "removed") ?? [];
   const running = Boolean(project?.runningRequestId) || project?.phase.kind === "studying" || project?.phase.kind === "opening";
-  const account = app.codex.account;
+  const activeProvider: ProviderId = project?.document.coordinator.threadProvider ?? project?.document.selectedProvider ?? "codex";
+  const account = app.providers[activeProvider]?.account ?? null;
+  const connected = isUsableAccount(account);
   const isActive = (kind: InspectorTarget["kind"]) => inspector?.kind === kind;
+  const mainView = useUi((s) => s.mainView);
+  const setMainView = useUi((s) => s.setMainView);
+  const dialogGoalId = useUi((s) => s.dialogGoalId);
+  const openDialog = useUi((s) => s.openDialog);
+  const goals = (document?.goals ?? []).filter((g) => g.status === "open" || g.status === "proposed");
+  const runningGoalId = project?.runningRequestId ? (document?.requests.find((r) => r.id === project.runningRequestId)?.goalId ?? null) : null;
+  const proposedGoals = document?.goals?.filter((g) => g.status === "proposed").length ?? 0;
 
   return (
     <div className="flex h-full min-h-0 flex-col text-foreground">
@@ -173,9 +186,24 @@ export function Sidebar({ isMac }: { isMac: boolean }) {
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className="flex flex-col gap-0.5 px-1.5 pt-1">
+          <SidebarRow
+            icon={<IconLayoutList className="size-3.5" stroke={1.8} />}
+            label="Panoramica dei progetti"
+            active={mainView === "overview"}
+            onClick={() => setMainView(mainView === "overview" ? "dialog" : "overview")}
+          />
+        </div>
         {project ? (
-          <div className="flex flex-col gap-0.5 px-1.5 pt-1 pb-1.5">
+          <div className="flex flex-col gap-0.5 px-1.5 pt-0.5 pb-1.5">
             <SidebarRow icon={<IconPencilPlus className="size-3.5" stroke={1.8} />} label="Scrivi al Coordinatore" onClick={() => focusComposer()} />
+            <SidebarRow
+              icon={<IconTarget className="size-3.5" stroke={1.8} />}
+              label="Obiettivi"
+              active={isActive("goals") || isActive("goal")}
+              badge={proposedGoals}
+              onClick={() => setInspector({ kind: "goals" })}
+            />
             <SidebarRow
               icon={<IconSitemap className="size-3.5" stroke={1.8} />}
               label="Mappa del progetto"
@@ -241,12 +269,16 @@ export function Sidebar({ isMac }: { isMac: boolean }) {
             {app.recentProjects.map((recent) => {
               const open = project?.id === recent.id;
               const loading = app.loadingProject === recent.path;
+              const background = app.backgroundProjects.find((b) => b.id === recent.id);
               return (
                 <div key={recent.id}>
                   <div className="group/thread-row relative">
                     <button
                       type="button"
-                      onClick={() => void act("project:open", { path: recent.path })}
+                      onClick={() => {
+                        setMainView("dialog");
+                        void act("project:open", { path: recent.path });
+                      }}
                       title={recent.path}
                       className={cn(SIDEBAR_ROW, "pr-8 hover:bg-[var(--sidebar-accent)]", open ? "text-foreground" : "text-foreground/89")}
                     >
@@ -254,9 +286,17 @@ export function Sidebar({ isMac }: { isMac: boolean }) {
                         {open ? <IconFolderOpen className="size-4" stroke={1.6} /> : <IconFolder className="size-4" stroke={1.6} />}
                       </LeadingIcon>
                       <span className="min-w-0 flex-1 truncate font-system-ui text-ui font-normal text-foreground/95">{recent.name}</span>
+                      {background ? (
+                        <span
+                          className="shrink-0 text-ui-xs text-muted-foreground"
+                          title={`${background.runningAssignments} incarichi in corso${background.pendingDecisions ? ` · ${background.pendingDecisions} decisioni da prendere` : ""}`}
+                        >
+                          {background.runningAssignments} al lavoro
+                        </span>
+                      ) : null}
                     </button>
                     <div className="absolute top-1/2 right-1.5 flex -translate-y-1/2 items-center">
-                      {loading ? (
+                      {loading || background ? (
                         <Spinner />
                       ) : !open ? (
                         <button
@@ -272,13 +312,36 @@ export function Sidebar({ isMac }: { isMac: boolean }) {
                   </div>
                   {open && project ? (
                     <div className="flex flex-col gap-0.5 pt-0.5">
-                      <button type="button" onClick={() => setInspector(null)} className={cn(SIDEBAR_ROW, "relative pl-8", !inspector ? ROW_ACTIVE : ROW_IDLE)}>
+                      <button
+                        type="button"
+                        onClick={() => openDialog(null)}
+                        className={cn(SIDEBAR_ROW, "relative pl-8", mainView === "dialog" && !dialogGoalId ? ROW_ACTIVE : ROW_IDLE)}
+                      >
                         <IconMessageCircle className="size-3 shrink-0 text-muted-foreground" stroke={1.8} />
                         <span className="min-w-0 flex-1 truncate text-ui leading-5">Dialogo del progetto</span>
                         <span className="flex w-[15px] shrink-0 items-center justify-center">
-                          {running ? <Spinner /> : null}
+                          {running && !runningGoalId ? <Spinner /> : null}
                         </span>
                       </button>
+                      {goals.map((goal) => (
+                        <button
+                          key={goal.id}
+                          type="button"
+                          onClick={() => openDialog(goal.id)}
+                          title={goal.outcome}
+                          className={cn(SIDEBAR_ROW, "pl-8", mainView === "dialog" && dialogGoalId === goal.id ? ROW_ACTIVE : ROW_IDLE)}
+                        >
+                          <IconTarget className="size-3 shrink-0 text-muted-foreground" stroke={1.8} />
+                          <span className="min-w-0 flex-1 truncate text-ui leading-5 text-foreground/95">{goal.title}</span>
+                          <span className="flex w-[15px] shrink-0 items-center justify-center">
+                            {running && runningGoalId === goal.id ? (
+                              <Spinner />
+                            ) : goal.status === "proposed" ? (
+                              <span className="size-[7px] rounded-full bg-warning" title="Proposto dal Coordinatore" />
+                            ) : null}
+                          </span>
+                        </button>
+                      ))}
                       {specialists.map((specialist) => (
                         <button
                           key={specialist.id}
@@ -319,13 +382,19 @@ export function Sidebar({ isMac }: { isMac: boolean }) {
       <div className="flex flex-col gap-0.5 border-t border-sidebar-border p-2 font-system-ui">
         <SidebarRow
           icon={<IconPlugConnected className="size-[15px]" stroke={1.7} />}
-          label={account?.kind === "chatgpt" ? "Codex di OpenAI" : "Collega ChatGPT"}
+          label={
+            connected
+              ? (PROVIDERS.find((p) => p.id === activeProvider)?.name ?? activeProvider)
+              : activeProvider === "codex"
+                ? "Collega ChatGPT"
+                : "Collegamenti"
+          }
           onClick={() => setDialog("connections")}
           trailing={
             <span
               className={cn(
                 "size-1.5 shrink-0 rounded-full",
-                account?.kind === "chatgpt" ? "bg-success" : account ? "bg-warning" : "bg-muted-foreground/40",
+                connected ? "bg-success" : account ? "bg-warning" : "bg-muted-foreground/40",
               )}
             />
           }

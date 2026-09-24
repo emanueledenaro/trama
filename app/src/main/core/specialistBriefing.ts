@@ -1,4 +1,4 @@
-import type { Specialist, SpecialistAssignment } from "@shared/domain";
+import type { PactDecision, Specialist, SpecialistAssignment } from "@shared/domain";
 import { CHECKS, type ReadOnlyCheck } from "./checks";
 import { needsWorktree } from "./team";
 
@@ -22,23 +22,39 @@ export function specialistInstructions(projectName: string, specialist: Speciali
   return lines.join("\n");
 }
 
-export function openingInput(assignment: SpecialistAssignment): string {
+/** The Pact decisions the assignment relies on, at the version it is delegated against. */
+function decisionLines(assignment: SpecialistAssignment, decisions: PactDecision[]): string[] {
+  const relied = Object.keys(assignment.decisionVersions ?? {});
+  if (!relied.length) return [];
+  return [
+    "Decisioni del Patto su cui si basa il lavoro:",
+    ...relied.map((id) => {
+      const d = decisions.find((x) => x.id === id);
+      return d ? `- ${d.id} v${d.version}: ${d.value} (esempio accettato: ${d.acceptedExample})` : `- ${id}: non più nel Patto`;
+    }),
+  ];
+}
+
+export function openingInput(assignment: SpecialistAssignment, decisions: PactDecision[] = []): string {
   const lines = [`Incarico ${assignment.id}: ${assignment.objective}`];
   if (assignment.issueNumber) lines.push(`Issue #${assignment.issueNumber}.`);
   if (assignment.exercise) lines.push(`Esercizio: ${assignment.exercise}.`);
   lines.push(`Moduli nel perimetro: ${assignment.moduleIds.join(", ")}.`);
   if (assignment.dependencies.length) lines.push(`Dipende da lavori già conclusi: ${assignment.dependencies.join(", ")}.`);
   if (assignment.requiredChecks.length) lines.push(`Verifiche richieste: ${assignment.requiredChecks.join(", ")}.`);
+  lines.push(...decisionLines(assignment, decisions));
   lines.push(`Istruzioni del Coordinatore:\n${assignment.instructions}`);
   lines.push("Quando hai finito, riporta le modifiche fatte, i comandi eseguiti con il loro esito e quello che resta aperto.");
   return lines.join("\n");
 }
 
-export function resumeInput(assignment: SpecialistAssignment): string {
+export function resumeInput(assignment: SpecialistAssignment, decisions: PactDecision[] = []): string {
   const lines = [`Riprendi l'incarico ${assignment.id}: ${assignment.objective}`];
   const stop = assignment.stops.at(-1);
   if (stop?.confirmedAt) lines.push(`Il lavoro era stato fermato (${stop.reason}). Il worktree è come l'hai lasciato.`);
   if (assignment.failure) lines.push(`Il turno precedente non è riuscito: ${assignment.failure}`);
+  const relied = decisionLines(assignment, decisions);
+  if (relied.length) lines.push(...relied, "Se una decisione è cambiata rispetto al lavoro fatto, adegua il lavoro alla versione attuale.");
   lines.push("Continua da dove eri rimasto e riporta cosa hai fatto in questo turno.");
   return lines.join("\n");
 }

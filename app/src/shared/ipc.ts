@@ -1,4 +1,19 @@
-import type { AppSettings, DecisionAlternative, MandateAction } from "./domain";
+import type { ProviderId } from "./codex";
+import type { AppSettings, DecisionAlternative, GoalStatus, MandateAction, ProjectOverview } from "./domain";
+import type { ExerciseId, GuideStepId, ObservedStep } from "./onboarding";
+
+export interface GoalExampleInputPayload {
+  /** Present when the example already exists and is being edited. */
+  id?: string | null;
+  kind: "accepted" | "refused";
+  text: string;
+}
+
+export interface GoalInputPayload {
+  title: string;
+  outcome: string;
+  examples: GoalExampleInputPayload[];
+}
 
 /** Every action the renderer can ask the main process to perform. */
 export interface ActionMap {
@@ -12,13 +27,31 @@ export interface ActionMap {
   "project:revealInFolder": [{ relativePath?: string }, void];
   "project:readFile": [{ relativePath: string }, string];
   "coordinator:send": [
-    { text: string; moduleId: string | null; model: string | null; effort: string | null; images?: ImageAttachmentInput[] },
+    {
+      text: string;
+      moduleId: string | null;
+      model: string | null;
+      effort: string | null;
+      images?: ImageAttachmentInput[];
+      /** The composer's provider; a different one moves the Coordinator (ADR 0009). */
+      provider?: ProviderId | null;
+      /** The goal dialog the message is sent from; absent or null is the project dialog (UX02). */
+      goalId?: string | null;
+    },
     void,
   ];
   "coordinator:interrupt": [void, void];
   "coordinator:retry": [void, void];
-  "coordinator:selectModel": [{ model: string; effort: string | null }, void];
-  "coordinator:saveDraft": [{ text: string }, void];
+  "coordinator:selectModel": [{ model: string; effort: string | null; provider?: ProviderId | null; goalId?: string | null }, void];
+  "coordinator:selectProvider": [{ provider: ProviderId; goalId?: string | null }, void];
+  "coordinator:saveDraft": [{ text: string; goalId?: string | null }, void];
+  "goal:create": [GoalInputPayload, string];
+  "goal:update": [
+    { id: string; title?: string; outcome?: string; examples?: GoalExampleInputPayload[]; status?: GoalStatus; decisionIds?: string[] },
+    void,
+  ];
+  "candidate:observeExample": [{ candidateId: string; exampleId: string; observed: boolean; snapshotId: string }, void];
+  "overview:read": [void, ProjectOverview[]];
   "coordinator:setContextThreshold": [{ percent: number }, void];
   "pact:decide": [{ id: string | null; value: string; acceptedExample: string; rationale: string }, void];
   "decision:answer": [{ requestId: string; alternativeIndex: number | null; freeText: string | null }, void];
@@ -37,14 +70,26 @@ export interface ActionMap {
   "team:answer": [{ proposalId: string; keeping: string[] | null; note: string | null }, void];
   "assignment:stop": [{ assignmentId: string }, void];
   "assignment:resume": [{ assignmentId: string }, void];
+  "assignment:removeWorktree": [{ assignmentId: string }, void];
+  "assignment:changeProvider": [{ assignmentId: string; provider: ProviderId; model: string }, void];
   "specialist:remove": [{ specialistId: string; reason: string }, void];
   "plan:prepare": [{ requestId: string }, void];
+  "plan:cancel": [{ planId: string }, void];
+  "plan:edit": [{ planId: string; steps: string[]; proposedBehavior: string; acceptedExample: string }, void];
   "pactDemo:run": [void, void];
   "pactDemo:approve": [void, void];
   "candidate:approve": [{ candidateId: string }, void];
   "candidate:publish": [{ candidateId: string }, void];
+  "candidate:previewPullRequest": [
+    { candidateId: string },
+    { repository: string | null; head: string | null; base: string; title: string; body: string },
+  ];
   "codex:refresh": [void, void];
   "codex:login": [void, void];
+  "skills:rollback": [void, string[]];
+  "practice:change": [{ action: "adopt" | "retire" | "rollback"; id: string; reason?: string }, void];
+  "providers:refresh": [{ provider?: ProviderId }, void];
+  "provider:login": [{ provider: ProviderId }, { url: string | null; command: string | null }];
   "github:refresh": [void, void];
   "github:createIssue": [{ title: string; body: string }, void];
   "settings:update": [Partial<AppSettings>, void];
@@ -52,6 +97,15 @@ export interface ActionMap {
   "monitor:poll": [void, void];
   "skills:prepare": [void, { pathsCreated: string[]; existingPreserved: string[]; warnings: string[]; version: string }];
   "app:dismissError": [void, void];
+  /** The first-run guide: opened once, skipped, steps skipped or taken back (C12). */
+  "onboarding:update": [{ shown?: boolean; dismissed?: boolean; skipStep?: GuideStepId; unskipStep?: GuideStepId }, void];
+  "onboarding:checkGitHub": [void, void];
+  /** Opens the example project and records that an exercise started (C13, C14). */
+  "exercise:start": [{ exercise: ExerciseId }, void];
+  /** Navigation in the example project that an exercise step waits for. */
+  "exercise:observe": [{ step: ObservedStep }, void];
+  /** The conflict exercise: two simulated local changes compared with the latest candidate. */
+  "exercise:simulateRemoteChanges": [void, void];
   "shell:openExternal": [{ url: string }, void];
 }
 

@@ -13,6 +13,7 @@ import type {
   WorkKind,
   WorktreeSession,
 } from "@shared/domain";
+import type { ProviderId } from "@shared/codex";
 import { shortId } from "@shared/ids";
 
 export class TeamError extends Error {
@@ -246,6 +247,13 @@ export interface AssignmentOrder {
   moduleIds: string[];
   dependencies: string[];
   model: string;
+  provider?: ProviderId;
+  /** The Coordinator's reason for the provider and model (UX05). */
+  modelReason?: string | null;
+  /** The goal the work serves (UX02). */
+  goalId?: string | null;
+  /** Pact decisions the work relies on. */
+  decisionIds?: string[];
   tools: SpecialistTool[];
   requiredChecks: string[];
   instructions: string;
@@ -279,7 +287,8 @@ export function assign(
   const objective = required(order.objective, "objective");
   const instructions = required(order.instructions, "instructions");
   const model = required(order.model, "model");
-  if (model.includes("/")) throw new TeamError("invalid_model", `Invalid model: ${model}.`);
+  const provider = order.provider ?? "codex";
+  if (provider === "codex" && model.includes("/")) throw new TeamError("invalid_model", `Invalid model: ${model}.`);
   const moduleIds = cleaned(order.moduleIds);
   if (moduleIds.length === 0) throw new TeamError("invalid_arguments", "moduleIDs is required.");
   const dependencies = cleaned(order.dependencies);
@@ -291,6 +300,12 @@ export function assign(
   }
   if (pending.length) throw new TeamError("dependencies_pending", `These assignments are not completed yet: ${pending.join(", ")}.`);
   requireIndependent(document, moduleIds, specialist.id);
+  const decisionVersions: Record<string, number> = {};
+  for (const id of cleaned(order.decisionIds ?? [])) {
+    const decision = document.decisions.find((d) => d.id === id);
+    if (!decision) throw new TeamError("unknown_decision", `Unknown decision: ${id}.`);
+    decisionVersions[id] = decision.version;
+  }
   const tools: SpecialistTool[] = ["commands", ...(order.tools.includes("edits") ? (["edits"] as const) : [])];
   const assignment: SpecialistAssignment = {
     id: shortId("A", randomUUID()),
@@ -303,6 +318,10 @@ export function assign(
     moduleIds,
     dependencies,
     model,
+    provider,
+    modelReason: order.modelReason?.trim() || null,
+    ...(order.goalId ? { goalId: order.goalId } : {}),
+    decisionVersions,
     tools,
     requiredChecks: cleaned(order.requiredChecks),
     instructions,
@@ -322,6 +341,7 @@ export function assign(
   specialist.assignments.push(assignment);
   specialist.status = "working";
   specialist.model = model;
+  specialist.provider = provider;
   specialist.tools = tools;
   specialist.updatedAt = now.toISOString();
   specialist.lastUpdate = assignment.lastUpdate;
@@ -341,11 +361,18 @@ export function recordThread(document: ProjectDocument, id: string, threadId: st
   });
 }
 
-export function beginTurn(document: ProjectDocument, id: string, turnId: string, model: string, now = new Date()): void {
+export function beginTurn(
+  document: ProjectDocument,
+  id: string,
+  turnId: string,
+  model: string,
+  now = new Date(),
+  provider: ProviderId = "codex",
+): void {
   updateAssignment(document, id, now, (assignment) => {
     if (!isActive(assignment)) throw new TeamError("not_running", `Specialist ${assignment.specialistId} has no work in progress.`);
     if (assignment.status === "preparing") assignment.status = "running";
-    assignment.turns.push({ id: turnId, number: assignment.turns.length + 1, model, startedAt: now.toISOString(), endedAt: null, outcome: null });
+    assignment.turns.push({ id: turnId, number: assignment.turns.length + 1, model, provider, startedAt: now.toISOString(), endedAt: null, outcome: null });
     assignment.lastUpdate = `Turno ${assignment.turns.length} in corso con ${model}`;
   });
 }
@@ -373,7 +400,7 @@ export function endTurn(document: ProjectDocument, id: string, turnId: string | 
       assignment.failure = null;
       assignment.lastUpdate = "Incarico concluso";
     } else if (outcome.kind === "interrupted") {
-      confirmStop(assignment, "Codex ha interrotto il turno.", now);
+      confirmStop(assignment, "Il provider ha interrotto il turno.", now);
     } else if (pendingStop(assignment)) {
       confirmStop(assignment, outcome.message, now);
     } else {
@@ -522,4 +549,58 @@ export function refusalMessage(authorization: Authorization, action: MandateActi
     default:
       return "";
   }
+}
+
+/**
+ * The person changes the provider or model of an assignment (ADR 0009). Assignment and worktree stay;
+ * the next turn opens a new session on the new provider.
+ */
+export function changeAssignmentProvider(
+  document: ProjectDocument,
+  id: string,
+  provider: ProviderId,
+  model: string,
+  now = new Date(),
+): SpecialistAssignment {
+  const assignment = findAssignment(document, id);
+  if (!assignment) throw new TeamError("unknown_assignment", `Unknown assignment: ${id}.`);
+  if (["preparing", "running", "stopRequested"].includes(assignment.status)) {
+    throw new TeamError("assignment_running", `Assignment ${id} is running: stop it before changing provider.`);
+  }
+  const trimmed = required(model, "model");
+  const changed = (assignment.provider ?? "codex") !== provider;
+  return updateAssignment(document, id, now, (a) => {
+    a.provider = provider;
+    a.model = trimmed;
+    if (changed) a.threadId = null;
+    a.lastUpdate = `Provider impostato dalla persona: ${provider} · ${trimmed}`;
+  });
+}
+
+/**
+ * Active assignments that rely on a decision that changed version or is being revised (C06). Work
+ * on other decisions keeps going.
+ */
+export function assignmentsAffectedByDecision(document: ProjectDocument, decisionId: string): SpecialistAssignment[] {
+  const current = document.decisions.find((d) => d.id === decisionId)?.version;
+  const revising = document.decisionRequests.some((r) => !r.outcome && r.revisesDecisionId === decisionId);
+  return activeAssignments(document).filter((assignment) => {
+    const version = assignment.decisionVersions?.[decisionId];
+    return version !== undefined && (revising || version !== current);
+  });
+}
+
+/** Resuming work whose decisions moved on delegates it against the current versions. */
+export function refreshDecisionVersions(document: ProjectDocument, id: string): string[] {
+  const assignment = findAssignment(document, id);
+  if (!assignment?.decisionVersions) return [];
+  const changed: string[] = [];
+  for (const [decisionId, version] of Object.entries(assignment.decisionVersions)) {
+    const current = document.decisions.find((d) => d.id === decisionId)?.version;
+    if (current !== undefined && current !== version) {
+      assignment.decisionVersions[decisionId] = current;
+      changed.push(decisionId);
+    }
+  }
+  return changed;
 }

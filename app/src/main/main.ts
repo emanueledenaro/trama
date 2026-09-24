@@ -1,5 +1,5 @@
 import { join } from "node:path";
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, Notification, shell, type MenuItemConstructorOptions } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, Notification, powerMonitor, shell, type MenuItemConstructorOptions } from "electron";
 import type { AppSettings } from "@shared/domain";
 import type { ActionMap, ActionName } from "@shared/ipc";
 import { TramaController } from "./controller";
@@ -23,9 +23,9 @@ const controller = new TramaController(process.env.TRAMA_DATA_DIR ?? join(app.ge
     nativeTheme.themeSource = theme;
     if (!isMac) window?.setBackgroundColor(surfaceColor());
   },
-  notify: (title, body) => {
+  notify: (title, body, sound) => {
     if (window?.isFocused() || !Notification.isSupported()) return;
-    const notification = new Notification({ title, body });
+    const notification = new Notification({ title, body, silent: !sound });
     notification.on("click", () => {
       if (!window) createWindow();
       window?.show();
@@ -48,8 +48,8 @@ function createWindow(): void {
   window = new BrowserWindow({
     width: 1100,
     height: 780,
-    minWidth: 840,
-    minHeight: 620,
+    minWidth: 720,
+    minHeight: 600,
     show: false,
     title: "Trama",
     ...(isMac
@@ -115,11 +115,17 @@ const handlers: { [K in ActionName]: Handler<K> } = {
     else void shell.openPath(target);
   },
   "project:readFile": ({ relativePath }) => controller.readFile(relativePath),
-  "coordinator:send": ({ text, moduleId, model, effort, images }) => controller.send(text, moduleId, model, effort, images ?? []),
+  "coordinator:send": ({ text, moduleId, model, effort, images, provider, goalId }) =>
+    controller.send(text, moduleId, model, effort, images ?? [], provider ?? null, goalId ?? null),
   "coordinator:interrupt": () => controller.interrupt(),
   "coordinator:retry": () => controller.startCoordinator(),
-  "coordinator:selectModel": ({ model, effort }) => controller.selectModel(model, effort),
-  "coordinator:saveDraft": ({ text }) => controller.saveDraft(text),
+  "coordinator:selectModel": ({ model, effort, provider, goalId }) => controller.selectModel(model, effort, provider ?? null, goalId ?? null),
+  "coordinator:selectProvider": ({ provider, goalId }) => controller.selectProvider(provider, goalId ?? null),
+  "coordinator:saveDraft": ({ text, goalId }) => controller.saveDraft(text, goalId ?? null),
+  "goal:create": (input) => controller.createGoal(input),
+  "goal:update": ({ id, ...change }) => controller.updateGoal(id, change),
+  "candidate:observeExample": (input) => controller.observeExample(input),
+  "overview:read": () => controller.projectsOverview(),
   "coordinator:setContextThreshold": ({ percent }) => controller.setContextThreshold(percent),
   "pact:decide": (input) => controller.recordDecision(input),
   "decision:answer": ({ requestId, alternativeIndex, freeText }) => controller.answerDecision(requestId, alternativeIndex, freeText),
@@ -128,6 +134,7 @@ const handlers: { [K in ActionName]: Handler<K> } = {
   "team:answer": ({ proposalId, keeping, note }) => controller.answerTeamProposal(proposalId, keeping, note),
   "assignment:stop": ({ assignmentId }) => controller.stopSpecialistWork(assignmentId),
   "assignment:resume": ({ assignmentId }) => controller.resumeSpecialistWork(assignmentId),
+  "assignment:changeProvider": ({ assignmentId, provider, model }) => controller.changeAssignmentProvider(assignmentId, provider, model),
   "specialist:remove": ({ specialistId, reason }) => controller.removeSpecialistByPerson(specialistId, reason),
   "plan:prepare": ({ requestId }) => controller.preparePlanForRequest(requestId),
   "pactDemo:run": () => controller.runPactDemo(),
@@ -136,6 +143,14 @@ const handlers: { [K in ActionName]: Handler<K> } = {
   "candidate:publish": ({ candidateId }) => controller.publishCandidateByPerson(candidateId),
   "codex:refresh": () => controller.refreshCodex(),
   "codex:login": () => controller.login(),
+  "skills:rollback": () => controller.rollbackSkills(),
+  "practice:change": ({ action, id, reason }) => controller.changePractice(action, id, reason ?? ""),
+  "assignment:removeWorktree": ({ assignmentId }) => controller.removeAssignmentWorktree(assignmentId),
+  "plan:cancel": async ({ planId }) => controller.cancelPlan(planId),
+  "plan:edit": async (input) => controller.editPlan(input),
+  "candidate:previewPullRequest": async ({ candidateId }) => controller.previewPullRequest(candidateId),
+  "providers:refresh": ({ provider }) => (provider ? controller.refreshProvider(provider) : controller.refreshProviders()),
+  "provider:login": ({ provider }) => controller.loginProvider(provider),
   "github:refresh": () => controller.refreshGitHub(),
   "github:createIssue": ({ title, body }) => controller.createGitHubIssue(title, body),
   "settings:update": (update) => controller.updateSettings(update),
@@ -143,6 +158,11 @@ const handlers: { [K in ActionName]: Handler<K> } = {
   "monitor:poll": () => controller.pollMonitor(),
   "skills:prepare": () => controller.prepareSkills(),
   "app:dismissError": () => controller.dismissError(),
+  "onboarding:update": (update) => controller.updateOnboarding(update),
+  "onboarding:checkGitHub": () => controller.checkGitHubCli(),
+  "exercise:start": ({ exercise }) => controller.startExercise(exercise),
+  "exercise:observe": ({ step }) => controller.observeExercise(step),
+  "exercise:simulateRemoteChanges": () => controller.simulateRemoteChanges(),
   "shell:openExternal": async ({ url }) => {
     if (/^https:\/\//.test(url)) await shell.openExternal(url);
   },
@@ -214,6 +234,10 @@ function buildMenu(): void {
         { label: "Patto", accelerator: "CmdOrCtrl+2", click: () => sendMenu("inspector:pact") },
         { label: "Mandato", accelerator: "CmdOrCtrl+3", click: () => sendMenu("inspector:mandate") },
         { label: "Issue", accelerator: "CmdOrCtrl+4", click: () => sendMenu("inspector:issues") },
+        { label: "Team", accelerator: "CmdOrCtrl+5", click: () => sendMenu("inspector:team") },
+        { label: "Lavoro", accelerator: "CmdOrCtrl+6", click: () => sendMenu("inspector:work") },
+        { label: "Gruppo", accelerator: "CmdOrCtrl+7", click: () => sendMenu("inspector:group") },
+        { label: "Memoria", accelerator: "CmdOrCtrl+8", click: () => sendMenu("inspector:memory") },
         { type: "separator" },
         { role: "resetZoom", label: "Dimensione reale" },
         { role: "zoomIn", label: "Ingrandisci" },
@@ -224,6 +248,14 @@ function buildMenu(): void {
       ],
     },
     { role: "windowMenu", label: "Finestra" },
+    {
+      role: "help",
+      label: "Aiuto",
+      submenu: [
+        { label: "Guida introduttiva", click: () => sendMenu("guide") },
+        { label: "Esercizi sul progetto di esempio", click: () => sendMenu("exercises") },
+      ],
+    },
   ];
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
@@ -242,6 +274,12 @@ app.whenReady().then(async () => {
   buildMenu();
   if (!startedHidden) createWindow();
   await controller.start();
+  // After sleep the monitor's timer and the providers' state are stale: check again at once.
+  powerMonitor.on("resume", () => {
+    void controller.pollMonitor().catch(() => undefined);
+    void controller.refreshCodex();
+    void controller.refreshProviders();
+  });
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
