@@ -8,6 +8,7 @@ import {
   IconFileText,
   IconInfoCircle,
   IconListCheck,
+  IconPlayerStop,
   IconTerminal2,
   IconTool,
 } from "@tabler/icons-react";
@@ -235,10 +236,25 @@ function Reply({ row, latest }: { row: Extract<TimelineRow, { kind: "reply" }>; 
 }
 
 function TurnFailure({ row }: { row: Extract<TimelineRow, { kind: "failure" }> }) {
-  const { title, detail } = turnFailureText(row.message);
+  // An interrupted turn is not an error: same place and Riprova, neutral colors, and the reason when there is one.
+  const { title, detail } = row.interrupted
+    ? { title: "Turno interrotto", detail: /^turno interrotto\.?$/i.test(row.message.trim()) ? null : row.message || null }
+    : turnFailureText(row.message);
   return (
-    <div role="alert" className="mb-4 flex items-start gap-2.5 rounded-xl border border-[color:color-mix(in_srgb,var(--destructive)_35%,transparent)] bg-[color-mix(in_srgb,var(--destructive)_8%,transparent)] px-3.5 py-3">
-      <IconAlertTriangle className="mt-0.5 size-4 shrink-0 text-[var(--destructive)]" stroke={1.8} />
+    <div
+      role={row.interrupted ? "status" : "alert"}
+      className={cn(
+        "mb-4 flex items-start gap-2.5 rounded-xl border px-3.5 py-3",
+        row.interrupted
+          ? "border-[color:var(--color-border)] bg-[var(--color-background-button-secondary)]"
+          : "border-[color:color-mix(in_srgb,var(--destructive)_35%,transparent)] bg-[color-mix(in_srgb,var(--destructive)_8%,transparent)]",
+      )}
+    >
+      {row.interrupted ? (
+        <IconPlayerStop className="mt-0.5 size-4 shrink-0 text-muted-foreground" stroke={1.8} />
+      ) : (
+        <IconAlertTriangle className="mt-0.5 size-4 shrink-0 text-[var(--destructive)]" stroke={1.8} />
+      )}
       <div className="min-w-0 flex-1">
         <div className="text-ui font-medium text-foreground">{title}</div>
         {detail ? <p className="mt-0.5 text-ui-sm break-words text-muted-foreground">{detail}</p> : null}

@@ -290,6 +290,31 @@ describe("TramaController", () => {
     await until(() => project.document.plans[0]!.status === "ready");
   });
 
+  it("closes a turn left running in a project the person leaves, and ignores its late end (C02)", async () => {
+    const { project: firstPath } = await setup();
+    const first = controller!.snapshot.project!;
+    const sending = controller!.send("[attesa] Spiegami gli ordini", null, null, null);
+    await until(() => first.document.requests.length === 1);
+    const request = first.document.requests[0]!;
+    await until(() => first.streaming?.requestId === request.id);
+
+    const second = await mkdtemp(join(tmpdir(), "trama-project-"));
+    await cp(join(root, "resources/DemoProject"), second, { recursive: true });
+    await controller!.openProject(second);
+    await sending;
+    expect(request).toMatchObject({ state: "interrupted", failure: "Hai lasciato il progetto mentre il Coordinatore rispondeva." });
+    const own = first.document.events.filter((e) => e.requestId === request.id).map((e) => e.content);
+    expect(own.some((c) => c.type === "activity" && c.title === "Il turno non è riuscito")).toBe(false);
+    expect(own.filter((c) => c.type === "activity" && c.title === "Turno interrotto")).toHaveLength(1);
+    expect(controller!.snapshot.project!.document.requests).toHaveLength(0);
+
+    await until(() => controller!.snapshot.project?.phase.kind === "ready");
+    await controller!.openProject(firstPath);
+    const reopened = controller!.snapshot.project!.document;
+    expect(reopened).not.toBe(first.document);
+    expect(reopened.requests[0]).toMatchObject({ id: request.id, state: "interrupted", failure: request.failure });
+  });
+
   it("persists the conversation and resumes it after a restart", async () => {
     const { data, project: path } = await setup();
     await controller!.send("Ciao", null, null, null);

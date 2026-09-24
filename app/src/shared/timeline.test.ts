@@ -23,6 +23,20 @@ describe("deriveTimelineRows", () => {
     expect(rows[2]).toMatchObject({ kind: "failure", requestId: "R1", text: "ciao", message: error });
   });
 
+  it("shows an interrupted turn after its work group, with the reason and the person's message", () => {
+    const stop = event(2, { type: "activity", title: "Turno interrotto", detail: null, tone: "info" });
+    const later = event(3, { type: "personMessage", text: "altro", moduleId: null, moduleName: null, imageCount: 0 }, "R2");
+    const rows = deriveTimelineRows([message, stop, later], [request("interrupted", "Turno interrotto.")], null);
+    expect(rows.map((r) => r.kind)).toEqual(["person", "work", "failure", "person"]);
+    expect(rows[2]).toMatchObject({ kind: "failure", requestId: "R1", text: "ciao", message: "Turno interrotto.", interrupted: true });
+  });
+
+  it("shows a turn interrupted by closing Trama, which left no event of its own", () => {
+    const rows = deriveTimelineRows([message], [request("interrupted", "Trama è stato chiuso mentre il Coordinatore lavorava.")], null);
+    expect(rows.map((r) => r.kind)).toEqual(["person", "failure"]);
+    expect(rows[1]).toMatchObject({ interrupted: true, message: "Trama è stato chiuso mentre il Coordinatore lavorava." });
+  });
+
   it("adds no failure row for a turn that completed", () => {
     const note = event(2, { type: "activity", title: "Strumento", detail: null, tone: "error" });
     const rows = deriveTimelineRows([message, note], [request("completed")], null);
@@ -31,10 +45,10 @@ describe("deriveTimelineRows", () => {
 });
 
 describe("turnFailureText", () => {
-  it("says in plain words that the model is not available for the account", () => {
+  it("says in plain words that the model is not available for the account, and keeps the provider's message", () => {
     expect(turnFailureText(error)).toEqual({
       title: "Il modello scelto non è disponibile con questo account",
-      detail: "Scegli un altro modello dal selettore e riprova.",
+      detail: "The 'gpt-6-sol' model is not supported when using Codex with a ChatGPT account. Scegli un altro modello dal selettore e riprova.",
     });
   });
 

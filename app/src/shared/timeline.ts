@@ -14,8 +14,8 @@ export type TimelineRow =
     }
   | { kind: "reply"; id: string; requestId: string | null; text: string | null; model: string | null; references: string[]; request: CoordinatorRequest | null; streaming: boolean }
   | { kind: "card"; id: string; cardKind: CardKind; event: ConversationEvent }
-  /** A turn that ended in an error: shown in place of the reply, never only inside the collapsed work group. */
-  | { kind: "failure"; id: string; requestId: string; message: string; text: string; goalId: string | null };
+  /** A turn that ended in an error or was interrupted: shown in place of the reply, never only inside the collapsed work group. */
+  | { kind: "failure"; id: string; requestId: string; message: string; text: string; goalId: string | null; interrupted: boolean };
 
 /**
  * Groups the conversation into rows: the person's message, one collapsed work group per turn,
@@ -64,6 +64,7 @@ export function deriveTimelineRows(
             message: failed.failure ?? content.detail ?? "",
             text: failed.text,
             goalId: failed.goalId ?? null,
+            interrupted: false,
           });
         }
         break;
@@ -107,6 +108,24 @@ export function deriveTimelineRows(
   }
 
   for (const request of requests) {
+    if (request.state !== "interrupted" || replied.has(request.id)) continue;
+    // After the last row of the turn: its work group, or the person's message when Trama closed before any event.
+    const index = rows.findLastIndex(
+      (row) => (row.kind === "work" && row.requestId === request.id) || ((row.kind === "person" || row.kind === "card") && row.event.requestId === request.id),
+    );
+    if (index < 0) continue;
+    rows.splice(index + 1, 0, {
+      kind: "failure",
+      id: `interrupted-${request.id}`,
+      requestId: request.id,
+      message: request.failure ?? "",
+      text: request.text,
+      goalId: request.goalId ?? null,
+      interrupted: true,
+    });
+  }
+
+  for (const request of requests) {
     if (request.state !== "running" || replied.has(request.id)) continue;
     const text = streaming && streaming.requestId === request.id ? streaming.text : null;
     rows.push({ kind: "reply", id: request.id, requestId: request.id, text, model: request.model, references: [], request, streaming: true });
@@ -142,7 +161,7 @@ export function turnFailureText(raw: string): { title: string; detail: string | 
     // Not JSON: keep the text as it is.
   }
   if (isUnsupportedModelError(message)) {
-    return { title: "Il modello scelto non è disponibile con questo account", detail: "Scegli un altro modello dal selettore e riprova." };
+    return { title: "Il modello scelto non è disponibile con questo account", detail: `${message} Scegli un altro modello dal selettore e riprova.` };
   }
   if (/usage limit|rate limit|hit your limit|quota/i.test(message)) {
     return { title: "Hai raggiunto il limite di utilizzo di questo provider", detail: message };
