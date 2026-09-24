@@ -205,6 +205,21 @@ export const COORDINATOR_TOOLS: ToolDefinition[] = [
     readOnly: false,
   },
   {
+    name: "propose_practice",
+    description:
+      "Propose a general working practice for teams (C15), derived from problems of this project: give the evidence ids (a technical review id with changes requested, candidateId:check for a failed check, a failed or waiting assignment id, a conflict assessment id). The method must be general: no file paths, decision ids or issue numbers of this project, because other projects may adopt it. With practiceID you propose a new version of an existing practice. Only the person adopts, retires or rolls back a practice.",
+    properties: { title: text, method: text, rationale: text, evidence: list(1), practiceID: text },
+    required: ["title", "method", "rationale", "evidence"],
+    readOnly: false,
+  },
+  {
+    name: "read_practices",
+    description: "List the general practices Trama knows, which ones the person adopted in this project and at which version.",
+    properties: {},
+    required: [],
+    readOnly: true,
+  },
+  {
     name: "update_ticket",
     description:
       "Report progress on a GitHub issue of this project with evidence (C10). For each checklist criterion (0-based index) give outcome met, partial or notMet, the evidence (candidate ids, pull requests as #N, commit SHAs) and the limits. A criterion counts as met only with a verified candidate, a pull request Trama published or a commit: code on disk or the end of a turn is not evidence. Trama posts one comment per distinct report (a retry posts nothing new) and ticks only the met criteria. With close true, Trama closes the issue only when every criterion is ticked and a merged pull request has green checks; otherwise it stays open and you get the blockers. Needs the mandate openPullRequest, and integrateCandidate to close.",
@@ -303,6 +318,9 @@ export interface ToolContext {
   providers: { id: ProviderId; models: string[] }[];
   /** Starts the runtime of an assignment that was just recorded. */
   startAssignment(id: string): void;
+  /** Proposes a practice or a new version of one; throws PracticeError on refused input. */
+  proposePractice(input: { title: string; method: string; rationale: string; evidence: string[]; practiceId: string | null }): Promise<{ practiceID: string; version: number }>;
+  readPractices(): Promise<JsonObject>;
   /** Reports progress on a GitHub issue with evidence; throws on refused evidence or a GitHub error. */
   updateTicket(input: TicketUpdate): Promise<TicketUpdateResult>;
   /** Stops running work that relies on a decision that changed or is being revised; returns the stopped assignment ids. */
@@ -594,6 +612,23 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
         context.startAssignment(assignment.id);
         return toolSuccess({ assignmentID: assignment.id, specialistID: assignment.specialistId, status: assignment.status, provider: assignment.provider ?? "codex", model: assignment.model });
       }
+      case "propose_practice": {
+        try {
+          const result = await context.proposePractice({
+            title: typeof args.title === "string" ? args.title : "",
+            method: typeof args.method === "string" ? args.method : "",
+            rationale: typeof args.rationale === "string" ? args.rationale : "",
+            evidence: strings(args.evidence),
+            practiceId: typeof args.practiceID === "string" && args.practiceID ? args.practiceID : null,
+          });
+          return toolSuccess({ ...result, status: "shown_to_person", note: "Only the person adopts it." });
+        } catch (error) {
+          const code = (error as { code?: string }).code ?? "invalid_arguments";
+          return toolFailure(code, (error as Error).message);
+        }
+      }
+      case "read_practices":
+        return toolSuccess(await context.readPractices());
       case "update_ticket": {
         const issueNumber = typeof args.issueNumber === "number" ? args.issueNumber : 0;
         if (!issueNumber) return toolFailure("invalid_arguments", "issueNumber is required.");

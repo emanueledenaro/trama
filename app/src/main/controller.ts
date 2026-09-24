@@ -16,6 +16,8 @@ import type {
   CoordinatorPhase,
   CoordinatorRequest,
   GitHubState,
+  Practice,
+  PracticeView,
   ProviderState,
   MandateAction,
   ProjectDocument,
@@ -36,6 +38,20 @@ import {
   TicketRefusal,
   TOOL_SERVER_INSTRUCTIONS,
 } from "./core/coordinatorTools";
+import {
+  adoptPractice,
+  currentVersion,
+  PracticeError,
+  PracticeStore,
+  practicesText,
+  privateContent,
+  problemEvidence,
+  projectHash,
+  proposePractice,
+  retirePractice,
+  revisePractice,
+  rollbackPractice,
+} from "./core/practices";
 import { checkItems, closeBlockers, evidenceProblems, parseChecklist, progressComment, progressKey, progressMarker } from "./core/tickets";
 import { openingInput, resumeInput, specialistInstructions } from "./core/specialistBriefing";
 import { prepareDemoProject } from "./core/demoProject";
@@ -232,6 +248,7 @@ export class TramaController {
       onAccountChanged: () => void this.refreshCodex(),
     });
     this.monitorStore = new MonitorStore(storageRoot);
+    this.practiceStore = new PracticeStore(storageRoot);
     this.state = {
       monitor: { enabled: false, openAtLogin: false, intervalSeconds: 300, repositories: [], status: {} },
       recentProjects: [],
@@ -245,6 +262,7 @@ export class TramaController {
       settings: { theme: "system", sidebarWidth: 256 },
       error: null,
       backgroundProjects: [],
+      practices: [],
       platform: process.platform,
     };
     this.state.codex = this.state.providers.codex;
@@ -256,7 +274,72 @@ export class TramaController {
   }
 
   /** State derived from the document: running specialist turns and candidate verdicts. */
+  private readonly practiceStore: PracticeStore;
+  private practices: Practice[] = [];
+
+  private practiceViews(projectId: string): PracticeView[] {
+    const hash = projectHash(projectId);
+    return this.practices.map((p) => {
+      const adoption = p.adoptions.find((a) => a.projectId === projectId && !a.retiredAt) ?? null;
+      const retired = [...p.adoptions].reverse().find((a) => a.projectId === projectId && a.retiredAt) ?? null;
+      const version = currentVersion(p);
+      const fromThisProject = p.sourceProjectHash === hash;
+      return {
+        id: p.id,
+        title: p.title,
+        status: p.status,
+        version: version.version,
+        method: version.method,
+        rationale: version.rationale,
+        evidence: fromThisProject ? version.evidence.map((e) => e.summary) : [],
+        fromThisProject,
+        adoptedVersion: adoption?.version ?? null,
+        retiredHere: !adoption && retired ? { at: retired.retiredAt!, reason: retired.retiredReason } : null,
+        versions: p.versions.length,
+      };
+    });
+  }
+
+  private async proposePractice(
+    project: ActiveProjectState,
+    input: { title: string; method: string; rationale: string; evidence: string[]; practiceId: string | null },
+  ): Promise<{ practiceID: string; version: number }> {
+    const evidence = input.evidence.map((reference) => {
+      const found = problemEvidence(project.document, reference);
+      if (!found) throw new PracticeError("evidence_insufficient", `${reference} is not evidence of a problem in this project.`);
+      return found;
+    });
+    const paths = project.snapshot.modules.flatMap((m) => [m.relativePath, ...m.files.map((f) => f.relativePath)]);
+    const leaked = privateContent(`${input.title}\n${input.method}`, project.document, paths);
+    if (leaked.length) throw new PracticeError("private_content", `The method names project-specific content: ${leaked.join(", ")}. Write it as a general method.`);
+    const practice = input.practiceId
+      ? revisePractice(this.practices, input.practiceId, { method: input.method, rationale: input.rationale, evidence })
+      : proposePractice(this.practices, { projectId: project.id, title: input.title, method: input.method, rationale: input.rationale, evidence });
+    await this.practiceStore.save(this.practices);
+    appendEvent(project.document, "trama", {
+      type: "activity",
+      title: `Pratica proposta: ${practice.title} (v${currentVersion(practice).version})`,
+      detail: `${currentVersion(practice).method}\nLa trovi in Memoria: solo tu la adotti.`,
+      tone: "info",
+    }, project.runningRequestId);
+    this.changedIn(project);
+    return { practiceID: practice.id, version: currentVersion(practice).version };
+  }
+
+  async changePractice(action: "adopt" | "retire" | "rollback", id: string, reason = ""): Promise<void> {
+    const project = this.requireProject();
+    if (action === "adopt") adoptPractice(this.practices, id, project.id);
+    else if (action === "retire") retirePractice(this.practices, id, project.id, reason);
+    else rollbackPractice(this.practices, id, project.id);
+    await this.practiceStore.save(this.practices);
+    const practice = this.practices.find((p) => p.id === id)!;
+    const label = action === "adopt" ? "adottata" : action === "retire" ? "ritirata" : "riportata alla versione precedente";
+    appendEvent(project.document, "person", { type: "activity", title: `Pratica ${label}: ${practice.title}`, detail: reason || null, tone: "info" });
+    this.changed();
+  }
+
   private refreshDerived(): void {
+    this.state.practices = this.state.project ? this.practiceViews(this.state.project.id) : [];
     this.state.backgroundProjects = [...this.parkedProjects.values()].map((p) => ({
       id: p.id,
       name: p.name,
@@ -282,6 +365,7 @@ export class TramaController {
       sounds: settings.sounds === true,
     };
     this.lastProjectId = settings.lastProjectId ?? null;
+    this.practices = await this.practiceStore.load();
     if (settings.monitor) this.state.monitor = { ...this.state.monitor, ...settings.monitor, status: {} };
     this.scheduleMonitor();
     this.host.applyTheme(this.state.settings.theme);
@@ -975,6 +1059,8 @@ export class TramaController {
           stopAssignment: (id) => void this.stopAssignmentRuntime(id),
           decisionChanged: (id) => this.stopWorkDependingOn(id),
           updateTicket: (input) => this.updateTicket(input, current.runningRequestId),
+          proposePractice: (input) => this.proposePractice(current, input),
+          readPractices: async () => ({ practices: this.practiceViews(current.id) as never }),
           runCheck: (check) => this.runCheck(check, current.rootPath, current.runningRequestId),
           availableChecks: availableChecks(current.rootPath),
           reviewWorkspace: async (assignmentId) => {
@@ -1053,6 +1139,7 @@ export class TramaController {
       if (opening.replaced) {
         document.coordinator.injectedStudy = {};
         document.coordinator.memorySentToThread = null;
+        document.coordinator.practicesSent = null;
         document.coordinator.contextWarnedAt = null;
         appendEvent(document, "trama", {
           type: "card",
@@ -1219,6 +1306,11 @@ export class TramaController {
         decisions: document.decisions,
       });
       if (mentioned) sections.push(mentioned);
+      const practices = practicesText(this.practices, project.id);
+      if ((practices ?? null) !== (document.coordinator.practicesSent ?? null)) {
+        sections.push(practices ?? "## Pratiche adottate\nLa persona ha ritirato tutte le pratiche di questo progetto.");
+        document.coordinator.practicesSent = practices;
+      }
       const skills = skillInvocations(trimmed, project.skills);
       sections.push(codexSkillText(trimmed, project.skills));
       appendEvent(
@@ -1412,6 +1504,7 @@ export class TramaController {
     document.coordinator.threadProvider = provider;
     document.coordinator.injectedStudy = {};
     document.coordinator.memorySentToThread = null;
+    document.coordinator.practicesSent = null;
     document.coordinator.contextWarnedAt = null;
     document.coordinator.pendingHandover = { from, reason: `la persona ha spostato il Coordinatore da ${providerName(from)} a ${providerName(provider)}` };
     document.selectedProvider = provider;

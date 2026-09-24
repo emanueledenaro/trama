@@ -151,6 +151,8 @@ export interface CoordinatorState {
   memory: CoordinatorMemory;
   study: ProjectStudy | null;
   memorySentToThread: string | null;
+  /** Fingerprint of the adopted practices last sent to the thread. */
+  practicesSent?: string | null;
   /** Percent of the context window above which the chat shows a notice (5-95). */
   contextThreshold?: number;
   /** The threshold the last notice was given for; cleared by a compaction or a new thread. */
@@ -527,6 +529,8 @@ export interface AppState {
   providers: Record<ProviderId, ProviderState>;
   settings: AppSettings;
   error: string | null;
+  /** General practices as the selected project may see them (C15). */
+  practices: PracticeView[];
   /** Projects not selected whose team is still working (C07). */
   backgroundProjects: BackgroundProject[];
   platform: NodeJS.Platform;
@@ -561,3 +565,45 @@ export interface GitHubCapabilities {
   rateRemaining: number | null;
 }
 
+
+/** A problem in a project that a practice answers (C15). */
+export interface PracticeEvidence {
+  kind: "regression" | "review" | "failure" | "wait" | "conflict";
+  /** Id of the evidence in its source project; never shown to other projects. */
+  reference: string;
+  summary: string;
+}
+
+export interface PracticeVersion {
+  version: number;
+  method: string;
+  rationale: string;
+  evidence: PracticeEvidence[];
+  createdAt: string;
+}
+
+/** A general working method the Coordinator proposes and the person adopts per project (C15). */
+export interface Practice {
+  id: string;
+  title: string;
+  status: "proposed" | "adopted" | "retired";
+  sourceProjectHash: string;
+  versions: PracticeVersion[];
+  adoptions: { projectId: string; version: number; adoptedAt: string; retiredAt: string | null; retiredReason: string | null }[];
+  createdAt: string;
+}
+
+export interface PracticeView {
+  id: string;
+  title: string;
+  status: Practice["status"];
+  version: number;
+  method: string;
+  rationale: string;
+  /** Evidence summaries, only for the project the practice came from. */
+  evidence: string[];
+  fromThisProject: boolean;
+  adoptedVersion: number | null;
+  retiredHere: { at: string; reason: string | null } | null;
+  versions: number;
+}
