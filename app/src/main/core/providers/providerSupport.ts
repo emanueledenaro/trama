@@ -13,7 +13,7 @@ import { homedir } from "node:os";
 import { basename, delimiter, dirname, extname, isAbsolute, join, parse, resolve, sep } from "node:path";
 import type { LoadedSkill } from "@shared/skills";
 import type { ProviderId } from "@shared/codex";
-import { isInside, ProviderError, type TurnEvent } from "./types";
+import { type HostToolServer, isInside, ProviderError, type TurnEvent } from "./types";
 
 // ── Skills (skillPromptInjection.ts) ─────────────────────────────────────
 
@@ -331,6 +331,25 @@ export class PendingTurn {
       throw new Error("Turno interrotto.");
     }
   }
+}
+
+// ── Host tools ───────────────────────────────────────────────────────────
+
+/** Names in Trama's MCP catalog, read with the bearer token from the main process. */
+export async function listHostToolNames(server: HostToolServer, timeoutMs = 5_000): Promise<string[]> {
+  const response = await fetch(server.url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "application/json, text/event-stream", Authorization: `Bearer ${server.token}` },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list", params: {} }),
+    signal: AbortSignal.timeout(timeoutMs),
+  });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  const payload = (await response.json()) as { result?: { tools?: unknown } };
+  const tools = Array.isArray(payload?.result?.tools) ? payload.result.tools : [];
+  return tools.flatMap((tool) => {
+    const name = (tool as { name?: unknown } | null)?.name;
+    return typeof name === "string" && /^[A-Za-z0-9_-]+$/.test(name) ? [name] : [];
+  });
 }
 
 // ── Usage-limit blocks ───────────────────────────────────────────────────

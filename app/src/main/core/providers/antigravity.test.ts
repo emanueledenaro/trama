@@ -8,6 +8,7 @@ import {
   accountFromFailedModels,
   AntigravityRuntime,
   buildAntigravityCaptureCommand,
+  isAllowedAntigravityTool,
   isDeniedAntigravityTool,
   hookScriptSource,
   mcpProxyScriptSource,
@@ -17,6 +18,7 @@ import {
   resolveAntigravityCliModelLabel,
 } from "./antigravity";
 import { clearUsageLimitsForTests, parseUsageLimit } from "./providerSupport";
+import { CoordinatorToolServer, toolSuccess } from "../toolServer";
 
 /** A fake `agy` that answers health probes and prints Synara-format stream-json with hook events. */
 const FAKE_AGY = String.raw`
@@ -33,7 +35,8 @@ if (args[0] === "plugin") { fs.appendFileSync(process.env.FAKE_AGY_LOG, "plugin 
 fs.appendFileSync(process.env.FAKE_AGY_LOG, JSON.stringify({ args, cwd: process.cwd(), env: {
   events: process.env.TRAMA_ANTIGRAVITY_EVENTS, root: process.env.TRAMA_ANTIGRAVITY_WRITABLE_ROOT,
   decision: process.env.TRAMA_ANTIGRAVITY_HOOK_DECISION, mcp: process.env.TRAMA_ANTIGRAVITY_MCP_URL,
-  tokenFile: process.env.TRAMA_ANTIGRAVITY_MCP_TOKEN_FILE, leaked: process.env.TRAMA_SECRET } }) + "\n");
+  tokenFile: process.env.TRAMA_ANTIGRAVITY_MCP_TOKEN_FILE, hostTools: process.env.TRAMA_ANTIGRAVITY_HOST_TOOLS,
+  leaked: process.env.TRAMA_SECRET } }) + "\n");
 // Like the real CLI, every hook runs the installed capture script and honors its decision.
 const capture = require("node:path").join(process.env.FAKE_AGY_PLUGIN, "capture.cjs");
 const hook = (event, payload) =>
@@ -58,6 +61,7 @@ const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   tool(3, "view_file", { AbsolutePath: "/x" }, { error: "boom" });
   tool(4, "search_web", { query: "x" }, { error: "" });
   tool(5, "write_to_file", { TargetFile: "/tmp/outside.txt" }, { error: "" });
+  tool(6, "invoke_subagent", { Task: "x" }, { error: "" });
   await wait(250);
   if (scenario === "limit") {
     out({ event: "result", result: { status: "ERROR", error: "RESOURCE_EXHAUSTED: quota exceeded, retry in 2 hours" } });
@@ -255,6 +259,44 @@ describe("Antigravity capture plugin scripts", () => {
     expect(JSON.parse(await decide(join(worktree, "new", "x.txt")))).toEqual({ decision: "allow" });
   });
 
+  it("allows only read tools, edits in the worktree and Trama's MCP tools", async () => {
+    const events = join(root, "events.ndjson");
+    const worktree = join(root, "worktree");
+    const env = {
+      TRAMA_ANTIGRAVITY_EVENTS: events,
+      TRAMA_ANTIGRAVITY_HOOK_DECISION: "allow",
+      TRAMA_ANTIGRAVITY_WRITABLE_ROOT: worktree,
+      TRAMA_ANTIGRAVITY_HOST_TOOLS: "propose_plan,read_plan",
+    };
+    const decide = async (name: string, args: Record<string, unknown> = {}) =>
+      (await runScript("capture.cjs", hookScriptSource(), ["pre-tool"], JSON.stringify({ conversationId: "c", stepIdx: 1, toolCall: { name, args } }), env)).stdout.trim();
+    for (const name of ["view_file", "list_dir", "grep_search", "find_by_name", "mcp_trama_propose_plan", "mcp__trama__read_plan", "propose_plan"]) {
+      expect(JSON.parse(await decide(name))).toEqual({ decision: "allow" });
+    }
+    for (const name of ["run_command", "search_web", "browser_open", "task_boundary", "invoke_subagent", "schedule", "mcp_trama_unknown", "mcp_github_create_issue", ""]) {
+      expect(await decide(name)).toBe("{}");
+    }
+    expect(JSON.parse(await decide("write_to_file", { TargetFile: join(worktree, "a.txt") }))).toEqual({ decision: "allow" });
+    expect(await decide("write_to_file", {})).toBe("{}");
+  });
+
+  it("denies subagent invocations during a Trama turn", async () => {
+    const events = join(root, "events.ndjson");
+    const env = { TRAMA_ANTIGRAVITY_EVENTS: events, TRAMA_ANTIGRAVITY_WRITABLE_ROOT: join(root, "worktree") };
+    const invoke = async (conversationId: string, extra: Record<string, string> = {}) =>
+      (await runScript("capture.cjs", hookScriptSource(), ["pre-invocation"], JSON.stringify({ conversationId }), { ...env, ...extra })).stdout.trim();
+    // The first conversation seen in the turn is the turn's own; any other is a subagent.
+    expect(JSON.parse(await invoke("main"))).toEqual({ decision: "allow" });
+    expect(JSON.parse(await invoke("main"))).toEqual({ decision: "allow" });
+    expect(await invoke("sub")).toBe("{}");
+    // A resumed conversation is known from the start.
+    expect(await invoke("other", { TRAMA_ANTIGRAVITY_CONVERSATION: "resumed", TRAMA_ANTIGRAVITY_EVENTS: join(root, "events2.ndjson") })).toBe("{}");
+    expect(isAllowedAntigravityTool("mcp_trama_propose_plan", new Set(["propose_plan"]))).toBe(true);
+    expect(isAllowedAntigravityTool("task_boundary", new Set(["propose_plan"]))).toBe(false);
+    const inactive = await runScript("capture.cjs", hookScriptSource(), ["pre-invocation"], JSON.stringify({ conversationId: "x" }), {});
+    expect(JSON.parse(inactive.stdout)).toEqual({ decision: "allow" });
+  });
+
   it("serves an empty MCP catalog outside a Trama turn", async () => {
     const input = `${JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" })}\n`;
     const result = await runScript("proxy.cjs", mcpProxyScriptSource(), [], input, {
@@ -302,7 +344,12 @@ describe("Antigravity turns", () => {
     expect(log).toContain("denied run_command");
     expect(log).toContain("denied search_web");
     expect(log).toContain("denied write_to_file");
-    expect(log.match(/denied /g)).toHaveLength(3);
+    expect(log).toContain("denied invoke_subagent");
+    expect(log.match(/denied /g)).toHaveLength(4);
+    // Tools outside the allow-list are denied too, with their own explanation.
+    expect(events).toContainEqual(
+      expect.objectContaining({ type: "toolCallCompleted", tool: "invoke_subagent", succeeded: false, error: expect.stringMatching(/solo lettura/) }),
+    );
     expect(events).toContainEqual(expect.objectContaining({ type: "fileChangeCompleted", paths: [join(worktree, "a.txt")], succeeded: true }));
     expect(events).toContainEqual(expect.objectContaining({ type: "toolCallStarted", tool: "view_file" }));
     expect(events).toContainEqual(expect.objectContaining({ type: "toolCallCompleted", tool: "view_file", succeeded: false, error: "boom" }));
@@ -385,6 +432,28 @@ describe("Antigravity turns", () => {
     await expect(turn).rejects.toThrow(/interrotto/);
     expect(events.at(-1)).toEqual({ type: "interrupted" });
     expect(runtime.isRunningTurn).toBe(false);
+  });
+
+  it("passes the names of Trama's MCP tools to the capture hook", async () => {
+    const server = new CoordinatorToolServer(
+      [{ name: "propose_plan", description: "Propone un piano", properties: {}, required: [], readOnly: true }],
+      async () => toolSuccess({ ok: true }),
+      "istruzioni",
+    );
+    const url = await server.start();
+    try {
+      runtime = new AntigravityRuntime(
+        { executable: join(root, "agy"), toolServer: { name: "trama", url, token: server.token } },
+        { homeDir: join(root, "home") },
+      );
+      const worktree = join(root, "worktree");
+      const { threadId } = await runtime.openThread({ model: "m", cwd: worktree, developerInstructions: "", sandbox: "workspace-write" });
+      await runtime.runTurn({ threadId, prompt: "x", cwd: worktree, model: "m", writableRoot: worktree, onEvent: () => undefined });
+      const call = (await logLines())[0] as { env: Record<string, string | undefined> };
+      expect(call.env.hostTools).toBe("propose_plan");
+    } finally {
+      server.stop();
+    }
   });
 
   it("keeps an interrupt that arrives while the turn is being set up", async () => {

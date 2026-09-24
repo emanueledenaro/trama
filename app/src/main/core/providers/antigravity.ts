@@ -13,9 +13,11 @@
  * Sandbox: print mode cannot pause for approvals, so Synara only runs it with
  * `--dangerously-skip-permissions` ("Full access"). Trama therefore refuses read-only threads and runs
  * only workspace-write turns whose cwd is inside the worktree. As ADR 0012 requires, the capture hook
- * enforces "write only inside the worktree, no network" by denial: it denies `run_command` (a shell
- * cannot be kept inside the worktree or off the network), web and browser tools, and file-edit tools
- * that target a path outside the worktree.
+ * enforces "write only inside the worktree, no network" with an allow-list: known read tools, the
+ * file-edit tools when their target stays inside the worktree, and Trama's MCP tools. Everything else
+ * is denied: `run_command` (a shell cannot be kept inside the worktree or off the network), web and
+ * browser tools, and any tool a newer CLI adds. Subagent launches (PreInvocation from another
+ * conversation) are denied too.
  */
 import { type ChildProcess, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
@@ -41,6 +43,7 @@ import {
   compareVersions,
   currentUsageLimit,
   inlineSkillInstructions,
+  listHostToolNames,
   parseCliVersion,
   parseUsageLimit,
   PendingTurn,
@@ -69,14 +72,39 @@ const DECISION_ENV = "TRAMA_ANTIGRAVITY_HOOK_DECISION";
 const WRITABLE_ROOT_ENV = "TRAMA_ANTIGRAVITY_WRITABLE_ROOT";
 const MCP_URL_ENV = "TRAMA_ANTIGRAVITY_MCP_URL";
 const MCP_TOKEN_FILE_ENV = "TRAMA_ANTIGRAVITY_MCP_TOKEN_FILE";
+const HOST_TOOLS_ENV = "TRAMA_ANTIGRAVITY_HOST_TOOLS";
+const CONVERSATION_ENV = "TRAMA_ANTIGRAVITY_CONVERSATION";
 
-/** Tools the capture hook always denies: a shell cannot be confined to the worktree or kept off the network. */
+/**
+ * The capture hook allows only these Antigravity tools during a Trama turn, plus the edit tools
+ * (inside the worktree) and Trama's own MCP tools. Everything else is denied, including tools that
+ * a newer CLI adds: shells, network and browser tools, subagents, scheduling.
+ */
+export const ANTIGRAVITY_READ_TOOLS = [
+  "view_file",
+  "view_file_outline",
+  "view_code_item",
+  "list_dir",
+  "find_by_name",
+  "grep_search",
+  "codebase_search",
+];
+export const ANTIGRAVITY_EDIT_TOOLS = ["write_to_file", "replace_file_content", "multi_replace_file_content"];
+/** Tools denied with a specific explanation: a shell cannot be confined to the worktree or kept off the network. */
 const DENIED_TOOL_NAMES = ["run_command", "send_command_input"];
 /** Web, browser and URL tools reach the network. */
 const NETWORK_TOOL_PATTERN = /^(?:search_web|read_url_content|browser_.*)$|web|url|fetch|http|browser/i;
+/** How Antigravity may name a tool of the `trama` MCP server: `mcp_trama_x`, `mcp__trama__x`, `trama__x`, `trama/x`. */
+const HOST_TOOL_PREFIX_PATTERN = /^(?:mcp[_-]{1,2})?trama(?:__|[_:/.])/;
 
 export function isDeniedAntigravityTool(name: string): boolean {
   return DENIED_TOOL_NAMES.includes(name) || NETWORK_TOOL_PATTERN.test(name);
+}
+
+/** The allow-list the capture hook applies (the hook script carries its own copy). */
+export function isAllowedAntigravityTool(name: string, hostTools: ReadonlySet<string>): boolean {
+  if (ANTIGRAVITY_READ_TOOLS.includes(name) || ANTIGRAVITY_EDIT_TOOLS.includes(name)) return true;
+  return hostTools.has(name.replace(HOST_TOOL_PREFIX_PATTERN, ""));
 }
 
 const READ_ONLY_REFUSAL =
@@ -366,9 +394,10 @@ export function hookScriptSource(): string {
   return `const fs = require("node:fs");
 const path = require("node:path");
 const event = process.argv[2] || "unknown";
-const EDIT_TOOLS = new Set(["write_to_file", "replace_file_content", "multi_replace_file_content"]);
-const DENIED_TOOLS = new Set(${JSON.stringify(DENIED_TOOL_NAMES)});
-const NETWORK_TOOL = new RegExp(${JSON.stringify(NETWORK_TOOL_PATTERN.source)}, "i");
+const READ_TOOLS = new Set(${JSON.stringify(ANTIGRAVITY_READ_TOOLS)});
+const EDIT_TOOLS = new Set(${JSON.stringify(ANTIGRAVITY_EDIT_TOOLS)});
+const HOST_TOOL_PREFIX = new RegExp(${JSON.stringify(HOST_TOOL_PREFIX_PATTERN.source)});
+const HOST_TOOLS = new Set((process.env.${HOST_TOOLS_ENV} || "").split(",").filter(Boolean));
 let payload = "";
 process.stdin.setEncoding("utf8");
 process.stdin.on("data", (chunk) => { payload += chunk; });
@@ -412,6 +441,19 @@ function contained(root, file) {
   }
   return true;
 }
+// The turn's own conversation: known when resuming, otherwise the first one seen in this turn.
+function isMainConversation(conversationId) {
+  if (typeof conversationId !== "string" || !conversationId) return true;
+  const known = process.env.${CONVERSATION_ENV};
+  if (known) return conversationId === known;
+  const file = process.env.${EVENTS_ENV} + ".conversation";
+  try {
+    fs.writeFileSync(file, conversationId, { flag: "wx" });
+    return true;
+  } catch {
+    try { return fs.readFileSync(file, "utf8") === conversationId; } catch { return false; }
+  }
+}
 function inside(root, target) {
   const normalized = root.endsWith(path.sep) ? root : root + path.sep;
   return target === root || target.startsWith(normalized);
@@ -450,23 +492,27 @@ process.stdin.on("end", () => {
   } catch {
     capturedPayload = "{}";
   }
+  // An empty object is Antigravity's denial.
+  const deny = (kind) => {
+    fs.appendFileSync(target, kind + "\\t" + capturedPayload + "\\n");
+    process.stdout.write("{}\\n");
+  };
   if (event === "pre-tool") {
+    // Allow-list: read tools, edit tools inside the worktree, Trama's MCP tools. Nothing else.
     const root = process.env.${WRITABLE_ROOT_ENV};
     const call = input && input.toolCall;
+    const name = call && typeof call.name === "string" ? call.name.trim() : "";
     const args = call && call.args && typeof call.args === "object" ? call.args : {};
     const file = typeof args.TargetFile === "string" ? args.TargetFile : typeof args.AbsolutePath === "string" ? args.AbsolutePath : "";
-    if (call && typeof call.name === "string" && (DENIED_TOOLS.has(call.name) || NETWORK_TOOL.test(call.name))) {
-      fs.appendFileSync(target, "denied-tool\\t" + capturedPayload + "\\n");
-      process.stdout.write("{}\\n");
-      return;
+    if (EDIT_TOOLS.has(name)) {
+      if (!root || !file || !contained(root, file)) return deny("denied-tool");
+    } else if (!READ_TOOLS.has(name) && !HOST_TOOLS.has(name.replace(HOST_TOOL_PREFIX, ""))) {
+      return deny("denied-tool");
     }
-    if (call && EDIT_TOOLS.has(call.name) && root) {
-      if (!file || !contained(root, file)) {
-        fs.appendFileSync(target, "denied-tool\\t" + capturedPayload + "\\n");
-        process.stdout.write("{}\\n");
-        return;
-      }
-    }
+  }
+  if (event === "pre-invocation" && !isMainConversation(input && input.conversationId)) {
+    // A subagent: Trama does not see or confine it.
+    return deny("denied-invocation");
   }
   fs.appendFileSync(target, event + "\\t" + capturedPayload + "\\n");
   if (event === "pre-tool") {
@@ -634,9 +680,10 @@ async function installCapturePlugin(binary: string, home: string): Promise<void>
 
 // ── Hook events and transcript ───────────────────────────────────────────
 
-const EDIT_TOOLS = new Set(["write_to_file", "replace_file_content", "multi_replace_file_content"]);
+const EDIT_TOOLS = new Set(ANTIGRAVITY_EDIT_TOOLS);
 const DENIED_COMMAND_OUTPUT = "Negato da Trama: Antigravity non può eseguire comandi di shell, perché non restano nel worktree né fuori dalla rete.";
 const DENIED_NETWORK_OUTPUT = "Negato da Trama: gli strumenti di rete non sono consentiti.";
+const DENIED_TOOL_OUTPUT = "Negato da Trama: con Antigravity sono consentiti solo lettura, modifiche nel worktree e gli strumenti di Trama.";
 
 export function normalizeAntigravityCommandLine(value: unknown): string | undefined {
   if (typeof value !== "string") return undefined;
@@ -898,6 +945,7 @@ export class AntigravityRuntime implements AgentRuntime {
     let text: string;
     let runDir: string | null = null;
     let tokenFile: string | null = null;
+    let hostTools: string[] = [];
     try {
       const skillText = await inlineSkillInstructions("antigravity", options.skills);
       pending.checkpoint();
@@ -911,6 +959,11 @@ export class AntigravityRuntime implements AgentRuntime {
       const promptIssue = antigravityPromptCommandLineIssue(text);
       if (promptIssue) throw new ProviderError("rpcError", promptIssue);
 
+      // The hook allows Trama's MCP tools by name, so it needs the current catalog.
+      if (toolServer) {
+        hostTools = await listHostToolNames(toolServer).catch(() => []);
+        pending.checkpoint();
+      }
       runDir = await mkdtemp(join(tmpdir(), "trama-antigravity-"));
       await writeFile(join(runDir, "hooks.ndjson"), "");
       if (toolServer) {
@@ -950,6 +1003,8 @@ export class AntigravityRuntime implements AgentRuntime {
       [EVENTS_ENV]: eventFile,
       [DECISION_ENV]: "allow",
       [WRITABLE_ROOT_ENV]: writableRoot,
+      [HOST_TOOLS_ENV]: hostTools.join(","),
+      ...(thread.conversationId ? { [CONVERSATION_ENV]: thread.conversationId } : {}),
       ...(toolServer && tokenFile ? { [MCP_URL_ENV]: toolServer.url, [MCP_TOKEN_FILE_ENV]: tokenFile } : {}),
     });
 
@@ -1139,6 +1194,8 @@ export class AntigravityRuntime implements AgentRuntime {
       } catch {
         continue;
       }
+      // A subagent launch the hook refused: it belongs to another conversation.
+      if (eventName === "denied-invocation") continue;
       const conversationId = typeof payload.conversationId === "string" ? payload.conversationId : undefined;
       // A subagent spawned by this CLI writes into the same hook file. Its events describe another
       // conversation and must never rebind this thread.
@@ -1178,7 +1235,8 @@ export class AntigravityRuntime implements AgentRuntime {
             succeeded: false,
           });
         } else {
-          turn.onEvent({ type: "toolCallCompleted", itemId, server: "antigravity", tool: name, succeeded: false, error: DENIED_NETWORK_OUTPUT });
+          const error = NETWORK_TOOL_PATTERN.test(name) ? DENIED_NETWORK_OUTPUT : DENIED_TOOL_OUTPUT;
+          turn.onEvent({ type: "toolCallCompleted", itemId, server: "antigravity", tool: name, succeeded: false, error });
         }
         continue;
       }
