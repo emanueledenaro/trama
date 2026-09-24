@@ -38,7 +38,8 @@ npm run dist        # pacchetto con electron-builder
 
 ## Struttura
 
-- `app/src/main`: processo principale. Scansione del repository, client di Codex App Server, Coordinatore, server MCP degli strumenti su `127.0.0.1`, Patto, mandato, GitHub e persistenza.
+- `app/src/main`: processo principale. Scansione del repository, Coordinatore, server MCP degli strumenti su `127.0.0.1`, Patto, mandato, GitHub e persistenza.
+- `app/src/main/core/providers`: gli adattatori dei nove provider portati da Synara (ADR 0012) dietro la forma comune `AgentRuntime`: Codex, Claude Agent, Cursor, Grok, Droid, Devin, OpenCode, Antigravity e Pi.
 - `app/src/preload`: bridge IPC con azioni tipizzate. Il renderer non ha accesso a Node.
 - `app/src/renderer`: interfaccia React con Tailwind CSS 4 e `@base-ui/react`, costruita sui token di design di Synara.
 - `app/src/shared`: tipi e logica condivisa, come la timeline della conversazione.
@@ -47,7 +48,7 @@ npm run dist        # pacchetto con electron-builder
 ## Primo uso
 
 1. Apri un progetto esistente oppure il progetto di esempio.
-2. Apri Collegamenti e verifica l'account ChatGPT riconosciuto da Codex.
+2. Apri Collegamenti e verifica i provider: Codex con un account ChatGPT, oppure un altro provider a cui hai già fatto l'accesso dalla sua CLI. La guida introduttiva ti accompagna al primo avvio e si riapre dal menu Aiuto.
 3. Se vuoi usare GitHub, esegui prima `gh auth login` nel terminale e controlla il repository mostrato dall'app.
 4. Leggi lo studio del Coordinatore e scrivigli. Puoi scegliere un modulo come contesto dal composer.
 5. Rispondi alle schede di decisione e di mandato: solo le tue risposte entrano nel Patto e nel mandato.
@@ -63,8 +64,8 @@ Il raggruppamento dei moduli deriva dai percorsi reali, con un trattamento speci
 ## Limiti attuali
 
 - L'app Electron è stata provata con un app-server Codex di prova (`app/test-fixtures/fake-codex.mjs`), nei test e con `npm run ui-check` sotto Linux. Una sessione con Codex reale e un account ChatGPT non è ancora stata eseguita con l'app Electron.
-- Come nella versione SwiftUI, solo Codex ha un adattatore completo; gli altri otto provider sono descritti in Collegamenti ma non selezionabili. La pubblicazione di pull request dall'app Electron è provata fino al push del branch; la creazione con `gh` non è ancora stata provata su un repository reale. L'elenco è nell'[ADR 0011](docs/adr/0011-app-desktop-electron-con-design-synara.md).
-- I pacchetti firmati dell'app Electron (Developer ID, notarizzazione) non sono ancora configurati.
+- I nove provider hanno un adattatore. La lettura di account e modelli di Claude Agent è stata provata su una CLI reale; i turni reali dei provider diversi da Codex, e gli altri provider in generale, sono provati solo con CLI, server e SDK finti. Antigravity lavora solo in un worktree, senza shell né rete. La pubblicazione di pull request è provata fino al push del branch; la creazione con `gh` non è ancora stata provata su un repository reale. L'elenco è nell'[ADR 0011](docs/adr/0011-app-desktop-electron-con-design-synara.md).
+- Il workflow `Rilascio` (`.github/workflows/release.yml`) produce i pacchetti per macOS, Windows e Linux a ogni tag `v*`. Firma e notarizzazione partono solo con i secret `CSC_LINK`, `CSC_KEY_PASSWORD`, `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD` e `APPLE_TEAM_ID`; senza, i pacchetti restano non firmati. Nessun pacchetto firmato è ancora stato prodotto.
 - La CI verifica build e test dell'app Electron. Le prove locali della versione SwiftUI, ormai rimossa, restano in [docs/verifiche-locali.md](docs/verifiche-locali.md) come registro storico.
 - Trama è distribuito con licenza MIT. L'interfaccia riprende il design di Synara, anch'esso MIT, con l'attribuzione in [docs/synara-attribution.md](docs/synara-attribution.md). Le skill Matt Pocock includono licenza MIT e attribuzione. Codex CLI viene installato separatamente e non è incluso nell'app.
 

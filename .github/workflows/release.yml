@@ -1,0 +1,57 @@
+name: Rilascio
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+jobs:
+  package:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            target: --mac
+          - os: windows-latest
+            target: --win
+          - os: ubuntu-latest
+            target: --linux
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: app
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - name: Dipendenze
+        run: npm ci
+      - name: Controllo dei tipi e test
+        run: npm run typecheck && npm test
+      - name: Build
+        run: npm run build
+      # Firma e notarizzazione partono solo quando i secret esistono: senza, il pacchetto resta non firmato.
+      - name: Pacchetto
+        env:
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          extra=()
+          if [ -z "$CSC_LINK" ]; then export CSC_IDENTITY_AUTO_DISCOVERY=false; fi
+          if [ "${{ matrix.target }}" = "--mac" ] && [ -n "$APPLE_ID" ] && [ -n "$CSC_LINK" ]; then extra+=("-c.mac.notarize=true"); fi
+          npx electron-builder ${{ matrix.target }} --publish never "${extra[@]}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: trama-${{ matrix.os }}
+          path: |
+            app/release/*.dmg
+            app/release/*.zip
+            app/release/*.exe
+            app/release/*.AppImage
+          if-no-files-found: error
