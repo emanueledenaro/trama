@@ -392,6 +392,8 @@ export interface ProjectDocument {
   createdFromIdea?: string | null;
   /** The review cycle scenario of the example project, run on a local model of an order. */
   pactDemo?: PactDemo | null;
+  /** Progress of the guided exercises, kept only in the example project (C13, C14). */
+  exercises?: import("./onboarding").ExerciseRecord;
 }
 
 export interface PactDemo {
@@ -508,6 +510,8 @@ export interface ActiveProjectState {
   skills: import("./skills").LoadedSkill[];
   /** The current verdict of each candidate, computed by the main process. */
   candidateReports: Record<string, CandidateReport>;
+  /** The AI Hero skills Trama copies are present in the project. */
+  aiHeroPrepared?: boolean;
 }
 
 export type ThemePreference = "system" | "light" | "dark";
@@ -534,6 +538,10 @@ export interface AppState {
   /** Projects not selected whose team is still working (C07). */
   backgroundProjects: BackgroundProject[];
   platform: NodeJS.Platform;
+  /** The first-run guide's persisted progress (C12). */
+  onboarding: import("./onboarding").OnboardingState;
+  /** GitHub CLI's login, read on demand for the guide. */
+  gitHubCli: import("./onboarding").GitHubCliState;
 }
 
 export interface ProviderState {

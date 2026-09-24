@@ -1,5 +1,6 @@
 import type { ProviderId } from "./codex";
 import type { AppSettings, DecisionAlternative, MandateAction } from "./domain";
+import type { ExerciseId, GuideStepId, ObservedStep } from "./onboarding";
 
 /** Every action the renderer can ask the main process to perform. */
 export interface ActionMap {
@@ -73,6 +74,15 @@ export interface ActionMap {
   "monitor:poll": [void, void];
   "skills:prepare": [void, { pathsCreated: string[]; existingPreserved: string[]; warnings: string[]; version: string }];
   "app:dismissError": [void, void];
+  /** The first-run guide: opened once, skipped, steps skipped or taken back (C12). */
+  "onboarding:update": [{ shown?: boolean; dismissed?: boolean; skipStep?: GuideStepId; unskipStep?: GuideStepId }, void];
+  "onboarding:checkGitHub": [void, void];
+  /** Opens the example project and records that an exercise started (C13, C14). */
+  "exercise:start": [{ exercise: ExerciseId }, void];
+  /** Navigation in the example project that an exercise step waits for. */
+  "exercise:observe": [{ step: ObservedStep }, void];
+  /** The conflict exercise: two simulated local changes compared with the latest candidate. */
+  "exercise:simulateRemoteChanges": [void, void];
   "shell:openExternal": [{ url: string }, void];
 }
 

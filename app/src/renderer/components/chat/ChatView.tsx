@@ -6,6 +6,7 @@ import {
   IconLayoutSidebarRight,
   IconRefresh,
   IconRosetteDiscountCheck,
+  IconSchool,
   IconShieldCheck,
   IconSitemap,
   IconUsersGroup,
@@ -20,6 +21,7 @@ import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/cn";
 import { formatRelativeTime } from "@/lib/format";
 import { act, type InspectorTarget, useUi } from "@/lib/store";
+import { ExercisePanel } from "@/components/onboarding/ExercisePanel";
 import { Composer } from "./Composer";
 import { ContextMeter } from "./ContextMeter";
 import { TimelineRowView } from "./TimelineRows";
@@ -47,6 +49,22 @@ function HeaderChip({
       <span className="size-3.5 shrink-0 opacity-70 [&>svg]:size-3.5">{icon}</span>
       {inspector ? null : <span className="hidden lg:inline">{label}</span>}
       {count ? <span className="text-ui-xs text-[var(--color-text-accent)]">{count}</span> : null}
+    </button>
+  );
+}
+
+/** Recalls the exercise guide on the example project. */
+function ExercisesChip() {
+  const exercise = useUi((s) => s.exercise);
+  const setExercise = useUi((s) => s.setExercise);
+  return (
+    <button
+      type="button"
+      className={cn(HEADER_CHIP, exercise && HEADER_CHIP_ACTIVE)}
+      onClick={() => (exercise ? setExercise(null) : void act("exercise:start", { exercise: "first" }).then(() => setExercise("first")))}
+    >
+      <IconSchool className="size-3.5 opacity-70" stroke={1.8} />
+      <span>Esercizi</span>
     </button>
   );
 }
@@ -101,6 +119,7 @@ function ChatHeader({ isMac }: { isMac: boolean }) {
       </div>
       {project ? (
         <div className="no-drag flex shrink-0 items-center gap-1">
+          {project.isDemo ? <ExercisesChip /> : null}
           <ContextMeter />
           <HeaderChip target={{ kind: "map" }} label="Mappa" icon={<IconSitemap stroke={1.8} />} />
           <HeaderChip target={{ kind: "pact" }} label="Patto" icon={<IconRosetteDiscountCheck stroke={1.8} />} count={pendingDecisions} />
@@ -152,6 +171,9 @@ function Landing() {
             </div>
             <button type="button" className="text-ui text-[var(--color-text-accent)] hover:underline" onClick={() => void act("project:openDemo", undefined)}>
               Esplora il progetto di esempio
+            </button>
+            <button type="button" className="text-ui-sm text-muted-foreground hover:text-foreground hover:underline" onClick={() => setDialog("guide")}>
+              Configura e prova Trama
             </button>
           </>
         )}
@@ -279,6 +301,7 @@ export function ChatView({ isMac }: { isMac: boolean }) {
       {project ? (
         <div key={project.id} className="chat-pane-enter relative flex min-h-0 flex-1 flex-col">
           <Timeline />
+          <ExercisePanel />
           <div className="pointer-events-none absolute inset-x-0 bottom-0 px-3 pb-3 sm:px-5 sm:pb-4">
             <div className="pointer-events-auto">
               <Composer />

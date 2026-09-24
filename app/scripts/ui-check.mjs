@@ -26,6 +26,15 @@ const shot = async (name) => {
 };
 
 await page.getByText("Su cosa vuoi lavorare?").waitFor();
+// First launch: the guide opens by itself once, with the real state of each step.
+const guide = page.getByRole("dialog", { name: "Guida introduttiva" });
+await guide.waitFor();
+await guide.locator('[data-step="github"][data-status]:not([data-status="checking"])').waitFor();
+await shot("00-guide-first-run");
+await guide.getByRole("button", { name: /Collega GitHub CLI/ }).click();
+await shot("00b-guide-github");
+await guide.getByRole("button", { name: "Continua più tardi" }).click();
+await guide.waitFor({ state: "hidden" });
 await shot("01-landing");
 await page.getByText("Esplora il progetto di esempio").click();
 await page.getByText("Ho letto lo studio").first().waitFor({ timeout: 20_000 });
@@ -106,6 +115,24 @@ await page.getByRole("button", { name: /Orders/ }).first().click();
 await shot("06-module");
 await page.getByRole("button", { name: /CancelPaidOrder.swift/ }).first().click();
 await shot("07-file");
+// C13: the first exercise's steps come from the document and from observed navigation.
+await page.getByRole("button", { name: "Esercizi", exact: true }).click();
+const exercise = page.getByRole("complementary", { name: "Esercizio" });
+await exercise.getByRole("button", { name: "Mostra la scheda di studio" }).click();
+await exercise.getByRole("button", { name: "Scegli un modulo nella mappa" }).click();
+await shot("07a-exercise-first");
+await page.getByRole("listbox", { name: "Moduli" }).getByRole("option", { name: /Orders/ }).click();
+await exercise.getByText("Esercizio completato.").waitFor({ timeout: 10_000 });
+await shot("07b-exercise-first-done");
+// C14: the conflict exercise compares the candidate with two simulated local changes.
+await exercise.getByRole("tab", { name: "4" }).click();
+await exercise.getByRole("button", { name: "Crea le modifiche simulate" }).click();
+await exercise.getByText("Esercizio completato.").waitFor({ timeout: 30_000 });
+await page.getByText("Modifica simulata da Trama in una copia locale separata").first().waitFor();
+await shot("07c-exercise-conflict");
+await exercise.getByRole("tab", { name: "2" }).click();
+await shot("07d-exercise-change");
+await exercise.getByRole("button", { name: "Chiudi l'esercizio" }).click();
 await page.getByRole("button", { name: /^Patto/ }).first().click();
 await shot("08-pact");
 await page.getByRole("button", { name: /^Mandato/ }).first().click();
@@ -129,4 +156,7 @@ await shot("11-connections");
 await page.keyboard.press("Escape");
 await page.getByRole("button", { name: "Impostazioni" }).click();
 await shot("12-settings");
+await page.getByRole("button", { name: "Apri la guida" }).click();
+await guide.waitFor();
+await shot("12a-guide-resume-dark");
 await app.close();

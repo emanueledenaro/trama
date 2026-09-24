@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import type { AppState } from "@shared/domain";
 import type { ActionName, ActionPayload, ActionResult } from "@shared/ipc";
+import type { ExerciseId } from "@shared/onboarding";
 
 export type InspectorTarget =
   | { kind: "map" }
@@ -18,13 +19,17 @@ export type InspectorTarget =
   | { kind: "issues" }
   | { kind: "issue"; number: number };
 
-export type DialogName = "settings" | "connections" | "createProject" | "search" | null;
+export type DialogName = "settings" | "connections" | "createProject" | "search" | "guide" | null;
 
 interface UiState {
   app: AppState | null;
   sidebarOpen: boolean;
   inspector: InspectorTarget | null;
   dialog: DialogName;
+  /** The dialog to reopen when the current one closes, for example the guide after Collegamenti. */
+  dialogReturn: DialogName;
+  /** The exercise shown in the panel over the example project's chat. */
+  exercise: ExerciseId | null;
   toast: string | null;
   composerFocusRequest: number;
   composerModuleId: string | null;
@@ -37,7 +42,8 @@ interface UiState {
   toggleSidebar(): void;
   setInspector(target: InspectorTarget | null): void;
   toggleInspector(target: InspectorTarget): void;
-  setDialog(dialog: DialogName): void;
+  setDialog(dialog: DialogName, returnTo?: DialogName): void;
+  setExercise(exercise: ExerciseId | null): void;
   setToast(message: string | null): void;
   focusComposer(moduleId?: string | null): void;
   setComposerModule(moduleId: string | null): void;
@@ -56,6 +62,8 @@ export const useUi = create<UiState>((set, get) => ({
   sidebarOpen: readSidebar(),
   inspector: null,
   dialog: null,
+  dialogReturn: null,
+  exercise: null,
   toast: null,
   composerFocusRequest: 0,
   composerModuleId: null,
@@ -94,7 +102,12 @@ export const useUi = create<UiState>((set, get) => ({
     const current = get().inspector;
     get().setInspector(current && current.kind === target.kind ? null : target);
   },
-  setDialog: (dialog) => set({ dialog }),
+  setDialog: (dialog, returnTo = null) => {
+    const back = get().dialogReturn;
+    if (dialog === null && back) set({ dialog: back, dialogReturn: null });
+    else set({ dialog, dialogReturn: returnTo });
+  },
+  setExercise: (exercise) => set({ exercise }),
   setToast: (toast) => set({ toast }),
   focusComposer: (moduleId) =>
     set((state) => ({

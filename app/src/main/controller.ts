@@ -115,6 +115,21 @@ import { assessConflict } from "./core/conflicts";
 import { pullRequestBody, publishCandidate } from "./core/publication";
 import { git } from "./core/process";
 import { AppStorage } from "./core/storage";
+import { hasAiHero, readGitHubCliStatus, simulateColleagueChanges } from "./core/onboarding";
+import {
+  EMPTY_ONBOARDING,
+  EXERCISE_IDS,
+  type ExerciseId,
+  exerciseSteps,
+  type GuideStepId,
+  hasUsableProvider,
+  isComplete,
+  isExerciseAssessment,
+  isObservedStep,
+  normalizeOnboarding,
+  type ObservedStep,
+  UNKNOWN_GITHUB_CLI,
+} from "@shared/onboarding";
 import { buildStudy, fingerprints, partsToInject, studyText } from "./core/study";
 import { CoordinatorToolServer, TOOL_SERVER_NAME } from "./core/toolServer";
 
@@ -264,6 +279,8 @@ export class TramaController {
       backgroundProjects: [],
       practices: [],
       platform: process.platform,
+      onboarding: { ...EMPTY_ONBOARDING },
+      gitHubCli: { ...UNKNOWN_GITHUB_CLI },
     };
     this.state.codex = this.state.providers.codex;
   }
@@ -355,6 +372,7 @@ export class TramaController {
       project.document.candidates.map((c) => [c.id, candidateReport(project.document, c, project.snapshot.headSHA)]),
     );
     project.pactDemoBlockers = project.document.pactDemo ? inspectPactDemo(project.document, project.document.pactDemo) : [];
+    this.recordCompletedExercises(project);
   }
 
   async start(): Promise<void> {
@@ -366,6 +384,7 @@ export class TramaController {
     };
     this.lastProjectId = settings.lastProjectId ?? null;
     this.practices = await this.practiceStore.load();
+    this.state.onboarding = normalizeOnboarding(settings.onboarding);
     if (settings.monitor) this.state.monitor = { ...this.state.monitor, ...settings.monitor, status: {} };
     this.scheduleMonitor();
     this.host.applyTheme(this.state.settings.theme);
@@ -452,7 +471,7 @@ export class TramaController {
 
   private async saveSettings(): Promise<void> {
     const { status: _status, ...monitor } = this.state.monitor;
-    await this.storage.saveSettings({ ...this.state.settings, lastProjectId: this.lastProjectId, monitor });
+    await this.storage.saveSettings({ ...this.state.settings, lastProjectId: this.lastProjectId, monitor, onboarding: this.state.onboarding });
   }
 
   // MARK: Codex account
@@ -586,6 +605,7 @@ export class TramaController {
         // Its team kept working: resume the same state instead of reading an older copy from disk.
         this.parkedProjects.delete(id);
         parked.snapshot = snapshot;
+        parked.aiHeroPrepared = hasAiHero(root);
         this.state.project = parked;
         this.state.loadingProject = null;
         this.lastProjectId = id;
@@ -651,6 +671,7 @@ export class TramaController {
         candidateReports: {},
         skills: [],
         pactDemoBlockers: [],
+        aiHeroPrepared: hasAiHero(root),
       };
       this.state.project = project;
       this.state.loadingProject = null;
@@ -2409,10 +2430,131 @@ export class TramaController {
       detail: [report.version, ...report.warnings].join("\n"),
       tone: "info",
     });
+    project.aiHeroPrepared = hasAiHero(project.rootPath);
+    if (project.aiHeroPrepared && !this.state.onboarding.aiHeroPreparedAt) {
+      this.state.onboarding.aiHeroPreparedAt = new Date().toISOString();
+      await this.saveSettings();
+    }
     this.changed();
     void this.refreshProject();
     void this.loadSkills();
     return report;
+  }
+
+  // MARK: First-run guide and exercises (C12, C13, C14)
+
+  async updateOnboarding(update: { shown?: boolean; dismissed?: boolean; skipStep?: GuideStepId; unskipStep?: GuideStepId }): Promise<void> {
+    const onboarding = this.state.onboarding;
+    const now = new Date().toISOString();
+    if (update.shown) onboarding.firstRunShownAt ??= now;
+    if (update.dismissed === true) onboarding.dismissedAt = now;
+    else if (update.dismissed === false) onboarding.dismissedAt = null;
+    if (update.skipStep) onboarding.skippedSteps = [...new Set([...onboarding.skippedSteps, update.skipStep])];
+    if (update.unskipStep) onboarding.skippedSteps = onboarding.skippedSteps.filter((s) => s !== update.unskipStep);
+    this.state.onboarding = normalizeOnboarding(onboarding);
+    this.publish();
+    await this.saveSettings();
+  }
+
+  private gitHubCliCheck: Promise<void> | null = null;
+
+  checkGitHubCli(): Promise<void> {
+    this.gitHubCliCheck ??= (async () => {
+      this.state.gitHubCli = { ...this.state.gitHubCli, status: "checking" };
+      this.publish();
+      this.state.gitHubCli = await readGitHubCliStatus();
+      this.publish();
+    })().finally(() => {
+      this.gitHubCliCheck = null;
+    });
+    return this.gitHubCliCheck;
+  }
+
+  /** Opens the example project, a local copy marked as an exercise, and records the start. */
+  async startExercise(exercise: ExerciseId): Promise<void> {
+    if (!EXERCISE_IDS.includes(exercise)) throw new DomainError("Esercizio sconosciuto.");
+    if (!this.state.project?.isDemo) await this.openDemo();
+    const project = this.requireProject();
+    const record = (project.document.exercises ??= { startedAt: {}, observed: {} });
+    record.startedAt[exercise] ??= new Date().toISOString();
+    this.changed();
+  }
+
+  /** Records navigation an exercise step waits for; only in the example project, once. */
+  observeExercise(step: ObservedStep): void {
+    const project = this.state.project;
+    if (!project?.isDemo || !isObservedStep(step)) return;
+    const document = project.document;
+    if (document.exercises?.observed[step]) return;
+    if (step === "studyRead" && !document.events.some((e) => e.content.type === "card" && e.content.kind === "study")) return;
+    const record = (document.exercises ??= { startedAt: {}, observed: {} });
+    record.observed[step] = new Date().toISOString();
+    this.changed();
+  }
+
+  /** Remembers an exercise once its steps are all observed in the example project's document. */
+  private recordCompletedExercises(project: ActiveProjectState): void {
+    if (!project.isDemo) return;
+    const completed = this.state.onboarding.completedExercises;
+    let changed = false;
+    for (const id of EXERCISE_IDS) {
+      if (completed[id]) continue;
+      if (isComplete(exerciseSteps(id, project.document, { providerReady: hasUsableProvider(this.state) }))) {
+        completed[id] = new Date().toISOString();
+        changed = true;
+      }
+    }
+    if (changed) void this.saveSettings().catch((error) => this.fail(error));
+  }
+
+  private simulatingConflicts = false;
+
+  /**
+   * The conflict exercise: compares the latest unpublished candidate of the example project with two
+   * changes of a simulated colleague, made in a separate local clone. No network, no real colleague.
+   */
+  async simulateRemoteChanges(): Promise<void> {
+    const project = this.requireProject();
+    if (!project.isDemo) throw new DomainError("L'esercizio di conflitto vale solo per il progetto di esempio.");
+    if (this.simulatingConflicts) return;
+    const document = project.document;
+    const eligible = document.candidates
+      .filter((c) => !c.pullRequest && latestCandidate(document, c.assignmentId)?.id === c.id && findAssignment(document, c.assignmentId)?.workspace)
+      .sort((a, b) => {
+        const exercise = (c: typeof a) => (findAssignment(document, c.assignmentId)?.exercise ? 1 : 0);
+        return exercise(b) - exercise(a) || b.declaredAt.localeCompare(a.declaredAt);
+      });
+    const candidate = eligible[0];
+    if (!candidate) throw new DomainError("Serve un candidato non pubblicato in un worktree: completa prima l'esercizio di modifica.");
+    const done = (document.conflicts ?? []).filter((a) => a.candidateId === candidate.id && a.snapshotId === candidate.snapshotId && isExerciseAssessment(a));
+    if (done.some((a) => a.classification === "clean") && done.some((a) => a.classification === "conflict")) {
+      throw new DomainError(`Il confronto di esercizio è già stato fatto sul candidato ${candidate.id}.`);
+    }
+    this.simulatingConflicts = true;
+    try {
+      appendEvent(document, "trama", {
+        type: "activity",
+        title: "Esercizio di conflitto",
+        detail: `Trama crea due modifiche simulate in una copia locale separata e le confronta con il candidato ${candidate.id}. Non c'è un collaboratore reale e non si usa la rete.`,
+        tone: "info",
+      });
+      this.changed();
+      const assessments = await simulateColleagueChanges({
+        candidate,
+        session: findAssignment(document, candidate.assignmentId)!.workspace!,
+        exerciseRoot: join(this.storage.root, "Exercises"),
+        cacheRoot: join(this.storage.root, "RemoteCache"),
+        probeRoot: join(this.storage.root, "ConflictProbe"),
+      });
+      document.conflicts ??= [];
+      for (const assessment of assessments) {
+        document.conflicts.push(assessment);
+        appendEvent(document, "trama", { type: "card", kind: "conflict", title: "Esercizio di conflitto", detail: null, referenceId: assessment.id });
+      }
+      this.changed();
+    } finally {
+      this.simulatingConflicts = false;
+    }
   }
 
   // MARK: Settings
