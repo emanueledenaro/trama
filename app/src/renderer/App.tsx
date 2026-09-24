@@ -131,7 +131,7 @@ export function App() {
               className="absolute inset-y-0 -left-1 z-20 w-2 cursor-ew-resize"
             />
           ) : null}
-          <main className="chat-content-card relative z-[15] flex min-w-0 flex-1 overflow-hidden">
+          <main className="chat-content-card @container/main relative z-[15] flex min-w-0 flex-1 overflow-hidden">
             <ChatView isMac={isMac} />
             {inspector && app.project && mainView === "dialog" ? <Inspector /> : null}
           </main>

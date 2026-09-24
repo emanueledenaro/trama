@@ -48,11 +48,13 @@ function HeaderChip({
   const toggle = useUi((s) => s.toggleInspector);
   const active = inspector?.kind === target.kind;
   return (
-    <button type="button" className={cn(HEADER_CHIP, active && HEADER_CHIP_ACTIVE)} onClick={() => toggle(target)}>
-      <span className="size-3.5 shrink-0 opacity-70 [&>svg]:size-3.5">{icon}</span>
-      {inspector ? null : <span className="hidden lg:inline">{label}</span>}
-      {count ? <span className="text-ui-xs text-[var(--color-text-accent)]">{count}</span> : null}
-    </button>
+    <Tooltip label={label}>
+      <button type="button" aria-label={label} aria-pressed={active} className={cn(HEADER_CHIP, active && HEADER_CHIP_ACTIVE)} onClick={() => toggle(target)}>
+        <span className="size-3.5 shrink-0 opacity-70 [&>svg]:size-3.5">{icon}</span>
+        {inspector ? null : <span className="hidden @min-[1000px]/chat:inline">{label}</span>}
+        {count ? <span className="text-ui-xs text-[var(--color-text-accent)]">{count}</span> : null}
+      </button>
+    </Tooltip>
   );
 }
 
@@ -63,11 +65,13 @@ function ExercisesChip() {
   return (
     <button
       type="button"
+      aria-label="Esercizi"
+      aria-pressed={Boolean(exercise)}
       className={cn(HEADER_CHIP, exercise && HEADER_CHIP_ACTIVE)}
       onClick={() => (exercise ? setExercise(null) : void act("exercise:start", { exercise: "first" }).then(() => setExercise("first")))}
     >
       <IconSchool className="size-3.5 opacity-70" stroke={1.8} />
-      <span>Esercizi</span>
+      <span className="hidden @min-[640px]/chat:inline">Esercizi</span>
     </button>
   );
 }
@@ -100,7 +104,7 @@ function ChatHeader({ isMac }: { isMac: boolean }) {
           <NavigationButtons />
         </div>
       ) : null}
-      <div className="flex min-w-0 flex-1 items-center gap-2">
+      <div className="flex min-w-[7rem] flex-1 items-center gap-2">
         {mainView === "overview" ? (
           <h2 className="truncate font-system-ui text-ui font-normal text-foreground">Panoramica dei progetti</h2>
         ) : project ? (
@@ -132,7 +136,8 @@ function ChatHeader({ isMac }: { isMac: boolean }) {
         )}
       </div>
       {project && mainView === "dialog" ? (
-        <div className="no-drag flex shrink-0 items-center gap-1">
+        // On a narrow dialog the chips scroll sideways instead of covering the title; each one stays reachable by Tab.
+        <div className="no-drag flex min-w-0 items-center gap-1 overflow-x-auto [scrollbar-width:none]">
           {project.isDemo ? <ExercisesChip /> : null}
           <HeaderChip target={{ kind: "goals" }} label="Obiettivi" icon={<IconTarget stroke={1.8} />} count={proposedGoals} />
           <HeaderChip target={{ kind: "map" }} label="Mappa" icon={<IconSitemap stroke={1.8} />} />
@@ -141,6 +146,11 @@ function ChatHeader({ isMac }: { isMac: boolean }) {
           <HeaderChip target={{ kind: "team" }} label="Team" icon={<IconUsersGroup stroke={1.8} />} count={pendingTeam} />
           <HeaderChip target={{ kind: "issues" }} label="Issue" icon={<IconCircleDot stroke={1.8} />} count={openIssues} />
           <HeaderChip target={{ kind: "memory" }} label="Memoria" icon={<IconBrain stroke={1.8} />} />
+        </div>
+      ) : null}
+      {project && mainView === "dialog" ? (
+        // Refresh and the inspector toggle never scroll away.
+        <div className="no-drag flex shrink-0 items-center gap-1">
           <Tooltip label="Aggiorna progetto">
             <button type="button" className={HEADER_CHIP} aria-label="Aggiorna progetto" onClick={() => void act("project:refresh", undefined)}>
               <IconRefresh className="size-3.5 opacity-70" stroke={1.8} />
@@ -256,7 +266,7 @@ function FirstGoalPrompt() {
   return (
     <div className="my-3 flex flex-wrap items-center gap-3 rounded-xl border border-dashed border-[color:var(--color-border)] px-3.5 py-3" data-testid="first-goal">
       <IconTarget className="size-4 shrink-0 text-muted-foreground" stroke={1.8} />
-      <p className="min-w-0 flex-1 text-ui text-muted-foreground">
+      <p className="min-w-[14rem] flex-1 text-ui text-muted-foreground">
         Descrivi un risultato e qualche esempio verificabile: il Coordinatore lo discute con te nel suo dialogo. Non concede un mandato.
       </p>
       <Button size="sm" variant="outline" onClick={() => setInspector({ kind: "goals", create: true })}>
@@ -351,7 +361,7 @@ export function ChatView({ isMac }: { isMac: boolean }) {
   const mainView = useUi((s) => s.mainView);
   const goalId = useUi((s) => s.dialogGoalId);
   return (
-    <div className="relative flex min-w-0 flex-1 flex-col">
+    <div className="@container/chat relative flex min-w-0 flex-1 flex-col">
       <ChatHeader isMac={isMac} />
       {mainView === "overview" ? (
         <OverviewView />

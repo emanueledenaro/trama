@@ -43,7 +43,7 @@ function readImage(file: File): Promise<DraftImage> {
 }
 
 const PILL =
-  "inline-flex h-7 min-w-0 shrink-0 cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-lg px-2 text-ui-sm font-normal text-[var(--color-text-foreground-secondary)] transition-colors hover:bg-[var(--color-background-elevated-secondary)] hover:text-[var(--color-text-foreground)] data-[popup-open]:bg-[var(--color-background-elevated-secondary)] data-[popup-open]:text-[var(--color-text-foreground)] sm:px-2.5";
+  "inline-flex h-7 min-w-0 shrink cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-lg px-2 text-ui-sm font-normal text-[var(--color-text-foreground-secondary)] transition-colors hover:bg-[var(--color-background-elevated-secondary)] hover:text-[var(--color-text-foreground)] data-[popup-open]:bg-[var(--color-background-elevated-secondary)] data-[popup-open]:text-[var(--color-text-foreground)] sm:px-2.5";
 
 /** Images and pasted texts not yet sent, kept per dialog while the app runs (UX02). */
 const unsentByDialog = new Map<string, { images: DraftImage[]; pastes: { id: string; text: string }[] }>();

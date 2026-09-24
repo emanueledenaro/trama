@@ -52,7 +52,7 @@ function createWindow(): void {
     width: 1100,
     height: 780,
     minWidth: 720,
-    minHeight: 600,
+    minHeight: 640,
     show: false,
     title: "Trama",
     ...(isMac
