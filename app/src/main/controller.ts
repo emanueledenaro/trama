@@ -636,6 +636,16 @@ export class TramaController {
 
   // MARK: Projects
 
+  /** Recent entries may keep an unresolved path (older versions, symlinked folders such as /var on macOS). */
+  private async findRecentProject(root: string): Promise<RecentProject | undefined> {
+    const exact = this.state.recentProjects.find((p) => p.path === root);
+    if (exact) return exact;
+    for (const project of this.state.recentProjects) {
+      if ((await realpath(project.path).catch(() => null)) === root) return project;
+    }
+    return undefined;
+  }
+
   async openProject(path: string, isDemo = false, idea: string | null = null): Promise<void> {
     const root = await realpath(path).catch(() => {
       throw new DomainError(`La cartella non è leggibile: ${path}`);
@@ -652,7 +662,7 @@ export class TramaController {
     this.publishNow();
 
     try {
-      const existing = this.state.recentProjects.find((p) => p.path === root);
+      const existing = await this.findRecentProject(root);
       const id = existing?.id ?? randomUUID();
       const snapshot = await scanRepository(root, isDemo);
       const parked = this.parkedProjects.get(id);
@@ -665,7 +675,7 @@ export class TramaController {
         this.state.loadingProject = null;
         this.lastProjectId = id;
         this.state.recentProjects = [
-          { ...(existing ?? { id, name: snapshot.name, path: root, isDemo }), lastOpenedAt: new Date().toISOString() },
+          { ...(existing ?? { id, name: snapshot.name, path: root, isDemo }), path: root, lastOpenedAt: new Date().toISOString() },
           ...this.state.recentProjects.filter((p) => p.id !== id),
         ];
         await this.storage.saveRecentProjects(this.state.recentProjects);
