@@ -88,6 +88,16 @@ await page.getByRole("button", { name: /^Team/ }).first().click();
 await shot("04e-team-inspector");
 await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
 
+// Learning (ADR 0014): the Coordinator saves a note, then a review the person asks for writes memory and a skill.
+await page.getByLabel("Messaggio al Coordinatore").fill("[memoria] ricorda il gestore di pacchetti");
+await page.keyboard.press("Enter");
+await page.getByText(/^Salvato\./).first().waitFor({ timeout: 20_000 });
+await page.getByRole("button", { name: /^Memoria/ }).first().click();
+await page.getByRole("button", { name: "Rivedi ora" }).click();
+await page.getByText("Skill 'release-flow' created").first().waitFor({ timeout: 30_000 });
+await shot("04i-memory");
+await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
+
 // Candidate: correct the mandate to allow integration, then declare, verify, review and clear.
 await page.getByRole("button", { name: /^Mandato/ }).first().click();
 await page.getByRole("button", { name: "Correggi", exact: true }).click();

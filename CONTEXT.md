@@ -34,7 +34,13 @@ Incarico: un lavoro assegnato dal Coordinatore a uno specialista, con obiettivo,
 
 Studio del progetto: la conoscenza che il Coordinatore ha del progetto attivo prima di dialogare: codice e moduli, documenti, issue e pull request, decisioni, mandato, incarichi e candidati, eventi del monitor e cronologia della chat. Lo studio avviene all'apertura del progetto e si aggiorna quando il progetto cambia.
 
-Memoria del Coordinatore: le note che il Coordinatore conserva per un progetto oltre la durata della sua finestra di contesto. È distinta dallo studio, che Trama ricava dai dati, e dalla cronologia, che è la conversazione stessa.
+Memoria del Coordinatore: le note che il Coordinatore conserva per un progetto oltre la durata della sua finestra di contesto. È distinta dallo studio, che Trama ricava dai dati, e dalla cronologia, che è la conversazione stessa. Ha due parti con un limite di caratteri: le note sul progetto (`MEMORY.md`) e il profilo della persona (`USER.md`), comune ai suoi progetti. Sono note del Coordinatore, non decisioni: non sostituiscono il Patto né il mandato (ADR 0014).
+
+Skill appresa: una procedura che il Coordinatore ha ricavato dal lavoro di un progetto e carica quando serve. Resta nella cartella di Trama, nella libreria di quel progetto. È distinta dalle skill del repository, come quelle di AI Hero, e da una pratica, che è un metodo generale condiviso fra progetti solo con l'adozione della persona. Una skill creata dalla revisione dell'esperienza è curata dal manutentore; una skill nata in un turno con la persona resta sua, salvo che lei la affidi.
+
+Revisione dell'esperienza: la sessione separata e non presidiata che, dopo abbastanza messaggi o azioni, rilegge la conversazione e aggiorna memoria e skill. Può solo aggiungere alla memoria: cambiare o togliere una voce diventa una proposta per la persona. Ogni revisione è registrata con motivo di avvio, esito, chiamate e token.
+
+Manutenzione delle skill: il controllo settimanale che rende inattive e poi archivia le skill create dalla revisione e non usate. Non tocca le skill fissate né quelle della persona; un'archiviazione si annulla con un ripristino.
 
 Scheda: un atto del metodo mostrato nella conversazione: studio, proposta di team, mandato, incarico, decisione, candidato, conflitto, avviso di contesto. Una scheda non è un log di strumenti né un messaggio libero.
 

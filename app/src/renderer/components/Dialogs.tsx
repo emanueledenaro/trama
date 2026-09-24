@@ -1,7 +1,7 @@
 import { IconDeviceDesktop, IconMoon, IconSun } from "@tabler/icons-react";
 import { useState } from "react";
 import type { ProviderAccount, ProviderId } from "@shared/codex";
-import type { ThemePreference } from "@shared/domain";
+import { DEFAULT_LEARNING_SETTINGS, type LearningSettings, type ThemePreference } from "@shared/domain";
 import { capabilityLines, PROVIDERS, type ProviderDescriptor } from "@shared/providers";
 import { Button } from "@/components/ui/button";
 import { Input, Label, TextArea } from "@/components/ui/field";
@@ -55,6 +55,7 @@ function SettingsDialog() {
         </section>
         <MonitorSettings />
         <MethodSettings />
+        <LearningSettingsSection />
         <section>
           <h4 className="mb-2 text-ui-sm font-medium text-muted-foreground">Avvisi</h4>
           <Toggle checked={sounds} onChange={(value) => void act("settings:update", { sounds: value })} label="Suono con gli avvisi utili" />
@@ -68,6 +69,26 @@ function SettingsDialog() {
         </section>
       </div>
     </Dialog>
+  );
+}
+
+/** What the Coordinator's learning may do (ADR 0014). */
+function LearningSettingsSection() {
+  const saved = useUi((s) => s.app?.settings.learning);
+  const learning = { ...DEFAULT_LEARNING_SETTINGS, ...(saved ?? {}) };
+  const set = (change: Partial<LearningSettings>) => void act("settings:update", { learning: change });
+  return (
+    <section>
+      <h4 className="mb-2 text-ui-sm font-medium text-muted-foreground">Apprendimento del Coordinatore</h4>
+      <Toggle checked={learning.memory} onChange={(value) => set({ memory: value })} label="Note sul progetto" />
+      <Toggle checked={learning.userProfile} onChange={(value) => set({ userProfile: value })} label="Profilo della persona, comune ai tuoi progetti" />
+      <Toggle checked={learning.backgroundReview} onChange={(value) => set({ backgroundReview: value })} label="Revisione dell'esperienza dopo il lavoro" />
+      <Toggle checked={learning.curator} onChange={(value) => set({ curator: value })} label="Manutenzione settimanale delle skill apprese" />
+      <Toggle checked={learning.consolidate} onChange={(value) => set({ consolidate: value })} label="Unire con un modello le skill troppo simili" />
+      <p className="text-ui-xs text-muted-foreground">
+        Tutto resta nella cartella di Trama, mai nel repository. La revisione usa il provider e il modello del Coordinatore e consuma token: la trovi in Memoria con il suo costo.
+      </p>
+    </section>
   );
 }
 

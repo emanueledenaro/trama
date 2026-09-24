@@ -1,16 +1,16 @@
 # Apprendimento di Trama dal sistema Hermes
 
-Stato: richiesta di prodotto approvata nella conversazione del 20 settembre 2026; analisi del sorgente in corso. Nessuna parità funzionale ancora dimostrata.
+Stato: richiesta di prodotto approvata il 20 settembre 2026; porting in TypeScript fatto il 24 settembre 2026 secondo l'[ADR 0014](../adr/0014-apprendimento-di-hermes.md). La parità è verificata con test automatici sul comportamento; la prova con un provider reale resta da fare.
 
 La persona chiede il sistema di apprendimento di Hermes Agent, usando il codice ufficiale come riferimento e riusando le parti compatibili. Il riferimento è https://github.com/NousResearch/hermes-agent. Prima di portare codice occorre fissare revisione, percorsi, licenza e test pertinenti. Le dipendenze opzionali devono essere distinte dalle funzioni del sistema locale.
 
-Revisione rilevata tramite API GitHub: `c1488ac947c9bc33fd65ec464548dc9d8edd6122`. La [licenza della revisione](https://github.com/NousResearch/hermes-agent/blob/c1488ac947c9bc33fd65ec464548dc9d8edd6122/LICENSE) è MIT, copyright 2025 Nous Research. Il porting deve conservare copyright e avviso di licenza nelle copie o porzioni sostanziali derivate. In questa fase non è stato incorporato codice Hermes.
+La prima analisi usava la revisione `c1488ac947c9bc33fd65ec464548dc9d8edd6122`. Il porting parte dalla revisione `58c896ea4ebaff5425a068f461b6c6fedadb8b40` del 24 settembre 2026, più recente di 2.484 commit. La licenza è MIT, copyright 2025 Nous Research: copyright e avviso stanno in [hermes-attribution.md](../hermes-attribution.md) e [hermes-LICENSE](../hermes-LICENSE).
 
 ## Risultato richiesto
 
 Il Coordinatore conserva conoscenze utili tra conversazioni, recupera esperienze precedenti e ricava procedure riutilizzabili dal lavoro. L'analisi deve coprire memoria della persona e del progetto, ricerca delle sessioni, creazione e aggiornamento delle skill, trigger della revisione dell'esperienza e limiti delle autovalutazioni. Il comportamento va ricavato dal sorgente: non si presume un miglioramento misurabile a ogni messaggio.
 
-Trama resta un'app nativa Swift. Eventuali adattamenti rispetto a Hermes devono essere dichiarati, con motivazione e prove. Account esterni e servizi opzionali non diventano prerequisiti impliciti.
+Dal 23 settembre 2026 Trama è un'app Electron (ADR 0011), quindi il porting è in TypeScript nel processo principale. Gli adattamenti rispetto a Hermes sono dichiarati nell'ADR 0014, con motivazione. Account esterni e servizi opzionali non diventano prerequisiti impliciti.
 
 ## Collegamento al lavoro esistente
 
@@ -19,6 +19,8 @@ C15 (#47) possiede il miglioramento delle pratiche e dei team. La memoria attual
 Il piano già approvato resta P02 con selettore coerente, UX00 con approvazione del layout, UX01-UX08 con i relativi prerequisiti, poi P03-P09. L'estensione Hermes richiede una mappa delle dipendenze verso C15 prima di assegnare l'implementazione; non è parte implicita della correzione del composer P02.
 
 ## Esecuzione
+
+La tabella dei file portati è in [hermes-attribution.md](../hermes-attribution.md). In breve: memoria `MEMORY.md` e `USER.md` con i limiti e i controlli di Hermes; ricerca nei dialoghi con ranking BM25 riprodotto senza SQLite; skill con batch atomici e modifica fuzzy; revisione dell'esperienza separata con i prompt originali; manutenzione settimanale delle skill. La vista Memoria mostra e corregge tutto.
 
 ## Mappa iniziale del sorgente
 
@@ -37,9 +39,9 @@ Analisi delegata a gpt-5.6-luna con ragionamento medium, sulla revisione fissata
 
 Hermes non esegue necessariamente una costosa revisione LLM a ogni messaggio: distingue sincronizzazione dei turni, recupero anticipato, estrazione ai confini della sessione e manutenzione periodica. Le impostazioni e i trigger devono essere preservati o documentati come differenze.
 
-Il porting Swift deve riusare i confini di memoria e strumenti di Trama. La scelta della persistenza e i test di equivalenza restano da definire sul diff implementativo. Nessun runtime Python o servizio Honcho è stato aggiunto. Riprodurre localmente una funzione di Honcho non autorizza a dichiararla equivalente senza prove.
+Il porting riusa i confini di memoria e strumenti di Trama: gli strumenti passano dal server MCP del Coordinatore e i dati stanno nella cartella di Trama. Nessun runtime Python o servizio Honcho è stato aggiunto. Riprodurre localmente una funzione di Honcho non autorizza a dichiararla equivalente senza prove.
 
-Restano da ispezionare in dettaglio il deposito della memoria integrata, la ricerca storica e i test upstream; la tabella non è ancora una specifica completa di parità.
+Deposito della memoria, ricerca storica, skill, manutenzione e test upstream sono stati letti per intero sulla revisione `58c896e`. I casi limite asseriti dai test di Hermes sono ripresi nei test di `app/src/main/core/learning`.
 
 L'implementatore richiesto è gpt-5.6-luna con ragionamento medium. Il Coordinatore verifica aderenza al ticket, diff, regressioni e risultati osservabili e richiede correzioni quando necessario. L'analisi del sorgente precede la suddivisione del porting in incarichi verificabili.
 

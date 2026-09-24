@@ -1,0 +1,31 @@
+# Il Coordinatore impara con la logica di Hermes Agent, dentro la cartella di Trama
+
+Stato: accettata il 24 settembre 2026 per l'estensione Hermes di C15 (#47), su richiesta della persona del 20 e del 24 settembre 2026. Sostituisce la memoria a testo unico dell'ADR 0006 (`write_memory`); gli ADR 0005, 0009, 0012 e 0013 restano validi.
+
+La persona chiede che il Coordinatore conservi quello che impara, lo ritrovi e ne ricavi procedure, usando le logiche reali di [Hermes Agent](https://github.com/NousResearch/hermes-agent). Il riferimento è la revisione `58c896ea4ebaff5425a068f461b6c6fedadb8b40` (24 settembre 2026), con licenza MIT. Restava da decidere cosa portare, dove conservarlo e con quali limiti, visto che Trama ha già regole su decisioni, mandato e isolamento fra progetti.
+
+Decisione:
+
+- **Si porta il comportamento, non il runtime.** Il codice è riscritto in TypeScript in `app/src/main/core/learning`, senza Python e senza servizi esterni. Ogni file dice in testa da quali file di Hermes deriva. I prompt, le descrizioni degli strumenti, i limiti e i messaggi di errore restano quelli di Hermes, parola per parola, salvo dove nominano cose che in Trama non esistono.
+- **Memoria in due file, con i limiti di Hermes.** `MEMORY.md` (2.200 caratteri) contiene le note del Coordinatore su un progetto; `USER.md` (1.375 caratteri) contiene chi è la persona e vale per tutti i suoi progetti. Le voci sono separate da `§`. Ogni scrittura rilegge il file, rifiuta un file illeggibile o cambiato da fuori (con una copia `.bak`) e passa dal controllo contro injection ed esfiltrazione. Il blocco nel prompt è fissato all'apertura del thread e dopo una compattazione, come in Hermes.
+- **Skill apprese per progetto.** Il Coordinatore crea e corregge procedure con `skill_manage` (batch atomici, modifica fuzzy in nove passi, controllo del formato di `SKILL.md`), le legge con `skills_list` e `skill_view`, e riceve l'indice delle skill nel prompt. La libreria di un progetto non va negli altri progetti: condividere un metodo resta il compito delle pratiche di C15, con i loro controlli sui contenuti privati.
+- **Ricerca nelle conversazioni passate.** `session_search` cerca nei dialoghi del progetto con la stessa pulizia della query, lo stesso ranking BM25, gli stessi frammenti e lo stesso secondo tentativo in OR di Hermes. Trama non ha SQLite, quindi l'indice FTS5 è riprodotto in memoria. Gli eventi già presenti nel thread vivo del Coordinatore sono esclusi, come Hermes esclude la sessione in corso.
+- **Revisione dell'esperienza separata e non presidiata.** Dopo 10 messaggi della persona senza scritture in memoria, o dopo 10 azioni del Coordinatore senza scritture di skill, Trama apre una sessione a parte con il provider e il modello del Coordinatore, in sola lettura, con la trascrizione e i prompt di Hermes. Può chiamare solo gli strumenti di memoria e di skill, al massimo 16 volte. Può aggiungere alla memoria, ma una sostituzione o una rimozione diventa una proposta che la persona approva o scarta. Può modificare solo le skill che ha creato lei, mai quelle nate in un turno con la persona o fissate.
+- **Manutenzione settimanale.** Una volta alla settimana, dopo due ore di inattività e mai al primo controllo, le skill create dalla revisione e non usate da 14 giorni diventano inattive; dopo 30 giorni vanno in archivio, da cui si ripristinano. Il passaggio con un modello che unisce skill simili è spento per impostazione predefinita, come in Hermes, e prima di partire copia la libreria.
+- **Tutto resta nella cartella di Trama.** `Learning/USER.md` e `Learning/Projects/<hash>/` contengono memoria, skill, proposte, registro delle revisioni e stato della manutenzione. Nulla viene scritto nel repository.
+- **La persona vede e corregge tutto.** La vista Memoria mostra le voci con il loro spazio, le proposte, le skill con uso e stato, le revisioni con motivo di avvio, esito, chiamate e token, e la manutenzione. Da lì la persona corregge o toglie voci, fissa, affida, archivia, ripristina o elimina skill, chiede una revisione con un argomento e spegne ogni parte dalle impostazioni.
+- **Le note non sono decisioni.** Memoria e skill sono note del Coordinatore. Non sostituiscono il Patto, il mandato o le risposte della persona, e un risultato AI non diventa per questo un'evidenza di verifica.
+
+Differenze dichiarate rispetto a Hermes:
+
+- la revisione riceve la trascrizione invece di condividere la sessione del modello, come Hermes fa quando manda la revisione a un altro modello (`_digest_history`);
+- non ci sono provider di memoria esterni (Honcho, mem0), profili, cron, hub di skill, skill incluse nel pacchetto o directory esterne, né il registro delle modifiche e l'approvazione obbligatoria delle scritture, che in Hermes sono spenti per impostazione predefinita;
+- il linter delle skill lascia fuori le regole sulle convenzioni proprie di Hermes (`author`, `license`, `metadata.hermes`, piattaforme, nomi dei suoi strumenti);
+- `session_search` non restituisce link `@session` e ha una sola libreria per progetto;
+- il batch della memoria controlla anche l'alias `new_text`, che Hermes salta per un errore;
+- il limite di iterazioni della revisione è applicato alle chiamate agli strumenti, perché la sessione del provider non espone il numero di chiamate al modello.
+- quando l'indice delle skill cambia durante un thread, il turno successivo lo riceve come aggiornamento; in Hermes resta fissato nel prompt fino alla compattazione. Il thread di Trama dura molto più di una sessione di Hermes, quindi una skill nuova sarebbe rimasta invisibile troppo a lungo.
+
+Alternative scartate: tenere `write_memory`, che sostituiva tutto il testo e non aveva limiti per voce, controlli o revisione; portare il runtime Python di Hermes, che aggiungerebbe un secondo agente con propri permessi; una libreria di skill comune a tutti i progetti, che porterebbe contenuti di un progetto negli altri senza i controlli delle pratiche.
+
+Conseguenze: la vecchia memoria a testo unico passa una volta in `MEMORY.md`, un paragrafo per voce, e resta nel documento come storia. La revisione consuma token del provider del Coordinatore: per questo è registrata con il suo costo e si spegne dalle impostazioni. L'efficacia va dimostrata con prove reali, come chiede C15: un miglioramento a ogni messaggio non è promesso.

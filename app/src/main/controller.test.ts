@@ -288,6 +288,84 @@ describe("TramaController", () => {
   });
 });
 
+describe("learning ported from Hermes (ADR 0014)", () => {
+  it("keeps memory in Trama's folder and recalls earlier dialogs only outside the live thread", async () => {
+    const { data, project: root } = await setup();
+    const { existsSync, readFileSync } = await import("node:fs");
+    await controller!.send("Come funziona l'annullamento?", null, null, null);
+    await controller!.send("[memoria] ricorda pnpm", null, null, null);
+    const project = controller!.snapshot.project!;
+    const reply = project.document.events.at(-1)!.content as { text: string };
+    // Every message is still in the live thread: discovery returns nothing from it.
+    expect(reply.text).toContain("No matching sessions found");
+    const learning = controller!.snapshot.learning!;
+    expect(learning.memory.entries).toEqual(["Il progetto usa pnpm 9"]);
+    expect(existsSync(join(root, "MEMORY.md"))).toBe(false);
+    const files = (await import("node:fs")).readdirSync(join(data, "Learning", "Projects"));
+    expect(readFileSync(join(data, "Learning", "Projects", files[0]!, "MEMORY.md"), "utf8")).toBe("Il progetto usa pnpm 9");
+    expect(project.document.coordinator.learning).toMatchObject({ turnsSinceMemory: 0, memoryMigrated: true });
+  });
+
+  it("runs an unattended review that adds, proposes and creates, and denies other tools", async () => {
+    await setup();
+    await controller!.send("[memoria] ricorda pnpm", null, null, null);
+    const project = controller!.snapshot.project!;
+    const internal = controller as unknown as { runLearningReview(p: unknown, scope: { memory: boolean; skills: boolean }): Promise<void> };
+    await internal.runLearningReview(project, { memory: true, skills: true });
+    const learning = controller!.snapshot.learning!;
+    expect(learning.user.entries).toEqual(["La persona preferisce risposte brevi in italiano"]);
+    // An unattended review may not remove: the removal waits for the person.
+    expect(learning.memory.entries).toEqual(["Il progetto usa pnpm 9"]);
+    expect(learning.proposals).toHaveLength(1);
+    expect(learning.skills).toMatchObject([{ name: "release-flow", createdBy: "agent", state: "active" }]);
+    const run = learning.reviews[0]!;
+    expect(run).toMatchObject({ trigger: "memory+skills", status: "completed", toolCalls: 3 });
+    expect(run.actions).toEqual(["User profile updated", expect.stringContaining("staged for your approval"), "Skill 'release-flow' created"]);
+    const card = project.document.events.at(-1)!.content;
+    expect(card).toMatchObject({ type: "activity", title: "Revisione dell'esperienza" });
+
+    controller!.resolveLearningProposal(learning.proposals[0]!.id, true);
+    expect(controller!.snapshot.learning!.memory.entries).toEqual([]);
+    controller!.changeLearnedSkill({ name: "release-flow", action: "pin" });
+    expect(() => controller!.changeLearnedSkill({ name: "release-flow", action: "archive" })).toThrow("fissata");
+    controller!.changeLearnedSkill({ name: "release-flow", action: "unpin" });
+    controller!.changeLearnedSkill({ name: "release-flow", action: "archive" });
+    expect(controller!.snapshot.learning!.archivedSkills).toEqual(["release-flow"]);
+    controller!.changeLearnedSkill({ name: "release-flow", action: "restore" });
+    expect(controller!.editLearnedMemory({ target: "user", action: "replace", oldText: "brevi", content: "La persona preferisce risposte dirette" })).toEqual({ success: true, error: null });
+  });
+
+  it("gives a skill-only review no memory tool", async () => {
+    await setup();
+    const project = controller!.snapshot.project!;
+    const internal = controller as unknown as { runLearningReview(p: unknown, scope: { memory: boolean; skills: boolean }): Promise<void> };
+    await internal.runLearningReview(project, { memory: false, skills: true });
+    const learning = controller!.snapshot.learning!;
+    expect(learning.user.entries).toEqual([]);
+    expect(learning.reviews[0]).toMatchObject({ trigger: "skills", actions: ["Skill 'release-flow' created"] });
+  });
+
+  it("moves the old single-text memory into MEMORY.md once", async () => {
+    const { data, project } = await setup();
+    await controller!.closeProject();
+    const { readFile, writeFile, readdir } = await import("node:fs/promises");
+    const { createHash } = await import("node:crypto");
+    const id = controller!.snapshot.recentProjects[0]!.id;
+    const documentPath = join(data, "Projects", `${createHash("sha256").update(id).digest("hex")}.json`);
+    const saved = JSON.parse(await readFile(documentPath, "utf8"));
+    saved.coordinator.memory = { text: "Primo fatto\n\nSecondo fatto", updatedAt: null, revision: 2 };
+    delete saved.coordinator.learning;
+    await writeFile(documentPath, JSON.stringify(saved));
+    const { existsSync } = await import("node:fs");
+    if (existsSync(join(data, "Learning", "Projects"))) {
+      for (const dir of await readdir(join(data, "Learning", "Projects"))) await (await import("node:fs/promises")).rm(join(data, "Learning", "Projects", dir), { recursive: true });
+    }
+    await controller!.openProject(project);
+    await until(() => controller!.snapshot.project?.phase.kind === "ready");
+    expect(controller!.snapshot.learning!.memory.entries).toEqual(["Primo fatto", "Secondo fatto"]);
+  });
+});
+
 describe("import from the SwiftUI app", () => {
   it("imports recent projects and a conversation without touching the Swift files", async () => {
     const { createHash } = await import("node:crypto");
