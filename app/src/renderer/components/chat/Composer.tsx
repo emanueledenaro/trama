@@ -1,5 +1,5 @@
 // Layout and classes follow Synara (github.com/Emanuele-web04/synara, MIT License, Copyright (c) 2026 T3 Tools Inc. and Emanuele Di Pietro).
-import { IconArrowUp, IconAt, IconChevronDown, IconPhotoPlus, IconX } from "@tabler/icons-react";
+import { IconArrowUp, IconPhotoPlus, IconX } from "@tabler/icons-react";
 import type { ProviderId } from "@shared/codex";
 import type { ImageAttachmentInput } from "@shared/ipc";
 import { type MentionCandidate, mentionCandidates, mentionToken } from "@shared/mentions";
@@ -8,9 +8,9 @@ import { skillCandidates } from "@shared/skills";
 import { dialogComposer, findGoal } from "@shared/goals";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ContextMeter } from "./ContextMeter";
+import { ContextPicker } from "./ContextPicker";
 import { ModelPicker } from "./ModelPicker";
 import { Button } from "@/components/ui/button";
-import { Menu, MenuGroupLabel, MenuPopup, MenuRadioGroup, MenuRadioItem, MenuSeparator, MenuTrigger } from "@/components/ui/menu";
 import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/cn";
 import { act, useUi } from "@/lib/store";
@@ -88,7 +88,6 @@ export function Composer() {
   // A chosen model the catalogue no longer offers stays visible as unavailable: never replaced silently (ADR 0010).
   const modelMissing = Boolean(selectedModel && models.length && !modelInfo);
   const effort = selection.selectedEffort ?? modelInfo?.defaultReasoningEffort ?? null;
-  const module = moduleId ? project.snapshot.modules.find((m) => m.id === moduleId) : null;
   const dialogKey = `${project.id}:${goal?.id ?? ""}`;
   const unsent = useRef({ images, pastes });
   unsent.current = { images, pastes };
@@ -333,26 +332,7 @@ export function Composer() {
                   event.target.value = "";
                 }}
               />
-              <Menu>
-                <MenuTrigger className={cn(PILL, "max-w-56")} aria-label="Contesto del messaggio">
-                  <IconAt className="size-3.5 shrink-0 opacity-70" stroke={1.8} />
-                  <span className="min-w-0 truncate text-[var(--color-text-foreground)]">{module ? module.name : "Intero progetto"}</span>
-                  <IconChevronDown className="ms-0.5 size-3 shrink-0 opacity-60" />
-                </MenuTrigger>
-                <MenuPopup side="top" composer className="w-64">
-                  <MenuGroupLabel>Contesto</MenuGroupLabel>
-                  <MenuRadioGroup value={moduleId ?? "__project"} onValueChange={(value) => setModule(value === "__project" ? null : (value as string))}>
-                    <MenuRadioItem value="__project">Intero progetto</MenuRadioItem>
-                    <MenuSeparator />
-                    {project.snapshot.modules.map((m) => (
-                      <MenuRadioItem key={m.id} value={m.id}>
-                        <span className="block truncate">{m.name}</span>
-                        <span className="block truncate text-ui-xs text-muted-foreground">{m.relativePath}</span>
-                      </MenuRadioItem>
-                    ))}
-                  </MenuRadioGroup>
-                </MenuPopup>
-              </Menu>
+              <ContextPicker className={cn(PILL, "max-w-56")} modules={project.snapshot.modules} moduleId={moduleId} onChange={setModule} />
               <ModelPicker
                 className={PILL}
                 selectedProvider={selectedProvider}

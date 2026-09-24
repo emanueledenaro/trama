@@ -40,6 +40,15 @@ await shot("01-landing");
 await page.getByText("Esplora il progetto di esempio").click();
 await page.getByText("Ho letto lo studio").first().waitFor({ timeout: 20_000 });
 await shot("02-demo-study");
+// The context and model pickers share one panel.
+await page.getByRole("button", { name: "Contesto del messaggio" }).click();
+await page.getByRole("listbox", { name: "Contesto" }).waitFor();
+await shot("02c-context-picker");
+await page.keyboard.press("Escape");
+await page.getByRole("button", { name: /^Provider e modello del Coordinatore/ }).click();
+await page.getByRole("listbox", { name: "Modelli" }).waitFor();
+await shot("02d-model-picker");
+await page.keyboard.press("Escape");
 await page.getByLabel("Messaggio al Coordinatore").pressSequentially("Guarda @cancelpa");
 await page.getByRole("listbox", { name: "Menzioni" }).waitFor();
 await shot("02b-mentions");

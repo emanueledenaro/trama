@@ -7,7 +7,9 @@ import { PROVIDERS } from "@shared/providers";
 import { ASSIGNMENT_STATUS, AssignmentCard, CandidateCard, TeamProposalCard } from "@/components/chat/Cards";
 import { Spinner } from "@/components/Spinner";
 import { Button } from "@/components/ui/button";
+import { ProviderIcon } from "@/components/ProviderIcon";
 import { Badge, TextArea } from "@/components/ui/field";
+import { PickerSelect } from "@/components/ui/picker";
 import { cn } from "@/lib/cn";
 import { formatRelativeTime } from "@/lib/format";
 import { act, useUi } from "@/lib/store";
@@ -223,35 +225,28 @@ function AssignmentProvider({ assignment }: { assignment: SpecialistAssignment }
         Ora: {providerLabel(current)}<Sep />{assignment.model}. Puoi cambiarlo prima della ripresa: incarico e worktree restano, riparte solo la sessione.
       </p>
       <div className="mt-2 flex flex-wrap items-center gap-2 text-ui-sm">
-        <select
-          aria-label="Provider"
-          className="h-7 rounded-lg border border-[color:var(--color-border)] bg-transparent px-2"
+        <PickerSelect
+          label="Provider"
           value={provider}
-          onChange={(e) => {
-            const next = e.target.value as ProviderId;
+          options={connected.map((id) => ({ value: id, title: providerLabel(id), icon: <ProviderIcon provider={id} /> }))}
+          onChange={(next) => {
             setProvider(next);
             setModel(providers[next]?.models.find((m) => m.isDefault)?.model ?? providers[next]?.models[0]?.model ?? "");
           }}
-        >
-          {connected.map((id) => (
-            <option key={id} value={id}>
-              {providerLabel(id)}
-            </option>
-          ))}
-        </select>
-        <select
-          aria-label="Modello"
-          className="h-7 min-w-0 flex-1 rounded-lg border border-[color:var(--color-border)] bg-transparent px-2"
+        />
+        <PickerSelect
+          label="Modello"
           value={model}
-          onChange={(e) => setModel(e.target.value)}
-        >
-          {!validModel ? <option value={model}>{model} (non disponibile)</option> : null}
-          {models.map((m) => (
-            <option key={m.model} value={m.model}>
-              {m.displayName}
-            </option>
-          ))}
-        </select>
+          title={providerLabel(provider)}
+          meta={models.length === 1 ? "1 modello" : `${models.length} modelli`}
+          searchPlaceholder="Cerca un modello"
+          className="flex-1"
+          options={[
+            ...(!validModel ? [{ value: model, title: `${model} (non disponibile)`, disabled: true }] : []),
+            ...models.map((m) => ({ value: m.model, title: m.displayName, subtitle: m.description?.replaceAll(" · ", ", ") })),
+          ]}
+          onChange={setModel}
+        />
         <Button
           size="sm"
           variant="outline"

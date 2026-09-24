@@ -7,6 +7,7 @@ import { PROVIDERS } from "@shared/providers";
 import { ASSIGNMENT_STATUS, CANDIDATE_STATE } from "@/components/chat/Cards";
 import { Button } from "@/components/ui/button";
 import { Badge, Input, Label, TextArea } from "@/components/ui/field";
+import { PickerSelect } from "@/components/ui/picker";
 import { cn } from "@/lib/cn";
 import { formatRelativeTime } from "@/lib/format";
 import { act, useUi } from "@/lib/store";
@@ -71,15 +72,16 @@ export function GoalEditor({ goal, onDone }: { goal?: ProjectGoal; onDone: (id: 
           {examples.map((example, index) => (
             // biome-ignore lint/suspicious/noArrayIndexKey: new examples have no id until saved.
             <div key={example.id ?? `new-${index}`} className="flex items-center gap-1.5">
-              <select
-                aria-label="Tipo di esempio"
-                className="h-8 shrink-0 rounded-lg border border-input bg-transparent px-1.5 text-ui-sm"
+              <PickerSelect
+                label="Tipo di esempio"
                 value={example.kind}
-                onChange={(e) => update(index, { kind: e.target.value as GoalExample["kind"] })}
-              >
-                <option value="accepted">Deve succedere</option>
-                <option value="refused">Non deve succedere</option>
-              </select>
+                options={[
+                  { value: "accepted", title: "Deve succedere" },
+                  { value: "refused", title: "Non deve succedere" },
+                ]}
+                onChange={(kind) => update(index, { kind })}
+                className="h-8 shrink-0"
+              />
               <Input
                 aria-label={`Esempio ${index + 1}`}
                 value={example.text}
@@ -306,19 +308,17 @@ export function GoalView({ id }: { id: string }) {
         {!links.decisions.length && !links.openQuestions.length && !links.missingDecisionIds.length ? <EmptyNote>Nessuna decisione collegata.</EmptyNote> : null}
         {linkable.length ? (
           <div className="mt-2 flex items-center gap-1.5">
-            <select
-              aria-label="Decisione da collegare"
-              className="h-7 min-w-0 flex-1 rounded-lg border border-input bg-transparent px-1.5 text-ui-sm"
+            <PickerSelect
+              label="Decisione da collegare"
+              title="Decisioni del Patto"
+              meta={linkable.length === 1 ? "1 decisione" : `${linkable.length} decisioni`}
+              placeholder="Collega una decisione del Patto…"
+              searchPlaceholder="Cerca una decisione"
               value={linking}
-              onChange={(e) => setLinking(e.target.value)}
-            >
-              <option value="">Collega una decisione del Patto…</option>
-              {linkable.map((d) => (
-                <option key={d.id} value={d.id}>
-                  {d.id}<Sep />{d.value.slice(0, 60)}
-                </option>
-              ))}
-            </select>
+              options={linkable.map((d) => ({ value: d.id, title: d.id, subtitle: d.value }))}
+              onChange={setLinking}
+              className="flex-1"
+            />
             <Button
               size="xs"
               variant="outline"
