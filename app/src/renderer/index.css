@@ -153,16 +153,17 @@
   --destructive: color-mix(in srgb, #ef4444 90%, white);
 }
 
-:root[data-platform="darwin"] {
+:root[data-platform="darwin"],
+:root[data-platform="win32"] {
+  /* Native glass under a see-through sidebar: the macOS sidebar material, Acrylic on Windows 11. */
   --app-shell-background: transparent;
-  /* Light mode stays a neutral gray: at 38% the desktop wallpaper tinted the sidebar. */
-  --app-sidebar-surface: color-mix(in srgb, var(--surface) 95%, black);
+  --app-sidebar-surface: color-mix(in srgb, var(--surface) 45%, transparent);
   --app-sidebar-backdrop-filter: none;
 }
 
-:root.dark[data-platform="darwin"] {
-  --app-sidebar-backdrop-filter: blur(4px) saturate(130%);
-  --app-sidebar-surface: color-mix(in srgb, color-mix(in srgb, var(--surface) 80%, black) 72%, transparent);
+:root.dark[data-platform="darwin"],
+:root.dark[data-platform="win32"] {
+  --app-sidebar-surface: color-mix(in srgb, color-mix(in srgb, var(--surface) 80%, black) 60%, transparent);
 }
 
 @layer base {

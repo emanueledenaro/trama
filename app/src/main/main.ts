@@ -1,3 +1,4 @@
+import { release } from "node:os";
 import { join } from "node:path";
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, Notification, powerMonitor, shell, type MenuItemConstructorOptions } from "electron";
 import type { AppSettings } from "@shared/domain";
@@ -7,6 +8,8 @@ import { TramaController } from "./controller";
 app.setName("Trama");
 if (!app.requestSingleInstanceLock()) app.exit(0);
 const isMac = process.platform === "darwin";
+// Windows 11 paints Acrylic glass behind a transparent window; older Windows and Linux stay opaque.
+const isGlassWindows = process.platform === "win32" && Number(release().split(".")[2] ?? 0) >= 22000;
 const rendererUrl = process.env.TRAMA_RENDERER_URL;
 let window: BrowserWindow | null = null;
 
@@ -21,7 +24,7 @@ const controller = new TramaController(process.env.TRAMA_DATA_DIR ?? join(app.ge
   openExternal: (url) => shell.openExternal(url),
   applyTheme: (theme: AppSettings["theme"]) => {
     nativeTheme.themeSource = theme;
-    if (!isMac) window?.setBackgroundColor(surfaceColor());
+    if (!isMac && !isGlassWindows) window?.setBackgroundColor(surfaceColor());
   },
   notify: (title, body, sound) => {
     if (window?.isFocused() || !Notification.isSupported()) return;
@@ -56,11 +59,13 @@ function createWindow(): void {
       ? {
           titleBarStyle: "hiddenInset" as const,
           trafficLightPosition: { x: 16, y: 16 },
-          vibrancy: "under-window" as const,
-          visualEffectState: "followWindow" as const,
+          vibrancy: "sidebar" as const,
+          visualEffectState: "active" as const,
           backgroundColor: "#00000000",
         }
-      : { backgroundColor: surfaceColor(), autoHideMenuBar: true }),
+      : isGlassWindows
+        ? { backgroundMaterial: "acrylic" as const, backgroundColor: "#00000000", autoHideMenuBar: true }
+        : { backgroundColor: surfaceColor(), autoHideMenuBar: true }),
     webPreferences: {
       preload: join(__dirname, "preload.cjs"),
       contextIsolation: true,
@@ -292,7 +297,7 @@ app.whenReady().then(async () => {
 });
 
 nativeTheme.on("updated", () => {
-  if (!isMac) window?.setBackgroundColor(surfaceColor());
+  if (!isMac && !isGlassWindows) window?.setBackgroundColor(surfaceColor());
 });
 
 app.on("window-all-closed", () => {
