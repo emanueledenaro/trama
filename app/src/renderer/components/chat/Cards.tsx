@@ -14,6 +14,8 @@ import {
   IconUsersGroup,
 } from "@tabler/icons-react";
 import type { AssignmentStatus, CandidateState } from "@shared/domain";
+import { findGoal } from "@shared/goals";
+import { PROVIDERS } from "@shared/providers";
 import type { ActionResult } from "@shared/ipc";
 import { Spinner } from "@/components/Spinner";
 import { useState } from "react";
@@ -49,6 +51,9 @@ function CardFrame({
     </div>
   );
 }
+
+/** The provider's name; an absent provider is Codex, as in documents written before providers. */
+const providerLabel = (id: string | undefined | null) => PROVIDERS.find((p) => p.id === (id ?? "codex"))?.name ?? id ?? "Codex";
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -370,7 +375,10 @@ export function AssignmentCard({ assignmentId }: { assignmentId: string }) {
   const specialist = project.document.team.specialists.find((s) => s.assignments.some((a) => a.id === assignmentId));
   const assignment = specialist?.assignments.find((a) => a.id === assignmentId);
   const [showResult, setShowResult] = useState(false);
+  const setInspector = useUi((s) => s.setInspector);
   if (!specialist || !assignment) return null;
+  const goal = findGoal(project.document, assignment.goalId);
+  const lastTurn = assignment.turns.at(-1);
   const status = ASSIGNMENT_STATUS[assignment.status];
   const active = ["preparing", "running", "stopRequested"].includes(assignment.status);
   const isCurrent = specialist.assignments.at(-1)?.id === assignment.id;
@@ -393,8 +401,25 @@ export function AssignmentCard({ assignmentId }: { assignmentId: string }) {
       {assignment.exercise ? <Field label="Esercizio">{assignment.exercise}</Field> : null}
       <Field label="Perimetro">{assignment.moduleIds.map(moduleName).join(", ")}</Field>
       {assignment.dependencies.length ? <Field label="Dipendenze">{assignment.dependencies.join(", ")}</Field> : null}
+      {goal ? (
+        <Field label="Obiettivo del progetto">
+          <button type="button" className="text-left text-[var(--color-text-accent)] hover:underline" onClick={() => setInspector({ kind: "goal", id: goal.id })}>
+            {goal.title}
+          </button>
+        </Field>
+      ) : null}
+      <Field label="Provider e modello scelti all'assegnazione">
+        {providerLabel(assignment.provider)} · {assignment.model}
+        <div className="mt-0.5 text-ui-sm text-muted-foreground">
+          {assignment.modelReason ? `Motivazione del Coordinatore: ${assignment.modelReason}` : "Il Coordinatore non ha registrato una motivazione per questa scelta."}
+        </div>
+        {lastTurn && (lastTurn.provider ?? "codex") !== (assignment.provider ?? "codex") ? (
+          <div className="mt-0.5 text-ui-sm text-warning">Ultimo turno eseguito con {providerLabel(lastTurn.provider)} · {lastTurn.model}</div>
+        ) : lastTurn && lastTurn.model !== assignment.model ? (
+          <div className="mt-0.5 text-ui-sm text-warning">Ultimo turno eseguito con {lastTurn.model}</div>
+        ) : null}
+      </Field>
       <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-ui-sm text-muted-foreground">
-        <span>Modello {assignment.model}</span>
         <span>{assignment.tools.includes("edits") ? "Worktree proprio" : "Sola lettura"}</span>
         {assignment.requiredChecks.length ? <span>Verifiche: {assignment.requiredChecks.join(", ")}</span> : null}
       </div>
