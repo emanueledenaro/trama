@@ -26,7 +26,7 @@ describe("SessionSearch (Hermes session_search)", () => {
     const top = (result.results as Record<string, unknown>[])[0]!;
     expect(top).toMatchObject({ session_id: PROJECT_DIALOG_ID, match_message_id: 1, detail: "full", title: "Dialogo del progetto" });
     expect(String(top.snippet)).toContain(">>>docker<<<");
-    expect((top.messages as { id: number }[]).map((m) => m.id)).toEqual([1, 2, 6]);
+    expect((top.messages as { id: number }[]).map((m) => m.id)).toEqual([1, 2]);
   });
 
   it("retries with OR and finds a goal dialog by its words", () => {
@@ -41,11 +41,15 @@ describe("SessionSearch (Hermes session_search)", () => {
   it("scrolls, reads and browses", () => {
     const { document, goal } = conversation();
     const search = new SessionSearch({ document, currentSessionId: goal.id, liveFromSequence: 6 });
-    expect(search.run({ session_id: PROJECT_DIALOG_ID, around_message_id: 2, window: 999 })).toMatchObject({ mode: "scroll", window: 20, messages_before: 1, messages_after: 2 });
+    expect(search.run({ session_id: PROJECT_DIALOG_ID, around_message_id: 2, window: 999 })).toMatchObject({ mode: "scroll", window: 20, messages_before: 1, messages_after: 1 });
     expect(search.run({ session_id: PROJECT_DIALOG_ID, around_message_id: 6 }).error).toContain("scroll rejected");
     expect(search.run({ session_id: PROJECT_DIALOG_ID, around_message_id: "x" }).error).toBe("scroll requires integer around_message_id");
     expect(search.run({ session_id: goal.id })).toMatchObject({ mode: "read", message_count: 2, truncated: false });
     expect(search.run({ session_id: "missing" }).error).toBe("session_id not found: missing");
+    // A read never returns what the live thread already holds.
+    expect((search.run({ session_id: PROJECT_DIALOG_ID }).messages as { id: number }[]).map((m) => m.id)).toEqual([1, 2, 3]);
+    const live = new SessionSearch({ document, currentSessionId: PROJECT_DIALOG_ID, liveFromSequence: 1 });
+    expect(live.run({ session_id: PROJECT_DIALOG_ID })).toMatchObject({ message_count: 0, message: "Every message of this dialog is already in your current thread." });
     expect(search.run({})).toMatchObject({ mode: "browse", count: 1, results: [{ session_id: PROJECT_DIALOG_ID }] });
   });
 

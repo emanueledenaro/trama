@@ -1148,6 +1148,7 @@ export class TramaController {
           },
           learningToolUsed: (tool) => {
             resetOnToolUse(counters, tool);
+            if (current.runningRequestId) this.turnLearningWrites.set(current.runningRequestId, [...(this.turnLearningWrites.get(current.runningRequestId) ?? []), tool]);
             this.learningChanged();
           },
           snapshot: current.snapshot,
@@ -1488,9 +1489,12 @@ export class TramaController {
       const references = referencedPaths(reply, paths);
       if (reply) {
         recordReply(document, request.id, reply, selectedModel, references, activeProvider);
-        const reviewSkills = finishTurnSkillNudge(this.coordinatorLearning(document), this.turnToolIterations.get(request.id) ?? 0);
-        if ((reviewMemory || reviewSkills) && this.state.settings.learning?.backgroundReview !== false) {
-          void this.runLearningReview(project, { memory: reviewMemory, skills: reviewSkills });
+        // A write in this turn already reset its counter: the review it would have started is not due.
+        const writes = this.turnLearningWrites.get(request.id) ?? [];
+        const reviewSkills = !writes.includes("skill_manage") && finishTurnSkillNudge(this.coordinatorLearning(document), this.turnToolIterations.get(request.id) ?? 0);
+        const dueMemory = reviewMemory && !writes.includes("memory");
+        if ((dueMemory || reviewSkills) && this.state.settings.learning?.backgroundReview !== false) {
+          void this.runLearningReview(project, { memory: dueMemory, skills: reviewSkills });
         }
       } else {
         appendEvent(document, "trama", { type: "activity", title: "Il Coordinatore non ha scritto una risposta", detail: null, tone: "info" }, request.id);
@@ -1516,6 +1520,7 @@ export class TramaController {
       if (!interrupted) void this.noticeIfBlocked(project, activeProvider, message, request.id);
     } finally {
       this.turnToolIterations.delete(request.id);
+      this.turnLearningWrites.delete(request.id);
       if (project.runningRequestId === request.id) project.runningRequestId = null;
       if (project.streaming?.requestId === request.id) project.streaming = null;
       this.changed();
@@ -2808,6 +2813,8 @@ export class TramaController {
   private readonly learningReviews = new Map<string, AbortController>();
   /** Tool iterations of each running Coordinator turn: the skill review counts them. */
   private readonly turnToolIterations = new Map<string, number>();
+  /** Learning tools the Coordinator wrote with in each running turn. */
+  private readonly turnLearningWrites = new Map<string, string[]>();
   private curatorTimer: NodeJS.Timeout | null = null;
   private learningViewProject: string | null = null;
 

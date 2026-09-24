@@ -162,8 +162,9 @@ export class SessionSearch {
     this.messages = context.document.events.map(messageOf).filter((m): m is StoredMessage => m !== null && m.content.trim().length > 0);
   }
 
+  /** Messages of a dialog that left the live thread: reads, windows and bookends never return the others. */
   private inSession(sessionId: string): StoredMessage[] {
-    return this.messages.filter((m) => m.sessionId === sessionId);
+    return this.messages.filter((m) => m.sessionId === sessionId && m.id < this.context.liveFromSequence);
   }
 
   private sessionExists(sessionId: string): boolean {
@@ -353,6 +354,7 @@ export class SessionSearch {
       truncated,
       messages: truncated ? [...shaped.slice(0, 20), ...shaped.slice(-10)] : shaped,
       ...(truncated ? { message: `Session has ${total} messages; showing first 20 + last 10. Pass around_message_id (any id above) to scroll the middle.` } : {}),
+      ...(total === 0 ? { message: "Every message of this dialog is already in your current thread." } : {}),
     };
   }
 

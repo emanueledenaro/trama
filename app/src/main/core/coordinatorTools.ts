@@ -442,7 +442,7 @@ export interface ToolContext {
   learning?: ProjectLearning | null;
   /** The dialog the running request comes from and where the live thread starts, for session_search. */
   sessionSearch?: { currentSessionId: string; liveFromSequence: number };
-  /** Called when the Coordinator uses a learning tool, to reset the review counters. */
+  /** Called when the Coordinator wrote memory or skills, to reset the review counters. */
   learningToolUsed?(tool: string): void;
   snapshot: RepositorySnapshot;
   github: GitHubState;
@@ -486,13 +486,15 @@ export interface ToolContext {
 function runLearningTool(name: string, args: JsonObject, context: ToolContext): ToolResult {
   const learning = context.learning;
   if (!learning) return toolFailure("learning_unavailable", "Learning is not available for this project.");
-  context.learningToolUsed?.(name);
   const skillContext = { origin: "foreground" as const };
+  // Only a write that succeeded resets its review counter: a refused one saved nothing.
+  const wrote = (result: Record<string, unknown>) => {
+    if (result.success === true) context.learningToolUsed?.(name);
+    return toolSuccess(result as JsonObject);
+  };
   switch (name) {
     case "memory":
-      return toolSuccess(
-        memoryTool(args as Record<string, unknown>, { store: learning.memory, origin: "foreground", stage: (proposal) => learning.stageProposal(proposal) }) as JsonObject,
-      );
+      return wrote(memoryTool(args as Record<string, unknown>, { store: learning.memory, origin: "foreground", stage: (proposal) => learning.stageProposal(proposal) }));
     case "session_search":
       return toolSuccess(
         new SessionSearch({
@@ -506,7 +508,7 @@ function runLearningTool(name: string, args: JsonObject, context: ToolContext): 
     case "skill_view":
       return toolSuccess(learning.skills.skillView(typeof args.name === "string" ? args.name : "", typeof args.file_path === "string" && args.file_path ? args.file_path : null, skillContext) as JsonObject);
     default:
-      return toolSuccess(learning.skills.skillManage(args as Record<string, unknown>, skillContext) as JsonObject);
+      return wrote(learning.skills.skillManage(args as Record<string, unknown>, skillContext));
   }
 }
 

@@ -62,11 +62,19 @@ export async function runReviewSession(input: ReviewSessionInput): Promise<Revie
   const readMarks = new Set<string>();
   const tools = learningTools(learning.settings.memory, learning.settings.userProfile).filter((t) => input.allowedTools.includes(t.name));
   let stopped: string | null = null;
+  let limitReached = false;
   const handle = async (name: string, args: JsonObject): Promise<ToolResult> => {
     if (input.signal?.aborted) stopped ??= "The review was stopped.";
     if (stopped) return toolFailure("review_stopped", `${stopped} Nothing more is saved.`);
     if (!input.allowedTools.includes(name)) return toolFailure("denied", deniedToolMessage(name, input.allowedTools));
-    if (calls.length >= input.maxToolCalls) return toolFailure("budget_exhausted", `This review reached its limit of ${input.maxToolCalls} tool calls. Stop and write your summary.`);
+    if (calls.length >= input.maxToolCalls) {
+      // Hermes ends the review loop at its iteration limit: the session stops here, and what it saved stays.
+      if (!limitReached) {
+        limitReached = true;
+        abort();
+      }
+      return toolFailure("budget_exhausted", `This review reached its limit of ${input.maxToolCalls} tool calls.`);
+    }
     let result: JsonObject;
     const skillContext = { origin: "backgroundReview" as const, readMarks };
     switch (name) {
@@ -123,6 +131,7 @@ export async function runReviewSession(input: ReviewSessionInput): Promise<Revie
     return { finalText, calls, usedTokens };
   } catch (error) {
     if (stopped && !(error instanceof ReviewStoppedError)) throw new ReviewStoppedError(stopped);
+    if (limitReached && !stopped) return { finalText: "", calls, usedTokens };
     throw error;
   } finally {
     clearTimeout(timer);
