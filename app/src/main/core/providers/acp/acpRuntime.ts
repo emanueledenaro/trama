@@ -29,7 +29,7 @@ import {
   extractJsonAnswer,
   schemaInstruction,
 } from "../types";
-import { absoluteUnnormalized, containedWriteTarget, currentUsageLimit, usageLimitError, writeFileNoFollow } from "../providerSupport";
+import { absoluteUnnormalized, containedWriteTarget, currentUsageLimit, PendingTurn, usageLimitError, writeFileNoFollow } from "../providerSupport";
 
 export type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
 export type JsonObject = { [key: string]: Json };
@@ -799,6 +799,8 @@ export class AcpAgentRuntime implements AgentRuntime {
   private currentModeId: string | null = null;
   private pendingInstructions: string | null = null;
   private activeTurn: ActiveTurn | null = null;
+  /** A turn still in setup: nothing has been sent to the agent yet. */
+  private pendingTurn: PendingTurn | null = null;
   private replayUntilQuiet: { last: number; resolve: () => void } | null = null;
   constructor(
     readonly profile: AcpProviderProfile,
@@ -811,7 +813,7 @@ export class AcpAgentRuntime implements AgentRuntime {
   }
 
   get isRunningTurn(): boolean {
-    return this.activeTurn !== null;
+    return this.activeTurn !== null || this.pendingTurn !== null;
   }
 
   async readAccount(): Promise<ProviderAccount> {
@@ -900,7 +902,7 @@ export class AcpAgentRuntime implements AgentRuntime {
   async runTurn(options: RunTurnOptions): Promise<string> {
     const prompt = options.prompt.trim();
     if (!prompt) throw new ProviderError("emptyPrompt", "Il messaggio è vuoto.");
-    if (this.activeTurn) throw new ProviderError("turnAlreadyRunning", "Un turno è già in corso.");
+    if (this.activeTurn || this.pendingTurn) throw new ProviderError("turnAlreadyRunning", "Un turno è già in corso.");
     const connection = this.connection;
     if (!connection || !this.sessionId || options.threadId !== this.sessionId) {
       throw new ProviderError("processExited", `${this.profile.label}: la sessione ${options.threadId} non è aperta.`);
@@ -908,8 +910,21 @@ export class AcpAgentRuntime implements AgentRuntime {
     const sessionId = this.sessionId;
     const block = currentUsageLimit(this.profile.id);
     if (block) throw new ProviderError("blocked", block.message);
-    await this.applyTurnConfiguration(connection, options);
-    const blocks = await this.promptBlocks(options, prompt);
+    const pending = new PendingTurn(options.onEvent, `${this.profile.label} è stato chiuso.`);
+    this.pendingTurn = pending;
+    let blocks: Json[];
+    try {
+      await this.applyTurnConfiguration(connection, options);
+      pending.checkpoint();
+      blocks = await this.promptBlocks(options, prompt);
+      pending.checkpoint();
+    } finally {
+      // The turn below registers synchronously, so an interrupt from here on reaches it.
+      if (this.pendingTurn === pending) this.pendingTurn = null;
+    }
+    if (this.connection !== connection || this.sessionId !== sessionId) {
+      throw new ProviderError("processExited", `${this.profile.label}: la sessione ${sessionId} non è più aperta.`);
+    }
 
     return new Promise<string>((resolvePromise, reject) => {
       const policy: AcpTurnPolicy = {
@@ -993,6 +1008,7 @@ export class AcpAgentRuntime implements AgentRuntime {
   }
 
   async interrupt(): Promise<void> {
+    if (this.pendingTurn) this.pendingTurn.interrupted = true;
     const turn = this.activeTurn;
     if (!turn || !this.connection || !this.sessionId) return;
     turn.interrupted = true;
@@ -1001,6 +1017,8 @@ export class AcpAgentRuntime implements AgentRuntime {
   }
 
   stop(): void {
+    if (this.pendingTurn) this.pendingTurn.stopped = true;
+    this.pendingTurn = null;
     this.activeTurn?.settle({ kind: "failed", message: `${this.profile.label} è stato chiuso.` });
     this.closeConnection();
   }

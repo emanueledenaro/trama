@@ -457,11 +457,25 @@ describe("ClaudeAgentRuntime", () => {
     sdk.query.mockReturnValueOnce(query);
     const events: TurnEvent[] = [];
     const turn = runtime.runTurn({ threadId, prompt: "Lavora", cwd: "/repo", model: "sonnet", onEvent: (e) => events.push(e) });
-    await vi.waitFor(() => expect(runtime.isRunningTurn).toBe(true));
+    await vi.waitFor(() => expect(sdk.query).toHaveBeenCalled());
     await runtime.interrupt();
     await expect(turn).rejects.toThrow(/interrotto/);
     expect(query.interrupt).toHaveBeenCalled();
     expect(events.at(-1)).toEqual({ type: "interrupted" });
+    expect(runtime.isRunningTurn).toBe(false);
+  });
+
+  it("keeps an interrupt that arrives while the turn is being set up", async () => {
+    const runtime = new ClaudeAgentRuntime({ executable });
+    const { threadId } = await runtime.openThread({ model: "sonnet", cwd: "/repo", developerInstructions: "" });
+    sdk.query.mockReturnValueOnce(fakeQuery([result({ session_id: threadId })]));
+    const events: TurnEvent[] = [];
+    const turn = runtime.runTurn({ threadId, prompt: "Lavora", cwd: "/repo", model: "sonnet", onEvent: (e) => events.push(e) });
+    expect(runtime.isRunningTurn).toBe(true);
+    await runtime.interrupt();
+    await expect(turn).rejects.toThrow("Turno interrotto.");
+    expect(events).toEqual([{ type: "interrupted" }]);
+    expect(sdk.query).not.toHaveBeenCalled();
     expect(runtime.isRunningTurn).toBe(false);
   });
 });

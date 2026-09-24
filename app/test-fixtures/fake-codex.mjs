@@ -67,8 +67,13 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
     case "turn/start": {
       const turnId = `turn-${++turns}`;
       const threadId = params.threadId;
-      send({ id, result: { turn: { id: turnId } } });
       const text = params.input[0].text;
+      if (text.includes("[attesa]")) {
+        // Answers turn/start late and then keeps running until interrupted.
+        setTimeout(() => send({ id, result: { turn: { id: turnId } } }), 150);
+        return;
+      }
+      send({ id, result: { turn: { id: turnId } } });
       const finish = (reply) => {
         send({ method: "item/completed", params: { threadId, turnId, item: { id: "msg", type: "agentMessage", phase: "final_answer", text: reply } } });
         send({ method: "turn/completed", params: { threadId, turn: { id: turnId, status: "completed" } } });

@@ -42,7 +42,7 @@ import {
   schemaInstruction,
   type TurnEvent,
 } from "./types";
-import { currentUsageLimit, usageLimitError } from "./providerSupport";
+import { currentUsageLimit, PendingTurn, usageLimitError } from "./providerSupport";
 
 const HOSTNAME = "127.0.0.1";
 const SERVER_USERNAME = "opencode";
@@ -57,6 +57,7 @@ const PREMATURE_IDLE_GRACE_MS = 10_000;
 const MAX_TURN_INPUT_CHARS = 120_000;
 const MAX_INLINE_SKILL_CHARS = 24_000;
 const PRIMARY_AGENT = "build";
+const ABORT_TIMEOUT_MS = 10_000;
 
 type SdkModule = typeof import("@opencode-ai/sdk/v2/client");
 
@@ -688,6 +689,7 @@ interface ActiveTurn {
   usageKey: string | null;
   idlePending: boolean;
   idleTimer: NodeJS.Timeout | null;
+  interrupted: boolean;
   outputSchema: boolean;
   onEvent: (event: TurnEvent) => void;
   resolve: (text: string) => void;
@@ -708,6 +710,7 @@ export interface OpenCodeRuntimeDependencies {
   loadSdk?: () => Promise<Pick<SdkModule, "createOpencodeClient">>;
   idleSettleMs?: number;
   prematureIdleGraceMs?: number;
+  abortTimeoutMs?: number;
 }
 
 /** OpenCode through a private `opencode serve`, with Trama's restricted permissions. */
@@ -726,6 +729,8 @@ export class OpenCodeRuntime implements AgentRuntime {
   private subscription: { key: string; controller: AbortController; ready: Promise<void> } | null = null;
   private session: OpenSession | null = null;
   private turn: ActiveTurn | null = null;
+  /** A turn still in setup: OpenCode has no prompt to abort yet. */
+  private pending: PendingTurn | null = null;
   private lastDirectory: string | null = null;
 
   constructor(
@@ -734,7 +739,7 @@ export class OpenCodeRuntime implements AgentRuntime {
   ) {}
 
   get isRunningTurn(): boolean {
-    return this.turn !== null;
+    return this.turn !== null || this.pending !== null;
   }
 
   async readAccount(): Promise<ProviderAccount> {
@@ -807,25 +812,43 @@ export class OpenCodeRuntime implements AgentRuntime {
     const prompt = options.prompt.trim();
     if (!prompt) throw new ProviderError("emptyPrompt", "Il messaggio è vuoto.");
     const model = requireModel(options.model);
-    if (this.turn) throw new ProviderError("turnAlreadyRunning", "Un turno è già in corso.");
+    if (this.turn || this.pending) throw new ProviderError("turnAlreadyRunning", "Un turno è già in corso.");
     const block = currentUsageLimit("opencode");
     if (block) throw new ProviderError("blocked", block.message);
+    const pending = new PendingTurn(options.onEvent, "OpenCode è stato chiuso.");
+    this.pending = pending;
+    try {
+      return await this.startTurn(options, prompt, model, pending);
+    } finally {
+      if (this.pending === pending) this.pending = null;
+    }
+  }
 
+  private async startTurn(
+    options: RunTurnOptions,
+    prompt: string,
+    model: { providerID: string; modelID: string },
+    pending: PendingTurn,
+  ): Promise<string> {
     const client = await this.prepareDirectory(options.cwd);
+    pending.checkpoint();
     if (this.session?.id !== options.threadId) {
       this.messages.clear();
       this.session = { id: options.threadId, directory: options.cwd, ephemeral: false, developerInstructions: "", rulesKey: null };
     }
     const session = this.session;
     const rules = await this.rulesFor(client, options.cwd, options.writableRoot ?? null);
+    pending.checkpoint();
     const rulesKey = JSON.stringify(rules);
     if (session.rulesKey !== rulesKey) {
       await client.session.update({ sessionID: session.id, permission: rules }, { signal: this.timeout() }).catch((error) => {
         throw new ProviderError("rpcError", `OpenCode non ha applicato i permessi di Trama: ${errorDetail(error)}`);
       });
       session.rulesKey = rulesKey;
+      pending.checkpoint();
     }
     await this.ensureSubscription(client, options.cwd);
+    pending.checkpoint();
 
     let text = prompt;
     if (options.skills?.length) {
@@ -833,6 +856,7 @@ export class OpenCodeRuntime implements AgentRuntime {
       if (skills) text = `${text}\n\n${skills}`;
     }
     if (options.outputSchema) text += schemaInstruction(options.outputSchema);
+    pending.checkpoint();
     if (this.turn) throw new ProviderError("turnAlreadyRunning", "Un turno è già in corso.");
 
     return new Promise<string>((resolve, reject) => {
@@ -854,12 +878,14 @@ export class OpenCodeRuntime implements AgentRuntime {
         usageKey: null,
         idlePending: false,
         idleTimer: null,
+        interrupted: false,
         outputSchema: Boolean(options.outputSchema),
         onEvent: options.onEvent,
         resolve,
         reject,
       };
       this.turn = turn;
+      if (this.pending === pending) this.pending = null;
       client.session
         .promptAsync(
           {
@@ -874,6 +900,8 @@ export class OpenCodeRuntime implements AgentRuntime {
         )
         .then(() => {
           if (this.turn === turn) turn.onEvent({ type: "turnStarted", turnId: turn.turnId });
+          // Interrupted before OpenCode accepted the prompt: the earlier abort found nothing to stop.
+          else if (turn.interrupted) void client.session.abort({ sessionID: turn.sessionId }).catch(() => undefined);
         })
         .catch((error: unknown) => {
           if (this.turn === turn) this.settle(turn, { failed: `OpenCode non ha accettato il messaggio: ${errorDetail(error)}`, emit: false });
@@ -881,16 +909,37 @@ export class OpenCodeRuntime implements AgentRuntime {
     });
   }
 
+  /** Never throws: when OpenCode does not confirm the abort, the server is stopped and the turn still ends. */
   async interrupt(): Promise<void> {
     const turn = this.turn;
-    const session = this.session;
-    if (!turn || !session) return;
-    const client = await this.clientFor(session.directory);
-    await client.session.abort({ sessionID: turn.sessionId }, { signal: this.timeout() });
+    if (!turn) {
+      if (this.pending) this.pending.interrupted = true;
+      return;
+    }
+    turn.interrupted = true;
+    const directory = this.session?.directory ?? this.discoveryDirectory();
+    const abortMs = this.deps.abortTimeoutMs ?? ABORT_TIMEOUT_MS;
+    let timer: NodeJS.Timeout | undefined;
+    try {
+      const client = await this.clientFor(directory);
+      await Promise.race([
+        client.session.abort({ sessionID: turn.sessionId }, { signal: this.timeout(abortMs) }),
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(() => reject(new Error("abort timed out")), abortMs);
+        }),
+      ]);
+    } catch {
+      // The session may still be working: stop the server rather than leave it running unseen.
+      if (this.turn === turn || (this.turn === null && this.pending === null)) this.restartServer();
+    } finally {
+      clearTimeout(timer);
+    }
     if (this.turn === turn) this.settle(turn, { interrupted: true });
   }
 
   stop(): void {
+    if (this.pending) this.pending.stopped = true;
+    this.pending = null;
     const turn = this.turn;
     if (turn) this.settle(turn, { error: new ProviderError("processExited", "OpenCode è stato chiuso.") });
     this.subscription?.controller.abort();

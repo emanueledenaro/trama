@@ -43,6 +43,7 @@ import {
   inlineSkillInstructions,
   parseCliVersion,
   parseUsageLimit,
+  PendingTurn,
   pathWithExecutable,
   recordUsageLimit,
   resolveExecutable,
@@ -754,6 +755,8 @@ export class AntigravityRuntime implements AgentRuntime {
   private readonly threads = new Map<string, ThreadState>();
   private readonly defaultEffortByModel = new Map<string, string>();
   private active: ActiveTurn | null = null;
+  /** A turn still in setup: no process exists yet to stop. */
+  private pending: PendingTurn | null = null;
 
   constructor(
     private readonly options: RuntimeOptions = {},
@@ -765,7 +768,7 @@ export class AntigravityRuntime implements AgentRuntime {
   }
 
   get isRunningTurn(): boolean {
-    return this.active !== null;
+    return this.active !== null || this.pending !== null;
   }
 
   private binary(): string {
@@ -876,7 +879,7 @@ export class AntigravityRuntime implements AgentRuntime {
     const prompt = options.prompt.trim();
     if (!prompt) throw new ProviderError("emptyPrompt", "Il messaggio è vuoto.");
     if (!options.model.trim()) throw new ProviderError("invalidModel", `Modello non valido: ${options.model}`);
-    if (this.active) throw new ProviderError("turnAlreadyRunning", "Un turno è già in corso.");
+    if (this.active || this.pending) throw new ProviderError("turnAlreadyRunning", "Un turno è già in corso.");
     const thread = this.threads.get(options.threadId);
     if (!thread) throw new ProviderError("rpcError", "Thread Antigravity sconosciuto: aprilo prima di avviare un turno.");
     const writableRoot = options.writableRoot ? resolve(options.writableRoot) : null;
@@ -889,27 +892,42 @@ export class AntigravityRuntime implements AgentRuntime {
     if (block) throw new ProviderError("blocked", block.message);
     const binary = this.binary();
 
-    const skillText = await inlineSkillInstructions("antigravity", options.skills);
-    const attachments = await attachedFilesBlock(options.images);
-    let text = [prompt, skillText, attachments].filter(Boolean).join("\n\n");
-    if (!thread.instructionsDelivered && thread.developerInstructions.trim()) {
-      text = `${thread.developerInstructions.trim()}\n\n${text}`;
-    }
-    if (options.outputSchema) text += schemaInstruction(options.outputSchema);
-    const promptIssue = antigravityPromptCommandLineIssue(text);
-    if (promptIssue) throw new ProviderError("rpcError", promptIssue);
+    const pending = new PendingTurn(options.onEvent, "Antigravity è stato chiuso.");
+    this.pending = pending;
+    const toolServer = this.options.toolServer ?? null;
+    let text: string;
+    let runDir: string | null = null;
+    let tokenFile: string | null = null;
+    try {
+      const skillText = await inlineSkillInstructions("antigravity", options.skills);
+      pending.checkpoint();
+      const attachments = await attachedFilesBlock(options.images);
+      pending.checkpoint();
+      text = [prompt, skillText, attachments].filter(Boolean).join("\n\n");
+      if (!thread.instructionsDelivered && thread.developerInstructions.trim()) {
+        text = `${thread.developerInstructions.trim()}\n\n${text}`;
+      }
+      if (options.outputSchema) text += schemaInstruction(options.outputSchema);
+      const promptIssue = antigravityPromptCommandLineIssue(text);
+      if (promptIssue) throw new ProviderError("rpcError", promptIssue);
 
+      runDir = await mkdtemp(join(tmpdir(), "trama-antigravity-"));
+      await writeFile(join(runDir, "hooks.ndjson"), "");
+      if (toolServer) {
+        tokenFile = join(runDir, "mcp-token");
+        await writeFile(tokenFile, toolServer.token, { mode: 0o600 });
+      }
+      pending.checkpoint();
+    } catch (error) {
+      if (runDir) void rm(runDir, { recursive: true, force: true }).catch(() => undefined);
+      throw error;
+    } finally {
+      // The turn below registers synchronously, so an interrupt from here on reaches it.
+      if (this.pending === pending) this.pending = null;
+    }
     const cliModel = resolveAntigravityCliModelLabel(options.model, options.effort, this.defaultEffortByModel.get(options.model));
-    const runDir = await mkdtemp(join(tmpdir(), "trama-antigravity-"));
     const eventFile = join(runDir, "hooks.ndjson");
     const logFile = join(runDir, "agy.log");
-    await writeFile(eventFile, "");
-    const toolServer = this.options.toolServer ?? null;
-    let tokenFile: string | null = null;
-    if (toolServer) {
-      tokenFile = join(runDir, "mcp-token");
-      await writeFile(tokenFile, toolServer.token, { mode: 0o600 });
-    }
 
     const args = [
       ...(thread.conversationId ? ["--conversation", thread.conversationId] : ["--new-project"]),
@@ -1282,6 +1300,7 @@ export class AntigravityRuntime implements AgentRuntime {
   }
 
   async interrupt(): Promise<void> {
+    if (this.pending) this.pending.interrupted = true;
     const turn = this.active;
     if (!turn) return;
     turn.interrupted = true;
@@ -1294,6 +1313,8 @@ export class AntigravityRuntime implements AgentRuntime {
   }
 
   stop(): void {
+    if (this.pending) this.pending.stopped = true;
+    this.pending = null;
     const turn = this.active;
     if (!turn) return;
     turn.interrupted = true;

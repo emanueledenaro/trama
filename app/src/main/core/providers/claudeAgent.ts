@@ -42,7 +42,7 @@ import {
   ProviderError,
   extractJsonAnswer,
 } from "./types";
-import { absoluteUnnormalized, isWritableTarget } from "./providerSupport";
+import { absoluteUnnormalized, isWritableTarget, PendingTurn } from "./providerSupport";
 
 type ClaudeSdk = typeof import("@anthropic-ai/claude-agent-sdk");
 
@@ -991,12 +991,14 @@ export class ClaudeAgentRuntime implements AgentRuntime {
   readonly providerId = "claudeAgent" as const;
   private thread: ThreadState | null = null;
   private active: ActiveTurn | null = null;
+  /** A turn still in setup: no query exists yet to interrupt. */
+  private pending: PendingTurn | null = null;
   private readonly ephemeralSessions = new Set<string>();
 
   constructor(private readonly options: RuntimeOptions = {}) {}
 
   get isRunningTurn(): boolean {
-    return this.active !== null;
+    return this.active !== null || this.pending !== null;
   }
 
   async readAccount(): Promise<ProviderAccount> {
@@ -1109,14 +1111,26 @@ export class ClaudeAgentRuntime implements AgentRuntime {
     const prompt = options.prompt.trim();
     if (!prompt) throw new ProviderError("emptyPrompt", "Il messaggio è vuoto.");
     if (!options.model.trim()) throw new ProviderError("invalidModel", `Modello non valido: ${options.model}`);
-    if (this.active) throw new ProviderError("turnAlreadyRunning", "Un turno è già in corso.");
+    if (this.active || this.pending) throw new ProviderError("turnAlreadyRunning", "Un turno è già in corso.");
     const thread: ThreadState =
       this.thread?.sessionId === options.threadId
         ? this.thread
         : { sessionId: options.threadId, started: true, cwd: options.cwd, developerInstructions: "", ephemeral: false };
-    const executable = resolveClaudeExecutable(this.options.executable);
-    const sdk = await loadClaudeSdk();
-    const content = await buildUserContent(prompt, options.images, options.skills);
+    const pending = new PendingTurn(options.onEvent, "Claude Agent è stato chiuso.");
+    this.pending = pending;
+    let executable: string;
+    let sdk: ClaudeSdk;
+    let content: Array<Record<string, unknown>>;
+    try {
+      executable = resolveClaudeExecutable(this.options.executable);
+      sdk = await loadClaudeSdk();
+      pending.checkpoint();
+      content = await buildUserContent(prompt, options.images, options.skills);
+      pending.checkpoint();
+    } finally {
+      // From here to `this.active = active` nothing awaits, so no interrupt can fall in between.
+      if (this.pending === pending) this.pending = null;
+    }
 
     // As with Codex, the turn's writable root decides the sandbox of this turn.
     const writableRoot = options.writableRoot ? resolve(options.writableRoot) : null;
@@ -1213,7 +1227,10 @@ export class ClaudeAgentRuntime implements AgentRuntime {
 
   async interrupt(): Promise<void> {
     const active = this.active;
-    if (!active) return;
+    if (!active) {
+      if (this.pending) this.pending.interrupted = true;
+      return;
+    }
     active.mapper.interruptRequested = true;
     try {
       await withTimeout(active.query.interrupt(), INTERRUPT_TIMEOUT_MS, "Timeout in attesa dell'interruzione di Claude.");
@@ -1224,6 +1241,8 @@ export class ClaudeAgentRuntime implements AgentRuntime {
   }
 
   stop(): void {
+    if (this.pending) this.pending.stopped = true;
+    this.pending = null;
     const active = this.active;
     if (active) {
       active.stopped = true;

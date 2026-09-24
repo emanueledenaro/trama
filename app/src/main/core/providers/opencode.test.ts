@@ -349,11 +349,57 @@ describe("OpenCodeRuntime", () => {
     const events: TurnEvent[] = [];
     const answer = runtime.runTurn({ threadId: "ses_new", prompt: "Lungo", cwd: "/repo", model: "anthropic/claude-x", onEvent: (e) => events.push(e) });
     const rejected = expect(answer).rejects.toThrow(/interrott/);
-    await vi.waitFor(() => expect(runtime.isRunningTurn).toBe(true));
+    await vi.waitFor(() => expect(client.session.promptAsync).toHaveBeenCalled());
     await runtime.interrupt();
     await rejected;
     expect(client.session.abort).toHaveBeenCalledWith({ sessionID: "ses_new" }, expect.anything());
     expect(events.at(-1)).toEqual({ type: "interrupted" });
+  });
+
+  it("ends an interrupted turn and stops the server when the abort fails or hangs", async () => {
+    for (const abort of [() => Promise.reject(new Error("HTTP 500")), () => new Promise<never>(() => undefined)]) {
+      const client = fakeClient();
+      const stops: number[] = [];
+      sdk.client = client;
+      let started = 0;
+      const runtime = new OpenCodeRuntime(
+        {},
+        {
+          startServer: async () => {
+            const index = ++started;
+            return { url: `http://127.0.0.1:${4200 + index}`, password: "pw", onExit: () => undefined, stop: () => stops.push(index) };
+          },
+          resolveExecutable: () => "/usr/bin/opencode",
+          abortTimeoutMs: 50,
+        },
+      );
+      await runtime.openThread({ model: "anthropic/claude-x", cwd: "/repo", developerInstructions: "" });
+      const events: TurnEvent[] = [];
+      const answer = runtime.runTurn({ threadId: "ses_new", prompt: "Lungo", cwd: "/repo", model: "anthropic/claude-x", onEvent: (e) => events.push(e) });
+      await vi.waitFor(() => expect(client.session.promptAsync).toHaveBeenCalled());
+      client.session.abort.mockImplementationOnce(abort as never);
+      await expect(runtime.interrupt()).resolves.toBeUndefined();
+      await expect(answer).rejects.toThrow("Turno interrotto.");
+      expect(events.at(-1)).toEqual({ type: "interrupted" });
+      expect(stops).toEqual([1]);
+      expect(runtime.isRunningTurn).toBe(false);
+      runtime.stop();
+    }
+  });
+
+  it("keeps an interrupt that arrives while the turn is being set up", async () => {
+    const client = fakeClient();
+    const { runtime } = makeRuntime(client, false);
+    await runtime.openThread({ model: "anthropic/claude-x", cwd: "/repo", developerInstructions: "" });
+    const events: TurnEvent[] = [];
+    const answer = runtime.runTurn({ threadId: "ses_new", prompt: "Lungo", cwd: "/repo", model: "anthropic/claude-x", onEvent: (e) => events.push(e) });
+    expect(runtime.isRunningTurn).toBe(true);
+    await runtime.interrupt();
+    await expect(answer).rejects.toThrow("Turno interrotto.");
+    expect(events).toEqual([{ type: "interrupted" }]);
+    expect(client.session.promptAsync).not.toHaveBeenCalled();
+    expect(runtime.isRunningTurn).toBe(false);
+    runtime.stop();
   });
 
   it("fails the turn on a session error", async () => {

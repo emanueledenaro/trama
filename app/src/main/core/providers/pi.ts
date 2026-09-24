@@ -48,7 +48,15 @@ import {
   schemaInstruction,
   type TurnEvent,
 } from "./types";
-import { containedWriteTarget, currentUsageLimit, imageMimeType, inlineSkillInstructions, usageLimitError, writeFileNoFollow } from "./providerSupport";
+import {
+  containedWriteTarget,
+  currentUsageLimit,
+  imageMimeType,
+  inlineSkillInstructions,
+  PendingTurn,
+  usageLimitError,
+  writeFileNoFollow,
+} from "./providerSupport";
 
 type PiSdk = typeof import("@earendil-works/pi-coding-agent");
 
@@ -487,6 +495,8 @@ export class PiRuntime implements AgentRuntime {
   private writableRoot: string | null = null;
   private hostToolNames = new Set<string>();
   private active: ActiveTurn | null = null;
+  /** A turn still in setup: Pi has no run to abort yet. */
+  private pending: PendingTurn | null = null;
 
   constructor(
     private readonly options: RuntimeOptions = {},
@@ -494,7 +504,7 @@ export class PiRuntime implements AgentRuntime {
   ) {}
 
   get isRunningTurn(): boolean {
-    return this.active !== null;
+    return this.active !== null || this.pending !== null;
   }
 
   private agentDir(sdk: PiSdk): string {
@@ -692,7 +702,7 @@ export class PiRuntime implements AgentRuntime {
   async runTurn(options: RunTurnOptions): Promise<string> {
     const prompt = options.prompt.trim();
     if (!prompt) throw new ProviderError("emptyPrompt", "Il messaggio è vuoto.");
-    if (this.active) throw new ProviderError("turnAlreadyRunning", "Un turno è già in corso.");
+    if (this.active || this.pending) throw new ProviderError("turnAlreadyRunning", "Un turno è già in corso.");
     const runtime = this.runtime;
     if (!runtime) throw new ProviderError("processExited", "La sessione Pi non è aperta.");
     const block = currentUsageLimit("pi");
@@ -700,29 +710,41 @@ export class PiRuntime implements AgentRuntime {
     const session = runtime.session;
     if (session.isStreaming) throw new ProviderError("turnAlreadyRunning", "Un turno è già in corso.");
 
-    const current = session.model ? `${session.model.provider}/${session.model.id}` : null;
-    if (options.model && options.model !== current) {
-      const model = this.registry ? findPiModel(this.registry, options.model) : undefined;
-      if (!model) throw new ProviderError("invalidModel", `Il modello Pi ${options.model} non è disponibile.`);
-      await session.setModel(model);
-    }
-    const effort = options.effort?.trim().toLowerCase();
-    if (isThinkingLevel(effort)) session.setThinkingLevel(effort);
-    this.writableRoot = this.writable && options.writableRoot ? resolve(options.writableRoot) : null;
-
+    const pending = new PendingTurn(options.onEvent, "Pi è stato chiuso.");
+    this.pending = pending;
     const images: ImageContent[] = [];
-    for (const path of options.images ?? []) {
-      const mimeType = imageMimeType(path);
-      if (!mimeType) continue;
-      try {
-        images.push({ type: "image", data: (await readFile(path)).toString("base64"), mimeType });
-      } catch {
-        throw new ProviderError("rpcError", `Impossibile leggere l'immagine allegata: ${path}`);
+    let text: string;
+    try {
+      const current = session.model ? `${session.model.provider}/${session.model.id}` : null;
+      if (options.model && options.model !== current) {
+        const model = this.registry ? findPiModel(this.registry, options.model) : undefined;
+        if (!model) throw new ProviderError("invalidModel", `Il modello Pi ${options.model} non è disponibile.`);
+        await session.setModel(model);
+        pending.checkpoint();
       }
+      const effort = options.effort?.trim().toLowerCase();
+      if (isThinkingLevel(effort)) session.setThinkingLevel(effort);
+
+      for (const path of options.images ?? []) {
+        const mimeType = imageMimeType(path);
+        if (!mimeType) continue;
+        try {
+          images.push({ type: "image", data: (await readFile(path)).toString("base64"), mimeType });
+        } catch {
+          throw new ProviderError("rpcError", `Impossibile leggere l'immagine allegata: ${path}`);
+        }
+        pending.checkpoint();
+      }
+      const skillText = await inlineSkillInstructions("pi", options.skills);
+      pending.checkpoint();
+      text = skillText ? `${prompt}\n\n${skillText}` : prompt;
+      if (options.outputSchema) text += schemaInstruction(options.outputSchema);
+    } finally {
+      // The turn below registers synchronously, so an interrupt from here on reaches it.
+      if (this.pending === pending) this.pending = null;
     }
-    const skillText = await inlineSkillInstructions("pi", options.skills);
-    let text = skillText ? `${prompt}\n\n${skillText}` : prompt;
-    if (options.outputSchema) text += schemaInstruction(options.outputSchema);
+    if (this.runtime !== runtime) throw new ProviderError("processExited", "La sessione Pi non è più aperta.");
+    this.writableRoot = this.writable && options.writableRoot ? resolve(options.writableRoot) : null;
 
     return new Promise<string>((resolvePromise, rejectPromise) => {
       const turn: ActiveTurn = {
@@ -885,6 +907,7 @@ export class PiRuntime implements AgentRuntime {
   }
 
   async interrupt(): Promise<void> {
+    if (this.pending) this.pending.interrupted = true;
     const turn = this.active;
     const session = this.runtime?.session;
     if (!turn || !session) return;
@@ -896,6 +919,8 @@ export class PiRuntime implements AgentRuntime {
   }
 
   stop(): void {
+    if (this.pending) this.pending.stopped = true;
+    this.pending = null;
     const turn = this.active;
     if (turn) {
       turn.onEvent({ type: "failed", message: "Pi è stato chiuso." });

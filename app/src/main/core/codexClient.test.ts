@@ -49,6 +49,24 @@ describe("CodexClient", () => {
     expect(events.some((e) => e.type === "commandCompleted" && e.command === "git status --short")).toBe(true);
     expect(events.at(-1)?.type).toBe("completed");
   });
+
+  it("keeps an interrupt that arrives before app-server returns the turn id", async () => {
+    client = new CodexClient({ executable: fake });
+    const { threadId } = await client.openThread({ model: "gpt-5.5", cwd: process.cwd(), developerInstructions: "test" });
+    const events: TurnEvent[] = [];
+    const early = client.runTurn({ threadId, prompt: "ciao", cwd: process.cwd(), model: "gpt-5.5", onEvent: (event) => events.push(event) });
+    expect(client.isRunningTurn).toBe(true);
+    await client.interrupt();
+    await expect(early).rejects.toThrow("Turno interrotto.");
+    expect(events).toEqual([{ type: "interrupted" }]);
+
+    const late = client.runTurn({ threadId, prompt: "[attesa]", cwd: process.cwd(), model: "gpt-5.5", onEvent: (event) => events.push(event) });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    await client.interrupt();
+    await expect(late).rejects.toThrow(/interrott/);
+    expect(events.at(-1)).toEqual({ type: "interrupted" });
+    expect(client.isRunningTurn).toBe(false);
+  });
 });
 
 describe("restrictedAppServerArguments", () => {

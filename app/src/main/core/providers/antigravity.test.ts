@@ -387,6 +387,21 @@ describe("Antigravity turns", () => {
     expect(runtime.isRunningTurn).toBe(false);
   });
 
+  it("keeps an interrupt that arrives while the turn is being set up", async () => {
+    runtime = make(true);
+    const worktree = join(root, "worktree");
+    const { threadId } = await runtime.openThread({ model: "m", cwd: worktree, developerInstructions: "", sandbox: "workspace-write" });
+    const events: TurnEvent[] = [];
+    const turn = runtime.runTurn({ threadId, prompt: "x", cwd: worktree, model: "m", writableRoot: worktree, onEvent: (e) => events.push(e) });
+    expect(runtime.isRunningTurn).toBe(true);
+    await runtime.interrupt();
+    await expect(turn).rejects.toThrow("Turno interrotto.");
+    expect(events).toEqual([{ type: "interrupted" }]);
+    expect(runtime.isRunningTurn).toBe(false);
+    // agy never started: only the plugin install is in the log.
+    expect(await logLines()).toEqual([]);
+  });
+
   it("marks the provider blocked after a usage-limit failure", async () => {
     process.env.FAKE_AGY_SCENARIO = "limit";
     runtime = make();

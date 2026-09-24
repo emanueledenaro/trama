@@ -13,7 +13,7 @@ import { homedir } from "node:os";
 import { basename, delimiter, dirname, extname, isAbsolute, join, parse, resolve, sep } from "node:path";
 import type { LoadedSkill } from "@shared/skills";
 import type { ProviderId } from "@shared/codex";
-import { isInside, ProviderError } from "./types";
+import { isInside, ProviderError, type TurnEvent } from "./types";
 
 // ── Skills (skillPromptInjection.ts) ─────────────────────────────────────
 
@@ -305,6 +305,32 @@ export function parseUsageLimit(message: string, now = new Date()): { message: s
     }
   }
   return { message: message.trim(), until };
+}
+
+// ── Turn setup ───────────────────────────────────────────────────────────
+
+/**
+ * A turn between `runTurn()` and the moment the provider can take an interrupt (a request id, a
+ * running process). `interrupt()` and `stop()` mark it; the setup calls `checkpoint()` after each
+ * await, so an interrupt that lands during setup is not lost.
+ */
+export class PendingTurn {
+  interrupted = false;
+  stopped = false;
+
+  constructor(
+    private readonly onEvent: (event: TurnEvent) => void,
+    private readonly stoppedMessage: string,
+  ) {}
+
+  /** Throws when the turn was interrupted or the runtime stopped during setup. */
+  checkpoint(): void {
+    if (this.stopped) throw new ProviderError("processExited", this.stoppedMessage);
+    if (this.interrupted) {
+      this.onEvent({ type: "interrupted" });
+      throw new Error("Turno interrotto.");
+    }
+  }
 }
 
 // ── Usage-limit blocks ───────────────────────────────────────────────────

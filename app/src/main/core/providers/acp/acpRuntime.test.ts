@@ -181,6 +181,20 @@ describe("AcpAgentRuntime", () => {
     expect(runtime.isRunningTurn).toBe(false);
   });
 
+  it("keeps an interrupt that arrives while the turn is being set up", async () => {
+    runtime = new AcpAgentRuntime(testProfile);
+    const { threadId } = await runtime.openThread({ model: "m1", cwd: dir, developerInstructions: "" });
+    const events: TurnEvent[] = [];
+    // Changing the model awaits session/set_config_option before the prompt.
+    const turn = runtime.runTurn({ threadId, prompt: "ciao", cwd: dir, model: "m2", onEvent: (e) => events.push(e) });
+    expect(runtime.isRunningTurn).toBe(true);
+    await runtime.interrupt();
+    await expect(turn).rejects.toThrow("Turno interrotto.");
+    expect(events).toEqual([{ type: "interrupted" }]);
+    expect(received().some((m) => m.method === "session/prompt")).toBe(false);
+    expect(runtime.isRunningTurn).toBe(false);
+  });
+
   it("cancels a running turn", async () => {
     runtime = new AcpAgentRuntime(testProfile);
     const { threadId } = await runtime.openThread({ model: "m1", cwd: dir, developerInstructions: "" });

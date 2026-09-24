@@ -325,6 +325,21 @@ describe("Pi turns", () => {
     expect(isPiInterruption("Retry cancelled")).toBe(true);
   });
 
+  it("keeps an interrupt that arrives while the turn is being set up", async () => {
+    const runtime = new PiRuntime();
+    const { threadId } = await runtime.openThread({ model: "anthropic/claude-x", cwd: root, developerInstructions: "" });
+    const prompt = vi.spyOn(session, "prompt");
+    const events: TurnEvent[] = [];
+    // Switching model awaits session.setModel before the prompt.
+    const turn = runtime.runTurn({ threadId, prompt: "x", cwd: root, model: "openai/gpt-x", onEvent: (event) => events.push(event) });
+    expect(runtime.isRunningTurn).toBe(true);
+    await runtime.interrupt();
+    await expect(turn).rejects.toThrow("Turno interrotto.");
+    expect(events).toEqual([{ type: "interrupted" }]);
+    expect(prompt).not.toHaveBeenCalled();
+    expect(runtime.isRunningTurn).toBe(false);
+  });
+
   it("reports a usage limit as blocked with its reset time", async () => {
     const runtime = new PiRuntime();
     const { threadId } = await runtime.openThread({ model: "anthropic/claude-x", cwd: root, developerInstructions: "" });
