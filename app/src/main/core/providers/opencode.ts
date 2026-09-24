@@ -42,6 +42,7 @@ import {
   schemaInstruction,
   type TurnEvent,
 } from "./types";
+import { currentUsageLimit, usageLimitError } from "./providerSupport";
 
 const HOSTNAME = "127.0.0.1";
 const SERVER_USERNAME = "opencode";
@@ -734,6 +735,8 @@ export class OpenCodeRuntime implements AgentRuntime {
   }
 
   async readAccount(): Promise<ProviderAccount> {
+    const block = currentUsageLimit("opencode");
+    if (block) return block;
     try {
       const client = await this.clientFor(this.discoveryDirectory());
       const list = await client.provider.list(undefined, { signal: this.timeout() });
@@ -802,6 +805,8 @@ export class OpenCodeRuntime implements AgentRuntime {
     if (!prompt) throw new ProviderError("emptyPrompt", "Il messaggio è vuoto.");
     const model = requireModel(options.model);
     if (this.turn) throw new ProviderError("turnAlreadyRunning", "Un turno è già in corso.");
+    const block = currentUsageLimit("opencode");
+    if (block) throw new ProviderError("blocked", block.message);
 
     const client = await this.prepareDirectory(options.cwd);
     if (this.session?.id !== options.threadId) {
@@ -1388,8 +1393,11 @@ export class OpenCodeRuntime implements AgentRuntime {
       turn.onEvent({ type: "interrupted" });
       turn.reject(new Error("Turno interrotto."));
     } else if ("failed" in outcome) {
-      if (outcome.emit !== false) turn.onEvent({ type: "failed", message: outcome.failed });
-      turn.reject(new Error(outcome.failed));
+      // Session errors such as "429 rate limit" or "quota exceeded" block the provider for everyone.
+      const blocked = usageLimitError("opencode", "OpenCode", outcome.failed);
+      if (outcome.emit !== false) turn.onEvent({ type: "failed", message: blocked?.message ?? outcome.failed });
+      turn.reject(blocked ?? new Error(outcome.failed));
+      if (blocked) this.options.onAccountChanged?.();
     } else {
       turn.reject(outcome.error);
     }

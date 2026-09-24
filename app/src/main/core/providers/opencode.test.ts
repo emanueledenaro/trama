@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PermissionRule } from "@opencode-ai/sdk/v2";
 import type { TurnEvent } from "./types";
+import { clearUsageLimitsForTests } from "./providerSupport";
 
 const sdk = vi.hoisted(() => ({ client: null as unknown, created: [] as unknown[] }));
 vi.mock("@opencode-ai/sdk/v2/client", () => ({
@@ -202,6 +203,7 @@ describe("OpenCodeRuntime", () => {
   });
   afterEach(() => {
     vi.clearAllMocks();
+    clearUsageLimitsForTests();
   });
 
   it("opens a session with Trama's permissions and host tools", async () => {
@@ -361,9 +363,33 @@ describe("OpenCodeRuntime", () => {
     const events: TurnEvent[] = [];
     const answer = runtime.runTurn({ threadId: "ses_new", prompt: "x", cwd: "/repo", model: "anthropic/claude-x", onEvent: (e) => events.push(e) });
     await vi.waitFor(() => expect(client.session.promptAsync).toHaveBeenCalled());
-    client.events.push({ type: "session.error", properties: { sessionID: "ses_new", error: { name: "APIError", data: { message: "quota esaurita", isRetryable: false } } } });
-    await expect(answer).rejects.toThrow("quota esaurita");
-    expect(events.at(-1)).toEqual({ type: "failed", message: "quota esaurita" });
+    client.events.push({ type: "session.error", properties: { sessionID: "ses_new", error: { name: "APIError", data: { message: "modello rifiutato", isRetryable: false } } } });
+    await expect(answer).rejects.toThrow("modello rifiutato");
+    expect(events.at(-1)).toEqual({ type: "failed", message: "modello rifiutato" });
+    runtime.stop();
+  });
+
+  it("blocks OpenCode for every runtime after a usage-limit session error", async () => {
+    const client = fakeClient();
+    sdk.client = client;
+    const onAccountChanged = vi.fn();
+    const server = async (): Promise<OpenCodeServerHandle> => ({ url: "http://127.0.0.1:4100", password: "pw", onExit: () => undefined, stop: () => undefined });
+    const runtime = new OpenCodeRuntime({ onAccountChanged }, { startServer: server, resolveExecutable: () => "/usr/bin/opencode" });
+    await runtime.openThread({ model: "anthropic/claude-x", cwd: "/repo", developerInstructions: "" });
+    const answer = runtime.runTurn({ threadId: "ses_new", prompt: "x", cwd: "/repo", model: "anthropic/claude-x", onEvent: () => undefined });
+    await vi.waitFor(() => expect(client.session.promptAsync).toHaveBeenCalled());
+    client.events.push({
+      type: "session.error",
+      properties: { sessionID: "ses_new", error: { name: "APIError", data: { message: "429 rate limit exceeded, retry after 2099-01-01T00:00:00Z" } } },
+    });
+    await expect(answer).rejects.toMatchObject({ code: "blocked", message: expect.stringMatching(/limite/) });
+    expect(onAccountChanged).toHaveBeenCalled();
+    // The controller reads the account from another (discovery) runtime.
+    const discovery = new OpenCodeRuntime({}, { startServer: server, resolveExecutable: () => "/usr/bin/opencode" });
+    await expect(discovery.readAccount()).resolves.toMatchObject({ kind: "blocked", until: "2099-01-01T00:00:00.000Z" });
+    await expect(runtime.runTurn({ threadId: "ses_new", prompt: "x", cwd: "/repo", model: "anthropic/claude-x", onEvent: () => undefined })).rejects.toMatchObject({
+      code: "blocked",
+    });
     runtime.stop();
   });
 

@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { TurnEvent } from "@shared/codex";
 import { CoordinatorToolServer, toolSuccess } from "../toolServer";
+import { clearUsageLimitsForTests } from "./providerSupport";
 
 type Listener = (event: Record<string, unknown>) => void;
 type Scenario = (session: FakeSession) => Promise<void>;
@@ -136,6 +137,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  clearUsageLimitsForTests();
   await rm(root, { recursive: true, force: true });
 });
 
@@ -329,6 +331,7 @@ describe("Pi turns", () => {
       code: "blocked",
     });
     expect(await runtime.readAccount()).toMatchObject({ kind: "blocked", until: "2099-01-01T00:00:00.000Z" });
+    expect(await new PiRuntime().readAccount()).toMatchObject({ kind: "blocked", message: expect.stringMatching(/limite/) });
     await expect(runtime.runTurn({ threadId, prompt: "x", cwd: root, model: "anthropic/claude-x", onEvent: () => undefined })).rejects.toMatchObject({
       code: "blocked",
     });

@@ -29,7 +29,7 @@ import {
   extractJsonAnswer,
   schemaInstruction,
 } from "../types";
-import { absoluteUnnormalized, containedWriteTarget, writeFileNoFollow } from "../providerSupport";
+import { absoluteUnnormalized, containedWriteTarget, currentUsageLimit, usageLimitError, writeFileNoFollow } from "../providerSupport";
 
 export type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
 export type JsonObject = { [key: string]: Json };
@@ -779,8 +779,6 @@ export class AcpAgentRuntime implements AgentRuntime {
   private pendingInstructions: string | null = null;
   private activeTurn: ActiveTurn | null = null;
   private replayUntilQuiet: { last: number; resolve: () => void } | null = null;
-  private blocked: { message: string; until: string | null } | null = null;
-
   constructor(
     readonly profile: AcpProviderProfile,
     private readonly options: RuntimeOptions = {},
@@ -796,10 +794,8 @@ export class AcpAgentRuntime implements AgentRuntime {
   }
 
   async readAccount(): Promise<ProviderAccount> {
-    if (this.blocked && (this.blocked.until === null || Date.parse(this.blocked.until) > Date.now())) {
-      return { kind: "blocked", message: this.blocked.message, until: this.blocked.until };
-    }
-    this.blocked = null;
+    const block = currentUsageLimit(this.profile.id);
+    if (block) return block;
     let executable: string;
     try {
       executable = this.profile.resolveExecutable(this.options.executable);
@@ -889,6 +885,8 @@ export class AcpAgentRuntime implements AgentRuntime {
       throw new ProviderError("processExited", `${this.profile.label}: la sessione ${options.threadId} non è aperta.`);
     }
     const sessionId = this.sessionId;
+    const block = currentUsageLimit(this.profile.id);
+    if (block) throw new ProviderError("blocked", block.message);
     await this.applyTurnConfiguration(connection, options);
     const blocks = await this.promptBlocks(options, prompt);
 
@@ -930,10 +928,10 @@ export class AcpAgentRuntime implements AgentRuntime {
             turn.onEvent({ type: "interrupted" });
             reject(new Error("Turno interrotto."));
           } else {
-            const limit = parseUsageLimit(outcome.message);
-            if (limit) this.blocked = { message: `${this.profile.label} ha raggiunto il limite di utilizzo. ${outcome.message}`, until: limit.until };
-            turn.onEvent({ type: "failed", message: outcome.message });
-            reject(new Error(outcome.message));
+            const blocked = usageLimitError(this.profile.id, this.profile.label, outcome.message, parseUsageLimit(outcome.message));
+            turn.onEvent({ type: "failed", message: blocked?.message ?? outcome.message });
+            reject(blocked ?? new Error(outcome.message));
+            if (blocked) this.options.onAccountChanged?.();
           }
         },
       };

@@ -39,13 +39,16 @@ import {
 import {
   attachedFilesBlock,
   compareVersions,
+  currentUsageLimit,
   inlineSkillInstructions,
   parseCliVersion,
   parseUsageLimit,
   pathWithExecutable,
+  recordUsageLimit,
   resolveExecutable,
   runHelper,
   teardownProcessTree,
+  usageLimitError,
 } from "./providerSupport";
 
 const DEFAULT_MODEL = "Gemini 3.5 Flash";
@@ -751,7 +754,6 @@ export class AntigravityRuntime implements AgentRuntime {
   private readonly threads = new Map<string, ThreadState>();
   private readonly defaultEffortByModel = new Map<string, string>();
   private active: ActiveTurn | null = null;
-  private blocked: { message: string; until: string | null } | null = null;
 
   constructor(
     private readonly options: RuntimeOptions = {},
@@ -770,11 +772,6 @@ export class AntigravityRuntime implements AgentRuntime {
     const binary = resolveExecutable("agy", this.options.executable);
     if (!binary) throw new ProviderError("executableNotFound", NOT_FOUND);
     return binary;
-  }
-
-  private currentBlock(): { message: string; until: string | null } | null {
-    if (this.blocked?.until && Date.parse(this.blocked.until) <= Date.now()) this.blocked = null;
-    return this.blocked;
   }
 
   async readAccount(): Promise<ProviderAccount> {
@@ -800,8 +797,8 @@ export class AntigravityRuntime implements AgentRuntime {
         message: `Antigravity CLI ${parsed} è troppo vecchio per Trama. Aggiorna alla ${MINIMUM_ANTIGRAVITY_CLI_VERSION} o successiva con agy update.`,
       };
     }
-    const block = this.currentBlock();
-    if (block) return { kind: "blocked", message: block.message, until: block.until };
+    const block = currentUsageLimit("antigravity");
+    if (block) return block;
     let models;
     try {
       models = await runHelper(binary, ["models"], { timeoutMs: HEALTH_MODELS_TIMEOUT_MS });
@@ -812,7 +809,9 @@ export class AntigravityRuntime implements AgentRuntime {
       this.rememberEfforts(parseAntigravityModelLines(models.stdout));
       return { kind: "authenticated", label: parsed ? `Antigravity CLI ${parsed}` : "Antigravity CLI" };
     }
-    return accountFromFailedModels(`${models.stderr}\n${models.stdout}`, models.timedOut);
+    const account = accountFromFailedModels(`${models.stderr}\n${models.stdout}`, models.timedOut);
+    if (account.kind === "blocked") recordUsageLimit("antigravity", account.message, account.until);
+    return account;
   }
 
   async listModels(): Promise<ProviderModel[]> {
@@ -886,7 +885,7 @@ export class AntigravityRuntime implements AgentRuntime {
     if (!isInside(writableRoot, cwd)) {
       throw new ProviderError("rpcError", "Antigravity lavora solo dentro il worktree dello specialista: la cartella del turno è fuori.");
     }
-    const block = this.currentBlock();
+    const block = currentUsageLimit("antigravity");
     if (block) throw new ProviderError("blocked", block.message);
     const binary = this.binary();
 
@@ -1078,14 +1077,9 @@ export class AntigravityRuntime implements AgentRuntime {
               stderr.trim() ||
               (result?.state === undefined && result !== undefined ? "Antigravity CLI è terminato senza un risultato completo." : "") ||
               `Antigravity CLI è terminato con codice ${code ?? 1}.`;
-            const limit = parseUsageLimit(message);
-            if (limit) {
-              this.blocked = limit;
-              this.options.onAccountChanged?.();
-              settle({ kind: "failed", error: new ProviderError("blocked", message) });
-            } else {
-              settle({ kind: "failed", error: new ProviderError("rpcError", message) });
-            }
+            const blocked = usageLimitError("antigravity", "Antigravity", message);
+            settle({ kind: "failed", error: blocked ?? new ProviderError("rpcError", message) });
+            if (blocked) this.options.onAccountChanged?.();
             return;
           }
           settle({ kind: "completed", text: options.outputSchema ? extractJsonAnswer(responseText) : responseText.trim() });

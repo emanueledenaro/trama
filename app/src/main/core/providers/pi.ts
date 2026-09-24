@@ -48,7 +48,7 @@ import {
   schemaInstruction,
   type TurnEvent,
 } from "./types";
-import { containedWriteTarget, imageMimeType, inlineSkillInstructions, parseUsageLimit, writeFileNoFollow } from "./providerSupport";
+import { containedWriteTarget, currentUsageLimit, imageMimeType, inlineSkillInstructions, usageLimitError, writeFileNoFollow } from "./providerSupport";
 
 type PiSdk = typeof import("@earendil-works/pi-coding-agent");
 
@@ -481,7 +481,6 @@ export class PiRuntime implements AgentRuntime {
   private writableRoot: string | null = null;
   private hostToolNames = new Set<string>();
   private active: ActiveTurn | null = null;
-  private blocked: { message: string; until: string | null } | null = null;
 
   constructor(
     private readonly options: RuntimeOptions = {},
@@ -496,11 +495,6 @@ export class PiRuntime implements AgentRuntime {
     return trimmed(this.dependencies.agentDir) ?? sdk.getAgentDir();
   }
 
-  private currentBlock(): { message: string; until: string | null } | null {
-    if (this.blocked?.until && Date.parse(this.blocked.until) <= Date.now()) this.blocked = null;
-    return this.blocked;
-  }
-
   /**
    * Synara only probes `pi --version` and leaves authentication unknown. Trama needs a yes or no, so
    * it asks the SDK which models have configured credentials (auth.json, environment keys, models.json).
@@ -512,8 +506,8 @@ export class PiRuntime implements AgentRuntime {
     } catch (error) {
       return { kind: "unavailable", message: `SDK di Pi non disponibile: ${(error as Error).message}` };
     }
-    const block = this.currentBlock();
-    if (block) return { kind: "blocked", message: block.message, until: block.until };
+    const block = currentUsageLimit("pi");
+    if (block) return block;
     let available: Model<Api>[];
     let registry: ModelRegistry;
     try {
@@ -690,7 +684,7 @@ export class PiRuntime implements AgentRuntime {
     if (this.active) throw new ProviderError("turnAlreadyRunning", "Un turno è già in corso.");
     const runtime = this.runtime;
     if (!runtime) throw new ProviderError("processExited", "La sessione Pi non è aperta.");
-    const block = this.currentBlock();
+    const block = currentUsageLimit("pi");
     if (block) throw new ProviderError("blocked", block.message);
     const session = runtime.session;
     if (session.isStreaming) throw new ProviderError("turnAlreadyRunning", "Un turno è già in corso.");
@@ -771,15 +765,10 @@ export class PiRuntime implements AgentRuntime {
       return;
     }
     if (errorMessage) {
-      const limit = parseUsageLimit(errorMessage);
-      turn.onEvent({ type: "failed", message: errorMessage });
-      if (limit) {
-        this.blocked = limit;
-        this.options.onAccountChanged?.();
-        turn.reject(new ProviderError("blocked", errorMessage));
-      } else {
-        turn.reject(new ProviderError("rpcError", errorMessage));
-      }
+      const blocked = usageLimitError("pi", "Pi", errorMessage);
+      turn.onEvent({ type: "failed", message: blocked?.message ?? errorMessage });
+      turn.reject(blocked ?? new ProviderError("rpcError", errorMessage));
+      if (blocked) this.options.onAccountChanged?.();
       return;
     }
     const answer = (session ? lastAssistantText(session) : "") || turn.streamedText;

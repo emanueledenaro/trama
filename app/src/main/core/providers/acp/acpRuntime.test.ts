@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { TurnEvent } from "@shared/codex";
+import { clearUsageLimitsForTests } from "../providerSupport";
 import { AcpAgentRuntime, type AcpProviderProfile, buildChildEnvironment, decidePermission, hostToolName, parseUsageLimit } from "./acpRuntime";
 
 const fakeAgent = join(import.meta.dirname, "../../../../../test-fixtures/fake-acp-agent.mjs");
@@ -45,6 +46,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  clearUsageLimitsForTests();
   runtime?.stop();
   runtime = null;
   delete process.env.FAKE_ACP_LOG;
@@ -135,6 +137,21 @@ describe("AcpAgentRuntime", () => {
     expect(await run(join(outside, "direct.txt"))).toMatch(/^refused/);
     expect(await run(join(root, "ok.txt"))).toBe("written");
     expect(readFileSync(join(root, "ok.txt"), "utf8")).toBe("scritto");
+  });
+
+  it("blocks the provider for every runtime after a usage-limit failure", async () => {
+    let changed = 0;
+    runtime = new AcpAgentRuntime(testProfile, { onAccountChanged: () => void changed++ });
+    const { threadId } = await runtime.openThread({ model: "m1", cwd: dir, developerInstructions: "" });
+    const events: TurnEvent[] = [];
+    await expect(runtime.runTurn({ threadId, prompt: "limit", cwd: dir, model: "m1", onEvent: (e) => events.push(e) })).rejects.toMatchObject({
+      code: "blocked",
+      message: expect.stringMatching(/limite/),
+    });
+    expect(changed).toBe(1);
+    expect(events.at(-1)).toMatchObject({ type: "failed", message: expect.stringMatching(/limite/) });
+    expect(await new AcpAgentRuntime(testProfile).readAccount()).toMatchObject({ kind: "blocked", until: expect.any(String) });
+    await expect(runtime.runTurn({ threadId, prompt: "ciao", cwd: dir, model: "m1", onEvent: () => undefined })).rejects.toMatchObject({ code: "blocked" });
   });
 
   it("cancels a running turn", async () => {

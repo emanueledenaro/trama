@@ -49,6 +49,10 @@ async function prompt(id, params) {
   const sessionId = params.sessionId;
   const text = params.prompt.filter((b) => b.type === "text").map((b) => b.text).join("\n");
   if (text.includes("silent")) return;
+  if (text.includes("limit")) {
+    send({ id, error: { code: -32000, message: "You've hit your usage limit. Try again in 2 hours." } });
+    return;
+  }
   if (text.includes("hang")) {
     update(sessionId, { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "working" } });
     await new Promise((resolve) => cancelWaiters.set(sessionId, resolve));

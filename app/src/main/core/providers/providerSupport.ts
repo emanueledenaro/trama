@@ -12,7 +12,8 @@ import { open, readFile, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, delimiter, dirname, extname, isAbsolute, join, normalize, parse, resolve, sep } from "node:path";
 import type { LoadedSkill } from "@shared/skills";
-import { isInside } from "./types";
+import type { ProviderId } from "@shared/codex";
+import { isInside, ProviderError } from "./types";
 
 // ── Skills (skillPromptInjection.ts) ─────────────────────────────────────
 
@@ -311,6 +312,58 @@ export function parseUsageLimit(message: string, now = new Date()): { message: s
     }
   }
   return { message: message.trim(), until };
+}
+
+// ── Usage-limit blocks ───────────────────────────────────────────────────
+
+/**
+ * Process-wide blocks, one per provider. The controller reads the account from a discovery runtime
+ * while turns run on other runtimes, so a block recorded by a turn must be visible to all of them.
+ */
+const usageLimitBlocks = new Map<ProviderId, { message: string; until: string | null; recordedAt: number }>();
+/** How long a block without a reset time lasts. */
+export const USAGE_LIMIT_WITHOUT_RESET_MS = 15 * 60_000;
+
+export function recordUsageLimit(providerId: ProviderId, message: string, until: string | null, now = Date.now()): void {
+  usageLimitBlocks.set(providerId, { message, until, recordedAt: now });
+}
+
+/** The active block of `providerId`, or null once it has expired. */
+export function currentUsageLimit(
+  providerId: ProviderId,
+  now = Date.now(),
+): { kind: "blocked"; message: string; until: string | null } | null {
+  const block = usageLimitBlocks.get(providerId);
+  if (!block) return null;
+  const until = block.until ? Date.parse(block.until) : Number.NaN;
+  const expired = Number.isNaN(until) ? now - block.recordedAt > USAGE_LIMIT_WITHOUT_RESET_MS : until <= now;
+  if (expired) {
+    usageLimitBlocks.delete(providerId);
+    return null;
+  }
+  return { kind: "blocked", message: block.message, until: block.until };
+}
+
+/**
+ * Records a usage-limit block for `providerId` when `raw` is a usage-limit failure and returns the
+ * error a turn rejects with; null for any other failure. The message says "limite", which the
+ * controller recognizes.
+ */
+export function usageLimitError(
+  providerId: ProviderId,
+  label: string,
+  raw: string,
+  parsed: { until: string | null } | null = parseUsageLimit(raw),
+): ProviderError | null {
+  if (!parsed) return null;
+  const detail = raw.trim();
+  const message = `${label} ha raggiunto il limite di utilizzo.${detail ? ` ${detail}` : ""}`;
+  recordUsageLimit(providerId, message, parsed.until);
+  return new ProviderError("blocked", message);
+}
+
+export function clearUsageLimitsForTests(): void {
+  usageLimitBlocks.clear();
 }
 
 // ── Paths ────────────────────────────────────────────────────────────────

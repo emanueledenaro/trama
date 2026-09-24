@@ -16,7 +16,7 @@ import {
   parseAntigravityPrintResult,
   resolveAntigravityCliModelLabel,
 } from "./antigravity";
-import { parseUsageLimit } from "./providerSupport";
+import { clearUsageLimitsForTests, parseUsageLimit } from "./providerSupport";
 
 /** A fake `agy` that answers health probes and prints Synara-format stream-json with hook events. */
 const FAKE_AGY = String.raw`
@@ -91,6 +91,7 @@ afterEach(async () => {
   runtime?.stop();
   runtime = null;
   for (const key of ["FAKE_AGY_SCENARIO", "FAKE_AGY_VERSION", "FAKE_AGY_MODELS", "FAKE_AGY_LOG", "FAKE_AGY_PLUGIN", "TRAMA_SECRET"]) delete process.env[key];
+  clearUsageLimitsForTests();
   await rm(root, { recursive: true, force: true });
 });
 
@@ -396,8 +397,13 @@ describe("Antigravity turns", () => {
       runtime.runTurn({ threadId, prompt: "x", cwd: worktree, model: "m", writableRoot: worktree, onEvent: (e) => events.push(e) }),
     ).rejects.toMatchObject({ code: "blocked" });
     expect(events.at(-1)).toMatchObject({ type: "failed", message: expect.stringMatching(/RESOURCE_EXHAUSTED/) });
-    const account = await runtime.readAccount();
+    expect(events.at(-1)).toMatchObject({ message: expect.stringMatching(/limite/) });
+    // Another runtime, like the controller's discovery runtime, sees the same block.
+    const account = await make().readAccount();
     expect(account.kind).toBe("blocked");
     expect(account.kind === "blocked" && account.until).toBeTruthy();
+    await expect(
+      runtime.runTurn({ threadId, prompt: "x", cwd: worktree, model: "m", writableRoot: worktree, onEvent: () => undefined }),
+    ).rejects.toMatchObject({ code: "blocked" });
   });
 });
