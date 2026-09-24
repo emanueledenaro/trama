@@ -155,11 +155,13 @@
 
 :root[data-platform="darwin"] {
   --app-shell-background: transparent;
-  --app-sidebar-surface: color-mix(in srgb, var(--surface) 38%, transparent);
-  --app-sidebar-backdrop-filter: blur(4px) saturate(130%);
+  /* Light mode stays a neutral gray: at 38% the desktop wallpaper tinted the sidebar. */
+  --app-sidebar-surface: color-mix(in srgb, var(--surface) 95%, black);
+  --app-sidebar-backdrop-filter: none;
 }
 
 :root.dark[data-platform="darwin"] {
+  --app-sidebar-backdrop-filter: blur(4px) saturate(130%);
   --app-sidebar-surface: color-mix(in srgb, color-mix(in srgb, var(--surface) 80%, black) 72%, transparent);
 }
 
