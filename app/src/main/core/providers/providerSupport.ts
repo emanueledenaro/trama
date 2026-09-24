@@ -7,10 +7,10 @@
  * See docs/synara-attribution.md.
  */
 import { type ChildProcess, spawn } from "node:child_process";
-import { accessSync, constants, readdirSync } from "node:fs";
-import { readFile, realpath, stat } from "node:fs/promises";
+import { accessSync, constants, constants as fsConstants, lstatSync, readdirSync, realpathSync } from "node:fs";
+import { open, readFile, stat } from "node:fs/promises";
 import { homedir } from "node:os";
-import { basename, delimiter, dirname, extname, join, normalize, resolve, sep } from "node:path";
+import { basename, delimiter, dirname, extname, isAbsolute, join, normalize, parse, resolve, sep } from "node:path";
 import type { LoadedSkill } from "@shared/skills";
 import { isInside } from "./types";
 
@@ -315,26 +315,90 @@ export function parseUsageLimit(message: string, now = new Date()): { message: s
 
 // ── Paths ────────────────────────────────────────────────────────────────
 
-/** Resolves the nearest existing ancestor through symlinks and re-appends the missing tail. */
-async function realPathOfTarget(path: string): Promise<string> {
-  const missing: string[] = [];
-  let current = resolve(path);
-  for (;;) {
-    try {
-      const real = await realpath(current);
-      return missing.length ? join(real, ...missing.reverse()) : real;
-    } catch {
-      const parent = dirname(current);
-      if (parent === current) return resolve(path);
-      missing.push(basename(current));
-      current = parent;
-    }
-  }
+/** `path` made absolute against `cwd` without lexical normalization, so `link/..` keeps its real meaning. */
+export function absoluteUnnormalized(cwd: string, path: string): string {
+  if (isAbsolute(path)) return path;
+  return cwd.endsWith("/") || cwd.endsWith("\\") ? `${cwd}${path}` : `${cwd}${sep}${path}`;
 }
 
-/** True when `path`, with symlinks resolved, is `root` or inside it. */
-export async function isWritableTarget(root: string, path: string): Promise<boolean> {
-  const realRoot = await realpath(root).catch(() => resolve(root));
-  const target = await realPathOfTarget(path);
-  return isInside(realRoot.endsWith(sep) ? realRoot.slice(0, -1) : realRoot, target);
+/**
+ * The real location a write to `path` would reach, walking it one component at a time with lstat:
+ * an existing symlink is followed through realpath, a dangling symlink (or a loop) returns null, and
+ * `..` moves to the parent of the real directory reached so far, as the kernel does. Components
+ * after the first missing one cannot be symlinks; a `..` among them returns null.
+ */
+export function resolveWriteTarget(path: string): string | null {
+  const absolute = isAbsolute(path) ? path : resolve(path);
+  const { root } = parse(absolute);
+  const parts = absolute.slice(root.length).split(/[\\/]+/).filter(Boolean);
+  let current = root;
+  for (let index = 0; index < parts.length; index++) {
+    const part = parts[index]!;
+    if (part === ".") continue;
+    if (part === "..") {
+      current = dirname(current);
+      continue;
+    }
+    const next = join(current, part);
+    let stats;
+    try {
+      stats = lstatSync(next);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") return null;
+      const rest = parts.slice(index + 1);
+      return rest.includes("..") ? null : join(next, ...rest.filter((entry) => entry !== "."));
+    }
+    if (stats.isSymbolicLink()) {
+      try {
+        current = realpathSync.native(next);
+      } catch {
+        // Dangling link or loop: a write would land wherever the link points, maybe outside.
+        return null;
+      }
+    } else {
+      current = next;
+    }
+  }
+  return current;
+}
+
+/**
+ * The real target of a write to `path` when it stays inside `root` (itself resolved); null otherwise.
+ * A path with `..` is checked twice, as written and lexically normalized, because the writer may
+ * use either form: both must stay inside. The normalized target is returned.
+ */
+export function containedWriteTarget(root: string, path: string): string | null {
+  let realRoot: string;
+  try {
+    realRoot = realpathSync.native(root);
+  } catch {
+    return null;
+  }
+  const trimmedRoot = realRoot.length > 1 && (realRoot.endsWith("/") || realRoot.endsWith("\\")) ? realRoot.slice(0, -1) : realRoot;
+  const target = resolveWriteTarget(resolve(path));
+  if (target === null || !isInside(trimmedRoot, target)) return null;
+  if (/(?:^|[\\/])\.\.(?:[\\/]|$)/.test(path)) {
+    const physical = resolveWriteTarget(path);
+    if (physical === null || !isInside(trimmedRoot, physical)) return null;
+  }
+  return target;
+}
+
+/** True when a write to `path`, with symlinks resolved, stays inside `root`. */
+export function isWritableTarget(root: string, path: string): boolean {
+  return containedWriteTarget(root, path) !== null;
+}
+
+/**
+ * Writes `content` to `path` without following a symlink in the last component (O_NOFOLLOW), so a
+ * link swapped in after the containment check cannot redirect the write.
+ */
+export async function writeFileNoFollow(path: string, content: string | Uint8Array): Promise<void> {
+  const flags = fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_TRUNC | (fsConstants.O_NOFOLLOW ?? 0);
+  const handle = await open(path, flags, 0o666);
+  try {
+    await handle.writeFile(content);
+  } finally {
+    await handle.close();
+  }
 }

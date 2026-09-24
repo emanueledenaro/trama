@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -228,6 +228,30 @@ describe("Antigravity capture plugin scripts", () => {
     expect(["view_file", "write_to_file", "grep_search", "list_dir"].some(isDeniedAntigravityTool)).toBe(false);
     const inactive = await runScript("capture.cjs", hookScriptSource(), ["pre-tool"], call("/x"), {});
     expect(JSON.parse(inactive.stdout)).toEqual({ decision: "ask" });
+  });
+
+  it("denies file edits through a dangling symlink or a link that leaves the worktree", async () => {
+    const events = join(root, "events.ndjson");
+    const worktree = join(root, "worktree");
+    await mkdir(join(root, "outside"));
+    await symlink(join(root, "outside", "pwned.txt"), join(worktree, "dangling"));
+    await symlink(join(root, "outside"), join(worktree, "dirlink"));
+    const env = { TRAMA_ANTIGRAVITY_EVENTS: events, TRAMA_ANTIGRAVITY_HOOK_DECISION: "allow", TRAMA_ANTIGRAVITY_WRITABLE_ROOT: worktree };
+    const decide = async (file: string) =>
+      (
+        await runScript(
+          "capture.cjs",
+          hookScriptSource(),
+          ["pre-tool"],
+          JSON.stringify({ conversationId: "c", stepIdx: 1, toolCall: { name: "write_to_file", args: { TargetFile: file } } }),
+          env,
+        )
+      ).stdout.trim();
+    expect(await decide(join(worktree, "dangling"))).toBe("{}");
+    expect(await decide("dangling")).toBe("{}");
+    expect(await decide(join(worktree, "dirlink", "x.txt"))).toBe("{}");
+    expect(await decide(`${worktree}/dirlink/../x.txt`)).toBe("{}");
+    expect(JSON.parse(await decide(join(worktree, "new", "x.txt")))).toEqual({ decision: "allow" });
   });
 
   it("serves an empty MCP catalog outside a Trama turn", async () => {

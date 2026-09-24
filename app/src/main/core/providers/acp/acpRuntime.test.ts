@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -121,6 +121,22 @@ describe("AcpAgentRuntime", () => {
     expect(answers.map((m) => (m.result as { outcome: { optionId: string } }).outcome.optionId)).toEqual(["no", "yes", "no"]);
   });
 
+  it("writes files for the agent only inside the writable root, never through a dangling symlink", async () => {
+    runtime = new AcpAgentRuntime(testProfile);
+    const { threadId } = await runtime.openThread({ model: "m1", cwd: dir, developerInstructions: "" });
+    const root = join(dir, "tree");
+    const outside = join(dir, "outside");
+    mkdirSync(root);
+    mkdirSync(outside);
+    symlinkSync(join(outside, "pwned.txt"), join(root, "dangling"));
+    const run = (path: string) => runtime!.runTurn({ threadId, prompt: `fswrite ${path}`, cwd: root, model: "m1", writableRoot: root, onEvent: () => undefined });
+    expect(await run(join(root, "dangling"))).toMatch(/^refused/);
+    expect(existsSync(join(outside, "pwned.txt"))).toBe(false);
+    expect(await run(join(outside, "direct.txt"))).toMatch(/^refused/);
+    expect(await run(join(root, "ok.txt"))).toBe("written");
+    expect(readFileSync(join(root, "ok.txt"), "utf8")).toBe("scritto");
+  });
+
   it("cancels a running turn", async () => {
     runtime = new AcpAgentRuntime(testProfile);
     const { threadId } = await runtime.openThread({ model: "m1", cwd: dir, developerInstructions: "" });
@@ -185,6 +201,22 @@ describe("ACP policy helpers", () => {
     expect(decidePermission({ kind: "execute", paths: [], cwd, writableRoot: cwd, hostTool: false })).toBe("reject");
     expect(decidePermission({ kind: "fetch", paths: [], cwd, writableRoot: cwd, hostTool: false })).toBe("reject");
     expect(decidePermission({ kind: "other", paths: [], cwd, writableRoot: null, hostTool: true })).toBe("allow");
+  });
+
+  it("rejects edits through a dangling symlink or a link that leaves the root", () => {
+    const base = mkdtempSync(join(tmpdir(), "trama-acp-links-"));
+    const root = join(base, "tree");
+    const outside = join(base, "outside");
+    mkdirSync(root);
+    mkdirSync(outside);
+    symlinkSync(join(base, "outside-new.txt"), join(root, "dangling"));
+    symlinkSync(outside, join(root, "dirlink"));
+    const edit = (path: string) => decidePermission({ kind: "edit", paths: [path], cwd: root, writableRoot: root, hostTool: false });
+    expect(edit(join(root, "dangling"))).toBe("reject");
+    expect(edit(join(root, "dirlink", "x.ts"))).toBe("reject");
+    expect(edit(`${root}/dirlink/../x.ts`)).toBe("reject");
+    expect(edit(join(root, "new", "x.ts"))).toBe("allow");
+    rmSync(base, { recursive: true, force: true });
   });
 
   it("recognizes calls to Trama's MCP server", () => {

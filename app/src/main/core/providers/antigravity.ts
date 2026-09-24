@@ -368,20 +368,45 @@ const NETWORK_TOOL = new RegExp(${JSON.stringify(NETWORK_TOOL_PATTERN.source)}, 
 let payload = "";
 process.stdin.setEncoding("utf8");
 process.stdin.on("data", (chunk) => { payload += chunk; });
+// Same walk as resolveWriteTarget in providerSupport.ts: symlinks are followed one component at a
+// time, a dangling link or a loop returns null, and ".." moves to the real parent.
 function realTarget(target) {
-  const missing = [];
-  let current = path.resolve(target);
-  for (;;) {
+  const absolute = path.isAbsolute(target) ? target : path.resolve(target);
+  const root = path.parse(absolute).root;
+  const parts = absolute.slice(root.length).split(/[\\\\/]+/).filter(Boolean);
+  let current = root;
+  for (let index = 0; index < parts.length; index++) {
+    const part = parts[index];
+    if (part === ".") continue;
+    if (part === "..") { current = path.dirname(current); continue; }
+    const next = path.join(current, part);
+    let stats;
     try {
-      const real = fs.realpathSync(current);
-      return missing.length ? path.join(real, ...missing.reverse()) : real;
-    } catch {
-      const parent = path.dirname(current);
-      if (parent === current) return path.resolve(target);
-      missing.push(path.basename(current));
-      current = parent;
+      stats = fs.lstatSync(next);
+    } catch (error) {
+      if (!error || error.code !== "ENOENT") return null;
+      const rest = parts.slice(index + 1);
+      return rest.includes("..") ? null : path.join(next, ...rest.filter((entry) => entry !== "."));
+    }
+    if (stats.isSymbolicLink()) {
+      try { current = fs.realpathSync.native(next); } catch { return null; }
+    } else {
+      current = next;
     }
   }
+  return current;
+}
+function contained(root, file) {
+  let realRoot;
+  try { realRoot = fs.realpathSync.native(root); } catch { return false; }
+  const raw = path.isAbsolute(file) ? file : root + path.sep + file;
+  const lexical = realTarget(path.resolve(raw));
+  if (lexical === null || !inside(realRoot, lexical)) return false;
+  if (/(?:^|[\\\\/])\\.\\.(?:[\\\\/]|$)/.test(raw)) {
+    const physical = realTarget(raw);
+    if (physical === null || !inside(realRoot, physical)) return false;
+  }
+  return true;
 }
 function inside(root, target) {
   const normalized = root.endsWith(path.sep) ? root : root + path.sep;
@@ -432,9 +457,7 @@ process.stdin.on("end", () => {
       return;
     }
     if (call && EDIT_TOOLS.has(call.name) && root) {
-      let realRoot = root;
-      try { realRoot = fs.realpathSync(root); } catch {}
-      if (!file || !inside(realRoot, realTarget(path.resolve(root, file)))) {
+      if (!file || !contained(root, file)) {
         fs.appendFileSync(target, "denied-tool\\t" + capturedPayload + "\\n");
         process.stdout.write("{}\\n");
         return;

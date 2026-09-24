@@ -55,6 +55,14 @@ async function prompt(id, params) {
     send({ id, result: { stopReason: "cancelled" } });
     return;
   }
+  const fsWrite = /fswrite (\S+)/.exec(text);
+  if (fsWrite) {
+    const answer = await askClient("fs/write_text_file", { sessionId, path: fsWrite[1], content: "scritto" });
+    const reply = answer.error ? `refused: ${answer.error.message}` : "written";
+    update(sessionId, { sessionUpdate: "agent_message_chunk", content: { type: "text", text: reply } });
+    send({ id, result: { stopReason: "end_turn" } });
+    return;
+  }
   const write = /write (\S+)/.exec(text);
   if (write) {
     const toolCall = { toolCallId: "edit-1", title: "Edit file", kind: "edit", status: "pending", locations: [{ path: write[1] }] };

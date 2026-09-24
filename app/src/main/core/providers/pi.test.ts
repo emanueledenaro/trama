@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -228,11 +228,17 @@ describe("Pi sessions and tool gating", () => {
       await write.execute("w2", { path: "../escape.txt", content: "fuori" }, undefined, undefined, undefined).catch((error: Error) => {
         results.push(error.message);
       });
+      await write.execute("w3", { path: "dangling", content: "fuori" }, undefined, undefined, undefined).catch((error: Error) => {
+        results.push(error.message);
+      });
     };
+    await symlink(join(root, "outside-new.txt"), join(worktree, "dangling"));
     await runtime.runTurn({ threadId, prompt: "scrivi", cwd: worktree, model: "anthropic/claude-x", writableRoot: worktree, onEvent: () => undefined });
     expect(await readFile(join(worktree, "a.txt"), "utf8")).toBe("dentro");
     expect(results[0]).toBe("inside ok");
     expect(results[1]).toMatch(/fuori dal worktree/);
+    expect(results[2]).toMatch(/fuori dal worktree/);
+    await expect(readFile(join(root, "outside-new.txt"), "utf8")).rejects.toThrow();
   });
 });
 

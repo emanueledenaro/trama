@@ -13,7 +13,7 @@
  */
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { accessSync, constants, readdirSync, realpathSync } from "node:fs";
+import { accessSync, constants, readdirSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { delimiter, dirname, extname, join, resolve } from "node:path";
@@ -41,8 +41,8 @@ import {
   type TurnEvent,
   ProviderError,
   extractJsonAnswer,
-  isInside,
 } from "./types";
+import { absoluteUnnormalized, isWritableTarget } from "./providerSupport";
 
 type ClaudeSdk = typeof import("@anthropic-ai/claude-agent-sdk");
 
@@ -397,22 +397,6 @@ export function parseMcpToolName(name: string): { server: string; tool: string }
   return match ? { server: match[1]!, tool: match[2]! } : null;
 }
 
-/** Real path of `path`, resolving symlinks on the deepest ancestor that exists. */
-function realPathOf(path: string): string {
-  let current = path;
-  const rest: string[] = [];
-  for (;;) {
-    try {
-      return join(realpathSync.native(current), ...rest);
-    } catch {
-      const parent = dirname(current);
-      if (parent === current) return path;
-      rest.unshift(current.slice(parent.length).replace(/^[\\/]/, ""));
-      current = parent;
-    }
-  }
-}
-
 function toolPath(input: Record<string, unknown>): string | null {
   return nonEmpty(input.file_path) ?? nonEmpty(input.notebook_path) ?? nonEmpty(input.path) ?? null;
 }
@@ -426,7 +410,7 @@ export function decideToolPermission(
   toolName: string,
   input: Record<string, unknown>,
   policy: ToolPolicy,
-  realPath: (path: string) => string = realPathOf,
+  writable: (root: string, path: string) => boolean = isWritableTarget,
 ): ToolDecision {
   const mcp = parseMcpToolName(toolName);
   if (mcp) {
@@ -442,9 +426,8 @@ export function decideToolPermission(
     if (!policy.writableRoot) return { allow: false, reason: "This turn is read-only: file changes are not allowed." };
     const path = toolPath(input);
     if (!path) return { allow: false, reason: `${toolName} needs an explicit file path.` };
-    const root = realPath(resolve(policy.writableRoot));
-    const target = realPath(resolve(policy.cwd, path));
-    return isInside(root, target)
+    // Symlinks are resolved component by component; a dangling one is denied.
+    return writable(resolve(policy.writableRoot), absoluteUnnormalized(policy.cwd, path))
       ? { allow: true }
       : { allow: false, reason: `Writes are allowed only inside ${policy.writableRoot}.` };
   }

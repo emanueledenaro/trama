@@ -11,8 +11,8 @@
  */
 import { type ChildProcessWithoutNullStreams, execFile, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { accessSync, constants, existsSync, lstatSync, readdirSync, realpathSync } from "node:fs";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { accessSync, constants, existsSync, lstatSync, readdirSync } from "node:fs";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { delimiter, dirname, extname, isAbsolute, join, resolve } from "node:path";
 import type { LoadedSkill } from "@shared/skills";
@@ -27,9 +27,9 @@ import {
   type RuntimeOptions,
   type TurnEvent,
   extractJsonAnswer,
-  isInside,
   schemaInstruction,
 } from "../types";
+import { absoluteUnnormalized, containedWriteTarget, writeFileNoFollow } from "../providerSupport";
 
 export type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
 export type JsonObject = { [key: string]: Json };
@@ -381,7 +381,8 @@ export function toolCallPaths(toolCall: { rawInput?: unknown; content?: unknown;
   const paths = new Set<string>();
   const add = (value: unknown) => {
     const path = trimmed(value);
-    if (path) paths.add(resolve(cwd, path));
+    // Not normalized: `link/..` must be judged where the filesystem takes it.
+    if (path) paths.add(absoluteUnnormalized(cwd, path));
   };
   for (const location of asArray(toolCall.locations)) add(asObject(location)?.path);
   for (const entry of asArray(toolCall.content)) {
@@ -415,29 +416,12 @@ export function hostToolName(serverName: string | null | undefined, toolCall: { 
 
 // ── Permission policy (AcpAdapterSupport.ts, adapted to Trama's sandbox) ──
 
-/** True when `path` (or its nearest existing ancestor) resolves inside `root`, following symlinks. */
+/**
+ * True when `path` resolves inside `root`, following symlinks component by component. A dangling
+ * symlink is refused: the write would land wherever it points.
+ */
 export function resolvesInside(root: string, path: string): boolean {
-  const absolute = resolve(path);
-  if (!isInside(resolve(root), absolute)) return false;
-  let realRoot: string;
-  try {
-    realRoot = realpathSync(root);
-  } catch {
-    return false;
-  }
-  let probe = absolute;
-  let suffix = "";
-  for (;;) {
-    try {
-      const real = realpathSync(probe);
-      return isInside(realRoot, suffix ? join(real, suffix) : real);
-    } catch {
-      const parent = dirname(probe);
-      if (parent === probe) return false;
-      suffix = suffix ? join(probe.slice(parent.length + 1), suffix) : probe.slice(parent.length + 1);
-      probe = parent;
-    }
-  }
+  return containedWriteTarget(root, path) !== null;
 }
 
 export type PermissionDecision = "allow" | "reject";
@@ -1214,10 +1198,11 @@ export class AcpAgentRuntime implements AgentRuntime {
       case "fs/write_text_file": {
         const path = asString(params.path);
         const content = asString(params.content);
-        if (!policy.active || !policy.writableRoot || !path || content === null || !isAbsolute(path) || !resolvesInside(policy.writableRoot, path)) {
+        const target = policy.active && policy.writableRoot && path && isAbsolute(path) ? containedWriteTarget(policy.writableRoot, path) : null;
+        if (target === null || content === null) {
           throw new AcpRequestError(-32000, "Trama consente scritture solo dentro la cartella del turno.", undefined);
         }
-        await writeFile(path, content, "utf8");
+        await writeFileNoFollow(target, content);
         return null;
       }
       case "elicitation/create":

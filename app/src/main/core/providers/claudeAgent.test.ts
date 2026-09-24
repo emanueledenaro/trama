@@ -1,6 +1,6 @@
-import { chmodSync, mkdtempSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { TurnEvent } from "@shared/codex";
 
@@ -26,9 +26,10 @@ import {
   parseMcpToolName,
   usageLimitFromRateLimit,
 } from "./claudeAgent";
+import { isInside } from "./types";
 
 const ok = (stdout: string, code = 0) => ({ stdout, stderr: "", code });
-const identity = (path: string) => path;
+const identity = (root: string, path: string) => isInside(root, resolve(path));
 
 /** A fake `claude` that answers `auth status` with FAKE_CLAUDE_AUTH. */
 function fakeClaude(authJson: string): string {
@@ -157,8 +158,32 @@ describe("tool permissions", () => {
     expect(decideToolPermission("Write", { file_path: "/work/tree-other/a.ts" }, writable, identity).allow).toBe(false);
     expect(decideToolPermission("Edit", { file_path: "../../etc/hosts" }, writable, identity).allow).toBe(false);
     expect(decideToolPermission("Edit", {}, writable, identity).allow).toBe(false);
-    const symlinked = (path: string) => path.replace("/work/tree/link", "/elsewhere");
+    const symlinked = (root: string, path: string) => identity(root, path.replace("/work/tree/link", "/elsewhere"));
     expect(decideToolPermission("Edit", { file_path: "/work/tree/link/a.ts" }, writable, symlinked).allow).toBe(false);
+  });
+
+  it("denies writes through dangling or escaping symlinks on the real filesystem", () => {
+    const base = mkdtempSync(join(tmpdir(), "trama-claude-links-"));
+    const root = join(base, "tree");
+    const outside = join(base, "outside");
+    mkdirSync(root);
+    mkdirSync(outside);
+    symlinkSync(join(outside, "pwned.txt"), join(root, "dangling"));
+    symlinkSync(outside, join(root, "dirlink"));
+    mkdirSync(join(root, "sub"));
+    symlinkSync(join(root, "sub"), join(root, "inner"));
+    const policy = { cwd: root, writableRoot: root, hostServer: null };
+    expect(decideToolPermission("Write", { file_path: join(root, "dangling") }, policy).allow).toBe(false);
+    expect(decideToolPermission("Write", { file_path: "dangling" }, policy).allow).toBe(false);
+    expect(decideToolPermission("Write", { file_path: join(root, "dirlink", "x.ts") }, policy).allow).toBe(false);
+    expect(decideToolPermission("Write", { file_path: "inner/../../outside/x.ts" }, policy).allow).toBe(false);
+    // Physically outside although lexically inside, and the other way round.
+    expect(decideToolPermission("Write", { file_path: "dirlink/../x.ts" }, policy).allow).toBe(false);
+    mkdirSync(join(root, "sub", "deep"));
+    symlinkSync(join(root, "sub", "deep"), join(root, "deeplink"));
+    expect(decideToolPermission("Write", { file_path: "deeplink/../../x.ts" }, policy).allow).toBe(false);
+    expect(decideToolPermission("Write", { file_path: join(root, "inner", "x.ts") }, policy).allow).toBe(true);
+    expect(decideToolPermission("Write", { file_path: join(root, "new", "x.ts") }, policy).allow).toBe(true);
   });
 
   it("runs shell commands only inside the sandbox", () => {

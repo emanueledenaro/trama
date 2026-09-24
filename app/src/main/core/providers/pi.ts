@@ -20,7 +20,7 @@
  */
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
-import { access, constants, mkdir, readFile, writeFile } from "node:fs/promises";
+import { access, constants, mkdir, readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import type {
   AgentSession,
@@ -48,7 +48,7 @@ import {
   schemaInstruction,
   type TurnEvent,
 } from "./types";
-import { imageMimeType, inlineSkillInstructions, isWritableTarget, parseUsageLimit } from "./providerSupport";
+import { containedWriteTarget, imageMimeType, inlineSkillInstructions, parseUsageLimit, writeFileNoFollow } from "./providerSupport";
 
 type PiSdk = typeof import("@earendil-works/pi-coding-agent");
 
@@ -591,27 +591,27 @@ export class PiRuntime implements AgentRuntime {
       }
     }
     this.hostToolNames = new Set(hostTools.map((tool) => tool.name));
-    const gate = async (path: string) => {
+    // Every write goes to the real target checked here, and the file is opened with O_NOFOLLOW.
+    const gate = (path: string): string => {
       const root = this.writableRoot;
       if (!root) throw new Error("Scrittura non consentita: questo turno è in sola lettura.");
-      if (!(await isWritableTarget(root, path))) throw new Error(`Scrittura fuori dal worktree non consentita: ${path}`);
+      const target = containedWriteTarget(root, resolve(cwd, path));
+      if (target === null) throw new Error(`Scrittura fuori dal worktree non consentita: ${path}`);
+      return target;
     };
     const writeOperations: WriteOperations = {
       writeFile: async (path, content) => {
-        await gate(path);
-        await writeFile(path, content, "utf8");
+        await writeFileNoFollow(gate(path), content);
       },
       mkdir: async (dir) => {
-        await gate(dir);
-        await mkdir(dir, { recursive: true });
+        await mkdir(gate(dir), { recursive: true });
       },
     };
     const editOperations: EditOperations = {
       readFile: (path) => readFile(path),
       writeFile: writeOperations.writeFile,
       access: async (path) => {
-        await gate(path);
-        await access(path, constants.R_OK | constants.W_OK);
+        await access(gate(path), constants.R_OK | constants.W_OK);
       },
     };
     // SDK custom tools replace same-named extension tools, so every allowed name maps to Pi's own code.
