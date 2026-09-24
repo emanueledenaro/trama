@@ -218,6 +218,32 @@ describe("TramaController", () => {
     expect(activity?.content).toMatchObject({ detail: expect.stringContaining("skill: tdd") });
   });
 
+  it("loads project skills while the Codex usage is exhausted", async () => {
+    process.env.FAKE_CODEX_LIMITS = "exhausted";
+    try {
+      const data = await mkdtemp(join(tmpdir(), "trama-data-"));
+      const project = await mkdtemp(join(tmpdir(), "trama-project-"));
+      await cp(join(root, "resources/DemoProject"), project, { recursive: true });
+      controller = new TramaController(data, {
+        publish: () => undefined,
+        openExternal: async () => undefined,
+        applyTheme: () => undefined,
+        notify: () => undefined,
+        setOpenAtLogin: () => undefined,
+        aiHeroResourceDirectory: join(root, "resources/AIHero"),
+        demoResourceDirectory: join(root, "resources/DemoProject"),
+        codexExecutable: join(root, "test-fixtures/fake-codex.mjs"),
+      });
+      await controller.start();
+      await until(() => controller!.snapshot.codex.account?.kind === "blocked");
+      await controller.updateSettings({ autoPrepareMethod: false });
+      await controller.openProject(project);
+      await until(() => (controller!.snapshot.project?.skills.length ?? 0) > 0);
+    } finally {
+      delete process.env.FAKE_CODEX_LIMITS;
+    }
+  });
+
   it("prepares a plan for a request and turns its questions into decision cards", async () => {
     await setup();
     const project = controller!.snapshot.project!;

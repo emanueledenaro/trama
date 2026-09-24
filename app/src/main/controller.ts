@@ -178,6 +178,9 @@ export const FIRST_GOAL_REQUEST =
 /** How long Trama waits for a provider's account check before reporting it unknown. */
 const PROVIDER_CHECK_TIMEOUT_MS = 20_000;
 
+/** Codex reads its skill catalogue from disk, so a signed-in account with its usage exhausted still lists it. */
+const canListSkills = (account: ProviderAccount | null | undefined) => isUsableAccount(account) || account?.kind === "blocked";
+
 const providerName = (id: ProviderId) => PROVIDERS.find((p) => p.id === id)?.name ?? id;
 
 /** Why a provider cannot run a turn now, in the person's words; null when it can. */
@@ -555,10 +558,11 @@ export class TramaController {
       models = await this.discovery.listModels().catch(() => []);
     }
     const wasConnected = this.state.codex.account?.kind === "chatgpt";
+    const couldListSkills = canListSkills(this.state.codex.account);
     this.setProviderState("codex", { account, models, checking: false });
     this.publish();
     const project = this.state.project;
-    if (account.kind === "chatgpt" && project && !wasConnected) void this.loadSkills();
+    if (canListSkills(account) && project && !couldListSkills) void this.loadSkills();
     if (project && this.coordinatorProvider(project.document) === "codex" && account.kind === "chatgpt" && (!wasConnected || project.phase.kind === "unavailable")) {
       void this.startCoordinator();
     }
@@ -861,7 +865,7 @@ export class TramaController {
 
   private async loadSkills(): Promise<void> {
     const project = this.state.project;
-    if (!project || !isUsableAccount(this.state.codex.account)) return;
+    if (!project || !canListSkills(this.state.codex.account)) return;
     const skills = await this.discovery.listSkills(project.rootPath).catch(() => null);
     if (this.state.project === project && skills) {
       project.skills = skills;
