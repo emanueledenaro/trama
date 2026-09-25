@@ -104,7 +104,7 @@ export function Inspector() {
         {target.kind === "issues" ? <IssuesView /> : null}
         {target.kind === "issue" ? <IssueDetail number={target.number} /> : null}
         {target.kind === "goals" ? <GoalsView key={String(target.create)} create={target.create} /> : null}
-        {target.kind === "goal" ? <GoalView key={target.id} id={target.id} /> : null}
+        {target.kind === "goal" ? <GoalView key={`${target.id}:${String(target.edit)}`} id={target.id} edit={target.edit} /> : null}
       </div>
     </aside>
   );

@@ -3,18 +3,27 @@ import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { cn } from "@/lib/cn";
 import { remarkCallouts } from "@/lib/remarkCallouts";
-import { act } from "@/lib/store";
+import { projectFileLink } from "@/lib/chatLinks";
+import { act, useUi } from "@/lib/store";
 import { ChatBlockquote, ChatTable } from "./ChatBlocks";
 
 const REMARK_PLUGINS = [remarkGfm, remarkCallouts];
 
+/**
+ * An https link opens in the browser and a link to a project file opens it in the inspector. Any other link
+ * has nowhere to go, so it stays plain text instead of a link that does nothing (W12).
+ */
 function ChatLink({ href, children }: ComponentProps<"a">) {
+  const file = useUi((s) => (href && !href.startsWith("https://") ? projectFileLink(href, s.app?.project) : null));
+  if (!href || (!href.startsWith("https://") && !file)) return <span title={href}>{children}</span>;
   return (
     <a
       href={href}
+      title={file ? `Apri ${file} nell'ispettore` : undefined}
       onClick={(event) => {
         event.preventDefault();
-        if (href?.startsWith("https://")) void act("shell:openExternal", { url: href });
+        if (file) useUi.getState().setInspector({ kind: "file", path: file });
+        else void act("shell:openExternal", { url: href });
       }}
     >
       {children}

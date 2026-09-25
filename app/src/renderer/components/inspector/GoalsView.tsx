@@ -273,12 +273,12 @@ function ExampleList({ examples }: { examples: GoalExample[] }) {
   );
 }
 
-export function GoalView({ id }: { id: string }) {
+export function GoalView({ id, edit = false }: { id: string; edit?: boolean }) {
   const project = useUi((s) => s.app?.project)!;
   const setInspector = useUi((s) => s.setInspector);
   const openDialog = useUi((s) => s.openDialog);
   const dialogGoalId = useUi((s) => s.dialogGoalId);
-  const [editing, setEditing] = useState(false);
+  const [editing, setEditing] = useState(edit);
   const [linking, setLinking] = useState("");
   const [deleting, setDeleting] = useState<ProjectGoal | null>(null);
   const document = project.document;
@@ -499,7 +499,8 @@ export function GoalCard({ goalId }: { goalId: string }) {
               Conferma l'obiettivo
             </Button>
           ) : null}
-          <Button size="sm" variant="outline" onClick={() => setInspector({ kind: "goal", id: goal.id })}>
+          {/* "Modifica la proposta" opens the goal with its editor ready, not only its details (W12). */}
+          <Button size="sm" variant="outline" onClick={() => setInspector({ kind: "goal", id: goal.id, ...(goal.status === "proposed" ? { edit: true } : {}) })}>
             {goal.status === "proposed" ? "Modifica la proposta" : "Dettagli"}
           </Button>
           {dialogGoalId !== goal.id && goal.status !== "proposed" ? (
