@@ -22,7 +22,7 @@ Tutte le skill delle cartelle `skills/engineering`, `skills/productivity` e `ski
 
 ## Skill eseguite nel flusso di Trama
 
-Trama esegue anche le skill incluse dentro il proprio flusso, con il testo originale (issue #118). `app/src/main/core/nativeSkills.ts` consegna `SKILL.md` e i file di riferimento accanto senza modifiche, seguiti da un collegamento di Trama separato che traduce i verbi generici della skill negli strumenti di Trama. La prima skill consegnata così è `grilling`.
+Trama esegue anche le skill incluse dentro il proprio flusso, con il testo originale (issue #118). `app/src/main/core/nativeSkills.ts` consegna `SKILL.md` e i file di riferimento accanto senza modifiche, seguiti da un collegamento di Trama separato che traduce i verbi generici della skill negli strumenti di Trama. La prima skill consegnata così è `grilling`. Con il lavoro automatico dei ruoli fissi (issue #148) si aggiungono `triage`, `diagnosing-bugs` e `improve-codebase-architecture`, con i collegamenti in `app/src/main/core/duties.ts`.
 
 ## Nomi cambiati
 
