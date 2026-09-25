@@ -308,6 +308,22 @@ describe("TramaController", () => {
     expect(second.proposal).toBeNull();
   });
 
+  it("gives the Coordinator thread the original grilling skill once, also when it is already open (M02)", async () => {
+    await setup();
+    const document = controller!.snapshot.project!.document;
+    const skill = `skill:grilling:${join(root, "resources/AIHero/skills/grilling/SKILL.md")}`;
+    const received = async () => {
+      await controller!.send("[ricevuti]", null, null, null);
+      return JSON.parse((document.events.at(-1)!.content as { text: string }).text) as string[];
+    };
+    // A new Codex thread receives the skill as a native skill input in its first turn, the study.
+    expect(await received()).toEqual([skill, "rules"]);
+    // A thread opened before M02 holds the paraphrased grilling rules: it receives the skill once, like other late rules.
+    document.coordinator.rulesSent = "the M01 rules";
+    expect(await received()).toEqual([skill, "rules", skill, "rules"]);
+    expect(await received()).toEqual([skill, "rules", skill, "rules"]);
+  });
+
   it("grills a request in rounds and starts the plan only when no question is open (M01)", async () => {
     await setup();
     const project = controller!.snapshot.project!;

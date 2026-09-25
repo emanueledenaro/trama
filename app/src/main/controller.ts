@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { existsSync, type FSWatcher, watch } from "node:fs";
 import { mkdir, readFile as readFileText, realpath, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
@@ -7,7 +7,7 @@ import { isUsableAccount, type ProviderAccount, type ProviderId, type ProviderMo
 import { PROVIDERS, supportsReadOnly } from "@shared/providers";
 import { shortId } from "@shared/ids";
 import { mentionContextBlock } from "@shared/mentions";
-import { codexSkillText, skillInvocations } from "@shared/skills";
+import { codexSkillText, type LoadedSkill, skillInvocations } from "@shared/skills";
 import { isUnsupportedModelError } from "@shared/timeline";
 import type { ImageAttachmentInput } from "@shared/ipc";
 import type {
@@ -37,7 +37,7 @@ import {
   COORDINATOR_TOOLS,
   learningTools,
   developerInstructions,
-  GRILLING_INSTRUCTIONS,
+  GRILLING_BINDING,
   runCoordinatorTool,
   type TicketUpdate,
   type TicketUpdateResult,
@@ -170,6 +170,7 @@ import {
 } from "@shared/onboarding";
 import { buildStudy, fingerprints, partsToInject, studyText } from "./core/study";
 import { CoordinatorToolServer, TOOL_SERVER_NAME } from "./core/toolServer";
+import { deliverNativeSkill, loadNativeSkill, type NativeSkill } from "./core/nativeSkills";
 
 /** The model Trama prefers for the Coordinator when the Codex catalogue offers it. */
 const PREFERRED_COORDINATOR_MODEL = "gpt-5.6-luna";
@@ -183,8 +184,26 @@ const PROVIDER_CHECK_TIMEOUT_MS = 20_000;
 /** Why a Coordinator turn ended when the person opened or closed another project during it (C02). */
 const LEFT_PROJECT_NOTE = "Hai lasciato il progetto mentre il Coordinatore rispondeva.";
 
-/** Coordinator rules added after threads were opened: a resumed thread receives them once, in a turn. */
-const lateRules = () => [messageStyle("the person"), GRILLING_INSTRUCTIONS].join("\n\n");
+/**
+ * Coordinator rules added after threads were opened: a resumed thread receives them once, in a turn.
+ * `key` identifies them in `rulesSent` whatever the provider; Codex gets the grilling SKILL.md as a native skill input.
+ */
+interface LateRules {
+  key: string;
+  text: string;
+  skills: LoadedSkill[];
+}
+
+function lateRules(grilling: NativeSkill, provider: ProviderId): LateRules {
+  const style = messageStyle("the person");
+  const full = [style, deliverNativeSkill(grilling, GRILLING_BINDING, false).text].join("\n\n");
+  const delivery = deliverNativeSkill(grilling, GRILLING_BINDING, provider === "codex");
+  return {
+    key: `sha256:${createHash("sha256").update(full).digest("hex")}`,
+    text: [style, delivery.text].join("\n\n"),
+    skills: delivery.skills,
+  };
+}
 
 /** Codex reads its skill catalogue from disk, so a signed-in account with its usage exhausted still lists it. */
 const canListSkills = (account: ProviderAccount | null | undefined) => isUsableAccount(account) || account?.kind === "blocked";
@@ -1271,10 +1290,17 @@ export class TramaController {
       document.coordinator.study = study;
       if (this.runtime !== runtime) return;
       const previous = document.coordinator.threadId;
+      const rules = lateRules(await this.grillingSkill(), provider);
+      // Codex takes the grilling skill as a native skill input in the thread's first turn, the others in their instructions.
+      const inInstructions = rules.skills.length === 0;
       const opening = await runtime.client.openThread({
         model,
         cwd: project.rootPath,
-        developerInstructions: developerInstructions(project.name, this.learningFor(project).promptContext().guidance),
+        developerInstructions: developerInstructions(
+          project.name,
+          this.learningFor(project).promptContext().guidance,
+          inInstructions ? deliverNativeSkill(await this.grillingSkill(), GRILLING_BINDING, false).text : null,
+        ),
         resumeThreadId: previous,
       });
       // A provider switch during the opening replaced this runtime: its result must not come back (review #1).
@@ -1284,8 +1310,8 @@ export class TramaController {
         // A new thread holds none of the earlier events: session search may return all of them.
         learningState.liveFromSequence = document.lastSequence + 1;
         learningState.skillsIndexSent = null;
-        // A new thread received the current writing rules with its instructions.
-        document.coordinator.rulesSent = lateRules();
+        // A new thread received the current rules with its instructions; with Codex the skill still waits for a turn.
+        document.coordinator.rulesSent = inInstructions ? rules.key : null;
       }
       document.coordinator.threadId = opening.threadId;
       document.coordinator.threadModel = model;
@@ -1323,6 +1349,25 @@ export class TramaController {
       project.streaming = null;
       this.changed();
     }
+  }
+
+  private grillingLoad: Promise<NativeSkill> | null = null;
+
+  /** AI Hero's grilling skill as bundled with Trama (M02). */
+  private grillingSkill(): Promise<NativeSkill> {
+    this.grillingLoad ??= loadNativeSkill(join(this.host.aiHeroResourceDirectory, "skills"), "grilling").catch((error: unknown) => {
+      this.grillingLoad = null;
+      throw error;
+    });
+    return this.grillingLoad;
+  }
+
+  /** The late rules the Coordinator thread has not received yet, marked as sent: a section and skill inputs. */
+  private async pendingRules(document: ProjectDocument, provider: ProviderId): Promise<{ section: string; skills: LoadedSkill[] } | null> {
+    const rules = lateRules(await this.grillingSkill(), provider);
+    if (document.coordinator.rulesSent === rules.key) return null;
+    document.coordinator.rulesSent = rules.key;
+    return { section: `## Regole aggiornate da Trama\nThese rules replace the earlier ones on the same subjects:\n${rules.text}`, skills: rules.skills };
   }
 
   private async runStudyTurn(
@@ -1369,12 +1414,14 @@ export class TramaController {
         "\n\nQuesto progetto non ha ancora un team confermato: alla fine dello studio proponilo con propose_team, con un motivo per ogni specialista.";
     }
     if (!transcript && projectGoals(document).length === 0) request += `\n\n${FIRST_GOAL_REQUEST}`;
+    const rules = await this.pendingRules(document, document.coordinator.threadProvider ?? this.coordinatorProvider(document));
     const reply = await runtime.client.runTurn({
       threadId: document.coordinator.threadId!,
-      prompt: `${context}\n\n${request}`,
+      prompt: [context, ...(rules ? [rules.section] : []), request].join("\n\n"),
       cwd: project.rootPath,
       model,
       effort: null,
+      ...(rules?.skills.length ? { skills: rules.skills } : {}),
       onEvent: (event) => {
         if (event.type === "textDelta" && project.streaming?.requestId === null) {
           project.streaming.text += event.delta;
@@ -1489,11 +1536,8 @@ export class TramaController {
         sections.push(skillsIndex || "## Skills\nThe skill library of this project is empty now.");
         this.coordinatorLearning(document).skillsIndexSent = skillsIndex;
       }
-      const rules = lateRules();
-      if (document.coordinator.rulesSent !== rules) {
-        sections.push(`## Regole aggiornate da Trama\nThese rules replace the earlier ones on the same subjects:\n${rules}`);
-        document.coordinator.rulesSent = rules;
-      }
+      const rules = await this.pendingRules(document, activeProvider);
+      if (rules) sections.push(rules.section);
       if (module) sections.push(`Contesto scelto dalla persona: modulo ${module.name} (${module.relativePath}).`);
       const mentioned = mentionContextBlock(trimmed, {
         modules: project.snapshot.modules,
@@ -1537,7 +1581,8 @@ export class TramaController {
         effort,
         fastMode: this.fastModeFor(dialogComposer(document, goal?.id ?? null), activeProvider, selectedModel),
         images: attachments,
-        skills,
+        // The grilling skill of the late rules goes once, next to the skills the person invoked.
+        skills: [...(rules?.skills ?? []).filter((r) => !skills.some((s) => s.name === r.name)), ...skills],
         onEvent: (event) => this.handleTurnEvent(project, request, event),
       });
       if (closed()) return;
