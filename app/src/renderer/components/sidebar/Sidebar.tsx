@@ -13,7 +13,6 @@ import {
   IconLayoutSidebar,
   IconTarget,
   IconMessageCircle,
-  IconPlugConnected,
   IconRosetteDiscountCheck,
   IconSettings,
   IconShieldCheck,
@@ -32,10 +31,8 @@ import { StatusDot } from "@/components/inspector/TeamView";
 import { useState } from "react";
 import type * as React from "react";
 import { Spinner } from "@/components/Spinner";
-import { isUsableAccount, type ProviderId } from "@shared/codex";
 import { isOpenQuestion, type ProjectGoal, type Specialist } from "@shared/domain";
 import { goalDialogIsEmpty, workingGoals } from "@shared/goals";
-import { PROVIDERS } from "@shared/providers";
 import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/cn";
 import { act, type InspectorTarget, useUi } from "@/lib/store";
@@ -155,13 +152,9 @@ export function Sidebar({ isMac }: { isMac: boolean }) {
   const verifiedCandidates = project ? Object.values(project.candidateReports).filter((r) => r.state !== "building").length : 0;
   const specialists = sidebarSpecialists(document?.team.specialists ?? []);
   const running = Boolean(project?.runningRequestId) || project?.phase.kind === "studying" || project?.phase.kind === "opening";
-  const activeProvider: ProviderId = project?.document.coordinator.threadProvider ?? project?.document.selectedProvider ?? "codex";
-  const account = app.providers[activeProvider]?.account ?? null;
-  const connected = isUsableAccount(account);
   const isActive = (kind: InspectorTarget["kind"]) => inspector?.kind === kind;
   const mainView = useUi((s) => s.mainView);
   const setMainView = useUi((s) => s.setMainView);
-  const settingsSection = useUi((s) => s.settingsSection);
   const openSettings = useUi((s) => s.openSettings);
   const closeSettings = useUi((s) => s.closeSettings);
   const dialogGoalId = useUi((s) => s.dialogGoalId);
@@ -437,29 +430,9 @@ export function Sidebar({ isMac }: { isMac: boolean }) {
       </div>
 
       <div className="flex flex-col gap-0.5 border-t border-sidebar-border p-2 font-system-ui">
-        <SidebarRow
-          icon={<IconPlugConnected className="size-[15px]" stroke={1.7} />}
-          label={
-            connected
-              ? (PROVIDERS.find((p) => p.id === activeProvider)?.name ?? activeProvider)
-              : activeProvider === "codex"
-                ? "Collega ChatGPT"
-                : "Collegamenti"
-          }
-          active={mainView === "settings" && settingsSection === "connections"}
-          onClick={() => openSettings("connections")}
-          trailing={
-            <span
-              className={cn(
-                "size-1.5 shrink-0 rounded-full",
-                connected ? "bg-success" : account ? "bg-warning" : "bg-muted-foreground/40",
-              )}
-            />
-          }
-        />
         <SidebarRow icon={<IconSettings className="size-[15px]" stroke={1.7} />} label="Impostazioni"
-          active={mainView === "settings" && settingsSection !== "connections"}
-          onClick={() => (mainView === "settings" && settingsSection !== "connections" ? closeSettings() : openSettings("general"))}
+          active={mainView === "settings"}
+          onClick={() => (mainView === "settings" ? closeSettings() : openSettings("general"))}
         />
       </div>
       <DeleteGoalDialog goal={deleting} onClose={() => setDeleting(null)} />
