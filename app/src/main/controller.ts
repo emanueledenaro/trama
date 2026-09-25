@@ -29,6 +29,7 @@ import type {
   WorkPlan,
   RecentProject,
 } from "@shared/domain";
+import { isOpenQuestion } from "@shared/domain";
 import { resolveCodexExecutable } from "./core/codexClient";
 import { CodexRuntime } from "./core/providers/codex";
 import { createRuntime, hasAdapter } from "./core/providers/registry";
@@ -64,7 +65,18 @@ import { prepareDemoProject } from "./core/demoProject";
 import { appendEvent, emptyDocument, handoverTranscript, moveEvent, recordReply, referencedPaths } from "./core/document";
 import { candidateGoalId, dialogComposer, findGoal, projectGoals, requestGoalId } from "@shared/goals";
 import { openGrillingQuestions } from "@shared/grilling";
-import { createGoal, type GoalInput, goalContext, linkDecision, observeExample, requireGoal, updateGoal } from "./core/goals";
+import {
+  archiveGoal,
+  createGoal,
+  deleteEmptyGoal,
+  type GoalInput,
+  goalContext,
+  linkDecision,
+  observeExample,
+  requireGoal,
+  restoreGoal,
+  updateGoal,
+} from "./core/goals";
 import { orderByAttention, summarizeProject, unreadableProject } from "./core/overview";
 import {
   closeIssue,
@@ -90,6 +102,8 @@ import {
   mandateMessage,
   resolveMandateRequest,
   revokeMandate,
+  withdrawalMessage,
+  withdrawDecisionRequest,
 } from "./core/pact";
 import { availableChecks, CHECKS, lendNodeDependencies, type ReadOnlyCheck, runReadOnlyCheck } from "./core/checks";
 import { parsePlan, PLAN_SCHEMA, PLANNING_INSTRUCTIONS, planPrompt } from "./core/plan";
@@ -311,6 +325,7 @@ export class TramaController {
   private monitorTimer: NodeJS.Timeout | null = null;
   /** Messages sent while a turn was running; they leave in order when it ends. */
   private queue: {
+    id: string;
     projectId: string;
     text: string;
     moduleId: string | null;
@@ -320,6 +335,9 @@ export class TramaController {
     provider: ProviderId | null;
     /** The dialog is fixed when the message is sent, not when it leaves the queue (UX02). */
     goalId: string | null;
+    queuedAt: string;
+    /** False for a message that reports a choice already recorded: the person cannot delete it (W03). */
+    removable: boolean;
   }[] = [];
 
   constructor(
@@ -433,7 +451,7 @@ export class TramaController {
       name: p.name,
       rootPath: p.rootPath,
       runningAssignments: [...this.specialistRuntimes.values()].filter((r) => r.projectId === p.id).length,
-      pendingDecisions: p.document.decisionRequests.filter((d) => !d.outcome).length,
+      pendingDecisions: p.document.decisionRequests.filter(isOpenQuestion).length,
       lastUpdate: p.document.team.specialists.map((s) => s.updatedAt).sort().at(-1) ?? null,
     }));
     const project = this.state.project;
@@ -444,6 +462,9 @@ export class TramaController {
     }
     if (!project) return;
     project.runningWork = this.runningWorkKeys();
+    project.queuedMessages = this.queue
+      .filter((q) => q.projectId === project.id)
+      .map((q) => ({ id: q.id, text: q.text, goalId: q.goalId, imageCount: q.images.length, queuedAt: q.queuedAt, removable: q.removable }));
     project.candidateReports = Object.fromEntries(
       project.document.candidates.map((c) => [c.id, candidateReport(project.document, c, project.snapshot.headSHA)]),
     );
@@ -771,6 +792,7 @@ export class TramaController {
         },
         stateWritable: loaded.writable,
         runningWork: [],
+        queuedMessages: [],
         candidateReports: {},
         skills: [],
         pactDemoBlockers: [],
@@ -1451,14 +1473,29 @@ export class TramaController {
     images: ImageAttachmentInput[] = [],
     provider: ProviderId | null = null,
     goalId: string | null = null,
+    /** False when Trama writes a choice the person already made (answer, withdrawal, mandate): it stays in the queue. */
+    removable = true,
   ): Promise<void> {
     const project = this.requireProject();
     const trimmed = text.trim();
     if (!trimmed) return;
     const goal = goalId ? requireGoal(project.document, goalId) : null;
     if (project.runningRequestId) {
-      this.queue.push({ projectId: project.id, text: trimmed, moduleId, model, effort, images, provider, goalId: goal?.id ?? null });
-      dialogComposer(project.document, goal?.id ?? null).composerDraft = "";
+      this.queue.push({
+        id: randomUUID(),
+        projectId: project.id,
+        text: trimmed,
+        moduleId,
+        model,
+        effort,
+        images,
+        provider,
+        goalId: goal?.id ?? null,
+        queuedAt: new Date().toISOString(),
+        removable,
+      });
+      // Only a message the person typed empties the composer; a recorded choice leaves the draft alone.
+      if (removable) dialogComposer(project.document, goal?.id ?? null).composerDraft = "";
       this.changed();
       return;
     }
@@ -1487,7 +1524,7 @@ export class TramaController {
       ...(goal ? { goalId: goal.id } : {}),
     };
     document.requests.push(request);
-    dialogComposer(document, goal?.id ?? null).composerDraft = "";
+    if (removable) dialogComposer(document, goal?.id ?? null).composerDraft = "";
     appendEvent(
       document,
       "person",
@@ -1649,8 +1686,33 @@ export class TramaController {
     this.queue = this.queue.filter((item) => item.projectId === project?.id);
     const next = this.queue.shift();
     if (next) {
-      void this.send(next.text, next.moduleId, next.model, next.effort, next.images, next.provider, next.goalId).catch((error) => this.fail(error));
+      void this.send(next.text, next.moduleId, next.model, next.effort, next.images, next.provider, next.goalId, next.removable).catch((error) =>
+        this.fail(error),
+      );
     }
+  }
+
+  /** The person deletes a message still in the queue (W03): it never reaches the Coordinator nor the history. */
+  deleteQueuedMessage(id: string): void {
+    const project = this.requireProject();
+    const item = this.queue.find((q) => q.id === id && q.projectId === project.id);
+    if (!item) throw new DomainError("Il messaggio è già partito o non è più in coda.");
+    if (!item.removable) {
+      throw new DomainError("Questo messaggio riferisce al Coordinatore una scelta già registrata: parte comunque.");
+    }
+    this.queue = this.queue.filter((q) => q !== item);
+    this.changed();
+  }
+
+  /** Whether the dialog of a goal has a Coordinator turn running or a message waiting to leave. */
+  private dialogBusy(project: ActiveProjectState, goalId: string): string | null {
+    if (project.runningRequestId && requestGoalId(project.document, project.runningRequestId) === goalId) {
+      return "Il Coordinatore sta rispondendo in questo dialogo: aspetta la fine del turno.";
+    }
+    if (this.queue.some((q) => q.projectId === project.id && q.goalId === goalId)) {
+      return "Il dialogo ha un messaggio in coda: aspetta che parta o eliminalo.";
+    }
+    return null;
   }
 
   private handleTurnEvent(project: ActiveProjectState, request: CoordinatorRequest, event: TurnEvent): void {
@@ -1863,13 +1925,44 @@ export class TramaController {
     return id;
   }
 
-  /** Saves a goal change now; on failure the goals and the new card go back to what is on disk. */
-  private async saveGoalChange(project: ActiveProjectState, previousGoals: ProjectDocument["goals"], cardId: string | null): Promise<void> {
+  /** Archives or restores a goal (W03), saved before the person sees it. */
+  async archiveGoal(id: string, archived: boolean): Promise<string> {
+    const project = this.requireProject();
+    const goal = requireGoal(project.document, id);
+    const busy = archived ? this.dialogBusy(project, goal.id) : null;
+    if (busy) throw new DomainError(busy);
+    const previous = structuredClone(project.document.goals);
+    if (archived) archiveGoal(project.document, goal.id);
+    else restoreGoal(project.document, goal.id);
+    await this.saveGoalChange(project, previous, null);
+    return goal.id;
+  }
+
+  /** Deletes a goal whose dialog is empty (W03); a goal with history is archived instead. */
+  async deleteGoal(id: string): Promise<void> {
+    const project = this.requireProject();
+    const goal = requireGoal(project.document, id);
+    const busy = this.dialogBusy(project, goal.id);
+    if (busy) throw new DomainError(busy);
+    const previousGoals = structuredClone(project.document.goals);
+    const previousEvents = [...project.document.events];
+    deleteEmptyGoal(project.document, goal.id);
+    await this.saveGoalChange(project, previousGoals, null, previousEvents);
+  }
+
+  /** Saves a goal change now; on failure the goals and the events go back to what is on disk. */
+  private async saveGoalChange(
+    project: ActiveProjectState,
+    previousGoals: ProjectDocument["goals"],
+    cardId: string | null,
+    previousEvents: ProjectDocument["events"] | null = null,
+  ): Promise<void> {
     const document = project.document;
     const rollBack = () => {
       if (previousGoals === undefined) delete document.goals;
       else document.goals = previousGoals;
       if (cardId) document.events = document.events.filter((e) => e.id !== cardId);
+      if (previousEvents) document.events = previousEvents;
     };
     if (!project.stateWritable) {
       rollBack();
@@ -1965,7 +2058,19 @@ export class TramaController {
     this.stopWorkDependingOn(decision.id);
     this.changed();
     // The answer goes back to the dialog the question was asked in, whatever the person is looking at.
-    await this.send(decisionMessage(request, decision), null, null, null, [], null, goalId);
+    await this.send(decisionMessage(request, decision), null, null, null, [], null, goalId, false);
+  }
+
+  /**
+   * The person withdraws an open question with a reason (W03). No decision is recorded; the Coordinator reads
+   * the withdrawal and its reason as the person's message, in the dialog the question was asked in.
+   */
+  async withdrawDecision(requestId: string, reason: string): Promise<void> {
+    const project = this.requireProject();
+    const request = withdrawDecisionRequest(project.document, requestId, reason);
+    const goalId = request.goalId && findGoal(project.document, request.goalId) ? request.goalId : null;
+    this.changed();
+    await this.send(withdrawalMessage(request), null, null, null, [], null, goalId, false);
   }
 
   async grantMandate(input: {
@@ -1983,7 +2088,7 @@ export class TramaController {
     if (input.requestId) resolveMandateRequest(project.document, input.requestId, kind, mandate.version);
     this.stopWorkOutsideMandate("Il mandato corretto non copre più questo lavoro.");
     this.changed();
-    await this.send(mandateMessage(kind, mandate.version), null, null, null);
+    await this.send(mandateMessage(kind, mandate.version), null, null, null, [], null, null, false);
   }
 
   async revokeMandate(reason: string, requestId: string | null): Promise<void> {
@@ -1997,7 +2102,7 @@ export class TramaController {
       this.stopWorkOutsideMandate(`Mandato revocato: ${reason}`);
     }
     this.changed();
-    await this.send(mandateMessage("revoked", null, reason), null, null, null);
+    await this.send(mandateMessage("revoked", null, reason), null, null, null, [], null, null, false);
   }
 
   // MARK: Team
@@ -2303,7 +2408,7 @@ export class TramaController {
     confirmTeam(project.document, proposalId, keeping, note);
     const proposal = project.document.team.proposals.find((p) => p.id === proposalId)!;
     this.changed();
-    await this.send(teamMessage(project.document, proposal), null, null, null);
+    await this.send(teamMessage(project.document, proposal), null, null, null, [], null, null, false);
   }
 
   /** Stops running work the mandate no longer covers, after a correction or a revocation. */
@@ -2510,7 +2615,7 @@ export class TramaController {
     candidate.pullRequest = { ...published, at: new Date().toISOString() };
     appendEvent(document, "trama", { type: "activity", title: `Pull request #${published.number} pubblicata`, detail: published.url, tone: "tool" });
     this.changed();
-    await this.send(`Ho pubblicato il candidato ${candidate.id} come pull request #${published.number}: ${published.url}`, null, null, null);
+    await this.send(`Ho pubblicato il candidato ${candidate.id} come pull request #${published.number}: ${published.url}`, null, null, null, [], null, null, false);
   }
 
   // MARK: Tickets

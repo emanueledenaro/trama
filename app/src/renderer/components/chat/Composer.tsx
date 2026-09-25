@@ -159,6 +159,9 @@ export function Composer() {
     const prompt = text.trim();
     if (!prompt && !pastes.length) return;
     const message = serializePastes(prompt || "Leggi il testo incollato.", pastes.map((p) => p.text));
+    // A draft save still pending would write the sent text back as the dialog's draft.
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = null;
     setPastes([]);
     setText("");
     const attached = images.map(({ name, mimeType, dataBase64 }) => ({ name, mimeType, dataBase64 }));
