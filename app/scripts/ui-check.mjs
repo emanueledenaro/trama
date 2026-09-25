@@ -64,13 +64,23 @@ await page.getByLabel("Messaggio al Coordinatore").fill("Cosa succede quando si 
 await page.keyboard.press("Enter");
 await page.getByText("Ha lavorato per").first().waitFor({ timeout: 20_000 });
 await shot("03-reply");
-await page.getByRole("button", { name: "Prepara un piano" }).click();
-await page.getByText("Da rivedere").first().waitFor({ timeout: 20_000 });
-await page.waitForTimeout(400);
-await shot("03a-plan");
+// W01: a question for information leaves no step; a request for work ends with one step, on the right.
+if (await page.getByTestId("next-step").count()) throw new Error("A next step appeared after a question for information");
+if (await page.getByRole("button", { name: "Prepara un piano" }).count()) throw new Error("The fixed plan button is back");
+await page.getByLabel("Messaggio al Coordinatore").fill("[grilling:1] [passo:answerQuestions] Gli ordini pagati annullati vanno in revisione");
+await page.keyboard.press("Enter");
+const nextStep = page.getByTestId("next-step").getByRole("button", { name: "Rispondi alle 2 domande" });
+await nextStep.waitFor({ timeout: 20_000 });
+const stepBox = await nextStep.boundingBox();
+const replyBox = await page.getByTestId("next-step").boundingBox();
+if (!stepBox || !replyBox || replyBox.x + replyBox.width - (stepBox.x + stepBox.width) > 2) throw new Error("The next step is not on the right");
+await shot("03a-next-step");
+await nextStep.click();
+await page.waitForTimeout(600);
+await shot("03a2-next-step-questions");
 await page.getByLabel("Messaggio al Coordinatore").fill("[chiedi-decisione]");
 await page.keyboard.press("Enter");
-await page.getByText("Ordine 42, già pagato, annullato dal cliente").waitFor({ timeout: 20_000 });
+await page.getByRole("main").getByText("Cosa succede a un ordine pagato annullato?").waitFor({ timeout: 20_000 });
 await shot("03b-decision-card");
 await page.getByRole("button", { name: /Va in revisione/ }).click();
 await page.getByRole("button", { name: "Registra la decisione" }).last().click();
@@ -205,10 +215,9 @@ await shot("10e-overview");
 await page.getByRole("button", { name: "Panoramica dei progetti" }).click();
 await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
 
-// W03: withdraw a grilling question with a reason; the round then waits only for the other answer.
-await page.getByLabel("Messaggio al Coordinatore").fill("[grilling:1] Gli ordini pagati annullati vanno in revisione");
-await page.keyboard.press("Enter");
-const round = page.getByRole("region", { name: "Chiarimento, turno 1" });
+// W03: withdraw a grilling question with a reason; the round then waits only for the other answer. It works on
+// the round the W01 steps opened: a second grilling request would open a second "turno 1" and make the round ambiguous.
+const round = page.getByRole("region", { name: "Chiarimento, turno 1" }).first();
 await round.waitFor({ timeout: 20_000 });
 await round.getByRole("button", { name: "Ritira", exact: true }).first().click();
 await round.getByLabel("Motivo del ritiro").fill("Chi vede la revisione lo decidiamo dopo il primo rilascio");

@@ -17,7 +17,7 @@ import {
 } from "@tabler/icons-react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { isOpenQuestion, type QueuedMessage } from "@shared/domain";
-import { deriveTimelineRows } from "@shared/timeline";
+import { deriveTimelineRows, rowAnchors } from "@shared/timeline";
 import { dialogEvents, dialogRequests, findGoal, workingGoals } from "@shared/goals";
 import { GoalDialogHeader } from "@/components/inspector/GoalsView";
 import { OverviewView } from "@/components/OverviewView";
@@ -383,7 +383,7 @@ function Timeline() {
         {empty ? <ProjectIntro /> : null}
         {goalId ? <GoalDialogHeader goalId={goalId} /> : null}
         {rows.map((row, index) => (
-          <div key={row.id} className="px-1">
+          <div key={row.id} className="px-1" data-anchors={rowAnchors(row).join(" ") || undefined}>
             <TimelineRowView row={row} latest={row.kind === "reply" && !rows.slice(index + 1).some((r) => r.kind === "reply")} />
           </div>
         ))}

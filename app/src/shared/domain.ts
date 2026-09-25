@@ -73,6 +73,45 @@ export interface CoordinatorRequest {
   attachments?: string[];
   /** The goal dialog the message was sent from, fixed when the request is created (UX02). */
   goalId?: string | null;
+  /** The one next step the Coordinator declared at the end of the turn (W01). */
+  nextStep?: NextStep | null;
+}
+
+/** The phase of a request's work, computed by Trama from the records, never by the model (W01). */
+export type WorkPhase = "clarification" | "spec" | "slices" | "execution" | "verification" | "candidate" | "merged" | "blocked";
+
+/** A move that takes the work on: the first seven are the person's, the last three the Coordinator's (W01). */
+export type NextMove =
+  | "answerQuestions"
+  | "confirmUnderstanding"
+  | "grantMandate"
+  | "confirmTeam"
+  | "reviewPlan"
+  | "reviewCandidate"
+  | "mergePullRequest"
+  | "preparePlan"
+  | "assignWork"
+  | "verifyCandidate";
+
+/** The move the Coordinator chose among the allowed ones, with its one-line reason. */
+export interface NextStep {
+  move: NextMove;
+  reason: string;
+  declaredAt: string;
+}
+
+/** A declared next step that is still allowed, as the chat shows it under the reply. */
+export interface NextStepView {
+  move: NextMove;
+  actor: "person" | "coordinator";
+  label: string;
+  reason: string;
+  /** The record the step is about: a question, a mandate request, a team proposal, a plan or a candidate. */
+  targetId: string | null;
+  /** The pull request the person merges. */
+  url: string | null;
+  /** What the button sends to the Coordinator, for a step that is a message. */
+  message: string | null;
 }
 
 export interface PactDecision {
@@ -395,7 +434,8 @@ export interface Candidate {
   technicalReview: TechnicalReview | null;
   clearance: { actor: string; fingerprint: string; at: string } | null;
   humanApproval: { actor: string; fingerprint: string; at: string } | null;
-  pullRequest: { url: string; number: number; branch: string; at: string } | null;
+  /** mergedAt: when Trama saw the pull request merged on GitHub. */
+  pullRequest: { url: string; number: number; branch: string; at: string; mergedAt?: string | null } | null;
   /** The goal of the assignment, copied when the candidate is declared. */
   goalId?: string | null;
   /** The person's observations of the goal's examples on this exact snapshot (UX06). */
@@ -663,6 +703,8 @@ export interface ActiveProjectState {
   skills: import("./skills").LoadedSkill[];
   /** The current verdict of each candidate, computed by the main process. */
   candidateReports: Record<string, CandidateReport>;
+  /** The next step of the latest request of each dialog, by request id, while it is still allowed (W01). */
+  nextSteps: Record<string, NextStepView>;
   /** The AI Hero skills Trama copies are present in the project. */
   aiHeroPrepared?: boolean;
 }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ConversationEvent, CoordinatorRequest, DecisionRequest } from "./domain";
-import { deriveTimelineRows, turnFailureText } from "./timeline";
+import { deriveTimelineRows, rowAnchors, turnFailureText } from "./timeline";
 
 const at = "2026-09-24T12:00:00.000Z";
 
@@ -56,6 +56,8 @@ describe("deriveTimelineRows", () => {
     expect(rows.map((r) => r.kind)).toEqual(["person", "grillingRound", "card", "grillingRound"]);
     expect(rows[1]).toMatchObject({ round: 1, subjectRequestId: "R1", questionIds: ["Q1", "Q2"] });
     expect(rows[3]).toMatchObject({ round: 2, questionIds: ["Q4"] });
+    // A next step finds the card of its record through the row's anchors (W01).
+    expect(rows.map(rowAnchors)).toEqual([[], ["Q1", "Q2"], ["Q3"], ["Q4"]]);
   });
 
   it("adds no failure row for a turn that completed", () => {

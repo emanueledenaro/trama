@@ -34,6 +34,7 @@ import {
 } from "./team";
 import { type ToolDefinition, type ToolResult, toolFailure, toolSuccess } from "./toolServer";
 import type { CriterionReport } from "./tickets";
+import { NEXT_MOVES, workState } from "./workPhase";
 
 export interface TicketUpdate {
   issueNumber: number;
@@ -68,7 +69,7 @@ const text = { type: "string" };
 const list = (minimum: number) => ({ type: "array", minItems: minimum, items: text });
 
 export const TOOL_SERVER_INSTRUCTIONS =
-  "Trama tools read this project's study, Pact, mandate, team, GitHub issues and conversation, keep your memory and skills and search past dialogs, put mandates, team proposals and behavior decisions to the person, run read-only checks and act only within the mandate.";
+  "Trama tools read this project's study, Pact, mandate, team, GitHub issues and conversation, keep your memory and skills and search past dialogs, put mandates, team proposals and behavior decisions to the person, run read-only checks, act only within the mandate and close a turn with its one next step.";
 
 const SKILL_MANAGE_DESCRIPTION =
   "Create, update, or delete skills — your procedural memory for recurring task types. The call is an operations array (a single edit is a list of one); it applies atomically — any failure rolls every touched skill back. Ops: create (full SKILL.md; lands in this project's skill library in Trama's folder, never in the repository; must precede that skill's other ops), patch (targeted old_string/new_string fix — preferred; content alone REPLACES the whole file, read it via skill_view() first), write_file/remove_file (supporting files), delete (sole op only). Keep the description's first 57 chars a self-contained trigger: 'Use when <trigger>. <one-line behavior>.' Write lessons, not logs: imperative rule + why, no PR numbers/dates/incident narration, one rule per lesson, references/ named by topic (extend before adding). skill_view() shows format conventions.";
@@ -440,7 +441,23 @@ export const COORDINATOR_TOOLS: ToolDefinition[] = [
     required: ["candidate"],
     readOnly: false,
   },
+  {
+    name: "declare_next_step",
+    description:
+      "Close a turn about the work with its one next step: a move among the moves Trama allows now for this request (\"Fase del lavoro\" in Trama's message lists them; a refusal lists the current ones). Trama shows it as one button under your reply. Call it last, after the tools that change the work; reason is one line for the person. A second call replaces the first. Declare nothing when nothing is to do.",
+    properties: { move: { type: "string", enum: NEXT_MOVES }, reason: text },
+    required: ["move", "reason"],
+    readOnly: false,
+  },
 ];
+
+/** How the Coordinator closes a turn with the one next step (W01); a late rule, so open threads receive it too. */
+export const NEXT_STEP_RULES = [
+  "Each message from Trama gives the phase of the work and the moves allowed now, under \"Fase del lavoro\": Trama computes them from the records, you choose among them.",
+  "When your turn is about the work, close it with declare_next_step: the one move that takes the work on, with a one-line reason for the person. Call it last, after the tools that change the work: questions you just asked make answerQuestions allowed, and a refusal lists the moves allowed now.",
+  "Choose the person's move when the work waits for them (answer the questions, confirm the shared understanding, grant the mandate, confirm the team, review the plan, review the candidate, merge the pull request) and your own when the work waits for you (prepare the plan, assign the work, run the checks). Trama shows the step as one button under your reply.",
+  "Declare nothing when nothing is to do: after a greeting, after an answer for information, while specialists work. Do not end your message with a generic question such as \"Vuoi che...?\": the button asks it.",
+].join("\n");
 
 export interface ToolContext {
   document: ProjectDocument;
@@ -979,6 +996,26 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
         context.changed();
         return toolSuccess({ candidateID: candidate.id, state: "decided", note: "The person still reviews and publishes the candidate." });
       }
+      case "declare_next_step": {
+        const request = document.requests.find((r) => r.id === context.runningRequestId);
+        if (!request) return toolFailure("no_request", "A next step closes a turn that answers a message of the person.");
+        const move = typeof args.move === "string" ? args.move : "";
+        const reason = typeof args.reason === "string" ? (args.reason.trim().split("\n")[0] ?? "").trim() : "";
+        if (!reason) return toolFailure("invalid_arguments", "reason is required: one line for the person.");
+        const state = workState(document, request.id);
+        const option = state.moves.find((m) => m.move === move);
+        if (!option) {
+          return toolFailure(
+            "move_not_allowed",
+            state.moves.length
+              ? `${move || "This move"} is not allowed now. Allowed moves: ${state.moves.map((m) => m.move).join(", ")}.`
+              : `No move is allowed now (phase: ${state.phase ?? "none"}): close the turn without a next step.`,
+          );
+        }
+        request.nextStep = { move: option.move, reason: reason.slice(0, 240), declaredAt: new Date().toISOString() };
+        context.changed();
+        return toolSuccess({ move: option.move, label: option.label, actor: option.actor, phase: state.phase, status: "shown_to_person" });
+      }
       default:
         return toolFailure("unknown_tool", `Unknown tool ${name}.`);
     }
@@ -1031,6 +1068,7 @@ export function developerInstructions(projectName: string, learningGuidance: str
     "The person works by goals: a goal has a desired outcome and accepted and refused examples. Each goal has its own dialog with you, and the project dialog holds priorities and cross-goal questions; you stay one Coordinator with one mandate and one Pact for all of them. When a message comes from a goal dialog Trama says so and gives you the goal; answer about that goal, and the work you assign there is linked to it. read_goals lists the goals; propose_goal proposes a new one that the person confirms.",
     "When a specialist's work is done, declare_candidate captures its worktree and binds it to the Pact decisions it must respect; verify_candidate runs its required checks and review_candidate asks a distinct reviewer. Within the mandate, clear_candidate gives your green light to a verified and approved candidate. The person always reviews and publishes it: never claim that work is merged or published.",
     "When the person answers a card, withdraws a question or changes the mandate, Trama writes it to you as the person's message.",
+    NEXT_STEP_RULES,
     "When you rely on a repository file, name its path relative to the project root.",
     ...(learningGuidance ? [learningGuidance] : []),
   ].join("\n");
