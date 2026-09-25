@@ -398,6 +398,39 @@
   background: color-mix(in srgb, var(--color-text-accent) 26%, transparent);
 }
 
+/* An agent's own color (W15, ADR 0007): only on its identity, the avatar with the initial and the role tag.
+   AgentIdentity.tsx sets both shades from the palette in @shared/identity; identity.test.ts checks them against
+   every --surface above. Badges and cards keep the status colors. */
+.agent-identity {
+  --agent: var(--agent-light);
+}
+:root.dark .agent-identity {
+  --agent: var(--agent-dark);
+}
+/* In the components layer, so size and text utilities on an avatar or a tag still apply. */
+@layer components {
+  .agent-avatar {
+    display: inline-flex;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    border-radius: 9999px;
+    background: color-mix(in srgb, var(--agent) 16%, transparent);
+    color: var(--agent);
+    font-size: var(--text-ui-2xs);
+    font-weight: 600;
+    line-height: 1;
+  }
+  .agent-tag {
+    color: var(--agent);
+    font-size: var(--text-ui-xs);
+    font-weight: 500;
+    white-space: nowrap;
+  }
+}
+
 /* Registered so the light fades from one provider to the next instead of jumping. */
 @property --glow-1 {
   syntax: "<color>";

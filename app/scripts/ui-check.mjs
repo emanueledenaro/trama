@@ -115,13 +115,45 @@ const teamPanel = page.getByTestId("inspector");
 await teamPanel.getByText("Chiarimento e spec", { exact: true }).waitFor();
 await teamPanel.getByRole("button", { name: /^Ada/ }).waitFor();
 await shot("04e-team-inspector");
+// W15: each agent has an avatar with its initial and a colored tag; the tag comes from the proposal.
+await teamPanel.getByTestId("team-developer").getByTestId("agent-tag").filter({ hasText: "[Ordini]" }).waitFor();
+if ((await teamPanel.getByTestId("team-figure").getByTestId("agent-tag").count()) < 5) throw new Error("The fixed roles have no tag");
+// W13: the person renames the developer from the Team view; the id stays and a fixed role's name is refused.
+await teamPanel.getByTestId("team-developer").first().click();
+const developerId = (await teamPanel.getByText(/^S-[0-9A-F]{8}$/).first().textContent()).trim();
+await teamPanel.getByRole("button", { name: "Rinomina", exact: true }).click();
+const rename = teamPanel.getByTestId("rename-specialist");
+await rename.getByLabel("Nuovo nome").fill("Clean Code");
+await rename.getByText("È il nome di un ruolo fisso").waitFor();
+if (await rename.getByRole("button", { name: "Rinomina" }).isEnabled()) throw new Error("A fixed role's name can be chosen");
+await rename.getByLabel("Nuovo nome").fill("Giulia");
+const renameButtons = await rename.locator(".cta-row button").allTextContents();
+if (renameButtons.at(-1)?.trim() !== "Rinomina") throw new Error(`Rename is not the last call to action: ${renameButtons}`);
+await shot("04e3-team-rename");
+await rename.getByRole("button", { name: "Rinomina" }).click();
+await teamPanel.getByRole("heading", { name: "Giulia" }).waitFor({ timeout: 20_000 });
+await teamPanel.getByText(developerId, { exact: true }).waitFor();
+// W15: the person picks another color; only the avatar and the tag take it.
+await teamPanel.getByRole("radio", { name: "Rame" }).click();
+await teamPanel.locator('[role="radio"][aria-label="Rame"][aria-checked="true"]').waitFor({ timeout: 20_000 });
+await shot("04e4-team-color");
+await teamPanel.getByRole("button", { name: "Team", exact: true }).click();
+await teamPanel.getByTestId("team-developer").filter({ hasText: "Giulia" }).waitFor();
 await teamPanel.getByText("In sottofondo", { exact: true }).scrollIntoViewIfNeeded();
 await shot("04e1-team-candidate-background");
 await teamPanel.getByTestId("team-figure").filter({ hasText: "Guardiano delle regressioni" }).first().click();
 await teamPanel.getByText("Quando interviene").waitFor();
 if (await teamPanel.getByRole("button", { name: "Togli dal team" }).count()) throw new Error("A fixed role offers to leave the team");
 await shot("04e2-team-fixed-role");
+if (await teamPanel.getByRole("button", { name: "Rinomina", exact: true }).count()) throw new Error("A fixed role offers a rename");
 await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
+// W13: the person asks the Coordinator to rename the developer, without a new mandate; the chat follows the new name.
+await page.getByLabel("Messaggio al Coordinatore").fill("[rinomina:Giulia:Bea]");
+await page.keyboard.press("Enter");
+await page.getByText("Ho rinominato Giulia in Bea.").first().waitFor({ timeout: 20_000 });
+await page.getByText(/^Bea$/).first().waitFor({ timeout: 20_000 });
+await page.getByText("ha lavorato per").first().waitFor();
+await shot("04e5-team-renamed-in-chat");
 
 // Learning (ADR 0014): the Coordinator saves a note, then a review the person asks for writes memory and a skill.
 await page.getByLabel("Messaggio al Coordinatore").fill("[memoria] ricorda il gestore di pacchetti");
