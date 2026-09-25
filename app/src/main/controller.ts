@@ -12,6 +12,7 @@ import { isUnsupportedModelError } from "@shared/timeline";
 import type { ImageAttachmentInput } from "@shared/ipc";
 import type {
   ActiveProjectState,
+  AgentColor,
   AppSettings,
   AppState,
   CoordinatorPhase,
@@ -135,6 +136,8 @@ import {
   recordThread,
   recordWorkspace,
   removeSpecialist,
+  renameSpecialist,
+  setSpecialistColor,
   requestStop,
   assignmentsAffectedByDecision,
   changeAssignmentProvider,
@@ -2655,6 +2658,28 @@ export class TramaController {
   async removeSpecialistByPerson(specialistId: string, reason: string): Promise<void> {
     const project = this.requireProject();
     removeSpecialist(project.document, specialistId, reason, "Persona");
+    this.changed();
+  }
+
+  /** The person renames a developer from the Team view (W13): the id stays, the history records the change. */
+  async renameSpecialistByPerson(specialistId: string, name: string): Promise<void> {
+    const project = this.requireProject();
+    const { specialist, previousName } = renameSpecialist(project.document, specialistId, name);
+    if (previousName !== specialist.name) {
+      appendEvent(project.document, "trama", {
+        type: "activity",
+        title: "Sviluppatore rinominato",
+        detail: `${previousName} ora si chiama ${specialist.name} (${specialist.id}).`,
+        tone: "info",
+      });
+    }
+    this.changed();
+  }
+
+  /** The person picks another palette color for an agent (W15). */
+  async setSpecialistColorByPerson(specialistId: string, color: AgentColor): Promise<void> {
+    const project = this.requireProject();
+    setSpecialistColor(project.document, specialistId, color);
     this.changed();
   }
 

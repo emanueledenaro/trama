@@ -86,6 +86,8 @@ function withAssignments(document: ProjectDocument, assignments: SpecialistAssig
       moduleIds: [],
       role: "developer",
       origin: "teamProposal",
+      color: "blue",
+      tag: "Swift",
       createdAt: "",
       status: "working",
       model: null,

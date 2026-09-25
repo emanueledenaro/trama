@@ -20,6 +20,7 @@ import { cn } from "@/lib/cn";
 import { formatTime } from "@/lib/format";
 import { act, useUi } from "@/lib/store";
 import { Button } from "@/components/ui/button";
+import { AgentName } from "@/components/AgentIdentity";
 import { GoalCard } from "@/components/inspector/GoalsView";
 import {
   AssignmentCard,
@@ -142,17 +143,18 @@ function ActivityRow({ event }: { event: ConversationEvent }) {
 
 function WorkGroup({ row }: { row: Extract<TimelineRow, { kind: "work" }> }) {
   const [open, setOpen] = useState(false);
-  const specialistName = useUi((s) =>
-    row.assignmentId ? (s.app?.project?.document.team.specialists.find((sp) => sp.assignments.some((a) => a.id === row.assignmentId))?.name ?? null) : null,
+  const specialist = useUi((s) =>
+    row.assignmentId ? (s.app?.project?.document.team.specialists.find((sp) => sp.assignments.some((a) => a.id === row.assignmentId)) ?? null) : null,
   );
   const tools = row.activities.filter((e) => e.content.type === "activity" && e.content.tone !== "info").length;
-  const author = specialistName ?? "Il Coordinatore";
+  // The specialist's identity leads the label (W15): avatar, name and tag in its color.
+  const who = specialist ? <AgentName agent={specialist} className="mr-1" /> : null;
   const label = row.running
-    ? `${author} sta lavorando`
+    ? specialist ? <>{who}sta lavorando</> : "Il Coordinatore sta lavorando"
     : row.durationMs !== null
-      ? `${specialistName ? `${specialistName} ha` : "Ha"} lavorato per ${formatDuration(row.durationMs)}`
-      : specialistName
-        ? `${specialistName}, attività`
+      ? specialist ? <>{who}ha lavorato per {formatDuration(row.durationMs)}</> : `Ha lavorato per ${formatDuration(row.durationMs)}`
+      : specialist
+        ? <>{who}attività</>
         : "Attività";
   return (
     <div className="mb-3 text-chat">

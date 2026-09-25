@@ -7,7 +7,7 @@ import { COORDINATOR_TOOLS, developerInstructions, GRILLING_BINDING, NEXT_STEP_R
 import { emptyDocument } from "./document";
 import { deliverNativeSkill, loadNativeSkill } from "./nativeSkills";
 import { answerDecisionRequest, createDecisionRequest, grantMandate } from "./pact";
-import { developers } from "./team";
+import { confirmTeam, developers } from "./team";
 import { NEXT_MOVES } from "./workPhase";
 
 /** Only what read_team and propose_team use. */
@@ -61,6 +61,35 @@ describe("Coordinator tools for the full team (W09)", () => {
     expect(COORDINATOR_TOOLS.find((t) => t.name === "propose_team")!.description).toMatch(/fixed roles/);
     expect(COORDINATOR_TOOLS.find((t) => t.name === "create_specialist")!.description).toMatch(/developer/);
     expect(developerInstructions("Demo")).toMatch(/fixed roles/);
+  });
+});
+
+describe("Coordinator tools for the agents' identity (W13, W15)", () => {
+  it("rename_specialist renames a developer at the person's request, without a mandate, and keeps its id", async () => {
+    const document = emptyDocument("p");
+    let changes = 0;
+    const context = { ...teamContext(document), changed: () => void changes++ } as ToolContext;
+    await runCoordinatorTool(
+      "propose_team",
+      { specialists: [{ name: "Ada", tag: "Interfaccia", competence: "React", reason: "r", moduleIDs: [] }] },
+      context,
+    );
+    confirmTeam(document, document.team.proposals[0]!.id, null, null);
+    const ada = developers(document)[0]!;
+    expect(ada.tag).toBe("Interfaccia");
+    expect(document.mandate).toBeNull();
+    const renamed = parse(await runCoordinatorTool("rename_specialist", { specialist: "Ada", name: "Giulia" }, context));
+    expect(renamed).toMatchObject({ specialistID: ada.id, previousName: "Ada", name: "Giulia" });
+    expect(developers(document)[0]).toMatchObject({ id: ada.id, name: "Giulia" });
+    expect(changes).toBeGreaterThan(0);
+    const qa = document.team.specialists.find((s) => s.role === "qa")!;
+    const refused = await runCoordinatorTool("rename_specialist", { specialist: qa.id, name: "Quinto" }, context);
+    expect(refused.isError).toBe(true);
+    expect(refused.content[0]!.text).toContain("fixed_role");
+    const team = parse(await runCoordinatorTool("read_team", {}, context));
+    expect(team.specialists.find((s: { id: string }) => s.id === ada.id)).toMatchObject({ name: "Giulia", tag: "Interfaccia", color: ada.color });
+    expect(COORDINATOR_TOOLS.find((t) => t.name === "rename_specialist")!.description).toMatch(/without a mandate/);
+    expect(developerInstructions("Demo")).toMatch(/rename_specialist/);
   });
 });
 

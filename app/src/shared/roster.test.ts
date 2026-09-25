@@ -15,6 +15,8 @@ function member(role: TeamRole, name: string, status: Specialist["status"] = "av
     moduleIds: [],
     role,
     origin: role === "developer" ? "teamProposal" : "fixedRole",
+    color: "blue",
+    tag: "T",
     createdAt: "",
     status,
     model: null,

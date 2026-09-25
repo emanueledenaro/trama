@@ -1,5 +1,5 @@
 import type { ProviderId } from "./codex";
-import type { AppSettings, DecisionAlternative, GoalStatus, MandateAction, ProjectOverview } from "./domain";
+import type { AgentColor, AppSettings, DecisionAlternative, GoalStatus, MandateAction, ProjectOverview } from "./domain";
 import type { ExerciseId, GuideStepId, ObservedStep } from "./onboarding";
 
 export interface GoalExampleInputPayload {
@@ -85,6 +85,8 @@ export interface ActionMap {
   "assignment:removeWorktree": [{ assignmentId: string }, void];
   "assignment:changeProvider": [{ assignmentId: string; provider: ProviderId; model: string }, void];
   "specialist:remove": [{ specialistId: string; reason: string }, void];
+  "specialist:rename": [{ specialistId: string; name: string }, void];
+  "specialist:setColor": [{ specialistId: string; color: AgentColor }, void];
   "plan:cancel": [{ planId: string }, void];
   "plan:edit": [{ planId: string; steps: string[]; proposedBehavior: string; acceptedExample: string }, void];
   "pactDemo:run": [void, void];

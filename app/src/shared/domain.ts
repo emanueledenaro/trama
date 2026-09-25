@@ -283,6 +283,8 @@ export type SpecialistTool = "commands" | "edits";
 
 export interface ProposedSpecialist {
   name: string;
+  /** The role in short (W15), for example `Interfaccia`; derived from the competence when absent. */
+  tag?: string;
   competence: string;
   reason: string;
   moduleIds: string[];
@@ -503,6 +505,9 @@ export type TeamRole =
   | "performance"
   | "devops";
 
+/** A color of the fixed agent palette (W15, `@shared/identity`). */
+export type AgentColor = "blue" | "indigo" | "violet" | "fuchsia" | "pink" | "copper" | "olive" | "teal" | "cyan";
+
 /** The point of the flow where a figure of the team works (W09). */
 export type TeamMoment = "spec" | "slices" | "candidate" | "background";
 
@@ -516,6 +521,10 @@ export interface Specialist {
   role: TeamRole;
   /** `fixedRole`: Trama adds it to every team and it cannot be removed. */
   origin: "teamProposal" | "coordinator" | "fixedRole";
+  /** The agent's own color, only on its identity (W15, ADR 0007): Trama picks a free one, the person may change it. */
+  color: AgentColor;
+  /** The role in short, shown colored beside the name (W15): the fixed role's, or the developer's own. */
+  tag: string;
   createdAt: string;
   status: SpecialistStatus;
   model: string | null;

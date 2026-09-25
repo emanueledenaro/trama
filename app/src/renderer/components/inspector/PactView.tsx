@@ -9,6 +9,7 @@ import { formatDate } from "@/lib/format";
 import { act, useUi } from "@/lib/store";
 import { EmptyNote, InspectorSection } from "./Inspector";
 import { Sep } from "@/components/ui/sep";
+import { AgentName } from "@/components/AgentIdentity";
 
 function DecisionEditor({ initial, onDone }: { initial?: { id: string; value: string; acceptedExample: string; rationale: string }; onDone: () => void }) {
   const [value, setValue] = useState(initial?.value ?? "");
@@ -172,7 +173,7 @@ function DecisionDependentsSection({ id }: { id: string }) {
       {dependents.assignments.map(({ assignment, specialist, version, current }) => (
         <button key={assignment.id} type="button" className={row} onClick={() => setInspector({ kind: "specialist", id: specialist.id })}>
           <span className="min-w-0 flex-1 truncate">
-            <span className="font-mono text-[11px] text-muted-foreground">{assignment.id}</span> {specialist.name}<Sep />{assignment.objective}
+            <span className="font-mono text-[11px] text-muted-foreground">{assignment.id}</span> <AgentName agent={specialist} /><Sep />{assignment.objective}
           </span>
           <Badge tone={current ? "secondary" : "warning"}>{current ? `v${version}` : `delegato su v${version}`}</Badge>
           <Badge tone={ASSIGNMENT_STATUS[assignment.status].tone}>{ASSIGNMENT_STATUS[assignment.status].label}</Badge>

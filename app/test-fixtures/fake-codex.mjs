@@ -291,10 +291,18 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
       if (text.includes("[proponi-team]")) {
         callTool(threadId, "propose_team", {
           summary: "Un solo specialista per il modulo Orders",
-          specialists: [{ name: "Ada", competence: "Swift", reason: "Il dominio è in Swift", moduleIDs: ["Sources/Orders"] }],
+          specialists: [{ name: "Ada", tag: "Ordini", competence: "Swift", reason: "Il dominio è in Swift", moduleIDs: ["Sources/Orders"] }],
         }).then((result) => {
           toolDone("propose_team", result);
           finish("Ti ho proposto il team.");
+        });
+        return;
+      }
+      const renameMatch = text.match(/\[rinomina:([^:\]]+):([^\]]+)\]/);
+      if (renameMatch) {
+        callTool(threadId, "rename_specialist", { specialist: renameMatch[1], name: renameMatch[2] }).then((result) => {
+          toolDone("rename_specialist", result);
+          finish(result.isError ? `Rifiutato: ${result.content[0].text}` : `Ho rinominato ${renameMatch[1]} in ${renameMatch[2]}.`);
         });
         return;
       }
