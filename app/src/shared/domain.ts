@@ -295,6 +295,121 @@ export interface SpecialistAssignment {
   updatedAt: string;
   lastUpdate: string;
   reportedStatus: AssignmentStatus | null;
+  /** Set when Trama started this work of a fixed role by itself (W11); absent for work the Coordinator assigned. */
+  duty?: AssignmentDuty | null;
+}
+
+/** The AI Hero skill a fixed role runs when Trama starts its work by itself (W11). */
+export type DutySkill = "triage" | "diagnosing-bugs" | "improve-codebase-architecture";
+
+/** What made Trama start a fixed role's work: a rule of Trama, never the model's judgment (W11). */
+export type DutyTrigger =
+  | { kind: "newIssue"; issueNumber: number; title: string }
+  | { kind: "failedCheck"; failureId: string }
+  /** `afterWork`: the finished work that changed code, known when the review started. */
+  | { kind: "idleTeam"; headSHA: string; afterWork: string[] }
+  | { kind: "diagnosisFix"; diagnosisId: string };
+
+export type TriageCategory = "bug" | "enhancement";
+export type TriageState = "needs-triage" | "needs-info" | "ready-for-agent" | "ready-for-human" | "wontfix";
+
+/** The triage skill's recommendation for an issue; posting it on GitHub stays with the person. */
+export interface TriageOutcome {
+  kind: "triage";
+  category: TriageCategory;
+  state: TriageState;
+  reasoning: string;
+  /** What happened when the claim was checked against the code. */
+  verification: string;
+  /** Where the behavior already lives, when the request is already implemented. */
+  alreadyImplemented: string | null;
+  /** The comment the skill would post on the issue: agent brief, triage notes or the reason to close. */
+  comment: string;
+}
+
+export interface DiagnosisOutcome {
+  kind: "diagnosis";
+  /** The one command of the feedback loop, and what it printed. */
+  loopCommand: string | null;
+  loopOutput: string | null;
+  /** The loop went red on this bug. */
+  reproduced: boolean;
+  /** Ranked, most likely first. */
+  hypotheses: string[];
+  cause: string | null;
+  /** The failing test to write at the correct seam. */
+  regressionTest: string | null;
+  /** Set when no correct seam exists for a regression test. */
+  seamNote: string | null;
+  fix: string | null;
+  moduleIds: string[];
+  /** What the person should provide when no loop could be built. */
+  openQuestions: string | null;
+  /** The fix Trama assigned within the mandate. */
+  fixAssignmentId: string | null;
+  /** Why the fix is not assigned yet. */
+  fixWaiting: string | null;
+}
+
+export type ArchitectureStrength = "Strong" | "Worth exploring" | "Speculative";
+
+export interface ArchitectureProposal {
+  title: string;
+  files: string[];
+  problem: string;
+  solution: string;
+  benefits: string;
+  strength: ArchitectureStrength;
+  /** The ADR the proposal contradicts and why it is worth reopening. */
+  adrConflict: string | null;
+}
+
+export interface ArchitectureOutcome {
+  kind: "architecture";
+  proposals: ArchitectureProposal[];
+  topRecommendation: string | null;
+  /** The Pact decision card that puts the proposals to the person; null when there is nothing to propose. */
+  decisionRequestId: string | null;
+}
+
+export type DutyOutcome = TriageOutcome | DiagnosisOutcome | ArchitectureOutcome;
+
+export interface AssignmentDuty {
+  skill: DutySkill;
+  trigger: DutyTrigger;
+  /** Read from the session's answer when it ends; a fix keeps its report in `result` instead. */
+  outcome: DutyOutcome | null;
+  /** The session ended with an answer Trama could not read. */
+  unreadable?: boolean;
+}
+
+/** A check that failed on the project checkout or on a candidate, waiting for or under diagnosis (W11). */
+export interface CheckFailure {
+  id: string;
+  check: string;
+  /** The check as the person reads it, for example "test Node". */
+  title: string;
+  command: string;
+  target: "checkout" | "candidate";
+  candidateId: string | null;
+  /** The candidate's assignment: its worktree is where the check failed. */
+  assignmentId: string | null;
+  /** The candidate snapshot or the checkout HEAD the check failed on. */
+  version: string | null;
+  /** The check passed before: on the candidate's base, on an earlier version of the same work or on an earlier HEAD. */
+  regression: boolean;
+  output: string;
+  at: string;
+  diagnosisId: string | null;
+}
+
+/** Trama's own bookkeeping for the fixed roles' automatic work (W11). */
+export interface DutyLedger {
+  /** The highest issue number when Trama first read the project's issues: only issues above it are new. */
+  issueBaseline: number | null;
+  failures: CheckFailure[];
+  /** The last result of each check on the project checkout, to recognize a regression. */
+  checkoutChecks: Record<string, { headSHA: string | null; passed: boolean }>;
 }
 
 /**
@@ -528,6 +643,8 @@ export interface ProjectDocument {
   pactDemo?: PactDemo | null;
   /** Progress of the guided exercises, kept only in the example project (C13, C14). */
   exercises?: import("./onboarding").ExerciseRecord;
+  /** The fixed roles' automatic work (W11); absent until Trama first needs it. */
+  duties?: DutyLedger;
 }
 
 export interface PactDemo {

@@ -702,6 +702,7 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
                     worktreeBranch: current.workspace?.branch ?? null,
                     result: current.result,
                     failure: current.failure,
+                    startedByTrama: current.duty ? ({ skill: current.duty.skill, trigger: current.duty.trigger } as unknown as Json) : null,
                   }
                 : null,
             };
@@ -1025,6 +1026,7 @@ export function developerInstructions(projectName: string, learningGuidance: str
     "New features, trade-offs, product behavior and serious destructive cases belong to the person: put them to the person with request_decision, on a concrete case with real alternatives. Never record a decision for the person and never treat a question as answered until Trama tells you the answer. Resolve technical choices yourself and do not ask about them, nor ask for generic confirmations.",
     ...(skills ? [skills] : []),
     "Every project has the full team: the fixed roles (QA, UX, research, documentation and domain, bug triage and debugger, spec reviewer, Clean Code, regression guardian, security, performance, DevOps), always present and never removed, and the developers chosen for the project. Each figure has a competence, the AI Hero skills it relies on and its moments in the flow (clarification and spec, slices, candidate, background); read_team lists them.",
+    "Under a granted mandate Trama starts some fixed-role work by itself, on its own rules: bug triage and debugger triages each new GitHub issue with the triage skill, diagnoses a failed test or a regression with diagnosing-bugs and fixes a reproduced bug in an assignment within the mandate; Clean Code reviews the architecture with improve-codebase-architecture when the team is free, and its proposals reach the person as a Pact decision card. Their results reach you in the team report: build on them and do not start the same work again.",
     "At the end of your study propose the project's developers with propose_team: one developer per real need, each with a competence and the reason this project needs it, never one to fill a role. The person confirms or corrects it once, and only that answer creates the developers. From then on you change them yourself within the mandate, with create_specialist and stop_specialist, and you say it in the conversation.",
     "Within the mandate, assign_task gives a specialist work in a provider session and worktree that Trama owns: objective, ticket or exercise, modules, dependencies, required checks, your instructions and the provider and model you propose for it. Assign in parallel only work that is independent, and read_team to see where each specialist stands. stop_specialist asks Trama to stop work: the stop is first requested and then confirmed, and what was done is kept.",
     "run_readonly_check runs a check on the project checkout without writing to it; you may use it without a mandate.",

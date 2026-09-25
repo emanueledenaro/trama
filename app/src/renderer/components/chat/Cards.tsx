@@ -27,6 +27,7 @@ import { cn } from "@/lib/cn";
 import { act, useUi } from "@/lib/store";
 import { ACTION_LABELS } from "@/lib/labels";
 import { ChatMarkdown } from "./ChatMarkdown";
+import { DutyFields } from "./DutyFields";
 import { Sep } from "@/components/ui/sep";
 
 function CardFrame({
@@ -432,8 +433,9 @@ export function AssignmentCard({ assignmentId }: { assignmentId: string }) {
         {specialist.name} <span className="text-muted-foreground"><Sep />{specialist.competence}</span>
       </Field>
       <Field label="Obiettivo">{assignment.objective}</Field>
+      <DutyFields assignment={assignment} />
       {assignment.exercise ? <Field label="Esercizio">{assignment.exercise}</Field> : null}
-      <Field label="Perimetro">{assignment.moduleIds.map(moduleName).join(", ")}</Field>
+      <Field label="Perimetro">{assignment.moduleIds.length ? assignment.moduleIds.map(moduleName).join(", ") : "Tutto il progetto"}</Field>
       {assignment.dependencies.length ? <Field label="Dipendenze">{assignment.dependencies.join(", ")}</Field> : null}
       {goal ? (
         <Field label="Obiettivo del progetto">
@@ -445,7 +447,11 @@ export function AssignmentCard({ assignmentId }: { assignmentId: string }) {
       <Field label="Provider e modello scelti all'assegnazione">
         {providerLabel(assignment.provider)}<Sep />{assignment.model}
         <div className="mt-0.5 text-ui-sm text-muted-foreground">
-          {assignment.modelReason ? `Motivazione del Coordinatore: ${assignment.modelReason}` : "Il Coordinatore non ha registrato una motivazione per questa scelta."}
+          {assignment.duty && assignment.modelReason
+            ? assignment.modelReason
+            : assignment.modelReason
+              ? `Motivazione del Coordinatore: ${assignment.modelReason}`
+              : "Il Coordinatore non ha registrato una motivazione per questa scelta."}
         </div>
         {lastTurn && (lastTurn.provider ?? "codex") !== (assignment.provider ?? "codex") ? (
           <div className="mt-0.5 text-ui-sm text-warning">Ultimo turno eseguito con {providerLabel(lastTurn.provider)}<Sep />{lastTurn.model}</div>

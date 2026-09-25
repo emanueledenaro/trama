@@ -352,46 +352,138 @@ export function assign(
     if (!decision) throw new TeamError("unknown_decision", `Unknown decision: ${id}.`);
     decisionVersions[id] = decision.version;
   }
-  const tools: SpecialistTool[] = ["commands", ...(order.tools.includes("edits") ? (["edits"] as const) : [])];
+  return recordAssignment(
+    specialist,
+    {
+      requestId,
+      kind: order.kind,
+      objective,
+      issueNumber: order.issueNumber,
+      exercise: order.exercise?.trim() || null,
+      moduleIds,
+      dependencies,
+      model,
+      provider,
+      modelReason: order.modelReason?.trim() || null,
+      ...(order.goalId ? { goalId: order.goalId } : {}),
+      decisionVersions,
+      tools: order.tools,
+      requiredChecks: cleaned(order.requiredChecks),
+      instructions,
+      mandateVersion,
+      workspace: null,
+    },
+    now,
+  );
+}
+
+type AssignmentFields = Pick<
+  SpecialistAssignment,
+  | "requestId"
+  | "kind"
+  | "objective"
+  | "issueNumber"
+  | "exercise"
+  | "moduleIds"
+  | "dependencies"
+  | "model"
+  | "provider"
+  | "modelReason"
+  | "goalId"
+  | "decisionVersions"
+  | "tools"
+  | "requiredChecks"
+  | "instructions"
+  | "mandateVersion"
+  | "workspace"
+  | "duty"
+>;
+
+/** New work of a specialist: the assignment starts in preparation and the specialist is at work. */
+function recordAssignment(specialist: Specialist, fields: AssignmentFields, now: Date): SpecialistAssignment {
+  const tools: SpecialistTool[] = ["commands", ...(fields.tools.includes("edits") ? (["edits"] as const) : [])];
   const assignment: SpecialistAssignment = {
     id: shortId("A", randomUUID()),
     specialistId: specialist.id,
-    requestId,
-    kind: order.kind,
-    objective,
-    issueNumber: order.issueNumber,
-    exercise: order.exercise?.trim() || null,
-    moduleIds,
-    dependencies,
-    model,
-    provider,
-    modelReason: order.modelReason?.trim() || null,
-    ...(order.goalId ? { goalId: order.goalId } : {}),
-    decisionVersions,
+    ...fields,
     tools,
-    requiredChecks: cleaned(order.requiredChecks),
-    instructions,
-    mandateVersion,
     createdAt: now.toISOString(),
     status: "preparing",
-    workspace: null,
     threadId: null,
     turns: [],
     stops: [],
     result: null,
     failure: null,
     updatedAt: now.toISOString(),
-    lastUpdate: `Incarico ricevuto: ${objective}`,
+    lastUpdate: `Incarico ricevuto: ${fields.objective}`,
     reportedStatus: null,
   };
   specialist.assignments.push(assignment);
   specialist.status = "working";
-  specialist.model = model;
-  specialist.provider = provider;
+  specialist.model = fields.model;
+  specialist.provider = fields.provider;
   specialist.tools = tools;
   specialist.updatedAt = now.toISOString();
   specialist.lastUpdate = assignment.lastUpdate;
   return assignment;
+}
+
+export interface DutyOrder {
+  role: TeamRole;
+  kind: WorkKind;
+  objective: string;
+  instructions: string;
+  /** Empty for read-only work on the whole project. */
+  moduleIds: string[];
+  issueNumber: number | null;
+  model: string;
+  provider: ProviderId;
+  /** Why Trama chose this model, in the person's words. */
+  modelReason: string;
+  tools: SpecialistTool[];
+  requiredChecks: string[];
+  /** The worktree the work continues in, for the fix of a candidate; null to prepare one when it writes. */
+  workspace: WorktreeSession | null;
+  duty: NonNullable<SpecialistAssignment["duty"]>;
+}
+
+/**
+ * Work Trama gives a fixed role by itself (W11). The developers need not be confirmed; the role must be free,
+ * and work that writes must be independent of the work in progress.
+ */
+export function assignDuty(document: ProjectDocument, order: DutyOrder, mandateVersion: number, now = new Date()): SpecialistAssignment {
+  const specialist = teamMembers(document).find((s) => s.role === order.role);
+  if (!specialist) throw new TeamError("unknown_specialist", `The team has no ${order.role}.`);
+  const current = currentAssignment(specialist);
+  if (current && isActive(current)) throw new TeamError("specialist_busy", `Specialist ${specialist.id} is still working on ${current.id}.`);
+  const moduleIds = cleaned(order.moduleIds);
+  if (order.tools.includes("edits")) {
+    if (moduleIds.length === 0) throw new TeamError("invalid_arguments", "Work that writes needs its modules.");
+    requireIndependent(document, moduleIds, specialist.id);
+  }
+  return recordAssignment(
+    specialist,
+    {
+      requestId: null,
+      kind: order.kind,
+      objective: required(order.objective, "objective"),
+      issueNumber: order.issueNumber,
+      exercise: null,
+      moduleIds,
+      dependencies: [],
+      model: required(order.model, "model"),
+      provider: order.provider,
+      modelReason: order.modelReason,
+      decisionVersions: {},
+      tools: order.tools,
+      requiredChecks: cleaned(order.requiredChecks),
+      instructions: required(order.instructions, "instructions"),
+      mandateVersion,
+      workspace: order.workspace ? { ...order.workspace } : null,
+      duty: order.duty,
+    },
+    now,
+  );
 }
 
 export function recordWorkspace(document: ProjectDocument, id: string, workspace: WorktreeSession, now = new Date()): void {

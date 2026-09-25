@@ -28,6 +28,8 @@ Sviluppatore: uno specialista scelto per il progetto, che realizza le fette con 
 
 Momento: il punto del flusso in cui una figura del team interviene: chiarimento e spec, fette, candidato, in sottofondo. In ogni momento la figura ha un compito e le skill che usa lì; una figura può avere più momenti. Il momento dice quando una figura lavora, non che stia lavorando.
 
+Lavoro automatico: il lavoro che Trama avvia da solo per un ruolo fisso, per una regola di Trama e mai per giudizio del modello, solo con un mandato concesso. Il bug triage e debugger smista ogni issue nuova con `triage` e diagnostica con `diagnosing-bugs` una verifica fallita o una regressione; un bug che il ciclo di verifica riproduce diventa una correzione con test di regressione, come incarico dentro il mandato. Clean Code, quando il team è libero dopo aver cambiato il codice, rivede l'architettura con `improve-codebase-architecture`: le proposte arrivano alla persona come scheda del Patto, mai come modifiche. Ogni sessione usa il testo originale della skill ed è in sola lettura, tranne la correzione; l'esito resta registrato nell'incarico.
+
 Provider: il programma esterno con cui Trama parla per far lavorare un agente, per esempio Codex o Claude Agent. È distinto dal modello, che è una scelta interna al provider, e dal ruolo dello specialista, che non dipende da nessuno dei due. Un provider è collegato quando la persona ha reso disponibile il suo account.
 
 Selezione del composer: il provider, il modello e le opzioni del provider scelti per i prossimi turni di un dialogo. Resta associata alla bozza e al dialogo, conserva preferenze separate per provider e viene fotografata quando un turno entra in coda.
