@@ -7,13 +7,12 @@ import {
   IconCopy,
   IconFileText,
   IconInfoCircle,
-  IconListCheck,
   IconPlayerStop,
   IconTerminal2,
   IconTool,
 } from "@tabler/icons-react";
 import { useState } from "react";
-import type { ConversationEvent } from "@shared/domain";
+import type { ConversationEvent, NextStepView } from "@shared/domain";
 import { extractPastes, pasteSizeLabel, pasteTitle } from "@shared/pastedText";
 import { formatDuration, type TimelineRow, turnFailureText } from "@shared/timeline";
 import { cn } from "@/lib/cn";
@@ -177,10 +176,41 @@ function WorkGroup({ row }: { row: Extract<TimelineRow, { kind: "work" }> }) {
   );
 }
 
+/** Brings the card of a record into view; false when this dialog does not show it. */
+function revealCard(id: string): boolean {
+  const card = document.querySelector(`[data-anchors~="${CSS.escape(id)}"]`);
+  card?.scrollIntoView({ behavior: "smooth", block: "start" });
+  return card !== null;
+}
+
+/** The one next step the Coordinator declared, while the work still allows it (W01): one button on the right. */
+function NextStepRow({ step, goalId }: { step: NextStepView; goalId: string | null }) {
+  const setInspector = useUi((s) => s.setInspector);
+  const run = () => {
+    if (step.url) return void act("shell:openExternal", { url: step.url });
+    if (step.message) {
+      return void act("coordinator:send", { text: step.message, moduleId: null, model: null, effort: null, images: [], provider: null, goalId });
+    }
+    if (step.move === "reviewCandidate" && step.targetId) return setInspector({ kind: "candidate", id: step.targetId });
+    if (step.targetId && revealCard(step.targetId)) return;
+    if (step.move === "grantMandate") setInspector({ kind: "mandate" });
+    else if (step.move === "confirmTeam") setInspector({ kind: "team" });
+  };
+  return (
+    <div className="cta-row mt-2" data-testid="next-step">
+      {step.reason ? <span className="min-w-0 text-ui-xs text-muted-foreground">{step.reason}</span> : null}
+      <Button size="sm" onClick={run}>
+        {step.label}
+      </Button>
+    </div>
+  );
+}
+
 function Reply({ row, latest }: { row: Extract<TimelineRow, { kind: "reply" }>; latest: boolean }) {
   const setInspector = useUi((s) => s.setInspector);
   const [copied, setCopied] = useState(false);
   const request = row.request;
+  const nextStep = useUi((s) => (request ? s.app?.project?.nextSteps[request.id] : undefined) ?? null);
   if (row.streaming && !row.text) {
     return (
       <div className="py-1 text-chat">
@@ -207,13 +237,7 @@ function Reply({ row, latest }: { row: Extract<TimelineRow, { kind: "reply" }>; 
           ))}
         </div>
       ) : null}
-      {latest && !row.streaming && request?.state === "completed" ? (
-        <div className="cta-row mt-2">
-          <Button size="xs" variant="outline" onClick={() => void act("plan:prepare", { requestId: request.id })}>
-            <IconListCheck stroke={1.8} /> Prepara un piano
-          </Button>
-        </div>
-      ) : null}
+      {latest && !row.streaming && request?.state === "completed" && nextStep ? <NextStepRow step={nextStep} goalId={request.goalId ?? null} /> : null}
       {!row.streaming ? (
         <div className="mt-1.5 flex items-center gap-2 text-[11px] text-muted-foreground/45 opacity-0 transition-opacity group-hover:opacity-100">
           {row.model ? <span>Coordinatore<Sep />{row.model}</span> : null}

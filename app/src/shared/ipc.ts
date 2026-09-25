@@ -46,7 +46,13 @@ export interface ActionMap {
   "coordinator:setFastMode": [{ enabled: boolean; goalId?: string | null }, void];
   "coordinator:selectProvider": [{ provider: ProviderId; goalId?: string | null }, void];
   "coordinator:saveDraft": [{ text: string; goalId?: string | null }, void];
+  /** Deletes a message still waiting in the queue (W03); a message that reports a recorded choice stays. */
+  "coordinator:deleteQueued": [{ id: string }, void];
   "goal:create": [GoalInputPayload, string];
+  /** Archives (true) or restores (false) a goal; its status and history stay (W03). Returns the goal id once saved. */
+  "goal:archive": [{ id: string; archived: boolean }, string];
+  /** Deletes a goal whose dialog is empty (W03). */
+  "goal:delete": [{ id: string }, void];
   "goal:update": [
     { id: string; title?: string; outcome?: string; examples?: GoalExampleInputPayload[]; status?: GoalStatus; decisionIds?: string[] },
     /** The goal id, returned once the change is saved. */
@@ -57,6 +63,8 @@ export interface ActionMap {
   "coordinator:setContextThreshold": [{ percent: number }, void];
   "pact:decide": [{ id: string | null; value: string; acceptedExample: string; rationale: string }, void];
   "decision:answer": [{ requestId: string; alternativeIndex: number | null; freeText: string | null }, void];
+  /** Withdraws an open question with a reason; the Coordinator reads it as the person's message (W03). */
+  "decision:withdraw": [{ requestId: string; reason: string }, void];
   "mandate:grant": [
     {
       requestId: string | null;
@@ -75,7 +83,6 @@ export interface ActionMap {
   "assignment:removeWorktree": [{ assignmentId: string }, void];
   "assignment:changeProvider": [{ assignmentId: string; provider: ProviderId; model: string }, void];
   "specialist:remove": [{ specialistId: string; reason: string }, void];
-  "plan:prepare": [{ requestId: string }, void];
   "plan:cancel": [{ planId: string }, void];
   "plan:edit": [{ planId: string; steps: string[]; proposedBehavior: string; acceptedExample: string }, void];
   "pactDemo:run": [void, void];

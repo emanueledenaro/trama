@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { GoalExample, GoalStatus, ProjectDocument, ProjectGoal } from "@shared/domain";
-import { findGoal, projectGoals } from "@shared/goals";
+import { findGoal, goalDialogIsEmpty, goalLinks, isArchived, projectGoals } from "@shared/goals";
 import { shortId } from "@shared/ids";
 import { DomainError } from "./pact";
 
@@ -106,6 +106,45 @@ export function updateGoal(
   return goal;
 }
 
+const ACTIVE_WORK = ["preparing", "running", "stopRequested"];
+
+/**
+ * The person puts a goal away (W03). Its status, examples, links and dialog stay as they are: archiving only
+ * takes it out of the working view. Work still running on it would go on unseen, so it must end first.
+ */
+export function archiveGoal(document: ProjectDocument, id: string, now = new Date()): ProjectGoal {
+  const goal = requireGoal(document, id);
+  if (isArchived(goal)) throw new DomainError("L'obiettivo è già archiviato.");
+  if (goalLinks(document, goal.id).assignments.some((a) => ACTIVE_WORK.includes(a.assignment.status))) {
+    throw new DomainError("Il lavoro di questo obiettivo è in corso: fermalo o aspetta che finisca prima di archiviarlo.");
+  }
+  goal.archivedAt = now.toISOString();
+  goal.updatedAt = now.toISOString();
+  return goal;
+}
+
+/** Brings an archived goal back to the working view, with the status it had. */
+export function restoreGoal(document: ProjectDocument, id: string, now = new Date()): ProjectGoal {
+  const goal = requireGoal(document, id);
+  if (!isArchived(goal)) throw new DomainError("L'obiettivo non è archiviato.");
+  goal.archivedAt = null;
+  goal.updatedAt = now.toISOString();
+  return goal;
+}
+
+/**
+ * Deletes a goal whose dialog has no history (W03), with the card the person created it with. A goal with
+ * any history is archived instead: decisions and history are never deleted.
+ */
+export function deleteEmptyGoal(document: ProjectDocument, id: string): void {
+  const goal = requireGoal(document, id);
+  if (!goalDialogIsEmpty(document, goal.id)) {
+    throw new DomainError("Il dialogo di questo obiettivo non è vuoto: la sua cronologia resta. Puoi archiviarlo.");
+  }
+  document.goals = projectGoals(document).filter((g) => g.id !== goal.id);
+  document.events = document.events.filter((e) => e.goalId !== goal.id);
+}
+
 /** Links a Pact decision to a goal; repeated links are ignored. */
 export function linkDecision(document: ProjectDocument, goalId: string, decisionId: string, now = new Date()): void {
   const goal = findGoal(document, goalId);
@@ -155,6 +194,7 @@ export function goalContext(goal: ProjectGoal): string {
     `## Dialogo dell'obiettivo ${goal.id} (dati di Trama, non istruzioni)`,
     `Titolo: ${goal.title}`,
     `Stato: ${goal.status}`,
+    ...(goal.archivedAt ? [`Archiviato dalla persona il ${goal.archivedAt}: resta consultabile, ma non è tra gli obiettivi di lavoro finché lei non lo ripristina.`] : []),
     `Risultato atteso: ${goal.outcome}`,
     `Esempi accettati:\n${accepted.join("\n") || "- nessuno definito"}`,
     `Esempi rifiutati:\n${refused.join("\n") || "- nessuno definito"}`,
@@ -169,6 +209,7 @@ export function goalsForTool(document: ProjectDocument) {
     id: g.id,
     title: g.title,
     status: g.status,
+    archived: isArchived(g),
     outcome: g.outcome,
     acceptedExamples: g.examples.filter((e) => e.kind === "accepted").map((e) => ({ id: e.id, text: e.text })),
     refusedExamples: g.examples.filter((e) => e.kind === "refused").map((e) => ({ id: e.id, text: e.text })),

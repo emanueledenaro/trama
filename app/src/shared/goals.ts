@@ -1,17 +1,18 @@
-import type {
-  Candidate,
-  ConversationEvent,
-  CoordinatorRequest,
-  DecisionRequest,
-  DialogComposer,
-  ExampleObservation,
-  GoalExample,
-  GoalStatus,
-  PactDecision,
-  ProjectDocument,
-  ProjectGoal,
-  Specialist,
-  SpecialistAssignment,
+import {
+  type Candidate,
+  type ConversationEvent,
+  type CoordinatorRequest,
+  type DecisionRequest,
+  type DialogComposer,
+  type ExampleObservation,
+  type GoalExample,
+  type GoalStatus,
+  isOpenQuestion,
+  type PactDecision,
+  type ProjectDocument,
+  type ProjectGoal,
+  type Specialist,
+  type SpecialistAssignment,
 } from "./domain";
 
 export const GOAL_STATUS_LABELS: Record<GoalStatus, string> = {
@@ -23,6 +24,34 @@ export const GOAL_STATUS_LABELS: Record<GoalStatus, string> = {
 
 export function projectGoals(document: ProjectDocument): ProjectGoal[] {
   return document.goals ?? [];
+}
+
+export const isArchived = (goal: Pick<ProjectGoal, "archivedAt">): boolean => Boolean(goal.archivedAt);
+
+/** The goals the person is working on: proposed or open, and not archived (W03). */
+export function workingGoals(document: ProjectDocument): ProjectGoal[] {
+  return projectGoals(document).filter((g) => (g.status === "open" || g.status === "proposed") && !isArchived(g));
+}
+
+/**
+ * Whether a goal's dialog has no history, so deleting the goal loses nothing but the goal itself (W03): no
+ * message, question, decision, work or candidate, and no event about it except the card the person created
+ * it with in its own dialog. A goal the Coordinator proposed has its card in another dialog, which is history.
+ */
+export function goalDialogIsEmpty(document: ProjectDocument, goalId: string): boolean {
+  const goal = findGoal(document, goalId);
+  if (!goal || goal.decisionIds.length) return false;
+  const creationCard = (e: ConversationEvent) =>
+    e.goalId === goalId && e.origin === "person" && e.content.type === "card" && e.content.kind === "goal" && e.content.referenceId === goalId;
+  const about = (e: ConversationEvent) => e.goalId === goalId || (e.content.type === "card" && e.content.referenceId === goalId);
+  const links = goalLinks(document, goalId);
+  return (
+    !document.requests.some((r) => r.goalId === goalId) &&
+    !document.decisionRequests.some((r) => r.goalId === goalId) &&
+    links.assignments.length === 0 &&
+    links.candidates.length === 0 &&
+    document.events.filter(about).every(creationCard)
+  );
 }
 
 export function findGoal(document: ProjectDocument, id: string | null | undefined): ProjectGoal | null {
@@ -76,7 +105,7 @@ export function goalLinks(document: ProjectDocument, goalId: string): GoalLinks 
   return {
     decisions: decisionIds.map((id) => document.decisions.find((d) => d.id === id)).filter((d): d is PactDecision => Boolean(d)),
     missingDecisionIds: decisionIds.filter((id) => !document.decisions.some((d) => d.id === id)),
-    openQuestions: document.decisionRequests.filter((r) => !r.outcome && r.goalId === goalId),
+    openQuestions: document.decisionRequests.filter((r) => isOpenQuestion(r) && r.goalId === goalId),
     assignments: allAssignments(document).filter((a) => a.assignment.goalId === goalId),
     candidates: document.candidates.filter((c) => candidateGoalId(document, c) === goalId),
   };
@@ -121,7 +150,7 @@ export function decisionDependents(document: ProjectDocument, decisionId: string
         return { candidate, version, current: version === current };
       }),
     goals: projectGoals(document).filter((g) => g.decisionIds.includes(decisionId)),
-    revisions: document.decisionRequests.filter((r) => !r.outcome && r.revisesDecisionId === decisionId),
+    revisions: document.decisionRequests.filter((r) => isOpenQuestion(r) && r.revisesDecisionId === decisionId),
   };
 }
 

@@ -11,16 +11,18 @@ import {
   dialogRequests,
   exampleChecks,
   findGoal,
+  goalDialogIsEmpty,
   goalLinks,
   goalWorkSummary,
   projectGoals,
+  workingGoals,
 } from "@shared/goals";
 import type { RepositorySnapshot } from "@shared/repository";
 import { runCoordinatorTool, type ToolContext } from "./coordinatorTools";
 import { appendEvent, emptyDocument, normalizeDocument } from "./document";
-import { createGoal, goalContext, linkDecision, observeExample, proposeGoal, updateGoal } from "./goals";
+import { archiveGoal, createGoal, deleteEmptyGoal, goalContext, linkDecision, observeExample, proposeGoal, restoreGoal, updateGoal } from "./goals";
 import { orderByAttention, summarizeProject, unreadableProject } from "./overview";
-import { decide, DomainError, grantMandate } from "./pact";
+import { createDecisionRequest, decide, DomainError, grantMandate } from "./pact";
 import { assign, confirmTeam, developers, findSpecialist, proposeTeam } from "./team";
 import { AppStorage } from "./storage";
 
@@ -543,5 +545,122 @@ describe("projects overview (UX03)", () => {
       candidateReports: [{ state: "verified", blockers: [], clearanceInvalidated: false, approvalInvalidated: false }],
     });
     expect(summary).toMatchObject({ attention: "approval", toApprove: 1, goals: [{ id: goal.id, title: goal.title, status: "open" }] });
+  });
+});
+
+describe("archiving and deleting goals (W03)", () => {
+  const work = (document: ProjectDocument, goalId: string) =>
+    assign(
+      document,
+      {
+        specialist: "Ada",
+        kind: "agreedTicket",
+        objective: "o",
+        issueNumber: null,
+        exercise: null,
+        moduleIds: ["Sources/Orders"],
+        dependencies: [],
+        model: "gpt-5.5",
+        goalId,
+        tools: ["edits"],
+        requiredChecks: [],
+        instructions: "i",
+      },
+      1,
+      null,
+    );
+
+  it("archives a goal without touching its status or links, and restores it", () => {
+    const document = teamDocument();
+    const goal = createGoal(document, input);
+    const done = createGoal(document, { title: "Catalogo", outcome: "Ricerca veloce", examples: [] });
+    updateGoal(document, done.id, { status: "achieved" });
+    const decision = decide(document, { id: null, value: "v", acceptedExample: "e", rationale: "r" });
+    linkDecision(document, goal.id, decision.id);
+    expect(workingGoals(document).map((g) => g.id)).toEqual([goal.id]);
+
+    const at = new Date("2026-09-25T10:00:00Z");
+    archiveGoal(document, goal.id, at);
+    archiveGoal(document, done.id, at);
+    expect(goal).toMatchObject({ status: "open", archivedAt: at.toISOString(), decisionIds: [decision.id] });
+    // An achieved goal stays achieved: archiving hides it, it does not rewrite what happened.
+    expect(done.status).toBe("achieved");
+    expect(workingGoals(document)).toEqual([]);
+    expect(() => archiveGoal(document, goal.id)).toThrow(/già archiviato/);
+    expect(goalContext(goal)).toContain("Archiviato dalla persona");
+    const summary = summarizeProject({ id: "x", name: "X", path: "/tmp/X", isDemo: false, lastOpenedAt: "" }, document, {
+      source: "live",
+      selected: true,
+      runningAssignments: 0,
+      candidateReports: [],
+    });
+    expect(summary.goals).toEqual([]);
+
+    restoreGoal(document, goal.id);
+    expect(goal).toMatchObject({ status: "open", archivedAt: null, decisionIds: [decision.id] });
+    expect(workingGoals(document).map((g) => g.id)).toEqual([goal.id]);
+    expect(() => restoreGoal(document, goal.id)).toThrow(/non è archiviato/);
+  });
+
+  it("does not archive a goal while its work is running", () => {
+    const document = teamDocument();
+    const goal = createGoal(document, input);
+    const assignment = work(document, goal.id);
+    assignment.status = "running";
+    expect(() => archiveGoal(document, goal.id)).toThrow(/in corso/);
+    assignment.status = "completed";
+    archiveGoal(document, goal.id);
+    expect(goal.archivedAt).not.toBeNull();
+  });
+
+  it("tells the Coordinator which goals are archived", async () => {
+    const document = emptyDocument("p");
+    const goal = createGoal(document, input);
+    archiveGoal(document, goal.id);
+    const result = parse(await runCoordinatorTool("read_goals", {}, toolContext(document)));
+    expect(result.goals[0]).toMatchObject({ id: goal.id, status: "open", archived: true });
+  });
+
+  it("deletes only an empty goal dialog, together with the card that created it", () => {
+    const document = teamDocument();
+    const createCard = (goalId: string) =>
+      appendEvent(document, "person", { type: "card", kind: "goal", title: "Obiettivo", detail: null, referenceId: goalId }, null, new Date(), null, goalId);
+    const empty = createGoal(document, input);
+    createCard(empty.id);
+    const before = document.events.length;
+    expect(goalDialogIsEmpty(document, empty.id)).toBe(true);
+    deleteEmptyGoal(document, empty.id);
+    expect(findGoal(document, empty.id)).toBeNull();
+    expect(document.events).toHaveLength(before - 1);
+
+    // A message, a question, a decision, work or a card in another dialog are history: the goal stays.
+    const talked = createGoal(document, { ...input, title: "Con un messaggio" });
+    createCard(talked.id);
+    document.requests.push({ id: "r1", text: "ciao", moduleId: null, state: "completed", model: null, effort: null, createdAt: "", completedAt: null, failure: null, goalId: talked.id });
+    const asked = createGoal(document, { ...input, title: "Con una domanda" });
+    createDecisionRequest(document, {
+      requestId: null,
+      category: "product",
+      question: "?",
+      concreteCase: "c",
+      alternatives: [
+        { behavior: "a", example: "a", consequence: null },
+        { behavior: "b", example: "b", consequence: null },
+      ],
+      revisesDecisionId: null,
+      goalId: asked.id,
+    });
+    const linked = createGoal(document, { ...input, title: "Con una decisione" });
+    linkDecision(document, linked.id, decide(document, { id: null, value: "v", acceptedExample: "e", rationale: "r" }).id);
+    const worked = createGoal(document, { ...input, title: "Con un incarico" });
+    work(document, worked.id).status = "completed";
+    const proposed = proposeGoal(document, { ...input, title: "Proposto" });
+    appendEvent(document, "coordinator", { type: "card", kind: "goal", title: "Obiettivo proposto", detail: null, referenceId: proposed.id });
+    for (const goal of [talked, asked, linked, worked, proposed]) {
+      expect(goalDialogIsEmpty(document, goal.id)).toBe(false);
+      expect(() => deleteEmptyGoal(document, goal.id)).toThrow(/non è vuoto/);
+    }
+    expect(projectGoals(document)).toHaveLength(5);
+    expect(() => deleteEmptyGoal(document, "G-00000000")).toThrow(/non trovato/);
   });
 });

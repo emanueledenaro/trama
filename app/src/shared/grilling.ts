@@ -1,4 +1,4 @@
-import type { DecisionRequest, GrillingPlace, ProjectDocument } from "./domain";
+import { type DecisionRequest, type GrillingPlace, isOpenQuestion, type ProjectDocument } from "./domain";
 import { requestGoalId } from "./goals";
 
 /**
@@ -31,21 +31,25 @@ export function grillingSubject(document: ProjectDocument, requestId: string | n
   return null;
 }
 
-/** The grilling questions still waiting for the person's answer, for the grilling that covers `requestId`. */
+/**
+ * The grilling questions still waiting for the person's answer, for the grilling that covers `requestId`.
+ * A question the person withdrew is closed: it no longer blocks the next round or the plan (W03).
+ */
 export function openGrillingQuestions(document: ProjectDocument, requestId: string | null): DecisionRequest[] {
   const subject = grillingSubject(document, requestId);
   if (!subject) return [];
-  return document.decisionRequests.filter((q) => q.grilling?.subjectRequestId === subject && !q.outcome);
+  return document.decisionRequests.filter((q) => q.grilling?.subjectRequestId === subject && isOpenQuestion(q));
 }
 
 /**
- * Whether the person has settled the request by grilling: a grilling covers it and every one of its questions
- * has the person's answer. Those answers are the person's product decisions for the request.
+ * Whether the person has settled the request by grilling: a grilling covers it, none of its questions is open
+ * and the person answered at least one. Those answers are the person's product decisions for the request;
+ * a withdrawn question decides nothing.
  */
 export function grillingSettled(document: ProjectDocument, requestId: string | null): boolean {
   const subject = grillingSubject(document, requestId);
   if (!subject) return false;
-  const questions = document.decisionRequests.filter((q) => q.grilling?.subjectRequestId === subject);
+  const questions = document.decisionRequests.filter((q) => q.grilling?.subjectRequestId === subject && !q.withdrawal);
   return questions.length > 0 && questions.every((q) => q.outcome);
 }
 
@@ -75,7 +79,7 @@ export function placeGrillingQuestion(
     const latest = Math.max(...asked.map((q) => q.grilling!.round));
     if (round > latest + 1) throw new GrillingError(`The latest round is ${latest}: the next one is ${latest + 1}.`);
     if (round < latest) throw new GrillingError(`Round ${round} is closed: the current round is ${latest}.`);
-    if (round === latest + 1 && asked.some((q) => q.grilling!.round === latest && !q.outcome)) {
+    if (round === latest + 1 && asked.some((q) => q.grilling!.round === latest && isOpenQuestion(q))) {
       throw new GrillingError(`Round ${latest} still has open questions: wait for the person's answers before round ${round}.`);
     }
   }
