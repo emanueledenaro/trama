@@ -84,8 +84,8 @@ export function SearchPalette() {
           ]
         : []),
       { id: "open", label: "Apri progetto…", icon: <IconFolderPlus className={ICON} />, run: () => (close(), void act("project:openDialog", undefined)) },
-      { id: "connections", label: "Collegamenti", icon: <IconPlugConnected className={ICON} />, run: () => setDialog("connections") },
-      { id: "settings", label: "Impostazioni", icon: <IconSettings className={ICON} />, run: () => setDialog("settings") },
+      { id: "connections", label: "Collegamenti", icon: <IconPlugConnected className={ICON} />, run: () => { setDialog(null); useUi.getState().openSettings("connections"); } },
+      { id: "settings", label: "Impostazioni", icon: <IconSettings className={ICON} />, run: () => { setDialog(null); useUi.getState().openSettings("general"); } },
     ].map((item) => ({ ...item, group: "Azioni" }));
     const projects: PaletteItem[] = app.recentProjects.map((recent) => ({
       id: `project:${recent.id}`,

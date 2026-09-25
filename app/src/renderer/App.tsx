@@ -55,7 +55,7 @@ export function App() {
     const offState = window.trama.onState(setApp);
     const offMenu = window.trama.onMenu((command) => {
       const ui = useUi.getState();
-      if (command === "settings") ui.setDialog("settings");
+      if (command === "settings") ui.openSettings("general");
       else if (command === "createProject") ui.setDialog("createProject");
       else if (command === "guide") ui.setDialog("guide");
       else if (command === "exercises") {

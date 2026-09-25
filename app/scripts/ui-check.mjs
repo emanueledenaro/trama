@@ -203,8 +203,8 @@ await page.waitForTimeout(300);
 await shot("10c-search-result");
 await page.getByRole("button", { name: "Indietro" }).first().click();
 await page.getByRole("button", { name: /^ChatGPT/ }).click();
+await page.getByTestId("settings").waitFor();
 await shot("11-connections");
-await page.keyboard.press("Escape");
 await page.getByRole("button", { name: "Impostazioni" }).click();
 await shot("12-settings");
 await page.getByRole("button", { name: "Apri la guida" }).click();
@@ -212,6 +212,9 @@ await guide.waitFor();
 await shot("12a-guide-resume-dark");
 await guide.getByRole("button", { name: "Continua più tardi" }).click();
 await guide.waitFor({ state: "hidden" });
+// Impostazioni again closes the settings page and returns to the dialog.
+await page.getByRole("button", { name: "Impostazioni" }).click();
+await page.getByTestId("settings").waitFor({ state: "hidden" });
 
 // T19: the window sizes the layout is checked at, from the minimum (720x640) to full HD.
 // A narrow dialog gets the inspector floating over it, so the chat and the composer keep their width.

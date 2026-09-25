@@ -46,7 +46,10 @@ function StepActions({ step }: { step: StepState }) {
           >
             Verifica
           </Button>
-          <Button variant="outline" size="xs" onClick={() => setDialog("connections", "guide")}>
+          <Button variant="outline" size="xs" onClick={() => {
+              setDialog(null);
+              useUi.getState().openSettings("connections");
+            }}>
             Tutti i provider
           </Button>
           {skip}
