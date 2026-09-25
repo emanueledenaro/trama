@@ -106,8 +106,11 @@ export function resolveMandateRequest(
   return request;
 }
 
-/** Refuses to grant a mandate request the person can no longer answer: unknown, already resolved or superseded (W14). */
-export function assertMandateRequestGrantable(document: ProjectDocument, requestId: string | null): void {
+/**
+ * Refuses to grant or decline a mandate request the person can no longer answer: unknown, already resolved or
+ * superseded by a newer request (W14).
+ */
+export function assertMandateRequestAnswerable(document: ProjectDocument, requestId: string | null): void {
   if (!requestId) return;
   const request = document.mandateRequests.find((r) => r.id === requestId);
   if (!request) throw new DomainError(`Richiesta di mandato ${requestId} non trovata.`);

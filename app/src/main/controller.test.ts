@@ -422,6 +422,11 @@ describe("TramaController", () => {
     await controller!.grantMandate({ ...input, requestId: second!.id });
     expect(document.mandate?.version).toBe(1);
     expect(second!.resolution).toMatchObject({ kind: "granted", version: 1 });
+
+    // Declining the superseded card later must not revoke the mandate granted from the newer one.
+    await expect(controller!.revokeMandate("vecchia", first!.id)).rejects.toThrow(/superata/);
+    expect(document.mandate?.status).toBe("granted");
+    expect(first!.resolution?.kind).toBe("superseded");
   });
 
   it("refuses prepare_plan without a mandate and runs it within one", async () => {

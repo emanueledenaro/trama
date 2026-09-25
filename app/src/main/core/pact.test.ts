@@ -4,7 +4,7 @@ import { deriveTimelineRows, formatDuration } from "@shared/timeline";
 import { appendEvent, emptyDocument, recordReply, referencedPaths } from "./document";
 import {
   answerDecisionRequest,
-  assertMandateRequestGrantable,
+  assertMandateRequestAnswerable,
   createDecisionRequest,
   createMandateRequest,
   decide,
@@ -114,10 +114,10 @@ describe("Pact", () => {
     const base = { requestId: null, reason: "r", objectives: ["o"], priorities: [], scopeModuleIds: ["m"], authorizedActions: ["plan" as const], limits: [] };
     const first = createMandateRequest(document, base);
     const second = createMandateRequest(document, base);
-    expect(() => assertMandateRequestGrantable(document, first.id)).toThrow(/superata da .*M-/);
-    expect(() => assertMandateRequestGrantable(document, "M-UNKNOWN")).toThrow(DomainError);
-    expect(() => assertMandateRequestGrantable(document, second.id)).not.toThrow();
-    expect(() => assertMandateRequestGrantable(document, null)).not.toThrow();
+    expect(() => assertMandateRequestAnswerable(document, first.id)).toThrow(/superata da .*M-/);
+    expect(() => assertMandateRequestAnswerable(document, "M-UNKNOWN")).toThrow(DomainError);
+    expect(() => assertMandateRequestAnswerable(document, second.id)).not.toThrow();
+    expect(() => assertMandateRequestAnswerable(document, null)).not.toThrow();
   });
 });
 
