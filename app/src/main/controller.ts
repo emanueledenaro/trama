@@ -77,6 +77,7 @@ import {
   readIssue,
   readPullRequestStatus,
   updateIssueBody,
+  updateIssueText,
 } from "./core/github";
 import { convertLegacyDocument, readLegacyDocument, readLegacyRecentProjects } from "./core/legacyImport";
 import { type MonitorCheckpoint, MonitorStore, pollRepository } from "./core/monitor";
@@ -92,7 +93,7 @@ import {
   revokeMandate,
 } from "./core/pact";
 import { availableChecks, CHECKS, lendNodeDependencies, type ReadOnlyCheck, runReadOnlyCheck } from "./core/checks";
-import { parsePlan, PLAN_SCHEMA, PLANNING_INSTRUCTIONS, planPrompt } from "./core/plan";
+import { checkSpecSections, PlanError, type PlannerSkills, plannerTurn, readPlannerAnswer, SPEC_TRIAGE_LABEL, specMarkdown } from "./core/plan";
 import { approvePactDemo, inspectPactDemo, runPactDemo } from "./core/pactDemo";
 import { readRepositoryFile, scanRepository } from "./core/repositoryScanner";
 import { messageStyle } from "./core/messageStyle";
@@ -2713,10 +2714,28 @@ export class TramaController {
     this.changed();
   }
 
-  /** The person corrects a ready plan: steps, behavior and example (T06). */
-  editPlan(input: { planId: string; steps: string[]; proposedBehavior: string; acceptedExample: string }): void {
+  /**
+   * The person corrects a plan: a spec by its sections (M04), a plan written before M04 by its steps, behavior
+   * and example (T06). A spec already published on GitHub is updated there too.
+   */
+  editPlan(input: { planId: string; sections: import("@shared/domain").SpecSections } | { planId: string; steps: string[]; proposedBehavior: string; acceptedExample: string }): void {
     const project = this.requireProject();
     const plan = project.document.plans.find((p) => p.id === input.planId);
+    if ("sections" in input) {
+      if (!plan?.spec?.sections || (plan.status !== "ready" && plan.status !== "stale")) throw new DomainError("Il piano non ha ancora una spec da correggere.");
+      try {
+        plan.spec.sections = checkSpecSections(input.sections);
+      } catch (error) {
+        if (error instanceof PlanError) throw new DomainError(error.message);
+        throw error;
+      }
+      plan.editedAt = new Date().toISOString();
+      plan.updatedAt = plan.editedAt;
+      appendEvent(project.document, "person", { type: "activity", title: `Spec del piano ${plan.id} corretta`, detail: plan.spec.sections.title, tone: "info" }, plan.requestId);
+      this.changed();
+      if (plan.spec.issue) void this.updatePublishedSpec(project, plan);
+      return;
+    }
     if (!plan?.proposal) throw new DomainError("Il piano non ha ancora una proposta da correggere.");
     const steps = input.steps.map((s) => s.trim()).filter(Boolean);
     if (!steps.length || !input.proposedBehavior.trim()) throw new DomainError("Un piano corretto ha almeno un passo e un comportamento.");
@@ -2727,6 +2746,103 @@ export class TramaController {
     this.changed();
   }
 
+  /**
+   * The person answers to-spec's seam check on the plan card (M04): the seams as proposed, or a correction in their
+   * own words. The planner then writes the spec with that answer.
+   */
+  answerSeams(input: { planId: string; confirmed: boolean; note: string | null }): void {
+    const project = this.requireProject();
+    const plan = project.document.plans.find((p) => p.id === input.planId);
+    if (!plan?.spec || plan.status !== "seams") throw new DomainError("Il piano non aspetta una risposta sui seam.");
+    const note = input.note?.trim() || null;
+    if (!input.confirmed && !note) throw new DomainError("Scrivi cosa cambiare nei seam.");
+    const now = new Date().toISOString();
+    plan.spec.seamsAnswer = { confirmed: input.confirmed, note: input.confirmed ? null : note, at: now };
+    plan.status = "planning";
+    plan.failure = null;
+    plan.updatedAt = now;
+    appendEvent(
+      project.document,
+      "person",
+      { type: "activity", title: input.confirmed ? `Seam del piano ${plan.id} confermati` : `Seam del piano ${plan.id} corretti`, detail: plan.spec.seamsAnswer.note, tone: "info" },
+      plan.requestId,
+    );
+    this.changed();
+    void this.runPlanner(project, plan);
+  }
+
+  /** The person publishes a written spec on GitHub: one that stayed in Trama, or whose publication failed (M04). */
+  async publishPlanSpec(planId: string): Promise<void> {
+    const project = this.requireProject();
+    const plan = project.document.plans.find((p) => p.id === planId);
+    if (!plan?.spec?.sections || plan.status !== "ready") throw new DomainError("Il piano non ha una spec pronta da pubblicare.");
+    if (plan.spec.issue) return;
+    if (!this.specRepository(project)) throw new DomainError("GitHub non è collegato: la spec resta in Trama.");
+    await this.publishSpec(project, plan);
+    if (plan.spec.publishFailure) throw new DomainError(`La spec non è stata pubblicata su GitHub: ${plan.spec.publishFailure}`);
+  }
+
+  /** The repository a spec is published to: the project's GitHub when it is connected, otherwise none. */
+  private specRepository(project: ActiveProjectState): string | null {
+    return project.github.repository && project.github.status !== "unavailable" ? project.github.repository : null;
+  }
+
+  /** to-spec's publication: a GitHub issue with the ready-for-agent label when GitHub is connected; otherwise the spec stays in Trama. */
+  private async publishSpec(project: ActiveProjectState, plan: WorkPlan): Promise<void> {
+    const spec = plan.spec;
+    const repository = this.specRepository(project);
+    if (!spec?.sections || spec.issue || !repository) return;
+    try {
+      const issue = await createIssue(repository, spec.sections.title, specMarkdown(spec.sections), [SPEC_TRIAGE_LABEL]);
+      spec.issue = { ...issue, at: new Date().toISOString() };
+      spec.publishFailure = null;
+      appendEvent(
+        project.document,
+        "trama",
+        { type: "activity", title: `Spec del piano ${plan.id} pubblicata come issue #${issue.number}`, detail: issue.url, tone: "tool" },
+        plan.requestId,
+      );
+      void this.refreshGitHub();
+    } catch (error) {
+      spec.publishFailure = classifyGitHubError((error as Error).message).message;
+    }
+    this.changedIn(project);
+  }
+
+  /** A spec corrected after its publication: its issue takes the new title and text. */
+  private async updatePublishedSpec(project: ActiveProjectState, plan: WorkPlan): Promise<void> {
+    const spec = plan.spec;
+    const repository = this.specRepository(project);
+    if (!spec?.sections || !spec.issue) return;
+    try {
+      if (!repository) throw new Error("GitHub non è collegato.");
+      await updateIssueText(repository, spec.issue.number, spec.sections.title, specMarkdown(spec.sections));
+      spec.publishFailure = null;
+    } catch (error) {
+      spec.publishFailure = `La issue #${spec.issue.number} non ha preso la correzione: ${classifyGitHubError((error as Error).message).message}`;
+    }
+    this.changedIn(project);
+  }
+
+  private plannerSkillsLoad: Promise<PlannerSkills> | null = null;
+
+  /** AI Hero's to-spec and codebase-design skills as bundled with Trama, for the planner (M04). */
+  private plannerSkills(): Promise<PlannerSkills> {
+    const directory = join(this.host.aiHeroResourceDirectory, "skills");
+    this.plannerSkillsLoad ??= Promise.all([loadNativeSkill(directory, "to-spec"), loadNativeSkill(directory, "codebase-design")]).then(
+      ([toSpec, codebaseDesign]) => ({ toSpec, codebaseDesign }),
+      (error: unknown) => {
+        this.plannerSkillsLoad = null;
+        throw error;
+      },
+    );
+    return this.plannerSkillsLoad;
+  }
+
+  /**
+   * Runs the planner's next turn for the plan, after AI Hero's to-spec (M04): first the seams to test, which wait for
+   * the person; after the person's answer, the spec, which Trama publishes on GitHub when connected.
+   */
   private async runPlanner(project: ActiveProjectState, plan: WorkPlan): Promise<void> {
     const document = project.document;
     const startState = await this.repositoryState(project.rootPath);
@@ -2737,34 +2853,25 @@ export class TramaController {
     this.planners.set(plan.id, client);
     try {
       if (!model) throw new Error("Nessun modello disponibile per il pianificatore.");
-      const snapshot = project.snapshot;
-      const sources = {
-        sourceSnapshotID: snapshot.headSHA ?? snapshot.scannedAt,
-        knownModuleIDs: snapshot.modules.map((m) => m.id),
-        knownFiles: snapshot.modules.flatMap((m) => m.files.map((f) => f.relativePath)),
-        existingDecisionIDs: document.decisions.map((d) => d.id),
-      };
-      const moduleNames = plan.moduleIds.length
-        ? plan.moduleIds.map((id) => snapshot.modules.find((m) => m.id === id)?.name ?? id).join(", ")
-        : "Intero progetto";
-      const decisions = document.decisions.map((d) => `${d.id} v${d.version}: ${d.value}. Esempio: ${d.acceptedExample}`).join("\n");
-      const opening = await client.openThread({
-        model,
-        cwd: project.rootPath,
-        developerInstructions: PLANNING_INSTRUCTIONS,
-        ephemeral: true,
-      });
+      const turn = plannerTurn(await this.plannerSkills(), provider === "codex", { plan, document, snapshot: project.snapshot });
+      const opening = await client.openThread({ model, cwd: project.rootPath, developerInstructions: turn.developerInstructions, ephemeral: true });
       const raw = await client.runTurn({
         threadId: opening.threadId,
-        prompt: planPrompt(plan.summary + (plan.issueNumber ? ` (issue #${plan.issueNumber})` : ""), moduleNames, decisions, sources),
+        prompt: turn.prompt,
         cwd: project.rootPath,
         model,
-        outputSchema: PLAN_SCHEMA,
+        outputSchema: turn.outputSchema,
+        skills: turn.skills,
         onEvent: () => undefined,
       });
       if (plan.status !== "planning") return; // cancelled meanwhile: a late result does not come back
-      const proposal = parsePlan(extractJsonAnswer(raw), sources);
-      plan.proposal = proposal;
+      const spec = readPlannerAnswer(plan, extractJsonAnswer(raw), turn.sources);
+      plan.spec = spec;
+      if (!spec.sections) {
+        // to-spec's seam check: the seams wait for the person before the spec is written.
+        plan.status = "seams";
+        return;
+      }
       const changedMeanwhile = (await this.repositoryState(project.rootPath)) !== startState;
       if (plan.status !== "planning") return; // cancelled during the last check (review #12)
       if (changedMeanwhile) {
@@ -2773,21 +2880,7 @@ export class TramaController {
         return;
       }
       plan.status = "ready";
-      for (const question of proposal.questions) {
-        const request = createDecisionRequest(document, {
-          requestId: plan.requestId,
-          category: "product",
-          question: question.question,
-          concreteCase: question.scenario || proposal.summary,
-          alternatives: question.options.map((o) => ({ behavior: o.behavior, example: o.example, consequence: o.rationale || null })),
-          revisesDecisionId: question.revisesDecisionID,
-          goalId: requestGoalId(document, plan.requestId),
-        });
-        plan.decisionRequestIds.push(request.id);
-        // A question that revises a decision pauses the work relying on it, as request_decision does (review #7).
-        if (request.revisesDecisionId) this.stopWorkDependingOn(request.revisesDecisionId);
-        appendEvent(document, "trama", { type: "card", kind: "decision", title: "Decisione", detail: null, referenceId: request.id }, plan.requestId);
-      }
+      await this.publishSpec(project, plan);
     } catch (error) {
       if (plan.status !== "planning") return;
       plan.status = "failed";

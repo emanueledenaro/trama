@@ -22,7 +22,7 @@ Tutte le skill delle cartelle `skills/engineering`, `skills/productivity` e `ski
 
 ## Skill eseguite nel flusso di Trama
 
-Trama esegue anche le skill incluse dentro il proprio flusso, con il testo originale (issue #118). `app/src/main/core/nativeSkills.ts` consegna `SKILL.md` e i file di riferimento accanto senza modifiche, seguiti da un collegamento di Trama separato che traduce i verbi generici della skill negli strumenti di Trama. La prima skill consegnata così è `grilling`.
+Trama esegue anche le skill incluse dentro il proprio flusso, con il testo originale (issue #118). `app/src/main/core/nativeSkills.ts` consegna `SKILL.md` e i file di riferimento accanto senza modifiche, seguiti da un collegamento di Trama separato che traduce i verbi generici della skill negli strumenti di Trama. Oggi le skill consegnate così sono `grilling`, al Coordinatore, e `to-spec` con `codebase-design`, al pianificatore che scrive il piano di una richiesta come spec (issue #121). Il controllo dei seam che `to-spec` chiede alla persona diventa la scheda del piano, dove la persona conferma o corregge i seam; la pubblicazione sull'issue tracker è una issue GitHub quando il progetto ha GitHub collegato.
 
 ## Nomi cambiati
 

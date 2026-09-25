@@ -398,7 +398,7 @@ export const COORDINATOR_TOOLS: ToolDefinition[] = [
   {
     name: "prepare_plan",
     description:
-      "Within the mandate, have Trama's planner write a plan for a change the person asked for, for the person to review in the conversation. kind says what the work is: agreedTicket, decidedBehaviorCorrection (name the decisionIDs it restores), newFeature or tradeOff (these two go to the person, unless the person has answered every grilling question of the request: then you may plan them). The plan runs in the background and appears as a card; its behavior questions become decision cards.",
+      "Within the mandate, have Trama's planner write a plan for a change the person asked for, for the person to review in the conversation. kind says what the work is: agreedTicket, decidedBehaviorCorrection (name the decisionIDs it restores), newFeature or tradeOff (these two go to the person, unless the person has answered every grilling question of the request: then you may plan them). The plan is a spec: the planner runs AI Hero's to-spec skill on the request's conversation, in the background. It first proposes the seams to test, which the person confirms or corrects on the plan card; then it writes the spec, which Trama publishes as a GitHub issue when GitHub is connected, otherwise it stays in Trama.",
     properties: {
       kind: { type: "string", enum: WORK_KINDS },
       moduleIDs: list(1),
@@ -914,7 +914,7 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
           return toolFailure("grilling_open", `The grilling of this request still has open questions (${open.map((q) => q.id).join(", ")}): the plan starts when the person has answered them and confirmed the shared understanding.`);
         }
         const planId = context.orderPlan({ kind, moduleIds, summary, issueNumber: typeof args.issueNumber === "number" ? args.issueNumber : null });
-        return toolSuccess({ planID: planId, status: "planning", note: "The plan appears as a card when the planner ends." });
+        return toolSuccess({ planID: planId, status: "planning", note: "The plan appears as a card: first the seams for the person to check, then the spec." });
       }
       case "declare_candidate": {
         const assignment = findAssignment(document, typeof args.assignment === "string" ? args.assignment : "");
