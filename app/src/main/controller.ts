@@ -67,7 +67,14 @@ import { prepareDemoProject } from "./core/demoProject";
 import { appendEvent, emptyDocument, handoverTranscript, moveEvent, recordReply, referencedPaths } from "./core/document";
 import { candidateGoalId, dialogComposer, findGoal, projectGoals, requestGoalId } from "@shared/goals";
 import { COORDINATOR_MOVES, type CoordinatorMove, nextStepViews, PHASE_LABELS, workState, workStateText } from "./core/workPhase";
-import { AUTOMATIC_MOVE_DETAIL, automaticMove, automaticMoveSection, type ContinuationGuards, type WorkEvent } from "./core/continuousWork";
+import {
+  AUTOMATIC_MOVE_DETAIL,
+  automaticMove,
+  automaticMoveSection,
+  confirmationFeedback,
+  type ContinuationGuards,
+  type WorkEvent,
+} from "./core/continuousWork";
 import { openGrillingQuestions } from "@shared/grilling";
 import {
   archiveGoal,
@@ -1652,6 +1659,9 @@ export class TramaController {
       const work = workState(document, request.id);
       sections.push(workStateText(work));
       if (automatic) sections.push(automaticMoveSection(automatic));
+      // The previous reply closed with a generic confirmation question: Trama tells the Coordinator, not the model's own memory (W04).
+      const feedback = confirmationFeedback(document, request.id);
+      if (feedback) sections.push(feedback);
       const skills = skillInvocations(trimmed, project.skills);
       sections.push(codexSkillText(trimmed, project.skills));
       appendEvent(
@@ -1668,6 +1678,7 @@ export class TramaController {
             report ? "aggiornamenti del team" : null,
             work.phase ? `fase: ${PHASE_LABELS[work.phase]}` : null,
             automatic ? `mossa automatica: ${COORDINATOR_MOVES[automatic].label}` : null,
+            feedback ? "richiamo: domanda di conferma generica" : null,
             skills.length ? `skill: ${skills.map((s) => s.name).join(", ")}` : null,
           ]
             .filter(Boolean)

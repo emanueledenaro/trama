@@ -52,6 +52,8 @@ Lavoro continuo: dentro il mandato il Coordinatore fa da solo le sue mosse e chi
 
 Mossa automatica: un turno del Coordinatore avviato da Trama con il lavoro continuo. Nella chat è una riga di Trama con il nome della mossa, non un messaggio della persona, e finché il turno lavora ha il pulsante Ferma. Una mossa fermata resta interrotta e non ne parte un'altra.
 
+Domanda di conferma generica: una risposta del Coordinatore che chiude chiedendo il permesso di andare avanti ("Vuoi che...?", "Procedo?", "Fammi sapere se..."). Trama la riconosce dal testo, senza il modello, e al turno successivo dello stesso dialogo lo dice al Coordinatore. La cronologia registra il richiamo.
+
 Studio del progetto: la conoscenza che il Coordinatore ha del progetto attivo prima di dialogare: codice e moduli, documenti, issue e pull request, decisioni, mandato, incarichi e candidati, eventi del monitor e cronologia della chat. Lo studio avviene all'apertura del progetto e si aggiorna quando il progetto cambia.
 
 Memoria del Coordinatore: le note che il Coordinatore conserva per un progetto oltre la durata della sua finestra di contesto. È distinta dallo studio, che Trama ricava dai dati, e dalla cronologia, che è la conversazione stessa. Ha due parti con un limite di caratteri: le note sul progetto (`MEMORY.md`) e il profilo della persona (`USER.md`), comune ai suoi progetti. Sono note del Coordinatore, non decisioni: non sostituiscono il Patto né il mandato (ADR 0014).

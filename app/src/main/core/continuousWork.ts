@@ -75,5 +75,56 @@ export function automaticMoveSection(move: CoordinatorMove): string {
   ].join("\n");
 }
 
+/**
+ * Openings of a generic confirmation question: the Coordinator asks leave to go on instead of going on
+ * ("Vuoi che prepari il piano?", "Procedo?", "Fammi sapere se..."). A product question is a card, not one of these.
+ */
+const GENERIC_CONFIRMATION = [
+  /^(vuoi|volete|preferisci|preferite|desideri) che\b/i,
+  /^(vuoi|volete) (procedere|andare avanti|continuare|partire|iniziare)\b/i,
+  /^(procedo|proseguo|continuo|vado avanti|parto|inizio|comincio)\b/i,
+  /^(posso|devo) (procedere|proseguire|continuare|andare avanti|partire|iniziare|cominciare)\b/i,
+  /^(ti|vi) va (bene )?(se|di)\b/i,
+  /^va bene (se|così)\b/i,
+  /^(confermi|confermate)\b/i,
+  /^fammi sapere\b/i,
+  /^dimmi (se|tu)\b/i,
+];
+
+/**
+ * The generic confirmation question that closes a Coordinator reply (W04), or null: the last sentence of the text,
+ * when it asks the person leave to go on. Pure, so Trama's feedback does not depend on the model.
+ */
+export function closingConfirmation(text: string): string | null {
+  const paragraphs = text.trim().split(/\n\s*\n/);
+  // Markdown emphasis and quote marks around the paragraph do not change the sentence.
+  const last = (paragraphs.at(-1) ?? "").replace(/[*_`]/g, "").trim();
+  // The last sentence: what follows the last full stop, exclamation or question mark before the end.
+  const sentence = (last.match(/[^.!?\n]+[.!?]*\s*$/)?.[0] ?? last).replace(/^[\s>#-]+/, "").trim();
+  if (!sentence) return null;
+  const asks = sentence.endsWith("?") || /^fammi sapere\b|^dimmi (se|tu)\b/i.test(sentence);
+  return asks && GENERIC_CONFIRMATION.some((pattern) => pattern.test(sentence)) ? sentence : null;
+}
+
+/**
+ * What the Coordinator reads when its previous reply in the dialog of `requestId` closed with a generic confirmation
+ * question (W04): the question, and that it goes on by itself within the mandate. Null otherwise.
+ */
+export function confirmationFeedback(document: ProjectDocument, requestId: string): string | null {
+  const index = document.requests.findIndex((r) => r.id === requestId);
+  if (index < 0) return null;
+  const goalId = document.requests[index]!.goalId ?? null;
+  const previous = document.requests.slice(0, index).findLast((r) => (r.goalId ?? null) === goalId);
+  if (!previous) return null;
+  const reply = document.events.findLast((e) => e.requestId === previous.id && e.content.type === "coordinatorText");
+  if (reply?.content.type !== "coordinatorText") return null;
+  const question = closingConfirmation(reply.content.text);
+  if (!question) return null;
+  return [
+    "## Domanda di conferma generica",
+    `La tua risposta precedente chiudeva con "${question.slice(0, 200)}". Non chiudere così: dentro il mandato fai le tue mosse da solo, e quello che spetta alla persona (decisioni di prodotto, comprensione condivisa, mandato, team, unione) passa da una scheda o dal pulsante del passo, mai da una domanda alla fine del testo.`,
+  ].join("\n");
+}
+
 /** The line the chat shows for an automatic move, also read back in the history. */
 export const AUTOMATIC_MOVE_DETAIL = "Mossa del Coordinatore avviata da Trama dentro il mandato, senza chiederti conferma.";

@@ -467,6 +467,24 @@ describe("TramaController", () => {
     }
   }, 60_000);
 
+  it("tells the Coordinator when its previous reply closed with a generic confirmation question (W04)", async () => {
+    await setup();
+    const project = controller!.snapshot.project!;
+    const document = project.document;
+    const sentDetail = (requestId: string) =>
+      document.events.find((e) => e.requestId === requestId && e.content.type === "activity" && e.content.title === "Messaggio inviato al Coordinatore")
+        ?.content;
+    await controller!.send("[chiede-conferma] Guarda il modulo Orders", null, null, null);
+    await until(() => project.runningRequestId === null && document.requests.length === 1, 20_000);
+    await controller!.send("Ci sei?", null, null, null);
+    await until(() => project.runningRequestId === null && document.requests.length === 2, 20_000);
+    expect(sentDetail(document.requests[1]!.id)).toMatchObject({ detail: expect.stringContaining("richiamo: domanda di conferma generica") });
+    // The reply that followed ends with a fact: the next turn carries no reminder.
+    await controller!.send("Grazie", null, null, null);
+    await until(() => project.runningRequestId === null && document.requests.length === 3, 20_000);
+    expect(sentDetail(document.requests[2]!.id)).not.toMatchObject({ detail: expect.stringContaining("richiamo") });
+  }, 60_000);
+
   it("refuses prepare_plan without a mandate and runs it within one", async () => {
     await setup();
     const project = controller!.snapshot.project!;

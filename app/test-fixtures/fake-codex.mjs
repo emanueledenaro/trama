@@ -385,7 +385,10 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
       const reply =
         (text.startsWith("Studio del progetto scritto da Trama")
           ? "Ho letto lo studio: è un progetto Swift con i moduli Catalog, Inventory, Orders, Payments e Users. Vedi Sources/Orders/CancelPaidOrder.swift."
-          : `Ho ricevuto: **${text.slice(0, 200)}**. Questa risposta arriva dal server di prova. Vedi Sources/Orders/CancelPaidOrder.swift.`) + (await declareStep());
+          : `Ho ricevuto: **${text.slice(0, 200)}**. Questa risposta arriva dal server di prova. Vedi Sources/Orders/CancelPaidOrder.swift.`) +
+        // "[chiede-conferma]" closes the reply with a generic confirmation question, the habit W04 corrects.
+        (text.includes("[chiede-conferma]") ? "\n\nVuoi che prepari il piano?" : "") +
+        (await declareStep());
       const pieces = reply.match(/.{1,12}/g);
       send({ method: "item/started", params: { threadId, turnId, item: { id: "msg", type: "agentMessage", phase: "final_answer" } } });
       send({ method: "item/completed", params: { threadId, turnId, item: { id: "cmd", type: "commandExecution", command: "git status --short", exitCode: 0, status: "completed", aggregatedOutput: "" } } });

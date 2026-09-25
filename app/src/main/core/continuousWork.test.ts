@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { CoordinatorRequest, MandateAction, ProjectDocument, RequestStep, WorkPlan } from "@shared/domain";
 import { placeGrillingQuestion } from "@shared/grilling";
-import { AUTOMATIC_MOVES_IN_A_ROW, automaticMove, type ContinuationGuards } from "./continuousWork";
-import { emptyDocument } from "./document";
+import { AUTOMATIC_MOVES_IN_A_ROW, automaticMove, closingConfirmation, confirmationFeedback, type ContinuationGuards } from "./continuousWork";
+import { emptyDocument, recordReply } from "./document";
 import { answerDecisionRequest, createDecisionRequest, createMandateRequest, grantMandate } from "./pact";
 import { assign, confirmTeam, endTurn, proposeTeam } from "./team";
 
@@ -226,5 +226,39 @@ describe("automaticMove: the Coordinator's move Trama starts by itself (W04)", (
     expect(moveOf(document, "r3", "planEnded")).toBeNull();
     request(document, "person");
     expect(moveOf(document, "person")).toBe("assignWork");
+  });
+});
+
+describe("closingConfirmation: the generic question at the end of a reply (W04)", () => {
+  it("finds the question that asks leave to go on", () => {
+    expect(closingConfirmation("Ho letto il modulo Orders.\n\nVuoi che prepari il piano?")).toBe("Vuoi che prepari il piano?");
+    expect(closingConfirmation("Il piano è pronto. Procedo con l'assegnazione?")).toBe("Procedo con l'assegnazione?");
+    expect(closingConfirmation("Ho finito le verifiche.\n\n**Posso procedere con la revisione?**")).toBe("Posso procedere con la revisione?");
+    expect(closingConfirmation("Ecco il riepilogo. Fammi sapere se va bene.")).toBe("Fammi sapere se va bene.");
+    expect(closingConfirmation("Ti va bene se assegno la fetta ad Ada?")).toBe("Ti va bene se assegno la fetta ad Ada?");
+  });
+
+  it("leaves alone replies that end with a fact, or with a question that is not a confirmation", () => {
+    expect(closingConfirmation("Ho preparato il piano: due fette, Ada lavora sulla prima.")).toBeNull();
+    expect(closingConfirmation("Vuoi che prepari il piano? No: lo preparo io. Il piano è pronto.")).toBeNull();
+    expect(closingConfirmation("Il test fallisce su Orders. Perché il pagamento resta aperto?")).toBeNull();
+    expect(closingConfirmation("")).toBeNull();
+  });
+});
+
+describe("confirmationFeedback: Trama tells the Coordinator about its closing question (W04)", () => {
+  it("reads the previous reply of the same dialog only", () => {
+    const document = emptyDocument("p");
+    request(document, "r1");
+    recordReply(document, "r1", "Ho letto lo studio.\n\nVuoi che prepari il piano?", "gpt-5.5", []);
+    request(document, "g1", { goalId: "G-1" });
+    recordReply(document, "g1", "Obiettivo registrato.", "gpt-5.5", []);
+    request(document, "r2");
+    request(document, "g2", { goalId: "G-1" });
+
+    expect(confirmationFeedback(document, "r2")).toContain('chiudeva con "Vuoi che prepari il piano?"');
+    expect(confirmationFeedback(document, "g2")).toBeNull();
+    expect(confirmationFeedback(document, "r1")).toBeNull();
+    expect(confirmationFeedback(document, "missing")).toBeNull();
   });
 });
