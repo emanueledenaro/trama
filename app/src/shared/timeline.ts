@@ -154,6 +154,13 @@ export function deriveTimelineRows(
   return rows;
 }
 
+/** The records whose card a row shows (questions, mandate, team, plan, candidate), so a next step can bring it into view (W01). */
+export function rowAnchors(row: TimelineRow): string[] {
+  if (row.kind === "grillingRound") return row.questionIds;
+  if (row.kind === "card" && row.event.content.type === "card" && row.event.content.referenceId) return [row.event.content.referenceId];
+  return [];
+}
+
 /** Durations as the Swift app formats them: "450 ms", "2,5 s", "12 s", "1m 5s". */
 export function formatDuration(ms: number): string {
   if (ms < 1_000) return `${Math.round(ms)} ms`;

@@ -277,7 +277,8 @@ describe("TramaController", () => {
     await setup();
     const project = controller!.snapshot.project!;
     await controller!.send("Come si annulla un ordine pagato?", null, null, null);
-    await controller!.preparePlanForRequest(project.document.requests[0]!.id);
+    const request = project.document.requests[0]!;
+    controller!.orderPlan({ requestId: request.id, orderedBy: "person", kind: "agreedTicket", moduleIds: [], summary: request.text, issueNumber: null });
     const plan = project.document.plans[0]!;
     await until(() => plan.status !== "planning");
     expect(plan.status).toBe("ready");
@@ -291,7 +292,7 @@ describe("TramaController", () => {
     const project = controller!.snapshot.project!;
     await controller!.send("Come si annulla un ordine pagato?", null, null, null);
     const requestId = project.document.requests[0]!.id;
-    await controller!.preparePlanForRequest(requestId);
+    controller!.orderPlan({ requestId, orderedBy: "person", kind: "agreedTicket", moduleIds: [], summary: "Annullamento", issueNumber: null });
     const plan = project.document.plans[0]!;
     await until(() => plan.status !== "planning");
     expect(() => controller!.editPlan({ planId: plan.id, steps: [" "], proposedBehavior: "x", acceptedExample: "" })).toThrow(/almeno un passo/);
@@ -338,8 +339,7 @@ describe("TramaController", () => {
     const rows = deriveTimelineRows(document.events, document.requests, null, new Set(), document.decisionRequests);
     expect(rows.filter((r) => r.kind === "grillingRound")).toEqual([expect.objectContaining({ round: 1, questionIds: round1.map((q) => q.id) })]);
 
-    // Neither the person nor the Coordinator can start the plan while the round is open.
-    await expect(controller!.preparePlanForRequest(subject)).rejects.toThrow(/rispondi prima alle 2 domande aperte/);
+    // The Coordinator cannot start the plan while the round is open.
     await controller!.grantMandate({ requestId: null, objectives: ["o"], priorities: [], scopeModuleIds: ["Sources/Orders"], authorizedActions: ["plan"], limits: [] });
     await controller!.send("[piano]", null, null, null);
     expect(document.plans).toHaveLength(0);
@@ -353,13 +353,40 @@ describe("TramaController", () => {
     await controller!.send("[grilling:2]", null, null, null);
     const round2 = document.decisionRequests[2]!;
     expect(round2.grilling).toMatchObject({ subjectRequestId: subject, round: 2, number: 1 });
-    await expect(controller!.preparePlanForRequest(subject)).rejects.toThrow(/rispondi prima alla domanda aperta/);
+    await controller!.send("[piano]", null, null, null);
+    expect(document.plans).toHaveLength(0);
     await controller!.answerDecision(round2.id, 1, null);
     expect(document.decisions.map((d) => d.value)).toEqual(["Solo il supporto", "Anche il cliente", "Anche il cliente"]);
 
-    await controller!.preparePlanForRequest(subject);
+    await controller!.send("[piano]", null, null, null);
     expect(document.plans).toHaveLength(1);
     await until(() => document.plans[0]!.status !== "planning");
+  });
+
+  it("closes a turn with the one next step the work allows, and with none after a greeting (W01)", async () => {
+    await setup();
+    const project = controller!.snapshot.project!;
+    const document = project.document;
+    // A greeting has no work: Trama refuses the step and shows no button.
+    await controller!.send("[passo:preparePlan] Ciao", null, null, null);
+    const greeting = document.requests[0]!;
+    expect(greeting.nextStep).toBeUndefined();
+    expect(document.events.at(-1)!.content).toMatchObject({ text: expect.stringContaining("No move is allowed now") });
+
+    // A request for work: the grilling round, then one step, the person's answers.
+    await controller!.send("[grilling:1] [passo:answerQuestions] Gli ordini pagati annullati vanno in revisione", null, null, null);
+    const work = document.requests[1]!;
+    expect(work.nextStep).toMatchObject({ move: "answerQuestions", reason: "Il lavoro aspetta questo passo." });
+    await until(() => Boolean(project.nextSteps[work.id]));
+    expect(project.nextSteps).toEqual({
+      [work.id]: expect.objectContaining({ label: "Rispondi alle 2 domande", actor: "person", targetId: document.decisionRequests[0]!.id }),
+    });
+
+    // Each turn gives the Coordinator the phase; the answer starts a new turn, whose reply declared no step.
+    await controller!.answerDecision(document.decisionRequests[0]!.id, 0, null);
+    const sent = document.events.filter((e) => e.content.type === "activity" && e.content.title === "Messaggio inviato al Coordinatore").at(-1);
+    expect(sent?.content).toMatchObject({ detail: expect.stringContaining("fase: chiarimento") });
+    await until(() => Object.keys(project.nextSteps).length === 0);
   });
 
   it("refuses prepare_plan without a mandate and runs it within one", async () => {

@@ -1,8 +1,12 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { COORDINATOR_TOOLS, developerInstructions, GRILLING_BINDING } from "./coordinatorTools";
+import { placeGrillingQuestion } from "@shared/grilling";
+import { COORDINATOR_TOOLS, developerInstructions, GRILLING_BINDING, NEXT_STEP_RULES, runCoordinatorTool, type ToolContext } from "./coordinatorTools";
+import { emptyDocument } from "./document";
 import { deliverNativeSkill, loadNativeSkill } from "./nativeSkills";
+import { createDecisionRequest } from "./pact";
+import { NEXT_MOVES } from "./workPhase";
 
 describe("Coordinator grilling instructions (M01, M02)", () => {
   it("carry the original grilling skill with its binding, when to skip it and the confirmation", async () => {
@@ -20,5 +24,64 @@ describe("Coordinator grilling instructions (M01, M02)", () => {
     const tool = COORDINATOR_TOOLS.find((t) => t.name === "request_decision")!;
     expect(Object.keys(tool.properties)).toEqual(expect.arrayContaining(["grillingRound", "recommendedAlternative"]));
     expect(tool.required).not.toContain("grillingRound");
+  });
+});
+
+describe("declare_next_step: the one next step of a turn (W01)", () => {
+  const setup = () => {
+    const document = emptyDocument("p");
+    document.requests.push({ id: "r1", text: "Gli ordini annullati vanno in revisione", moduleId: null, state: "running", model: null, effort: null, createdAt: "", completedAt: null, failure: null });
+    let changes = 0;
+    // declare_next_step reads only the document and the running request, and reports a change.
+    const context = (runningRequestId: string | null) => ({ document, runningRequestId, changed: () => void changes++ }) as unknown as ToolContext;
+    return { document, context, changes: () => changes };
+  };
+  const declare = (move: string, context: ToolContext, reason = "Servono le tue risposte per il piano.") =>
+    runCoordinatorTool("declare_next_step", { move, reason }, context);
+
+  it("is a Coordinator tool over Trama's moves, and the instructions say when to use it", () => {
+    const tool = COORDINATOR_TOOLS.find((t) => t.name === "declare_next_step")!;
+    expect(tool.properties.move).toEqual({ type: "string", enum: NEXT_MOVES });
+    expect(tool.required).toEqual(["move", "reason"]);
+    expect(developerInstructions("Demo")).toContain(NEXT_STEP_RULES);
+  });
+
+  it("refuses a step when no move is allowed, as after a greeting, and outside a turn", async () => {
+    const { document, context } = setup();
+    const refused = await declare("preparePlan", context("r1"));
+    expect(refused.isError).toBe(true);
+    expect(refused.content[0]!.text).toContain("No move is allowed now");
+    expect((await declare("answerQuestions", context(null))).isError).toBe(true);
+    expect(document.requests[0]!.nextStep).toBeUndefined();
+  });
+
+  it("records an allowed move on the running request, refuses the others and lets a second call replace the first", async () => {
+    const { document, context, changes } = setup();
+    const grilling = placeGrillingQuestion(document, { runningRequestId: "r1", round: 1, recommendedIndex: 0, alternatives: 2 });
+    createDecisionRequest(document, {
+      requestId: "r1",
+      category: "product",
+      question: "Chi vede gli ordini in revisione?",
+      concreteCase: "Ordine 42",
+      alternatives: [
+        { behavior: "Solo il supporto", example: "Il supporto vede l'ordine 42", consequence: null },
+        { behavior: "Anche il cliente", example: "Il cliente vede lo stato review", consequence: null },
+      ],
+      revisesDecisionId: null,
+      grilling,
+    });
+    const wrong = await declare("preparePlan", context("r1"));
+    expect(wrong.isError).toBe(true);
+    expect(wrong.content[0]!.text).toContain("preparePlan is not allowed now. Allowed moves: answerQuestions.");
+
+    const accepted = await declare("answerQuestions", context("r1"), "Servono le tue risposte.\nSeconda riga ignorata");
+    expect(accepted.isError).toBeFalsy();
+    expect(JSON.parse(accepted.content[0]!.text)).toMatchObject({ move: "answerQuestions", label: "Rispondi alla domanda", actor: "person", phase: "clarification" });
+    expect(document.requests[0]!.nextStep).toMatchObject({ move: "answerQuestions", reason: "Servono le tue risposte." });
+    expect(changes()).toBe(1);
+
+    await declare("answerQuestions", context("r1"), "Rispondi, poi preparo il piano.");
+    expect(document.requests[0]!.nextStep?.reason).toBe("Rispondi, poi preparo il piano.");
+    expect((await declare("answerQuestions", context("r1"), " ")).isError).toBe(true);
   });
 });

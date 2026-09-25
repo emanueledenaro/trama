@@ -38,6 +38,7 @@ import {
   learningTools,
   developerInstructions,
   GRILLING_BINDING,
+  NEXT_STEP_RULES,
   runCoordinatorTool,
   type TicketUpdate,
   type TicketUpdateResult,
@@ -63,7 +64,7 @@ import { openingInput, resumeInput, specialistInstructions } from "./core/specia
 import { prepareDemoProject } from "./core/demoProject";
 import { appendEvent, emptyDocument, handoverTranscript, moveEvent, recordReply, referencedPaths } from "./core/document";
 import { candidateGoalId, dialogComposer, findGoal, projectGoals, requestGoalId } from "@shared/goals";
-import { openGrillingQuestions } from "@shared/grilling";
+import { nextStepViews, PHASE_LABELS, workState, workStateText } from "./core/workPhase";
 import { createGoal, type GoalInput, goalContext, linkDecision, observeExample, requireGoal, updateGoal } from "./core/goals";
 import { orderByAttention, summarizeProject, unreadableProject } from "./core/overview";
 import {
@@ -185,8 +186,9 @@ const PROVIDER_CHECK_TIMEOUT_MS = 20_000;
 const LEFT_PROJECT_NOTE = "Hai lasciato il progetto mentre il Coordinatore rispondeva.";
 
 /**
- * Coordinator rules added after threads were opened: a resumed thread receives them once, in a turn.
- * `key` identifies them in `rulesSent` whatever the provider; Codex gets the grilling SKILL.md as a native skill input.
+ * Coordinator rules added after threads were opened (writing, next step, grilling): a resumed thread receives them
+ * once, in a turn. `key` identifies them in `rulesSent` whatever the provider; Codex gets the grilling SKILL.md as a
+ * native skill input.
  */
 interface LateRules {
   key: string;
@@ -196,11 +198,11 @@ interface LateRules {
 
 function lateRules(grilling: NativeSkill, provider: ProviderId): LateRules {
   const style = messageStyle("the person");
-  const full = [style, deliverNativeSkill(grilling, GRILLING_BINDING, false).text].join("\n\n");
+  const full = [style, NEXT_STEP_RULES, deliverNativeSkill(grilling, GRILLING_BINDING, false).text].join("\n\n");
   const delivery = deliverNativeSkill(grilling, GRILLING_BINDING, provider === "codex");
   return {
     key: `sha256:${createHash("sha256").update(full).digest("hex")}`,
-    text: [style, delivery.text].join("\n\n"),
+    text: [style, NEXT_STEP_RULES, delivery.text].join("\n\n"),
     skills: delivery.skills,
   };
 }
@@ -447,6 +449,7 @@ export class TramaController {
     project.candidateReports = Object.fromEntries(
       project.document.candidates.map((c) => [c.id, candidateReport(project.document, c, project.snapshot.headSHA)]),
     );
+    project.nextSteps = nextStepViews(project.document);
     project.pactDemoBlockers = project.document.pactDemo ? inspectPactDemo(project.document, project.document.pactDemo) : [];
     this.recordCompletedExercises(project);
   }
@@ -772,6 +775,7 @@ export class TramaController {
         stateWritable: loaded.writable,
         runningWork: [],
         candidateReports: {},
+        nextSteps: {},
         skills: [],
         pactDemoBlockers: [],
         aiHeroPrepared: hasAiHero(root),
@@ -937,6 +941,24 @@ export class TramaController {
     this.updateMonitorStatus(repository, checkpoint);
     this.publish();
     void this.assessRemoteConflicts();
+    void this.recordMergedPullRequests(project, repository);
+  }
+
+  /** A published candidate whose pull request left the open ones: GitHub says whether it was merged (W01, merged phase). */
+  private async recordMergedPullRequests(project: ActiveProjectState, repository: string): Promise<void> {
+    const snapshot = project.github.snapshot;
+    if (!snapshot || snapshot.warnings.length) return;
+    const open = new Set(snapshot.pullRequests.map((p) => p.number));
+    let merged = false;
+    for (const candidate of project.document.candidates) {
+      const pull = candidate.pullRequest;
+      if (!pull || pull.mergedAt || open.has(pull.number)) continue;
+      const status = await readPullRequestStatus(repository, pull.number).catch(() => null);
+      if (status?.state !== "MERGED") continue;
+      pull.mergedAt = status.mergedAt ?? new Date().toISOString();
+      merged = true;
+    }
+    if (merged) this.changedIn(project);
   }
 
   private assessingConflicts = false;
@@ -1550,6 +1572,9 @@ export class TramaController {
         sections.push(practices ?? "## Pratiche adottate\nLa persona ha ritirato tutte le pratiche di questo progetto.");
         document.coordinator.practicesSent = practices;
       }
+      // Every turn: the phase of the work this message belongs to and the moves declare_next_step accepts (W01).
+      const work = workState(document, request.id);
+      sections.push(workStateText(work));
       const skills = skillInvocations(trimmed, project.skills);
       sections.push(codexSkillText(trimmed, project.skills));
       appendEvent(
@@ -1564,6 +1589,7 @@ export class TramaController {
             goal ? `obiettivo ${goal.id}` : null,
             parts.length ? `aggiornamento: ${parts.join(", ")}` : null,
             report ? "aggiornamenti del team" : null,
+            work.phase ? `fase: ${PHASE_LABELS[work.phase]}` : null,
             skills.length ? `skill: ${skills.map((s) => s.name).join(", ")}` : null,
           ]
             .filter(Boolean)
@@ -2671,30 +2697,6 @@ export class TramaController {
     this.changed();
     void this.runPlanner(project, plan);
     return plan;
-  }
-
-  async preparePlanForRequest(requestId: string): Promise<void> {
-    const project = this.requireProject();
-    const request = project.document.requests.find((r) => r.id === requestId);
-    if (!request) throw new DomainError("Richiesta non trovata.");
-    if (project.document.plans.some((p) => p.requestId === requestId && p.status === "planning")) return;
-    const open = openGrillingQuestions(project.document, requestId);
-    if (open.length) {
-      throw new DomainError(
-        open.length === 1
-          ? "Il piano parte dopo il chiarimento: rispondi prima alla domanda aperta del Coordinatore."
-          : `Il piano parte dopo il chiarimento: rispondi prima alle ${open.length} domande aperte del Coordinatore.`,
-      );
-    }
-    appendEvent(project.document, "person", { type: "personMessage", text: "Prepara un piano per questa richiesta.", moduleId: request.moduleId, moduleName: null }, requestId);
-    this.orderPlan({
-      requestId,
-      orderedBy: "person",
-      kind: "agreedTicket",
-      moduleIds: request.moduleId ? [request.moduleId] : [],
-      summary: request.text,
-      issueNumber: null,
-    });
   }
 
   private readonly planners = new Map<string, AgentRuntime>();

@@ -142,7 +142,6 @@ const handlers: { [K in ActionName]: Handler<K> } = {
   "assignment:resume": ({ assignmentId }) => controller.resumeSpecialistWork(assignmentId),
   "assignment:changeProvider": ({ assignmentId, provider, model }) => controller.changeAssignmentProvider(assignmentId, provider, model),
   "specialist:remove": ({ specialistId, reason }) => controller.removeSpecialistByPerson(specialistId, reason),
-  "plan:prepare": ({ requestId }) => controller.preparePlanForRequest(requestId),
   "pactDemo:run": () => controller.runPactDemo(),
   "pactDemo:approve": () => controller.approvePactDemo(),
   "candidate:approve": ({ candidateId }) => controller.approveCandidateByPerson(candidateId),
