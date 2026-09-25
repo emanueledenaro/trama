@@ -215,10 +215,9 @@ await shot("10e-overview");
 await page.getByRole("button", { name: "Panoramica dei progetti" }).click();
 await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
 
-// W03: withdraw a grilling question with a reason; the round then waits only for the other answer.
-await page.getByLabel("Messaggio al Coordinatore").fill("[grilling:1] Gli ordini pagati annullati vanno in revisione");
-await page.keyboard.press("Enter");
-const round = page.getByRole("region", { name: "Chiarimento, turno 1" });
+// W03: withdraw a grilling question with a reason; the round then waits only for the other answer. It works on
+// the round the W01 steps opened: a second grilling request would open a second "turno 1" and make the round ambiguous.
+const round = page.getByRole("region", { name: "Chiarimento, turno 1" }).first();
 await round.waitFor({ timeout: 20_000 });
 await round.getByRole("button", { name: "Ritira", exact: true }).first().click();
 await round.getByLabel("Motivo del ritiro").fill("Chi vede la revisione lo decidiamo dopo il primo rilascio");
