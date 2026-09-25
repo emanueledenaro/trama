@@ -163,7 +163,7 @@ CI ([`electron.yml`](.github/workflows/electron.yml)) runs type check, tests, bu
 ## Status and known limits
 
 - **End to end.** No candidate has yet been declared and verified from start to finish on a real project. The full Codex path still has to run.
-- **Fixed roles.** The team shows each role's moment, but running the roles at their moment is still open ([#147](https://github.com/emanueledenaro/trama/issues/147), [#148](https://github.com/emanueledenaro/trama/issues/148)).
+- **Fixed roles.** Under a granted mandate, bug triage, diagnosis of failed checks and Clean Code's architecture review start on their own ([#148](https://github.com/emanueledenaro/trama/issues/148)). The other roles do not run yet: the parallel review of a candidate by every reviewer is still open ([#147](https://github.com/emanueledenaro/trama/issues/147)).
 - **Pull requests.** Publishing is tested up to the branch push. Creating the PR with `gh` has not been tested on a real repository.
 - **Sandbox.** The Node sandbox with local networking is tested on macOS only. On Windows, tests that open a local server fail under the Codex sandbox.
 - **Provider switch.** Switching providers mid-conversation is verified only live.
