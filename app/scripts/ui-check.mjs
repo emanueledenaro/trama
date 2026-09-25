@@ -394,6 +394,24 @@ await guide.waitFor({ state: "hidden" });
 await page.getByRole("button", { name: "Impostazioni" }).click();
 await page.getByTestId("settings").waitFor({ state: "hidden" });
 
+// W14: a new mandate request supersedes the pending one. The old card turns grey, names the new one and loses
+// its buttons; it stays in the history. Only the new card can be accepted.
+await page.getByLabel("Messaggio al Coordinatore").fill("[chiedi-mandato:Prima proposta di mandato]");
+await page.keyboard.press("Enter");
+await page.getByText("Prima proposta di mandato").first().waitFor({ timeout: 20_000 });
+await page.getByLabel("Messaggio al Coordinatore").fill("[chiedi-mandato:Seconda proposta di mandato]");
+await page.keyboard.press("Enter");
+const supersededNote = page.getByTestId("superseded-mandate");
+await supersededNote.waitFor({ timeout: 20_000 });
+if ((await supersededNote.count()) !== 1) throw new Error("Expected exactly one superseded mandate card");
+const supersededCard = page.locator(".chat-card", { has: supersededNote });
+if (!(await supersededCard.getByText("Prima proposta di mandato").count())) throw new Error("The superseded card is not the first request");
+if (await supersededCard.getByRole("button").count()) throw new Error("The superseded mandate card still has buttons");
+const pendingCard = page.locator(".chat-card", { hasText: "Seconda proposta di mandato" }).last();
+await pendingCard.getByRole("button", { name: "Accetta la proposta" }).waitFor();
+await supersededCard.scrollIntoViewIfNeeded();
+await shot("15-mandate-superseded");
+
 // T19: the window sizes the layout is checked at, from the minimum (720x640) to full HD.
 // A narrow dialog gets the inspector floating over it, so the chat and the composer keep their width.
 for (const [width, height] of [[720, 640], [1040, 700], [1280, 800], [1440, 900], [1920, 1080]]) {
