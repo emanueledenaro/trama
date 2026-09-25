@@ -1,5 +1,5 @@
-import type { AttentionReason, CandidateReport, ProjectDocument, ProjectOverview, RecentProject } from "@shared/domain";
-import { projectGoals } from "@shared/goals";
+import { type AttentionReason, type CandidateReport, isOpenQuestion, type ProjectDocument, type ProjectOverview, type RecentProject } from "@shared/domain";
+import { workingGoals } from "@shared/goals";
 import { currentAssignment } from "./team";
 
 const ORDER: (AttentionReason | "unreadable" | null)[] = ["decision", "blocked", "approval", "running", "unreadable", null];
@@ -16,7 +16,7 @@ export function summarizeProject(
   input: { source: "live" | "saved"; selected: boolean; runningAssignments: number; candidateReports: CandidateReport[] },
 ): ProjectOverview {
   const pendingDecisions =
-    document.decisionRequests.filter((r) => !r.outcome).length +
+    document.decisionRequests.filter(isOpenQuestion).length +
     document.mandateRequests.filter((r) => !r.resolution).length +
     document.team.proposals.filter((p) => !p.resolution).length;
   let blockedWork = 0;
@@ -58,9 +58,7 @@ export function summarizeProject(
     blockedWork,
     toApprove,
     runningWork,
-    goals: projectGoals(document)
-      .filter((g) => g.status === "open" || g.status === "proposed")
-      .map((g) => ({ id: g.id, title: g.title, status: g.status })),
+    goals: workingGoals(document).map((g) => ({ id: g.id, title: g.title, status: g.status })),
     attention,
     reasons,
     problem: null,

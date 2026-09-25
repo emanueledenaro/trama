@@ -13,7 +13,6 @@ import {
   IconLayoutSidebar,
   IconTarget,
   IconMessageCircle,
-  IconPlugConnected,
   IconRosetteDiscountCheck,
   IconSettings,
   IconShieldCheck,
@@ -24,13 +23,16 @@ import {
   IconListCheck,
   IconBrain,
   IconPencilPlus,
+  IconArchive,
+  IconTrash,
 } from "@tabler/icons-react";
+import { DeleteGoalDialog, setArchived } from "@/components/inspector/GoalsView";
 import { StatusDot } from "@/components/inspector/TeamView";
+import { useState } from "react";
 import type * as React from "react";
 import { Spinner } from "@/components/Spinner";
-import { isUsableAccount, type ProviderId } from "@shared/codex";
-import type { Specialist } from "@shared/domain";
-import { PROVIDERS } from "@shared/providers";
+import { isOpenQuestion, type ProjectGoal, type Specialist } from "@shared/domain";
+import { goalDialogIsEmpty, workingGoals } from "@shared/goals";
 import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/cn";
 import { act, type InspectorTarget, useUi } from "@/lib/store";
@@ -140,7 +142,7 @@ export function Sidebar({ isMac }: { isMac: boolean }) {
   const setDialog = useUi((s) => s.setDialog);
   const project = app.project;
   const document = project?.document;
-  const pendingDecisions = document?.decisionRequests.filter((r) => !r.outcome) ?? [];
+  const pendingDecisions = document?.decisionRequests.filter(isOpenQuestion) ?? [];
   // A grilling round is one row with its count, not one row per question.
   const pendingRows = sidebarDecisionRows(pendingDecisions);
   const pendingMandate = document?.mandateRequests.find((r) => !r.resolution) ?? null;
@@ -150,20 +152,18 @@ export function Sidebar({ isMac }: { isMac: boolean }) {
   const verifiedCandidates = project ? Object.values(project.candidateReports).filter((r) => r.state !== "building").length : 0;
   const specialists = sidebarSpecialists(document?.team.specialists ?? []);
   const running = Boolean(project?.runningRequestId) || project?.phase.kind === "studying" || project?.phase.kind === "opening";
-  const activeProvider: ProviderId = project?.document.coordinator.threadProvider ?? project?.document.selectedProvider ?? "codex";
-  const account = app.providers[activeProvider]?.account ?? null;
-  const connected = isUsableAccount(account);
   const isActive = (kind: InspectorTarget["kind"]) => inspector?.kind === kind;
   const mainView = useUi((s) => s.mainView);
   const setMainView = useUi((s) => s.setMainView);
-  const settingsSection = useUi((s) => s.settingsSection);
   const openSettings = useUi((s) => s.openSettings);
   const closeSettings = useUi((s) => s.closeSettings);
   const dialogGoalId = useUi((s) => s.dialogGoalId);
   const openDialog = useUi((s) => s.openDialog);
-  const goals = (document?.goals ?? []).filter((g) => g.status === "open" || g.status === "proposed");
+  // Archived, achieved and abandoned goals leave the sidebar; the goals panel still lists them (W03).
+  const goals = document ? workingGoals(document) : [];
+  const [deleting, setDeleting] = useState<ProjectGoal | null>(null);
   const runningGoalId = project?.runningRequestId ? (document?.requests.find((r) => r.id === project.runningRequestId)?.goalId ?? null) : null;
-  const proposedGoals = document?.goals?.filter((g) => g.status === "proposed").length ?? 0;
+  const proposedGoals = goals.filter((g) => g.status === "proposed").length;
 
   return (
     <div className="flex h-full min-h-0 flex-col text-foreground">
@@ -335,25 +335,62 @@ export function Sidebar({ isMac }: { isMac: boolean }) {
                           {running && !runningGoalId ? <Spinner /> : null}
                         </span>
                       </button>
-                      {goals.map((goal) => (
-                        <button
-                          key={goal.id}
-                          type="button"
-                          onClick={() => openDialog(goal.id)}
-                          title={goal.outcome}
-                          className={cn(SIDEBAR_ROW, "pl-8", mainView === "dialog" && dialogGoalId === goal.id ? ROW_ACTIVE : ROW_IDLE)}
-                        >
-                          <IconTarget className="size-3 shrink-0 text-muted-foreground" stroke={1.8} />
-                          <span className="min-w-0 flex-1 truncate text-ui leading-5 text-foreground/95">{goal.title}</span>
-                          <span className="flex w-[15px] shrink-0 items-center justify-center">
-                            {running && runningGoalId === goal.id ? (
-                              <Spinner />
-                            ) : goal.status === "proposed" ? (
-                              <span className="size-[7px] rounded-full bg-warning" title="Proposto dal Coordinatore" />
-                            ) : null}
-                          </span>
-                        </button>
-                      ))}
+                      {goals.map((goal) => {
+                        const busy = running && runningGoalId === goal.id;
+                        const empty = document ? goalDialogIsEmpty(document, goal.id) : false;
+                        return (
+                          <div key={goal.id} className="group/goal-row relative" data-testid="sidebar-goal">
+                            <button
+                              type="button"
+                              onClick={() => openDialog(goal.id)}
+                              title={goal.outcome}
+                              className={cn(
+                                SIDEBAR_ROW,
+                                "pl-8",
+                                !busy && (empty ? "group-hover/goal-row:pr-12" : "group-hover/goal-row:pr-7"),
+                                mainView === "dialog" && dialogGoalId === goal.id ? ROW_ACTIVE : ROW_IDLE,
+                              )}
+                            >
+                              <IconTarget className="size-3 shrink-0 text-muted-foreground" stroke={1.8} />
+                              <span className="min-w-0 flex-1 truncate text-ui leading-5 text-foreground/95">{goal.title}</span>
+                              <span className="flex w-[15px] shrink-0 items-center justify-center group-focus-within/goal-row:invisible group-hover/goal-row:invisible">
+                                {busy ? (
+                                  <Spinner />
+                                ) : goal.status === "proposed" ? (
+                                  <span className="size-[7px] rounded-full bg-warning" title="Proposto dal Coordinatore" />
+                                ) : null}
+                              </span>
+                            </button>
+                            {busy ? null : (
+                              // Archive always; delete only while the dialog has no history.
+                              <div className="absolute top-1/2 right-1.5 flex -translate-y-1/2 items-center gap-0.5 opacity-0 transition-opacity group-hover/goal-row:opacity-100 focus-within:opacity-100">
+                                {empty ? (
+                                  <Tooltip label="Elimina il dialogo vuoto">
+                                    <button
+                                      type="button"
+                                      aria-label={`Elimina il dialogo vuoto ${goal.title}`}
+                                      className="sidebar-icon-button size-5"
+                                      onClick={() => setDeleting(goal)}
+                                    >
+                                      <IconTrash className="size-3" />
+                                    </button>
+                                  </Tooltip>
+                                ) : null}
+                                <Tooltip label="Archivia l'obiettivo">
+                                  <button
+                                    type="button"
+                                    aria-label={`Archivia ${goal.title}`}
+                                    className="sidebar-icon-button size-5"
+                                    onClick={() => setArchived(goal, true)}
+                                  >
+                                    <IconArchive className="size-3" />
+                                  </button>
+                                </Tooltip>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
                       {specialists.map((specialist) => (
                         <button
                           key={specialist.id}
@@ -393,31 +430,12 @@ export function Sidebar({ isMac }: { isMac: boolean }) {
       </div>
 
       <div className="flex flex-col gap-0.5 border-t border-sidebar-border p-2 font-system-ui">
-        <SidebarRow
-          icon={<IconPlugConnected className="size-[15px]" stroke={1.7} />}
-          label={
-            connected
-              ? (PROVIDERS.find((p) => p.id === activeProvider)?.name ?? activeProvider)
-              : activeProvider === "codex"
-                ? "Collega ChatGPT"
-                : "Collegamenti"
-          }
-          active={mainView === "settings" && settingsSection === "connections"}
-          onClick={() => openSettings("connections")}
-          trailing={
-            <span
-              className={cn(
-                "size-1.5 shrink-0 rounded-full",
-                connected ? "bg-success" : account ? "bg-warning" : "bg-muted-foreground/40",
-              )}
-            />
-          }
-        />
         <SidebarRow icon={<IconSettings className="size-[15px]" stroke={1.7} />} label="Impostazioni"
-          active={mainView === "settings" && settingsSection !== "connections"}
-          onClick={() => (mainView === "settings" && settingsSection !== "connections" ? closeSettings() : openSettings("general"))}
+          active={mainView === "settings"}
+          onClick={() => (mainView === "settings" ? closeSettings() : openSettings("general"))}
         />
       </div>
+      <DeleteGoalDialog goal={deleting} onClose={() => setDeleting(null)} />
     </div>
   );
 }

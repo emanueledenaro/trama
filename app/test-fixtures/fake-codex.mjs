@@ -85,12 +85,21 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
         return;
       }
       send({ id, result: { turn: { id: turnId } } });
-      const finish = (reply) => {
-        send({ method: "item/completed", params: { threadId, turnId, item: { id: "msg", type: "agentMessage", phase: "final_answer", text: reply } } });
-        send({ method: "turn/completed", params: { threadId, turn: { id: turnId, status: "completed" } } });
-      };
       const toolDone = (tool, result) =>
         send({ method: "item/completed", params: { threadId, turnId, item: { id: `tool-${tool}`, type: "mcpToolCall", server: "trama", tool, status: "completed", result } } });
+      // "[passo:<move>]" closes the turn with that next step (W01), after the turn's other tools; a refusal ends up in the reply.
+      const declareStep = async () => {
+        const step = text.match(/\[passo:(\w+)\]/);
+        if (!step) return "";
+        const result = await callTool(threadId, "declare_next_step", { move: step[1], reason: "Il lavoro aspetta questo passo." });
+        toolDone("declare_next_step", result);
+        return result.isError ? ` | Passo rifiutato: ${result.content[0].text}` : "";
+      };
+      const finish = async (reply) => {
+        const step = await declareStep();
+        send({ method: "item/completed", params: { threadId, turnId, item: { id: "msg", type: "agentMessage", phase: "final_answer", text: reply + step } } });
+        send({ method: "turn/completed", params: { threadId, turn: { id: turnId, status: "completed" } } });
+      };
       // Remembers the skill inputs and late-rule sections each thread received (M02).
       const seen = receivedByThread.get(threadId) ?? [];
       seen.push(...params.input.filter((item) => item.type === "skill").map((item) => `skill:${item.name}:${item.path}`));
@@ -294,9 +303,10 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
         toolDone("propose_goal", result);
       }
       send({ method: "thread/tokenUsage/updated", params: { threadId, turnId, tokenUsage: { total: { totalTokens: text.includes("[pieno]") ? 230_000 : 12_000 }, modelContextWindow: 258_000 } } });
-      const reply = text.startsWith("Studio del progetto scritto da Trama")
-        ? "Ho letto lo studio: è un progetto Swift con i moduli Catalog, Inventory, Orders, Payments e Users. Vedi Sources/Orders/CancelPaidOrder.swift."
-        : `Ho ricevuto: **${text.slice(0, 200)}**. Questa risposta arriva dal server di prova. Vedi Sources/Orders/CancelPaidOrder.swift.`;
+      const reply =
+        (text.startsWith("Studio del progetto scritto da Trama")
+          ? "Ho letto lo studio: è un progetto Swift con i moduli Catalog, Inventory, Orders, Payments e Users. Vedi Sources/Orders/CancelPaidOrder.swift."
+          : `Ho ricevuto: **${text.slice(0, 200)}**. Questa risposta arriva dal server di prova. Vedi Sources/Orders/CancelPaidOrder.swift.`) + (await declareStep());
       const pieces = reply.match(/.{1,12}/g);
       send({ method: "item/started", params: { threadId, turnId, item: { id: "msg", type: "agentMessage", phase: "final_answer" } } });
       send({ method: "item/completed", params: { threadId, turnId, item: { id: "cmd", type: "commandExecution", command: "git status --short", exitCode: 0, status: "completed", aggregatedOutput: "" } } });

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { isOpenQuestion } from "@shared/domain";
 import { deriveTimelineRows, formatDuration } from "@shared/timeline";
 import { appendEvent, emptyDocument, recordReply, referencedPaths } from "./document";
 import {
@@ -9,6 +10,8 @@ import {
   DomainError,
   grantMandate,
   revokeMandate,
+  withdrawalMessage,
+  withdrawDecisionRequest,
 } from "./pact";
 
 describe("Pact", () => {
@@ -40,6 +43,42 @@ describe("Pact", () => {
     expect(decision.value).toBe("Va in revisione");
     expect(request.outcome?.decisionId).toBe(decision.id);
     expect(() => answerDecisionRequest(document, request.id, { alternativeIndex: 1, freeText: null })).toThrow();
+  });
+
+  it("withdraws an open question with a reason and records no decision (W03)", () => {
+    const document = emptyDocument("p");
+    const ask = () =>
+      createDecisionRequest(document, {
+        requestId: null,
+        category: "product",
+        question: "Il cliente riceve una email?",
+        concreteCase: "Ordine 42 pagato e annullato",
+        alternatives: [
+          { behavior: "Sì", example: "email inviata", consequence: null },
+          { behavior: "No", example: "nessuna email", consequence: null },
+        ],
+        revisesDecisionId: null,
+      });
+    const request = ask();
+    expect(isOpenQuestion(request)).toBe(true);
+    expect(() => withdrawDecisionRequest(document, request.id, "  ")).toThrow(/motivo/);
+    const at = new Date("2026-09-25T10:00:00Z");
+    withdrawDecisionRequest(document, request.id, " Lo decidiamo nella prossima versione ", at);
+    expect(request.withdrawal).toEqual({ reason: "Lo decidiamo nella prossima versione", withdrawnAt: at.toISOString() });
+    expect(request.outcome).toBeNull();
+    expect(isOpenQuestion(request)).toBe(false);
+    expect(document.decisions).toHaveLength(0);
+    expect(withdrawalMessage(request)).toBe("Ho ritirato la domanda «Il cliente riceve una email?». Motivo: Lo decidiamo nella prossima versione.");
+    // A withdrawn question takes no answer and is not withdrawn twice.
+    expect(() => answerDecisionRequest(document, request.id, { alternativeIndex: 0, freeText: null })).toThrow(/ritirato/);
+    expect(() => withdrawDecisionRequest(document, request.id, "ancora")).toThrow(/già ritirato/);
+
+    // An answered question stays: its decision is revised with a new decision.
+    const answered = ask();
+    answerDecisionRequest(document, answered.id, { alternativeIndex: 1, freeText: null });
+    expect(() => withdrawDecisionRequest(document, answered.id, "ci ho ripensato")).toThrow(/decisione nuova/);
+    expect(answered.withdrawal ?? null).toBeNull();
+    expect(() => withdrawDecisionRequest(document, "Q-00000000", "motivo")).toThrow(/non trovata/);
   });
 
   it("versions, corrects and revokes a mandate", () => {
