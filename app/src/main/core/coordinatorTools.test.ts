@@ -7,7 +7,7 @@ import { FIXED_ROLES } from "@shared/roster";
 import { COORDINATOR_TOOLS, developerInstructions, GRILLING_BINDING, NEXT_STEP_RULES, runCoordinatorTool, type ToolContext } from "./coordinatorTools";
 import { emptyDocument } from "./document";
 import { deliverNativeSkill, loadNativeSkill } from "./nativeSkills";
-import { createDecisionRequest, grantMandate } from "./pact";
+import { answerDecisionRequest, createDecisionRequest, grantMandate } from "./pact";
 import { confirmTeam, developers } from "./team";
 import { NEXT_MOVES } from "./workPhase";
 
@@ -176,6 +176,38 @@ describe("declare_next_step: the one next step of a turn (W01)", () => {
     expect(tool.properties.move).toEqual({ type: "string", enum: NEXT_MOVES });
     expect(tool.required).toEqual(["move", "reason"]);
     expect(developerInstructions("Demo")).toContain(NEXT_STEP_RULES);
+  });
+
+  it("tell the Coordinator to go on by itself within the mandate and never to close with a generic confirmation (W04)", () => {
+    expect(NEXT_STEP_RULES).toContain("Within the mandate you carry the work on by yourself");
+    expect(NEXT_STEP_RULES).toContain("Mossa automatica di Trama");
+    expect(NEXT_STEP_RULES).toContain("Ask the person only for what is theirs: product decisions");
+    expect(NEXT_STEP_RULES).toMatch(/Never end a message with a generic confirmation question such as "Vuoi che\.\.\.\?"/);
+    // The rules no longer tell it to hand its own moves to the person as a button.
+    expect(NEXT_STEP_RULES).not.toContain("your own when the work waits for you");
+    expect(GRILLING_BINDING).toContain("declare_next_step confirmUnderstanding");
+    expect(GRILLING_BINDING).toContain("in the turn where the person confirms, prepare_plan");
+  });
+
+  it("tells the Coordinator that its own declared move is its to make now", async () => {
+    const { document, context } = setup();
+    const grilling = placeGrillingQuestion(document, { runningRequestId: "r1", round: 1, recommendedIndex: 0, alternatives: 2 });
+    const question = createDecisionRequest(document, {
+      requestId: "r1",
+      category: "product",
+      question: "Chi vede gli ordini in revisione?",
+      concreteCase: "Ordine 42",
+      alternatives: [
+        { behavior: "Solo il supporto", example: "Il supporto vede l'ordine 42", consequence: null },
+        { behavior: "Anche il cliente", example: "Il cliente vede lo stato review", consequence: null },
+      ],
+      revisesDecisionId: null,
+      grilling,
+    });
+    answerDecisionRequest(document, question.id, { alternativeIndex: 0, freeText: null });
+    grantMandate(document, { objectives: ["Ordini"], priorities: [], scopeModuleIds: ["Sources/Orders"], authorizedActions: ["plan"], limits: [] });
+    const result = await declare("preparePlan", context("r1"), "Il chiarimento è chiuso.");
+    expect(JSON.parse(result.content[0]!.text)).toMatchObject({ actor: "coordinator", status: "yours", note: expect.stringContaining("make it now") });
   });
 
   it("refuses a step when no move is allowed, as after a greeting, and outside a turn", async () => {
