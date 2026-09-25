@@ -115,7 +115,6 @@ import { readRepositoryFile, scanRepository } from "./core/repositoryScanner";
 import { messageStyle } from "./core/messageStyle";
 import { installedSkillVersion, prepareSkills, rollbackSkills, SELECTED_SKILLS, SKILL_VERSION, type SetupReport, updateSkills } from "./core/skillSetup";
 import {
-  authorize,
   beginTurn,
   confirmStopWithoutTurn,
   confirmTeam,
@@ -188,6 +187,7 @@ import {
 import { buildStudy, fingerprints, partsToInject, studyText } from "./core/study";
 import { CoordinatorToolServer, TOOL_SERVER_NAME } from "./core/toolServer";
 import { deliverNativeSkill, loadNativeSkill, type NativeSkill } from "./core/nativeSkills";
+import { concludeDuty, dutyModel, type DutyRunner, dutySession, nextDuty, recordCheckOutcome, withinMandate } from "./core/duties";
 
 /** The model Trama prefers for the Coordinator when the Codex catalogue offers it. */
 const PREFERRED_COORDINATOR_MODEL = "gpt-5.6-luna";
@@ -966,6 +966,18 @@ export class TramaController {
     this.publish();
     void this.assessRemoteConflicts();
     void this.recordMergedPullRequests(project, repository);
+    void this.runDuties();
+  }
+
+  /** Reads the open project's issues again, so an issue opened meanwhile reaches triage (W11). */
+  private async refreshIssues(project: ActiveProjectState): Promise<void> {
+    const repository = project.github.repository;
+    if (!repository || project.github.status !== "ready") return;
+    const issues = await listIssues(repository).catch(() => null);
+    if (!issues || this.state.project !== project) return;
+    project.github = { ...project.github, issues };
+    this.publish();
+    void this.runDuties();
   }
 
   /** A published candidate whose pull request left the open ones: GitHub says whether it was merged (W01, merged phase). */
@@ -1124,7 +1136,7 @@ export class TramaController {
         if (!assignment?.waitingForProvider || assignment.waitingForProvider.provider !== provider) continue;
         assignment.waitingForProvider = null;
         if (!["failed", "stopped"].includes(assignment.status)) continue;
-        if (authorize(project.document.mandate, "executeInWorktree", assignment.moduleIds) !== "authorized") {
+        if (!withinMandate(project.document, assignment)) {
           this.specialistActivity(project, assignment.id, `${assignment.turns.length + 1}`, "Ripresa non eseguita", "Il mandato non copre più questo incarico.", "info");
           continue;
         }
@@ -1389,6 +1401,7 @@ export class TramaController {
       if (this.state.project !== project || this.runtime !== runtime) return;
       project.phase = { kind: "ready" };
       this.changed();
+      void this.runDuties();
     } catch (error) {
       if (this.state.project !== project || this.coordinatorProvider(document) !== provider) return;
       project.phase = { kind: "unavailable", message: (error as Error).message };
@@ -1698,6 +1711,7 @@ export class TramaController {
       if (project.streaming?.requestId === request.id) project.streaming = null;
       this.changed();
       this.dispatchQueued();
+      void this.runDuties();
     }
   }
 
@@ -2116,6 +2130,7 @@ export class TramaController {
     if (input.requestId) resolveMandateRequest(project.document, input.requestId, kind, mandate.version);
     this.stopWorkOutsideMandate("Il mandato corretto non copre più questo lavoro.");
     this.changed();
+    void this.runDuties();
     await this.send(mandateMessage(kind, mandate.version), null, null, null, [], null, null, false);
   }
 
@@ -2208,7 +2223,8 @@ export class TramaController {
     let outcome: TurnEnd;
     try {
       let cwd = project.rootPath;
-      if (needsWorktree(assignment)) {
+      // A diagnosis reads a candidate's worktree without writing to it (W11).
+      if (needsWorktree(assignment) || assignment.workspace) {
         if (assignment.workspace) {
           await validateWorktree(assignment.workspace, this.worktreesRoot);
         } else {
@@ -2222,10 +2238,23 @@ export class TramaController {
         cwd = assignment.workspace!.worktreeRoot;
       }
       if (assignment.status !== "preparing") throw new Error("L'arresto è stato richiesto prima dell'avvio.");
+      // A fixed role's automatic work runs its original AI Hero skill (W11).
+      const duty = assignment.duty
+        ? dutySession({
+            projectName: project.name,
+            document,
+            assignment,
+            moduleIds: project.snapshot.modules.map((m) => m.id),
+            issue: project.github.issues.find((i) => i.number === assignment.issueNumber) ?? null,
+            resumed,
+            skill: await this.nativeSkill(assignment.duty.skill),
+            nativeInput: provider === "codex",
+          })
+        : null;
       const opening = await client.openThread({
         model: assignment.model,
         cwd,
-        developerInstructions: specialistInstructions(project.name, specialist, assignment),
+        developerInstructions: duty?.instructions ?? specialistInstructions(project.name, specialist, assignment),
         sandbox: needsWorktree(assignment) ? "workspace-write" : "read-only",
         resumeThreadId: assignment.threadId,
       });
@@ -2233,13 +2262,15 @@ export class TramaController {
       // A stop requested while the session was opening ends the work here (review #6).
       if ((assignment.status as string) === "stopRequested") throw new Error("L'arresto è stato richiesto prima dell'avvio del turno.");
       if (opening.replaced && assignment.threadId) this.specialistActivity(project, assignmentId, preKey, "Nuovo thread dello specialista", null, "info");
-      const prompt = resumed ? resumeInput(assignment, document.decisions) : openingInput(assignment, document.decisions);
+      const prompt = duty?.prompt ?? (resumed ? resumeInput(assignment, document.decisions) : openingInput(assignment, document.decisions));
       const text = await client.runTurn({
         threadId: opening.threadId,
         prompt,
         cwd,
         model: assignment.model,
         writableRoot: needsWorktree(assignment) ? cwd : null,
+        ...(duty?.skills.length ? { skills: duty.skills } : {}),
+        ...(duty?.outputSchema ? { outputSchema: duty.outputSchema } : {}),
         onEvent: (event) => {
           if (event.type === "turnStarted") {
             turnId = event.turnId;
@@ -2299,6 +2330,10 @@ export class TramaController {
       confirmStopWithoutTurn(document, assignmentId, outcome.kind === "failed" ? outcome.message : "Il turno non era partito.");
     }
     const final = findAssignment(document, assignmentId)!;
+    if (final.status === "completed" && final.duty && outcome.kind === "completed") {
+      const { decisionRequestId } = concludeDuty(document, assignmentId, outcome.text);
+      if (decisionRequestId) appendEvent(document, "trama", { type: "card", kind: "decision", title: "Decisione", detail: null, referenceId: decisionRequestId });
+    }
     const [title, detail] =
       final.status === "completed"
         ? ["Incarico concluso", final.result]
@@ -2333,6 +2368,76 @@ export class TramaController {
     }
     this.changedIn(project);
     this.releaseParkedProject(project);
+    void this.runDuties();
+  }
+
+  private readonly skillLoads = new Map<string, Promise<NativeSkill>>();
+
+  /** An AI Hero skill as bundled with Trama, loaded once. */
+  private nativeSkill(name: string): Promise<NativeSkill> {
+    let load = this.skillLoads.get(name);
+    if (!load) {
+      load = loadNativeSkill(join(this.host.aiHeroResourceDirectory, "skills"), name).catch((error: unknown) => {
+        this.skillLoads.delete(name);
+        throw error;
+      });
+      this.skillLoads.set(name, load);
+    }
+    return load;
+  }
+
+  /** The provider and model of the fixed roles' automatic work: the Coordinator's provider, on its lightest model. */
+  private dutyRunner(document: ProjectDocument): DutyRunner | null {
+    const provider = this.coordinatorProvider(document);
+    if (!hasAdapter(provider) || !supportsReadOnly(provider)) return null;
+    if (providerUnavailableReason(provider, this.state.providers[provider]?.account ?? null)) return null;
+    const chosen = dutyModel(this.state.providers[provider]?.models ?? [], document.coordinator.threadModel ?? this.coordinatorModel(document, provider));
+    return chosen ? { provider, model: chosen.model, modelReason: chosen.reason } : null;
+  }
+
+  private dutiesRun: Promise<void> | null = null;
+  private dutiesAgain = false;
+
+  /**
+   * Starts the fixed roles' automatic work that Trama's rules call for now (W11): triage of a new issue, diagnosis of a
+   * failed check and the fix of a reproduced bug, the architecture review of a free team. A call during a run makes
+   * that run look once more, and resolves with it.
+   */
+  runDuties(): Promise<void> {
+    if (this.dutiesRun) {
+      this.dutiesAgain = true;
+      return this.dutiesRun;
+    }
+    this.dutiesRun = (async () => {
+      try {
+        do {
+          this.dutiesAgain = false;
+          await this.startNextDuty();
+        } while (this.dutiesAgain);
+      } finally {
+        this.dutiesRun = null;
+      }
+    })();
+    return this.dutiesRun;
+  }
+
+  private async startNextDuty(): Promise<void> {
+    const project = this.state.project;
+    if (!project || project.isDemo || !project.stateWritable || this.quitting) return;
+    const headSHA = await this.headSHA(project.rootPath);
+    if (this.state.project !== project) return;
+    const assignment = nextDuty(project.document, {
+      issues: project.github.status === "ready" ? project.github.issues : null,
+      headSHA,
+      coordinatorBusy: project.phase.kind !== "ready" || project.runningRequestId !== null,
+      moduleIds: project.snapshot.modules.map((m) => m.id),
+      runner: this.dutyRunner(project.document),
+    });
+    if (assignment) {
+      appendEvent(project.document, "trama", { type: "card", kind: "assignment", title: "Incarico", detail: null, referenceId: assignment.id });
+      void this.startAssignment(assignment.id);
+    }
+    this.changed();
   }
 
   private async stopAssignmentRuntime(assignmentId: string): Promise<void> {
@@ -2364,9 +2469,15 @@ export class TramaController {
     const assignment = findAssignment(project.document, assignmentId);
     if (!assignment?.workspace || assignment.workspaceRemovedAt) throw new DomainError("L'incarico non ha un worktree da rimuovere.");
     if (isActive(assignment)) throw new DomainError("Ferma l'incarico prima di rimuovere il worktree.");
-    const published = project.document.candidates.some((c) => c.assignmentId === assignmentId && c.pullRequest);
+    // A fix of a candidate works in the candidate's worktree (W11): the worktree goes only when all of them stopped.
+    const sharing = project.document.team.specialists
+      .flatMap((s) => s.assignments)
+      .filter((a) => a.workspace?.worktreeRoot === assignment.workspace!.worktreeRoot && !a.workspaceRemovedAt);
+    if (sharing.some(isActive)) throw new DomainError("Un altro incarico sta lavorando in questo worktree: aspetta che finisca.");
+    const published = project.document.candidates.some((c) => sharing.some((a) => a.id === c.assignmentId) && c.pullRequest);
     const { branchDeleted } = await removeWorktree(assignment.workspace, this.worktreesRoot, published);
-    assignment.workspaceRemovedAt = new Date().toISOString();
+    const removedAt = new Date().toISOString();
+    for (const shared of sharing) shared.workspaceRemovedAt = removedAt;
     appendEvent(
       project.document,
       "trama",
@@ -2404,8 +2515,8 @@ export class TramaController {
 
   async resumeSpecialistWork(assignmentId: string): Promise<void> {
     const project = this.requireProject();
-    const authorization = authorize(project.document.mandate, "executeInWorktree", findAssignment(project.document, assignmentId)?.moduleIds ?? []);
-    if (authorization !== "authorized") throw new DomainError("Il mandato attuale non copre più questo incarico.");
+    const paused = findAssignment(project.document, assignmentId);
+    if (!paused || !withinMandate(project.document, paused)) throw new DomainError("Il mandato attuale non copre più questo incarico.");
     if (findAssignment(project.document, assignmentId)?.workspaceRemovedAt) {
       throw new DomainError("Il worktree di questo incarico è stato rimosso: assegna un nuovo incarico.");
     }
@@ -2447,7 +2558,7 @@ export class TramaController {
     for (const specialist of document.team.specialists) {
       const assignment = specialist.assignments.at(-1);
       if (!assignment || !isActive(assignment) || assignment.status === "stopRequested") continue;
-      if (authorize(document.mandate, "executeInWorktree", assignment.moduleIds) === "authorized") continue;
+      if (withinMandate(document, assignment)) continue;
       requestStop(document, specialist.id, "Trama", reason);
       void this.stopAssignmentRuntime(assignment.id);
     }
@@ -2469,7 +2580,17 @@ export class TramaController {
       },
       requestId,
     );
+    // A failed test on the checkout, or one that passed before, goes to the debugger (W11).
+    const failure = recordCheckOutcome(project.document, {
+      check,
+      passed: result.exitCode === 0,
+      ran: result.command.length > 0,
+      output: result.output,
+      command: result.command.join(" "),
+      target: { kind: "checkout", headSHA: result.headSHA },
+    });
     this.changed();
+    if (failure) void this.runDuties();
     return result;
   }
 
@@ -2508,6 +2629,16 @@ export class TramaController {
       output: result.output,
       snapshotId: snapshot.snapshotId,
     });
+    // A failed test on a specialist's work, or one that passed before, goes to the debugger (W11).
+    const failure = recordCheckOutcome(document, {
+      check,
+      passed: result.exitCode === 0,
+      ran: result.command.length > 0,
+      output: result.output,
+      command: result.command.join(" "),
+      target: { kind: "candidate", candidateId },
+    });
+    if (failure) void this.runDuties();
     appendEvent(
       document,
       "trama",
@@ -2748,6 +2879,7 @@ export class TramaController {
         if (project && project.github.repository?.toLowerCase() === repository.toLowerCase()) {
           project.github = { ...project.github, snapshot: checkpoint.snapshot, events: checkpoint.events };
           void this.assessRemoteConflicts();
+          void this.refreshIssues(project);
         }
         if (incoming.length) {
           this.host.notify("Trama: aggiornamenti condivisi", `${incoming.length === 1 ? "Una novità" : `${incoming.length} novità`} su ${repository}. Apri Trama per valutarne l'impatto sul tuo lavoro.`);

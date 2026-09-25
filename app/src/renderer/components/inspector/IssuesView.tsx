@@ -1,5 +1,7 @@
 import { IconArrowLeft, IconCircleCheck, IconCircleDot, IconExternalLink, IconMessageCircle, IconPlus, IconRefresh } from "@tabler/icons-react";
 import { useState } from "react";
+import { issueTriage } from "@shared/duties";
+import { ASSIGNMENT_STATUS } from "@/components/chat/Cards";
 import { ChatMarkdown } from "@/components/chat/ChatMarkdown";
 import { Spinner } from "@/components/Spinner";
 import { Button } from "@/components/ui/button";
@@ -134,6 +136,7 @@ export function IssuesView() {
 
 export function IssueDetail({ number }: { number: number }) {
   const issue = useUi((s) => s.app?.project?.github.issues.find((i) => i.number === number));
+  const triage = useUi((s) => (s.app?.project ? issueTriage(s.app.project.document, number) : null));
   const setInspector = useUi((s) => s.setInspector);
   const focusComposer = useUi((s) => s.focusComposer);
   if (!issue) return <div className="p-4"><EmptyNote>Issue non trovata.</EmptyNote></div>;
@@ -166,6 +169,23 @@ export function IssueDetail({ number }: { number: number }) {
       <InspectorSection title="Descrizione">
         {issue.body ? <ChatMarkdown text={issue.body} /> : <EmptyNote>Nessuna descrizione.</EmptyNote>}
       </InspectorSection>
+      {triage ? (
+        <InspectorSection
+          title="Triage di Trama"
+          aside={<Badge tone={ASSIGNMENT_STATUS[triage.status].tone}>{ASSIGNMENT_STATUS[triage.status].label}</Badge>}
+        >
+          {triage.duty?.outcome?.kind === "triage" && triage.result ? (
+            <ChatMarkdown text={triage.result} />
+          ) : (
+            <p className="text-ui-sm text-muted-foreground">{triage.lastUpdate}</p>
+          )}
+          <div className="cta-row mt-2">
+            <Button size="sm" variant="ghost" onClick={() => setInspector({ kind: "specialist", id: triage.specialistId })}>
+              Apri il bug triage
+            </Button>
+          </div>
+        </InspectorSection>
+      ) : null}
     </>
   );
 }
