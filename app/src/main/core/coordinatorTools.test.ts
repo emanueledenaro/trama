@@ -3,10 +3,11 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { ProjectDocument } from "@shared/domain";
 import { placeGrillingQuestion } from "@shared/grilling";
+import { FIXED_ROLES } from "@shared/roster";
 import { COORDINATOR_TOOLS, developerInstructions, GRILLING_BINDING, NEXT_STEP_RULES, runCoordinatorTool, type ToolContext } from "./coordinatorTools";
 import { emptyDocument } from "./document";
 import { deliverNativeSkill, loadNativeSkill } from "./nativeSkills";
-import { createDecisionRequest } from "./pact";
+import { createDecisionRequest, grantMandate } from "./pact";
 import { confirmTeam, developers } from "./team";
 import { NEXT_MOVES } from "./workPhase";
 
@@ -55,6 +56,52 @@ describe("Coordinator tools for the full team (W09)", () => {
     );
     expect(shown.isError).toBeFalsy();
     expect(developers(document)).toHaveLength(0);
+  });
+
+  it("assign_task gives work to developers only and names them when it refuses a fixed role", async () => {
+    const document = emptyDocument("p");
+    const started: string[] = [];
+    const context = {
+      ...teamContext(document),
+      snapshot: { modules: [{ id: "Sources/Orders", name: "Orders", relativePath: "Sources/Orders", files: [] }] },
+      startAssignment: (id: string) => void started.push(id),
+    } as unknown as ToolContext;
+    const order = { kind: "agreedTicket", objective: "o", moduleIDs: ["Sources/Orders"], requiredChecks: [], tools: ["edits"], instructions: "i" };
+    grantMandate(document, { objectives: ["o"], priorities: [], scopeModuleIds: ["Sources/Orders"], authorizedActions: ["executeInWorktree"], limits: [] });
+
+    const alone = await runCoordinatorTool("assign_task", { ...order, specialist: "QA" }, context);
+    expect(alone.isError).toBe(true);
+    expect(alone.content[0]!.text).toContain("fixed_role");
+    expect(alone.content[0]!.text).toContain("no developers yet");
+
+    await runCoordinatorTool(
+      "propose_team",
+      {
+        specialists: [
+          { name: "Ada", competence: "Swift", reason: "r", moduleIDs: ["Sources/Orders"] },
+          { name: "Bruno", competence: "Test", reason: "r", moduleIDs: [] },
+        ],
+      },
+      context,
+    );
+    confirmTeam(document, document.team.proposals[0]!.id, null, null);
+    const [ada, bruno] = developers(document);
+    for (const role of FIXED_ROLES) {
+      const fixed = document.team.specialists.find((s) => s.role === role)!;
+      for (const reference of [fixed.id, fixed.name]) {
+        const refused = await runCoordinatorTool("assign_task", { ...order, specialist: reference }, context);
+        expect(refused.isError).toBe(true);
+        expect(refused.content[0]!.text).toContain("fixed_role");
+        expect(refused.content[0]!.text).toContain(`Developers available: Ada (${ada!.id}), Bruno (${bruno!.id}).`);
+      }
+      expect(fixed.assignments).toHaveLength(0);
+    }
+    expect(started).toHaveLength(0);
+
+    const accepted = parse(await runCoordinatorTool("assign_task", { ...order, specialist: "Ada" }, context));
+    expect(accepted).toMatchObject({ specialistID: ada!.id, status: expect.any(String) });
+    expect(started).toEqual([accepted.assignmentID]);
+    expect(COORDINATOR_TOOLS.find((t) => t.name === "assign_task")!.description).toMatch(/only to developers/);
   });
 
   it("tell the Coordinator that the fixed roles are always there and it proposes developers", () => {
