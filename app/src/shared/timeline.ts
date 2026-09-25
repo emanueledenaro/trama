@@ -147,6 +147,8 @@ export function deriveTimelineRows(
   for (const request of requests) {
     if (request.state !== "running" || replied.has(request.id)) continue;
     const text = streaming && streaming.requestId === request.id ? streaming.text : null;
+    // The running work group already says the Coordinator is working: one indicator, until the reply has text.
+    if (!text && rows.some((row) => row.kind === "work" && row.running && row.requestId === request.id)) continue;
     rows.push({ kind: "reply", id: request.id, requestId: request.id, text, model: request.model, references: [], request, streaming: true });
   }
   return rows;

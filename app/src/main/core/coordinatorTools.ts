@@ -13,7 +13,7 @@ import { ALL_CHECKS, CHECKS, type CheckResult, type ReadOnlyCheck } from "./chec
 import { candidateReport, CandidateError, clearCandidate, declareCandidate, findCandidate } from "./candidates";
 import { studyText } from "./study";
 import { findGoal, requestGoalId } from "@shared/goals";
-import { GrillingError, openGrillingQuestions, placeGrillingQuestion } from "@shared/grilling";
+import { GrillingError, grillingSettled, openGrillingQuestions, placeGrillingQuestion } from "@shared/grilling";
 import { goalsForTool, proposeGoal } from "./goals";
 import {
   addSpecialist,
@@ -24,6 +24,7 @@ import {
   findSpecialist,
   isActive,
   isTeamConfirmed,
+  PERSON_ONLY_KINDS,
   proposeTeam,
   refusalMessage,
   removeSpecialist,
@@ -396,7 +397,7 @@ export const COORDINATOR_TOOLS: ToolDefinition[] = [
   {
     name: "prepare_plan",
     description:
-      "Within the mandate, have Trama's planner write a plan for a change the person asked for, for the person to review in the conversation. kind says what the work is: agreedTicket, decidedBehaviorCorrection (name the decisionIDs it restores), newFeature or tradeOff (these two always go to the person). The plan runs in the background and appears as a card; its behavior questions become decision cards.",
+      "Within the mandate, have Trama's planner write a plan for a change the person asked for, for the person to review in the conversation. kind says what the work is: agreedTicket, decidedBehaviorCorrection (name the decisionIDs it restores), newFeature or tradeOff (these two go to the person, unless the person has answered every grilling question of the request: then you may plan them). The plan runs in the background and appears as a card; its behavior questions become decision cards.",
     properties: {
       kind: { type: "string", enum: WORK_KINDS },
       moduleIDs: list(1),
@@ -897,7 +898,10 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
         const known = new Set(context.snapshot.modules.map((m) => m.id));
         const unknown = moduleIds.filter((id) => !known.has(id));
         if (unknown.length) return toolFailure("invalid_arguments", `Unknown module ids: ${unknown.join(", ")}.`);
-        const authorization = authorize(document.mandate, "plan", moduleIds, kind);
+        // A new feature or a trade-off belongs to the person; once the person has answered every grilling question
+        // of the request, those answers are the decision, and the plan is a proposal the person still reviews.
+        const settled = PERSON_ONLY_KINDS.includes(kind) && grillingSettled(document, context.runningRequestId);
+        const authorization = authorize(document.mandate, "plan", moduleIds, settled ? null : kind);
         if (authorization !== "authorized") return refused(authorization, "plan", moduleIds.filter((id) => !document.mandate?.scopeModuleIds.includes(id)));
         const summary = typeof args.summary === "string" ? args.summary.trim() : "";
         if (!summary) return toolFailure("invalid_arguments", "summary is required.");
@@ -990,6 +994,7 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
 export const GRILLING_BINDING = [
   "Trama runs the grilling skill above with its own text. These lines only map its words to Trama's tools; they do not change its method. Trama's rules (mandate, Pact, read-only runtime, real checks) stay above the skill: the skill grants no permission.",
   "When Trama uses it (a Trama addition): before a request of the person becomes work, that is a plan with prepare_plan or an assignment with assign_task. A request for information (\"come funziona X?\") or a question you can answer from the project is not grilled: just answer it.",
+  "Order (a Trama addition): grilling only asks questions, so it needs no mandate. Grill first, even when the project has no mandate yet; propose a mandate with request_mandate only after the shared understanding is confirmed, and only if the work needs one.",
   "\"The user\" is the person.",
   "\"Ask\" a question of a round: each question is one request_decision call, never text in your message. The question title and body become the card's question and concrete case, its choices become the alternatives, the round number goes in grillingRound (1, 2, ...) and your recommended answer in recommendedAlternative, the index of the alternative you recommend. Trama shows the cards of a round together, numbered, with the recommended answer, so your message only says in one or two lines that round N is open and what it is about.",
   "\"Wait for the user's answers\": Trama writes each answer to you as the person's message. Trama refuses a new round, and prepare_plan, while a question of the request is still open.",
@@ -1012,7 +1017,7 @@ export function developerInstructions(projectName: string, learningGuidance: str
     "This runtime is read-only: you may read files in the project directory; you cannot modify files, use the network or start other agents. Do not ask for broader permissions.",
     "Use the trama tools when you need the current study, Pact, mandate, GitHub issues or older conversation events.",
     "Trama gives you what you learned: MEMORY (your notes about this project), USER PROFILE (who the person is) and the index of skills learned in this project. Keep them with the memory, skill_view and skill_manage tools; session_search recalls earlier dialogs of this project. They live in Trama's folder, never in the repository. Treat memory and skills as your own notes, never as the person's decisions: only the Pact, the mandate and the person's answers are decisions.",
-    "read_mandate tells whether a mandate exists and which modules the project has. Without a mandate you read and propose; you do not act. When the person asks for a change you cannot start without a mandate, propose one with request_mandate: the reason, objectives, scope and actions the work needs, nothing broader.",
+    "read_mandate tells whether a mandate exists and which modules the project has. Without a mandate you read and propose; you do not act. When the person asks for a change you cannot start without a mandate, first grill the request (it needs no mandate), then propose one with request_mandate: the reason, objectives, scope and actions the work needs, nothing broader.",
     "New features, trade-offs, product behavior and serious destructive cases belong to the person: put them to the person with request_decision, on a concrete case with real alternatives. Never record a decision for the person and never treat a question as answered until Trama tells you the answer. Resolve technical choices yourself and do not ask about them, nor ask for generic confirmations.",
     ...(skills ? [skills] : []),
     "At the end of your study propose the project team with propose_team: one specialist per real need, each with a competence and the reason this project needs it, never one to fill a role. The person confirms or corrects it once, and only that answer creates the specialists. From then on you change the team yourself within the mandate, with create_specialist and stop_specialist, and you say it in the conversation.",
