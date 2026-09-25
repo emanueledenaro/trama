@@ -195,10 +195,12 @@ function NextStepRow({ step, goalId }: { step: NextStepView; goalId: string | nu
     }
     if (step.move === "reviewCandidate" && step.targetId) return setInspector({ kind: "candidate", id: step.targetId });
     if (step.targetId && revealCard(step.targetId)) return;
-    // Seams and plan review both act on the plan card (M04); when this dialog does not show it, the work lists the plans.
-    if (step.move === "confirmSeams" || step.move === "reviewPlan") setInspector({ kind: "work" });
-    else if (step.move === "grantMandate") setInspector({ kind: "mandate" });
+    // A card this dialog does not show still has a panel that lists it: the step never does nothing (W12).
+    if (step.move === "grantMandate") setInspector({ kind: "mandate" });
     else if (step.move === "confirmTeam") setInspector({ kind: "team" });
+    else if (step.move === "answerQuestions") setInspector({ kind: "pact" });
+    // Seams and plan review both act on the plan card (M04): the work panel lists the plans.
+    else if (step.move === "reviewPlan" || step.move === "confirmSeams") setInspector({ kind: "work" });
   };
   return (
     <div className="cta-row mt-2" data-testid="next-step">

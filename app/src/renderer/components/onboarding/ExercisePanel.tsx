@@ -11,8 +11,10 @@ import { Sep } from "@/components/ui/sep";
 const DECISION_PROMPT =
   "Esercizio: fammi una domanda di prodotto sul caso dell'ordine pagato annullato, con alternative concrete, usando request_decision. Non modificare nulla.";
 
+/** The exercises talk in the project dialog: show it, so the message and the reply appear where the person looks (W12). */
 function send(text: string) {
-  void act("coordinator:send", { text, moduleId: null, model: null, effort: null });
+  useUi.getState().openDialog(null);
+  void act("coordinator:send", { text, moduleId: null, model: null, effort: null, goalId: null });
 }
 
 /** Actions for the step the exercise waits for. They never mark a step: the state does. */
@@ -37,7 +39,9 @@ function CurrentActions({ exercise, step }: { exercise: ExerciseId; step: string
           <Button
             size="xs"
             onClick={() => {
-              document.querySelector('[data-anchor="study"]')?.scrollIntoView({ behavior: "smooth", block: "start" });
+              // The study card lives in the project dialog: show that dialog first, then the card.
+              useUi.getState().openDialog(null);
+              requestAnimationFrame(() => document.querySelector('[data-anchor="study"]')?.scrollIntoView({ behavior: "smooth", block: "start" }));
               void act("exercise:observe", { step: "studyRead" });
             }}
           >

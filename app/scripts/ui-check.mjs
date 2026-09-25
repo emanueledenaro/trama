@@ -1,6 +1,7 @@
 // Launches the built app with the fake Codex server and saves screenshots of the main screens.
 // Usage: node scripts/ui-check.mjs <output-dir>
-import { mkdtemp } from "node:fs/promises";
+import { execFileSync } from "node:child_process";
+import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { _electron as electron } from "playwright";
@@ -8,7 +9,7 @@ import { _electron as electron } from "playwright";
 const out = resolve(process.argv[2] ?? "ui-check");
 const dataDir = await mkdtemp(join(tmpdir(), "trama-ui-"));
 // Each launch uses the same Trama data folder, so a second launch is a real reopening.
-const launch = async () => {
+const launch = async (env = {}) => {
   const app = await electron.launch({
     // Its own Electron profile, so the check runs next to an open Trama instead of hitting its single-instance lock.
     args: [".", "--no-sandbox", `--user-data-dir=${await mkdtemp(join(tmpdir(), "trama-ui-profile-"))}`],
@@ -16,7 +17,13 @@ const launch = async () => {
       ...process.env,
       TRAMA_DATA_DIR: dataDir,
       TRAMA_CODEX_PATH: resolve("test-fixtures/fake-codex.mjs"),
+      ...env,
     },
+  });
+  app.process().on("exit", (code, signal) => console.log("[electron exit]", code, signal));
+  app.process().stderr.on("data", (data) => {
+    const text = String(data).trim();
+    if (text && !text.startsWith("Debugger")) console.log("[electron]", text);
   });
   const page = await app.firstWindow();
   page.on("console", (m) => console.log("[renderer]", m.type(), m.text()));
@@ -29,6 +36,24 @@ const shot = async (name) => {
   await page.waitForTimeout(400);
   await page.screenshot({ path: join(out, `${name}.png`) });
   console.log("saved", name);
+};
+// W12: "Chiedi al Coordinatore" leaves a question in the composer, ready to edit or send, with the cursor in it.
+const composer = () => page.getByLabel("Messaggio al Coordinatore");
+const expectAsked = async (fragment, control) => {
+  const asked = await page
+    .waitForFunction(
+      (text) => {
+        const box = document.querySelector('textarea[aria-label="Messaggio al Coordinatore"]');
+        return Boolean(box && box.value.includes(text) && document.activeElement === box);
+      },
+      fragment,
+      { timeout: 5_000 },
+    )
+    .then(
+      () => true,
+      () => false,
+    );
+  if (!asked) throw new Error(`${control}: no "${fragment}" in the focused composer, it holds: ${await composer().inputValue().catch(() => "no composer")}`);
 };
 
 await page.getByText("Su cosa vuoi lavorare?").waitFor();
@@ -349,6 +374,71 @@ await inspectorPanel.getByRole("button", { name: "Ripristina" }).click();
 await page.getByTestId("sidebar-goal").filter({ hasText: goalTitle }).waitFor();
 await shot("14f-goal-restored");
 await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
+
+// W12: the main action of every screen does what its label says, with an effect the person sees. Mandato, Memoria,
+// candidato, Obiettivi, Panoramica, guida and the chat cards are clicked above; Issue and Gruppo after the restart.
+// Header: a rescan that changes nothing still confirms it ran.
+await page.getByRole("button", { name: "Aggiorna progetto" }).click();
+const refreshed = page.getByRole("status").filter({ hasText: "Progetto riletto" });
+await refreshed.waitFor({ timeout: 10_000 });
+await refreshed.getByRole("button", { name: "Chiudi" }).click();
+// Goal card: "Modifica la proposta" opens the proposal with its editor ready.
+await page.getByTestId("goal-card").getByRole("button", { name: "Modifica la proposta" }).first().click();
+const editor = page.getByTestId("inspector").getByTestId("goal-editor");
+await editor.waitFor();
+await shot("16a-goal-proposal-edit");
+await editor.getByRole("button", { name: "Annulla" }).click();
+await editor.waitFor({ state: "detached" });
+// Mappa: asking about a module puts the question in the composer with the module as the message's context.
+await page.getByRole("button", { name: "Mappa del progetto" }).click();
+await page.getByRole("listbox", { name: "Moduli" }).getByRole("option", { name: /Orders/ }).click();
+await page.getByTestId("inspector").getByRole("button", { name: "Chiedi al Coordinatore su questo modulo" }).click();
+await expectAsked("Cosa fa il modulo Orders", "Mappa, Chiedi al Coordinatore su questo modulo");
+if (!(await page.getByRole("button", { name: "Contesto del messaggio" }).innerText()).includes("Orders")) throw new Error("The module is not the message's context");
+await shot("16b-module-ask");
+await page.getByRole("button", { name: "Contesto del messaggio" }).click();
+await page.getByRole("listbox", { name: "Contesto" }).getByRole("option", { name: /Intero progetto/ }).click();
+await composer().fill("");
+// Patto: "Nuova decisione" opens the editor, "Annulla" closes it.
+await page.getByRole("button", { name: /^Patto/ }).first().click();
+await page.getByTestId("inspector").getByRole("button", { name: "Nuova decisione" }).click();
+const recordDecision = page.getByTestId("inspector").getByRole("button", { name: "Registra decisione", exact: true });
+await recordDecision.waitFor();
+await page.getByTestId("inspector").getByRole("button", { name: "Annulla", exact: true }).click();
+await recordDecision.waitFor({ state: "detached" });
+// Team: asking about a specialist names its latest assignment; the action is the last in the cta-row.
+await page.getByRole("button", { name: /^Team/ }).first().click();
+await page.getByTestId("inspector").getByTestId("team-developer").first().click();
+await page.getByTestId("inspector").getByRole("button", { name: "Chiedi al Coordinatore", exact: true }).waitFor();
+const developerName = (await page.getByTestId("inspector").locator("h3.text-ui-lg").first().textContent()).trim();
+const specialistActions = await page.getByTestId("inspector").locator(".cta-row").first().locator("button").allTextContents();
+if (specialistActions.at(-1)?.trim() !== "Chiedi al Coordinatore") throw new Error(`Chiedi al Coordinatore is not the last call to action: ${specialistActions}`);
+await page.getByTestId("inspector").getByRole("button", { name: "Chiedi al Coordinatore", exact: true }).click();
+await expectAsked(`di ${developerName}`, "Team, Chiedi al Coordinatore");
+if (!(await composer().inputValue()).includes("Aggiornami sull'incarico A-")) throw new Error(`The question does not name ${developerName}'s assignment`);
+await shot("16c-specialist-ask");
+await composer().fill("");
+// Lavoro: a candidate opens with its diff; the card inside it offers no "Apri il diff" that would do nothing.
+await page.getByRole("button", { name: /^Lavoro/ }).first().click();
+await page.getByTestId("inspector").getByRole("button", { name: /^C-[0-9A-F]{8}/ }).first().click();
+await page.getByTestId("inspector").getByText(/^Diff catturato da Trama/).waitFor();
+if (await page.getByTestId("inspector").getByRole("button", { name: "Apri il diff" }).count()) throw new Error("The candidate view offers a diff it already shows");
+await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
+// Ricerca: "Scrivi al Coordinatore" from the overview goes back to the dialog with the cursor in the composer.
+await page.getByRole("button", { name: "Panoramica dei progetti" }).click();
+await page.getByTestId("overview").waitFor();
+await page.keyboard.press("Control+K");
+await page.getByRole("textbox", { name: "Cerca in Trama" }).fill("Scrivi al");
+await page.keyboard.press("Enter");
+await page.getByTestId("overview").waitFor({ state: "detached" });
+await expectAsked("", "Ricerca, Scrivi al Coordinatore");
+// Dialoghi: "Crea un progetto" opens its dialog and "Annulla" closes it.
+await page.getByRole("button", { name: "Crea un progetto" }).first().click();
+const createDialog = page.getByRole("dialog", { name: "Crea un progetto" });
+await createDialog.waitFor();
+await createDialog.getByRole("button", { name: "Annulla" }).click();
+await createDialog.waitFor({ state: "hidden" });
+
 await page.keyboard.press("Control+K");
 await page.getByRole("textbox", { name: "Cerca in Trama" }).fill("cancel");
 await page.getByRole("option").first().waitFor();
@@ -365,6 +455,12 @@ await settings.getByRole("button", { name: /^Collegamenti/ }).first().click();
 await shot("11-connections");
 await settings.getByRole("button", { name: /^Generale/ }).first().click();
 await shot("12-settings");
+// W12, Impostazioni: the theme follows the choice at once.
+await page.getByRole("radio", { name: "Scuro" }).click();
+await page.getByRole("radio", { name: "Scuro", checked: true }).waitFor();
+if (!(await page.evaluate(() => document.documentElement.classList.contains("dark")))) throw new Error("Tema Scuro did not darken the window");
+await page.getByRole("radio", { name: "Sistema" }).click();
+await page.getByRole("radio", { name: "Sistema", checked: true }).waitFor();
 await page.getByRole("button", { name: "Apri la guida" }).click();
 await guide.waitFor();
 await shot("12a-guide-resume-dark");
@@ -412,8 +508,22 @@ for (const [width, height] of [[720, 640], [1040, 700], [1280, 800], [1440, 900]
 }
 await app.close();
 
+// W12, Issue and Gruppo need a project with a GitHub remote. The restart puts a fake GitHub CLI first on the PATH,
+// so the check never reaches GitHub; the example project does not use gh, so the reopening below is unchanged.
+const ghBin = await mkdtemp(join(tmpdir(), "trama-ui-gh-"));
+await writeFile(join(ghBin, "gh"), `#!/bin/sh\nexec "${process.execPath}" "${resolve("test-fixtures/fake-gh.mjs")}" "$@"\n`, { mode: 0o755 });
+const githubProject = await mkdtemp(join(tmpdir(), "trama-ui-negozio-"));
+const git = (...args) => execFileSync("git", ["-C", githubProject, ...args], { stdio: "ignore" });
+git("init", "-q", "-b", "main");
+await mkdir(join(githubProject, "src"));
+await writeFile(join(githubProject, "src", "orders.js"), 'export function cancel(order) {\n  return { ...order, state: "cancelled" };\n}\n');
+await writeFile(join(githubProject, "README.md"), "# Negozio\n");
+git("add", ".");
+git("-c", "user.name=Trama UI", "-c", "user.email=ui@trama.local", "commit", "-q", "-m", "Negozio");
+git("remote", "add", "origin", "https://github.com/trama-ui/negozio.git");
+
 // Reopening (UX01): after a restart the same goal is in the list and opens from the keyboard alone.
-({ app, page } = await launch());
+({ app, page } = await launch({ PATH: `${ghBin}:${process.env.PATH}` }));
 const goalsRow = page.getByRole("button", { name: /^Obiettivi/ }).first();
 await goalsRow.waitFor({ timeout: 30_000 });
 // M04: the spec is still there to read after the restart.
@@ -433,4 +543,30 @@ await page.getByText(goalId, { exact: true }).waitFor();
 await page.getByRole("heading", { name: goalTitle }).waitFor();
 await shot("13a-goal-reopened");
 console.log("reopened goal", goalId);
+
+// W12, Issue: "Chiedi al Coordinatore" cites the issue in the composer, ready to edit or send. The folder chooser is
+// native, so the project opens through the same action as a recent project in the sidebar.
+await page.evaluate((path) => window.trama.invoke("project:open", { path }), githubProject);
+await page.getByTestId("dialog-title").filter({ hasText: "trama-ui-negozio" }).waitFor({ timeout: 30_000 });
+await page.getByRole("button", { name: /^Issue/ }).first().click();
+const issuesPanel = page.getByTestId("inspector");
+await issuesPanel.getByRole("button", { name: /Il pulsante Annulla non fa niente/ }).click({ timeout: 30_000 });
+await issuesPanel.getByRole("button", { name: "Chiedi al Coordinatore", exact: true }).click();
+await expectAsked("@issue:7 «Il pulsante Annulla non fa niente»", "Issue, Chiedi al Coordinatore");
+if (await page.getByRole("button", { name: "Invia al Coordinatore" }).isDisabled()) throw new Error("The question about the issue cannot be sent");
+await shot("15a-issue-ask");
+await composer().fill("");
+// W12, Gruppo: following the repository shows the monitor at work; the impact question waits in the composer. In a
+// narrow window the inspector floats over the chat, so it steps aside to leave the question in view.
+await page.getByRole("button", { name: /^Gruppo/ }).first().click();
+const groupPanel = page.getByTestId("inspector");
+await groupPanel.getByRole("button", { name: "Segui in background" }).click();
+await groupPanel.getByText("Monitor attivo").waitFor({ timeout: 10_000 });
+await shot("15b-group-follow");
+await page.setViewportSize({ width: 720, height: 640 });
+await groupPanel.getByRole("button", { name: "Chiedi al Coordinatore l'impatto" }).click();
+await expectAsked("Valuta l'impatto delle ultime novità dei colleghi", "Gruppo, Chiedi al Coordinatore l'impatto");
+await groupPanel.waitFor({ state: "detached" });
+await shot("15c-group-ask-narrow");
+await composer().fill("");
 await app.close();

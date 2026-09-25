@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/field";
 import { cn } from "@/lib/cn";
 import { formatRelativeTime } from "@/lib/format";
 import { act, useUi } from "@/lib/store";
+import { GROUP_IMPACT_QUESTION } from "@/lib/askCoordinator";
 import { EmptyNote, InspectorSection } from "./Inspector";
 import { Sep } from "@/components/ui/sep";
 
@@ -19,13 +20,7 @@ export function GroupView() {
   const snapshot = github.snapshot;
   const repository = github.repository;
   const monitored = repository ? monitor.repositories.some((r) => r.toLowerCase() === repository.toLowerCase()) : false;
-  const askImpact = () =>
-    void act("coordinator:send", {
-      text: "Valuta l'impatto delle ultime novità dei colleghi (pull request e branch) sul lavoro in corso di questo progetto.",
-      moduleId: null,
-      model: null,
-      effort: null,
-    });
+  const askCoordinator = useUi((s) => s.askCoordinator);
   return (
     <>
       <InspectorSection
@@ -47,7 +42,7 @@ export function GroupView() {
               {snapshot ? `Letto ${formatRelativeTime(snapshot.fetchedAt)} fa, ramo principale ${snapshot.defaultBranch}` : "Nessuna lettura ancora."}
             </p>
             <div className="cta-row mt-2">
-              <Button size="sm" variant="outline" onClick={askImpact}>
+              <Button size="sm" variant="outline" onClick={() => askCoordinator(GROUP_IMPACT_QUESTION)}>
                 Chiedi al Coordinatore l'impatto
               </Button>
               {!monitored ? (

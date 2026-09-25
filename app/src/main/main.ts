@@ -225,7 +225,8 @@ function buildMenu(): void {
         { label: "Apri progetto di esempio", click: () => void controller.openDemo().catch(() => undefined) },
         { label: "Crea un progetto…", click: () => sendMenu("createProject") },
         { type: "separator" },
-        { label: "Aggiorna progetto", accelerator: "CmdOrCtrl+R", click: () => void controller.refreshProject() },
+        // Through the window, so the menu item confirms the rescan like the header button does (W12).
+        { label: "Aggiorna progetto", accelerator: "CmdOrCtrl+R", click: () => sendMenu("refreshProject") },
         ...(isMac ? [] : [{ type: "separator" as const }, { label: "Impostazioni…", accelerator: "CmdOrCtrl+,", click: () => sendMenu("settings") }]),
         ...(isMac ? [{ role: "close" as const, label: "Chiudi finestra" }] : [{ role: "quit" as const, label: "Esci" }]),
       ],

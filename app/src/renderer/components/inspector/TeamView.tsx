@@ -1,4 +1,4 @@
-import { IconArrowLeft } from "@tabler/icons-react";
+import { IconArrowLeft, IconMessageCircle } from "@tabler/icons-react";
 import { useState } from "react";
 import { isUsableAccount, type ProviderId } from "@shared/codex";
 import type { Specialist, SpecialistAssignment } from "@shared/domain";
@@ -17,6 +17,7 @@ import { PickerSelect } from "@/components/ui/picker";
 import { cn } from "@/lib/cn";
 import { formatRelativeTime } from "@/lib/format";
 import { act, useUi } from "@/lib/store";
+import { specialistQuestion } from "@/lib/askCoordinator";
 import { EmptyNote, InspectorSection } from "./Inspector";
 import { Sep } from "@/components/ui/sep";
 
@@ -190,7 +191,7 @@ export function TeamView() {
 export function SpecialistView({ id }: { id: string }) {
   const project = useUi((s) => s.app?.project)!;
   const setInspector = useUi((s) => s.setInspector);
-  const focusComposer = useUi((s) => s.focusComposer);
+  const askCoordinator = useUi((s) => s.askCoordinator);
   const [removing, setRemoving] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [reason, setReason] = useState("");
@@ -199,6 +200,11 @@ export function SpecialistView({ id }: { id: string }) {
   const current = specialist.assignments.at(-1);
   const busy = current && ["preparing", "running", "stopRequested"].includes(current.status);
   const fixed = isFixedRole(specialist.role);
+  // The question goes to the dialog of the goal the latest assignment serves; otherwise to the dialog on screen.
+  const ask = () => {
+    const goalId = findGoal(project.document, current?.goalId ?? null)?.id;
+    askCoordinator(specialistQuestion(specialist, current ?? null), goalId ? { goalId } : {});
+  };
   return (
     <>
       <div className="px-4 pt-3">
@@ -240,8 +246,8 @@ export function SpecialistView({ id }: { id: string }) {
               Togli dal team
             </Button>
           ) : null}
-          <Button size="sm" variant="outline" onClick={() => focusComposer()}>
-            Vai alla conversazione
+          <Button size="sm" variant="outline" onClick={ask}>
+            <IconMessageCircle stroke={1.8} /> Chiedi al Coordinatore
           </Button>
         </div>
         {renaming ? <RenameSpecialist specialist={specialist} onDone={() => setRenaming(false)} /> : null}

@@ -2,6 +2,7 @@ import { IconArrowLeft, IconExternalLink, IconFileText, IconFolder, IconMessageC
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { act, useUi } from "@/lib/store";
+import { moduleQuestion } from "@/lib/askCoordinator";
 import { EmptyNote, InspectorSection } from "./Inspector";
 
 const ROW =
@@ -54,7 +55,7 @@ export function MapView() {
 export function ModuleView({ id }: { id: string }) {
   const project = useUi((s) => s.app?.project)!;
   const setInspector = useUi((s) => s.setInspector);
-  const focusComposer = useUi((s) => s.focusComposer);
+  const askCoordinator = useUi((s) => s.askCoordinator);
   const module = project.snapshot.modules.find((m) => m.id === id);
   if (!module) return <div className="p-4"><EmptyNote>Il modulo non esiste più dopo l'ultima scansione.</EmptyNote></div>;
   const inMandate = project.document.mandate?.status === "granted" && project.document.mandate.scopeModuleIds.includes(module.id);
@@ -67,7 +68,7 @@ export function ModuleView({ id }: { id: string }) {
         <h3 className="mt-2 text-ui-lg font-medium text-foreground">{module.name}</h3>
         <p className="mt-0.5 font-mono text-[11px] text-muted-foreground">{module.relativePath}</p>
         <div className="cta-row mt-3">
-          <Button size="sm" variant="outline" onClick={() => focusComposer(module.id)}>
+          <Button size="sm" onClick={() => askCoordinator(moduleQuestion(module.name), { moduleId: module.id })}>
             <IconMessageCircle stroke={1.8} /> Chiedi al Coordinatore su questo modulo
           </Button>
         </div>

@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/cn";
 import { act, useUi } from "@/lib/store";
+import { withQuestion } from "@/lib/askCoordinator";
 import { Sep } from "@/components/ui/sep";
 
 const IMAGE_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp"];
@@ -108,6 +109,25 @@ export function Composer() {
   useEffect(() => {
     if (focusRequest) textarea.current?.focus();
   }, [focusRequest]);
+
+  // A question prepared by "Chiedi al Coordinatore" in a panel: added to the draft, cursor at the end (W12).
+  const prefill = useUi((s) => s.composerPrefill);
+  useEffect(() => {
+    if (prefill === null) return;
+    const question = useUi.getState().takeComposerPrefill();
+    if (question === null) return;
+    const next = withQuestion(text, question);
+    updateText(next);
+    // In a narrow window the inspector floats over the chat: close it, or it would hide the question.
+    const panel = document.querySelector<HTMLElement>('[data-testid="inspector"]');
+    if (panel && getComputedStyle(panel).position === "absolute") useUi.getState().setInspector(null);
+    requestAnimationFrame(() => {
+      textarea.current?.focus();
+      textarea.current?.setSelectionRange(next.length, next.length);
+    });
+    // Only when a new question arrives; the draft it extends is the one on screen.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prefill]);
 
   useLayoutEffect(() => {
     const element = textarea.current;
