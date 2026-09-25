@@ -11,6 +11,8 @@ import {
   IconSitemap,
   IconTarget,
   IconUsersGroup,
+  IconFileDiff,
+  IconGitPullRequest,
 } from "@tabler/icons-react";
 import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import { deriveTimelineRows } from "@shared/timeline";
@@ -33,31 +35,6 @@ import { TimelineRowView } from "./TimelineRows";
 const HEADER_CHIP =
   "!h-7 shrink-0 rounded-lg gap-1.5 border-0 px-1.5 text-ui-sm font-normal transition-colors text-[var(--color-text-foreground-secondary)] hover:bg-[var(--color-background-button-secondary-hover)] hover:text-[var(--color-text-foreground)] inline-flex items-center";
 const HEADER_CHIP_ACTIVE = "bg-[var(--color-background-button-secondary)] text-[var(--color-text-foreground)]";
-
-function HeaderChip({
-  target,
-  label,
-  icon,
-  count,
-}: {
-  target: InspectorTarget;
-  label: string;
-  icon: React.ReactNode;
-  count?: number;
-}) {
-  const inspector = useUi((s) => s.inspector);
-  const toggle = useUi((s) => s.toggleInspector);
-  const active = inspector?.kind === target.kind;
-  return (
-    <Tooltip label={label}>
-      <button type="button" aria-label={label} aria-pressed={active} className={cn(HEADER_CHIP, active && HEADER_CHIP_ACTIVE)} onClick={() => toggle(target)}>
-        <span className="size-3.5 shrink-0 opacity-70 [&>svg]:size-3.5">{icon}</span>
-        {inspector ? null : <span className="hidden @min-[1000px]/chat:inline">{label}</span>}
-        {count ? <span className="text-ui-xs text-[var(--color-text-accent)]">{count}</span> : null}
-      </button>
-    </Tooltip>
-  );
-}
 
 interface HeaderPanel {
   target: InspectorTarget;
@@ -129,6 +106,8 @@ function ChatHeader({ isMac }: { isMac: boolean }) {
     { target: { kind: "pact" }, label: "Patto", icon: <IconRosetteDiscountCheck stroke={1.8} />, count: pendingDecisions },
     { target: { kind: "mandate" }, label: "Mandato", icon: <IconShieldCheck stroke={1.8} />, count: pendingMandate },
     { target: { kind: "team" }, label: "Team", icon: <IconUsersGroup stroke={1.8} />, count: pendingTeam },
+    { target: { kind: "work" }, label: "Lavoro", icon: <IconFileDiff stroke={1.8} /> },
+    { target: { kind: "group" }, label: "Gruppo", icon: <IconGitPullRequest stroke={1.8} /> },
     { target: { kind: "issues" }, label: "Issue", icon: <IconCircleDot stroke={1.8} />, count: openIssues },
     { target: { kind: "memory" }, label: "Memoria", icon: <IconBrain stroke={1.8} /> },
   ];
@@ -178,19 +157,11 @@ function ChatHeader({ isMac }: { isMac: boolean }) {
         )}
       </div>
       {project && mainView === "dialog" ? (
-        // A wide dialog shows every panel in a row; a narrow one gathers them in one "Pannelli" menu.
-        <>
-          <div className="no-drag hidden min-w-0 items-center gap-1 @min-[640px]/chat:flex">
-            {project.isDemo ? <ExercisesChip /> : null}
-            {panels.map((panel) => (
-              <HeaderChip key={panel.target.kind} target={panel.target} label={panel.label} icon={panel.icon} count={panel.count} />
-            ))}
-          </div>
-          <div className="no-drag flex items-center gap-1 @min-[640px]/chat:hidden">
-            {project.isDemo ? <ExercisesChip /> : null}
-            <PanelsMenu panels={panels} />
-          </div>
-        </>
+        // The panels live in the sidebar; only while the sidebar is hidden does the header offer them, in one menu.
+        <div className="no-drag flex items-center gap-1">
+          {project.isDemo ? <ExercisesChip /> : null}
+          {sidebarOpen ? null : <PanelsMenu panels={panels} />}
+        </div>
       ) : null}
       {project && mainView === "dialog" ? (
         // Refresh and the inspector toggle never scroll away.

@@ -13,7 +13,6 @@ import {
   IconLayoutSidebar,
   IconTarget,
   IconMessageCircle,
-  IconPencilPlus,
   IconPlugConnected,
   IconRosetteDiscountCheck,
   IconSettings,
@@ -23,6 +22,8 @@ import {
   IconUsersGroup,
   IconX,
   IconListCheck,
+  IconBrain,
+  IconPencilPlus,
 } from "@tabler/icons-react";
 import { StatusDot } from "@/components/inspector/TeamView";
 import type * as React from "react";
@@ -136,7 +137,6 @@ export function Sidebar({ isMac }: { isMac: boolean }) {
   const inspector = useUi((s) => s.inspector);
   const setInspector = useUi((s) => s.setInspector);
   const setDialog = useUi((s) => s.setDialog);
-  const focusComposer = useUi((s) => s.focusComposer);
   const project = app.project;
   const document = project?.document;
   const pendingDecisions = document?.decisionRequests.filter((r) => !r.outcome) ?? [];
@@ -199,7 +199,6 @@ export function Sidebar({ isMac }: { isMac: boolean }) {
         </div>
         {project ? (
           <div className="flex flex-col gap-0.5 px-2 pt-0.5 pb-1.5">
-            <SidebarRow icon={<IconPencilPlus className="size-3.5" stroke={1.8} />} label="Scrivi al Coordinatore" onClick={() => focusComposer()} />
             <SidebarRow
               icon={<IconTarget className="size-3.5" stroke={1.8} />}
               label="Obiettivi"
@@ -253,6 +252,12 @@ export function Sidebar({ isMac }: { isMac: boolean }) {
               active={isActive("issues") || isActive("issue")}
               badge={openIssues}
               onClick={() => setInspector({ kind: "issues" })}
+            />
+            <SidebarRow
+              icon={<IconBrain className="size-3.5" stroke={1.8} />}
+              label="Memoria"
+              active={isActive("memory")}
+              onClick={() => setInspector({ kind: "memory" })}
             />
           </div>
         ) : null}
