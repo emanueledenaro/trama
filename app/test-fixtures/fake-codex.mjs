@@ -19,6 +19,7 @@ const account = process.env.FAKE_CODEX_ACCOUNT ?? "chatgpt";
 const send = (message) => process.stdout.write(`${JSON.stringify(message)}\n`);
 let threads = 0;
 const toolServers = new Map();
+const receivedByThread = new Map();
 
 async function callTool(threadId, name, args) {
   const server = toolServers.get(threadId);
@@ -90,6 +91,15 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
       };
       const toolDone = (tool, result) =>
         send({ method: "item/completed", params: { threadId, turnId, item: { id: `tool-${tool}`, type: "mcpToolCall", server: "trama", tool, status: "completed", result } } });
+      // Remembers the skill inputs and late-rule sections each thread received (M02).
+      const seen = receivedByThread.get(threadId) ?? [];
+      seen.push(...params.input.filter((item) => item.type === "skill").map((item) => `skill:${item.name}:${item.path}`));
+      if (text.includes("## Regole aggiornate da Trama")) seen.push("rules");
+      receivedByThread.set(threadId, seen);
+      if (text.includes("[ricevuti]")) {
+        setTimeout(() => finish(JSON.stringify(seen)), 10);
+        return;
+      }
       if (text.includes("[tier]")) {
         // Echoes the service tier the turn asked for.
         setTimeout(() => finish(`tier:${params.serviceTier ?? "none"}`), 10);
