@@ -1,12 +1,68 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import type { ProjectDocument } from "@shared/domain";
 import { placeGrillingQuestion } from "@shared/grilling";
 import { COORDINATOR_TOOLS, developerInstructions, GRILLING_BINDING, NEXT_STEP_RULES, runCoordinatorTool, type ToolContext } from "./coordinatorTools";
 import { emptyDocument } from "./document";
 import { deliverNativeSkill, loadNativeSkill } from "./nativeSkills";
 import { createDecisionRequest } from "./pact";
+import { developers } from "./team";
 import { NEXT_MOVES } from "./workPhase";
+
+/** Only what read_team and propose_team use. */
+function teamContext(document: ProjectDocument): ToolContext {
+  return {
+    document,
+    runningRequestId: null,
+    changed: () => undefined,
+    addCard: () => undefined,
+    models: ["gpt-5.5"],
+    defaultModel: "gpt-5.5",
+    defaultProvider: "codex",
+    providers: [{ id: "codex", models: ["gpt-5.5"] }],
+  } as unknown as ToolContext;
+}
+
+const parse = (result: { content: { text: string }[] }) => JSON.parse(result.content[0]!.text);
+
+describe("Coordinator tools for the full team (W09)", () => {
+  it("read_team shows every figure with its role, its moments and its skills", async () => {
+    const team = parse(await runCoordinatorTool("read_team", {}, teamContext(emptyDocument("p"))));
+    expect(team.specialists.filter((s: { fixedRole: boolean }) => s.fixedRole)).toHaveLength(11);
+    expect(team.specialists.find((s: { role: string }) => s.role === "regressionGuardian")).toMatchObject({
+      name: "Guardiano delle regressioni",
+      fixedRole: true,
+      moments: [{ moment: "candidate", skills: ["diagnosing-bugs"] }],
+    });
+    expect(team.specialists.find((s: { role: string }) => s.role === "security").moments[0].skills).toEqual([]);
+  });
+
+  it("propose_team proposes developers only, beside the fixed roles", async () => {
+    const document = emptyDocument("p");
+    const refused = await runCoordinatorTool(
+      "propose_team",
+      { specialists: [{ name: "Clean Code", competence: "Standard", reason: "r", moduleIDs: [] }] },
+      teamContext(document),
+    );
+    expect(refused.isError).toBe(true);
+    expect(refused.content[0]!.text).toContain("fixed_role");
+    expect(document.team.proposals).toHaveLength(0);
+    const shown = await runCoordinatorTool(
+      "propose_team",
+      { specialists: [{ name: "Ada", competence: "Swift", reason: "r", moduleIDs: ["Sources/Orders"] }] },
+      teamContext(document),
+    );
+    expect(shown.isError).toBeFalsy();
+    expect(developers(document)).toHaveLength(0);
+  });
+
+  it("tell the Coordinator that the fixed roles are always there and it proposes developers", () => {
+    expect(COORDINATOR_TOOLS.find((t) => t.name === "propose_team")!.description).toMatch(/fixed roles/);
+    expect(COORDINATOR_TOOLS.find((t) => t.name === "create_specialist")!.description).toMatch(/developer/);
+    expect(developerInstructions("Demo")).toMatch(/fixed roles/);
+  });
+});
 
 describe("Coordinator grilling instructions (M01, M02)", () => {
   it("carry the original grilling skill with its binding, when to skip it and the confirmation", async () => {

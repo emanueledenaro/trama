@@ -18,9 +18,15 @@ Product Owner: la persona che decide obiettivi, priorità, comportamenti del pro
 
 Coordinatore generale: l'interlocutore principale della persona per tutti i progetti registrati in Trama. Riunisce lavoro e risultati dei team, mantenendo distinti progetti e decisioni.
 
-Team di progetto: l'insieme degli specialisti appartenenti a un singolo progetto. La composizione dipende dalle necessità del progetto e può cambiare nel tempo.
+Team di progetto: l'insieme degli specialisti appartenenti a un singolo progetto. È sempre completo: ha tutti i ruoli fissi e gli sviluppatori scelti per il progetto. Solo gli sviluppatori dipendono dalle necessità del progetto e cambiano nel tempo.
 
 Specialista: un agente con una competenza e un incarico motivato all'interno di un team di progetto. Il ruolo è distinto dal modello AI usato per svolgerlo e non conferisce autorità sulle decisioni del Product Owner.
+
+Ruolo fisso: una figura che ogni team di progetto ha sempre, qualunque sia il progetto: QA, UX, ricerca, documentazione e dominio, bug triage e debugger, revisore della spec, Clean Code, guardiano delle regressioni, sicurezza, prestazioni, DevOps. Ha una competenza, le skill di AI Hero su cui si basa e i suoi momenti. Sicurezza e prestazioni sono aggiunte di Trama e non hanno una skill. Trama crea i ruoli fissi con il progetto e li aggiunge ai progetti esistenti; nessuno li toglie dal team. Non contano nel limite degli sviluppatori in parallelo.
+
+Sviluppatore: uno specialista scelto per il progetto, che realizza le fette con `implement` e `tdd`. Il Coordinatore propone gli sviluppatori alla fine dello studio e solo la risposta della persona li crea; poi il Coordinatore li cambia entro il mandato.
+
+Momento: il punto del flusso in cui una figura del team interviene: chiarimento e spec, fette, candidato, in sottofondo. In ogni momento la figura ha un compito e le skill che usa lì; una figura può avere più momenti. Il momento dice quando una figura lavora, non che stia lavorando.
 
 Provider: il programma esterno con cui Trama parla per far lavorare un agente, per esempio Codex o Claude Agent. È distinto dal modello, che è una scelta interna al provider, e dal ruolo dello specialista, che non dipende da nessuno dei due. Un provider è collegato quando la persona ha reso disponibile il suo account.
 

@@ -336,13 +336,37 @@ export interface SpecialistAssignment {
   reportedStatus: AssignmentStatus | null;
 }
 
+/**
+ * A figure of the project team (W09): every fixed role that each team always has, and the developers
+ * chosen for the project.
+ */
+export type TeamRole =
+  | "qa"
+  | "ux"
+  | "research"
+  | "documentation"
+  | "developer"
+  | "bugTriage"
+  | "specReviewer"
+  | "cleanCode"
+  | "regressionGuardian"
+  | "security"
+  | "performance"
+  | "devops";
+
+/** The point of the flow where a figure of the team works (W09). */
+export type TeamMoment = "spec" | "slices" | "candidate" | "background";
+
 export interface Specialist {
   id: string;
   name: string;
   competence: string;
   reason: string;
   moduleIds: string[];
-  origin: "teamProposal" | "coordinator";
+  /** A fixed role, or `developer` for the specialists chosen for the project (W09). */
+  role: TeamRole;
+  /** `fixedRole`: Trama adds it to every team and it cannot be removed. */
+  origin: "teamProposal" | "coordinator" | "fixedRole";
   createdAt: string;
   status: SpecialistStatus;
   model: string | null;

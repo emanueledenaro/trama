@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { TramaController } from "./controller";
 import { git } from "./core/process";
+import { developers, findSpecialist } from "./core/team";
 
 const root = join(import.meta.dirname, "../..");
 let controller: TramaController | null = null;
@@ -49,7 +50,7 @@ describe("team flow", () => {
     const proposal = document.team.proposals[0]!;
     expect(proposal.members[0]!.name).toBe("Ada");
     await controller.answerTeamProposal(proposal.id, null, null);
-    expect(document.team.specialists.map((s) => s.name)).toEqual(["Ada"]);
+    expect(developers(document).map((s) => s.name)).toEqual(["Ada"]);
 
     // Without a mandate the assignment is refused and nothing starts.
     await controller.send("[assegna]", null, null, null);
@@ -64,7 +65,7 @@ describe("team flow", () => {
       limits: [],
     });
     await controller.send("[assegna]", null, null, null);
-    const specialist = document.team.specialists[0]!;
+    const specialist = findSpecialist(document, "Ada")!;
     const assignment = specialist.assignments[0]!;
     await until(() => assignment.status === "completed");
     expect(assignment.result).toBe("Ho scritto NOTE.md nel worktree.");
@@ -171,7 +172,7 @@ describe("switching project (C07)", () => {
       limits: [],
     });
     await controller.send("[assegna] [lento]", null, null, null);
-    const assignment = document.team.specialists[0]!.assignments[0]!;
+    const assignment = findSpecialist(document, "Ada")!.assignments[0]!;
     await until(() => assignment.status === "running");
     const eventsBefore = document.events.length;
 
@@ -227,7 +228,7 @@ describe("quit and provider waits (C11)", () => {
       limits: [],
     });
     await controller.send("[assegna] [lento]", null, null, null);
-    const assignment = document.team.specialists[0]!.assignments[0]!;
+    const assignment = findSpecialist(document, "Ada")!.assignments[0]!;
     await until(() => assignment.status === "running");
     return { data, document, assignment };
   }
@@ -240,7 +241,7 @@ describe("quit and provider waits (C11)", () => {
     expect(assignment.stops.at(-1)?.reason).toMatch(/Esci/);
     const { AppStorage } = await import("./core/storage");
     const saved = (await new AppStorage(data).loadDocument(document.projectId)).document!;
-    expect(saved.team.specialists[0]!.assignments[0]!.status).toBe("stopped");
+    expect(findSpecialist(saved, "Ada")!.assignments[0]!.status).toBe("stopped");
   }, 30_000);
 
   it("resumes only waiting work when the provider is available again", async () => {

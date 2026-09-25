@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { ProviderId } from "@shared/codex";
 import type { ConversationEvent, EventContent, EventOrigin, ProjectDocument } from "@shared/domain";
 import { requestGoalId } from "@shared/goals";
+import { completeTeam } from "./team";
 
 function assignmentGoalId(document: ProjectDocument, assignmentId: string): string | null {
   for (const specialist of document.team.specialists) {
@@ -11,8 +12,9 @@ function assignmentGoalId(document: ProjectDocument, assignmentId: string): stri
   return null;
 }
 
+/** A new project's document: its team already has every fixed role (W09). */
 export function emptyDocument(projectId: string): ProjectDocument {
-  return {
+  const document: ProjectDocument = {
     schemaVersion: 1,
     projectId,
     events: [],
@@ -38,9 +40,14 @@ export function emptyDocument(projectId: string): ProjectDocument {
     candidates: [],
     plans: [],
   };
+  completeTeam(document.team);
+  return document;
 }
 
-/** Fills fields added after a document was written and marks turns left running as interrupted. */
+/**
+ * Fills fields added after a document was written, completes an older team with the fixed roles (W09) and marks
+ * turns left running as interrupted.
+ */
 export function normalizeDocument(raw: Partial<ProjectDocument>, projectId: string): ProjectDocument {
   const base = emptyDocument(projectId);
   const document: ProjectDocument = {
@@ -51,6 +58,7 @@ export function normalizeDocument(raw: Partial<ProjectDocument>, projectId: stri
     coordinator: { ...base.coordinator, ...(raw.coordinator ?? {}) },
     team: { ...base.team, ...(raw.team ?? {}) },
   };
+  completeTeam(document.team);
   for (const request of document.requests) {
     if (request.state === "running") {
       request.state = "interrupted";

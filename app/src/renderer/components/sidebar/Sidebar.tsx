@@ -29,6 +29,7 @@ import { StatusDot } from "@/components/inspector/TeamView";
 import type * as React from "react";
 import { Spinner } from "@/components/Spinner";
 import { isUsableAccount, type ProviderId } from "@shared/codex";
+import type { Specialist } from "@shared/domain";
 import { PROVIDERS } from "@shared/providers";
 import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/cn";
@@ -147,7 +148,7 @@ export function Sidebar({ isMac }: { isMac: boolean }) {
   const pendingTeam = document?.team.proposals.some((p) => !p.resolution) ?? false;
   const activeWork = document?.team.specialists.filter((s) => s.status === "working" || s.status === "stopping").length ?? 0;
   const verifiedCandidates = project ? Object.values(project.candidateReports).filter((r) => r.state !== "building").length : 0;
-  const specialists = document?.team.specialists.filter((s) => s.status !== "removed") ?? [];
+  const specialists = sidebarSpecialists(document?.team.specialists ?? []);
   const running = Boolean(project?.runningRequestId) || project?.phase.kind === "studying" || project?.phase.kind === "opening";
   const activeProvider: ProviderId = project?.document.coordinator.threadProvider ?? project?.document.selectedProvider ?? "codex";
   const account = app.providers[activeProvider]?.account ?? null;
@@ -419,6 +420,15 @@ export function Sidebar({ isMac }: { isMac: boolean }) {
       </div>
     </div>
   );
+}
+
+/**
+ * The team members listed under the open project: the developers, then a fixed role only while it has work to show,
+ * so eleven idle figures do not push the dialogs down. The Team panel shows everyone (W09).
+ */
+export function sidebarSpecialists(specialists: Specialist[]): Specialist[] {
+  const members = specialists.filter((s) => s.status !== "removed");
+  return [...members.filter((s) => s.role === "developer"), ...members.filter((s) => s.role !== "developer" && s.status !== "available")];
 }
 
 /** Pending decisions as sidebar rows: each grilling round becomes one row, other decisions keep their own. */

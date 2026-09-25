@@ -5,16 +5,19 @@ import type {
   ProjectDocument,
   ProjectMandate,
   ProposedSpecialist,
+  ProjectTeam,
   Specialist,
   SpecialistAssignment,
   SpecialistStatus,
   SpecialistTool,
   TeamProposal,
+  TeamRole,
   WorkKind,
   WorktreeSession,
 } from "@shared/domain";
 import type { ProviderId } from "@shared/codex";
 import { shortId } from "@shared/ids";
+import { FIXED_ROLES, isFixedRole, roleProfile } from "@shared/roster";
 
 export class TeamError extends Error {
   constructor(
@@ -45,6 +48,43 @@ export function isTeamConfirmed(document: ProjectDocument): boolean {
 
 export function teamMembers(document: ProjectDocument): Specialist[] {
   return document.team.specialists.filter((s) => s.status !== "removed");
+}
+
+/** The specialists chosen for the project, beside the fixed roles (W09). */
+export function developers(document: ProjectDocument): Specialist[] {
+  return teamMembers(document).filter((s) => s.role === "developer");
+}
+
+function fixedSpecialist(role: TeamRole, now: Date): Specialist {
+  const profile = roleProfile(role);
+  return {
+    ...newSpecialist(
+      { name: profile.name, competence: profile.competence, reason: "Ogni team di Trama ha questa figura, in ogni progetto.", moduleIds: [] },
+      "fixedRole",
+      now,
+    ),
+    role,
+  };
+}
+
+/**
+ * Every team has all the fixed roles (W09, Q10 of #137). Specialists of an older team stay, as developers;
+ * each missing role is added. Calling it again changes nothing.
+ */
+export function completeTeam(team: ProjectTeam, now = new Date()): Specialist[] {
+  for (const specialist of team.specialists) {
+    if (!specialist.role) specialist.role = "developer";
+  }
+  const missing = FIXED_ROLES.filter((role) => !team.specialists.some((s) => s.role === role && s.status !== "removed"));
+  const added = missing.map((role) => fixedSpecialist(role, now));
+  team.specialists.push(...added);
+  return added;
+}
+
+function refuseFixedRole(specialist: Specialist): void {
+  if (isFixedRole(specialist.role)) {
+    throw new TeamError("fixed_role", `${specialist.name} is a fixed role: every team keeps it.`);
+  }
 }
 
 export function findAssignment(document: ProjectDocument, id: string): SpecialistAssignment | null {
@@ -117,6 +157,10 @@ export function proposeTeam(
     moduleIds: cleaned(m.moduleIds),
   }));
   if (members.length === 0) throw new TeamError("invalid_arguments", "A team needs at least one specialist.");
+  for (const member of members) {
+    const fixed = FIXED_ROLES.map(roleProfile).find((p) => key(p.name) === key(member.name));
+    if (fixed) throw new TeamError("fixed_role", `${fixed.name} is a fixed role that every team already has: propose developers only.`);
+  }
   const names = new Set<string>();
   for (const member of members) {
     if (names.has(key(member.name))) throw new TeamError("invalid_arguments", `A specialist named ${member.name} is already in the team.`);
@@ -144,6 +188,7 @@ function newSpecialist(member: ProposedSpecialist, origin: Specialist["origin"],
     competence: member.competence,
     reason: member.reason,
     moduleIds: member.moduleIds,
+    role: "developer",
     origin,
     createdAt: now.toISOString(),
     status: "available",
@@ -224,6 +269,7 @@ export function removeSpecialist(document: ProjectDocument, id: string, reason: 
   const specialist = document.team.specialists.find((s) => s.id === id);
   if (!specialist) throw new TeamError("unknown_specialist", `Unknown specialist: ${id}.`);
   if (specialist.status === "removed") throw new TeamError("specialist_removed", `Specialist ${id} was removed from the team.`);
+  refuseFixedRole(specialist);
   const current = currentAssignment(specialist);
   if (current && isActive(current)) {
     throw new TeamError("specialist_busy", `Specialist ${id} is still working on ${current.id}.`);
@@ -423,6 +469,7 @@ export function requestStop(
   if (!specialist) throw new TeamError("unknown_specialist", `Unknown specialist: ${specialistId}.`);
   const current = currentAssignment(specialist);
   if (!current || !isActive(current)) throw new TeamError("not_running", `Specialist ${specialist.id} has no work in progress.`);
+  if (thenRemove) refuseFixedRole(specialist);
   const why = required(reason, "reason");
   return updateAssignment(document, current.id, now, (assignment) => {
     if (pendingStop(assignment)) return;

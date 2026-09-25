@@ -4,6 +4,7 @@ import { isUsableAccount, type ProviderId } from "@shared/codex";
 import type { Specialist, SpecialistAssignment } from "@shared/domain";
 import { findGoal } from "@shared/goals";
 import { PROVIDERS } from "@shared/providers";
+import { isFixedRole, roleDuties, type RosterFigure, TEAM_MOMENTS, teamRoster } from "@shared/roster";
 import { ASSIGNMENT_STATUS, AssignmentCard, CandidateCard, TeamProposalCard } from "@/components/chat/Cards";
 import { Spinner } from "@/components/Spinner";
 import { Button } from "@/components/ui/button";
@@ -38,18 +39,107 @@ export function StatusDot({ status }: { status: Specialist["status"] }) {
   );
 }
 
-export function TeamView() {
+/** The AI Hero skills a figure relies on, or the note that the role is Trama's own addition. */
+function SkillList({ skills }: { skills: string[] }) {
+  if (!skills.length) return <span className="block text-ui-xs text-muted-foreground/80">Aggiunta di Trama, senza skill</span>;
+  return (
+    <span className="block truncate text-ui-xs text-muted-foreground/80">
+      Skill: <span className="font-mono text-[11px]">{skills.join(", ")}</span>
+    </span>
+  );
+}
+
+const ROW = "flex w-full items-start gap-2 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-[var(--sidebar-accent)]";
+
+/** A developer of the project: competence, status and the provider and model of its current work (UX05). */
+function DeveloperRow({ specialist }: { specialist: Specialist }) {
   const project = useUi((s) => s.app?.project)!;
   const setInspector = useUi((s) => s.setInspector);
+  const current = specialist.assignments.at(-1);
+  const goal = current ? findGoal(project.document, current.goalId) : null;
+  return (
+    <button type="button" onClick={() => setInspector({ kind: "specialist", id: specialist.id })} className={ROW}>
+      <span className="mt-1.5 flex w-3 justify-center">
+        <StatusDot status={specialist.status} />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block text-ui text-foreground">
+          {specialist.name} <span className="text-muted-foreground"><Sep />{specialist.competence}</span>
+        </span>
+        <span className="block truncate text-ui-sm text-muted-foreground">
+          {STATUS_LABEL[specialist.status]}<Sep />{specialist.lastUpdate}
+        </span>
+        {current ? (
+          <span className="block truncate text-ui-xs text-muted-foreground/80" title={current.modelReason ?? "Motivazione non registrata"}>
+            {providerLabel(current.provider ?? "codex")}<Sep />{current.model}
+            {current.modelReason ? ", motivato" : ", motivazione non registrata"}
+            {goal ? `, per ${goal.title}` : ""}
+          </span>
+        ) : null}
+      </span>
+    </button>
+  );
+}
+
+/** A fixed role at one moment: what it does there and with which skills; it opens the specialist. */
+function FigureRow({ figure }: { figure: RosterFigure }) {
+  const setInspector = useUi((s) => s.setInspector);
+  const specialist = figure.specialists[0];
+  const body = (
+    <>
+      <span className="mt-1.5 flex w-3 justify-center">{specialist ? <StatusDot status={specialist.status} /> : null}</span>
+      <span className="min-w-0 flex-1">
+        <span className="block text-ui text-foreground">{figure.profile.name}</span>
+        <span className="block text-ui-sm text-muted-foreground">{figure.duty.task}</span>
+        {specialist && specialist.status !== "available" ? (
+          <span className="block truncate text-ui-sm text-muted-foreground">
+            {STATUS_LABEL[specialist.status]}<Sep />{specialist.lastUpdate}
+          </span>
+        ) : null}
+        <SkillList skills={figure.duty.skills} />
+      </span>
+    </>
+  );
+  if (!specialist) return <div className="flex items-start gap-2 px-2 py-1.5">{body}</div>;
+  return (
+    <button type="button" data-testid="team-figure" onClick={() => setInspector({ kind: "specialist", id: specialist.id })} className={ROW}>
+      {body}
+    </button>
+  );
+}
+
+/** The developers' place in the flow, with each developer chosen for the project below it. */
+function DevelopersFigure({ figure, confirmed }: { figure: RosterFigure; confirmed: boolean }) {
+  return (
+    <div className="px-2 py-1.5">
+      <span className="block text-ui text-foreground">{figure.profile.name}</span>
+      <span className="block text-ui-sm text-muted-foreground">{figure.duty.task}</span>
+      <SkillList skills={figure.duty.skills} />
+      <div className="-mx-2 mt-1 flex flex-col gap-0.5 pl-3">
+        {figure.specialists.length === 0 ? (
+          <p className="px-2 text-ui-sm text-muted-foreground/70">
+            {confirmed ? "Nessuno sviluppatore attivo." : "Il Coordinatore li propone alla fine dello studio."}
+          </p>
+        ) : null}
+        {figure.specialists.map((specialist) => (
+          <DeveloperRow key={specialist.id} specialist={specialist} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+export function TeamView() {
+  const project = useUi((s) => s.app?.project)!;
   const team = project.document.team;
   const pending = team.proposals.find((p) => !p.resolution);
-  const members = team.specialists.filter((s) => s.status !== "removed");
   const former = team.specialists.filter((s) => s.status === "removed");
   return (
     <>
       <InspectorSection title="Il team del progetto">
         <p className="text-ui-sm text-muted-foreground">
-          Il Coordinatore propone il team alla fine dello studio. Solo la tua risposta crea gli specialisti; poi il Coordinatore lo cambia entro il mandato.
+          Ogni progetto ha tutte le figure di un team di sviluppo, ognuna nel suo momento del lavoro. Tu decidi il prodotto e il Coordinatore guida il
+          team. Gli sviluppatori li propone il Coordinatore alla fine dello studio e li crea solo la tua risposta; le altre figure ci sono sempre.
         </p>
       </InspectorSection>
       {pending ? (
@@ -57,43 +147,20 @@ export function TeamView() {
           <TeamProposalCard proposalId={pending.id} />
         </InspectorSection>
       ) : null}
-      <InspectorSection title={`Specialisti (${members.length})`}>
-        {members.length === 0 ? <EmptyNote>{team.confirmedAt ? "Il team non ha specialisti attivi." : "Nessun team confermato."}</EmptyNote> : null}
-        <div className="-mx-2 flex flex-col gap-0.5">
-          {members.map((specialist) => (
-            <button
-              key={specialist.id}
-              type="button"
-              onClick={() => setInspector({ kind: "specialist", id: specialist.id })}
-              className="flex w-full items-start gap-2 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-[var(--sidebar-accent)]"
-            >
-              <span className="mt-1.5 flex w-3 justify-center">
-                <StatusDot status={specialist.status} />
-              </span>
-              <span className="min-w-0 flex-1">
-                <span className="block text-ui text-foreground">
-                  {specialist.name} <span className="text-muted-foreground"><Sep />{specialist.competence}</span>
-                </span>
-                <span className="block truncate text-ui-sm text-muted-foreground">
-                  {STATUS_LABEL[specialist.status]}<Sep />{specialist.lastUpdate}
-                </span>
-                {(() => {
-                  const current = specialist.assignments.at(-1);
-                  if (!current) return null;
-                  const goal = findGoal(project.document, current.goalId);
-                  return (
-                    <span className="block truncate text-ui-xs text-muted-foreground/80" title={current.modelReason ?? "Motivazione non registrata"}>
-                      {providerLabel(current.provider ?? "codex")}<Sep />{current.model}
-                      {current.modelReason ? ", motivato" : ", motivazione non registrata"}
-                      {goal ? `, per ${goal.title}` : ""}
-                    </span>
-                  );
-                })()}
-              </span>
-            </button>
-          ))}
-        </div>
-      </InspectorSection>
+      {teamRoster(team).map((moment) => (
+        <InspectorSection key={moment.moment} title={moment.label}>
+          <p className="text-ui-sm text-muted-foreground">{moment.when}</p>
+          <div className="-mx-2 mt-1 flex flex-col gap-0.5">
+            {moment.figures.map((figure) =>
+              figure.profile.role === "developer" ? (
+                <DevelopersFigure key={figure.profile.role} figure={figure} confirmed={team.confirmedAt !== null} />
+              ) : (
+                <FigureRow key={figure.profile.role} figure={figure} />
+              ),
+            )}
+          </div>
+        </InspectorSection>
+      ))}
       {former.length ? (
         <InspectorSection title="Usciti dal team">
           {former.map((s) => (
@@ -117,6 +184,7 @@ export function SpecialistView({ id }: { id: string }) {
   if (!specialist) return <div className="p-4"><EmptyNote>Specialista non trovato.</EmptyNote></div>;
   const current = specialist.assignments.at(-1);
   const busy = current && ["preparing", "running", "stopRequested"].includes(current.status);
+  const fixed = isFixedRole(specialist.role);
   return (
     <>
       <div className="px-4 pt-3">
@@ -135,7 +203,7 @@ export function SpecialistView({ id }: { id: string }) {
           <Button size="sm" variant="outline" onClick={() => focusComposer()}>
             Vai alla conversazione
           </Button>
-          {specialist.status !== "removed" && !busy ? (
+          {specialist.status !== "removed" && !busy && !fixed ? (
             <Button size="sm" variant="ghost" onClick={() => setRemoving(!removing)}>
               Togli dal team
             </Button>
@@ -158,8 +226,24 @@ export function SpecialistView({ id }: { id: string }) {
       <InspectorSection title="Perché è nel team">
         <p className="text-ui text-foreground/90">{specialist.reason}</p>
         <p className="mt-1 text-ui-xs text-muted-foreground">
-          {specialist.origin === "teamProposal" ? "Dalla proposta confermata" : "Aggiunto dal Coordinatore"}<Sep />{formatRelativeTime(specialist.createdAt)}
+          {specialist.origin === "fixedRole" ? "Ruolo fisso, non si toglie dal team" : specialist.origin === "teamProposal" ? "Dalla proposta confermata" : "Aggiunto dal Coordinatore"}
+          <Sep />
+          {formatRelativeTime(specialist.createdAt)}
         </p>
+      </InspectorSection>
+      <InspectorSection title="Quando interviene">
+        <div className="flex flex-col gap-1.5">
+          {roleDuties(specialist.role).map((duty) => (
+            <div key={duty.moment}>
+              <span className="block text-ui text-foreground/90">
+                {TEAM_MOMENTS.find((m) => m.moment === duty.moment)!.label}
+                <Sep />
+                {duty.task}
+              </span>
+              <SkillList skills={duty.skills} />
+            </div>
+          ))}
+        </div>
       </InspectorSection>
       {current && ["stopped", "failed"].includes(current.status) ? <AssignmentProvider assignment={current} /> : null}
       {current?.workspace && !current.workspaceRemovedAt && ["stopped", "failed", "completed"].includes(current.status) ? (
