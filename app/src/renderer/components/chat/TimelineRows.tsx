@@ -8,6 +8,7 @@ import {
   IconFileText,
   IconInfoCircle,
   IconPlayerStop,
+  IconPlayerTrackNext,
   IconTerminal2,
   IconTool,
 } from "@tabler/icons-react";
@@ -186,13 +187,12 @@ function revealCard(id: string): boolean {
 }
 
 /** The one next step the Coordinator declared, while the work still allows it (W01): one button on the right. */
-function NextStepRow({ step, goalId }: { step: NextStepView; goalId: string | null }) {
+function NextStepRow({ step, requestId }: { step: NextStepView; requestId: string }) {
   const setInspector = useUi((s) => s.setInspector);
   const run = () => {
     if (step.url) return void act("shell:openExternal", { url: step.url });
-    if (step.message) {
-      return void act("coordinator:send", { text: step.message, moduleId: null, model: null, effort: null, images: [], provider: null, goalId });
-    }
+    // A step that is a message: Trama sends it and records that the person took it (W04).
+    if (step.message) return void act("coordinator:takeStep", { requestId });
     if (step.move === "reviewCandidate" && step.targetId) return setInspector({ kind: "candidate", id: step.targetId });
     if (step.targetId && revealCard(step.targetId)) return;
     // A card this dialog does not show still has a panel that lists it: the step never does nothing (W12).
@@ -207,6 +207,28 @@ function NextStepRow({ step, goalId }: { step: NextStepView; goalId: string | nu
       <Button size="sm" onClick={run}>
         {step.label}
       </Button>
+    </div>
+  );
+}
+
+/** A move of the Coordinator that Trama started by itself within the mandate (W04): one line, and a stop on the right while it runs. */
+function AutomaticStepRow({ label, requestId }: { label: string; requestId: string | null }) {
+  const running = useUi((s) => requestId !== null && s.app?.project?.runningRequestId === requestId);
+  return (
+    <div className="cta-row mb-3 text-chat" data-testid="automatic-step">
+      <span className="mr-auto inline-flex min-w-0 items-center gap-1.5 text-muted-foreground">
+        <IconPlayerTrackNext className="size-3.5 shrink-0" stroke={1.8} />
+        <span className="min-w-0">
+          {running ? "Il Coordinatore va avanti da solo" : "Mossa automatica"}
+          <Sep />
+          <span className="text-foreground">{label}</span>
+        </span>
+      </span>
+      {running ? (
+        <Button size="xs" variant="outline" onClick={() => void act("coordinator:interrupt", undefined)}>
+          Ferma
+        </Button>
+      ) : null}
     </div>
   );
 }
@@ -242,7 +264,7 @@ function Reply({ row, latest }: { row: Extract<TimelineRow, { kind: "reply" }>; 
           ))}
         </div>
       ) : null}
-      {latest && !row.streaming && request?.state === "completed" && nextStep ? <NextStepRow step={nextStep} goalId={request.goalId ?? null} /> : null}
+      {latest && !row.streaming && request?.state === "completed" && nextStep ? <NextStepRow step={nextStep} requestId={request.id} /> : null}
       {!row.streaming ? (
         <div className="mt-1.5 flex items-center gap-2 text-[11px] text-muted-foreground/45 opacity-0 transition-opacity group-hover:opacity-100">
           {row.model ? <span>Coordinatore<Sep />{row.model}</span> : null}
@@ -327,6 +349,7 @@ export function TimelineRowView({ row, streaming = false, latest = false }: { ro
       if (row.cardKind === "plan" && content.referenceId) return <PlanCard planId={content.referenceId} />;
       if (row.cardKind === "conflict" && content.referenceId) return <ConflictCard assessmentId={content.referenceId} />;
       if (row.cardKind === "goal" && content.referenceId) return <GoalCard goalId={content.referenceId} />;
+      if (row.cardKind === "automaticStep") return <AutomaticStepRow label={content.title} requestId={content.referenceId} />;
       return <ContextNoticeCard title={content.title} detail={content.detail} />;
     }
   }

@@ -21,7 +21,9 @@ export type CardKind =
   | "candidate"
   | "plan"
   | "conflict"
-  | "goal";
+  | "goal"
+  /** A move of the Coordinator that Trama started by itself within the mandate (W04); referenceId is its request. */
+  | "automaticStep";
 
 export interface ConflictAssessment {
   id: string;
@@ -75,6 +77,14 @@ export interface CoordinatorRequest {
   goalId?: string | null;
   /** The one next step the Coordinator declared at the end of the turn (W01). */
   nextStep?: NextStep | null;
+  /** The next step this message takes (W04): the person's button, or Trama starting the Coordinator's move by itself. */
+  step?: RequestStep | null;
+}
+
+/** A next step taken by a message: the person pressed its button, or Trama started the Coordinator's own move (W04). */
+export interface RequestStep {
+  move: NextMove;
+  by: "person" | "trama";
 }
 
 /** The phase of a request's work, computed by Trama from the records, never by the model (W01). */
@@ -873,6 +883,8 @@ export interface AppSettings {
   autoPrepareMethod?: boolean;
   /** A sound with useful alerts only (conflicts, blocked providers, finished work). Off by default. */
   sounds?: boolean;
+  /** Continuous work (W04): Trama starts the Coordinator's own moves within the mandate. On unless the person turns it off. */
+  continuousWork?: boolean;
   /** What the learning loop may do (ADR 0014); missing keys take the defaults. */
   learning?: Partial<LearningSettings>;
 }

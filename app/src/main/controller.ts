@@ -29,6 +29,7 @@ import type {
   WorkKind,
   WorkPlan,
   RecentProject,
+  RequestStep,
 } from "@shared/domain";
 import { isOpenQuestion } from "@shared/domain";
 import { resolveCodexExecutable } from "./core/codexClient";
@@ -66,7 +67,15 @@ import { openingInput, resumeInput, specialistInstructions } from "./core/specia
 import { prepareDemoProject } from "./core/demoProject";
 import { appendEvent, emptyDocument, handoverTranscript, moveEvent, recordReply, referencedPaths } from "./core/document";
 import { candidateGoalId, dialogComposer, findGoal, projectGoals, requestGoalId } from "@shared/goals";
-import { nextStepViews, PHASE_LABELS, workState, workStateText } from "./core/workPhase";
+import { COORDINATOR_MOVES, type CoordinatorMove, nextStepViews, PHASE_LABELS, workState, workStateText } from "./core/workPhase";
+import {
+  AUTOMATIC_MOVE_DETAIL,
+  automaticMove,
+  automaticMoveSection,
+  confirmationFeedback,
+  type ContinuationGuards,
+  type WorkEvent,
+} from "./core/continuousWork";
 import { openGrillingQuestions } from "@shared/grilling";
 import {
   archiveGoal,
@@ -345,6 +354,8 @@ export class TramaController {
     queuedAt: string;
     /** False for a message that reports a choice already recorded: the person cannot delete it (W03). */
     removable: boolean;
+    /** The next step the message takes, when the person pressed its button (W04). */
+    step: RequestStep | null;
   }[] = [];
 
   constructor(
@@ -487,6 +498,7 @@ export class TramaController {
       sidebarWidth: typeof settings.sidebarWidth === "number" ? settings.sidebarWidth : 256,
       sounds: settings.sounds === true,
       autoPrepareMethod: settings.autoPrepareMethod !== false,
+      continuousWork: settings.continuousWork !== false,
       learning: learningSettings(settings.learning),
     };
     this.lastProjectId = settings.lastProjectId ?? null;
@@ -1515,11 +1527,17 @@ export class TramaController {
     goalId: string | null = null,
     /** False when Trama writes a choice the person already made (answer, withdrawal, mandate): it stays in the queue. */
     removable = true,
+    /** The next step the message takes: the person's button, or Trama starting the Coordinator's move (W04). */
+    step: RequestStep | null = null,
   ): Promise<void> {
     const project = this.requireProject();
     const trimmed = text.trim();
     if (!trimmed) return;
     const goal = goalId ? requireGoal(project.document, goalId) : null;
+    // Only a message the person typed empties the composer; a recorded choice or a step's button leaves the draft alone.
+    const typed = removable && !step;
+    // An automatic move never waits in the queue: the turn running now is a newer event (W04).
+    if (project.runningRequestId && step?.by === "trama") return;
     if (project.runningRequestId) {
       this.queue.push({
         id: randomUUID(),
@@ -1533,9 +1551,9 @@ export class TramaController {
         goalId: goal?.id ?? null,
         queuedAt: new Date().toISOString(),
         removable,
+        step,
       });
-      // Only a message the person typed empties the composer; a recorded choice leaves the draft alone.
-      if (removable) dialogComposer(project.document, goal?.id ?? null).composerDraft = "";
+      if (typed) dialogComposer(project.document, goal?.id ?? null).composerDraft = "";
       this.changed();
       return;
     }
@@ -1562,16 +1580,30 @@ export class TramaController {
       failure: null,
       attachments,
       ...(goal ? { goalId: goal.id } : {}),
+      ...(step ? { step } : {}),
     };
     document.requests.push(request);
-    if (removable) dialogComposer(document, goal?.id ?? null).composerDraft = "";
-    appendEvent(
-      document,
-      "person",
-      { type: "personMessage", text: trimmed, moduleId: module?.id ?? null, moduleName: module?.name ?? null, imageCount: attachments.length },
-      request.id,
-    );
+    if (typed) dialogComposer(document, goal?.id ?? null).composerDraft = "";
+    const automatic = step?.by === "trama" ? (step.move as CoordinatorMove) : null;
+    if (automatic) {
+      // A move Trama started by itself is not the person's message: the chat shows it as its own line, with a stop (W04).
+      appendEvent(
+        document,
+        "trama",
+        { type: "card", kind: "automaticStep", title: COORDINATOR_MOVES[automatic].label, detail: AUTOMATIC_MOVE_DETAIL, referenceId: request.id },
+        request.id,
+      );
+    } else {
+      appendEvent(
+        document,
+        "person",
+        { type: "personMessage", text: trimmed, moduleId: module?.id ?? null, moduleName: module?.name ?? null, imageCount: attachments.length },
+        request.id,
+      );
+    }
     project.runningRequestId = request.id;
+    // The running request now keeps the Coordinator busy in place of the starting move.
+    if (this.automaticStarting?.projectId === project.id) this.automaticStarting = null;
     const learning = this.learningFor(project);
     learning.memory.resetConsolidationFailures();
     const reviewMemory = tickMemoryNudge(this.coordinatorLearning(document), learning.memoryAvailable);
@@ -1630,6 +1662,10 @@ export class TramaController {
       // Every turn: the phase of the work this message belongs to and the moves declare_next_step accepts (W01).
       const work = workState(document, request.id);
       sections.push(workStateText(work));
+      if (automatic) sections.push(automaticMoveSection(automatic));
+      // The previous reply closed with a generic confirmation question: Trama tells the Coordinator, not the model's own memory (W04).
+      const feedback = confirmationFeedback(document, request.id);
+      if (feedback) sections.push(feedback);
       const skills = skillInvocations(trimmed, project.skills);
       sections.push(codexSkillText(trimmed, project.skills));
       appendEvent(
@@ -1645,6 +1681,8 @@ export class TramaController {
             parts.length ? `aggiornamento: ${parts.join(", ")}` : null,
             report ? "aggiornamenti del team" : null,
             work.phase ? `fase: ${PHASE_LABELS[work.phase]}` : null,
+            automatic ? `mossa automatica: ${COORDINATOR_MOVES[automatic].label}` : null,
+            feedback ? "richiamo: domanda di conferma generica" : null,
             skills.length ? `skill: ${skills.map((s) => s.name).join(", ")}` : null,
           ]
             .filter(Boolean)
@@ -1713,12 +1751,14 @@ export class TramaController {
       if (project.runningRequestId === request.id) project.runningRequestId = null;
       if (project.streaming?.requestId === request.id) project.streaming = null;
       this.changed();
-      this.dispatchQueued();
+      // The person's queued messages go first; otherwise the work may go on by itself (W04).
+      if (!this.dispatchQueued()) this.continueAfterTurn(project, request.id);
       void this.runDuties();
     }
   }
 
-  private dispatchQueued(): void {
+  /** Sends the next queued message of the selected project; false when none left. */
+  private dispatchQueued(): boolean {
     const project = this.state.project;
     // Messages queued in a project the person left go back to that project's draft instead of vanishing (review #14).
     for (const item of this.queue.filter((q) => q.projectId !== project?.id)) {
@@ -1730,11 +1770,83 @@ export class TramaController {
     }
     this.queue = this.queue.filter((item) => item.projectId === project?.id);
     const next = this.queue.shift();
-    if (next) {
-      void this.send(next.text, next.moduleId, next.model, next.effort, next.images, next.provider, next.goalId, next.removable).catch((error) =>
-        this.fail(error),
-      );
+    if (!next) return false;
+    void this.send(next.text, next.moduleId, next.model, next.effort, next.images, next.provider, next.goalId, next.removable, next.step).catch((error) =>
+      this.fail(error),
+    );
+    return true;
+  }
+
+  // MARK: Continuous work (W04)
+
+  /** Plans and assignments that ended while the Coordinator was busy: weighed when its turn ends. */
+  private deferredWork: { projectId: string; requestId: string; event: WorkEvent }[] = [];
+  /** The automatic move that is starting and has no running request yet: no second move meanwhile. */
+  private automaticStarting: { projectId: string } | null = null;
+
+  private continuationGuards(project: ActiveProjectState): ContinuationGuards {
+    const provider = this.coordinatorProvider(project.document);
+    const unavailable =
+      providerUnavailableReason(provider, this.state.providers[provider]?.account ?? null) ??
+      (project.phase.kind === "unavailable" ? project.phase.message : null) ??
+      (this.coordinatorModel(project.document, provider) ? null : this.coordinatorModelProblem(project.document, provider));
+    return {
+      enabled: this.state.settings.continuousWork !== false,
+      busy: project.runningRequestId !== null || this.automaticStarting?.projectId === project.id || this.queue.some((q) => q.projectId === project.id),
+      unavailable,
+    };
+  }
+
+  /** A plan or an assignment of the selected project ended: the work may go on by itself now, or after the running turn. */
+  private continueWork(project: ActiveProjectState, requestId: string | null, event: WorkEvent): void {
+    if (!requestId || this.quitting || this.state.project !== project) return;
+    if (this.continuationGuards(project).busy) {
+      this.deferredWork.push({ projectId: project.id, requestId, event });
+      return;
     }
+    this.startAutomaticMove(project, [{ requestId, event }]);
+  }
+
+  /**
+   * A Coordinator turn ended with no message waiting: its own end first, then the work that ended during it. After
+   * an error or an interruption nothing goes on, the work that ended meanwhile included: the person decides.
+   */
+  private continueAfterTurn(project: ActiveProjectState, requestId: string): void {
+    const deferred = this.deferredWork.filter((d) => d.projectId === project.id);
+    this.deferredWork = this.deferredWork.filter((d) => d.projectId !== project.id);
+    if (this.quitting || this.state.project !== project) return;
+    if (project.document.requests.find((r) => r.id === requestId)?.state !== "completed") return;
+    this.startAutomaticMove(project, [{ requestId, event: "turnEnded" }, ...deferred]);
+  }
+
+  /** Starts the first automatic move the events allow, as a Coordinator turn: at most one (W04). */
+  private startAutomaticMove(project: ActiveProjectState, events: { requestId: string; event: WorkEvent }[]): void {
+    const guards = this.continuationGuards(project);
+    for (const { requestId, event } of events) {
+      const move = automaticMove(project.document, requestId, event, guards);
+      if (!move) continue;
+      // The model of the dialog's latest turn, while the Coordinator's provider still offers it.
+      const models = this.state.providers[this.coordinatorProvider(project.document)]?.models ?? [];
+      const model = move.model && (models.length === 0 || models.some((m) => m.model === move.model)) ? move.model : null;
+      const step: RequestStep = { move: move.move, by: "trama" };
+      const starting = { projectId: project.id };
+      this.automaticStarting = starting;
+      void this.send(move.message, null, model, model ? move.effort : null, [], null, move.goalId, false, step)
+        .catch((error) => this.fail(error))
+        .finally(() => {
+          if (this.automaticStarting === starting) this.automaticStarting = null;
+        });
+      return;
+    }
+  }
+
+  /** The person takes the next step shown under a reply when it is a message (W01): Trama sends it and records the step (W04). */
+  async takeStep(requestId: string): Promise<void> {
+    const project = this.requireProject();
+    const step = nextStepViews(project.document)[requestId];
+    if (!step?.message) throw new DomainError("Questo passo non è più disponibile.");
+    const goalId = project.document.requests.find((r) => r.id === requestId)?.goalId ?? null;
+    await this.send(step.message, null, null, null, [], null, goalId, true, { move: step.move, by: "person" });
   }
 
   /** The person deletes a message still in the queue (W03): it never reaches the Coordinator nor the history. */
@@ -2373,6 +2485,7 @@ export class TramaController {
       }
     }
     this.changedIn(project);
+    this.continueWork(project, final.requestId, "assignmentEnded");
     this.releaseParkedProject(project);
     void this.runDuties();
   }
@@ -3067,6 +3180,7 @@ export class TramaController {
       client.stop();
       plan.updatedAt = new Date().toISOString();
       this.changedIn(project);
+      this.continueWork(project, plan.requestId, "planEnded");
     }
   }
 
