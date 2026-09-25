@@ -13,6 +13,7 @@ import type {
   SpecialistAssignment,
   TriageOutcome,
 } from "@shared/domain";
+import { isOpenQuestion } from "@shared/domain";
 import { STRENGTH_ORDER, TRIAGE_CATEGORY_LABEL, TRIAGE_STATE_LABEL, TRIAGE_STATES } from "@shared/duties";
 import { shortId } from "@shared/ids";
 import type { LoadedSkill } from "@shared/skills";
@@ -295,7 +296,8 @@ function startArchitectureReview(document: ProjectDocument, context: DutyContext
     if (last.duty?.trigger.kind === "idleTeam" && last.duty.trigger.headSHA === context.headSHA) return null;
     const outcome = last.duty?.outcome;
     const card = outcome?.kind === "architecture" && outcome.decisionRequestId ? document.decisionRequests.find((r) => r.id === outcome.decisionRequestId) : null;
-    if (card && !card.outcome) return null;
+    // An answered or withdrawn card lets the next review come (W03).
+    if (card && isOpenQuestion(card)) return null;
   }
   // The team is free after it changed code since the last review.
   const reviewed = new Set(last?.duty?.trigger.kind === "idleTeam" ? last.duty.trigger.afterWork : []);

@@ -18,7 +18,7 @@ import {
   withinMandate,
 } from "./duties";
 import { loadNativeSkill } from "./nativeSkills";
-import { answerDecisionRequest, decide, grantMandate } from "./pact";
+import { answerDecisionRequest, decide, grantMandate, withdrawDecisionRequest } from "./pact";
 import { assign, beginTurn, confirmTeam, endTurn, findAssignment, proposeTeam, recordWorkspace } from "./team";
 
 const skillsDirectory = join(import.meta.dirname, "../../../resources/AIHero/skills");
@@ -330,7 +330,16 @@ describe("architecture review when the team is free (W11)", () => {
       null,
     );
     finish(document, more);
-    expect(nextDuty(document, context({ headSHA: "b".repeat(40) }))?.duty?.trigger).toEqual({ kind: "idleTeam", headSHA: "b".repeat(40), afterWork: [work.id, more.id] });
+    const second = nextDuty(document, context({ headSHA: "b".repeat(40) }))!;
+    expect(second.duty?.trigger).toEqual({ kind: "idleTeam", headSHA: "b".repeat(40), afterWork: [work.id, more.id] });
+
+    // A card the person withdrew does not hold the next review back.
+    finish(document, second);
+    const next = concludeDuty(document, second.id, architectureAnswer(1)).decisionRequestId!;
+    withdrawDecisionRequest(document, next, "Non ora");
+    const last = assign(document, { ...work, specialist: "Ada", objective: "Terzo lavoro", exercise: null, dependencies: [], tools: ["edits"], requiredChecks: ["node_test"] }, 1, null);
+    finish(document, last);
+    expect(nextDuty(document, context({ headSHA: "c".repeat(40) }))?.duty?.skill).toBe("improve-codebase-architecture");
   });
 
   it("puts the proposals to the person as one Pact decision card, strongest first, never as edits", () => {
