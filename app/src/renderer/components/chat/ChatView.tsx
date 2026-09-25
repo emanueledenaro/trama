@@ -23,6 +23,7 @@ import { TramaLogo } from "@/components/TramaLogo";
 import { Button } from "@/components/ui/button";
 import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/cn";
+import { Menu, MenuItem, MenuPopup, MenuTrigger } from "@/components/ui/menu";
 import { formatRelativeTime } from "@/lib/format";
 import { act, type InspectorTarget, useUi } from "@/lib/store";
 import { ExercisePanel } from "@/components/onboarding/ExercisePanel";
@@ -58,6 +59,38 @@ function HeaderChip({
   );
 }
 
+interface HeaderPanel {
+  target: InspectorTarget;
+  label: string;
+  icon: React.ReactNode;
+  count?: number;
+}
+
+/** The panels of a narrow dialog, in one menu; the button shows how many things wait for the person. */
+function PanelsMenu({ panels }: { panels: HeaderPanel[] }) {
+  const inspector = useUi((s) => s.inspector);
+  const toggle = useUi((s) => s.toggleInspector);
+  const waiting = panels.reduce((sum, panel) => sum + (panel.count ?? 0), 0);
+  return (
+    <Menu>
+      <MenuTrigger aria-label="Pannelli" className={cn(HEADER_CHIP, inspector && HEADER_CHIP_ACTIVE)}>
+        <IconLayoutSidebarRight className="size-3.5 opacity-70" stroke={1.8} />
+        <span>Pannelli</span>
+        {waiting ? <span className="text-ui-xs text-[var(--color-text-accent)]">{waiting}</span> : null}
+      </MenuTrigger>
+      <MenuPopup align="end">
+        {panels.map((panel) => (
+          <MenuItem key={panel.target.kind} onClick={() => toggle(panel.target)}>
+            <span className="flex size-4 items-center justify-center opacity-70 [&>svg]:size-3.5">{panel.icon}</span>
+            <span className="flex-1">{panel.label}</span>
+            {panel.count ? <span className="text-ui-xs text-[var(--color-text-accent)]">{panel.count}</span> : null}
+          </MenuItem>
+        ))}
+      </MenuPopup>
+    </Menu>
+  );
+}
+
 /** Recalls the exercise guide on the example project. */
 function ExercisesChip() {
   const exercise = useUi((s) => s.exercise);
@@ -90,6 +123,15 @@ function ChatHeader({ isMac }: { isMac: boolean }) {
   const openDialog = useUi((s) => s.openDialog);
   const goal = useUi((s) => (project ? findGoal(project.document, s.dialogGoalId) : null));
   const proposedGoals = project?.document.goals?.filter((g) => g.status === "proposed").length ?? 0;
+  const panels: HeaderPanel[] = [
+    { target: { kind: "goals" }, label: "Obiettivi", icon: <IconTarget stroke={1.8} />, count: proposedGoals },
+    { target: { kind: "map" }, label: "Mappa", icon: <IconSitemap stroke={1.8} /> },
+    { target: { kind: "pact" }, label: "Patto", icon: <IconRosetteDiscountCheck stroke={1.8} />, count: pendingDecisions },
+    { target: { kind: "mandate" }, label: "Mandato", icon: <IconShieldCheck stroke={1.8} />, count: pendingMandate },
+    { target: { kind: "team" }, label: "Team", icon: <IconUsersGroup stroke={1.8} />, count: pendingTeam },
+    { target: { kind: "issues" }, label: "Issue", icon: <IconCircleDot stroke={1.8} />, count: openIssues },
+    { target: { kind: "memory" }, label: "Memoria", icon: <IconBrain stroke={1.8} /> },
+  ];
 
   return (
     <div
@@ -136,17 +178,19 @@ function ChatHeader({ isMac }: { isMac: boolean }) {
         )}
       </div>
       {project && mainView === "dialog" ? (
-        // On a narrow dialog the chips scroll sideways instead of covering the title; each one stays reachable by Tab.
-        <div className="no-drag flex min-w-0 items-center gap-1 overflow-x-auto [scrollbar-width:none]">
-          {project.isDemo ? <ExercisesChip /> : null}
-          <HeaderChip target={{ kind: "goals" }} label="Obiettivi" icon={<IconTarget stroke={1.8} />} count={proposedGoals} />
-          <HeaderChip target={{ kind: "map" }} label="Mappa" icon={<IconSitemap stroke={1.8} />} />
-          <HeaderChip target={{ kind: "pact" }} label="Patto" icon={<IconRosetteDiscountCheck stroke={1.8} />} count={pendingDecisions} />
-          <HeaderChip target={{ kind: "mandate" }} label="Mandato" icon={<IconShieldCheck stroke={1.8} />} count={pendingMandate} />
-          <HeaderChip target={{ kind: "team" }} label="Team" icon={<IconUsersGroup stroke={1.8} />} count={pendingTeam} />
-          <HeaderChip target={{ kind: "issues" }} label="Issue" icon={<IconCircleDot stroke={1.8} />} count={openIssues} />
-          <HeaderChip target={{ kind: "memory" }} label="Memoria" icon={<IconBrain stroke={1.8} />} />
-        </div>
+        // A wide dialog shows every panel in a row; a narrow one gathers them in one "Pannelli" menu.
+        <>
+          <div className="no-drag hidden min-w-0 items-center gap-1 @min-[640px]/chat:flex">
+            {project.isDemo ? <ExercisesChip /> : null}
+            {panels.map((panel) => (
+              <HeaderChip key={panel.target.kind} target={panel.target} label={panel.label} icon={panel.icon} count={panel.count} />
+            ))}
+          </div>
+          <div className="no-drag flex items-center gap-1 @min-[640px]/chat:hidden">
+            {project.isDemo ? <ExercisesChip /> : null}
+            <PanelsMenu panels={panels} />
+          </div>
+        </>
       ) : null}
       {project && mainView === "dialog" ? (
         // Refresh and the inspector toggle never scroll away.

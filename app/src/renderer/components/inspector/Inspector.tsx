@@ -1,6 +1,7 @@
-import { IconX } from "@tabler/icons-react";
+import { IconArrowsDiagonal, IconArrowsDiagonalMinimize2, IconX } from "@tabler/icons-react";
 import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/cn";
+import { ResizeHandle, useResizableWidth } from "@/lib/resizable";
 import { useUi } from "@/lib/store";
 import { CandidateView } from "./CandidateView";
 import { GoalView, GoalsView } from "./GoalsView";
@@ -12,6 +13,9 @@ import { MemoryView } from "./MemoryView";
 import { SpecialistView, TeamView } from "./TeamView";
 import { FilePreview, MapView, ModuleView } from "./MapView";
 import { DecisionView, PactView } from "./PactView";
+
+/** The narrowest the dialog gets next to a docked inspector. */
+const CHAT_MIN_WIDTH = 420;
 
 const TITLES = {
   map: "Mappa del progetto",
@@ -35,6 +39,9 @@ const TITLES = {
 export function Inspector() {
   const target = useUi((s) => s.inspector)!;
   const setInspector = useUi((s) => s.setInspector);
+  const panel = useResizableWidth("trama.inspectorWidth", { initial: 420, min: 340, max: (viewport) => Math.min(1100, viewport * 0.7) });
+  const wide = Math.round(Math.min(panel.bounds.max, window.innerWidth * 0.6));
+  const isWide = panel.width >= wide - 8;
   return (
     <aside
       aria-label={TITLES[target.kind]}
@@ -43,13 +50,38 @@ export function Inspector() {
         if (event.key === "Escape" && !event.defaultPrevented) setInspector(null);
       }}
       className={cn(
-        "relative flex w-[380px] shrink-0 flex-col border-l border-[color:var(--app-surface-divider)] bg-[var(--color-background-surface)] xl:w-[420px]",
+        "@container/inspector relative flex max-w-full shrink-0 flex-col border-l border-[color:var(--app-surface-divider)] bg-[var(--color-background-surface)]",
+        !panel.resizing && "transition-[width] duration-200 ease-out",
         // Below this width a docked inspector would squeeze the dialog, so it floats over the chat instead.
         "@max-[859px]/main:absolute @max-[859px]/main:inset-y-0 @max-[859px]/main:right-0 @max-[859px]/main:z-30 @max-[859px]/main:max-w-full @max-[859px]/main:shadow-2xl",
       )}
+      // The dialog keeps at least CHAT_MIN_WIDTH; below that the inspector floats over it (see the container query above).
+      style={{ width: `min(${panel.width}px, max(${panel.bounds.min}px, calc(100% - ${CHAT_MIN_WIDTH}px)))` }}
     >
+      <ResizeHandle
+        side="left"
+        label="Larghezza dell'ispettore"
+        width={panel.width}
+        min={panel.bounds.min}
+        max={panel.bounds.max}
+        onResize={panel.setWidth}
+        onReset={panel.reset}
+        onDragChange={panel.setResizing}
+        className="absolute inset-y-0 -left-1 z-20"
+      />
       <div className="chat-surface-divider drag-region flex h-[46px] shrink-0 items-center gap-2 px-4">
         <h3 className="min-w-0 flex-1 truncate font-system-ui text-ui text-foreground">{TITLES[target.kind]}</h3>
+        <Tooltip label={isWide ? "Larghezza normale" : "Allarga l'ispettore"}>
+          <button
+            type="button"
+            aria-label={isWide ? "Larghezza normale" : "Allarga l'ispettore"}
+            aria-pressed={isWide}
+            className="sidebar-icon-button no-drag size-6 rounded-md"
+            onClick={() => (isWide ? panel.reset() : panel.setWidth(wide))}
+          >
+            {isWide ? <IconArrowsDiagonalMinimize2 className="size-3.5" /> : <IconArrowsDiagonal className="size-3.5" />}
+          </button>
+        </Tooltip>
         <Tooltip label="Chiudi l'ispettore">
           <button type="button" aria-label="Chiudi l'ispettore" className="sidebar-icon-button no-drag size-6 rounded-md" onClick={() => setInspector(null)}>
             <IconX className="size-3.5" />

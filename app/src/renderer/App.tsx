@@ -5,6 +5,7 @@ import { shouldOpenGuideOnLaunch } from "@shared/onboarding";
 import { ChatView } from "@/components/chat/ChatView";
 import { Dialogs } from "@/components/Dialogs";
 import { Inspector } from "@/components/inspector/Inspector";
+import { ResizeHandle, useResizableWidth } from "@/lib/resizable";
 import { PROVIDER_GLOW } from "@/components/ProviderIcon";
 import { Sidebar } from "@/components/sidebar/Sidebar";
 import { Toast } from "@/components/Toast";
@@ -45,6 +46,7 @@ export function App() {
   const setApp = useUi((s) => s.setApp);
   const sidebarOpen = useUi((s) => s.sidebarOpen);
   const inspector = useUi((s) => s.inspector);
+  const sidebar = useResizableWidth("trama.sidebarWidth", { initial: 256, min: 208, max: (viewport) => Math.min(440, viewport * 0.35) });
   const mainView = useUi((s) => s.mainView);
 
   useEffect(() => {
@@ -108,27 +110,34 @@ export function App() {
       >
         <div
           className={cn(
-            "relative h-svh shrink-0 overflow-hidden transition-[width] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]",
-            sidebarOpen ? "w-64" : "w-0",
+            "relative h-svh shrink-0 overflow-hidden",
+            !sidebar.resizing && "transition-[width] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]",
           )}
+          style={{ width: sidebarOpen ? sidebar.width : 0 }}
         >
           <div
             className={cn(
-              "app-sidebar-surface absolute inset-y-0 left-0 flex w-64 flex-col transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]",
+              "app-sidebar-surface absolute inset-y-0 left-0 flex flex-col transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]",
               !sidebarOpen && "-translate-x-full",
             )}
+            style={{ width: sidebar.width }}
           >
             <Sidebar isMac={isMac} />
           </div>
         </div>
         <div className="relative flex h-svh min-h-0 min-w-0 flex-1">
           {sidebarOpen ? (
-            <button
-              type="button"
-              aria-label="Nascondi la barra laterale"
-              data-placement="content-seam"
+            <ResizeHandle
+              side="right"
+              label="Larghezza della barra laterale. Clic per nasconderla"
+              width={sidebar.width}
+              min={sidebar.bounds.min}
+              max={sidebar.bounds.max}
+              onResize={sidebar.setWidth}
+              onReset={sidebar.reset}
               onClick={() => useUi.getState().toggleSidebar()}
-              className="absolute inset-y-0 -left-1 z-20 w-2 cursor-ew-resize"
+              onDragChange={sidebar.setResizing}
+              className="absolute inset-y-0 -left-1 z-20"
             />
           ) : null}
           <main className="chat-content-card @container/main relative z-[15] flex min-w-0 flex-1 overflow-hidden">

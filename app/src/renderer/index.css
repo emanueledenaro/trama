@@ -821,8 +821,13 @@ button {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  justify-content: flex-end;
+  /* "safe": a row wider than its box wraps and never pushes buttons out past the left edge. */
+  justify-content: safe flex-end;
   gap: 0.5rem;
+}
+.cta-row > * {
+  max-width: 100%;
+  min-width: 0;
 }
 .cta-row > :is([data-variant="default"], [data-variant="destructive"]) {
   order: 1;
@@ -838,4 +843,33 @@ button {
 }
 .chat-card :is(textarea, input) {
   background: color-mix(in srgb, var(--background) 30%, transparent);
+}
+
+/* The draggable edge of a side panel: invisible until hovered or dragged, then a thin line of light. */
+.panel-resize-handle {
+  width: 10px;
+  cursor: col-resize;
+  touch-action: none;
+  outline: none;
+}
+.panel-resize-handle::after {
+  content: "";
+  position: absolute;
+  inset-block: 0;
+  left: 50%;
+  width: 2px;
+  transform: translateX(-50%);
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--glow-1, var(--info)) 70%, var(--foreground));
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+.panel-resize-handle:hover::after,
+.panel-resize-handle:focus-visible::after,
+.panel-resize-handle[data-active]::after {
+  opacity: 0.55;
+}
+body:has(.panel-resize-handle[data-active]) {
+  cursor: col-resize;
+  user-select: none;
 }
