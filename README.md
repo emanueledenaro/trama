@@ -1,21 +1,23 @@
 # Trama
 
-Trama è un'app desktop per leggere un repository, collegare una richiesta ai moduli del progetto e conservare decisioni, lavoro e verifiche sullo stesso candidato. Usa Codex App Server di OpenAI come motore del Coordinatore e GitHub CLI per le operazioni GitHub esplicite.
+Trama is a desktop app that reads a repository, links a request to the project's modules and keeps decisions, work and checks on the same candidate. It uses OpenAI's Codex App Server as the engine of the Coordinator and GitHub CLI for explicit GitHub operations.
 
-L'app è scritta in Electron e riprende l'interfaccia di [Synara](https://github.com/Emanuele-web04/synara) (vedi [ADR 0011](docs/adr/0011-app-desktop-electron-con-design-synara.md)). Il codice è in [`app/`](app). I sorgenti della versione SwiftUI sono stati rimossi il 23 settembre 2026 e restano nella cronologia git.
+The app is built with Electron and follows the interface of [Synara](https://github.com/Emanuele-web04/synara) (see [ADR 0011](docs/adr/0011-app-desktop-electron-con-design-synara.md)). The code is in [`app/`](app). The sources of the SwiftUI version were removed on 23 September 2026 and remain in the git history.
 
-Il progetto è in alpha. La prima prova reale dell'app Electron su sé stessa è del 24 settembre 2026 ed è registrata in [V09](docs/verifiche/v09-trama-su-trama-2026-09-24.md). Il repository pubblico è [emanueledenaro/trama](https://github.com/emanueledenaro/trama) e il lavoro pianificato è registrato nelle [GitHub Issues](https://github.com/emanueledenaro/trama/issues).
+The project is in alpha. The first real run of the Electron app on its own repository took place on 24 September 2026 and is recorded in [V09](docs/verifiche/v09-trama-su-trama-2026-09-24.md). The public repository is [emanueledenaro/trama](https://github.com/emanueledenaro/trama) and planned work is tracked in [GitHub Issues](https://github.com/emanueledenaro/trama/issues).
 
-## Requisiti
+The app interface and most of the product documentation in `docs/` are in Italian.
 
-- macOS, Linux o Windows.
-- Node.js 22 e npm.
+## Requirements
+
+- macOS, Linux or Windows.
+- Node.js 22 and npm.
 - Git.
-- [GitHub CLI](https://cli.github.com/) per leggere o pubblicare issue. Le operazioni che scrivono sul remoto richiedono un accesso `gh` valido e un'azione esplicita nell'app.
-- Codex CLI con un account ChatGPT. Trama rifiuta account API key e provider diversi da OpenAI per evitare un passaggio implicito alla fatturazione API. In alternativa il Coordinatore può usare un altro provider supportato a cui hai già fatto l'accesso dalla sua CLI.
-- Per eseguire i test Node del candidato con la rete locale: `sandbox-exec` su macOS (già presente) o `bubblewrap` su Linux. Senza, Trama usa la sandbox di Codex, che blocca anche 127.0.0.1.
+- [GitHub CLI](https://cli.github.com/) to read or publish issues. Operations that write to the remote need a valid `gh` login and an explicit action in the app.
+- Codex CLI with a ChatGPT account. Trama refuses API key accounts and providers other than OpenAI, so that it never switches to API billing without you knowing. Alternatively, the Coordinator can use another supported provider you have already signed in to from its own CLI.
+- To run the candidate's Node tests with local networking: `sandbox-exec` on macOS (built in) or `bubblewrap` on Linux. Without them Trama falls back to the Codex sandbox, which also blocks 127.0.0.1.
 
-## Avvio in sviluppo
+## Development
 
 ```bash
 git clone https://github.com/emanueledenaro/trama.git
@@ -24,69 +26,72 @@ npm install
 npm run dev
 ```
 
-`npm run dev` avvia Vite per l'interfaccia, compila il processo principale e apre Electron. `TRAMA_CODEX_PATH` indica un eseguibile Codex diverso da quello trovato nel `PATH`; `TRAMA_DATA_DIR` sposta la cartella dei dati.
+`npm run dev` starts Vite for the interface, builds the main process and opens Electron. `TRAMA_CODEX_PATH` points to a Codex executable other than the one found in `PATH`; `TRAMA_DATA_DIR` moves the data folder.
 
-Altri comandi, sempre in `app/`:
+Other commands, also in `app/`:
 
 ```bash
-npm run typecheck   # controllo dei tipi
-npm test            # test del processo principale e della logica condivisa
-npm run build       # build di interfaccia e processo principale
-npm start           # build e avvio
-npm run ui-check    # avvia l'app con un Codex di prova e salva le schermate in ui-check/
-npm run dist        # pacchetto con electron-builder
+npm run typecheck   # type check
+npm test            # tests for the main process and shared logic
+npm run build       # build the interface and the main process
+npm start           # build and launch
+npm run ui-check    # launch the app with a fake Codex and save screenshots in ui-check/
+npm run dist        # package with electron-builder
 ```
 
-## Come funziona
+## How it works
 
-- **Coordinatore.** È l'unico interlocutore. Studia il progetto, propone gli sviluppatori e scrive nella chat con risposte strutturate: conclusione in apertura, elenchi, tabelle di confronto e avvisi per decisioni e blocchi.
-- **Interrogatorio prima del piano.** Prima che una richiesta diventi un piano o un incarico, il Coordinatore la chiarisce in round numerati con la skill originale `grilling` di AI Hero. Ogni domanda è una scheda di decisione con un'alternativa consigliata. Il piano parte solo quando tutte le domande del round hanno risposta.
-- **Patto e mandato.** Solo le risposte della persona entrano nel Patto. Il mandato dice cosa il Coordinatore può fare da solo.
-- **Team.** Ogni progetto ha gli sviluppatori proposti dal Coordinatore e undici ruoli fissi: QA, UX, ricerca, documentazione e dominio, bug triage e debugger, revisore della spec, Clean Code, guardiano delle regressioni, sicurezza, prestazioni e DevOps. Il pannello Team mostra per ogni momento (chiarimento e spec, fette, candidato, in sottofondo) chi interviene. L'esecuzione dei ruoli fissi nel loro momento non è ancora collegata ([#147](https://github.com/emanueledenaro/trama/issues/147), [#148](https://github.com/emanueledenaro/trama/issues/148)).
-- **Obiettivi.** Risultati di progetto con esempi accettati e rifiutati, salvati nel documento del progetto prima di essere mostrati (ADR 0013).
-- **Verifiche.** Trama esegue da sola i controlli sul candidato: `git_status`, `git_diff_check`, `swift_build`, `swift_test`, `node_test` e `node_typecheck`. Le verifiche Node girano nel worktree con le dipendenze prestate dal checkout quando `package-lock.json` coincide, in una sandbox che permette solo la rete locale.
-- **Skill.** Il pacchetto completo delle skill di Matt Pocock (v1.2.3) è incluso con i nomi di Trama, per esempio `ask-trama` e `setup-trama`. Si richiamano con `/` nel composer. Dettagli in [docs/aihero-attribution.md](docs/aihero-attribution.md).
-- **Interfaccia.** Pannelli (obiettivi, mappa, Patto, mandato, team, issue, memoria) nella barra laterale, barra laterale e inspector ridimensionabili, tema chiaro e scuro per ogni provider, finestra in vetro su macOS e Windows 11. Impostazioni e Collegamenti sono una pagina unica con le sezioni generali, collegamenti, metodo, apprendimento e monitor.
+- **Coordinator.** Your only point of contact. It studies the project, proposes the developers and writes structured replies in the chat: the conclusion first, then lists, comparison tables and callouts for decisions and blockers.
+- **Grilling before the plan.** Before a request becomes a plan or an assignment, the Coordinator clarifies it in numbered rounds with AI Hero's original `grilling` skill. Each question is a decision card with a recommended alternative. The plan starts only when every question of the round has an answer.
+- **Pact and mandate.** Only your answers enter the Pact. The mandate says what the Coordinator may do on its own.
+- **Team.** Every project has the developers proposed by the Coordinator plus eleven fixed roles: QA, UX, research, documentation and domain, bug triage and debugger, spec reviewer, Clean Code, regression guardian, security, performance and DevOps. The Team panel shows who steps in at each moment (clarification and spec, slices, candidate, background). Running the fixed roles at their moment is not wired yet ([#147](https://github.com/emanueledenaro/trama/issues/147), [#148](https://github.com/emanueledenaro/trama/issues/148)).
+- **Goals.** Project outcomes with accepted and rejected examples, saved in the project document before they are shown (ADR 0013).
+- **Checks.** Trama runs the checks on the candidate itself: `git_status`, `git_diff_check`, `swift_build`, `swift_test`, `node_test` and `node_typecheck`. Node checks run in the worktree, borrowing the checkout's dependencies when `package-lock.json` matches, inside a sandbox that allows only local networking.
+- **Skills.** The full set of Matt Pocock's skills (v1.2.3) is bundled with Trama's names, for example `ask-trama` and `setup-trama`. Type `/` in the composer to use them. Details in [docs/aihero-attribution.md](docs/aihero-attribution.md).
+- **Interface.** Panels (goals, map, Pact, mandate, team, issues, memory) live in the sidebar. Sidebar and inspector can be resized. Each provider has its own light and dark theme, and the window uses glass on macOS and Windows 11. Settings and connections are a single page with the sections general, connections, method, learning and monitor.
 
-## Struttura
+## Structure
 
-- `app/src/main`: processo principale. Scansione del repository, Coordinatore, server MCP degli strumenti su `127.0.0.1`, Patto, mandato, team, obiettivi, verifiche, GitHub e persistenza.
-- `app/src/main/core/nativeSkills.ts`: consegna una skill di AI Hero senza modifiche, con un collegamento di Trama che traduce i verbi della skill negli strumenti di Trama.
-- `app/src/main/core/providers`: gli adattatori dei nove provider portati da Synara (ADR 0012) dietro la forma comune `AgentRuntime`: Codex, Claude Agent, Cursor, Grok, Droid, Devin, OpenCode, Antigravity e Pi.
-- `app/src/preload`: bridge IPC con azioni tipizzate. Il renderer non ha accesso a Node.
-- `app/src/main/core/learning`: l'apprendimento del Coordinatore portato da [Hermes Agent](https://github.com/NousResearch/hermes-agent) (ADR 0014, [attribuzione](docs/hermes-attribution.md)): memoria `MEMORY.md` e `USER.md`, ricerca nei dialoghi passati, skill apprese, revisione dell'esperienza e manutenzione delle skill.
-- `app/src/renderer`: interfaccia React con Tailwind CSS 4 e `@base-ui/react`, costruita sui token di design di Synara.
-- `app/src/shared`: tipi e logica condivisa, come la timeline della conversazione, i round dell'interrogatorio e i ruoli del team.
-- `app/resources/AIHero`: le skill di AI Hero con licenza e `bundle.json`, che registra ogni sostituzione di nome. `app/scripts/sync-aihero.mjs` ricostruisce il pacchetto da un checkout della sorgente.
-- `app/resources/DemoProject`: il progetto di esempio.
-- `app/test-fixtures/fake-codex.mjs`: un app-server di prova per i test e per `ui-check`. Le sue risposte non sono risultati di Codex.
+- `app/src/main`: main process. Repository scanning, Coordinator, MCP tool server on `127.0.0.1`, Pact, mandate, team, goals, checks, GitHub and persistence.
+- `app/src/main/core/nativeSkills.ts`: delivers an AI Hero skill unchanged, together with a Trama binding that maps the skill's verbs to Trama's tools.
+- `app/src/main/core/providers`: adapters for the nine providers ported from Synara (ADR 0012) behind the common `AgentRuntime` shape: Codex, Claude Agent, Cursor, Grok, Droid, Devin, OpenCode, Antigravity and Pi.
+- `app/src/main/core/learning`: the Coordinator's learning loop ported from [Hermes Agent](https://github.com/NousResearch/hermes-agent) (ADR 0014, [attribution](docs/hermes-attribution.md)): `MEMORY.md` and `USER.md` memory, search over past conversations, learned skills, experience review and skill maintenance.
+- `app/src/preload`: IPC bridge with typed actions. The renderer has no access to Node.
+- `app/src/renderer`: React interface with Tailwind CSS 4 and `@base-ui/react`, built on Synara's design tokens.
+- `app/src/shared`: shared types and logic, such as the conversation timeline, grilling rounds and team roles.
+- `app/resources/AIHero`: the AI Hero skills with their license and `bundle.json`, which records every name substitution. `app/scripts/sync-aihero.mjs` rebuilds the bundle from a checkout of the source.
+- `app/resources/DemoProject`: the sample project.
+- `app/test-fixtures/fake-codex.mjs`: a fake app server for tests and `ui-check`. Its replies are not Codex results.
 
-## Primo uso
+## First use
 
-1. Apri un progetto esistente oppure il progetto di esempio.
-2. Apri Impostazioni, sezione Collegamenti, e verifica i provider: Codex con un account ChatGPT, oppure un altro provider a cui hai già fatto l'accesso dalla sua CLI. La guida introduttiva ti accompagna al primo avvio e si riapre dal menu Aiuto.
-3. Se vuoi usare GitHub, esegui prima `gh auth login` nel terminale e controlla il repository mostrato dall'app.
-4. Leggi lo studio del Coordinatore e conferma o correggi gli sviluppatori proposti.
-5. Scrivigli una richiesta. Puoi scegliere un modulo come contesto dal composer e una skill con `/`.
-6. Rispondi ai round di domande e alle schede di mandato: solo le tue risposte entrano nel Patto e nel mandato.
+1. Open an existing project or the sample project.
+2. Open Settings (Impostazioni), Connections section (Collegamenti), and check the providers: Codex with a ChatGPT account, or another provider you have already signed in to from its CLI. The introductory guide walks you through the first launch and can be reopened from the Help (Aiuto) menu.
+3. To use GitHub, run `gh auth login` in a terminal first and check the repository the app shows.
+4. Read the Coordinator's study and confirm or correct the proposed developers.
+5. Send it a request. You can pick a module as context in the composer and a skill with `/`.
+6. Answer the rounds of questions and the mandate cards: only your answers enter the Pact and the mandate.
 
-Trama salva progetti recenti, conversazioni e stato operativo nella cartella dati dell'utente, sotto `Trama/Desktop` (`~/Library/Application Support/Trama/Desktop` su macOS, `~/.config/Trama/Desktop` su Linux, `%APPDATA%\Trama\Desktop` su Windows). Al primo avvio l'app legge i progetti recenti della versione SwiftUI in `Trama/` e, all'apertura di un progetto, ne importa conversazione, Patto, mandato, memoria e thread del Coordinatore. I file della versione SwiftUI non vengono modificati. Quello che il Coordinatore impara sta nella stessa cartella, sotto `Learning/`, e mai nel repository del progetto. Le credenziali ChatGPT restano nel componente ufficiale Codex. L'app non legge `auth.json` e non copia token.
+Trama stores recent projects, conversations and working state in the user data folder, under `Trama/Desktop` (`~/Library/Application Support/Trama/Desktop` on macOS, `~/.config/Trama/Desktop` on Linux, `%APPDATA%\Trama\Desktop` on Windows). On first launch the app reads the SwiftUI version's recent projects from `Trama/` and, when a project is opened, imports its conversation, Pact, mandate, memory and Coordinator thread. The SwiftUI version's files are not modified. What the Coordinator learns is kept in the same folder, under `Learning/`, and never in the project repository. ChatGPT credentials stay in the official Codex component. The app does not read `auth.json` and does not copy tokens.
 
-## Repository supportati
+## Supported repositories
 
-La prima analisi strutturale legge progetti Swift e JavaScript o TypeScript. Per Swift riconosce gli import diretti. Per file `js`, `ts`, `mjs`, `cjs`, `jsx` e `tsx` riconosce import e riferimenti relativi. `package.json` entra nell'indice; gli altri file JSON non vengono trattati come sorgente.
+The first structural analysis reads Swift and JavaScript or TypeScript projects. For Swift it recognizes direct imports. For `js`, `ts`, `mjs`, `cjs`, `jsx` and `tsx` files it recognizes imports and relative references. `package.json` is indexed; other JSON files are not treated as source.
 
-Il raggruppamento dei moduli deriva dai percorsi reali, con un trattamento specifico per cartelle `Sources` e `src`. Trama non inventa moduli semantici quando il repository non li dichiara. Segreti, credenziali, symlink e percorsi fuori dalla radice sono esclusi dall'indice.
+Modules are grouped from the actual paths, with specific handling for `Sources` and `src` folders. Trama does not invent semantic modules the repository does not declare. Secrets, credentials, symlinks and paths outside the root are excluded from the index.
 
-## Limiti attuali
+## Current limits
 
-- La prima prova reale ([V09](docs/verifiche/v09-trama-su-trama-2026-09-24.md)) ha superato il percorso di base con Claude e con Pi su account veri: messaggio, strumento di Trama, interruzione, riavvio e ripresa. Il percorso completo con Codex non è ancora stato eseguito, perché l'account di prova aveva l'utilizzo esaurito. Nessun candidato è stato dichiarato e verificato dall'inizio alla fine.
-- Cursor, Grok, Droid, Devin, OpenCode e Antigravity hanno un adattatore ma sono provati solo con CLI, server e SDK finti. Droid non è stato rilevato sulla macchina di prova. Antigravity lavora solo in un worktree, senza shell né rete. Il passaggio da un provider all'altro è verificato solo dal vivo.
-- La pubblicazione di pull request è provata fino al push del branch; la creazione con `gh` non è ancora stata provata su un repository reale. L'elenco completo è nell'[ADR 0011](docs/adr/0011-app-desktop-electron-con-design-synara.md).
-- La sandbox Node con rete locale è provata su macOS. Su Linux `bubblewrap` non è stato provato su una macchina reale. Su Windows resta la sandbox di Codex, quindi i test che aprono un server locale falliscono.
-- Alcuni documenti di pianificazione (`docs/piano-operativo.md`, spec del verticale) descrivono ancora la versione SwiftUI e possono dare al Coordinatore un quadro sbagliato del progetto.
-- Il workflow `Rilascio` (`.github/workflows/release.yml`) produce i pacchetti per macOS, Windows e Linux a ogni tag `v*`. Firma e notarizzazione partono solo con i secret `CSC_LINK`, `CSC_KEY_PASSWORD`, `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD` e `APPLE_TEAM_ID`; senza, i pacchetti restano non firmati. Nessun pacchetto firmato è ancora stato prodotto.
-- La CI (`.github/workflows/electron.yml`) esegue su Ubuntu con Node 22 controllo dei tipi, test, build e `ui-check`, e allega le schermate. Le prove locali della versione SwiftUI, ormai rimossa, restano in [docs/verifiche-locali.md](docs/verifiche-locali.md) come registro storico.
-- Trama è distribuito con licenza MIT. L'interfaccia riprende il design di Synara, anch'esso MIT, con l'attribuzione in [docs/synara-attribution.md](docs/synara-attribution.md). Le skill di Matt Pocock includono licenza MIT e attribuzione in [docs/aihero-attribution.md](docs/aihero-attribution.md); l'apprendimento di Hermes Agent è attribuito in [docs/hermes-attribution.md](docs/hermes-attribution.md). Codex CLI viene installato separatamente e non è incluso nell'app.
+- The first real run ([V09](docs/verifiche/v09-trama-su-trama-2026-09-24.md)) passed the base path with Claude and Pi on real accounts: message, Trama tool, interrupt, restart and resume. The full path with Codex has not run yet, because the test account had used up its quota. No candidate has been declared and verified end to end.
+- Cursor, Grok, Droid, Devin, OpenCode and Antigravity have an adapter but are tested only against fake CLIs, servers and SDKs. Droid was not detected on the test machine. Antigravity works only in a worktree, without shell or network. Switching from one provider to another is verified only live.
+- Pull request publishing is tested up to the branch push; creating the PR with `gh` has not been tested on a real repository yet. The full list is in [ADR 0011](docs/adr/0011-app-desktop-electron-con-design-synara.md).
+- The Node sandbox with local networking is tested on macOS. On Linux, `bubblewrap` has not been tested on a real machine. On Windows the Codex sandbox remains, so tests that open a local server fail.
+- Some planning documents (`docs/piano-operativo.md`, the vertical spec) still describe the SwiftUI version and can give the Coordinator a wrong picture of the project.
+- The `Rilascio` workflow (`.github/workflows/release.yml`) builds packages for macOS, Windows and Linux on every `v*` tag. Signing and notarization run only with the `CSC_LINK`, `CSC_KEY_PASSWORD`, `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD` and `APPLE_TEAM_ID` secrets; without them the packages stay unsigned. No signed package has been produced yet.
+- CI (`.github/workflows/electron.yml`) runs type check, tests, build and `ui-check` on Ubuntu with Node 22, and uploads the screenshots. Local checks of the removed SwiftUI version remain in [docs/verifiche-locali.md](docs/verifiche-locali.md) as a historical record.
 
-Questi limiti sono tracciati nei ticket T01-T18 e nelle [GitHub Issues](https://github.com/emanueledenaro/trama/issues). La presenza del codice o di un test locale non chiude da sola un ticket.
+These limits are tracked in tickets T01-T18 and in [GitHub Issues](https://github.com/emanueledenaro/trama/issues). Code or a local test alone does not close a ticket.
+
+## License
+
+Trama is released under the MIT license. The interface follows Synara's design, also MIT, with attribution in [docs/synara-attribution.md](docs/synara-attribution.md). Matt Pocock's skills include their MIT license and attribution in [docs/aihero-attribution.md](docs/aihero-attribution.md); the Hermes Agent learning loop is attributed in [docs/hermes-attribution.md](docs/hermes-attribution.md). Codex CLI is installed separately and is not included in the app.
