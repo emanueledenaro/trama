@@ -141,6 +141,12 @@ export function TeamView() {
           Ogni progetto ha tutte le figure di un team di sviluppo, ognuna nel suo momento del lavoro. Tu decidi il prodotto e il Coordinatore guida il
           team. Gli sviluppatori li propone il Coordinatore alla fine dello studio e li crea solo la tua risposta; le altre figure ci sono sempre.
         </p>
+        <p className="mt-2 text-ui-sm text-muted-foreground">
+          Alcune figure si attivano da sole, con regole di Trama e sul modello più leggero: il bug triage smista le issue nuove, diagnostica i test
+          che falliscono e corregge il bug riprodotto; Clean Code rivede l'architettura quando il team è libero e ti propone i miglioramenti in una
+          scheda del Patto.
+          {project.isDemo ? " Nel progetto di esempio restano ferme." : project.document.mandate?.status === "granted" ? "" : " Si attivano quando concedi un mandato."}
+        </p>
       </InspectorSection>
       {pending ? (
         <InspectorSection title="Proposta in attesa">
