@@ -21,10 +21,13 @@ export type InspectorTarget =
   | { kind: "goals"; create?: boolean }
   | { kind: "goal"; id: string };
 
-/** The main pane: a dialog with the Coordinator, or the projects overview (UX03). */
-export type MainView = "dialog" | "overview";
+/** The main pane: a dialog with the Coordinator, the projects overview (UX03), or the settings page. */
+export type MainView = "dialog" | "overview" | "settings";
 
-export type DialogName = "settings" | "connections" | "createProject" | "search" | "guide" | null;
+/** The sections of the settings page; "connections" holds ChatGPT, GitHub and the providers. */
+export type SettingsSection = "general" | "connections" | "method" | "learning" | "monitor";
+
+export type DialogName = "createProject" | "search" | "guide" | null;
 
 interface UiState {
   app: AppState | null;
@@ -44,6 +47,11 @@ interface UiState {
   /** A goal to open once its project is the selected one, after a switch from the overview. */
   pendingGoal: { projectId: string; goalId: string } | null;
   setMainView(view: MainView): void;
+  settingsSection: SettingsSection;
+  /** The view the settings page returns to when it closes. */
+  settingsReturn: Exclude<MainView, "settings">;
+  openSettings(section?: SettingsSection): void;
+  closeSettings(): void;
   openDialog(goalId: string | null): void;
   openGoalOf(projectId: string, goalId: string): void;
   /** Inspector history for the back and forward buttons, as Synara's app navigation. */
@@ -84,6 +92,17 @@ export const useUi = create<UiState>((set, get) => ({
   dialogGoalId: null,
   pendingGoal: null,
   setMainView: (mainView) => set({ mainView }),
+  settingsSection: "general",
+  settingsReturn: "dialog",
+  openSettings: (section) => {
+    const current = get().mainView;
+    set({
+      mainView: "settings",
+      settingsSection: section ?? get().settingsSection,
+      settingsReturn: current === "settings" ? get().settingsReturn : current,
+    });
+  },
+  closeSettings: () => set({ mainView: get().settingsReturn }),
   openDialog: (dialogGoalId) => set({ dialogGoalId, mainView: "dialog" }),
   openGoalOf: (projectId, goalId) => {
     if (get().app?.project?.id === projectId) set({ dialogGoalId: goalId, mainView: "dialog", pendingGoal: null });

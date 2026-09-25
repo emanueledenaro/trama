@@ -19,6 +19,7 @@ import { deriveTimelineRows } from "@shared/timeline";
 import { dialogEvents, dialogRequests, findGoal } from "@shared/goals";
 import { GoalDialogHeader } from "@/components/inspector/GoalsView";
 import { OverviewView } from "@/components/OverviewView";
+import { SettingsView } from "@/components/settings/SettingsView";
 import { NavigationButtons, SidebarTrigger } from "@/components/sidebar/Sidebar";
 import { Spinner } from "@/components/Spinner";
 import { TramaLogo } from "@/components/TramaLogo";
@@ -128,6 +129,8 @@ function ChatHeader({ isMac }: { isMac: boolean }) {
       <div className="flex min-w-[7rem] flex-1 items-center gap-2">
         {mainView === "overview" ? (
           <h2 className="truncate font-system-ui text-ui font-normal text-foreground">Panoramica dei progetti</h2>
+        ) : mainView === "settings" ? (
+          <h2 className="truncate font-system-ui text-ui font-normal text-foreground">Impostazioni</h2>
         ) : project ? (
           <>
             <span className="inline-flex size-3.5 shrink-0 items-center justify-center text-muted-foreground">
@@ -234,7 +237,7 @@ function Landing() {
         ) : null}
         {app.codex.account?.kind !== "chatgpt" ? (
           <p className="mt-4 max-w-sm text-ui-sm text-muted-foreground">
-            <button type="button" className="text-[var(--color-text-accent)] hover:underline" onClick={() => setDialog("connections")}>
+            <button type="button" className="text-[var(--color-text-accent)] hover:underline" onClick={() => useUi.getState().openSettings("connections")}>
               Collega ChatGPT e verifica i collegamenti
             </button>
             . Puoi esplorare i file anche prima di collegare un account.
@@ -380,6 +383,8 @@ export function ChatView({ isMac }: { isMac: boolean }) {
       <ChatHeader isMac={isMac} />
       {mainView === "overview" ? (
         <OverviewView />
+      ) : mainView === "settings" ? (
+        <SettingsView />
       ) : project ? (
         <div key={`${project.id}:${goalId ?? "project"}`} className="chat-pane-enter relative flex min-h-0 flex-1 flex-col">
           <Timeline />

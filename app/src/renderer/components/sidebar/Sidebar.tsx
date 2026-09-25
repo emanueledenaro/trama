@@ -155,6 +155,9 @@ export function Sidebar({ isMac }: { isMac: boolean }) {
   const isActive = (kind: InspectorTarget["kind"]) => inspector?.kind === kind;
   const mainView = useUi((s) => s.mainView);
   const setMainView = useUi((s) => s.setMainView);
+  const settingsSection = useUi((s) => s.settingsSection);
+  const openSettings = useUi((s) => s.openSettings);
+  const closeSettings = useUi((s) => s.closeSettings);
   const dialogGoalId = useUi((s) => s.dialogGoalId);
   const openDialog = useUi((s) => s.openDialog);
   const goals = (document?.goals ?? []).filter((g) => g.status === "open" || g.status === "proposed");
@@ -398,7 +401,8 @@ export function Sidebar({ isMac }: { isMac: boolean }) {
                 ? "Collega ChatGPT"
                 : "Collegamenti"
           }
-          onClick={() => setDialog("connections")}
+          active={mainView === "settings" && settingsSection === "connections"}
+          onClick={() => openSettings("connections")}
           trailing={
             <span
               className={cn(
@@ -408,7 +412,10 @@ export function Sidebar({ isMac }: { isMac: boolean }) {
             />
           }
         />
-        <SidebarRow icon={<IconSettings className="size-[15px]" stroke={1.7} />} label="Impostazioni" onClick={() => setDialog("settings")} />
+        <SidebarRow icon={<IconSettings className="size-[15px]" stroke={1.7} />} label="Impostazioni"
+          active={mainView === "settings" && settingsSection !== "connections"}
+          onClick={() => (mainView === "settings" && settingsSection !== "connections" ? closeSettings() : openSettings("general"))}
+        />
       </div>
     </div>
   );
