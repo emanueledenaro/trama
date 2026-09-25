@@ -4,7 +4,7 @@ import type { ProviderId } from "@shared/codex";
 import type { ImageAttachmentInput } from "@shared/ipc";
 import { type MentionCandidate, mentionCandidates, mentionToken } from "@shared/mentions";
 import { normalizePaste, pasteSizeLabel, pasteTitle, serializePastes, shouldCollapsePaste } from "@shared/pastedText";
-import { skillCandidates } from "@shared/skills";
+import { AIHERO_ATTRIBUTION, skillCandidates } from "@shared/skills";
 import { dialogComposer, findGoal } from "@shared/goals";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ContextMeter } from "./ContextMeter";
@@ -195,6 +195,7 @@ export function Composer() {
                 <span className="max-w-[45%] shrink-0 truncate text-ui-xs text-muted-foreground">{candidate.subtitle}</span>
               </button>
             ))}
+            {mention.sigil === "/" && project.aiHeroPrepared ? <p className="px-2 pt-1 pb-0.5 text-ui-xs text-muted-foreground">{AIHERO_ATTRIBUTION}.</p> : null}
           </div>
         ) : null}
         <form
