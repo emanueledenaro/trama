@@ -24,7 +24,9 @@ Specialista: un agente con una competenza e un incarico motivato all'interno di 
 
 Ruolo fisso: una figura che ogni team di progetto ha sempre, qualunque sia il progetto: QA, UX, ricerca, documentazione e dominio, bug triage e debugger, revisore della spec, Clean Code, guardiano delle regressioni, sicurezza, prestazioni, DevOps. Ha una competenza, le skill di AI Hero su cui si basa e i suoi momenti. Sicurezza e prestazioni sono aggiunte di Trama e non hanno una skill. Trama crea i ruoli fissi con il progetto e li aggiunge ai progetti esistenti; nessuno li toglie dal team. Non contano nel limite degli sviluppatori in parallelo.
 
-Sviluppatore: uno specialista scelto per il progetto, che realizza le fette con `implement` e `tdd`. Il Coordinatore propone gli sviluppatori alla fine dello studio e solo la risposta della persona li crea; poi il Coordinatore li cambia entro il mandato.
+Sviluppatore: uno specialista scelto per il progetto, che realizza le fette con `implement` e `tdd`. Il Coordinatore propone gli sviluppatori alla fine dello studio e solo la risposta della persona li crea; poi il Coordinatore li cambia entro il mandato. La persona può rinominare uno sviluppatore dalla vista Team o chiedendolo al Coordinatore, senza mandato; l'ID resta lo stesso. I ruoli fissi non si rinominano.
+
+Identità di un agente: l'avatar con l'iniziale e il tag del ruolo in breve (`[Interfaccia]`, `[QA]`), nel colore proprio dell'agente. Trama assegna un colore libero da una palette fissa e la persona può cambiarlo dalla vista Team. Il colore sta solo sull'identità: badge e schede usano i colori di stato (ADR 0007).
 
 Momento: il punto del flusso in cui una figura del team interviene: chiarimento e spec, fette, candidato, in sottofondo. In ogni momento la figura ha un compito e le skill che usa lì; una figura può avere più momenti. Il momento dice quando una figura lavora, non che stia lavorando.
 

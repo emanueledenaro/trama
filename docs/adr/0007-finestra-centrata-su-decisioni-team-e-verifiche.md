@@ -8,4 +8,6 @@ Decisione: un progetto ha una sola conversazione con il Coordinatore e non esist
 
 Il composer serve a decidere e a dare intenzioni. Le azioni principali della persona sono rispondere alle schede di decisione e concedere il mandato; il diff si consulta, non si approva riga per riga.
 
+Eccezione del 25 settembre 2026 (D-6AE0F263, W15): ogni agente ha un proprio colore, preso da una palette fissa lontana dai colori di stato (verde, ambra, rosso). Il colore sta solo sulla sua identità: l'avatar con l'iniziale e il tag del ruolo, per esempio `Giulia [Interfaccia]`. Badge, schede, puntini di stato e la striscia in alto usano solo i colori di stato. Trama assegna alla creazione un colore libero e la persona può cambiarlo dalla vista Team. Ogni tinta resta leggibile in chiaro e in scuro con tutti i temi dei provider, e `app/src/shared/identity.test.ts` lo verifica.
+
 Conseguenze: la app Codex resta il livello di qualità visiva (grigi neutri, font di sistema, quiete), non la pianta. Le viste esistenti si riusano dentro l'ispettore. L'ADR 0005 resta valido: il Coordinatore è l'unico interlocutore e le altre superfici sono di lettura e verifica.
