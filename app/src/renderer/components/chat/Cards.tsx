@@ -347,6 +347,7 @@ export function TeamProposalCard({ proposalId }: { proposalId: string }) {
       }
     >
       {proposal.summary ? <p className="text-ui text-foreground/90">{proposal.summary}</p> : null}
+      <p className="mt-1 text-ui-sm text-muted-foreground">Qui scegli gli sviluppatori. Le altre figure del team ci sono sempre.</p>
       <div className="mt-2 space-y-1.5">
         {proposal.members.map((member) => {
           const checked = selected.includes(member.name);

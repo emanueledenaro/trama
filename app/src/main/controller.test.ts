@@ -7,6 +7,7 @@ import { decisionDependents, dialogEvents, findGoal, projectGoals } from "@share
 import { deriveTimelineRows } from "@shared/timeline";
 import { TramaController } from "./controller";
 import { AppStorage } from "./core/storage";
+import { developers } from "./core/team";
 
 const root = join(import.meta.dirname, "../..");
 let controller: TramaController | null = null;
@@ -98,7 +99,7 @@ describe("TramaController", () => {
     expect(card?.goalId ?? null).toBeNull();
     // Proposing a goal grants nothing and starts nothing.
     expect(document.mandate).toBeNull();
-    expect(document.team.specialists).toHaveLength(0);
+    expect(developers(document)).toHaveLength(0);
   });
 
   it("keeps two goal dialogs apart from the project dialog and gives the Coordinator the goal", async () => {

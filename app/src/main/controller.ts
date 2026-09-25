@@ -1411,7 +1411,7 @@ export class TramaController {
     }
     if (!transcript && !document.team.confirmedAt) {
       request +=
-        "\n\nQuesto progetto non ha ancora un team confermato: alla fine dello studio proponilo con propose_team, con un motivo per ogni specialista.";
+        "\n\nQuesto progetto non ha ancora sviluppatori confermati: alla fine dello studio proponili con propose_team, con un motivo per ognuno. I ruoli fissi del team ci sono già.";
     }
     if (!transcript && projectGoals(document).length === 0) request += `\n\n${FIRST_GOAL_REQUEST}`;
     const rules = await this.pendingRules(document, document.coordinator.threadProvider ?? this.coordinatorProvider(document));
