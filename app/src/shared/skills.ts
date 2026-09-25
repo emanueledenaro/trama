@@ -7,6 +7,9 @@ export interface LoadedSkill {
   description: string | null;
 }
 
+/** Shown wherever Trama lists the bundled AI Hero skills (M08, MIT attribution). */
+export const AIHERO_ATTRIBUTION = "Basato sulle skill di Matt Pocock, licenza MIT";
+
 const INVOCATION = /(^|\s)([/$])([A-Za-z0-9_:-]+)(?=\s|$|[,.;!?)])/g;
 
 /** Enabled skills matching `query`, by name first and then description. */

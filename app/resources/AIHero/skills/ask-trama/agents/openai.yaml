@@ -1,5 +1,5 @@
 interface:
-  display_name: "Ask Matt"
+  display_name: "Ask Trama"
   short_description: "Find the right skill or workflow"
 policy:
   allow_implicit_invocation: false

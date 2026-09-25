@@ -3,6 +3,7 @@ import { useState } from "react";
 import type { ProviderAccount, ProviderId } from "@shared/codex";
 import { DEFAULT_LEARNING_SETTINGS, type LearningSettings, type ThemePreference } from "@shared/domain";
 import { capabilityLines, PROVIDERS, type ProviderDescriptor } from "@shared/providers";
+import { AIHERO_ATTRIBUTION } from "@shared/skills";
 import { Button } from "@/components/ui/button";
 import { Input, Label, TextArea } from "@/components/ui/field";
 import { Dialog } from "@/components/ui/dialog";
@@ -160,8 +161,9 @@ function MethodSettings() {
     <section>
       <h4 className="mb-1 text-ui-sm font-medium text-muted-foreground">Metodo di lavoro</h4>
       <p className="mb-2 text-ui-xs text-muted-foreground">
-        Copia nel progetto un sottoinsieme fissato delle skill AI Hero di Matt Pocock (licenza MIT), senza installer e senza cambiare le impostazioni globali di Codex. I file esistenti restano invariati.
+        Copia nel progetto le skill AI Hero della release v1.2.3 con i nomi di Trama (ask-trama, setup-trama), senza installer e senza cambiare le impostazioni globali di Codex. Le skill varie, come git-guardrails-claude-code, si usano solo con "/". I file esistenti restano invariati.
       </p>
+      <p className="mb-2 text-ui-xs text-muted-foreground">{AIHERO_ATTRIBUTION}.</p>
       <Button
         size="sm"
         variant="outline"
