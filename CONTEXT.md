@@ -84,6 +84,8 @@ Dialogo di obiettivo: la conversazione con il Coordinatore dedicata a un singolo
 
 Mandato di progetto: l'autorizzazione persistente del Product Owner a perseguire obiettivi entro limiti definiti per un progetto. La delega di un singolo incarico deve rientrare nel mandato e nelle decisioni applicabili.
 
+Richiesta di mandato superata: una richiesta di mandato del Coordinatore ancora in attesa, sostituita da una richiesta più recente prima che la persona rispondesse. Resta nella cronologia, grigia e con il riferimento alla richiesta nuova, ma non si può più concedere. In ogni momento la persona concede al massimo una richiesta, la più recente (W14).
+
 Panoramica globale: il riepilogo di avanzamento, blocchi e decisioni richieste dei progetti registrati. È distinta dalle conversazioni e dai contenuti privati dei singoli progetti. Ordina i progetti per attenzione: decisioni richieste, lavoro fermo o fallito, risultati da approvare, lavoro in corso. Distingue i dati aggiornati dei progetti in memoria dai dati dell'ultimo salvataggio e dagli stati non leggibili, e non apre sessioni AI per aggiornarsi.
 
 Revisione tecnica: la valutazione di un candidato da parte di un revisore distinto dall'autore, riferita ai requisiti e alle verifiche di quel lavoro. Non è una decisione di prodotto né una revisione umana.

@@ -9,7 +9,7 @@ import type {
   SpecialistAssignment,
   WorkPhase,
 } from "@shared/domain";
-import { isOpenQuestion } from "@shared/domain";
+import { isOpenQuestion, pendingMandateRequest } from "@shared/domain";
 import { grillingSubject } from "@shared/grilling";
 import { PROVIDERS } from "@shared/providers";
 import { inspectCandidate, latestCandidate } from "./candidates";
@@ -145,7 +145,8 @@ export function workState(document: ProjectDocument, requestId: string | null): 
   const plan = document.plans.filter((p) => inScope(p.requestId)).at(-1) ?? null;
   const assigned = allAssignments(document).filter((a) => inScope(a.requestId) && (!plan || a.createdAt >= plan.createdAt));
   const assignments = assigned.filter((a) => !superseded(a, assigned));
-  const pendingMandate = document.mandateRequests.filter((r) => !r.resolution).at(-1) ?? null;
+  // Only the latest request can be granted: a newer one supersedes the pending one (W14).
+  const pendingMandate = pendingMandateRequest(document);
   const mandateAsked = pendingMandate !== null && inScope(pendingMandate.requestId);
 
   const moves: MoveOption[] = [];

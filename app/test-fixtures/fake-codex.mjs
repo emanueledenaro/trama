@@ -274,6 +274,20 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
         });
         return;
       }
+      if (text.includes("[chiedi-mandato")) {
+        // [chiedi-mandato] or [chiedi-mandato:<reason>]: a mandate request, which supersedes a pending one (W14).
+        const reason = text.match(/\[chiedi-mandato:([^\]]+)\]/)?.[1] ?? "Serve un piano per gli ordini";
+        callTool(threadId, "request_mandate", {
+          reason,
+          objectives: ["Documentare l'annullamento degli ordini"],
+          scopeModuleIDs: ["Sources/Orders"],
+          authorizedActions: ["plan"],
+        }).then((result) => {
+          toolDone("request_mandate", result);
+          finish(result.isError ? `Rifiutato: ${result.content[0].text}` : result.content[0].text);
+        });
+        return;
+      }
       if (text.includes("[proponi-team]")) {
         callTool(threadId, "propose_team", {
           summary: "Un solo specialista per il modulo Orders",

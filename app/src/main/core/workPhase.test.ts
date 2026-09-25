@@ -173,6 +173,17 @@ describe("workState: the phase and the allowed moves of a request (W01)", () => 
     expect(workState(document, "g1").phase).toBeNull();
   });
 
+  it("proposes only the latest mandate request: a newer one moves the grant to it (W14)", () => {
+    const document = emptyDocument("p");
+    request(document, "r1");
+    const base = { requestId: "r1", reason: "Serve", objectives: ["o"], priorities: [], scopeModuleIds: ["m"], authorizedActions: ["plan" as const], limits: [] };
+    const first = createMandateRequest(document, base);
+    expect(workState(document, "r1").moves).toMatchObject([{ move: "grantMandate", targetId: first.id }]);
+    const second = createMandateRequest(document, { ...base, reason: "Serve di più" });
+    expect(workState(document, "r1").moves).toMatchObject([{ move: "grantMandate", targetId: second.id }]);
+    expect(workState(document, "r1").moves).toHaveLength(1);
+  });
+
   it("is spec while the plan is written or has open questions", () => {
     const document = emptyDocument("p");
     request(document, "r1");

@@ -106,6 +106,22 @@ export function resolveMandateRequest(
   return request;
 }
 
+/**
+ * Refuses to grant or decline a mandate request the person can no longer answer: unknown, already resolved or
+ * superseded by a newer request (W14).
+ */
+export function assertMandateRequestAnswerable(document: ProjectDocument, requestId: string | null): void {
+  if (!requestId) return;
+  const request = document.mandateRequests.find((r) => r.id === requestId);
+  if (!request) throw new DomainError(`Richiesta di mandato ${requestId} non trovata.`);
+  const resolution = request.resolution;
+  if (!resolution) return;
+  if (resolution.kind === "superseded") {
+    throw new DomainError(`La richiesta di mandato ${requestId} è superata da ${resolution.supersededBy ?? "una richiesta più recente"}: non si può più concedere.`);
+  }
+  throw new DomainError(`La richiesta di mandato ${requestId} ha già una risposta.`);
+}
+
 export function createMandateRequest(
   document: ProjectDocument,
   input: Omit<MandateRequest, "id" | "askedAt" | "resolution">,
@@ -127,9 +143,9 @@ export function createMandateRequest(
     askedAt: now.toISOString(),
     resolution: null,
   };
-  // A newer proposal replaces the pending one.
+  // A newer request supersedes the pending one (W14): it stays in the history and can no longer be granted.
   for (const pending of document.mandateRequests) {
-    if (!pending.resolution) pending.resolution = { kind: "revoked", version: null, resolvedAt: now.toISOString() };
+    if (!pending.resolution) pending.resolution = { kind: "superseded", version: null, resolvedAt: now.toISOString(), supersededBy: request.id };
   }
   document.mandateRequests.push(request);
   return request;

@@ -105,6 +105,7 @@ import { convertLegacyDocument, readLegacyDocument, readLegacyRecentProjects } f
 import { type MonitorCheckpoint, MonitorStore, pollRepository } from "./core/monitor";
 import {
   answerDecisionRequest,
+  assertMandateRequestAnswerable,
   createDecisionRequest,
   decide,
   decisionMessage,
@@ -2235,6 +2236,7 @@ export class TramaController {
     limits: string[];
   }): Promise<void> {
     const project = this.requireProject();
+    assertMandateRequestAnswerable(project.document, input.requestId);
     const hadMandate = project.document.mandate?.status === "granted";
     const mandate = grantMandate(project.document, input);
     const kind = hadMandate ? "corrected" : "granted";
@@ -2248,6 +2250,8 @@ export class TramaController {
   async revokeMandate(reason: string, requestId: string | null): Promise<void> {
     const project = this.requireProject();
     const document = project.document;
+    // A stale card must not revoke the active mandate: only the latest request can be answered (W14).
+    assertMandateRequestAnswerable(document, requestId);
     if (requestId && !document.mandate) {
       resolveMandateRequest(document, requestId, "revoked", null);
     } else {

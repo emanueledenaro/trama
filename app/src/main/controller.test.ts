@@ -485,6 +485,32 @@ describe("TramaController", () => {
     expect(sentDetail(document.requests[2]!.id)).not.toMatchObject({ detail: expect.stringContaining("richiamo") });
   }, 60_000);
 
+  it("supersedes a pending mandate request with a newer one, which alone can be granted (W14)", async () => {
+    await setup();
+    const document = controller!.snapshot.project!.document;
+    await controller!.send("[chiedi-mandato:Primo]", null, null, null);
+    await controller!.send("[chiedi-mandato:Secondo]", null, null, null);
+    const [first, second] = document.mandateRequests;
+    expect(first!.resolution).toMatchObject({ kind: "superseded", supersededBy: second!.id });
+    expect(second!.resolution).toBeNull();
+    // The Coordinator learns which request the new one replaced.
+    expect(document.events.at(-1)!.content).toMatchObject({ text: expect.stringContaining(first!.id) });
+    // Both cards stay in the history.
+    expect(document.events.filter((e) => e.content.type === "card" && e.content.kind === "mandate")).toHaveLength(2);
+
+    const input = { objectives: ["o"], priorities: [], scopeModuleIds: ["Sources/Orders"], authorizedActions: ["plan" as const], limits: [] };
+    await expect(controller!.grantMandate({ ...input, requestId: first!.id })).rejects.toThrow(/superata/);
+    expect(document.mandate).toBeNull();
+    await controller!.grantMandate({ ...input, requestId: second!.id });
+    expect(document.mandate?.version).toBe(1);
+    expect(second!.resolution).toMatchObject({ kind: "granted", version: 1 });
+
+    // Declining the superseded card later must not revoke the mandate granted from the newer one.
+    await expect(controller!.revokeMandate("vecchia", first!.id)).rejects.toThrow(/superata/);
+    expect(document.mandate?.status).toBe("granted");
+    expect(first!.resolution?.kind).toBe("superseded");
+  });
+
   it("refuses prepare_plan without a mandate and runs it within one", async () => {
     await setup();
     const project = controller!.snapshot.project!;
