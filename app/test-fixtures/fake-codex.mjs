@@ -178,6 +178,47 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
         finish("Saved what stood out.");
         return;
       }
+      const automatic = text.match(/Mossa automatica di Trama: (\w+)/);
+      if (automatic) {
+        // A move Trama started by itself (W04). FAKE_CODEX_AUTOMATIC=wait keeps the turn running until interrupted,
+        // =idle answers without making the move; otherwise the fake makes it like a Coordinator that follows the rules.
+        if (process.env.FAKE_CODEX_AUTOMATIC === "wait") return;
+        const call = async (tool, args) => {
+          const result = await callTool(threadId, tool, args);
+          toolDone(tool, result);
+          return result;
+        };
+        const json = (result) => JSON.parse(result.content[0].text);
+        const done = [];
+        if (process.env.FAKE_CODEX_AUTOMATIC !== "idle") {
+          if (automatic[1] === "preparePlan") {
+            await call("prepare_plan", { kind: "agreedTicket", moduleIDs: ["Sources/Orders"], summary: "Revisione degli ordini pagati annullati" });
+            done.push("Ho chiesto il piano al pianificatore.");
+          } else if (automatic[1] === "assignWork") {
+            const assigned = await call("assign_task", {
+              specialist: "Ada",
+              kind: "agreedTicket",
+              objective: "Mandare in revisione gli ordini pagati annullati",
+              moduleIDs: ["Sources/Orders"],
+              requiredChecks: ["git_status"],
+              tools: ["edits"],
+              instructions: "Scrivi una nota",
+            });
+            done.push(assigned.isError ? `Rifiutato: ${assigned.content[0].text}` : "Ho assegnato la fetta ad Ada.");
+          } else if (automatic[1] === "verifyCandidate") {
+            const team = json(await call("read_team", {}));
+            const assignment = team.specialists.map((s) => s.assignment).find((a) => a?.status === "completed");
+            const decision = json(await call("read_pact", {})).decisions[0];
+            const declared = await call("declare_candidate", { assignment: assignment.id, decisionIDs: [decision.id] });
+            const { candidateID } = json(declared);
+            await call("verify_candidate", { candidate: candidateID, check: "git_status" });
+            await call("review_candidate", { candidate: candidateID });
+            done.push(`Ho verificato il candidato ${candidateID}.`);
+          }
+        }
+        finish(done.join(" ") || "Non ho fatto la mossa.");
+        return;
+      }
       if (text.includes("[memoria]")) {
         callTool(threadId, "memory", { target: "memory", action: "add", content: "Il progetto usa pnpm 9" }).then(async (result) => {
           toolDone("memory", result);

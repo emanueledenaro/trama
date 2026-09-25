@@ -122,6 +122,7 @@ const handlers: { [K in ActionName]: Handler<K> } = {
   "project:readFile": ({ relativePath }) => controller.readFile(relativePath),
   "coordinator:send": ({ text, moduleId, model, effort, images, provider, goalId }) =>
     controller.send(text, moduleId, model, effort, images ?? [], provider ?? null, goalId ?? null),
+  "coordinator:takeStep": ({ requestId }) => controller.takeStep(requestId),
   "coordinator:interrupt": () => controller.interrupt(),
   "coordinator:retry": () => controller.startCoordinator(),
   "coordinator:selectModel": ({ model, effort, provider, goalId }) => controller.selectModel(model, effort, provider ?? null, goalId ?? null),

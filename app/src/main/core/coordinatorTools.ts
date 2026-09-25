@@ -444,19 +444,24 @@ export const COORDINATOR_TOOLS: ToolDefinition[] = [
   {
     name: "declare_next_step",
     description:
-      "Close a turn about the work with its one next step: a move among the moves Trama allows now for this request (\"Fase del lavoro\" in Trama's message lists them; a refusal lists the current ones). Trama shows it as one button under your reply. Call it last, after the tools that change the work; reason is one line for the person. A second call replaces the first. Declare nothing when nothing is to do.",
+      "Close a turn about the work with its one next step: a move among the moves Trama allows now for this request (\"Fase del lavoro\" in Trama's message lists them; a refusal lists the current ones). Trama shows the person's move as one button under your reply; your own move you make now with your tools, and Trama starts it by itself when the turn ends without it. Call it last, after the tools that change the work; reason is one line for the person. A second call replaces the first. Declare nothing when nothing is to do.",
     properties: { move: { type: "string", enum: NEXT_MOVES }, reason: text },
     required: ["move", "reason"],
     readOnly: false,
   },
 ];
 
-/** How the Coordinator closes a turn with the one next step (W01); a late rule, so open threads receive it too. */
+/**
+ * How the Coordinator carries the work on and closes a turn with the one next step (W01, W04); a late rule,
+ * so open threads receive it too.
+ */
 export const NEXT_STEP_RULES = [
   "Each message from Trama gives the phase of the work and the moves allowed now, under \"Fase del lavoro\": Trama computes them from the records, you choose among them.",
-  "When your turn is about the work, close it with declare_next_step: the one move that takes the work on, with a one-line reason for the person. Call it last, after the tools that change the work: questions you just asked make answerQuestions allowed, and a refusal lists the moves allowed now.",
-  "Choose the person's move when the work waits for them (answer the questions, confirm the shared understanding, grant the mandate, confirm the team, review the plan, review the candidate, merge the pull request) and your own when the work waits for you (prepare the plan, assign the work, run the checks). Trama shows the step as one button under your reply.",
-  "Declare nothing when nothing is to do: after a greeting, after an answer for information, while specialists work. Do not end your message with a generic question such as \"Vuoi che...?\": the button asks it.",
+  "Within the mandate you carry the work on by yourself. When the next move is yours (prepare the plan once the person confirmed the shared understanding, assign the slices of a ready plan, run the checks and the technical review of finished work), make it in the same turn with your tools, without asking. When a turn ends and your own move is still the next one, Trama starts it by itself as a new turn with the section \"Mossa automatica di Trama\": make that move then; the person can stop it.",
+  "Ask the person only for what is theirs: product decisions (request_decision), the confirmation of the shared understanding, the mandate (request_mandate), the team and merging the candidate. Technical choices are yours.",
+  "When your turn is about the work, close it with declare_next_step: the one move that takes the work on, with a one-line reason for the person. Call it last, after the tools that change the work: questions you just asked make answerQuestions allowed, and a refusal lists the moves allowed now. Trama shows the person's move as one button under your reply.",
+  "Declare nothing when nothing is to do: after a greeting, after an answer for information, while specialists or the planner work.",
+  "Never end a message with a generic confirmation question such as \"Vuoi che...?\", \"Procedo?\" or \"Fammi sapere se...\": within the mandate you go on by yourself, and what belongs to the person is a card or the next step's button, never a question at the end of your text.",
 ].join("\n");
 
 export interface ToolContext {
@@ -1014,6 +1019,16 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
         }
         request.nextStep = { move: option.move, reason: reason.slice(0, 240), declaredAt: new Date().toISOString() };
         context.changed();
+        if (option.actor === "coordinator") {
+          return toolSuccess({
+            move: option.move,
+            label: option.label,
+            actor: option.actor,
+            phase: state.phase,
+            status: "yours",
+            note: "This move is yours: make it now with your tools. If the turn ends without it, Trama starts it by itself within the mandate.",
+          });
+        }
         return toolSuccess({ move: option.move, label: option.label, actor: option.actor, phase: state.phase, status: "shown_to_person" });
       }
       default:
@@ -1040,8 +1055,8 @@ export const GRILLING_BINDING = [
   "\"Ask\" a question of a round: each question is one request_decision call, never text in your message. The question title and body become the card's question and concrete case, its choices become the alternatives, the round number goes in grillingRound (1, 2, ...) and your recommended answer in recommendedAlternative, the index of the alternative you recommend. Trama shows the cards of a round together, numbered, with the recommended answer, so your message only says in one or two lines that round N is open and what it is about.",
   "\"Wait for the user's answers\": Trama writes each answer to you as the person's message. Trama refuses a new round, and prepare_plan, while a question of the request is still open. The person may withdraw an open question with a reason instead of answering it: Trama writes that to you too, the question is closed without a decision and no longer blocks the next round or the plan. Do not ask it again unless the reason leaves it open.",
   "\"Dispatch a sub-agent\" to find a fact: in Trama a sub-agent is a read-only specialist session managed by Trama. This Coordinator session cannot start one, so do that exploration yourself with read-only means (the project files, read_study, read_pact, read_issues, read_history, run_readonly_check): its result is the sub-agent's report.",
-  "\"The user confirms you have reached a shared understanding\": a chat message. Sum up the shared understanding in a few lines and ask the person to confirm it; that is the one confirmation you ask for.",
-  "\"Act on it\": prepare_plan or assign_task for the request, within the mandate.",
+  "\"The user confirms you have reached a shared understanding\": sum up the shared understanding in a few lines and ask the person to confirm it with declare_next_step confirmUnderstanding, whose button sends the confirmation; do not ask it again as a question in your text. That is the one confirmation you ask for.",
+  "\"Act on it\": in the turn where the person confirms, prepare_plan or assign_task for the request within the mandate, without asking again.",
   "Issue tracker: the project's GitHub issues when GitHub is connected (read_issues, update_ticket), otherwise Trama's goals and work (read_goals, read_team). Commit: only a specialist commits, in its Trama worktree, and the result becomes a Trama candidate (declare_candidate); you never commit.",
 ].join("\n");
 

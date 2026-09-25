@@ -145,6 +145,25 @@ describe("workState: the phase and the allowed moves of a request (W01)", () => 
     expect(workState(document, "r2").moves[1]).toMatchObject({ actor: "coordinator", label: "Prepara il piano", message: "Prepara il piano." });
   });
 
+  it("drops the person's confirmation once they took it with the step's button, until a new question comes (W04)", () => {
+    const document = emptyDocument("p");
+    request(document, "r1");
+    answerDecisionRequest(document, grill(document, "r1").id, { alternativeIndex: 1, freeText: null });
+    mandate(document, ["plan"]);
+    // A message the person typed is not the confirmation: only the step's button records it.
+    request(document, "r2");
+    expect(moves(document, "r2")).toEqual(["confirmUnderstanding", "preparePlan"]);
+    const confirmation = request(document, "r3");
+    confirmation.step = { move: "confirmUnderstanding", by: "person" };
+    expect(workState(document, "r3")).toMatchObject({ phase: "clarification", moves: [{ move: "preparePlan", actor: "coordinator" }] });
+
+    // A new round asked after the confirmation needs a new one.
+    request(document, "r4");
+    answerDecisionRequest(document, grill(document, "r4", 2).id, { alternativeIndex: 0, freeText: null });
+    request(document, "r5");
+    expect(moves(document, "r5")).toEqual(["confirmUnderstanding", "preparePlan"]);
+  });
+
   it("is clarification when only a mandate request waits, and has no phase in another dialog", () => {
     const document = emptyDocument("p");
     request(document, "r1");

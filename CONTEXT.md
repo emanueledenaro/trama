@@ -44,7 +44,11 @@ Incarico: un lavoro assegnato dal Coordinatore a uno specialista, con obiettivo,
 
 Fase del lavoro: il punto in cui si trova il lavoro di una richiesta, ricavato da Trama dai dati e mai dal modello: chiarimento, spec, fette, esecuzione, verifica, candidato, unito, oppure bloccata con il motivo. Il lavoro di una richiesta comprende i messaggi dello stesso dialogo dal chiarimento che l'ha aperto, o dall'inizio del dialogo, fino a quella richiesta. Finché le fette non hanno dati propri, la fase fette è il piano pronto da dividere in incarichi.
 
-Prossimo passo: la sola mossa, tra quelle che la fase consente, con cui il Coordinatore chiude un turno sul lavoro, con una riga di motivo. La mossa spetta alla persona (rispondere alle domande, confermare la comprensione, concedere il mandato, confermare il team, rivedere il piano, verificare il candidato, unire la pull request) o al Coordinatore (preparare il piano, assegnare il lavoro, eseguire le verifiche). Trama rifiuta una mossa non consentita e mostra il passo come un pulsante a destra sotto l'ultima risposta, finché resta consentito. Dopo un saluto o una domanda informativa non c'è un prossimo passo.
+Prossimo passo: la sola mossa, tra quelle che la fase consente, con cui il Coordinatore chiude un turno sul lavoro, con una riga di motivo. La mossa spetta alla persona (rispondere alle domande, confermare la comprensione, concedere il mandato, confermare il team, rivedere il piano, verificare il candidato, unire la pull request) o al Coordinatore (preparare il piano, assegnare il lavoro, eseguire le verifiche). Trama rifiuta una mossa non consentita e mostra il passo come un pulsante a destra sotto l'ultima risposta, finché resta consentito. Dopo un saluto o una domanda informativa non c'è un prossimo passo. La conferma della comprensione conta solo quando la persona usa il pulsante del passo; una domanda posta dopo ne chiede una nuova.
+
+Lavoro continuo: dentro il mandato il Coordinatore fa da solo le sue mosse e chiede alla persona solo decisioni di prodotto, la conferma della comprensione, il mandato, il team e l'unione del candidato. Quando un evento cambia il lavoro (la fine di un turno, di un piano o di un incarico) e la mossa successiva è del Coordinatore, Trama la avvia da sola al posto del pulsante. Trama lo decide dai dati: al massimo una mossa per evento, nessuna dopo un errore o un'interruzione, nessuna dalla fine di una mossa automatica, nessuna mentre la persona ha un messaggio in coda o il provider del Coordinatore è bloccato, e dopo cinque mosse automatiche di fila nello stesso dialogo aspetta la persona. La persona lo spegne nelle impostazioni.
+
+Mossa automatica: un turno del Coordinatore avviato da Trama con il lavoro continuo. Nella chat è una riga di Trama con il nome della mossa, non un messaggio della persona, e finché il turno lavora ha il pulsante Ferma. Una mossa fermata resta interrotta e non ne parte un'altra.
 
 Studio del progetto: la conoscenza che il Coordinatore ha del progetto attivo prima di dialogare: codice e moduli, documenti, issue e pull request, decisioni, mandato, incarichi e candidati, eventi del monitor e cronologia della chat. Lo studio avviene all'apertura del progetto e si aggiorna quando il progetto cambia.
 
@@ -56,7 +60,7 @@ Revisione dell'esperienza: la sessione separata e non presidiata che, dopo abbas
 
 Manutenzione delle skill: il controllo settimanale che rende inattive e poi archivia le skill create dalla revisione e non usate. Non tocca le skill fissate né quelle della persona; un'archiviazione si annulla con un ripristino.
 
-Scheda: un atto del metodo mostrato nella conversazione: studio, proposta di team, mandato, incarico, decisione, candidato, conflitto, avviso di contesto. Una scheda non è un log di strumenti né un messaggio libero.
+Scheda: un atto del metodo mostrato nella conversazione: studio, proposta di team, mandato, incarico, decisione, candidato, conflitto, avviso di contesto, mossa automatica. Una scheda non è un log di strumenti né un messaggio libero.
 
 Ispettore: la superficie che mostra il dettaglio di ciò che la persona tocca nella conversazione o nella sidebar: decisione, candidato, specialista, modulo, issue, gruppo. Non è una sezione da visitare a sé.
 

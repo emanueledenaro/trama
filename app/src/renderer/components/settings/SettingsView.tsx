@@ -386,6 +386,7 @@ function ProviderRow({ provider }: { provider: ProviderDescriptor }) {
 function MethodSection() {
   const project = useUi((s) => s.app?.project ?? null);
   const autoPrepare = useUi((s) => s.app?.settings.autoPrepareMethod !== false);
+  const continuousWork = useUi((s) => s.app?.settings.continuousWork !== false);
   const [report, setReport] = useState<{ pathsCreated: string[]; existingPreserved: string[]; warnings: string[]; version: string } | null>(null);
   const [running, setRunning] = useState(false);
   const noProject = !project || project.isDemo;
@@ -441,6 +442,14 @@ function MethodSection() {
               </Button>
             </>
           }
+        />
+      </Group>
+      <Group title="Lavoro continuo">
+        <ToggleRow
+          label="Il Coordinatore va avanti da solo dentro il mandato"
+          description="Prepara il piano, assegna il lavoro ed esegue le verifiche senza chiedere. Ti chiede solo decisioni di prodotto, il mandato, il team e l'unione del candidato. Puoi fermare ogni mossa dalla chat."
+          checked={continuousWork}
+          onChange={(value) => void act("settings:update", { continuousWork: value })}
         />
       </Group>
     </>

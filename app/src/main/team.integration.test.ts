@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { TramaController } from "./controller";
 import { git } from "./core/process";
 import { developers, findSpecialist } from "./core/team";
+import { workState } from "./core/workPhase";
 
 const root = join(import.meta.dirname, "../..");
 let controller: TramaController | null = null;
@@ -41,6 +42,8 @@ describe("team flow", () => {
       codexExecutable: join(root, "test-fixtures/fake-codex.mjs"),
     });
     await controller.start();
+    // This flow is the manual one: the Coordinator moves only when asked (W04 is off).
+    await controller.updateSettings({ continuousWork: false });
     await controller.openProject(repo);
     await until(() => controller!.snapshot.project?.phase.kind === "ready");
     const project = controller.snapshot.project!;
@@ -108,7 +111,87 @@ describe("team flow", () => {
     await until(() => slow.status === "stopped");
     expect(slow.stops[0]!.confirmedAt).not.toBeNull();
     expect(specialist.status).toBe("stopped");
+    // With continuous work off, Trama never started a move by itself.
+    expect(document.requests.some((r) => r.step?.by === "trama")).toBe(false);
   }, 30_000);
+
+  it("goes on by itself within the mandate and asks the person only for what is theirs (W04)", async () => {
+    const data = await mkdtemp(join(tmpdir(), "trama-data-"));
+    const repo = await mkdtemp(join(tmpdir(), "trama-repo-"));
+    await cp(join(root, "resources/DemoProject"), repo, { recursive: true });
+    await git(["init", "-b", "main"], repo, false);
+    await git(["add", "."], repo, false);
+    await git(["-c", "user.name=T", "-c", "user.email=t@t", "commit", "-m", "init"], repo, false);
+    controller = new TramaController(data, {
+      publish: () => undefined,
+      openExternal: async () => undefined,
+      applyTheme: () => undefined,
+      notify: () => undefined,
+      setOpenAtLogin: () => undefined,
+      aiHeroResourceDirectory: join(root, "resources/AIHero"),
+      demoResourceDirectory: "",
+      codexExecutable: join(root, "test-fixtures/fake-codex.mjs"),
+    });
+    await controller.start();
+    await controller.openProject(repo);
+    await until(() => controller!.snapshot.project?.phase.kind === "ready", 30_000);
+    const project = controller.snapshot.project!;
+    const document = project.document;
+    const automatic = () => document.requests.filter((r) => r.step?.by === "trama");
+    const idle = () => until(() => project.runningRequestId === null && !controller!.snapshot.project!.queuedMessages.length, 20_000);
+
+    await controller.send("[proponi-team]", null, null, null);
+    await controller.answerTeamProposal(document.team.proposals[0]!.id, null, null);
+    await controller.grantMandate({
+      requestId: null,
+      objectives: ["Ordini in revisione"],
+      priorities: [],
+      scopeModuleIds: ["Sources/Orders"],
+      authorizedActions: ["plan", "executeInWorktree"],
+      limits: [],
+    });
+    await controller.send("[grilling:1] Gli ordini pagati annullati vanno in revisione", null, null, null);
+    for (const question of [...document.decisionRequests]) await controller.answerDecision(question.id, 1, null);
+    // Every question is answered, but the shared understanding is the person's to confirm: nothing starts.
+    await idle();
+    expect(automatic()).toEqual([]);
+
+    await controller.send("[passo:confirmUnderstanding] Riassumi quello che abbiamo deciso", null, null, null);
+    const summary = document.requests.at(-1)!;
+    await until(() => Boolean(project.nextSteps[summary.id]));
+    expect(project.nextSteps[summary.id]).toMatchObject({ move: "confirmUnderstanding", label: "Conferma la comprensione" });
+    expect(automatic()).toEqual([]);
+    await controller.takeStep(summary.id);
+    const confirmation = document.requests.find((r) => r.step?.move === "confirmUnderstanding")!;
+    expect(confirmation).toMatchObject({ text: "Confermo la comprensione condivisa: procedi.", step: { by: "person" } });
+
+    // Trama starts the plan by itself: a line in the chat, not a message of the person.
+    await until(() => document.plans.length === 1 && document.plans[0]!.status === "ready", 20_000);
+    const plan = document.plans[0]!;
+    const planning = automatic()[0]!;
+    expect(planning).toMatchObject({ text: "Prepara il piano.", step: { move: "preparePlan", by: "trama" }, state: "completed" });
+    expect(plan.requestId).toBe(planning.id);
+    const line = document.events.find((e) => e.requestId === planning.id && e.content.type === "card");
+    expect(line?.content).toMatchObject({ kind: "automaticStep", title: "Prepara il piano", referenceId: planning.id });
+    expect(document.events.some((e) => e.requestId === planning.id && e.content.type === "personMessage")).toBe(false);
+    const sent = document.events.find((e) => e.requestId === planning.id && e.content.type === "activity" && e.content.title === "Messaggio inviato al Coordinatore");
+    expect(sent?.content).toMatchObject({ detail: expect.stringContaining("mossa automatica: Prepara il piano") });
+
+    // The plan asks a product question: the work waits for the person.
+    await idle();
+    expect(automatic()).toHaveLength(1);
+    await controller.answerDecision(plan.decisionRequestIds[0]!, 0, null);
+
+    // Then Trama assigns the slice, and once Ada ends it runs the checks and the review, up to the person's candidate.
+    const specialist = findSpecialist(document, "Ada")!;
+    await until(() => document.candidates[0]?.technicalReview?.verdict === "approved", 30_000);
+    await idle();
+    expect(automatic().map((r) => r.step!.move)).toEqual(["preparePlan", "assignWork", "verifyCandidate"]);
+    expect(specialist.assignments[0]!.requestId).toBe(automatic()[1]!.id);
+    expect(document.candidates[0]!.evidence.git_status?.result).toBe("pass");
+    const latest = document.requests.at(-1)!;
+    expect(workState(document, latest.id)).toMatchObject({ phase: "candidate", moves: [{ move: "reviewCandidate", actor: "person" }] });
+  }, 60_000);
 
   it("runs a read-only check for the Coordinator", async () => {
     const data = await mkdtemp(join(tmpdir(), "trama-data-"));
