@@ -96,6 +96,7 @@ import { convertLegacyDocument, readLegacyDocument, readLegacyRecentProjects } f
 import { type MonitorCheckpoint, MonitorStore, pollRepository } from "./core/monitor";
 import {
   answerDecisionRequest,
+  assertMandateRequestGrantable,
   createDecisionRequest,
   decide,
   decisionMessage,
@@ -2123,6 +2124,7 @@ export class TramaController {
     limits: string[];
   }): Promise<void> {
     const project = this.requireProject();
+    assertMandateRequestGrantable(project.document, input.requestId);
     const hadMandate = project.document.mandate?.status === "granted";
     const mandate = grantMandate(project.document, input);
     const kind = hadMandate ? "corrected" : "granted";

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { MandateAction } from "@shared/domain";
+import { type MandateAction, pendingMandateRequest } from "@shared/domain";
 import { MandateCard } from "@/components/chat/Cards";
 import { Button } from "@/components/ui/button";
 import { Badge, Label, TextArea } from "@/components/ui/field";
@@ -15,7 +15,7 @@ const lines = (text: string) => text.split("\n").map((l) => l.trim()).filter(Boo
 export function MandateView() {
   const project = useUi((s) => s.app?.project)!;
   const { mandate, mandateRequests } = project.document;
-  const pending = mandateRequests.find((r) => !r.resolution) ?? null;
+  const pending = pendingMandateRequest({ mandateRequests });
   const source = pending ?? (mandate?.status === "granted" ? mandate : null);
   const [objectives, setObjectives] = useState("");
   const [priorities, setPriorities] = useState("");

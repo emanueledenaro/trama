@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { isOpenQuestion } from "@shared/domain";
+import { isOpenQuestion, pendingMandateRequest } from "@shared/domain";
 import { deriveTimelineRows, formatDuration } from "@shared/timeline";
 import { appendEvent, emptyDocument, recordReply, referencedPaths } from "./document";
 import {
   answerDecisionRequest,
+  assertMandateRequestGrantable,
   createDecisionRequest,
   createMandateRequest,
   decide,
@@ -92,12 +93,31 @@ describe("Pact", () => {
     expect(() => grantMandate(document, { ...input, objectives: [] })).toThrow(DomainError);
   });
 
-  it("replaces a pending mandate request with a newer one", () => {
+  it("supersedes a pending mandate request with a newer one, which it references (W14)", () => {
     const document = emptyDocument("p");
     const base = { requestId: null, reason: "r", objectives: ["o"], priorities: [], scopeModuleIds: ["m"], authorizedActions: ["plan" as const], limits: [] };
     const first = createMandateRequest(document, base);
-    createMandateRequest(document, base);
-    expect(first.resolution?.kind).toBe("revoked");
+    const second = createMandateRequest(document, base);
+    expect(first.resolution).toMatchObject({ kind: "superseded", version: null, supersededBy: second.id });
+    expect(second.resolution).toBeNull();
+    // Both stay in the history.
+    expect(document.mandateRequests.map((r) => r.id)).toEqual([first.id, second.id]);
+    expect(pendingMandateRequest(document)?.id).toBe(second.id);
+    // A resolved request keeps its outcome when a newer one arrives.
+    const third = createMandateRequest(document, base);
+    expect(first.resolution?.supersededBy).toBe(second.id);
+    expect(second.resolution?.supersededBy).toBe(third.id);
+  });
+
+  it("refuses to grant a superseded mandate request, and grants the pending one (W14)", () => {
+    const document = emptyDocument("p");
+    const base = { requestId: null, reason: "r", objectives: ["o"], priorities: [], scopeModuleIds: ["m"], authorizedActions: ["plan" as const], limits: [] };
+    const first = createMandateRequest(document, base);
+    const second = createMandateRequest(document, base);
+    expect(() => assertMandateRequestGrantable(document, first.id)).toThrow(/superata da .*M-/);
+    expect(() => assertMandateRequestGrantable(document, "M-UNKNOWN")).toThrow(DomainError);
+    expect(() => assertMandateRequestGrantable(document, second.id)).not.toThrow();
+    expect(() => assertMandateRequestGrantable(document, null)).not.toThrow();
   });
 });
 
