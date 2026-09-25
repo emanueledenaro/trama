@@ -243,13 +243,35 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
         });
         return;
       }
+      if (text.includes("[chiedi-mandato")) {
+        // [chiedi-mandato] or [chiedi-mandato:<reason>]: a mandate request, which supersedes a pending one (W14).
+        const reason = text.match(/\[chiedi-mandato:([^\]]+)\]/)?.[1] ?? "Serve un piano per gli ordini";
+        callTool(threadId, "request_mandate", {
+          reason,
+          objectives: ["Documentare l'annullamento degli ordini"],
+          scopeModuleIDs: ["Sources/Orders"],
+          authorizedActions: ["plan"],
+        }).then((result) => {
+          toolDone("request_mandate", result);
+          finish(result.isError ? `Rifiutato: ${result.content[0].text}` : result.content[0].text);
+        });
+        return;
+      }
       if (text.includes("[proponi-team]")) {
         callTool(threadId, "propose_team", {
           summary: "Un solo specialista per il modulo Orders",
-          specialists: [{ name: "Ada", competence: "Swift", reason: "Il dominio è in Swift", moduleIDs: ["Sources/Orders"] }],
+          specialists: [{ name: "Ada", tag: "Ordini", competence: "Swift", reason: "Il dominio è in Swift", moduleIDs: ["Sources/Orders"] }],
         }).then((result) => {
           toolDone("propose_team", result);
           finish("Ti ho proposto il team.");
+        });
+        return;
+      }
+      const renameMatch = text.match(/\[rinomina:([^:\]]+):([^\]]+)\]/);
+      if (renameMatch) {
+        callTool(threadId, "rename_specialist", { specialist: renameMatch[1], name: renameMatch[2] }).then((result) => {
+          toolDone("rename_specialist", result);
+          finish(result.isError ? `Rifiutato: ${result.content[0].text}` : `Ho rinominato ${renameMatch[1]} in ${renameMatch[2]}.`);
         });
         return;
       }

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { ProjectMandate } from "@shared/domain";
+import type { ProjectMandate, Specialist } from "@shared/domain";
+import { AGENT_PALETTE, isAgentColor } from "@shared/identity";
 import { FIXED_ROLES, roleProfile } from "@shared/roster";
 import { emptyDocument, normalizeDocument } from "./document";
 import {
@@ -13,8 +14,11 @@ import {
   findSpecialist,
   proposeTeam,
   removeSpecialist,
+  renameSpecialist,
   requestStop,
   resumeAssignment,
+  setSpecialistColor,
+  teamMembers,
   stopOrphanedAssignments,
   teamMessage,
   teamReport,
@@ -162,7 +166,7 @@ describe("full team (W09)", () => {
     };
     const raw = JSON.parse(JSON.stringify({ team: { proposals: [], specialists: [legacy], confirmedAt: "2026-09-01T00:00:00.000Z" } }));
     const document = normalizeDocument(raw, "p");
-    expect(document.team.specialists[0]).toEqual({ ...legacy, role: "developer" });
+    expect(document.team.specialists[0]).toEqual({ ...legacy, role: "developer", color: AGENT_PALETTE[0]!.color, tag: "Swift" });
     expect(document.team.specialists.slice(1).map((s) => s.role)).toEqual(FIXED_ROLES);
     expect(document.team.confirmedAt).toBe("2026-09-01T00:00:00.000Z");
     const again = normalizeDocument(JSON.parse(JSON.stringify(document)), "p");
@@ -182,6 +186,68 @@ describe("full team (W09)", () => {
     assign(document, order({ specialist: qa.id, tools: [] }), 1, null);
     expect(() => requestStop(document, qa.id, "Coordinatore", "basta", true)).toThrow(expect.objectContaining({ code: "fixed_role" }));
     expect(requestStop(document, qa.id, "Coordinatore", "basta").status).toBe("stopRequested");
+  });
+});
+
+describe("agent identity (W13, W15)", () => {
+  it("gives every agent a color and a tag at creation, spreading the palette", () => {
+    const document = emptyDocument("p");
+    const colors = document.team.specialists.map((s) => s.color);
+    expect(colors.slice(0, AGENT_PALETTE.length)).toEqual(AGENT_PALETTE.map((e) => e.color));
+    for (const specialist of document.team.specialists) expect(specialist.tag).toBe(roleProfile(specialist.role).tag);
+    expect(document.team.specialists.find((s) => s.role === "regressionGuardian")!.tag).toBe("Regressioni");
+    const proposal = proposeTeam(document, {
+      requestId: null,
+      summary: null,
+      members: [
+        { name: "Giulia", tag: " Interfaccia ", competence: "React e CSS", reason: "r", moduleIds: [] },
+        { name: "Piero", competence: "Provider AI, account e modelli", reason: "r", moduleIds: [] },
+      ],
+    });
+    const [giulia, piero] = confirmTeam(document, proposal.id, null, null);
+    expect(giulia).toMatchObject({ tag: "Interfaccia" });
+    expect(piero).toMatchObject({ tag: "Provider AI" });
+    const used = new Map<string, number>();
+    for (const s of teamMembers(document)) used.set(s.color, (used.get(s.color) ?? 0) + 1);
+    expect(Math.max(...used.values()) - Math.min(...used.values())).toBeLessThanOrEqual(1);
+    expect(normalizeDocument(JSON.parse(JSON.stringify(document)), "p").team.specialists.map((s) => s.color)).toEqual(
+      document.team.specialists.map((s) => s.color),
+    );
+  });
+
+  it("migrates agents without a color or a tag once, and keeps them afterwards", () => {
+    const document = emptyDocument("p");
+    for (const specialist of document.team.specialists) {
+      delete (specialist as Partial<Specialist>).color;
+      delete (specialist as Partial<Specialist>).tag;
+    }
+    const migrated = normalizeDocument(JSON.parse(JSON.stringify(document)), "p");
+    expect(migrated.team.specialists.every((s) => isAgentColor(s.color) && s.tag.length > 0)).toBe(true);
+    expect(migrated.team.specialists.find((s) => s.role === "qa")!.tag).toBe("QA");
+  });
+
+  it("renames a developer, keeping its id, and refuses fixed roles and taken names", () => {
+    const document = emptyDocument("p");
+    confirmTeam(document, proposeTeam(document, { requestId: null, summary: null, members }).id, null, null);
+    const ada = findSpecialist(document, "Ada")!;
+    const assignment = assign(document, order(), 1, null);
+    const renamed = renameSpecialist(document, ada.id, "  Giulia ");
+    expect(renamed).toMatchObject({ previousName: "Ada", specialist: { id: ada.id, name: "Giulia" } });
+    expect(findSpecialist(document, "Giulia")!.assignments[0]!.id).toBe(assignment.id);
+    expect(findSpecialist(document, "Ada")).toBeNull();
+    expect(() => renameSpecialist(document, ada.id, "bruno")).toThrow(expect.objectContaining({ code: "duplicate_name" }));
+    expect(() => renameSpecialist(document, ada.id, "Clean code")).toThrow(expect.objectContaining({ code: "fixed_role" }));
+    expect(() => renameSpecialist(document, ada.id, " ")).toThrow(expect.objectContaining({ code: "invalid_arguments" }));
+    const qa = document.team.specialists.find((s) => s.role === "qa")!;
+    expect(() => renameSpecialist(document, qa.id, "Quinto")).toThrow(expect.objectContaining({ code: "fixed_role" }));
+    expect(() => renameSpecialist(document, "S-NOPE", "X")).toThrow(expect.objectContaining({ code: "unknown_specialist" }));
+  });
+
+  it("lets the person change any agent's color within the palette", () => {
+    const document = emptyDocument("p");
+    const qa = document.team.specialists.find((s) => s.role === "qa")!;
+    expect(setSpecialistColor(document, qa.id, "copper").color).toBe("copper");
+    expect(() => setSpecialistColor(document, qa.id, "green" as never)).toThrow(expect.objectContaining({ code: "invalid_color" }));
   });
 });
 

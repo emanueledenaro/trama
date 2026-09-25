@@ -24,7 +24,9 @@ Specialista: un agente con una competenza e un incarico motivato all'interno di 
 
 Ruolo fisso: una figura che ogni team di progetto ha sempre, qualunque sia il progetto: QA, UX, ricerca, documentazione e dominio, bug triage e debugger, revisore della spec, Clean Code, guardiano delle regressioni, sicurezza, prestazioni, DevOps. Ha una competenza, le skill di AI Hero su cui si basa e i suoi momenti. Sicurezza e prestazioni sono aggiunte di Trama e non hanno una skill. Trama crea i ruoli fissi con il progetto e li aggiunge ai progetti esistenti; nessuno li toglie dal team. Non contano nel limite degli sviluppatori in parallelo.
 
-Sviluppatore: uno specialista scelto per il progetto, che realizza le fette con `implement` e `tdd`. Il Coordinatore propone gli sviluppatori alla fine dello studio e solo la risposta della persona li crea; poi il Coordinatore li cambia entro il mandato.
+Sviluppatore: uno specialista scelto per il progetto, che realizza le fette con `implement` e `tdd`. Il Coordinatore propone gli sviluppatori alla fine dello studio e solo la risposta della persona li crea; poi il Coordinatore li cambia entro il mandato. La persona può rinominare uno sviluppatore dalla vista Team o chiedendolo al Coordinatore, senza mandato; l'ID resta lo stesso. I ruoli fissi non si rinominano.
+
+Identità di un agente: l'avatar con l'iniziale e il tag del ruolo in breve (`[Interfaccia]`, `[QA]`), nel colore proprio dell'agente. Trama assegna un colore libero da una palette fissa e la persona può cambiarlo dalla vista Team. Il colore sta solo sull'identità: badge e schede usano i colori di stato (ADR 0007).
 
 Momento: il punto del flusso in cui una figura del team interviene: chiarimento e spec, fette, candidato, in sottofondo. In ogni momento la figura ha un compito e le skill che usa lì; una figura può avere più momenti. Il momento dice quando una figura lavora, non che stia lavorando.
 
@@ -77,6 +79,8 @@ Dialogo del progetto: la conversazione con il Coordinatore dedicata a priorità 
 Dialogo di obiettivo: la conversazione con il Coordinatore dedicata a un singolo obiettivo, con bozza e selezione del composer proprie. Condivide con gli altri dialoghi l'autorità, il mandato, le decisioni e la memoria del progetto. Nell'app Electron il dialogo è una vista della cronologia del progetto: ogni messaggio porta l'obiettivo di origine, fissato all'invio, e gli eventi, le domande e gli incarichi nati da quel turno lo ereditano. La sessione tecnica del Coordinatore resta una per progetto: ogni turno di un dialogo di obiettivo riceve titolo, risultato atteso ed esempi dell'obiettivo. Così resta un solo Coordinatore responsabile e le decisioni comuni non vengono aggiornate da sessioni concorrenti (ADR 0013).
 
 Mandato di progetto: l'autorizzazione persistente del Product Owner a perseguire obiettivi entro limiti definiti per un progetto. La delega di un singolo incarico deve rientrare nel mandato e nelle decisioni applicabili.
+
+Richiesta di mandato superata: una richiesta di mandato del Coordinatore ancora in attesa, sostituita da una richiesta più recente prima che la persona rispondesse. Resta nella cronologia, grigia e con il riferimento alla richiesta nuova, ma non si può più concedere. In ogni momento la persona concede al massimo una richiesta, la più recente (W14).
 
 Panoramica globale: il riepilogo di avanzamento, blocchi e decisioni richieste dei progetti registrati. È distinta dalle conversazioni e dai contenuti privati dei singoli progetti. Ordina i progetti per attenzione: decisioni richieste, lavoro fermo o fallito, risultati da approvare, lavoro in corso. Distingue i dati aggiornati dei progetti in memoria dai dati dell'ultimo salvataggio e dagli stati non leggibili, e non apre sessioni AI per aggiornarsi.
 

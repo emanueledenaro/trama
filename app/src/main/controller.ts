@@ -12,6 +12,7 @@ import { isUnsupportedModelError } from "@shared/timeline";
 import type { ImageAttachmentInput } from "@shared/ipc";
 import type {
   ActiveProjectState,
+  AgentColor,
   AppSettings,
   AppState,
   CoordinatorPhase,
@@ -97,6 +98,7 @@ import { convertLegacyDocument, readLegacyDocument, readLegacyRecentProjects } f
 import { type MonitorCheckpoint, MonitorStore, pollRepository } from "./core/monitor";
 import {
   answerDecisionRequest,
+  assertMandateRequestAnswerable,
   createDecisionRequest,
   decide,
   decisionMessage,
@@ -126,6 +128,8 @@ import {
   recordThread,
   recordWorkspace,
   removeSpecialist,
+  renameSpecialist,
+  setSpecialistColor,
   requestStop,
   assignmentsAffectedByDecision,
   changeAssignmentProvider,
@@ -2124,6 +2128,7 @@ export class TramaController {
     limits: string[];
   }): Promise<void> {
     const project = this.requireProject();
+    assertMandateRequestAnswerable(project.document, input.requestId);
     const hadMandate = project.document.mandate?.status === "granted";
     const mandate = grantMandate(project.document, input);
     const kind = hadMandate ? "corrected" : "granted";
@@ -2137,6 +2142,8 @@ export class TramaController {
   async revokeMandate(reason: string, requestId: string | null): Promise<void> {
     const project = this.requireProject();
     const document = project.document;
+    // A stale card must not revoke the active mandate: only the latest request can be answered (W14).
+    assertMandateRequestAnswerable(document, requestId);
     if (requestId && !document.mandate) {
       resolveMandateRequest(document, requestId, "revoked", null);
     } else {
@@ -2539,6 +2546,28 @@ export class TramaController {
   async removeSpecialistByPerson(specialistId: string, reason: string): Promise<void> {
     const project = this.requireProject();
     removeSpecialist(project.document, specialistId, reason, "Persona");
+    this.changed();
+  }
+
+  /** The person renames a developer from the Team view (W13): the id stays, the history records the change. */
+  async renameSpecialistByPerson(specialistId: string, name: string): Promise<void> {
+    const project = this.requireProject();
+    const { specialist, previousName } = renameSpecialist(project.document, specialistId, name);
+    if (previousName !== specialist.name) {
+      appendEvent(project.document, "trama", {
+        type: "activity",
+        title: "Sviluppatore rinominato",
+        detail: `${previousName} ora si chiama ${specialist.name} (${specialist.id}).`,
+        tone: "info",
+      });
+    }
+    this.changed();
+  }
+
+  /** The person picks another palette color for an agent (W15). */
+  async setSpecialistColorByPerson(specialistId: string, color: AgentColor): Promise<void> {
+    const project = this.requireProject();
+    setSpecialistColor(project.document, specialistId, color);
     this.changed();
   }
 

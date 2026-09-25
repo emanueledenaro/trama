@@ -10,6 +10,8 @@ export interface RoleProfile {
   role: TeamRole;
   /** The fixed specialist's name in the team; for developers, the name of the group. */
   name: string;
+  /** The role in short, shown colored beside the name (W15): `[QA]`, `[Regressioni]`. Each developer has its own. */
+  tag: string;
   competence: string;
 }
 
@@ -29,18 +31,18 @@ export const TEAM_MOMENTS: { moment: TeamMoment; label: string; when: string }[]
 ];
 
 const PROFILES: RoleProfile[] = [
-  { role: "qa", name: "QA", competence: "Sceglie i seam da testare e i casi che le verifiche devono coprire." },
-  { role: "ux", name: "UX", competence: "Cura l'esperienza e l'interfaccia." },
-  { role: "research", name: "Ricerca", competence: "Studia librerie e API sconosciute su fonti affidabili." },
-  { role: "documentation", name: "Documentazione e dominio", competence: "Tiene allineati glossario, ADR e documentazione." },
-  { role: "developer", name: "Sviluppatori", competence: "Scelti per il progetto: il Coordinatore li propone e tu li confermi." },
-  { role: "bugTriage", name: "Bug triage e debugger", competence: "Smista le issue e trova la causa dei bug." },
-  { role: "specReviewer", name: "Revisore della spec", competence: "Controlla che il candidato faccia quello che la spec chiede." },
-  { role: "cleanCode", name: "Clean Code", competence: "Controlla gli standard del repository e la forma dei moduli. Segnala e propone, non modifica il codice." },
-  { role: "regressionGuardian", name: "Guardiano delle regressioni", competence: "Controlla che quello che funzionava funzioni ancora." },
-  { role: "security", name: "Sicurezza", competence: "Cerca vulnerabilità, segreti e dati esposti." },
-  { role: "performance", name: "Prestazioni", competence: "Cerca rallentamenti e consumi eccessivi." },
-  { role: "devops", name: "DevOps", competence: "Cura build, pacchetto e rilascio." },
+  { role: "qa", name: "QA", tag: "QA", competence: "Sceglie i seam da testare e i casi che le verifiche devono coprire." },
+  { role: "ux", name: "UX", tag: "UX", competence: "Cura l'esperienza e l'interfaccia." },
+  { role: "research", name: "Ricerca", tag: "Ricerca", competence: "Studia librerie e API sconosciute su fonti affidabili." },
+  { role: "documentation", name: "Documentazione e dominio", tag: "Documentazione", competence: "Tiene allineati glossario, ADR e documentazione." },
+  { role: "developer", name: "Sviluppatori", tag: "Sviluppo", competence: "Scelti per il progetto: il Coordinatore li propone e tu li confermi." },
+  { role: "bugTriage", name: "Bug triage e debugger", tag: "Triage", competence: "Smista le issue e trova la causa dei bug." },
+  { role: "specReviewer", name: "Revisore della spec", tag: "Spec", competence: "Controlla che il candidato faccia quello che la spec chiede." },
+  { role: "cleanCode", name: "Clean Code", tag: "Clean Code", competence: "Controlla gli standard del repository e la forma dei moduli. Segnala e propone, non modifica il codice." },
+  { role: "regressionGuardian", name: "Guardiano delle regressioni", tag: "Regressioni", competence: "Controlla che quello che funzionava funzioni ancora." },
+  { role: "security", name: "Sicurezza", tag: "Sicurezza", competence: "Cerca vulnerabilità, segreti e dati esposti." },
+  { role: "performance", name: "Prestazioni", tag: "Prestazioni", competence: "Cerca rallentamenti e consumi eccessivi." },
+  { role: "devops", name: "DevOps", tag: "DevOps", competence: "Cura build, pacchetto e rilascio." },
 ];
 
 /** The spec's table of moments, row by row and in its order. */
