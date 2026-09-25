@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { ProjectDocument } from "./domain";
 import { emptyDocument } from "../main/core/document";
 import { answerDecisionRequest, createDecisionRequest } from "../main/core/pact";
-import { GrillingError, grillingSubject, openGrillingQuestions, placeGrillingQuestion } from "./grilling";
+import { GrillingError, grillingSettled, grillingSubject, openGrillingQuestions, placeGrillingQuestion } from "./grilling";
 
 function withRequests(...ids: [string, string | null][]): ProjectDocument {
   const document = emptyDocument("p");
@@ -75,3 +75,19 @@ describe("grilling rounds (M01)", () => {
     expect(openGrillingQuestions(document, "R2")).toEqual([]);
   });
 });
+
+describe("grillingSettled", () => {
+  it("is true only when a grilling covers the request and the person answered every question", () => {
+    const document = withRequests(["R1", null], ["R2", null]);
+    expect(grillingSettled(document, "R1")).toBe(false);
+    const first = ask(document, "R1", 1);
+    const second = ask(document, "R1", 1);
+    expect(grillingSettled(document, "R1")).toBe(false);
+    answerDecisionRequest(document, first.id, { alternativeIndex: 0, freeText: null });
+    expect(grillingSettled(document, "R1")).toBe(false);
+    answerDecisionRequest(document, second.id, { alternativeIndex: 1, freeText: null });
+    expect(grillingSettled(document, "R1")).toBe(true);
+    expect(grillingSettled(document, "R2")).toBe(true);
+  });
+});
+

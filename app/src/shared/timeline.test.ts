@@ -78,3 +78,20 @@ describe("turnFailureText", () => {
     expect(turnFailureText("socket closed")).toEqual({ title: "Il Coordinatore non ha potuto rispondere", detail: "socket closed" });
   });
 });
+
+describe("running turn indicator", () => {
+  it("shows one indicator while the Coordinator works: the work group, not also an empty reply", () => {
+    const tool = event(2, { type: "activity", title: "Legge il progetto", detail: null, tone: "tool" });
+    const rows = deriveTimelineRows([message, tool], [request("running")], null);
+    expect(rows.filter((r) => r.kind === "work" && r.running)).toHaveLength(1);
+    expect(rows.some((r) => r.kind === "reply")).toBe(false);
+  });
+
+  it("keeps the pending reply when no work group is running yet, and the streaming text once it arrives", () => {
+    expect(deriveTimelineRows([message], [request("running")], null).at(-1)).toMatchObject({ kind: "reply", streaming: true });
+    const tool = event(2, { type: "activity", title: "Legge il progetto", detail: null, tone: "tool" });
+    const rows = deriveTimelineRows([message, tool], [request("running")], { requestId: "R1", text: "Ecco" });
+    expect(rows.at(-1)).toMatchObject({ kind: "reply", text: "Ecco" });
+  });
+});
+

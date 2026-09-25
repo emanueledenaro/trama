@@ -39,6 +39,17 @@ export function openGrillingQuestions(document: ProjectDocument, requestId: stri
 }
 
 /**
+ * Whether the person has settled the request by grilling: a grilling covers it and every one of its questions
+ * has the person's answer. Those answers are the person's product decisions for the request.
+ */
+export function grillingSettled(document: ProjectDocument, requestId: string | null): boolean {
+  const subject = grillingSubject(document, requestId);
+  if (!subject) return false;
+  const questions = document.decisionRequests.filter((q) => q.grilling?.subjectRequestId === subject);
+  return questions.length > 0 && questions.every((q) => q.outcome);
+}
+
+/**
  * Places a new grilling question asked during `runningRequestId`. Round 1 starts a grilling on the running
  * request; a later round continues the grilling of its dialog and may start only when the previous round
  * is fully answered.
