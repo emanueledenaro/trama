@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type {
+  AgentColor,
   AssignmentStatus,
   MandateAction,
   ProjectDocument,
@@ -18,6 +19,7 @@ import type {
 import { isOpenQuestion } from "@shared/domain";
 import type { ProviderId } from "@shared/codex";
 import { shortId } from "@shared/ids";
+import { freeAgentColor, isAgentColor, tagFromCompetence } from "@shared/identity";
 import { FIXED_ROLES, isFixedRole, roleProfile } from "@shared/roster";
 
 export class TeamError extends Error {
@@ -56,12 +58,19 @@ export function developers(document: ProjectDocument): Specialist[] {
   return teamMembers(document).filter((s) => s.role === "developer");
 }
 
-function fixedSpecialist(role: TeamRole, now: Date): Specialist {
+function fixedSpecialist(role: TeamRole, team: ProjectTeam, now: Date): Specialist {
   const profile = roleProfile(role);
   return {
     ...newSpecialist(
-      { name: profile.name, competence: profile.competence, reason: "Ogni team di Trama ha questa figura, in ogni progetto.", moduleIds: [] },
+      {
+        name: profile.name,
+        tag: profile.tag,
+        competence: profile.competence,
+        reason: "Ogni team di Trama ha questa figura, in ogni progetto.",
+        moduleIds: [],
+      },
       "fixedRole",
+      team,
       now,
     ),
     role,
@@ -70,15 +79,28 @@ function fixedSpecialist(role: TeamRole, now: Date): Specialist {
 
 /**
  * Every team has all the fixed roles (W09, Q10 of #137). Specialists of an older team stay, as developers;
- * each missing role is added. Calling it again changes nothing.
+ * each missing role is added. Agents written before W15 get a color and a tag, in the order they joined.
+ * Calling it again changes nothing.
  */
 export function completeTeam(team: ProjectTeam, now = new Date()): Specialist[] {
+  const identified: Specialist[] = team.specialists.filter((s) => isAgentColor(s.color));
   for (const specialist of team.specialists) {
     if (!specialist.role) specialist.role = "developer";
+    if (!isAgentColor(specialist.color)) {
+      specialist.color = freeAgentColor(identified);
+      identified.push(specialist);
+    }
+    if (!specialist.tag?.trim()) {
+      specialist.tag = isFixedRole(specialist.role) ? roleProfile(specialist.role).tag : tagFromCompetence(specialist.competence);
+    }
   }
   const missing = FIXED_ROLES.filter((role) => !team.specialists.some((s) => s.role === role && s.status !== "removed"));
-  const added = missing.map((role) => fixedSpecialist(role, now));
-  team.specialists.push(...added);
+  const added: Specialist[] = [];
+  for (const role of missing) {
+    const specialist = fixedSpecialist(role, team, now);
+    team.specialists.push(specialist);
+    added.push(specialist);
+  }
   return added;
 }
 
@@ -153,6 +175,7 @@ export function proposeTeam(
   }
   const members = input.members.map((m) => ({
     name: required(m.name, "name"),
+    ...(m.tag?.trim() ? { tag: m.tag.trim() } : {}),
     competence: required(m.competence, "competence"),
     reason: required(m.reason, "reason"),
     moduleIds: cleaned(m.moduleIds),
@@ -182,7 +205,8 @@ export function proposeTeam(
   return proposal;
 }
 
-function newSpecialist(member: ProposedSpecialist, origin: Specialist["origin"], now: Date): Specialist {
+/** A new agent: a free color of the palette and its tag, the given one or the start of its competence (W15). */
+function newSpecialist(member: ProposedSpecialist, origin: Specialist["origin"], team: ProjectTeam, now: Date): Specialist {
   return {
     id: shortId("S", randomUUID()),
     name: member.name,
@@ -191,6 +215,8 @@ function newSpecialist(member: ProposedSpecialist, origin: Specialist["origin"],
     moduleIds: member.moduleIds,
     role: "developer",
     origin,
+    color: freeAgentColor(team.specialists),
+    tag: member.tag?.trim() || tagFromCompetence(member.competence),
     createdAt: now.toISOString(),
     status: "available",
     model: null,
@@ -221,14 +247,18 @@ export function confirmTeam(
     kept = proposal.members.filter((m) => keys.has(key(m.name)));
   }
   if (kept.length === 0) throw new TeamError("invalid_arguments", "A team needs at least one specialist.");
-  const created = kept.map((m) => newSpecialist(m, "teamProposal", now));
+  const created: Specialist[] = [];
+  for (const member of kept) {
+    const specialist = newSpecialist(member, "teamProposal", document.team, now);
+    document.team.specialists.push(specialist);
+    created.push(specialist);
+  }
   const removedNames = proposal.members.filter((m) => !kept.includes(m)).map((m) => m.name);
   const trimmedNote = note?.trim() || null;
   proposal.resolution =
     removedNames.length === 0 && !trimmedNote
       ? { kind: "confirmed", specialistIds: created.map((s) => s.id), resolvedAt: now.toISOString() }
       : { kind: "corrected", specialistIds: created.map((s) => s.id), removedNames, note: trimmedNote, resolvedAt: now.toISOString() };
-  document.team.specialists.push(...created);
   document.team.confirmedAt = now.toISOString();
   return created;
 }
@@ -261,8 +291,39 @@ export function addSpecialist(document: ProjectDocument, draft: ProposedSpeciali
   }
   const free = teamMembers(document).find((s) => s.status === "available" && key(s.competence) === key(competence));
   if (free) throw new TeamError("specialist_available", `Specialist ${free.id} already has this competence and is free.`);
-  const specialist = newSpecialist({ name, competence, reason, moduleIds: cleaned(draft.moduleIds) }, "coordinator", now);
+  const specialist = newSpecialist({ name, tag: draft.tag, competence, reason, moduleIds: cleaned(draft.moduleIds) }, "coordinator", document.team, now);
   document.team.specialists.push(specialist);
+  return specialist;
+}
+
+/**
+ * The person renames a developer, from the Team view or by asking the Coordinator (W13, D-C7F4BD3C); no mandate
+ * is needed. The id stays, so assignments, chat and history show the new name. Fixed roles keep theirs.
+ */
+export function renameSpecialist(document: ProjectDocument, id: string, name: string, now = new Date()): { specialist: Specialist; previousName: string } {
+  const specialist = document.team.specialists.find((s) => s.id === id.trim());
+  if (!specialist) throw new TeamError("unknown_specialist", `Unknown specialist: ${id}.`);
+  if (specialist.status === "removed") throw new TeamError("specialist_removed", `Specialist ${id} was removed from the team.`);
+  refuseFixedRole(specialist);
+  const next = required(name, "name");
+  const fixed = FIXED_ROLES.map(roleProfile).find((p) => key(p.name) === key(next));
+  if (fixed) throw new TeamError("fixed_role", `${fixed.name} is a fixed role of the team: choose another name.`);
+  if (teamMembers(document).some((s) => s.id !== specialist.id && key(s.name) === key(next))) {
+    throw new TeamError("duplicate_name", `A specialist named ${next} is already in the team.`);
+  }
+  const previousName = specialist.name;
+  specialist.name = next;
+  specialist.updatedAt = now.toISOString();
+  return { specialist, previousName };
+}
+
+/** The person picks another color of the palette for any agent, fixed roles included (W15, D-816E48A9). */
+export function setSpecialistColor(document: ProjectDocument, id: string, color: AgentColor, now = new Date()): Specialist {
+  const specialist = document.team.specialists.find((s) => s.id === id);
+  if (!specialist) throw new TeamError("unknown_specialist", `Unknown specialist: ${id}.`);
+  if (!isAgentColor(color)) throw new TeamError("invalid_color", `Unknown agent color: ${String(color)}.`);
+  specialist.color = color;
+  specialist.updatedAt = now.toISOString();
   return specialist;
 }
 

@@ -4,12 +4,15 @@ import { isUsableAccount, type ProviderId } from "@shared/codex";
 import type { Specialist, SpecialistAssignment } from "@shared/domain";
 import { findGoal } from "@shared/goals";
 import { PROVIDERS } from "@shared/providers";
-import { isFixedRole, roleDuties, type RosterFigure, TEAM_MOMENTS, teamRoster } from "@shared/roster";
+import { AGENT_PALETTE } from "@shared/identity";
+import { FIXED_ROLES, isFixedRole, roleDuties, roleProfile, type RosterFigure, TEAM_MOMENTS, teamRoster } from "@shared/roster";
+import { AgentAvatar, AgentName, AgentTag, agentStyle } from "@/components/AgentIdentity";
 import { ASSIGNMENT_STATUS, AssignmentCard, CandidateCard, TeamProposalCard } from "@/components/chat/Cards";
 import { Spinner } from "@/components/Spinner";
 import { Button } from "@/components/ui/button";
 import { ProviderIcon } from "@/components/ProviderIcon";
-import { Badge, TextArea } from "@/components/ui/field";
+import { Badge, Input, TextArea } from "@/components/ui/field";
+import { Tooltip } from "@/components/ui/tooltip";
 import { PickerSelect } from "@/components/ui/picker";
 import { cn } from "@/lib/cn";
 import { formatRelativeTime } from "@/lib/format";
@@ -58,16 +61,17 @@ function DeveloperRow({ specialist }: { specialist: Specialist }) {
   const current = specialist.assignments.at(-1);
   const goal = current ? findGoal(project.document, current.goalId) : null;
   return (
-    <button type="button" onClick={() => setInspector({ kind: "specialist", id: specialist.id })} className={ROW}>
-      <span className="mt-1.5 flex w-3 justify-center">
-        <StatusDot status={specialist.status} />
+    <button type="button" data-testid="team-developer" onClick={() => setInspector({ kind: "specialist", id: specialist.id })} className={ROW}>
+      <span className="mt-0.5 flex w-4 justify-center">
+        <AgentAvatar agent={specialist} />
       </span>
       <span className="min-w-0 flex-1">
         <span className="block text-ui text-foreground">
-          {specialist.name} <span className="text-muted-foreground"><Sep />{specialist.competence}</span>
+          <AgentName agent={specialist} avatar={false} /> <span className="text-muted-foreground"><Sep />{specialist.competence}</span>
         </span>
-        <span className="block truncate text-ui-sm text-muted-foreground">
-          {STATUS_LABEL[specialist.status]}<Sep />{specialist.lastUpdate}
+        <span className="flex items-center gap-1.5 truncate text-ui-sm text-muted-foreground">
+          <StatusDot status={specialist.status} />
+          <span className="min-w-0 truncate">{STATUS_LABEL[specialist.status]}<Sep />{specialist.lastUpdate}</span>
         </span>
         {current ? (
           <span className="block truncate text-ui-xs text-muted-foreground/80" title={current.modelReason ?? "Motivazione non registrata"}>
@@ -87,9 +91,12 @@ function FigureRow({ figure }: { figure: RosterFigure }) {
   const specialist = figure.specialists[0];
   const body = (
     <>
-      <span className="mt-1.5 flex w-3 justify-center">{specialist ? <StatusDot status={specialist.status} /> : null}</span>
+      <span className="mt-0.5 flex w-4 justify-center">{specialist ? <AgentAvatar agent={specialist} /> : null}</span>
       <span className="min-w-0 flex-1">
-        <span className="block text-ui text-foreground">{figure.profile.name}</span>
+        <span className="flex items-center gap-1.5 text-ui text-foreground">
+          {specialist ? <AgentName agent={specialist} avatar={false} /> : figure.profile.name}
+          {specialist && specialist.status !== "available" ? <StatusDot status={specialist.status} /> : null}
+        </span>
         <span className="block text-ui-sm text-muted-foreground">{figure.duty.task}</span>
         {specialist && specialist.status !== "available" ? (
           <span className="block truncate text-ui-sm text-muted-foreground">
@@ -185,6 +192,7 @@ export function SpecialistView({ id }: { id: string }) {
   const setInspector = useUi((s) => s.setInspector);
   const focusComposer = useUi((s) => s.focusComposer);
   const [removing, setRemoving] = useState(false);
+  const [renaming, setRenaming] = useState(false);
   const [reason, setReason] = useState("");
   const specialist = project.document.team.specialists.find((s) => s.id === id);
   if (!specialist) return <div className="p-4"><EmptyNote>Specialista non trovato.</EmptyNote></div>;
@@ -198,7 +206,9 @@ export function SpecialistView({ id }: { id: string }) {
           <IconArrowLeft className="size-3.5" /> Team
         </button>
         <div className="mt-2 flex items-center gap-2">
+          <AgentAvatar agent={specialist} className="size-5 text-ui-xs" />
           <h3 className="text-ui-lg font-medium text-foreground">{specialist.name}</h3>
+          <AgentTag agent={specialist} className="text-ui-sm" />
           <Badge>{specialist.id}</Badge>
           <span className="ml-auto flex items-center gap-1.5 text-ui-sm text-muted-foreground">
             <StatusDot status={specialist.status} /> {STATUS_LABEL[specialist.status]}
@@ -209,12 +219,18 @@ export function SpecialistView({ id }: { id: string }) {
           <Button size="sm" variant="outline" onClick={() => focusComposer()}>
             Vai alla conversazione
           </Button>
+          {specialist.status !== "removed" && !fixed ? (
+            <Button size="sm" variant="ghost" onClick={() => setRenaming(!renaming)}>
+              Rinomina
+            </Button>
+          ) : null}
           {specialist.status !== "removed" && !busy && !fixed ? (
             <Button size="sm" variant="ghost" onClick={() => setRemoving(!removing)}>
               Togli dal team
             </Button>
           ) : null}
         </div>
+        {renaming ? <RenameSpecialist specialist={specialist} onDone={() => setRenaming(false)} /> : null}
         {removing ? (
           <div className="mt-2 space-y-2">
             <TextArea value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Motivo" className="min-h-12" />
@@ -229,6 +245,7 @@ export function SpecialistView({ id }: { id: string }) {
           </div>
         ) : null}
       </div>
+      {specialist.status !== "removed" ? <AgentColorPicker specialist={specialist} /> : null}
       <InspectorSection title="Perché è nel team">
         <p className="text-ui text-foreground/90">{specialist.reason}</p>
         <p className="mt-1 text-ui-xs text-muted-foreground">
@@ -298,6 +315,77 @@ export function SpecialistView({ id }: { id: string }) {
 }
 
 const providerLabel = (id: ProviderId) => PROVIDERS.find((p) => p.id === id)?.name ?? id;
+
+const nameKey = (name: string) => name.trim().toLocaleLowerCase("it").replace(/\s+/g, " ");
+
+/** The person renames a developer (W13): the id stays, so assignments, chat and history follow the new name. */
+function RenameSpecialist({ specialist, onDone }: { specialist: Specialist; onDone: () => void }) {
+  const specialists = useUi((s) => s.app?.project?.document.team.specialists ?? []);
+  const [name, setName] = useState(specialist.name);
+  const next = name.trim();
+  const taken = specialists.some((s) => s.id !== specialist.id && s.status !== "removed" && nameKey(s.name) === nameKey(next));
+  const fixedName = FIXED_ROLES.some((role) => nameKey(roleProfile(role).name) === nameKey(next));
+  const unchanged = next === specialist.name;
+  const save = () => void act("specialist:rename", { specialistId: specialist.id, name: next }).then(onDone);
+  return (
+    <div className="mt-2 space-y-2" data-testid="rename-specialist">
+      <Input
+        autoFocus
+        aria-label="Nuovo nome"
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && next && !taken && !fixedName && !unchanged) save();
+          if (e.key === "Escape") onDone();
+        }}
+      />
+      {taken ? <p className="text-ui-sm text-muted-foreground">Nel team c'è già qualcuno con questo nome.</p> : null}
+      {fixedName ? <p className="text-ui-sm text-muted-foreground">È il nome di un ruolo fisso del team: scegline un altro.</p> : null}
+      <p className="text-ui-xs text-muted-foreground">L'ID {specialist.id} resta lo stesso: incarichi, chat e cronologia mostrano il nuovo nome.</p>
+      <div className="cta-row">
+        <Button size="sm" variant="ghost" onClick={onDone}>
+          Annulla
+        </Button>
+        <Button size="sm" disabled={!next || taken || fixedName || unchanged} onClick={save}>
+          Rinomina
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+/** The agent's color (W15): Trama picked a free one; the person may choose another from the palette. */
+function AgentColorPicker({ specialist }: { specialist: Specialist }) {
+  return (
+    <InspectorSection title="Colore">
+      <p className="text-ui-sm text-muted-foreground">Il colore sta solo sull'avatar e sul tag. Badge e schede restano sui colori di stato.</p>
+      <div className="mt-2 flex flex-wrap gap-1.5" role="radiogroup" aria-label="Colore dell'agente">
+        {AGENT_PALETTE.map((entry) => {
+          const selected = entry.color === specialist.color;
+          return (
+            <Tooltip key={entry.color} label={entry.label}>
+              <button
+                type="button"
+                role="radio"
+                aria-checked={selected}
+                aria-label={entry.label}
+                data-testid="agent-color"
+                className={cn(
+                  "agent-identity agent-avatar size-6 text-ui-xs transition-shadow",
+                  selected ? "ring-2 ring-[var(--agent)] ring-offset-1 ring-offset-background" : "hover:ring-1 hover:ring-[var(--agent)]",
+                )}
+                style={agentStyle({ color: entry.color })}
+                onClick={() => (selected ? undefined : void act("specialist:setColor", { specialistId: specialist.id, color: entry.color }))}
+              >
+                {[...specialist.name.trim()][0]?.toLocaleUpperCase("it") ?? "?"}
+              </button>
+            </Tooltip>
+          );
+        })}
+      </div>
+    </InspectorSection>
+  );
+}
 
 /** The person changes the provider of a stopped assignment (ADR 0009): assignment and worktree stay. */
 function AssignmentProvider({ assignment }: { assignment: SpecialistAssignment }) {

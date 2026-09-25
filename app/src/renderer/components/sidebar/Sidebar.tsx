@@ -17,7 +17,6 @@ import {
   IconSettings,
   IconShieldCheck,
   IconSitemap,
-  IconUser,
   IconUsersGroup,
   IconX,
   IconListCheck,
@@ -28,6 +27,7 @@ import {
 } from "@tabler/icons-react";
 import { DeleteGoalDialog, setArchived } from "@/components/inspector/GoalsView";
 import { StatusDot } from "@/components/inspector/TeamView";
+import { AgentAvatar, AgentTag } from "@/components/AgentIdentity";
 import { useState } from "react";
 import type * as React from "react";
 import { Spinner } from "@/components/Spinner";
@@ -398,8 +398,11 @@ export function Sidebar({ isMac }: { isMac: boolean }) {
                           onClick={() => setInspector({ kind: "specialist", id: specialist.id })}
                           className={cn(SIDEBAR_ROW, "pl-8", inspector?.kind === "specialist" && inspector.id === specialist.id ? ROW_ACTIVE : ROW_IDLE)}
                         >
-                          <IconUser className="size-3 shrink-0 text-muted-foreground" stroke={1.8} />
-                          <span className="min-w-0 flex-1 truncate text-ui leading-5 text-foreground/95">{specialist.name}</span>
+                          <AgentAvatar agent={specialist} className="-ml-0.5" />
+                          <span className="flex min-w-0 flex-1 items-center gap-1.5 text-ui leading-5 text-foreground/95">
+                            <span className="min-w-0 truncate">{specialist.name}</span>
+                            <AgentTag agent={specialist} className="shrink-0" />
+                          </span>
                           <span className="flex w-[15px] shrink-0 items-center justify-center">
                             <StatusDot status={specialist.status} />
                           </span>
