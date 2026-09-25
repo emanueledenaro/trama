@@ -216,19 +216,33 @@ export function SpecialistView({ id }: { id: string }) {
         </div>
         <p className="mt-0.5 text-ui text-muted-foreground">{specialist.competence}</p>
         <div className="cta-row mt-3">
-          <Button size="sm" variant="outline" onClick={() => focusComposer()}>
-            Vai alla conversazione
-          </Button>
           {specialist.status !== "removed" && !fixed ? (
-            <Button size="sm" variant="ghost" onClick={() => setRenaming(!renaming)}>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => {
+                setRenaming(!renaming);
+                setRemoving(false);
+              }}
+            >
               Rinomina
             </Button>
           ) : null}
           {specialist.status !== "removed" && !busy && !fixed ? (
-            <Button size="sm" variant="ghost" onClick={() => setRemoving(!removing)}>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => {
+                setRemoving(!removing);
+                setRenaming(false);
+              }}
+            >
               Togli dal team
             </Button>
           ) : null}
+          <Button size="sm" variant="outline" onClick={() => focusComposer()}>
+            Vai alla conversazione
+          </Button>
         </div>
         {renaming ? <RenameSpecialist specialist={specialist} onDone={() => setRenaming(false)} /> : null}
         {removing ? (
