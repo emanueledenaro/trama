@@ -88,9 +88,10 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
       const toolDone = (tool, result) =>
         send({ method: "item/completed", params: { threadId, turnId, item: { id: `tool-${tool}`, type: "mcpToolCall", server: "trama", tool, status: "completed", result } } });
       // "[passo:<move>]" closes the turn with that next step (W01), after the turn's other tools; a refusal ends up in the reply.
+      // Only the Coordinator's threads have Trama's tools: a planner or a review quoting the request declares nothing.
       const declareStep = async () => {
         const step = text.match(/\[passo:(\w+)\]/);
-        if (!step) return "";
+        if (!step || !toolServers.has(threadId)) return "";
         const result = await callTool(threadId, "declare_next_step", { move: step[1], reason: "Il lavoro aspetta questo passo." });
         toolDone("declare_next_step", result);
         return result.isError ? ` | Passo rifiutato: ${result.content[0].text}` : "";

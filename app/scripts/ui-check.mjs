@@ -104,33 +104,6 @@ await page.getByRole("button", { name: "Concedi mandato" }).click();
 await page.getByText(/Mandato v1/).first().waitFor({ timeout: 20_000 });
 await shot("04c-mandate-granted");
 await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
-// M04: the plan follows to-spec. The seams come first and wait for the person, with the confirmation on the right;
-// then the spec with the template's sections, which stays in Trama without GitHub.
-const seamChecks = page.locator('[data-testid="plan-spec"][data-status="seams"]');
-const earlierSeamChecks = await seamChecks.count();
-await page.getByLabel("Messaggio al Coordinatore").fill("[piano]");
-await page.keyboard.press("Enter");
-const seamCheck = seamChecks.nth(earlierSeamChecks);
-const confirmSeams = seamCheck.getByRole("button", { name: "Conferma i seam" });
-await confirmSeams.waitFor({ timeout: 20_000 });
-await seamCheck.scrollIntoViewIfNeeded();
-const confirmBox = await confirmSeams.boundingBox();
-const seamBox = await seamCheck.boundingBox();
-if (!confirmBox || !seamBox || seamBox.x + seamBox.width - (confirmBox.x + confirmBox.width) > 2) throw new Error("Conferma i seam is not on the right");
-await shot("04c1-plan-seams");
-await confirmSeams.click();
-const writtenSpec = page.locator('[data-testid="plan-spec"][data-status="ready"]').last();
-await writtenSpec.getByText("Resta in Trama").waitFor({ timeout: 20_000 });
-await writtenSpec.getByRole("button", { name: /Mostra tutta la spec/ }).click();
-await writtenSpec.getByText("Decisioni sui test").waitFor();
-await writtenSpec.scrollIntoViewIfNeeded();
-await shot("04c2-plan-spec");
-const approvePlan = writtenSpec.getByRole("button", { name: "Approva il piano e chiedi di realizzarlo" });
-await approvePlan.evaluate((button) => button.scrollIntoView({ block: "center" }));
-const approveBox = await approvePlan.boundingBox();
-const specBox = await writtenSpec.boundingBox();
-if (!approveBox || !specBox || specBox.x + specBox.width - (approveBox.x + approveBox.width) > 2) throw new Error("The plan's approval is not on the right");
-await shot("04c3-plan-spec-actions");
 await page.getByLabel("Messaggio al Coordinatore").fill("[assegna]");
 await page.keyboard.press("Enter");
 await page.getByText("Concluso", { exact: true }).first().waitFor({ timeout: 20_000 });
@@ -259,6 +232,46 @@ await page.waitForTimeout(500);
 await page.getByRole("button", { name: "Interrompi" }).waitFor({ state: "hidden", timeout: 20_000 });
 await round.scrollIntoViewIfNeeded();
 await shot("14b-grilling-withdrawn");
+// M04: the plan follows to-spec, once the grilling round above is complete (a plan waits for open questions).
+// The seams come first and wait for the person, with the confirmation on the right; then the spec with the
+// template's sections, which stays in Trama without GitHub.
+const seamChecks = page.locator('[data-testid="plan-spec"][data-status="seams"]');
+const earlierSeamChecks = await seamChecks.count();
+await page.getByLabel("Messaggio al Coordinatore").fill("[piano]");
+await page.keyboard.press("Enter");
+const seamCheck = seamChecks.nth(earlierSeamChecks);
+const confirmSeams = seamCheck.getByRole("button", { name: "Conferma i seam" });
+await confirmSeams.waitFor({ timeout: 20_000 });
+await seamCheck.scrollIntoViewIfNeeded();
+const confirmBox = await confirmSeams.boundingBox();
+const seamBox = await seamCheck.boundingBox();
+if (!confirmBox || !seamBox || seamBox.x + seamBox.width - (confirmBox.x + confirmBox.width) > 2) throw new Error("Conferma i seam is not on the right");
+await shot("04c1-plan-seams");
+// The next step "Conferma i seam" targets the plan card, like "Rivedi il piano": the button brings the card into view.
+await page.getByLabel("Messaggio al Coordinatore").fill("[passo:confirmSeams] A che punto è il piano?");
+await page.keyboard.press("Enter");
+const seamsStep = page.getByTestId("next-step").getByRole("button", { name: "Conferma i seam" }).last();
+await seamsStep.waitFor({ timeout: 20_000 });
+await page.getByRole("button", { name: "Interrompi" }).waitFor({ state: "hidden", timeout: 20_000 });
+await seamsStep.click();
+await page.waitForTimeout(800);
+if (!(await seamCheck.evaluate((card) => { const box = card.getBoundingClientRect(); return box.bottom > 0 && box.top < window.innerHeight; }))) {
+  throw new Error("The next step Conferma i seam did not bring the plan card into view");
+}
+await shot("04c1b-next-step-seams");
+await confirmSeams.click();
+const writtenSpec = page.locator('[data-testid="plan-spec"][data-status="ready"]').last();
+await writtenSpec.getByText("Resta in Trama").waitFor({ timeout: 20_000 });
+await writtenSpec.getByRole("button", { name: /Mostra tutta la spec/ }).click();
+await writtenSpec.getByText("Decisioni sui test").waitFor();
+await writtenSpec.scrollIntoViewIfNeeded();
+await shot("04c2-plan-spec");
+const approvePlan = writtenSpec.getByRole("button", { name: "Approva il piano e chiedi di realizzarlo" });
+await approvePlan.evaluate((button) => button.scrollIntoView({ block: "center" }));
+const approveBox = await approvePlan.boundingBox();
+const specBox = await writtenSpec.boundingBox();
+if (!approveBox || !specBox || specBox.x + specBox.width - (approveBox.x + approveBox.width) > 2) throw new Error("The plan's approval is not on the right");
+await shot("04c3-plan-spec-actions");
 // A message sent while the Coordinator works waits in the queue and can be deleted after a confirmation.
 await page.getByLabel("Messaggio al Coordinatore").fill("[attesa] Spiegami gli ordini");
 await page.keyboard.press("Enter");

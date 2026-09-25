@@ -193,7 +193,9 @@ function NextStepRow({ step, goalId }: { step: NextStepView; goalId: string | nu
     }
     if (step.move === "reviewCandidate" && step.targetId) return setInspector({ kind: "candidate", id: step.targetId });
     if (step.targetId && revealCard(step.targetId)) return;
-    if (step.move === "grantMandate") setInspector({ kind: "mandate" });
+    // Seams and plan review both act on the plan card (M04); when this dialog does not show it, the work lists the plans.
+    if (step.move === "confirmSeams" || step.move === "reviewPlan") setInspector({ kind: "work" });
+    else if (step.move === "grantMandate") setInspector({ kind: "mandate" });
     else if (step.move === "confirmTeam") setInspector({ kind: "team" });
   };
   return (
