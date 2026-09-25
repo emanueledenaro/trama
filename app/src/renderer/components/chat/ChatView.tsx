@@ -30,7 +30,7 @@ import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/cn";
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "@/components/ui/menu";
 import { formatRelativeTime } from "@/lib/format";
-import { act, type InspectorTarget, useUi } from "@/lib/store";
+import { act, type InspectorTarget, refreshProject, useUi } from "@/lib/store";
 import { ExercisePanel } from "@/components/onboarding/ExercisePanel";
 import { Composer } from "./Composer";
 import { TimelineRowView } from "./TimelineRows";
@@ -172,7 +172,7 @@ function ChatHeader({ isMac }: { isMac: boolean }) {
         // Refresh and the inspector toggle never scroll away.
         <div className="no-drag flex shrink-0 items-center gap-1">
           <Tooltip label="Aggiorna progetto">
-            <button type="button" className={HEADER_CHIP} aria-label="Aggiorna progetto" onClick={() => void act("project:refresh", undefined)}>
+            <button type="button" className={HEADER_CHIP} aria-label="Aggiorna progetto" onClick={() => void refreshProject()}>
               <IconRefresh className="size-3.5 opacity-70" stroke={1.8} />
             </button>
           </Tooltip>

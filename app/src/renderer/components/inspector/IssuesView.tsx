@@ -9,6 +9,7 @@ import { Badge, Input, Label, TextArea } from "@/components/ui/field";
 import { cn } from "@/lib/cn";
 import { formatRelativeTime } from "@/lib/format";
 import { act, useUi } from "@/lib/store";
+import { issueQuestion } from "@/lib/askCoordinator";
 import { EmptyNote, InspectorSection } from "./Inspector";
 import { Sep } from "@/components/ui/sep";
 
@@ -138,7 +139,7 @@ export function IssueDetail({ number }: { number: number }) {
   const issue = useUi((s) => s.app?.project?.github.issues.find((i) => i.number === number));
   const triage = useUi((s) => (s.app?.project ? issueTriage(s.app.project.document, number) : null));
   const setInspector = useUi((s) => s.setInspector);
-  const focusComposer = useUi((s) => s.focusComposer);
+  const askCoordinator = useUi((s) => s.askCoordinator);
   if (!issue) return <div className="p-4"><EmptyNote>Issue non trovata.</EmptyNote></div>;
   return (
     <>
@@ -158,11 +159,11 @@ export function IssueDetail({ number }: { number: number }) {
           ))}
         </div>
         <div className="cta-row mt-3">
-          <Button size="sm" variant="outline" onClick={() => focusComposer()}>
-            <IconMessageCircle stroke={1.8} /> Chiedi al Coordinatore
-          </Button>
           <Button size="sm" variant="ghost" onClick={() => void act("shell:openExternal", { url: issue.url })}>
             <IconExternalLink stroke={1.8} /> GitHub
+          </Button>
+          <Button size="sm" onClick={() => askCoordinator(issueQuestion(issue))}>
+            <IconMessageCircle stroke={1.8} /> Chiedi al Coordinatore
           </Button>
         </div>
       </div>

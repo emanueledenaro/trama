@@ -585,6 +585,8 @@ const BLOCKER_TEXT: Record<string, string> = {
 export function CandidateCard({ candidateId }: { candidateId: string }) {
   const project = useUi((s) => s.app?.project)!;
   const setInspector = useUi((s) => s.setInspector);
+  // The inspector already showing this candidate has the diff right below: the button would do nothing (W12).
+  const diffOnScreen = useUi((s) => s.inspector?.kind === "candidate" && s.inspector.id === candidateId);
   const candidate = project.document.candidates.find((c) => c.id === candidateId);
   const report = project.candidateReports[candidateId];
   const [preview, setPreview] = useState<ActionResult<"candidate:previewPullRequest"> | null>(null);
@@ -668,9 +670,11 @@ export function CandidateCard({ candidateId }: { candidateId: string }) {
         </button>
       ) : null}
       <div className="cta-row mt-3">
-        <Button size="sm" variant="outline" onClick={() => setInspector({ kind: "candidate", id: candidate.id })}>
-          Apri il diff
-        </Button>
+        {diffOnScreen ? null : (
+          <Button size="sm" variant="outline" onClick={() => setInspector({ kind: "candidate", id: candidate.id })}>
+            Apri il diff
+          </Button>
+        )}
         {report.blockers.length === 0 && !approved ? (
           <Button size="sm" variant="outline" onClick={() => void act("candidate:approve", { candidateId })}>
             Approva questo candidato
@@ -823,6 +827,8 @@ export function PlanCard({ planId }: { planId: string }) {
                   moduleId: null,
                   model: null,
                   effort: null,
+                  // The approval belongs to the dialog of the plan, not always to the project's (W12).
+                  goalId: project.document.requests.find((r) => r.id === plan.requestId)?.goalId ?? null,
                 })
               }
             >

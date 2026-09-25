@@ -10,7 +10,7 @@ import { Sidebar } from "@/components/sidebar/Sidebar";
 import { Toast } from "@/components/Toast";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { cn } from "@/lib/cn";
-import { act, useUi } from "@/lib/store";
+import { act, refreshProject, useUi } from "@/lib/store";
 
 function useThemeClass(theme: "system" | "light" | "dark" | undefined) {
   useEffect(() => {
@@ -63,9 +63,12 @@ export function App() {
         void act("exercise:start", { exercise }).then(() => useUi.getState().setExercise(exercise));
       }
       else if (command === "toggleSidebar") ui.toggleSidebar();
+      // The items below act on the open project; without one they say so instead of doing nothing (W12).
+      else if (!ui.app?.project) ui.setToast("Apri o crea un progetto per usare questa voce.", "info");
       else if (command === "focusComposer") ui.focusComposer();
-      else if (command === "toggleInspector") ui.setInspector(ui.inspector ? null : { kind: "map" });
-      else if (command.startsWith("inspector:") && ui.app?.project) {
+      else if (command === "refreshProject") void refreshProject();
+      else if (command === "toggleInspector") ui.setInspector(ui.inspector && ui.mainView === "dialog" ? null : { kind: "map" });
+      else if (command.startsWith("inspector:")) {
         ui.setInspector({ kind: command.slice("inspector:".length) as "map" | "pact" | "mandate" | "issues" | "team" | "work" | "group" | "memory" });
       }
     });

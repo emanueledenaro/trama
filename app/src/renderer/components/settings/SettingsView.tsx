@@ -424,7 +424,22 @@ function MethodSection() {
           }
           control={
             <>
-              <Button size="sm" variant="ghost" disabled={noProject} onClick={() => void act("skills:rollback", undefined)}>
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={noProject}
+                onClick={() =>
+                  // The record of the rollback goes to the project's chat; this page says it happened (W12).
+                  void act("skills:rollback", undefined).then((restored) => {
+                    if (!restored) return;
+                    setReport(null);
+                    useUi.getState().setToast(
+                      `Ultimo aggiornamento del metodo annullato: ${restored.length === 1 ? "1 file ripristinato" : `${restored.length} file ripristinati`}.`,
+                      "info",
+                    );
+                  })
+                }
+              >
                 Annulla l'ultimo aggiornamento
               </Button>
               <Button
