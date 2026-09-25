@@ -13,7 +13,7 @@ import {
   IconTelescope,
   IconUsersGroup,
 } from "@tabler/icons-react";
-import type { AssignmentStatus, CandidateState } from "@shared/domain";
+import { type AssignmentStatus, type CandidateState, isOpenQuestion } from "@shared/domain";
 import { isExerciseAssessment } from "@shared/onboarding";
 import { findGoal } from "@shared/goals";
 import { PROVIDERS } from "@shared/providers";
@@ -206,9 +206,14 @@ export function DecisionCard({ requestId }: { requestId: string }) {
   const setInspector = useUi((s) => s.setInspector);
   const [choice, setChoice] = useState<number | null>(null);
   const [freeText, setFreeText] = useState("");
+  // Withdrawing asks for a reason first: the step that confirms an action the person cannot undo.
+  const [withdrawing, setWithdrawing] = useState(false);
+  const [reason, setReason] = useState("");
   const request = project.document.decisionRequests.find((r) => r.id === requestId);
   if (!request) return null;
   const outcome = request.outcome;
+  const withdrawal = request.withdrawal ?? null;
+  const closed = Boolean(outcome || withdrawal);
   const grilling = request.grilling ?? null;
 
   return (
@@ -216,18 +221,24 @@ export function DecisionCard({ requestId }: { requestId: string }) {
       icon={<IconRosetteDiscountCheck stroke={1.8} />}
       title={grilling ? `Domanda ${grilling.number}` : "Decisione"}
       className={grilling ? "my-2" : undefined}
-      aside={<Badge tone={request.category === "destructive" ? "destructive" : "info"}>{request.category === "destructive" ? "Caso distruttivo" : "Scelta di prodotto"}</Badge>}
+      aside={
+        withdrawal ? (
+          <Badge tone="secondary">Ritirata</Badge>
+        ) : (
+          <Badge tone={request.category === "destructive" ? "destructive" : "info"}>{request.category === "destructive" ? "Caso distruttivo" : "Scelta di prodotto"}</Badge>
+        )
+      }
     >
-      <p className="text-ui font-medium text-foreground">{request.question}</p>
+      <p className={cn("text-ui font-medium text-foreground", withdrawal && "text-foreground/70")}>{request.question}</p>
       <Field label="Caso concreto">{request.concreteCase}</Field>
       <div className="mt-3 space-y-1.5">
         {request.alternatives.map((alternative, index) => {
-          const chosen = outcome ? outcome.alternativeIndex === index : choice === index;
+          const chosen = outcome ? outcome.alternativeIndex === index : !withdrawal && choice === index;
           return (
             <button
               key={alternative.behavior}
               type="button"
-              disabled={Boolean(outcome)}
+              disabled={closed}
               onClick={() => {
                 setChoice(index);
                 setFreeText("");
@@ -237,7 +248,7 @@ export function DecisionCard({ requestId }: { requestId: string }) {
                 chosen
                   ? "border-[color:var(--color-text-accent)] bg-[color-mix(in_srgb,var(--color-text-accent)_7%,transparent)]"
                   : "border-[color:var(--color-border)] hover:bg-[var(--color-background-button-secondary-hover)]",
-                outcome && !chosen && "opacity-60",
+                closed && !chosen && "opacity-60",
               )}
             >
               <div className="flex items-start gap-2">
@@ -260,6 +271,37 @@ export function DecisionCard({ requestId }: { requestId: string }) {
           </button>
           {outcome.alternativeIndex === null ? <span className="truncate"><Sep />«{outcome.answer}»</span> : null}
         </div>
+      ) : withdrawal ? (
+        <p className="mt-3 text-ui-sm text-muted-foreground" data-testid="withdrawn-question">
+          Hai ritirato la domanda. Motivo: {withdrawal.reason}
+          <Sep />
+          Non è diventata una decisione e il Coordinatore ha ricevuto il motivo.
+        </p>
+      ) : withdrawing ? (
+        <div className="mt-3 space-y-2">
+          <TextArea
+            value={reason}
+            onChange={(event) => setReason(event.target.value)}
+            placeholder="Perché la ritiri? Il Coordinatore legge il motivo."
+            aria-label="Motivo del ritiro"
+            className="min-h-12"
+            autoFocus
+          />
+          <p className="text-ui-xs text-muted-foreground">La domanda resta nella cronologia, non diventa una decisione e non blocca più il piano.</p>
+          <div className="cta-row">
+            <Button size="sm" variant="ghost" onClick={() => setWithdrawing(false)}>
+              Annulla
+            </Button>
+            <Button
+              size="sm"
+              variant="destructive"
+              disabled={!reason.trim()}
+              onClick={() => void act("decision:withdraw", { requestId, reason: reason.trim() })}
+            >
+              Ritira la domanda
+            </Button>
+          </div>
+        </div>
       ) : (
         <div className="mt-3 space-y-2">
           <TextArea
@@ -272,19 +314,24 @@ export function DecisionCard({ requestId }: { requestId: string }) {
             aria-label="La tua decisione"
             className="min-h-12"
           />
-          <Button className="ml-auto flex"
-            size="sm"
-            disabled={choice === null && !freeText.trim()}
-            onClick={() =>
-              void act("decision:answer", {
-                requestId,
-                alternativeIndex: choice,
-                freeText: choice === null ? freeText.trim() : null,
-              })
-            }
-          >
-            Registra la decisione
-          </Button>
+          <div className="cta-row">
+            <Button size="sm" variant="ghost" onClick={() => setWithdrawing(true)}>
+              Ritira
+            </Button>
+            <Button
+              size="sm"
+              disabled={choice === null && !freeText.trim()}
+              onClick={() =>
+                void act("decision:answer", {
+                  requestId,
+                  alternativeIndex: choice,
+                  freeText: choice === null ? freeText.trim() : null,
+                })
+              }
+            >
+              Registra la decisione
+            </Button>
+          </div>
         </div>
       )}
     </CardFrame>
@@ -295,15 +342,19 @@ export function DecisionCard({ requestId }: { requestId: string }) {
 export function GrillingRoundCard({ round, questionIds }: { round: number; questionIds: string[] }) {
   const project = useUi((s) => s.app?.project)!;
   const questions = questionIds.map((id) => project.document.decisionRequests.find((r) => r.id === id)).filter((r) => r !== undefined);
-  const answered = questions.filter((q) => q.outcome).length;
-  const complete = answered === questions.length;
+  // A withdrawn question is closed without an answer: it no longer counts among the answers the round waits for.
+  const asked = questions.filter((q) => !q.withdrawal);
+  const answered = asked.filter((q) => q.outcome).length;
+  const withdrawn = questions.length - asked.length;
+  const complete = answered === asked.length;
   return (
     <section aria-label={`Chiarimento, turno ${round}`} className="my-3 rounded-xl border border-dashed border-[color:var(--color-border)] px-2.5 pt-2 pb-0.5">
       <div className="flex items-center gap-2 px-1 text-ui-sm">
         <IconListCheck className="size-3.5 shrink-0 text-muted-foreground" stroke={1.8} />
         <span className="min-w-0 flex-1 truncate font-medium text-foreground">Chiarimento prima del piano, turno {round}</span>
+        {withdrawn ? <Badge tone="secondary">{withdrawn === 1 ? "1 ritirata" : `${withdrawn} ritirate`}</Badge> : null}
         <Badge tone={complete ? "success" : "info"}>
-          {complete ? "Turno completo" : `${answered} di ${questions.length} risposte`}
+          {complete ? "Turno completo" : `${answered} di ${asked.length} risposte`}
         </Badge>
       </div>
       {questions.map((q) => (
@@ -639,7 +690,7 @@ export function PlanCard({ planId }: { planId: string }) {
   if (!plan) return null;
   const proposal = plan.proposal;
   const moduleName = (id: string) => project.snapshot.modules.find((m) => m.id === id)?.name ?? id;
-  const pendingQuestions = project.document.decisionRequests.filter((r) => plan.decisionRequestIds.includes(r.id) && !r.outcome).length;
+  const pendingQuestions = project.document.decisionRequests.filter((r) => plan.decisionRequestIds.includes(r.id) && isOpenQuestion(r)).length;
   return (
     <CardFrame
       icon={<IconListCheck stroke={1.8} />}

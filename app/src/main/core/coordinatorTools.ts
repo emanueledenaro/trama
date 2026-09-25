@@ -281,7 +281,7 @@ export const COORDINATOR_TOOLS: ToolDefinition[] = [
   {
     name: "read_goals",
     description:
-      "Read the project's goals: title, status, desired outcome, accepted and refused examples and linked decisions, plus the goal of the dialog you are answering (null for the project dialog).",
+      "Read the project's goals: title, status, whether the person archived it, desired outcome, accepted and refused examples and linked decisions, plus the goal of the dialog you are answering (null for the project dialog). An archived goal keeps its status and history but is out of the person's working view: do not start work on it unless the person restores it.",
     properties: {},
     required: [],
     readOnly: true,
@@ -1001,7 +1001,7 @@ export const GRILLING_BINDING = [
   "Order (a Trama addition): grilling only asks questions, so it needs no mandate. Grill first, even when the project has no mandate yet; propose a mandate with request_mandate only after the shared understanding is confirmed, and only if the work needs one.",
   "\"The user\" is the person.",
   "\"Ask\" a question of a round: each question is one request_decision call, never text in your message. The question title and body become the card's question and concrete case, its choices become the alternatives, the round number goes in grillingRound (1, 2, ...) and your recommended answer in recommendedAlternative, the index of the alternative you recommend. Trama shows the cards of a round together, numbered, with the recommended answer, so your message only says in one or two lines that round N is open and what it is about.",
-  "\"Wait for the user's answers\": Trama writes each answer to you as the person's message. Trama refuses a new round, and prepare_plan, while a question of the request is still open.",
+  "\"Wait for the user's answers\": Trama writes each answer to you as the person's message. Trama refuses a new round, and prepare_plan, while a question of the request is still open. The person may withdraw an open question with a reason instead of answering it: Trama writes that to you too, the question is closed without a decision and no longer blocks the next round or the plan. Do not ask it again unless the reason leaves it open.",
   "\"Dispatch a sub-agent\" to find a fact: in Trama a sub-agent is a read-only specialist session managed by Trama. This Coordinator session cannot start one, so do that exploration yourself with read-only means (the project files, read_study, read_pact, read_issues, read_history, run_readonly_check): its result is the sub-agent's report.",
   "\"The user confirms you have reached a shared understanding\": a chat message. Sum up the shared understanding in a few lines and ask the person to confirm it; that is the one confirmation you ask for.",
   "\"Act on it\": prepare_plan or assign_task for the request, within the mandate.",
@@ -1030,7 +1030,7 @@ export function developerInstructions(projectName: string, learningGuidance: str
     "run_readonly_check runs a check on the project checkout without writing to it; you may use it without a mandate.",
     "The person works by goals: a goal has a desired outcome and accepted and refused examples. Each goal has its own dialog with you, and the project dialog holds priorities and cross-goal questions; you stay one Coordinator with one mandate and one Pact for all of them. When a message comes from a goal dialog Trama says so and gives you the goal; answer about that goal, and the work you assign there is linked to it. read_goals lists the goals; propose_goal proposes a new one that the person confirms.",
     "When a specialist's work is done, declare_candidate captures its worktree and binds it to the Pact decisions it must respect; verify_candidate runs its required checks and review_candidate asks a distinct reviewer. Within the mandate, clear_candidate gives your green light to a verified and approved candidate. The person always reviews and publishes it: never claim that work is merged or published.",
-    "When the person answers a card or changes the mandate, Trama writes it to you as the person's message.",
+    "When the person answers a card, withdraws a question or changes the mandate, Trama writes it to you as the person's message.",
     "When you rely on a repository file, name its path relative to the project root.",
     ...(learningGuidance ? [learningGuidance] : []),
   ].join("\n");

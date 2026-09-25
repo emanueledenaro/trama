@@ -177,6 +177,7 @@ export function answerDecisionRequest(
   const request = document.decisionRequests.find((r) => r.id === requestId);
   if (!request) throw new DomainError("Domanda non trovata.");
   if (request.outcome) throw new DomainError("Hai già risposto a questa domanda.");
+  if (request.withdrawal) throw new DomainError("Hai ritirato questa domanda: non aspetta più una risposta.");
   let value: string;
   let example: string;
   if (answer.alternativeIndex !== null) {
@@ -202,6 +203,34 @@ export function answerDecisionRequest(
     answeredAt: now.toISOString(),
   };
   return { request, decision };
+}
+
+/**
+ * The person withdraws an open question with a reason (W03). The question stays in the history and records no
+ * decision; an answered question is never withdrawn, because its decision is revised with a new decision.
+ */
+export function withdrawDecisionRequest(document: ProjectDocument, requestId: string, reason: string, now = new Date()): DecisionRequest {
+  const request = document.decisionRequests.find((r) => r.id === requestId);
+  if (!request) throw new DomainError("Domanda non trovata.");
+  if (request.outcome) {
+    throw new DomainError("Hai già risposto a questa domanda: la decisione presa resta e si rivede con una decisione nuova.");
+  }
+  if (request.withdrawal) throw new DomainError("Hai già ritirato questa domanda.");
+  const trimmed = reason.trim();
+  if (!trimmed) throw new DomainError("Indica il motivo del ritiro.");
+  request.withdrawal = { reason: trimmed, withdrawnAt: now.toISOString() };
+  return request;
+}
+
+const sentence = (text: string) => (/[.!?]$/.test(text) ? text : `${text}.`);
+
+/** What the Coordinator reads when the person withdraws a question, written as the person's message. */
+export function withdrawalMessage(request: DecisionRequest): string {
+  const reason = sentence(request.withdrawal?.reason ?? "");
+  const grilling = request.grilling;
+  return grilling
+    ? `Ho ritirato la domanda ${grilling.number} del chiarimento, turno ${grilling.round}: «${request.question}». Motivo: ${reason} Non conta più come domanda aperta.`
+    : `Ho ritirato la domanda «${request.question}». Motivo: ${reason}`;
 }
 
 export const mandateMessage = (kind: "granted" | "corrected" | "revoked", version: number | null, reason?: string) =>

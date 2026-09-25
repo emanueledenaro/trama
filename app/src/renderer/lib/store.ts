@@ -39,6 +39,8 @@ interface UiState {
   /** The exercise shown in the panel over the example project's chat. */
   exercise: ExerciseId | null;
   toast: string | null;
+  /** "info" for a plain confirmation, such as a goal archived; errors and warnings keep the default. */
+  toastTone: "warning" | "info";
   composerFocusRequest: number;
   composerModuleId: string | null;
   mainView: MainView;
@@ -65,7 +67,7 @@ interface UiState {
   toggleInspector(target: InspectorTarget): void;
   setDialog(dialog: DialogName, returnTo?: DialogName): void;
   setExercise(exercise: ExerciseId | null): void;
-  setToast(message: string | null): void;
+  setToast(message: string | null, tone?: "warning" | "info"): void;
   focusComposer(moduleId?: string | null): void;
   setComposerModule(moduleId: string | null): void;
 }
@@ -86,6 +88,7 @@ export const useUi = create<UiState>((set, get) => ({
   dialogReturn: null,
   exercise: null,
   toast: null,
+  toastTone: "warning",
   composerFocusRequest: 0,
   composerModuleId: null,
   mainView: "dialog",
@@ -158,7 +161,7 @@ export const useUi = create<UiState>((set, get) => ({
     else set({ dialog, dialogReturn: returnTo });
   },
   setExercise: (exercise) => set({ exercise }),
-  setToast: (toast) => set({ toast }),
+  setToast: (toast, toastTone = "warning") => set({ toast, toastTone }),
   focusComposer: (moduleId) =>
     set((state) => ({
       composerFocusRequest: state.composerFocusRequest + 1,
