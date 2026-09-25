@@ -14,6 +14,7 @@ import { formatRelativeTime } from "@/lib/format";
 import { act, useUi } from "@/lib/store";
 import { EmptyNote, InspectorSection } from "./Inspector";
 import { Sep } from "@/components/ui/sep";
+import { AgentName } from "@/components/AgentIdentity";
 
 const STATUS_TONE: Record<GoalStatus, "warning" | "info" | "success" | "secondary"> = {
   proposed: "warning",
@@ -439,7 +440,7 @@ export function GoalView({ id, edit = false }: { id: string; edit?: boolean }) {
           >
             <span className="flex items-center gap-2 text-ui">
               <span className="min-w-0 flex-1 truncate text-foreground">
-                {specialist.name} <span className="text-muted-foreground"><Sep />{assignment.objective}</span>
+                <AgentName agent={specialist} /> <span className="text-muted-foreground"><Sep />{assignment.objective}</span>
               </span>
               <Badge tone={ASSIGNMENT_STATUS[assignment.status].tone}>{ASSIGNMENT_STATUS[assignment.status].label}</Badge>
             </span>

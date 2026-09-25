@@ -29,6 +29,7 @@ import {
   proposeTeam,
   refusalMessage,
   removeSpecialist,
+  renameSpecialist,
   requestStop,
   TeamError,
 } from "./team";
@@ -67,6 +68,10 @@ type JsonObject = { [key: string]: Json };
 
 const text = { type: "string" };
 const list = (minimum: number) => ({ type: "array", minItems: minimum, items: text });
+const TAG = {
+  type: "string",
+  description: "The developer's role in short, one or two Italian words shown colored beside its name, for example Interfaccia or Provider. Defaults to the start of the competence.",
+};
 
 export const TOOL_SERVER_INSTRUCTIONS =
   "Trama tools read this project's study, Pact, mandate, team, GitHub issues and conversation, keep your memory and skills and search past dialogs, put mandates, team proposals and behavior decisions to the person, run read-only checks, act only within the mandate and close a turn with its one next step.";
@@ -306,7 +311,7 @@ export const COORDINATOR_TOOLS: ToolDefinition[] = [
         minItems: 1,
         items: {
           type: "object",
-          properties: { name: text, competence: text, reason: text, moduleIDs: list(0) },
+          properties: { name: text, tag: TAG, competence: text, reason: text, moduleIDs: list(0) },
           required: ["name", "competence", "reason", "moduleIDs"],
           additionalProperties: false,
         },
@@ -319,8 +324,16 @@ export const COORDINATOR_TOOLS: ToolDefinition[] = [
     name: "create_specialist",
     description:
       "Within the mandate (composeTeam), add a developer to the confirmed team for work you are about to assign, and say so in the conversation. Never add one to fill a role, nor when a free specialist has the same competence; the fixed roles are already in the team.",
-    properties: { name: text, competence: text, reason: text, moduleIDs: list(1) },
+    properties: { name: text, tag: TAG, competence: text, reason: text, moduleIDs: list(1) },
     required: ["name", "competence", "reason", "moduleIDs"],
+    readOnly: false,
+  },
+  {
+    name: "rename_specialist",
+    description:
+      "Rename a developer, named by id or current name, only when the person asks you to; it needs no mandate (without a mandate is fine). The id stays, so assignments, chat and history show the new name. Fixed roles keep their names. Say it in the conversation.",
+    properties: { specialist: text, name: text },
+    required: ["specialist", "name"],
     readOnly: false,
   },
   {
@@ -700,6 +713,8 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
             return {
               id: specialist.id,
               name: specialist.name,
+              tag: specialist.tag,
+              color: specialist.color,
               role: specialist.role,
               fixedRole: isFixedRole(specialist.role),
               competence: specialist.competence,
@@ -740,6 +755,7 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
           const item = (m && typeof m === "object" && !Array.isArray(m) ? m : {}) as JsonObject;
           return {
             name: typeof item.name === "string" ? item.name : "",
+            tag: typeof item.tag === "string" ? item.tag : undefined,
             competence: typeof item.competence === "string" ? item.competence : "",
             reason: typeof item.reason === "string" ? item.reason : "",
             moduleIds: strings(item.moduleIDs),
@@ -759,12 +775,20 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
         if (authorization !== "authorized") return refused(authorization, "composeTeam");
         const specialist = addSpecialist(document, {
           name: typeof args.name === "string" ? args.name : "",
+          tag: typeof args.tag === "string" ? args.tag : undefined,
           competence: typeof args.competence === "string" ? args.competence : "",
           reason: typeof args.reason === "string" ? args.reason : "",
           moduleIds: strings(args.moduleIDs),
         });
         context.changed();
-        return toolSuccess({ specialistID: specialist.id, name: specialist.name });
+        return toolSuccess({ specialistID: specialist.id, name: specialist.name, tag: specialist.tag });
+      }
+      case "rename_specialist": {
+        const found = findSpecialist(document, typeof args.specialist === "string" ? args.specialist : "");
+        if (!found) return toolFailure("unknown_specialist", `Unknown specialist: ${String(args.specialist)}.`);
+        const { specialist, previousName } = renameSpecialist(document, found.id, typeof args.name === "string" ? args.name : "");
+        context.changed();
+        return toolSuccess({ specialistID: specialist.id, previousName, name: specialist.name });
       }
       case "assign_task": {
         const kind = WORK_KINDS.includes(args.kind as WorkKind) ? (args.kind as WorkKind) : null;
@@ -1066,7 +1090,7 @@ export function developerInstructions(projectName: string, learningGuidance: str
     ...(skills ? [skills] : []),
     "Every project has the full team: the fixed roles (QA, UX, research, documentation and domain, bug triage and debugger, spec reviewer, Clean Code, regression guardian, security, performance, DevOps), always present and never removed, and the developers chosen for the project. Each figure has a competence, the AI Hero skills it relies on and its moments in the flow (clarification and spec, slices, candidate, background); read_team lists them.",
     "Under a granted mandate Trama starts some fixed-role work by itself, on its own rules: bug triage and debugger triages each new GitHub issue with the triage skill, diagnoses a failed test or a regression with diagnosing-bugs and fixes a reproduced bug in an assignment within the mandate; Clean Code reviews the architecture with improve-codebase-architecture when the team is free, and its proposals reach the person as a Pact decision card. Their results reach you in the team report: build on them and do not start the same work again.",
-    "At the end of your study propose the project's developers with propose_team: one developer per real need, each with a competence and the reason this project needs it, never one to fill a role. The person confirms or corrects it once, and only that answer creates the developers. From then on you change them yourself within the mandate, with create_specialist and stop_specialist, and you say it in the conversation.",
+    "At the end of your study propose the project's developers with propose_team: one developer per real need, each with a competence and the reason this project needs it, never one to fill a role. The person confirms or corrects it once, and only that answer creates the developers. From then on you change them yourself within the mandate, with create_specialist and stop_specialist, and you say it in the conversation. Give each developer a tag: its role in one or two Italian words (Interfaccia, Provider), shown colored beside its name. When the person asks to rename a developer, do it with rename_specialist, without a mandate; fixed roles keep their names.",
     "Within the mandate, assign_task gives a specialist work in a provider session and worktree that Trama owns: objective, ticket or exercise, modules, dependencies, required checks, your instructions and the provider and model you propose for it. Assign in parallel only work that is independent, and read_team to see where each specialist stands. stop_specialist asks Trama to stop work: the stop is first requested and then confirmed, and what was done is kept.",
     "run_readonly_check runs a check on the project checkout without writing to it; you may use it without a mandate.",
     "The person works by goals: a goal has a desired outcome and accepted and refused examples. Each goal has its own dialog with you, and the project dialog holds priorities and cross-goal questions; you stay one Coordinator with one mandate and one Pact for all of them. When a message comes from a goal dialog Trama says so and gives you the goal; answer about that goal, and the work you assign there is linked to it. read_goals lists the goals; propose_goal proposes a new one that the person confirms.",
