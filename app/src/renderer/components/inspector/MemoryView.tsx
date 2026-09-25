@@ -380,7 +380,8 @@ function PracticeRow({ practice }: { practice: PracticeView }) {
           <Button className="ml-auto flex"
             size="sm"
             variant="destructive"
-            onClick={() => void act("practice:change", { action: "retire", id: practice.id, reason }).then(() => setRetiring(false))}
+            disabled={!reason.trim()}
+            onClick={() => void act("practice:change", { action: "retire", id: practice.id, reason: reason.trim() }).then(() => setRetiring(false))}
           >
             Ritira la pratica
           </Button>
