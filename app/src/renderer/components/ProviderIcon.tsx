@@ -245,21 +245,17 @@ const ICONS: Record<ProviderId, Icon> = {
   pi: PiIcon,
 };
 
-/**
- * The light each provider brings to the window glass, taken from its mark: Claude's coral, Antigravity's blue,
- * Devin's teal. Monochrome marks (ChatGPT, Cursor, Grok, Droid, OpenCode, Pi) bring a neutral light that follows
- * the theme (--glow-neutral in index.css).
- */
+/** Each provider's brand color, from its own site (docs/progettazione/temi-provider.md); the effort slider wears it. */
 export const PROVIDER_GLOW: Record<ProviderId, string> = {
-  codex: "var(--glow-neutral)",
+  codex: "#339cff",
   claudeAgent: "#d97757",
-  cursor: "var(--glow-neutral)",
+  cursor: "#f54e00",
   antigravity: "#3186ff",
   grok: "var(--glow-neutral)",
-  droid: "var(--glow-neutral)",
-  devin: "#21c19a",
-  opencode: "var(--glow-neutral)",
-  pi: "var(--glow-neutral)",
+  droid: "#d15010",
+  devin: "#317cff",
+  opencode: "#03b000",
+  pi: "#6a9fcc",
 };
 
 export function ProviderIcon({ provider, className }: { provider: ProviderId; className?: string }) {

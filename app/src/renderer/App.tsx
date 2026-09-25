@@ -6,7 +6,6 @@ import { ChatView } from "@/components/chat/ChatView";
 import { Dialogs } from "@/components/Dialogs";
 import { Inspector } from "@/components/inspector/Inspector";
 import { ResizeHandle, useResizableWidth } from "@/lib/resizable";
-import { PROVIDER_GLOW } from "@/components/ProviderIcon";
 import { Sidebar } from "@/components/sidebar/Sidebar";
 import { Toast } from "@/components/Toast";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -27,7 +26,7 @@ function useThemeClass(theme: "system" | "light" | "dark" | undefined) {
 }
 
 /** The window glass takes the light of the Coordinator's provider in the open dialog, steady. */
-function useProviderGlow() {
+function useProviderTheme() {
   const project = useUi((s) => s.app?.project ?? null);
   const goalId = useUi((s) => s.dialogGoalId);
   useEffect(() => {
@@ -36,13 +35,15 @@ function useProviderGlow() {
         project.document.coordinator.threadProvider ??
         "codex")
       : null;
-    document.documentElement.style.setProperty("--glow-1", provider ? PROVIDER_GLOW[provider] : "transparent");
+    // The provider's theme (index.css) sets the light, accent, surfaces and primary button of the whole app.
+    if (provider) document.documentElement.dataset.provider = provider;
+    else delete document.documentElement.dataset.provider;
   }, [project, goalId]);
 }
 
 export function App() {
   const app = useUi((s) => s.app);
-  useProviderGlow();
+  useProviderTheme();
   const setApp = useUi((s) => s.setApp);
   const sidebarOpen = useUi((s) => s.sidebarOpen);
   const inspector = useUi((s) => s.inspector);

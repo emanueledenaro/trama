@@ -158,17 +158,18 @@
   /* The whole window is glass: the native material (macOS under-window, Acrylic on Windows 11) shows the
      windows behind, blurred. Content and cards are layered translucent surfaces, opaque enough for text. */
   --app-shell-background: transparent;
-  --app-content-glass: color-mix(in srgb, var(--surface) 60%, transparent);
-  --card: color-mix(in srgb, var(--surface) 60%, transparent);
-  --app-sidebar-surface: color-mix(in srgb, var(--surface) 30%, transparent);
+  /* Opaque enough that each provider's own surface color reads, whatever desktop is behind; a hint still shows. */
+  --app-content-glass: color-mix(in srgb, var(--surface) 80%, transparent);
+  --card: color-mix(in srgb, var(--surface) 78%, transparent);
+  --app-sidebar-surface: color-mix(in srgb, var(--surface) 55%, transparent);
   --app-sidebar-backdrop-filter: none;
 }
 
 :root.dark[data-platform="darwin"],
 :root.dark[data-platform="win32"] {
-  --app-content-glass: color-mix(in srgb, var(--surface) 45%, transparent);
-  --card: color-mix(in srgb, var(--surface) 55%, transparent);
-  --app-sidebar-surface: color-mix(in srgb, color-mix(in srgb, var(--surface) 80%, black) 20%, transparent);
+  --app-content-glass: color-mix(in srgb, var(--surface) 78%, transparent);
+  --card: color-mix(in srgb, var(--surface) 70%, transparent);
+  --app-sidebar-surface: color-mix(in srgb, color-mix(in srgb, var(--surface) 80%, black) 60%, transparent);
 }
 
 :root[data-platform="darwin"] body,
@@ -188,6 +189,213 @@
 }
 :root.dark {
   --glow-neutral: rgb(255 255 255);
+}
+
+
+/* Provider themes: Trama takes the look of the provider the dialog uses (data-provider on the root, set by
+   useProviderTheme in App.tsx). Colors come from each provider's own site (see docs/progettazione/temi-provider.md):
+   base ink and surface, the light over the glass, a text-safe accent for each mode, the primary button.
+   Status colors (errors, warnings, success) stay the same for every provider. */
+:root[data-provider="codex"] {
+  --ink: #0d0d0d;
+  --surface: #ffffff;
+  --glow-1: #8e8ea0;
+  --color-text-accent: #0a6fd6;
+  --primary: #0d0d0d;
+  --primary-foreground: #ffffff;
+  --ring: color-mix(in srgb, #0a6fd6 70%, transparent);
+  --app-user-message-background: color-mix(in srgb, #0a6fd6 10%, color-mix(in srgb, #0d0d0d 4%, transparent));
+  --sidebar-selected: color-mix(in srgb, #0a6fd6 12%, transparent);
+}
+:root.dark[data-provider="codex"] {
+  --ink: #ececec;
+  --surface: #212121;
+  --glow-1: #ffffff;
+  --color-text-accent: #5aaeff;
+  --primary: #ececec;
+  --primary-foreground: #171717;
+  --ring: color-mix(in srgb, #5aaeff 70%, transparent);
+  --app-user-message-background: color-mix(in srgb, #5aaeff 10%, color-mix(in srgb, #ececec 4%, transparent));
+  --sidebar-selected: color-mix(in srgb, #5aaeff 12%, transparent);
+}
+:root[data-provider="claudeAgent"] {
+  --ink: #141413;
+  --surface: #faf9f5;
+  --glow-1: #d97757;
+  --color-text-accent: #b4532f;
+  --primary: #c96442;
+  --primary-foreground: #ffffff;
+  --ring: color-mix(in srgb, #b4532f 70%, transparent);
+  --app-user-message-background: color-mix(in srgb, #b4532f 10%, color-mix(in srgb, #141413 4%, transparent));
+  --sidebar-selected: color-mix(in srgb, #b4532f 12%, transparent);
+}
+:root.dark[data-provider="claudeAgent"] {
+  --ink: #f0eee6;
+  --surface: #262624;
+  --glow-1: #d97757;
+  --color-text-accent: #e38a67;
+  --primary: #d97757;
+  --primary-foreground: #141413;
+  --ring: color-mix(in srgb, #e38a67 70%, transparent);
+  --app-user-message-background: color-mix(in srgb, #e38a67 10%, color-mix(in srgb, #f0eee6 4%, transparent));
+  --sidebar-selected: color-mix(in srgb, #e38a67 12%, transparent);
+}
+:root[data-provider="cursor"] {
+  --ink: #26251e;
+  --surface: #f7f7f4;
+  --glow-1: #cac6be;
+  --color-text-accent: #c93f00;
+  --primary: #26251e;
+  --primary-foreground: #f7f7f4;
+  --ring: color-mix(in srgb, #c93f00 70%, transparent);
+  --app-user-message-background: color-mix(in srgb, #c93f00 10%, color-mix(in srgb, #26251e 4%, transparent));
+  --sidebar-selected: color-mix(in srgb, #c93f00 12%, transparent);
+}
+:root.dark[data-provider="cursor"] {
+  --ink: #edecec;
+  --surface: #14120b;
+  --glow-1: #47433c;
+  --color-text-accent: #ff7a3d;
+  --primary: #edecec;
+  --primary-foreground: #14120b;
+  --ring: color-mix(in srgb, #ff7a3d 70%, transparent);
+  --app-user-message-background: color-mix(in srgb, #ff7a3d 10%, color-mix(in srgb, #edecec 4%, transparent));
+  --sidebar-selected: color-mix(in srgb, #ff7a3d 12%, transparent);
+}
+:root[data-provider="antigravity"] {
+  --ink: #121317;
+  --surface: #f8f9fc;
+  --glow-1: #3186ff;
+  --color-text-accent: #1f63e0;
+  --primary: #3186ff;
+  --primary-foreground: #ffffff;
+  --ring: color-mix(in srgb, #1f63e0 70%, transparent);
+  --app-user-message-background: color-mix(in srgb, #1f63e0 10%, color-mix(in srgb, #121317 4%, transparent));
+  --sidebar-selected: color-mix(in srgb, #1f63e0 12%, transparent);
+}
+:root.dark[data-provider="antigravity"] {
+  --ink: #e6eaf0;
+  --surface: #121317;
+  --glow-1: #3186ff;
+  --color-text-accent: #749bff;
+  --primary: #3186ff;
+  --primary-foreground: #ffffff;
+  --ring: color-mix(in srgb, #749bff 70%, transparent);
+  --app-user-message-background: color-mix(in srgb, #749bff 10%, color-mix(in srgb, #e6eaf0 4%, transparent));
+  --sidebar-selected: color-mix(in srgb, #749bff 12%, transparent);
+}
+:root[data-provider="grok"] {
+  --ink: #000000;
+  --surface: #f9f8f7;
+  --glow-1: #9a9894;
+  --color-text-accent: #1e1f22;
+  --primary: #000000;
+  --primary-foreground: #ffffff;
+  --ring: color-mix(in srgb, #1e1f22 70%, transparent);
+  --app-user-message-background: color-mix(in srgb, #1e1f22 10%, color-mix(in srgb, #000000 4%, transparent));
+  --sidebar-selected: color-mix(in srgb, #1e1f22 12%, transparent);
+}
+:root.dark[data-provider="grok"] {
+  --ink: #fcfcfc;
+  --surface: #1e1f22;
+  --glow-1: #ffffff;
+  --color-text-accent: #ffffff;
+  --primary: #fcfcfc;
+  --primary-foreground: #1e1f22;
+  --ring: color-mix(in srgb, #ffffff 70%, transparent);
+  --app-user-message-background: color-mix(in srgb, #ffffff 10%, color-mix(in srgb, #fcfcfc 4%, transparent));
+  --sidebar-selected: color-mix(in srgb, #ffffff 12%, transparent);
+}
+:root[data-provider="droid"] {
+  --ink: #0d0d0d;
+  --surface: #f5f5f5;
+  --glow-1: #d15010;
+  --color-text-accent: #b0430b;
+  --primary: #d15010;
+  --primary-foreground: #ffffff;
+  --ring: color-mix(in srgb, #b0430b 70%, transparent);
+  --app-user-message-background: color-mix(in srgb, #b0430b 10%, color-mix(in srgb, #0d0d0d 4%, transparent));
+  --sidebar-selected: color-mix(in srgb, #b0430b 12%, transparent);
+}
+:root.dark[data-provider="droid"] {
+  --ink: #f5f5f5;
+  --surface: #0d0d0d;
+  --glow-1: #d15010;
+  --color-text-accent: #ff8a4c;
+  --primary: #e0601c;
+  --primary-foreground: #ffffff;
+  --ring: color-mix(in srgb, #ff8a4c 70%, transparent);
+  --app-user-message-background: color-mix(in srgb, #ff8a4c 10%, color-mix(in srgb, #f5f5f5 4%, transparent));
+  --sidebar-selected: color-mix(in srgb, #ff8a4c 12%, transparent);
+}
+:root[data-provider="devin"] {
+  --ink: #191919;
+  --surface: #fcfcfc;
+  --glow-1: #00a558;
+  --color-text-accent: #2166e8;
+  --primary: #191919;
+  --primary-foreground: #ffffff;
+  --ring: color-mix(in srgb, #2166e8 70%, transparent);
+  --app-user-message-background: color-mix(in srgb, #2166e8 10%, color-mix(in srgb, #191919 4%, transparent));
+  --sidebar-selected: color-mix(in srgb, #2166e8 12%, transparent);
+}
+:root.dark[data-provider="devin"] {
+  --ink: #f2f2f2;
+  --surface: #131313;
+  --glow-1: #00a558;
+  --color-text-accent: #5c9aff;
+  --primary: #f2f2f2;
+  --primary-foreground: #131313;
+  --ring: color-mix(in srgb, #5c9aff 70%, transparent);
+  --app-user-message-background: color-mix(in srgb, #5c9aff 10%, color-mix(in srgb, #f2f2f2 4%, transparent));
+  --sidebar-selected: color-mix(in srgb, #5c9aff 12%, transparent);
+}
+:root[data-provider="opencode"] {
+  --ink: #211e1e;
+  --surface: #f1f0f0;
+  --glow-1: #8e8b8b;
+  --color-text-accent: #0a7f0a;
+  --primary: #211e1e;
+  --primary-foreground: #f1f0f0;
+  --ring: color-mix(in srgb, #0a7f0a 70%, transparent);
+  --app-user-message-background: color-mix(in srgb, #0a7f0a 10%, color-mix(in srgb, #211e1e 4%, transparent));
+  --sidebar-selected: color-mix(in srgb, #0a7f0a 12%, transparent);
+}
+:root.dark[data-provider="opencode"] {
+  --ink: #dad9d9;
+  --surface: #181616;
+  --glow-1: #8e8b8b;
+  --color-text-accent: #2fd12f;
+  --primary: #dad9d9;
+  --primary-foreground: #181616;
+  --ring: color-mix(in srgb, #2fd12f 70%, transparent);
+  --app-user-message-background: color-mix(in srgb, #2fd12f 10%, color-mix(in srgb, #dad9d9 4%, transparent));
+  --sidebar-selected: color-mix(in srgb, #2fd12f 12%, transparent);
+}
+:root[data-provider="pi"] {
+  --ink: #13110f;
+  --surface: #f3f2f0;
+  --glow-1: #4b607c;
+  --color-text-accent: #4b607c;
+  --primary: #4b607c;
+  --primary-foreground: #ffffff;
+  --ring: color-mix(in srgb, #4b607c 70%, transparent);
+  --app-user-message-background: color-mix(in srgb, #4b607c 10%, color-mix(in srgb, #13110f 4%, transparent));
+  --sidebar-selected: color-mix(in srgb, #4b607c 12%, transparent);
+}
+:root.dark[data-provider="pi"] {
+  --ink: #ebe7e4;
+  --surface: #161d27;
+  --glow-1: #6a9fcc;
+  --color-text-accent: #8db8dc;
+  --primary: #6a9fcc;
+  --primary-foreground: #0d1116;
+  --ring: color-mix(in srgb, #8db8dc 70%, transparent);
+  --app-user-message-background: color-mix(in srgb, #8db8dc 10%, color-mix(in srgb, #ebe7e4 4%, transparent));
+  --sidebar-selected: color-mix(in srgb, #8db8dc 12%, transparent);
+}
+::selection {
+  background: color-mix(in srgb, var(--color-text-accent) 26%, transparent);
 }
 
 /* Registered so the light fades from one provider to the next instead of jumping. */
@@ -349,9 +557,11 @@ button {
     transition: opacity 300ms cubic-bezier(0.32, 0.72, 0, 1);
   }
   /* The content adds no surface of its own: the same steady veil colors the whole window evenly. */
+  /* The dialog is glass in the provider's own surface color with a touch of its light, like the sidebar and
+     the inspector; left transparent it took the color of whatever desktop sat behind the window. */
   :root[data-platform="darwin"] .chat-content-card,
   :root[data-platform="win32"] .chat-content-card {
-    background: transparent;
+    background: color-mix(in srgb, var(--glow-1) 7%, var(--app-content-glass));
   }
   /* On glass the composer is nearly opaque. Instead of a scrim, which drew a band of shade, the timeline
      fades out toward the composer; the composer keeps 12px from the bottom of the window. */
