@@ -1,5 +1,7 @@
 import { Popover } from "@base-ui/react/popover";
 import { act, useUi } from "@/lib/store";
+import { PickerSelect } from "@/components/ui/picker";
+import { Sep } from "@/components/ui/sep";
 
 const format = (n: number) => n.toLocaleString("it-IT");
 
@@ -35,27 +37,25 @@ export function ContextMeter() {
         {percent}%
       </Popover.Trigger>
       <Popover.Portal>
-        <Popover.Positioner side="bottom" align="end" sideOffset={6} className="z-50">
+        <Popover.Positioner side="top" align="start" sideOffset={8} className="z-50">
           <Popover.Popup className="translucent-popup w-80 rounded-2xl p-4 text-ui outline-none transition-[opacity,scale] data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0">
             <div className="font-medium text-foreground">Finestra di contesto</div>
             <p className="mt-1 text-ui-sm text-muted-foreground">
-              {percent}% usato · {format(usage.usedTokens)} su {format(usage.contextWindow)} token
+              {percent}% usato<Sep />{format(usage.usedTokens)} su {format(usage.contextWindow)} token
             </p>
             <p className="text-ui-sm text-muted-foreground">Codex compatta il contesto automaticamente quando serve.</p>
             <div className="my-3 h-px bg-border" />
             <label className="flex items-center justify-between gap-2 text-ui-sm">
               <span>Avviso sopra</span>
-              <select
-                value={threshold}
-                onChange={(e) => void act("coordinator:setContextThreshold", { percent: Number(e.target.value) })}
-                className="rounded-md border border-input bg-transparent px-1.5 py-0.5 font-sans text-ui-sm"
-              >
-                {Array.from({ length: 19 }, (_, i) => 5 + i * 5).map((value) => (
-                  <option key={value} value={value}>
-                    {value}%
-                  </option>
-                ))}
-              </select>
+              <PickerSelect
+                label="Soglia di avviso"
+                value={String(threshold)}
+                options={Array.from({ length: 19 }, (_, i) => String(5 + i * 5)).map((value) => ({ value, title: `${value}%` }))}
+                onChange={(value) => void act("coordinator:setContextThreshold", { percent: Number(value) })}
+                meta="Per questo progetto"
+                side="top"
+                className="w-24"
+              />
             </label>
             <p className="mt-2 text-ui-xs text-muted-foreground">
               La soglia vale per questo progetto. Oltre la soglia la chat mostra un avviso; dopo una compattazione l'avviso può tornare.

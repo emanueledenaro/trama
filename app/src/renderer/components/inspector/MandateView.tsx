@@ -8,6 +8,7 @@ import { formatDate } from "@/lib/format";
 import { ACTION_LABELS, DELEGABLE_ACTIONS } from "@/lib/labels";
 import { act, useUi } from "@/lib/store";
 import { EmptyNote, InspectorSection } from "./Inspector";
+import { Sep } from "@/components/ui/sep";
 
 const lines = (text: string) => text.split("\n").map((l) => l.trim()).filter(Boolean);
 
@@ -51,7 +52,7 @@ export function MandateView() {
         aside={
           mandate ? (
             <Badge tone={mandate.status === "granted" ? "success" : "secondary"}>
-              {mandate.status === "granted" ? `Mandato v${mandate.version} · ${mandate.scopeModuleIds.length} moduli` : "Mandato revocato"}
+              {mandate.status === "granted" ? `Mandato v${mandate.version}, ${mandate.scopeModuleIds.length} moduli` : "Mandato revocato"}
             </Badge>
           ) : null
         }
@@ -63,8 +64,8 @@ export function MandateView() {
         ) : (
           <div className="space-y-1.5 text-ui text-foreground/90">
             <p>Concesso il {formatDate(mandate.grantedAt)}.</p>
-            <p className="text-ui-sm text-muted-foreground">Obiettivi: {mandate.objectives.join(" · ")}</p>
-            <p className="text-ui-sm text-muted-foreground">Azioni: {mandate.authorizedActions.map((a) => ACTION_LABELS[a]).join(" · ")}</p>
+            <p className="text-ui-sm text-muted-foreground">Obiettivi: {mandate.objectives.join(", ")}</p>
+            <p className="text-ui-sm text-muted-foreground">Azioni: {mandate.authorizedActions.map((a) => ACTION_LABELS[a]).join(", ")}</p>
           </div>
         )}
       </InspectorSection>
@@ -125,7 +126,7 @@ export function MandateView() {
               <Label>Limiti</Label>
               <TextArea value={limits} onChange={(e) => setLimits(e.target.value)} className="min-h-12" />
             </div>
-            <div className="flex gap-2">
+            <div className="cta-row">
               <Button size="sm" disabled={!valid} onClick={() => void grant()}>
                 {mandate?.status === "granted" ? "Salva correzione" : "Concedi mandato"}
               </Button>
@@ -157,7 +158,7 @@ export function MandateView() {
           <ol className="space-y-1.5 text-ui-sm text-muted-foreground">
             {[...mandate.history].reverse().map((snapshot) => (
               <li key={snapshot.version}>
-                v{snapshot.version} · {formatDate(snapshot.grantedAt)} · {snapshot.objectives.join(" · ")}
+                v{snapshot.version}<Sep />{formatDate(snapshot.grantedAt)}<Sep />{snapshot.objectives.join(", ")}
               </li>
             ))}
           </ol>

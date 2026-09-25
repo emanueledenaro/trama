@@ -142,7 +142,7 @@ describe("first-run guide", () => {
     withAccount(app, "claudeAgent", { kind: "authenticated", label: "ada@example.com" });
     const step = guideSteps(app)[0]!;
     expect(step.status).toBe("done");
-    expect(step.detail).toContain("Claude Agent");
+    expect(step.detail).toContain("Claude");
   });
 
   it("reports providers still being checked", () => {

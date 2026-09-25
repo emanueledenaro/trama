@@ -1,26 +1,20 @@
 // Layout and classes follow Synara (github.com/Emanuele-web04/synara, MIT License, Copyright (c) 2026 T3 Tools Inc. and Emanuele Di Pietro).
-import { IconArrowUp, IconAt, IconChevronDown, IconPhotoPlus, IconSparkles, IconX } from "@tabler/icons-react";
-import { isUsableAccount, type ProviderId } from "@shared/codex";
-import { PROVIDERS, supportsReadOnly } from "@shared/providers";
+import { IconArrowUp, IconPhotoPlus, IconX } from "@tabler/icons-react";
+import type { ProviderId } from "@shared/codex";
 import type { ImageAttachmentInput } from "@shared/ipc";
 import { type MentionCandidate, mentionCandidates, mentionToken } from "@shared/mentions";
 import { normalizePaste, pasteSizeLabel, pasteTitle, serializePastes, shouldCollapsePaste } from "@shared/pastedText";
-import { skillCandidates } from "@shared/skills";
+import { AIHERO_ATTRIBUTION, skillCandidates } from "@shared/skills";
 import { dialogComposer, findGoal } from "@shared/goals";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { ContextMeter } from "./ContextMeter";
+import { ContextPicker } from "./ContextPicker";
+import { ModelPicker } from "./ModelPicker";
 import { Button } from "@/components/ui/button";
-import { Menu, MenuGroupLabel, MenuPopup, MenuRadioGroup, MenuRadioItem, MenuSeparator, MenuTrigger } from "@/components/ui/menu";
 import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/cn";
 import { act, useUi } from "@/lib/store";
-
-const EFFORT_LABELS: Record<string, string> = {
-  minimal: "Minimo",
-  low: "Basso",
-  medium: "Medio",
-  high: "Alto",
-  xhigh: "Molto alto",
-};
+import { Sep } from "@/components/ui/sep";
 
 const IMAGE_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp"];
 const MAXIMUM_IMAGES = 8;
@@ -49,7 +43,7 @@ function readImage(file: File): Promise<DraftImage> {
 }
 
 const PILL =
-  "inline-flex h-7 min-w-0 shrink-0 cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-lg px-2 text-ui-sm font-normal text-[var(--color-text-foreground-secondary)] transition-colors hover:bg-[var(--color-background-elevated-secondary)] hover:text-[var(--color-text-foreground)] data-[popup-open]:bg-[var(--color-background-elevated-secondary)] data-[popup-open]:text-[var(--color-text-foreground)] sm:px-2.5";
+  "inline-flex h-7 min-w-0 shrink cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-lg px-2 text-ui-sm font-normal text-[var(--color-text-foreground-secondary)] transition-colors hover:bg-[var(--color-background-elevated-secondary)] hover:text-[var(--color-text-foreground)] data-[popup-open]:bg-[var(--color-background-elevated-secondary)] data-[popup-open]:text-[var(--color-text-foreground)] sm:px-2.5";
 
 /** Images and pasted texts not yet sent, kept per dialog while the app runs (UX02). */
 const unsentByDialog = new Map<string, { images: DraftImage[]; pastes: { id: string; text: string }[] }>();
@@ -94,7 +88,6 @@ export function Composer() {
   // A chosen model the catalogue no longer offers stays visible as unavailable: never replaced silently (ADR 0010).
   const modelMissing = Boolean(selectedModel && models.length && !modelInfo);
   const effort = selection.selectedEffort ?? modelInfo?.defaultReasoningEffort ?? null;
-  const module = moduleId ? project.snapshot.modules.find((m) => m.id === moduleId) : null;
   const dialogKey = `${project.id}:${goal?.id ?? ""}`;
   const unsent = useRef({ images, pastes });
   unsent.current = { images, pastes };
@@ -130,7 +123,7 @@ export function Composer() {
       ? mentionCandidates(mention.query, mentionSources).slice(0, 12)
       : skillCandidates(mention.query, project.skills)
           .slice(0, 12)
-          .map((skill) => ({ mention: { kind: "file" as const, key: `$${skill.name}` }, title: `$${skill.name}`, subtitle: skill.description ?? "Skill" }));
+          .map((skill) => ({ mention: { kind: "file" as const, key: `/${skill.name}` }, title: `/${skill.name}`, subtitle: skill.description ?? "Skill" }));
 
   /** Opens the mention menu while the word before the cursor starts with @. */
   const trackMention = (value: string, cursor: number) => {
@@ -202,6 +195,7 @@ export function Composer() {
                 <span className="max-w-[45%] shrink-0 truncate text-ui-xs text-muted-foreground">{candidate.subtitle}</span>
               </button>
             ))}
+            {mention.sigil === "/" && project.aiHeroPrepared ? <p className="px-2 pt-1 pb-0.5 text-ui-xs text-muted-foreground">{AIHERO_ATTRIBUTION}.</p> : null}
           </div>
         ) : null}
         <form
@@ -233,7 +227,7 @@ export function Composer() {
                   className="group/paste relative flex max-w-64 min-w-0 flex-col rounded-lg border border-[color:var(--color-border)] bg-[var(--color-background-button-secondary)] px-2.5 py-1.5"
                 >
                   <span className="truncate text-ui-sm text-foreground">{pasteTitle(paste.text) || "Testo incollato"}</span>
-                  <span className="text-ui-xs text-muted-foreground">Testo incollato · {pasteSizeLabel(paste.text)}</span>
+                  <span className="text-ui-xs text-muted-foreground">Testo incollato<Sep />{pasteSizeLabel(paste.text)}</span>
                   <button
                     type="button"
                     aria-label="Rimuovi testo incollato"
@@ -315,7 +309,7 @@ export function Composer() {
                   ? "Aggiungi un messaggio: partirà quando il Coordinatore avrà finito"
                   : goal
                     ? `Messaggio al Coordinatore sull'obiettivo «${goal.title}». Usa @ per citare moduli, file, issue e decisioni`
-                    : "Messaggio al Coordinatore. Usa @ per citare moduli, file, issue e decisioni, $ per una skill"
+                    : "Messaggio al Coordinatore. Usa @ per citare moduli, file, issue e decisioni, / per una skill"
               }
               aria-label="Messaggio al Coordinatore"
               className="block max-h-60 min-h-[2lh] w-full resize-none bg-transparent font-system-ui text-chat leading-relaxed text-foreground outline-none placeholder:text-muted-foreground/40"
@@ -339,102 +333,18 @@ export function Composer() {
                   event.target.value = "";
                 }}
               />
-              <Menu>
-                <MenuTrigger className={cn(PILL, "max-w-56")} aria-label="Contesto del messaggio">
-                  <IconAt className="size-3.5 shrink-0 opacity-70" stroke={1.8} />
-                  <span className="min-w-0 truncate text-[var(--color-text-foreground)]">{module ? module.name : "Intero progetto"}</span>
-                  <IconChevronDown className="ms-0.5 size-3 shrink-0 opacity-60" />
-                </MenuTrigger>
-                <MenuPopup side="top" composer className="w-64">
-                  <MenuGroupLabel>Contesto</MenuGroupLabel>
-                  <MenuRadioGroup value={moduleId ?? "__project"} onValueChange={(value) => setModule(value === "__project" ? null : (value as string))}>
-                    <MenuRadioItem value="__project">Intero progetto</MenuRadioItem>
-                    <MenuSeparator />
-                    {project.snapshot.modules.map((m) => (
-                      <MenuRadioItem key={m.id} value={m.id}>
-                        <span className="block truncate">{m.name}</span>
-                        <span className="block truncate text-ui-xs text-muted-foreground">{m.relativePath}</span>
-                      </MenuRadioItem>
-                    ))}
-                  </MenuRadioGroup>
-                </MenuPopup>
-              </Menu>
-              <Menu>
-                <MenuTrigger className={PILL} aria-label="Provider e modello del Coordinatore">
-                  <IconSparkles className="size-3.5 shrink-0 opacity-70" stroke={1.8} />
-                  {selectedProvider !== "codex" ? (
-                    <span className="shrink-0 text-muted-foreground">{PROVIDERS.find((p) => p.id === selectedProvider)?.name}</span>
-                  ) : null}
-                  <span className={cn("min-w-0 truncate", modelMissing ? "text-warning line-through" : "text-[var(--color-text-foreground)]")}>
-                    {modelInfo?.displayName ?? selectedModel ?? "Scegli un modello"}
-                  </span>
-                  {effort ? <span className="shrink-0 text-muted-foreground">{EFFORT_LABELS[effort] ?? effort}</span> : null}
-                  <IconChevronDown className="ms-0.5 size-3 shrink-0 opacity-60" />
-                </MenuTrigger>
-                <MenuPopup side="top" composer className="w-72">
-                  <MenuGroupLabel>Provider</MenuGroupLabel>
-                  <MenuRadioGroup
-                    value={selectedProvider}
-                    onValueChange={(value) => void act("coordinator:selectProvider", { provider: value as ProviderId, goalId: goal?.id ?? null })}
-                  >
-                    {PROVIDERS.map((p) => {
-                      const account = providers[p.id as ProviderId]?.account ?? null;
-                      const usable = isUsableAccount(account) && supportsReadOnly(p.id);
-                      return (
-                        <MenuRadioItem key={p.id} value={p.id} disabled={!usable || busy}>
-                          <span className="block truncate">{p.name}</span>
-                          {!usable ? (
-                            <span className="block truncate text-ui-xs text-muted-foreground">
-                              {!supportsReadOnly(p.id)
-                                ? "Solo per specialisti con worktree"
-                                : account?.kind === "blocked"
-                                  ? "Bloccato"
-                                  : account?.kind === "signedOut"
-                                    ? "Accesso richiesto"
-                                    : "Non collegato"}
-                            </span>
-                          ) : null}
-                        </MenuRadioItem>
-                      );
-                    })}
-                  </MenuRadioGroup>
-                  <MenuSeparator />
-                  <MenuGroupLabel>Modello</MenuGroupLabel>
-                  {modelMissing ? (
-                    <p className="px-2 pb-1 text-ui-xs text-warning">{selectedModel} non è più disponibile: scegline un altro.</p>
-                  ) : null}
-                  <MenuRadioGroup
-                    value={selectedModel ?? ""}
-                    onValueChange={(value) => {
-                      const next = models.find((m) => m.model === value);
-                      void act("coordinator:selectModel", { model: value as string, effort: next?.defaultReasoningEffort ?? null, provider: selectedProvider, goalId: goal?.id ?? null });
-                    }}
-                  >
-                    {models.map((m) => (
-                      <MenuRadioItem key={m.model} value={m.model}>
-                        <span className="block truncate">{m.displayName}</span>
-                        {m.description ? <span className="block truncate text-ui-xs text-muted-foreground">{m.description}</span> : null}
-                      </MenuRadioItem>
-                    ))}
-                  </MenuRadioGroup>
-                  {modelInfo && modelInfo.supportedReasoningEfforts.length ? (
-                    <>
-                      <MenuSeparator />
-                      <MenuGroupLabel>Sforzo</MenuGroupLabel>
-                      <MenuRadioGroup
-                        value={effort ?? ""}
-                        onValueChange={(value) => void act("coordinator:selectModel", { model: modelInfo.model, effort: value as string, provider: selectedProvider, goalId: goal?.id ?? null })}
-                      >
-                        {modelInfo.supportedReasoningEfforts.map((level) => (
-                          <MenuRadioItem key={level} value={level}>
-                            {EFFORT_LABELS[level] ?? level}
-                          </MenuRadioItem>
-                        ))}
-                      </MenuRadioGroup>
-                    </>
-                  ) : null}
-                </MenuPopup>
-              </Menu>
+              <ContextPicker className={cn(PILL, "max-w-56")} modules={project.snapshot.modules} moduleId={moduleId} onChange={setModule} />
+              <ModelPicker
+                className={PILL}
+                selectedProvider={selectedProvider}
+                selectedModel={selectedModel}
+                effort={effort}
+                modelMissing={modelMissing}
+                busy={busy}
+                goalId={goal?.id ?? null}
+                fastMode={selection.selectedFastMode === true}
+              />
+              <ContextMeter />
             </div>
             <div className="flex shrink-0 items-center gap-2">
               {busy && !text.trim() && !pastes.length ? (

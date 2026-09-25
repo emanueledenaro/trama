@@ -23,11 +23,11 @@ import { TramaLogo } from "@/components/TramaLogo";
 import { Button } from "@/components/ui/button";
 import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/cn";
+import { Menu, MenuItem, MenuPopup, MenuTrigger } from "@/components/ui/menu";
 import { formatRelativeTime } from "@/lib/format";
 import { act, type InspectorTarget, useUi } from "@/lib/store";
 import { ExercisePanel } from "@/components/onboarding/ExercisePanel";
 import { Composer } from "./Composer";
-import { ContextMeter } from "./ContextMeter";
 import { TimelineRowView } from "./TimelineRows";
 
 const HEADER_CHIP =
@@ -49,11 +49,45 @@ function HeaderChip({
   const toggle = useUi((s) => s.toggleInspector);
   const active = inspector?.kind === target.kind;
   return (
-    <button type="button" className={cn(HEADER_CHIP, active && HEADER_CHIP_ACTIVE)} onClick={() => toggle(target)}>
-      <span className="size-3.5 shrink-0 opacity-70 [&>svg]:size-3.5">{icon}</span>
-      {inspector ? null : <span className="hidden lg:inline">{label}</span>}
-      {count ? <span className="text-ui-xs text-[var(--color-text-accent)]">{count}</span> : null}
-    </button>
+    <Tooltip label={label}>
+      <button type="button" aria-label={label} aria-pressed={active} className={cn(HEADER_CHIP, active && HEADER_CHIP_ACTIVE)} onClick={() => toggle(target)}>
+        <span className="size-3.5 shrink-0 opacity-70 [&>svg]:size-3.5">{icon}</span>
+        {inspector ? null : <span className="hidden @min-[1000px]/chat:inline">{label}</span>}
+        {count ? <span className="text-ui-xs text-[var(--color-text-accent)]">{count}</span> : null}
+      </button>
+    </Tooltip>
+  );
+}
+
+interface HeaderPanel {
+  target: InspectorTarget;
+  label: string;
+  icon: React.ReactNode;
+  count?: number;
+}
+
+/** The panels of a narrow dialog, in one menu; the button shows how many things wait for the person. */
+function PanelsMenu({ panels }: { panels: HeaderPanel[] }) {
+  const inspector = useUi((s) => s.inspector);
+  const toggle = useUi((s) => s.toggleInspector);
+  const waiting = panels.reduce((sum, panel) => sum + (panel.count ?? 0), 0);
+  return (
+    <Menu>
+      <MenuTrigger aria-label="Pannelli" className={cn(HEADER_CHIP, inspector && HEADER_CHIP_ACTIVE)}>
+        <IconLayoutSidebarRight className="size-3.5 opacity-70" stroke={1.8} />
+        <span>Pannelli</span>
+        {waiting ? <span className="text-ui-xs text-[var(--color-text-accent)]">{waiting}</span> : null}
+      </MenuTrigger>
+      <MenuPopup align="end">
+        {panels.map((panel) => (
+          <MenuItem key={panel.target.kind} onClick={() => toggle(panel.target)}>
+            <span className="flex size-4 items-center justify-center opacity-70 [&>svg]:size-3.5">{panel.icon}</span>
+            <span className="flex-1">{panel.label}</span>
+            {panel.count ? <span className="text-ui-xs text-[var(--color-text-accent)]">{panel.count}</span> : null}
+          </MenuItem>
+        ))}
+      </MenuPopup>
+    </Menu>
   );
 }
 
@@ -64,11 +98,13 @@ function ExercisesChip() {
   return (
     <button
       type="button"
+      aria-label="Esercizi"
+      aria-pressed={Boolean(exercise)}
       className={cn(HEADER_CHIP, exercise && HEADER_CHIP_ACTIVE)}
       onClick={() => (exercise ? setExercise(null) : void act("exercise:start", { exercise: "first" }).then(() => setExercise("first")))}
     >
       <IconSchool className="size-3.5 opacity-70" stroke={1.8} />
-      <span>Esercizi</span>
+      <span className="hidden @min-[640px]/chat:inline">Esercizi</span>
     </button>
   );
 }
@@ -83,11 +119,19 @@ function ChatHeader({ isMac }: { isMac: boolean }) {
   const pendingMandate = project?.document.mandateRequests.some((r) => !r.resolution) ? 1 : 0;
   const openIssues = project?.github.issues.filter((i) => i.state === "open").length ?? 0;
   const pendingTeam = project?.document.team.proposals.some((p) => !p.resolution) ? 1 : 0;
-  const model = project?.document.coordinator.threadModel ?? project?.document.selectedModel ?? null;
   const mainView = useUi((s) => s.mainView);
   const openDialog = useUi((s) => s.openDialog);
   const goal = useUi((s) => (project ? findGoal(project.document, s.dialogGoalId) : null));
   const proposedGoals = project?.document.goals?.filter((g) => g.status === "proposed").length ?? 0;
+  const panels: HeaderPanel[] = [
+    { target: { kind: "goals" }, label: "Obiettivi", icon: <IconTarget stroke={1.8} />, count: proposedGoals },
+    { target: { kind: "map" }, label: "Mappa", icon: <IconSitemap stroke={1.8} /> },
+    { target: { kind: "pact" }, label: "Patto", icon: <IconRosetteDiscountCheck stroke={1.8} />, count: pendingDecisions },
+    { target: { kind: "mandate" }, label: "Mandato", icon: <IconShieldCheck stroke={1.8} />, count: pendingMandate },
+    { target: { kind: "team" }, label: "Team", icon: <IconUsersGroup stroke={1.8} />, count: pendingTeam },
+    { target: { kind: "issues" }, label: "Issue", icon: <IconCircleDot stroke={1.8} />, count: openIssues },
+    { target: { kind: "memory" }, label: "Memoria", icon: <IconBrain stroke={1.8} /> },
+  ];
 
   return (
     <div
@@ -102,7 +146,7 @@ function ChatHeader({ isMac }: { isMac: boolean }) {
           <NavigationButtons />
         </div>
       ) : null}
-      <div className="flex min-w-0 flex-1 items-center gap-2">
+      <div className="flex min-w-[7rem] flex-1 items-center gap-2">
         {mainView === "overview" ? (
           <h2 className="truncate font-system-ui text-ui font-normal text-foreground">Panoramica dei progetti</h2>
         ) : project ? (
@@ -127,12 +171,6 @@ function ChatHeader({ isMac }: { isMac: boolean }) {
             </h2>
             <div className="flex min-w-0 items-center gap-1 overflow-hidden text-ui-sm text-muted-foreground/55">
               {project.snapshot.branch ? <span className="truncate">{project.snapshot.branch}</span> : null}
-              {model ? (
-                <>
-                  <span>·</span>
-                  <span className="truncate">{model}</span>
-                </>
-              ) : null}
             </div>
           </>
         ) : (
@@ -140,16 +178,23 @@ function ChatHeader({ isMac }: { isMac: boolean }) {
         )}
       </div>
       {project && mainView === "dialog" ? (
+        // A wide dialog shows every panel in a row; a narrow one gathers them in one "Pannelli" menu.
+        <>
+          <div className="no-drag hidden min-w-0 items-center gap-1 @min-[640px]/chat:flex">
+            {project.isDemo ? <ExercisesChip /> : null}
+            {panels.map((panel) => (
+              <HeaderChip key={panel.target.kind} target={panel.target} label={panel.label} icon={panel.icon} count={panel.count} />
+            ))}
+          </div>
+          <div className="no-drag flex items-center gap-1 @min-[640px]/chat:hidden">
+            {project.isDemo ? <ExercisesChip /> : null}
+            <PanelsMenu panels={panels} />
+          </div>
+        </>
+      ) : null}
+      {project && mainView === "dialog" ? (
+        // Refresh and the inspector toggle never scroll away.
         <div className="no-drag flex shrink-0 items-center gap-1">
-          {project.isDemo ? <ExercisesChip /> : null}
-          <ContextMeter />
-          <HeaderChip target={{ kind: "goals" }} label="Obiettivi" icon={<IconTarget stroke={1.8} />} count={proposedGoals} />
-          <HeaderChip target={{ kind: "map" }} label="Mappa" icon={<IconSitemap stroke={1.8} />} />
-          <HeaderChip target={{ kind: "pact" }} label="Patto" icon={<IconRosetteDiscountCheck stroke={1.8} />} count={pendingDecisions} />
-          <HeaderChip target={{ kind: "mandate" }} label="Mandato" icon={<IconShieldCheck stroke={1.8} />} count={pendingMandate} />
-          <HeaderChip target={{ kind: "team" }} label="Team" icon={<IconUsersGroup stroke={1.8} />} count={pendingTeam} />
-          <HeaderChip target={{ kind: "issues" }} label="Issue" icon={<IconCircleDot stroke={1.8} />} count={openIssues} />
-          <HeaderChip target={{ kind: "memory" }} label="Memoria" icon={<IconBrain stroke={1.8} />} />
           <Tooltip label="Aggiorna progetto">
             <button type="button" className={HEADER_CHIP} aria-label="Aggiorna progetto" onClick={() => void act("project:refresh", undefined)}>
               <IconRefresh className="size-3.5 opacity-70" stroke={1.8} />
@@ -265,7 +310,7 @@ function FirstGoalPrompt() {
   return (
     <div className="my-3 flex flex-wrap items-center gap-3 rounded-xl border border-dashed border-[color:var(--color-border)] px-3.5 py-3" data-testid="first-goal">
       <IconTarget className="size-4 shrink-0 text-muted-foreground" stroke={1.8} />
-      <p className="min-w-0 flex-1 text-ui text-muted-foreground">
+      <p className="min-w-[14rem] flex-1 text-ui text-muted-foreground">
         Descrivi un risultato e qualche esempio verificabile: il Coordinatore lo discute con te nel suo dialogo. Non concede un mandato.
       </p>
       <Button size="sm" variant="outline" onClick={() => setInspector({ kind: "goals", create: true })}>
@@ -289,7 +334,11 @@ function Timeline() {
     project.streaming && (project.streaming.requestId === null ? goalId === null : requests.some((r) => r.id === project.streaming!.requestId))
       ? project.streaming
       : null;
-  const rows = useMemo(() => deriveTimelineRows(events, requests, streaming, new Set(runningWork)), [events, requests, streaming, runningWork]);
+  const decisionRequests = project.document.decisionRequests;
+  const rows = useMemo(
+    () => deriveTimelineRows(events, requests, streaming, new Set(runningWork), decisionRequests),
+    [events, requests, streaming, runningWork, decisionRequests],
+  );
   const scroller = useRef<HTMLDivElement>(null);
   const pinned = useRef(true);
   const studying = project.phase.kind === "studying" && goalId === null;
@@ -311,7 +360,7 @@ function Timeline() {
         const element = event.currentTarget;
         pinned.current = element.scrollHeight - element.scrollTop - element.clientHeight < 48;
       }}
-      className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-y-contain py-3 [scrollbar-gutter:stable] sm:py-4"
+      className="chat-timeline-scroll min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-y-contain py-3 [scrollbar-gutter:stable] sm:py-4"
     >
       <div className="mx-auto w-full max-w-[var(--app-chat-max-width)] min-w-0 px-3 pb-40 sm:px-5">
         {empty ? <ProjectIntro /> : null}
@@ -356,7 +405,7 @@ export function ChatView({ isMac }: { isMac: boolean }) {
   const mainView = useUi((s) => s.mainView);
   const goalId = useUi((s) => s.dialogGoalId);
   return (
-    <div className="relative flex min-w-0 flex-1 flex-col">
+    <div className="@container/chat relative flex min-w-0 flex-1 flex-col">
       <ChatHeader isMac={isMac} />
       {mainView === "overview" ? (
         <OverviewView />
@@ -364,7 +413,7 @@ export function ChatView({ isMac }: { isMac: boolean }) {
         <div key={`${project.id}:${goalId ?? "project"}`} className="chat-pane-enter relative flex min-h-0 flex-1 flex-col">
           <Timeline />
           <ExercisePanel />
-          <div className="pointer-events-none absolute inset-x-0 bottom-0 px-3 pb-3 sm:px-5 sm:pb-4">
+          <div className="chat-composer-dock pointer-events-none absolute inset-x-0 bottom-0 px-3 pb-3 sm:px-5 sm:pb-4">
             <div className="pointer-events-auto">
               <Composer />
             </div>

@@ -6,6 +6,7 @@ import { cn } from "@/lib/cn";
 import { formatRelativeTime } from "@/lib/format";
 import { act, useUi } from "@/lib/store";
 import { EmptyNote, InspectorSection } from "./Inspector";
+import { Sep } from "@/components/ui/sep";
 
 function lineClass(line: string): string {
   if (line.startsWith("+++") || line.startsWith("---") || line.startsWith("diff --git") || line.startsWith("index ")) return "text-muted-foreground";
@@ -35,7 +36,7 @@ function GoalExamplesSection({ candidateId }: { candidateId: string }) {
   const checks = exampleChecks(candidate, goal);
   const passed = Object.values(candidate.evidence).filter((e) => e.result === "pass" && e.snapshotId === candidate.snapshotId).length;
   return (
-    <InspectorSection title={`Esempi dell'obiettivo · versione ${candidate.snapshotId.slice(0, 12)}`}>
+    <InspectorSection title={`Esempi dell'obiettivo, versione ${candidate.snapshotId.slice(0, 12)}`}>
       <button type="button" className="mb-1.5 text-left text-ui-sm text-[var(--color-text-accent)] hover:underline" onClick={() => setInspector({ kind: "goal", id: goal.id })}>
         {goal.title}
       </button>
@@ -56,12 +57,12 @@ function GoalExamplesSection({ candidateId }: { candidateId: string }) {
             <div className="mt-1.5 flex flex-wrap items-center gap-2 text-ui-sm">
               {current ? (
                 <span className={current.observed ? "text-success" : "text-destructive"}>
-                  {current.observed ? "Osservato" : "Non osservato"} su questa versione · {formatRelativeTime(current.at)}
+                  {current.observed ? "Osservato" : "Non osservato"} su questa versione<Sep />{formatRelativeTime(current.at)}
                 </span>
               ) : (
                 <span className="text-muted-foreground">
                   Non verificato su questa versione
-                  {stale ? ` · in precedenza ${stale.observed ? "osservato" : "non osservato"} su un'altra versione o un altro testo` : ""}
+                  {stale ? `, in precedenza ${stale.observed ? "osservato" : "non osservato"} su un'altra versione o un altro testo` : ""}
                 </span>
               )}
               <span className="ml-auto flex gap-1">
@@ -97,7 +98,7 @@ export function CandidateView({ id }: { id: string }) {
         <CandidateCard candidateId={id} />
       </div>
       <GoalExamplesSection candidateId={id} />
-      <InspectorSection title={`Diff catturato da Trama · ${candidate.changedFiles.length} file`}>
+      <InspectorSection title={`Diff catturato da Trama, ${candidate.changedFiles.length} file`}>
         <pre className="overflow-x-auto rounded-xl bg-[var(--app-chat-code-surface)] py-2 font-mono text-[11px] leading-[1.55]">
           {candidate.diff.split("\n").map((line, index) => (
             // biome-ignore lint/suspicious/noArrayIndexKey: diff lines have no identity beyond their position.

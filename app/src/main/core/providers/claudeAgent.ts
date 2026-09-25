@@ -64,7 +64,7 @@ const MAX_INLINE_SKILLS_TOTAL_CHARS = 60_000;
 const CLIENT_APP = "trama/0.1.0";
 const MISSING_CLI_MESSAGE =
   "Claude Code non trovato. Installa Claude Code e accedi con `claude login` dal terminale.";
-const SIGNED_OUT_MESSAGE = "Accedi a Claude con `claude login` dal terminale per usare Claude Agent.";
+const SIGNED_OUT_MESSAGE = "Accedi a Claude con `claude login` dal terminale per usarlo in Trama.";
 
 // ── Binary resolution (providerBinaryResolution.ts) ─────────────────
 
@@ -274,7 +274,7 @@ export function claudeAccountLabel(result: CommandResult): string | null {
       ] ?? titleCase(subscription);
     plan = `Claude ${name}`;
   }
-  return [plan, email].filter(Boolean).join(" · ") || null;
+  return [plan, email].filter(Boolean).join(", ") || null;
 }
 
 let authStatusTail: Promise<unknown> = Promise.resolve();
@@ -807,14 +807,14 @@ export class ClaudeTurnMapper {
         blocked: false,
       };
     }
-    return this.failure(text.trim() || "Claude Agent si è fermato con un errore.");
+    return this.failure(text.trim() || "Claude si è fermato con un errore.");
   }
 
   /** The outcome when the stream ends without a `result`. */
   fromStreamEnd(): TurnOutcome {
     return this.interruptRequested
       ? { kind: "interrupted" }
-      : this.failure("Claude Agent si è fermato senza completare il turno.");
+      : this.failure("Claude si è fermato senza completare il turno.");
   }
 
   private failure(text: string): TurnOutcome {
@@ -1121,7 +1121,7 @@ export class ClaudeAgentRuntime implements AgentRuntime {
       this.thread?.sessionId === options.threadId
         ? this.thread
         : { sessionId: options.threadId, started: true, cwd: options.cwd, developerInstructions: "", ephemeral: false, hostToolsOnly: false };
-    const pending = new PendingTurn(options.onEvent, "Claude Agent è stato chiuso.");
+    const pending = new PendingTurn(options.onEvent, "Claude è stato chiuso.");
     this.pending = pending;
     let executable: string;
     let sdk: ClaudeSdk;
@@ -1211,7 +1211,7 @@ export class ClaudeAgentRuntime implements AgentRuntime {
       if (this.active === active) this.active = null;
     }
     if (mapper.sessionId === thread.sessionId) thread.started = true;
-    if (active.stopped) throw new ProviderError("processExited", "Claude Agent è stato chiuso.");
+    if (active.stopped) throw new ProviderError("processExited", "Claude è stato chiuso.");
     outcome ??= mapper.fromStreamEnd();
 
     switch (outcome.kind) {

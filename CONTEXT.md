@@ -30,6 +30,8 @@ Attribuzione del turno: il provider e il modello che hanno effettivamente esegui
 
 Stato di accesso: la condizione di un provider rispetto all'account della persona: autenticato, non autenticato o sconosciuto. È distinto dall'essere collegato, perché un provider collegato può essere non autenticato, per esempio dopo la scadenza di un token.
 
+Chiarimento (grilling): i turni di domande con cui il Coordinatore chiarisce una richiesta prima che diventi un piano o un incarico, secondo la skill `grilling` di AI Hero. Ogni turno pone la frontiera, cioè le sole decisioni che si possono già chiedere, come schede di decisione numerate con la risposta consigliata. I fatti il Coordinatore li cerca da solo. Il piano parte quando nessuna domanda del chiarimento è aperta e la persona ha confermato la comprensione condivisa. Una domanda informativa non passa dal chiarimento.
+
 Incarico: un lavoro assegnato dal Coordinatore a uno specialista, con obiettivo, perimetro, dipendenze e verifiche richieste. Un incarico produce candidati; la delega è il legame tra quell'incarico, le decisioni applicabili e il mandato.
 
 Studio del progetto: la conoscenza che il Coordinatore ha del progetto attivo prima di dialogare: codice e moduli, documenti, issue e pull request, decisioni, mandato, incarichi e candidati, eventi del monitor e cronologia della chat. Lo studio avviene all'apertura del progetto e si aggiorna quando il progetto cambia.

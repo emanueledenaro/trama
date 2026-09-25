@@ -7,11 +7,14 @@ import { PROVIDERS } from "@shared/providers";
 import { ASSIGNMENT_STATUS, AssignmentCard, CandidateCard, TeamProposalCard } from "@/components/chat/Cards";
 import { Spinner } from "@/components/Spinner";
 import { Button } from "@/components/ui/button";
+import { ProviderIcon } from "@/components/ProviderIcon";
 import { Badge, TextArea } from "@/components/ui/field";
+import { PickerSelect } from "@/components/ui/picker";
 import { cn } from "@/lib/cn";
 import { formatRelativeTime } from "@/lib/format";
 import { act, useUi } from "@/lib/store";
 import { EmptyNote, InspectorSection } from "./Inspector";
+import { Sep } from "@/components/ui/sep";
 
 const STATUS_LABEL: Record<Specialist["status"], string> = {
   available: "libero",
@@ -69,10 +72,10 @@ export function TeamView() {
               </span>
               <span className="min-w-0 flex-1">
                 <span className="block text-ui text-foreground">
-                  {specialist.name} <span className="text-muted-foreground">· {specialist.competence}</span>
+                  {specialist.name} <span className="text-muted-foreground"><Sep />{specialist.competence}</span>
                 </span>
                 <span className="block truncate text-ui-sm text-muted-foreground">
-                  {STATUS_LABEL[specialist.status]} · {specialist.lastUpdate}
+                  {STATUS_LABEL[specialist.status]}<Sep />{specialist.lastUpdate}
                 </span>
                 {(() => {
                   const current = specialist.assignments.at(-1);
@@ -80,9 +83,9 @@ export function TeamView() {
                   const goal = findGoal(project.document, current.goalId);
                   return (
                     <span className="block truncate text-ui-xs text-muted-foreground/80" title={current.modelReason ?? "Motivazione non registrata"}>
-                      {providerLabel(current.provider ?? "codex")} · {current.model}
-                      {current.modelReason ? " · motivato" : " · motivazione non registrata"}
-                      {goal ? ` · per ${goal.title}` : ""}
+                      {providerLabel(current.provider ?? "codex")}<Sep />{current.model}
+                      {current.modelReason ? ", motivato" : ", motivazione non registrata"}
+                      {goal ? `, per ${goal.title}` : ""}
                     </span>
                   );
                 })()}
@@ -95,7 +98,7 @@ export function TeamView() {
         <InspectorSection title="Usciti dal team">
           {former.map((s) => (
             <p key={s.id} className="text-ui-sm text-muted-foreground">
-              {s.name} · {s.removal?.reason}
+              {s.name}<Sep />{s.removal?.reason}
             </p>
           ))}
         </InspectorSection>
@@ -128,7 +131,7 @@ export function SpecialistView({ id }: { id: string }) {
           </span>
         </div>
         <p className="mt-0.5 text-ui text-muted-foreground">{specialist.competence}</p>
-        <div className="mt-3 flex gap-2">
+        <div className="cta-row mt-3">
           <Button size="sm" variant="outline" onClick={() => focusComposer()}>
             Vai alla conversazione
           </Button>
@@ -141,7 +144,7 @@ export function SpecialistView({ id }: { id: string }) {
         {removing ? (
           <div className="mt-2 space-y-2">
             <TextArea value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Motivo" className="min-h-12" />
-            <Button
+            <Button className="ml-auto flex"
               size="sm"
               variant="destructive"
               disabled={!reason.trim()}
@@ -155,7 +158,7 @@ export function SpecialistView({ id }: { id: string }) {
       <InspectorSection title="Perché è nel team">
         <p className="text-ui text-foreground/90">{specialist.reason}</p>
         <p className="mt-1 text-ui-xs text-muted-foreground">
-          {specialist.origin === "teamProposal" ? "Dalla proposta confermata" : "Aggiunto dal Coordinatore"} · {formatRelativeTime(specialist.createdAt)}
+          {specialist.origin === "teamProposal" ? "Dalla proposta confermata" : "Aggiunto dal Coordinatore"}<Sep />{formatRelativeTime(specialist.createdAt)}
         </p>
       </InspectorSection>
       {current && ["stopped", "failed"].includes(current.status) ? <AssignmentProvider assignment={current} /> : null}
@@ -191,8 +194,8 @@ export function SpecialistView({ id }: { id: string }) {
                 {assignment.objective}
                 <span className="text-muted-foreground">
                   {" "}
-                  · {providerLabel(assignment.provider ?? "codex")} {assignment.model}
-                  {assignment.goalId ? ` · ${findGoal(project.document, assignment.goalId)?.title ?? assignment.goalId}` : ""}
+                  <Sep />{providerLabel(assignment.provider ?? "codex")} {assignment.model}
+                  {assignment.goalId ? `, ${findGoal(project.document, assignment.goalId)?.title ?? assignment.goalId}` : ""}
                 </span>
               </span>
               <Badge tone={ASSIGNMENT_STATUS[assignment.status].tone}>{ASSIGNMENT_STATUS[assignment.status].label}</Badge>
@@ -219,38 +222,31 @@ function AssignmentProvider({ assignment }: { assignment: SpecialistAssignment }
   return (
     <InspectorSection title="Provider dell'incarico">
       <p className="text-ui-sm text-muted-foreground">
-        Ora: {providerLabel(current)} · {assignment.model}. Puoi cambiarlo prima della ripresa: incarico e worktree restano, riparte solo la sessione.
+        Ora: {providerLabel(current)}<Sep />{assignment.model}. Puoi cambiarlo prima della ripresa: incarico e worktree restano, riparte solo la sessione.
       </p>
       <div className="mt-2 flex flex-wrap items-center gap-2 text-ui-sm">
-        <select
-          aria-label="Provider"
-          className="h-7 rounded-lg border border-[color:var(--color-border)] bg-transparent px-2"
+        <PickerSelect
+          label="Provider"
           value={provider}
-          onChange={(e) => {
-            const next = e.target.value as ProviderId;
+          options={connected.map((id) => ({ value: id, title: providerLabel(id), icon: <ProviderIcon provider={id} /> }))}
+          onChange={(next) => {
             setProvider(next);
             setModel(providers[next]?.models.find((m) => m.isDefault)?.model ?? providers[next]?.models[0]?.model ?? "");
           }}
-        >
-          {connected.map((id) => (
-            <option key={id} value={id}>
-              {providerLabel(id)}
-            </option>
-          ))}
-        </select>
-        <select
-          aria-label="Modello"
-          className="h-7 min-w-0 flex-1 rounded-lg border border-[color:var(--color-border)] bg-transparent px-2"
+        />
+        <PickerSelect
+          label="Modello"
           value={model}
-          onChange={(e) => setModel(e.target.value)}
-        >
-          {!validModel ? <option value={model}>{model} (non disponibile)</option> : null}
-          {models.map((m) => (
-            <option key={m.model} value={m.model}>
-              {m.displayName}
-            </option>
-          ))}
-        </select>
+          title={providerLabel(provider)}
+          meta={models.length === 1 ? "1 modello" : `${models.length} modelli`}
+          searchPlaceholder="Cerca un modello"
+          className="flex-1"
+          options={[
+            ...(!validModel ? [{ value: model, title: `${model} (non disponibile)`, disabled: true }] : []),
+            ...models.map((m) => ({ value: m.model, title: m.displayName, subtitle: m.description?.replaceAll(" · ", ", ") })),
+          ]}
+          onChange={setModel}
+        />
         <Button
           size="sm"
           variant="outline"

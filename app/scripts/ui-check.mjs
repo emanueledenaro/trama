@@ -7,18 +7,24 @@ import { _electron as electron } from "playwright";
 
 const out = resolve(process.argv[2] ?? "ui-check");
 const dataDir = await mkdtemp(join(tmpdir(), "trama-ui-"));
-const app = await electron.launch({
-  args: [".", "--no-sandbox"],
-  env: {
-    ...process.env,
-    TRAMA_DATA_DIR: dataDir,
-    TRAMA_CODEX_PATH: resolve("test-fixtures/fake-codex.mjs"),
-  },
-});
-const page = await app.firstWindow();
-page.on("console", (m) => console.log("[renderer]", m.type(), m.text()));
-page.on("pageerror", (e) => console.log("[pageerror]", e.message));
-await page.setViewportSize({ width: 1280, height: 820 });
+// Each launch uses the same Trama data folder, so a second launch is a real reopening.
+const launch = async () => {
+  const app = await electron.launch({
+    // Its own Electron profile, so the check runs next to an open Trama instead of hitting its single-instance lock.
+    args: [".", "--no-sandbox", `--user-data-dir=${await mkdtemp(join(tmpdir(), "trama-ui-profile-"))}`],
+    env: {
+      ...process.env,
+      TRAMA_DATA_DIR: dataDir,
+      TRAMA_CODEX_PATH: resolve("test-fixtures/fake-codex.mjs"),
+    },
+  });
+  const page = await app.firstWindow();
+  page.on("console", (m) => console.log("[renderer]", m.type(), m.text()));
+  page.on("pageerror", (e) => console.log("[pageerror]", e.message));
+  await page.setViewportSize({ width: 1280, height: 820 });
+  return { app, page };
+};
+let { app, page } = await launch();
 const shot = async (name) => {
   await page.waitForTimeout(400);
   await page.screenshot({ path: join(out, `${name}.png`) });
@@ -39,6 +45,15 @@ await shot("01-landing");
 await page.getByText("Esplora il progetto di esempio").click();
 await page.getByText("Ho letto lo studio").first().waitFor({ timeout: 20_000 });
 await shot("02-demo-study");
+// The context and model pickers share one panel.
+await page.getByRole("button", { name: "Contesto del messaggio" }).click();
+await page.getByRole("listbox", { name: "Contesto" }).waitFor();
+await shot("02c-context-picker");
+await page.keyboard.press("Escape");
+await page.getByRole("button", { name: /^Provider e modello del Coordinatore/ }).click();
+await page.getByRole("listbox", { name: "Modelli" }).waitFor();
+await shot("02d-model-picker");
+await page.keyboard.press("Escape");
 await page.getByLabel("Messaggio al Coordinatore").pressSequentially("Guarda @cancelpa");
 await page.getByRole("listbox", { name: "Menzioni" }).waitFor();
 await shot("02b-mentions");
@@ -72,7 +87,7 @@ await page.getByRole("button", { name: "Conferma il team" }).click();
 await page.getByText("Team confermato").first().waitFor({ timeout: 20_000 });
 await page.getByRole("button", { name: /^Mandato/ }).first().click();
 await page.getByRole("button", { name: "Scrivi", exact: true }).click();
-await page.getByLabel("Obiettivi").fill("Documentare l'annullamento degli ordini");
+await page.getByRole("textbox", { name: "Obiettivi" }).fill("Documentare l'annullamento degli ordini");
 await page.getByRole("checkbox", { name: /Orders/ }).check();
 await page.getByRole("checkbox", { name: /worktree/ }).check();
 await page.getByRole("button", { name: "Concedi mandato" }).click();
@@ -162,6 +177,9 @@ await page.getByLabel("Esempio 1").fill("Ordine 42 pagato e annullato: stato rev
 await page.getByRole("button", { name: "Crea l'obiettivo" }).click();
 await page.getByTestId("dialog-title").filter({ hasText: "Ordini annullati in revisione" }).waitFor();
 await page.getByTestId("goal-dialog-header").waitFor();
+// The goal is saved before the dialog opens; its detail shows the stable id used after the restart.
+const goalTitle = "Ordini annullati in revisione";
+const goalId = (await page.getByText(/^G-[0-9A-F]{8}$/).first().textContent()).trim();
 await page.getByLabel("Messaggio al Coordinatore").fill("Da dove partiamo per questo obiettivo?");
 await page.keyboard.press("Enter");
 await page.getByText(/Dialogo dell'obiettivo G-/).first().waitFor({ timeout: 20_000 });
@@ -184,7 +202,7 @@ await page.keyboard.press("Enter");
 await page.waitForTimeout(300);
 await shot("10c-search-result");
 await page.getByRole("button", { name: "Indietro" }).first().click();
-await page.getByRole("button", { name: /Codex di OpenAI/ }).click();
+await page.getByRole("button", { name: /^ChatGPT/ }).click();
 await shot("11-connections");
 await page.keyboard.press("Escape");
 await page.getByRole("button", { name: "Impostazioni" }).click();
@@ -192,4 +210,46 @@ await shot("12-settings");
 await page.getByRole("button", { name: "Apri la guida" }).click();
 await guide.waitFor();
 await shot("12a-guide-resume-dark");
+await guide.getByRole("button", { name: "Continua più tardi" }).click();
+await guide.waitFor({ state: "hidden" });
+
+// T19: the window sizes the layout is checked at, from the minimum (720x640) to full HD.
+// A narrow dialog gets the inspector floating over it, so the chat and the composer keep their width.
+for (const [width, height] of [[720, 640], [1040, 700], [1280, 800], [1440, 900], [1920, 1080]]) {
+  await page.setViewportSize({ width, height });
+  await page.waitForTimeout(400);
+  if (await page.getByTestId("inspector").count()) await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
+  const composer = await page.getByLabel("Messaggio al Coordinatore").boundingBox();
+  if (!composer || composer.width < 300) throw new Error(`Composer squeezed at ${width}x${height}: ${JSON.stringify(composer)}`);
+  if (await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)) throw new Error(`Horizontal page scroll at ${width}x${height}`);
+  await page.getByRole("button", { name: "Mappa del progetto" }).click();
+  await page.getByRole("listbox", { name: "Moduli" }).getByRole("option", { name: /Orders/ }).click();
+  await shot(`13-size-${width}x${height}-module`);
+  // Escape inside the inspector closes it, at every size.
+  await page.getByTestId("inspector").getByRole("button", { name: "Chiudi l'ispettore" }).focus();
+  await page.keyboard.press("Escape");
+  await page.getByTestId("inspector").waitFor({ state: "detached" });
+  await shot(`13-size-${width}x${height}-chat`);
+}
+await app.close();
+
+// Reopening (UX01): after a restart the same goal is in the list and opens from the keyboard alone.
+({ app, page } = await launch());
+const goalsRow = page.getByRole("button", { name: /^Obiettivi/ }).first();
+await goalsRow.waitFor({ timeout: 30_000 });
+await goalsRow.focus();
+await page.keyboard.press("Enter");
+await page.getByRole("button", { name: "Nuovo obiettivo" }).focus();
+let reached = false;
+for (let step = 0; step < 12 && !reached; step++) {
+  await page.keyboard.press("Tab");
+  reached = await page.evaluate((title) => document.activeElement?.textContent?.includes(title) ?? false, goalTitle);
+}
+if (!reached) throw new Error("The goal is not reachable with Tab after reopening");
+await shot("13-goals-reopened");
+await page.keyboard.press("Enter");
+await page.getByText(goalId, { exact: true }).waitFor();
+await page.getByRole("heading", { name: goalTitle }).waitFor();
+await shot("13a-goal-reopened");
+console.log("reopened goal", goalId);
 await app.close();

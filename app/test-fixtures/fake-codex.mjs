@@ -19,6 +19,7 @@ const account = process.env.FAKE_CODEX_ACCOUNT ?? "chatgpt";
 const send = (message) => process.stdout.write(`${JSON.stringify(message)}\n`);
 let threads = 0;
 const toolServers = new Map();
+const receivedByThread = new Map();
 
 async function callTool(threadId, name, args) {
   const server = toolServers.get(threadId);
@@ -42,12 +43,22 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
       if (account === "none") return send({ id, result: { account: null } });
       if (account === "apikey") return send({ id, result: { account: { type: "apiKey" } } });
       return send({ id, result: { account: { type: "chatgpt", email: "persona@example.com", planType: "plus" } } });
+    case "account/rateLimits/read":
+      if (process.env.FAKE_CODEX_LIMITS === "none") return send({ id, error: { code: -32601, message: "method not found" } });
+      return send({
+        id,
+        result: {
+          ordinaryUsageAllowed: process.env.FAKE_CODEX_LIMITS !== "exhausted",
+          rateLimits: { limitId: "codex", primary: { usedPercent: 100, windowDurationMins: 43200, resetsAt: 1792820871 }, planType: process.env.FAKE_CODEX_LIMITS === "exhausted" ? "free" : "plus" },
+        },
+      });
     case "model/list":
       return send({
         id,
         result: {
           data: [
             { id: "gpt-5.5", model: "gpt-5.5", displayName: "GPT-5.5", description: "Modello di prova", isDefault: true, hidden: false, supportedReasoningEfforts: ["low", "medium", "high"], defaultReasoningEffort: "medium" },
+            { id: "gpt-5.5-fast", model: "gpt-5.5-fast", displayName: "GPT-5.5 Fast", description: "Modello con livello veloce", isDefault: false, hidden: false, supportedReasoningEfforts: ["low"], defaultReasoningEffort: "low", additionalSpeedTiers: ["fast"] },
           ],
         },
       });
@@ -80,6 +91,20 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
       };
       const toolDone = (tool, result) =>
         send({ method: "item/completed", params: { threadId, turnId, item: { id: `tool-${tool}`, type: "mcpToolCall", server: "trama", tool, status: "completed", result } } });
+      // Remembers the skill inputs and late-rule sections each thread received (M02).
+      const seen = receivedByThread.get(threadId) ?? [];
+      seen.push(...params.input.filter((item) => item.type === "skill").map((item) => `skill:${item.name}:${item.path}`));
+      if (text.includes("## Regole aggiornate da Trama")) seen.push("rules");
+      receivedByThread.set(threadId, seen);
+      if (text.includes("[ricevuti]")) {
+        setTimeout(() => finish(JSON.stringify(seen)), 10);
+        return;
+      }
+      if (text.includes("[tier]")) {
+        // Echoes the service tier the turn asked for.
+        setTimeout(() => finish(`tier:${params.serviceTier ?? "none"}`), 10);
+        return;
+      }
       if (params.outputSchema?.required?.includes("sourceSnapshotID")) {
         const sources = JSON.parse(text.slice(text.indexOf("Fonti: ") + 7));
         const plan = {
@@ -206,6 +231,30 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
           toolDone("run_readonly_check", result);
           finish("Ho eseguito la verifica.");
         });
+        return;
+      }
+      const grillingMatch = text.match(/\[grilling:(\d+)\]/);
+      if (grillingMatch) {
+        // A grilling round (M01): round 1 asks two questions of the frontier, later rounds one.
+        const round = Number(grillingMatch[1]);
+        const questions = round === 1 ? ["Chi vede gli ordini in revisione?", "Il cliente riceve una email?"] : [`Domanda del turno ${round}`];
+        const answers = [];
+        for (const question of questions) {
+          const result = await callTool(threadId, "request_decision", {
+            category: "product",
+            question,
+            concreteCase: "Ordine 42, già pagato, annullato dal cliente",
+            alternatives: [
+              { behavior: "Solo il supporto", example: "Il supporto vede l'ordine 42" },
+              { behavior: "Anche il cliente", example: "Il cliente vede lo stato review" },
+            ],
+            grillingRound: round,
+            recommendedAlternative: 1,
+          });
+          toolDone("request_decision", result);
+          answers.push(result.isError ? `Rifiutato: ${result.content[0].text}` : "ok");
+        }
+        finish(answers.join(" | "));
         return;
       }
       if (text.includes("[chiedi-decisione]")) {

@@ -8,13 +8,14 @@ import {
   IconFileText,
   IconInfoCircle,
   IconListCheck,
+  IconPlayerStop,
   IconTerminal2,
   IconTool,
 } from "@tabler/icons-react";
 import { useState } from "react";
 import type { ConversationEvent } from "@shared/domain";
 import { extractPastes, pasteSizeLabel, pasteTitle } from "@shared/pastedText";
-import { formatDuration, type TimelineRow } from "@shared/timeline";
+import { formatDuration, type TimelineRow, turnFailureText } from "@shared/timeline";
 import { cn } from "@/lib/cn";
 import { formatTime } from "@/lib/format";
 import { act, useUi } from "@/lib/store";
@@ -26,12 +27,14 @@ import {
   ConflictCard,
   ContextNoticeCard,
   DecisionCard,
+  GrillingRoundCard,
   MandateCard,
   PlanCard,
   StudyCard,
   TeamProposalCard,
 } from "./Cards";
 import { ChatMarkdown } from "./ChatMarkdown";
+import { Sep } from "@/components/ui/sep";
 
 function DisclosureChevron({ open }: { open: boolean }) {
   return (
@@ -53,7 +56,7 @@ function PersonMessage({ row }: { row: Extract<TimelineRow, { kind: "person" }> 
           <div className="pr-1 pb-1 text-ui-xs text-muted-foreground/60">
             {[row.moduleName ? `Modulo ${row.moduleName}` : null, row.imageCount ? (row.imageCount === 1 ? "1 immagine" : `${row.imageCount} immagini`) : null]
               .filter(Boolean)
-              .join(" · ")}
+              .join(", ")}
           </div>
         ) : null}
         <div className="w-max max-w-full min-w-0 self-end rounded-[var(--radius-user-message)] border border-transparent bg-[var(--app-user-message-background)] px-3.5 py-2.5">
@@ -67,7 +70,7 @@ function PersonMessage({ row }: { row: Extract<TimelineRow, { kind: "person" }> 
                   onClick={() => setOpenPaste(openPaste === index ? null : index)}
                   className="rounded-md bg-[color-mix(in_srgb,var(--foreground)_7%,transparent)] px-2 py-1 text-left text-ui-xs text-muted-foreground hover:text-foreground"
                 >
-                  {pasteTitle(paste) || "Testo incollato"} · {pasteSizeLabel(paste)}
+                  {pasteTitle(paste) || "Testo incollato"}<Sep />{pasteSizeLabel(paste)}
                 </button>
               ))}
             </div>
@@ -149,7 +152,7 @@ function WorkGroup({ row }: { row: Extract<TimelineRow, { kind: "work" }> }) {
     : row.durationMs !== null
       ? `${specialistName ? `${specialistName} ha` : "Ha"} lavorato per ${formatDuration(row.durationMs)}`
       : specialistName
-        ? `${specialistName} · attività`
+        ? `${specialistName}, attività`
         : "Attività";
   return (
     <div className="mb-3 text-chat">
@@ -159,7 +162,7 @@ function WorkGroup({ row }: { row: Extract<TimelineRow, { kind: "work" }> }) {
         className="-ml-0.5 inline-flex items-center gap-1 pb-2 text-left text-muted-foreground transition-colors duration-200 hover:text-foreground"
       >
         <span className={cn(row.running && "shimmer-text")}>{label}</span>
-        {tools ? <span className="text-muted-foreground/60">· {tools === 1 ? "1 strumento" : `${tools} strumenti`}</span> : null}
+        {tools ? <span className="text-muted-foreground/60"><Sep />{tools === 1 ? "1 strumento" : `${tools} strumenti`}</span> : null}
         <DisclosureChevron open={open} />
       </button>
       {open ? (
@@ -205,7 +208,7 @@ function Reply({ row, latest }: { row: Extract<TimelineRow, { kind: "reply" }>; 
         </div>
       ) : null}
       {latest && !row.streaming && request?.state === "completed" ? (
-        <div className="mt-2">
+        <div className="cta-row mt-2">
           <Button size="xs" variant="outline" onClick={() => void act("plan:prepare", { requestId: request.id })}>
             <IconListCheck stroke={1.8} /> Prepara un piano
           </Button>
@@ -213,7 +216,7 @@ function Reply({ row, latest }: { row: Extract<TimelineRow, { kind: "reply" }>; 
       ) : null}
       {!row.streaming ? (
         <div className="mt-1.5 flex items-center gap-2 text-[11px] text-muted-foreground/45 opacity-0 transition-opacity group-hover:opacity-100">
-          {row.model ? <span>Coordinatore · {row.model}</span> : null}
+          {row.model ? <span>Coordinatore<Sep />{row.model}</span> : null}
           {request?.completedAt ? <span>{formatTime(request.completedAt)}</span> : null}
           <button
             type="button"
@@ -233,6 +236,44 @@ function Reply({ row, latest }: { row: Extract<TimelineRow, { kind: "reply" }>; 
   );
 }
 
+function TurnFailure({ row }: { row: Extract<TimelineRow, { kind: "failure" }> }) {
+  // An interrupted turn is not an error: same place and Riprova, neutral colors, and the reason when there is one.
+  const { title, detail } = row.interrupted
+    ? { title: "Turno interrotto", detail: /^turno interrotto\.?$/i.test(row.message.trim()) ? null : row.message || null }
+    : turnFailureText(row.message);
+  return (
+    <div
+      role={row.interrupted ? "status" : "alert"}
+      className={cn(
+        "mb-4 flex items-start gap-2.5 rounded-xl border px-3.5 py-3",
+        row.interrupted
+          ? "border-[color:var(--color-border)] bg-[var(--color-background-button-secondary)]"
+          : "border-[color:color-mix(in_srgb,var(--destructive)_35%,transparent)] bg-[color-mix(in_srgb,var(--destructive)_8%,transparent)]",
+      )}
+    >
+      {row.interrupted ? (
+        <IconPlayerStop className="mt-0.5 size-4 shrink-0 text-muted-foreground" stroke={1.8} />
+      ) : (
+        <IconAlertTriangle className="mt-0.5 size-4 shrink-0 text-[var(--destructive)]" stroke={1.8} />
+      )}
+      <div className="min-w-0 flex-1">
+        <div className="text-ui font-medium text-foreground">{title}</div>
+        {detail ? <p className="mt-0.5 text-ui-sm break-words text-muted-foreground">{detail}</p> : null}
+      </div>
+      <Button
+        size="xs"
+        variant="outline"
+        className="shrink-0"
+        onClick={() =>
+          void act("coordinator:send", { text: row.text, moduleId: null, model: null, effort: null, images: [], provider: null, goalId: row.goalId })
+        }
+      >
+        Riprova
+      </Button>
+    </div>
+  );
+}
+
 export function TimelineRowView({ row, streaming = false, latest = false }: { row: TimelineRow; streaming?: boolean; latest?: boolean }) {
   switch (row.kind) {
     case "person":
@@ -241,6 +282,10 @@ export function TimelineRowView({ row, streaming = false, latest = false }: { ro
       return <WorkGroup row={row} />;
     case "reply":
       return <Reply row={row} latest={latest} />;
+    case "failure":
+      return <TurnFailure row={row} />;
+    case "grillingRound":
+      return <GrillingRoundCard round={row.round} questionIds={row.questionIds} />;
     case "card": {
       const content = row.event.content;
       if (content.type !== "card") return null;

@@ -155,6 +155,8 @@ export interface TurnOptions {
   cwd: string;
   model: string;
   effort?: string | null;
+  /** Fast service tier for this turn; absent keeps the thread's current tier. */
+  fastMode?: boolean | null;
   /** Absolute paths of images attached to this message. */
   images?: string[];
   /** The only directory the turn may write; the turn is read-only when absent. */
@@ -207,11 +209,35 @@ export class CodexClient {
     if (!account) return { kind: "signedOut" };
     const type = asString(account.type);
     if (type === "chatgpt") {
-      const plan = asString(account.planType);
+      const email = asString(account.email);
+      // account/read takes the plan from the saved login token, which keeps a lapsed plan; the rate limits come
+      // from the server and say what the account can do now.
+      const limits = await this.readRateLimits().catch(() => null);
+      const plan = limits?.plan ?? asString(account.planType);
       if (!plan) throw new CodexError("malformedMessage", "account ChatGPT senza piano");
-      return { kind: "chatgpt", email: asString(account.email), plan };
+      if (limits?.blocked) {
+        return {
+          kind: "blocked",
+          message: `Hai esaurito l'utilizzo di ChatGPT (piano ${plan}).`,
+          until: limits.resetsAt,
+        };
+      }
+      return { kind: "chatgpt", email, plan };
     }
     return { kind: "unsupported", type: type ?? "sconosciuto" };
+  }
+
+  /** The server's view of the account: current plan and whether ordinary usage is allowed now. */
+  private async readRateLimits(): Promise<{ plan: string | null; blocked: boolean; resetsAt: string | null }> {
+    // Short timeout: an older app-server without this method must not slow down reading the account.
+    const result = asObject(await this.request("account/rateLimits/read", {}, 3_000));
+    const limits = asObject(result?.rateLimits);
+    const resetsAt = asObject(limits?.primary)?.resetsAt;
+    return {
+      plan: asString(limits?.planType),
+      blocked: result?.ordinaryUsageAllowed === false,
+      resetsAt: typeof resetsAt === "number" ? new Date(resetsAt * 1000).toISOString() : null,
+    };
   }
 
   /** Starts the ChatGPT browser login handled by Codex and returns the URL to open. */
@@ -244,6 +270,7 @@ export class CodexClient {
           .map((effort) => asString(effort) ?? asString(asObject(effort)?.reasoningEffort))
           .filter((effort): effort is string => Boolean(effort));
         const defaultEffort = asString(item.defaultReasoningEffort);
+        const speedTiers = asArray(item.additionalSpeedTiers ?? item.additional_speed_tiers).map((tier) => asString(tier)?.toLowerCase());
         models.push({
           id: asString(item.id) ?? model,
           model,
@@ -252,6 +279,7 @@ export class CodexClient {
           isDefault: item.isDefault === true,
           supportedReasoningEfforts: efforts,
           defaultReasoningEffort: defaultEffort && efforts.includes(defaultEffort) ? defaultEffort : null,
+          supportsFastMode: item.supportsFastMode === true || speedTiers.includes("fast"),
         });
       }
       cursor = asString(result.nextCursor);
@@ -360,6 +388,7 @@ export class CodexClient {
         ],
         cwd: options.cwd,
         model: options.model,
+        ...(typeof options.fastMode === "boolean" ? { serviceTier: options.fastMode ? "fast" : "default" } : {}),
         approvalPolicy: "never",
         sandboxPolicy: options.writableRoot
           ? {

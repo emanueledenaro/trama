@@ -121,6 +121,17 @@ export interface DecisionAlternative {
   consequence: string | null;
 }
 
+/** Where a grilling question sits: the request being clarified, its round, its number and the recommended answer. */
+export interface GrillingPlace {
+  /** The request whose work the grilling clarifies: the one where round 1 was asked. */
+  subjectRequestId: string;
+  round: number;
+  /** 1-based position of the question within its round. */
+  number: number;
+  /** Index of the alternative the Coordinator recommends. */
+  recommendedIndex: number;
+}
+
 export interface DecisionRequest {
   id: string;
   requestId: string | null;
@@ -131,6 +142,8 @@ export interface DecisionRequest {
   revisesDecisionId: string | null;
   /** The goal dialog the question was asked in; its answer links the decision to that goal. */
   goalId?: string | null;
+  /** Set when the question belongs to a grilling round before a plan (M01). */
+  grilling?: GrillingPlace | null;
   askedAt: string;
   outcome: { answer: string; alternativeIndex: number | null; decisionId: string; version: number; answeredAt: string } | null;
 }
@@ -169,6 +182,8 @@ export interface CoordinatorState {
   memorySentToThread: string | null;
   /** Fingerprint of the adopted practices last sent to the thread. */
   practicesSent?: string | null;
+  /** The late rules (writing, grilling) the thread holds: a thread opened before they changed receives them in a turn. */
+  rulesSent?: string | null;
   /** Percent of the context window above which the chat shows a notice (5-95). */
   contextThreshold?: number;
   /** The threshold the last notice was given for; cleared by a compaction or a new thread. */
@@ -431,6 +446,8 @@ export interface DialogComposer {
   selectedProvider?: ProviderId;
   selectedModel: string | null;
   selectedEffort: string | null;
+  /** Fast mode for models that offer it; absent means off. */
+  selectedFastMode?: boolean;
   providerPreferences?: Partial<Record<ProviderId, { model: string | null; effort: string | null }>>;
   composerDraft: string;
 }
@@ -470,6 +487,8 @@ export interface ProjectDocument {
   selectedProvider?: ProviderId;
   selectedModel: string | null;
   selectedEffort: string | null;
+  /** Fast mode for models that offer it; absent means off. */
+  selectedFastMode?: boolean;
   /** The last model and effort chosen for each provider, restored when the person switches back. */
   providerPreferences?: Partial<Record<ProviderId, { model: string | null; effort: string | null }>>;
   composerDraft: string;
@@ -712,6 +731,8 @@ export interface ProviderState {
   account: ProviderAccount | null;
   models: ProviderModel[];
   checking: boolean;
+  /** Models the provider refused for this account in this session; the picker shows them disabled. */
+  unsupportedModels?: string[];
 }
 
 export type AttentionReason = "decision" | "blocked" | "approval" | "running";

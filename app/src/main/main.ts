@@ -1,3 +1,4 @@
+import { release } from "node:os";
 import { join } from "node:path";
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, Notification, powerMonitor, shell, type MenuItemConstructorOptions } from "electron";
 import type { AppSettings } from "@shared/domain";
@@ -7,6 +8,8 @@ import { TramaController } from "./controller";
 app.setName("Trama");
 if (!app.requestSingleInstanceLock()) app.exit(0);
 const isMac = process.platform === "darwin";
+// Windows 11 paints Acrylic glass behind a transparent window; older Windows and Linux stay opaque.
+const isGlassWindows = process.platform === "win32" && Number(release().split(".")[2] ?? 0) >= 22000;
 const rendererUrl = process.env.TRAMA_RENDERER_URL;
 let window: BrowserWindow | null = null;
 
@@ -21,7 +24,7 @@ const controller = new TramaController(process.env.TRAMA_DATA_DIR ?? join(app.ge
   openExternal: (url) => shell.openExternal(url),
   applyTheme: (theme: AppSettings["theme"]) => {
     nativeTheme.themeSource = theme;
-    if (!isMac) window?.setBackgroundColor(surfaceColor());
+    if (!isMac && !isGlassWindows) window?.setBackgroundColor(surfaceColor());
   },
   notify: (title, body, sound) => {
     if (window?.isFocused() || !Notification.isSupported()) return;
@@ -49,7 +52,7 @@ function createWindow(): void {
     width: 1100,
     height: 780,
     minWidth: 720,
-    minHeight: 600,
+    minHeight: 640,
     show: false,
     title: "Trama",
     ...(isMac
@@ -57,10 +60,12 @@ function createWindow(): void {
           titleBarStyle: "hiddenInset" as const,
           trafficLightPosition: { x: 16, y: 16 },
           vibrancy: "under-window" as const,
-          visualEffectState: "followWindow" as const,
+          visualEffectState: "active" as const,
           backgroundColor: "#00000000",
         }
-      : { backgroundColor: surfaceColor(), autoHideMenuBar: true }),
+      : isGlassWindows
+        ? { backgroundMaterial: "acrylic" as const, backgroundColor: "#00000000", autoHideMenuBar: true }
+        : { backgroundColor: surfaceColor(), autoHideMenuBar: true }),
     webPreferences: {
       preload: join(__dirname, "preload.cjs"),
       contextIsolation: true,
@@ -120,6 +125,7 @@ const handlers: { [K in ActionName]: Handler<K> } = {
   "coordinator:interrupt": () => controller.interrupt(),
   "coordinator:retry": () => controller.startCoordinator(),
   "coordinator:selectModel": ({ model, effort, provider, goalId }) => controller.selectModel(model, effort, provider ?? null, goalId ?? null),
+  "coordinator:setFastMode": ({ enabled, goalId }) => controller.setFastMode(enabled, goalId ?? null),
   "coordinator:selectProvider": ({ provider, goalId }) => controller.selectProvider(provider, goalId ?? null),
   "coordinator:saveDraft": ({ text, goalId }) => controller.saveDraft(text, goalId ?? null),
   "goal:create": (input) => controller.createGoal(input),
@@ -292,7 +298,7 @@ app.whenReady().then(async () => {
 });
 
 nativeTheme.on("updated", () => {
-  if (!isMac) window?.setBackgroundColor(surfaceColor());
+  if (!isMac && !isGlassWindows) window?.setBackgroundColor(surfaceColor());
 });
 
 app.on("window-all-closed", () => {

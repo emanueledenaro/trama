@@ -1,10 +1,12 @@
-import { cp, mkdtemp } from "node:fs/promises";
+import { chmod, cp, mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { AppState } from "@shared/domain";
 import { decisionDependents, dialogEvents, findGoal, projectGoals } from "@shared/goals";
+import { deriveTimelineRows } from "@shared/timeline";
 import { TramaController } from "./controller";
+import { AppStorage } from "./core/storage";
 
 const root = join(import.meta.dirname, "../..");
 let controller: TramaController | null = null;
@@ -101,12 +103,12 @@ describe("TramaController", () => {
 
   it("keeps two goal dialogs apart from the project dialog and gives the Coordinator the goal", async () => {
     const { data } = await setup();
-    const first = controller!.createGoal({
+    const first = await controller!.createGoal({
       title: "Revisione degli ordini",
       outcome: "Gli ordini pagati annullati vanno in revisione",
       examples: [{ kind: "accepted", text: "Ordine 42: stato review" }],
     });
-    const second = controller!.createGoal({ title: "Catalogo più veloce", outcome: "La ricerca risponde in meno di un secondo", examples: [] });
+    const second = await controller!.createGoal({ title: "Catalogo più veloce", outcome: "La ricerca risponde in meno di un secondo", examples: [] });
     const project = controller!.snapshot.project!;
     const document = project.document;
 
@@ -165,7 +167,7 @@ describe("TramaController", () => {
 
   it("links a decision asked in a goal dialog to that goal and answers there", async () => {
     await setup();
-    const goalId = controller!.createGoal({ title: "Revisione", outcome: "Ordini in revisione", examples: [] });
+    const goalId = await controller!.createGoal({ title: "Revisione", outcome: "Ordini in revisione", examples: [] });
     const document = controller!.snapshot.project!.document;
     await controller!.send("[chiedi-decisione]", null, null, null, [], null, goalId);
     const question = document.decisionRequests[0]!;
@@ -176,6 +178,33 @@ describe("TramaController", () => {
     const answer = document.requests.at(-1)!;
     expect(answer.goalId).toBe(goalId);
     expect(decisionDependents(document, decisionId).goals.map((g) => g.id)).toEqual([goalId]);
+  });
+
+  it("saves a goal before reporting it and keeps nothing when the save fails (UX01)", async () => {
+    const { data } = await setup();
+    const project = controller!.snapshot.project!;
+    const document = project.document;
+    const storage = new AppStorage(data);
+
+    // Success is reported only once the goal is on disk, without waiting for the deferred save.
+    const id = await controller!.createGoal({ title: "Revisione", outcome: "Ordini in revisione", examples: [] });
+    expect(findGoal((await storage.loadDocument(project.id)).document!, id)).toMatchObject({ title: "Revisione" });
+    await controller!.updateGoal(id, { title: "Revisione degli ordini" });
+    expect(findGoal((await storage.loadDocument(project.id)).document!, id)!.title).toBe("Revisione degli ordini");
+
+    const goalsBefore = structuredClone(document.goals);
+    const eventsBefore = document.events.length;
+    const projects = dirname(storage.documentPath(project.id));
+    await chmod(projects, 0o500);
+    try {
+      await expect(controller!.createGoal({ title: "Catalogo", outcome: "Ricerca veloce", examples: [] })).rejects.toThrow(/non è stato salvato/);
+      await expect(controller!.updateGoal(id, { title: "Titolo perso" })).rejects.toThrow(/non è stato salvato/);
+    } finally {
+      await chmod(projects, 0o700);
+    }
+    expect(document.goals).toEqual(goalsBefore);
+    expect(document.events).toHaveLength(eventsBefore);
+    expect(findGoal((await storage.loadDocument(project.id)).document!, id)!.title).toBe("Revisione degli ordini");
   });
 
   it("refuses a message to a goal that does not exist", async () => {
@@ -218,6 +247,32 @@ describe("TramaController", () => {
     expect(activity?.content).toMatchObject({ detail: expect.stringContaining("skill: tdd") });
   });
 
+  it("loads project skills while the Codex usage is exhausted", async () => {
+    process.env.FAKE_CODEX_LIMITS = "exhausted";
+    try {
+      const data = await mkdtemp(join(tmpdir(), "trama-data-"));
+      const project = await mkdtemp(join(tmpdir(), "trama-project-"));
+      await cp(join(root, "resources/DemoProject"), project, { recursive: true });
+      controller = new TramaController(data, {
+        publish: () => undefined,
+        openExternal: async () => undefined,
+        applyTheme: () => undefined,
+        notify: () => undefined,
+        setOpenAtLogin: () => undefined,
+        aiHeroResourceDirectory: join(root, "resources/AIHero"),
+        demoResourceDirectory: join(root, "resources/DemoProject"),
+        codexExecutable: join(root, "test-fixtures/fake-codex.mjs"),
+      });
+      await controller.start();
+      await until(() => controller!.snapshot.codex.account?.kind === "blocked");
+      await controller.updateSettings({ autoPrepareMethod: false });
+      await controller.openProject(project);
+      await until(() => (controller!.snapshot.project?.skills.length ?? 0) > 0);
+    } finally {
+      delete process.env.FAKE_CODEX_LIMITS;
+    }
+  });
+
   it("prepares a plan for a request and turns its questions into decision cards", async () => {
     await setup();
     const project = controller!.snapshot.project!;
@@ -253,6 +308,60 @@ describe("TramaController", () => {
     expect(second.proposal).toBeNull();
   });
 
+  it("gives the Coordinator thread the original grilling skill once, also when it is already open (M02)", async () => {
+    await setup();
+    const document = controller!.snapshot.project!.document;
+    const skill = `skill:grilling:${join(root, "resources/AIHero/skills/grilling/SKILL.md")}`;
+    const received = async () => {
+      await controller!.send("[ricevuti]", null, null, null);
+      return JSON.parse((document.events.at(-1)!.content as { text: string }).text) as string[];
+    };
+    // A new Codex thread receives the skill as a native skill input in its first turn, the study.
+    expect(await received()).toEqual([skill, "rules"]);
+    // A thread opened before M02 holds the paraphrased grilling rules: it receives the skill once, like other late rules.
+    document.coordinator.rulesSent = "the M01 rules";
+    expect(await received()).toEqual([skill, "rules", skill, "rules"]);
+    expect(await received()).toEqual([skill, "rules", skill, "rules"]);
+  });
+
+  it("grills a request in rounds and starts the plan only when no question is open (M01)", async () => {
+    await setup();
+    const project = controller!.snapshot.project!;
+    const document = project.document;
+    await controller!.send("[grilling:1] Gli ordini pagati annullati vanno in revisione", null, null, null);
+    const subject = document.requests[0]!.id;
+    const round1 = document.decisionRequests;
+    expect(round1.map((q) => q.grilling)).toEqual([
+      { subjectRequestId: subject, round: 1, number: 1, recommendedIndex: 1 },
+      { subjectRequestId: subject, round: 1, number: 2, recommendedIndex: 1 },
+    ]);
+    const rows = deriveTimelineRows(document.events, document.requests, null, new Set(), document.decisionRequests);
+    expect(rows.filter((r) => r.kind === "grillingRound")).toEqual([expect.objectContaining({ round: 1, questionIds: round1.map((q) => q.id) })]);
+
+    // Neither the person nor the Coordinator can start the plan while the round is open.
+    await expect(controller!.preparePlanForRequest(subject)).rejects.toThrow(/rispondi prima alle 2 domande aperte/);
+    await controller!.grantMandate({ requestId: null, objectives: ["o"], priorities: [], scopeModuleIds: ["Sources/Orders"], authorizedActions: ["plan"], limits: [] });
+    await controller!.send("[piano]", null, null, null);
+    expect(document.plans).toHaveLength(0);
+    expect(document.events.at(-1)!.content).toMatchObject({ text: expect.stringContaining("grilling_open") });
+
+    // The next round waits for the whole frontier; the answers stay recorded as Pact decisions.
+    await controller!.answerDecision(round1[0]!.id, 0, null);
+    await controller!.send("[grilling:2]", null, null, null);
+    expect(document.events.at(-1)!.content).toMatchObject({ text: expect.stringContaining("still has open questions") });
+    await controller!.answerDecision(round1[1]!.id, 1, null);
+    await controller!.send("[grilling:2]", null, null, null);
+    const round2 = document.decisionRequests[2]!;
+    expect(round2.grilling).toMatchObject({ subjectRequestId: subject, round: 2, number: 1 });
+    await expect(controller!.preparePlanForRequest(subject)).rejects.toThrow(/rispondi prima alla domanda aperta/);
+    await controller!.answerDecision(round2.id, 1, null);
+    expect(document.decisions.map((d) => d.value)).toEqual(["Solo il supporto", "Anche il cliente", "Anche il cliente"]);
+
+    await controller!.preparePlanForRequest(subject);
+    expect(document.plans).toHaveLength(1);
+    await until(() => document.plans[0]!.status !== "planning");
+  });
+
   it("refuses prepare_plan without a mandate and runs it within one", async () => {
     await setup();
     const project = controller!.snapshot.project!;
@@ -262,6 +371,31 @@ describe("TramaController", () => {
     await controller!.send("[piano]", null, null, null);
     expect(project.document.plans[0]?.orderedBy).toBe("coordinator");
     await until(() => project.document.plans[0]!.status === "ready");
+  });
+
+  it("closes a turn left running in a project the person leaves, and ignores its late end (C02)", async () => {
+    const { project: firstPath } = await setup();
+    const first = controller!.snapshot.project!;
+    const sending = controller!.send("[attesa] Spiegami gli ordini", null, null, null);
+    await until(() => first.document.requests.length === 1);
+    const request = first.document.requests[0]!;
+    await until(() => first.streaming?.requestId === request.id);
+
+    const second = await mkdtemp(join(tmpdir(), "trama-project-"));
+    await cp(join(root, "resources/DemoProject"), second, { recursive: true });
+    await controller!.openProject(second);
+    await sending;
+    expect(request).toMatchObject({ state: "interrupted", failure: "Hai lasciato il progetto mentre il Coordinatore rispondeva." });
+    const own = first.document.events.filter((e) => e.requestId === request.id).map((e) => e.content);
+    expect(own.some((c) => c.type === "activity" && c.title === "Il turno non è riuscito")).toBe(false);
+    expect(own.filter((c) => c.type === "activity" && c.title === "Turno interrotto")).toHaveLength(1);
+    expect(controller!.snapshot.project!.document.requests).toHaveLength(0);
+
+    await until(() => controller!.snapshot.project?.phase.kind === "ready");
+    await controller!.openProject(firstPath);
+    const reopened = controller!.snapshot.project!.document;
+    expect(reopened).not.toBe(first.document);
+    expect(reopened.requests[0]).toMatchObject({ id: request.id, state: "interrupted", failure: request.failure });
   });
 
   it("persists the conversation and resumes it after a restart", async () => {

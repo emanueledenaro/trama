@@ -9,6 +9,7 @@ let client: CodexClient | null = null;
 afterEach(() => {
   client?.stop();
   delete process.env.FAKE_CODEX_ACCOUNT;
+  delete process.env.FAKE_CODEX_LIMITS;
 });
 
 describe("CodexClient", () => {
@@ -16,7 +17,34 @@ describe("CodexClient", () => {
     client = new CodexClient({ executable: fake });
     expect(await client.readAccount()).toEqual({ kind: "chatgpt", email: "persona@example.com", plan: "plus" });
     const models = await client.listModels();
-    expect(models[0]).toMatchObject({ model: "gpt-5.5", isDefault: true, defaultReasoningEffort: "medium" });
+    expect(models[0]).toMatchObject({ model: "gpt-5.5", isDefault: true, defaultReasoningEffort: "medium", supportsFastMode: false });
+    expect(models[1]).toMatchObject({ model: "gpt-5.5-fast", supportsFastMode: true });
+  });
+
+  it("sends the fast service tier only when the turn asks for one", async () => {
+    client = new CodexClient({ executable: fake });
+    const { threadId } = await client.openThread({ model: "gpt-5.5-fast", cwd: process.cwd(), developerInstructions: "test" });
+    const turn = (fastMode?: boolean | null) =>
+      client!.runTurn({ threadId, prompt: "[tier]", cwd: process.cwd(), model: "gpt-5.5-fast", fastMode, onEvent: () => undefined });
+    expect(await turn(true)).toBe("tier:fast");
+    expect(await turn(false)).toBe("tier:default");
+    expect(await turn(null)).toBe("tier:none");
+  });
+
+  it("takes the plan from the rate limits and reports an exhausted account as blocked", async () => {
+    process.env.FAKE_CODEX_LIMITS = "exhausted";
+    client = new CodexClient({ executable: fake });
+    expect(await client.readAccount()).toEqual({
+      kind: "blocked",
+      message: "Hai esaurito l'utilizzo di ChatGPT (piano free).",
+      until: new Date(1792820871 * 1000).toISOString(),
+    });
+  });
+
+  it("falls back to the login plan when the rate limits cannot be read", async () => {
+    process.env.FAKE_CODEX_LIMITS = "none";
+    client = new CodexClient({ executable: fake });
+    expect(await client.readAccount()).toEqual({ kind: "chatgpt", email: "persona@example.com", plan: "plus" });
   });
 
   it("refuses accounts that are not ChatGPT", async () => {

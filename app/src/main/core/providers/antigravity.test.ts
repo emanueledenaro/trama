@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -83,7 +83,8 @@ let root: string;
 let runtime: AntigravityRuntime | null = null;
 
 beforeEach(async () => {
-  root = await mkdtemp(join(tmpdir(), "trama-agy-test-"));
+  // The runtime reports resolved paths, and tmpdir() is a symlink on macOS.
+  root = await realpath(await mkdtemp(join(tmpdir(), "trama-agy-test-")));
   await writeFile(join(root, "agy"), `#!${process.execPath}\n${FAKE_AGY}`, { mode: 0o755 });
   await mkdir(join(root, "home"));
   await mkdir(join(root, "worktree"));

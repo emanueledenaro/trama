@@ -7,10 +7,12 @@ import { PROVIDERS } from "@shared/providers";
 import { ASSIGNMENT_STATUS, CANDIDATE_STATE } from "@/components/chat/Cards";
 import { Button } from "@/components/ui/button";
 import { Badge, Input, Label, TextArea } from "@/components/ui/field";
+import { PickerSelect } from "@/components/ui/picker";
 import { cn } from "@/lib/cn";
 import { formatRelativeTime } from "@/lib/format";
 import { act, useUi } from "@/lib/store";
 import { EmptyNote, InspectorSection } from "./Inspector";
+import { Sep } from "@/components/ui/sep";
 
 const STATUS_TONE: Record<GoalStatus, "warning" | "info" | "success" | "secondary"> = {
   proposed: "warning",
@@ -33,21 +35,19 @@ export function GoalEditor({ goal, onDone }: { goal?: ProjectGoal; onDone: (id: 
     goal?.examples.map((e) => ({ id: e.id, kind: e.kind, text: e.text })) ?? [{ kind: "accepted", text: "" }],
   );
   const [saving, setSaving] = useState(false);
+  const [failed, setFailed] = useState(false);
   const valid = title.trim() && outcome.trim();
   const update = (index: number, change: Partial<GoalExampleInputPayload>) =>
     setExamples((current) => current.map((e, i) => (i === index ? { ...e, ...change } : e)));
+  // The main process answers only after the goal is saved; on a refusal the form keeps what the person wrote.
   const save = async () => {
     setSaving(true);
+    setFailed(false);
     const payload = { title, outcome, examples: examples.filter((e) => e.text.trim()) };
-    if (goal) {
-      await act("goal:update", { id: goal.id, ...payload });
-      setSaving(false);
-      onDone(goal.id);
-    } else {
-      const id = await act("goal:create", payload);
-      setSaving(false);
-      if (id) onDone(id);
-    }
+    const id = goal ? await act("goal:update", { id: goal.id, ...payload }) : await act("goal:create", payload);
+    setSaving(false);
+    if (id) onDone(id);
+    else setFailed(true);
   };
   return (
     <div className="space-y-2.5 rounded-xl border border-[color:var(--color-border)] p-3" data-testid="goal-editor">
@@ -70,15 +70,16 @@ export function GoalEditor({ goal, onDone }: { goal?: ProjectGoal; onDone: (id: 
           {examples.map((example, index) => (
             // biome-ignore lint/suspicious/noArrayIndexKey: new examples have no id until saved.
             <div key={example.id ?? `new-${index}`} className="flex items-center gap-1.5">
-              <select
-                aria-label="Tipo di esempio"
-                className="h-8 shrink-0 rounded-lg border border-input bg-transparent px-1.5 text-ui-sm"
+              <PickerSelect
+                label="Tipo di esempio"
                 value={example.kind}
-                onChange={(e) => update(index, { kind: e.target.value as GoalExample["kind"] })}
-              >
-                <option value="accepted">Deve succedere</option>
-                <option value="refused">Non deve succedere</option>
-              </select>
+                options={[
+                  { value: "accepted", title: "Deve succedere" },
+                  { value: "refused", title: "Non deve succedere" },
+                ]}
+                onChange={(kind) => update(index, { kind })}
+                className="h-8 shrink-0"
+              />
               <Input
                 aria-label={`Esempio ${index + 1}`}
                 value={example.text}
@@ -100,7 +101,7 @@ export function GoalEditor({ goal, onDone }: { goal?: ProjectGoal; onDone: (id: 
           <IconPlus /> Aggiungi un esempio
         </Button>
       </div>
-      <div className="flex gap-2">
+      <div className="cta-row">
         <Button size="sm" disabled={!valid || saving} onClick={() => void save()}>
           {goal ? "Salva l'obiettivo" : "Crea l'obiettivo"}
         </Button>
@@ -108,6 +109,11 @@ export function GoalEditor({ goal, onDone }: { goal?: ProjectGoal; onDone: (id: 
           Annulla
         </Button>
       </div>
+      {failed ? (
+        <p role="alert" className="text-ui-sm text-warning">
+          L'obiettivo non è stato salvato. Il testo resta qui: correggilo o riprova.
+        </p>
+      ) : null}
       <p className="text-ui-xs text-muted-foreground">Creare un obiettivo non concede un mandato e non avvia specialisti.</p>
     </div>
   );
@@ -171,7 +177,7 @@ export function GoalsView({ create }: { create?: boolean }) {
                   <span className="min-w-0 flex-1">
                     <span className="block text-ui text-foreground">{goal.title}</span>
                     <span className="block truncate text-ui-sm text-muted-foreground">
-                      {goal.examples.length ? `${goal.examples.length} esempi` : "esempi da definire"} · {goalWorkSummary(project.document, goal.id)}
+                      {goal.examples.length ? `${goal.examples.length} ${goal.examples.length === 1 ? "esempio" : "esempi"}` : "esempi da definire"}<Sep />{goalWorkSummary(project.document, goal.id)}
                     </span>
                   </span>
                 </button>
@@ -226,9 +232,9 @@ export function GoalView({ id }: { id: string }) {
           <GoalStatusBadge status={goal.status} />
         </div>
         <p className="mt-0.5 text-ui-xs text-muted-foreground">
-          <span className="font-mono">{goal.id}</span> · {goal.origin === "person" ? "creato da te" : "proposto dal Coordinatore"} · {formatRelativeTime(goal.createdAt)}
+          <span className="font-mono">{goal.id}</span><Sep />{goal.origin === "person" ? "creato da te" : "proposto dal Coordinatore"}<Sep />{formatRelativeTime(goal.createdAt)}
         </p>
-        <div className="mt-3 flex flex-wrap gap-2">
+        <div className="cta-row mt-3">
           <Button size="sm" variant={dialogGoalId === goal.id ? "ghost" : "outline"} disabled={dialogGoalId === goal.id} onClick={() => openDialog(goal.id)}>
             <IconMessageCircle /> {dialogGoalId === goal.id ? "Dialogo aperto" : "Apri il dialogo"}
           </Button>
@@ -305,19 +311,17 @@ export function GoalView({ id }: { id: string }) {
         {!links.decisions.length && !links.openQuestions.length && !links.missingDecisionIds.length ? <EmptyNote>Nessuna decisione collegata.</EmptyNote> : null}
         {linkable.length ? (
           <div className="mt-2 flex items-center gap-1.5">
-            <select
-              aria-label="Decisione da collegare"
-              className="h-7 min-w-0 flex-1 rounded-lg border border-input bg-transparent px-1.5 text-ui-sm"
+            <PickerSelect
+              label="Decisione da collegare"
+              title="Decisioni del Patto"
+              meta={linkable.length === 1 ? "1 decisione" : `${linkable.length} decisioni`}
+              placeholder="Collega una decisione del Patto…"
+              searchPlaceholder="Cerca una decisione"
               value={linking}
-              onChange={(e) => setLinking(e.target.value)}
-            >
-              <option value="">Collega una decisione del Patto…</option>
-              {linkable.map((d) => (
-                <option key={d.id} value={d.id}>
-                  {d.id} · {d.value.slice(0, 60)}
-                </option>
-              ))}
-            </select>
+              options={linkable.map((d) => ({ value: d.id, title: d.id, subtitle: d.value }))}
+              onChange={setLinking}
+              className="flex-1"
+            />
             <Button
               size="xs"
               variant="outline"
@@ -342,12 +346,12 @@ export function GoalView({ id }: { id: string }) {
           >
             <span className="flex items-center gap-2 text-ui">
               <span className="min-w-0 flex-1 truncate text-foreground">
-                {specialist.name} <span className="text-muted-foreground">· {assignment.objective}</span>
+                {specialist.name} <span className="text-muted-foreground"><Sep />{assignment.objective}</span>
               </span>
               <Badge tone={ASSIGNMENT_STATUS[assignment.status].tone}>{ASSIGNMENT_STATUS[assignment.status].label}</Badge>
             </span>
             <span className="block truncate text-ui-sm text-muted-foreground">
-              {providerName(assignment.provider)} · {assignment.model}
+              {providerName(assignment.provider)}<Sep />{assignment.model}
             </span>
           </button>
         ))}
@@ -396,7 +400,7 @@ export function GoalCard({ goalId }: { goalId: string }) {
         <div className="mt-2">
           <ExampleList examples={goal.examples} />
         </div>
-        <div className="mt-3 flex flex-wrap gap-2">
+        <div className="cta-row mt-3">
           {goal.status === "proposed" ? (
             <Button size="sm" onClick={() => void act("goal:update", { id: goal.id, status: "open" })}>
               Conferma l'obiettivo
@@ -433,7 +437,7 @@ export function GoalDialogHeader({ goalId }: { goalId: string }) {
       </div>
       <p className="mt-1 line-clamp-2 text-ui-sm text-muted-foreground">{goal.outcome}</p>
       <p className="mt-1 text-ui-xs text-muted-foreground">
-        {goal.examples.length ? `${accepted} esempi accettati · ${refused} rifiutati` : "Esempi da definire"} · {goalWorkSummary(project.document, goal.id)} ·{" "}
+        {goal.examples.length ? `${accepted} esempi accettati, ${refused} rifiutati` : "Esempi da definire"}<Sep />{goalWorkSummary(project.document, goal.id)}<Sep />{" "}
         <button type="button" className="text-[var(--color-text-accent)] hover:underline" onClick={() => setInspector({ kind: "goal", id: goal.id })}>
           dettagli
         </button>

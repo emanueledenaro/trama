@@ -101,7 +101,7 @@ describe("auth status parsing", () => {
   it("reads the loggedIn marker and the account label", () => {
     const output = ok(JSON.stringify({ loggedIn: true, authMethod: "claude.ai", email: "persona@example.com", subscriptionType: "max" }));
     expect(parseClaudeAuthStatus(output)).toEqual({ status: "authenticated" });
-    expect(claudeAccountLabel(output)).toBe("Claude Max · persona@example.com");
+    expect(claudeAccountLabel(output)).toBe("Claude Max, persona@example.com");
     expect(claudeAccountLabel(ok(JSON.stringify({ loggedIn: true, authMethod: "api_key" })))).toBe("Chiave API Claude");
   });
 

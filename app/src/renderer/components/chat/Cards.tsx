@@ -27,6 +27,7 @@ import { cn } from "@/lib/cn";
 import { act, useUi } from "@/lib/store";
 import { ACTION_LABELS } from "@/lib/labels";
 import { ChatMarkdown } from "./ChatMarkdown";
+import { Sep } from "@/components/ui/sep";
 
 function CardFrame({
   icon,
@@ -45,7 +46,7 @@ function CardFrame({
   anchor?: string;
 }) {
   return (
-    <div data-anchor={anchor} className={cn("my-3 overflow-hidden rounded-xl border border-[color:var(--color-border)] bg-[var(--card)]", className)}>
+    <div data-anchor={anchor} className={cn("chat-card my-3 overflow-hidden", className)}>
       <div className="flex items-center gap-2 px-3.5 pt-2.5 pb-1 text-ui">
         <span className="flex size-4 shrink-0 items-center justify-center text-muted-foreground [&>svg]:size-3.5">{icon}</span>
         <span className="min-w-0 flex-1 truncate font-medium text-foreground">{title}</span>
@@ -93,7 +94,7 @@ export function StudyCard({ title, text, streaming }: { title: string; text: str
         <p className="line-clamp-2 text-ui text-muted-foreground">{text}</p>
       )}
       {streaming ? (
-        <div className="mt-2">
+        <div className="cta-row mt-2">
           <Button variant="outline" size="xs" onClick={() => void act("coordinator:interrupt", undefined)}>
             Interrompi
           </Button>
@@ -133,7 +134,7 @@ export function MandateCard({ requestId }: { requestId: string }) {
       aside={
         resolution ? (
           <Badge tone={resolution.kind === "revoked" ? "secondary" : "success"}>
-            {resolution.kind === "granted" ? `Concesso · v${resolution.version}` : resolution.kind === "corrected" ? `Corretto · v${resolution.version}` : "Non concesso"}
+            {resolution.kind === "granted" ? `Concesso, v${resolution.version}` : resolution.kind === "corrected" ? `Corretto, v${resolution.version}` : "Non concesso"}
           </Badge>
         ) : (
           <Badge tone="info">In attesa</Badge>
@@ -148,15 +149,15 @@ export function MandateCard({ requestId }: { requestId: string }) {
           ))}
         </ul>
       </Field>
-      {request.priorities.length ? <Field label="Priorità">{request.priorities.join(" · ")}</Field> : null}
+      {request.priorities.length ? <Field label="Priorità">{request.priorities.join(", ")}</Field> : null}
       <Field label="Perimetro">{request.scopeModuleIds.map(moduleName).join(", ")}</Field>
-      <Field label="Azioni autorizzate">{request.authorizedActions.map((a) => ACTION_LABELS[a]).join(" · ")}</Field>
-      {request.limits.length ? <Field label="Limiti">{request.limits.join(" · ")}</Field> : null}
+      <Field label="Azioni autorizzate">{request.authorizedActions.map((a) => ACTION_LABELS[a]).join(", ")}</Field>
+      {request.limits.length ? <Field label="Limiti">{request.limits.join(", ")}</Field> : null}
       {!resolution ? (
         revoking ? (
           <div className="mt-3 space-y-2">
             <TextArea value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Motivo" aria-label="Motivo della revoca" />
-            <div className="flex gap-2">
+            <div className="cta-row">
               <Button
                 size="sm"
                 variant="destructive"
@@ -171,7 +172,7 @@ export function MandateCard({ requestId }: { requestId: string }) {
             </div>
           </div>
         ) : (
-          <div className="mt-3 flex flex-wrap gap-2">
+          <div className="cta-row mt-3">
             <Button
               size="sm"
               onClick={() =>
@@ -208,11 +209,13 @@ export function DecisionCard({ requestId }: { requestId: string }) {
   const request = project.document.decisionRequests.find((r) => r.id === requestId);
   if (!request) return null;
   const outcome = request.outcome;
+  const grilling = request.grilling ?? null;
 
   return (
     <CardFrame
       icon={<IconRosetteDiscountCheck stroke={1.8} />}
-      title="Decisione"
+      title={grilling ? `Domanda ${grilling.number}` : "Decisione"}
+      className={grilling ? "my-2" : undefined}
       aside={<Badge tone={request.category === "destructive" ? "destructive" : "info"}>{request.category === "destructive" ? "Caso distruttivo" : "Scelta di prodotto"}</Badge>}
     >
       <p className="text-ui font-medium text-foreground">{request.question}</p>
@@ -237,7 +240,10 @@ export function DecisionCard({ requestId }: { requestId: string }) {
                 outcome && !chosen && "opacity-60",
               )}
             >
-              <div className="text-ui text-foreground">{alternative.behavior}</div>
+              <div className="flex items-start gap-2">
+                <span className="min-w-0 flex-1 text-ui text-foreground">{alternative.behavior}</span>
+                {grilling?.recommendedIndex === index ? <Badge tone="success">Consigliata</Badge> : null}
+              </div>
               <div className="mt-0.5 text-ui-sm text-muted-foreground">Esempio: {alternative.example}</div>
               {alternative.consequence ? <div className="mt-0.5 text-ui-sm text-muted-foreground">Conseguenza: {alternative.consequence}</div> : null}
             </button>
@@ -247,12 +253,12 @@ export function DecisionCard({ requestId }: { requestId: string }) {
       {outcome ? (
         <div className="mt-3 flex items-center gap-2 text-ui-sm text-muted-foreground">
           <span>
-            Decisione {outcome.decisionId} · versione {outcome.version}
+            Decisione {outcome.decisionId}<Sep />versione {outcome.version}
           </span>
           <button type="button" className="text-[var(--color-text-accent)] hover:underline" onClick={() => setInspector({ kind: "decision", id: outcome.decisionId })}>
             Apri nel Patto
           </button>
-          {outcome.alternativeIndex === null ? <span className="truncate">· «{outcome.answer}»</span> : null}
+          {outcome.alternativeIndex === null ? <span className="truncate"><Sep />«{outcome.answer}»</span> : null}
         </div>
       ) : (
         <div className="mt-3 space-y-2">
@@ -266,7 +272,7 @@ export function DecisionCard({ requestId }: { requestId: string }) {
             aria-label="La tua decisione"
             className="min-h-12"
           />
-          <Button
+          <Button className="ml-auto flex"
             size="sm"
             disabled={choice === null && !freeText.trim()}
             onClick={() =>
@@ -282,6 +288,28 @@ export function DecisionCard({ requestId }: { requestId: string }) {
         </div>
       )}
     </CardFrame>
+  );
+}
+
+/** The questions of one grilling round (M01), together under the round they belong to. */
+export function GrillingRoundCard({ round, questionIds }: { round: number; questionIds: string[] }) {
+  const project = useUi((s) => s.app?.project)!;
+  const questions = questionIds.map((id) => project.document.decisionRequests.find((r) => r.id === id)).filter((r) => r !== undefined);
+  const answered = questions.filter((q) => q.outcome).length;
+  const complete = answered === questions.length;
+  return (
+    <section aria-label={`Chiarimento, turno ${round}`} className="my-3 rounded-xl border border-dashed border-[color:var(--color-border)] px-2.5 pt-2 pb-0.5">
+      <div className="flex items-center gap-2 px-1 text-ui-sm">
+        <IconListCheck className="size-3.5 shrink-0 text-muted-foreground" stroke={1.8} />
+        <span className="min-w-0 flex-1 truncate font-medium text-foreground">Chiarimento prima del piano, turno {round}</span>
+        <Badge tone={complete ? "success" : "info"}>
+          {complete ? "Turno completo" : `${answered} di ${questions.length} risposte`}
+        </Badge>
+      </div>
+      {questions.map((q) => (
+        <DecisionCard key={q.id} requestId={q.id} />
+      ))}
+    </section>
   );
 }
 
@@ -341,7 +369,7 @@ export function TeamProposalCard({ proposalId }: { proposalId: string }) {
               ) : null}
               <span className="min-w-0 flex-1">
                 <span className="block text-ui text-foreground">
-                  {member.name} <span className="text-muted-foreground">· {member.competence}</span>
+                  {member.name} <span className="text-muted-foreground"><Sep />{member.competence}</span>
                 </span>
                 <span className="block text-ui-sm text-muted-foreground">{member.reason}</span>
                 {member.moduleIds.length ? (
@@ -356,7 +384,7 @@ export function TeamProposalCard({ proposalId }: { proposalId: string }) {
       {!resolution ? (
         <div className="mt-3 space-y-2">
           <TextArea value={note} onChange={(e) => setNote(e.target.value)} placeholder="Correzione (facoltativa)" aria-label="Correzione" className="min-h-12" />
-          <Button
+          <Button className="ml-auto flex"
             size="sm"
             disabled={selected.length === 0}
             onClick={() =>
@@ -400,7 +428,7 @@ export function AssignmentCard({ assignmentId }: { assignmentId: string }) {
       }
     >
       <Field label="Specialista">
-        {specialist.name} <span className="text-muted-foreground">· {specialist.competence}</span>
+        {specialist.name} <span className="text-muted-foreground"><Sep />{specialist.competence}</span>
       </Field>
       <Field label="Obiettivo">{assignment.objective}</Field>
       {assignment.exercise ? <Field label="Esercizio">{assignment.exercise}</Field> : null}
@@ -414,12 +442,12 @@ export function AssignmentCard({ assignmentId }: { assignmentId: string }) {
         </Field>
       ) : null}
       <Field label="Provider e modello scelti all'assegnazione">
-        {providerLabel(assignment.provider)} · {assignment.model}
+        {providerLabel(assignment.provider)}<Sep />{assignment.model}
         <div className="mt-0.5 text-ui-sm text-muted-foreground">
           {assignment.modelReason ? `Motivazione del Coordinatore: ${assignment.modelReason}` : "Il Coordinatore non ha registrato una motivazione per questa scelta."}
         </div>
         {lastTurn && (lastTurn.provider ?? "codex") !== (assignment.provider ?? "codex") ? (
-          <div className="mt-0.5 text-ui-sm text-warning">Ultimo turno eseguito con {providerLabel(lastTurn.provider)} · {lastTurn.model}</div>
+          <div className="mt-0.5 text-ui-sm text-warning">Ultimo turno eseguito con {providerLabel(lastTurn.provider)}<Sep />{lastTurn.model}</div>
         ) : lastTurn && lastTurn.model !== assignment.model ? (
           <div className="mt-0.5 text-ui-sm text-warning">Ultimo turno eseguito con {lastTurn.model}</div>
         ) : null}
@@ -448,7 +476,7 @@ export function AssignmentCard({ assignmentId }: { assignmentId: string }) {
         </div>
       ) : null}
       {isCurrent && (active || assignment.status === "stopped" || assignment.status === "failed") ? (
-        <div className="mt-3 flex gap-2">
+        <div className="cta-row mt-3">
           {active ? (
             <Button size="sm" variant="outline" disabled={assignment.status === "stopRequested"} onClick={() => void act("assignment:stop", { assignmentId })}>
               Ferma
@@ -494,7 +522,7 @@ export function CandidateCard({ candidateId }: { candidateId: string }) {
   return (
     <CardFrame icon={<IconFileDiff stroke={1.8} />} title={`Candidato ${candidate.id}`} aside={<Badge tone={state.tone}>{state.label}</Badge>}>
       <p className="text-ui-sm text-muted-foreground">
-        {specialist?.name ?? candidate.specialistId} · incarico {candidate.assignmentId} · {candidate.changedFiles.length === 1 ? "1 file" : `${candidate.changedFiles.length} file`}
+        {specialist?.name ?? candidate.specialistId}<Sep />incarico {candidate.assignmentId}<Sep />{candidate.changedFiles.length === 1 ? "1 file" : `${candidate.changedFiles.length} file`}
       </p>
       <Field label="Decisioni pertinenti">
         {candidate.requiredDecisionIds.map((id) => (
@@ -524,7 +552,7 @@ export function CandidateCard({ candidateId }: { candidateId: string }) {
         </div>
       </Field>
       {candidate.technicalReview ? (
-        <Field label={`Revisione tecnica · ${candidate.technicalReview.verdict === "approved" ? "approvata" : "modifiche richieste"}`}>
+        <Field label={`Revisione tecnica, ${candidate.technicalReview.verdict === "approved" ? "approvata" : "modifiche richieste"}`}>
           {candidate.technicalReview.summary}
         </Field>
       ) : null}
@@ -534,7 +562,7 @@ export function CandidateCard({ candidateId }: { candidateId: string }) {
             {report.blockers.map((b) => (
               <li key={`${b.code}-${b.detail}`}>
                 {BLOCKER_TEXT[b.code] ?? b.code}
-                {b.code === "BASE_CHANGED" ? null : <span className="text-muted-foreground"> · {b.detail}</span>}
+                {b.code === "BASE_CHANGED" ? null : <span className="text-muted-foreground"><Sep />{b.detail}</span>}
               </li>
             ))}
           </ul>
@@ -566,7 +594,7 @@ export function CandidateCard({ candidateId }: { candidateId: string }) {
           <IconGitPullRequest className="size-3.5" /> Pull request #{candidate.pullRequest.number}
         </button>
       ) : null}
-      <div className="mt-3 flex flex-wrap gap-2">
+      <div className="cta-row mt-3">
         <Button size="sm" variant="outline" onClick={() => setInspector({ kind: "candidate", id: candidate.id })}>
           Apri il diff
         </Button>
@@ -584,11 +612,11 @@ export function CandidateCard({ candidateId }: { candidateId: string }) {
       {preview && !candidate.pullRequest ? (
         <div className="mt-2 space-y-1.5 rounded-lg border border-[color:var(--color-border)] p-2.5 text-ui-sm">
           <p className="text-muted-foreground">
-            {preview.repository} · <span className="font-mono">{preview.head}</span> → <span className="font-mono">{preview.base}</span>
+            {preview.repository}<Sep /><span className="font-mono">{preview.head}</span> → <span className="font-mono">{preview.base}</span>
           </p>
           <p className="font-medium text-foreground">{preview.title}</p>
           <pre className="max-h-48 overflow-auto whitespace-pre-wrap font-sans text-ui-xs text-foreground/85">{preview.body}</pre>
-          <div className="flex gap-2">
+          <div className="cta-row">
             <Button size="sm" onClick={() => void act("candidate:publish", { candidateId }).then(() => setPreview(null))}>
               <IconGitPullRequest /> Pubblica
             </Button>
@@ -633,7 +661,7 @@ export function PlanCard({ planId }: { planId: string }) {
       }
     >
       <p className="text-ui-sm text-muted-foreground">
-        {plan.orderedBy === "coordinator" ? "Chiesto dal Coordinatore" : "Chiesto da te"} · {plan.summary}
+        {plan.orderedBy === "coordinator" ? "Chiesto dal Coordinatore" : "Chiesto da te"}<Sep />{plan.summary}
       </p>
       {plan.failure ? <Field label="Errore">{plan.failure}</Field> : null}
       {proposal ? (
@@ -654,7 +682,7 @@ export function PlanCard({ planId }: { planId: string }) {
                 Esempio accettato
                 <TextArea value={editing.example} onChange={(e) => setEditing({ ...editing, example: e.target.value })} className="mt-1 min-h-12" />
               </label>
-              <div className="flex gap-2">
+              <div className="cta-row">
                 <Button
                   size="sm"
                   onClick={() =>
@@ -700,7 +728,7 @@ export function PlanCard({ planId }: { planId: string }) {
             </div>
           ) : null}
           {pendingQuestions ? <p className="mt-2 text-ui-sm text-[var(--color-text-accent)]">{pendingQuestions === 1 ? "Una domanda aspetta" : `${pendingQuestions} domande aspettano`} la tua risposta.</p> : null}
-          <div className="mt-3 flex flex-wrap gap-2">
+          <div className="cta-row mt-3">
             {!editing && plan.status !== "planning" ? (
               <Button
                 size="sm"

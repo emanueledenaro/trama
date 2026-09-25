@@ -8,5 +8,6 @@ export default defineConfig({
       "@": resolve(import.meta.dirname, "src/renderer"),
     },
   },
-  test: { include: ["src/**/*.test.ts"], environment: "node" },
+  // Git-heavy tests pass 5 s on a loaded macOS runner; the limit guards hangs, not speed.
+  test: { include: ["src/**/*.test.ts"], environment: "node", testTimeout: 20_000 },
 });

@@ -7,6 +7,7 @@ import { cn } from "@/lib/cn";
 import { formatRelativeTime } from "@/lib/format";
 import { act, useUi } from "@/lib/store";
 import { EmptyNote, InspectorSection } from "./Inspector";
+import { Sep } from "@/components/ui/sep";
 
 type Tab = "pulls" | "branches" | "news";
 
@@ -43,9 +44,9 @@ export function GroupView() {
         ) : (
           <>
             <p className="text-ui-sm text-muted-foreground">
-              {snapshot ? `Letto ${formatRelativeTime(snapshot.fetchedAt)} fa · ramo principale ${snapshot.defaultBranch}` : "Nessuna lettura ancora."}
+              {snapshot ? `Letto ${formatRelativeTime(snapshot.fetchedAt)} fa, ramo principale ${snapshot.defaultBranch}` : "Nessuna lettura ancora."}
             </p>
-            <div className="mt-2 flex flex-wrap gap-2">
+            <div className="cta-row mt-2">
               <Button size="sm" variant="outline" onClick={askImpact}>
                 Chiedi al Coordinatore l'impatto
               </Button>
@@ -99,8 +100,8 @@ export function GroupView() {
                     <span className="min-w-0 flex-1">
                       <span className="block text-ui text-foreground/90">{pull.title}</span>
                       <span className="block truncate text-ui-xs text-muted-foreground">
-                        #{pull.number} · {pull.author ?? "?"} · {pull.headRef} → {pull.baseRef}
-                        {pull.draft ? " · bozza" : ""}
+                        #{pull.number}<Sep />{pull.author ?? "?"}<Sep />{pull.headRef} → {pull.baseRef}
+                        {pull.draft ? ", bozza" : ""}
                       </span>
                     </span>
                   </button>
@@ -126,7 +127,7 @@ export function GroupView() {
                   <div key={event.id} className="px-2 py-1.5">
                     <div className="text-ui text-foreground/90">{event.title}</div>
                     <div className="text-ui-xs text-muted-foreground">
-                      {formatRelativeTime(event.observedAt)} fa{event.author ? ` · ${event.author}` : ""}
+                      {formatRelativeTime(event.observedAt)} fa{event.author ? `, ${event.author}` : ""}
                     </div>
                   </div>
                 ))
