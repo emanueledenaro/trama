@@ -74,17 +74,27 @@ const person = (move: NextMove, label: string, targetId: string | null, extra: P
   ...extra,
 });
 
-const coordinator = (move: NextMove, label: string, message: string, targetId: string | null = null): MoveOption => ({
+/** The moves that are the Coordinator's own: Trama starts them by itself within the mandate (W04). */
+export type CoordinatorMove = "preparePlan" | "assignWork" | "verifyCandidate";
+
+/** The words of the Coordinator's moves: the button's label and the message that asks for the move. */
+export const COORDINATOR_MOVES: Record<CoordinatorMove, { label: string; message: string }> = {
+  preparePlan: { label: "Prepara il piano", message: "Prepara il piano." },
+  assignWork: { label: "Assegna il lavoro", message: "Assegna il lavoro." },
+  verifyCandidate: { label: "Esegui le verifiche", message: "Esegui le verifiche del lavoro." },
+};
+
+const coordinator = (move: CoordinatorMove, targetId: string | null = null): MoveOption => ({
   move,
   actor: "coordinator",
-  label,
+  label: COORDINATOR_MOVES[move].label,
   targetId,
   url: null,
-  message,
+  message: COORDINATOR_MOVES[move].message,
 });
 
 /** The requests of the work `requestId` belongs to: its dialog, from the grilling that opened the work (or the dialog's start) to it. */
-function workRequests(document: ProjectDocument, requestId: string): Set<string> | null {
+export function workRequests(document: ProjectDocument, requestId: string): Set<string> | null {
   const index = document.requests.findIndex((r) => r.id === requestId);
   if (index < 0) return null;
   const goalId = document.requests[index]!.goalId ?? null;
@@ -150,10 +160,10 @@ export function workState(document: ProjectDocument, requestId: string | null): 
       if (proposal) add(person("confirmTeam", "Conferma il team", proposal.id));
       return;
     }
-    if (may("executeInWorktree")) add(coordinator("assignWork", "Assegna il lavoro", "Assegna il lavoro."));
+    if (may("executeInWorktree")) add(coordinator("assignWork"));
   };
   const preparePlan = () => {
-    if (may("plan")) add(coordinator("preparePlan", "Prepara il piano", "Prepara il piano."));
+    if (may("plan")) add(coordinator("preparePlan"));
   };
   const finish = (phase: WorkPhase | null, blocker: string | null = null): WorkState => {
     if (phase === null) return { phase, blocker, moves: [] };
@@ -189,12 +199,24 @@ export function workState(document: ProjectDocument, requestId: string | null): 
   }
   if (grilled) {
     if (!open.length) {
-      add(person("confirmUnderstanding", "Conferma la comprensione", null, { message: "Confermo la comprensione condivisa: procedi." }));
+      if (!understandingConfirmed(document, scope, questions)) {
+        add(person("confirmUnderstanding", "Conferma la comprensione", null, { message: "Confermo la comprensione condivisa: procedi." }));
+      }
       preparePlan();
     }
     return finish("clarification");
   }
   return finish(open.length || mandateAsked ? "clarification" : null);
+}
+
+/**
+ * Whether the person confirmed the shared understanding with the step's button (W04) after every grilling question
+ * of the work was asked. A typed message is not recorded as the confirmation, and a question asked later needs a new one.
+ */
+function understandingConfirmed(document: ProjectDocument, scope: Set<string>, questions: DecisionRequest[]): boolean {
+  const index = (id: string | null) => document.requests.findIndex((r) => r.id === id);
+  const lastAsked = Math.max(-1, ...questions.map((q) => index(q.requestId)));
+  return document.requests.some((r, i) => i > lastAsked && scope.has(r.id) && r.step?.move === "confirmUnderstanding");
 }
 
 function answerQuestions(open: DecisionRequest[]): MoveOption {
@@ -236,7 +258,7 @@ function assignedWork(
   if (unverified) {
     const needsDeclaring = edits.some((i) => !i.candidate);
     if (!needsDeclaring || authorize(document.mandate, "executeInWorktree") === "authorized") {
-      moves.add(coordinator("verifyCandidate", "Esegui le verifiche", "Esegui le verifiche del lavoro.", unverified.candidate?.id ?? null));
+      moves.add(coordinator("verifyCandidate", unverified.candidate?.id ?? null));
     }
     return { phase: "verification", blocker: null };
   }

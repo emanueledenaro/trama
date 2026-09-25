@@ -40,6 +40,8 @@ export interface ActionMap {
     },
     void,
   ];
+  /** Takes the next step shown under a reply when it is a message to the Coordinator; Trama records the step (W04). */
+  "coordinator:takeStep": [{ requestId: string }, void];
   "coordinator:interrupt": [void, void];
   "coordinator:retry": [void, void];
   "coordinator:selectModel": [{ model: string; effort: string | null; provider?: ProviderId | null; goalId?: string | null }, void];

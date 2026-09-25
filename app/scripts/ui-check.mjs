@@ -17,6 +17,8 @@ const launch = async (env = {}) => {
       ...process.env,
       TRAMA_DATA_DIR: dataDir,
       TRAMA_CODEX_PATH: resolve("test-fixtures/fake-codex.mjs"),
+      // A move Trama starts by itself keeps running until the check stops it (W04).
+      FAKE_CODEX_AUTOMATIC: "wait",
       ...env,
     },
   });
@@ -439,6 +441,46 @@ await createDialog.waitFor();
 await createDialog.getByRole("button", { name: "Annulla" }).click();
 await createDialog.waitFor({ state: "hidden" });
 
+// W04: within the mandate the Coordinator goes on by itself. In the goal dialog, once the grilling is answered and
+// the person confirmed it with the step's button, Trama starts the plan as its own line with a stop on the right.
+await page.getByTestId("sidebar-goal").filter({ hasText: goalTitle }).click();
+await page.getByTestId("dialog-title").filter({ hasText: goalTitle }).waitFor();
+await page.getByLabel("Messaggio al Coordinatore").fill("[grilling:1] Gli ordini pagati annullati restano in revisione");
+await page.keyboard.press("Enter");
+const goalRound = page.getByRole("region", { name: "Chiarimento, turno 1" }).first();
+await goalRound.getByText("0 di 2 risposte").waitFor({ timeout: 20_000 });
+await goalRound.getByRole("button", { name: /Anche il cliente/ }).first().click();
+await goalRound.getByRole("button", { name: "Registra la decisione" }).first().click();
+await goalRound.getByText("1 di 2 risposte").waitFor({ timeout: 20_000 });
+await goalRound.getByRole("button", { name: /Anche il cliente/ }).last().click();
+await goalRound.getByRole("button", { name: "Registra la decisione" }).click();
+await goalRound.getByText("Turno completo").waitFor({ timeout: 20_000 });
+await page.getByRole("button", { name: "Interrompi" }).waitFor({ state: "hidden", timeout: 20_000 });
+await page.getByRole("button", { name: /^Mandato/ }).first().click();
+await page.getByRole("button", { name: "Correggi", exact: true }).click();
+await page.getByRole("checkbox", { name: /Preparare piani/ }).check();
+await page.getByRole("button", { name: "Salva correzione" }).click();
+await page.getByText(/Mandato v3/).first().waitFor({ timeout: 20_000 });
+await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
+await page.getByRole("button", { name: "Interrompi" }).waitFor({ state: "hidden", timeout: 20_000 });
+if (await page.getByTestId("automatic-step").count()) throw new Error("Trama went on before the person confirmed the shared understanding");
+await page.getByLabel("Messaggio al Coordinatore").fill("[passo:confirmUnderstanding] Riassumi quello che abbiamo deciso");
+await page.keyboard.press("Enter");
+const confirmStep = page.getByTestId("next-step").getByRole("button", { name: "Conferma la comprensione" });
+await confirmStep.waitFor({ timeout: 20_000 });
+await confirmStep.click();
+const automaticStep = page.getByTestId("automatic-step").filter({ hasText: "Prepara il piano" });
+const stopMove = automaticStep.getByRole("button", { name: "Ferma" });
+await stopMove.waitFor({ timeout: 20_000 });
+const stopBox = await stopMove.boundingBox();
+const lineBox = await automaticStep.boundingBox();
+if (!stopBox || !lineBox || lineBox.x + lineBox.width - (stopBox.x + stopBox.width) > 2) throw new Error("The stop of the automatic move is not on the right");
+await shot("15a-automatic-step");
+await stopMove.click();
+await stopMove.waitFor({ state: "detached", timeout: 20_000 });
+await page.getByText("Turno interrotto").last().waitFor({ timeout: 20_000 });
+if ((await page.getByTestId("automatic-step").count()) !== 1) throw new Error("Trama started another move after the stop");
+await shot("15b-automatic-step-stopped");
 await page.keyboard.press("Control+K");
 await page.getByRole("textbox", { name: "Cerca in Trama" }).fill("cancel");
 await page.getByRole("option").first().waitFor();

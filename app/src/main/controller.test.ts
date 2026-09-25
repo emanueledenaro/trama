@@ -37,6 +37,20 @@ async function interruptOnceSent(document: ProjectDocument, requestId: string): 
   await controller!.interrupt();
 }
 
+/**
+ * Answers a grilling and confirms the shared understanding with the step's button, within a mandate that allows
+ * planning (W04): the next move is the Coordinator's plan.
+ */
+async function confirmUnderstanding(document: ProjectDocument): Promise<void> {
+  await controller!.grantMandate({ requestId: null, objectives: ["o"], priorities: [], scopeModuleIds: ["Sources/Orders"], authorizedActions: ["plan"], limits: [] });
+  await controller!.send("[grilling:1] Gli ordini pagati annullati vanno in revisione", null, null, null);
+  for (const question of [...document.decisionRequests]) await controller!.answerDecision(question.id, 1, null);
+  await controller!.send("[passo:confirmUnderstanding] Riassumi quello che abbiamo deciso", null, null, null);
+  await controller!.takeStep(document.requests.at(-1)!.id);
+}
+
+const automaticRequests = (document: ProjectDocument) => document.requests.filter((r) => r.step?.by === "trama");
+
 async function setup() {
   const data = await mkdtemp(join(tmpdir(), "trama-data-"));
   const project = await mkdtemp(join(tmpdir(), "trama-project-"));
@@ -415,6 +429,74 @@ describe("TramaController", () => {
     expect(sent?.content).toMatchObject({ detail: expect.stringContaining("fase: chiarimento") });
     await until(() => Object.keys(project.nextSteps).length === 0);
   });
+
+  it("stops an automatic move at the person's stop, and the stopped work goes on no further (W04)", async () => {
+    process.env.FAKE_CODEX_AUTOMATIC = "wait";
+    try {
+      await setup();
+      const project = controller!.snapshot.project!;
+      const document = project.document;
+      await confirmUnderstanding(document);
+      await until(() => automaticRequests(document).length === 1, 20_000);
+      const move = automaticRequests(document)[0]!;
+      expect(move).toMatchObject({ state: "running", step: { move: "preparePlan", by: "trama" }, text: "Prepara il piano." });
+      await interruptOnceSent(document, move.id);
+      await until(() => move.state === "interrupted" && project.runningRequestId === null, 20_000);
+      await new Promise((r) => setTimeout(r, 300));
+      expect(automaticRequests(document)).toHaveLength(1);
+      expect(document.plans).toEqual([]);
+      // The chat shows the move as Trama's line, then the interruption in its place.
+      const rows = deriveTimelineRows(document.events, document.requests, null, new Set(), document.decisionRequests);
+      const index = rows.findIndex((r) => r.kind === "card" && r.cardKind === "automaticStep");
+      expect(rows[index]).toMatchObject({ event: { requestId: move.id, content: { title: "Prepara il piano" } } });
+      expect(rows.slice(index).some((r) => r.kind === "failure" && r.interrupted && r.requestId === move.id)).toBe(true);
+      expect(rows.some((r) => r.kind === "person" && r.event.requestId === move.id)).toBe(false);
+    } finally {
+      delete process.env.FAKE_CODEX_AUTOMATIC;
+    }
+  }, 60_000);
+
+  it("does not retry a move the Coordinator did not make, and starts nothing while its provider is blocked (W04)", async () => {
+    process.env.FAKE_CODEX_AUTOMATIC = "idle";
+    try {
+      await setup();
+      const project = controller!.snapshot.project!;
+      const document = project.document;
+      await confirmUnderstanding(document);
+      await until(() => automaticRequests(document)[0]?.state === "completed" && project.runningRequestId === null, 20_000);
+      await new Promise((r) => setTimeout(r, 300));
+      // The automatic turn ended without a plan: one move per event, no loop.
+      expect(automaticRequests(document)).toHaveLength(1);
+      expect(document.plans).toEqual([]);
+
+      // With the provider blocked, a new event of the person starts nothing either.
+      controller!.snapshot.providers.codex.account = { kind: "blocked", message: "Limite di utilizzo raggiunto.", until: null };
+      await controller!.send("Ci sei?", null, null, null);
+      await new Promise((r) => setTimeout(r, 300));
+      expect(automaticRequests(document)).toHaveLength(1);
+      expect(workState(document, document.requests.at(-1)!.id).moves.map((m) => m.move)).toEqual(["preparePlan"]);
+    } finally {
+      delete process.env.FAKE_CODEX_AUTOMATIC;
+    }
+  }, 60_000);
+
+  it("tells the Coordinator when its previous reply closed with a generic confirmation question (W04)", async () => {
+    await setup();
+    const project = controller!.snapshot.project!;
+    const document = project.document;
+    const sentDetail = (requestId: string) =>
+      document.events.find((e) => e.requestId === requestId && e.content.type === "activity" && e.content.title === "Messaggio inviato al Coordinatore")
+        ?.content;
+    await controller!.send("[chiede-conferma] Guarda il modulo Orders", null, null, null);
+    await until(() => project.runningRequestId === null && document.requests.length === 1, 20_000);
+    await controller!.send("Ci sei?", null, null, null);
+    await until(() => project.runningRequestId === null && document.requests.length === 2, 20_000);
+    expect(sentDetail(document.requests[1]!.id)).toMatchObject({ detail: expect.stringContaining("richiamo: domanda di conferma generica") });
+    // The reply that followed ends with a fact: the next turn carries no reminder.
+    await controller!.send("Grazie", null, null, null);
+    await until(() => project.runningRequestId === null && document.requests.length === 3, 20_000);
+    expect(sentDetail(document.requests[2]!.id)).not.toMatchObject({ detail: expect.stringContaining("richiamo") });
+  }, 60_000);
 
   it("supersedes a pending mandate request with a newer one, which alone can be granted (W14)", async () => {
     await setup();

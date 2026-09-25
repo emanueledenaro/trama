@@ -234,6 +234,47 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
         finish("Saved what stood out.");
         return;
       }
+      const automatic = text.match(/Mossa automatica di Trama: (\w+)/);
+      if (automatic) {
+        // A move Trama started by itself (W04). FAKE_CODEX_AUTOMATIC=wait keeps the turn running until interrupted,
+        // =idle answers without making the move; otherwise the fake makes it like a Coordinator that follows the rules.
+        if (process.env.FAKE_CODEX_AUTOMATIC === "wait") return;
+        const call = async (tool, args) => {
+          const result = await callTool(threadId, tool, args);
+          toolDone(tool, result);
+          return result;
+        };
+        const json = (result) => JSON.parse(result.content[0].text);
+        const done = [];
+        if (process.env.FAKE_CODEX_AUTOMATIC !== "idle") {
+          if (automatic[1] === "preparePlan") {
+            await call("prepare_plan", { kind: "agreedTicket", moduleIDs: ["Sources/Orders"], summary: "Revisione degli ordini pagati annullati" });
+            done.push("Ho chiesto il piano al pianificatore.");
+          } else if (automatic[1] === "assignWork") {
+            const assigned = await call("assign_task", {
+              specialist: "Ada",
+              kind: "agreedTicket",
+              objective: "Mandare in revisione gli ordini pagati annullati",
+              moduleIDs: ["Sources/Orders"],
+              requiredChecks: ["git_status"],
+              tools: ["edits"],
+              instructions: "Scrivi una nota",
+            });
+            done.push(assigned.isError ? `Rifiutato: ${assigned.content[0].text}` : "Ho assegnato la fetta ad Ada.");
+          } else if (automatic[1] === "verifyCandidate") {
+            const team = json(await call("read_team", {}));
+            const assignment = team.specialists.map((s) => s.assignment).find((a) => a?.status === "completed");
+            const decision = json(await call("read_pact", {})).decisions[0];
+            const declared = await call("declare_candidate", { assignment: assignment.id, decisionIDs: [decision.id] });
+            const { candidateID } = json(declared);
+            await call("verify_candidate", { candidate: candidateID, check: "git_status" });
+            await call("review_candidate", { candidate: candidateID });
+            done.push(`Ho verificato il candidato ${candidateID}.`);
+          }
+        }
+        finish(done.join(" ") || "Non ho fatto la mossa.");
+        return;
+      }
       if (text.includes("[memoria]")) {
         callTool(threadId, "memory", { target: "memory", action: "add", content: "Il progetto usa pnpm 9" }).then(async (result) => {
           toolDone("memory", result);
@@ -376,7 +417,10 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
       const reply =
         (text.startsWith("Studio del progetto scritto da Trama")
           ? "Ho letto lo studio: è un progetto Swift con i moduli Catalog, Inventory, Orders, Payments e Users. Vedi Sources/Orders/CancelPaidOrder.swift."
-          : `Ho ricevuto: **${text.slice(0, 200)}**. Questa risposta arriva dal server di prova. Vedi Sources/Orders/CancelPaidOrder.swift.`) + (await declareStep());
+          : `Ho ricevuto: **${text.slice(0, 200)}**. Questa risposta arriva dal server di prova. Vedi Sources/Orders/CancelPaidOrder.swift.`) +
+        // "[chiede-conferma]" closes the reply with a generic confirmation question, the habit W04 corrects.
+        (text.includes("[chiede-conferma]") ? "\n\nVuoi che prepari il piano?" : "") +
+        (await declareStep());
       const pieces = reply.match(/.{1,12}/g);
       send({ method: "item/started", params: { threadId, turnId, item: { id: "msg", type: "agentMessage", phase: "final_answer" } } });
       send({ method: "item/completed", params: { threadId, turnId, item: { id: "cmd", type: "commandExecution", command: "git status --short", exitCode: 0, status: "completed", aggregatedOutput: "" } } });
