@@ -128,15 +128,24 @@ export function MandateCard({ requestId }: { requestId: string }) {
   const moduleName = (id: string) => project.snapshot.modules.find((m) => m.id === id)?.name ?? id;
   const resolution = request.resolution;
   const hasMandate = project.document.mandate?.status === "granted";
+  // A newer request replaced this one before the person answered (W14): grey, kept in the history, not grantable.
+  const superseded = resolution?.kind === "superseded";
 
   return (
     <CardFrame
       icon={<IconShieldCheck stroke={1.8} />}
       title="Mandato"
+      className={cn(superseded && "opacity-60")}
       aside={
         resolution ? (
-          <Badge tone={resolution.kind === "revoked" ? "secondary" : "success"}>
-            {resolution.kind === "granted" ? `Concesso, v${resolution.version}` : resolution.kind === "corrected" ? `Corretto, v${resolution.version}` : "Non concesso"}
+          <Badge tone={resolution.kind === "revoked" || superseded ? "secondary" : "success"}>
+            {resolution.kind === "granted"
+              ? `Concesso, v${resolution.version}`
+              : resolution.kind === "corrected"
+                ? `Corretto, v${resolution.version}`
+                : superseded
+                  ? "Superata"
+                  : "Non concesso"}
           </Badge>
         ) : (
           <Badge tone="info">In attesa</Badge>
@@ -144,6 +153,11 @@ export function MandateCard({ requestId }: { requestId: string }) {
       }
     >
       <p className="text-ui text-foreground/90">{request.reason}</p>
+      {superseded ? (
+        <p className="mt-1 text-ui-sm text-muted-foreground" data-testid="superseded-mandate">
+          Superata dalla richiesta {resolution.supersededBy ?? "più recente"}: non si può più concedere.
+        </p>
+      ) : null}
       <Field label="Obiettivi">
         <ul className="list-disc pl-4">
           {request.objectives.map((o) => (

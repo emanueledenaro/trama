@@ -151,7 +151,21 @@ export interface MandateRequest {
   authorizedActions: MandateAction[];
   limits: string[];
   askedAt: string;
-  resolution: { kind: "granted" | "corrected" | "revoked"; version: number | null; resolvedAt: string } | null;
+  /**
+   * Null while the request waits for the person. "superseded" means a newer request replaced it before the
+   * person answered (W14): it can no longer be granted and names the newer one in `supersededBy`.
+   */
+  resolution: {
+    kind: "granted" | "corrected" | "revoked" | "superseded";
+    version: number | null;
+    resolvedAt: string;
+    supersededBy?: string | null;
+  } | null;
+}
+
+/** The one mandate request waiting for the person: the latest unresolved one (W14). */
+export function pendingMandateRequest(document: Pick<ProjectDocument, "mandateRequests">): MandateRequest | null {
+  return document.mandateRequests.filter((r) => !r.resolution).at(-1) ?? null;
 }
 
 export interface DecisionAlternative {

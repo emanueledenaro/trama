@@ -232,7 +232,7 @@ export const COORDINATOR_TOOLS: ToolDefinition[] = [
   {
     name: "request_mandate",
     description:
-      "Ask the person for a mandate, or for a correction of the current one, with the reason and the proposal. Trama shows it as a card; the person grants, corrects or revokes it. Module ids come from read_mandate.",
+      "Ask the person for a mandate, or for a correction of the current one, with the reason and the proposal. Trama shows it as a card; the person grants, corrects or revokes it. A new request supersedes the pending one, which can no longer be granted. Module ids come from read_mandate.",
     properties: {
       reason: text,
       objectives: list(1),
@@ -635,6 +635,7 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
         const scope = strings(args.scopeModuleIDs);
         const unknown = scope.filter((id) => !known.has(id));
         if (unknown.length) return toolFailure("invalid_arguments", `Unknown module ids: ${unknown.join(", ")}. Read them with read_mandate.`);
+        const pending = document.mandateRequests.filter((r) => !r.resolution).map((r) => r.id);
         const request = createMandateRequest(document, {
           requestId: context.runningRequestId,
           reason: typeof args.reason === "string" ? args.reason : "",
@@ -646,7 +647,8 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
         });
         context.addCard("mandate", "Mandato", request.id);
         context.changed();
-        return toolSuccess({ requestID: request.id, status: "shown_to_person" });
+        // A pending request is superseded by this one (W14): the person can grant only the latest.
+        return toolSuccess({ requestID: request.id, status: "shown_to_person", supersededRequestIDs: pending });
       }
       case "request_decision": {
         const alternatives = Array.isArray(args.alternatives) ? args.alternatives : [];

@@ -31,7 +31,7 @@ import { AgentAvatar, AgentTag } from "@/components/AgentIdentity";
 import { useState } from "react";
 import type * as React from "react";
 import { Spinner } from "@/components/Spinner";
-import { isOpenQuestion, type ProjectGoal, type Specialist } from "@shared/domain";
+import { isOpenQuestion, pendingMandateRequest, type ProjectGoal, type Specialist } from "@shared/domain";
 import { goalDialogIsEmpty, workingGoals } from "@shared/goals";
 import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/cn";
@@ -145,7 +145,7 @@ export function Sidebar({ isMac }: { isMac: boolean }) {
   const pendingDecisions = document?.decisionRequests.filter(isOpenQuestion) ?? [];
   // A grilling round is one row with its count, not one row per question.
   const pendingRows = sidebarDecisionRows(pendingDecisions);
-  const pendingMandate = document?.mandateRequests.find((r) => !r.resolution) ?? null;
+  const pendingMandate = document ? pendingMandateRequest(document) : null;
   const openIssues = project?.github.issues.filter((i) => i.state === "open").length ?? 0;
   const pendingTeam = document?.team.proposals.some((p) => !p.resolution) ?? false;
   const activeWork = document?.team.specialists.filter((s) => s.status === "working" || s.status === "stopping").length ?? 0;
