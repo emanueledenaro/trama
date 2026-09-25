@@ -387,6 +387,7 @@ describe("TramaController", () => {
     await until(() => project.document.plans[0]!.status === "seams");
   });
 
+  // A grilling round, two planner turns and a restart: slower than the default timeout on a loaded machine.
   it("writes the spec with to-spec once the person confirms the seams, keeps it in Trama and after a restart (M04)", async () => {
     const { data } = await setup();
     const project = controller!.snapshot.project!;
@@ -433,7 +434,7 @@ describe("TramaController", () => {
     await until(() => controller!.snapshot.project?.phase.kind === "ready" || controller!.snapshot.project?.phase.kind === "unavailable");
     const reopened = controller.snapshot.project!.document.plans[0]!;
     expect(reopened).toMatchObject({ id: plan.id, status: "ready", spec: { seams: plan.spec!.seams, sections: plan.spec!.sections, issue: null } });
-  });
+  }, 60_000);
 
   it("publishes the spec as a GitHub issue with the ready-for-agent label when GitHub is connected (M04)", async () => {
     const bin = await mkdtemp(join(tmpdir(), "trama-bin-"));
