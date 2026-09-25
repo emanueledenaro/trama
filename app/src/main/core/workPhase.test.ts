@@ -166,6 +166,17 @@ describe("workState: the phase and the allowed moves of a request (W01)", () => 
     expect(moves(document, "r1")).toEqual(["answerQuestions"]);
   });
 
+  it("is spec while the proposed seams wait for the person to confirm them (M04)", () => {
+    const document = emptyDocument("p");
+    request(document, "r1");
+    const seams = plan(document, "r1", "seams");
+    expect(workState(document, "r1")).toEqual({
+      phase: "spec",
+      blocker: null,
+      moves: [{ move: "confirmSeams", actor: "person", label: "Conferma i seam", targetId: seams.id, url: null, message: null }],
+    });
+  });
+
   it("is slices when the plan is ready: the person reviews it, the Coordinator assigns within the mandate and the team", () => {
     const document = emptyDocument("p");
     request(document, "r1");

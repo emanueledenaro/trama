@@ -80,12 +80,13 @@ export interface CoordinatorRequest {
 /** The phase of a request's work, computed by Trama from the records, never by the model (W01). */
 export type WorkPhase = "clarification" | "spec" | "slices" | "execution" | "verification" | "candidate" | "merged" | "blocked";
 
-/** A move that takes the work on: the first seven are the person's, the last three the Coordinator's (W01). */
+/** A move that takes the work on: the first eight are the person's, the last three the Coordinator's (W01). */
 export type NextMove =
   | "answerQuestions"
   | "confirmUnderstanding"
   | "grantMandate"
   | "confirmTeam"
+  | "confirmSeams"
   | "reviewPlan"
   | "reviewCandidate"
   | "mergePullRequest"
