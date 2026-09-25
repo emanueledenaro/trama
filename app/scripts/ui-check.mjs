@@ -371,10 +371,13 @@ await page.keyboard.press("Enter");
 await page.waitForTimeout(300);
 await shot("10c-search-result");
 await page.getByRole("button", { name: "Indietro" }).first().click();
-await page.getByRole("button", { name: /^ChatGPT/ }).click();
-await page.getByTestId("settings").waitFor();
-await shot("11-connections");
+// The sidebar footer holds only Impostazioni: Collegamenti is a section of the settings page.
 await page.getByRole("button", { name: "Impostazioni" }).click();
+const settings = page.getByTestId("settings");
+await settings.waitFor();
+await settings.getByRole("button", { name: /^Collegamenti/ }).first().click();
+await shot("11-connections");
+await settings.getByRole("button", { name: /^Generale/ }).first().click();
 await shot("12-settings");
 // W12, Impostazioni: the theme follows the choice at once.
 await page.getByRole("radio", { name: "Scuro" }).click();

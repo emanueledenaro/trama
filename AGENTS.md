@@ -22,7 +22,9 @@ I nomi dei branch usano un prefisso per il tipo di lavoro:
 
 La descrizione è in inglese, minuscola, con parole separate da trattini, per esempio `feature/electron-app`.
 
-L'interfaccia dell'app, la documentazione di prodotto, le issue, le pull request e le comunicazioni con la persona restano in italiano, salvo quando un termine tecnico o una fonte richiedono l'inglese. Non tradurre retroattivamente dati persistiti, contenuti storici, nomi di API esterne o testo già pubblicato soltanto per applicare questa regola.
+L'interfaccia dell'app, la documentazione di prodotto, le issue, le pull request e le comunicazioni con la persona restano in italiano, salvo quando un termine tecnico o una fonte richiedono l'inglese. Fa eccezione il `README.md`, che è in inglese e si rivolge a chi scopre il progetto su GitHub. Segue la struttura dei README open source: presentazione e schermata, stato del progetto, avvio rapido, funzionamento, provider, sviluppo, limiti noti, contributi e licenza. Le schermate stanno in `docs/images/readme/` e vengono da `npm run ui-check`. Il README riporta solo fatti verificati e rimanda ai registri in `docs/verifiche/`.
+
+Non tradurre retroattivamente dati persistiti, contenuti storici, nomi di API esterne o testo già pubblicato soltanto per applicare questa regola.
 
 ## Agent skills
 
