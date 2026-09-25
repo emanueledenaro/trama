@@ -194,7 +194,8 @@ describe("TramaController", () => {
     expect(decisionDependents(document, decisionId).goals.map((g) => g.id)).toEqual([goalId]);
   });
 
-  it("saves a goal before reporting it and keeps nothing when the save fails (UX01)", async () => {
+  // Root ignores chmod 0o500, so the failed save this test needs cannot happen when the suite runs as root.
+  it.skipIf(process.getuid?.() === 0)("saves a goal before reporting it and keeps nothing when the save fails (UX01)", async () => {
     const { data } = await setup();
     const project = controller!.snapshot.project!;
     const document = project.document;
