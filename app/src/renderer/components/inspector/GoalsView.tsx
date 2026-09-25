@@ -1,11 +1,12 @@
-import { IconArrowLeft, IconMessageCircle, IconPlus, IconTarget, IconTrash } from "@tabler/icons-react";
+import { IconArchive, IconArrowLeft, IconMessageCircle, IconPlus, IconTarget, IconTrash } from "@tabler/icons-react";
 import { useState } from "react";
 import type { GoalExample, GoalStatus, ProjectGoal } from "@shared/domain";
-import { GOAL_STATUS_LABELS, findGoal, goalLinks, goalWorkSummary, projectGoals } from "@shared/goals";
+import { GOAL_STATUS_LABELS, findGoal, goalDialogIsEmpty, goalLinks, goalWorkSummary, isArchived, projectGoals } from "@shared/goals";
 import type { GoalExampleInputPayload } from "@shared/ipc";
 import { PROVIDERS } from "@shared/providers";
 import { ASSIGNMENT_STATUS, CANDIDATE_STATE } from "@/components/chat/Cards";
 import { Button } from "@/components/ui/button";
+import { Dialog } from "@/components/ui/dialog";
 import { Badge, Input, Label, TextArea } from "@/components/ui/field";
 import { PickerSelect } from "@/components/ui/picker";
 import { cn } from "@/lib/cn";
@@ -23,6 +24,63 @@ const STATUS_TONE: Record<GoalStatus, "warning" | "info" | "success" | "secondar
 
 export function GoalStatusBadge({ status }: { status: GoalStatus }) {
   return <Badge tone={STATUS_TONE[status]}>{GOAL_STATUS_LABELS[status]}</Badge>;
+}
+
+/** The status of a goal, and whether the person archived it: archiving keeps the status (W03). */
+function GoalBadges({ goal }: { goal: ProjectGoal }) {
+  return (
+    <>
+      <GoalStatusBadge status={goal.status} />
+      {isArchived(goal) ? <Badge tone="outline">Archiviato</Badge> : null}
+    </>
+  );
+}
+
+/** Archives or restores a goal; the toast says where an archived goal went. */
+export function setArchived(goal: ProjectGoal, archived: boolean) {
+  void act("goal:archive", { id: goal.id, archived }).then((id) => {
+    if (!id) return;
+    useUi.getState().setToast(archived ? "Obiettivo archiviato. Lo ritrovi tra gli obiettivi archiviati." : "Obiettivo ripristinato.", "info");
+  });
+}
+
+/**
+ * Confirms the deletion of an empty goal dialog (W03). Only a dialog without history can be deleted: the
+ * main process checks it again, so a message sent meanwhile keeps the goal.
+ */
+export function DeleteGoalDialog({ goal, onClose }: { goal: ProjectGoal | null; onClose: () => void }) {
+  const inspector = useUi((s) => s.inspector);
+  const setInspector = useUi((s) => s.setInspector);
+  return (
+    <Dialog
+      open={goal !== null}
+      onOpenChange={(open) => (open ? null : onClose())}
+      title="Eliminare il dialogo vuoto?"
+      description="Il dialogo non ha messaggi, domande, decisioni né lavoro. Eliminarlo toglie anche l'obiettivo e non si può annullare."
+      footer={
+        <>
+          <Button size="sm" variant="ghost" onClick={onClose}>
+            Annulla
+          </Button>
+          <Button
+            size="sm"
+            variant="destructive"
+            onClick={() => {
+              if (!goal) return;
+              void act("goal:delete", { id: goal.id }).then(() => {
+                if (inspector?.kind === "goal" && inspector.id === goal.id) setInspector({ kind: "goals" });
+                onClose();
+              });
+            }}
+          >
+            Elimina il dialogo
+          </Button>
+        </>
+      }
+    >
+      {goal ? <p className="pt-1 text-ui text-foreground/90">{goal.title}</p> : null}
+    </Dialog>
+  );
 }
 
 const providerName = (id: string | undefined) => PROVIDERS.find((p) => p.id === (id ?? "codex"))?.name ?? id ?? "Codex";
@@ -125,10 +183,12 @@ export function GoalsView({ create }: { create?: boolean }) {
   const openDialog = useUi((s) => s.openDialog);
   const [editing, setEditing] = useState(Boolean(create));
   const goals = projectGoals(project.document);
-  const groups: { title: string; statuses: GoalStatus[] }[] = [
-    { title: "Proposti dal Coordinatore", statuses: ["proposed"] },
-    { title: "Aperti", statuses: ["open"] },
-    { title: "Chiusi", statuses: ["achieved", "abandoned"] },
+  // Archived goals get their own group at the end, whatever their status (W03).
+  const groups: { title: string; items: ProjectGoal[] }[] = [
+    { title: "Proposti dal Coordinatore", items: goals.filter((g) => !isArchived(g) && g.status === "proposed") },
+    { title: "Aperti", items: goals.filter((g) => !isArchived(g) && g.status === "open") },
+    { title: "Chiusi", items: goals.filter((g) => !isArchived(g) && (g.status === "achieved" || g.status === "abandoned")) },
+    { title: "Archiviati", items: goals.filter(isArchived) },
   ];
   return (
     <>
@@ -160,11 +220,10 @@ export function GoalsView({ create }: { create?: boolean }) {
         ) : null}
         {goals.length === 0 && !editing ? <p className="mt-2 text-ui text-muted-foreground/70">Nessun obiettivo. La conversazione precedente resta nel dialogo del progetto.</p> : null}
       </InspectorSection>
-      {groups.map((group) => {
-        const items = goals.filter((g) => group.statuses.includes(g.status));
+      {groups.map(({ title, items }) => {
         if (!items.length) return null;
         return (
-          <InspectorSection key={group.title} title={`${group.title} (${items.length})`}>
+          <InspectorSection key={title} title={`${title} (${items.length})`}>
             <div className="-mx-2 flex flex-col gap-0.5">
               {items.map((goal) => (
                 <button
@@ -177,6 +236,12 @@ export function GoalsView({ create }: { create?: boolean }) {
                   <span className="min-w-0 flex-1">
                     <span className="block text-ui text-foreground">{goal.title}</span>
                     <span className="block truncate text-ui-sm text-muted-foreground">
+                      {isArchived(goal) ? (
+                        <>
+                          {GOAL_STATUS_LABELS[goal.status]}
+                          <Sep />
+                        </>
+                      ) : null}
                       {goal.examples.length ? `${goal.examples.length} ${goal.examples.length === 1 ? "esempio" : "esempi"}` : "esempi da definire"}<Sep />{goalWorkSummary(project.document, goal.id)}
                     </span>
                   </span>
@@ -215,12 +280,15 @@ export function GoalView({ id }: { id: string }) {
   const dialogGoalId = useUi((s) => s.dialogGoalId);
   const [editing, setEditing] = useState(false);
   const [linking, setLinking] = useState("");
+  const [deleting, setDeleting] = useState<ProjectGoal | null>(null);
   const document = project.document;
   const goal = findGoal(document, id);
   if (!goal) return <div className="p-4"><EmptyNote>Obiettivo non trovato.</EmptyNote></div>;
   const links = goalLinks(document, goal.id);
   const linkable = document.decisions.filter((d) => !goal.decisionIds.includes(d.id));
   const setStatus = (status: GoalStatus) => void act("goal:update", { id: goal.id, status });
+  const archived = isArchived(goal);
+  const empty = goalDialogIsEmpty(document, goal.id);
   return (
     <>
       <div className="px-4 pt-3">
@@ -229,22 +297,46 @@ export function GoalView({ id }: { id: string }) {
         </button>
         <div className="mt-2 flex flex-wrap items-center gap-2">
           <h3 className="min-w-0 text-ui-lg font-medium text-foreground">{goal.title}</h3>
-          <GoalStatusBadge status={goal.status} />
+          <GoalBadges goal={goal} />
         </div>
         <p className="mt-0.5 text-ui-xs text-muted-foreground">
           <span className="font-mono">{goal.id}</span><Sep />{goal.origin === "person" ? "creato da te" : "proposto dal Coordinatore"}<Sep />{formatRelativeTime(goal.createdAt)}
+          {goal.archivedAt ? (
+            <>
+              <Sep />archiviato {formatRelativeTime(goal.archivedAt)}
+            </>
+          ) : null}
         </p>
+        {archived ? (
+          <p className="mt-2 text-ui-sm text-muted-foreground">
+            L'obiettivo è fuori dalla barra laterale e dalla panoramica. Stato, decisioni e cronologia restano; ripristinalo per riprendere il lavoro.
+          </p>
+        ) : null}
         <div className="cta-row mt-3">
           <Button size="sm" variant={dialogGoalId === goal.id ? "ghost" : "outline"} disabled={dialogGoalId === goal.id} onClick={() => openDialog(goal.id)}>
             <IconMessageCircle /> {dialogGoalId === goal.id ? "Dialogo aperto" : "Apri il dialogo"}
           </Button>
-          {goal.status === "proposed" ? (
+          {empty ? (
+            <Button size="sm" variant="ghost" onClick={() => setDeleting(goal)}>
+              <IconTrash /> Elimina
+            </Button>
+          ) : null}
+          {archived ? null : (
+            <Button size="sm" variant="ghost" onClick={() => setArchived(goal, true)}>
+              <IconArchive /> Archivia
+            </Button>
+          )}
+          {archived ? (
+            <Button size="sm" onClick={() => setArchived(goal, false)}>
+              Ripristina
+            </Button>
+          ) : goal.status === "proposed" ? (
             <>
-              <Button size="sm" onClick={() => setStatus("open")}>
-                Conferma l'obiettivo
-              </Button>
               <Button size="sm" variant="ghost" onClick={() => setStatus("abandoned")}>
                 Scarta
+              </Button>
+              <Button size="sm" onClick={() => setStatus("open")}>
+                Conferma l'obiettivo
               </Button>
             </>
           ) : goal.status === "open" ? (
@@ -262,6 +354,7 @@ export function GoalView({ id }: { id: string }) {
             </Button>
           )}
         </div>
+        <DeleteGoalDialog goal={deleting} onClose={() => setDeleting(null)} />
       </div>
       <InspectorSection title="Risultato atteso" aside={!editing ? <Button size="xs" variant="ghost" onClick={() => setEditing(true)}>Modifica</Button> : null}>
         {editing ? (
@@ -393,7 +486,7 @@ export function GoalCard({ goalId }: { goalId: string }) {
         <span className="min-w-0 flex-1 truncate font-medium text-foreground">
           {goal.status === "proposed" ? "Obiettivo proposto" : "Obiettivo"}: {goal.title}
         </span>
-        <GoalStatusBadge status={goal.status} />
+        <GoalBadges goal={goal} />
       </div>
       <div className="px-3.5 pb-3">
         <p className="text-ui text-foreground/90">{goal.outcome}</p>
@@ -401,7 +494,7 @@ export function GoalCard({ goalId }: { goalId: string }) {
           <ExampleList examples={goal.examples} />
         </div>
         <div className="cta-row mt-3">
-          {goal.status === "proposed" ? (
+          {goal.status === "proposed" && !isArchived(goal) ? (
             <Button size="sm" onClick={() => void act("goal:update", { id: goal.id, status: "open" })}>
               Conferma l'obiettivo
             </Button>
@@ -424,16 +517,19 @@ export function GoalCard({ goalId }: { goalId: string }) {
 export function GoalDialogHeader({ goalId }: { goalId: string }) {
   const project = useUi((s) => s.app?.project)!;
   const setInspector = useUi((s) => s.setInspector);
+  const [deleting, setDeleting] = useState<ProjectGoal | null>(null);
   const goal = findGoal(project.document, goalId);
   if (!goal) return null;
   const accepted = goal.examples.filter((e) => e.kind === "accepted").length;
   const refused = goal.examples.length - accepted;
+  const archived = isArchived(goal);
+  const empty = goalDialogIsEmpty(project.document, goal.id);
   return (
     <div className={cn("mb-2 rounded-xl border border-[color:var(--color-border)] px-3.5 py-2.5")} data-testid="goal-dialog-header">
       <div className="flex items-center gap-2 text-ui">
         <IconTarget className="size-3.5 shrink-0 text-muted-foreground" stroke={1.8} />
         <span className="min-w-0 flex-1 truncate font-medium text-foreground">{goal.title}</span>
-        <GoalStatusBadge status={goal.status} />
+        <GoalBadges goal={goal} />
       </div>
       <p className="mt-1 line-clamp-2 text-ui-sm text-muted-foreground">{goal.outcome}</p>
       <p className="mt-1 text-ui-xs text-muted-foreground">
@@ -442,6 +538,27 @@ export function GoalDialogHeader({ goalId }: { goalId: string }) {
           dettagli
         </button>
       </p>
+      {archived || empty ? (
+        <div className="mt-2 flex flex-wrap items-center gap-2 border-t border-[color:var(--color-border)] pt-2">
+          <p className="min-w-[12rem] flex-1 text-ui-sm text-muted-foreground">
+            {archived
+              ? "Obiettivo archiviato: il dialogo resta consultabile. Ripristinalo per riportarlo tra gli obiettivi di lavoro."
+              : "Il dialogo è vuoto. Se l'hai creato per sbaglio puoi eliminarlo."}
+          </p>
+          <div className="cta-row">
+            {archived ? (
+              <Button size="xs" variant="outline" onClick={() => setArchived(goal, false)}>
+                Ripristina
+              </Button>
+            ) : (
+              <Button size="xs" variant="ghost" onClick={() => setDeleting(goal)}>
+                <IconTrash /> Elimina il dialogo
+              </Button>
+            )}
+          </div>
+        </div>
+      ) : null}
+      <DeleteGoalDialog goal={deleting} onClose={() => setDeleting(null)} />
     </div>
   );
 }

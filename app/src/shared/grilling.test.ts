@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ProjectDocument } from "./domain";
 import { emptyDocument } from "../main/core/document";
-import { answerDecisionRequest, createDecisionRequest } from "../main/core/pact";
+import { answerDecisionRequest, createDecisionRequest, withdrawalMessage, withdrawDecisionRequest } from "../main/core/pact";
 import { GrillingError, grillingSettled, grillingSubject, openGrillingQuestions, placeGrillingQuestion } from "./grilling";
 
 function withRequests(...ids: [string, string | null][]): ProjectDocument {
@@ -73,6 +73,38 @@ describe("grilling rounds (M01)", () => {
     expect(openGrillingQuestions(document, "G1")).toEqual([]);
     answerDecisionRequest(document, q.id, { alternativeIndex: 0, freeText: null });
     expect(openGrillingQuestions(document, "R2")).toEqual([]);
+  });
+});
+
+describe("withdrawn grilling questions (W03)", () => {
+  it("stop blocking the next round and the plan, and are told to the Coordinator with their place", () => {
+    const document = withRequests(["R1", null], ["R2", null]);
+    const first = ask(document, "R1", 1);
+    const second = ask(document, "R1", 1);
+    answerDecisionRequest(document, first.id, { alternativeIndex: 0, freeText: null });
+    expect(openGrillingQuestions(document, "R1").map((q) => q.id)).toEqual([second.id]);
+    withdrawDecisionRequest(document, second.id, "Non serve per la prima versione.");
+    expect(openGrillingQuestions(document, "R1")).toEqual([]);
+    expect(withdrawalMessage(second)).toBe(
+      "Ho ritirato la domanda 2 del chiarimento, turno 1: «Domanda 1». Motivo: Non serve per la prima versione. Non conta più come domanda aperta.",
+    );
+    // The next round may start: the withdrawn question is closed, not open.
+    expect(ask(document, "R2", 2).grilling).toMatchObject({ subjectRequestId: "R1", round: 2, number: 1 });
+  });
+
+  it("settle a grilling only through the answers that remain", () => {
+    const document = withRequests(["R1", null]);
+    const first = ask(document, "R1", 1);
+    const second = ask(document, "R1", 1);
+    withdrawDecisionRequest(document, first.id, "Fuori tema");
+    expect(grillingSettled(document, "R1")).toBe(false);
+    withdrawDecisionRequest(document, second.id, "Fuori tema");
+    // Nothing answered: withdrawing every question decides nothing for the person.
+    expect(openGrillingQuestions(document, "R1")).toEqual([]);
+    expect(grillingSettled(document, "R1")).toBe(false);
+    const third = ask(document, "R1", 2);
+    answerDecisionRequest(document, third.id, { alternativeIndex: 1, freeText: null });
+    expect(grillingSettled(document, "R1")).toBe(true);
   });
 });
 

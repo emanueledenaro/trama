@@ -1,8 +1,10 @@
+import { workState } from "./core/workPhase";
+import { openGrillingQuestions } from "@shared/grilling";
 import { chmod, cp, mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import type { AppState } from "@shared/domain";
+import type { AppState, ProjectDocument } from "@shared/domain";
 import { decisionDependents, dialogEvents, findGoal, projectGoals } from "@shared/goals";
 import { deriveTimelineRows } from "@shared/timeline";
 import { TramaController } from "./controller";
@@ -22,6 +24,17 @@ async function until(check: () => boolean, timeout = 10_000): Promise<void> {
     if (Date.now() - start > timeout) throw new Error("timeout");
     await new Promise((r) => setTimeout(r, 20));
   }
+}
+
+/**
+ * Interrupts a running Coordinator turn once Trama handed it to the provider: before that there is no turn to
+ * interrupt, and the fake server's "[attesa]" turn would run forever.
+ */
+async function interruptOnceSent(document: ProjectDocument, requestId: string): Promise<void> {
+  await until(() =>
+    document.events.some((e) => e.requestId === requestId && e.content.type === "activity" && e.content.title === "Messaggio inviato al Coordinatore"),
+  );
+  await controller!.interrupt();
 }
 
 async function setup() {
@@ -424,6 +437,121 @@ describe("TramaController", () => {
     const reopened = controller!.snapshot.project!.document;
     expect(reopened).not.toBe(first.document);
     expect(reopened.requests[0]).toMatchObject({ id: request.id, state: "interrupted", failure: request.failure });
+  });
+
+  it("withdraws a grilling question with a reason: the Coordinator reads why and the plan may start (W03)", async () => {
+    await setup();
+    const document = controller!.snapshot.project!.document;
+    await controller!.send("[grilling:1] Gli ordini pagati annullati vanno in revisione", null, null, null);
+    const subject = document.requests[0]!.id;
+    const [first, second] = document.decisionRequests;
+    await controller!.answerDecision(first!.id, 0, null);
+    // One question still open: the work is still in clarification and the plan cannot start.
+    expect(openGrillingQuestions(document, subject)).toHaveLength(1);
+    expect(workState(document, subject).phase).toBe("clarification");
+
+    await expect(controller!.withdrawDecision(second!.id, "  ")).rejects.toThrow(/motivo/);
+    await controller!.withdrawDecision(second!.id, "La email la decidiamo dopo");
+    expect(second!.withdrawal?.reason).toBe("La email la decidiamo dopo");
+    expect(second!.outcome).toBeNull();
+    // Trama writes the withdrawal to the Coordinator as the person's message, like an answer.
+    const told = document.requests.at(-1)!;
+    expect(told).toMatchObject({
+      text: "Ho ritirato la domanda 2 del chiarimento, turno 1: «Il cliente riceve una email?». Motivo: La email la decidiamo dopo. Non conta più come domanda aperta.",
+      state: "completed",
+    });
+    expect(document.events.some((e) => e.content.type === "personMessage" && e.content.text === told.text)).toBe(true);
+    // The answered question and its decision stay; the withdrawn one records none.
+    expect(document.decisions.map((d) => d.value)).toEqual(["Solo il supporto"]);
+    await expect(controller!.withdrawDecision(first!.id, "ci ho ripensato")).rejects.toThrow(/decisione nuova/);
+
+    // The withdrawn question no longer counts as open: the next step is the person's confirmation of the shared understanding, then the plan.
+    expect(openGrillingQuestions(document, subject)).toHaveLength(0);
+    const moves = workState(document, subject).moves.map((m) => m.move);
+    expect(moves).not.toContain("answerQuestions");
+    expect(moves).toContain("confirmUnderstanding");
+  });
+
+  it("writes the withdrawal of a question to the dialog it was asked in (W03)", async () => {
+    await setup();
+    const goalId = await controller!.createGoal({ title: "Revisione", outcome: "Ordini in revisione", examples: [] });
+    const document = controller!.snapshot.project!.document;
+    await controller!.send("[chiedi-decisione]", null, null, null, [], null, goalId);
+    await controller!.withdrawDecision(document.decisionRequests[0]!.id, "Non è il momento");
+    expect(document.requests.at(-1)).toMatchObject({ goalId, text: expect.stringContaining("Motivo: Non è il momento.") });
+    expect(findGoal(document, goalId)!.decisionIds).toEqual([]);
+  });
+
+  it("archives and restores a goal, saved before it is reported (W03)", async () => {
+    const { data } = await setup();
+    const project = controller!.snapshot.project!;
+    const storage = new AppStorage(data);
+    const saved = async (id: string) => findGoal((await storage.loadDocument(project.id)).document!, id);
+    const id = await controller!.createGoal({ title: "Revisione", outcome: "Ordini in revisione", examples: [] });
+    await controller!.archiveGoal(id, true);
+    expect((await saved(id))!.archivedAt).toEqual(expect.any(String));
+    expect((await saved(id))!.status).toBe("open");
+    await controller!.archiveGoal(id, false);
+    expect((await saved(id))!.archivedAt).toBeNull();
+
+    // A goal whose dialog has a turn running is not put away under it.
+    const running = controller!.send("[attesa] Spiegami gli ordini", null, null, null, [], null, id);
+    await until(() => project.runningRequestId !== null);
+    await expect(controller!.archiveGoal(id, true)).rejects.toThrow(/sta rispondendo/);
+    await interruptOnceSent(project.document, project.runningRequestId!);
+    await running;
+  });
+
+  it("deletes an empty goal dialog and keeps one with history (W03)", async () => {
+    const { data } = await setup();
+    const project = controller!.snapshot.project!;
+    const document = project.document;
+    const storage = new AppStorage(data);
+    const empty = await controller!.createGoal({ title: "Doppione", outcome: "Creato per sbaglio", examples: [] });
+    const used = await controller!.createGoal({ title: "Revisione", outcome: "Ordini in revisione", examples: [] });
+    await controller!.send("Da dove partiamo?", null, null, null, [], null, used);
+    await expect(controller!.deleteGoal(used)).rejects.toThrow(/non è vuoto/);
+    // The Coordinator's first proposal has its card in the project dialog: it is history too.
+    const proposed = document.goals!.find((g) => g.origin === "coordinator")!;
+    await expect(controller!.deleteGoal(proposed.id)).rejects.toThrow(/non è vuoto/);
+
+    await controller!.deleteGoal(empty);
+    expect(findGoal(document, empty)).toBeNull();
+    expect(dialogEvents(document.events, empty)).toEqual([]);
+    expect(findGoal((await storage.loadDocument(project.id)).document!, empty)).toBeNull();
+    expect(findGoal((await storage.loadDocument(project.id)).document!, used)).not.toBeNull();
+  });
+
+  it("deletes a queued message before it leaves, never one that reports a recorded choice (W03)", async () => {
+    await setup();
+    const project = controller!.snapshot.project!;
+    const document = project.document;
+    await controller!.send("[chiedi-decisione]", null, null, null);
+    const question = document.decisionRequests[0]!;
+    const running = controller!.send("[attesa] Spiegami gli ordini", null, null, null);
+    await until(() => project.runningRequestId !== null);
+    const runningId = project.runningRequestId!;
+    await controller!.send("Messaggio da togliere", null, null, null);
+    controller!.saveDraft("Bozza che resta", null);
+    await controller!.answerDecision(question.id, 0, null);
+    const queued = controller!.snapshot.project!.queuedMessages;
+    expect(queued.map((q) => [q.text, q.goalId, q.removable])).toEqual([
+      ["Messaggio da togliere", null, true],
+      [expect.stringContaining("Ho risposto alla domanda"), null, false],
+    ]);
+    expect(() => controller!.deleteQueuedMessage(queued[1]!.id)).toThrow(/già registrata/);
+    controller!.deleteQueuedMessage(queued[0]!.id);
+    expect(controller!.snapshot.project!.queuedMessages.map((q) => q.id)).toEqual([queued[1]!.id]);
+    expect(() => controller!.deleteQueuedMessage(queued[0]!.id)).toThrow(/non è più in coda/);
+
+    await interruptOnceSent(document, runningId);
+    await running;
+    await until(() => document.requests.some((r) => r.text.startsWith("Ho risposto alla domanda") && r.state === "completed"));
+    expect(document.requests.some((r) => r.text === "Messaggio da togliere")).toBe(false);
+    expect(document.events.some((e) => e.content.type === "personMessage" && e.content.text === "Messaggio da togliere")).toBe(false);
+    expect(controller!.snapshot.project!.queuedMessages).toEqual([]);
+    // The answer Trama wrote for the person left the draft the person was writing.
+    expect(document.composerDraft).toBe("Bozza che resta");
   });
 
   it("persists the conversation and resumes it after a restart", async () => {

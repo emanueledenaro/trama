@@ -1,5 +1,6 @@
 import { IconArrowLeft, IconPlus, IconTarget } from "@tabler/icons-react";
 import { useState } from "react";
+import { isOpenQuestion } from "@shared/domain";
 import { decisionDependents } from "@shared/goals";
 import { ASSIGNMENT_STATUS, DecisionCard } from "@/components/chat/Cards";
 import { Button } from "@/components/ui/button";
@@ -52,7 +53,7 @@ export function PactView() {
   const setInspector = useUi((s) => s.setInspector);
   const [editing, setEditing] = useState(false);
   const { decisions, decisionRequests } = project.document;
-  const pending = decisionRequests.filter((r) => !r.outcome);
+  const pending = decisionRequests.filter(isOpenQuestion);
   return (
     <>
       {project.isDemo ? <PactDemoBox /> : null}

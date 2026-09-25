@@ -13,10 +13,12 @@ import {
   IconUsersGroup,
   IconFileDiff,
   IconGitPullRequest,
+  IconTrash,
 } from "@tabler/icons-react";
-import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { isOpenQuestion, type QueuedMessage } from "@shared/domain";
 import { deriveTimelineRows, rowAnchors } from "@shared/timeline";
-import { dialogEvents, dialogRequests, findGoal } from "@shared/goals";
+import { dialogEvents, dialogRequests, findGoal, workingGoals } from "@shared/goals";
 import { GoalDialogHeader } from "@/components/inspector/GoalsView";
 import { OverviewView } from "@/components/OverviewView";
 import { SettingsView } from "@/components/settings/SettingsView";
@@ -93,14 +95,14 @@ function ChatHeader({ isMac }: { isMac: boolean }) {
   const inspector = useUi((s) => s.inspector);
   const setInspector = useUi((s) => s.setInspector);
   const project = app.project;
-  const pendingDecisions = project?.document.decisionRequests.filter((r) => !r.outcome).length ?? 0;
+  const pendingDecisions = project?.document.decisionRequests.filter(isOpenQuestion).length ?? 0;
   const pendingMandate = project?.document.mandateRequests.some((r) => !r.resolution) ? 1 : 0;
   const openIssues = project?.github.issues.filter((i) => i.state === "open").length ?? 0;
   const pendingTeam = project?.document.team.proposals.some((p) => !p.resolution) ? 1 : 0;
   const mainView = useUi((s) => s.mainView);
   const openDialog = useUi((s) => s.openDialog);
   const goal = useUi((s) => (project ? findGoal(project.document, s.dialogGoalId) : null));
-  const proposedGoals = project?.document.goals?.filter((g) => g.status === "proposed").length ?? 0;
+  const proposedGoals = project ? workingGoals(project.document).filter((g) => g.status === "proposed").length : 0;
   const panels: HeaderPanel[] = [
     { target: { kind: "goals" }, label: "Obiettivi", icon: <IconTarget stroke={1.8} />, count: proposedGoals },
     { target: { kind: "map" }, label: "Mappa", icon: <IconSitemap stroke={1.8} /> },
@@ -296,6 +298,46 @@ function FirstGoalPrompt() {
 
 const hasConfirmedGoal = (goals: { status: string }[] | undefined) => (goals ?? []).some((g) => g.status !== "proposed");
 
+/**
+ * A message waiting for the running turn to end (W03). The person may delete it before it leaves, after a
+ * confirmation; a message that reports a choice already recorded always leaves.
+ */
+function QueuedMessageRow({ message }: { message: QueuedMessage }) {
+  const [confirming, setConfirming] = useState(false);
+  return (
+    <div className="flex w-full justify-end py-2" data-testid="queued-message">
+      <div className="flex max-w-[80%] flex-col items-end gap-1">
+        <div className="pr-1 text-ui-xs text-muted-foreground/70">
+          In coda: parte quando il Coordinatore finisce
+          {message.imageCount ? `, ${message.imageCount === 1 ? "1 immagine" : `${message.imageCount} immagini`}` : ""}
+        </div>
+        <div className="w-max max-w-full min-w-0 rounded-[var(--radius-user-message)] border border-dashed border-[color:var(--color-border)] px-3.5 py-2.5 text-chat whitespace-pre-wrap text-foreground/75">
+          <span className="line-clamp-6">{message.text}</span>
+        </div>
+        {message.removable ? (
+          confirming ? (
+            <div className="cta-row">
+              <span className="text-ui-xs text-muted-foreground">Il messaggio non arriverà al Coordinatore.</span>
+              <Button size="xs" variant="ghost" onClick={() => setConfirming(false)}>
+                Annulla
+              </Button>
+              <Button size="xs" variant="destructive" onClick={() => void act("coordinator:deleteQueued", { id: message.id })}>
+                Elimina il messaggio
+              </Button>
+            </div>
+          ) : (
+            <Button size="xs" variant="ghost" aria-label="Elimina il messaggio in coda" onClick={() => setConfirming(true)}>
+              <IconTrash /> Elimina
+            </Button>
+          )
+        ) : (
+          <span className="pr-1 text-ui-xs text-muted-foreground/70">Riferisce una scelta già registrata: parte comunque.</span>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function Timeline() {
   const project = useUi((s) => s.app?.project)!;
   const goalId = useUi((s) => s.dialogGoalId);
@@ -313,6 +355,7 @@ function Timeline() {
     () => deriveTimelineRows(events, requests, streaming, new Set(runningWork), decisionRequests),
     [events, requests, streaming, runningWork, decisionRequests],
   );
+  const queued = project.queuedMessages.filter((q) => q.goalId === goalId);
   const scroller = useRef<HTMLDivElement>(null);
   const pinned = useRef(true);
   const studying = project.phase.kind === "studying" && goalId === null;
@@ -342,6 +385,11 @@ function Timeline() {
         {rows.map((row, index) => (
           <div key={row.id} className="px-1" data-anchors={rowAnchors(row).join(" ") || undefined}>
             <TimelineRowView row={row} latest={row.kind === "reply" && !rows.slice(index + 1).some((r) => r.kind === "reply")} />
+          </div>
+        ))}
+        {queued.map((message) => (
+          <div key={message.id} className="px-1">
+            <QueuedMessageRow message={message} />
           </div>
         ))}
         {studying ? (

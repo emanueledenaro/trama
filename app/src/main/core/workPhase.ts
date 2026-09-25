@@ -9,6 +9,7 @@ import type {
   SpecialistAssignment,
   WorkPhase,
 } from "@shared/domain";
+import { isOpenQuestion } from "@shared/domain";
 import { grillingSubject } from "@shared/grilling";
 import { PROVIDERS } from "@shared/providers";
 import { inspectCandidate, latestCandidate } from "./candidates";
@@ -128,7 +129,8 @@ export function workState(document: ProjectDocument, requestId: string | null): 
   const may = (action: MandateAction) => authorize(document.mandate, action) === "authorized";
 
   const questions = document.decisionRequests.filter((q) => (q.grilling ? scope.has(q.grilling.subjectRequestId) : inScope(q.requestId)));
-  const open = questions.filter((q) => !q.outcome);
+  // A withdrawn question is not open any more (W03).
+  const open = questions.filter(isOpenQuestion);
   const grilled = questions.some((q) => q.grilling);
   const plan = document.plans.filter((p) => inScope(p.requestId)).at(-1) ?? null;
   const assigned = allAssignments(document).filter((a) => inScope(a.requestId) && (!plan || a.createdAt >= plan.createdAt));

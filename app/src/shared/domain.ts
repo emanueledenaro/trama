@@ -185,6 +185,16 @@ export interface DecisionRequest {
   grilling?: GrillingPlace | null;
   askedAt: string;
   outcome: { answer: string; alternativeIndex: number | null; decisionId: string; version: number; answeredAt: string } | null;
+  /**
+   * Set when the person withdrew the open question with a reason (W03): it stays in the history, records no
+   * decision and no longer waits for an answer. Absent in documents written before withdrawals.
+   */
+  withdrawal?: { reason: string; withdrawnAt: string } | null;
+}
+
+/** A question still waiting for the person: neither answered nor withdrawn. */
+export function isOpenQuestion(request: Pick<DecisionRequest, "outcome" | "withdrawal">): boolean {
+  return !request.outcome && !request.withdrawal;
 }
 
 export interface CoordinatorMemory {
@@ -533,6 +543,11 @@ export interface ProjectGoal {
   decisionIds: string[];
   /** The goal dialog's composer. */
   dialog: DialogComposer;
+  /**
+   * When the person put the goal away (W03). Archiving hides it from the working view and keeps its status,
+   * links and history; restoring clears it. Absent or null means not archived.
+   */
+  archivedAt?: string | null;
 }
 
 export interface ProjectDocument {
@@ -673,6 +688,8 @@ export interface ActiveProjectState {
   phase: CoordinatorPhase;
   streaming: { requestId: string | null; text: string } | null;
   runningRequestId: string | null;
+  /** Messages sent while a turn was running, in the order they will leave (W03). */
+  queuedMessages: QueuedMessage[];
   contextUsage: { usedTokens: number; contextWindow: number | null } | null;
   github: GitHubState;
   stateWritable: boolean;
@@ -690,6 +707,21 @@ export interface ActiveProjectState {
   nextSteps: Record<string, NextStepView>;
   /** The AI Hero skills Trama copies are present in the project. */
   aiHeroPrepared?: boolean;
+}
+
+/** A message waiting for the running turn to end; it has no request and no event until it leaves. */
+export interface QueuedMessage {
+  id: string;
+  text: string;
+  /** The dialog it was sent from, fixed at sending (UX02). */
+  goalId: string | null;
+  imageCount: number;
+  queuedAt: string;
+  /**
+   * False when the message reports a choice Trama already recorded (an answer, a withdrawal, a mandate):
+   * deleting it would hide that choice from the Coordinator.
+   */
+  removable: boolean;
 }
 
 export type ThemePreference = "system" | "light" | "dark";

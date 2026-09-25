@@ -15,6 +15,7 @@ import type {
   WorkKind,
   WorktreeSession,
 } from "@shared/domain";
+import { isOpenQuestion } from "@shared/domain";
 import type { ProviderId } from "@shared/codex";
 import { shortId } from "@shared/ids";
 import { FIXED_ROLES, isFixedRole, roleProfile } from "@shared/roster";
@@ -630,7 +631,7 @@ export function changeAssignmentProvider(
  */
 export function assignmentsAffectedByDecision(document: ProjectDocument, decisionId: string): SpecialistAssignment[] {
   const current = document.decisions.find((d) => d.id === decisionId)?.version;
-  const revising = document.decisionRequests.some((r) => !r.outcome && r.revisesDecisionId === decisionId);
+  const revising = document.decisionRequests.some((r) => isOpenQuestion(r) && r.revisesDecisionId === decisionId);
   return activeAssignments(document).filter((assignment) => {
     const version = assignment.decisionVersions?.[decisionId];
     return version !== undefined && (revising || version !== current);
