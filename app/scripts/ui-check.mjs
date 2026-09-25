@@ -100,7 +100,17 @@ await page.getByText("Concluso", { exact: true }).first().waitFor({ timeout: 20_
 await page.waitForTimeout(500);
 await shot("04d-assignment-done");
 await page.getByRole("button", { name: /^Team/ }).first().click();
+// W09: the full team, moment by moment, with the fixed roles next to the confirmed developer.
+const teamPanel = page.getByTestId("inspector");
+await teamPanel.getByText("Chiarimento e spec", { exact: true }).waitFor();
+await teamPanel.getByRole("button", { name: /^Ada/ }).waitFor();
 await shot("04e-team-inspector");
+await teamPanel.getByText("In sottofondo", { exact: true }).scrollIntoViewIfNeeded();
+await shot("04e1-team-candidate-background");
+await teamPanel.getByTestId("team-figure").filter({ hasText: "Guardiano delle regressioni" }).first().click();
+await teamPanel.getByText("Quando interviene").waitFor();
+if (await teamPanel.getByRole("button", { name: "Togli dal team" }).count()) throw new Error("A fixed role offers to leave the team");
+await shot("04e2-team-fixed-role");
 await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
 
 // Learning (ADR 0014): the Coordinator saves a note, then a review the person asks for writes memory and a skill.

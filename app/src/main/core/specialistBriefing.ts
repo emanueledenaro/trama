@@ -6,7 +6,7 @@ import { needsWorktree } from "./team";
 export function specialistInstructions(projectName: string, specialist: Specialist, assignment: SpecialistAssignment): string {
   const lines = [
     `You are ${specialist.name}, a specialist of the project "${projectName}" in Trama, working under its Coordinator.`,
-    `Your competence: ${specialist.competence}.`,
+    `Your competence: ${specialist.competence.replace(/\.$/, "")}.`,
     "Trama owns this thread and runs it for one assignment. Do the work, then answer with what you changed, what you checked and what is left.",
     needsWorktree(assignment)
       ? "You work in your own Git worktree, the working directory of this thread. Write only inside it: the project checkout, its index and every other directory are out of reach, and so is the network. Do not commit, push, or run Git commands that write."

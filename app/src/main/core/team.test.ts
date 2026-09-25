@@ -1,13 +1,16 @@
 import { describe, expect, it } from "vitest";
 import type { ProjectMandate } from "@shared/domain";
-import { emptyDocument } from "./document";
+import { FIXED_ROLES, roleProfile } from "@shared/roster";
+import { emptyDocument, normalizeDocument } from "./document";
 import {
   assign,
   type AssignmentOrder,
   authorize,
   beginTurn,
   confirmTeam,
+  developers,
   endTurn,
+  findSpecialist,
   proposeTeam,
   removeSpecialist,
   requestStop,
@@ -46,7 +49,7 @@ describe("team", () => {
     const first = proposeTeam(document, { requestId: null, summary: null, members });
     const second = proposeTeam(document, { requestId: null, summary: null, members });
     expect(first.resolution?.kind).toBe("superseded");
-    expect(document.team.specialists).toHaveLength(0);
+    expect(developers(document)).toHaveLength(0);
     const created = confirmTeam(document, second.id, ["ada"], "Bruno dopo");
     expect(created.map((s) => s.name)).toEqual(["Ada"]);
     expect(second.resolution).toMatchObject({ kind: "corrected", removedNames: ["Bruno"], note: "Bruno dopo" });
@@ -65,18 +68,19 @@ describe("team", () => {
     );
     beginTurn(document, assignment.id, "t1", "gpt-5.5");
     requestStop(document, "Ada", "Coordinatore", "Cambio di piano");
-    expect(document.team.specialists[0]!.status).toBe("stopping");
+    const ada = findSpecialist(document, "Ada")!;
+    expect(ada.status).toBe("stopping");
     endTurn(document, assignment.id, "t1", { kind: "interrupted" });
     expect(assignment.status).toBe("stopped");
     expect(assignment.stops[0]!.confirmedAt).not.toBeNull();
     resumeAssignment(document, assignment.id);
     beginTurn(document, assignment.id, "t2", "gpt-5.5");
     endTurn(document, assignment.id, "t2", { kind: "completed", text: "Fatto" });
-    expect(document.team.specialists[0]!.status).toBe("available");
+    expect(ada.status).toBe("available");
     const report = teamReport(document)!;
     expect(report.text).toContain("Ada · incarico");
     expect(report.text).toContain("Risultato: Fatto");
-    expect(() => removeSpecialist(document, document.team.specialists[0]!.id, "fine", "Coordinatore")).not.toThrow();
+    expect(() => removeSpecialist(document, ada.id, "fine", "Coordinatore")).not.toThrow();
   });
 
   it("stops work left running by a previous launch", () => {
@@ -108,6 +112,76 @@ describe("team", () => {
     expect(authorize(mandate, "composeTeam")).toBe("not_in_mandate");
     expect(authorize(mandate, "executeInWorktree", ["Sources/Orders"], "newFeature")).toBe("person_required");
     expect(authorize({ ...mandate, status: "revoked" }, "executeInWorktree", [], "newFeature")).toBe("mandate_revoked");
+  });
+});
+
+describe("full team (W09)", () => {
+  it("gives a new project every fixed role before any proposal", () => {
+    const document = emptyDocument("p");
+    expect(document.team.specialists.map((s) => s.role)).toEqual(FIXED_ROLES);
+    for (const specialist of document.team.specialists) {
+      expect(specialist).toMatchObject({
+        name: roleProfile(specialist.role).name,
+        competence: roleProfile(specialist.role).competence,
+        origin: "fixedRole",
+        status: "available",
+        moduleIds: [],
+      });
+      expect(specialist.id).toMatch(/^S-[0-9A-F]{8}$/);
+    }
+    expect(developers(document)).toEqual([]);
+    expect(document.team.confirmedAt).toBeNull();
+  });
+
+  it("adds the confirmed specialists as developers beside the fixed roles", () => {
+    const document = emptyDocument("p");
+    confirmTeam(document, proposeTeam(document, { requestId: null, summary: null, members }).id, null, null);
+    expect(developers(document).map((s) => [s.name, s.role])).toEqual([
+      ["Ada", "developer"],
+      ["Bruno", "developer"],
+    ]);
+    expect(document.team.specialists).toHaveLength(FIXED_ROLES.length + 2);
+  });
+
+  it("migrates an older team: its specialists stay as developers and the fixed roles are added once", () => {
+    const legacy = {
+      id: "S-0000ADA0",
+      name: "Ada",
+      competence: "Swift",
+      reason: "Il dominio è in Swift",
+      moduleIds: ["Sources/Orders"],
+      origin: "teamProposal",
+      createdAt: "2026-09-01T00:00:00.000Z",
+      status: "available",
+      model: "gpt-5.5",
+      tools: ["commands"],
+      updatedAt: "2026-09-01T00:00:00.000Z",
+      lastUpdate: "Nel team",
+      assignments: [],
+      removal: null,
+    };
+    const raw = JSON.parse(JSON.stringify({ team: { proposals: [], specialists: [legacy], confirmedAt: "2026-09-01T00:00:00.000Z" } }));
+    const document = normalizeDocument(raw, "p");
+    expect(document.team.specialists[0]).toEqual({ ...legacy, role: "developer" });
+    expect(document.team.specialists.slice(1).map((s) => s.role)).toEqual(FIXED_ROLES);
+    expect(document.team.confirmedAt).toBe("2026-09-01T00:00:00.000Z");
+    const again = normalizeDocument(JSON.parse(JSON.stringify(document)), "p");
+    expect(again.team.specialists.map((s) => s.id)).toEqual(document.team.specialists.map((s) => s.id));
+  });
+
+  it("keeps the fixed roles in the team and out of the proposal", () => {
+    const document = emptyDocument("p");
+    expect(() => proposeTeam(document, { requestId: null, summary: null, members: [{ name: "qa", competence: "Test", reason: "r", moduleIds: [] }] })).toThrow(
+      /QA is a fixed role/,
+    );
+    confirmTeam(document, proposeTeam(document, { requestId: null, summary: null, members }).id, null, null);
+    const guardian = document.team.specialists.find((s) => s.role === "regressionGuardian")!;
+    expect(() => removeSpecialist(document, guardian.id, "non serve", "Persona")).toThrow(expect.objectContaining({ code: "fixed_role" }));
+    expect(guardian.status).toBe("available");
+    const qa = document.team.specialists.find((s) => s.role === "qa")!;
+    assign(document, order({ specialist: qa.id, tools: [] }), 1, null);
+    expect(() => requestStop(document, qa.id, "Coordinatore", "basta", true)).toThrow(expect.objectContaining({ code: "fixed_role" }));
+    expect(requestStop(document, qa.id, "Coordinatore", "basta").status).toBe("stopRequested");
   });
 });
 

@@ -21,7 +21,7 @@ import { appendEvent, emptyDocument, normalizeDocument } from "./document";
 import { createGoal, goalContext, linkDecision, observeExample, proposeGoal, updateGoal } from "./goals";
 import { orderByAttention, summarizeProject, unreadableProject } from "./overview";
 import { decide, DomainError, grantMandate } from "./pact";
-import { assign, confirmTeam, proposeTeam } from "./team";
+import { assign, confirmTeam, developers, findSpecialist, proposeTeam } from "./team";
 import { AppStorage } from "./storage";
 
 const input = {
@@ -52,7 +52,7 @@ function candidate(document: ProjectDocument, assignmentId: string, decisionIds:
   const value: Candidate = {
     id: `C-${snapshotId}`,
     assignmentId,
-    specialistId: document.team.specialists[0]!.id,
+    specialistId: findSpecialist(document, "Ada")!.id,
     snapshotId,
     baseSHA: "base",
     diff: "",
@@ -91,7 +91,7 @@ describe("goals (UX01)", () => {
     expect(findGoal(document, second.id)).toBe(second);
     // Creating a goal grants no mandate and starts nothing.
     expect(document.mandate).toBeNull();
-    expect(document.team.specialists).toHaveLength(0);
+    expect(developers(document)).toHaveLength(0);
   });
 
   it("refuses invalid input", () => {
@@ -326,7 +326,7 @@ describe("Coordinator tools for goals and models (UX02, UX05, UX07)", () => {
     );
     expect(result.isError).toBeFalsy();
     expect(parse(result)).toMatchObject({ model: "gpt-5.5-mini", goalID: goal.id });
-    const assignment = document.team.specialists[0]!.assignments[0]!;
+    const assignment = findSpecialist(document, "Ada")!.assignments[0]!;
     expect(assignment).toMatchObject({ modelReason: "Un compito piccolo e ben definito: basta il modello più leggero.", goalId: goal.id });
     expect(goalLinks(document, goal.id).assignments.map((a) => a.assignment.id)).toEqual([assignment.id]);
 
@@ -347,7 +347,7 @@ describe("Coordinator tools for goals and models (UX02, UX05, UX07)", () => {
       { specialist: "Ada", kind: "agreedTicket", objective: "o", moduleIDs: ["Sources/Orders"], requiredChecks: [], instructions: "i" },
       toolContext(document),
     );
-    const assignment = document.team.specialists[0]!.assignments[0]!;
+    const assignment = findSpecialist(document, "Ada")!.assignments[0]!;
     expect(assignment.modelReason).toBeNull();
     expect(assignment.goalId).toBeUndefined();
   });

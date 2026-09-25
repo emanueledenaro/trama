@@ -13,6 +13,7 @@ import { ALL_CHECKS, CHECKS, type CheckResult, type ReadOnlyCheck } from "./chec
 import { candidateReport, CandidateError, clearCandidate, declareCandidate, findCandidate } from "./candidates";
 import { studyText } from "./study";
 import { findGoal, requestGoalId } from "@shared/goals";
+import { isFixedRole, roleDuties } from "@shared/roster";
 import { GrillingError, grillingSettled, openGrillingQuestions, placeGrillingQuestion } from "@shared/grilling";
 import { goalsForTool, proposeGoal } from "./goals";
 import {
@@ -272,7 +273,7 @@ export const COORDINATOR_TOOLS: ToolDefinition[] = [
   {
     name: "read_team",
     description:
-      "Read the project team: the proposal and the person's answer, each specialist with competence, reason, status and current assignment, and what composeTeam and executeInWorktree would get now.",
+      "Read the project team: the proposal and the person's answer, each specialist with its role (a fixed role or developer), competence, reason, the moments of the flow it works at with the AI Hero skills it relies on there, status and current assignment, and what composeTeam and executeInWorktree would get now.",
     properties: {},
     required: [],
     readOnly: true,
@@ -296,7 +297,7 @@ export const COORDINATOR_TOOLS: ToolDefinition[] = [
   {
     name: "propose_team",
     description:
-      "Propose the project team to the person, once, at the end of your study: for each specialist a name, a competence, the reason this project needs it and the modules it would work on. Propose only specialists that real work needs, never one to fill a role. Trama shows a card; the person confirms or corrects it once and only that answer creates the specialists. Afterwards change the team with create_specialist and stop_specialist.",
+      "Propose the project's developers to the person, once, at the end of your study: for each developer a name, a competence, the reason this project needs it and the modules it would work on. Every team already has the fixed roles (QA, UX, research, documentation and domain, bug triage and debugger, spec reviewer, Clean Code, regression guardian, security, performance, DevOps): never propose them. Propose only developers that real work needs, never one to fill a role. Trama shows a card; the person confirms or corrects it once and only that answer creates the developers. Afterwards change them with create_specialist and stop_specialist.",
     properties: {
       summary: text,
       specialists: {
@@ -316,7 +317,7 @@ export const COORDINATOR_TOOLS: ToolDefinition[] = [
   {
     name: "create_specialist",
     description:
-      "Within the mandate (composeTeam), add a specialist to the confirmed team for work you are about to assign, and say so in the conversation. Never add one to fill a role, nor when a free specialist has the same competence.",
+      "Within the mandate (composeTeam), add a developer to the confirmed team for work you are about to assign, and say so in the conversation. Never add one to fill a role, nor when a free specialist has the same competence; the fixed roles are already in the team.",
     properties: { name: text, competence: text, reason: text, moduleIDs: list(1) },
     required: ["name", "competence", "reason", "moduleIDs"],
     readOnly: false,
@@ -324,7 +325,7 @@ export const COORDINATOR_TOOLS: ToolDefinition[] = [
   {
     name: "assign_task",
     description:
-      "Within the mandate (executeInWorktree), assign work to a specialist, named by id or name. Trama starts it in a provider session it owns, in its own worktree when tools include edits, without network. Give the objective, the issue or exercise, the modules, the assignments it depends on, the Pact decisions the work relies on (decisionIDs: the work stops if one changes), the checks the result must pass and your instructions for the specialist. provider and model default to yours; propose another connected provider or model only when the work needs it (read_team lists them). In modelReason say why this provider and model fit the work: first the quality the work needs, then the cost among adequate models; say so when you lack evidence. goalID names the goal the work serves; it defaults to the goal of the dialog you are answering. Assign in parallel only independent work: different modules and no unfinished dependency. kind newFeature and tradeOff always go to the person.",
+      "Within the mandate (executeInWorktree), assign work to a specialist, named by id or name. Trama starts it in a provider session it owns, in its own worktree when tools include edits, without network. Give the objective, the issue or exercise, the modules, the assignments it depends on, the Pact decisions the work relies on (decisionIDs: the work stops if one changes), the checks the result must pass and your instructions for the specialist. provider and model default to yours; propose another connected provider or model only when the work needs it (read_team lists them). In modelReason say why this provider and model fit the work: first the quality the work needs, then the cost among adequate models; say so when you lack evidence. goalID names the goal the work serves; it defaults to the goal of the dialog you are answering. Assign in parallel only independent work: different modules and no unfinished dependency. Slices go to developers; give a fixed role only work of its own moments (read_team). kind newFeature and tradeOff always go to the person.",
     properties: {
       specialist: text,
       kind: { type: "string", enum: WORK_KINDS },
@@ -389,7 +390,7 @@ export const COORDINATOR_TOOLS: ToolDefinition[] = [
   {
     name: "stop_specialist",
     description:
-      "Within the mandate, stop a specialist's work (executeInWorktree), or with remove take the specialist out of the team once its work has stopped (composeTeam). A stop is first requested and then confirmed when the provider ends the turn; work and history are kept. Say it in the conversation.",
+      "Within the mandate, stop a specialist's work (executeInWorktree), or with remove take a developer out of the team once its work has stopped (composeTeam); a fixed role stays. A stop is first requested and then confirmed when the provider ends the turn; work and history are kept. Say it in the conversation.",
     properties: { specialist: text, reason: text, remove: { type: "boolean" } },
     required: ["specialist", "reason"],
     readOnly: false,
@@ -680,8 +681,11 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
             return {
               id: specialist.id,
               name: specialist.name,
+              role: specialist.role,
+              fixedRole: isFixedRole(specialist.role),
               competence: specialist.competence,
               reason: specialist.reason,
+              moments: roleDuties(specialist.role) as unknown as Json,
               moduleIDs: specialist.moduleIds,
               status: specialist.status,
               model: specialist.model,
@@ -1020,7 +1024,8 @@ export function developerInstructions(projectName: string, learningGuidance: str
     "read_mandate tells whether a mandate exists and which modules the project has. Without a mandate you read and propose; you do not act. When the person asks for a change you cannot start without a mandate, first grill the request (it needs no mandate), then propose one with request_mandate: the reason, objectives, scope and actions the work needs, nothing broader.",
     "New features, trade-offs, product behavior and serious destructive cases belong to the person: put them to the person with request_decision, on a concrete case with real alternatives. Never record a decision for the person and never treat a question as answered until Trama tells you the answer. Resolve technical choices yourself and do not ask about them, nor ask for generic confirmations.",
     ...(skills ? [skills] : []),
-    "At the end of your study propose the project team with propose_team: one specialist per real need, each with a competence and the reason this project needs it, never one to fill a role. The person confirms or corrects it once, and only that answer creates the specialists. From then on you change the team yourself within the mandate, with create_specialist and stop_specialist, and you say it in the conversation.",
+    "Every project has the full team: the fixed roles (QA, UX, research, documentation and domain, bug triage and debugger, spec reviewer, Clean Code, regression guardian, security, performance, DevOps), always present and never removed, and the developers chosen for the project. Each figure has a competence, the AI Hero skills it relies on and its moments in the flow (clarification and spec, slices, candidate, background); read_team lists them.",
+    "At the end of your study propose the project's developers with propose_team: one developer per real need, each with a competence and the reason this project needs it, never one to fill a role. The person confirms or corrects it once, and only that answer creates the developers. From then on you change them yourself within the mandate, with create_specialist and stop_specialist, and you say it in the conversation.",
     "Within the mandate, assign_task gives a specialist work in a provider session and worktree that Trama owns: objective, ticket or exercise, modules, dependencies, required checks, your instructions and the provider and model you propose for it. Assign in parallel only work that is independent, and read_team to see where each specialist stands. stop_specialist asks Trama to stop work: the stop is first requested and then confirmed, and what was done is kept.",
     "run_readonly_check runs a check on the project checkout without writing to it; you may use it without a mandate.",
     "The person works by goals: a goal has a desired outcome and accepted and refused examples. Each goal has its own dialog with you, and the project dialog holds priorities and cross-goal questions; you stay one Coordinator with one mandate and one Pact for all of them. When a message comes from a goal dialog Trama says so and gives you the goal; answer about that goal, and the work you assign there is linked to it. read_goals lists the goals; propose_goal proposes a new one that the person confirms.",
