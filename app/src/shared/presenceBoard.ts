@@ -25,8 +25,8 @@ export interface BoardRow {
   name: string;
   /** The GitHub identity, when the remote is on GitHub and the login is known. */
   login: string | null;
-  /** The agent's color and tag (W15), for agent rows. */
-  agent: { color: string; tag: string } | null;
+  /** The agent's id, color and tag (W15), for agent rows; the id gives its bot's body (W16). */
+  agent: { id: string; color: string; tag: string } | null;
   /** The row of the person an agent works for. */
   ownerKey: string | null;
   activeBranch: string | null;
@@ -115,7 +115,7 @@ export function groupBoard(input: { presence: PresenceView | null | undefined; s
         self: entry.self,
         name: agent.name,
         login: null,
-        agent: { color: agent.color, tag: agent.tag },
+        agent: { id: agent.id, color: agent.color, tag: agent.tag },
         ownerKey: key,
         activeBranch: agent.branch,
         alsoOn: [],
