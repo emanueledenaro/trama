@@ -29,7 +29,9 @@ export type CardKind =
   /** Trama asks whether to share the presence in this project (G01); referenceId is the proposal, `initial` or `conflict`. */
   | "presenceConsent"
   /** The route Ask Trama chose for the person's situation (M07); referenceId is the route. */
-  | "route";
+  | "route"
+  /** The Coordinator points out an overlap with a colleague's work (G03); referenceId is the overlap's id. */
+  | "overlap";
 
 export interface ConflictAssessment {
   id: string;
@@ -39,6 +41,8 @@ export interface ConflictAssessment {
   references: string[];
   classification: "conflict" | "overlap" | "clean" | "unknown";
   conflictingFiles: string[];
+  /** The lines in conflict for each file, in the candidate's version (G03); absent in older assessments. */
+  conflictingLines?: Record<string, import("./overlap").LineRange[]>;
   detail: string;
   checkedAt: string;
 }
@@ -416,6 +420,34 @@ export interface SpecialistAssignment {
   duty?: AssignmentDuty | null;
   /** The slice of the plan's approved breakdown this work delivers (M05); absent for work outside one. */
   slice?: { planId: string; sliceId: string } | null;
+  /**
+   * The seams to test in the contract of the assignment (W05). For a slice, the seams the person confirmed in the
+   * spec, with their number there. Absent in assignments made before the contract, and in a fixed role's work.
+   */
+  seams?: ContractSeam[];
+  /** The developer's structured report (W05), read from its last answer: its statement, never evidence. */
+  report?: DeveloperReport | null;
+}
+
+/** A seam the developer must test, as the contract of the assignment names it (W05). */
+export interface ContractSeam {
+  /** The number the developer uses in its report: the seam's number in the spec for a slice. */
+  number: number;
+  seam: string;
+  /** What the test at this seam verifies, when the spec says it. */
+  tests: string | null;
+}
+
+/**
+ * The developer's structured report at the end of the work (W05), extending the tested seams of M06.
+ * A section the developer left out is null; an empty list means it said there was nothing.
+ */
+export interface DeveloperReport {
+  filesTouched: string[] | null;
+  testsWritten: string[] | null;
+  /** Every seam of the contract, with the tests the developer named or null; a number outside it is not agreed. */
+  seams: TestedSeam[] | null;
+  doubts: string[] | null;
 }
 
 /** The AI Hero skill a fixed role runs when Trama starts its work by itself (W11). */
@@ -940,6 +972,8 @@ export interface ProjectDocument {
   presence?: import("./presence").PresenceConsent;
   /** Routes the Coordinator proposed with the ask-trama skill (M07); absent before the first one. */
   routes?: import("./askTrama").AskTramaRoute[];
+  /** The overlaps the Coordinator already pointed out in the chat (G03), so each one is said once. */
+  overlapNotices?: string[];
 }
 
 export interface PactDemo {
@@ -1070,6 +1104,8 @@ export interface ActiveProjectState {
   aiHeroPrepared?: boolean;
   /** Who works on what (G01), computed by the main process; absent until the first reading and in the example project. */
   presence?: import("./presence").PresenceView | null;
+  /** The person's work against the colleagues' presence (G03); absent without a presence reading. */
+  overlaps?: import("./overlap").OverlapView | null;
 }
 
 /** A message waiting for the running turn to end; it has no request and no event until it leaves. */

@@ -145,6 +145,7 @@ import {
   setSpecialistColor,
   requestStop,
   assignmentsAffectedByDecision,
+  authorize,
   changeAssignmentProvider,
   refreshDecisionVersions,
   resumeAssignment,
@@ -188,6 +189,9 @@ import { git } from "./core/process";
 import { AppStorage } from "./core/storage";
 import { hasAiHero, readGitHubCliStatus, simulateColleagueChanges } from "./core/onboarding";
 import { type AgentWork, type PresenceContext, PresenceService } from "./core/presence";
+import { overlapModules, probeColleagues, projectOverlaps } from "./core/overlap";
+import { compareSides, coordinatorNotice, type PresenceProbe } from "@shared/overlap";
+import { type AgentOverlap, agentOverlapKey, agentOverlaps, occupantName, presenceSection } from "./core/coordinatorPresence";
 import { emptyConsent, type PresenceProposal, type PresenceTask, shouldProposeConsent, shouldReproposeConsent } from "@shared/presence";
 import { agentTag } from "@shared/identity";
 import {
@@ -522,6 +526,7 @@ export class TramaController {
       project.document.plans.filter((p) => p.slicing?.status === "approved").map((p) => [p.id, sliceViews(project.document, p)]),
     );
     project.focus = focusView(project.document);
+    project.overlaps = projectOverlaps(project, this.presenceProbes);
     project.pactDemoBlockers = project.document.pactDemo ? inspectPactDemo(project.document, project.document.pactDemo) : [];
     this.recordCompletedExercises(project);
   }
@@ -1135,6 +1140,7 @@ export class TramaController {
 
   private startPresence(project: ActiveProjectState): void {
     void this.stopPresence();
+    this.presenceProbes = [];
     const service: PresenceService = new PresenceService({
       cacheRoot: join(this.storage.root, "Presence"),
       context: (): PresenceContext | null => (this.state.project === project && this.presence === service ? this.presenceContext(project) : null),
@@ -1142,11 +1148,12 @@ export class TramaController {
         if (this.state.project !== project || this.presence !== service) return;
         const { hasCollaborators, ...rest } = view;
         project.presence = rest;
-        if (project.stateWritable && shouldProposeConsent(project.document.presence, hasCollaborators)) {
-          this.proposePresence(project, "initial", []);
-          return;
-        }
+        void this.probePresence(project, service);
+        // The consent proposal comes first; the overlaps the reading found follow it in the chat.
+        if (project.stateWritable && shouldProposeConsent(project.document.presence, hasCollaborators)) this.proposePresence(project, "initial", []);
+        this.noticeOverlaps(project);
         this.publish();
+        this.reactToAgentOverlaps(project);
       },
     });
     this.presence = service;
@@ -1221,6 +1228,38 @@ export class TramaController {
     this.changedIn(project);
   }
 
+  /** Overlaps between the person's agents and someone else already told to the Coordinator, by project (G04). */
+  private toldOverlaps = new Map<string, Set<string>>();
+
+  /**
+   * Decision 10: when one of the person's agents starts touching the same files as a colleague, Trama starts a
+   * Coordinator turn within the mandate so it moves or postpones the agent's task. Each overlap is told once; while
+   * the Coordinator is busy it waits for the next presence tick, and the turn's presence section lists it anyway.
+   */
+  private reactToAgentOverlaps(project: ActiveProjectState): void {
+    const overlaps = agentOverlaps(project.document, project.presence);
+    const told = this.toldOverlaps.get(project.id) ?? new Set<string>();
+    const current = new Set(overlaps.map(agentOverlapKey));
+    // An overlap that ended is forgotten, so a new one on the same files is told again.
+    for (const key of told) if (!current.has(key)) told.delete(key);
+    this.toldOverlaps.set(project.id, told);
+    const fresh = overlaps.filter((overlap) => !told.has(agentOverlapKey(overlap)));
+    if (!fresh.length || this.quitting || this.state.project !== project || !project.stateWritable) return;
+    const guards = this.continuationGuards(project);
+    if (!guards.enabled || guards.busy || guards.unavailable) return;
+    if (authorize(project.document.mandate, "executeInWorktree") !== "authorized") return;
+    const first = fresh[0]!;
+    const goalId = first.goalId && (project.document.goals ?? []).some((g) => g.id === first.goalId) ? first.goalId : null;
+    for (const overlap of fresh) told.add(agentOverlapKey(overlap));
+    const starting = { projectId: project.id };
+    this.automaticStarting = starting;
+    void this.send(overlapMessage(fresh), null, null, null, [], null, goalId, false, { move: "assignWork", by: "trama" })
+      .catch((error) => this.fail(error))
+      .finally(() => {
+        if (this.automaticStarting === starting) this.automaticStarting = null;
+      });
+  }
+
   async setPresenceConsent(share: boolean, proposal: PresenceProposal | null): Promise<void> {
     const project = this.requireProject();
     if (project.isDemo) throw new DomainError("Il progetto di esempio non condivide la presenza.");
@@ -1247,6 +1286,105 @@ export class TramaController {
 
   async refreshPresence(): Promise<void> {
     await this.presence?.tick();
+  }
+
+  // MARK: Overlap warnings (G03)
+
+  private presenceProbes: PresenceProbe[] = [];
+  private probingPresence = false;
+
+  /**
+   * Decision 3, the real conflict: the checkout merged with the pushed branches of the colleagues who touch the same
+   * files. The probes run in Trama's folders; the checkout and the colleague's branch do not change.
+   */
+  private async probePresence(project: ActiveProjectState, service: PresenceService): Promise<void> {
+    const remote = service.remote();
+    if (!remote || this.probingPresence || !project.presence) return;
+    this.probingPresence = true;
+    try {
+      const probes = await probeColleagues({
+        root: project.rootPath,
+        source: remote.source,
+        presenceCache: remote.cache,
+        others: project.presence.others,
+        previous: this.presenceProbes,
+        cacheRoot: join(this.storage.root, "RemoteCache"),
+        probeRoot: join(this.storage.root, "ConflictProbe"),
+      }).catch(() => this.presenceProbes);
+      if (this.state.project !== project || this.presence !== service) return;
+      const changed = JSON.stringify(probes) !== JSON.stringify(this.presenceProbes);
+      this.presenceProbes = probes;
+      if (!changed) return;
+      project.overlaps = projectOverlaps(project, probes);
+      this.noticeOverlaps(project);
+      this.publish();
+    } finally {
+      this.probingPresence = false;
+    }
+  }
+
+  /**
+   * Decisions 4 and 9: the Coordinator says in the chat, once, what is relevant. While working, the same file and the
+   * real conflict; before a task starts, the modules its agent is about to touch. The module level alone stays a
+   * light signal in the map and the focus bar. Nothing is blocked (decision 10).
+   */
+  private noticeOverlaps(project: ActiveProjectState): void {
+    if (project.isDemo || !project.stateWritable || !project.presence?.self) return;
+    const document = project.document;
+    const view = projectOverlaps(project, this.presenceProbes);
+    if (!view) return;
+    const notices = (document.overlapNotices ??= []);
+    let changed = false;
+    let conflict = false;
+    for (const item of view.items) {
+      if (item.level === "module" || notices.includes(item.id)) continue;
+      const notice = coordinatorNotice(item, "working");
+      appendEvent(document, "coordinator", { type: "card", kind: "overlap", title: notice.title, detail: notice.text, referenceId: item.id });
+      notices.push(item.id);
+      changed = true;
+      conflict ||= item.level === "conflict";
+    }
+    const recent = Date.now() - 10 * 60_000;
+    const modules = overlapModules(project);
+    const pullRequests = project.github.snapshot?.pullRequests ?? [];
+    for (const specialist of document.team.specialists) {
+      for (const assignment of specialist.assignments) {
+        const key = `start:${assignment.id}`;
+        if (notices.includes(key) || !["preparing", "running"].includes(assignment.status) || Date.parse(assignment.createdAt) < recent) continue;
+        notices.push(key);
+        changed = true;
+        const found = compareSides({
+          sides: [{ mine: specialist.name, files: [], moduleIds: assignment.moduleIds }],
+          others: project.presence.others,
+          modules,
+          probes: [],
+          pullRequests,
+        });
+        const item = found[0];
+        if (!item) continue;
+        const notice = coordinatorNotice(item, "start");
+        appendEvent(document, "coordinator", { type: "card", kind: "overlap", title: notice.title, detail: notice.text, referenceId: item.id }, assignment.requestId);
+      }
+    }
+    if (!changed) return;
+    if (notices.length > 300) notices.splice(0, notices.length - 300);
+    if (conflict && shouldReproposeConsent(document.presence, "conflict")) {
+      const names = [...new Set(view.items.filter((i) => i.level === "conflict").map((i) => i.colleague.name))];
+      this.proposePresence(project, "conflict", names);
+      return;
+    }
+    this.changedIn(project);
+  }
+
+  /** Decision 10: the message the person wrote goes to the colleague's open pull request, only when the person sends it. */
+  async commentColleaguePullRequest(number: number, body: string): Promise<void> {
+    const project = this.requireProject();
+    const repository = project.github.repository;
+    if (!repository) throw new DomainError("Nessun repository GitHub collegato.");
+    const text = body.trim();
+    if (!text || text.length > 5_000) throw new DomainError("Il messaggio è vuoto o troppo lungo.");
+    if (!project.github.snapshot?.pullRequests.some((p) => p.number === number)) throw new DomainError(`La pull request #${number} non è tra quelle aperte.`);
+    await commentOnIssue(repository, number, text);
   }
 
   async createGitHubIssue(title: string, body: string): Promise<void> {
@@ -1456,6 +1594,7 @@ export class TramaController {
           snapshot: current.snapshot,
           github: current.github,
           runningRequestId: current.runningRequestId,
+          presence: current.presence ?? null,
           changed: () => this.changed(),
           addCard: (kind, title, referenceId) =>
             appendEvent(current.document, "trama", { type: "card", kind, title, detail: null, referenceId }, current.runningRequestId),
@@ -1846,6 +1985,9 @@ export class TramaController {
       // Every turn: the task in focus and the queue, so the Coordinator brings a conversation that drifts back to the focus (W02).
       const focus = focusText(document, request.id);
       if (focus) sections.push(focus);
+      // Every turn while colleagues are at work: who touches what and the rules of decisions 10 and 11 (G04).
+      const presence = presenceSection(document, project.presence, project.snapshot.modules);
+      if (presence) sections.push(presence);
       // The previous reply closed with a generic confirmation question: Trama tells the Coordinator, not the model's own memory (W04).
       const feedback = confirmationFeedback(document, request.id);
       if (feedback) sections.push(feedback);
@@ -4221,4 +4363,16 @@ export class TramaController {
     this.state.error = null;
     this.publish();
   }
+}
+
+/** What Trama writes to the Coordinator when its agents overlap someone else (G04, decision 10). */
+function overlapMessage(overlaps: AgentOverlap[]): string {
+  const lines = overlaps.slice(0, 5).map(
+    (o) => `- l'incarico ${o.assignmentId} di ${o.specialistName}${o.slice ? ` (fetta ${o.slice})` : ""} tocca ${o.files.slice(0, 8).join(", ")}, come ${occupantName(o.occupant)}.`,
+  );
+  return [
+    "Presenza: un tuo sviluppatore si sovrappone al lavoro di un collega.",
+    ...lines,
+    "Sposta o rimanda il suo compito: fermalo con stop_specialist e dagli un'altra fetta pronta, o riassegna la stessa fetta quando il collega ha lasciato quei file. Non chiedere al collega di fermarsi.",
+  ].join("\n");
 }

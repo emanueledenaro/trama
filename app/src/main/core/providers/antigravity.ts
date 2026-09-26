@@ -11,17 +11,20 @@
  * per-turn file: that is where the conversation id, the tool calls and the transcript path come from.
  *
  * Sandbox: print mode cannot pause for approvals, so Synara only runs it with
- * `--dangerously-skip-permissions` ("Full access"). Trama therefore refuses read-only threads and runs
- * only workspace-write turns whose cwd is inside the worktree. As ADR 0012 requires, the capture hook
- * enforces "write only inside the worktree, no network" with an allow-list: known read tools, the
- * file-edit tools when their target stays inside the worktree, and Trama's MCP tools. Everything else
- * is denied: `run_command` (a shell cannot be kept inside the worktree or off the network), web and
- * browser tools, and any tool a newer CLI adds. Subagent launches (PreInvocation from another
- * conversation) are denied too.
+ * `--dangerously-skip-permissions` ("Full access"). As ADR 0012 requires, the capture hook enforces
+ * the rules with an allow-list, in one of two profiles:
+ * - worktree (specialists): known read tools, the file-edit tools when their target stays inside the
+ *   worktree, and Trama's MCP tools; the turn's cwd must be inside the worktree;
+ * - read-only (Coordinator, planners, reviewers, checks): known read tools and Trama's MCP tools only.
+ * Everything else is denied in both: `run_command` (a shell cannot be kept inside the worktree or off
+ * the network), web and browser tools, and any tool a newer CLI adds. Subagent launches (PreInvocation
+ * from another conversation) are denied too. A read-only turn also passes `--sandbox` when the
+ * installed CLI offers it, and never runs without the hook: Trama tests the installed hook before the
+ * session and stops a turn whose CLI does not call it (ADR 0012).
  */
 import { type ChildProcess, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { existsSync } from "node:fs";
+import { existsSync, statSync } from "node:fs";
 import { mkdir, mkdtemp, open, readFile, rm, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -74,6 +77,10 @@ const MCP_URL_ENV = "TRAMA_ANTIGRAVITY_MCP_URL";
 const MCP_TOKEN_FILE_ENV = "TRAMA_ANTIGRAVITY_MCP_TOKEN_FILE";
 const HOST_TOOLS_ENV = "TRAMA_ANTIGRAVITY_HOST_TOOLS";
 const CONVERSATION_ENV = "TRAMA_ANTIGRAVITY_CONVERSATION";
+/** `worktree` for specialists; any other value, or none, is the read-only profile. */
+const PROFILE_ENV = "TRAMA_ANTIGRAVITY_PROFILE";
+const HOOK_CHECK_TIMEOUT_MS = 10_000;
+const HELP_TIMEOUT_MS = 4_000;
 
 /**
  * The capture hook allows only these Antigravity tools during a Trama turn, plus the edit tools
@@ -107,8 +114,16 @@ export function isAllowedAntigravityTool(name: string, hostTools: ReadonlySet<st
   return hostTools.has(name.replace(HOST_TOOL_PREFIX_PATTERN, ""));
 }
 
-const READ_ONLY_REFUSAL =
-  "Antigravity CLI in modalità print non può fermarsi per le approvazioni e non garantisce la sola lettura: Trama lo usa solo per specialisti con un worktree proprio. Scegli un altro provider per Coordinatore, pianificatori, revisori e verifiche.";
+export type AntigravityProfile = "read-only" | "worktree";
+
+/** The allow-list of one profile (the hook script carries its own copy). */
+export function isAllowedAntigravityToolIn(profile: AntigravityProfile, name: string, hostTools: ReadonlySet<string>): boolean {
+  if (profile === "read-only" && ANTIGRAVITY_EDIT_TOOLS.includes(name)) return false;
+  return isAllowedAntigravityTool(name, hostTools);
+}
+
+const HOOK_ACTION = "Aggiorna Antigravity CLI con agy update o reinstallalo, poi riprova.";
+const HOOK_NOT_CALLED = `Antigravity CLI non ha chiamato l'hook di Trama, quindi la sola lettura non era garantita e Trama ha fermato il turno. ${HOOK_ACTION}`;
 const NOT_FOUND = "Antigravity CLI (agy) non è installato o non è nel PATH.";
 
 // ── stream-json print output (antigravityPrintResult.ts) ─────────────────
@@ -398,6 +413,8 @@ const READ_TOOLS = new Set(${JSON.stringify(ANTIGRAVITY_READ_TOOLS)});
 const EDIT_TOOLS = new Set(${JSON.stringify(ANTIGRAVITY_EDIT_TOOLS)});
 const HOST_TOOL_PREFIX = new RegExp(${JSON.stringify(HOST_TOOL_PREFIX_PATTERN.source)});
 const HOST_TOOLS = new Set((process.env.${HOST_TOOLS_ENV} || "").split(",").filter(Boolean));
+// Only an explicit worktree profile may edit; anything else is read-only.
+const READ_ONLY = process.env.${PROFILE_ENV} !== "worktree";
 let payload = "";
 process.stdin.setEncoding("utf8");
 process.stdin.on("data", (chunk) => { payload += chunk; });
@@ -498,14 +515,14 @@ process.stdin.on("end", () => {
     process.stdout.write("{}\\n");
   };
   if (event === "pre-tool") {
-    // Allow-list: read tools, edit tools inside the worktree, Trama's MCP tools. Nothing else.
+    // Allow-list: read tools, edit tools inside the worktree (worktree profile only), Trama's MCP tools. Nothing else.
     const root = process.env.${WRITABLE_ROOT_ENV};
     const call = input && input.toolCall;
     const name = call && typeof call.name === "string" ? call.name.trim() : "";
     const args = call && call.args && typeof call.args === "object" ? call.args : {};
     const file = typeof args.TargetFile === "string" ? args.TargetFile : typeof args.AbsolutePath === "string" ? args.AbsolutePath : "";
     if (EDIT_TOOLS.has(name)) {
-      if (!root || !file || !contained(root, file)) return deny("denied-tool");
+      if (READ_ONLY || !root || !file || !contained(root, file)) return deny("denied-tool");
     } else if (!READ_TOOLS.has(name) && !HOST_TOOLS.has(name.replace(HOST_TOOL_PREFIX, ""))) {
       return deny("denied-tool");
     }
@@ -678,12 +695,112 @@ async function installCapturePlugin(binary: string, home: string): Promise<void>
   }
 }
 
+// ── Read-only safeguards ─────────────────────────────────────────────────
+
+function runShellHook(command: string, input: string, env: NodeJS.ProcessEnv, timeoutMs: number): Promise<string> {
+  return new Promise((resolvePromise, reject) => {
+    const child = spawn(command, { shell: true, env, stdio: ["pipe", "pipe", "pipe"] });
+    let stdout = "";
+    let stderr = "";
+    const timer = setTimeout(() => {
+      child.kill("SIGKILL");
+      reject(new Error("the hook did not answer in time"));
+    }, timeoutMs);
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
+    child.stdout.on("data", (chunk: string) => (stdout += chunk));
+    child.stderr.on("data", (chunk: string) => (stderr = (stderr + chunk).slice(-2_000)));
+    child.stdin.on("error", () => undefined);
+    child.once("error", (error) => {
+      clearTimeout(timer);
+      reject(error);
+    });
+    child.once("close", (code) => {
+      clearTimeout(timer);
+      if (code === 0) resolvePromise(stdout.trim());
+      else reject(new Error(stderr.trim() || `the hook exited with code ${code ?? 1}`));
+    });
+    child.stdin.end(input);
+  });
+}
+
+/**
+ * Runs the installed PreToolUse hook exactly as the CLI would, in the read-only profile, and checks
+ * that it denies an edit and a shell command and allows a read. Throws when the hook is missing,
+ * does not start or answers otherwise.
+ */
+export async function checkReadOnlyHook(home: string, cwd: string): Promise<void> {
+  const pluginDir = join(home, ".gemini", "antigravity-cli", "plugins", PLUGIN_NAME);
+  const config = record(record(JSON.parse(await readFile(join(pluginDir, "hooks.json"), "utf8")))?.[PLUGIN_NAME]);
+  const preTool = Array.isArray(config?.PreToolUse) ? record(config.PreToolUse[0]) : undefined;
+  const hook = Array.isArray(preTool?.hooks) ? record(preTool.hooks[0]) : undefined;
+  if (typeof hook?.command !== "string") throw new Error("hooks.json has no PreToolUse command");
+  const dir = await mkdtemp(join(tmpdir(), "trama-antigravity-check-"));
+  try {
+    const env: NodeJS.ProcessEnv = { ...process.env };
+    for (const key of Object.keys(env)) if (key.startsWith("TRAMA_")) delete env[key];
+    Object.assign(env, { [EVENTS_ENV]: join(dir, "hooks.ndjson"), [DECISION_ENV]: "allow", [PROFILE_ENV]: "read-only" });
+    const decide = (name: string, args: Record<string, unknown>) =>
+      runShellHook(hook.command as string, JSON.stringify({ conversationId: "trama-check", stepIdx: 0, toolCall: { name, args } }), env, HOOK_CHECK_TIMEOUT_MS);
+    const edit = await decide("write_to_file", { TargetFile: join(cwd, "trama-check.txt") });
+    if (edit !== "{}") throw new Error(`the hook allowed an edit: ${edit}`);
+    const shell = await decide("run_command", { CommandLine: "true" });
+    if (shell !== "{}") throw new Error(`the hook allowed a shell command: ${shell}`);
+    const read = await decide("view_file", { AbsolutePath: join(cwd, "README.md") });
+    if (read !== '{"decision":"allow"}') throw new Error(`the hook did not allow a read: ${read || "empty answer"}`);
+  } finally {
+    await rm(dir, { recursive: true, force: true }).catch(() => undefined);
+  }
+}
+
+const hookChecks = new Map<string, Promise<void>>();
+
+function ensureReadOnlyHook(binary: string, home: string, cwd: string): Promise<void> {
+  const key = `${binary}\0${home}`;
+  let check = hookChecks.get(key);
+  if (!check) {
+    check = checkReadOnlyHook(home, cwd).catch((error) => {
+      hookChecks.delete(key);
+      throw error;
+    });
+    hookChecks.set(key, check);
+  }
+  return check;
+}
+
+/** True when `agy --help` lists `--sandbox` as a switch without a value. */
+export function antigravityHelpOffersSandbox(help: string): boolean {
+  for (const line of help.split(/\r?\n/g)) {
+    const match = /^\s*(?:-\w,\s*)?--sandbox(?![\w-])(.*)$/.exec(line);
+    if (!match) continue;
+    const rest = match[1] ?? "";
+    // `--sandbox <mode>`, `--sandbox=MODE`, `--sandbox string`: a value is needed, and Trama does not guess one.
+    return !/^(?:\s*[=<[]|\s(?:string|[A-Z_]{2,})\b)/.test(rest);
+  }
+  return false;
+}
+
+const sandboxFlags = new Map<string, Promise<boolean>>();
+
+function sandboxFlagAvailable(binary: string): Promise<boolean> {
+  let flag = sandboxFlags.get(binary);
+  if (!flag) {
+    flag = runHelper(binary, ["--help"], { timeoutMs: HELP_TIMEOUT_MS })
+      .then((result) => !result.timedOut && antigravityHelpOffersSandbox(`${result.stdout}\n${result.stderr}`))
+      .catch(() => false);
+    sandboxFlags.set(binary, flag);
+  }
+  return flag;
+}
+
 // ── Hook events and transcript ───────────────────────────────────────────
 
 const EDIT_TOOLS = new Set(ANTIGRAVITY_EDIT_TOOLS);
 const DENIED_COMMAND_OUTPUT = "Negato da Trama: Antigravity non può eseguire comandi di shell, perché non restano nel worktree né fuori dalla rete.";
 const DENIED_NETWORK_OUTPUT = "Negato da Trama: gli strumenti di rete non sono consentiti.";
 const DENIED_TOOL_OUTPUT = "Negato da Trama: con Antigravity sono consentiti solo lettura, modifiche nel worktree e gli strumenti di Trama.";
+const READ_ONLY_DENIED_COMMAND_OUTPUT = "Negato da Trama: in sola lettura Antigravity non può eseguire comandi di shell.";
+const READ_ONLY_DENIED_TOOL_OUTPUT = "Negato da Trama: in sola lettura Antigravity può usare solo gli strumenti di lettura e quelli di Trama.";
 
 export function normalizeAntigravityCommandLine(value: unknown): string | undefined {
   if (typeof value !== "string") return undefined;
@@ -739,6 +856,8 @@ async function readCompleteLines(path: string, offset: number): Promise<{ lines:
 
 interface ThreadState {
   cwd: string;
+  /** Opened read-only: every turn uses the read-only profile, even with a writable root. */
+  readOnly: boolean;
   developerInstructions: string;
   ephemeral: boolean;
   conversationId: string | null;
@@ -763,6 +882,11 @@ interface ActiveTurn {
   transcriptInitialRead: boolean;
   pendingTools: PendingTool[];
   toolSequence: number;
+  readOnly: boolean;
+  /** The CLI called the capture hook in this turn. */
+  hookSeen: boolean;
+  /** A read-only turn produced output before any hook call: Trama stopped it. */
+  hookMissing: boolean;
   streamedText: boolean;
   backgroundTaskStarted: boolean;
   interrupted: boolean;
@@ -887,20 +1011,14 @@ export class AntigravityRuntime implements AgentRuntime {
   }
 
   async openThread(options: OpenThreadOptions): Promise<{ threadId: string; replaced: boolean }> {
-    if (options.sandbox !== "workspace-write") throw new ProviderError("unsupportedSandbox", READ_ONLY_REFUSAL);
     if (!options.model.trim()) throw new ProviderError("invalidModel", `Modello non valido: ${options.model}`);
+    const readOnly = options.sandbox !== "workspace-write";
     const binary = this.binary();
-    try {
-      await ensureCapturePlugin(binary, this.home);
-    } catch (error) {
-      throw new ProviderError(
-        "rpcError",
-        `Trama non è riuscito a installare il plugin di cattura per Antigravity: ${(error as Error).message}`,
-      );
-    }
     const cwd = resolve(options.cwd);
+    await this.preparePlugin(binary, readOnly, cwd);
     const base = {
       cwd,
+      readOnly,
       developerInstructions: options.developerInstructions,
       ephemeral: options.ephemeral ?? false,
       instructionsDelivered: false,
@@ -922,6 +1040,28 @@ export class AntigravityRuntime implements AgentRuntime {
     return { threadId, replaced: Boolean(options.resumeThreadId) };
   }
 
+  /**
+   * Installs the capture plugin; a read-only session also needs the installed hook to deny edits and
+   * shell commands when Trama calls it the way the CLI does. Without that, Trama refuses the session.
+   */
+  private async preparePlugin(binary: string, readOnly: boolean, cwd: string): Promise<void> {
+    try {
+      await ensureCapturePlugin(binary, this.home);
+    } catch (error) {
+      const message = `Trama non è riuscito a installare il plugin di cattura per Antigravity: ${(error as Error).message}`;
+      throw new ProviderError(readOnly ? "unsupportedSandbox" : "rpcError", readOnly ? `${message.replace(/\.$/, "")}. Senza il plugin la sola lettura non è garantita. ${HOOK_ACTION}` : message);
+    }
+    if (!readOnly) return;
+    try {
+      await ensureReadOnlyHook(binary, this.home, cwd);
+    } catch (error) {
+      throw new ProviderError(
+        "unsupportedSandbox",
+        `L'hook di Trama per Antigravity non si è caricato (${(error as Error).message}), quindi Trama non apre la sessione in sola lettura. ${HOOK_ACTION}`,
+      );
+    }
+  }
+
   async runTurn(options: RunTurnOptions): Promise<string> {
     const prompt = options.prompt.trim();
     if (!prompt) throw new ProviderError("emptyPrompt", "Il messaggio è vuoto.");
@@ -929,10 +1069,11 @@ export class AntigravityRuntime implements AgentRuntime {
     if (this.active || this.pending) throw new ProviderError("turnAlreadyRunning", "Un turno è già in corso.");
     const thread = this.threads.get(options.threadId);
     if (!thread) throw new ProviderError("rpcError", "Thread Antigravity sconosciuto: aprilo prima di avviare un turno.");
-    const writableRoot = options.writableRoot ? resolve(options.writableRoot) : null;
     const cwd = resolve(options.cwd);
-    if (!writableRoot) throw new ProviderError("unsupportedSandbox", READ_ONLY_REFUSAL);
-    if (!isInside(writableRoot, cwd)) {
+    // Read-only when the thread was opened read-only or the turn has no writable root.
+    const writableRoot = !thread.readOnly && options.writableRoot ? resolve(options.writableRoot) : null;
+    const readOnly = writableRoot === null;
+    if (writableRoot && !isInside(writableRoot, cwd)) {
       throw new ProviderError("rpcError", "Antigravity lavora solo dentro il worktree dello specialista: la cartella del turno è fuori.");
     }
     const block = currentUsageLimit("antigravity");
@@ -940,6 +1081,7 @@ export class AntigravityRuntime implements AgentRuntime {
     const binary = this.binary();
 
     const pending = new PendingTurn(options.onEvent, "Antigravity è stato chiuso.");
+    let sandboxFlag = false;
     this.pending = pending;
     const toolServer = this.options.toolServer ?? null;
     let text: string;
@@ -947,6 +1089,13 @@ export class AntigravityRuntime implements AgentRuntime {
     let tokenFile: string | null = null;
     let hostTools: string[] = [];
     try {
+      if (readOnly) {
+        // A workspace-write thread can still run a read-only turn: check the hook here too (cached).
+        await this.preparePlugin(binary, true, cwd);
+        pending.checkpoint();
+        sandboxFlag = await sandboxFlagAvailable(binary);
+        pending.checkpoint();
+      }
       const skillText = await inlineSkillInstructions("antigravity", options.skills);
       pending.checkpoint();
       const attachments = await attachedFilesBlock(options.images);
@@ -985,6 +1134,8 @@ export class AntigravityRuntime implements AgentRuntime {
     const args = [
       ...(thread.conversationId ? ["--conversation", thread.conversationId] : ["--new-project"]),
       "--dangerously-skip-permissions",
+      // Extra layer for read-only turns; the capture hook stays the rule Trama relies on.
+      ...(sandboxFlag ? ["--sandbox"] : []),
       "--model",
       cliModel,
       "--output-format",
@@ -1002,7 +1153,8 @@ export class AntigravityRuntime implements AgentRuntime {
       PATH: pathWithExecutable(binary),
       [EVENTS_ENV]: eventFile,
       [DECISION_ENV]: "allow",
-      [WRITABLE_ROOT_ENV]: writableRoot,
+      [PROFILE_ENV]: readOnly ? "read-only" : "worktree",
+      ...(writableRoot ? { [WRITABLE_ROOT_ENV]: writableRoot } : {}),
       [HOST_TOOLS_ENV]: hostTools.join(","),
       ...(thread.conversationId ? { [CONVERSATION_ENV]: thread.conversationId } : {}),
       ...(toolServer && tokenFile ? { [MCP_URL_ENV]: toolServer.url, [MCP_TOKEN_FILE_ENV]: tokenFile } : {}),
@@ -1033,6 +1185,9 @@ export class AntigravityRuntime implements AgentRuntime {
         transcriptInitialRead: true,
         pendingTools: [],
         toolSequence: 0,
+        readOnly,
+        hookSeen: false,
+        hookMissing: false,
         streamedText: false,
         backgroundTaskStarted: false,
         interrupted: false,
@@ -1061,7 +1216,13 @@ export class AntigravityRuntime implements AgentRuntime {
       let stdout = "";
       let stderr = "";
       const parser = createAntigravityPrintResultParser((update) => {
-        if (turn.settled) return;
+        if (turn.settled || turn.hookMissing) return;
+        // The CLI calls PreInvocation before any step: a read-only turn without it has no guard.
+        if (turn.readOnly && !hookCalled(turn)) {
+          turn.hookMissing = true;
+          teardownProcessTree(child);
+          return;
+        }
         if (update.type === "agent_response" && update.textDelta) {
           turn.streamedText = true;
           options.onEvent({ type: "textDelta", itemId: `agy-step-${update.index}`, delta: update.textDelta });
@@ -1123,6 +1284,10 @@ export class AntigravityRuntime implements AgentRuntime {
           await this.poll(turn, thread).catch(() => undefined);
           if (turn.settled) return;
           const result = parser.finish();
+          if (turn.hookMissing || (turn.readOnly && !turn.interrupted && (code ?? 1) === 0 && !hookCalled(turn))) {
+            settle({ kind: "failed", error: new ProviderError("unsupportedSandbox", HOOK_NOT_CALLED) });
+            return;
+          }
           const responseText = result?.response ?? stdout.trim();
           if (!turn.streamedText && responseText) {
             options.onEvent({ type: "textDelta", itemId: "agy-response", delta: responseText });
@@ -1182,6 +1347,7 @@ export class AntigravityRuntime implements AgentRuntime {
       return;
     }
     turn.hookOffset = batch.nextOffset;
+    if (batch.lines.length > 0) turn.hookSeen = true;
     let stopSeen = false;
     for (const line of batch.lines) {
       if (turn.settled) return;
@@ -1224,7 +1390,7 @@ export class AntigravityRuntime implements AgentRuntime {
             itemId,
             command: normalizeAntigravityCommandLine(toolArgs?.CommandLine) ?? "",
             exitCode: null,
-            output: DENIED_COMMAND_OUTPUT,
+            output: turn.readOnly ? READ_ONLY_DENIED_COMMAND_OUTPUT : DENIED_COMMAND_OUTPUT,
             succeeded: false,
           });
         } else if (EDIT_TOOLS.has(name)) {
@@ -1235,7 +1401,11 @@ export class AntigravityRuntime implements AgentRuntime {
             succeeded: false,
           });
         } else {
-          const error = NETWORK_TOOL_PATTERN.test(name) ? DENIED_NETWORK_OUTPUT : DENIED_TOOL_OUTPUT;
+          const error = NETWORK_TOOL_PATTERN.test(name)
+            ? DENIED_NETWORK_OUTPUT
+            : turn.readOnly
+              ? READ_ONLY_DENIED_TOOL_OUTPUT
+              : DENIED_TOOL_OUTPUT;
           turn.onEvent({ type: "toolCallCompleted", itemId, server: "antigravity", tool: name, succeeded: false, error });
         }
         continue;
@@ -1379,6 +1549,17 @@ export class AntigravityRuntime implements AgentRuntime {
     turn.settle({ kind: "failed", error: new ProviderError("processExited", "Antigravity è stato chiuso.") });
     teardownProcessTree(turn.child, 1_000);
   }
+}
+
+/** True once the hook file has a record: the CLI loaded the capture hook for this turn. */
+function hookCalled(turn: ActiveTurn): boolean {
+  if (turn.hookSeen) return true;
+  try {
+    turn.hookSeen = statSync(turn.eventFile).size > 0;
+  } catch {
+    // Not readable yet.
+  }
+  return turn.hookSeen;
 }
 
 function transcriptPathFor(home: string, conversationId: string): string {

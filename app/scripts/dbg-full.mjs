@@ -1170,7 +1170,7 @@ await agyModel.click();
 await page.getByRole("button", { name: "Provider e modello del Coordinatore: Antigravity" }).waitFor({ timeout: 20_000 });
 await composer().fill("Cosa contiene il progetto?");
 await page.keyboard.press("Enter");
-await page.getByText("Ho letto il progetto in sola lettura").first().waitFor({ timeout: 30_000 });
+await page.getByText("Ho letto il progetto in sola lettura").first().waitFor({ timeout: 30_000 }).catch(async () => { await shot("dbg-agy"); console.log("MAINTEXT", await page.locator("body").innerText()); console.log("AGYLOG", await readFile(agyLog, "utf8").catch(() => "none")); process.exit(3); });
 const agyCalls = await readFile(agyLog, "utf8");
 if (!/"profile":"read-only"/.test(agyCalls)) throw new Error(`The Antigravity Coordinator did not run read-only: ${agyCalls}`);
 for (const expected of ["allowed view_file", "denied write_to_file", "denied run_command"]) {

@@ -134,6 +134,8 @@ export interface ActionMap {
   /** The person starts or declines the route Ask Trama proposed (M07). */
   "route:answer": [{ routeId: string; start: boolean }, void];
   "presence:refresh": [void, void];
+  /** Sends the message the person wrote to a colleague as a comment on the colleague's open pull request (G03). */
+  "presence:commentPullRequest": [{ number: number; body: string }, void];
   "github:createIssue": [{ title: string; body: string }, void];
   "settings:update": [Partial<AppSettings>, void];
   "monitor:update": [{ enabled?: boolean; openAtLogin?: boolean; intervalSeconds?: number; addRepository?: string; removeRepository?: string }, void];

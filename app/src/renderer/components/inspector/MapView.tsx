@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { act, useUi } from "@/lib/store";
 import { moduleQuestion } from "@/lib/askCoordinator";
+import { OverlapMarkSign, OverlapRow } from "@/components/OverlapNotice";
 import { EmptyNote, InspectorSection } from "./Inspector";
 
 const ROW =
@@ -12,6 +13,7 @@ export function MapView() {
   const project = useUi((s) => s.app?.project)!;
   const setInspector = useUi((s) => s.setInspector);
   const { snapshot } = project;
+  const marks = project.overlaps?.modules ?? {};
   return (
     <>
       <InspectorSection title="Struttura rilevata">
@@ -21,6 +23,12 @@ export function MapView() {
         <p className="mt-1 text-ui-sm text-muted-foreground">
           I moduli seguono le cartelle del repository e non provano una responsabilità architetturale.
         </p>
+        {Object.keys(marks).length ? (
+          <p className="mt-1 text-ui-sm text-muted-foreground" data-testid="map-overlap-legend">
+            Accanto ai moduli compare chi ci lavora ora: grigio se lo tocca solo un collega, blu se è anche il tuo modulo, giallo se toccate gli stessi
+            file, rosso se la prova di unione trova un conflitto.
+          </p>
+        ) : null}
         {snapshot.warnings.length ? (
           <ul className="mt-2 list-disc space-y-0.5 pl-4 text-ui-sm text-warning">
             {snapshot.warnings.slice(0, 5).map((w) => (
@@ -43,6 +51,7 @@ export function MapView() {
             >
               <IconFolder className="size-4 shrink-0 text-muted-foreground" stroke={1.6} />
               <span className="min-w-0 flex-1 truncate">{module.name}</span>
+              <OverlapMarkSign mark={marks[module.id]} />
               <span className="shrink-0 text-ui-xs text-muted-foreground/70">{module.files.length} file</span>
             </button>
           ))}
@@ -57,6 +66,8 @@ export function ModuleView({ id }: { id: string }) {
   const setInspector = useUi((s) => s.setInspector);
   const askCoordinator = useUi((s) => s.askCoordinator);
   const module = project.snapshot.modules.find((m) => m.id === id);
+  const fileMarks = project.overlaps?.files ?? {};
+  const moduleOverlaps = (project.overlaps?.items ?? []).filter((item) => item.modules.some((m) => m.id === id));
   if (!module) return <div className="p-4"><EmptyNote>Il modulo non esiste più dopo l'ultima scansione.</EmptyNote></div>;
   const inMandate = project.document.mandate?.status === "granted" && project.document.mandate.scopeModuleIds.includes(module.id);
   return (
@@ -77,6 +88,15 @@ export function ModuleView({ id }: { id: string }) {
         <p className="text-ui text-foreground/90">{module.summary}</p>
         <p className="mt-1 text-ui-sm text-muted-foreground">{inMandate ? "Il modulo rientra nel mandato." : "Il modulo non rientra nel mandato attuale."}</p>
       </InspectorSection>
+      {moduleOverlaps.length ? (
+        <InspectorSection title="Colleghi al lavoro qui">
+          <div data-testid="module-overlaps" className="divide-y divide-[color:var(--app-surface-divider)]">
+            {moduleOverlaps.map((item) => (
+              <OverlapRow key={item.id} item={item} />
+            ))}
+          </div>
+        </InspectorSection>
+      ) : null}
       <InspectorSection title="Dipendenze rilevate">
         {module.dependencies.length ? (
           <div className="flex flex-wrap gap-1">
@@ -96,6 +116,7 @@ export function ModuleView({ id }: { id: string }) {
             <button key={file.id} type="button" className={ROW} onClick={() => setInspector({ kind: "file", path: file.relativePath })}>
               <IconFileText className="size-3.5 shrink-0 text-muted-foreground" stroke={1.7} />
               <span className="min-w-0 flex-1 truncate font-mono text-[11.5px]">{file.relativePath.slice(module.relativePath === "." ? 0 : module.relativePath.length + 1)}</span>
+              <OverlapMarkSign mark={fileMarks[file.relativePath]} />
               <span className="shrink-0 text-ui-xs text-muted-foreground/70">{file.lineCount}</span>
             </button>
           ))}
@@ -111,6 +132,7 @@ export function FilePreview({ path }: { path: string }) {
   const [contents, setContents] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
   const module = project.snapshot.modules.find((m) => m.files.some((f) => f.relativePath === path));
+  const fileOverlaps = (project.overlaps?.items ?? []).filter((item) => item.level !== "module" && item.files.includes(path));
 
   useEffect(() => {
     let current = true;
@@ -136,11 +158,19 @@ export function FilePreview({ path }: { path: string }) {
         ) : null}
         <div className="mt-2 flex items-center gap-2">
           <p className="min-w-0 flex-1 truncate font-mono text-[11.5px] text-foreground">{path}</p>
+          <OverlapMarkSign mark={project.overlaps?.files[path]} />
           <button type="button" className="sidebar-icon-button size-6 rounded-md" aria-label="Mostra nella cartella" onClick={() => void act("project:revealInFolder", { relativePath: path })}>
             <IconExternalLink className="size-3.5" />
           </button>
         </div>
       </div>
+      {fileOverlaps.length ? (
+        <div className="px-4 pb-2" data-testid="file-overlaps">
+          {fileOverlaps.map((item) => (
+            <OverlapRow key={item.id} item={item} detailed={false} />
+          ))}
+        </div>
+      ) : null}
       <div className="min-h-0 flex-1 overflow-auto px-4 pb-4">
         {failed ? <EmptyNote>Il file non è disponibile per la lettura.</EmptyNote> : null}
         {contents !== null ? (

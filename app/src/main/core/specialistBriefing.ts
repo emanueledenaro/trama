@@ -2,6 +2,7 @@ import type { PactDecision, Specialist, SpecialistAssignment } from "@shared/dom
 import { messageStyle } from "./messageStyle";
 import { CHECKS, type ReadOnlyCheck } from "./checks";
 import { needsWorktree } from "./team";
+import { contractBriefing, REPORT_HEADINGS } from "./implementation";
 
 export function specialistInstructions(projectName: string, specialist: Specialist, assignment: SpecialistAssignment): string {
   const lines = [
@@ -44,9 +45,11 @@ export function openingInput(assignment: SpecialistAssignment, decisions: PactDe
   lines.push(`Moduli nel perimetro: ${assignment.moduleIds.join(", ")}.`);
   if (assignment.dependencies.length) lines.push(`Dipende da lavori già conclusi: ${assignment.dependencies.join(", ")}.`);
   if (assignment.requiredChecks.length) lines.push(`Verifiche richieste: ${assignment.requiredChecks.join(", ")}.`);
-  lines.push(...decisionLines(assignment, decisions));
+  const relied = decisionLines(assignment, decisions);
+  lines.push(...(relied.length || !assignment.seams ? relied : ["Decisioni del Patto su cui si basa il lavoro: nessuna."]));
   lines.push(`Istruzioni del Coordinatore:\n${assignment.instructions}`);
   lines.push("Quando hai finito, riporta le modifiche fatte, i comandi eseguiti con il loro esito e quello che resta aperto.");
+  lines.push(...contractBriefing(assignment));
   return lines.join("\n");
 }
 
@@ -58,5 +61,9 @@ export function resumeInput(assignment: SpecialistAssignment, decisions: PactDec
   const relied = decisionLines(assignment, decisions);
   if (relied.length) lines.push(...relied, "Se una decisione è cambiata rispetto al lavoro fatto, adegua il lavoro alla versione attuale.");
   lines.push("Continua da dove eri rimasto e riporta cosa hai fatto in questo turno.");
+  if (assignment.seams) {
+    const headings = Object.values(REPORT_HEADINGS).map((h) => `\`${h}\``).join(", ");
+    lines.push(`Chiudi con il rapporto dell'incarico su tutto il lavoro, non solo su questo turno: ${headings}.`);
+  }
   return lines.join("\n");
 }
