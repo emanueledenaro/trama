@@ -17,6 +17,10 @@ Controllo di #228 sul branch `bugfix/issue-228-provider-github-tools`. Nella pro
 - Istruzioni: il Coordinatore e gli specialisti leggono che gli strumenti GitHub, web, connettori e MCP del provider sono bloccati, quale strumento di Trama usare, e che non devono mai chiedere alla persona di eseguire un comando nel terminale per leggere dati che Trama può leggere. Lo dicono anche le istruzioni del server MCP di Trama.
 - Scelta del provider: `coordinatorUnavailableReason` in `app/src/shared/providers.ts` esclude dal ruolo di Coordinatore un provider senza sessioni in sola lettura o senza gli strumenti di Trama. Il motivo compare nella scelta del provider, in Impostazioni e nell'avviso del Coordinatore; le proposte di cambio provider usano la stessa regola. La capacità si chiama ora "Strumenti di Trama". Oggi tutti i nove provider li ricevono, quindi nessuno è escluso per questo.
 
+## Uscita strutturata
+
+Nella prova in locale con Claude Haiku in sola lettura (triage dei ruoli fissi), in 3 incarichi su 6 l'agente scriveva "Il tool StructuredOutput non è disponibile in questa sessione Trama (read-only)" e Trama non leggeva la risposta. Con `outputFormat` l'SDK di Claude restituisce la risposta attraverso lo strumento `StructuredOutput`, e il filtro degli strumenti lo rifiutava come uno strumento sconosciuto. Ora `decideToolPermission` lo ammette sempre: è l'uscita che Trama stessa chiede. Codex usa lo schema nativo di app-server senza strumenti; Pi, OpenCode, Antigravity e gli agenti ACP chiedono il JSON nel testo del prompt e Trama lo estrae dalla risposta, quindi non c'è uno strumento da ammettere. Test: `claudeAgent.test.ts` ("lets a read-only turn return the structured answer Trama asked for"), con il fake dell'SDK; per ACP resta il test esistente dello schema in `acpRuntime.test.ts`.
+
 ## Provider per provider
 
 "Fake" indica l'agente o la CLI di prova in `app/test-fixtures` o i finti SDK dei test. "Reale" indica il binario o l'SDK del provider. In questa verifica nessun binario reale è stato eseguito: l'ambiente non ha le CLI dei provider né gli accessi.

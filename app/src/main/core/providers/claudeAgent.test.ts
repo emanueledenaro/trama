@@ -180,6 +180,7 @@ describe("tool permissions", () => {
       reason: expect.stringContaining("Trama non consente accessi alla rete"),
     });
     expect(decideToolPermission("Edit", { file_path: "/repo/a.ts" }, coordinator, identity)).not.toHaveProperty("providerTool");
+    expect(decideToolPermission("StructuredOutput", { verdict: "bug" }, coordinator, identity)).toEqual({ allow: true });
   });
 
   it("limits writes to the writable root", () => {
@@ -512,6 +513,32 @@ describe("ClaudeAgentRuntime", () => {
     expect(answers[1]).toMatchObject({ behavior: "allow" });
     expect(events).toContainEqual({ type: "toolRefused", itemId: "t-gh", tool: "mcp__github__list_issues", reason: expect.stringContaining("read_issues") });
     expect(events).toContainEqual(expect.objectContaining({ type: "toolCallCompleted", server: "trama", tool: "read_issues", succeeded: true }));
+  });
+
+  it("lets a read-only turn return the structured answer Trama asked for", async () => {
+    const runtime = new ClaudeAgentRuntime({ executable });
+    const { threadId } = await runtime.openThread({ model: "haiku", cwd: "/repo", developerInstructions: "" });
+    const answers: unknown[] = [];
+    const answer = { issue: 228, verdict: "bug" };
+    sdk.query.mockImplementationOnce(({ options }: { options: { canUseTool: (name: string, input: unknown, context: unknown) => Promise<unknown> } }) => {
+      async function* turn() {
+        answers.push(await options.canUseTool("StructuredOutput", answer, { toolUseID: "t-out", signal: new AbortController().signal }));
+        yield result({ session_id: threadId, result: "", structured_output: answer });
+      }
+      return Object.assign(turn(), { interrupt: vi.fn(), close: vi.fn(), supportedModels: vi.fn(async () => []) });
+    });
+    const events: TurnEvent[] = [];
+    const text = await runtime.runTurn({
+      threadId,
+      prompt: "Triage",
+      cwd: "/repo",
+      model: "haiku",
+      outputSchema: { type: "object", required: ["issue", "verdict"] },
+      onEvent: (e) => events.push(e),
+    });
+    expect(answers).toEqual([{ behavior: "allow", updatedInput: answer }]);
+    expect(JSON.parse(text)).toEqual(answer);
+    expect(events.some((e) => e.type === "toolRefused")).toBe(false);
   });
 
   it("interrupts a running turn", async () => {

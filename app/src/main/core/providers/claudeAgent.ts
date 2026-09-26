@@ -396,6 +396,8 @@ export const ALWAYS_DISALLOWED_TOOLS = [
   "RemoteTrigger",
   "CronCreate",
 ];
+/** The tool through which Claude Code returns the answer of a turn with `outputFormat`. */
+export const STRUCTURED_OUTPUT_TOOL = "StructuredOutput";
 const WRITE_TOOLS = new Set(["Edit", "Write", "MultiEdit", "NotebookEdit"]);
 const SHELL_TOOLS = new Set(["Bash", "BashOutput", "KillShell", "KillBash", "Monitor"]);
 const READ_TOOLS = new Set(["Read", "Glob", "Grep", "LS", "NotebookRead", "TodoWrite", "ToolSearch", "ListMcpResourcesTool", "ReadMcpResourceTool"]);
@@ -427,6 +429,8 @@ export function decideToolPermission(
     reason: refusalReason(externalToolKind(tool, kind), policy.hostTools ?? []),
     providerTool: true,
   });
+  // The SDK's structured answer (outputFormat json_schema), which Trama itself asks for: never a provider tool to block.
+  if (toolName === STRUCTURED_OUTPUT_TOOL) return { allow: true };
   const mcp = parseMcpToolName(toolName);
   if (mcp) return mcp.server === policy.hostServer ? { allow: true } : providerTool(`${mcp.server} ${mcp.tool}`);
   if (toolName === "WebFetch" || toolName === "WebSearch") return providerTool(toolName, "fetch");
