@@ -1,6 +1,7 @@
 import { Popover } from "@base-ui/react/popover";
 import { IconBolt, IconBoltFilled, IconChevronDown, IconRotateClockwise } from "@tabler/icons-react";
 import { isUsableAccount, type ProviderId } from "@shared/codex";
+import { failureSummary } from "@shared/providerFailure";
 import { PROVIDERS } from "@shared/providers";
 import { useEffect, useRef, useState } from "react";
 import { PROVIDER_GLOW, ProviderIcon } from "@/components/ProviderIcon";
@@ -49,9 +50,21 @@ export function ModelPicker({
   const providers = useUi((s) => s.app!.providers);
   const [open, setOpen] = useState(false);
   const [browsing, setBrowsing] = useState<ProviderId>(selectedProvider);
+  // A recovery action (Cambia modello, Cambia provider) opens the picker on the provider it names (P10).
+  const pickerRequest = useUi((s) => s.pickerRequest);
+  const requestedProvider = useRef<ProviderId | null>(null);
+  const handledRequest = useRef(pickerRequest?.nonce ?? 0);
 
   useEffect(() => {
-    if (open) setBrowsing(selectedProvider);
+    if (!pickerRequest || pickerRequest.nonce === handledRequest.current) return;
+    handledRequest.current = pickerRequest.nonce;
+    requestedProvider.current = pickerRequest.provider;
+    setOpen(true);
+  }, [pickerRequest]);
+
+  useEffect(() => {
+    if (open) setBrowsing(requestedProvider.current ?? selectedProvider);
+    requestedProvider.current = null;
   }, [open, selectedProvider]);
 
   const descriptor = PROVIDERS.find((p) => p.id === browsing);
@@ -133,7 +146,11 @@ export function ModelPicker({
         <PickerList label="Modelli">
           {!usable ? (
             <PickerNote>
-              {descriptor?.signInCommand ? `Collegalo dal terminale con ${descriptor.signInCommand}.` : "Collegalo dalle impostazioni."}
+              {account?.kind === "blocked"
+                ? failureSummary(account.message, descriptor?.name)
+                : descriptor?.signInCommand
+                  ? `Collegalo dal terminale con ${descriptor.signInCommand}.`
+                  : "Collegalo dalle impostazioni."}
             </PickerNote>
           ) : visible.length === 0 ? (
             <PickerNote>Nessun modello corrisponde.</PickerNote>
