@@ -35,7 +35,7 @@ Lo sviluppatore che lavora in un worktree riceve lo standard nelle istruzioni di
 
 ## Revisione tecnica
 
-Il revisore (V05) controlla il diff anche rispetto allo standard e riporta i rilievi con file e riga, divisi in bloccanti e suggerimenti. Un rilievo bloccante porta sempre a "modifiche richieste", anche se il revisore ha scritto "approvato". Un'eccezione dichiarata e motivata dallo sviluppatore non è una violazione.
+Il revisore (V05) controlla il diff anche rispetto allo standard e riporta i rilievi con file e riga, divisi in bloccanti e suggerimenti. Una violazione di `names`, `noHiddenSideEffects` o `dry` è sempre bloccante, anche se il revisore la chiama suggerimento. Un rilievo bloccante porta sempre a "modifiche richieste", anche se il revisore ha scritto "approvato". Un'eccezione dichiarata e motivata dallo sviluppatore non è una violazione.
 
 I rilievi sono il giudizio del modello e restano rilievi. Contano come evidenza solo le misure che Trama calcola da sola, sempre uguali per lo stesso diff:
 
@@ -45,7 +45,7 @@ I rilievi sono il giudizio del modello e restano rilievi. Contano come evidenza 
 | Righe di una funzione, dalla dichiarazione alla graffa di chiusura | `smallFunctions` | più di 40 |
 | Righe aggiunte uguali a un blocco presente altrove nei file cambiati | `dry` | almeno 6 righe consecutive con logica |
 
-Le misure riguardano solo le funzioni che il candidato aggiunge o cambia. Le funzioni si leggono nei linguaggi con le graffe: TypeScript, JavaScript, Swift, Kotlin, Rust e le funzioni `func` di Go. Le duplicazioni si cercano anche in Python, Java, C, C#, Ruby e PHP. Le righe vuote, quelle con sole parentesi, gli import e i commenti non contano come logica. Trama legge solo file normali dentro il worktree: niente collegamenti simbolici e niente file sopra i 512 KB.
+Le misure riguardano solo le funzioni che il candidato aggiunge o cambia. Le funzioni si leggono nei linguaggi con le graffe: TypeScript, JavaScript, Swift, Kotlin, Rust e Go, con i metodi e i risultati di Go. Le duplicazioni si cercano anche in Python, Java, C, C#, Ruby e PHP. Le righe vuote, quelle con sole parentesi, gli import e i commenti non contano come logica. Trama legge solo file normali dentro il worktree: niente collegamenti simbolici, nemmeno su una cartella del percorso, e niente file sopra i 512 KB.
 
 ## Configurazione per progetto
 

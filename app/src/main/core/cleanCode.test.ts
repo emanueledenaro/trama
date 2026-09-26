@@ -123,6 +123,10 @@ describe("the technical review against the standard (V05, Q03)", () => {
       { severity: "blocking", rule: "dry", file: "src/b.ts", line: null, message: "La stessa validazione è in a.ts." },
       { severity: "blocking", rule: null, file: "src/c.ts", line: 3, message: "Fuori dallo standard." },
     ]);
+    // A breach of a blocking rule blocks even when the reviewer calls it a suggestion.
+    const downgraded = readReviewAnswer({ verdict: "approved", summary: "Bene.", findings: [{ severity: "suggestion", rule: "dry", file: "a.ts", line: 4, message: "Stessa logica di b.ts." }] });
+    expect(downgraded.verdict).toBe("changesRequested");
+    expect(downgraded.findings[0]!.severity).toBe("blocking");
     const suggestions = readReviewAnswer({ verdict: "approved", summary: "Bene.", findings: [{ severity: "suggestion", rule: "kiss", file: "a.ts", line: 1, message: "Più semplice." }] });
     expect(suggestions.verdict).toBe("approved");
     expect(readReviewAnswer({ verdict: "approved", summary: "Bene." })).toEqual({ verdict: "approved", summary: "Bene.", findings: [] });
@@ -201,6 +205,25 @@ describe("deterministic measures of the candidate (Q03)", () => {
     ]);
   });
 
+  it("reads Go functions and methods with their results", () => {
+    const text = [
+      "func load(id string, cache Cache, log Logger, clock Clock) (Item, error) {",
+      "\treturn cache.Get(id)",
+      "}",
+      "func (s *Store) save(item Item) error {",
+      "\treturn nil",
+      "}",
+      "func (s *Store) Open() *Store {",
+      "\treturn s",
+      "}",
+    ].join("\n");
+    expect(findFunctions(text).map(({ name, line, endLine, arguments: count }) => ({ name, line, endLine, count }))).toEqual([
+      { name: "load", line: 1, endLine: 3, count: 4 },
+      { name: "save", line: 4, endLine: 6, count: 1 },
+      { name: "Open", line: 7, endLine: 9, count: 0 },
+    ]);
+  });
+
   it("blanks strings, comments and regular expressions without moving a line", () => {
     const text = "const a = \"{\"; // (\nconst b = /[/]}/g;\n/* {\n */ const c = `(`;";
     const blanked = blankLiterals(text);
@@ -234,6 +257,25 @@ describe("deterministic measures of the candidate (Q03)", () => {
     expect(measureCandidate(newFilesDiff([a, b]), [a, b], ["names"]).measures).toEqual([]);
   });
 
+  it("finds an added copy of existing logic whichever file or line comes first", () => {
+    const block = ["const refund = order.total - order.fees;", "ledger.add(order.id, refund);", "audit.log(\"refund\", order.id);", "notify(order.customer, refund);", "metrics.count(\"refund\");", "return refund;"];
+    const added = { path: "src/a.ts", text: ["export function cancel(order) {", ...block, "}"].join("\n") };
+    const existing = { path: "src/z.ts", text: ["export function close(order) {", ...block, "}"].join("\n") };
+    // Only a.ts is new: z.ts is a changed file whose block was already there.
+    const diff = [newFilesDiff([added]), "+++ b/src/z.ts", "@@ -1,8 +1,9 @@", "+// closing", ...existing.text.split("\n").map((l) => ` ${l}`)].join("\n");
+    const withComment = { ...existing, text: `// closing\n${existing.text}` };
+    expect(measureCandidate(diff, [added, withComment], allRules).measures).toEqual([
+      { kind: "duplication", rule: "dry", file: "src/a.ts", line: 2, subject: "src/z.ts:3", value: 6, limit: MEASURE_LIMITS.duplication },
+    ]);
+    // In one file too: the new copy above the old one is still found.
+    const oneFile = { path: "src/b.ts", text: ["function fresh(order) {", ...block, "}", "function old(order) {", ...block, "}"].join("\n") };
+    const lines = oneFile.text.split("\n");
+    const oneDiff = ["+++ b/src/b.ts", `@@ -1,8 +1,${lines.length} @@`, ...lines.map((l, i) => (i < 8 ? `+${l}` : ` ${l}`))].join("\n");
+    expect(measureCandidate(oneDiff, [oneFile], ["dry"]).measures).toEqual([
+      { kind: "duplication", rule: "dry", file: "src/b.ts", line: 2, subject: "src/b.ts:10", value: 6, limit: MEASURE_LIMITS.duplication },
+    ]);
+  });
+
   it("gives the same numbers on every run", () => {
     const a = { path: "src/a.ts", text: "function f(a, b, c, d) {\n  return a;\n}" };
     const diff = newFilesDiff([a]);
@@ -246,7 +288,11 @@ describe("deterministic measures of the candidate (Q03)", () => {
     await writeFile(join(root, "src/a.ts"), "function f(a, b, c, d) {\n  return a;\n}");
     await writeFile(join(root, "secret.txt"), "token");
     await symlink(join(root, "src/a.ts"), join(root, "src/link.ts"));
-    const files = await readMeasuredFiles(root, ["src/a.ts", "src/link.ts", "secret.txt", "../outside.ts", "src/gone.ts"]);
+    // A folder that points outside the worktree: the file under it looks regular to lstat, and is still left out.
+    const outside = await mkdtemp(join(tmpdir(), "trama-clean-code-outside-"));
+    await writeFile(join(outside, "b.ts"), "function secret(a, b, c, d) {}");
+    await symlink(outside, join(root, "lib"));
+    const files = await readMeasuredFiles(root, ["src/a.ts", "src/link.ts", "lib/b.ts", "secret.txt", "../outside.ts", "src/gone.ts"]);
     expect(files.map((f) => f.path)).toEqual(["src/a.ts"]);
     const check = await checkStandard({ diff: newFilesDiff(files), changedFiles: ["src/a.ts"] }, root, { disabledRules: ["smallFunctions"], note: null });
     expect(check).toEqual({

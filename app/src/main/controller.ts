@@ -2714,10 +2714,11 @@ export class TramaController {
       const opening = await client.openThread({
         model: assignment.model,
         cwd,
-        // Trama's Clean Code standard (Q03) reaches whoever writes code, as Trama's text above the skills and apart from them.
+        // Trama's Clean Code standard (Q03) reaches whoever writes in a worktree, a fixed role's fix included, as Trama's
+        // text above the skills and apart from them.
         developerInstructions: specialistInstructionsWithStandard(
           baseInstructions,
-          !duty && needsWorktree(assignment) ? developerStandard(document.cleanCode) : null,
+          needsWorktree(assignment) ? developerStandard(document.cleanCode) : null,
           developer && !nativeInput ? developer.text : null,
         ),
         sandbox: needsWorktree(assignment) ? "workspace-write" : "read-only",

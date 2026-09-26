@@ -1,4 +1,4 @@
-import { lstat, readFile } from "node:fs/promises";
+import { lstat, readFile, realpath } from "node:fs/promises";
 import { join, relative } from "node:path";
 import {
   activeRules,
@@ -170,9 +170,12 @@ function readFinding(item: unknown): ReviewFinding | null {
   if (!item || typeof item !== "object") return null;
   const { severity, rule, file, line, message } = item as Record<string, unknown>;
   if (typeof file !== "string" || !file.trim() || typeof message !== "string" || !message.trim()) return null;
+  const known = typeof rule === "string" && isCleanCodeRule(rule) ? rule : null;
+  // A breach of a blocking rule blocks whatever severity the reviewer wrote; the reviewer may only raise one.
+  const blockingRule = CLEAN_CODE_RULES.find((r) => r.id === known)?.severity === "blocking";
   return {
-    severity: severity === "blocking" ? "blocking" : "suggestion",
-    rule: typeof rule === "string" && isCleanCodeRule(rule) ? rule : null,
+    severity: blockingRule || severity === "blocking" ? "blocking" : "suggestion",
+    rule: known,
     file: file.trim(),
     line: typeof line === "number" && Number.isInteger(line) && line > 0 ? line : null,
     message: message.trim(),
@@ -248,16 +251,19 @@ export function measureCandidate(diff: string, files: MeasuredFile[], rules: Cle
 const MAX_MEASURED_BYTES = 512 * 1024;
 
 /**
- * The candidate's code files as they are in its worktree. A symbolic link, a file outside the worktree, a file too
- * large or gone is left out: the measures read only regular code files.
+ * The candidate's code files as they are in its worktree. A symbolic link (the file or a folder on its path), a file
+ * outside the worktree, a file too large or gone is left out: the measures read only regular code files.
  */
 export async function readMeasuredFiles(worktreeRoot: string, paths: string[]): Promise<MeasuredFile[]> {
+  const root = await realpath(worktreeRoot);
   const files: MeasuredFile[] = [];
   for (const path of paths.filter(isMeasuredFile)) {
-    const full = join(worktreeRoot, path);
-    if (relative(worktreeRoot, full).startsWith("..")) continue;
+    const full = join(root, path);
+    if (relative(root, full).startsWith("..")) continue;
     const info = await lstat(full).catch(() => null);
     if (!info?.isFile() || info.size > MAX_MEASURED_BYTES) continue;
+    // A symbolic link anywhere along the path, a folder included, makes the resolved path differ: left out.
+    if ((await realpath(full).catch(() => null)) !== full) continue;
     files.push({ path, text: await readFile(full, "utf8") });
   }
   return files;
@@ -285,7 +291,8 @@ interface FoundFunction {
 }
 
 const NOT_A_METHOD = new Set(["if", "for", "while", "switch", "catch", "function", "return", "with", "else", "do", "super", "new", "typeof", "await"]);
-const DECLARATION = /\b(?:function\s*\*?|func|fun|fn)\s+([A-Za-z_$][\w$]*)\s*(?:<[^>(]*>)?\s*\(/g;
+// A Go method names its receiver first: `func (s *Store) save(`.
+const DECLARATION = /\b(?:function\s*\*?|func(?:\s*\([^()]*\))?|fun|fn)\s+([A-Za-z_$][\w$]*)\s*(?:<[^>(]*>)?\s*\(/g;
 const ARROW = /\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*(?::[^=]+)?=\s*(?:async\s+)?(?:<[^>(]*>\s*)?\(/g;
 const METHOD = /^[ \t]*(?:(?:public|private|protected|static|async|override|readonly|get|set)\s+)*([A-Za-z_$][\w$]*)\s*(?:<[^>(]*>)?\s*\(/gm;
 
@@ -317,6 +324,9 @@ function bodyStart(code: string, from: number): { at: number; block: boolean } |
   const rest = code.slice(from, from + 400);
   const header = rest.match(/^\s*(?:(?:async|throws|rethrows)\s*)*(?:(?:->|:)\s*[^{;=]*?)?\s*(=>\s*)?\{/);
   if (header) return { at: from + header[0].length - 1, block: true };
+  // Go writes the results with no marker: `) error {`, `) (Item, error) {`, `) *Store {`.
+  const goResults = rest.match(/^[ \t]*(?:\([^(){};=]*\)|[*[\]\w.]+)[ \t]*\{/);
+  if (goResults) return { at: from + goResults[0].length - 1, block: true };
   const arrow = rest.match(/^\s*(?::\s*[^=;{]*?)?\s*=>\s*/);
   return arrow ? { at: from + arrow[0].length, block: false } : null;
 }
@@ -443,20 +453,32 @@ interface Place {
   at: number;
 }
 
-/** Every window of added lines whose text appears earlier in the files, apart from itself. */
+/**
+ * Every window of added lines whose text appears at another place of the files, whichever comes first. Of two added
+ * copies only the later one counts; the other place named is an existing copy when there is one.
+ */
 function duplicateHits(perFile: Significant[][], window: number): { place: Place; other: Place }[] {
-  const firstSeen = new Map<string, Place>();
-  const hits: { place: Place; other: Place }[] = [];
+  const places = new Map<string, Place[]>();
+  const blockAt = ({ file, at }: Place) => perFile[file]!.slice(at, at + window);
   perFile.forEach((lines, file) => {
     for (let at = 0; at + window <= lines.length; at++) {
-      const block = lines.slice(at, at + window);
-      const key = block.map((l) => l.text).join("\n");
-      const seen = firstSeen.get(key);
-      if (!seen) firstSeen.set(key, { file, at });
-      else if ((seen.file !== file || at - seen.at >= window) && block.every((l) => l.added)) hits.push({ place: { file, at }, other: seen });
+      const key = blockAt({ file, at }).map((l) => l.text).join("\n");
+      places.set(key, [...(places.get(key) ?? []), { file, at }]);
     }
   });
-  return hits;
+  const isAdded = (place: Place) => blockAt(place).every((l) => l.added);
+  const before = (a: Place, b: Place) => a.file < b.file || (a.file === b.file && a.at < b.at);
+  const hits: { place: Place; other: Place }[] = [];
+  for (const same of places.values()) {
+    for (const place of same.filter(isAdded)) {
+      const others = same.filter((o) => o.file !== place.file || Math.abs(o.at - place.at) >= window);
+      const existing = others.find((o) => !isAdded(o));
+      const earlierAdded = others.find((o) => isAdded(o) && before(o, place));
+      const other = existing ?? earlierAdded;
+      if (other) hits.push({ place, other });
+    }
+  }
+  return hits.sort((a, b) => (before(a.place, b.place) ? -1 : 1));
 }
 
 /**

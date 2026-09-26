@@ -255,7 +255,7 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
         const verdict = text.includes("RIFIUTA") ? "changesRequested" : "approved";
         // The technical review against Trama's Clean Code standard (Q03) answers with findings, file and line.
         const findings = text.includes("Misure deterministiche di Trama")
-          ? [{ severity: "suggestion", rule: "names", file: "NOTE.md", line: 1, message: "Il titolo della nota potrebbe dire quale annullamento documenta." }]
+          ? [{ severity: "suggestion", rule: "kiss", file: "NOTE.md", line: 1, message: "La nota può dire in una riga sola cosa documenta." }]
           : [];
         setTimeout(() => finish(JSON.stringify({ verdict, summary: "Il diff rispetta le decisioni indicate.", findings })), 10);
         return;
