@@ -157,7 +157,7 @@ function WorkGroup({ row }: { row: Extract<TimelineRow, { kind: "work" }> }) {
   );
   const tools = row.activities.filter((e) => e.content.type === "activity" && e.content.tone !== "info").length;
   // The specialist's identity leads the label (W15): avatar, name and tag in its color.
-  const who = specialist ? <AgentName agent={specialist} className="mr-1" /> : null;
+  const who = specialist ? <AgentName agent={specialist} size={32} className="mr-1" /> : null;
   const label = row.running
     ? specialist ? <>{who}sta lavorando</> : "Il Coordinatore sta lavorando"
     : row.durationMs !== null

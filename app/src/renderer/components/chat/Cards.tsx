@@ -515,7 +515,7 @@ export function AssignmentCard({ assignmentId }: { assignmentId: string }) {
       }
     >
       <Field label="Specialista">
-        <AgentName agent={specialist} /> <span className="text-muted-foreground"><Sep />{specialist.competence}</span>
+        <AgentName agent={specialist} size={32} /> <span className="text-muted-foreground"><Sep />{specialist.competence}</span>
       </Field>
       <Field label="Obiettivo">{assignment.objective}</Field>
       <DutyFields assignment={assignment} />
@@ -982,7 +982,7 @@ export function CandidateCard({ candidateId }: { candidateId: string }) {
   return (
     <CardFrame icon={<IconFileDiff stroke={1.8} />} title={`Candidato ${candidate.id}`} aside={<Badge tone={state.tone}>{state.label}</Badge>}>
       <p className="text-ui-sm text-muted-foreground">
-        {specialist ? <AgentName agent={specialist} /> : candidate.specialistId}<Sep />incarico {candidate.assignmentId}<Sep />{candidate.changedFiles.length === 1 ? "1 file" : `${candidate.changedFiles.length} file`}
+        {specialist ? <AgentName agent={specialist} size={32} /> : candidate.specialistId}<Sep />incarico {candidate.assignmentId}<Sep />{candidate.changedFiles.length === 1 ? "1 file" : `${candidate.changedFiles.length} file`}
       </p>
       <Field label="Decisioni pertinenti">
         {candidate.requiredDecisionIds.map((id) => (

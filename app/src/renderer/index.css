@@ -475,6 +475,93 @@
   stroke: var(--background);
   stroke-width: 7;
 }
+/* The bots' steady moves (W16), chosen by `data-move` and run only on bots in view (`data-live`). They move the
+   whole SVG, except the knots of the thinking move. The steady ones advance in steps, a few times per second: the
+   amplitude is a pixel or two, so the steps do not show, and the window is not redrawn at every frame, which with
+   twenty bots on screen took about 13% of CPU. Steps last 0.45 s and each bot's delay is a whole number of steps,
+   so all bots step together. botEngine.ts draws the morphs and the eyes. */
+.agent-bot[data-live] {
+  transform-origin: 50% 85%;
+  animation: bot-breathe 3.6s steps(8) var(--bot-delay, 0s) infinite alternate;
+}
+.agent-bot[data-live][data-move="sleep"] {
+  transform-origin: 50% 55%;
+  animation: bot-sleep 4.5s steps(10) var(--bot-delay, 0s) infinite alternate;
+}
+.agent-bot[data-live][data-move="exclamation"] {
+  animation: bot-hop 0.75s steps(5) infinite alternate;
+}
+.agent-bot[data-live][data-move="alert"] {
+  animation: bot-shake 2.2s steps(44) infinite;
+}
+.agent-bot[data-live][data-move="thinking"] {
+  animation: none;
+}
+.agent-bot[data-live][data-move="thinking"] :is([data-part="blob-0"], [data-part="blob-1"], [data-part="blob-2"], [data-part="dim"]) {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: bot-knot 1.3s steps(6) infinite;
+}
+.agent-bot[data-live][data-move="thinking"] :is([data-part="blob-0"], [data-part="dim"]) {
+  animation-delay: 0.35s;
+}
+.agent-bot[data-live][data-move="thinking"] [data-part="blob-2"] {
+  animation-delay: 0.7s;
+}
+:root.bots-paused .agent-bot,
+:root.bots-paused .agent-bot * {
+  animation-play-state: paused !important;
+}
+@keyframes bot-breathe {
+  to {
+    transform: scale(1.03, 0.985);
+  }
+}
+@keyframes bot-sleep {
+  from {
+    transform: scale(0.92);
+  }
+  to {
+    transform: scale(1.08);
+  }
+}
+@keyframes bot-hop {
+  to {
+    transform: translateY(-9%);
+  }
+}
+@keyframes bot-shake {
+  0%,
+  24%,
+  100% {
+    transform: none;
+  }
+  4%,
+  12%,
+  20% {
+    transform: translateX(-5%) rotate(-4deg);
+  }
+  8%,
+  16% {
+    transform: translateX(5%) rotate(4deg);
+  }
+}
+@keyframes bot-knot {
+  0%,
+  60%,
+  100% {
+    transform: none;
+  }
+  30% {
+    transform: scale(1.28);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .agent-bot,
+  .agent-bot * {
+    animation: none !important;
+  }
+}
 /* In the components layer, so color and text utilities on a tag or a person's avatar still apply. */
 @layer components {
   .person-avatar {

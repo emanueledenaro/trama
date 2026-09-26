@@ -58,12 +58,12 @@ function useAgentBot(agent: Agent, activity: AgentActivity | undefined) {
 
 export function AgentAvatar({
   agent,
-  size = 16,
+  size = 24,
   activity,
   className,
 }: {
   agent: Agent;
-  /** Pixels, from 16 to 96. */
+  /** Pixels, from 20 to 96: 24 in lists, 32 in the Team and the chat, 64 on the specialist's page. */
   size?: number;
   /** The state to show when the agent is not in the open project's team, for example a colleague's agent. */
   activity?: AgentActivity;
@@ -97,17 +97,20 @@ export function AgentTag({ agent, className }: { agent: Agent; className?: strin
 export function AgentName({
   agent,
   avatar = true,
+  size = 24,
   activity,
   className,
 }: {
   agent: Agent;
   avatar?: boolean;
+  /** The bot's size in pixels. */
+  size?: number;
   activity?: AgentActivity;
   className?: string;
 }) {
   return (
     <span className={cn("inline-flex min-w-0 items-center gap-1.5 align-middle", className)}>
-      {avatar ? <AgentAvatar agent={agent} activity={activity} /> : null}
+      {avatar ? <AgentAvatar agent={agent} activity={activity} size={size} /> : null}
       <span className="min-w-0 truncate">{agent.name}</span>
       <AgentTag agent={agent} className="shrink-0" />
     </span>

@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useRef } from "react";
+import { type CSSProperties, useEffect, useId, useMemo, useRef } from "react";
 import { ACTIVITY_LOOK, type AgentActivity, type BotShape, stableHash, transitionMove } from "@shared/agentBot";
 import type { AgentColor } from "@shared/domain";
 import { badgeTransform, BADGE_RADIUS, BOT_VIEWBOX, CLAY, botDetail, botPose, clampBotSize, renderPose, weaveStrength } from "@/lib/botGeometry";
@@ -9,14 +9,14 @@ import { agentStyle } from "./AgentIdentity";
 /**
  * An agent's bot (W16, ADR 0007): a soft body of woven fabric in the agent's color, with a stitched seam and two
  * stitches for eyes. The body is the agent's own (a shape per role); the move and the eyes follow its state.
- * Drawn from scratch in SVG; `botEngine` animates it while it is on screen.
+ * Drawn from scratch in SVG; CSS runs its steady moves and `botEngine` the morphs and the eyes, only while on screen.
  */
 export function AgentBot({
   shape,
   color,
   activity,
   seed,
-  size = 16,
+  size = 24,
   className,
 }: {
   shape: BotShape;
@@ -24,7 +24,7 @@ export function AgentBot({
   activity: AgentActivity;
   /** The agent's id, so two bots in the same state do not move in step. */
   seed: string;
-  /** Pixels, from 16 to 96. */
+  /** Pixels, from 20 to 96. */
   size?: number;
   className?: string;
 }) {
@@ -86,7 +86,8 @@ export function AgentBot({
       height={px}
       overflow="visible"
       className={cn("agent-identity agent-bot", className)}
-      style={agentStyle({ color })}
+      style={{ ...agentStyle({ color }), "--bot-delay": `${-(Math.floor(number * 8) % 8) * 0.45}s` } as CSSProperties}
+      data-move={look.animation}
       data-agent={seed}
       data-shape={shape}
       data-activity={activity}

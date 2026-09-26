@@ -32,10 +32,11 @@ describe("bot geometry (W16)", () => {
     expect(outlines.size).toBe(BOT_SHAPES.length);
   });
 
-  it("keeps sizes between 16 and 96 px and reduces detail when small", () => {
-    expect(clampBotSize(8)).toBe(16);
+  it("keeps sizes between 20 and 96 px and reduces detail when small", () => {
+    expect(clampBotSize(8)).toBe(20);
+    expect(clampBotSize(16)).toBe(20);
     expect(clampBotSize(200)).toBe(96);
-    expect(botDetail(16)).toBe("low");
+    expect(botDetail(20)).toBe("low");
     expect(botDetail(24)).toBe("mid");
     expect(botDetail(48)).toBe("high");
     expect(pointCount("low")).toBeLessThan(pointCount("high"));

@@ -63,8 +63,8 @@ function DeveloperRow({ specialist }: { specialist: Specialist }) {
   const goal = current ? findGoal(project.document, current.goalId) : null;
   return (
     <button type="button" data-testid="team-developer" onClick={() => setInspector({ kind: "specialist", id: specialist.id })} className={ROW}>
-      <span className="flex w-6 justify-center">
-        <AgentAvatar agent={specialist} size={24} />
+      <span className="flex w-8 justify-center">
+        <AgentAvatar agent={specialist} size={32} />
       </span>
       <span className="min-w-0 flex-1">
         <span className="block text-ui text-foreground">
@@ -92,7 +92,7 @@ function FigureRow({ figure }: { figure: RosterFigure }) {
   const specialist = figure.specialists[0];
   const body = (
     <>
-      <span className="flex w-6 justify-center">{specialist ? <AgentAvatar agent={specialist} size={24} /> : null}</span>
+      <span className="flex w-8 justify-center">{specialist ? <AgentAvatar agent={specialist} size={32} /> : null}</span>
       <span className="min-w-0 flex-1">
         <span className="flex items-center gap-1.5 text-ui text-foreground">
           {specialist ? <AgentName agent={specialist} avatar={false} /> : figure.profile.name}
@@ -212,7 +212,7 @@ export function SpecialistView({ id }: { id: string }) {
           <IconArrowLeft className="size-3.5" /> Team
         </button>
         <div className="mt-2 flex items-center gap-2">
-          <AgentAvatar agent={specialist} size={48} />
+          <AgentAvatar agent={specialist} size={64} />
           <h3 className="text-ui-lg font-medium text-foreground">{specialist.name}</h3>
           <AgentTag agent={specialist} className="text-ui-sm" />
           <Badge>{specialist.id}</Badge>
@@ -391,13 +391,13 @@ function AgentColorPicker({ specialist }: { specialist: Specialist }) {
                 aria-label={entry.label}
                 data-testid="agent-color"
                 className={cn(
-                  "agent-identity inline-flex size-8 items-center justify-center rounded-full transition-shadow",
+                  "agent-identity inline-flex size-10 items-center justify-center rounded-full transition-shadow",
                   selected ? "ring-2 ring-[var(--agent)] ring-offset-1 ring-offset-background" : "hover:ring-1 hover:ring-[var(--agent)]",
                 )}
                 style={agentStyle({ color: entry.color })}
                 onClick={() => (selected ? undefined : void act("specialist:setColor", { specialistId: specialist.id, color: entry.color }))}
               >
-                <AgentAvatar agent={{ ...specialist, color: entry.color }} activity="idle" size={24} />
+                <AgentAvatar agent={{ ...specialist, color: entry.color }} activity="idle" size={32} />
               </button>
             </Tooltip>
           );

@@ -43,7 +43,8 @@ export const BOT_VIEWBOX = "-108 -108 216 216";
 export const BOT_UNIT = 80;
 /** The clay's radial gradient, lit from the top left; the stop colors are in `.agent-bot` in index.css. */
 export const CLAY = { cx: -58, cy: -66, r: 200, stops: [0, 0.14, 0.4, 1] } as const;
-export const MINIMUM_BOT_SIZE = 16;
+/** Smaller bots do not read at a glance: shape, color and eyes need at least 20 px. */
+export const MINIMUM_BOT_SIZE = 20;
 export const MAXIMUM_BOT_SIZE = 96;
 
 export function clampBotSize(size: number): number {
