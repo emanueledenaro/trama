@@ -11,6 +11,7 @@ export function Dialog({
   children,
   footer,
   className,
+  icon,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -19,6 +20,8 @@ export function Dialog({
   children: React.ReactNode;
   footer?: React.ReactNode;
   className?: string;
+  /** Shown before the title, for example Trama's mark in the guide. */
+  icon?: React.ReactNode;
 }) {
   return (
     <DialogPrimitive.Root open={open} onOpenChange={onOpenChange}>
@@ -31,6 +34,7 @@ export function Dialog({
           )}
         >
           <div className="flex items-start gap-3 px-5 pt-4 pb-2">
+            {icon ? <div className="shrink-0 pt-0.5">{icon}</div> : null}
             <div className="min-w-0 flex-1">
               <DialogPrimitive.Title className="text-ui-lg font-medium text-foreground">{title}</DialogPrimitive.Title>
               {description ? (
