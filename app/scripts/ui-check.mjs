@@ -682,7 +682,7 @@ git("-c", "user.name=Trama UI", "-c", "user.email=ui@trama.local", "commit", "-q
 git("remote", "add", "origin", "https://github.com/trama-ui/negozio.git");
 
 // Reopening (UX01): after a restart the same goal is in the list and opens from the keyboard alone.
-({ app, page } = await launch({ PATH: `${ghBin}:${process.env.PATH}` }));
+({ app, page } = await launch({ PATH: `${ghBin}:${process.env.PATH}`, FAKE_GH_TEAM: "1" }));
 const goalsRow = page.getByRole("button", { name: /^Obiettivi/ }).first();
 await goalsRow.waitFor({ timeout: 30_000 });
 // M04: the spec is still there to read after the restart.
@@ -721,6 +721,14 @@ await page.getByRole("button", { name: /^Gruppo/ }).first().click();
 const groupPanel = page.getByTestId("inspector");
 await groupPanel.getByRole("button", { name: "Segui in background" }).click();
 await groupPanel.getByText("Monitor attivo").waitFor({ timeout: 10_000 });
+// G02, decision 9a: a colleague who does not use Trama appears with what GitHub shows, their pull request and branch;
+// a branch nobody explains stays apart.
+const githubOnly = groupPanel.locator('[data-testid="group-row"][data-kind="github"]').filter({ hasText: "collega" });
+await githubOnly.getByText("#12 Annullo degli ordini dal riepilogo").waitFor({ timeout: 20_000 });
+await githubOnly.getByText("feature/annullo-ordini").waitFor();
+await githubOnly.getByText(/^su GitHub/).waitFor();
+await groupPanel.getByTestId("group-other-branches").getByText(/spike\/vecchio-checkout/).waitFor();
+await groupPanel.locator('[data-testid="group-row"][data-self="true"]').getByText("trama-ui (tu)").waitFor({ timeout: 20_000 });
 await shot("15b-group-follow");
 await page.setViewportSize({ width: 720, height: 640 });
 await groupPanel.getByRole("button", { name: "Chiedi al Coordinatore l'impatto" }).click();
@@ -834,6 +842,47 @@ await correctedCard.getByText("Verificato", { exact: true }).waitFor();
 await correctedCard.scrollIntoViewIfNeeded();
 await shot("18e-clearance-withdrawn");
 
+// M06: the developer of a slice runs implement and tdd with their original text and reports the seams it tested.
+// The candidate shows that report apart from Trama's evidence; the build and the tests wait for Trama's own run.
+await page.getByRole("button", { name: /^Mandato/ }).first().click();
+await page.getByRole("button", { name: "Correggi", exact: true }).click();
+await page.getByRole("checkbox", { name: /Preparare piani/ }).check();
+await page.getByRole("button", { name: "Salva correzione" }).click();
+await page.getByText(/Mandato v2/).first().waitFor({ timeout: 20_000 });
+await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
+await send("[piano]");
+const sliceSeams = page.locator('[data-testid="plan-spec"][data-status="seams"]').last();
+await sliceSeams.getByRole("button", { name: "Conferma i seam" }).click({ timeout: 20_000 });
+const sliceSpec = page.locator('[data-testid="plan-spec"][data-status="ready"]').last();
+await sliceSpec.getByTestId("plan-slices").getByRole("button", { name: "Conferma le fette" }).click({ timeout: 20_000 });
+await sliceSpec.getByText("Restano in Trama").waitFor({ timeout: 20_000 });
+await send("[assegna] [test]");
+const sliceWork = assignmentCards.nth(3);
+await sliceWork.getByText("Concluso", { exact: true }).waitFor({ timeout: 20_000 });
+await send(`[candidato:${await cardAssignment(sliceWork)}:${candidateDecision}]`);
+const sliceCandidate = candidateCards.nth(2);
+const testedSeams = sliceCandidate.getByTestId("candidate-tested-seams");
+await testedSeams.waitFor({ timeout: 30_000 });
+await testedSeams.locator('[data-testid="candidate-tested-seam"][data-tested="yes"][data-agreed="yes"]').getByText(/CancelPaidOrder/).waitFor();
+await testedSeams.getByText("test: NOTE.md").waitFor();
+await testedSeams.getByText(/non un'evidenza/).waitFor();
+for (const check of ["swift_build", "swift_test"]) {
+  await sliceCandidate.locator(`[data-testid="candidate-evidence"][data-check="${check}"][data-result="missing"]`).waitFor();
+}
+await page.getByText(/Via libera rifiutato: .*candidate_not_verified/).last().waitFor({ timeout: 20_000 });
+if (await sliceCandidate.getByRole("button", { name: "Approva questo candidato" }).count()) throw new Error("A slice candidate without Trama's checks can be approved");
+await sliceCandidate.scrollIntoViewIfNeeded();
+await shot("19a-slice-candidate-seams");
+await app.evaluate(({ nativeTheme }) => {
+  nativeTheme.themeSource = "dark";
+});
+await page.evaluate(() => document.documentElement.classList.add("dark"));
+await shot("19b-slice-candidate-seams-dark");
+await app.evaluate(({ nativeTheme }) => {
+  nativeTheme.themeSource = "system";
+});
+await page.evaluate(() => document.documentElement.classList.remove("dark"));
+
 // G01, presenza: a project with a colleague on a local bare remote. The colleague's record is already there; Trama
 // proposes the consent in the chat once, with "Non ora" and "Condividi" on the right, and publishes only after
 // "Condividi": names, branches and paths, never the content of a file.
@@ -856,15 +905,27 @@ const beaRecord = {
   user: "bea-at-example.com",
   name: "Bea",
   activeBranch: "feature/rimborsi",
-  alsoOn: [],
-  localBranches: ["main", "feature/rimborsi"],
+  alsoOn: ["fix/iva-rimborsi"],
+  localBranches: ["main", "feature/rimborsi", "fix/iva-rimborsi"],
   files: ["src/payments.js"],
   task: { kind: "goal", title: "Rimborsi parziali" },
   since: new Date(Date.now() - 20 * 60_000).toISOString(),
   lastActivityAt: new Date().toISOString(),
   updatedAt: new Date().toISOString(),
   closedAt: null,
-  agents: [],
+  agents: [
+    {
+      id: "lia",
+      name: "Lia",
+      color: "violet",
+      tag: "Interfaccia",
+      branch: "trama/lia-rimborsi",
+      files: ["src/refunds-view.js"],
+      task: { kind: "assignment", title: "Schermata dei rimborsi" },
+      since: new Date(Date.now() - 30 * 60_000).toISOString(),
+      lastActivityAt: new Date(Date.now() - 12 * 60_000).toISOString(),
+    },
+  ],
 };
 presenceGit(presenceSeed, "checkout", "-q", "--orphan", "presence");
 presenceGit(presenceSeed, "rm", "-rq", "--cached", ".");
@@ -912,16 +973,50 @@ const presenceReply = await presenceAnswer.innerText();
 if (!presenceReply.includes("src/payments.js") || !presenceReply.includes("Sezione presenza ricevuta")) throw new Error(`Presence answer: ${presenceReply}`);
 await presenceAnswer.scrollIntoViewIfNeeded();
 await shot("16d-presence-coordinator");
+// G02: Gruppo is the picture of who works on what. One row per person and per agent, with identity, active branch,
+// "anche su", the request, the files and the freshness; the person's own switch is in the view, on the right.
 await page.getByRole("button", { name: /^Gruppo/ }).first().click();
-const presencePanel = page.getByTestId("presence-list");
-await presencePanel.getByText("Ada (tu)").waitFor({ timeout: 10_000 });
-await presencePanel.getByText("Bea").waitFor({ timeout: 10_000 });
-await presencePanel.getByText("Rimborsi parziali").waitFor();
+const presencePanel = page.getByTestId("group-board");
+const rows = presencePanel.locator('[data-testid="group-row"]');
+const adaRow = rows.filter({ hasText: "Ada (tu)" });
+await adaRow.getByText("feature/carrello").waitFor({ timeout: 10_000 });
+const beaRow = rows.filter({ hasText: "Bea" }).and(page.locator('[data-kind="person"]'));
+await beaRow.getByText("feature/rimborsi").waitFor({ timeout: 10_000 });
+await beaRow.getByText(/anche su/).waitFor();
+await beaRow.getByText("fix/iva-rimborsi").waitFor();
+await beaRow.getByText("Rimborsi parziali").waitFor();
+await beaRow.getByText("src/payments.js").waitFor();
+await beaRow.getByText("attivo ora").waitFor();
+const liaRow = rows.and(page.locator('[data-kind="agent"]')).filter({ hasText: "Lia" });
+await liaRow.getByTestId("agent-tag").getByText("[Interfaccia]").waitFor();
+await liaRow.getByText("trama/lia-rimborsi").waitFor();
+await liaRow.getByText("Schermata dei rimborsi").waitFor();
+await liaRow.getByText(/^inattivo da 1[2-9] min$/).waitFor();
+const ownSwitch = page.getByTestId("inspector").getByRole("switch", { name: "Condividi la presenza", checked: true });
+await ownSwitch.waitFor();
+const groupInspector = await page.getByTestId("inspector").boundingBox();
+const switchBox = await ownSwitch.boundingBox();
+if (!groupInspector || !switchBox || switchBox.x < groupInspector.x + groupInspector.width / 2) throw new Error("Gruppo: the sharing switch is not on the right");
 await shot("16a-presence-group");
-await page.evaluate(() => window.trama.invoke("settings:update", { theme: "dark" }));
-await page.waitForFunction(() => document.documentElement.classList.contains("dark"));
-await shot("16b-presence-group-dark");
-await page.evaluate(() => window.trama.invoke("settings:update", { theme: "system" }));
+const groupLook = await page.evaluate(() => ({ provider: document.documentElement.dataset.provider ?? null, dark: document.documentElement.classList.contains("dark") }));
+for (const provider of ["codex", "claudeAgent"]) {
+  for (const dark of [false, true]) {
+    await setLook(provider, dark);
+    await shot(`16b-presence-group-${provider}-${dark ? "dark" : "light"}`);
+  }
+}
+await setLook(groupLook.provider, groupLook.dark);
+// A wide inspector puts the details beside each name; a narrow window floats it over the chat without a horizontal scroll.
+await page.getByTestId("inspector").getByRole("button", { name: "Allarga l'ispettore" }).click();
+await page.waitForTimeout(400);
+await shot("16d-presence-group-wide");
+await page.getByTestId("inspector").getByRole("button", { name: "Larghezza normale" }).click();
+await page.setViewportSize({ width: 720, height: 640 });
+await page.waitForTimeout(400);
+if (await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)) throw new Error("Horizontal page scroll in Gruppo at 720x640");
+if (await page.getByTestId("inspector").evaluate((node) => node.scrollWidth > node.clientWidth + 1)) throw new Error("Gruppo overflows the inspector at 720x640");
+await shot("16e-presence-group-narrow");
+await page.setViewportSize({ width: 1280, height: 820 });
 await page.getByRole("button", { name: "Impostazioni" }).click();
 await page.getByTestId("settings").getByRole("button", { name: /^Presenza/ }).first().click();
 await page.getByTestId("settings").getByRole("switch", { name: "Condividi la presenza", checked: true }).waitFor();

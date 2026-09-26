@@ -271,6 +271,13 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
           appendFileSync(tracked, "// Nota dello specialista   \n");
         }
         if (text.includes("[lento]")) return; // stays running until interrupted
+        if (text.includes("## Trama binding for the tdd skill")) {
+          // The developer of a slice (M06) runs implement and tdd, and reports the confirmed seams it tested.
+          const skills = params.input.filter((item) => item.type === "skill").map((item) => item.name);
+          const seam = text.match(/## Seam confermati dalla persona\n1\. /) ? "\n\nTested seams:\n- 1: NOTE.md" : "";
+          setTimeout(() => finish(`Ho scritto NOTE.md nel worktree. Skill ricevute: ${skills.join(", ")}${seam}`), 30);
+          return;
+        }
         setTimeout(() => finish("Ho scritto NOTE.md nel worktree."), 30);
         return;
       }
@@ -408,7 +415,12 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
           objective: "Documenta l'annullamento",
           moduleIDs: ["Sources/Orders"],
           // "[spazi]" leaves trailing whitespace, "[correggi-spazi]" is the correction: both must pass git_diff_check (V05).
-          requiredChecks: text.includes("[spazi]") || text.includes("[correggi-spazi]") ? ["git_status", "git_diff_check"] : ["git_status"],
+          // "[test]" also names the project's build and test suite, as for the work of a slice (M06).
+          requiredChecks: text.includes("[spazi]") || text.includes("[correggi-spazi]")
+            ? ["git_status", "git_diff_check"]
+            : text.includes("[test]")
+              ? ["git_status", "swift_build", "swift_test"]
+              : ["git_status"],
           tools: ["edits"],
           instructions: `${text.includes("[lento]") ? "[lento] " : ""}${text.includes("[spazi]") ? "[spazi] " : ""}Scrivi una nota`,
         }).then((result) => {
