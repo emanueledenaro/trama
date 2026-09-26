@@ -816,6 +816,67 @@ button {
   animation: shimmer 2s steps(40, end) infinite;
 }
 
+/* Launch intro (B02): TramaMark's two ribbons weave into the "T". The back side and the face grow from the tips
+   of the two arms and meet at the crossing in the stem (a hole in their clip closes there), then the shadows of
+   the crossings lock the weave. Under 1.5 s in total, and the layer leaves early when the app is ready
+   (lib/launchIntro.ts). The paths are TramaMark's: 1 the back side, 2 the face, then the shadows. */
+@keyframes launch-weave {
+  from {
+    clip-path: polygon(evenodd, 0% 0%, 100% 0%, 100% 100%, 0% 100%, 0% 0%, 14% 0%, 86% 0%, 86% 100%, 14% 100%, 14% 0%) fill-box;
+  }
+  45% {
+    clip-path: polygon(evenodd, 0% 0%, 100% 0%, 100% 100%, 0% 100%, 0% 0%, 44% 24%, 56% 24%, 56% 100%, 44% 100%, 44% 24%) fill-box;
+  }
+  to {
+    clip-path: polygon(evenodd, 0% 0%, 100% 0%, 100% 100%, 0% 100%, 0% 0%, 50% 64%, 50% 64%, 50% 64%, 50% 64%, 50% 64%) fill-box;
+  }
+}
+@keyframes launch-shade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes launch-settle {
+  from {
+    opacity: 0;
+    transform: scale(0.94);
+  }
+  30% {
+    opacity: 1;
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+.launch-intro-mark {
+  animation: launch-settle 1100ms cubic-bezier(0.32, 0.72, 0, 1) both;
+}
+.launch-intro-mark svg > path:nth-of-type(1) {
+  animation: launch-weave 700ms cubic-bezier(0.65, 0, 0.35, 1) both;
+}
+.launch-intro-mark svg > path:nth-of-type(2) {
+  animation: launch-weave 760ms cubic-bezier(0.65, 0, 0.35, 1) 40ms both;
+}
+.launch-intro-mark svg > path:nth-of-type(n + 3) {
+  animation: launch-shade 260ms ease-out 840ms both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .launch-intro,
+  .launch-intro-mark,
+  .launch-intro-mark svg > path {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+.launch-intro-still,
+.launch-intro-still svg > path {
+  animation: none !important;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .chat-pane-enter,
   .chat-message-send-enter,

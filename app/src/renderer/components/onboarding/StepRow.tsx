@@ -67,7 +67,7 @@ export function StepRow({
       {expanded ? (
         <div className="px-2.5 pb-2.5 pl-9">
           <p className="text-ui-sm text-muted-foreground">{step.detail}</p>
-          {children ? <div className="mt-2 flex flex-wrap items-center gap-2">{children}</div> : null}
+          {children ? <div className="cta-row mt-2">{children}</div> : null}
         </div>
       ) : null}
     </li>
