@@ -27,6 +27,9 @@ function teamContext(document: ProjectDocument): ToolContext {
 
 const parse = (result: { content: { text: string }[] }) => JSON.parse(result.content[0]!.text);
 
+/** The parts of the assignment contract (W05) that the tests do not look at. */
+const CONTRACT = { seams: ["La nota degli ordini"], decisionIDs: [], dependencies: [] };
+
 describe("Coordinator tools for the full team (W09)", () => {
   it("read_team shows every figure with its role, its moments and its skills", async () => {
     const team = parse(await runCoordinatorTool("read_team", {}, teamContext(emptyDocument("p"))));
@@ -66,7 +69,7 @@ describe("Coordinator tools for the full team (W09)", () => {
       snapshot: { modules: [{ id: "Sources/Orders", name: "Orders", relativePath: "Sources/Orders", files: [] }] },
       startAssignment: (id: string) => void started.push(id),
     } as unknown as ToolContext;
-    const order = { kind: "agreedTicket", objective: "o", moduleIDs: ["Sources/Orders"], requiredChecks: [], tools: ["edits"], instructions: "i" };
+    const order = { ...CONTRACT, kind: "agreedTicket", objective: "o", moduleIDs: ["Sources/Orders"], requiredChecks: ["git_status"], tools: ["edits"], instructions: "i" };
     grantMandate(document, { objectives: ["o"], priorities: [], scopeModuleIds: ["Sources/Orders"], authorizedActions: ["executeInWorktree"], limits: [] });
 
     const alone = await runCoordinatorTool("assign_task", { ...order, specialist: "QA" }, context);
@@ -141,7 +144,7 @@ describe("Coordinator tools for the full team (W09)", () => {
       updatedAt: "",
     };
     document.plans.push(plan);
-    const order = { specialist: "Ada", kind: "agreedTicket", objective: "o", moduleIDs: ["Sources/Orders"], requiredChecks: [], tools: ["edits"], instructions: "i" };
+    const order = { specialist: "Ada", kind: "agreedTicket", objective: "o", moduleIDs: ["Sources/Orders"], seams: [], decisionIDs: [], dependencies: [], requiredChecks: ["git_status"], tools: ["edits"], instructions: "i" };
 
     const text = async (args: Record<string, unknown>) => (await runCoordinatorTool("assign_task", { ...order, ...args }, context)).content[0]!.text;
     // Not approved yet: the person answers the breakdown first.
@@ -159,6 +162,127 @@ describe("Coordinator tools for the full team (W09)", () => {
     expect(COORDINATOR_TOOLS.find((t) => t.name === "propose_team")!.description).toMatch(/fixed roles/);
     expect(COORDINATOR_TOOLS.find((t) => t.name === "create_specialist")!.description).toMatch(/developer/);
     expect(developerInstructions("Demo")).toMatch(/fixed roles/);
+  });
+});
+
+describe("the contract of an assignment and the developer's report (W05)", () => {
+  function contractContext(withSpec: boolean) {
+    const document = emptyDocument("p");
+    document.requests.push({ id: "r1", text: "r1", moduleId: null, state: "running", model: null, effort: null, createdAt: "", completedAt: null, failure: null, goalId: null });
+    const started: string[] = [];
+    const context = {
+      ...teamContext(document),
+      runningRequestId: "r1",
+      snapshot: { modules: [{ id: "Sources/Orders", name: "Orders", relativePath: "Sources/Orders", files: [] }] },
+      startAssignment: (id: string) => void started.push(id),
+    } as unknown as ToolContext;
+    grantMandate(document, { objectives: ["o"], priorities: [], scopeModuleIds: ["Sources/Orders"], authorizedActions: ["executeInWorktree"], limits: [] });
+    const proposal = proposeTeam(document, { requestId: null, summary: null, members: [{ name: "Ada", competence: "Swift", reason: "r", moduleIds: ["Sources/Orders"] }] });
+    confirmTeam(document, proposal.id, null, null);
+    const seams = [
+      { seam: "L'interfaccia di CancelPaidOrder", existing: true, tests: "Un ordine pagato annullato va in revisione" },
+      { seam: "Il rimborso manuale del supporto", existing: false, tests: "Il supporto rimborsa l'ordine 42" },
+    ];
+    document.plans.push({
+      id: "P-1",
+      requestId: "r1",
+      orderedBy: "coordinator",
+      kind: "agreedTicket",
+      moduleIds: ["Sources/Orders"],
+      summary: "s",
+      issueNumber: null,
+      status: "ready",
+      proposal: null,
+      ...(withSpec ? { spec: { seams, seamsAnswer: { confirmed: true, note: null, at: "" } } } : {}),
+      slicing: {
+        status: "approved",
+        tickets: [{ id: "S1", title: "S1", whatToBuild: "w", acceptanceCriteria: ["c"], blockedBy: [], issue: null }],
+        feedback: null,
+        approvedAt: "",
+        failure: null,
+        publishFailure: null,
+      },
+      failure: null,
+      decisionRequestIds: [],
+      createdAt: "",
+      updatedAt: "",
+    } as never);
+    return { document, context, started };
+  }
+
+  const order = {
+    specialist: "Ada",
+    kind: "agreedTicket",
+    objective: "Consegna la fetta S1",
+    moduleIDs: ["Sources/Orders"],
+    slice: "S1",
+    seams: ["1"],
+    decisionIDs: [],
+    dependencies: [],
+    requiredChecks: ["git_status", "swift_test"],
+    tools: ["edits"],
+    instructions: "Segui la spec",
+  };
+
+  it("refuses an incomplete contract with a clear tool failure that names every missing part", async () => {
+    const { document, context, started } = contractContext(true);
+    const { seams: _seams, decisionIDs: _decisions, dependencies: _dependencies, ...bare } = order;
+    const refused = await runCoordinatorTool("assign_task", { ...bare, objective: " ", requiredChecks: [] }, context);
+    expect(refused.isError).toBe(true);
+    const text = refused.content[0]!.text;
+    expect(text).toContain("incomplete_contract");
+    for (const part of ["objective", "seams", "decisionIDs", "dependencies", "requiredChecks (at least one check"]) expect(text).toContain(part);
+    expect(started).toEqual([]);
+    expect(developers(document)[0]!.assignments).toEqual([]);
+    expect(COORDINATOR_TOOLS.find((t) => t.name === "assign_task")!.required).toEqual(
+      expect.arrayContaining(["objective", "seams", "decisionIDs", "dependencies", "requiredChecks"]),
+    );
+  });
+
+  it("takes the seams of a slice by their number in the spec and refuses one the person did not confirm", async () => {
+    const { document, context, started } = contractContext(true);
+    const outside = parse(await runCoordinatorTool("assign_task", { ...order, seams: ["3", "the refund"] }, context)).error;
+    expect(outside.code).toBe("incomplete_contract");
+    expect(outside.message).toContain("name the ones this slice tests by number");
+    expect(outside.message).toContain(`1 "L'interfaccia di CancelPaidOrder", 2 "Il rimborso manuale del supporto"; not a confirmed seam: 3, the refund`);
+    expect((await runCoordinatorTool("assign_task", { ...order, seams: [] }, context)).content[0]!.text).toContain("incomplete_contract");
+    expect(started).toEqual([]);
+
+    const accepted = parse(await runCoordinatorTool("assign_task", { ...order, seams: ["seam 2"] }, context));
+    expect(started).toEqual([accepted.assignmentID]);
+    expect(developers(document)[0]!.assignments[0]!.seams).toEqual([{ number: 2, seam: "Il rimborso manuale del supporto", tests: "Il supporto rimborsa l'ordine 42" }]);
+  });
+
+  it("wants no seam for a slice whose spec has none, and at least one seam in words for other work with edits", async () => {
+    const { document, context } = contractContext(false);
+    expect((await runCoordinatorTool("assign_task", order, context)).content[0]!.text).toContain("seams ([] for this slice");
+    parse(await runCoordinatorTool("assign_task", { ...order, seams: [] }, context));
+    expect(developers(document)[0]!.assignments[0]!.seams).toEqual([]);
+
+    const outside = contractContext(false);
+    outside.document.plans = [];
+    const { slice: _slice, ...plain } = order;
+    expect((await runCoordinatorTool("assign_task", { ...plain, seams: [] }, outside.context)).content[0]!.text).toContain("seams (at least one seam");
+    parse(await runCoordinatorTool("assign_task", { ...plain, seams: ["La nota degli ordini"] }, outside.context));
+    expect(developers(outside.document)[0]!.assignments[0]!.seams).toEqual([{ number: 1, seam: "La nota degli ordini", tests: null }]);
+  });
+
+  it("saves the developer's report on the assignment and read_team shows it as a statement", async () => {
+    const { document, context } = contractContext(true);
+    const { assignmentID } = parse(await runCoordinatorTool("assign_task", order, context));
+    endTurn(document, assignmentID, null, {
+      kind: "completed",
+      text: "Fatto.\n\nFiles touched:\n- Sources/Orders/CancelPaidOrder.swift\nTests written:\n- Tests/CancelPaidOrderTests.swift\nTested seams:\n- 1: CancelPaidOrderTests\nDoubts:\n- none",
+    });
+    const report = {
+      filesTouched: ["Sources/Orders/CancelPaidOrder.swift"],
+      testsWritten: ["Tests/CancelPaidOrderTests.swift"],
+      seams: [{ seam: "L'interfaccia di CancelPaidOrder", agreed: true, tests: "CancelPaidOrderTests" }],
+      doubts: [],
+    };
+    expect(developers(document)[0]!.assignments[0]!.report).toEqual(report);
+    const team = parse(await runCoordinatorTool("read_team", {}, context));
+    expect(team.specialists.find((s: { name: string }) => s.name === "Ada").assignment.report).toEqual(report);
   });
 });
 
@@ -338,6 +462,8 @@ describe("team and candidate tools under the mandate (V04, V05)", () => {
     issueNumber: 12,
     exercise: "Esercizio 1",
     moduleIDs: ["Sources/Orders"],
+    seams: ["La nota sull'annullamento"],
+    decisionIDs: [],
     dependencies: [],
     requiredChecks: ["git_status", "git_diff_check"],
     tools: ["edits"],
