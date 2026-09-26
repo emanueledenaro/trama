@@ -91,7 +91,7 @@ import {
   restoreGoal,
   updateGoal,
 } from "./core/goals";
-import { orderByAttention, summarizeProject, unreadableProject } from "./core/overview";
+import { activeColleagues, orderByAttention, summarizeProject, unreadableProject } from "./core/overview";
 import {
   closeIssue,
   commentOnIssue,
@@ -187,7 +187,7 @@ import { type ReviewCall, runReviewSession } from "./core/learning/reviewRunner"
 import { PROJECT_DIALOG_ID } from "./core/learning/sessionSearch";
 import { git } from "./core/process";
 import { AppStorage } from "./core/storage";
-import { hasAiHero, readGitHubCliStatus, simulateColleagueChanges } from "./core/onboarding";
+import { cloneRepository, hasAiHero, readGitHubCliStatus, simulateColleagueChanges } from "./core/onboarding";
 import { type AgentWork, type PresenceContext, PresenceService } from "./core/presence";
 import { overlapModules, probeColleagues, projectOverlaps } from "./core/overlap";
 import { compareSides, coordinatorNotice, type PresenceProbe } from "@shared/overlap";
@@ -206,6 +206,7 @@ import {
   isObservedStep,
   normalizeOnboarding,
   type ObservedStep,
+  parseRepositoryInput,
   UNKNOWN_GITHUB_CLI,
 } from "@shared/onboarding";
 import { buildStudy, fingerprints, partsToInject, studyText } from "./core/study";
@@ -890,6 +891,25 @@ export class TramaController {
     await writeFile(join(root, "README.md"), `# ${trimmed}\n\n${idea.trim()}\n`);
     await initializeRepository(root);
     await this.openProject(root, false, idea.trim() || null);
+  }
+
+  /** Clones a GitHub repository into a new folder inside `parent` and opens it (B02). */
+  async cloneProject(parent: string, input: string): Promise<void> {
+    const repository = parseRepositoryInput(input);
+    if (!repository) throw new DomainError("Scrivi il repository come proprietario/nome oppure incolla il suo indirizzo GitHub.");
+    const root = join(parent, repository.split("/")[1]!);
+    if (existsSync(root)) throw new DomainError(`Esiste già una cartella ${repository.split("/")[1]} in questa posizione.`);
+    if (this.state.gitHubCli.status === "unknown") await this.checkGitHubCli();
+    this.state.loadingProject = root;
+    this.publishNow();
+    try {
+      await cloneRepository(repository, root, this.state.gitHubCli.status === "ready");
+    } catch (error) {
+      this.state.loadingProject = null;
+      this.publishNow();
+      throw new DomainError((error as Error).message);
+    }
+    await this.openProject(root);
   }
 
   async closeProject(): Promise<void> {
@@ -2475,6 +2495,7 @@ export class TramaController {
             selected: project === this.state.project,
             runningAssignments: [...this.specialistRuntimes.values()].filter((r) => r.projectId === project.id).length,
             candidateReports: reports,
+            colleagues: project.isDemo ? null : activeColleagues(project.presence),
           }),
         );
         continue;
@@ -3821,10 +3842,24 @@ export class TramaController {
 
   // MARK: First-run guide and exercises (C12, C13, C14)
 
-  async updateOnboarding(update: { shown?: boolean; dismissed?: boolean; skipStep?: GuideStepId; unskipStep?: GuideStepId }): Promise<void> {
+  async updateOnboarding(update: {
+    shown?: boolean;
+    dismissed?: boolean;
+    skipStep?: GuideStepId;
+    unskipStep?: GuideStepId;
+    methodChoice?: boolean;
+    welcomeClosed?: boolean;
+  }): Promise<void> {
     const onboarding = this.state.onboarding;
     const now = new Date().toISOString();
     if (update.shown) onboarding.firstRunShownAt ??= now;
+    if (update.welcomeClosed) onboarding.welcomeClosedAt ??= now;
+    if (typeof update.methodChoice === "boolean") {
+      // The answer in the welcome is the same switch as Impostazioni, Metodo di lavoro: prepare when a project opens.
+      onboarding.methodChoice = { prepare: update.methodChoice, at: now };
+      onboarding.skippedSteps = onboarding.skippedSteps.filter((s) => s !== "aiHero");
+      this.state.settings = { ...this.state.settings, autoPrepareMethod: update.methodChoice };
+    }
     if (update.dismissed === true) onboarding.dismissedAt = now;
     else if (update.dismissed === false) onboarding.dismissedAt = null;
     if (update.skipStep) onboarding.skippedSteps = [...new Set([...onboarding.skippedSteps, update.skipStep])];

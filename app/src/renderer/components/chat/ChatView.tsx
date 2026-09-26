@@ -23,15 +23,14 @@ import { GoalDialogHeader } from "@/components/inspector/GoalsView";
 import { OverviewView } from "@/components/OverviewView";
 import { SettingsView } from "@/components/settings/SettingsView";
 import { NavigationButtons, SidebarTrigger } from "@/components/sidebar/Sidebar";
-import { Spinner } from "@/components/Spinner";
-import { TramaLogo } from "@/components/TramaLogo";
+import { BrandMark } from "@/components/brand/BrandMark";
 import { Button } from "@/components/ui/button";
 import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/cn";
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "@/components/ui/menu";
-import { formatRelativeTime } from "@/lib/format";
 import { act, type InspectorTarget, refreshProject, useUi } from "@/lib/store";
 import { ExercisePanel } from "@/components/onboarding/ExercisePanel";
+import { ProjectPicker } from "@/components/launch/ProjectPicker";
 import { Composer } from "./Composer";
 import { FocusBar } from "./FocusBar";
 import { TimelineRowView } from "./TimelineRows";
@@ -193,70 +192,12 @@ function ChatHeader({ isMac }: { isMac: boolean }) {
   );
 }
 
-function Landing() {
-  const app = useUi((s) => s.app)!;
-  const setDialog = useUi((s) => s.setDialog);
-  const recents = app.recentProjects.slice(0, 5);
-  return (
-    <div className="chat-pane-enter relative flex min-h-0 flex-1 items-center justify-center overflow-y-auto">
-      <div className="mx-auto flex w-full max-w-[var(--app-chat-max-width)] min-w-0 flex-col items-center gap-4 px-6 text-center select-none">
-        <TramaLogo className="size-10" />
-        <h2 className="text-[26px] leading-[1.15] font-normal tracking-[-0.015em] text-foreground/95 sm:text-[30px]">Su cosa vuoi lavorare?</h2>
-        {app.loadingProject ? (
-          <p className="flex items-center gap-2 text-ui text-muted-foreground">
-            <Spinner /> Lettura del progetto…
-          </p>
-        ) : (
-          <>
-            <div className="mt-2 flex flex-wrap items-center justify-center gap-2">
-              <Button onClick={() => void act("project:openDialog", undefined)}>Apri un progetto</Button>
-              <Button variant="outline" onClick={() => setDialog("createProject")}>
-                Crea un progetto
-              </Button>
-            </div>
-            <button type="button" className="text-ui text-[var(--color-text-accent)] hover:underline" onClick={() => void act("project:openDemo", undefined)}>
-              Esplora il progetto di esempio
-            </button>
-            <button type="button" className="text-ui-sm text-muted-foreground hover:text-foreground hover:underline" onClick={() => setDialog("guide")}>
-              Configura e prova Trama
-            </button>
-          </>
-        )}
-        {recents.length ? (
-          <div className="mt-6 w-full max-w-sm text-left">
-            <div className="px-2 pb-1 text-ui text-muted-foreground/58">Progetti recenti</div>
-            {recents.map((recent) => (
-              <button
-                key={recent.id}
-                type="button"
-                onClick={() => void act("project:open", { path: recent.path })}
-                className="flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-ui text-foreground/89 transition-colors hover:bg-[var(--sidebar-accent)]"
-              >
-                <span className="min-w-0 flex-1 truncate">{recent.name}</span>
-                <span className="shrink-0 text-ui-xs text-muted-foreground/60">{formatRelativeTime(recent.lastOpenedAt)}</span>
-              </button>
-            ))}
-          </div>
-        ) : null}
-        {app.codex.account?.kind !== "chatgpt" ? (
-          <p className="mt-4 max-w-sm text-ui-sm text-muted-foreground">
-            <button type="button" className="text-[var(--color-text-accent)] hover:underline" onClick={() => useUi.getState().openSettings("connections")}>
-              Collega ChatGPT e verifica i collegamenti
-            </button>
-            . Puoi esplorare i file anche prima di collegare un account.
-          </p>
-        ) : null}
-      </div>
-    </div>
-  );
-}
-
 function ProjectIntro() {
   const project = useUi((s) => s.app?.project)!;
   const phase = project.phase;
   return (
     <div className="flex flex-col items-center gap-3 px-6 pt-[18vh] pb-8 text-center select-none">
-      <TramaLogo className="size-10" />
+      <BrandMark size={40} variant="glyph" />
       <h2 className="text-[26px] leading-[1.15] font-normal tracking-[-0.015em] text-foreground/95">
         {project.isDemo ? "Progetto di esempio" : project.name}
       </h2>
@@ -449,7 +390,7 @@ export function ChatView({ isMac }: { isMac: boolean }) {
           </div>
         </>
       ) : (
-        <Landing />
+        <ProjectPicker />
       )}
     </div>
   );

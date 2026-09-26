@@ -1248,6 +1248,8 @@ export interface ProjectOverview {
   blockedWork: number;
   toApprove: number;
   runningWork: number;
+  /** Colleagues seen working on the repository (G01), from the live presence reading; null when not read. */
+  colleagues: number | null;
   goals: { id: string; title: string; status: GoalStatus }[];
   attention: AttentionReason | null;
   reasons: string[];

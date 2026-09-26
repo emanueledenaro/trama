@@ -1,5 +1,6 @@
 import { type AttentionReason, type CandidateReport, isOpenQuestion, type ProjectDocument, type ProjectOverview, type RecentProject } from "@shared/domain";
 import { workingGoals } from "@shared/goals";
+import type { PresenceView } from "@shared/presence";
 import { currentAssignment } from "./team";
 
 const ORDER: (AttentionReason | "unreadable" | null)[] = ["decision", "blocked", "approval", "running", "unreadable", null];
@@ -13,7 +14,7 @@ const ACTIVE = ["preparing", "running", "stopRequested"];
 export function summarizeProject(
   recent: RecentProject,
   document: ProjectDocument,
-  input: { source: "live" | "saved"; selected: boolean; runningAssignments: number; candidateReports: CandidateReport[] },
+  input: { source: "live" | "saved"; selected: boolean; runningAssignments: number; candidateReports: CandidateReport[]; colleagues?: number | null },
 ): ProjectOverview {
   const pendingDecisions =
     document.decisionRequests.filter(isOpenQuestion).length +
@@ -58,6 +59,7 @@ export function summarizeProject(
     blockedWork,
     toApprove,
     runningWork,
+    colleagues: input.colleagues ?? null,
     goals: workingGoals(document).map((g) => ({ id: g.id, title: g.title, status: g.status })),
     attention,
     reasons,
@@ -79,6 +81,7 @@ export function unreadableProject(recent: RecentProject, error: string | null): 
     blockedWork: 0,
     toApprove: 0,
     runningWork: 0,
+    colleagues: null,
     goals: [],
     attention: null,
     reasons: [],
@@ -93,4 +96,10 @@ export function unreadableProject(recent: RecentProject, error: string | null): 
 export function orderByAttention(entries: ProjectOverview[]): ProjectOverview[] {
   const rank = (entry: ProjectOverview) => ORDER.indexOf(entry.source === "unreadable" ? "unreadable" : entry.attention);
   return [...entries].sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name, "it") || a.id.localeCompare(b.id));
+}
+
+/** Colleagues active or idle in a presence reading; offline ones are left out. Null without a reading. */
+export function activeColleagues(presence: PresenceView | null | undefined): number | null {
+  if (!presence) return null;
+  return presence.others.filter((entry) => entry.status === "active" || entry.status === "idle").length;
 }
