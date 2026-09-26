@@ -319,7 +319,10 @@ describe("Coordinator tools for goals and models (UX02, UX05, UX07)", () => {
         kind: "agreedTicket",
         objective: "Documenta",
         moduleIDs: ["Sources/Orders"],
-        requiredChecks: [],
+        seams: ["La nota degli ordini"],
+        decisionIDs: [],
+        dependencies: [],
+        requiredChecks: ["git_status"],
         tools: ["edits"],
         instructions: "Scrivi",
         model: "gpt-5.5-mini",
@@ -335,7 +338,7 @@ describe("Coordinator tools for goals and models (UX02, UX05, UX07)", () => {
 
     const unknown = await runCoordinatorTool(
       "assign_task",
-      { specialist: "Bruno", kind: "agreedTicket", objective: "o", moduleIDs: ["Sources/Orders"], requiredChecks: [], instructions: "i", goalID: "G-NOPE" },
+      { specialist: "Bruno", kind: "agreedTicket", objective: "o", moduleIDs: ["Sources/Orders"], seams: [], decisionIDs: [], dependencies: [], requiredChecks: [], instructions: "i", goalID: "G-NOPE" },
       context,
     );
     expect(unknown.isError).toBe(true);
@@ -347,7 +350,7 @@ describe("Coordinator tools for goals and models (UX02, UX05, UX07)", () => {
     grantMandate(document, { objectives: ["o"], priorities: [], scopeModuleIds: ["Sources/Orders"], authorizedActions: ["executeInWorktree"], limits: [] });
     await runCoordinatorTool(
       "assign_task",
-      { specialist: "Ada", kind: "agreedTicket", objective: "o", moduleIDs: ["Sources/Orders"], requiredChecks: [], instructions: "i" },
+      { specialist: "Ada", kind: "agreedTicket", objective: "o", moduleIDs: ["Sources/Orders"], seams: [], decisionIDs: [], dependencies: [], requiredChecks: [], instructions: "i" },
       toolContext(document),
     );
     const assignment = findSpecialist(document, "Ada")!.assignments[0]!;

@@ -7,13 +7,16 @@ import { emptyDocument } from "./document";
 import {
   developerSkillsDelivery,
   IMPLEMENT_BINDING,
+  readDeveloperReport,
   readTestedSeams,
+  REPORT_HEADINGS,
   sliceBriefing,
   TDD_BINDING,
   TESTED_SEAMS_HEADING,
 } from "./implementation";
 import { loadNativeSkill } from "./nativeSkills";
 import { answerDecisionRequest, createDecisionRequest, grantMandate } from "./pact";
+import { openingInput, resumeInput } from "./specialistBriefing";
 import { assign, confirmTeam, endTurn, proposeTeam } from "./team";
 
 const skillsDirectory = join(import.meta.dirname, "../../../resources/AIHero/skills");
@@ -243,5 +246,75 @@ describe("the candidate of a slice reports the tested seams; Trama's checks deci
     endTurn(document, other.id, null, { kind: "completed", text: `${TESTED_SEAMS_HEADING}\n- 1: x` });
     const plain = declareCandidate(document, { assignmentId: other.id, decisionIds, unresolvedChoices: [], externalEffects: [] }, capture(other.id));
     expect("testedSeams" in plain).toBe(false);
+  });
+});
+
+describe("the contract reaches the developer and its structured report is saved (W05)", () => {
+  const seams = [
+    { number: 1, seam: "L'interfaccia di CancelPaidOrder", tests: "Un ordine pagato annullato va in revisione" },
+    { number: 2, seam: "Il rimborso manuale del supporto", tests: null },
+  ];
+  const answer = [
+    "Ho aggiunto lo stato review.",
+    "",
+    REPORT_HEADINGS.filesTouched,
+    "- `Sources/Orders/CancelPaidOrder.swift`",
+    "- Sources/Orders/OrderState.swift",
+    REPORT_HEADINGS.testsWritten,
+    "- Tests/OrdersTests/CancelPaidOrderTests.swift",
+    TESTED_SEAMS_HEADING,
+    "- 1: CancelPaidOrderTests",
+    "- 4: OtherTests",
+    REPORT_HEADINGS.doubts,
+    "- none",
+  ].join("\n");
+
+  it("reads files, tests, seams and doubts, keeping every seam of the contract and one outside it visible", () => {
+    expect(readDeveloperReport(answer, seams)).toEqual({
+      filesTouched: ["Sources/Orders/CancelPaidOrder.swift", "Sources/Orders/OrderState.swift"],
+      testsWritten: ["Tests/OrdersTests/CancelPaidOrderTests.swift"],
+      seams: [
+        { seam: "L'interfaccia di CancelPaidOrder", agreed: true, tests: "CancelPaidOrderTests" },
+        { seam: "Il rimborso manuale del supporto", agreed: true, tests: null },
+        { seam: "Seam 4", agreed: false, tests: "OtherTests" },
+      ],
+      doubts: [],
+    });
+    // A block left out stays null, so the card can say the developer did not report it.
+    expect(readDeveloperReport(`${REPORT_HEADINGS.doubts}\n- Chi rimborsa?`, seams)).toEqual({ filesTouched: null, testsWritten: null, seams: null, doubts: ["Chi rimborsa?"] });
+    expect(readDeveloperReport("Fatto.", seams)).toBeNull();
+  });
+
+  it("numbers the seams of a slice as the spec does", () => {
+    expect(readTestedSeams(`${TESTED_SEAMS_HEADING}\n- 2: RefundTests`, [seams[1]!])).toEqual([{ seam: "Il rimborso manuale del supporto", agreed: true, tests: "RefundTests" }]);
+  });
+
+  it("writes the contract and the report it owes in the opening message, and asks for the report again on resume", () => {
+    const document = project();
+    const assignment = work(document, true);
+    assignment.seams = seams;
+    const opening = openingInput(assignment, document.decisions);
+    expect(opening).toContain("Decisioni del Patto su cui si basa il lavoro: nessuna.");
+    expect(opening).toContain("Verifiche richieste: git_status, swift_build, swift_test.");
+    expect(opening).toContain("Seam da testare in questo incarico:\n1. L'interfaccia di CancelPaidOrder. Si verifica: Un ordine pagato annullato va in revisione\n2. Il rimborso manuale del supporto\n");
+    for (const heading of Object.values(REPORT_HEADINGS)) expect(opening).toContain(heading);
+    expect(resumeInput(assignment, document.decisions)).toContain("Chiudi con il rapporto dell'incarico");
+    for (const heading of Object.values(REPORT_HEADINGS)) expect(TDD_BINDING).toContain(heading);
+  });
+
+  it("saves the report when the work ends, and leaves work without a contract as before", () => {
+    const document = project();
+    const withContract = work(document, true);
+    withContract.seams = seams;
+    endTurn(document, withContract.id, null, { kind: "completed", text: answer });
+    expect(withContract.report?.filesTouched).toEqual(["Sources/Orders/CancelPaidOrder.swift", "Sources/Orders/OrderState.swift"]);
+    const unreported = work(document, false, ["git_status"]);
+    unreported.seams = [];
+    endTurn(document, unreported.id, null, { kind: "completed", text: "Fatto." });
+    expect(unreported.report).toBeNull();
+    const older = work(document, false, ["git_status"]);
+    endTurn(document, older.id, null, { kind: "completed", text: answer });
+    expect("report" in older).toBe(false);
+    expect(openingInput(older)).not.toContain(TESTED_SEAMS_HEADING);
   });
 });
