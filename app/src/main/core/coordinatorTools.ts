@@ -1,6 +1,8 @@
 import type { ProviderId } from "@shared/codex";
 import { supportsReadOnly } from "@shared/providers";
-import type { MandateAction, ProjectDocument, SpecialistTool, TechnicalReview, WorkKind } from "@shared/domain";
+import type { AssignmentCommit, CommitConventions, MandateAction, ProjectDocument, SpecialistTool, TechnicalReview, WorkKind } from "@shared/domain";
+import { DEFAULT_CONVENTIONS, validateCommitMessage } from "./conventions";
+import { candidateCommit } from "./quality";
 import { messageStyle } from "./messageStyle";
 import type { WorkspaceReview } from "./workspace";
 import { memoryTool, memoryToolSurface } from "./learning/memoryStore";
@@ -355,9 +357,12 @@ export const COORDINATOR_TOOLS: ToolDefinition[] = [
   {
     name: "assign_task",
     description:
-      "Within the mandate (executeInWorktree), assign work to a developer, named by id or name. Trama starts it in a provider session it owns, in its own worktree when tools include edits, without network. Every assignment carries a contract, and Trama refuses an incomplete one (incomplete_contract): the objective; seams, the seams the developer tests (for a slice, the numbers of the seams the person confirmed in the spec (1, 2, ...); otherwise each seam in words; at least one for work with edits, unless the spec of the slice has no confirmed seam); decisionIDs, the Pact decisions the work relies on (the work stops if one changes; [] only when no decision applies); dependencies, the assignments it depends on ([] when none); requiredChecks, the checks the result must pass (at least one for work with edits). Add the issue or exercise, the modules and your instructions for the specialist. The developer ends with a structured report (files touched, tests written, seams covered, doubts) that Trama saves on the assignment: read_team shows it, as the developer's statement and never as evidence. provider and model default to yours; propose another connected provider or model only when the work needs it (read_team lists them). In modelReason say why this provider and model fit the work: first the quality the work needs, then the cost among adequate models; say so when you lack evidence. goalID names the goal the work serves; it defaults to the goal of the dialog you are answering. Assign in parallel only independent work: different modules and no unfinished dependency. When the plan of the work has approved slices (to-tickets), work with edits delivers one slice: name it in slice (S1, S2, ...); Trama refuses a slice whose blockers are not done, a slice someone is working on, and more than three developers at work at once. The developer of a slice runs AI Hero's implement and tdd skills, testing only at the seams the person confirmed and reporting the seams it tested: name in requiredChecks the project's typecheck and test checks when it has them (node_typecheck and node_test, or swift_build and swift_test), because only Trama's run of them on the candidate counts as evidence. Work goes only to developers: a fixed role works at its own moments, which Trama starts, and assign_task refuses it. kind newFeature and tradeOff always go to the person. Presence: work with edits avoids the files colleagues are touching now (read_presence). Trama refuses it when a colleague or a colleague's agent touches files in its modules; when you know the files the work will touch, list them in expectedFiles and Trama refuses only if one of them is taken. Then assign another ready slice or postpone this one. Only when the person told you to go ahead anyway, put their words in overlapAcceptedByPerson.",
+      "Within the mandate (executeInWorktree), assign work to a developer, named by id or name. Trama starts it in a provider session it owns, in its own worktree when tools include edits, without network. Every assignment carries a contract, and Trama refuses an incomplete one (incomplete_contract): the objective; seams, the seams the developer tests (for a slice, the numbers of the seams the person confirmed in the spec (1, 2, ...); otherwise each seam in words; at least one for work with edits, unless the spec of the slice has no confirmed seam); decisionIDs, the Pact decisions the work relies on (the work stops if one changes; [] only when no decision applies); dependencies, the assignments it depends on ([] when none); requiredChecks, the checks the result must pass (at least one for work with edits). Add the issue or exercise, the modules and your instructions for the specialist. The developer ends with a structured report (files touched, tests written, seams covered, doubts) that Trama saves on the assignment: read_team shows it, as the developer's statement and never as evidence. provider and model default to yours; propose another connected provider or model only when the work needs it (read_team lists them). In modelReason say why this provider and model fit the work: first the quality the work needs, then the cost among adequate models; say so when you lack evidence. goalID names the goal the work serves; it defaults to the goal of the dialog you are answering. Assign in parallel only independent work: different modules and no unfinished dependency. When the plan of the work has approved slices (to-tickets), work with edits delivers one slice: name it in slice (S1, S2, ...); Trama refuses a slice whose blockers are not done, a slice someone is working on, and more than three developers at work at once. The developer of a slice runs AI Hero's implement and tdd skills, testing only at the seams the person confirmed and reporting the seams it tested: name in requiredChecks the project's typecheck and test checks when it has them (node_typecheck and node_test, or swift_build and swift_test), because only Trama's run of them on the candidate counts as evidence. Work goes only to developers: a fixed role works at its own moments, which Trama starts, and assign_task refuses it. kind newFeature and tradeOff always go to the person. Presence: work with edits avoids the files colleagues are touching now (read_presence). Trama refuses it when a colleague or a colleague's agent touches files in its modules; when you know the files the work will touch, list them in expectedFiles and Trama refuses only if one of them is taken. Then assign another ready slice or postpone this one. Only when the person told you to go ahead anyway, put their words in overlapAcceptedByPerson. Trama derives the Conventional Commits type and scope of the work and its Conventional Branch name (feature/, bugfix/, hotfix/, chore/ or the project's own prefixes, with the issue number) from the kind, the files and the modules; correct them with commitType and commitScope (an empty commitScope means none), and set hotfix for an urgent fix that goes straight to the main branch. Trama names the branch before the work has files: for work that only writes documentation set commitType docs, so its branch is a chore/ one.",
     properties: {
       specialist: text,
+      commitType: text,
+      commitScope: text,
+      hotfix: { type: "boolean" },
       kind: { type: "string", enum: WORK_KINDS },
       objective: text,
       issueNumber: { type: "integer", minimum: 1 },
@@ -449,6 +454,14 @@ export const COORDINATOR_TOOLS: ToolDefinition[] = [
       "Within the mandate (executeInWorktree), declare a candidate from a specialist's work: Trama captures the exact content of the assignment's worktree now and binds it to the assignment's modules and required checks and to the Pact decisions you name. The diff, the checks and the evidence are Trama's, not yours. A correction is a new candidate, never a new run on an old one.",
     properties: { assignment: text, decisionIDs: list(1), unresolvedChoices: list(0), externalEffects: list(0) },
     required: ["assignment", "decisionIDs"],
+    readOnly: false,
+  },
+  {
+    name: "set_commit_message",
+    description:
+      "Correct the Conventional Commits message Trama derived for a candidate before the person publishes it: type (one the project allows), scope (an empty string removes it), description (short, imperative, in the project's language), breaking (the description of an incompatible change, written as a BREAKING CHANGE footer with ! in the header; an empty string makes it compatible). Trama keeps the body with the why and the footers with the issue and the candidate, validates the message against Conventional Commits 1.0.0 and the project's rules (AGENTS.md, CONTRIBUTING.md, commitlint) and refuses an invalid one with what is wrong. The header becomes the pull request's title.",
+    properties: { candidate: text, type: text, scope: text, description: text, breaking: text },
+    required: ["candidate"],
     readOnly: false,
   },
   {
@@ -586,6 +599,8 @@ export interface ToolContext {
   availableChecks: ReadOnlyCheck[];
   /** Captures what an assignment's worktree changed, as Trama sees it now. */
   reviewWorkspace(assignmentId: string): Promise<WorkspaceReview>;
+  /** The rules the project declares for commits and branches (Q01); the defaults when absent. */
+  conventions?(): Promise<CommitConventions>;
   /** Runs a required check on a candidate's worktree and records the evidence. */
   verifyCandidate(candidateId: string, check: ReadOnlyCheck): Promise<CheckResult>;
   /** Runs a technical review in a thread distinct from the author's. */
@@ -995,6 +1010,15 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
           return incompleteContract(["seams (at least one seam the developer tests, in words)"]);
         }
         const seams = contractSeams(namedSeams, confirmed.length ? confirmed : null);
+        const commitType = typeof args.commitType === "string" && args.commitType.trim() ? args.commitType.trim().toLowerCase() : null;
+        const allowedTypes = ((await context.conventions?.()) ?? DEFAULT_CONVENTIONS).types;
+        if (commitType && !allowedTypes.includes(commitType)) {
+          return toolFailure("invalid_arguments", `commitType must be one of the project's types: ${allowedTypes.join(", ")}.`);
+        }
+        const commitScope = typeof args.commitScope === "string" ? args.commitScope.trim() : null;
+        if (commitScope && !/^[A-Za-z0-9][\w./-]*$/.test(commitScope)) return toolFailure("invalid_arguments", "commitScope is one noun without spaces or parentheses.");
+        const commit: AssignmentCommit | null =
+          commitType || commitScope !== null || args.hotfix === true ? { type: commitType, scope: commitScope, hotfix: args.hotfix === true } : null;
         const assignment = assign(
           document,
           {
@@ -1014,6 +1038,7 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
             requiredChecks: checks,
             instructions: typeof args.instructions === "string" ? args.instructions : "",
             slice,
+            commit,
             seams,
           },
           document.mandate!.version,
@@ -1222,6 +1247,9 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
           },
           review,
         );
+        // The commit Trama will write and git diff --check on this exact snapshot, for the quality standard (Q01).
+        candidate.whitespaceErrors = review.whitespaceErrors;
+        candidate.commit = candidateCommit(document, candidate, (await context.conventions?.()) ?? DEFAULT_CONVENTIONS);
         context.addCard("candidate", "Candidato", candidate.id);
         context.changed();
         return toolSuccess({
@@ -1230,7 +1258,27 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
           changedFiles: candidate.changedFiles,
           requiredChecks: candidate.requiredChecks,
           excludedSensitiveFiles: review.excludedSensitiveFiles,
+          commitMessage: candidate.commit.message,
+          whitespaceErrors: review.whitespaceErrors,
         });
+      }
+      case "set_commit_message": {
+        const candidate = findCandidate(document, typeof args.candidate === "string" ? args.candidate : "");
+        if (!candidate) return toolFailure("unknown_candidate", `There is no candidate ${String(args.candidate)}.`);
+        if (candidate.pullRequest) return toolFailure("already_published", `Candidate ${candidate.id} is already published as pull request #${candidate.pullRequest.number}.`);
+        const field = (key: string) => (typeof args[key] === "string" ? (args[key] as string) : undefined);
+        const conventions = (await context.conventions?.()) ?? candidate.commit?.conventions ?? DEFAULT_CONVENTIONS;
+        const commit = candidateCommit(document, candidate, conventions, {
+          type: field("type")?.trim().toLowerCase(),
+          scope: field("scope"),
+          description: field("description"),
+          breaking: field("breaking"),
+        });
+        const problems = validateCommitMessage(commit.message, conventions);
+        if (problems.length) return toolFailure("invalid_commit_message", `Trama refuses this message:\n${commit.message}\n\nProblems: ${problems.join(" ")}`);
+        candidate.commit = commit;
+        context.changed();
+        return toolSuccess({ candidateID: candidate.id, commitMessage: commit.message, pullRequestTitle: commit.message.split("\n")[0]! });
       }
       case "verify_candidate": {
         const candidate = findCandidate(document, typeof args.candidate === "string" ? args.candidate : "");
@@ -1383,6 +1431,7 @@ export function developerInstructions(projectName: string, learningGuidance: str
     "The presence tells who works on what in the team: colleagues who share it in Trama, with their branch, task and the paths they touch, and their agents. read_presence reads it. When you assign work avoid the files colleagues are touching; when one of your developers overlaps a colleague, move or postpone its task; when you propose a goal someone already works on, say so; answer \"who is touching X\" only from read_presence. Never block a person or ask a colleague to stop.",
     "The person works by goals: a goal has a desired outcome and accepted and refused examples. Each goal has its own dialog with you, and the project dialog holds priorities and cross-goal questions; you stay one Coordinator with one mandate and one Pact for all of them. When a message comes from a goal dialog Trama says so and gives you the goal; answer about that goal, and the work you assign there is linked to it. read_goals lists the goals; propose_goal proposes a new one that the person confirms.",
     "When a specialist's work is done, declare_candidate captures its worktree and binds it to the Pact decisions it must respect; verify_candidate runs its required checks and review_candidate asks a distinct reviewer. Within the mandate, clear_candidate gives your green light to a verified and approved candidate. The person always reviews and publishes it: never claim that work is merged or published.",
+    "Trama writes commits in Conventional Commits 1.0.0, or in the rules the project declares, and names branches feature/, bugfix/ or hotfix/. It derives the type and scope from the kind of work, the files and the modules: when they are wrong, correct them with set_commit_message before the person publishes. Trama publishes only a candidate that meets its quality standard: verified, a valid message, no secrets or sensitive files, a clean git diff --check, its issue linked when one exists and no Pact question left open.",
     "When the person answers a card, withdraws a question or changes the mandate, Trama writes it to you as the person's message.",
     NEXT_STEP_RULES,
     "When you rely on a repository file, name its path relative to the project root.",

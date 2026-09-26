@@ -22,6 +22,7 @@ import {
   type CandidateEvidence,
   type CandidateState,
   type DeveloperReport,
+  type QualityItem,
   type SpecialistAssignment,
   type TestedSeam,
   isOpenQuestion,
@@ -669,6 +670,41 @@ const BLOCKER_TEXT: Record<string, string> = {
   REMOTE_CONFLICT: "Conflitto con il lavoro di un collega",
 };
 
+const QUALITY_LABEL: Record<QualityItem["code"], string> = {
+  VERIFIED: "Candidato verificato",
+  COMMIT_MESSAGE: "Messaggio di commit",
+  NO_SECRETS: "Niente segreti né file sensibili",
+  DIFF_CHECK: "git diff --check",
+  ISSUE_LINKED: "Issue collegata",
+  PACT_SETTLED: "Nessuna domanda aperta nel Patto",
+};
+
+/** The quality standard before publishing (Q01): each condition, and for a missing one what to do. */
+function QualityField({ items }: { items: QualityItem[] }) {
+  const missing = items.filter((i) => !i.passed).length;
+  return (
+    <Field label={missing ? `Standard di pubblicazione, manca ${missing === 1 ? "1 condizione" : `${missing} condizioni`}` : "Standard di pubblicazione, rispettato"}>
+      <ul className="space-y-1" data-testid="candidate-quality" data-ready={missing ? "no" : "yes"}>
+        {items.map((item) => (
+          <li key={item.code} data-testid="quality-item" data-code={item.code} data-passed={item.passed ? "yes" : "no"} className="text-ui-sm">
+            <div className="flex items-start gap-1.5">
+              {item.passed ? <IconCircleCheck className="mt-0.5 size-3.5 shrink-0 text-success" /> : <IconCircleX className="mt-0.5 size-3.5 shrink-0 text-destructive" />}
+              <span className="min-w-0">
+                <span className="text-foreground">{QUALITY_LABEL[item.code]}</span>
+                <span className={cn("text-muted-foreground", item.code === "COMMIT_MESSAGE" && item.passed && "font-mono text-[11.5px]")}>
+                  <Sep />
+                  {item.detail}
+                </span>
+                {item.fix ? <span className="block text-ui-xs text-muted-foreground">Come sistemarlo: {item.fix}</span> : null}
+              </span>
+            </div>
+          </li>
+        ))}
+      </ul>
+    </Field>
+  );
+}
+
 /** One required check of a candidate; a failed one opens on the command and the original output Trama recorded (V05). */
 export function EvidenceRow({ check, evidence }: { check: string; evidence: CandidateEvidence | null }) {
   const [open, setOpen] = useState(false);
@@ -853,6 +889,8 @@ export function CandidateCard({ candidateId }: { candidateId: string }) {
   const state = CANDIDATE_STATE[report.state];
   const specialist = project.document.team.specialists.find((s) => s.id === candidate.specialistId);
   const approved = candidate.humanApproval && !report.approvalInvalidated;
+  const quality = report.quality ?? [];
+  const publishable = quality.every((i) => i.passed);
   return (
     <CardFrame icon={<IconFileDiff stroke={1.8} />} title={`Candidato ${candidate.id}`} aside={<Badge tone={state.tone}>{state.label}</Badge>}>
       <p className="text-ui-sm text-muted-foreground">
@@ -903,6 +941,7 @@ export function CandidateCard({ candidateId }: { candidateId: string }) {
         ) : null;
       })()}
       {candidate.pullRequest?.mergedAt ? null : <CandidateOverlaps candidateId={candidate.id} />}
+      {quality.length && !candidate.pullRequest ? <QualityField items={quality} /> : null}
       {candidate.clearance ? (
         <p className="mt-2 text-ui-sm text-muted-foreground">
           {report.clearanceInvalidated ? "Il via libera del Coordinatore non vale più: sono cambiate evidenze o decisioni." : "Via libera del Coordinatore."}
@@ -940,7 +979,7 @@ export function CandidateCard({ candidateId }: { candidateId: string }) {
             Approva questo candidato
           </Button>
         ) : null}
-        {approved && !candidate.pullRequest && project.github.repository && !preview ? (
+        {approved && publishable && !candidate.pullRequest && project.github.repository && !preview ? (
           <Button size="sm" onClick={() => void act("candidate:previewPullRequest", { candidateId }).then((p) => setPreview(p ?? null))}>
             <IconGitPullRequest /> Prepara la pull request
           </Button>
@@ -951,7 +990,10 @@ export function CandidateCard({ candidateId }: { candidateId: string }) {
           <p className="text-muted-foreground">
             {preview.repository}<Sep /><span className="font-mono">{preview.head}</span> → <span className="font-mono">{preview.base}</span>
           </p>
-          <p className="font-medium text-foreground">{preview.title}</p>
+          <p className="font-medium text-foreground" data-testid="pull-request-title">{preview.title}</p>
+          <pre className="max-h-32 overflow-auto whitespace-pre-wrap rounded-md bg-[var(--app-chat-code-surface)] px-2 py-1.5 font-mono text-[11px] text-foreground/85" data-testid="commit-message">
+            {preview.message}
+          </pre>
           <pre className="max-h-48 overflow-auto whitespace-pre-wrap font-sans text-ui-xs text-foreground/85">{preview.body}</pre>
           <div className="cta-row">
             <Button size="sm" onClick={() => void act("candidate:publish", { candidateId }).then(() => setPreview(null))}>

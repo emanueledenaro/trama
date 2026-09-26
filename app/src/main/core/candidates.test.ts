@@ -33,7 +33,7 @@ function setup() {
   );
   beginTurn(document, assignment.id, "t", "gpt");
   endTurn(document, assignment.id, "t", { kind: "completed", text: "ok" });
-  const review = { snapshotId: "snap", baseSHA: "base", diff: "d", changedFiles: ["a"], excludedSensitiveFiles: [] };
+  const review = { snapshotId: "snap", baseSHA: "base", diff: "d", changedFiles: ["a"], excludedSensitiveFiles: [], whitespaceErrors: [] };
   const candidate = declareCandidate(document, { assignmentId: assignment.id, decisionIds: [decision.id], unresolvedChoices: [], externalEffects: [] }, review);
   return { document, decision, candidate };
 }
@@ -105,7 +105,7 @@ describe("candidates", () => {
     const fixed = declareCandidate(
       document,
       { assignmentId: candidate.assignmentId, decisionIds: [decision.id], unresolvedChoices: [], externalEffects: [] },
-      { snapshotId: "fixed", baseSHA: "base", diff: "d2", changedFiles: ["a"], excludedSensitiveFiles: [] },
+      { snapshotId: "fixed", baseSHA: "base", diff: "d2", changedFiles: ["a"], excludedSensitiveFiles: [], whitespaceErrors: [] },
     );
     expect(fixed.id).not.toBe(candidate.id);
     expect(fixed.evidence).toEqual({});
