@@ -95,6 +95,12 @@ export interface ActionMap {
   ];
   /** The person's answer to the seam check of a spec: confirmed, or corrected in their own words (M04). */
   "plan:answerSeams": [{ planId: string; confirmed: boolean; note: string | null }, void];
+  /** The person's answer to the breakdown to-tickets proposed: approved, or corrected in their own words (M05). */
+  "plan:answerSlices": [{ planId: string; confirmed: boolean; note: string | null }, void];
+  /** Asks again for the slices of a ready spec, after a failed round or for a plan written before M05. */
+  "plan:slice": [{ planId: string }, void];
+  /** Publishes on GitHub the approved slices still only in Trama (M05). */
+  "plan:publishSlices": [{ planId: string }, void];
   /** Publishes a written spec on GitHub, when it stayed in Trama or its publication failed (M04). */
   "plan:publish": [{ planId: string }, void];
   "pactDemo:run": [void, void];

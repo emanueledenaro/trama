@@ -104,6 +104,57 @@ describe("Coordinator tools for the full team (W09)", () => {
     expect(COORDINATOR_TOOLS.find((t) => t.name === "assign_task")!.description).toMatch(/only to developers/);
   });
 
+  it("assign_task delivers one unblocked slice of an approved breakdown, with its issue (M05)", async () => {
+    const document = emptyDocument("p");
+    document.requests.push({ id: "r1", text: "r1", moduleId: null, state: "running", model: null, effort: null, createdAt: "", completedAt: null, failure: null, goalId: null });
+    const context = {
+      ...teamContext(document),
+      runningRequestId: "r1",
+      snapshot: { modules: [{ id: "Sources/Orders", name: "Orders", relativePath: "Sources/Orders", files: [] }] },
+      startAssignment: () => undefined,
+    } as unknown as ToolContext;
+    grantMandate(document, { objectives: ["o"], priorities: [], scopeModuleIds: ["Sources/Orders"], authorizedActions: ["executeInWorktree"], limits: [] });
+    await runCoordinatorTool("propose_team", { specialists: [{ name: "Ada", competence: "Swift", reason: "r", moduleIDs: ["Sources/Orders"] }] }, context);
+    confirmTeam(document, document.team.proposals[0]!.id, null, null);
+    const ticket = (id: string, blockedBy: string[], issue: number) => ({
+      id,
+      title: id,
+      whatToBuild: "w",
+      acceptanceCriteria: ["c"],
+      blockedBy,
+      issue: { number: issue, url: `https://github.com/o/r/issues/${issue}`, at: "" },
+    });
+    const plan = {
+      id: "P-1",
+      requestId: "r1",
+      orderedBy: "coordinator" as const,
+      kind: "agreedTicket" as const,
+      moduleIds: ["Sources/Orders"],
+      summary: "s",
+      issueNumber: null,
+      status: "ready" as const,
+      proposal: null,
+      slicing: { status: "proposed" as const, tickets: [ticket("S1", [], 8), ticket("S2", ["S1"], 9)], feedback: null, approvedAt: null, failure: null, publishFailure: null },
+      failure: null,
+      decisionRequestIds: [],
+      createdAt: "",
+      updatedAt: "",
+    };
+    document.plans.push(plan);
+    const order = { specialist: "Ada", kind: "agreedTicket", objective: "o", moduleIDs: ["Sources/Orders"], requiredChecks: [], tools: ["edits"], instructions: "i" };
+
+    const text = async (args: Record<string, unknown>) => (await runCoordinatorTool("assign_task", { ...order, ...args }, context)).content[0]!.text;
+    // Not approved yet: the person answers the breakdown first.
+    expect(await text({ slice: "S1" })).toContain("slices_not_approved");
+    plan.slicing.status = "approved" as never;
+    expect(await text({})).toContain("slice_required");
+    expect(await text({ slice: "S2" })).toContain("Slice S2 is blocked by S1");
+    const accepted = parse(await runCoordinatorTool("assign_task", { ...order, slice: "1" }, context));
+    expect(accepted).toMatchObject({ slice: "S1" });
+    const assignment = developers(document)[0]!.assignments[0]!;
+    expect(assignment).toMatchObject({ slice: { planId: "P-1", sliceId: "S1" }, issueNumber: 8 });
+  });
+
   it("tell the Coordinator that the fixed roles are always there and it proposes developers", () => {
     expect(COORDINATOR_TOOLS.find((t) => t.name === "propose_team")!.description).toMatch(/fixed roles/);
     expect(COORDINATOR_TOOLS.find((t) => t.name === "create_specialist")!.description).toMatch(/developer/);

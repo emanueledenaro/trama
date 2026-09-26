@@ -86,7 +86,7 @@ export async function listIssues(repository: string): Promise<GitHubIssue[]> {
 }
 
 /** Opens an issue; `labels` are applied when the person's gh session may set them. Returns the issue GitHub created. */
-export async function createIssue(repository: string, title: string, body: string, labels: string[] = []): Promise<{ number: number; url: string }> {
+export async function createIssue(repository: string, title: string, body: string, labels: string[] = []): Promise<{ number: number; url: string; id?: number }> {
   const output = await run(
     "gh",
     [
@@ -102,9 +102,17 @@ export async function createIssue(repository: string, title: string, body: strin
     ],
     { env: ghEnvironment(), timeout: 20_000 },
   );
-  const issue = JSON.parse(output) as { number?: unknown; html_url?: unknown };
+  const issue = JSON.parse(output) as { id?: unknown; number?: unknown; html_url?: unknown };
   if (typeof issue.number !== "number" || typeof issue.html_url !== "string") throw new Error("GitHub non ha restituito la issue creata.");
-  return { number: issue.number, url: issue.html_url };
+  return { number: issue.number, url: issue.html_url, ...(typeof issue.id === "number" ? { id: issue.id } : {}) };
+}
+
+/** Marks issue `number` as blocked by the issue with database id `blockingId`: GitHub's native issue dependency. */
+export async function addBlockedBy(repository: string, number: number, blockingId: number): Promise<void> {
+  await run("gh", ["api", "--method", "POST", `repos/${repository}/issues/${number}/dependencies/blocked_by`, "--field", `issue_id=${blockingId}`], {
+    env: ghEnvironment(),
+    timeout: 20_000,
+  });
 }
 
 /** Rewrites the title and body of an issue. */

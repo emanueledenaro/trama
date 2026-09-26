@@ -36,7 +36,8 @@ import {
 } from "./team";
 import { type ToolDefinition, type ToolResult, toolFailure, toolSuccess } from "./toolServer";
 import type { CriterionReport } from "./tickets";
-import { NEXT_MOVES, workState } from "./workPhase";
+import { sliceAssignmentProblem } from "./slices";
+import { NEXT_MOVES, workRequests, workState } from "./workPhase";
 
 export interface TicketUpdate {
   issueNumber: number;
@@ -340,7 +341,7 @@ export const COORDINATOR_TOOLS: ToolDefinition[] = [
   {
     name: "assign_task",
     description:
-      "Within the mandate (executeInWorktree), assign work to a developer, named by id or name. Trama starts it in a provider session it owns, in its own worktree when tools include edits, without network. Give the objective, the issue or exercise, the modules, the assignments it depends on, the Pact decisions the work relies on (decisionIDs: the work stops if one changes), the checks the result must pass and your instructions for the specialist. provider and model default to yours; propose another connected provider or model only when the work needs it (read_team lists them). In modelReason say why this provider and model fit the work: first the quality the work needs, then the cost among adequate models; say so when you lack evidence. goalID names the goal the work serves; it defaults to the goal of the dialog you are answering. Assign in parallel only independent work: different modules and no unfinished dependency. Work goes only to developers: a fixed role works at its own moments, which Trama starts, and assign_task refuses it. kind newFeature and tradeOff always go to the person.",
+      "Within the mandate (executeInWorktree), assign work to a developer, named by id or name. Trama starts it in a provider session it owns, in its own worktree when tools include edits, without network. Give the objective, the issue or exercise, the modules, the assignments it depends on, the Pact decisions the work relies on (decisionIDs: the work stops if one changes), the checks the result must pass and your instructions for the specialist. provider and model default to yours; propose another connected provider or model only when the work needs it (read_team lists them). In modelReason say why this provider and model fit the work: first the quality the work needs, then the cost among adequate models; say so when you lack evidence. goalID names the goal the work serves; it defaults to the goal of the dialog you are answering. Assign in parallel only independent work: different modules and no unfinished dependency. When the plan of the work has approved slices (to-tickets), work with edits delivers one slice: name it in slice (S1, S2, ...); Trama refuses a slice whose blockers are not done, a slice someone is working on, and more than three developers at work at once. Work goes only to developers: a fixed role works at its own moments, which Trama starts, and assign_task refuses it. kind newFeature and tradeOff always go to the person.",
     properties: {
       specialist: text,
       kind: { type: "string", enum: WORK_KINDS },
@@ -354,6 +355,7 @@ export const COORDINATOR_TOOLS: ToolDefinition[] = [
       model: text,
       modelReason: text,
       goalID: text,
+      slice: text,
       tools: { type: "array", items: { type: "string", enum: ["commands", "edits"] } },
       requiredChecks: { type: "array", items: { type: "string", enum: ALL_CHECKS } },
       instructions: text,
@@ -413,7 +415,7 @@ export const COORDINATOR_TOOLS: ToolDefinition[] = [
   {
     name: "prepare_plan",
     description:
-      "Within the mandate, have Trama's planner write a plan for a change the person asked for, for the person to review in the conversation. kind says what the work is: agreedTicket, decidedBehaviorCorrection (name the decisionIDs it restores), newFeature or tradeOff (these two go to the person, unless the person has answered every grilling question of the request: then you may plan them). The plan is a spec: the planner runs AI Hero's to-spec skill on the request's conversation, in the background. It first proposes the seams to test, which the person confirms or corrects on the plan card; then it writes the spec, which Trama publishes as a GitHub issue when GitHub is connected, otherwise it stays in Trama.",
+      "Within the mandate, have Trama's planner write a plan for a change the person asked for, for the person to review in the conversation. kind says what the work is: agreedTicket, decidedBehaviorCorrection (name the decisionIDs it restores), newFeature or tradeOff (these two go to the person, unless the person has answered every grilling question of the request: then you may plan them). The plan is a spec: the planner runs AI Hero's to-spec skill on the request's conversation, in the background. It first proposes the seams to test, which the person confirms or corrects on the plan card; then it writes the spec, which Trama publishes as a GitHub issue when GitHub is connected, otherwise it stays in Trama. Then Trama splits the spec into slices with AI Hero's to-tickets skill, for the person to approve on the plan card; you assign them once approved.",
     properties: {
       kind: { type: "string", enum: WORK_KINDS },
       moduleIDs: list(1),
@@ -841,13 +843,29 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
         const namedGoal = typeof args.goalID === "string" && args.goalID.trim() ? args.goalID.trim() : null;
         if (namedGoal && !findGoal(document, namedGoal)) return toolFailure("unknown_goal", `Unknown goal ${namedGoal}. Read the goals with read_goals.`);
         const goalId = namedGoal ?? requestGoalId(document, context.runningRequestId);
+        // With an approved breakdown (M05) work with edits delivers one unblocked slice of it.
+        const scope = context.runningRequestId ? workRequests(document, context.runningRequestId) : null;
+        const plan = scope ? document.plans.filter((p) => p.requestId !== null && scope.has(p.requestId)).at(-1) : undefined;
+        const sliceId = typeof args.slice === "string" && args.slice.trim() ? args.slice.trim().toUpperCase().replace(/^(\d+)$/, "S$1") : null;
+        let slice: { planId: string; sliceId: string } | null = null;
+        if (plan?.slicing && (sliceId || strings(args.tools).includes("edits"))) {
+          if (!sliceId) {
+            return toolFailure("slice_required", `Plan ${plan.id} is split into slices: name the slice this work delivers in slice (${plan.slicing.tickets.map((t) => t.id).join(", ")}).`);
+          }
+          const problem = sliceAssignmentProblem(document, plan, sliceId);
+          if (problem) return toolFailure(plan.slicing.status === "approved" ? "slice_not_assignable" : "slices_not_approved", problem);
+          slice = { planId: plan.id, sliceId };
+        } else if (sliceId) {
+          return toolFailure("unknown_slice", "The plan of this work has no approved slices.");
+        }
+        const ticket = slice ? plan!.slicing!.tickets.find((t) => t.id === slice.sliceId) : null;
         const assignment = assign(
           document,
           {
             specialist: typeof args.specialist === "string" ? args.specialist : "",
             kind,
             objective: typeof args.objective === "string" ? args.objective : "",
-            issueNumber: typeof args.issueNumber === "number" ? args.issueNumber : null,
+            issueNumber: typeof args.issueNumber === "number" ? args.issueNumber : (ticket?.issue?.number ?? null),
             exercise: typeof args.exercise === "string" ? args.exercise : null,
             moduleIds,
             dependencies: strings(args.dependencies),
@@ -859,6 +877,7 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
             tools: strings(args.tools) as SpecialistTool[],
             requiredChecks: checks,
             instructions: typeof args.instructions === "string" ? args.instructions : "",
+            slice,
           },
           document.mandate!.version,
           context.runningRequestId,
@@ -873,6 +892,7 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
           provider: assignment.provider ?? "codex",
           model: assignment.model,
           goalID: assignment.goalId ?? null,
+          slice: assignment.slice?.sliceId ?? null,
         });
       }
       case "read_goals":

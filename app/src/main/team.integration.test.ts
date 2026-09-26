@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { TramaController } from "./controller";
 import { git } from "./core/process";
 import { developers, findSpecialist } from "./core/team";
+import { sliceViews } from "./core/slices";
 import { workState } from "./core/workPhase";
 
 const root = join(import.meta.dirname, "../..");
@@ -183,15 +184,31 @@ describe("team flow", () => {
     expect(workState(document, document.requests.at(-1)!.id).moves).toEqual([expect.objectContaining({ move: "confirmSeams", actor: "person" })]);
     controller.answerSeams({ planId: plan.id, confirmed: true, note: null });
 
-    // Then Trama assigns the slice, and once Ada ends it runs the checks and the review, up to the person's candidate.
+    // The spec written, to-tickets splits it (M05): the breakdown is the person's to approve, so the work waits again.
+    await until(() => plan.slicing?.status === "proposed", 20_000);
+    await idle();
+    expect(automatic()).toHaveLength(1);
+    expect(workState(document, document.requests.at(-1)!.id)).toMatchObject({ phase: "slices", moves: [{ move: "confirmSlices", actor: "person" }] });
+    await controller.answerSlices({ planId: plan.id, confirmed: true, note: null });
+
+    // Then Trama assigns the first unblocked slice, and once Ada ends it runs the checks and the review, up to the person's candidate.
     const specialist = findSpecialist(document, "Ada")!;
     await until(() => document.candidates[0]?.technicalReview?.verdict === "approved", 30_000);
     await idle();
     expect(automatic().map((r) => r.step!.move)).toEqual(["preparePlan", "assignWork", "verifyCandidate"]);
     expect(specialist.assignments[0]!.requestId).toBe(automatic()[1]!.id);
+    expect(specialist.assignments[0]!.slice).toEqual({ planId: plan.id, sliceId: "S1" });
     expect(document.candidates[0]!.evidence.git_status?.result).toBe("pass");
+    // The verified slice unblocks the two that depended on it: they can be assigned beside the person's candidate.
     const latest = document.requests.at(-1)!;
-    expect(workState(document, latest.id)).toMatchObject({ phase: "candidate", moves: [{ move: "reviewCandidate", actor: "person" }] });
+    expect(workState(document, latest.id)).toMatchObject({
+      phase: "candidate",
+      moves: [
+        { move: "reviewCandidate", actor: "person" },
+        { move: "assignWork", actor: "coordinator" },
+      ],
+    });
+    expect(sliceViews(document, plan).map((v) => v.state)).toEqual(["done", "ready", "ready"]);
   }, 60_000);
 
   it("runs a read-only check for the Coordinator", async () => {

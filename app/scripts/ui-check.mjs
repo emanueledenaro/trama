@@ -325,14 +325,35 @@ await writtenSpec.getByRole("button", { name: /Mostra tutta la spec/ }).click();
 await writtenSpec.getByText("Decisioni sui test").waitFor();
 await writtenSpec.scrollIntoViewIfNeeded();
 await shot("04c2-plan-spec");
-const approvePlan = writtenSpec.getByRole("button", { name: "Approva il piano e chiedi di realizzarlo" });
-await approvePlan.evaluate((button) => button.scrollIntoView({ block: "center" }));
-const approveBox = await approvePlan.boundingBox();
-const specBox = await writtenSpec.boundingBox();
-if (!approveBox || !specBox || specBox.x + specBox.width - (approveBox.x + approveBox.width) > 2) throw new Error("The plan's approval is not on the right");
-await shot("04c3-plan-spec-actions");
-// The seams held the work for the person; with the spec written it goes on by itself within the mandate (W04).
-// The check stops that move, so the queue below starts from an idle Coordinator.
+// M05: the written spec is split with to-tickets. The breakdown waits for the person, with its blocking edges, and
+// the confirmation sits on the right, primary last; a plan with slices has no approval of the whole plan.
+const slices = writtenSpec.getByTestId("plan-slices");
+const confirmSlices = slices.getByRole("button", { name: "Conferma le fette" });
+await confirmSlices.waitFor({ timeout: 20_000 });
+if ((await slices.getByTestId("plan-slice").count()) !== 3) throw new Error("The breakdown does not show the three slices of to-tickets");
+await slices.getByText("Bloccata da: 1").first().waitFor();
+await slices.getByText("Può iniziare subito").waitFor();
+if (await writtenSpec.getByRole("button", { name: "Approva il piano e chiedi di realizzarlo" }).count()) throw new Error("A plan with slices still offers the approval of the whole plan");
+await slices.getByRole("button", { name: "Mostra i criteri di accettazione" }).click();
+await confirmSlices.evaluate((button) => button.scrollIntoView({ block: "center" }));
+const sliceActions = await slices.locator(".cta-row").last().locator("button").allTextContents();
+if (sliceActions.at(-1)?.trim() !== "Conferma le fette") throw new Error(`Conferma le fette is not the last call to action: ${sliceActions}`);
+const confirmSlicesBox = await confirmSlices.boundingBox();
+const slicesBox = await slices.boundingBox();
+if (!confirmSlicesBox || !slicesBox || slicesBox.x + slicesBox.width - (confirmSlicesBox.x + confirmSlicesBox.width) > 2) throw new Error("Conferma le fette is not on the right");
+await shot("04c3-plan-slices");
+// The slices must read in the light theme too.
+await page.evaluate(() => document.documentElement.classList.remove("dark"));
+await shot("04c3b-plan-slices-light");
+await page.evaluate(() => document.documentElement.classList.add("dark"));
+// The slices held the work for the person; once confirmed they stay in Trama without GitHub, the first is ready
+// and the others wait for it, and the work goes on by itself within the mandate (W04).
+await confirmSlices.click();
+await slices.getByText("Restano in Trama").waitFor({ timeout: 20_000 });
+const sliceStates = await slices.getByTestId("plan-slice").evaluateAll((items) => items.map((item) => item.getAttribute("data-state")));
+if (sliceStates[0] === "blocked" || sliceStates.slice(1).some((state) => state !== "blocked")) throw new Error(`The slices do not respect their blockers: ${sliceStates}`);
+await shot("04c4-plan-slices-confirmed");
+// The check stops the automatic assignment, so the queue below starts from an idle Coordinator.
 const assignStep = page.getByTestId("automatic-step").filter({ hasText: "Assegna il lavoro" }).last();
 await assignStep.getByRole("button", { name: "Ferma" }).click({ timeout: 20_000 });
 await page.getByRole("button", { name: "Interrompi" }).waitFor({ state: "hidden", timeout: 20_000 });

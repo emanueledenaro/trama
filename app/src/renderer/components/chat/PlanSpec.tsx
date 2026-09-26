@@ -4,10 +4,11 @@ import type * as React from "react";
 import { Button } from "@/components/ui/button";
 import { Badge, Input, TextArea } from "@/components/ui/field";
 import { act, useUi } from "@/lib/store";
+import { PlanSlices } from "./PlanSlices";
 
 /**
  * The body of a plan written as a spec with AI Hero's to-spec (M04): the seam check the person answers, then the
- * spec with the template's sections, where it was published, and the person's corrections.
+ * spec with the template's sections, where it was published, and the person's corrections; then its slices (M05).
  */
 
 type ListKey = "userStories" | "implementationDecisions" | "testingDecisions";
@@ -227,22 +228,31 @@ export function PlanSpecBody({ plan }: { plan: WorkPlan }) {
                   Pubblica su GitHub
                 </Button>
               ) : null}
-              <Button
-                size="sm"
-                disabled={plan.status === "stale"}
-                onClick={() =>
-                  void act("coordinator:send", {
-                    text: `Ho rivisto il piano ${plan.id} e va bene. Realizzalo con il team entro il mandato.`,
-                    moduleId: null,
-                    model: null,
-                    effort: null,
-                  })
-                }
-              >
-                Approva il piano e chiedi di realizzarlo
-              </Button>
+              {/* A spec written before M05 has no slices yet: the person can have it split, or approve it as a whole. */}
+              {!plan.slicing && plan.status === "ready" ? (
+                <Button size="sm" variant="outline" onClick={() => void act("plan:slice", { planId: plan.id })}>
+                  Dividi in fette
+                </Button>
+              ) : null}
+              {!plan.slicing ? (
+                <Button
+                  size="sm"
+                  disabled={plan.status === "stale"}
+                  onClick={() =>
+                    void act("coordinator:send", {
+                      text: `Ho rivisto il piano ${plan.id} e va bene. Realizzalo con il team entro il mandato.`,
+                      moduleId: null,
+                      model: null,
+                      effort: null,
+                    })
+                  }
+                >
+                  Approva il piano e chiedi di realizzarlo
+                </Button>
+              ) : null}
             </div>
           ) : null}
+          <PlanSlices plan={plan} />
         </>
       ) : null}
     </div>
