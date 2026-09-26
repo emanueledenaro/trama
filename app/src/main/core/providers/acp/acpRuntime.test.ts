@@ -4,7 +4,12 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { TurnEvent } from "@shared/codex";
 import { clearUsageLimitsForTests } from "../providerSupport";
+import { CoordinatorToolServer, toolSuccess } from "../../toolServer";
 import { AcpAgentRuntime, type AcpProviderProfile, buildChildEnvironment, decidePermission, hostToolName, parseUsageLimit } from "./acpRuntime";
+import { cursorProfile } from "./cursor";
+import { devinProfile } from "./devin";
+import { droidProfile } from "./droid";
+import { grokProfile } from "./grok";
 
 const fakeAgent = join(import.meta.dirname, "../../../../../test-fixtures/fake-acp-agent.mjs");
 const toolServer = { name: "trama", url: "http://127.0.0.1:4567/mcp", token: "secret-token" };
@@ -97,14 +102,69 @@ describe("AcpAgentRuntime", () => {
     expect(prompt.at(-1)!.text).toBe("ciao");
   });
 
-  it("passes no MCP server when the agent cannot reach HTTP servers", async () => {
+  it("passes Trama's tools over stdio when the agent cannot reach HTTP servers, with the token out of the messages (issue #228)", async () => {
     process.env.FAKE_ACP_NO_HTTP = "1";
     runtime = new AcpAgentRuntime(testProfile, { toolServer });
     await runtime.openThread({ model: "m1", cwd: dir, developerInstructions: "" });
-    expect(runtime.hostToolsAvailable).toBe(false);
+    expect(runtime.hostToolTransport).toBe("stdio");
     const created = received().find((m) => m.method === "session/new")!;
-    expect(created.params!.mcpServers).toEqual([]);
+    const [server] = created.params!.mcpServers as Array<{ name: string; command: string; args: string[]; env: Array<{ name: string; value: string }> }>;
+    expect(server).toMatchObject({ name: "trama", command: process.execPath });
+    expect(server!.env).toContainEqual({ name: "ELECTRON_RUN_AS_NODE", value: "1" });
     expect(readFileSync(logPath, "utf8")).not.toContain("secret-token");
+    const tokenFile = server!.env.find((e) => e.name.endsWith("TOKEN_FILE"))!.value;
+    expect(readFileSync(tokenFile, "utf8")).toBe("secret-token");
+    runtime.stop();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(existsSync(tokenFile)).toBe(false);
+  });
+
+  describe.each([
+    ["cursor", cursorProfile],
+    ["devin", devinProfile],
+    ["droid", droidProfile],
+    ["grok", grokProfile],
+  ] as const)("%s: the provider's GitHub tool is refused and the next turn uses read_issues (issue #228)", (_id, profile) => {
+    let server: CoordinatorToolServer;
+    beforeEach(async () => {
+      server = new CoordinatorToolServer(
+        [{ name: "read_issues", description: "Read GitHub issues.", properties: {}, required: [], readOnly: true }],
+        async (name) => toolSuccess({ tool: name, issues: [{ number: 228, title: "Strumenti di Trama" }] }),
+        "",
+      );
+      await server.start();
+    });
+    afterEach(() => server.stop());
+
+    it.each([["http"], ["stdio"]])("over %s", async (transport) => {
+      if (transport === "stdio") process.env.FAKE_ACP_NO_HTTP = "1";
+      const asFake: AcpProviderProfile = {
+        ...profile,
+        resolveExecutable: testProfile.resolveExecutable,
+        launch: testProfile.launch,
+        instructionsAtLaunch: undefined,
+        validateInitialize: undefined,
+        authPolicy: "always",
+        resolveAuth: testProfile.resolveAuth,
+      };
+      runtime = new AcpAgentRuntime(asFake, { toolServer: { name: "trama", url: server.url, token: server.token, tools: server.toolNames } });
+      const { threadId } = await runtime.openThread({ model: "m1", cwd: dir, developerInstructions: "" });
+      expect(runtime.hostToolTransport).toBe(transport);
+      const events: TurnEvent[] = [];
+      const run = () => runtime!.runTurn({ threadId, prompt: "leggi le issue", cwd: dir, model: "m1", onEvent: (e) => events.push(e) });
+
+      expect(await run()).toBe("rejected");
+      const refused = events.find((e) => e.type === "toolRefused");
+      expect(refused).toMatchObject({ type: "toolRefused", itemId: "gh-1", tool: "github: list_issues" });
+      expect(refused && "reason" in refused ? refused.reason : "").toContain("Gli strumenti GitHub del provider sono bloccati: per le issue usa read_issues di Trama.");
+
+      expect(await run()).toBe(`trama: ${JSON.stringify({ tool: "read_issues", issues: [{ number: 228, title: "Strumenti di Trama" }] })}`);
+      const prompts = received().filter((m) => m.method === "session/prompt");
+      const second = (prompts.at(-1)!.params!.prompt as Array<{ text: string }>).map((b) => b.text).join("\n");
+      expect(second).toContain("Nel turno precedente Trama ha bloccato questi strumenti del provider:");
+      // The notice goes out once.
+      expect(await run()).toBe("rejected");
+    });
   });
 
   it("rejects edits in a read-only turn and allows them inside the writable root", async () => {

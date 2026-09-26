@@ -164,6 +164,24 @@ describe("tool permissions", () => {
     expect(parseMcpToolName("mcp__trama__propose_plan")).toEqual({ server: "trama", tool: "propose_plan" });
   });
 
+  it("names Trama's tool when it refuses Claude's own GitHub, web or shell tools (issue #228)", () => {
+    const coordinator = { ...readOnly, hostTools: ["read_issues", "run_readonly_check"] };
+    expect(decideToolPermission("mcp__github__list_issues", {}, coordinator, identity)).toEqual({
+      allow: false,
+      providerTool: true,
+      reason: expect.stringContaining("Gli strumenti GitHub del provider sono bloccati: per le issue usa read_issues di Trama."),
+    });
+    expect(decideToolPermission("Bash", { command: "gh issue list" }, coordinator, identity)).toMatchObject({
+      providerTool: true,
+      reason: expect.stringContaining("read_issues di Trama"),
+    });
+    expect(decideToolPermission("WebFetch", { url: "https://github.com" }, coordinator, identity)).toMatchObject({
+      providerTool: true,
+      reason: expect.stringContaining("Trama non consente accessi alla rete"),
+    });
+    expect(decideToolPermission("Edit", { file_path: "/repo/a.ts" }, coordinator, identity)).not.toHaveProperty("providerTool");
+  });
+
   it("limits writes to the writable root", () => {
     expect(decideToolPermission("Edit", { file_path: "/work/tree/src/a.ts" }, writable, identity).allow).toBe(true);
     expect(decideToolPermission("Write", { file_path: "src/new.ts" }, writable, identity).allow).toBe(true);
@@ -470,6 +488,30 @@ describe("ClaudeAgentRuntime", () => {
     await runtime.runTurn({ threadId, prompt: "Ancora", cwd: "/repo", model: "sonnet", onEvent: () => undefined });
     expect(sdk.query.mock.calls[1]![0].options).toMatchObject({ resume: threadId });
     expect(sdk.query.mock.calls[1]![0].options.sessionId).toBeUndefined();
+  });
+
+  it("refuses Claude's GitHub tool with the reason and lets the turn use read_issues (issue #228)", async () => {
+    const toolServer = { name: "trama", url: "http://127.0.0.1:1/mcp", token: "t", tools: ["read_issues"] };
+    const runtime = new ClaudeAgentRuntime({ executable, toolServer });
+    const { threadId } = await runtime.openThread({ model: "sonnet", cwd: "/repo", developerInstructions: "" });
+    const answers: unknown[] = [];
+    sdk.query.mockImplementationOnce(({ options }: { options: { canUseTool: (name: string, input: unknown, context: unknown) => Promise<unknown> } }) => {
+      async function* turn() {
+        const context = { toolUseID: "t-gh", signal: new AbortController().signal };
+        answers.push(await options.canUseTool("mcp__github__list_issues", {}, context));
+        answers.push(await options.canUseTool("mcp__trama__read_issues", {}, { ...context, toolUseID: "t-trama" }));
+        yield assistant([{ type: "tool_use", id: "t-trama", name: "mcp__trama__read_issues", input: {} }]);
+        yield toolResult("t-trama", "[]");
+        yield result({ session_id: threadId });
+      }
+      return Object.assign(turn(), { interrupt: vi.fn(), close: vi.fn(), supportedModels: vi.fn(async () => []) });
+    });
+    const events: TurnEvent[] = [];
+    await runtime.runTurn({ threadId, prompt: "Leggi le issue", cwd: "/repo", model: "sonnet", onEvent: (e) => events.push(e) });
+    expect(answers[0]).toEqual({ behavior: "deny", message: expect.stringContaining("per le issue usa read_issues di Trama") });
+    expect(answers[1]).toMatchObject({ behavior: "allow" });
+    expect(events).toContainEqual({ type: "toolRefused", itemId: "t-gh", tool: "mcp__github__list_issues", reason: expect.stringContaining("read_issues") });
+    expect(events).toContainEqual(expect.objectContaining({ type: "toolCallCompleted", server: "trama", tool: "read_issues", succeeded: true }));
   });
 
   it("interrupts a running turn", async () => {

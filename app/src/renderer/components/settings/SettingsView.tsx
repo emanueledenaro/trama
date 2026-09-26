@@ -17,7 +17,7 @@ import { useEffect, useState } from "react";
 import type { ProviderAccount, ProviderId } from "@shared/codex";
 import { DEFAULT_LEARNING_SETTINGS, type LearningSettings, type ThemePreference } from "@shared/domain";
 import { classifyProviderFailure } from "@shared/providerFailure";
-import { capabilityLines, PROVIDERS, type ProviderDescriptor } from "@shared/providers";
+import { capabilityLines, coordinatorUnavailableReason, PROVIDERS, type ProviderDescriptor } from "@shared/providers";
 import { AIHERO_ATTRIBUTION } from "@shared/skills";
 import { MAX_PARALLEL_DEVELOPERS_SETTING, MIN_PARALLEL_DEVELOPERS, parallelDevelopers } from "@shared/parallel";
 import { GitHubCliDescription } from "@/components/GitHubCliStatus";
@@ -368,6 +368,7 @@ function ProviderRow({ provider }: { provider: ProviderDescriptor }) {
               Accesso: <code className="font-mono text-foreground/90">{provider.signInCommand}</code>
             </span>
           ) : null}
+          {coordinatorUnavailableReason(id) ? <span className="block text-warning">{coordinatorUnavailableReason(id)}</span> : null}
           {hint ? <span className="block text-foreground/80">{hint}</span> : null}
         </>
       }

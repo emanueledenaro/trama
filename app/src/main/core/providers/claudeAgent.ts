@@ -44,6 +44,7 @@ import {
 } from "./types";
 import { deniedReadFolders, expandHome, readableRoots, toolchainRoots } from "../readScope";
 import { absoluteUnnormalized, isWritableTarget, PendingTurn } from "./providerSupport";
+import { externalToolKind, refusalReason } from "./toolRefusal";
 
 type ClaudeSdk = typeof import("@anthropic-ai/claude-agent-sdk");
 
@@ -371,10 +372,15 @@ export interface ToolPolicy {
   hostServer: string | null;
   /** Folders the read tools may reach (issue #206); only `cwd` when absent. */
   readableRoots?: string[];
+  /** Names of the tools on Trama's server, so a refusal can name the one to use (issue #228). */
+  hostTools?: readonly string[];
 }
 
-/** A refused read outside the readable roots names its path, so Trama can record it. */
-export type ToolDecision = { allow: true } | { allow: false; reason: string; outsideRead?: string };
+/**
+ * A refused read outside the readable roots names its path, so Trama can record it. `providerTool` marks one of
+ * Claude's own tools that a Trama tool replaces (issue #228): the reason names that tool.
+ */
+export type ToolDecision = { allow: true } | { allow: false; reason: string; outsideRead?: string; providerTool?: boolean };
 
 /** Tools that reach the network, ask the person, or start agents Trama cannot see. Always removed. */
 export const ALWAYS_DISALLOWED_TOOLS = [
@@ -416,12 +422,14 @@ export function decideToolPermission(
   policy: ToolPolicy,
   writable: (root: string, path: string) => boolean = isWritableTarget,
 ): ToolDecision {
+  const providerTool = (tool: string, kind: string | null = null): ToolDecision => ({
+    allow: false,
+    reason: refusalReason(externalToolKind(tool, kind), policy.hostTools ?? []),
+    providerTool: true,
+  });
   const mcp = parseMcpToolName(toolName);
-  if (mcp) {
-    return mcp.server === policy.hostServer
-      ? { allow: true }
-      : { allow: false, reason: `Trama allows only its own MCP server; ${mcp.server} is not available.` };
-  }
+  if (mcp) return mcp.server === policy.hostServer ? { allow: true } : providerTool(`${mcp.server} ${mcp.tool}`);
+  if (toolName === "WebFetch" || toolName === "WebSearch") return providerTool(toolName, "fetch");
   if (ALWAYS_DISALLOWED_TOOLS.includes(toolName)) {
     return { allow: false, reason: `${toolName} is not available in Trama.` };
   }
@@ -444,13 +452,13 @@ export function decideToolPermission(
       : { allow: false, reason: `Writes are allowed only inside ${policy.writableRoot}.` };
   }
   if (SHELL_TOOLS.has(toolName)) {
-    if (!policy.writableRoot) return { allow: false, reason: "This turn is read-only: shell commands are not allowed." };
+    if (!policy.writableRoot) return providerTool(typeof input.command === "string" ? input.command : toolName, "execute");
     if (input.dangerouslyDisableSandbox === true) {
       return { allow: false, reason: "Commands must run inside the sandbox." };
     }
     return { allow: true };
   }
-  return { allow: false, reason: `${toolName} is not available in Trama.` };
+  return providerTool(toolName);
 }
 
 // ── Query options ───────────────────────────────────────────────────
@@ -1175,6 +1183,7 @@ export class ClaudeAgentRuntime implements AgentRuntime {
       writableRoot,
       hostServer: this.options.toolServer?.name ?? null,
       readableRoots: [...thread.readableRoots, ...readableRoots(options.cwd)],
+      hostTools: this.options.toolServer?.tools ?? [],
     };
     // A refused read outside the project is recorded once per path and tool (issue #206).
     const reported = new Set<string>();
@@ -1183,6 +1192,11 @@ export class ClaudeAgentRuntime implements AgentRuntime {
       if (!decision.allow && decision.outsideRead && !reported.has(`${toolName}:${decision.outsideRead}`)) {
         reported.add(`${toolName}:${decision.outsideRead}`);
         options.onEvent({ type: "readOutsideScope", itemId, path: decision.outsideRead, tool: toolName });
+      }
+      // canUseTool and the hook may both refuse the same call: one activity per call (issue #228).
+      if (!decision.allow && decision.providerTool && !reported.has(`refused:${itemId}`)) {
+        reported.add(`refused:${itemId}`);
+        options.onEvent({ type: "toolRefused", itemId, tool: toolName, reason: decision.reason });
       }
       return decision;
     };

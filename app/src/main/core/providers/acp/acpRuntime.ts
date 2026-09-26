@@ -31,6 +31,8 @@ import {
 } from "../types";
 import { expandHome, readableRoots } from "../../readScope";
 import { absoluteUnnormalized, containedWriteTarget, currentUsageLimit, PendingTurn, usageLimitError, writeFileNoFollow } from "../providerSupport";
+import { prepareStdioHostToolServer, type StdioHostToolServer } from "../hostToolProxy";
+import { ToolRefusals } from "../toolRefusal";
 
 export type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
 export type JsonObject = { [key: string]: Json };
@@ -417,6 +419,9 @@ export function hostToolName(serverName: string | null | undefined, toolCall: { 
 
 // ── Permission policy (AcpAdapterSupport.ts, adapted to Trama's sandbox) ──
 
+/** Tool kinds that touch project files: a refusal there is about the path or the sandbox, not a provider tool. */
+const FILE_TOOL_KINDS = new Set(["read", "search", "think", "edit", "delete", "move"]);
+
 /**
  * True when `path` resolves inside `root`, following symlinks component by component. A dangling
  * symlink is refused: the write would land wherever it points.
@@ -522,6 +527,8 @@ export interface AcpTurnPolicy {
   hostServerName: string | null;
   /** Folders reads may reach; only `cwd` when absent. */
   readableRoots?: string[];
+  /** Records a refused provider tool and returns the reason for the agent (issue #228). */
+  refuse?: (input: { itemId: string; tool: string; kind?: string | null }) => string;
 }
 
 export interface AcpProviderProfile {
@@ -813,6 +820,11 @@ export class AcpAgentRuntime implements AgentRuntime {
   /** A turn still in setup: nothing has been sent to the agent yet. */
   private pendingTurn: PendingTurn | null = null;
   private replayUntilQuiet: { last: number; resolve: () => void } | null = null;
+  /** The stdio proxy to Trama's tools, for an agent without HTTP MCP servers (issue #228). */
+  private stdioHostTools: StdioHostToolServer | null = null;
+  private transport: "http" | "stdio" | null = null;
+  /** Provider tools Trama refused; the next prompt tells the agent why (issue #228). */
+  private readonly refusals = new ToolRefusals(() => this.options.toolServer?.tools ?? []);
   constructor(
     readonly profile: AcpProviderProfile,
     private readonly options: RuntimeOptions = {},
@@ -866,7 +878,7 @@ export class AcpAgentRuntime implements AgentRuntime {
     const executable = this.profile.resolveExecutable(this.options.executable);
     const launchInput: AcpLaunchInput = { cwd: options.cwd, model: options.model, developerInstructions: options.developerInstructions };
     const connection = await this.start(executable, launchInput);
-    const mcpServers = this.mcpServers();
+    const mcpServers = await this.mcpServers();
     const meta = this.profile.sessionMeta ? { _meta: this.profile.sessionMeta } : {};
     const capabilities = asObject(this.initializeResult.agentCapabilities);
     let resumed = false;
@@ -945,6 +957,7 @@ export class AcpAgentRuntime implements AgentRuntime {
         writableRoot: options.writableRoot ?? null,
         hostServerName: this.options.toolServer?.name ?? null,
         readableRoots: [...this.sessionReadableRoots, ...readableRoots(options.cwd)],
+        refuse: (input) => this.refusals.record(input, (event) => this.activeTurn?.onEvent(event)),
       };
       let watchdog: NodeJS.Timeout | null = null;
       let cancelTimer: NodeJS.Timeout | null = null;
@@ -1045,6 +1058,10 @@ export class AcpAgentRuntime implements AgentRuntime {
     this.configOptions = [];
     this.currentModeId = null;
     this.replayUntilQuiet = null;
+    this.transport = null;
+    this.refusals.clear();
+    void this.stdioHostTools?.dispose().catch(() => undefined);
+    this.stdioHostTools = null;
   }
 
   private async start(executable: string, launchInput: AcpLaunchInput): Promise<AcpConnection> {
@@ -1118,18 +1135,27 @@ export class AcpAgentRuntime implements AgentRuntime {
     return new ProviderError("rpcError", `${this.profile.label} non ha avviato la sessione: ${message}`);
   }
 
-  /** Trama's tools over HTTP, only when the agent advertises HTTP MCP servers; the token never goes in argv. */
-  private mcpServers(): Json[] {
+  /**
+   * Trama's tools: over HTTP when the agent advertises HTTP MCP servers, otherwise over stdio, which every ACP agent
+   * must support (issue #228). The token never goes in argv: it rides the HTTP header or the proxy's private file.
+   */
+  private async mcpServers(): Promise<Json[]> {
     const server: HostToolServer | null | undefined = this.options.toolServer;
     if (!server) return [];
     const http = asObject(asObject(this.initializeResult.agentCapabilities)?.mcpCapabilities)?.http === true;
-    if (!http) return [];
-    return [{ type: "http", name: server.name, url: server.url, headers: [{ name: "Authorization", value: `Bearer ${server.token}` }] }];
+    if (http) {
+      this.transport = "http";
+      return [{ type: "http", name: server.name, url: server.url, headers: [{ name: "Authorization", value: `Bearer ${server.token}` }] }];
+    }
+    this.stdioHostTools ??= await prepareStdioHostToolServer(server);
+    this.transport = "stdio";
+    const { command, args, env } = this.stdioHostTools;
+    return [{ name: server.name, command, args, env: Object.entries(env).map(([name, value]) => ({ name, value })) }];
   }
 
-  /** True when the agent can reach Trama's tools in this session. */
-  get hostToolsAvailable(): boolean {
-    return this.mcpServers().length > 0;
+  /** How the agent reaches Trama's tools in this session; null without a tool server. */
+  get hostToolTransport(): "http" | "stdio" | null {
+    return this.transport;
   }
 
   private adoptSession(sessionId: string, cwd: string, result: JsonObject): void {
@@ -1197,6 +1223,8 @@ export class AcpAgentRuntime implements AgentRuntime {
   private async promptBlocks(options: RunTurnOptions, prompt: string): Promise<Json[]> {
     const blocks: Json[] = [];
     if (this.pendingInstructions) blocks.push({ type: "text", text: this.pendingInstructions });
+    const refused = this.refusals.takeNotice();
+    if (refused) blocks.push({ type: "text", text: refused });
     const skills = await inlineSkillInstructions(options.skills ?? [], (path) => this.profile.inlineSkill(path));
     if (skills) blocks.push({ type: "text", text: skills });
     const supportsImages = asObject(asObject(this.initializeResult.agentCapabilities)?.promptCapabilities)?.image === true;
@@ -1283,9 +1311,17 @@ export class AcpAgentRuntime implements AgentRuntime {
           hostTool: hostToolName(policy.hostServerName, toolCall) !== null,
           readableRoots: policy.readableRoots,
         });
+    const itemId = trimmed(toolCall.toolCallId) ?? randomUUID();
     if (policy.active && decision === "reject" && (kind === "read" || kind === "search" || kind === "think")) {
       const outside = paths.find((path) => !(policy.readableRoots ?? [policy.cwd]).some((root) => resolvesInside(root, path)));
-      if (outside) this.reportOutsideRead(outside, trimmed(toolCall.toolCallId) ?? randomUUID(), title ?? kind);
+      if (outside) this.reportOutsideRead(outside, itemId, title ?? kind);
+    } else if (policy.active && decision === "reject" && !FILE_TOOL_KINDS.has(kind ?? "")) {
+      // The provider's own GitHub, web, command or connector tool (issue #228).
+      const input = asObject(toolCall.rawInput);
+      const server = trimmed(input?.server) ?? trimmed(input?.serverName) ?? trimmed(input?.server_name);
+      const named = trimmed(input?.tool) ?? trimmed(input?.toolName) ?? trimmed(input?.tool_name);
+      const tool = (server && named ? `${server}: ${named}` : null) ?? toolCallCommand(toolCall.rawInput, title) ?? title ?? kind ?? "strumento";
+      policy.refuse?.({ itemId, tool, kind });
     }
     // With no active turn Synara cancels: late or replayed requests must not inherit a turn's authority.
     const optionId = policy.active ? selectPermissionOption(decision, params.options) : null;

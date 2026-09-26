@@ -58,6 +58,8 @@ import {
   teardownProcessTree,
   usageLimitError,
 } from "./providerSupport";
+import { MCP_TOKEN_FILE_ENV, MCP_URL_ENV, mcpProxyScriptSource } from "./hostToolProxy";
+import { ToolRefusals } from "./toolRefusal";
 
 const DEFAULT_MODEL = "Gemini 3.8 Flash";
 const PRINT_TIMEOUT = "30m";
@@ -74,8 +76,6 @@ const MCP_SERVER_NAME = "trama";
 const EVENTS_ENV = "TRAMA_ANTIGRAVITY_EVENTS";
 const DECISION_ENV = "TRAMA_ANTIGRAVITY_HOOK_DECISION";
 const WRITABLE_ROOT_ENV = "TRAMA_ANTIGRAVITY_WRITABLE_ROOT";
-const MCP_URL_ENV = "TRAMA_ANTIGRAVITY_MCP_URL";
-const MCP_TOKEN_FILE_ENV = "TRAMA_ANTIGRAVITY_MCP_TOKEN_FILE";
 const HOST_TOOLS_ENV = "TRAMA_ANTIGRAVITY_HOST_TOOLS";
 const CONVERSATION_ENV = "TRAMA_ANTIGRAVITY_CONVERSATION";
 /** JSON list of the folders the read tools may reach (issue #206). */
@@ -635,76 +635,6 @@ export function buildAntigravityHookConfig(command: (event: string) => string): 
   };
 }
 
-/**
- * Stdio-to-HTTP MCP proxy (Synara agentGateway/stdioProxyScript.ts). Antigravity only spawns stdio
- * MCP servers from a plugin. The proxy forwards JSON-RPC lines to Trama's loopback server with the
- * bearer read from a per-turn file; outside a Trama turn it serves an empty tool list.
- */
-export function mcpProxyScriptSource(): string {
-  return `const fs = require("node:fs");
-const clean = (value) => (typeof value === "string" && value && !value.startsWith("$") ? value : undefined);
-const url = clean(process.env.${MCP_URL_ENV});
-const tokenFile = clean(process.env.${MCP_TOKEN_FILE_ENV});
-let token;
-try { token = tokenFile ? fs.readFileSync(tokenFile, "utf8").trim() : undefined; } catch { token = undefined; }
-const active = Boolean(url && token);
-let output = Promise.resolve();
-const write = (message) => { output = output.then(() => { process.stdout.write(JSON.stringify(message) + "\\n"); }); return output; };
-const isRecord = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
-function inactive(message) {
-  if (!isRecord(message) || !("id" in message)) return [];
-  const id = message.id;
-  if (message.method === "initialize") {
-    return [{ jsonrpc: "2.0", id, result: { protocolVersion: (message.params && message.params.protocolVersion) || "2025-06-18", capabilities: { tools: {} }, serverInfo: { name: "trama", version: "1.0.0" } } }];
-  }
-  if (message.method === "ping") return [{ jsonrpc: "2.0", id, result: {} }];
-  if (message.method === "tools/list") return [{ jsonrpc: "2.0", id, result: { tools: [] } }];
-  return [{ jsonrpc: "2.0", id, error: { code: -32601, message: "Trama is not active for this Antigravity session." } }];
-}
-async function forward(message) {
-  if (!active) return inactive(message);
-  const hasId = isRecord(message) && "id" in message;
-  try {
-    const response = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Accept: "application/json, text/event-stream", Authorization: "Bearer " + token },
-      body: JSON.stringify(message),
-    });
-    if (response.status === 202) return [];
-    const payload = await response.json();
-    return (Array.isArray(payload) ? payload : [payload]).filter(isRecord);
-  } catch (error) {
-    return hasId ? [{ jsonrpc: "2.0", id: message.id, error: { code: -32603, message: "Trama tool server request failed: " + String(error) } }] : [];
-  }
-}
-async function handle(line) {
-  let parsed;
-  try { parsed = JSON.parse(line); } catch { return write({ jsonrpc: "2.0", id: null, error: { code: -32700, message: "Parse error" } }); }
-  const messages = Array.isArray(parsed) ? parsed : [parsed];
-  const responses = (await Promise.all(messages.map(forward))).flat();
-  if (responses.length === 0) return;
-  return write(Array.isArray(parsed) ? responses : responses[0]);
-}
-const inflight = new Set();
-let buffer = "";
-process.stdin.setEncoding("utf8");
-process.stdin.on("data", (chunk) => {
-  buffer += chunk;
-  let index;
-  while ((index = buffer.indexOf("\\n")) !== -1) {
-    const line = buffer.slice(0, index).trim();
-    buffer = buffer.slice(index + 1);
-    if (line) { const task = handle(line).catch(() => undefined); inflight.add(task); task.finally(() => inflight.delete(task)); }
-  }
-});
-process.stdin.on("end", async () => {
-  await Promise.allSettled([...inflight]);
-  await output.catch(() => undefined);
-  process.exit(0);
-});
-`;
-}
-
 const pluginInstallations = new Map<string, Promise<void>>();
 
 /** Writes the capture plugin and installs it with `agy plugin install`, once per binary and home. */
@@ -1032,6 +962,8 @@ export class AntigravityRuntime implements AgentRuntime {
   private active: ActiveTurn | null = null;
   /** A turn still in setup: no process exists yet to stop. */
   private pending: PendingTurn | null = null;
+  /** The hook's denial carries no message: the next prompt tells the agent why and what to use (issue #228). */
+  private readonly refusals = new ToolRefusals(() => this.options.toolServer?.tools ?? []);
 
   constructor(
     private readonly options: RuntimeOptions = {},
@@ -1215,7 +1147,7 @@ export class AntigravityRuntime implements AgentRuntime {
       pending.checkpoint();
       const attachments = await attachedFilesBlock(options.images);
       pending.checkpoint();
-      text = [prompt, skillText, attachments].filter(Boolean).join("\n\n");
+      text = [this.refusals.takeNotice(), prompt, skillText, attachments].filter(Boolean).join("\n\n");
       if (!thread.instructionsDelivered && thread.developerInstructions.trim()) {
         text = `${thread.developerInstructions.trim()}\n\n${text}`;
       }
@@ -1519,14 +1451,16 @@ export class AntigravityRuntime implements AgentRuntime {
       if (eventName === "denied-tool") {
         const itemId = `agy-tool-${turn.toolSequence++}`;
         if (name === "run_command" || name === "send_command_input") {
+          const command = normalizeAntigravityCommandLine(toolArgs?.CommandLine) ?? "";
           turn.onEvent({
             type: "commandCompleted",
             itemId,
-            command: normalizeAntigravityCommandLine(toolArgs?.CommandLine) ?? "",
+            command,
             exitCode: null,
             output: turn.readOnly ? READ_ONLY_DENIED_COMMAND_OUTPUT : DENIED_COMMAND_OUTPUT,
             succeeded: false,
           });
+          this.refusals.record({ itemId, tool: command || name, kind: "execute" }, turn.onEvent);
         } else if (EDIT_TOOLS.has(name)) {
           turn.onEvent({
             type: "fileChangeCompleted",
@@ -1541,6 +1475,7 @@ export class AntigravityRuntime implements AgentRuntime {
               ? READ_ONLY_DENIED_TOOL_OUTPUT
               : DENIED_TOOL_OUTPUT;
           turn.onEvent({ type: "toolCallCompleted", itemId, server: "antigravity", tool: name, succeeded: false, error });
+          this.refusals.record({ itemId, tool: name, kind: NETWORK_TOOL_PATTERN.test(name) ? "fetch" : null }, turn.onEvent);
         }
         continue;
       }

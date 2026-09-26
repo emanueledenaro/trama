@@ -192,6 +192,19 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
         setTimeout(() => finish(JSON.stringify(seen)), 10);
         return;
       }
+      if (text.includes("[issue-gh]")) {
+        // Issue #228: Codex tries `gh` in the read-only sandbox, which has no network; once Trama names read_issues, that one.
+        if (text.includes("read_issues di Trama") && toolServers.has(threadId)) {
+          const result = await callTool(threadId, "read_issues", {});
+          toolDone("read_issues", result);
+          setTimeout(() => finish(`trama: ${result.content[0].text}`), 10);
+          return;
+        }
+        const command = "/bin/bash -lc 'gh issue list'";
+        send({ method: "item/completed", params: { threadId, turnId, item: { id: "gh", type: "commandExecution", command, exitCode: 1, status: "failed", aggregatedOutput: "error connecting to api.github.com" } } });
+        setTimeout(() => finish("github"), 10);
+        return;
+      }
       if (text.includes("[tier]")) {
         // Echoes the service tier the turn asked for.
         setTimeout(() => finish(`tier:${params.serviceTier ?? "none"}`), 10);
