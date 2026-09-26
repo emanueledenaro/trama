@@ -328,7 +328,8 @@ describe("quit and provider waits (C11)", () => {
       authorizedActions: ["executeInWorktree"],
       limits: [],
     });
-    await controller.send("[assegna] [lento]", null, null, null);
+    // "[lento:sempre]": a resumed turn too runs until stopped, so a stop never races its end.
+    await controller.send("[assegna] [lento:sempre]", null, null, null);
     const assignment = findSpecialist(document, "Ada")!.assignments[0]!;
     await until(() => assignment.status === "running");
     return { data, document, assignment };
@@ -357,6 +358,8 @@ describe("quit and provider waits (C11)", () => {
     await until(() => assignment.status === "running");
     await controller!.stopSpecialistWork(assignment.id);
     await until(() => assignment.status === "stopped");
+    // The resumed turn was still running when the stop arrived: it ended interrupted, not completed by itself.
+    expect(assignment.turns.map((t) => t.outcome)).toEqual(["interrupted", "interrupted"]);
   }, 30_000);
 });
 
