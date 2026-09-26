@@ -21,6 +21,8 @@ export interface ActionMap {
   "project:open": [{ path: string }, void];
   "project:openDemo": [void, void];
   "project:create": [{ name: string; idea: string }, void];
+  /** Clones a GitHub repository (`owner/name` or its URL) into a folder the person chooses, then opens it (B02). */
+  "project:clone": [{ repository: string }, void];
   "project:close": [void, void];
   "project:refresh": [void, void];
   "project:forgetRecent": [{ id: string }, void];
@@ -113,7 +115,7 @@ export interface ActionMap {
   "candidate:publish": [{ candidateId: string }, void];
   "candidate:previewPullRequest": [
     { candidateId: string },
-    { repository: string | null; head: string | null; base: string; title: string; body: string },
+    { repository: string | null; head: string | null; base: string; title: string; message: string; body: string },
   ];
   "codex:refresh": [void, void];
   "codex:login": [void, void];
@@ -142,8 +144,11 @@ export interface ActionMap {
   "monitor:poll": [void, void];
   "skills:prepare": [void, { pathsCreated: string[]; existingPreserved: string[]; warnings: string[]; version: string }];
   "app:dismissError": [void, void];
-  /** The first-run guide: opened once, skipped, steps skipped or taken back (C12). */
-  "onboarding:update": [{ shown?: boolean; dismissed?: boolean; skipStep?: GuideStepId; unskipStep?: GuideStepId }, void];
+  /** The first-run guide and the welcome: opened once, skipped, steps skipped or taken back, the method chosen (C12, B02). */
+  "onboarding:update": [
+    { shown?: boolean; dismissed?: boolean; skipStep?: GuideStepId; unskipStep?: GuideStepId; methodChoice?: boolean; welcomeClosed?: boolean },
+    void,
+  ];
   "onboarding:checkGitHub": [void, void];
   /** Opens the example project and records that an exercise started (C13, C14). */
   "exercise:start": [{ exercise: ExerciseId }, void];

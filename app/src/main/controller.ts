@@ -12,6 +12,7 @@ import { isUnsupportedModelError } from "@shared/timeline";
 import type { ImageAttachmentInput } from "@shared/ipc";
 import type {
   ActiveProjectState,
+  Candidate,
   FocusAudit,
   WorktreeSession,
   AgentColor,
@@ -65,7 +66,7 @@ import {
   rollbackPractice,
 } from "./core/practices";
 import { checkItems, closeBlockers, evidenceProblems, parseChecklist, progressComment, progressKey, progressMarker } from "./core/tickets";
-import { developerSkillsDelivery, sliceBriefing } from "./core/implementation";
+import { assignmentSlice, developerSkillsDelivery, sliceBriefing } from "./core/implementation";
 import { openingInput, resumeInput, specialistInstructions } from "./core/specialistBriefing";
 import { prepareDemoProject } from "./core/demoProject";
 import { appendEvent, emptyDocument, handoverTranscript, moveEvent, recordReply, referencedPaths } from "./core/document";
@@ -93,7 +94,7 @@ import {
   restoreGoal,
   updateGoal,
 } from "./core/goals";
-import { orderByAttention, summarizeProject, unreadableProject } from "./core/overview";
+import { activeColleagues, orderByAttention, summarizeProject, unreadableProject } from "./core/overview";
 import {
   closeIssue,
   commentOnIssue,
@@ -161,6 +162,8 @@ import { AuditError, type AxisName, type AxisTurn, auditSpec, axisThread, axisTu
 import { approveCandidate, candidateReport, findCandidate, latestCandidate, recordEvidence, recordTechnicalReview } from "./core/candidates";
 import { assessConflict } from "./core/conflicts";
 import { pullRequestBody, publishCandidate } from "./core/publication";
+import { branchPrefix, commitHeader, readProjectConventions, requireValidCommitMessage, validateCommitMessage } from "./core/conventions";
+import { candidateCommit, qualityGate, qualityMissing, relatedIssue, workCommitType } from "./core/quality";
 import {
   applyAutomaticTransitions,
   autoSummary,
@@ -190,12 +193,12 @@ import { type ReviewCall, runReviewSession } from "./core/learning/reviewRunner"
 import { PROJECT_DIALOG_ID } from "./core/learning/sessionSearch";
 import { git } from "./core/process";
 import { AppStorage } from "./core/storage";
-import { hasAiHero, readGitHubCliStatus, simulateColleagueChanges } from "./core/onboarding";
+import { cloneRepository, hasAiHero, readGitHubCliStatus, simulateColleagueChanges } from "./core/onboarding";
 import { type AgentWork, type PresenceContext, PresenceService } from "./core/presence";
 import { overlapModules, probeColleagues, projectOverlaps } from "./core/overlap";
 import { compareSides, coordinatorNotice, type PresenceProbe } from "@shared/overlap";
 import { type AgentOverlap, agentOverlapKey, agentOverlaps, occupantName, presenceSection } from "./core/coordinatorPresence";
-import { emptyConsent, type PresenceProposal, type PresenceTask, shouldProposeConsent, shouldReproposeConsent } from "@shared/presence";
+import { emptyConsent, type PresenceProposal, type PresenceTask, type PresenceView, shouldProposeConsent, shouldReproposeConsent } from "@shared/presence";
 import { agentTag } from "@shared/identity";
 import {
   EMPTY_ONBOARDING,
@@ -209,6 +212,8 @@ import {
   isObservedStep,
   normalizeOnboarding,
   type ObservedStep,
+  parseRepositoryInput,
+  shouldAutoPrepareMethod,
   UNKNOWN_GITHUB_CLI,
 } from "@shared/onboarding";
 import { buildStudy, fingerprints, partsToInject, studyText } from "./core/study";
@@ -301,17 +306,21 @@ function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promi
   });
 }
 
+/** The first commit of a project Trama creates, in Conventional Commits (Q01). */
+export const INITIAL_COMMIT_MESSAGE = "chore: start the project";
+
 /**
  * A new project is a Git repository with a first commit, so worktrees, candidates and conflict checks
  * work from the start. The person's Git identity signs the commit; without one, Trama signs it.
  */
 export async function initializeRepository(root: string): Promise<void> {
+  requireValidCommitMessage(INITIAL_COMMIT_MESSAGE);
   await git(["init", "-b", "main"], root, false);
   await git(["add", "README.md"], root, false);
   try {
-    await git(["commit", "-m", "Start the project"], root, false);
+    await git(["commit", "-m", INITIAL_COMMIT_MESSAGE], root, false);
   } catch {
-    await git(["-c", "user.name=Trama", "-c", "user.email=trama@localhost", "commit", "-m", "Start the project"], root, false);
+    await git(["-c", "user.name=Trama", "-c", "user.email=trama@localhost", "commit", "-m", INITIAL_COMMIT_MESSAGE], root, false);
   }
 }
 
@@ -503,7 +512,10 @@ export class TramaController {
       .filter((q) => q.projectId === project.id)
       .map((q) => ({ id: q.id, text: q.text, goalId: q.goalId, imageCount: q.images.length, queuedAt: q.queuedAt, removable: q.removable }));
     project.candidateReports = Object.fromEntries(
-      project.document.candidates.map((c) => [c.id, candidateReport(project.document, c, project.snapshot.headSHA)]),
+      project.document.candidates.map((c) => {
+        const report = candidateReport(project.document, c, project.snapshot.headSHA);
+        return [c.id, { ...report, quality: qualityGate(project.document, c, report, project.github.repository) }];
+      }),
     );
     project.nextSteps = nextStepViews(project.document);
     project.sliceViews = Object.fromEntries(
@@ -865,7 +877,7 @@ export class TramaController {
       if (!isDemo) void this.refreshGitHub();
       this.watchProject(root);
       if (!isDemo) this.startPresence(project);
-      if (!isDemo && loaded.writable && this.state.settings.autoPrepareMethod !== false && !hasAiHero(root)) {
+      if (!isDemo && loaded.writable && shouldAutoPrepareMethod(this.state.settings, this.state.onboarding) && !hasAiHero(root)) {
         // T04: the method is ready when the project opens; existing files are never overwritten.
         void this.prepareSkills().catch((error) => this.fail(error));
       }
@@ -894,6 +906,25 @@ export class TramaController {
     await writeFile(join(root, "README.md"), `# ${trimmed}\n\n${idea.trim()}\n`);
     await initializeRepository(root);
     await this.openProject(root, false, idea.trim() || null);
+  }
+
+  /** Clones a GitHub repository into a new folder inside `parent` and opens it (B02). */
+  async cloneProject(parent: string, input: string): Promise<void> {
+    const repository = parseRepositoryInput(input);
+    if (!repository) throw new DomainError("Scrivi il repository come proprietario/nome oppure incolla il suo indirizzo GitHub.");
+    const root = join(parent, repository.split("/")[1]!);
+    if (existsSync(root)) throw new DomainError(`Esiste già una cartella ${repository.split("/")[1]} in questa posizione.`);
+    if (this.state.gitHubCli.status === "unknown") await this.checkGitHubCli();
+    this.state.loadingProject = root;
+    this.publishNow();
+    try {
+      await cloneRepository(repository, root, this.state.gitHubCli.status === "ready");
+    } catch (error) {
+      this.state.loadingProject = null;
+      this.publishNow();
+      throw new DomainError((error as Error).message);
+    }
+    await this.openProject(root);
   }
 
   async closeProject(): Promise<void> {
@@ -1466,6 +1497,8 @@ export class TramaController {
   private parkSelectedProject(): void {
     void this.stopPresence();
     const project = this.state.project;
+    // The project picker still says who was working on a project the person left (B02).
+    if (project?.presence) this.lastPresence.set(project.id, project.presence);
     // The Coordinator's turn stops with its runtime: it ends here, in its own project, before the late rejection arrives.
     const left = project?.runningRequestId ? project.document.requests.find((r) => r.id === project.runningRequestId) : undefined;
     const closeLeft = project !== null && left?.state === "running";
@@ -1599,6 +1632,7 @@ export class TramaController {
             await validateWorktree(assignment.workspace, this.worktreesRoot);
             return reviewWorktree(assignment.workspace);
           },
+          conventions: () => readProjectConventions(current.rootPath),
           verifyCandidate: (candidateId, check) => this.verifyCandidate(candidateId, check, current.runningRequestId),
           reviewCandidate: (candidateId) => this.reviewCandidate(candidateId, current.runningRequestId),
           headSHA: () => this.headSHA(current.rootPath),
@@ -2464,6 +2498,9 @@ export class TramaController {
     this.changed();
   }
 
+  /** The last presence reading of the projects the person left, by project id (B02). */
+  private lastPresence = new Map<string, PresenceView>();
+
   /** The projects overview (UX03): in-memory projects are live, the others are read from their last save. */
   async projectsOverview(): Promise<ProjectOverview[]> {
     const live = new Map<string, ActiveProjectState>([...this.parkedProjects].map(([id, p]) => [id, p]));
@@ -2479,6 +2516,7 @@ export class TramaController {
             selected: project === this.state.project,
             runningAssignments: [...this.specialistRuntimes.values()].filter((r) => r.projectId === project.id).length,
             candidateReports: reports,
+            colleagues: project.isDemo ? null : activeColleagues(project.presence ?? this.lastPresence.get(project.id)),
           }),
         );
         continue;
@@ -2496,6 +2534,7 @@ export class TramaController {
             selected: false,
             runningAssignments: 0,
             candidateReports: document.candidates.map((c) => candidateReport(document, c, null)),
+            colleagues: activeColleagues(this.lastPresence.get(recent.id)),
           }),
         );
       }
@@ -2665,7 +2704,15 @@ export class TramaController {
         if (assignment.workspace) {
           await validateWorktree(assignment.workspace, this.worktreesRoot);
         } else {
-          const workspace = await prepareWorktree(project.rootPath, `${specialist.name} ${assignment.id}`, this.worktreesRoot);
+          // The branch follows Conventional Branch or the project's prefixes (Q01), with the issue number when there is one.
+          const conventions = await readProjectConventions(project.rootPath);
+          const type = workCommitType(assignment, conventions);
+          const title = assignmentSlice(document, assignment)?.ticket.title ?? assignment.objective;
+          const workspace = await prepareWorktree(project.rootPath, title, this.worktreesRoot, {
+            prefix: branchPrefix(type, assignment.commit?.hotfix ?? false, conventions),
+            issue: relatedIssue(document, assignment),
+            conventions,
+          });
           recordWorkspace(document, assignmentId, workspace);
           this.specialistActivity(project, assignmentId, preKey, "Worktree pronto", workspace.branch, "info");
           // The specialist can run the project's tests only with its dependencies; lent from the checkout.
@@ -3318,18 +3365,34 @@ export class TramaController {
   }
 
   /** What publishing will send: shown to the person before the push (T11). */
-  previewPullRequest(candidateId: string): { repository: string | null; head: string | null; base: string; title: string; body: string } {
+  async previewPullRequest(
+    candidateId: string,
+  ): Promise<{ repository: string | null; head: string | null; base: string; title: string; message: string; body: string }> {
     const project = this.requireProject();
     const candidate = findCandidate(project.document, candidateId);
     if (!candidate) throw new DomainError("Candidato non trovato.");
     const assignment = findAssignment(project.document, candidate.assignmentId)!;
+    const message = await this.candidateMessage(project, candidate);
     return {
       repository: project.github.repository,
       head: assignment.workspace?.branch ?? null,
       base: project.snapshot.branch ?? "main",
-      title: assignment.objective,
-      body: pullRequestBody(candidate, assignment, project.document.decisions),
+      title: commitHeader(message),
+      message,
+      body: pullRequestBody(candidate, assignment, project.document.decisions, relatedIssue(project.document, assignment)),
     };
+  }
+
+  /**
+   * The commit message of a candidate, checked against the rules the project declares now (Q01). A candidate declared
+   * before Q01 gets its message here; a message the rules no longer accept is refused with what is wrong.
+   */
+  private async candidateMessage(project: ActiveProjectState, candidate: Candidate): Promise<string> {
+    const conventions = await readProjectConventions(project.rootPath);
+    if (!candidate.commit) candidate.commit = candidateCommit(project.document, candidate, conventions);
+    const problems = validateCommitMessage(candidate.commit.message, conventions);
+    if (problems.length) throw new DomainError(`Trama non scrive questo messaggio di commit: ${problems.join(" ")} Chiedi al Coordinatore di correggerlo.`);
+    return candidate.commit.message;
   }
 
   async publishCandidateByPerson(candidateId: string): Promise<void> {
@@ -3343,6 +3406,10 @@ export class TramaController {
     if (candidate.pullRequest) throw new DomainError(`Il candidato è già pubblicato: ${candidate.pullRequest.url}`);
     const repository = project.github.repository;
     if (!repository) throw new DomainError("Il progetto non ha un remoto GitHub.");
+    // The quality standard comes before anything leaves the machine (Q01).
+    const message = await this.candidateMessage(project, candidate);
+    const missing = qualityMissing(qualityGate(document, candidate, report, repository));
+    if (missing.length) throw new DomainError(`Il candidato non rispetta lo standard di pubblicazione: ${missing.map((m) => m.detail).join(" ")}`);
     const capabilities = await readGitHubCapabilities(repository);
     if (capabilities.status !== "ready") throw new DomainError(capabilities.message ?? "GitHub non è raggiungibile.");
     if (!capabilities.canPush) throw new DomainError(`Il tuo account GitHub non ha il permesso di push su ${repository}.`);
@@ -3353,8 +3420,9 @@ export class TramaController {
       assignment,
       repository,
       baseBranch,
-      title: assignment.objective,
-      body: pullRequestBody(candidate, assignment, document.decisions),
+      message,
+      conventions: candidate.commit!.conventions,
+      body: pullRequestBody(candidate, assignment, document.decisions, relatedIssue(document, assignment)),
     });
     candidate.pullRequest = { ...published, at: new Date().toISOString() };
     appendEvent(document, "trama", { type: "activity", title: `Pull request #${published.number} pubblicata`, detail: published.url, tone: "tool" });
@@ -3930,10 +3998,24 @@ export class TramaController {
 
   // MARK: First-run guide and exercises (C12, C13, C14)
 
-  async updateOnboarding(update: { shown?: boolean; dismissed?: boolean; skipStep?: GuideStepId; unskipStep?: GuideStepId }): Promise<void> {
+  async updateOnboarding(update: {
+    shown?: boolean;
+    dismissed?: boolean;
+    skipStep?: GuideStepId;
+    unskipStep?: GuideStepId;
+    methodChoice?: boolean;
+    welcomeClosed?: boolean;
+  }): Promise<void> {
     const onboarding = this.state.onboarding;
     const now = new Date().toISOString();
     if (update.shown) onboarding.firstRunShownAt ??= now;
+    if (update.welcomeClosed) onboarding.welcomeClosedAt ??= now;
+    if (typeof update.methodChoice === "boolean") {
+      // The answer in the welcome is the same switch as Impostazioni, Metodo di lavoro: prepare when a project opens.
+      onboarding.methodChoice = { prepare: update.methodChoice, at: now };
+      onboarding.skippedSteps = onboarding.skippedSteps.filter((s) => s !== "aiHero");
+      this.state.settings = { ...this.state.settings, autoPrepareMethod: update.methodChoice };
+    }
     if (update.dismissed === true) onboarding.dismissedAt = now;
     else if (update.dismissed === false) onboarding.dismissedAt = null;
     if (update.skipStep) onboarding.skippedSteps = [...new Set([...onboarding.skippedSteps, update.skipStep])];

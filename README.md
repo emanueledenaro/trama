@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="docs/brand/trama-app-icon.svg" alt="Trama app icon: two ribbons woven into a T" width="112">
+
 # Trama
 
 **A desktop app that coordinates AI coding agents on your repository and keeps every decision, task and check tied to the change it belongs to.**

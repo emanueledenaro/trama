@@ -49,7 +49,7 @@ describe("AppStorage", () => {
     beginTurn(document, first.id, "t1", "gpt-5.5");
     requestStop(document, "Ada", "Persona", "Cambio di piano");
     endTurn(document, first.id, "t1", { kind: "interrupted" });
-    const review = { snapshotId: "snap", baseSHA: "base", diff: "+nota   ", changedFiles: ["NOTE.md"], excludedSensitiveFiles: [] };
+    const review = { snapshotId: "snap", baseSHA: "base", diff: "+nota   ", changedFiles: ["NOTE.md"], excludedSensitiveFiles: [], whitespaceErrors: [] };
     const candidate = declareCandidate(document, { assignmentId: first.id, decisionIds: [decision.id], unresolvedChoices: [], externalEffects: [] }, review);
     recordEvidence(document, candidate.id, { check: "git_diff_check", passed: false, command: "git diff --check HEAD", output: "NOTE.md:1: trailing whitespace.", snapshotId: "snap" });
     recordTechnicalReview(document, candidate.id, { reviewerThreadId: "thread-r", authorThreadId: "thread-1", verdict: "changesRequested", summary: "Spazi finali" });

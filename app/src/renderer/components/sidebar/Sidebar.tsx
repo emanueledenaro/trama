@@ -31,6 +31,7 @@ import { AgentAvatar, AgentTag } from "@/components/AgentIdentity";
 import { useState } from "react";
 import type * as React from "react";
 import { Spinner } from "@/components/Spinner";
+import { TramaMark } from "@/components/brand/TramaMark";
 import { isOpenQuestion, pendingMandateRequest, type ProjectGoal, type Specialist } from "@shared/domain";
 import { goalDialogIsEmpty, workingGoals } from "@shared/goals";
 import { Tooltip } from "@/components/ui/tooltip";
@@ -175,7 +176,9 @@ export function Sidebar({ isMac }: { isMac: boolean }) {
       </div>
 
       <div className="flex items-center gap-1 pt-0 pr-3 pb-1 pl-1.5">
-        <div className="flex h-8 min-w-0 items-center gap-1.5 rounded-lg px-2.5">
+        {/* The brand slot (B01): the mark stays here in every screen, in the provider's colors. */}
+        <div className="flex h-8 min-w-0 items-center gap-2 rounded-lg px-2.5" data-testid="brand-slot">
+          <TramaMark size={20} />
           <span className="min-w-0 truncate font-display text-[17px] text-foreground">Trama</span>
         </div>
         <div className="ml-auto flex items-center gap-1.5">

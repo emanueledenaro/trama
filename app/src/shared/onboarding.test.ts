@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { emptyDocument } from "../main/core/document";
 import type { ProviderId } from "./codex";
-import type { ActiveProjectState, AppState, Candidate, ProjectDocument, SpecialistAssignment } from "./domain";
+import type { ActiveProjectState, AppState, Candidate, ProjectDocument, ProjectOverview, SpecialistAssignment } from "./domain";
 import {
   EMPTY_ONBOARDING,
   exerciseSteps,
@@ -10,7 +10,14 @@ import {
   normalizeOnboarding,
   parseGhAuthStatus,
   resumeStep,
-  shouldOpenGuideOnLaunch,
+  launchScreen,
+  nextSetupStep,
+  parseRepositoryInput,
+  recentProjectStatus,
+  resumeSetupStep,
+  setupSteps,
+  shouldAutoPrepareMethod,
+  shouldShowWelcomeOnLaunch,
   UNKNOWN_GITHUB_CLI,
 } from "./onboarding";
 import { PROVIDERS } from "./providers";
@@ -128,13 +135,91 @@ function candidate(id: string, assignmentId: string, declaredAt: string, result:
 
 const workspace = { sourceRoot: "/tmp/negozio", worktreeRoot: "/tmp/wt", branch: "trama/ada", baseSHA: "b" };
 
-describe("first-run guide", () => {
-  it("opens by itself only on a clean first launch", () => {
-    expect(shouldOpenGuideOnLaunch(appState())).toBe(true);
-    expect(shouldOpenGuideOnLaunch(appState({ onboarding: { ...EMPTY_ONBOARDING, firstRunShownAt: "t" } }))).toBe(false);
-    expect(shouldOpenGuideOnLaunch(appState({ onboarding: { ...EMPTY_ONBOARDING, dismissedAt: "t" } }))).toBe(false);
-    expect(shouldOpenGuideOnLaunch(appState({ recentProjects: [{ id: "1", name: "A", path: "/a", isDemo: false, lastOpenedAt: "" }] }))).toBe(false);
+const recent = { id: "1", name: "A", path: "/a", isDemo: false, lastOpenedAt: "" };
+
+describe("welcome on the first launch", () => {
+  it("shows by itself only on a clean first launch", () => {
+    expect(shouldShowWelcomeOnLaunch(appState())).toBe(true);
+    expect(shouldShowWelcomeOnLaunch(appState({ onboarding: { ...EMPTY_ONBOARDING, firstRunShownAt: "t" } }))).toBe(false);
+    expect(shouldShowWelcomeOnLaunch(appState({ onboarding: { ...EMPTY_ONBOARDING, welcomeClosedAt: "t" } }))).toBe(false);
+    expect(shouldShowWelcomeOnLaunch(appState({ onboarding: { ...EMPTY_ONBOARDING, dismissedAt: "t" } }))).toBe(false);
+    expect(shouldShowWelcomeOnLaunch(appState({ recentProjects: [recent] }))).toBe(false);
   });
+
+  it("chooses the first screen from the state: welcome, project picker or the open project", () => {
+    expect(launchScreen(appState())).toBe("welcome");
+    expect(launchScreen(appState({ onboarding: { ...EMPTY_ONBOARDING, firstRunShownAt: "t" } }))).toBe("picker");
+    expect(launchScreen(appState({ recentProjects: [recent] }))).toBe("picker");
+    expect(launchScreen(appState({ recentProjects: [recent], project: project(emptyDocument("real"), { isDemo: false }) }))).toBe("project");
+  });
+
+  it("walks provider, GitHub and AI Hero with the guide's own states", () => {
+    const app = appState();
+    expect(setupSteps(app).map((s) => s.id)).toEqual(["provider", "github", "aiHero"]);
+    const guide = Object.fromEntries(guideSteps(app).map((s) => [s.id, s]));
+    for (const step of setupSteps(app)) expect(step).toEqual(guide[step.id]);
+    expect(nextSetupStep("provider")).toBe("github");
+    expect(nextSetupStep("github")).toBe("aiHero");
+    expect(nextSetupStep("aiHero")).toBeNull();
+  });
+
+  it("resumes at the first open step, then at the first skipped one, else at the start", () => {
+    const app = appState();
+    expect(resumeSetupStep(app)).toBe("provider");
+    app.onboarding.skippedSteps = ["provider"];
+    expect(resumeSetupStep(app)).toBe("github");
+    app.gitHubCli = { status: "ready", account: "ada", detail: null, checkedAt: "t" };
+    expect(resumeSetupStep(app)).toBe("aiHero");
+    app.onboarding.methodChoice = { prepare: true, at: "t" };
+    expect(resumeSetupStep(app)).toBe("provider");
+    withAccount(app, "codex", { kind: "chatgpt", email: "ada@example.com", plan: "plus" } as never);
+    app.onboarding.skippedSteps = [];
+    expect(resumeSetupStep(app)).toBe("provider");
+  });
+
+  it("takes the AI Hero answer as the step while no project is open", () => {
+    const app = appState();
+    expect(statusOf(setupSteps(app)).aiHero).toBe("pending");
+    app.onboarding.methodChoice = { prepare: true, at: "t" };
+    const prepared = setupSteps(app).find((s) => s.id === "aiHero")!;
+    expect(prepared.status).toBe("done");
+    expect(prepared.detail).toContain("primo tuo progetto");
+    // The welcome's "Non preparare" also turns the setting off, as the controller does.
+    app.onboarding.methodChoice = { prepare: false, at: "t" };
+    app.settings = { ...app.settings, autoPrepareMethod: false };
+    expect(setupSteps(app).find((s) => s.id === "aiHero")!.detail).toContain("non preparare");
+    // A project without the skills still asks for them: the answer does not claim a copy that did not happen.
+    app.onboarding.methodChoice = { prepare: true, at: "t" };
+    app.project = project(emptyDocument("real"), { isDemo: false, name: "Mio" });
+    expect(statusOf(setupSteps(app)).aiHero).toBe("pending");
+  });
+
+  it("prepares the method on opening only when the setting says so and the step was not postponed", () => {
+    const app = appState();
+    expect(shouldAutoPrepareMethod(app.settings, app.onboarding)).toBe(true);
+    expect(shouldAutoPrepareMethod({ ...app.settings, autoPrepareMethod: false }, app.onboarding)).toBe(false);
+    expect(shouldAutoPrepareMethod(app.settings, { ...app.onboarding, skippedSteps: ["aiHero"] })).toBe(false);
+  });
+
+  it("describes the AI Hero answer from the current setting", () => {
+    const app = appState();
+    app.onboarding.methodChoice = { prepare: false, at: "t" };
+    app.settings = { ...app.settings, autoPrepareMethod: true };
+    expect(setupSteps(app).find((s) => s.id === "aiHero")!.detail).toContain("primo tuo progetto");
+    app.settings = { ...app.settings, autoPrepareMethod: false };
+    expect(setupSteps(app).find((s) => s.id === "aiHero")!.detail).toContain("non preparare");
+  });
+
+  it("reads old settings without the welcome fields", () => {
+    const normalized = normalizeOnboarding({ firstRunShownAt: "t" } as never);
+    expect(normalized.methodChoice).toBeNull();
+    expect(normalized.welcomeClosedAt).toBeNull();
+    expect(normalizeOnboarding({ methodChoice: { prepare: "yes", at: 1 } } as never).methodChoice).toBeNull();
+    expect(normalizeOnboarding({ methodChoice: { prepare: false, at: "t" }, welcomeClosedAt: "w" }).methodChoice).toEqual({ prepare: false, at: "t" });
+  });
+});
+
+describe("first-run guide", () => {
 
   it("marks the provider step done only with a usable account of any provider", () => {
     const app = appState();
@@ -167,7 +252,7 @@ describe("first-run guide", () => {
   it("counts only a real project and AI Hero found in it", () => {
     const app = appState({ project: project(emptyDocument("demo")) });
     expect(statusOf(guideSteps(app)).project).toBe("pending");
-    expect(statusOf(guideSteps(app)).aiHero).toBe("blocked");
+    expect(statusOf(guideSteps(app)).aiHero).toBe("pending");
     app.project = project(emptyDocument("real"), { isDemo: false, name: "Mio" });
     expect(statusOf(guideSteps(app)).project).toBe("done");
     expect(statusOf(guideSteps(app)).aiHero).toBe("pending");
@@ -328,5 +413,60 @@ describe("conflict exercise", () => {
     expect(steps()).toMatchObject({ compatible: "done", incompatible: "pending" });
     document.events.push({ id: "e", sequence: 1, origin: "trama", requestId: null, createdAt: "", content: { type: "card", kind: "conflict", title: "", detail: null, referenceId: "i" } });
     expect(isComplete(exerciseSteps("conflict", document, { providerReady: true }))).toBe(true);
+  });
+});
+
+describe("project picker", () => {
+  const entry = (overrides: Partial<ProjectOverview> = {}): ProjectOverview => ({
+    id: "1",
+    name: "Negozio",
+    path: "/p",
+    isDemo: false,
+    source: "saved",
+    selected: false,
+    updatedAt: null,
+    pendingDecisions: 0,
+    blockedWork: 0,
+    toApprove: 0,
+    runningWork: 0,
+    colleagues: null,
+    goals: [],
+    attention: null,
+    reasons: [],
+    problem: null,
+    ...overrides,
+  });
+
+  it("says what a recent project is doing from its records only", () => {
+    expect(recentProjectStatus(null)).toEqual({ work: [], colleagues: null });
+    expect(recentProjectStatus(entry())).toEqual({ work: ["Niente in attesa"], colleagues: null });
+    expect(recentProjectStatus(entry({ source: "live", runningWork: 2, pendingDecisions: 1, colleagues: 3 }))).toEqual({
+      work: ["2 agenti al lavoro", "1 decisione in attesa"],
+      colleagues: "3 colleghi attivi",
+    });
+    expect(recentProjectStatus(entry({ runningWork: 1, blockedWork: 2, toApprove: 1, colleagues: 1 })).work).toEqual([
+      "1 agente al lavoro",
+      "2 lavori fermi",
+      "1 risultato da approvare",
+    ]);
+    expect(recentProjectStatus(entry({ colleagues: 0 })).colleagues).toBe("Nessun collega attivo");
+    expect(recentProjectStatus(entry({ source: "unreadable" })).work).toEqual(["Stato non leggibile"]);
+    expect(recentProjectStatus(entry({ source: "notSaved" })).work).toEqual(["Ancora da studiare"]);
+  });
+
+  it("reads a GitHub repository typed as owner/name or as a URL", () => {
+    expect(parseRepositoryInput("emanueledenaro/trama")).toBe("emanueledenaro/trama");
+    expect(parseRepositoryInput(" https://github.com/emanueledenaro/trama ")).toBe("emanueledenaro/trama");
+    expect(parseRepositoryInput("https://github.com/emanueledenaro/trama.git")).toBe("emanueledenaro/trama");
+    expect(parseRepositoryInput("https://github.com/emanueledenaro/trama/pull/200")).toBe("emanueledenaro/trama");
+    expect(parseRepositoryInput("github.com/emanueledenaro/trama/")).toBe("emanueledenaro/trama");
+    expect(parseRepositoryInput("git@github.com:emanueledenaro/trama.git")).toBe("emanueledenaro/trama");
+    expect(parseRepositoryInput("ssh://git@github.com/emanueledenaro/trama")).toBe("emanueledenaro/trama");
+  });
+
+  it("refuses what is not a GitHub repository", () => {
+    for (const input of ["", "trama", "https://gitlab.com/a/b", "a/b/c", "-rf/x", "owner/..", "owner/na me", "file:///etc/passwd", "../x"]) {
+      expect(parseRepositoryInput(input)).toBeNull();
+    }
   });
 });

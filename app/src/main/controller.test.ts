@@ -88,6 +88,20 @@ describe("TramaController", () => {
     await until(() => events.some((e) => e.content.type === "activity" && e.content.title.startsWith("Metodo di lavoro AI Hero")));
   });
 
+  it("does not prepare the AI Hero method on opening when the person postponed the step (B02)", async () => {
+    const { project } = await setup();
+    const { existsSync } = await import("node:fs");
+    await controller!.updateSettings({ autoPrepareMethod: true });
+    await controller!.updateOnboarding({ skipStep: "aiHero" });
+    await controller!.openProject(project);
+    await until(() => controller!.snapshot.project?.phase.kind === "ready");
+    expect(existsSync(join(project, ".agents/skills/AIHERO-VERSION.md"))).toBe(false);
+    // Choosing afterwards takes the step back, and the next opening prepares it.
+    await controller!.updateOnboarding({ methodChoice: true });
+    await controller!.openProject(project);
+    await until(() => existsSync(join(project, ".agents/skills/AIHERO-MANIFEST.json")));
+  });
+
   it("creates a project from an idea as a Git repository and remembers the idea (T10)", async () => {
     await setup();
     const parent = await mkdtemp(join(tmpdir(), "trama-parent-"));
@@ -160,15 +174,19 @@ describe("TramaController", () => {
     expect(dialogEvents(document.events, second).map((e) => e.content.type)).toEqual(["card"]);
     expect(dialogEvents(document.events, null).some((e) => e.content.type === "personMessage")).toBe(false);
 
-    // A message queued in one dialog stays there even if the person moves on before it leaves.
-    const running = controller!.send("Primo messaggio", null, null, null, [], null, null);
+    // A message queued in one dialog stays there even if the person moves on before it leaves. "[attesa]" keeps the
+    // first turn running until it is interrupted: a reply that ends by itself could finish between two checks.
+    const running = controller!.send("[attesa] Primo messaggio", null, null, null, [], null, null);
     await until(() => project.runningRequestId !== null);
+    const firstId = project.runningRequestId!;
     await controller!.send("In coda per il secondo obiettivo", null, null, null, [], null, second);
+    expect(controller!.snapshot.project!.queuedMessages.map((q) => [q.text, q.goalId])).toEqual([["In coda per il secondo obiettivo", second]]);
+    await interruptOnceSent(document, firstId);
     await running;
-    await until(() => document.requests.filter((r) => r.state === "completed").length === 3);
+    await until(() => document.requests.some((r) => r.text === "In coda per il secondo obiettivo" && r.state === "completed"));
     const queued = document.requests.find((r) => r.text === "In coda per il secondo obiettivo")!;
     expect(queued.goalId).toBe(second);
-    expect(document.requests.find((r) => r.text === "Primo messaggio")!.goalId ?? null).toBeNull();
+    expect(document.requests.find((r) => r.id === firstId)!.goalId ?? null).toBeNull();
 
     // Goals, dialogs and drafts survive a restart.
     await controller!.stop();
@@ -1003,6 +1021,6 @@ describe("initializeRepository", () => {
     await writeFile(join(project, "README.md"), "# Nuovo\n");
     await initializeRepository(project);
     expect((await git(["rev-parse", "--abbrev-ref", "HEAD"], project)).trim()).toBe("main");
-    expect((await git(["log", "--format=%s"], project)).trim()).toBe("Start the project");
+    expect((await git(["log", "--format=%s"], project)).trim()).toBe("chore: start the project");
   });
 });
