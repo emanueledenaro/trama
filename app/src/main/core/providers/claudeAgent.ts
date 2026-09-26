@@ -42,6 +42,7 @@ import {
   ProviderError,
   extractJsonAnswer,
 } from "./types";
+import { codexHomeDirectory, expandHome, readableRoots, toolchainRoots } from "../readScope";
 import { absoluteUnnormalized, isWritableTarget, PendingTurn } from "./providerSupport";
 
 type ClaudeSdk = typeof import("@anthropic-ai/claude-agent-sdk");
@@ -368,9 +369,12 @@ export interface ToolPolicy {
   writableRoot: string | null;
   /** Name of Trama's MCP server, whose tools are allowed. */
   hostServer: string | null;
+  /** Folders the read tools may reach (issue #206); only `cwd` when absent. */
+  readableRoots?: string[];
 }
 
-export type ToolDecision = { allow: true } | { allow: false; reason: string };
+/** A refused read outside the readable roots names its path, so Trama can record it. */
+export type ToolDecision = { allow: true } | { allow: false; reason: string; outsideRead?: string };
 
 /** Tools that reach the network, ask the person, or start agents Trama cannot see. Always removed. */
 export const ALWAYS_DISALLOWED_TOOLS = [
@@ -421,7 +425,15 @@ export function decideToolPermission(
   if (ALWAYS_DISALLOWED_TOOLS.includes(toolName)) {
     return { allow: false, reason: `${toolName} is not available in Trama.` };
   }
-  if (READ_TOOLS.has(toolName)) return { allow: true };
+  if (READ_TOOLS.has(toolName)) {
+    const path = toolPath(input);
+    if (!path) return { allow: true };
+    const target = absoluteUnnormalized(policy.cwd, expandHome(path));
+    // Symlinks are resolved as for writes: a link out of the project reads outside it.
+    return (policy.readableRoots ?? [policy.cwd]).some((root) => writable(resolve(root), target))
+      ? { allow: true }
+      : { allow: false, reason: "Reads are allowed only inside the project and the folders Trama allows.", outsideRead: resolve(target) };
+  }
   if (WRITE_TOOLS.has(toolName)) {
     if (!policy.writableRoot) return { allow: false, reason: "This turn is read-only: file changes are not allowed." };
     const path = toolPath(input);
@@ -512,7 +524,16 @@ export function buildQueryOptions(input: QueryOptionsInput): ClaudeQueryOptions 
             failIfUnavailable: true,
             autoAllowBashIfSandboxed: true,
             allowUnsandboxedCommands: false,
-            filesystem: { allowWrite: [input.policy.writableRoot!] },
+            // Commands read nothing private: the home folder and Codex's home are denied, except the readable
+            // roots and the toolchains on PATH (issue #206).
+            filesystem: {
+              allowWrite: [input.policy.writableRoot!],
+              denyRead: [homedir(), codexHomeDirectory()],
+              allowRead: [
+                ...(input.policy.readableRoots ?? [input.policy.cwd]),
+                ...toolchainRoots([dirname(input.executable), ...(input.env.PATH ?? "").split(delimiter).filter(Boolean)]),
+              ],
+            },
             network: { allowedDomains: [], strictAllowlist: true },
           },
         }
@@ -949,6 +970,7 @@ interface ThreadState {
   developerInstructions: string;
   ephemeral: boolean;
   hostToolsOnly: boolean;
+  readableRoots: string[];
 }
 
 interface ActiveTurn {
@@ -1092,6 +1114,7 @@ export class ClaudeAgentRuntime implements AgentRuntime {
       developerInstructions: options.developerInstructions,
       ephemeral: options.ephemeral ?? false,
       hostToolsOnly: options.hostToolsOnly ?? false,
+      readableRoots: readableRoots(options.cwd, options.readableRoots ?? []),
     } as const;
     if (options.resumeThreadId) {
       let exists = false;
@@ -1120,7 +1143,15 @@ export class ClaudeAgentRuntime implements AgentRuntime {
     const thread: ThreadState =
       this.thread?.sessionId === options.threadId
         ? this.thread
-        : { sessionId: options.threadId, started: true, cwd: options.cwd, developerInstructions: "", ephemeral: false, hostToolsOnly: false };
+        : {
+            sessionId: options.threadId,
+            started: true,
+            cwd: options.cwd,
+            developerInstructions: "",
+            ephemeral: false,
+            hostToolsOnly: false,
+            readableRoots: readableRoots(options.cwd),
+          };
     const pending = new PendingTurn(options.onEvent, "Claude è stato chiuso.");
     this.pending = pending;
     let executable: string;
@@ -1139,15 +1170,30 @@ export class ClaudeAgentRuntime implements AgentRuntime {
 
     // As with Codex, the turn's writable root decides the sandbox of this turn.
     const writableRoot = options.writableRoot ? resolve(options.writableRoot) : null;
-    const policy: ToolPolicy = { cwd: options.cwd, writableRoot, hostServer: this.options.toolServer?.name ?? null };
-    const canUseTool: CanUseTool = async (toolName, input): Promise<PermissionResult> => {
+    const policy: ToolPolicy = {
+      cwd: options.cwd,
+      writableRoot,
+      hostServer: this.options.toolServer?.name ?? null,
+      readableRoots: [...thread.readableRoots, ...readableRoots(options.cwd)],
+    };
+    // A refused read outside the project is recorded once per path and tool (issue #206).
+    const reported = new Set<string>();
+    const decide = (toolName: string, input: Record<string, unknown>, itemId: string): ToolDecision => {
       const decision = decideToolPermission(toolName, input, policy);
+      if (!decision.allow && decision.outsideRead && !reported.has(`${toolName}:${decision.outsideRead}`)) {
+        reported.add(`${toolName}:${decision.outsideRead}`);
+        options.onEvent({ type: "readOutsideScope", itemId, path: decision.outsideRead, tool: toolName });
+      }
+      return decision;
+    };
+    const canUseTool: CanUseTool = async (toolName, input, context): Promise<PermissionResult> => {
+      const decision = decide(toolName, input, context.toolUseID);
       return decision.allow ? { behavior: "allow", updatedInput: input } : { behavior: "deny", message: decision.reason };
     };
     // Hooks run before Claude Code's own auto-approvals, so a denial here holds even for tools that would not prompt.
-    const preToolUse: HookCallback = async (input) => {
+    const preToolUse: HookCallback = async (input, toolUseID) => {
       if (input.hook_event_name !== "PreToolUse") return {};
-      const decision = decideToolPermission(input.tool_name, asRecord(input.tool_input) ?? {}, policy);
+      const decision = decide(input.tool_name, asRecord(input.tool_input) ?? {}, toolUseID ?? input.tool_name);
       return decision.allow
         ? {}
         : { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: decision.reason } };

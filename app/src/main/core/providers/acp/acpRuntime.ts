@@ -29,6 +29,7 @@ import {
   extractJsonAnswer,
   schemaInstruction,
 } from "../types";
+import { expandHome, readableRoots } from "../../readScope";
 import { absoluteUnnormalized, containedWriteTarget, currentUsageLimit, PendingTurn, usageLimitError, writeFileNoFollow } from "../providerSupport";
 
 export type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
@@ -382,7 +383,7 @@ export function toolCallPaths(toolCall: { rawInput?: unknown; content?: unknown;
   const add = (value: unknown) => {
     const path = trimmed(value);
     // Not normalized: `link/..` must be judged where the filesystem takes it.
-    if (path) paths.add(absoluteUnnormalized(cwd, path));
+    if (path) paths.add(absoluteUnnormalized(cwd, expandHome(path)));
   };
   for (const location of asArray(toolCall.locations)) add(asObject(location)?.path);
   for (const entry of asArray(toolCall.content)) {
@@ -437,13 +438,15 @@ export function decidePermission(input: {
   cwd: string;
   writableRoot: string | null;
   hostTool: boolean;
+  /** Folders reads may reach (issue #206); only `cwd` when absent. */
+  readableRoots?: string[];
 }): PermissionDecision {
   if (input.hostTool) return "allow";
   switch (input.kind) {
     case "read":
     case "search":
     case "think":
-      return input.paths.every((path) => resolvesInside(input.cwd, path)) ? "allow" : "reject";
+      return input.paths.every((path) => (input.readableRoots ?? [input.cwd]).some((root) => resolvesInside(root, path))) ? "allow" : "reject";
     case "edit":
     case "delete":
     case "move":
@@ -513,6 +516,8 @@ export interface AcpTurnPolicy {
   cwd: string;
   writableRoot: string | null;
   hostServerName: string | null;
+  /** Folders reads may reach; only `cwd` when absent. */
+  readableRoots?: string[];
 }
 
 export interface AcpProviderProfile {
@@ -795,6 +800,8 @@ export class AcpAgentRuntime implements AgentRuntime {
   private initializeResult: JsonObject = {};
   private sessionId: string | null = null;
   private sessionCwd = "";
+  /** Folders outside the session's cwd that Trama lets it read. */
+  private sessionReadableRoots: string[] = [];
   private configOptions: JsonObject[] = [];
   private currentModeId: string | null = null;
   private pendingInstructions: string | null = null;
@@ -851,6 +858,7 @@ export class AcpAgentRuntime implements AgentRuntime {
   async openThread(options: OpenThreadOptions): Promise<{ threadId: string; replaced: boolean }> {
     if (this.activeTurn) throw new ProviderError("turnAlreadyRunning", "Un turno è già in corso.");
     this.closeConnection();
+    this.sessionReadableRoots = readableRoots(options.cwd, options.readableRoots ?? []);
     const executable = this.profile.resolveExecutable(this.options.executable);
     const launchInput: AcpLaunchInput = { cwd: options.cwd, model: options.model, developerInstructions: options.developerInstructions };
     const connection = await this.start(executable, launchInput);
@@ -932,6 +940,7 @@ export class AcpAgentRuntime implements AgentRuntime {
         cwd: options.cwd,
         writableRoot: options.writableRoot ?? null,
         hostServerName: this.options.toolServer?.name ?? null,
+        readableRoots: [...this.sessionReadableRoots, ...readableRoots(options.cwd)],
       };
       let watchdog: NodeJS.Timeout | null = null;
       let cancelTimer: NodeJS.Timeout | null = null;
@@ -1221,7 +1230,9 @@ export class AcpAgentRuntime implements AgentRuntime {
         return this.answerPermission(params, policy);
       case "fs/read_text_file": {
         const path = asString(params.path);
-        if (!policy.active || !path || !isAbsolute(path) || !resolvesInside(policy.cwd, path) || lstatSync(path, { throwIfNoEntry: false })?.isSymbolicLink()) {
+        const inside = path !== null && isAbsolute(path) && (policy.readableRoots ?? [policy.cwd]).some((root) => resolvesInside(root, path));
+        if (policy.active && path && isAbsolute(path) && !inside) this.reportOutsideRead(path, "fs/read_text_file", "fs/read_text_file");
+        if (!policy.active || !path || !inside || lstatSync(path, { throwIfNoEntry: false })?.isSymbolicLink()) {
           throw new AcpRequestError(-32000, "Trama consente solo letture dentro la cartella di lavoro.", undefined);
         }
         const content = await readFile(path, "utf8");
@@ -1257,18 +1268,29 @@ export class AcpAgentRuntime implements AgentRuntime {
     const toolCall = asObject(params.toolCall) ?? {};
     const title = trimmed(toolCall.title);
     const kind = trimmed(toolCall.kind) ?? inferToolKind(title);
+    const paths = toolCallPaths(toolCall, policy.cwd);
     const decision: PermissionDecision = !policy.active
       ? "reject"
       : decidePermission({
           kind,
-          paths: toolCallPaths(toolCall, policy.cwd),
+          paths,
           cwd: policy.cwd,
           writableRoot: policy.writableRoot,
           hostTool: hostToolName(policy.hostServerName, toolCall) !== null,
+          readableRoots: policy.readableRoots,
         });
+    if (policy.active && decision === "reject" && (kind === "read" || kind === "search" || kind === "think")) {
+      const outside = paths.find((path) => !(policy.readableRoots ?? [policy.cwd]).some((root) => resolvesInside(root, path)));
+      if (outside) this.reportOutsideRead(outside, trimmed(toolCall.toolCallId) ?? randomUUID(), title ?? kind);
+    }
     // With no active turn Synara cancels: late or replayed requests must not inherit a turn's authority.
     const optionId = policy.active ? selectPermissionOption(decision, params.options) : null;
     return optionId ? { outcome: { outcome: "selected", optionId } } : { outcome: { outcome: "cancelled" } };
+  }
+
+  /** Records a read Trama refused outside the session's folders (issue #206). */
+  private reportOutsideRead(path: string, itemId: string, tool: string): void {
+    this.activeTurn?.onEvent({ type: "readOutsideScope", itemId, path: resolve(path), tool });
   }
 
   // ── Session updates ──

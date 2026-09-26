@@ -3,7 +3,7 @@ import { existsSync, type FSWatcher, watch } from "node:fs";
 import { mkdir, readFile as readFileText, realpath, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { isUsableAccount, type ProviderAccount, type ProviderId, type ProviderModel, type TurnEvent } from "@shared/codex";
+import { isUsableAccount, type ProviderAccount, type ProviderId, type ProviderModel, READ_OUTSIDE_SCOPE_TITLE, type TurnEvent } from "@shared/codex";
 import { PROVIDERS, supportsReadOnly } from "@shared/providers";
 import { shortId } from "@shared/ids";
 import { mentionContextBlock } from "@shared/mentions";
@@ -238,6 +238,10 @@ interface LateRules {
 }
 
 /** The Coordinator's AI Hero skills with their bindings: grill-with-docs, grilling and domain-modeling (M02, M03). */
+/** How Trama records a read the session tried outside its folders (issue #206). */
+const readOutsideScopeDetail = (event: Extract<TurnEvent, { type: "readOutsideScope" }>) =>
+  `${event.path} non appartiene al progetto: Trama non lo lascia leggere.\nRichiesta: ${event.tool}`;
+
 const coordinatorSkillParts = (skills: NativeSkill[]) => skills.map((skill, index) => ({ skill, binding: COORDINATOR_SKILLS[index]!.binding }));
 
 function lateRules(skills: NativeSkill[], provider: ProviderId): LateRules {
@@ -1665,6 +1669,7 @@ export class TramaController {
           inInstructions ? deliverNativeSkills(coordinatorSkillParts(await this.coordinatorSkills()), false).text : null,
         ),
         resumeThreadId: previous,
+        readableRoots: this.readableRoots(project),
       });
       // A provider switch during the opening replaced this runtime: its result must not come back (review #1).
       if (this.state.project !== project || this.runtime !== runtime) return;
@@ -2203,6 +2208,9 @@ export class TramaController {
           event.succeeded ? "tool" : "error",
         );
         return;
+      case "readOutsideScope":
+        activity(READ_OUTSIDE_SCOPE_TITLE, readOutsideScopeDetail(event), "error");
+        return;
       case "reasoning":
         activity("Ragionamento", event.text, "info");
         return;
@@ -2698,6 +2706,7 @@ export class TramaController {
         developerInstructions: developer && !nativeInput ? [baseInstructions, developer.text].join("\n\n") : baseInstructions,
         sandbox: needsWorktree(assignment) ? "workspace-write" : "read-only",
         resumeThreadId: assignment.threadId,
+        readableRoots: this.readableRoots(project),
       });
       recordThread(document, assignmentId, opening.threadId);
       // A stop requested while the session was opening ends the work here (review #6).
@@ -2752,6 +2761,9 @@ export class TramaController {
               return;
             case "toolCallCompleted":
               this.specialistActivity(project, assignmentId, key, `${event.server}: ${event.tool}`, event.error, event.succeeded ? "tool" : "error");
+              return;
+            case "readOutsideScope":
+              this.specialistActivity(project, assignmentId, key, READ_OUTSIDE_SCOPE_TITLE, readOutsideScopeDetail(event), "error");
               return;
             default:
               return;
@@ -2817,6 +2829,14 @@ export class TramaController {
   private readonly skillLoads = new Map<string, Promise<NativeSkill>>();
 
   /** An AI Hero skill as bundled with Trama, loaded once. */
+  /**
+   * The folders an agent session may read besides its own (issue #206): the project, which a worktree session
+   * needs for Git, and Trama's bundled skills. Codex's home, its memories and other projects stay out.
+   */
+  private readableRoots(project: ActiveProjectState): string[] {
+    return [project.rootPath, join(this.host.aiHeroResourceDirectory, "skills")];
+  }
+
   private nativeSkill(name: string): Promise<NativeSkill> {
     let load = this.skillLoads.get(name);
     if (!load) {
@@ -3150,6 +3170,7 @@ export class TramaController {
         model,
         cwd: assignment.workspace.worktreeRoot,
         ephemeral: true,
+        readableRoots: this.readableRoots(project),
         developerInstructions:
           "You are the technical reviewer of a candidate in Trama, distinct from its author. Read the diff and the worktree, read-only. Judge whether the change does what the assignment asks and respects the Pact decisions listed. Answer in Italian. You never approve on behalf of the person and you never merge.",
       });
@@ -3572,7 +3593,13 @@ export class TramaController {
     try {
       if (!model) throw new Error("Nessun modello disponibile per il pianificatore.");
       const turn = plannerTurn(await this.plannerSkills(), provider === "codex", { plan, document, snapshot: project.snapshot });
-      const opening = await client.openThread({ model, cwd: project.rootPath, developerInstructions: turn.developerInstructions, ephemeral: true });
+      const opening = await client.openThread({
+        model,
+        cwd: project.rootPath,
+        developerInstructions: turn.developerInstructions,
+        ephemeral: true,
+        readableRoots: this.readableRoots(project),
+      });
       const raw = await client.runTurn({
         threadId: opening.threadId,
         prompt: turn.prompt,
@@ -3733,7 +3760,13 @@ export class TramaController {
     try {
       if (!model) throw new Error("Nessun modello disponibile per dividere il lavoro in fette.");
       const turn = slicerTurn(await this.nativeSkill("to-tickets"), provider === "codex", { plan, snapshot: project.snapshot });
-      const opening = await client.openThread({ model, cwd: project.rootPath, developerInstructions: turn.developerInstructions, ephemeral: true });
+      const opening = await client.openThread({
+        model,
+        cwd: project.rootPath,
+        developerInstructions: turn.developerInstructions,
+        ephemeral: true,
+        readableRoots: this.readableRoots(project),
+      });
       const raw = await client.runTurn({
         threadId: opening.threadId,
         prompt: turn.prompt,

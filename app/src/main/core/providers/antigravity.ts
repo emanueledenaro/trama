@@ -28,6 +28,7 @@ import { existsSync, statSync } from "node:fs";
 import { mkdir, mkdtemp, open, readFile, rm, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
+import { expandHome, isReadable, readableRoots } from "../readScope";
 import {
   type AgentRuntime,
   extractJsonAnswer,
@@ -77,6 +78,8 @@ const MCP_URL_ENV = "TRAMA_ANTIGRAVITY_MCP_URL";
 const MCP_TOKEN_FILE_ENV = "TRAMA_ANTIGRAVITY_MCP_TOKEN_FILE";
 const HOST_TOOLS_ENV = "TRAMA_ANTIGRAVITY_HOST_TOOLS";
 const CONVERSATION_ENV = "TRAMA_ANTIGRAVITY_CONVERSATION";
+/** JSON list of the folders the read tools may reach (issue #206). */
+const READABLE_ROOTS_ENV = "TRAMA_ANTIGRAVITY_READABLE_ROOTS";
 /** `worktree` for specialists; any other value, or none, is the read-only profile. */
 const PROFILE_ENV = "TRAMA_ANTIGRAVITY_PROFILE";
 const HOOK_CHECK_TIMEOUT_MS = 10_000;
@@ -96,6 +99,19 @@ export const ANTIGRAVITY_READ_TOOLS = [
   "grep_search",
   "codebase_search",
 ];
+/** Arguments of the read tools that name a file or folder; the capture hook refuses one outside the readable roots. */
+export const ANTIGRAVITY_READ_PATH_ARGUMENTS = ["AbsolutePath", "File", "DirectoryPath", "SearchDirectory", "SearchPath", "TargetDirectories"];
+
+/** The paths a read tool call names, `~` expanded, in the order of ANTIGRAVITY_READ_PATH_ARGUMENTS. */
+export function antigravityReadPaths(args: Record<string, unknown> | null | undefined): string[] {
+  const paths: string[] = [];
+  for (const key of ANTIGRAVITY_READ_PATH_ARGUMENTS) {
+    const value = args?.[key];
+    for (const item of Array.isArray(value) ? value : [value]) if (typeof item === "string" && item.trim()) paths.push(expandHome(item.trim()));
+  }
+  return paths;
+}
+
 export const ANTIGRAVITY_EDIT_TOOLS = ["write_to_file", "replace_file_content", "multi_replace_file_content"];
 /** Tools denied with a specific explanation: a shell cannot be confined to the worktree or kept off the network. */
 const DENIED_TOOL_NAMES = ["run_command", "send_command_input"];
@@ -413,6 +429,9 @@ const READ_TOOLS = new Set(${JSON.stringify(ANTIGRAVITY_READ_TOOLS)});
 const EDIT_TOOLS = new Set(${JSON.stringify(ANTIGRAVITY_EDIT_TOOLS)});
 const HOST_TOOL_PREFIX = new RegExp(${JSON.stringify(HOST_TOOL_PREFIX_PATTERN.source)});
 const HOST_TOOLS = new Set((process.env.${HOST_TOOLS_ENV} || "").split(",").filter(Boolean));
+const READ_PATH_ARGUMENTS = ${JSON.stringify(ANTIGRAVITY_READ_PATH_ARGUMENTS)};
+let READABLE_ROOTS = [];
+try { READABLE_ROOTS = JSON.parse(process.env.${READABLE_ROOTS_ENV} || "[]"); } catch { READABLE_ROOTS = []; }
 // Only an explicit worktree profile may edit; anything else is read-only.
 const READ_ONLY = process.env.${PROFILE_ENV} !== "worktree";
 let payload = "";
@@ -523,7 +542,17 @@ process.stdin.on("end", () => {
     const file = typeof args.TargetFile === "string" ? args.TargetFile : typeof args.AbsolutePath === "string" ? args.AbsolutePath : "";
     if (EDIT_TOOLS.has(name)) {
       if (READ_ONLY || !root || !file || !contained(root, file)) return deny("denied-tool");
-    } else if (!READ_TOOLS.has(name) && !HOST_TOOLS.has(name.replace(HOST_TOOL_PREFIX, ""))) {
+    } else if (READ_TOOLS.has(name)) {
+      // A read stays inside the project, its worktree and the folders Trama allows (issue #206).
+      const home = require("node:os").homedir();
+      for (const key of READ_PATH_ARGUMENTS) {
+        for (const item of [].concat(args[key] === undefined ? [] : args[key])) {
+          if (typeof item !== "string" || !item.trim()) continue;
+          const wanted = item.trim().replace(/^~(?=$|[\\/])/, home);
+          if (!READABLE_ROOTS.some((readable) => contained(readable, wanted))) return deny("denied-read");
+        }
+      }
+    } else if (!HOST_TOOLS.has(name.replace(HOST_TOOL_PREFIX, ""))) {
       return deny("denied-tool");
     }
   }
@@ -726,7 +755,7 @@ function runShellHook(command: string, input: string, env: NodeJS.ProcessEnv, ti
 
 /**
  * Runs the installed PreToolUse hook exactly as the CLI would, in the read-only profile, and checks
- * that it denies an edit and a shell command and allows a read. Throws when the hook is missing,
+ * that it denies an edit, a shell command and a read outside the project, and allows a read inside it. Throws when the hook is missing,
  * does not start or answers otherwise.
  */
 export async function checkReadOnlyHook(home: string, cwd: string): Promise<void> {
@@ -739,7 +768,12 @@ export async function checkReadOnlyHook(home: string, cwd: string): Promise<void
   try {
     const env: NodeJS.ProcessEnv = { ...process.env };
     for (const key of Object.keys(env)) if (key.startsWith("TRAMA_")) delete env[key];
-    Object.assign(env, { [EVENTS_ENV]: join(dir, "hooks.ndjson"), [DECISION_ENV]: "allow", [PROFILE_ENV]: "read-only" });
+    Object.assign(env, {
+      [EVENTS_ENV]: join(dir, "hooks.ndjson"),
+      [DECISION_ENV]: "allow",
+      [PROFILE_ENV]: "read-only",
+      [READABLE_ROOTS_ENV]: JSON.stringify(readableRoots(cwd)),
+    });
     const decide = (name: string, args: Record<string, unknown>) =>
       runShellHook(hook.command as string, JSON.stringify({ conversationId: "trama-check", stepIdx: 0, toolCall: { name, args } }), env, HOOK_CHECK_TIMEOUT_MS);
     const edit = await decide("write_to_file", { TargetFile: join(cwd, "trama-check.txt") });
@@ -748,6 +782,8 @@ export async function checkReadOnlyHook(home: string, cwd: string): Promise<void
     if (shell !== "{}") throw new Error(`the hook allowed a shell command: ${shell}`);
     const read = await decide("view_file", { AbsolutePath: join(cwd, "README.md") });
     if (read !== '{"decision":"allow"}') throw new Error(`the hook did not allow a read: ${read || "empty answer"}`);
+    const outside = await decide("view_file", { AbsolutePath: join(dirname(resolve(cwd)), "trama-read-check", "MEMORY.md") });
+    if (outside !== "{}") throw new Error(`the hook allowed a read outside the project: ${outside}`);
   } finally {
     await rm(dir, { recursive: true, force: true }).catch(() => undefined);
   }
@@ -800,6 +836,7 @@ const DENIED_COMMAND_OUTPUT = "Negato da Trama: Antigravity non può eseguire co
 const DENIED_NETWORK_OUTPUT = "Negato da Trama: gli strumenti di rete non sono consentiti.";
 const DENIED_TOOL_OUTPUT = "Negato da Trama: con Antigravity sono consentiti solo lettura, modifiche nel worktree e gli strumenti di Trama.";
 const READ_ONLY_DENIED_COMMAND_OUTPUT = "Negato da Trama: in sola lettura Antigravity non può eseguire comandi di shell.";
+const DENIED_READ_OUTPUT = "Negato da Trama: Antigravity legge solo nel progetto, nel suo worktree e nelle cartelle che Trama permette.";
 const READ_ONLY_DENIED_TOOL_OUTPUT = "Negato da Trama: in sola lettura Antigravity può usare solo gli strumenti di lettura e quelli di Trama.";
 
 export function normalizeAntigravityCommandLine(value: unknown): string | undefined {
@@ -862,6 +899,8 @@ interface ThreadState {
   ephemeral: boolean;
   conversationId: string | null;
   instructionsDelivered: boolean;
+  /** Folders the read tools may reach. */
+  readableRoots: string[];
 }
 
 interface PendingTool {
@@ -883,6 +922,9 @@ interface ActiveTurn {
   pendingTools: PendingTool[];
   toolSequence: number;
   readOnly: boolean;
+  cwd: string;
+  /** Folders the read tools may reach in this turn. */
+  readableRoots: string[];
   /** The CLI called the capture hook in this turn. */
   hookSeen: boolean;
   /** A read-only turn produced output before any hook call: Trama stopped it. */
@@ -1022,6 +1064,7 @@ export class AntigravityRuntime implements AgentRuntime {
       developerInstructions: options.developerInstructions,
       ephemeral: options.ephemeral ?? false,
       instructionsDelivered: false,
+      readableRoots: readableRoots(cwd, options.readableRoots ?? []),
     };
     if (options.resumeThreadId) {
       const known = this.threads.get(options.resumeThreadId);
@@ -1156,6 +1199,7 @@ export class AntigravityRuntime implements AgentRuntime {
       [PROFILE_ENV]: readOnly ? "read-only" : "worktree",
       ...(writableRoot ? { [WRITABLE_ROOT_ENV]: writableRoot } : {}),
       [HOST_TOOLS_ENV]: hostTools.join(","),
+      [READABLE_ROOTS_ENV]: JSON.stringify([...thread.readableRoots, ...readableRoots(cwd)]),
       ...(thread.conversationId ? { [CONVERSATION_ENV]: thread.conversationId } : {}),
       ...(toolServer && tokenFile ? { [MCP_URL_ENV]: toolServer.url, [MCP_TOKEN_FILE_ENV]: tokenFile } : {}),
     });
@@ -1186,6 +1230,8 @@ export class AntigravityRuntime implements AgentRuntime {
         pendingTools: [],
         toolSequence: 0,
         readOnly,
+        cwd,
+        readableRoots: [...thread.readableRoots, ...readableRoots(cwd)],
         hookSeen: false,
         hookMissing: false,
         streamedText: false,
@@ -1382,6 +1428,14 @@ export class AntigravityRuntime implements AgentRuntime {
       const toolCall = record(payload.toolCall);
       const name = typeof toolCall?.name === "string" ? toolCall.name.trim() : "";
       const toolArgs = record(toolCall?.args);
+      if (eventName === "denied-read") {
+        // The hook refused a read outside the session's folders: record which path (issue #206).
+        const itemId = `agy-tool-${turn.toolSequence++}`;
+        const outside = antigravityReadPaths(toolArgs).map((path) => resolve(turn.cwd, path)).find((path) => !isReadable(turn.readableRoots, turn.cwd, path));
+        turn.onEvent({ type: "toolCallCompleted", itemId, server: "antigravity", tool: name, succeeded: false, error: DENIED_READ_OUTPUT });
+        if (outside) turn.onEvent({ type: "readOutsideScope", itemId, path: outside, tool: name });
+        continue;
+      }
       if (eventName === "denied-tool") {
         const itemId = `agy-tool-${turn.toolSequence++}`;
         if (name === "run_command" || name === "send_command_input") {

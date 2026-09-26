@@ -139,6 +139,29 @@ describe("AcpAgentRuntime", () => {
     expect(readFileSync(join(root, "ok.txt"), "utf8")).toBe("scritto");
   });
 
+  it("reads only inside the session's folders and records a refused read (issue #206)", async () => {
+    const project = join(dir, "project");
+    const skills = join(dir, "skills");
+    const codexHome = join(dir, "codex-home");
+    for (const folder of [project, skills, join(codexHome, "memories")]) mkdirSync(folder, { recursive: true });
+    writeFileSync(join(project, "a.ts"), "progetto");
+    writeFileSync(join(skills, "SKILL.md"), "skill");
+    writeFileSync(join(codexHome, "memories", "MEMORY.md"), "privato");
+    runtime = new AcpAgentRuntime(testProfile);
+    const { threadId } = await runtime.openThread({ model: "m1", cwd: project, developerInstructions: "", readableRoots: [skills] });
+    const events: TurnEvent[] = [];
+    const run = (prompt: string) => runtime!.runTurn({ threadId, prompt, cwd: project, model: "m1", onEvent: (e) => events.push(e) });
+    expect(await run(`fsread ${join(project, "a.ts")}`)).toBe("read: progetto");
+    expect(await run(`fsread ${join(skills, "SKILL.md")}`)).toBe("read: skill");
+    expect(await run(`fsread ${join(codexHome, "memories", "MEMORY.md")}`)).toMatch(/^refused/);
+    expect(await run(`grep ${project}`)).toBe("allowed");
+    expect(await run(`grep ${join(codexHome, "memories")}`)).toBe("rejected");
+    expect(events.filter((e) => e.type === "readOutsideScope")).toEqual([
+      { type: "readOutsideScope", itemId: "fs/read_text_file", path: join(codexHome, "memories", "MEMORY.md"), tool: "fs/read_text_file" },
+      { type: "readOutsideScope", itemId: "grep-1", path: join(codexHome, "memories"), tool: "Grep" },
+    ]);
+  });
+
   it("blocks the provider for every runtime after a usage-limit failure", async () => {
     let changed = 0;
     runtime = new AcpAgentRuntime(testProfile, { onAccountChanged: () => void changed++ });
@@ -259,6 +282,10 @@ describe("ACP policy helpers", () => {
     expect(decidePermission({ kind: "execute", paths: [], cwd, writableRoot: cwd, hostTool: false })).toBe("reject");
     expect(decidePermission({ kind: "fetch", paths: [], cwd, writableRoot: cwd, hostTool: false })).toBe("reject");
     expect(decidePermission({ kind: "other", paths: [], cwd, writableRoot: null, hostTool: true })).toBe("allow");
+    // Reads reach the folders Trama allows, and nothing else (issue #206).
+    const skills = mkdtempSync(join(tmpdir(), "trama-acp-skills-"));
+    expect(decidePermission({ kind: "read", paths: [join(skills, "tdd/SKILL.md")], cwd, writableRoot: null, hostTool: false, readableRoots: [cwd, skills] })).toBe("allow");
+    expect(decidePermission({ kind: "search", paths: ["/etc"], cwd, writableRoot: null, hostTool: false, readableRoots: [cwd, skills] })).toBe("reject");
   });
 
   it("rejects edits through a dangling symlink or a link that leaves the root", () => {
