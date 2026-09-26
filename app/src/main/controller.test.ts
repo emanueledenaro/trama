@@ -1003,6 +1003,6 @@ describe("initializeRepository", () => {
     await writeFile(join(project, "README.md"), "# Nuovo\n");
     await initializeRepository(project);
     expect((await git(["rev-parse", "--abbrev-ref", "HEAD"], project)).trim()).toBe("main");
-    expect((await git(["log", "--format=%s"], project)).trim()).toBe("Start the project");
+    expect((await git(["log", "--format=%s"], project)).trim()).toBe("chore: start the project");
   });
 });
