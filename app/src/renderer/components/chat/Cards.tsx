@@ -668,7 +668,7 @@ const BLOCKER_TEXT: Record<string, string> = {
 };
 
 const QUALITY_LABEL: Record<QualityItem["code"], string> = {
-  VERIFIED: "Verificato",
+  VERIFIED: "Candidato verificato",
   COMMIT_MESSAGE: "Messaggio di commit",
   NO_SECRETS: "Niente segreti né file sensibili",
   DIFF_CHECK: "git diff --check",
