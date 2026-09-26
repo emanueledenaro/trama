@@ -179,6 +179,9 @@ await welcome.getByRole("heading", { name: "Benvenuto in Trama" }).waitFor();
 // The welcome is modal: Tab cycles inside it (through the dialog's focus guards) and never reaches the window behind.
 for (let press = 0; press < 8; press++) {
   await page.keyboard.press("Tab");
+  // A focus guard hands the focus back inside on the next animation frame: a person never tabs faster than that,
+  // so the check waits for the frame instead of pressing Tab again from the guard.
+  await page.waitForFunction(() => !document.activeElement?.hasAttribute("data-base-ui-focus-guard"), undefined, { timeout: 2_000 });
   const focus = await page.evaluate(() => {
     const active = document.activeElement;
     return {
