@@ -113,6 +113,35 @@ await shot("00b-guide-github");
 await guide.getByRole("button", { name: "Continua più tardi" }).click();
 await guide.waitFor({ state: "hidden" });
 await shot("01-landing");
+// B01: Trama's mark sits in the sidebar's brand slot and on the start screen, in the colors of the provider theme,
+// light and dark. The brand slot's gradient must change with the provider and with the theme.
+const brandLook = (provider, dark) =>
+  page.evaluate(
+    ([name, isDark]) => {
+      if (name) document.documentElement.dataset.provider = name;
+      else delete document.documentElement.dataset.provider;
+      document.documentElement.classList.toggle("dark", isDark);
+    },
+    [provider, dark],
+  );
+const startLook = await page.evaluate(() => ({ provider: document.documentElement.dataset.provider ?? null, dark: document.documentElement.classList.contains("dark") }));
+if ((await page.locator('[data-testid="brand-slot"] [data-trama-mark="glyph"]').count()) !== 1) throw new Error("No Trama mark in the sidebar's brand slot");
+if ((await page.locator("[data-trama-mark]").count()) < 2) throw new Error("No Trama mark on the start screen");
+const markColors = new Set();
+for (const provider of ["codex", "claudeAgent", "grok"]) {
+  for (const dark of [false, true]) {
+    await brandLook(provider, dark);
+    const color = await page.evaluate(() => {
+      const stop = document.querySelector('[data-testid="brand-slot"] [data-trama-mark] stop');
+      return stop ? getComputedStyle(stop).stopColor : null;
+    });
+    if (!color) throw new Error(`No gradient in the brand slot's mark with ${provider}`);
+    markColors.add(color);
+    await shot(`01b-brand-${provider}-${dark ? "dark" : "light"}`);
+  }
+}
+if (markColors.size !== 6) throw new Error(`The mark does not follow the provider theme: ${[...markColors].join(", ")}`);
+await brandLook(startLook.provider, startLook.dark);
 await seamShots("logo", "logo");
 await expectContrastFallback();
 await page.getByText("Esplora il progetto di esempio").click();
@@ -606,6 +635,16 @@ await settings.getByRole("button", { name: /^Collegamenti/ }).first().click();
 await shot("11-connections");
 await settings.getByRole("button", { name: /^Generale/ }).first().click();
 await shot("12-settings");
+// B01: Informazioni shows the mark on its tile with the version, in every provider theme.
+await settings.getByTestId("about-trama").locator('[data-trama-mark="tile"]').waitFor();
+for (const provider of ["codex", "claudeAgent", "grok"]) {
+  for (const dark of [false, true]) {
+    await brandLook(provider, dark);
+    await settings.getByTestId("about-trama").scrollIntoViewIfNeeded();
+    await shot(`12b-about-${provider}-${dark ? "dark" : "light"}`);
+  }
+}
+await brandLook(startLook.provider, startLook.dark);
 // W12, Impostazioni: the theme follows the choice at once.
 await page.getByRole("radio", { name: "Scuro" }).click();
 await page.getByRole("radio", { name: "Scuro", checked: true }).waitFor();

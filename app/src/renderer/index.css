@@ -394,6 +394,21 @@
   --app-user-message-background: color-mix(in srgb, #8db8dc 10%, color-mix(in srgb, #ebe7e4 4%, transparent));
   --sidebar-selected: color-mix(in srgb, #8db8dc 12%, transparent);
 }
+
+/* Trama's mark (B01, components/brand/TramaMark.tsx) takes the provider's accent and light: the ribbons go
+   from the accent to the light, the back side and the shadows are the accent darkened. The fixed brand
+   colors of the app icon are in docs/brand/README.md. */
+:root {
+  --trama-mark-from: var(--color-text-accent);
+  --trama-mark-mid: color-mix(in oklab, var(--color-text-accent) 72%, var(--glow-1, #8e8ea0));
+  --trama-mark-to: color-mix(in oklab, var(--color-text-accent) 45%, var(--glow-1, #8e8ea0));
+  --trama-mark-back: color-mix(in oklab, var(--color-text-accent) 58%, black);
+  --trama-mark-deep: color-mix(in oklab, var(--color-text-accent) 32%, black);
+  --trama-mark-shade: color-mix(in oklab, var(--color-text-accent) 22%, black);
+  /* The tile stays darker than the accent, so the white glyph on it reads with every provider, Grok's white included. */
+  --trama-mark-tile: color-mix(in oklab, var(--color-text-accent) 70%, black);
+  --trama-mark-tile-glow: color-mix(in oklab, var(--trama-mark-to) 76%, black);
+}
 ::selection {
   background: color-mix(in srgb, var(--color-text-accent) 26%, transparent);
 }
