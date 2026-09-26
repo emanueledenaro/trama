@@ -21,6 +21,7 @@ import {
   assign,
   authorize,
   currentAssignment,
+  developers,
   findAssignment,
   findSpecialist,
   isActive,
@@ -339,7 +340,7 @@ export const COORDINATOR_TOOLS: ToolDefinition[] = [
   {
     name: "assign_task",
     description:
-      "Within the mandate (executeInWorktree), assign work to a specialist, named by id or name. Trama starts it in a provider session it owns, in its own worktree when tools include edits, without network. Give the objective, the issue or exercise, the modules, the assignments it depends on, the Pact decisions the work relies on (decisionIDs: the work stops if one changes), the checks the result must pass and your instructions for the specialist. provider and model default to yours; propose another connected provider or model only when the work needs it (read_team lists them). In modelReason say why this provider and model fit the work: first the quality the work needs, then the cost among adequate models; say so when you lack evidence. goalID names the goal the work serves; it defaults to the goal of the dialog you are answering. Assign in parallel only independent work: different modules and no unfinished dependency. Slices go to developers; give a fixed role only work of its own moments (read_team). kind newFeature and tradeOff always go to the person.",
+      "Within the mandate (executeInWorktree), assign work to a developer, named by id or name. Trama starts it in a provider session it owns, in its own worktree when tools include edits, without network. Give the objective, the issue or exercise, the modules, the assignments it depends on, the Pact decisions the work relies on (decisionIDs: the work stops if one changes), the checks the result must pass and your instructions for the specialist. provider and model default to yours; propose another connected provider or model only when the work needs it (read_team lists them). In modelReason say why this provider and model fit the work: first the quality the work needs, then the cost among adequate models; say so when you lack evidence. goalID names the goal the work serves; it defaults to the goal of the dialog you are answering. Assign in parallel only independent work: different modules and no unfinished dependency. Work goes only to developers: a fixed role works at its own moments, which Trama starts, and assign_task refuses it. kind newFeature and tradeOff always go to the person.",
     properties: {
       specialist: text,
       kind: { type: "string", enum: WORK_KINDS },
@@ -798,6 +799,17 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
       case "assign_task": {
         const kind = WORK_KINDS.includes(args.kind as WorkKind) ? (args.kind as WorkKind) : null;
         if (!kind) return toolFailure("invalid_arguments", `kind must be one of: ${WORK_KINDS.join(", ")}.`);
+        const assignee = findSpecialist(document, typeof args.specialist === "string" ? args.specialist : "");
+        if (assignee && isFixedRole(assignee.role)) {
+          const available = developers(document).map((s) => `${s.name} (${s.id})`);
+          return toolFailure(
+            "fixed_role",
+            `${assignee.name} is a fixed role: it works only at its own moments, which Trama starts. Work goes to developers. ` +
+              (available.length
+                ? `Developers available: ${available.join(", ")}.`
+                : "The team has no developers yet: propose them with propose_team or add one with create_specialist."),
+          );
+        }
         const moduleIds = strings(args.moduleIDs);
         const known = new Set(context.snapshot.modules.map((m) => m.id));
         const unknown = moduleIds.filter((id) => !known.has(id));
@@ -1106,7 +1118,7 @@ export function developerInstructions(projectName: string, learningGuidance: str
     "Every project has the full team: the fixed roles (QA, UX, research, documentation and domain, bug triage and debugger, spec reviewer, Clean Code, regression guardian, security, performance, DevOps), always present and never removed, and the developers chosen for the project. Each figure has a competence, the AI Hero skills it relies on and its moments in the flow (clarification and spec, slices, candidate, background); read_team lists them.",
     "Under a granted mandate Trama starts some fixed-role work by itself, on its own rules: bug triage and debugger triages each new GitHub issue with the triage skill, diagnoses a failed test or a regression with diagnosing-bugs and fixes a reproduced bug in an assignment within the mandate; Clean Code reviews the architecture with improve-codebase-architecture when the team is free, and its proposals reach the person as a Pact decision card. Their results reach you in the team report: build on them and do not start the same work again.",
     "At the end of your study propose the project's developers with propose_team: one developer per real need, each with a competence and the reason this project needs it, never one to fill a role. The person confirms or corrects it once, and only that answer creates the developers. From then on you change them yourself within the mandate, with create_specialist and stop_specialist, and you say it in the conversation. Give each developer a tag: its role in one or two Italian words (Interfaccia, Provider), shown colored beside its name. When the person asks to rename a developer, do it with rename_specialist, without a mandate; fixed roles keep their names.",
-    "Within the mandate, assign_task gives a specialist work in a provider session and worktree that Trama owns: objective, ticket or exercise, modules, dependencies, required checks, your instructions and the provider and model you propose for it. Assign in parallel only work that is independent, and read_team to see where each specialist stands. stop_specialist asks Trama to stop work: the stop is first requested and then confirmed, and what was done is kept.",
+    "Within the mandate, assign_task gives a developer work in a provider session and worktree that Trama owns: objective, ticket or exercise, modules, dependencies, required checks, your instructions and the provider and model you propose for it. Assign in parallel only work that is independent, and read_team to see where each specialist stands. stop_specialist asks Trama to stop work: the stop is first requested and then confirmed, and what was done is kept.",
     "run_readonly_check runs a check on the project checkout without writing to it; you may use it without a mandate.",
     "The person works by goals: a goal has a desired outcome and accepted and refused examples. Each goal has its own dialog with you, and the project dialog holds priorities and cross-goal questions; you stay one Coordinator with one mandate and one Pact for all of them. When a message comes from a goal dialog Trama says so and gives you the goal; answer about that goal, and the work you assign there is linked to it. read_goals lists the goals; propose_goal proposes a new one that the person confirms.",
     "When a specialist's work is done, declare_candidate captures its worktree and binds it to the Pact decisions it must respect; verify_candidate runs its required checks and review_candidate asks a distinct reviewer. Within the mandate, clear_candidate gives your green light to a verified and approved candidate. The person always reviews and publishes it: never claim that work is merged or published.",
