@@ -146,6 +146,13 @@ describe("open tasks", () => {
     });
   });
 
+  it("shows the seams to confirm as the spec phase waiting for the person (M04)", () => {
+    const { document, orders } = project();
+    request(document, "g1", orders.id, 4);
+    plan(document, "g1", "seams");
+    expect(focusView(document).focus).toMatchObject({ id: `goal:${orders.id}`, phase: "spec", phaseLabel: "spec", blocker: null, waitingFor: "Conferma i seam" });
+  });
+
   it("leaves out a goal the Coordinator only proposed", () => {
     const document = emptyDocument("p");
     proposeGoal(document, { title: "Proposto", outcome: "Da confermare", examples: [] }, at(1));

@@ -85,12 +85,34 @@ export async function listIssues(repository: string): Promise<GitHubIssue[]> {
   return issues;
 }
 
-export async function createIssue(repository: string, title: string, body: string): Promise<void> {
-  await run(
+/** Opens an issue; `labels` are applied when the person's gh session may set them. Returns the issue GitHub created. */
+export async function createIssue(repository: string, title: string, body: string, labels: string[] = []): Promise<{ number: number; url: string }> {
+  const output = await run(
     "gh",
-    ["api", "--method", "POST", `repos/${repository}/issues`, "--raw-field", `title=${title}`, "--raw-field", `body=${body}`],
+    [
+      "api",
+      "--method",
+      "POST",
+      `repos/${repository}/issues`,
+      "--raw-field",
+      `title=${title}`,
+      "--raw-field",
+      `body=${body}`,
+      ...labels.flatMap((label) => ["--raw-field", `labels[]=${label}`]),
+    ],
     { env: ghEnvironment(), timeout: 20_000 },
   );
+  const issue = JSON.parse(output) as { number?: unknown; html_url?: unknown };
+  if (typeof issue.number !== "number" || typeof issue.html_url !== "string") throw new Error("GitHub non ha restituito la issue creata.");
+  return { number: issue.number, url: issue.html_url };
+}
+
+/** Rewrites the title and body of an issue. */
+export async function updateIssueText(repository: string, number: number, title: string, body: string): Promise<void> {
+  await run("gh", ["api", "--method", "PATCH", `repos/${repository}/issues/${number}`, "--raw-field", `title=${title}`, "--raw-field", `body=${body}`], {
+    env: ghEnvironment(),
+    timeout: 20_000,
+  });
 }
 
 export interface IssueDetail {
