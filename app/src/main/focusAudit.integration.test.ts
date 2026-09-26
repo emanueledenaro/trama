@@ -87,7 +87,8 @@ describe("focus mode on a candidate (F01)", () => {
     // The real checks come first, in the sandbox, as Trama's evidence on this snapshot.
     expect(candidate.requiredChecks.length).toBeGreaterThan(0);
     expect(audit.checks.map((c) => [c.check, c.result, c.snapshotId])).toEqual(candidate.requiredChecks.map((check) => [check, "pass", candidate.snapshotId]));
-    expect(audit.checks.every((c) => c.recordedAt < audit.standards.startedAt! && c.recordedAt < audit.spec.startedAt!)).toBe(true);
+    // The axes start after the last check is recorded; both can fall in the same millisecond.
+    expect(audit.checks.every((c) => c.recordedAt <= audit.standards.startedAt! && c.recordedAt <= audit.spec.startedAt!)).toBe(true);
     // Two axes, each its own session, both running at once.
     expect(audit.specSource).toBe("Issue #12");
     expect(audit.standards).toMatchObject({ status: "done", findings: 1, worst: expect.stringContaining("Mysterious Name") });
