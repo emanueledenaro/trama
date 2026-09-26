@@ -1,7 +1,7 @@
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import type { DutySkill, GitHubIssue, GitHubPullRequest, MandateAction, ProjectDocument, SpecialistAssignment } from "@shared/domain";
+import type { DutySkill, GitHubIssue, MandateAction, ProjectDocument, PullRequestLink, SpecialistAssignment } from "@shared/domain";
 import { dutyTriggerText } from "@shared/duties";
 import { declareCandidate } from "./candidates";
 import { emptyDocument } from "./document";
@@ -497,18 +497,7 @@ describe("mandate and model of the automatic work (W11)", () => {
   });
 });
 
-const pull = (number: number, overrides: Partial<GitHubPullRequest> = {}): GitHubPullRequest => ({
-  number,
-  title: `PR ${number}`,
-  author: "rita",
-  headRef: `feature/pr-${number}`,
-  headSHA: "c".repeat(40),
-  baseRef: "main",
-  url: `https://github.com/o/r/pull/${number}`,
-  draft: false,
-  updatedAt: "",
-  ...overrides,
-});
+const pull = (number: number, linkedIssues: number[]): PullRequestLink => ({ number, linkedIssues });
 
 describe("only issues that are new for Trama go to triage (issue #231)", () => {
   it("leaves out an issue already in work, one with a linked pull request and one that was closed and reopened", () => {
@@ -516,7 +505,8 @@ describe("only issues that are new for Trama go to triage (issue #231)", () => {
     nextDuty(document, context({ issues: [] }));
     const { work } = withCandidate(document);
     work.issueNumber = 187;
-    const linked = pull(190, { title: "W16: avatar animati", linkedIssues: [188] });
+    // A pull request of any state: GitHub lists the closed and merged ones with the issues.
+    const linked = pull(190, [188]);
     // The reopened issue was seen closed: it never becomes new again.
     nextDuty(document, context({ issues: [issue(189, [], "closed")], pullRequests: [] }));
     const issues = [issue(187), issue(188), issue(189), issue(191)];
@@ -529,7 +519,7 @@ describe("only issues that are new for Trama go to triage (issue #231)", () => {
     expect(dropped[191]).toBeNull();
     // A pull request that shows up later still takes the issue out before its triage.
     finish(document, triage);
-    const later = nextDuty(document, context({ issues: [...issues, issue(192)], pullRequests: [linked, pull(193, { headRef: "bugfix/issue-192-save" })] }));
+    const later = nextDuty(document, context({ issues: [...issues, issue(192)], pullRequests: [linked, pull(193, [192])] }));
     expect(later?.duty?.skill).not.toBe("triage");
     expect(document.duties?.newIssues?.find((e) => e.number === 192)?.dropped).toContain("#193");
   });
@@ -594,6 +584,35 @@ describe("the state of the automatic work (issue #231)", () => {
     const before = JSON.stringify(document);
     byKind(document, { issues: [issue(1), issue(2), issue(3)] });
     expect(JSON.stringify(document)).toBe(before);
+  });
+});
+
+describe("the state of the domain writing (issue #231)", () => {
+  it("is due when nothing holds it, and names what holds it otherwise", () => {
+    const proposal = (scope: string[]) => ({
+      id: "P-1",
+      requestId: null,
+      decisionIds: ["D-1"],
+      contextPath: "CONTEXT.md",
+      adrDirectory: "docs/adr",
+      terms: [{ term: "Ordine", definition: "d", avoid: [] }],
+      adrs: [],
+      moduleIds: scope,
+      scopeModuleIds: scope,
+      createdAt: "",
+      assignmentId: null,
+      // A reason saved earlier, no longer true: the state reads the rules again.
+      waiting: "Senza un mandato valido nessuno scrive i file: la proposta aspetta il mandato.",
+    });
+    const writing = (document: ProjectDocument, overrides: Partial<DutyContext> = {}) =>
+      automaticWorkStatus(document, context(overrides)).find((w) => w.kind === "domainWriting")!;
+    const document = project();
+    document.domainProposals = [proposal(["app"])];
+    expect(writing(document)).toMatchObject({ state: "due", detail: expect.stringContaining("P-1") });
+    expect(writing(document, { runner: null }).detail).toContain("provider");
+    document.domainProposals = [proposal(["docs"])];
+    expect(writing(document)).toMatchObject({ state: "waiting", detail: expect.stringContaining("correzione del mandato") });
+    expect(writing(project(null))).toMatchObject({ state: "idle" });
   });
 });
 
