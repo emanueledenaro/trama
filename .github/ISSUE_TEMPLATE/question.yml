@@ -1,0 +1,19 @@
+name: Domanda
+description: Una domanda sull'uso o sul funzionamento di Trama.
+labels: [question, needs-triage]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Prima di aprire una domanda, controllare il [README](https://github.com/emanueledenaro/trama#readme) e [SUPPORT.md](https://github.com/emanueledenaro/trama/blob/main/SUPPORT.md).
+  - type: textarea
+    id: domanda
+    attributes:
+      label: Domanda
+    validations:
+      required: true
+  - type: textarea
+    id: contesto
+    attributes:
+      label: Contesto
+      description: Cosa hai già provato, sistema operativo, provider.

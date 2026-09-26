@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Vulnerabilità di sicurezza
+    url: https://github.com/emanueledenaro/trama/security/advisories/new
+    about: Segnalare in privato, non in una issue pubblica. Vedi SECURITY.md.
+  - name: Discussioni
+    url: https://github.com/emanueledenaro/trama/discussions
+    about: Idee aperte e domande generali. Vedi SUPPORT.md.

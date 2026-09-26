@@ -1,0 +1,55 @@
+name: Pubblicazione del rilascio
+# When main carries a version of app/package.json with a CHANGELOG.md section
+# and no v* tag yet, creates a draft release, builds the packages, attaches
+# them and publishes the release, which creates the tag. Tags are never moved.
+on:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+concurrency:
+  group: release-publish
+  cancel-in-progress: false
+jobs:
+  draft:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      tag: ${{ steps.draft.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Release in bozza
+        id: draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version=$(node -p "require('./app/package.json').version")
+          tag="v$version"
+          if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null; then
+            echo "Il tag $tag esiste già: nessun rilascio."
+            exit 0
+          fi
+          if ! node scripts/release/cli.mjs notes "$version" > notes.md; then
+            echo "CHANGELOG.md non ha una sezione per $version: nessun rilascio."
+            exit 0
+          fi
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "La bozza $tag esiste già: la riprendo."
+          else
+            gh release create "$tag" --draft --target "$GITHUB_SHA" --title "$tag" --notes-file notes.md
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+  package:
+    needs: draft
+    if: needs.draft.outputs.tag != ''
+    permissions:
+      contents: write
+    uses: ./.github/workflows/release.yml
+    with:
+      ref: ${{ github.sha }}
+      tag: ${{ needs.draft.outputs.tag }}
+    secrets: inherit
