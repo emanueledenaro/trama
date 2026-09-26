@@ -133,19 +133,27 @@ describe("glossary and ADR proposals from the grilling decisions (M03)", () => {
 });
 
 describe("the Coordinator's grill-with-docs, grilling and domain-modeling skills (M03)", () => {
-  it("delivers the three skills byte for byte, each followed by its binding", async () => {
-    expect(COORDINATOR_SKILLS.map((s) => s.name)).toEqual(["grill-with-docs", "grilling", "domain-modeling"]);
+  it("delivers the Coordinator's skills byte for byte, each followed by its binding", async () => {
+    expect(COORDINATOR_SKILLS.map((s) => s.name)).toEqual(["grill-with-docs", "grilling", "domain-modeling", "ask-trama"]);
     const parts = await Promise.all(COORDINATOR_SKILLS.map(async ({ name, binding }) => ({ skill: await loadNativeSkill(skillsDirectory, name), binding })));
     const { text, skills } = deliverNativeSkills(parts, false);
     expect(skills).toEqual([]);
     const delivered = Buffer.from(text, "utf8");
-    for (const file of ["grill-with-docs/SKILL.md", "grilling/SKILL.md", "domain-modeling/SKILL.md", "domain-modeling/CONTEXT-FORMAT.md", "domain-modeling/ADR-FORMAT.md"]) {
+    for (const file of [
+      "grill-with-docs/SKILL.md",
+      "grilling/SKILL.md",
+      "domain-modeling/SKILL.md",
+      "domain-modeling/CONTEXT-FORMAT.md",
+      "domain-modeling/ADR-FORMAT.md",
+      "ask-trama/SKILL.md",
+      "ask-trama/PHASE-BOUNDARIES.md",
+    ]) {
       expect(delivered.includes(await readFile(join(skillsDirectory, file))), file).toBe(true);
     }
     for (const { name, binding } of COORDINATOR_SKILLS) expect(text).toContain(`## Trama binding for the ${name} skill\n${binding}`);
 
     const codex = deliverNativeSkills(parts, true);
-    expect(codex.skills.map((s) => s.name)).toEqual(["grill-with-docs", "grilling", "domain-modeling"]);
+    expect(codex.skills.map((s) => s.name)).toEqual(["grill-with-docs", "grilling", "domain-modeling", "ask-trama"]);
     expect(codex.skills.map((s) => s.path)).toEqual(COORDINATOR_SKILLS.map(({ name }) => join(skillsDirectory, name, "SKILL.md")));
     expect(codex.text).toContain(await readFile(join(skillsDirectory, "domain-modeling/CONTEXT-FORMAT.md"), "utf8"));
     expect(codex.text).not.toContain(await readFile(join(skillsDirectory, "domain-modeling/SKILL.md"), "utf8"));
