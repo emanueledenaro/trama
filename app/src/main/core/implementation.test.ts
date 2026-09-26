@@ -121,7 +121,7 @@ function work(document: ProjectDocument, slice: boolean, requiredChecks = ["git_
   );
 }
 
-const capture = (id: string) => ({ snapshotId: `snap-${id}`, baseSHA: "base", diff: "+x", changedFiles: ["NOTE.md"], excludedSensitiveFiles: [] });
+const capture = (id: string) => ({ snapshotId: `snap-${id}`, baseSHA: "base", diff: "+x", changedFiles: ["NOTE.md"], excludedSensitiveFiles: [], whitespaceErrors: [] });
 
 describe("the developer of a slice runs implement and tdd with their original text (M06)", () => {
   it("delivers implement, tdd and tdd's reference files byte for byte, each followed by its binding", async () => {
