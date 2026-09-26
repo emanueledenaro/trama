@@ -12,6 +12,7 @@ import { isUnsupportedModelError } from "@shared/timeline";
 import type { ImageAttachmentInput } from "@shared/ipc";
 import type {
   ActiveProjectState,
+  FocusAudit,
   AgentColor,
   AppSettings,
   AppState,
@@ -155,6 +156,7 @@ import {
   type TurnEnd,
 } from "./core/team";
 import { prepareWorktree, removeWorktree, reviewWorktree, validateWorktree } from "./core/workspace";
+import { AuditError, type AxisName, type AxisTurn, auditSpec, axisThread, axisTurn, beginAxes, closeAudit, failAudit, findAudit, finishAxis, openAudit, readAxisAnswer, recordAuditCheck } from "./core/audit";
 import { approveCandidate, candidateReport, findCandidate, latestCandidate, recordEvidence, recordTechnicalReview } from "./core/candidates";
 import { assessConflict } from "./core/conflicts";
 import { pullRequestBody, publishCandidate } from "./core/publication";
@@ -3082,8 +3084,7 @@ export class TramaController {
     return (await git(["rev-parse", "--verify", "HEAD"], root).catch(() => "")).trim() || null;
   }
 
-  private async verifyCandidate(candidateId: string, check: ReadOnlyCheck, requestId: string | null) {
-    const project = this.requireProject();
+  private async verifyCandidate(candidateId: string, check: ReadOnlyCheck, requestId: string | null, project = this.requireProject()) {
     const document = project.document;
     const candidate = findCandidate(document, candidateId);
     if (!candidate) throw new Error(`Unknown candidate ${candidateId}.`);
@@ -3199,6 +3200,85 @@ export class TramaController {
       return review;
     } finally {
       client.stop();
+    }
+  }
+
+  // MARK: Focus mode
+
+  /**
+   * The person opens focus mode on a candidate (F01): the fixed point is its base. Trama runs the real checks in the
+   * sandbox first, then the two axes of code-review in parallel, read-only. Returns the examination's id at once;
+   * the report fills in as the work goes and stays in the project.
+   */
+  startFocusAudit(candidateId: string): string {
+    const project = this.requireProject();
+    const candidate = findCandidate(project.document, candidateId);
+    if (!candidate) throw new DomainError("Candidato non trovato.");
+    let audit: FocusAudit;
+    try {
+      audit = openAudit(project.document, candidate);
+    } catch (error) {
+      if (error instanceof AuditError) throw new DomainError(error.message);
+      throw error;
+    }
+    this.changed();
+    void this.runAudit(project, audit.id);
+    return audit.id;
+  }
+
+  private async runAudit(project: ActiveProjectState, auditId: string): Promise<void> {
+    const document = project.document;
+    const audit = findAudit(document, auditId)!;
+    try {
+      const candidate = findCandidate(document, audit.target.candidateId)!;
+      const assignment = findAssignment(document, candidate.assignmentId);
+      if (!assignment?.workspace || assignment.workspaceRemovedAt) throw new Error("Il candidato non ha più il suo worktree: la focus mode non può leggerlo.");
+      // The facts first: Trama's own checks in the sandbox, on the candidate as declared.
+      for (const check of candidate.requiredChecks) {
+        if (!(check in CHECKS)) continue;
+        await this.verifyCandidate(candidate.id, check as ReadOnlyCheck, null, project);
+        recordAuditCheck(audit, candidate.evidence[check]!);
+        this.changedIn(project);
+      }
+      // Cheap models for the axes (spec #124, Q3): the fixed roles' lightest model, read-only.
+      const runner = this.dutyRunner(document);
+      if (!runner) throw new Error("Nessun modello in sola lettura disponibile per gli assi di code-review.");
+      const skill = await this.nativeSkill("code-review");
+      const spec = auditSpec(document, assignment, project.github.issues);
+      const axes = beginAxes(audit, spec?.source ?? null, runner.model);
+      this.changedIn(project);
+      const input = { projectName: project.name, audit, candidate, assignment, spec };
+      await Promise.all(axes.map((axis) => this.runAuditAxis(project, audit, axis, axisTurn(input, axis, skill, runner.provider === "codex"), runner, assignment.workspace!.worktreeRoot)));
+      closeAudit(audit);
+    } catch (error) {
+      failAudit(audit, (error as Error).message);
+    } finally {
+      this.changedIn(project);
+    }
+  }
+
+  /** One axis of code-review: a read-only session of its own, in the candidate's worktree. */
+  private async runAuditAxis(project: ActiveProjectState, audit: FocusAudit, axis: AxisName, turn: AxisTurn, runner: DutyRunner, cwd: string): Promise<void> {
+    const client = createRuntime(runner.provider, { executable: runner.provider === "codex" ? this.host.codexExecutable : null, requestTimeoutMs: 15_000 });
+    try {
+      const opening = await client.openThread({ model: runner.model, cwd, developerInstructions: turn.instructions, sandbox: "read-only", ephemeral: true });
+      axisThread(audit, axis, opening.threadId);
+      this.changedIn(project);
+      const raw = await client.runTurn({
+        threadId: opening.threadId,
+        prompt: turn.prompt,
+        cwd,
+        model: runner.model,
+        skills: turn.skills,
+        outputSchema: turn.outputSchema,
+        onEvent: () => undefined,
+      });
+      finishAxis(audit, axis, readAxisAnswer(raw));
+    } catch (error) {
+      finishAxis(audit, axis, { failure: (error as Error).message });
+    } finally {
+      client.stop();
+      this.changedIn(project);
     }
   }
 
