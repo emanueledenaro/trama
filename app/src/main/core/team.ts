@@ -643,6 +643,12 @@ export function endTurn(document: ProjectDocument, id: string, turnId: string | 
       assignment.status = "failed";
       assignment.failure = outcome.message;
       assignment.lastUpdate = `Turno non riuscito: ${outcome.message}`;
+      // A question asked before the failure still pauses the work (W06): it stays visible to the Coordinator.
+      const question = pendingQuestion(assignment);
+      if (question) {
+        assignment.status = "paused";
+        assignment.lastUpdate = `In pausa: aspetta la risposta alla domanda ${question.id}. Il turno non è riuscito: ${outcome.message}`;
+      }
     }
   });
 }
@@ -733,6 +739,7 @@ export function resumePausedAssignment(document: ProjectDocument, id: string, no
   specialist.assignments = [...specialist.assignments.filter((a) => a.id !== id), assignment];
   return updateAssignment(document, id, now, (a) => {
     a.status = "preparing";
+    a.failure = null;
     a.lastUpdate = `Ripresa con la risposta alla domanda ${pendingQuestion(a)!.id}`;
   });
 }

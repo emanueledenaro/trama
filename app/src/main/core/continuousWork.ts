@@ -64,9 +64,10 @@ export function automaticMove(document: ProjectDocument, requestId: string, even
   if (!state.phase || state.phase === "blocked") return null;
   // A Pact card that blocks a developer's work (W06) holds only that work: the team goes on with the rest.
   const holds = (move: NextMove) => WAITS_FOR_PERSON.includes(move) && !(move === "answerQuestions" && state.questionsHoldOnlyTheirWork);
-  if (state.moves.some((m) => m.actor === "person" && holds(m.move))) return null;
   const option = state.moves.find((m) => m.actor === "coordinator");
   if (!option) return null;
+  // A developer's question waits for the Coordinator, never for an unrelated card of the person (W06).
+  if (option.move !== "answerQuestion" && state.moves.some((m) => m.actor === "person" && holds(m.move))) return null;
   const move = option.move as CoordinatorMove;
   return { move, ...COORDINATOR_MOVES[move], goalId, model: latest.model, effort: latest.effort };
 }

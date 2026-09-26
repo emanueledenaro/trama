@@ -790,6 +790,8 @@ export class TramaController {
         // Work that waited for a provider while the project was parked is checked again now.
         const waiting = new Set(parked.document.team.specialists.flatMap((sp) => sp.assignments.flatMap((a) => (a.waitingForProvider ? [a.waitingForProvider.provider] : []))));
         for (const provider of waiting) void this.resumeWaitingWork(provider);
+        // Answers that arrived while the project was parked resume their work now (W06).
+        this.resumeAnsweredWork(parked);
         return;
       }
       const loaded = await this.storage.loadDocument(id);
@@ -864,6 +866,8 @@ export class TramaController {
       if (!isDemo) void this.refreshGitHub();
       this.watchProject(root);
       if (!isDemo) this.startPresence(project);
+      // Paused work whose question got its answer before a restart resumes now (W06).
+      if (loaded.writable) this.resumeAnsweredWork(project);
       if (!isDemo && loaded.writable && this.state.settings.autoPrepareMethod !== false && !hasAiHero(root)) {
         // T04: the method is ready when the project opens; existing files are never overwritten.
         void this.prepareSkills().catch((error) => this.fail(error));
@@ -2793,7 +2797,9 @@ export class TramaController {
         ? ["Incarico concluso", final.result]
         : final.status === "stopped"
           ? ["Arresto confermato", final.stops.at(-1)?.reason ?? null]
-          : ["Incarico non riuscito", final.failure];
+          : final.status === "paused"
+            ? ["In pausa per una domanda", final.lastUpdate]
+            : ["Incarico non riuscito", final.failure];
     this.specialistActivity(project, assignmentId, turnId ? `${final.turns.length}` : preKey, title, detail, final.status === "failed" ? "error" : "info");
     const stop = final.stops.at(-1);
     if (final.status === "stopped" && stop?.thenRemove) {
@@ -2819,9 +2825,6 @@ export class TramaController {
         this.host.notify(`Trama: ${providerName(provider)} bloccato`, `L'incarico ${assignmentId} aspetta che ${providerName(provider)} si sblocchi.`, this.state.settings.sounds === true);
         this.scheduleProviderWait(provider);
       }
-    }
-    if (final.status === "paused") {
-      this.specialistActivity(project, assignmentId, `${final.turns.length}`, "In pausa per una domanda", final.lastUpdate, "info");
     }
     this.changedIn(project);
     // A developer freed by this end may resume work whose question has its answer (W06).
@@ -3037,7 +3040,9 @@ export class TramaController {
     if (findAssignment(project.document, assignmentId)?.workspaceRemovedAt) {
       throw new DomainError("Il worktree di questo incarico è stato rimosso: assegna un nuovo incarico.");
     }
-    resumeAssignment(project.document, assignmentId);
+    // Paused work with its answer resumes like Trama resumes it (W06); other work was stopped or failed.
+    if (paused.status === "paused") resumePausedAssignment(project.document, assignmentId);
+    else resumeAssignment(project.document, assignmentId);
     const moved = refreshDecisionVersions(project.document, assignmentId);
     if (moved.length) {
       appendEvent(

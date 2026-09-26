@@ -528,6 +528,9 @@ export function AssignmentCard({ assignmentId }: { assignmentId: string }) {
   const status = ASSIGNMENT_STATUS[assignment.status];
   const active = ["preparing", "running", "stopRequested"].includes(assignment.status);
   const isCurrent = specialist.assignments.at(-1)?.id === assignment.id;
+  // Paused work whose question has its answer (W06): Trama resumes it by itself, the person can resume it now.
+  const pendingAsk = assignment.questions?.find((q) => !q.resumedAt);
+  const answeredPause = assignment.status === "paused" && pendingAsk !== undefined && developerQuestionState(pendingAsk) === "answered";
   const moduleName = (id: string) => project.snapshot.modules.find((m) => m.id === id)?.name ?? id;
   return (
     <CardFrame
@@ -599,7 +602,7 @@ export function AssignmentCard({ assignmentId }: { assignmentId: string }) {
           ) : null}
         </div>
       ) : null}
-      {isCurrent && (active || assignment.status === "stopped" || assignment.status === "failed") ? (
+      {isCurrent && (active || assignment.status === "stopped" || assignment.status === "failed" || answeredPause) ? (
         <div className="cta-row mt-3">
           {active ? (
             <Button size="sm" variant="outline" disabled={assignment.status === "stopRequested"} onClick={() => void act("assignment:stop", { assignmentId })}>

@@ -4,6 +4,7 @@ import { automaticMove } from "./continuousWork";
 import { runCoordinatorTool, type ToolContext } from "./coordinatorTools";
 import {
   answeredWork,
+  answerFromFacts,
   ASK_COORDINATOR_TOOL,
   askCoordinator,
   asksCoordinator,
@@ -13,7 +14,7 @@ import {
 } from "./developerQuestions";
 import { emptyDocument } from "./document";
 import { REPORT_HEADINGS } from "./implementation";
-import { answerDecisionRequest, grantMandate, withdrawDecisionRequest } from "./pact";
+import { answerDecisionRequest, createDecisionRequest, grantMandate, withdrawDecisionRequest } from "./pact";
 import { sliceAssignmentProblem, sliceViews } from "./slices";
 import { resumeInput, specialistInstructions } from "./specialistBriefing";
 import {
@@ -141,6 +142,8 @@ function context(document: ProjectDocument, answered: string[] = []): ToolContex
   } as unknown as ToolContext;
 }
 
+const answerFromFactsForTest = (document: ProjectDocument, id: string) => answerFromFacts(document, id, { text: "Sì", sources: ["spec #7"] });
+
 const parse = (result: { content: { text: string }[] }) => JSON.parse(result.content[0]!.text);
 
 const alternatives = [
@@ -191,6 +194,40 @@ describe("a developer asks the Coordinator with a tool (W06)", () => {
     expect(text).toContain(`${question.id}: Ada`);
     expect(text).toContain("fetta S1 in pausa");
     expect(automaticMove(document, "r1", "assignmentEnded", guards)).toMatchObject({ move: "answerQuestion", label: "Rispondi allo sviluppatore" });
+  });
+});
+
+describe("edge cases of the pause (W06)", () => {
+  it("pauses the work when the turn fails after the question, so the question stays visible", () => {
+    const document = project();
+    const assignment = work(document, "Ada", "S1", 2);
+    beginTurn(document, assignment.id, "t1", "gpt-5.5", at(3));
+    const question = askCoordinator(document, assignment.id, { question: "Buono?", context: null }, at(4));
+    endTurn(document, assignment.id, "t1", { kind: "failed", message: "Connessione persa" }, at(5));
+    expect(assignment.status).toBe("paused");
+    expect(assignment.failure).toBe("Connessione persa");
+    expect(workState(document, "r1").questions?.map((q) => q.id)).toEqual([question.id]);
+    answerFromFactsForTest(document, question.id);
+    expect(resumePausedAssignment(document, assignment.id).failure).toBeNull();
+  });
+
+  it("answers the developer by itself even while an unrelated card waits for the person", () => {
+    const { document, question } = askedOnS1();
+    createDecisionRequest(document, {
+      requestId: "r1",
+      category: "product",
+      question: "Il cliente riceve una email?",
+      concreteCase: "Ordine 42",
+      alternatives: alternatives.map((a) => ({ ...a, consequence: null })),
+      revisesDecisionId: null,
+    });
+    const state = workState(document, "r1");
+    expect(state.moves[0]!.move).toBe("answerQuestions");
+    expect(state.questionsHoldOnlyTheirWork).toBeUndefined();
+    expect(automaticMove(document, "r1", "assignmentEnded", guards)).toMatchObject({ move: "answerQuestion" });
+    // Once the question is answered, the unrelated card holds the rest of the work as before.
+    answerFromFactsForTest(document, question.id);
+    expect(automaticMove(document, "r1", "assignmentEnded", guards)).toBeNull();
   });
 });
 

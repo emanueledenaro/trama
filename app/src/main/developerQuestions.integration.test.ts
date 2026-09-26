@@ -125,6 +125,8 @@ describe("a developer's question to the Coordinator (W06)", () => {
     expect(activity).toContain(`Domanda ${question.id} al Coordinatore`);
     expect(activity).toContain("In pausa per una domanda");
     expect(activity).toContain("Risposta ricevuta");
+    // A pause is not a failure: the history says it once, as a pause.
+    expect(activity).not.toContain("Incarico non riuscito");
   }, 40_000);
 
   it("puts a product question on a Pact card that blocks the work until the person answers", async () => {
