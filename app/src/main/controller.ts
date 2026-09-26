@@ -159,8 +159,8 @@ import { prepareWorktree, removeWorktree, reviewWorktree, validateWorktree } fro
 import { approveCandidate, candidateReport, findCandidate, latestCandidate, recordEvidence, recordTechnicalReview } from "./core/candidates";
 import { assessConflict } from "./core/conflicts";
 import { pullRequestBody, publishCandidate } from "./core/publication";
-import { branchPrefix, commitHeader, deriveCommitType, readProjectConventions, requireValidCommitMessage, validateCommitMessage } from "./core/conventions";
-import { candidateCommit, qualityGate, qualityMissing, relatedIssue } from "./core/quality";
+import { branchPrefix, commitHeader, readProjectConventions, requireValidCommitMessage, validateCommitMessage } from "./core/conventions";
+import { candidateCommit, qualityGate, qualityMissing, relatedIssue, workCommitType } from "./core/quality";
 import {
   applyAutomaticTransitions,
   autoSummary,
@@ -2674,7 +2674,7 @@ export class TramaController {
         } else {
           // The branch follows Conventional Branch or the project's prefixes (Q01), with the issue number when there is one.
           const conventions = await readProjectConventions(project.rootPath);
-          const type = assignment.commit?.type ?? deriveCommitType(assignment.kind, [], conventions);
+          const type = workCommitType(assignment, conventions);
           const title = assignmentSlice(document, assignment)?.ticket.title ?? assignment.objective;
           const workspace = await prepareWorktree(project.rootPath, title, this.worktreesRoot, {
             prefix: branchPrefix(type, assignment.commit?.hotfix ?? false, conventions),

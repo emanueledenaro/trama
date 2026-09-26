@@ -236,6 +236,18 @@ describe("project conventions (Q01)", () => {
     expect(conventions).toMatchObject({ sources: ["commitlint.config.js"], types: ["feat", "fix", "docs"], scopes: ["app", "site"], headerMaxLength: 72 });
   });
 
+  it("ignores commitlint rules turned off with severity 0", () => {
+    const conventions = conventionsFromText({
+      instructions: [],
+      commitlint: { path: ".commitlintrc.json", text: JSON.stringify({ rules: { "type-enum": [0, "always", ["custom"]], "header-max-length": [0, "always", 20] } }) },
+      branches: [],
+    });
+    expect(conventions.types).toEqual(DEFAULT_CONVENTIONS.types);
+    expect(conventions.headerMaxLength).toBe(DEFAULT_CONVENTIONS.headerMaxLength);
+    const warning = conventionsFromText({ instructions: [], commitlint: { path: ".commitlintrc.json", text: '{"rules":{"type-enum":[1,"always",["custom"]]}}' }, branches: [] });
+    expect(warning.types).toEqual(["custom"]);
+  });
+
   it("follows the prefixes of existing branches when nothing is declared", () => {
     const conventions = conventionsFromText({ instructions: [], commitlint: null, branches: ["main", "feat/a", "feat/b", "fix/c", "feature/d"] });
     expect(conventions.branchPrefixes).toEqual({ feature: "feat", bugfix: "fix", hotfix: "hotfix", release: "release", chore: "chore" });

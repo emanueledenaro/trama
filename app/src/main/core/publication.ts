@@ -91,7 +91,12 @@ export async function publishCandidate(input: {
     await git(["log", "--format=%H", "--fixed-strings", `--grep=${marker}`, `--grep=${legacyMarker}`, `${workspace.baseSHA}..HEAD`], root)
   ).trim();
   if (!committed) {
+    // The index holds only the candidate: a file the specialist staged, a sensitive one included, is left out.
+    await git(["reset", "--quiet", "--mixed", "HEAD"], root, false);
     await git(["add", "--", ...input.candidate.changedFiles], root, false);
+    const staged = (await git(["diff", "--cached", "--name-only", "-z", "--no-renames", "HEAD"], root)).split("\0").filter(Boolean);
+    const extra = staged.filter((path) => !input.candidate.changedFiles.includes(path));
+    if (extra.length) throw new Error(`L'indice contiene file fuori dal candidato: ${extra.join(", ")}.`);
     await git(["commit", "--no-verify", "--cleanup=whitespace", "-m", input.message], root, false);
   }
   const push = await runProcess("git", ["-c", "core.hooksPath=/dev/null", "push", "-u", "origin", workspace.branch], {

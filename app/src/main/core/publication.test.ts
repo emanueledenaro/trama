@@ -72,7 +72,10 @@ describe("publication retry", () => {
     const candidate = { id: "C-1", snapshotId: review.snapshotId, changedFiles: review.changedFiles } as unknown as Candidate;
     const assignment = { id: "A-1", objective: "Cambia a", workspace } as unknown as SpecialistAssignment;
     const input = { candidate, assignment, repository: "o/r", baseBranch: "main", message: "fix: change a\n\nTrama-Candidate: C-1", conventions: DEFAULT_CONVENTIONS, body: "b" };
+    // A sensitive file the specialist staged never reaches the commit (Q01).
+    await git(["add", "-f", ".env"], workspace.worktreeRoot, false);
     await expect(publishCandidate(input)).rejects.toThrow();
+    expect((await git(["show", "--name-only", "--format=", "HEAD"], workspace.worktreeRoot)).trim().split("\n")).toEqual(["a.txt"]);
     await expect(publishCandidate(input)).rejects.toThrow();
     const commits = (await git(["rev-list", `${workspace.baseSHA}..HEAD`], workspace.worktreeRoot)).trim().split("\n");
     expect(commits).toHaveLength(1);

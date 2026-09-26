@@ -5,7 +5,7 @@ import { DEFAULT_CONVENTIONS, validateCommitMessage } from "./conventions";
 import { emptyDocument } from "./document";
 import { createDecisionRequest, decide } from "./pact";
 import { pullRequestBody } from "./publication";
-import { candidateCommit, qualityGate, qualityMissing, relatedIssue, secretFindings } from "./quality";
+import { candidateCommit, qualityGate, qualityMissing, relatedIssue, secretFindings, workCommitType } from "./quality";
 import { assign, beginTurn, confirmTeam, endTurn, findAssignment, proposeTeam } from "./team";
 
 function setup(options: { kind?: "agreedTicket" | "decidedBehaviorCorrection"; diff?: string; changedFiles?: string[]; whitespaceErrors?: string[]; issueNumber?: number | null } = {}) {
@@ -118,15 +118,17 @@ describe("the quality standard before publishing (Q01)", () => {
 
   it("wants the slice's issue on GitHub when the project is connected", () => {
     const { document, assignment, gate } = setup();
+    // The plan's issue is the spec's, not the slice's: it never stands in for the slice's own issue.
     const plan = {
       id: "P-1",
       requestId: null,
-      issueNumber: null,
+      issueNumber: 7,
       decisionRequestIds: [],
       slicing: { status: "approved", tickets: [{ id: "S1", title: "Review state", whatToBuild: "w", acceptanceCriteria: ["c"], blockedBy: [], issue: null }] },
     } as unknown as WorkPlan;
     document.plans.push(plan);
     assignment.slice = { planId: "P-1", sliceId: "S1" };
+    expect(relatedIssue(document, assignment)).toBeNull();
     expect(qualityMissing(gate())).toEqual([]);
     const missing = qualityMissing(gate("o/r"));
     expect(missing.map((m) => m.code)).toEqual(["ISSUE_LINKED"]);
@@ -152,6 +154,17 @@ describe("the quality standard before publishing (Q01)", () => {
     const missing = qualityMissing(gate());
     expect(missing.map((m) => m.code)).toEqual(["PACT_SETTLED"]);
     expect(missing[0]!.detail).toContain(question.id);
+  });
+});
+
+describe("the type that names the branch (Q01)", () => {
+  it("is the Coordinator's, docs for the documentation role, or derived from the kind", () => {
+    const { assignment } = setup();
+    expect(workCommitType(assignment)).toBe("feat");
+    assignment.duty = { skill: "domain-modeling", trigger: { kind: "domainProposal", proposalId: "X" }, outcome: null };
+    expect(workCommitType(assignment)).toBe("docs");
+    assignment.commit = { type: "fix", scope: null, hotfix: false };
+    expect(workCommitType(assignment)).toBe("fix");
   });
 });
 

@@ -82,16 +82,19 @@ function pickPrefixes(counts: Map<string, number>, base: CommitConventions["bran
   return result;
 }
 
-/** The words of a commitlint rule's list, for `rule: [2, "always", [...]]` in JSON, JavaScript or flow YAML. */
+/**
+ * The words of a commitlint rule's list, for `rule: [2, "always", [...]]` in JSON, JavaScript or flow YAML. Only an
+ * enabled rule counts: severity 1 (warning) or 2 (error), never 0.
+ */
 function commitlintList(text: string, rule: string): string[] | null {
-  const match = new RegExp(`['"]?${rule}['"]?\\s*:\\s*\\[\\s*\\d\\s*,\\s*['"]?always['"]?\\s*,\\s*\\[([^\\]]*)\\]`).exec(text);
+  const match = new RegExp(`['"]?${rule}['"]?\\s*:\\s*\\[\\s*[12]\\s*,\\s*['"]?always['"]?\\s*,\\s*\\[([^\\]]*)\\]`).exec(text);
   if (!match) return null;
   const words = [...match[1]!.matchAll(/[A-Za-z0-9][\w./-]*/g)].map((m) => m[0]);
   return words.length ? words : null;
 }
 
 function commitlintNumber(text: string, rule: string): number | null {
-  const match = new RegExp(`['"]?${rule}['"]?\\s*:\\s*\\[\\s*\\d\\s*,\\s*['"]?always['"]?\\s*,\\s*(\\d+)\\s*\\]`).exec(text);
+  const match = new RegExp(`['"]?${rule}['"]?\\s*:\\s*\\[\\s*[12]\\s*,\\s*['"]?always['"]?\\s*,\\s*(\\d+)\\s*\\]`).exec(text);
   return match ? Number(match[1]) : null;
 }
 

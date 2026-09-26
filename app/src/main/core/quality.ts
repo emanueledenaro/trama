@@ -14,10 +14,22 @@ import { workRequests } from "./workPhase";
 /** The footer that marks Trama's commit of a candidate; a retry finds the commit by it. */
 export const candidateTrailer = (candidateId: string) => `Trama-Candidate: ${candidateId}`;
 
-/** The issue the work refers to: the assignment's, its slice's or its plan's. */
+/**
+ * The issue the work refers to: for a slice its own issue, never the plan's; otherwise the assignment's. A slice
+ * without its issue has none to link, and the quality standard says so when GitHub is connected.
+ */
 export function relatedIssue(document: ProjectDocument, assignment: SpecialistAssignment): number | null {
   const slice = assignmentSlice(document, assignment);
-  return assignment.issueNumber ?? slice?.ticket.issue?.number ?? slice?.plan.issueNumber ?? null;
+  if (slice) return slice.ticket.issue?.number ?? null;
+  return assignment.issueNumber;
+}
+
+/** The commit type of the work before its files exist, which names its branch: the Coordinator's, or derived. */
+export function workCommitType(assignment: SpecialistAssignment, conventions: CommitConventions = DEFAULT_CONVENTIONS): string {
+  if (assignment.commit?.type) return assignment.commit.type;
+  // The documentation and domain role writes only docs (M03).
+  if (assignment.duty?.skill === "domain-modeling" && conventions.types.includes("docs")) return "docs";
+  return deriveCommitType(assignment.kind, [], conventions);
 }
 
 /** What the Coordinator may correct in a candidate's commit; a field left undefined keeps Trama's choice. */
