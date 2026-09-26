@@ -192,7 +192,7 @@ import { type AgentWork, type PresenceContext, PresenceService } from "./core/pr
 import { overlapModules, probeColleagues, projectOverlaps } from "./core/overlap";
 import { compareSides, coordinatorNotice, type PresenceProbe } from "@shared/overlap";
 import { type AgentOverlap, agentOverlapKey, agentOverlaps, occupantName, presenceSection } from "./core/coordinatorPresence";
-import { emptyConsent, type PresenceProposal, type PresenceTask, shouldProposeConsent, shouldReproposeConsent } from "@shared/presence";
+import { emptyConsent, type PresenceProposal, type PresenceTask, type PresenceView, shouldProposeConsent, shouldReproposeConsent } from "@shared/presence";
 import { agentTag } from "@shared/identity";
 import {
   EMPTY_ONBOARDING,
@@ -1482,6 +1482,8 @@ export class TramaController {
   private parkSelectedProject(): void {
     void this.stopPresence();
     const project = this.state.project;
+    // The project picker still says who was working on a project the person left (B02).
+    if (project?.presence) this.lastPresence.set(project.id, project.presence);
     // The Coordinator's turn stops with its runtime: it ends here, in its own project, before the late rejection arrives.
     const left = project?.runningRequestId ? project.document.requests.find((r) => r.id === project.runningRequestId) : undefined;
     const closeLeft = project !== null && left?.state === "running";
@@ -2480,6 +2482,9 @@ export class TramaController {
     this.changed();
   }
 
+  /** The last presence reading of the projects the person left, by project id (B02). */
+  private lastPresence = new Map<string, PresenceView>();
+
   /** The projects overview (UX03): in-memory projects are live, the others are read from their last save. */
   async projectsOverview(): Promise<ProjectOverview[]> {
     const live = new Map<string, ActiveProjectState>([...this.parkedProjects].map(([id, p]) => [id, p]));
@@ -2495,7 +2500,7 @@ export class TramaController {
             selected: project === this.state.project,
             runningAssignments: [...this.specialistRuntimes.values()].filter((r) => r.projectId === project.id).length,
             candidateReports: reports,
-            colleagues: project.isDemo ? null : activeColleagues(project.presence),
+            colleagues: project.isDemo ? null : activeColleagues(project.presence ?? this.lastPresence.get(project.id)),
           }),
         );
         continue;
@@ -2513,6 +2518,7 @@ export class TramaController {
             selected: false,
             runningAssignments: 0,
             candidateReports: document.candidates.map((c) => candidateReport(document, c, null)),
+            colleagues: activeColleagues(this.lastPresence.get(recent.id)),
           }),
         );
       }

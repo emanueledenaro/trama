@@ -1,6 +1,6 @@
 import { type AttentionReason, type CandidateReport, isOpenQuestion, type ProjectDocument, type ProjectOverview, type RecentProject } from "@shared/domain";
 import { workingGoals } from "@shared/goals";
-import type { PresenceView } from "@shared/presence";
+import { presenceFreshness, type PresenceView } from "@shared/presence";
 import { currentAssignment } from "./team";
 
 const ORDER: (AttentionReason | "unreadable" | null)[] = ["decision", "blocked", "approval", "running", "unreadable", null];
@@ -98,8 +98,14 @@ export function orderByAttention(entries: ProjectOverview[]): ProjectOverview[] 
   return [...entries].sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name, "it") || a.id.localeCompare(b.id));
 }
 
-/** Colleagues active or idle in a presence reading; offline ones are left out. Null without a reading. */
-export function activeColleagues(presence: PresenceView | null | undefined): number | null {
+/**
+ * Colleagues active or idle in a presence reading, their freshness computed again at `now`: a reading kept
+ * from an earlier session never shows someone as active after their heartbeat went stale. Null without a reading.
+ */
+export function activeColleagues(presence: PresenceView | null | undefined, now = new Date()): number | null {
   if (!presence) return null;
-  return presence.others.filter((entry) => entry.status === "active" || entry.status === "idle").length;
+  return presence.others.filter((entry) => {
+    const status = presenceFreshness(entry.record, now).status;
+    return status === "active" || status === "idle";
+  }).length;
 }
