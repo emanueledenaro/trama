@@ -1,6 +1,7 @@
 import {
   IconBrain,
   IconBrandGithub,
+  IconChecklist,
   IconChevronDown,
   IconDeviceDesktop,
   IconEye,
@@ -23,7 +24,8 @@ import { TramaMark } from "@/components/brand/TramaMark";
 import { ProviderIcon } from "@/components/ProviderIcon";
 import { Spinner } from "@/components/Spinner";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/field";
+import { Badge, TextArea } from "@/components/ui/field";
+import { activeRules, CLEAN_CODE_RULES, CLEAN_CODE_SOURCE, CLEAN_CODE_VERSION } from "@shared/cleanCode";
 import { cn } from "@/lib/cn";
 import { act, type SettingsSection, useUi } from "@/lib/store";
 import { PresenceControls, presenceStatusLine } from "@/components/PresencePanel";
@@ -32,6 +34,7 @@ const SECTIONS: { id: SettingsSection; label: string; icon: React.ReactNode }[] 
   { id: "general", label: "Generale", icon: <IconSettings stroke={1.7} /> },
   { id: "connections", label: "Collegamenti", icon: <IconPlugConnected stroke={1.7} /> },
   { id: "method", label: "Metodo di lavoro", icon: <IconTools stroke={1.7} /> },
+  { id: "standard", label: "Standard del codice", icon: <IconChecklist stroke={1.7} /> },
   { id: "learning", label: "Apprendimento", icon: <IconBrain stroke={1.7} /> },
   { id: "monitor", label: "Monitor", icon: <IconEye stroke={1.7} /> },
   { id: "presence", label: "Presenza", icon: <IconUsers stroke={1.7} /> },
@@ -77,6 +80,7 @@ export function SettingsView() {
           {section === "general" ? <GeneralSection /> : null}
           {section === "connections" ? <ConnectionsSection /> : null}
           {section === "method" ? <MethodSection /> : null}
+          {section === "standard" ? <StandardSection /> : null}
           {section === "learning" ? <LearningSection /> : null}
           {section === "monitor" ? <MonitorSection /> : null}
           {section === "presence" ? <PresenceSection /> : null}
@@ -489,6 +493,86 @@ function MethodSection() {
           onChange={(value) => void act("settings:update", { continuousWork: value })}
         />
       </Group>
+    </>
+  );
+}
+
+/** Trama's Clean Code standard for the open project (Q03, ADR 0016): each rule on or off, and the person's note. */
+function StandardSection() {
+  const project = useUi((s) => s.app?.project ?? null);
+  const settings = project?.document.cleanCode;
+  const [note, setNote] = useState<string | null>(null);
+  const saved = settings?.note ?? "";
+  const draft = note ?? saved;
+  const on = new Set(activeRules(settings).map((rule) => rule.id));
+  return (
+    <>
+      <PageHeader
+        title="Standard del codice"
+        description={
+          <>
+            Lo standard Clean Code di Trama, versione {CLEAN_CODE_VERSION}. Gli sviluppatori lo ricevono come testo di Trama accanto alle skill, che restano col testo
+            originale, e la revisione tecnica controlla il diff anche rispetto a questo standard.
+          </>
+        }
+      />
+      {!project ? (
+        <Group>
+          <Row label={<span className="text-muted-foreground">Apri un progetto per adattare lo standard.</span>} />
+        </Group>
+      ) : (
+        <div data-testid="clean-code-settings">
+          <Group
+            title={`Regole per ${project.name}`}
+            note={
+              <>
+                Fonte: {CLEAN_CODE_SOURCE}. Prima vengono le regole del progetto (AGENTS.md, CONTRIBUTING.md, linter e formatter), poi il metodo delle skill, poi
+                questo standard. Le regole segnate come bloccanti fanno chiedere modifiche in revisione. Numero di argomenti, lunghezza delle funzioni e duplicazioni
+                li misura Trama: sono evidenze, mentre i rilievi del revisore restano un giudizio.
+              </>
+            }
+          >
+            {CLEAN_CODE_RULES.map((rule) => (
+              <Row
+                key={rule.id}
+                label={
+                  <span className="flex items-center gap-2">
+                    {rule.label}
+                    {rule.severity === "blocking" ? <Badge tone="warning">Bloccante</Badge> : null}
+                  </span>
+                }
+                description={rule.summary}
+                control={
+                  <Toggle checked={on.has(rule.id)} label={rule.label} onChange={(enabled) => void act("project:cleanCode", { rule: rule.id, enabled })} />
+                }
+              />
+            ))}
+          </Group>
+          <Group title="Adattamento al progetto" note="Il testo arriva a sviluppatori e revisore come indicazione della persona, per esempio: SOLID solo nei moduli a oggetti.">
+            <div className="px-4 py-3">
+              <TextArea
+                aria-label="Come si applica lo standard a questo progetto"
+                rows={3}
+                value={draft}
+                placeholder="Lingua, paradigma o eccezioni di questo progetto"
+                onChange={(event) => setNote(event.target.value)}
+              />
+              <div className="cta-row mt-2">
+                <Button size="sm" variant="ghost" disabled={draft === saved} onClick={() => setNote(null)}>
+                  Annulla
+                </Button>
+                <Button
+                  size="sm"
+                  disabled={draft === saved}
+                  onClick={() => void act("project:cleanCode", { note: draft }).then(() => setNote(null))}
+                >
+                  Salva
+                </Button>
+              </div>
+            </div>
+          </Group>
+        </div>
+      )}
     </>
   );
 }

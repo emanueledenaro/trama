@@ -143,6 +143,8 @@ export interface ActionMap {
   /** Sends the message the person wrote to a colleague as a comment on the colleague's open pull request (G03). */
   "presence:commentPullRequest": [{ number: number; body: string }, void];
   "github:createIssue": [{ title: string; body: string }, void];
+  /** Adapts Trama's Clean Code standard to the open project (Q03): one rule on or off, or the person's note. */
+  "project:cleanCode": [{ rule?: import("./cleanCode").CleanCodeRuleId; enabled?: boolean; note?: string | null }, void];
   "settings:update": [Partial<AppSettings>, void];
   "monitor:update": [{ enabled?: boolean; openAtLogin?: boolean; intervalSeconds?: number; addRepository?: string; removeRepository?: string }, void];
   "monitor:poll": [void, void];

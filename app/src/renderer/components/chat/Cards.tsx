@@ -21,12 +21,16 @@ import {
   type AssignmentStatus,
   type CandidateEvidence,
   type CandidateState,
+  type DeveloperQuestion,
   type DeveloperReport,
   type QualityItem,
   type SpecialistAssignment,
+  type TechnicalReview,
   type TestedSeam,
+  developerQuestionState,
   isOpenQuestion,
 } from "@shared/domain";
+import { CLEAN_CODE_RULES, type CodeMeasure } from "@shared/cleanCode";
 import { isExerciseAssessment } from "@shared/onboarding";
 import { findGoal } from "@shared/goals";
 import { adrMarkdown, adrPath, findDomainProposal, glossaryEntry } from "@shared/domainDocs";
@@ -248,6 +252,10 @@ export function DecisionCard({ requestId }: { requestId: string }) {
   const withdrawal = request.withdrawal ?? null;
   const closed = Boolean(outcome || withdrawal);
   const grilling = request.grilling ?? null;
+  // A card that answers a developer's question blocks that work until the person answers (W06).
+  const blocked = request.blocksWork ? project.document.team.specialists.find((sp) => sp.assignments.some((a) => a.id === request.blocksWork!.assignmentId)) : null;
+  const blockedWork = blocked?.assignments.find((a) => a.id === request.blocksWork!.assignmentId) ?? null;
+  const blockedQuestion = blockedWork?.questions?.find((q) => q.id === request.blocksWork!.questionId) ?? null;
 
   return (
     <CardFrame
@@ -255,14 +263,38 @@ export function DecisionCard({ requestId }: { requestId: string }) {
       title={grilling ? `Domanda ${grilling.number}` : "Decisione"}
       className={grilling ? "my-2" : undefined}
       aside={
-        withdrawal ? (
-          <Badge tone="secondary">Ritirata</Badge>
-        ) : (
-          <Badge tone={request.category === "destructive" ? "destructive" : "info"}>{request.category === "destructive" ? "Caso distruttivo" : "Scelta di prodotto"}</Badge>
-        )
+        <span className="flex items-center gap-1.5">
+          {request.blocksWork && !closed ? (
+            <span data-testid="blocks-work">
+              <Badge tone="warning">Blocca il lavoro</Badge>
+            </span>
+          ) : null}
+          {withdrawal ? (
+            <Badge tone="secondary">Ritirata</Badge>
+          ) : (
+            <Badge tone={request.category === "destructive" ? "destructive" : "info"}>{request.category === "destructive" ? "Caso distruttivo" : "Scelta di prodotto"}</Badge>
+          )}
+        </span>
       }
     >
       <p className={cn("text-ui font-medium text-foreground", withdrawal && "text-foreground/70")}>{request.question}</p>
+      {blocked && blockedWork ? (
+        <Field label="Domanda dello sviluppatore">
+          <div data-testid="blocked-work">
+            <AgentName agent={blocked} />
+            <Sep />
+            {blockedWork.slice ? `fetta ${blockedWork.slice.sliceId}, ` : ""}incarico {blockedWork.id}
+            {blockedQuestion ? <div className="mt-0.5 text-ui-sm text-foreground/90">«{blockedQuestion.question}»</div> : null}
+            <div className="mt-0.5 text-ui-sm text-muted-foreground">
+              {!closed
+                ? "Il lavoro resta in pausa finché non rispondi. Il resto del team va avanti."
+                : blockedQuestion?.resumedAt
+                  ? "Il lavoro è ripreso con la tua risposta."
+                  : "Il lavoro riprende con la tua risposta appena lo sviluppatore è libero."}
+            </div>
+          </div>
+        </Field>
+      ) : null}
       <Field label="Caso concreto">{request.concreteCase}</Field>
       <div className="mt-3 space-y-1.5">
         {request.alternatives.map((alternative, index) => {
@@ -404,6 +436,7 @@ export const ASSIGNMENT_STATUS: Record<AssignmentStatus, { label: string; tone: 
   stopped: { label: "Fermato", tone: "secondary" },
   completed: { label: "Concluso", tone: "success" },
   failed: { label: "Non riuscito", tone: "destructive" },
+  paused: { label: "In pausa", tone: "warning" },
 };
 
 export function TeamProposalCard({ proposalId }: { proposalId: string }) {
@@ -500,6 +533,9 @@ export function AssignmentCard({ assignmentId }: { assignmentId: string }) {
   const status = ASSIGNMENT_STATUS[assignment.status];
   const active = ["preparing", "running", "stopRequested"].includes(assignment.status);
   const isCurrent = specialist.assignments.at(-1)?.id === assignment.id;
+  // Paused work whose question has its answer (W06): Trama resumes it by itself, the person can resume it now.
+  const pendingAsk = assignment.questions?.find((q) => !q.resumedAt);
+  const answeredPause = assignment.status === "paused" && pendingAsk !== undefined && developerQuestionState(pendingAsk) === "answered";
   const moduleName = (id: string) => project.snapshot.modules.find((m) => m.id === id)?.name ?? id;
   return (
     <CardFrame
@@ -558,6 +594,7 @@ export function AssignmentCard({ assignmentId }: { assignmentId: string }) {
       <p className="mt-2 text-ui-sm text-muted-foreground">{assignment.lastUpdate}</p>
       {assignment.failure ? <Field label="Errore">{readableFailure(assignment.failure)}</Field> : null}
       {assignment.report !== undefined ? <ReportField report={assignment.report} /> : null}
+      {assignment.questions?.length ? <QuestionsField questions={assignment.questions} /> : null}
       {assignment.result ? (
         <div className="mt-2">
           <button type="button" className="inline-flex items-center gap-1 text-ui-sm text-muted-foreground hover:text-foreground" onClick={() => setShowResult(!showResult)}>
@@ -570,7 +607,7 @@ export function AssignmentCard({ assignmentId }: { assignmentId: string }) {
           ) : null}
         </div>
       ) : null}
-      {isCurrent && (active || assignment.status === "stopped" || assignment.status === "failed") ? (
+      {isCurrent && (active || assignment.status === "stopped" || assignment.status === "failed" || answeredPause) ? (
         <div className="cta-row mt-3">
           {active ? (
             <Button size="sm" variant="outline" disabled={assignment.status === "stopRequested"} onClick={() => void act("assignment:stop", { assignmentId })}>
@@ -825,12 +862,24 @@ function ContractFields({ assignment, decisions }: { assignment: SpecialistAssig
 }
 
 /** One block of the developer's report: null when it left the block out, an empty list when it said there was nothing. */
-function ReportList({ label, items, testId }: { label: string; items: string[] | null; testId: string }) {
+function ReportList({
+  label,
+  items,
+  testId,
+  missing = "Non riportati",
+  none = "Nessuno",
+}: {
+  label: string;
+  items: string[] | null;
+  testId: string;
+  missing?: string;
+  none?: string;
+}) {
   return (
     <div className="mt-1" data-testid={testId} data-reported={items === null ? "no" : "yes"}>
       <div className="text-ui-xs text-muted-foreground/70">{label}</div>
       {items === null ? (
-        <p className="text-ui-sm text-muted-foreground">Non riportati</p>
+        <p className="text-ui-sm text-muted-foreground">{missing}</p>
       ) : items.length ? (
         <ul className="space-y-0.5 text-ui-sm">
           {items.map((item) => (
@@ -840,9 +889,49 @@ function ReportList({ label, items, testId }: { label: string; items: string[] |
           ))}
         </ul>
       ) : (
-        <p className="text-ui-sm text-muted-foreground">Nessuno</p>
+        <p className="text-ui-sm text-muted-foreground">{none}</p>
       )}
     </div>
+  );
+}
+
+const QUESTION_STATE = {
+  asked: { label: "Aspetta il Coordinatore", tone: "warning" },
+  waitingForPerson: { label: "Blocca il lavoro", tone: "warning" },
+  answered: { label: "Risposta data", tone: "info" },
+  resumed: { label: "Lavoro ripreso", tone: "success" },
+} as const;
+
+/** The developer's questions to the Coordinator (W06) with where each stands and its answer. */
+function QuestionsField({ questions }: { questions: DeveloperQuestion[] }) {
+  return (
+    <Field label="Domande al Coordinatore">
+      <ul className="space-y-2" data-testid="assignment-questions">
+        {questions.map((question) => {
+          const key = question.resumedAt ? "resumed" : developerQuestionState(question);
+          const answer = question.answer;
+          return (
+            <li key={question.id} data-testid="assignment-question" data-state={key}>
+              <div className="flex items-start gap-2">
+                <span className="min-w-0 flex-1 break-words text-ui-sm text-foreground">{question.question}</span>
+                <Badge tone={QUESTION_STATE[key].tone}>{QUESTION_STATE[key].label}</Badge>
+              </div>
+              {question.context ? <div className="text-ui-sm text-muted-foreground">Contesto: {question.context}</div> : null}
+              {answer?.kind === "facts" ? (
+                <div className="mt-0.5 text-ui-sm text-foreground/90" data-testid="question-answer">
+                  Risposta del Coordinatore: {answer.text}
+                  <div className="text-ui-xs text-muted-foreground">Fonti: {answer.sources.join(", ")}</div>
+                </div>
+              ) : answer?.kind === "person" ? (
+                <div className="mt-0.5 text-ui-sm text-foreground/90" data-testid="question-answer">
+                  {answer.text ? `Risposta della persona: ${answer.text}` : `Aspetta la tua risposta sulla scheda ${answer.decisionRequestId}.`}
+                </div>
+              ) : null}
+            </li>
+          );
+        })}
+      </ul>
+    </Field>
   );
 }
 
@@ -868,9 +957,84 @@ function ReportField({ report }: { report: DeveloperReport | null }) {
               )}
             </div>
             <ReportList label="Dubbi" items={report.doubts} testId="report-doubts" />
+            {report.exceptions !== undefined ? (
+              <ReportList label="Eccezioni allo standard" items={report.exceptions} testId="report-exceptions" missing="Non riportate" none="Nessuna" />
+            ) : null}
           </>
         )}
         <p className="mt-1 text-ui-xs text-muted-foreground">{STATEMENT_NOTE}</p>
+      </div>
+    </Field>
+  );
+}
+
+const MEASURE_TEXT: Record<CodeMeasure["kind"], (m: CodeMeasure) => string> = {
+  arguments: (m) => `${m.subject} ha ${m.value} argomenti, il limite è ${m.limit}`,
+  functionLength: (m) => `${m.subject} è lunga ${m.value} righe, il limite è ${m.limit}`,
+  duplication: (m) => `${m.value} righe uguali a ${m.subject}`,
+};
+
+const REVIEW_NOTE = "I rilievi sono il giudizio del revisore, non un'evidenza. Contano le misure e le verifiche eseguite da Trama.";
+
+/** The technical review (V05) with the findings against the Clean Code standard and Trama's own measures (Q03). */
+function TechnicalReviewField({ review }: { review: TechnicalReview }) {
+  const findings = [...(review.findings ?? [])].sort((a, b) => (a.severity === b.severity ? 0 : a.severity === "blocking" ? -1 : 1));
+  const standard = review.standard;
+  const ruleLabel = (id: string | null) => CLEAN_CODE_RULES.find((rule) => rule.id === id)?.label ?? "Altro";
+  return (
+    <Field label={`Revisione tecnica, ${review.verdict === "approved" ? "approvata" : "modifiche richieste"}`}>
+      <div data-testid="technical-review" data-verdict={review.verdict}>
+        <p>{review.summary}</p>
+        {standard ? (
+          <div className="mt-1.5" data-testid="review-measures">
+            <div className="text-ui-xs text-muted-foreground/70">
+              Misure di Trama, standard v{standard.version}: {standard.filesMeasured === 1 ? "1 file" : `${standard.filesMeasured} file`}
+              <Sep />
+              {standard.functionsMeasured === 1 ? "1 funzione" : `${standard.functionsMeasured} funzioni`}
+            </div>
+            {standard.measures.length ? (
+              <ul className="space-y-0.5 text-ui-sm">
+                {standard.measures.map((m) => (
+                  <li key={`${m.kind}-${m.file}-${m.line}`} data-testid="review-measure" data-kind={m.kind} className="break-words">
+                    <span className="font-mono text-[11.5px]">
+                      {m.file}:{m.line}
+                    </span>
+                    <Sep />
+                    {MEASURE_TEXT[m.kind](m)}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-ui-sm text-muted-foreground">Nessuna misura oltre il limite</p>
+            )}
+          </div>
+        ) : null}
+        {review.findings !== undefined ? (
+          <div className="mt-1.5" data-testid="review-findings">
+            <div className="text-ui-xs text-muted-foreground/70">Rilievi del revisore</div>
+            {findings.length ? (
+              <ul className="space-y-1 text-ui-sm">
+                {findings.map((f) => (
+                  <li key={`${f.file}-${f.line}-${f.message}`} data-testid="review-finding" data-severity={f.severity} className="break-words">
+                    <span className="mr-1.5 inline-flex items-center gap-1.5 align-middle">
+                      <Badge tone={f.severity === "blocking" ? "destructive" : "info"}>{f.severity === "blocking" ? "Bloccante" : "Suggerimento"}</Badge>
+                      <span className="font-mono text-[11.5px] text-foreground/90">
+                        {f.file}
+                        {f.line ? `:${f.line}` : ""}
+                      </span>
+                    </span>
+                    <span className="text-muted-foreground">{ruleLabel(f.rule)}</span>
+                    <Sep />
+                    {f.message}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-ui-sm text-muted-foreground">Nessun rilievo</p>
+            )}
+            <p className="mt-1 text-ui-xs text-muted-foreground">{REVIEW_NOTE}</p>
+          </div>
+        ) : null}
       </div>
     </Field>
   );
@@ -910,11 +1074,7 @@ export function CandidateCard({ candidateId }: { candidateId: string }) {
           ))}
         </div>
       </Field>
-      {candidate.technicalReview ? (
-        <Field label={`Revisione tecnica, ${candidate.technicalReview.verdict === "approved" ? "approvata" : "modifiche richieste"}`}>
-          {candidate.technicalReview.summary}
-        </Field>
-      ) : null}
+      {candidate.technicalReview ? <TechnicalReviewField review={candidate.technicalReview} /> : null}
       {report.blockers.length ? (
         <Field label="Cosa manca">
           <ul className="space-y-0.5 text-ui-sm">
