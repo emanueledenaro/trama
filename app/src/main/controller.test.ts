@@ -112,6 +112,35 @@ describe("TramaController", () => {
     expect(project.snapshot.headSHA).toMatch(/^[0-9a-f]{40}$/);
   });
 
+  it("keeps the project the person opens while the last one is still being restored", async () => {
+    const { data, project: last } = await setup();
+    await controller!.stop();
+    const other = await mkdtemp(join(tmpdir(), "trama-project-"));
+    await cp(join(root, "resources/DemoProject"), other, { recursive: true });
+    controller = new TramaController(data, {
+      publish: () => undefined,
+      openExternal: async () => undefined,
+      applyTheme: () => undefined,
+      notify: () => undefined,
+      setOpenAtLogin: () => undefined,
+      aiHeroResourceDirectory: join(root, "resources/AIHero"),
+      demoResourceDirectory: join(root, "resources/DemoProject"),
+      codexExecutable: join(root, "test-fixtures/fake-codex.mjs"),
+    });
+    // Trama reopens the last project on start; the person opens another one before that ends.
+    const starting = controller.start();
+    await controller.openProject(other);
+    await starting;
+    const { realpath } = await import("node:fs/promises");
+    expect(controller.snapshot.project?.rootPath).toBe(await realpath(other));
+    // Two opens in a row: the later one is the project the person sees.
+    const first = controller.openProject(last);
+    await controller.openProject(other);
+    await first;
+    expect(controller.snapshot.project?.rootPath).toBe(await realpath(other));
+    expect(controller.snapshot.loadingProject).toBeNull();
+  });
+
   it("studies the project, answers a message and records references", async () => {
     await setup();
     const project = controller!.snapshot.project!;
