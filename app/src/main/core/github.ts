@@ -1,12 +1,26 @@
 import { execFile } from "node:child_process";
+import { delimiter } from "node:path";
 import type { GitHubCapabilities, GitHubIssue } from "@shared/domain";
 
 const REMOTE_PREFIXES = ["git@github.com:", "https://github.com/", "ssh://git@github.com/"];
+
+/**
+ * Folders where Homebrew puts `gh`. An app opened from the Finder does not inherit the terminal's PATH, so
+ * Trama looks there too (P10).
+ */
+export const GH_FALLBACK_DIRECTORIES = ["/opt/homebrew/bin", "/usr/local/bin", "/home/linuxbrew/.linuxbrew/bin"];
+
+/** PATH with the Homebrew folders after the inherited ones, without duplicates. */
+export function ghSearchPath(path = process.env.PATH ?? ""): string {
+  return [...new Set([...path.split(delimiter).filter(Boolean), ...GH_FALLBACK_DIRECTORIES])].join(delimiter);
+}
 
 /** Environment for `gh`: authentication always comes from gh itself, never from inherited tokens. */
 export function ghEnvironment(): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {
     ...process.env,
+    // spawn looks the command up in this PATH, so a gh from Homebrew is found also when Trama starts from the Finder.
+    PATH: ghSearchPath(),
     GH_HOST: "github.com",
     GH_PROMPT_DISABLED: "1",
     GIT_TERMINAL_PROMPT: "0",

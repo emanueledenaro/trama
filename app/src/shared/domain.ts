@@ -87,6 +87,8 @@ export interface CoordinatorRequest {
   nextStep?: NextStep | null;
   /** The next step this message takes (W04): the person's button, or Trama starting the Coordinator's move by itself. */
   step?: RequestStep | null;
+  /** Set when the request repeats a failed one (P10): its id, and the automatic attempt (0 when the person pressed Riprova). */
+  retry?: { of: string; attempt: number } | null;
 }
 
 /** A next step taken by a message: the person pressed its button, or Trama started the Coordinator's own move (W04). */
@@ -1200,6 +1202,8 @@ export interface ActiveProjectState {
   presence?: import("./presence").PresenceView | null;
   /** The person's work against the colleagues' presence (G03); absent without a presence reading. */
   overlaps?: import("./overlap").OverlapView | null;
+  /** The automatic retry after a temporary provider limit, while it waits (P10). */
+  providerRetry?: import("./providerFailure").ProviderRetryView | null;
 }
 
 /** A message waiting for the running turn to end; it has no request and no event until it leaves. */
