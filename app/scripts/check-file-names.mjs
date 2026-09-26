@@ -3,6 +3,7 @@
 // extension cannot tell apart, such as TramaMark.tsx and tramaMark.ts in the same folder.
 // Usage: node scripts/check-file-names.mjs
 import { execFileSync } from "node:child_process";
+import { pathToFileURL } from "node:url";
 
 const MODULE = /\.(tsx?|mts|cts|jsx?|mjs|cjs)$/;
 
@@ -25,7 +26,7 @@ export function caseCollisions(paths) {
   return collisions;
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const root = execFileSync("git", ["rev-parse", "--show-toplevel"], { encoding: "utf8" }).trim();
   const paths = execFileSync("git", ["-C", root, "ls-files", "-z"], { encoding: "utf8" }).split("\0").filter(Boolean);
   const collisions = caseCollisions(paths);
