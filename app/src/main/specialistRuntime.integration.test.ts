@@ -78,7 +78,8 @@ describe("specialist runtime (V04)", () => {
       authorizedActions: ["executeInWorktree"],
       limits: [],
     });
-    await controller.send("[assegna] [lento]", null, null, null);
+    // "[lento:sempre]": the resumed turn too runs until stopped, so the stop below never races its end.
+    await controller.send("[assegna] [lento:sempre]", null, null, null);
     const specialist = findSpecialist(document, "Ada")!;
     const assignment = specialist.assignments[0]!;
     await until(() => assignment.status === "running");
@@ -96,7 +97,7 @@ describe("specialist runtime (V04)", () => {
     expect(profile).toMatchObject({ filesystem: { ":minimal": "read", [worktree]: "write", [repo]: "read" }, network: { enabled: false } });
     expect(Object.entries(profile.filesystem).filter(([, access]) => access === "write").map(([path]) => path)).toEqual([worktree]);
     expect(config.features).toMatchObject({ memories: false });
-    expect(opened[0]!.params.developerInstructions).toContain("Instructions from the Coordinator:\n[lento] Scrivi una nota");
+    expect(opened[0]!.params.developerInstructions).toContain("Instructions from the Coordinator:\n[lento:sempre] Scrivi una nota");
     expect(assignment.threadId).toBeTruthy();
     expect(assignment.threadId).not.toBe(document.coordinator.threadId);
     // The turn writes only in the worktree, without network.

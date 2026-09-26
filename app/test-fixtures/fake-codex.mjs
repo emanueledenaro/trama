@@ -37,6 +37,9 @@ const readableIn = (params, path) => {
   return !roots || roots.some(([root, access]) => access !== "none" && (path === root || path.startsWith(`${root}/`)));
 };
 const receivedByThread = new Map();
+// Threads opened for "[lento:sempre]" work: the Coordinator's instructions carry the tag, so a resumed turn, whose
+// prompt only says to go on, stays running until interrupted like the first one. "[lento]" work ends when resumed.
+const slowThreads = new Set();
 // The first slice Trama lists as ready in the Coordinator's message (M05), as assign_task's slice argument.
 const readySlice = (text) => {
   const id = text.match(/^- (S\d+) «[^»]*»:[^\n]* pronta\./m)?.[1];
@@ -108,6 +111,7 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
       const server = params.config?.["mcp_servers.trama"];
       if (server) toolServers.set(threadId, server);
       threadProfiles.set(threadId, { permissions: params.permissions ?? null, config: params.config ?? {} });
+      if (String(params.developerInstructions ?? "").includes("[lento:sempre]")) slowThreads.add(threadId);
       return send({ id, result: { thread: { id: threadId } } });
     }
     case "turn/start": {
@@ -341,7 +345,7 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
           const { appendFileSync } = await import("node:fs");
           appendFileSync(tracked, "// Nota dello specialista   \n");
         }
-        if (text.includes("[lento]")) return; // stays running until interrupted
+        if (text.includes("[lento]") || slowThreads.has(threadId)) return; // stays running until interrupted
         if (text.includes("## Trama binding for the tdd skill")) {
           // The developer of a slice (M06) runs implement and tdd, and reports the confirmed seams it tested.
           const skills = params.input.filter((item) => item.type === "skill").map((item) => item.name);
@@ -499,7 +503,7 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
               ? ["git_status", "swift_build", "swift_test"]
               : ["git_status"],
           tools: ["edits"],
-          instructions: `${text.includes("[lento]") ? "[lento] " : ""}${text.includes("[spazi]") ? "[spazi] " : ""}Scrivi una nota`,
+          instructions: `${text.includes("[lento]") ? "[lento] " : ""}${text.includes("[lento:sempre]") ? "[lento:sempre] " : ""}${text.includes("[spazi]") ? "[spazi] " : ""}Scrivi una nota`,
         }).then((result) => {
           toolDone("assign_task", result);
           finish(result.isError ? `Rifiutato: ${result.content[0].text}` : "Ho assegnato il lavoro ad Ada.");
