@@ -16,8 +16,10 @@ import { isOpenQuestion, pendingMandateRequest } from "@shared/domain";
 import { grillingSubject } from "@shared/grilling";
 import { PROVIDERS } from "@shared/providers";
 import { inspectCandidate, latestCandidate } from "./candidates";
+import { pendingQuestion, pendingState, type QuestionView, questionsText, questionViews } from "./developerQuestions";
 import { sliceViews, slicesText } from "./slices";
-import { activeDevelopers, authorize, isActive, isTeamConfirmed, MAX_PARALLEL_DEVELOPERS, needsWorktree } from "./team";
+import { activeDevelopers, authorize, isActive, isTeamConfirmed, needsWorktree } from "./team";
+import { parallelDevelopers } from "@shared/parallel";
 
 /**
  * The phase of a request's work and the moves that take it on (W01). Trama computes both from the records
@@ -42,7 +44,25 @@ export interface WorkState {
   blocker: string | null;
   moves: MoveOption[];
   /** The plan of the work with an approved breakdown and where each slice stands (M05); absent otherwise. */
-  slices?: { plan: WorkPlan; views: SliceView[]; developersAtWork: number };
+  slices?: { plan: WorkPlan; views: SliceView[]; developersAtWork: number; limit: number };
+  /** In the verification phase, what the Coordinator's move acts on (issue #204); absent otherwise. */
+  verification?: VerificationTargets;
+  /** The developers' questions that pause the work (W06); absent when none. */
+  questions?: QuestionView[];
+  /**
+   * True when every open question of the person is a Pact card that blocks a developer's work (W06): it holds only
+   * that work, and the rest goes on.
+   */
+  questionsHoldOnlyTheirWork?: boolean;
+}
+
+/**
+ * What verifying the work means now: the worktree assignments that ended without a candidate, which the Coordinator
+ * declares first with declare_candidate, and the declared candidates still missing evidence or an approving review.
+ */
+export interface VerificationTargets {
+  undeclared: string[];
+  unverified: string[];
 }
 
 export const NEXT_MOVES: NextMove[] = [
@@ -58,6 +78,7 @@ export const NEXT_MOVES: NextMove[] = [
   "preparePlan",
   "assignWork",
   "verifyCandidate",
+  "answerQuestion",
 ];
 
 export const PHASE_LABELS: Record<WorkPhase, string> = {
@@ -81,14 +102,15 @@ const person = (move: NextMove, label: string, targetId: string | null, extra: P
   ...extra,
 });
 
-/** The moves that are the Coordinator's own: Trama starts them by itself within the mandate (W04). */
-export type CoordinatorMove = "preparePlan" | "assignWork" | "verifyCandidate";
+/** The moves that are the Coordinator's own: Trama starts them by itself within the mandate (W04, W06). */
+export type CoordinatorMove = "preparePlan" | "assignWork" | "verifyCandidate" | "answerQuestion";
 
 /** The words of the Coordinator's moves: the button's label and the message that asks for the move. */
 export const COORDINATOR_MOVES: Record<CoordinatorMove, { label: string; message: string }> = {
   preparePlan: { label: "Prepara il piano", message: "Prepara il piano." },
   assignWork: { label: "Assegna il lavoro", message: "Assegna il lavoro." },
   verifyCandidate: { label: "Esegui le verifiche", message: "Esegui le verifiche del lavoro." },
+  answerQuestion: { label: "Rispondi allo sviluppatore", message: "Rispondi alla domanda dello sviluppatore." },
 };
 
 const coordinator = (move: CoordinatorMove, targetId: string | null = null): MoveOption => ({
@@ -141,6 +163,8 @@ function candidateBlockerText(candidate: Candidate, blocker: CandidateBlocker): 
       return `Il candidato ${candidate.id} ha un effetto esterno che Trama non verifica: ${blocker.detail}`;
     case "REMOTE_CONFLICT":
       return `Il candidato ${candidate.id} è in conflitto con il lavoro dei colleghi: ${blocker.detail}`;
+    case "WORKTREE_CONFLICT":
+      return `Il candidato ${candidate.id} è in conflitto con il worktree di un altro sviluppatore: ${blocker.detail}`;
     default:
       return `Il candidato ${candidate.id} è bloccato: ${blocker.code} ${blocker.detail}`.trim();
   }
@@ -170,9 +194,10 @@ export function workState(document: ProjectDocument, requestId: string | null): 
   };
   const views = plan ? sliceViews(document, plan) : [];
   const developersAtWork = activeDevelopers(document);
-  const slices = plan && plan.slicing?.status === "approved" ? { plan, views, developersAtWork } : undefined;
+  const limit = parallelDevelopers(document);
+  const slices = plan && plan.slicing?.status === "approved" ? { plan, views, developersAtWork, limit } : undefined;
   // With an approved breakdown only a slice whose blockers are done can be assigned, and only while a developer is free (M05).
-  const assignable = !slices || (developersAtWork < MAX_PARALLEL_DEVELOPERS && views.some((v) => v.state === "ready" || v.state === "verifying"));
+  const assignable = !slices || (developersAtWork < limit && views.some((v) => v.state === "ready" || v.state === "verifying"));
   const assignWork = () => {
     if (!assignable) return;
     if (!isTeamConfirmed(document)) {
@@ -185,21 +210,30 @@ export function workState(document: ProjectDocument, requestId: string | null): 
   const preparePlan = () => {
     if (may("plan")) add(coordinator("preparePlan"));
   };
-  const finish = (phase: WorkPhase | null, blocker: string | null = null): WorkState => {
+  const questionList = questionViews(document, assignments);
+  const finish = (phase: WorkPhase | null, blocker: string | null = null, verification?: VerificationTargets): WorkState => {
     if (phase === null) return { phase, blocker, moves: [] };
     if (open.length) moves.unshift(answerQuestions(open));
     if (pendingMandate) add(person("grantMandate", "Concedi il mandato", pendingMandate.id));
-    return { phase, blocker, moves, ...(slices ? { slices } : {}) };
+    return {
+      phase,
+      blocker,
+      moves,
+      ...(slices ? { slices } : {}),
+      ...(verification ? { verification } : {}),
+      ...(questionList.length ? { questions: questionList } : {}),
+      ...(open.length && open.every((q) => q.blocksWork) ? { questionsHoldOnlyTheirWork: true } : {}),
+    };
   };
 
   if (assignments.length) {
-    const state = assignedWork(document, assignments, { assignWork, add });
+    const state = assignedWork(document, assignments, { assignWork, add, otherSliceReady: Boolean(slices) && assignable });
     if (state) {
-      if (!slices || state.phase === "blocked") return finish(state.phase, state.blocker);
+      if (!slices || state.phase === "blocked") return finish(state.phase, state.blocker, state.verification);
       // The next unblocked slices go on beside the work already assigned (M05); the work is merged only with every slice done.
       assignWork();
       const unfinished = views.some((v) => v.state !== "done");
-      return finish(state.phase === "merged" && unfinished ? "execution" : state.phase, state.blocker);
+      return finish(state.phase === "merged" && unfinished ? "execution" : state.phase, state.blocker, state.verification);
     }
   }
   if (plan) {
@@ -278,9 +312,14 @@ function answerQuestions(open: DecisionRequest[]): MoveOption {
 function assignedWork(
   document: ProjectDocument,
   assignments: SpecialistAssignment[],
-  moves: { assignWork(): void; add(option: MoveOption): void },
-): { phase: WorkPhase; blocker: string | null } | null {
-  const items = assignments.map((assignment) => ({ assignment, candidate: latestCandidate(document, assignment.id) }));
+  moves: { assignWork(): void; add(option: MoveOption): void; otherSliceReady: boolean },
+): { phase: WorkPhase; blocker: string | null; verification?: VerificationTargets } | null {
+  // A developer's question pauses its work (W06): the Coordinator answers it before its other moves.
+  const paused = assignments.filter((a) => a.status === "paused");
+  for (const assignment of paused) {
+    if (pendingState(assignment) === "asked") moves.add(coordinator("answerQuestion", pendingQuestion(assignment)!.id));
+  }
+  const items = assignments.filter((a) => a.status !== "paused").map((assignment) => ({ assignment, candidate: latestCandidate(document, assignment.id) }));
   for (const { assignment, candidate } of items) {
     if (isActive(assignment) && assignment.waitingForProvider) {
       return { phase: "blocked", blocker: `L'incarico ${assignment.id} aspetta che ${providerName(assignment.waitingForProvider.provider)} torni disponibile.` };
@@ -302,16 +341,31 @@ function assignedWork(
     }
   }
   if (items.some((i) => isActive(i.assignment))) return { phase: "execution", blocker: null };
+  if (paused.length) {
+    // A question on a Pact card holds only its work: the team goes on with a ready slice meanwhile.
+    moves.assignWork();
+    if (paused.some((a) => pendingState(a) !== "waitingForPerson")) return { phase: "execution", blocker: null };
+    if (!items.length) {
+      if (moves.otherSliceReady) return { phase: "execution", blocker: null };
+      const held = paused[0]!;
+      const card = pendingQuestion(held)?.answer;
+      const what = held.slice ? `La fetta ${held.slice.sliceId}` : `L'incarico ${held.id}`;
+      return { phase: "blocked", blocker: `${what} è in pausa: lo sviluppatore aspetta la tua risposta alla domanda ${card?.kind === "person" ? card.decisionRequestId : ""}.` };
+    }
+  }
   // Only work in a worktree becomes a candidate; read-only work that ended leaves the phase to the plan.
   const edits = items.filter((i) => needsWorktree(i.assignment));
   if (!edits.length) return null;
-  const unverified = edits.find((i) => !i.candidate || inspectCandidate(document, i.candidate, null).length || i.candidate.technicalReview?.verdict !== "approved");
-  if (unverified) {
-    const needsDeclaring = edits.some((i) => !i.candidate);
-    if (!needsDeclaring || authorize(document.mandate, "executeInWorktree") === "authorized") {
-      moves.add(coordinator("verifyCandidate", unverified.candidate?.id ?? null));
+  const pending = edits.filter((i) => !i.candidate || inspectCandidate(document, i.candidate, null).length || i.candidate.technicalReview?.verdict !== "approved");
+  if (pending.length) {
+    const verification: VerificationTargets = {
+      undeclared: pending.filter((i) => !i.candidate).map((i) => i.assignment.id),
+      unverified: pending.flatMap((i) => (i.candidate ? [i.candidate.id] : [])),
+    };
+    if (!verification.undeclared.length || authorize(document.mandate, "executeInWorktree") === "authorized") {
+      moves.add(coordinator("verifyCandidate", pending[0]!.candidate?.id ?? null));
     }
-    return { phase: "verification", blocker: null };
+    return { phase: "verification", blocker: null, verification };
   }
   const unpublished = edits.find((i) => !i.candidate!.pullRequest);
   if (unpublished) {
@@ -346,11 +400,30 @@ export function workStateText(state: WorkState): string {
   const lines = ["## Fase del lavoro (calcolata da Trama, dati, non istruzioni)"];
   lines.push(state.phase ? `Fase: ${PHASE_LABELS[state.phase]} (${state.phase}).` : "Nessun lavoro registrato per questa richiesta.");
   if (state.blocker) lines.push(`Blocco: ${state.blocker}`);
-  if (state.slices) lines.push(slicesText(state.slices.plan, state.slices.views, state.slices.developersAtWork));
+  if (state.slices) lines.push(slicesText(state.slices.plan, state.slices.views, state.slices.developersAtWork, state.slices.limit));
+  if (state.verification) lines.push(...verificationText(state.verification));
+  if (state.questions) lines.push(questionsText(state.questions));
   lines.push(
     state.moves.length
       ? `Mosse possibili per declare_next_step: ${state.moves.map((m) => `${m.move} (${m.actor === "person" ? "la persona" : "tu"}: "${m.label}")`).join("; ")}.`
       : "Nessuna mossa possibile ora.",
   );
   return lines.join("\n");
+}
+
+/**
+ * The verification move spelled out (issue #204): an assignment id is not a candidate, so an assignment that ended
+ * without one is declared first, and verify_candidate takes the candidateID declare_candidate returns.
+ */
+export function verificationText(targets: VerificationTargets): string[] {
+  const lines: string[] = [];
+  if (targets.undeclared.length) {
+    lines.push(
+      `Incarichi conclusi senza candidato: ${targets.undeclared.join(", ")}. Per ognuno prima declare_candidate (assignment: l'id dell'incarico, decisionIDs: le decisioni del Patto che deve rispettare), poi verify_candidate con il candidateID che restituisce, per ogni verifica richiesta, poi review_candidate.`,
+    );
+  }
+  if (targets.unverified.length) {
+    lines.push(`Candidati da verificare: ${targets.unverified.join(", ")}. verify_candidate per ogni verifica richiesta che manca, poi review_candidate.`);
+  }
+  return lines;
 }

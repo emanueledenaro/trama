@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -13,7 +14,16 @@ afterEach(() => {
   delete process.env.FAKE_CODEX_ACCOUNT;
   delete process.env.FAKE_CODEX_LIMITS;
   delete process.env.FAKE_CODEX_LOG;
+  delete process.env.FAKE_CODEX_INITIALIZE_GATE;
 });
+
+async function until(check: () => boolean, timeout = 10_000): Promise<void> {
+  const start = Date.now();
+  while (!check()) {
+    if (Date.now() - start > timeout) throw new Error("timeout");
+    await new Promise((r) => setTimeout(r, 20));
+  }
+}
 
 describe("CodexClient", () => {
   it("reads a ChatGPT account and lists models", async () => {
@@ -22,6 +32,18 @@ describe("CodexClient", () => {
     const models = await client.listModels();
     expect(models[0]).toMatchObject({ model: "gpt-5.5", isDefault: true, defaultReasoningEffort: "medium", supportsFastMode: false });
     expect(models[1]).toMatchObject({ model: "gpt-5.5-fast", supportsFastMode: true });
+  });
+
+  it("ends a request still waiting for its answer when the client stops, not at its timeout", async () => {
+    const gate = join(await mkdtemp(join(tmpdir(), "trama-gate-")), "initialize");
+    process.env.FAKE_CODEX_INITIALIZE_GATE = gate;
+    client = new CodexClient({ executable: fake, requestTimeoutMs: 15_000 });
+    const reading = client.readAccount();
+    await until(() => existsSync(`${gate}.held`));
+    const stoppedAt = Date.now();
+    client.stop();
+    expect(await reading).toEqual({ kind: "unavailable", message: "Codex è stato chiuso." });
+    expect(Date.now() - stoppedAt).toBeLessThan(1_000);
   });
 
   it("sends the fast service tier only when the turn asks for one", async () => {
@@ -77,6 +99,30 @@ describe("CodexClient", () => {
     ]);
   });
 
+  it("names a permission profile on a turn only to switch it, as Codex 0.155 fails on the thread's own", async () => {
+    const worktree = await mkdtemp(join(tmpdir(), "trama-worktree-"));
+    const log = join(await mkdtemp(join(tmpdir(), "trama-log-")), "codex.log");
+    process.env.FAKE_CODEX_LOG = log;
+    client = new CodexClient({ executable: fake });
+    const profile = (access: string) => ({ filesystem: { ":minimal": "read", [worktree]: access }, network: { enabled: false } });
+    const { threadId } = await client.openThread({
+      model: "gpt-5.5",
+      cwd: worktree,
+      developerInstructions: "test",
+      permissions: "trama_write",
+      config: { "permissions.trama_read": profile("read"), "permissions.trama_write": profile("write") },
+    });
+    const turn = (permissions: string) =>
+      client!.runTurn({ threadId, prompt: "ciao", cwd: worktree, model: "gpt-5.5", permissions, onEvent: () => undefined });
+    await turn("trama_write");
+    await turn("trama_read");
+    await turn("trama_read");
+    const requests = (await readFile(log, "utf8")).trim().split("\n").map((line) => JSON.parse(line) as { method: string; params: Record<string, unknown> });
+    const turns = requests.filter((r) => r.method === "turn/start");
+    expect(turns.map((r) => r.params.permissions)).toEqual([undefined, "trama_read", undefined]);
+    expect(turns.every((r) => r.params.sandboxPolicy === undefined)).toBe(true);
+  });
+
   it("streams a turn and resolves with the final answer", async () => {
     client = new CodexClient({ executable: fake });
     const { threadId, replaced } = await client.openThread({
@@ -125,7 +171,7 @@ describe("restrictedAppServerArguments", () => {
     const { restrictedAppServerArguments } = await import("./codexClient");
     const args = await restrictedAppServerArguments(fake, "trama");
     expect(args).toContain('mcp_servers.github={command="/usr/bin/false",enabled=false}');
-    expect(args.slice(-8)).toEqual(["--disable", "apps", "--disable", "plugins", "--disable", "hooks", "--disable", "multi_agent"]);
+    expect(args.slice(-10)).toEqual(["--disable", "apps", "--disable", "plugins", "--disable", "hooks", "--disable", "multi_agent", "--disable", "memories"]);
     await expect(restrictedAppServerArguments(fake, "github")).rejects.toThrow(/riservato/);
   });
 

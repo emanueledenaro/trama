@@ -28,6 +28,7 @@ import { existsSync, statSync } from "node:fs";
 import { mkdir, mkdtemp, open, readFile, rm, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
+import { expandHome, isReadable, readableRoots } from "../readScope";
 import {
   type AgentRuntime,
   extractJsonAnswer,
@@ -58,7 +59,7 @@ import {
   usageLimitError,
 } from "./providerSupport";
 
-const DEFAULT_MODEL = "Gemini 3.5 Flash";
+const DEFAULT_MODEL = "Gemini 3.8 Flash";
 const PRINT_TIMEOUT = "30m";
 const POLL_INTERVAL_MS = 75;
 const VERSION_TIMEOUT_MS = 4_000;
@@ -77,6 +78,8 @@ const MCP_URL_ENV = "TRAMA_ANTIGRAVITY_MCP_URL";
 const MCP_TOKEN_FILE_ENV = "TRAMA_ANTIGRAVITY_MCP_TOKEN_FILE";
 const HOST_TOOLS_ENV = "TRAMA_ANTIGRAVITY_HOST_TOOLS";
 const CONVERSATION_ENV = "TRAMA_ANTIGRAVITY_CONVERSATION";
+/** JSON list of the folders the read tools may reach (issue #206). */
+const READABLE_ROOTS_ENV = "TRAMA_ANTIGRAVITY_READABLE_ROOTS";
 /** `worktree` for specialists; any other value, or none, is the read-only profile. */
 const PROFILE_ENV = "TRAMA_ANTIGRAVITY_PROFILE";
 const HOOK_CHECK_TIMEOUT_MS = 10_000;
@@ -96,6 +99,19 @@ export const ANTIGRAVITY_READ_TOOLS = [
   "grep_search",
   "codebase_search",
 ];
+/** Arguments of the read tools that name a file or folder; the capture hook refuses one outside the readable roots. */
+export const ANTIGRAVITY_READ_PATH_ARGUMENTS = ["AbsolutePath", "File", "DirectoryPath", "SearchDirectory", "SearchPath", "TargetDirectories"];
+
+/** The paths a read tool call names, `~` expanded, in the order of ANTIGRAVITY_READ_PATH_ARGUMENTS. */
+export function antigravityReadPaths(args: Record<string, unknown> | null | undefined): string[] {
+  const paths: string[] = [];
+  for (const key of ANTIGRAVITY_READ_PATH_ARGUMENTS) {
+    const value = args?.[key];
+    for (const item of Array.isArray(value) ? value : [value]) if (typeof item === "string" && item.trim()) paths.push(expandHome(item.trim()));
+  }
+  return paths;
+}
+
 export const ANTIGRAVITY_EDIT_TOOLS = ["write_to_file", "replace_file_content", "multi_replace_file_content"];
 /** Tools denied with a specific explanation: a shell cannot be confined to the worktree or kept off the network. */
 const DENIED_TOOL_NAMES = ["run_command", "send_command_input"];
@@ -281,7 +297,22 @@ export function parseAntigravityPrintResult(stdout: string): AntigravityPrintRes
 
 // ── Models (`agy models`) ────────────────────────────────────────────────
 
+/**
+ * The labels `agy` 1.2.11 accepts, as display name and effort levels (issue #209). `--model` takes the
+ * full label, such as `Gemini 3.8 Flash (High)`: a bare name is rejected as an unknown model.
+ */
+export const ANTIGRAVITY_KNOWN_MODELS: Readonly<Record<string, readonly string[]>> = {
+  "Gemini 3.8 Flash": ["low", "medium", "high"],
+  "Gemini 3.7 Flash": ["low", "medium", "high"],
+  "Gemini 3.6 Flash": ["low", "medium", "high"],
+  "Gemini 3.1 Pro": ["low", "high"],
+  "Claude Sonnet 4.6": ["thinking"],
+  "Claude Opus 4.6": ["thinking"],
+  "GPT-OSS 120B": ["medium"],
+};
+
 const DEFAULT_EFFORT_BY_MODEL: Readonly<Record<string, string>> = {
+  "Gemini 3.8 Flash": "high",
   "Gemini 3.7 Flash": "high",
   "Gemini 3.6 Flash": "medium",
   "Gemini 3.5 Flash": "medium",
@@ -346,20 +377,53 @@ export function parseAntigravityModelLines(output: string): ProviderModel[] {
   return models;
 }
 
-/** Always rebuilds the CLI display label, so a corrupted `slug\tName (Effort)` row never reaches `--model`. */
+const effortKey = (value: string | null | undefined): string | undefined => value?.trim().toLowerCase() || undefined;
+
+/**
+ * Always rebuilds the CLI display label, so a corrupted `slug\tName (Effort)` row never reaches `--model`.
+ * A missing, empty or unsupported effort falls back to the model's default level: `agy` rejects a known
+ * model without one. `supportedEfforts` are the levels `agy models` listed; without them Trama uses the
+ * levels of `agy` 1.2.11. A level in the name that the model does not offer is replaced the same way.
+ */
 export function resolveAntigravityCliModelLabel(
   model: string,
   effort?: string | null,
-  discoveredDefaultEffort?: string,
+  discoveredDefaultEffort?: string | null,
+  supportedEfforts?: readonly string[],
 ): string {
   const parsed = parseAntigravityCliModelLabel(model);
   if (!parsed) return model;
-  const chosen =
-    parsed.effort ??
-    effort?.trim().toLowerCase() ??
-    discoveredDefaultEffort?.trim().toLowerCase() ??
-    DEFAULT_EFFORT_BY_MODEL[parsed.model];
+  const supported = supportedEfforts?.length ? supportedEfforts : (ANTIGRAVITY_KNOWN_MODELS[parsed.model] ?? []);
+  // A level in the name wins only when the model offers it: `Gemini 3.1 Pro (Medium)` has no such level.
+  const candidates = [parsed.effort, effortKey(effort), effortKey(discoveredDefaultEffort), DEFAULT_EFFORT_BY_MODEL[parsed.model], supported[0]];
+  const chosen = candidates.find((value): value is string => Boolean(value) && (supported.length === 0 || supported.includes(value!)));
   return chosen ? `${parsed.model} (${effortLabel(chosen)})` : parsed.model;
+}
+
+/** The values `agy --effort` documents. */
+const EFFORT_FLAG_VALUES = ["low", "medium", "high"];
+
+/**
+ * `--model` and `--effort` for a resolved label. With `--effort` (agy 1.1.5 and later) the name and the
+ * level travel apart, as agy reports them: `--model "Gemini 3.8 Flash" --effort "high"`. A level the flag
+ * does not document, such as Thinking, stays in the label, and so does every level on an older CLI.
+ */
+export function antigravityModelArgs(label: string, effortFlag: boolean): string[] {
+  const parsed = parseAntigravityCliModelLabel(label);
+  if (effortFlag && parsed?.effort && EFFORT_FLAG_VALUES.includes(parsed.effort)) {
+    return ["--model", parsed.model, "--effort", parsed.effort];
+  }
+  return ["--model", label];
+}
+
+/** `agy` refused the `--model` label: an unknown model, or a known one without its effort level. */
+export function isAntigravityUnknownModelError(message: string): boolean {
+  return /invalid model selection|not recognized as a known model|unknown model/i.test(message);
+}
+
+/** The refusal in plain Italian with the label Trama sent, so the person can pick another model. */
+export function antigravityUnknownModelMessage(cliModel: string, detail: string): string {
+  return `Il modello ${cliModel} non è disponibile in Antigravity CLI. Cambia modello e riprova. Dettaglio di agy: ${detail.trim()}`;
 }
 
 export function antigravityPromptCommandLineIssue(prompt: string, platform: NodeJS.Platform = process.platform): string | null {
@@ -413,6 +477,9 @@ const READ_TOOLS = new Set(${JSON.stringify(ANTIGRAVITY_READ_TOOLS)});
 const EDIT_TOOLS = new Set(${JSON.stringify(ANTIGRAVITY_EDIT_TOOLS)});
 const HOST_TOOL_PREFIX = new RegExp(${JSON.stringify(HOST_TOOL_PREFIX_PATTERN.source)});
 const HOST_TOOLS = new Set((process.env.${HOST_TOOLS_ENV} || "").split(",").filter(Boolean));
+const READ_PATH_ARGUMENTS = ${JSON.stringify(ANTIGRAVITY_READ_PATH_ARGUMENTS)};
+let READABLE_ROOTS = [];
+try { READABLE_ROOTS = JSON.parse(process.env.${READABLE_ROOTS_ENV} || "[]"); } catch { READABLE_ROOTS = []; }
 // Only an explicit worktree profile may edit; anything else is read-only.
 const READ_ONLY = process.env.${PROFILE_ENV} !== "worktree";
 let payload = "";
@@ -523,7 +590,17 @@ process.stdin.on("end", () => {
     const file = typeof args.TargetFile === "string" ? args.TargetFile : typeof args.AbsolutePath === "string" ? args.AbsolutePath : "";
     if (EDIT_TOOLS.has(name)) {
       if (READ_ONLY || !root || !file || !contained(root, file)) return deny("denied-tool");
-    } else if (!READ_TOOLS.has(name) && !HOST_TOOLS.has(name.replace(HOST_TOOL_PREFIX, ""))) {
+    } else if (READ_TOOLS.has(name)) {
+      // A read stays inside the project, its worktree and the folders Trama allows (issue #206).
+      const home = require("node:os").homedir();
+      for (const key of READ_PATH_ARGUMENTS) {
+        for (const item of [].concat(args[key] === undefined ? [] : args[key])) {
+          if (typeof item !== "string" || !item.trim()) continue;
+          const wanted = item.trim().replace(/^~(?=$|[\\/])/, home);
+          if (!READABLE_ROOTS.some((readable) => contained(readable, wanted))) return deny("denied-read");
+        }
+      }
+    } else if (!HOST_TOOLS.has(name.replace(HOST_TOOL_PREFIX, ""))) {
       return deny("denied-tool");
     }
   }
@@ -726,7 +803,7 @@ function runShellHook(command: string, input: string, env: NodeJS.ProcessEnv, ti
 
 /**
  * Runs the installed PreToolUse hook exactly as the CLI would, in the read-only profile, and checks
- * that it denies an edit and a shell command and allows a read. Throws when the hook is missing,
+ * that it denies an edit, a shell command and a read outside the project, and allows a read inside it. Throws when the hook is missing,
  * does not start or answers otherwise.
  */
 export async function checkReadOnlyHook(home: string, cwd: string): Promise<void> {
@@ -739,7 +816,12 @@ export async function checkReadOnlyHook(home: string, cwd: string): Promise<void
   try {
     const env: NodeJS.ProcessEnv = { ...process.env };
     for (const key of Object.keys(env)) if (key.startsWith("TRAMA_")) delete env[key];
-    Object.assign(env, { [EVENTS_ENV]: join(dir, "hooks.ndjson"), [DECISION_ENV]: "allow", [PROFILE_ENV]: "read-only" });
+    Object.assign(env, {
+      [EVENTS_ENV]: join(dir, "hooks.ndjson"),
+      [DECISION_ENV]: "allow",
+      [PROFILE_ENV]: "read-only",
+      [READABLE_ROOTS_ENV]: JSON.stringify(readableRoots(cwd)),
+    });
     const decide = (name: string, args: Record<string, unknown>) =>
       runShellHook(hook.command as string, JSON.stringify({ conversationId: "trama-check", stepIdx: 0, toolCall: { name, args } }), env, HOOK_CHECK_TIMEOUT_MS);
     const edit = await decide("write_to_file", { TargetFile: join(cwd, "trama-check.txt") });
@@ -748,6 +830,8 @@ export async function checkReadOnlyHook(home: string, cwd: string): Promise<void
     if (shell !== "{}") throw new Error(`the hook allowed a shell command: ${shell}`);
     const read = await decide("view_file", { AbsolutePath: join(cwd, "README.md") });
     if (read !== '{"decision":"allow"}') throw new Error(`the hook did not allow a read: ${read || "empty answer"}`);
+    const outside = await decide("view_file", { AbsolutePath: join(dirname(resolve(cwd)), "trama-read-check", "MEMORY.md") });
+    if (outside !== "{}") throw new Error(`the hook allowed a read outside the project: ${outside}`);
   } finally {
     await rm(dir, { recursive: true, force: true }).catch(() => undefined);
   }
@@ -780,18 +864,33 @@ export function antigravityHelpOffersSandbox(help: string): boolean {
   return false;
 }
 
-const sandboxFlags = new Map<string, Promise<boolean>>();
-
-function sandboxFlagAvailable(binary: string): Promise<boolean> {
-  let flag = sandboxFlags.get(binary);
-  if (!flag) {
-    flag = runHelper(binary, ["--help"], { timeoutMs: HELP_TIMEOUT_MS })
-      .then((result) => !result.timedOut && antigravityHelpOffersSandbox(`${result.stdout}\n${result.stderr}`))
-      .catch(() => false);
-    sandboxFlags.set(binary, flag);
-  }
-  return flag;
+/** True when `agy --help` lists `--effort` (agy 1.1.5 and later). */
+export function antigravityHelpOffersEffort(help: string): boolean {
+  return /^\s*(?:-\w,\s*)?--effort(?![\w-])/m.test(help);
 }
+
+/**
+ * Levels `agy models` listed, shared by every runtime: the controller discovers models on one instance
+ * and runs the Coordinator and the specialists on others.
+ */
+const defaultEffortByModel = new Map<string, string>();
+const effortsByModel = new Map<string, string[]>();
+
+const helpTexts = new Map<string, Promise<string>>();
+
+function helpText(binary: string): Promise<string> {
+  let help = helpTexts.get(binary);
+  if (!help) {
+    help = runHelper(binary, ["--help"], { timeoutMs: HELP_TIMEOUT_MS })
+      .then((result) => (result.timedOut ? "" : `${result.stdout}\n${result.stderr}`))
+      .catch(() => "");
+    helpTexts.set(binary, help);
+  }
+  return help;
+}
+
+const sandboxFlagAvailable = (binary: string): Promise<boolean> => helpText(binary).then(antigravityHelpOffersSandbox);
+const effortFlagAvailable = (binary: string): Promise<boolean> => helpText(binary).then(antigravityHelpOffersEffort);
 
 // ── Hook events and transcript ───────────────────────────────────────────
 
@@ -800,6 +899,7 @@ const DENIED_COMMAND_OUTPUT = "Negato da Trama: Antigravity non può eseguire co
 const DENIED_NETWORK_OUTPUT = "Negato da Trama: gli strumenti di rete non sono consentiti.";
 const DENIED_TOOL_OUTPUT = "Negato da Trama: con Antigravity sono consentiti solo lettura, modifiche nel worktree e gli strumenti di Trama.";
 const READ_ONLY_DENIED_COMMAND_OUTPUT = "Negato da Trama: in sola lettura Antigravity non può eseguire comandi di shell.";
+const DENIED_READ_OUTPUT = "Negato da Trama: Antigravity legge solo nel progetto, nel suo worktree e nelle cartelle che Trama permette.";
 const READ_ONLY_DENIED_TOOL_OUTPUT = "Negato da Trama: in sola lettura Antigravity può usare solo gli strumenti di lettura e quelli di Trama.";
 
 export function normalizeAntigravityCommandLine(value: unknown): string | undefined {
@@ -862,6 +962,8 @@ interface ThreadState {
   ephemeral: boolean;
   conversationId: string | null;
   instructionsDelivered: boolean;
+  /** Folders the read tools may reach. */
+  readableRoots: string[];
 }
 
 interface PendingTool {
@@ -883,6 +985,9 @@ interface ActiveTurn {
   pendingTools: PendingTool[];
   toolSequence: number;
   readOnly: boolean;
+  cwd: string;
+  /** Folders the read tools may reach in this turn. */
+  readableRoots: string[];
   /** The CLI called the capture hook in this turn. */
   hookSeen: boolean;
   /** A read-only turn produced output before any hook call: Trama stopped it. */
@@ -924,7 +1029,6 @@ export class AntigravityRuntime implements AgentRuntime {
   private readonly home: string;
   private readonly threadStoreFile: string;
   private readonly threads = new Map<string, ThreadState>();
-  private readonly defaultEffortByModel = new Map<string, string>();
   private active: ActiveTurn | null = null;
   /** A turn still in setup: no process exists yet to stop. */
   private pending: PendingTurn | null = null;
@@ -1001,7 +1105,8 @@ export class AntigravityRuntime implements AgentRuntime {
 
   private rememberEfforts(models: ProviderModel[]): void {
     for (const model of models) {
-      if (model.defaultReasoningEffort) this.defaultEffortByModel.set(model.model, model.defaultReasoningEffort);
+      if (model.defaultReasoningEffort) defaultEffortByModel.set(model.model, model.defaultReasoningEffort);
+      if (model.supportedReasoningEfforts.length) effortsByModel.set(model.model, model.supportedReasoningEfforts);
     }
   }
 
@@ -1022,6 +1127,7 @@ export class AntigravityRuntime implements AgentRuntime {
       developerInstructions: options.developerInstructions,
       ephemeral: options.ephemeral ?? false,
       instructionsDelivered: false,
+      readableRoots: readableRoots(cwd, options.readableRoots ?? []),
     };
     if (options.resumeThreadId) {
       const known = this.threads.get(options.resumeThreadId);
@@ -1082,6 +1188,8 @@ export class AntigravityRuntime implements AgentRuntime {
 
     const pending = new PendingTurn(options.onEvent, "Antigravity è stato chiuso.");
     let sandboxFlag = false;
+    let effortFlag = false;
+    const named = parseAntigravityCliModelLabel(options.model);
     this.pending = pending;
     const toolServer = this.options.toolServer ?? null;
     let text: string;
@@ -1094,6 +1202,13 @@ export class AntigravityRuntime implements AgentRuntime {
         await this.preparePlugin(binary, true, cwd);
         pending.checkpoint();
         sandboxFlag = await sandboxFlagAvailable(binary);
+        pending.checkpoint();
+      }
+      effortFlag = await effortFlagAvailable(binary);
+      pending.checkpoint();
+      if (named && !named.effort && !effortsByModel.has(named.model) && !ANTIGRAVITY_KNOWN_MODELS[named.model]) {
+        // A model Trama has no levels for: ask `agy models` once, since agy rejects a name without its level.
+        await this.listModels().catch(() => undefined);
         pending.checkpoint();
       }
       const skillText = await inlineSkillInstructions("antigravity", options.skills);
@@ -1127,7 +1242,12 @@ export class AntigravityRuntime implements AgentRuntime {
       // The turn below registers synchronously, so an interrupt from here on reaches it.
       if (this.pending === pending) this.pending = null;
     }
-    const cliModel = resolveAntigravityCliModelLabel(options.model, options.effort, this.defaultEffortByModel.get(options.model));
+    const cliModel = resolveAntigravityCliModelLabel(
+      options.model,
+      options.effort,
+      defaultEffortByModel.get(named?.model ?? options.model),
+      effortsByModel.get(named?.model ?? options.model),
+    );
     const eventFile = join(runDir, "hooks.ndjson");
     const logFile = join(runDir, "agy.log");
 
@@ -1136,8 +1256,7 @@ export class AntigravityRuntime implements AgentRuntime {
       "--dangerously-skip-permissions",
       // Extra layer for read-only turns; the capture hook stays the rule Trama relies on.
       ...(sandboxFlag ? ["--sandbox"] : []),
-      "--model",
-      cliModel,
+      ...antigravityModelArgs(cliModel, effortFlag),
       "--output-format",
       "stream-json",
       "--log-file",
@@ -1156,6 +1275,7 @@ export class AntigravityRuntime implements AgentRuntime {
       [PROFILE_ENV]: readOnly ? "read-only" : "worktree",
       ...(writableRoot ? { [WRITABLE_ROOT_ENV]: writableRoot } : {}),
       [HOST_TOOLS_ENV]: hostTools.join(","),
+      [READABLE_ROOTS_ENV]: JSON.stringify([...thread.readableRoots, ...readableRoots(cwd)]),
       ...(thread.conversationId ? { [CONVERSATION_ENV]: thread.conversationId } : {}),
       ...(toolServer && tokenFile ? { [MCP_URL_ENV]: toolServer.url, [MCP_TOKEN_FILE_ENV]: tokenFile } : {}),
     });
@@ -1186,6 +1306,8 @@ export class AntigravityRuntime implements AgentRuntime {
         pendingTools: [],
         toolSequence: 0,
         readOnly,
+        cwd,
+        readableRoots: [...thread.readableRoots, ...readableRoots(cwd)],
         hookSeen: false,
         hookMissing: false,
         streamedText: false,
@@ -1318,6 +1440,10 @@ export class AntigravityRuntime implements AgentRuntime {
               stderr.trim() ||
               (result?.state === undefined && result !== undefined ? "Antigravity CLI è terminato senza un risultato completo." : "") ||
               `Antigravity CLI è terminato con codice ${code ?? 1}.`;
+            if (isAntigravityUnknownModelError(message)) {
+              settle({ kind: "failed", error: new ProviderError("invalidModel", antigravityUnknownModelMessage(cliModel, message)) });
+              return;
+            }
             const blocked = usageLimitError("antigravity", "Antigravity", message);
             settle({ kind: "failed", error: blocked ?? new ProviderError("rpcError", message) });
             if (blocked) this.options.onAccountChanged?.();
@@ -1382,6 +1508,14 @@ export class AntigravityRuntime implements AgentRuntime {
       const toolCall = record(payload.toolCall);
       const name = typeof toolCall?.name === "string" ? toolCall.name.trim() : "";
       const toolArgs = record(toolCall?.args);
+      if (eventName === "denied-read") {
+        // The hook refused a read outside the session's folders: record which path (issue #206).
+        const itemId = `agy-tool-${turn.toolSequence++}`;
+        const outside = antigravityReadPaths(toolArgs).map((path) => resolve(turn.cwd, path)).find((path) => !isReadable(turn.readableRoots, turn.cwd, path));
+        turn.onEvent({ type: "toolCallCompleted", itemId, server: "antigravity", tool: name, succeeded: false, error: DENIED_READ_OUTPUT });
+        if (outside) turn.onEvent({ type: "readOutsideScope", itemId, path: outside, tool: name });
+        continue;
+      }
       if (eventName === "denied-tool") {
         const itemId = `agy-tool-${turn.toolSequence++}`;
         if (name === "run_command" || name === "send_command_input") {

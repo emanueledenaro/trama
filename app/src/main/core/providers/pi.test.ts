@@ -247,6 +247,35 @@ describe("Pi sessions and tool gating", () => {
     expect(results[2]).toMatch(/fuori dal worktree/);
     await expect(readFile(join(root, "outside-new.txt"), "utf8")).rejects.toThrow();
   });
+
+  it("keeps read tools inside the session's folders and reports a refused read (issue #206)", async () => {
+    const project = join(root, "project");
+    const codexHome = join(root, "codex-home");
+    await mkdir(project, { recursive: true });
+    await mkdir(join(codexHome, "memories"), { recursive: true });
+    await writeFile(join(project, "README.md"), "progetto");
+    await writeFile(join(codexHome, "memories", "MEMORY.md"), "privato");
+    const runtime = new PiRuntime();
+    const { threadId } = await runtime.openThread({ model: "anthropic/claude-x", cwd: project, developerInstructions: "" });
+    const tool = (name: string) => lastSessionOptions().customTools.find((t) => t.name === name)!;
+    const results: string[] = [];
+    state.scenario = async () => {
+      const inside = await tool("read").execute("r1", { path: "README.md" }, undefined, undefined, undefined);
+      results.push(JSON.stringify(inside));
+      for (const [id, name, path] of [["r2", "read", join(codexHome, "memories", "MEMORY.md")], ["r3", "grep", "../codex-home"]] as const) {
+        await tool(name).execute(id, { path, pattern: "privato" }, undefined, undefined, undefined).catch((error: Error) => results.push(error.message));
+      }
+    };
+    const events: TurnEvent[] = [];
+    await runtime.runTurn({ threadId, prompt: "leggi", cwd: project, model: "anthropic/claude-x", onEvent: (e) => events.push(e) });
+    expect(results[0]).toContain("progetto");
+    expect(results.slice(1)).toEqual([expect.stringMatching(/fuori dal progetto/), expect.stringMatching(/fuori dal progetto/)]);
+    expect(results.join(" ")).not.toContain("privato\"");
+    expect(events.filter((e) => e.type === "readOutsideScope")).toEqual([
+      { type: "readOutsideScope", itemId: "r2", path: join(codexHome, "memories", "MEMORY.md"), tool: "read" },
+      { type: "readOutsideScope", itemId: "r3", path: codexHome, tool: "grep" },
+    ]);
+  });
 });
 
 describe("Pi turns", () => {

@@ -46,7 +46,8 @@ const asObject = (value: Json | undefined): JsonObject | null =>
 const asString = (value: Json | undefined): string | null => (typeof value === "string" ? value : null);
 const asArray = (value: Json | undefined): Json[] => (Array.isArray(value) ? value : []);
 
-function searchPath(): string[] {
+/** Folders searched for Codex, also on the PATH app-server gets. */
+export function searchPath(): string[] {
   const home = homedir();
   return [
     ...(process.env.PATH ?? "").split(delimiter).filter(Boolean),
@@ -112,7 +113,8 @@ export async function restrictedAppServerArguments(executable: string, reservedS
         : '{url="http://127.0.0.1:9/mcp",enabled=false}';
     args.push("-c", `mcp_servers.${name}=${value}`);
   }
-  args.push("--disable", "apps", "--disable", "plugins", "--disable", "hooks", "--disable", "multi_agent");
+  // Codex memories point the model at ~/.codex/memories, which holds other projects' notes (issue #206).
+  args.push("--disable", "apps", "--disable", "plugins", "--disable", "hooks", "--disable", "multi_agent", "--disable", "memories");
   return args;
 }
 
@@ -142,6 +144,8 @@ export interface ThreadOptions {
   sandbox?: "read-only" | "workspace-write";
   /** Resume this thread when it still exists; otherwise start a new one. */
   resumeThreadId?: string | null;
+  /** Named permission profile, defined in `config`; replaces `sandbox`. */
+  permissions?: string;
 }
 
 export interface TurnOptions {
@@ -156,6 +160,8 @@ export interface TurnOptions {
   images?: string[];
   /** The only directory the turn may write; the turn is read-only when absent. */
   writableRoot?: string | null;
+  /** Named permission profile of the thread; replaces the sandbox policy built from `writableRoot`. */
+  permissions?: string;
   /** Skills the person invoked, sent as skill input items. */
   skills?: LoadedSkill[];
   /** JSON schema the final answer must follow. */
@@ -178,6 +184,8 @@ export class CodexClient {
   private stderrTail = "";
   /** Turns already over: a late event of theirs, such as the end of an interrupted turn, never reaches the next one. */
   private readonly endedTurnIds = new Set<string>();
+  /** The permission profile each thread runs under, from its opening or from the last turn that switched it. */
+  private readonly threadPermissions = new Map<string, string>();
 
   constructor(
     private readonly options: {
@@ -310,7 +318,7 @@ export class CodexClient {
       model: options.model,
       cwd: options.cwd,
       approvalPolicy: "never",
-      sandbox: options.sandbox ?? "read-only",
+      ...(options.permissions ? { permissions: options.permissions } : { sandbox: options.sandbox ?? "read-only" }),
       developerInstructions: options.developerInstructions,
     };
     if (options.config) common.config = options.config;
@@ -320,7 +328,10 @@ export class CodexClient {
           await this.request("thread/resume", { ...common, threadId: options.resumeThreadId, excludeTurns: true }, 60_000),
         );
         const id = asString(asObject(result?.thread)?.id);
-        if (id) return { threadId: id, replaced: false };
+        if (id) {
+          this.rememberPermissions(id, options.permissions);
+          return { threadId: id, replaced: false };
+        }
       } catch (error) {
         if (!(error instanceof CodexError) || error.code !== "rpcError") throw error;
       }
@@ -334,7 +345,13 @@ export class CodexClient {
     );
     const id = asString(asObject(result?.thread)?.id);
     if (!id) throw new CodexError("malformedMessage", "risposta thread/start senza thread.id");
+    this.rememberPermissions(id, options.permissions);
     return { threadId: id, replaced: Boolean(options.resumeThreadId) };
+  }
+
+  private rememberPermissions(threadId: string, permissions: string | undefined): void {
+    if (permissions) this.threadPermissions.set(threadId, permissions);
+    else this.threadPermissions.delete(threadId);
   }
 
   /** Runs one turn and resolves with the final answer. Events stream through `onEvent`. */
@@ -387,7 +404,14 @@ export class CodexClient {
         model: options.model,
         ...(typeof options.fastMode === "boolean" ? { serviceTier: options.fastMode ? "fast" : "default" } : {}),
         approvalPolicy: "never",
-        sandboxPolicy: options.writableRoot
+      };
+      // A turn names its profile only to switch it: the thread already runs under the one it was opened with, and
+      // Codex 0.155 rebuilds the configuration of a turn that names one without the thread's `config`, failing with
+      // "default_permissions requires a `[permissions]` table".
+      if (options.permissions) {
+        if (this.threadPermissions.get(options.threadId) !== options.permissions) params.permissions = options.permissions;
+      } else
+        params.sandboxPolicy = options.writableRoot
           ? {
               type: "workspaceWrite",
               writableRoots: [options.writableRoot],
@@ -395,14 +419,14 @@ export class CodexClient {
               excludeTmpdirEnvVar: true,
               excludeSlashTmp: true,
             }
-          : { type: "readOnly", networkAccess: false },
-      };
+          : { type: "readOnly", networkAccess: false };
       if (options.effort) params.effort = options.effort;
       if (options.outputSchema) params.outputSchema = options.outputSchema;
       this.request("turn/start", params)
         .then((result) => {
           const turnId = asString(asObject(asObject(result)?.turn)?.id);
           if (!turnId) throw new CodexError("malformedMessage", "risposta turn/start senza turn.id");
+          if (typeof params.permissions === "string") this.threadPermissions.set(options.threadId, params.permissions);
           this.adoptTurnId(turn, turnId);
         })
         .catch((error: Error) => {
@@ -442,7 +466,14 @@ export class CodexClient {
   stop(): void {
     if (this.pendingTurn) this.pendingTurn.stopped = true;
     this.pendingTurn = null;
-    this.activeTurn?.reject(new CodexError("processExited", "Codex è stato chiuso."));
+    const closed = new CodexError("processExited", "Codex è stato chiuso.");
+    this.activeTurn?.reject(closed);
+    // The process's exit no longer reaches `fail` once `child` is cleared: its requests end here, not at their timeout.
+    for (const [, pending] of this.pending) {
+      clearTimeout(pending.timer);
+      pending.reject(closed);
+    }
+    this.pending.clear();
     this.child?.kill();
     this.child = null;
     this.initializing = null;

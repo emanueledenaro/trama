@@ -29,6 +29,9 @@ export interface ProviderModel {
 
 export type CodexModel = ProviderModel;
 
+/** Title of the activity Trama records when a session tried to read outside its folders (issue #206). */
+export const READ_OUTSIDE_SCOPE_TITLE = "Lettura fuori dal progetto bloccata";
+
 /** A normalized event from one running turn, forwarded to the renderer. */
 export type TurnEvent =
   | { type: "turnStarted"; turnId: string }
@@ -39,6 +42,8 @@ export type TurnEvent =
   | { type: "fileChangeCompleted"; itemId: string; paths: string[]; succeeded: boolean }
   | { type: "toolCallStarted"; itemId: string; server: string; tool: string }
   | { type: "toolCallCompleted"; itemId: string; server: string; tool: string; succeeded: boolean; error: string | null }
+  /** The session tried to read outside the project, its worktree and the folders Trama allows; the read was refused. */
+  | { type: "readOutsideScope"; itemId: string; path: string; tool: string }
   | { type: "tokenUsage"; usedTokens: number; contextWindow: number | null }
   | { type: "compacted" }
   | { type: "completed"; text: string }

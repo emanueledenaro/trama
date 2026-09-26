@@ -35,6 +35,7 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 import type { AgentToolResult, ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type { Api, ImageContent, Model, TextContent } from "@earendil-works/pi-ai";
+import { expandHome, isReadable, readableRoots } from "../readScope";
 import {
   type AgentRuntime,
   extractJsonAnswer,
@@ -398,6 +399,29 @@ export function piHostToolResult(result: unknown): AgentToolResult<unknown> {
 }
 
 /** Projects Trama's MCP catalog into Pi custom tools; schemas and execution stay on Trama's server. */
+/**
+ * A read tool that refuses a `path` outside `roots` (`~` expanded, symlinks resolved) before Pi reads it, and
+ * reports the refused path.
+ */
+export function guardReadTool(
+  definition: ToolDefinition,
+  roots: readonly string[],
+  cwd: string,
+  onRefused: (toolCallId: string, path: string) => void,
+): ToolDefinition {
+  return {
+    ...definition,
+    execute: async (toolCallId, params, ...rest) => {
+      const path = typeof (params as { path?: unknown } | null)?.path === "string" ? (params as { path: string }).path : "";
+      if (path && !isReadable(roots, cwd, path)) {
+        onRefused(toolCallId, resolve(cwd, expandHome(path.replace(/^@/, ""))));
+        throw new Error(`Lettura fuori dal progetto non consentita: ${path}`);
+      }
+      return definition.execute(toolCallId, params, ...rest);
+    },
+  };
+}
+
 export async function buildPiHostTools(server: HostToolServer, reserved: Set<string>): Promise<ToolDefinition[]> {
   const result = await mcpRequest(server, "tools/list", {});
   if (!isRecord(result) || !Array.isArray(result.tools)) throw new Error("tools/list ha restituito un catalogo non valido.");
@@ -627,11 +651,17 @@ export class PiRuntime implements AgentRuntime {
       },
     };
     // SDK custom tools replace same-named extension tools, so every allowed name maps to Pi's own code.
+    // Read tools stay inside the session's folders; a refused read is recorded (issue #206).
+    const roots = readableRoots(cwd, options.readableRoots ?? []);
+    const guardRead = (definition: ToolDefinition): ToolDefinition =>
+      guardReadTool(definition, roots, cwd, (toolCallId, path) =>
+        this.active?.onEvent({ type: "readOutsideScope", itemId: toolCallId, path, tool: definition.name }),
+      );
     const customTools: ToolDefinition[] = [
-      sdk.defineTool(sdk.createReadToolDefinition(cwd) as ToolDefinition),
-      sdk.defineTool(sdk.createGrepToolDefinition(cwd) as ToolDefinition),
-      sdk.defineTool(sdk.createFindToolDefinition(cwd) as ToolDefinition),
-      sdk.defineTool(sdk.createLsToolDefinition(cwd) as ToolDefinition),
+      sdk.defineTool(guardRead(sdk.createReadToolDefinition(cwd) as ToolDefinition)),
+      sdk.defineTool(guardRead(sdk.createGrepToolDefinition(cwd) as ToolDefinition)),
+      sdk.defineTool(guardRead(sdk.createFindToolDefinition(cwd) as ToolDefinition)),
+      sdk.defineTool(guardRead(sdk.createLsToolDefinition(cwd) as ToolDefinition)),
       ...(this.writable
         ? [
             sdk.defineTool(sdk.createEditToolDefinition(cwd, { operations: editOperations }) as ToolDefinition),

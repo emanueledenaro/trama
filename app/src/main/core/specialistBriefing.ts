@@ -3,6 +3,7 @@ import { messageStyle } from "./messageStyle";
 import { CHECKS, type ReadOnlyCheck } from "./checks";
 import { needsWorktree } from "./team";
 import { contractBriefing, REPORT_HEADINGS } from "./implementation";
+import { answerBriefing, asksCoordinator } from "./developerQuestions";
 
 export function specialistInstructions(projectName: string, specialist: Specialist, assignment: SpecialistAssignment): string {
   const lines = [
@@ -17,6 +18,11 @@ export function specialistInstructions(projectName: string, specialist: Speciali
     messageStyle("the Coordinator"),
     "Name the files you touched with their path relative to the worktree root.",
   ];
+  if (asksCoordinator(specialist, assignment)) {
+    lines.push(
+      "When a doubt stops the work and the code, the spec, the contract and the Pact decisions do not answer it, ask the Coordinator with the ask_coordinator tool instead of guessing. Then stop and end your answer with the report: Trama resumes this session with the answer.",
+    );
+  }
   if (assignment.requiredChecks.length) {
     const checks = assignment.requiredChecks.map((c) => CHECKS[c as ReadOnlyCheck]?.summary ?? c);
     lines.push(`The work is done when these checks pass: ${checks.join("; ")}. Run them when you can and report their output.`);
@@ -60,6 +66,9 @@ export function resumeInput(assignment: SpecialistAssignment, decisions: PactDec
   if (assignment.failure) lines.push(`Il turno precedente non è riuscito: ${assignment.failure}`);
   const relied = decisionLines(assignment, decisions);
   if (relied.length) lines.push(...relied, "Se una decisione è cambiata rispetto al lavoro fatto, adegua il lavoro alla versione attuale.");
+  // The answer to the developer's question (W06) that paused the work.
+  const answer = answerBriefing(assignment);
+  if (answer.length) lines.push("", ...answer, "");
   lines.push("Continua da dove eri rimasto e riporta cosa hai fatto in questo turno.");
   if (assignment.seams) {
     const headings = Object.values(REPORT_HEADINGS).map((h) => `\`${h}\``).join(", ");

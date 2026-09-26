@@ -4,6 +4,7 @@ import { useState } from "react";
 import type { FocusTask } from "@shared/domain";
 import { type OverlapItem, overlapSummary, strongest } from "@shared/overlap";
 import { OverlapBadge, OverlapRow } from "@/components/OverlapNotice";
+import { useSeam } from "@/components/Seam";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/cn";
 import { act, useUi } from "@/lib/store";
@@ -128,6 +129,8 @@ export function FocusBar() {
   const openDialog = useUi((s) => s.openDialog);
   const overlaps = useUi((s) => s.app?.project?.overlaps);
   const [queueOpen, setQueueOpen] = useState(false);
+  // The work going on now (W17): the task in focus is stitched.
+  const seam = useSeam("focus", { active: Boolean(view?.focus), radius: "10px" });
   const overlapItems = focusOverlaps(overlaps, view?.focus?.id ?? null);
   if (!view || (!view.focus && !view.queue.length && !overlapItems.length)) return null;
   const focus = view.focus;
@@ -140,7 +143,8 @@ export function FocusBar() {
     <section aria-label="Barra di focus" className="chat-surface-divider shrink-0 px-3 sm:px-5" data-testid="focus-bar">
       <div className="mx-auto flex w-full max-w-[var(--app-chat-max-width)] min-w-0 flex-col px-1 py-2">
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-          <div className="flex min-w-[12rem] flex-1 items-start gap-2">
+          <div className={cn("relative flex min-w-[12rem] flex-1 items-start gap-2", seam.shown && "-mx-2 px-2 py-1.5")}>
+            {seam.stitch}
             <IconFocus2 className="mt-0.5 size-4 shrink-0 text-muted-foreground" stroke={1.8} />
             {focus ? (
               <div className="flex min-w-0 flex-1 flex-col gap-0.5">

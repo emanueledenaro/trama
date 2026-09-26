@@ -9,5 +9,5 @@ export default defineConfig({
     },
   },
   // Git-heavy tests pass 5 s on a loaded macOS runner; the limit guards hangs, not speed.
-  test: { include: ["src/**/*.test.ts"], environment: "node", testTimeout: 20_000 },
+  test: { include: ["src/**/*.test.ts", "scripts/**/*.test.ts"], environment: "node", testTimeout: 20_000 },
 });

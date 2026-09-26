@@ -10,6 +10,7 @@ import {
   IconGitBranch,
   IconInfoCircle,
   IconRosetteDiscountCheck,
+  IconRoute,
   IconShieldCheck,
   IconTelescope,
   IconUsersGroup,
@@ -21,11 +22,13 @@ import {
   type AssignmentStatus,
   type CandidateEvidence,
   type CandidateState,
+  type DeveloperQuestion,
   type DeveloperReport,
   type QualityItem,
   type SpecialistAssignment,
   type TechnicalReview,
   type TestedSeam,
+  developerQuestionState,
   isOpenQuestion,
 } from "@shared/domain";
 import { CLEAN_CODE_RULES, type CodeMeasure } from "@shared/cleanCode";
@@ -33,6 +36,7 @@ import { isExerciseAssessment } from "@shared/onboarding";
 import { findGoal } from "@shared/goals";
 import { adrMarkdown, adrPath, findDomainProposal, glossaryEntry } from "@shared/domainDocs";
 import { PROVIDERS } from "@shared/providers";
+import { BOUNDARY_LABELS, findRoute, firstRunnableStep, ROUTE_PATH_LABELS, type RouteStatus, STEP_KIND_LABELS, TRAMA_FLOWS } from "@shared/askTrama";
 import type { ActionResult } from "@shared/ipc";
 import { Spinner } from "@/components/Spinner";
 import { useState } from "react";
@@ -250,6 +254,10 @@ export function DecisionCard({ requestId }: { requestId: string }) {
   const withdrawal = request.withdrawal ?? null;
   const closed = Boolean(outcome || withdrawal);
   const grilling = request.grilling ?? null;
+  // A card that answers a developer's question blocks that work until the person answers (W06).
+  const blocked = request.blocksWork ? project.document.team.specialists.find((sp) => sp.assignments.some((a) => a.id === request.blocksWork!.assignmentId)) : null;
+  const blockedWork = blocked?.assignments.find((a) => a.id === request.blocksWork!.assignmentId) ?? null;
+  const blockedQuestion = blockedWork?.questions?.find((q) => q.id === request.blocksWork!.questionId) ?? null;
 
   return (
     <CardFrame
@@ -257,14 +265,38 @@ export function DecisionCard({ requestId }: { requestId: string }) {
       title={grilling ? `Domanda ${grilling.number}` : "Decisione"}
       className={grilling ? "my-2" : undefined}
       aside={
-        withdrawal ? (
-          <Badge tone="secondary">Ritirata</Badge>
-        ) : (
-          <Badge tone={request.category === "destructive" ? "destructive" : "info"}>{request.category === "destructive" ? "Caso distruttivo" : "Scelta di prodotto"}</Badge>
-        )
+        <span className="flex items-center gap-1.5">
+          {request.blocksWork && !closed ? (
+            <span data-testid="blocks-work">
+              <Badge tone="warning">Blocca il lavoro</Badge>
+            </span>
+          ) : null}
+          {withdrawal ? (
+            <Badge tone="secondary">Ritirata</Badge>
+          ) : (
+            <Badge tone={request.category === "destructive" ? "destructive" : "info"}>{request.category === "destructive" ? "Caso distruttivo" : "Scelta di prodotto"}</Badge>
+          )}
+        </span>
       }
     >
       <p className={cn("text-ui font-medium text-foreground", withdrawal && "text-foreground/70")}>{request.question}</p>
+      {blocked && blockedWork ? (
+        <Field label="Domanda dello sviluppatore">
+          <div data-testid="blocked-work">
+            <AgentName agent={blocked} />
+            <Sep />
+            {blockedWork.slice ? `fetta ${blockedWork.slice.sliceId}, ` : ""}incarico {blockedWork.id}
+            {blockedQuestion ? <div className="mt-0.5 text-ui-sm text-foreground/90">«{blockedQuestion.question}»</div> : null}
+            <div className="mt-0.5 text-ui-sm text-muted-foreground">
+              {!closed
+                ? "Il lavoro resta in pausa finché non rispondi. Il resto del team va avanti."
+                : blockedQuestion?.resumedAt
+                  ? "Il lavoro è ripreso con la tua risposta."
+                  : "Il lavoro riprende con la tua risposta appena lo sviluppatore è libero."}
+            </div>
+          </div>
+        </Field>
+      ) : null}
       <Field label="Caso concreto">{request.concreteCase}</Field>
       <div className="mt-3 space-y-1.5">
         {request.alternatives.map((alternative, index) => {
@@ -406,6 +438,7 @@ export const ASSIGNMENT_STATUS: Record<AssignmentStatus, { label: string; tone: 
   stopped: { label: "Fermato", tone: "secondary" },
   completed: { label: "Concluso", tone: "success" },
   failed: { label: "Non riuscito", tone: "destructive" },
+  paused: { label: "In pausa", tone: "warning" },
 };
 
 export function TeamProposalCard({ proposalId }: { proposalId: string }) {
@@ -502,6 +535,9 @@ export function AssignmentCard({ assignmentId }: { assignmentId: string }) {
   const status = ASSIGNMENT_STATUS[assignment.status];
   const active = ["preparing", "running", "stopRequested"].includes(assignment.status);
   const isCurrent = specialist.assignments.at(-1)?.id === assignment.id;
+  // Paused work whose question has its answer (W06): Trama resumes it by itself, the person can resume it now.
+  const pendingAsk = assignment.questions?.find((q) => !q.resumedAt);
+  const answeredPause = assignment.status === "paused" && pendingAsk !== undefined && developerQuestionState(pendingAsk) === "answered";
   const moduleName = (id: string) => project.snapshot.modules.find((m) => m.id === id)?.name ?? id;
   return (
     <CardFrame
@@ -518,6 +554,11 @@ export function AssignmentCard({ assignmentId }: { assignmentId: string }) {
         <AgentName agent={specialist} size={32} /> <span className="text-muted-foreground"><Sep />{specialist.competence}</span>
       </Field>
       <Field label="Obiettivo">{assignment.objective}</Field>
+      {assignment.selfPicked ? (
+        <Field label="Presa">
+          <span data-testid="assignment-self-picked">In autonomia: era la prossima fetta pronta nei moduli dello sviluppatore, dentro il mandato.</span>
+        </Field>
+      ) : null}
       <DutyFields assignment={assignment} />
       {assignment.exercise ? <Field label="Esercizio">{assignment.exercise}</Field> : null}
       <Field label="Perimetro">{assignment.moduleIds.length ? assignment.moduleIds.map(moduleName).join(", ") : "Tutto il progetto"}</Field>
@@ -536,7 +577,7 @@ export function AssignmentCard({ assignmentId }: { assignmentId: string }) {
       <Field label="Provider e modello scelti all'assegnazione">
         {providerLabel(assignment.provider)}<Sep />{assignment.model}
         <div className="mt-0.5 text-ui-sm text-muted-foreground">
-          {assignment.duty && assignment.modelReason
+          {(assignment.duty || assignment.selfPicked) && assignment.modelReason
             ? assignment.modelReason
             : assignment.modelReason
               ? `Motivazione del Coordinatore: ${assignment.modelReason}`
@@ -560,6 +601,7 @@ export function AssignmentCard({ assignmentId }: { assignmentId: string }) {
       <p className="mt-2 text-ui-sm text-muted-foreground">{assignment.lastUpdate}</p>
       {assignment.failure ? <Field label="Errore">{readableFailure(assignment.failure)}</Field> : null}
       {assignment.report !== undefined ? <ReportField report={assignment.report} /> : null}
+      {assignment.questions?.length ? <QuestionsField questions={assignment.questions} /> : null}
       {assignment.result ? (
         <div className="mt-2">
           <button type="button" className="inline-flex items-center gap-1 text-ui-sm text-muted-foreground hover:text-foreground" onClick={() => setShowResult(!showResult)}>
@@ -572,7 +614,7 @@ export function AssignmentCard({ assignmentId }: { assignmentId: string }) {
           ) : null}
         </div>
       ) : null}
-      {isCurrent && (active || assignment.status === "stopped" || assignment.status === "failed") ? (
+      {isCurrent && (active || assignment.status === "stopped" || assignment.status === "failed" || answeredPause) ? (
         <div className="cta-row mt-3">
           {active ? (
             <Button size="sm" variant="outline" disabled={assignment.status === "stopRequested"} onClick={() => void act("assignment:stop", { assignmentId })}>
@@ -669,6 +711,7 @@ const BLOCKER_TEXT: Record<string, string> = {
   EVIDENCE_STALE: "Verifica non più valida",
   CHECK_FAILED: "Verifica non superata",
   REMOTE_CONFLICT: "Conflitto con il lavoro di un collega",
+  WORKTREE_CONFLICT: "Conflitto con il worktree di un altro sviluppatore",
 };
 
 const QUALITY_LABEL: Record<QualityItem["code"], string> = {
@@ -857,6 +900,46 @@ function ReportList({
         <p className="text-ui-sm text-muted-foreground">{none}</p>
       )}
     </div>
+  );
+}
+
+const QUESTION_STATE = {
+  asked: { label: "Aspetta il Coordinatore", tone: "warning" },
+  waitingForPerson: { label: "Blocca il lavoro", tone: "warning" },
+  answered: { label: "Risposta data", tone: "info" },
+  resumed: { label: "Lavoro ripreso", tone: "success" },
+} as const;
+
+/** The developer's questions to the Coordinator (W06) with where each stands and its answer. */
+function QuestionsField({ questions }: { questions: DeveloperQuestion[] }) {
+  return (
+    <Field label="Domande al Coordinatore">
+      <ul className="space-y-2" data-testid="assignment-questions">
+        {questions.map((question) => {
+          const key = question.resumedAt ? "resumed" : developerQuestionState(question);
+          const answer = question.answer;
+          return (
+            <li key={question.id} data-testid="assignment-question" data-state={key}>
+              <div className="flex items-start gap-2">
+                <span className="min-w-0 flex-1 break-words text-ui-sm text-foreground">{question.question}</span>
+                <Badge tone={QUESTION_STATE[key].tone}>{QUESTION_STATE[key].label}</Badge>
+              </div>
+              {question.context ? <div className="text-ui-sm text-muted-foreground">Contesto: {question.context}</div> : null}
+              {answer?.kind === "facts" ? (
+                <div className="mt-0.5 text-ui-sm text-foreground/90" data-testid="question-answer">
+                  Risposta del Coordinatore: {answer.text}
+                  <div className="text-ui-xs text-muted-foreground">Fonti: {answer.sources.join(", ")}</div>
+                </div>
+              ) : answer?.kind === "person" ? (
+                <div className="mt-0.5 text-ui-sm text-foreground/90" data-testid="question-answer">
+                  {answer.text ? `Risposta della persona: ${answer.text}` : `Aspetta la tua risposta sulla scheda ${answer.decisionRequestId}.`}
+                </div>
+              ) : null}
+            </li>
+          );
+        })}
+      </ul>
+    </Field>
   );
 }
 
@@ -1254,15 +1337,23 @@ export function ConflictCard({ assessmentId }: { assessmentId: string }) {
   const exercise = isExerciseAssessment(assessment);
   // A comparison made on an older snapshot of the candidate, or against a head that moved on, is obsolete (T13).
   const candidate = project.document.candidates.find((c) => c.id === assessment.candidateId);
+  // Against another developer's worktree (W08) the other side is that candidate, not a remote head.
+  const worktree = Boolean(assessment.otherCandidateId);
+  const other = worktree ? project.document.candidates.find((c) => c.id === assessment.otherCandidateId) : undefined;
+  const otherMoved =
+    worktree &&
+    (!other ||
+      other.snapshotId !== assessment.otherSnapshotId ||
+      project.document.candidates.filter((c) => c.assignmentId === other.assignmentId).at(-1)?.id !== other.id);
   const heads =
-    project.github.snapshot && !exercise
+    project.github.snapshot && !exercise && !worktree
       ? new Set([...project.github.snapshot.branches.map((b) => b.sha.toLowerCase()), ...project.github.snapshot.pullRequests.map((p) => p.headSHA.toLowerCase())])
       : null;
-  const obsolete = (candidate && candidate.snapshotId !== assessment.snapshotId) || (heads !== null && !heads.has(assessment.remoteSHA.toLowerCase()));
+  const obsolete = (candidate && candidate.snapshotId !== assessment.snapshotId) || otherMoved || (heads !== null && !heads.has(assessment.remoteSHA.toLowerCase()));
   return (
     <CardFrame
       icon={<IconGitBranch stroke={1.8} />}
-      title={exercise ? "Esercizio di conflitto" : "Lavoro dei colleghi"}
+      title={exercise ? "Esercizio di conflitto" : worktree ? "Worktree del team" : "Lavoro dei colleghi"}
       aside={
         <>
           {exercise ? <Badge tone="info">Esercizio</Badge> : null}
@@ -1271,7 +1362,11 @@ export function ConflictCard({ assessmentId }: { assessmentId: string }) {
       }
     >
       {obsolete ? (
-        <p className="mb-1 text-ui-xs text-muted-foreground">Il candidato o il lavoro del collega sono cambiati dopo questo confronto: Trama ne farà uno nuovo.</p>
+        <p className="mb-1 text-ui-xs text-muted-foreground">
+          {worktree
+            ? "Uno dei due candidati è cambiato dopo questo confronto: Trama ne farà uno nuovo."
+            : "Il candidato o il lavoro del collega sono cambiati dopo questo confronto: Trama ne farà uno nuovo."}
+        </p>
       ) : null}
       {exercise ? (
         <p className="mb-1 text-ui-sm text-muted-foreground">Modifica simulata da Trama in una copia locale separata: non è il lavoro di un collaboratore reale.</p>
@@ -1281,7 +1376,8 @@ export function ConflictCard({ assessmentId }: { assessmentId: string }) {
         <button type="button" className="font-mono text-[11.5px] text-[var(--color-text-accent)] hover:underline" onClick={() => setInspector({ kind: "candidate", id: assessment.candidateId })}>
           {assessment.candidateId}
         </button>{" "}
-        e {assessment.references.join(", ")} ({assessment.remoteSHA.slice(0, 7)}).
+        e {assessment.references.join(", ")}
+        {worktree ? "" : ` (${assessment.remoteSHA.slice(0, 7)})`}.
       </p>
       <p className="mt-1 text-ui-sm text-muted-foreground">{assessment.detail}</p>
       {assessment.conflictingFiles.length ? (
@@ -1333,6 +1429,71 @@ export function PresenceConsentCard({ proposal, detail }: { proposal: string; de
           </Button>
           <Button size="sm" onClick={() => void act("presence:consent", { share: true, proposal: proposal as "initial" | "conflict" })}>
             Condividi
+          </Button>
+        </div>
+      ) : null}
+    </CardFrame>
+  );
+}
+
+const ROUTE_STATUS: Record<RouteStatus, { label: string; tone: "info" | "success" | "secondary" }> = {
+  proposed: { label: "Proposto", tone: "info" },
+  started: { label: "Avviato", tone: "success" },
+  declined: { label: "Non avviato", tone: "secondary" },
+  superseded: { label: "Sostituito", tone: "secondary" },
+};
+
+/**
+ * The route the Coordinator chose with Ask Trama (M07): each step says how Trama runs it, and a skill the package does
+ * not carry says it is not yet available. "Avvia il percorso" applies the phase boundary and starts the first step.
+ */
+export function RouteCard({ routeId }: { routeId: string }) {
+  const project = useUi((s) => s.app?.project);
+  const route = project ? findRoute(project.document, routeId) : null;
+  if (!project || !route) return null;
+  const status = ROUTE_STATUS[route.status];
+  const runnable = firstRunnableStep(route);
+  const busy = Boolean(project.runningRequestId);
+  return (
+    <CardFrame
+      anchor="route"
+      icon={<IconRoute stroke={1.8} />}
+      title={`Percorso di Ask Trama ${route.id}`}
+      className={cn(route.status === "superseded" && "opacity-80")}
+      aside={<Badge tone={status.tone}>{status.label}</Badge>}
+    >
+      <div data-testid="route" data-route={route.id}>
+        <Field label="La tua situazione">{route.situation}</Field>
+        <Field label={ROUTE_PATH_LABELS[route.path]}>
+          <ol className="mt-1 space-y-1">
+            {route.steps.map((step, index) => (
+              <li key={step.skill} className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                <span className="text-muted-foreground tabular-nums">{index + 1}.</span>
+                <code className="rounded bg-[var(--app-chat-code-surface)] px-1 py-px font-mono text-ui-sm">{step.skill}</code>
+                {step.kind === "unavailable" ? (
+                  <Badge tone="warning">{STEP_KIND_LABELS.unavailable}</Badge>
+                ) : (
+                  <span className="text-ui-sm text-muted-foreground">{step.kind === "flow" ? TRAMA_FLOWS[step.skill] : STEP_KIND_LABELS.skill}</span>
+                )}
+              </li>
+            ))}
+          </ol>
+        </Field>
+        <Field label={`Confine di fase: ${BOUNDARY_LABELS[route.boundary].label}`}>
+          <span className="text-ui-sm text-muted-foreground">{BOUNDARY_LABELS[route.boundary].detail}</span>
+        </Field>
+        <Field label="Perché questo percorso">{route.reason}</Field>
+        {route.status === "proposed" && !runnable ? (
+          <p className="mt-2 text-ui-sm text-muted-foreground">Nessun passo di questo percorso è ancora disponibile in Trama.</p>
+        ) : null}
+      </div>
+      {route.status === "proposed" ? (
+        <div className="cta-row mt-3">
+          <Button size="sm" variant="outline" disabled={busy} onClick={() => void act("route:answer", { routeId: route.id, start: false })}>
+            Non avviare
+          </Button>
+          <Button size="sm" disabled={busy || !runnable} onClick={() => void act("route:answer", { routeId: route.id, start: true })}>
+            Avvia il percorso
           </Button>
         </div>
       ) : null}

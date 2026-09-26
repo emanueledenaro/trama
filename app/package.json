@@ -12,6 +12,7 @@
     "build": "vite build && node scripts/build-electron.mjs",
     "start": "npm run build && electron .",
     "typecheck": "tsc --noEmit -p tsconfig.json",
+    "check:names": "node scripts/check-file-names.mjs",
     "test": "vitest run",
     "dist": "npm run build && electron-builder",
     "ui-check": "npm run build && node scripts/ui-check.mjs ui-check"

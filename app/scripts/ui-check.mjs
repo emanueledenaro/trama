@@ -58,6 +58,49 @@ const expectAsked = async (fragment, control) => {
   if (!asked) throw new Error(`${control}: no "${fragment}" in the focused composer, it holds: ${await composer().inputValue().catch(() => "no composer")}`);
 };
 
+// W17: the seam, the bots' stitch used as an accent. At most one shows on a screen, and only on the approved uses;
+// each use is saved in light and dark. With high contrast the stitch becomes a continuous edge.
+const visibleSeams = () =>
+  page.evaluate(() =>
+    [...document.querySelectorAll("svg[data-seam]")]
+      .filter((svg) => {
+        const box = svg.getBoundingClientRect();
+        return box.width > 0 && box.height > 0 && box.bottom > 0 && box.top < innerHeight;
+      })
+      .map((svg) => svg.dataset.seam),
+  );
+const expectSeam = async (use) => {
+  const seams = await visibleSeams();
+  if (seams.length > 1) throw new Error(`More than one seam on the screen: ${seams.join(", ")}`);
+  if ((seams[0] ?? null) !== use) throw new Error(`Expected the seam on ${use ?? "nothing"}, found ${seams[0] ?? "none"}`);
+};
+const seamShots = async (use, name) => {
+  await expectSeam(use);
+  const dark = await page.evaluate(() => document.documentElement.classList.contains("dark"));
+  for (const mode of ["light", "dark"]) {
+    await page.evaluate((isDark) => document.documentElement.classList.toggle("dark", isDark), mode === "dark");
+    await shot(`21-seam-${name}-${mode}`);
+  }
+  await page.evaluate((isDark) => document.documentElement.classList.toggle("dark", isDark), dark);
+};
+const expectContrastFallback = async () => {
+  for (const media of [{ contrast: "more" }, { forcedColors: "active" }]) {
+    await page.emulateMedia(media);
+    const dash = await page.evaluate(() => {
+      const rect = document.querySelector("svg[data-seam] rect");
+      return rect ? getComputedStyle(rect).strokeDasharray : null;
+    });
+    if (dash !== "none") throw new Error(`With ${JSON.stringify(media)} the seam is still dashed: ${dash}`);
+  }
+  await page.emulateMedia({ contrast: "no-preference", forcedColors: "none" });
+};
+const dragFiles = (type) =>
+  page.evaluate((eventType) => {
+    const files = new DataTransfer();
+    files.items.add(new File(["Note"], "note.txt", { type: "text/plain" }));
+    document.querySelector("form.chat-composer-surface").dispatchEvent(new DragEvent(eventType, { dataTransfer: files, bubbles: true, cancelable: true }));
+  }, type);
+
 // B02, first launch. The intro plays over the app while the state loads and leaves by itself; the welcome follows.
 const welcome = page.getByTestId("welcome");
 await welcome.waitFor();
@@ -133,9 +176,21 @@ const setTheme = async (theme) => {
 
 // The welcome: logo, what Trama does, then the configuration in three steps that reuse the guide's states.
 await welcome.getByRole("heading", { name: "Benvenuto in Trama" }).waitFor();
+// Behind the welcome the window is inert: its controls cannot take the focus, whatever the timing of the dialog.
+const behind = await page.evaluate(() => {
+  const toggle = document.querySelector('button[aria-label="Mostra o nascondi la barra laterale"]');
+  toggle?.focus();
+  return { found: Boolean(toggle), focused: document.activeElement === toggle };
+});
+if (!behind.found || behind.focused) throw new Error(`The window behind the welcome is not inert: ${JSON.stringify(behind)}`);
 // The welcome is modal: Tab cycles inside it (through the dialog's focus guards) and never reaches the window behind.
+// The dialog takes the focus once it has opened, which a slow machine shows after the heading: wait for it first.
+await page.waitForFunction(() => Boolean(document.activeElement?.closest('[data-testid="welcome"]')), null, { timeout: 10_000 });
 for (let press = 0; press < 8; press++) {
   await page.keyboard.press("Tab");
+  // A Tab that lands on a focus guard is sent back inside on the next frame; a person never types faster than that,
+  // but Playwright does, and a second Tab before the redirect reached the window behind on a loaded runner.
+  await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
   const focus = await page.evaluate(() => {
     const active = document.activeElement;
     return {
@@ -242,6 +297,8 @@ for (const provider of ["codex", "claudeAgent", "grok"]) {
 }
 if (markColors.size !== 6) throw new Error(`The mark does not follow the provider theme: ${[...markColors].join(", ")}`);
 await brandLook(startLook.provider, startLook.dark);
+await seamShots("logo", "logo");
+await expectContrastFallback();
 await picker.getByRole("button", { name: "Clona da GitHub" }).click();
 const cloneDialog = page.getByRole("dialog", { name: "Clona da GitHub" });
 await cloneDialog.getByRole("textbox").fill("non è un repository");
@@ -274,6 +331,14 @@ await shot("01d-picker-example-exercise");
 await page.getByRole("complementary", { name: "Esercizio" }).getByRole("button", { name: "Chiudi l'esercizio" }).click();
 await page.getByText("Ho letto lo studio").first().waitFor({ timeout: 20_000 });
 await shot("02-demo-study");
+// A place to fill: the project has no goal yet. Files dragged over the composer take the seam while they are there.
+await page.getByTestId("first-goal").scrollIntoViewIfNeeded();
+await seamShots("firstGoal", "first-goal");
+await dragFiles("dragover");
+await page.getByText("Rilascia le immagini per allegarle al messaggio").waitFor();
+await seamShots("fileDrop", "file-drop");
+await dragFiles("dragleave");
+await expectSeam("firstGoal");
 // The context and model pickers share one panel.
 await page.getByRole("button", { name: "Contesto del messaggio" }).click();
 await page.getByRole("listbox", { name: "Contesto" }).waitFor();
@@ -930,6 +995,8 @@ await pausedItem.getByRole("button", { name: "Metti in focus" }).click();
 await focusIs(firstFocus, true);
 await queue.locator('[data-status="paused"]').first().waitFor({ state: "detached", timeout: 10_000 });
 await shot("17b-focus-back");
+// The work going on now: the task in focus takes the seam.
+await seamShots("focus", "focus");
 // Light and dark on two providers' themes, then a narrow window where the bar wraps without a horizontal scroll.
 const look = await page.evaluate(() => ({ provider: document.documentElement.dataset.provider ?? null, dark: document.documentElement.classList.contains("dark") }));
 const setLook = (provider, dark) =>
@@ -1109,9 +1176,42 @@ await shot("18a-specialist-stopped");
 await slowCard.getByRole("button", { name: "Riprendi" }).click();
 await slowCard.getByText("Concluso", { exact: true }).waitFor({ timeout: 20_000 });
 
+// Issue #204: the work ends, Trama starts the checks by itself and the Coordinator verifies the assignment instead of a
+// candidate, as in the live run. The move comes back under the reply with Trama's reason and its button on the right.
+await page.evaluate(() => window.trama.invoke("settings:update", { continuousWork: true }));
+await send("[assegna] [luna]");
+const lunaCard = assignmentCards.nth(1);
+await lunaCard.getByText("Concluso", { exact: true }).waitFor({ timeout: 20_000 });
+const lunaAssignment = await cardAssignment(lunaCard);
+const stalledStep = page.locator('[data-testid="automatic-step"][data-stalled="true"]').filter({ hasText: "Esegui le verifiche" });
+await stalledStep.getByText("Mossa automatica non riuscita").waitFor({ timeout: 30_000 });
+const retryStep = page.getByTestId("next-step").filter({ hasText: `l'incarico ${lunaAssignment} è concluso ma il suo candidato non è stato dichiarato` });
+await retryStep.waitFor({ timeout: 20_000 });
+const retryButton = retryStep.getByRole("button", { name: "Esegui le verifiche" });
+const retryBox = await retryButton.boundingBox();
+const retryRowBox = await retryStep.boundingBox();
+if (!retryBox || !retryRowBox || retryRowBox.x + retryRowBox.width - (retryBox.x + retryBox.width) > 2) throw new Error("Esegui le verifiche is not on the right");
+await page.evaluate(() => window.trama.invoke("settings:update", { continuousWork: false }));
+await retryStep.scrollIntoViewIfNeeded();
+await shot("18a2-automatic-move-stalled");
+await app.evaluate(({ nativeTheme }) => {
+  nativeTheme.themeSource = "dark";
+});
+await page.evaluate(() => document.documentElement.classList.add("dark"));
+await shot("18a3-automatic-move-stalled-dark");
+await app.evaluate(({ nativeTheme }) => {
+  nativeTheme.themeSource = "system";
+});
+await page.evaluate(() => document.documentElement.classList.remove("dark"));
+// The person takes the move again: it reaches the Coordinator as the person's message, and the button goes away.
+await retryButton.click();
+await page.getByText("Esegui le verifiche del lavoro.").last().waitFor({ timeout: 20_000 });
+await page.getByRole("button", { name: "Interrompi" }).waitFor({ state: "hidden", timeout: 20_000 });
+if (await retryStep.count()) throw new Error("The stalled move is still offered after the person took it");
+
 // V05: the work leaves trailing whitespace; git_diff_check fails on the candidate with git's own output.
 await send("[assegna] [spazi]");
-const spacesCard = assignmentCards.nth(1);
+const spacesCard = assignmentCards.nth(2);
 await spacesCard.getByText("Concluso", { exact: true }).waitFor({ timeout: 20_000 });
 await send(`[candidato:${await cardAssignment(spacesCard)}:${candidateDecision}:tutte]`);
 const candidateCards = page.locator(".chat-card").filter({ has: page.getByTestId("candidate-evidence") });
@@ -1139,7 +1239,7 @@ await page.evaluate(() => document.documentElement.classList.remove("dark"));
 
 // The correction is new work and a new candidate, with new evidence; the failed one keeps its own.
 await send("[assegna] [correggi-spazi]");
-const fixCard = assignmentCards.nth(2);
+const fixCard = assignmentCards.nth(3);
 await fixCard.getByText("Concluso", { exact: true }).waitFor({ timeout: 20_000 });
 await send(`[candidato:${await cardAssignment(fixCard)}:${candidateDecision}:tutte]`);
 const correctedCard = candidateCards.nth(1);
@@ -1230,9 +1330,9 @@ await sliceSpec.getByText("Restano in Trama").waitFor({ timeout: 20_000 });
 // W05: an assignment without its contract (seams, Pact decisions) is refused with a clear tool failure; no card appears.
 await send("[assegna] [senza-contratto]");
 await page.getByText(/Rifiutato: .*incomplete_contract.*seams.*decisionIDs/).last().waitFor({ timeout: 20_000 });
-if ((await assignmentCards.count()) !== 3) throw new Error("An assignment without its contract reached a developer");
+if ((await assignmentCards.count()) !== 4) throw new Error("An assignment without its contract reached a developer");
 await send("[assegna] [test]");
-const sliceWork = assignmentCards.nth(3);
+const sliceWork = assignmentCards.nth(4);
 await sliceWork.getByText("Concluso", { exact: true }).waitFor({ timeout: 20_000 });
 // W05: the card shows the contract the slice reached the developer with and the developer's structured report,
 // as a statement apart from Trama's evidence.
@@ -1284,11 +1384,16 @@ await page.evaluate(() => document.documentElement.classList.remove("dark"));
 // F01: focus mode on a candidate. Trama runs the real checks first, then code-review's Standards and Spec axes, and
 // the report keeps them apart. The slice candidate reads its slice as the spec; the corrected one has none.
 const focusAudit = page.getByTestId("focus-audit");
+// An examination that ends in "failed" says why: the check reports that text instead of waiting out its timeout.
+const auditDone = async () => {
+  await page.locator('[data-testid="focus-audit"]:is([data-status="done"], [data-status="failed"])').waitFor({ timeout: 60_000 });
+  if ((await focusAudit.getAttribute("data-status")) !== "done") throw new Error(`Focus mode failed: ${await focusAudit.innerText()}`);
+};
 const focusActions = await sliceCandidate.locator(".cta-row button").allTextContents();
 if (!focusActions.some((label) => label.includes("Focus mode"))) throw new Error(`No Focus mode on the candidate: ${focusActions}`);
 await sliceCandidate.getByRole("button", { name: "Focus mode" }).click();
 await focusAudit.waitFor({ timeout: 20_000 });
-await page.locator('[data-testid="focus-audit"][data-status="done"]').waitFor({ timeout: 60_000 });
+await auditDone();
 for (const check of ["swift_build", "swift_test"]) {
   await focusAudit.locator(`[data-testid="candidate-evidence"][data-check="${check}"]:not([data-result="missing"])`).waitFor();
 }
@@ -1311,7 +1416,7 @@ await page.evaluate(() => document.documentElement.classList.remove("dark"));
 await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
 await correctedCard.scrollIntoViewIfNeeded();
 await correctedCard.getByRole("button", { name: "Focus mode" }).click();
-await page.locator('[data-testid="focus-audit"][data-status="done"]').waitFor({ timeout: 60_000 });
+await auditDone();
 await focusAudit.locator('[data-testid="audit-axis"][data-axis="spec"][data-status="skipped"]').getByText("no spec available", { exact: true }).waitFor();
 await focusAudit.locator('[data-testid="candidate-evidence"][data-check="git_diff_check"][data-result="pass"]').waitFor();
 await shot("20c-focus-audit-no-spec");
@@ -1329,6 +1434,160 @@ await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
 await correctedCard.getByRole("button", { name: "Focus mode" }).click();
 await page.locator('[data-testid="focus-audit"][data-status="done"]').waitFor({ timeout: 10_000 });
 await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
+
+// W06: a developer with a doubt asks the Coordinator with ask_coordinator, and the slice pauses. The question stays in
+// the report's doubts. The Coordinator puts it on a Pact card that blocks the work; the person's answer resumes the
+// developer in the same session, and the card and the assignment say so.
+await send("[assegna:S1] [test] [domanda]");
+const questionWork = assignmentCards.nth(5);
+await questionWork.getByText("In pausa", { exact: true }).waitFor({ timeout: 20_000 });
+await questionWork.locator('[data-testid="assignment-question"][data-state="asked"]').getByText(/buono/).waitFor();
+await questionWork.getByText("Aspetta il Coordinatore").waitFor();
+await questionWork.getByTestId("report-doubts").getByText(/Domanda al Coordinatore/).waitFor();
+await sliceSpec.locator('[data-testid="plan-slice"][data-state="paused"]').getByText("In pausa").waitFor({ timeout: 20_000 });
+await questionWork.scrollIntoViewIfNeeded();
+await shot("19e-developer-question");
+await send("[blocca-dubbio]");
+// The card keeps the developer's question after the answer; only the "Blocca il lavoro" badge goes.
+const blockingCard = page.locator(".chat-card", { has: page.getByTestId("blocked-work") }).last();
+await blockingCard.waitFor({ timeout: 20_000 });
+await blockingCard.getByTestId("blocks-work").getByText("Blocca il lavoro").waitFor();
+await blockingCard.getByTestId("blocked-work").getByText(/buono/).waitFor();
+await blockingCard.getByText("Il lavoro resta in pausa finché non rispondi. Il resto del team va avanti.").waitFor();
+await questionWork.locator('[data-testid="assignment-question"][data-state="waitingForPerson"]').getByText("Blocca il lavoro").waitFor();
+await blockingCard.getByRole("button", { name: /Va in revisione come gli altri/ }).click();
+const blockingActions = await blockingCard.locator(".cta-row").last().locator("button").allTextContents();
+if (blockingActions.at(-1)?.trim() !== "Registra la decisione") throw new Error(`Registra la decisione is not the last call to action: ${blockingActions}`);
+const recordBox = await blockingCard.getByRole("button", { name: "Registra la decisione" }).boundingBox();
+const blockingBox = await blockingCard.boundingBox();
+if (!recordBox || !blockingBox || blockingBox.x + blockingBox.width - (recordBox.x + recordBox.width) > 20) throw new Error("Registra la decisione is not on the right");
+await blockingCard.scrollIntoViewIfNeeded();
+await shot("19f-blocking-card");
+const questionLook = await page.evaluate(() => ({ provider: document.documentElement.dataset.provider ?? null, dark: document.documentElement.classList.contains("dark") }));
+for (const provider of ["codex", "claudeAgent"]) {
+  await setLook(provider, true);
+  await shot(`19g-blocking-card-${provider}-dark`);
+}
+await setLook(questionLook.provider, questionLook.dark);
+await blockingCard.getByRole("button", { name: "Registra la decisione" }).click();
+await questionWork.getByText("Concluso", { exact: true }).waitFor({ timeout: 30_000 });
+await questionWork.locator('[data-testid="assignment-question"][data-state="resumed"]').getByText("Lavoro ripreso").waitFor();
+await questionWork.getByTestId("question-answer").getByText(/Va in revisione come gli altri/).waitFor();
+await blockingCard.getByText("Il lavoro è ripreso con la tua risposta.").waitFor();
+if (await blockingCard.getByTestId("blocks-work").count()) throw new Error("An answered card still says it blocks the work");
+await questionWork.scrollIntoViewIfNeeded();
+await shot("19h-developer-question-resumed");
+await setLook("claudeAgent", true);
+await shot("19i-developer-question-resumed-claude-dark");
+await setLook(questionLook.provider, questionLook.dark);
+// W08: independent movement, after the work of #204 and W06 (two more assignment cards). The person sets the project's
+// parallel limit in the settings; a verified slice unblocks the ones that depended on it, and with continuous work on
+// the free developer takes the next ready one in its modules by itself, without a Coordinator turn.
+await page.getByRole("button", { name: "Impostazioni" }).click();
+const parallelSettings = page.getByTestId("settings");
+await parallelSettings.getByRole("button", { name: /^Metodo di lavoro/ }).first().click();
+const parallelPicker = parallelSettings.getByTestId("parallel-developers");
+await parallelPicker.getByRole("radio", { name: "3", checked: true }).waitFor();
+await parallelPicker.getByRole("radio", { name: "2" }).click();
+await parallelPicker.getByRole("radio", { name: "2", checked: true }).waitFor();
+await parallelPicker.scrollIntoViewIfNeeded();
+await shot("22a-parallel-developers");
+await app.evaluate(({ nativeTheme }) => {
+  nativeTheme.themeSource = "dark";
+});
+await page.evaluate(() => document.documentElement.classList.add("dark"));
+await shot("22b-parallel-developers-dark");
+await app.evaluate(({ nativeTheme }) => {
+  nativeTheme.themeSource = "system";
+});
+await page.evaluate(() => document.documentElement.classList.remove("dark"));
+await page.getByRole("button", { name: "Impostazioni" }).click();
+await page.getByTestId("settings").waitFor({ state: "hidden" });
+// The first slice is verified on new work that passes its check and the technical review: S2 and S3 become ready.
+await send("[assegna:S1]");
+const verifiedSliceWork = assignmentCards.nth(6);
+await verifiedSliceWork.getByText("Concluso", { exact: true }).waitFor({ timeout: 20_000 });
+await send(`[candidato:${await cardAssignment(verifiedSliceWork)}:${candidateDecision}]`);
+const teamSlices = sliceSpec.getByTestId("plan-slices");
+await teamSlices.locator('[data-testid="plan-slice"][data-state="done"]').first().waitFor({ timeout: 30_000 });
+const unblocked = await teamSlices.getByTestId("plan-slice").evaluateAll((items) => items.map((item) => item.getAttribute("data-state")));
+if (unblocked.join() !== "done,ready,ready") throw new Error(`A verified slice did not unblock its dependents: ${unblocked}`);
+if ((await assignmentCards.count()) !== 7) throw new Error("A developer took a slice while continuous work was off");
+// Continuous work on: at the next event of the work (here the end of a Coordinator turn) Ada is free and takes S2 in
+// autonomy; the assignment card says so and the slice shows who took it.
+await page.evaluate(() => window.trama.invoke("settings:update", { continuousWork: true }));
+await send("Come procede il lavoro?");
+const pickedCard = assignmentCards.nth(7);
+await pickedCard.getByTestId("assignment-self-picked").waitFor({ timeout: 20_000 });
+await pickedCard.getByText(/^S2 Il supporto vede gli ordini in revisione$/).waitFor();
+const pickedSlice = teamSlices.locator('[data-testid="plan-slice"][data-self-picked="yes"]').first();
+await pickedSlice.getByTestId("plan-slice-worker").getByText("Ada, presa in autonomia").waitFor({ timeout: 20_000 });
+if ((await pickedSlice.locator("span").first().textContent())?.trim() !== "2. Il supporto vede gli ordini in revisione") throw new Error("The free developer did not take the next ready slice");
+await teamSlices.getByTestId("plan-slices-parallel").getByText(/Sviluppatori al lavoro: \d di 2\./).waitFor();
+await page.evaluate(() => window.trama.invoke("settings:update", { continuousWork: false }));
+// A Coordinator move that continuous work started meanwhile keeps running in this check (FAKE_CODEX_AUTOMATIC=wait):
+// the person stops it before the next project opens.
+const runningMoves = page.getByTestId("automatic-step").getByRole("button", { name: "Ferma" });
+for (let tries = 0; (await runningMoves.count()) && tries < 10; tries += 1) {
+  await runningMoves.first().click().catch(() => undefined);
+  await page.waitForTimeout(500);
+}
+await pickedSlice.evaluate((item) => item.scrollIntoView({ block: "center" }));
+await shot("22c-slice-self-picked");
+await app.evaluate(({ nativeTheme }) => {
+  nativeTheme.themeSource = "dark";
+});
+await page.evaluate(() => document.documentElement.classList.add("dark"));
+await shot("22d-slice-self-picked-dark");
+await app.evaluate(({ nativeTheme }) => {
+  nativeTheme.themeSource = "system";
+});
+await page.evaluate(() => document.documentElement.classList.remove("dark"));
+// M07, Ask Trama: /ask-trama is in the composer with the original skill's description, and its button starts the
+// message. The Coordinator runs ask-trama and proposes a route instead of naming a command; each step says how Trama
+// runs it. "Avvia il percorso" starts the first flow inside Trama: here grilling, round 1.
+await page.getByRole("button", { name: "Interrompi" }).waitFor({ state: "hidden", timeout: 20_000 });
+await composer().fill("");
+await composer().pressSequentially("/ask");
+const skillMenu = page.getByRole("listbox", { name: "Skill" });
+await skillMenu.getByRole("option", { name: /\/ask-trama/ }).getByText("Ask which skill or flow fits your situation. A router over the skills in this repo.").waitFor({ timeout: 10_000 });
+await shot("21-ask-trama-menu");
+await page.keyboard.press("Escape");
+await composer().fill("");
+await page.getByRole("button", { name: "Ask Trama", exact: true }).click();
+await expectAsked("/ask-trama ", "Ask Trama");
+await page.keyboard.type("Gli ordini pagati annullati devono andare in revisione invece del rimborso automatico.");
+await page.keyboard.press("Enter");
+const routeCard = page.locator('[data-anchor="route"]').last();
+await routeCard.getByText("Proposto", { exact: true }).waitFor({ timeout: 20_000 });
+for (const expected of ["Flusso principale", "grill-with-docs", "Grilling prima del piano, con glossario e ADR", "prototype", "Skill nel Coordinatore", "Piano scritto come spec", "Revisione del candidato e focus mode", "Confine di fase: Continua"]) {
+  if (!(await routeCard.innerText()).includes(expected)) throw new Error(`The Ask Trama route does not show "${expected}"`);
+}
+if (await page.getByText("Chi vede gli ordini in revisione?").count()) throw new Error("Ask Trama started a flow before the person confirmed the route");
+const skipRoute = await routeCard.getByRole("button", { name: "Non avviare" }).boundingBox();
+const startRoute = await routeCard.getByRole("button", { name: "Avvia il percorso" }).boundingBox();
+const routeBox = await routeCard.boundingBox();
+if (!skipRoute || !startRoute || !routeBox || skipRoute.x >= startRoute.x || routeBox.x + routeBox.width - (startRoute.x + startRoute.width) > 20) {
+  throw new Error("Ask Trama route: Non avviare and Avvia il percorso are not on the right, primary last");
+}
+await routeCard.scrollIntoViewIfNeeded();
+await shot("21a-ask-trama-route");
+const routeLook = await page.evaluate(() => ({ provider: document.documentElement.dataset.provider ?? null, dark: document.documentElement.classList.contains("dark") }));
+for (const provider of ["codex", "claudeAgent"]) {
+  for (const dark of [false, true]) {
+    await setLook(provider, dark);
+    await shot(`21b-ask-trama-route-${provider}-${dark ? "dark" : "light"}`);
+  }
+}
+await setLook(routeLook.provider, routeLook.dark);
+await routeCard.getByRole("button", { name: "Avvia il percorso" }).click();
+await routeCard.getByText("Avviato", { exact: true }).waitFor({ timeout: 20_000 });
+await page.getByText(/^Avvia il percorso AT-[0-9A-F]{8} di Ask Trama/).last().waitFor({ timeout: 20_000 });
+await page.getByText("Chi vede gli ordini in revisione?").last().waitFor({ timeout: 20_000 });
+if (await routeCard.getByRole("button", { name: "Avvia il percorso" }).count()) throw new Error("A started route can be started again");
+await page.getByRole("button", { name: "Interrompi" }).waitFor({ state: "hidden", timeout: 20_000 });
+await page.getByText("Chi vede gli ordini in revisione?").last().scrollIntoViewIfNeeded();
+await shot("21c-ask-trama-started");
 
 // G01, presenza: a project with a colleague on a local bare remote. The colleague's record is already there; Trama
 // proposes the consent in the chat once, with "Non ora" and "Condividi" on the right, and publishes only after
@@ -1655,6 +1914,58 @@ for (const dark of [false, true]) {
   await page.evaluate((theme) => window.trama.invoke("settings:update", { theme }), dark ? "dark" : "light");
   await page.waitForFunction((wanted) => document.documentElement.classList.contains("dark") === wanted, dark);
   await shot(`19a-antigravity-coordinator-${dark ? "dark" : "light"}`);
+}
+await page.evaluate(() => window.trama.invoke("settings:update", { theme: "system" }));
+await app.close();
+
+// L03 #206: agents stay in the project. As in the live proof of 26 September, Clean Code's architecture review greps
+// Codex's global memory (~/.codex/memories/MEMORY.md). The fake Codex applies the thread's permission profile like the
+// real sandbox: the file stays hidden, nothing from it reaches Trama, and the review's activity shows the refused read.
+const scopeCodexHome = await mkdtemp(join(tmpdir(), "trama-ui-codex-home-"));
+await mkdir(join(scopeCodexHome, "memories"));
+const scopeMemory = join(scopeCodexHome, "memories", "MEMORY.md");
+await writeFile(scopeMemory, "ordini: nota privata di un altro progetto\n");
+const scopeProject = await mkdtemp(join(tmpdir(), "trama-ui-perimetro-"));
+await cp(resolve("resources/DemoProject"), scopeProject, { recursive: true });
+await writeFile(join(scopeProject, "package.json"), JSON.stringify({ name: "negozio", private: true, scripts: { test: "node -e \"process.exit(1)\"" } }));
+execFileSync("git", ["-C", scopeProject, "init", "-q", "-b", "main"]);
+execFileSync("git", ["-C", scopeProject, "add", "."]);
+execFileSync("git", ["-C", scopeProject, "-c", "user.name=Trama UI", "-c", "user.email=ui@trama.local", "commit", "-q", "-m", "Negozio"]);
+({ app, page } = await launch({ CODEX_HOME: scopeCodexHome, FAKE_CODEX_MEMORY_PROBE: "1" }));
+await page.evaluate(() => window.trama.invoke("settings:update", { continuousWork: false, theme: "light" }));
+await page.evaluate((path) => window.trama.invoke("project:open", { path }), scopeProject);
+await page.getByTestId("dialog-title").filter({ hasText: "trama-ui-perimetro" }).waitFor({ timeout: 30_000 });
+await page.getByText("Ho letto lo studio").first().waitFor({ timeout: 30_000 });
+await page.evaluate(() =>
+  window.trama.invoke("mandate:grant", {
+    requestId: null,
+    objectives: ["Correggere i bug"],
+    priorities: [],
+    scopeModuleIds: ["Sources/Orders"],
+    authorizedActions: ["executeInWorktree"],
+    limits: [],
+  }),
+);
+await composer().fill("[verifica:node_test]");
+await page.keyboard.press("Enter");
+// The failed check is diagnosed and fixed; then the free team gets the architecture review, which ends with a Pact card.
+await page.getByText(/Approfondire l'annullamento/).first().waitFor({ timeout: 90_000 });
+const blockedRead = page.getByRole("button", { name: "Lettura fuori dal progetto bloccata" });
+for (const group of await page.getByRole("button", { name: /ha lavorato per/ }).all()) {
+  if (await blockedRead.count()) break;
+  await group.click();
+}
+await blockedRead.first().waitFor({ timeout: 10_000 });
+if ((await blockedRead.count()) !== 1) throw new Error(`Expected one refused read, got ${await blockedRead.count()}`);
+await blockedRead.first().click();
+const blockedDetail = await blockedRead.first().locator("xpath=..").innerText();
+if (!blockedDetail.includes(scopeMemory) || !blockedDetail.includes("rg -n -i")) throw new Error(`Refused read without its path and request: ${blockedDetail}`);
+if ((await page.locator("body").innerText()).includes("nota privata")) throw new Error("Codex's memory reached Trama");
+await blockedRead.first().scrollIntoViewIfNeeded();
+for (const dark of [false, true]) {
+  await page.evaluate((theme) => window.trama.invoke("settings:update", { theme }), dark ? "dark" : "light");
+  await page.waitForFunction((wanted) => document.documentElement.classList.contains("dark") === wanted, dark);
+  await shot(`21-read-outside-project-${dark ? "dark" : "light"}`);
 }
 await page.evaluate(() => window.trama.invoke("settings:update", { theme: "system" }));
 await app.close();
