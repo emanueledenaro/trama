@@ -68,6 +68,18 @@ import {
 } from "./core/practices";
 import { checkItems, closeBlockers, evidenceProblems, parseChecklist, progressComment, progressKey, progressMarker } from "./core/tickets";
 import { assignmentSlice, developerSkillsDelivery, sliceBriefing } from "./core/implementation";
+import {
+  type CleanCodeChange,
+  checkStandard,
+  developerStandard,
+  readReviewAnswer,
+  REVIEW_OUTPUT_SCHEMA,
+  type ReviewAnswer,
+  reviewerInstructions,
+  reviewStandardBriefing,
+  specialistInstructionsWithStandard,
+  updateCleanCode,
+} from "./core/cleanCode";
 import { openingInput, resumeInput, specialistInstructions } from "./core/specialistBriefing";
 import { prepareDemoProject } from "./core/demoProject";
 import { appendEvent, emptyDocument, handoverTranscript, moveEvent, recordReply, referencedPaths } from "./core/document";
@@ -1297,6 +1309,13 @@ export class TramaController {
     consent.pending = null;
     this.changed();
     await this.presence?.tick();
+  }
+
+  /** The person adapts Trama's Clean Code standard to this project (Q03); the next developer and review read it. */
+  updateCleanCode(change: CleanCodeChange): void {
+    const project = this.requireProject();
+    project.document.cleanCode = updateCleanCode(project.document.cleanCode, change);
+    this.changed();
   }
 
   async pausePresence(paused: boolean): Promise<void> {
@@ -2866,7 +2885,13 @@ export class TramaController {
       const opening = await client.openThread({
         model: assignment.model,
         cwd,
-        developerInstructions: developer && !nativeInput ? [baseInstructions, developer.text].join("\n\n") : baseInstructions,
+        // Trama's Clean Code standard (Q03) reaches whoever writes in a worktree, a fixed role's fix included, as Trama's
+        // text above the skills and apart from them.
+        developerInstructions: specialistInstructionsWithStandard(
+          baseInstructions,
+          needsWorktree(assignment) ? developerStandard(document.cleanCode) : null,
+          developer && !nativeInput ? developer.text : null,
+        ),
         sandbox: needsWorktree(assignment) ? "workspace-write" : "read-only",
         resumeThreadId: assignment.threadId,
       });
@@ -3337,12 +3362,13 @@ export class TramaController {
     if (!model) throw new Error(this.coordinatorModelProblem(document, provider));
     const client = createRuntime(provider, { executable: provider === "codex" ? this.host.codexExecutable : null, requestTimeoutMs: 15_000 });
     try {
+      // The standard's measures are Trama's own, taken before the reviewer reads anything (Q03).
+      const standard = await checkStandard(candidate, assignment.workspace.worktreeRoot, document.cleanCode);
       const opening = await client.openThread({
         model,
         cwd: assignment.workspace.worktreeRoot,
         ephemeral: true,
-        developerInstructions:
-          "You are the technical reviewer of a candidate in Trama, distinct from its author. Read the diff and the worktree, read-only. Judge whether the change does what the assignment asks and respects the Pact decisions listed. Answer in Italian. You never approve on behalf of the person and you never merge.",
+        developerInstructions: reviewerInstructions(document.cleanCode),
       });
       const decisions = candidate.requiredDecisionIds
         .map((id) => document.decisions.find((d) => d.id === id))
@@ -3352,33 +3378,33 @@ export class TramaController {
       const prompt = [
         `Revisione tecnica del candidato ${candidate.id} per l'incarico ${assignment.id}: ${assignment.objective}`,
         `Decisioni del Patto da rispettare:\n${decisions}`,
+        reviewStandardBriefing(standard, assignment.report?.exceptions ?? null),
         `Diff catturato da Trama:\n\`\`\`diff\n${candidate.diff.slice(0, 60_000)}\n\`\`\``,
-        "Rispondi con verdict approved oppure changesRequested e un riassunto breve.",
-      ].join("\n\n");
+        "Rispondi con verdict approved oppure changesRequested, un riassunto breve e i findings (un elenco vuoto se non ne hai).",
+      ]
+        .filter(Boolean)
+        .join("\n\n");
       const answer = await client.runTurn({
         threadId: opening.threadId,
         prompt,
         cwd: assignment.workspace.worktreeRoot,
         model,
-        outputSchema: {
-          type: "object",
-          properties: { verdict: { type: "string", enum: ["approved", "changesRequested"] }, summary: { type: "string" } },
-          required: ["verdict", "summary"],
-          additionalProperties: false,
-        },
+        outputSchema: REVIEW_OUTPUT_SCHEMA,
         onEvent: () => undefined,
       });
-      let parsed: { verdict?: string; summary?: string };
+      let parsed: ReviewAnswer;
       try {
-        parsed = JSON.parse(extractJsonAnswer(answer)) as { verdict?: string; summary?: string };
+        parsed = readReviewAnswer(JSON.parse(extractJsonAnswer(answer)) as Record<string, unknown>);
       } catch {
         throw new Error("La revisione tecnica non ha restituito un verdetto leggibile.");
       }
       const review = recordTechnicalReview(document, candidateId, {
         reviewerThreadId: opening.threadId,
         authorThreadId: assignment.threadId,
-        verdict: parsed.verdict === "approved" ? "approved" : "changesRequested",
-        summary: parsed.summary?.trim() || "",
+        verdict: parsed.verdict,
+        summary: parsed.summary,
+        findings: parsed.findings,
+        standard,
       });
       appendEvent(
         document,

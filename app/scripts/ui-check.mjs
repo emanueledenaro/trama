@@ -1107,6 +1107,16 @@ await correctedCard.getByText("Via libera del Coordinatore.").waitFor();
 if ((await failedCard.innerText()).includes("Deciso")) throw new Error("The failed candidate took the correction's state");
 await correctedCard.scrollIntoViewIfNeeded();
 await shot("18d-candidate-corrected");
+// Q03: the technical review checks the diff against Trama's Clean Code standard. The card shows Trama's measures as
+// evidence and the reviewer's findings, with file and line, as judgement; in the light and the dark theme.
+const review = correctedCard.getByTestId("technical-review");
+await review.getByTestId("review-measures").getByText(/Misure di Trama, standard v1/).waitFor();
+const suggestion = review.locator('[data-testid="review-finding"][data-severity="suggestion"]');
+await suggestion.getByText("NOTE.md:1").waitFor();
+await suggestion.getByText("Suggerimento").waitFor();
+await review.getByText(/non un'evidenza/).waitFor();
+await review.scrollIntoViewIfNeeded();
+await shot("18d1-review-findings");
 // Q01: before publishing, the card shows the quality standard. The corrected candidate meets it, with its Conventional
 // Commits message; the failed one says what is missing and how to fix it. Both themes.
 const correctedQuality = correctedCard.locator('[data-testid="candidate-quality"][data-ready="yes"]');
@@ -1130,10 +1140,29 @@ await page.evaluate(() => document.documentElement.classList.add("dark"));
 await shot("18h-publication-standard-missing-dark");
 await correctedQuality.scrollIntoViewIfNeeded();
 await shot("18i-publication-standard-dark");
+await review.scrollIntoViewIfNeeded();
+await shot("18d2-review-findings-dark");
+// The project's switches: Impostazioni, Standard del codice lists the rules; one turns off for this project.
+await page.getByRole("button", { name: "Impostazioni" }).click();
+const standardSettings = page.getByTestId("settings");
+await standardSettings.getByRole("button", { name: /^Standard del codice/ }).first().click();
+const rules = standardSettings.getByTestId("clean-code-settings");
+await rules.getByText(/Robert C\. Martin/).waitFor();
+const solid = rules.getByRole("switch", { name: "SOLID" });
+await solid.click();
+await rules.locator('[role="switch"][aria-label="SOLID"][aria-checked="false"]').waitFor({ timeout: 10_000 });
+const standardActions = await rules.locator(".cta-row button").allTextContents();
+if (standardActions.at(-1)?.trim() !== "Salva") throw new Error(`Salva is not the last call to action: ${standardActions}`);
+await shot("18d3-standard-settings-dark");
 await app.evaluate(({ nativeTheme }) => {
   nativeTheme.themeSource = "system";
 });
 await page.evaluate(() => document.documentElement.classList.remove("dark"));
+await shot("18d4-standard-settings");
+await solid.click();
+await rules.locator('[role="switch"][aria-label="SOLID"][aria-checked="true"]').waitFor({ timeout: 10_000 });
+await page.getByRole("button", { name: "Impostazioni" }).click();
+await standardSettings.waitFor({ state: "hidden" });
 const correctedId = (await correctedCard.innerText()).match(/Candidato (C-[0-9A-F]{8})/)[1];
 await send(`[riverifica:${correctedId}:git_status]`);
 await correctedCard.getByText("Il via libera del Coordinatore non vale più: sono cambiate evidenze o decisioni.").waitFor({ timeout: 20_000 });
@@ -1172,6 +1201,7 @@ await developerReport.getByTestId("report-files").getByText("NOTE.md").waitFor()
 await developerReport.getByTestId("report-tests").getByText("NOTE.md").waitFor();
 await developerReport.locator('[data-testid="report-seam"][data-tested="yes"][data-agreed="yes"]').getByText(/CancelPaidOrder/).waitFor();
 await developerReport.getByTestId("report-doubts").getByText(/rimborso manuale/).waitFor();
+await developerReport.getByTestId("report-exceptions").getByText("Nessuna").waitFor();
 await developerReport.getByText(/non un'evidenza/).waitFor();
 await developerReport.scrollIntoViewIfNeeded();
 await shot("19c-assignment-contract-report");

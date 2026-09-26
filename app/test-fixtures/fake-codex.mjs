@@ -318,7 +318,11 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
       }
       if (params.outputSchema) {
         const verdict = text.includes("RIFIUTA") ? "changesRequested" : "approved";
-        setTimeout(() => finish(JSON.stringify({ verdict, summary: "Il diff rispetta le decisioni indicate." })), 10);
+        // The technical review against Trama's Clean Code standard (Q03) answers with findings, file and line.
+        const findings = text.includes("Misure deterministiche di Trama")
+          ? [{ severity: "suggestion", rule: "kiss", file: "NOTE.md", line: 1, message: "La nota può dire in una riga sola cosa documenta." }]
+          : [];
+        setTimeout(() => finish(JSON.stringify({ verdict, summary: "Il diff rispetta le decisioni indicate.", findings })), 10);
         return;
       }
       if (params.sandboxPolicy?.type === "workspaceWrite") {
@@ -348,7 +352,7 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
           const skills = params.input.filter((item) => item.type === "skill").map((item) => item.name);
           const seam = text.match(/## Seam confermati dalla persona\n1\. /) ? "\n- 1: NOTE.md" : "\n- none";
           // The structured report of W05, which extends M06's tested seams.
-          const report = `\n\nFiles touched:\n- NOTE.md\nTests written:\n- NOTE.md\nTested seams:${seam}\nDoubts:\n- Il rimborso manuale resta fuori da questa fetta`;
+          const report = `\n\nFiles touched:\n- NOTE.md\nTests written:\n- NOTE.md\nTested seams:${seam}\nDoubts:\n- Il rimborso manuale resta fuori da questa fetta\nStandard exceptions:\n- none`;
           setTimeout(() => finish(`Ho scritto NOTE.md nel worktree. Skill ricevute: ${skills.join(", ")}${report}`), 30);
           return;
         }
