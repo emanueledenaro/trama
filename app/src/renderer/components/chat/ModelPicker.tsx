@@ -1,7 +1,7 @@
 import { Popover } from "@base-ui/react/popover";
 import { IconBolt, IconBoltFilled, IconChevronDown, IconRotateClockwise } from "@tabler/icons-react";
 import { isUsableAccount, type ProviderId } from "@shared/codex";
-import { PROVIDERS, supportsReadOnly } from "@shared/providers";
+import { PROVIDERS } from "@shared/providers";
 import { useEffect, useRef, useState } from "react";
 import { PROVIDER_GLOW, ProviderIcon } from "@/components/ProviderIcon";
 import { PickerHeader, PickerList, PickerNote, PickerOption, PickerPopup, PickerSearch, usePickerSearch } from "@/components/ui/picker";
@@ -55,7 +55,7 @@ export function ModelPicker({
 
   const descriptor = PROVIDERS.find((p) => p.id === browsing);
   const account = providers[browsing]?.account ?? null;
-  const usable = isUsableAccount(account) && supportsReadOnly(browsing);
+  const usable = isUsableAccount(account);
   const models = providers[browsing]?.models ?? [];
   const { query, setQuery, visible, searchable } = usePickerSearch(open, models, (m) => `${m.displayName} ${m.model} ${m.description ?? ""}`);
   const current = providers[selectedProvider]?.models.find((m) => m.model === selectedModel);
@@ -105,7 +105,7 @@ export function ModelPicker({
                     browsing === id && "bg-[var(--color-background-elevated-secondary)] ring-1 ring-[color:var(--color-border-heavy)]",
                   )}
                 >
-                  <ProviderIcon provider={id} className={cn("size-4", !(isUsableAccount(providers[id]?.account ?? null) && supportsReadOnly(id)) && "opacity-45")} />
+                  <ProviderIcon provider={id} className={cn("size-4", !isUsableAccount(providers[id]?.account ?? null) && "opacity-45")} />
                   {id === selectedProvider ? <span className="absolute -bottom-0.5 size-1 rounded-full bg-[var(--color-text-accent)]" /> : null}
                 </button>
               </Tooltip>
@@ -119,13 +119,11 @@ export function ModelPicker({
           meta={
             usable
               ? `${models.length === 1 ? "1 modello" : `${models.length} modelli`}`
-              : !supportsReadOnly(browsing)
-                ? "Solo per specialisti con worktree"
-                : account?.kind === "blocked"
-                  ? "Bloccato"
-                  : account?.kind === "signedOut"
-                    ? "Accesso richiesto"
-                    : "Non collegato"
+              : account?.kind === "blocked"
+                ? "Bloccato"
+                : account?.kind === "signedOut"
+                  ? "Accesso richiesto"
+                  : "Non collegato"
           }
         />
 
@@ -134,11 +132,7 @@ export function ModelPicker({
         <PickerList label="Modelli">
           {!usable ? (
             <PickerNote>
-              {!supportsReadOnly(browsing)
-                ? "Può lavorare solo come specialista in un worktree proprio."
-                : descriptor?.signInCommand
-                  ? `Collegalo dal terminale con ${descriptor.signInCommand}.`
-                  : "Collegalo dalle impostazioni."}
+              {descriptor?.signInCommand ? `Collegalo dal terminale con ${descriptor.signInCommand}.` : "Collegalo dalle impostazioni."}
             </PickerNote>
           ) : visible.length === 0 ? (
             <PickerNote>Nessun modello corrisponde.</PickerNote>

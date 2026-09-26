@@ -951,6 +951,55 @@ await app.evaluate(({ nativeTheme }) => {
 });
 await page.evaluate(() => document.documentElement.classList.remove("dark"));
 
+// F01: focus mode on a candidate. Trama runs the real checks first, then code-review's Standards and Spec axes, and
+// the report keeps them apart. The slice candidate reads its slice as the spec; the corrected one has none.
+const focusAudit = page.getByTestId("focus-audit");
+const focusActions = await sliceCandidate.locator(".cta-row button").allTextContents();
+if (!focusActions.some((label) => label.includes("Focus mode"))) throw new Error(`No Focus mode on the candidate: ${focusActions}`);
+await sliceCandidate.getByRole("button", { name: "Focus mode" }).click();
+await focusAudit.waitFor({ timeout: 20_000 });
+await page.locator('[data-testid="focus-audit"][data-status="done"]').waitFor({ timeout: 60_000 });
+for (const check of ["swift_build", "swift_test"]) {
+  await focusAudit.locator(`[data-testid="candidate-evidence"][data-check="${check}"]:not([data-result="missing"])`).waitFor();
+}
+await focusAudit.locator('[data-testid="audit-axis"][data-axis="standards"][data-status="done"]').getByText(/Mysterious Name/).first().waitFor();
+await focusAudit.locator('[data-testid="audit-axis"][data-axis="spec"][data-status="done"]').getByText(/Fonte: Fetta S1/).waitFor();
+const auditText = await focusAudit.innerText();
+const [checksAt, standardsAt, specAt] = ["Verifiche reali", "Standards", "Spec"].map((heading) => auditText.indexOf(heading));
+if (!(checksAt >= 0 && checksAt < standardsAt && standardsAt < specAt)) throw new Error("Focus mode: the checks are not first, or Standards and Spec are out of order");
+await focusAudit.getByTestId("focus-audit-summary").getByText(/Standards: 1 rilievo.*Spec: 1 rilievo/).waitFor();
+await shot("20a-focus-audit");
+await app.evaluate(({ nativeTheme }) => {
+  nativeTheme.themeSource = "dark";
+});
+await page.evaluate(() => document.documentElement.classList.add("dark"));
+await shot("20b-focus-audit-dark");
+await app.evaluate(({ nativeTheme }) => {
+  nativeTheme.themeSource = "system";
+});
+await page.evaluate(() => document.documentElement.classList.remove("dark"));
+await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
+await correctedCard.scrollIntoViewIfNeeded();
+await correctedCard.getByRole("button", { name: "Focus mode" }).click();
+await page.locator('[data-testid="focus-audit"][data-status="done"]').waitFor({ timeout: 60_000 });
+await focusAudit.locator('[data-testid="audit-axis"][data-axis="spec"][data-status="skipped"]').getByText("no spec available", { exact: true }).waitFor();
+await focusAudit.locator('[data-testid="candidate-evidence"][data-check="git_diff_check"][data-result="pass"]').waitFor();
+await shot("20c-focus-audit-no-spec");
+await app.evaluate(({ nativeTheme }) => {
+  nativeTheme.themeSource = "dark";
+});
+await page.evaluate(() => document.documentElement.classList.add("dark"));
+await shot("20d-focus-audit-no-spec-dark");
+await app.evaluate(({ nativeTheme }) => {
+  nativeTheme.themeSource = "system";
+});
+await page.evaluate(() => document.documentElement.classList.remove("dark"));
+// Opened again, the card shows the same examination instead of starting a new one.
+await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
+await correctedCard.getByRole("button", { name: "Focus mode" }).click();
+await page.locator('[data-testid="focus-audit"][data-status="done"]').waitFor({ timeout: 10_000 });
+await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
+
 // G01, presenza: a project with a colleague on a local bare remote. The colleague's record is already there; Trama
 // proposes the consent in the chat once, with "Non ora" and "Condividi" on the right, and publishes only after
 // "Condividi": names, branches and paths, never the content of a file.
@@ -1140,4 +1189,43 @@ await shot("16h-overlap-module");
 if (!(await readFile(join(presenceProject, "src", "payments.js"), "utf8")).includes("CONTENUTO PRIVATO")) throw new Error("The probe changed the checkout");
 if (presenceGit(presenceProject, "symbolic-ref", "--short", "HEAD").trim() !== "feature/carrello") throw new Error("The probe changed the branch");
 if (presenceGit(presenceRemote, "rev-parse", "feature/rimborsi").trim() !== presenceGit(presenceSeed, "rev-parse", "feature/rimborsi").trim()) throw new Error("Bea's branch moved");
+await app.close();
+
+// P11: Antigravity works in every role. A fake agy first on the PATH and a separate HOME for its capture plugin:
+// the picker offers it like the other providers, and the Coordinator runs on it in the read-only profile.
+const agyBin = await mkdtemp(join(tmpdir(), "trama-ui-agy-"));
+const agyHome = await mkdtemp(join(tmpdir(), "trama-ui-agy-home-"));
+const agyLog = join(agyBin, "calls.log");
+await writeFile(join(agyBin, "agy"), `#!/bin/sh\nexec "${process.execPath}" "${resolve("test-fixtures/fake-agy.mjs")}" "$@"\n`, { mode: 0o755 });
+const agyProject = await mkdtemp(join(tmpdir(), "trama-ui-agy-project-"));
+execFileSync("git", ["-C", agyProject, "init", "-q", "-b", "main"]);
+await writeFile(join(agyProject, "README.md"), "# Magazzino\n");
+execFileSync("git", ["-C", agyProject, "add", "."]);
+execFileSync("git", ["-C", agyProject, "-c", "user.name=Trama UI", "-c", "user.email=ui@trama.local", "commit", "-q", "-m", "Magazzino"]);
+({ app, page } = await launch({ PATH: `${agyBin}:${process.env.PATH}`, HOME: agyHome, FAKE_AGY_LOG: agyLog }));
+await page.evaluate((path) => window.trama.invoke("project:open", { path }), agyProject);
+await page.getByTestId("dialog-title").filter({ hasText: "trama-ui-agy-project" }).waitFor({ timeout: 30_000 });
+await page.getByRole("button", { name: /^Provider e modello del Coordinatore/ }).click();
+await page.getByRole("tab", { name: "Antigravity" }).click();
+const agyModel = page.getByRole("listbox", { name: "Modelli" }).getByText("Gemini 3.5 Flash").first();
+await agyModel.waitFor({ timeout: 20_000 });
+if (await page.getByText("Solo per specialisti con worktree").count()) throw new Error("Antigravity is still offered only to specialists");
+await shot("19-antigravity-picker");
+await agyModel.click();
+await page.getByRole("button", { name: "Provider e modello del Coordinatore: Antigravity" }).waitFor({ timeout: 20_000 });
+await composer().fill("Cosa contiene il progetto?");
+await page.keyboard.press("Enter");
+await page.getByText("Ho letto il progetto in sola lettura").first().waitFor({ timeout: 30_000 });
+const agyCalls = await readFile(agyLog, "utf8");
+if (!/"profile":"read-only"/.test(agyCalls)) throw new Error(`The Antigravity Coordinator did not run read-only: ${agyCalls}`);
+for (const expected of ["allowed view_file", "denied write_to_file", "denied run_command"]) {
+  if (!agyCalls.includes(expected)) throw new Error(`Antigravity read-only hook: no "${expected}" in ${agyCalls}`);
+}
+if ((await readFile(join(agyProject, "README.md"), "utf8")) !== "# Magazzino\n") throw new Error("The read-only Antigravity turn changed a file");
+for (const dark of [false, true]) {
+  await page.evaluate((theme) => window.trama.invoke("settings:update", { theme }), dark ? "dark" : "light");
+  await page.waitForFunction((wanted) => document.documentElement.classList.contains("dark") === wanted, dark);
+  await shot(`19a-antigravity-coordinator-${dark ? "dark" : "light"}`);
+}
+await page.evaluate(() => window.trama.invoke("settings:update", { theme: "system" }));
 await app.close();
