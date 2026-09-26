@@ -1926,6 +1926,10 @@ export class TramaController {
           this.publish();
         } else if (event.type === "tokenUsage") {
           project.contextUsage = { usedTokens: event.usedTokens, contextWindow: event.contextWindow };
+        } else if (event.type === "toolRefused") {
+          // A refusal during the study is visible too (issue #228).
+          appendEvent(document, "trama", { type: "activity", title: TOOL_REFUSED_TITLE, detail: toolRefusedDetail(event), tone: "error" }, null);
+          this.changed();
         }
       },
     });

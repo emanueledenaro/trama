@@ -79,6 +79,7 @@ async function prompt(id, params) {
   const sessionId = params.sessionId;
   const text = params.prompt.filter((b) => b.type === "text").map((b) => b.text).join("\n");
   if (text.includes("silent")) return;
+  if (text.includes("exit now")) process.exit(0);
   if (text.includes("limit")) {
     send({ id, error: { code: -32000, message: "You've hit your usage limit. Try again in 2 hours." } });
     return;
@@ -99,7 +100,9 @@ async function prompt(id, params) {
       send({ id, result: { stopReason: "end_turn" } });
       return;
     }
-    const toolCall = { toolCallId: "gh-1", title: "Calling list_issues from github", kind: "other", status: "pending", rawInput: { server: "github", tool: "list_issues" } };
+    // "come lettura": the agent labels its connector a read with no path, as some agents do.
+    const kind = text.includes("come lettura") ? "read" : "other";
+    const toolCall = { toolCallId: "gh-1", title: "Calling list_issues from github", kind, status: "pending", rawInput: { server: "github", tool: "list_issues" } };
     update(sessionId, { sessionUpdate: "tool_call", ...toolCall });
     const answer = await askClient("session/request_permission", {
       sessionId,

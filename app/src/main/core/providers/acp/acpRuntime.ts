@@ -878,49 +878,55 @@ export class AcpAgentRuntime implements AgentRuntime {
     const executable = this.profile.resolveExecutable(this.options.executable);
     const launchInput: AcpLaunchInput = { cwd: options.cwd, model: options.model, developerInstructions: options.developerInstructions };
     const connection = await this.start(executable, launchInput);
-    const mcpServers = await this.mcpServers();
-    const meta = this.profile.sessionMeta ? { _meta: this.profile.sessionMeta } : {};
-    const capabilities = asObject(this.initializeResult.agentCapabilities);
-    let resumed = false;
+    try {
+      const mcpServers = await this.mcpServers();
+      const meta = this.profile.sessionMeta ? { _meta: this.profile.sessionMeta } : {};
+      const capabilities = asObject(this.initializeResult.agentCapabilities);
+      let resumed = false;
 
-    if (options.resumeThreadId) {
-      const supportsResume = asObject(capabilities?.sessionCapabilities)?.resume != null;
-      const supportsLoad = capabilities?.loadSession === true;
-      if (supportsResume || supportsLoad) {
-        const method = supportsResume ? "session/resume" : "session/load";
-        const params = { sessionId: options.resumeThreadId, cwd: options.cwd, mcpServers, ...meta } as JsonObject;
-        try {
-          if (method === "session/load") this.replayUntilQuiet = { last: Date.now(), resolve: () => undefined };
-          const result = await this.withAuth(() => connection.request(method, params, SESSION_SETUP_TIMEOUT_MS));
-          this.adoptSession(options.resumeThreadId, options.cwd, asObject(result) ?? {});
-          resumed = true;
-          if (method === "session/load") await this.awaitLoadReplay();
-        } catch (error) {
-          this.replayUntilQuiet = null;
-          if (!(error instanceof AcpRequestError) && !(error instanceof ProviderError && error.code === "timedOut")) throw error;
+      if (options.resumeThreadId) {
+        const supportsResume = asObject(capabilities?.sessionCapabilities)?.resume != null;
+        const supportsLoad = capabilities?.loadSession === true;
+        if (supportsResume || supportsLoad) {
+          const method = supportsResume ? "session/resume" : "session/load";
+          const params = { sessionId: options.resumeThreadId, cwd: options.cwd, mcpServers, ...meta } as JsonObject;
+          try {
+            if (method === "session/load") this.replayUntilQuiet = { last: Date.now(), resolve: () => undefined };
+            const result = await this.withAuth(() => connection.request(method, params, SESSION_SETUP_TIMEOUT_MS));
+            this.adoptSession(options.resumeThreadId, options.cwd, asObject(result) ?? {});
+            resumed = true;
+            if (method === "session/load") await this.awaitLoadReplay();
+          } catch (error) {
+            this.replayUntilQuiet = null;
+            if (!(error instanceof AcpRequestError) && !(error instanceof ProviderError && error.code === "timedOut")) throw error;
+          }
         }
       }
-    }
-    if (!resumed) {
-      const params = { cwd: options.cwd, mcpServers, ...meta } as JsonObject;
-      const create = () => connection.request("session/new", params, SESSION_SETUP_TIMEOUT_MS);
-      let result: Json;
-      try {
-        result = await this.withAuth(create);
-      } catch (error) {
-        if (!(error instanceof AcpRequestError && this.profile.retrySessionNew?.(error))) throw this.startupError(error);
-        await new Promise((r) => setTimeout(r, 100));
-        result = await this.withAuth(create).catch((retryError) => {
-          throw this.startupError(retryError);
-        });
+      if (!resumed) {
+        const params = { cwd: options.cwd, mcpServers, ...meta } as JsonObject;
+        const create = () => connection.request("session/new", params, SESSION_SETUP_TIMEOUT_MS);
+        let result: Json;
+        try {
+          result = await this.withAuth(create);
+        } catch (error) {
+          if (!(error instanceof AcpRequestError && this.profile.retrySessionNew?.(error))) throw this.startupError(error);
+          await new Promise((r) => setTimeout(r, 100));
+          result = await this.withAuth(create).catch((retryError) => {
+            throw this.startupError(retryError);
+          });
+        }
+        const sessionId = trimmed(asObject(result)?.sessionId);
+        if (!sessionId) throw new ProviderError("malformedMessage", `${this.profile.label}: risposta session/new senza sessionId.`);
+        this.adoptSession(sessionId, options.cwd, asObject(result) ?? {});
       }
-      const sessionId = trimmed(asObject(result)?.sessionId);
-      if (!sessionId) throw new ProviderError("malformedMessage", `${this.profile.label}: risposta session/new senza sessionId.`);
-      this.adoptSession(sessionId, options.cwd, asObject(result) ?? {});
+      const instructions = options.developerInstructions.trim();
+      this.pendingInstructions = !resumed && instructions && !this.profile.instructionsAtLaunch?.(launchInput) ? instructions : null;
+      return { threadId: this.sessionId!, replaced: Boolean(options.resumeThreadId) && !resumed };
+    } catch (error) {
+      // A session that never opened keeps no process and no token file (issue #228).
+      if (this.connection === connection) this.closeConnection();
+      throw error;
     }
-    const instructions = options.developerInstructions.trim();
-    this.pendingInstructions = !resumed && instructions && !this.profile.instructionsAtLaunch?.(launchInput) ? instructions : null;
-    return { threadId: this.sessionId!, replaced: Boolean(options.resumeThreadId) && !resumed };
   }
 
   async runTurn(options: RunTurnOptions): Promise<string> {
@@ -1082,6 +1088,9 @@ export class AcpAgentRuntime implements AgentRuntime {
         if (this.connection !== connection) return;
         this.connection = null;
         this.sessionId = null;
+        // The stdio proxy's token file goes with the process (issue #228).
+        void this.stdioHostTools?.dispose().catch(() => undefined);
+        this.stdioHostTools = null;
         this.activeTurn?.settle(this.activeTurn.interrupted ? { kind: "interrupted" } : { kind: "failed", message: error.message });
       },
     );
@@ -1315,7 +1324,10 @@ export class AcpAgentRuntime implements AgentRuntime {
     if (policy.active && decision === "reject" && (kind === "read" || kind === "search" || kind === "think")) {
       const outside = paths.find((path) => !(policy.readableRoots ?? [policy.cwd]).some((root) => resolvesInside(root, path)));
       if (outside) this.reportOutsideRead(outside, itemId, title ?? kind);
-    } else if (policy.active && decision === "reject" && !FILE_TOOL_KINDS.has(kind ?? "")) {
+    }
+    // A provider tool, or a "read" with no path Trama can check, such as a connector that lists GitHub issues (issue #228).
+    const pathless = (kind === "read" || kind === "search" || kind === "think") && paths.length === 0;
+    if (policy.active && decision === "reject" && (pathless || !FILE_TOOL_KINDS.has(kind ?? ""))) {
       // The provider's own GitHub, web, command or connector tool (issue #228).
       const input = asObject(toolCall.rawInput);
       const server = trimmed(input?.server) ?? trimmed(input?.serverName) ?? trimmed(input?.server_name);

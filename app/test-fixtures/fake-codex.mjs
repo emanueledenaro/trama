@@ -782,6 +782,10 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
         });
         toolDone("propose_goal", result);
       }
+      if (process.env.FAKE_CODEX_STUDY_GH && text.startsWith("Studio del progetto scritto da Trama")) {
+        // Issue #228: the study itself tries `gh`, which the read-only sandbox stops.
+        send({ method: "item/completed", params: { threadId, turnId, item: { id: "gh-study", type: "commandExecution", command: "gh issue list", exitCode: 1, status: "failed", aggregatedOutput: "error connecting to api.github.com" } } });
+      }
       send({ method: "thread/tokenUsage/updated", params: { threadId, turnId, tokenUsage: { total: { totalTokens: text.includes("[pieno]") ? 230_000 : 12_000 }, modelContextWindow: 258_000 } } });
       const reply =
         (text.startsWith("Studio del progetto scritto da Trama")

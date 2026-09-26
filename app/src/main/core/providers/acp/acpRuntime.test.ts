@@ -119,6 +119,24 @@ describe("AcpAgentRuntime", () => {
     expect(existsSync(tokenFile)).toBe(false);
   });
 
+  it("refuses a connector the agent labels a read without a path, and deletes the token file when the agent exits (issue #228)", async () => {
+    process.env.FAKE_ACP_NO_HTTP = "1";
+    runtime = new AcpAgentRuntime(testProfile, { toolServer: { ...toolServer, tools: ["read_issues"] } });
+    const { threadId } = await runtime.openThread({ model: "m1", cwd: dir, developerInstructions: "" });
+    const events: TurnEvent[] = [];
+    const run = (prompt: string) => runtime!.runTurn({ threadId, prompt, cwd: dir, model: "m1", onEvent: (e) => events.push(e) });
+    expect(await run("leggi le issue come lettura")).toBe("rejected");
+    expect(events).toContainEqual(expect.objectContaining({ type: "toolRefused", tool: "github: list_issues", reason: expect.stringContaining("read_issues di Trama") }));
+
+    const created = received().find((m) => m.method === "session/new")!;
+    const [server] = created.params!.mcpServers as Array<{ env: Array<{ name: string; value: string }> }>;
+    const tokenFile = server!.env.find((e) => e.name.endsWith("TOKEN_FILE"))!.value;
+    expect(existsSync(tokenFile)).toBe(true);
+    await expect(run("exit now")).rejects.toThrow();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(existsSync(tokenFile)).toBe(false);
+  });
+
   describe.each([
     ["cursor", cursorProfile],
     ["devin", devinProfile],
