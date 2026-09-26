@@ -104,6 +104,8 @@ Panoramica globale: il riepilogo di avanzamento, blocchi e decisioni richieste d
 
 Revisione tecnica: la valutazione di un candidato da parte di un revisore distinto dall'autore, riferita ai requisiti e alle verifiche di quel lavoro. Non è una decisione di prodotto né una revisione umana.
 
+Focus mode: l'esame in sola lettura di un solo bersaglio, per ora un candidato. Il punto fisso è la base del candidato. Trama esegue prima le verifiche reali nella sandbox, poi i due assi della skill `code-review`, Standards e Spec, in due sessioni parallele con il testo originale della skill. Senza una spec l'asse Spec non parte e riporta "no spec available". Il rapporto tiene le verifiche in testa e i due assi separati, resta nel progetto e si riapre dopo un riavvio. Le verifiche sono evidenze; i rilievi degli assi sono giudizi del modello.
+
 Via libera del Coordinatore: l'autorizzazione all'integrazione di un candidato verificato entro il mandato del Product Owner. È distinta dal via libera umano; i casi distruttivi seri richiedono l'intervento della persona.
 
 Miglioramento del team: un cambiamento della composizione o del metodo di lavoro degli specialisti, motivato dai risultati osservati e verificabile rispetto al metodo precedente. Comprende ruoli, istruzioni, modelli disponibili e procedure; conserva le decisioni e i controlli del progetto.
