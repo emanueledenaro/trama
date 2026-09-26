@@ -1052,6 +1052,16 @@ await correctedCard.getByText("Via libera del Coordinatore.").waitFor();
 if ((await failedCard.innerText()).includes("Deciso")) throw new Error("The failed candidate took the correction's state");
 await correctedCard.scrollIntoViewIfNeeded();
 await shot("18d-candidate-corrected");
+// Q03: the technical review checks the diff against Trama's Clean Code standard. The card shows Trama's measures as
+// evidence and the reviewer's findings, with file and line, as judgement; in the light and the dark theme.
+const review = correctedCard.getByTestId("technical-review");
+await review.getByTestId("review-measures").getByText(/Misure di Trama, standard v1/).waitFor();
+const suggestion = review.locator('[data-testid="review-finding"][data-severity="suggestion"]');
+await suggestion.getByText("NOTE.md:1").waitFor();
+await suggestion.getByText("Suggerimento").waitFor();
+await review.getByText(/non un'evidenza/).waitFor();
+await review.scrollIntoViewIfNeeded();
+await shot("18d1-review-findings");
 // Q01: before publishing, the card shows the quality standard. The corrected candidate meets it, with its Conventional
 // Commits message; the failed one says what is missing and how to fix it. Both themes.
 const correctedQuality = correctedCard.locator('[data-testid="candidate-quality"][data-ready="yes"]');
@@ -1075,10 +1085,29 @@ await page.evaluate(() => document.documentElement.classList.add("dark"));
 await shot("18h-publication-standard-missing-dark");
 await correctedQuality.scrollIntoViewIfNeeded();
 await shot("18i-publication-standard-dark");
+await review.scrollIntoViewIfNeeded();
+await shot("18d2-review-findings-dark");
+// The project's switches: Impostazioni, Standard del codice lists the rules; one turns off for this project.
+await page.getByRole("button", { name: "Impostazioni" }).click();
+const standardSettings = page.getByTestId("settings");
+await standardSettings.getByRole("button", { name: /^Standard del codice/ }).first().click();
+const rules = standardSettings.getByTestId("clean-code-settings");
+await rules.getByText(/Robert C\. Martin/).waitFor();
+const solid = rules.getByRole("switch", { name: "SOLID" });
+await solid.click();
+await rules.locator('[role="switch"][aria-label="SOLID"][aria-checked="false"]').waitFor({ timeout: 10_000 });
+const standardActions = await rules.locator(".cta-row button").allTextContents();
+if (standardActions.at(-1)?.trim() !== "Salva") throw new Error(`Salva is not the last call to action: ${standardActions}`);
+await shot("18d3-standard-settings-dark");
 await app.evaluate(({ nativeTheme }) => {
   nativeTheme.themeSource = "system";
 });
 await page.evaluate(() => document.documentElement.classList.remove("dark"));
+await shot("18d4-standard-settings");
+await solid.click();
+await rules.locator('[role="switch"][aria-label="SOLID"][aria-checked="true"]').waitFor({ timeout: 10_000 });
+await page.getByRole("button", { name: "Impostazioni" }).click();
+await standardSettings.waitFor({ state: "hidden" });
 const correctedId = (await correctedCard.innerText()).match(/Candidato (C-[0-9A-F]{8})/)[1];
 await send(`[riverifica:${correctedId}:git_status]`);
 await correctedCard.getByText("Il via libera del Coordinatore non vale più: sono cambiate evidenze o decisioni.").waitFor({ timeout: 20_000 });
@@ -1117,6 +1146,7 @@ await developerReport.getByTestId("report-files").getByText("NOTE.md").waitFor()
 await developerReport.getByTestId("report-tests").getByText("NOTE.md").waitFor();
 await developerReport.locator('[data-testid="report-seam"][data-tested="yes"][data-agreed="yes"]').getByText(/CancelPaidOrder/).waitFor();
 await developerReport.getByTestId("report-doubts").getByText(/rimborso manuale/).waitFor();
+await developerReport.getByTestId("report-exceptions").getByText("Nessuna").waitFor();
 await developerReport.getByText(/non un'evidenza/).waitFor();
 await developerReport.scrollIntoViewIfNeeded();
 await shot("19c-assignment-contract-report");
@@ -1201,6 +1231,52 @@ await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
 await correctedCard.getByRole("button", { name: "Focus mode" }).click();
 await page.locator('[data-testid="focus-audit"][data-status="done"]').waitFor({ timeout: 10_000 });
 await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
+
+// W06: a developer with a doubt asks the Coordinator with ask_coordinator, and the slice pauses. The question stays in
+// the report's doubts. The Coordinator puts it on a Pact card that blocks the work; the person's answer resumes the
+// developer in the same session, and the card and the assignment say so.
+await send("[assegna:S1] [test] [domanda]");
+const questionWork = assignmentCards.nth(4);
+await questionWork.getByText("In pausa", { exact: true }).waitFor({ timeout: 20_000 });
+await questionWork.locator('[data-testid="assignment-question"][data-state="asked"]').getByText(/buono/).waitFor();
+await questionWork.getByText("Aspetta il Coordinatore").waitFor();
+await questionWork.getByTestId("report-doubts").getByText(/Domanda al Coordinatore/).waitFor();
+await sliceSpec.locator('[data-testid="plan-slice"][data-state="paused"]').getByText("In pausa").waitFor({ timeout: 20_000 });
+await questionWork.scrollIntoViewIfNeeded();
+await shot("19e-developer-question");
+await send("[blocca-dubbio]");
+// The card keeps the developer's question after the answer; only the "Blocca il lavoro" badge goes.
+const blockingCard = page.locator(".chat-card", { has: page.getByTestId("blocked-work") }).last();
+await blockingCard.waitFor({ timeout: 20_000 });
+await blockingCard.getByTestId("blocks-work").getByText("Blocca il lavoro").waitFor();
+await blockingCard.getByTestId("blocked-work").getByText(/buono/).waitFor();
+await blockingCard.getByText("Il lavoro resta in pausa finché non rispondi. Il resto del team va avanti.").waitFor();
+await questionWork.locator('[data-testid="assignment-question"][data-state="waitingForPerson"]').getByText("Blocca il lavoro").waitFor();
+await blockingCard.getByRole("button", { name: /Va in revisione come gli altri/ }).click();
+const blockingActions = await blockingCard.locator(".cta-row").last().locator("button").allTextContents();
+if (blockingActions.at(-1)?.trim() !== "Registra la decisione") throw new Error(`Registra la decisione is not the last call to action: ${blockingActions}`);
+const recordBox = await blockingCard.getByRole("button", { name: "Registra la decisione" }).boundingBox();
+const blockingBox = await blockingCard.boundingBox();
+if (!recordBox || !blockingBox || blockingBox.x + blockingBox.width - (recordBox.x + recordBox.width) > 20) throw new Error("Registra la decisione is not on the right");
+await blockingCard.scrollIntoViewIfNeeded();
+await shot("19f-blocking-card");
+const questionLook = await page.evaluate(() => ({ provider: document.documentElement.dataset.provider ?? null, dark: document.documentElement.classList.contains("dark") }));
+for (const provider of ["codex", "claudeAgent"]) {
+  await setLook(provider, true);
+  await shot(`19g-blocking-card-${provider}-dark`);
+}
+await setLook(questionLook.provider, questionLook.dark);
+await blockingCard.getByRole("button", { name: "Registra la decisione" }).click();
+await questionWork.getByText("Concluso", { exact: true }).waitFor({ timeout: 30_000 });
+await questionWork.locator('[data-testid="assignment-question"][data-state="resumed"]').getByText("Lavoro ripreso").waitFor();
+await questionWork.getByTestId("question-answer").getByText(/Va in revisione come gli altri/).waitFor();
+await blockingCard.getByText("Il lavoro è ripreso con la tua risposta.").waitFor();
+if (await blockingCard.getByTestId("blocks-work").count()) throw new Error("An answered card still says it blocks the work");
+await questionWork.scrollIntoViewIfNeeded();
+await shot("19h-developer-question-resumed");
+await setLook("claudeAgent", true);
+await shot("19i-developer-question-resumed-claude-dark");
+await setLook(questionLook.provider, questionLook.dark);
 
 // G01, presenza: a project with a colleague on a local bare remote. The colleague's record is already there; Trama
 // proposes the consent in the chat once, with "Non ora" and "Condividi" on the right, and publishes only after
