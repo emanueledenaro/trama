@@ -24,7 +24,7 @@ import { OverviewView } from "@/components/OverviewView";
 import { SettingsView } from "@/components/settings/SettingsView";
 import { NavigationButtons, SidebarTrigger } from "@/components/sidebar/Sidebar";
 import { Spinner } from "@/components/Spinner";
-import { TramaLogo } from "@/components/TramaLogo";
+import { TramaMark } from "@/components/brand/TramaMark";
 import { Button } from "@/components/ui/button";
 import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/cn";
@@ -200,7 +200,7 @@ function Landing() {
   return (
     <div className="chat-pane-enter relative flex min-h-0 flex-1 items-center justify-center overflow-y-auto">
       <div className="mx-auto flex w-full max-w-[var(--app-chat-max-width)] min-w-0 flex-col items-center gap-4 px-6 text-center select-none">
-        <TramaLogo className="size-10" />
+        <TramaMark size={44} />
         <h2 className="text-[26px] leading-[1.15] font-normal tracking-[-0.015em] text-foreground/95 sm:text-[30px]">Su cosa vuoi lavorare?</h2>
         {app.loadingProject ? (
           <p className="flex items-center gap-2 text-ui text-muted-foreground">
@@ -256,7 +256,7 @@ function ProjectIntro() {
   const phase = project.phase;
   return (
     <div className="flex flex-col items-center gap-3 px-6 pt-[18vh] pb-8 text-center select-none">
-      <TramaLogo className="size-10" />
+      <TramaMark size={44} />
       <h2 className="text-[26px] leading-[1.15] font-normal tracking-[-0.015em] text-foreground/95">
         {project.isDemo ? "Progetto di esempio" : project.name}
       </h2>
