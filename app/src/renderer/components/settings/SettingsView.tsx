@@ -216,7 +216,7 @@ function GeneralSection() {
   );
 }
 
-function providerStatus(account: ProviderAccount | null, checking: boolean): { label: string; detail: string | null; tone: "success" | "warning" | "secondary" } {
+export function providerStatus(account: ProviderAccount | null, checking: boolean): { label: string; detail: string | null; tone: "success" | "warning" | "secondary" } {
   if (checking && !account) return { label: "Verifica in corso", detail: null, tone: "secondary" };
   switch (account?.kind) {
     case "chatgpt":

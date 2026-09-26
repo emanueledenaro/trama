@@ -108,6 +108,10 @@ const handlers: { [K in ActionName]: Handler<K> } = {
     const parent = await chooseFolder("Scegli la cartella");
     if (parent) await controller.createProject(parent, name, idea);
   },
+  "project:clone": async ({ repository }) => {
+    const parent = await chooseFolder("Scegli dove clonare il progetto");
+    if (parent) await controller.cloneProject(parent, repository);
+  },
   "project:close": () => controller.closeProject(),
   "project:refresh": () => controller.refreshProject(),
   "project:forgetRecent": ({ id }) => controller.forgetRecent(id),
@@ -283,6 +287,7 @@ function buildMenu(): void {
       role: "help",
       label: "Aiuto",
       submenu: [
+        { label: "Benvenuto in Trama", click: () => sendMenu("welcome") },
         { label: "Guida introduttiva", click: () => sendMenu("guide") },
         { label: "Esercizi sul progetto di esempio", click: () => sendMenu("exercises") },
       ],
