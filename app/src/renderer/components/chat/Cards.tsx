@@ -15,7 +15,7 @@ import {
   IconUsersGroup,
   IconUsers,
 } from "@tabler/icons-react";
-import { type AssignmentStatus, type CandidateEvidence, type CandidateState, isOpenQuestion } from "@shared/domain";
+import { type AssignmentStatus, type CandidateEvidence, type CandidateState, type TestedSeam, isOpenQuestion } from "@shared/domain";
 import { isExerciseAssessment } from "@shared/onboarding";
 import { findGoal } from "@shared/goals";
 import { adrMarkdown, adrPath, findDomainProposal, glossaryEntry } from "@shared/domainDocs";
@@ -692,6 +692,35 @@ function EvidenceRow({ check, evidence }: { check: string; evidence: CandidateEv
   );
 }
 
+/** The seams the developer of a slice says it tested (M06): its statement, shown apart from Trama's evidence. */
+function TestedSeamsField({ seams }: { seams: TestedSeam[] | null }) {
+  return (
+    <Field label="Seam testati, secondo lo sviluppatore">
+      <div data-testid="candidate-tested-seams">
+        {seams === null ? (
+          <p className="text-ui-sm text-muted-foreground">Lo sviluppatore non ha riportato i seam testati.</p>
+        ) : seams.length === 0 ? (
+          <p className="text-ui-sm text-muted-foreground">La spec non ha seam confermati.</p>
+        ) : (
+          <ul className="space-y-0.5 text-ui-sm">
+            {seams.map((s) => (
+              <li key={`${s.seam}-${s.tests}`} data-testid="candidate-tested-seam" data-tested={s.tests ? "yes" : "no"} data-agreed={s.agreed ? "yes" : "no"}>
+                {s.seam}
+                <span className="text-muted-foreground">
+                  <Sep />
+                  {s.tests ? `test: ${s.tests}` : "nessun test riportato"}
+                  {s.agreed ? null : ", fuori dai seam confermati"}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+        <p className="mt-1 text-ui-xs text-muted-foreground">È una dichiarazione dello sviluppatore, non un'evidenza: contano le verifiche eseguite da Trama.</p>
+      </div>
+    </Field>
+  );
+}
+
 export function CandidateCard({ candidateId }: { candidateId: string }) {
   const project = useUi((s) => s.app?.project)!;
   const setInspector = useUi((s) => s.setInspector);
@@ -716,6 +745,7 @@ export function CandidateCard({ candidateId }: { candidateId: string }) {
           </button>
         ))}
       </Field>
+      {candidate.testedSeams !== undefined ? <TestedSeamsField seams={candidate.testedSeams} /> : null}
       <Field label="Evidenze delle verifiche">
         <div className="space-y-0.5">
           {candidate.requiredChecks.map((check) => (

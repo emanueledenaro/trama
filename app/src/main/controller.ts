@@ -63,6 +63,7 @@ import {
   rollbackPractice,
 } from "./core/practices";
 import { checkItems, closeBlockers, evidenceProblems, parseChecklist, progressComment, progressKey, progressMarker } from "./core/tickets";
+import { developerSkillsDelivery, sliceBriefing } from "./core/implementation";
 import { openingInput, resumeInput, specialistInstructions } from "./core/specialistBriefing";
 import { prepareDemoProject } from "./core/demoProject";
 import { appendEvent, emptyDocument, handoverTranscript, moveEvent, recordReply, referencedPaths } from "./core/document";
@@ -2644,10 +2645,18 @@ export class TramaController {
             nativeInput: provider === "codex",
           })
         : null;
+      // The developer of a slice runs AI Hero's implement and tdd with their original text (M06). As for the planner,
+      // Codex takes each SKILL.md as a skill input with the message, the other providers in the instructions.
+      const briefing = duty || !needsWorktree(assignment) ? null : sliceBriefing(document, assignment);
+      const nativeInput = provider === "codex";
+      const developer = briefing
+        ? developerSkillsDelivery({ implement: await this.nativeSkill("implement"), tdd: await this.nativeSkill("tdd") }, nativeInput)
+        : null;
+      const baseInstructions = duty?.instructions ?? specialistInstructions(project.name, specialist, assignment);
       const opening = await client.openThread({
         model: assignment.model,
         cwd,
-        developerInstructions: duty?.instructions ?? specialistInstructions(project.name, specialist, assignment),
+        developerInstructions: developer && !nativeInput ? [baseInstructions, developer.text].join("\n\n") : baseInstructions,
         sandbox: needsWorktree(assignment) ? "workspace-write" : "read-only",
         resumeThreadId: assignment.threadId,
       });
@@ -2655,14 +2664,15 @@ export class TramaController {
       // A stop requested while the session was opening ends the work here (review #6).
       if ((assignment.status as string) === "stopRequested") throw new Error("L'arresto è stato richiesto prima dell'avvio del turno.");
       if (opening.replaced && assignment.threadId) this.specialistActivity(project, assignmentId, preKey, "Nuovo thread dello specialista", null, "info");
-      const prompt = duty?.prompt ?? (resumed ? resumeInput(assignment, document.decisions) : openingInput(assignment, document.decisions));
+      const task = duty?.prompt ?? (resumed ? resumeInput(assignment, document.decisions) : openingInput(assignment, document.decisions));
+      const prompt = [task, briefing, developer && nativeInput ? developer.text : null].filter(Boolean).join("\n\n");
       const text = await client.runTurn({
         threadId: opening.threadId,
         prompt,
         cwd,
         model: assignment.model,
         writableRoot: needsWorktree(assignment) ? cwd : null,
-        ...(duty?.skills.length ? { skills: duty.skills } : {}),
+        ...(duty?.skills.length ? { skills: duty.skills } : developer?.skills.length ? { skills: developer.skills } : {}),
         ...(duty?.outputSchema ? { outputSchema: duty.outputSchema } : {}),
         onEvent: (event) => {
           if (event.type === "turnStarted") {
