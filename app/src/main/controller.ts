@@ -2942,30 +2942,33 @@ export class TramaController {
 
   private comparingWorktrees = false;
 
-  /** Merges each pair of the team's open candidates that change the same files, at most four new probes per run (W08). */
+  /**
+   * Merges each pair of the team's open candidates that change the same files (W08), four probes at a time, until no
+   * pair is left to compare: with six developers a new candidate can open five pairs at once.
+   */
   private async assessWorktreeConflicts(project: ActiveProjectState): Promise<void> {
     if (this.comparingWorktrees) return;
-    const pairs = worktreePairs(project.document).slice(0, 4);
-    if (!pairs.length) return;
     this.comparingWorktrees = true;
     try {
-      for (const pair of pairs) {
-        const assessment = await assessWorktreePair(project.document, pair, join(this.storage.root, "ConflictProbe"));
-        if (this.state.project !== project) return;
-        const document = project.document;
-        (document.conflicts ??= []).push(assessment);
-        if (assessment.classification === "conflict" || assessment.classification === "overlap") {
-          const assignment = findAssignment(document, pair.mine.assignmentId);
-          appendEvent(document, "trama", { type: "card", kind: "conflict", title: "Conflitto", detail: null, referenceId: assessment.id }, assignment?.requestId ?? null);
-          if (assessment.classification === "conflict") {
-            this.host.notify(
-              "Trama: conflitto tra due worktree",
-              `Il candidato ${pair.mine.id} entra in conflitto con ${pair.other.id}: si risolve prima dell'unione.`,
-              this.state.settings.sounds === true,
-            );
+      for (let pairs = worktreePairs(project.document).slice(0, 4); pairs.length; pairs = worktreePairs(project.document).slice(0, 4)) {
+        for (const pair of pairs) {
+          const assessment = await assessWorktreePair(project.document, pair, join(this.storage.root, "ConflictProbe"));
+          if (this.state.project !== project) return;
+          const document = project.document;
+          (document.conflicts ??= []).push(assessment);
+          if (assessment.classification === "conflict" || assessment.classification === "overlap") {
+            const assignment = findAssignment(document, pair.mine.assignmentId);
+            appendEvent(document, "trama", { type: "card", kind: "conflict", title: "Conflitto", detail: null, referenceId: assessment.id }, assignment?.requestId ?? null);
+            if (assessment.classification === "conflict") {
+              this.host.notify(
+                "Trama: conflitto tra due worktree",
+                `Il candidato ${pair.mine.id} entra in conflitto con ${pair.other.id}: si risolve prima dell'unione.`,
+                this.state.settings.sounds === true,
+              );
+            }
           }
+          this.changedIn(project);
         }
-        this.changedIn(project);
       }
     } finally {
       this.comparingWorktrees = false;

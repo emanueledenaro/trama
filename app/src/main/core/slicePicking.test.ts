@@ -241,6 +241,24 @@ describe("independent movement (W08)", () => {
     expect(first!.assignment).toMatchObject({ provider: "claudeAgent", model: "sonnet" });
   });
 
+  it("gives a slice on several modules only to a developer who covers them all", () => {
+    const { document } = project([ticket(1, [], "Il rimborso tocca Sources/Orders e Sources/Payments")]);
+    // Ada knows only Orders and Bruno only Payments: neither takes the slice, which keeps its whole scope.
+    expect(waiting(pickSlices(document, input()))).toEqual(["S1: Nessuno sviluppatore libero copre i moduli di questa fetta."]);
+    document.team.specialists.find((s) => s.name === "Carla")!.moduleIds = [];
+    const [pick] = picked(pickSlices(document, input()));
+    expect(name(document, pick!.assignment.specialistId)).toBe("Carla");
+    expect(pick!.assignment.moduleIds).toEqual(["Sources/Orders", "Sources/Payments"]);
+  });
+
+  it("carries the Pact decisions the spec requires from the first slice", () => {
+    const { document, plan } = project();
+    const required = decision(document);
+    plan.spec!.requiredDecisionIDs = [required.id];
+    const [first] = picked(pickSlices(document, input()));
+    expect(first!.assignment.decisionVersions).toEqual({ [required.id]: required.version });
+  });
+
   it("reads the modules of a slice from its text, then from the plan", () => {
     const { plan } = project();
     expect(sliceModules(TICKETS[1]!, plan, MODULES, [])).toEqual(["Sources/Support"]);

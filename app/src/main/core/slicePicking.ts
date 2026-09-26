@@ -50,10 +50,12 @@ export function sliceModules(ticket: SliceTicket, plan: WorkPlan, modules: Repos
   return [...new Set(earlier.flatMap((a) => a.moduleIds))];
 }
 
-/** The modules of the slice a developer covers: all of them for a developer with no modules of its own. */
-export function competentModules(specialist: Specialist, moduleIds: string[]): string[] {
-  if (!specialist.moduleIds.length) return moduleIds;
-  return moduleIds.filter((id) => specialist.moduleIds.includes(id));
+/**
+ * Whether a developer covers every module of the slice, so the assignment keeps the slice's whole scope and its
+ * overlap checks. A developer with no modules of its own covers them all.
+ */
+export function coversModules(specialist: Specialist, moduleIds: string[]): boolean {
+  return !specialist.moduleIds.length || moduleIds.every((id) => specialist.moduleIds.includes(id));
 }
 
 const planAssignments = (document: ProjectDocument, planId: string) =>
@@ -135,7 +137,7 @@ export function pickSlices(document: ProjectDocument, input: PickInput): PickOut
         waiting(`Qualcuno tocca ora questi moduli: ${occupied.map((o) => occupantName(o.occupant)).join(", ")}.`);
         continue;
       }
-      const developer = free.find((s) => competentModules(s, moduleIds).length > 0);
+      const developer = free.find((s) => coversModules(s, moduleIds));
       if (!developer) {
         waiting("Nessuno sviluppatore libero copre i moduli di questa fetta.");
         continue;
@@ -150,10 +152,11 @@ export function pickSlices(document: ProjectDocument, input: PickInput): PickOut
         const done = earlier.filter((a) => a.slice?.sliceId === id && delivered(document, a)).at(-1);
         return done ? [done.id] : [];
       });
-      // The Pact decisions the plan's earlier slices relied on, in their assignments or their candidates.
+      // The Pact decisions the spec requires, then those the plan's earlier slices relied on (assignments, candidates).
       const earlierIds = new Set(earlier.map((a) => a.id));
       const decisionIds = [
         ...new Set([
+          ...(plan.spec?.requiredDecisionIDs ?? plan.proposal?.requiredDecisionIDs ?? []),
           ...earlier.flatMap((a) => Object.keys(a.decisionVersions ?? {})),
           ...document.candidates.filter((c) => earlierIds.has(c.assignmentId)).flatMap((c) => c.requiredDecisionIds),
         ]),
@@ -168,7 +171,7 @@ export function pickSlices(document: ProjectDocument, input: PickInput): PickOut
             objective: `${ticket.id} ${ticket.title}`,
             issueNumber: ticket.issue?.number ?? null,
             exercise: null,
-            moduleIds: competentModules(developer, moduleIds),
+            moduleIds,
             dependencies: blockers,
             decisionIds,
             model: chosen.model,
