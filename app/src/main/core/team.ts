@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type {
   AgentColor,
+  AssignmentCommit,
   AssignmentStatus,
   ContractSeam,
   MandateAction,
@@ -381,6 +382,8 @@ export interface AssignmentOrder {
   instructions: string;
   /** The slice of an approved breakdown the work delivers (M05); the caller checks that it may start. */
   slice?: { planId: string; sliceId: string } | null;
+  /** The Coordinator's correction of the commit type and scope and of the branch prefix (Q01). */
+  commit?: AssignmentCommit | null;
   /** The seams to test in the contract (W05); the caller checks that the contract is complete. */
   seams?: ContractSeam[];
   /** The developer took the slice by itself (W08). */
@@ -462,6 +465,7 @@ export function assign(
       mandateVersion,
       workspace: null,
       ...(order.slice ? { slice: order.slice } : {}),
+      ...(order.commit ? { commit: order.commit } : {}),
       ...(order.seams ? { seams: order.seams } : {}),
       ...(order.selfPicked ? { selfPicked: true } : {}),
     },
@@ -490,6 +494,7 @@ type AssignmentFields = Pick<
   | "workspace"
   | "duty"
   | "slice"
+  | "commit"
   | "seams"
   | "selfPicked"
 >;
