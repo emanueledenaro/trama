@@ -834,6 +834,47 @@ await correctedCard.getByText("Verificato", { exact: true }).waitFor();
 await correctedCard.scrollIntoViewIfNeeded();
 await shot("18e-clearance-withdrawn");
 
+// M06: the developer of a slice runs implement and tdd with their original text and reports the seams it tested.
+// The candidate shows that report apart from Trama's evidence; the build and the tests wait for Trama's own run.
+await page.getByRole("button", { name: /^Mandato/ }).first().click();
+await page.getByRole("button", { name: "Correggi", exact: true }).click();
+await page.getByRole("checkbox", { name: /Preparare piani/ }).check();
+await page.getByRole("button", { name: "Salva correzione" }).click();
+await page.getByText(/Mandato v2/).first().waitFor({ timeout: 20_000 });
+await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
+await send("[piano]");
+const sliceSeams = page.locator('[data-testid="plan-spec"][data-status="seams"]').last();
+await sliceSeams.getByRole("button", { name: "Conferma i seam" }).click({ timeout: 20_000 });
+const sliceSpec = page.locator('[data-testid="plan-spec"][data-status="ready"]').last();
+await sliceSpec.getByTestId("plan-slices").getByRole("button", { name: "Conferma le fette" }).click({ timeout: 20_000 });
+await sliceSpec.getByText("Restano in Trama").waitFor({ timeout: 20_000 });
+await send("[assegna] [test]");
+const sliceWork = assignmentCards.nth(3);
+await sliceWork.getByText("Concluso", { exact: true }).waitFor({ timeout: 20_000 });
+await send(`[candidato:${await cardAssignment(sliceWork)}:${candidateDecision}]`);
+const sliceCandidate = candidateCards.nth(2);
+const testedSeams = sliceCandidate.getByTestId("candidate-tested-seams");
+await testedSeams.waitFor({ timeout: 30_000 });
+await testedSeams.locator('[data-testid="candidate-tested-seam"][data-tested="yes"][data-agreed="yes"]').getByText(/CancelPaidOrder/).waitFor();
+await testedSeams.getByText("test: NOTE.md").waitFor();
+await testedSeams.getByText(/non un'evidenza/).waitFor();
+for (const check of ["swift_build", "swift_test"]) {
+  await sliceCandidate.locator(`[data-testid="candidate-evidence"][data-check="${check}"][data-result="missing"]`).waitFor();
+}
+await page.getByText(/Via libera rifiutato: .*candidate_not_verified/).last().waitFor({ timeout: 20_000 });
+if (await sliceCandidate.getByRole("button", { name: "Approva questo candidato" }).count()) throw new Error("A slice candidate without Trama's checks can be approved");
+await sliceCandidate.scrollIntoViewIfNeeded();
+await shot("19a-slice-candidate-seams");
+await app.evaluate(({ nativeTheme }) => {
+  nativeTheme.themeSource = "dark";
+});
+await page.evaluate(() => document.documentElement.classList.add("dark"));
+await shot("19b-slice-candidate-seams-dark");
+await app.evaluate(({ nativeTheme }) => {
+  nativeTheme.themeSource = "system";
+});
+await page.evaluate(() => document.documentElement.classList.remove("dark"));
+
 // G01, presenza: a project with a colleague on a local bare remote. The colleague's record is already there; Trama
 // proposes the consent in the chat once, with "Non ora" and "Condividi" on the right, and publishes only after
 // "Condividi": names, branches and paths, never the content of a file.

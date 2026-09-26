@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import type { Candidate, CandidateBlocker, CandidateReport, CandidateState, ProjectDocument, TechnicalReview } from "@shared/domain";
 import { shortId } from "@shared/ids";
+import { agreedSeams, assignmentSlice, readTestedSeams } from "./implementation";
 import { findAssignment } from "./team";
 import type { WorkspaceReview } from "./workspace";
 
@@ -66,6 +67,9 @@ export function declareCandidate(
     pullRequest: null,
     ...(assignment.goalId ? { goalId: assignment.goalId } : {}),
   };
+  // The work of a slice reports the seams it tested (M06): the developer's statement, next to Trama's evidence.
+  const slice = assignmentSlice(document, assignment);
+  if (slice) candidate.testedSeams = readTestedSeams(assignment.result, agreedSeams(slice.plan));
   document.candidates.push(candidate);
   return candidate;
 }
