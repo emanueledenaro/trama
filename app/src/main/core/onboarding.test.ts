@@ -1,10 +1,10 @@
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { mkdtemp, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { Candidate } from "@shared/domain";
 import { isExerciseAssessment } from "@shared/onboarding";
-import { simulateColleagueChanges } from "./onboarding";
+import { readGitHubCliStatus, simulateColleagueChanges } from "./onboarding";
 import { git } from "./process";
 import { prepareWorktree, reviewWorktree } from "./workspace";
 
@@ -38,5 +38,19 @@ describe("conflict exercise", () => {
     expect((await git(["rev-parse", "HEAD"], repo)).trim()).toBe(head);
     expect((await git(["status", "--porcelain"], repo)).trim()).toBe("");
     expect((await reviewWorktree(session)).snapshotId).toBe(review.snapshotId);
+  });
+});
+
+describe("GitHub CLI status", () => {
+  it("reads a logged-in gh as ready, whatever PATH Trama inherited", async () => {
+    const bin = await mkdtemp(join(tmpdir(), "trama-gh-"));
+    await symlink(join(process.cwd(), "test-fixtures/fake-gh.mjs"), join(bin, "gh"));
+    const path = process.env.PATH;
+    process.env.PATH = `${bin}:${path}`;
+    try {
+      expect(await readGitHubCliStatus()).toMatchObject({ status: "ready", account: "trama-ui" });
+    } finally {
+      process.env.PATH = path;
+    }
   });
 });
