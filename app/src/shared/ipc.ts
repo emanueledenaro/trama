@@ -44,6 +44,10 @@ export interface ActionMap {
   "coordinator:takeStep": [{ requestId: string }, void];
   "coordinator:interrupt": [void, void];
   "coordinator:retry": [void, void];
+  /** Repeats a failed turn without writing the message again (P10). */
+  "coordinator:retryRequest": [{ requestId: string }, void];
+  /** Stops the automatic retries after a temporary provider limit (P10). */
+  "coordinator:stopRetry": [void, void];
   "coordinator:selectModel": [{ model: string; effort: string | null; provider?: ProviderId | null; goalId?: string | null }, void];
   "coordinator:setFastMode": [{ enabled: boolean; goalId?: string | null }, void];
   "coordinator:selectProvider": [{ provider: ProviderId; goalId?: string | null }, void];

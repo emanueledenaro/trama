@@ -14,6 +14,7 @@ import {
   IconTelescope,
   IconUsersGroup,
 } from "@tabler/icons-react";
+import { readableFailure } from "@shared/providerFailure";
 import { type AssignmentStatus, type CandidateEvidence, type CandidateState, type TestedSeam, isOpenQuestion } from "@shared/domain";
 import { isExerciseAssessment } from "@shared/onboarding";
 import { findGoal } from "@shared/goals";
@@ -115,7 +116,7 @@ export function ContextNoticeCard({ title, detail }: { title: string; detail: st
       <IconInfoCircle className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
       <div>
         <div className="text-foreground/90">{title}</div>
-        {detail ? <div className="text-ui-sm text-muted-foreground">{detail}</div> : null}
+        {detail ? <div className="text-ui-sm text-muted-foreground">{readableFailure(detail)}</div> : null}
       </div>
     </div>
   );
@@ -538,7 +539,7 @@ export function AssignmentCard({ assignmentId }: { assignmentId: string }) {
         </div>
       ) : null}
       <p className="mt-2 text-ui-sm text-muted-foreground">{assignment.lastUpdate}</p>
-      {assignment.failure ? <Field label="Errore">{assignment.failure}</Field> : null}
+      {assignment.failure ? <Field label="Errore">{readableFailure(assignment.failure)}</Field> : null}
       {assignment.result ? (
         <div className="mt-2">
           <button type="button" className="inline-flex items-center gap-1 text-ui-sm text-muted-foreground hover:text-foreground" onClick={() => setShowResult(!showResult)}>
@@ -874,7 +875,7 @@ export function PlanCard({ planId }: { planId: string }) {
       <p className="text-ui-sm text-muted-foreground">
         {plan.orderedBy === "coordinator" ? "Chiesto dal Coordinatore" : "Chiesto da te"}<Sep />{plan.summary}
       </p>
-      {plan.failure ? <Field label="Errore">{plan.failure}</Field> : null}
+      {plan.failure ? <Field label="Errore">{readableFailure(plan.failure)}</Field> : null}
       {plan.spec ? <PlanSpecBody plan={plan} /> : null}
       {proposal ? (
         <>

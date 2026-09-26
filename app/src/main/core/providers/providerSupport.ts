@@ -13,6 +13,7 @@ import { homedir } from "node:os";
 import { basename, delimiter, dirname, extname, isAbsolute, join, parse, resolve, sep } from "node:path";
 import type { LoadedSkill } from "@shared/skills";
 import type { ProviderId } from "@shared/codex";
+import { classifyProviderFailure, parseResetTime } from "@shared/providerFailure";
 import { type HostToolServer, isInside, ProviderError, type TurnEvent } from "./types";
 
 // ── Skills (skillPromptInjection.ts) ─────────────────────────────────────
@@ -270,7 +271,7 @@ export function teardownProcessTree(child: ChildProcess, graceMs = 2_000): void 
 // ── Usage limits ─────────────────────────────────────────────────────────
 
 const USAGE_LIMIT_PATTERN =
-  /usage limit|rate[ _-]?limit|quota|resource[ _]exhausted|too many requests|\b429\b|out of credits|insufficient credits/i;
+  /usage limit|rate[ _-]?limit|quota|resource[ _]exhausted|too many requests|\b429\b|out of credits|insufficient credits|temporarily rate-limited/i;
 
 /**
  * Recognizes a usage-limit failure and, when the message says so, the moment it resets.
@@ -278,33 +279,7 @@ const USAGE_LIMIT_PATTERN =
  */
 export function parseUsageLimit(message: string, now = new Date()): { message: string; until: string | null } | null {
   if (!USAGE_LIMIT_PATTERN.test(message)) return null;
-  let until: string | null = null;
-  const iso = /\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})?/.exec(message);
-  if (iso) {
-    const date = new Date(iso[0]);
-    if (!Number.isNaN(date.getTime())) until = date.toISOString();
-  }
-  if (!until) {
-    const relative =
-      /(?:try again|retry|resets?|available again)\s+(?:in|after)\s+(\d+(?:\.\d+)?)\s*(ms|milliseconds?|s|secs?|seconds?|m|mins?|minutes?|h|hrs?|hours?|d|days?)\b/i.exec(
-        message,
-      ) ?? /retry[- ]after:?\s*(\d+(?:\.\d+)?)\s*(s|seconds?)?/i.exec(message);
-    if (relative) {
-      const amount = Number.parseFloat(relative[1]!);
-      const unit = (relative[2] ?? "s").toLowerCase();
-      const factor = unit.startsWith("ms") || unit.startsWith("milli")
-        ? 1
-        : unit.startsWith("s")
-          ? 1_000
-          : unit.startsWith("m")
-            ? 60_000
-            : unit.startsWith("h")
-              ? 3_600_000
-              : 86_400_000;
-      until = new Date(now.getTime() + amount * factor).toISOString();
-    }
-  }
-  return { message: message.trim(), until };
+  return { message: message.trim(), until: parseResetTime(message, now) };
 }
 
 // ── Turn setup ───────────────────────────────────────────────────────────
@@ -383,9 +358,11 @@ export function currentUsageLimit(
 }
 
 /**
- * Records a usage-limit block for `providerId` when `raw` is a usage-limit failure and returns the
- * error a turn rejects with; null for any other failure. The message says "limite", which the
- * controller recognizes.
+ * The error a turn rejects with when `raw` is a usage-limit failure; null for any other failure (P10).
+ * A quota, or a limit that says when it resets, blocks the provider for every runtime until then. A temporary
+ * or shared limit without a reset time (an upstream 429) blocks nothing: the next turn may already pass, and
+ * the controller retries it with a growing wait. Both messages say "limite", which the controller recognizes;
+ * the provider's text follows for the technical detail.
  */
 export function usageLimitError(
   providerId: ProviderId,
@@ -395,7 +372,12 @@ export function usageLimitError(
 ): ProviderError | null {
   if (!parsed) return null;
   const detail = raw.trim();
-  const message = `${label} ha raggiunto il limite di utilizzo.${detail ? ` ${detail}` : ""}`;
+  const failure = classifyProviderFailure(detail, { provider: label });
+  const temporary = failure.kind === "temporaryLimit" && !parsed.until;
+  const message = temporary
+    ? `${label} ha un limite temporaneo.${detail ? ` ${detail}` : ""}`
+    : `${label} ha raggiunto il limite di utilizzo.${detail ? ` ${detail}` : ""}`;
+  if (temporary) return new ProviderError("rateLimited", message);
   recordUsageLimit(providerId, message, parsed.until);
   return new ProviderError("blocked", message);
 }

@@ -12,11 +12,13 @@ import {
   IconTools,
   IconUsers,
 } from "@tabler/icons-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { ProviderAccount, ProviderId } from "@shared/codex";
 import { DEFAULT_LEARNING_SETTINGS, type LearningSettings, type ThemePreference } from "@shared/domain";
+import { classifyProviderFailure } from "@shared/providerFailure";
 import { capabilityLines, PROVIDERS, type ProviderDescriptor } from "@shared/providers";
 import { AIHERO_ATTRIBUTION } from "@shared/skills";
+import { GitHubCliDescription } from "@/components/GitHubCliStatus";
 import { ProviderIcon } from "@/components/ProviderIcon";
 import { Spinner } from "@/components/Spinner";
 import { Button } from "@/components/ui/button";
@@ -215,12 +217,12 @@ function providerStatus(account: ProviderAccount | null, checking: boolean): { l
       return { label: "Accesso richiesto", detail: null, tone: "secondary" };
     case "unsupported":
       return { label: "Account non supportato", detail: account.type, tone: "warning" };
-    case "blocked":
-      return {
-        label: "Bloccato",
-        detail: `${account.message}${account.until ? ` Si sblocca il ${new Date(account.until).toLocaleString("it-IT")}.` : ""}`,
-        tone: "warning",
-      };
+    case "blocked": {
+      // The provider's text stays out of the row: its class in plain words (P10).
+      const failure = classifyProviderFailure(account.message);
+      const until = !failure.until && account.until ? ` Si sblocca il ${new Date(account.until).toLocaleString("it-IT")}.` : "";
+      return { label: failure.kind === "temporaryLimit" ? "Limite temporaneo" : "Quota esaurita", detail: `${failure.explanation}${until}`, tone: "warning" };
+    }
     case "unavailable":
       return { label: "Non disponibile", detail: account.message, tone: "warning" };
     default:
@@ -229,7 +231,7 @@ function providerStatus(account: ProviderAccount | null, checking: boolean): { l
 }
 
 const GITHUB_STATUS = {
-  unknown: "Stato sconosciuto",
+  unknown: "Non ancora controllato",
   checking: "Verifica in corso",
   missing: "Non installata",
   signedOut: "Accesso richiesto",
@@ -240,6 +242,10 @@ const GITHUB_STATUS = {
 function ConnectionsSection() {
   const codex = useUi((s) => s.app!.codex);
   const gitHubCli = useUi((s) => s.app!.gitHubCli);
+  // The state is read each time the page opens, so a login made in the terminal meanwhile shows up (P10).
+  useEffect(() => {
+    if (useUi.getState().app?.gitHubCli.status !== "checking") void act("onboarding:checkGitHub", undefined);
+  }, []);
   const account = codex.account;
   const status = providerStatus(account, codex.checking);
   const codexDetail =
@@ -258,6 +264,7 @@ function ConnectionsSection() {
             onClick={() => {
               void act("codex:refresh", undefined);
               void act("providers:refresh", {});
+              void act("onboarding:checkGitHub", undefined);
             }}
           >
             <IconRefresh /> Verifica tutti
@@ -294,22 +301,21 @@ function ConnectionsSection() {
               <IconBrandGithub className="size-4" stroke={1.7} /> GitHub
             </span>
           }
-          description={
-            gitHubCli.status === "ready" ? (
-              gitHubCli.account
-            ) : gitHubCli.status === "error" && gitHubCli.detail ? (
-              gitHubCli.detail
-            ) : (
-              <>
-                Trama usa GitHub CLI. {gitHubCli.status === "missing" ? "Installala, poi esegui " : "Esegui "}
-                <code className="font-mono text-foreground/90">gh auth login</code> nel terminale.
-              </>
-            )
-          }
+          description={<GitHubCliDescription state={gitHubCli} />}
           control={
-            <Badge tone={gitHubCli.status === "ready" ? "success" : gitHubCli.status === "error" ? "warning" : "secondary"}>
-              {GITHUB_STATUS[gitHubCli.status]}
-            </Badge>
+            <>
+              <Badge tone={gitHubCli.status === "ready" ? "success" : gitHubCli.status === "error" ? "warning" : "secondary"}>
+                {GITHUB_STATUS[gitHubCli.status]}
+              </Badge>
+              <Button
+                variant="outline"
+                size="xs"
+                disabled={gitHubCli.status === "checking"}
+                onClick={() => void act("onboarding:checkGitHub", undefined)}
+              >
+                Controlla di nuovo
+              </Button>
+            </>
           }
         />
       </Group>
