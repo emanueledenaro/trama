@@ -822,7 +822,8 @@ const cardAssignment = async (card) => (await card.innerText()).match(/Incarico 
 await send("[assegna] [lento]");
 const slowCard = assignmentCards.first();
 await slowCard.getByText("Al lavoro", { exact: true }).waitFor({ timeout: 20_000 });
-await slowCard.getByText(/trama\//).waitFor();
+// Q01: the branch follows Conventional Branch and stays recognizable as Trama's work.
+await slowCard.getByText(/(feature|chore)\/[a-z0-9-]+-trama-[0-9a-f]{8}/).waitFor();
 const slowActions = await slowCard.locator(".cta-row button").allTextContents();
 if (slowActions.at(-1)?.trim() !== "Ferma") throw new Error(`Ferma is not the last call to action: ${slowActions}`);
 await slowCard.getByRole("button", { name: "Ferma" }).click();
@@ -877,6 +878,33 @@ await correctedCard.getByText("Via libera del Coordinatore.").waitFor();
 if ((await failedCard.innerText()).includes("Deciso")) throw new Error("The failed candidate took the correction's state");
 await correctedCard.scrollIntoViewIfNeeded();
 await shot("18d-candidate-corrected");
+// Q01: before publishing, the card shows the quality standard. The corrected candidate meets it, with its Conventional
+// Commits message; the failed one says what is missing and how to fix it. Both themes.
+const correctedQuality = correctedCard.locator('[data-testid="candidate-quality"][data-ready="yes"]');
+await correctedQuality.waitFor({ timeout: 20_000 });
+const commitItem = correctedQuality.locator('[data-testid="quality-item"][data-code="COMMIT_MESSAGE"][data-passed="yes"]');
+if (!/(feat|docs|chore)(\([a-z0-9-]+\))?: \S/.test(await commitItem.innerText())) throw new Error(`The commit message is not in Conventional Commits: ${await commitItem.innerText()}`);
+const failedQuality = failedCard.locator('[data-testid="candidate-quality"][data-ready="no"]');
+for (const code of ["VERIFIED", "DIFF_CHECK"]) await failedQuality.locator(`[data-testid="quality-item"][data-code="${code}"][data-passed="no"]`).waitFor();
+await failedQuality.getByText(/trailing whitespace/).first().waitFor();
+await failedQuality.getByText(/^Come sistemarlo:/).first().waitFor();
+const correctedActions = await correctedCard.locator(".cta-row button").allTextContents();
+if (correctedActions.at(-1)?.trim() !== "Approva questo candidato") throw new Error(`Unexpected calls to action on the candidate: ${correctedActions}`);
+await correctedQuality.scrollIntoViewIfNeeded();
+await shot("18f-publication-standard");
+await failedQuality.scrollIntoViewIfNeeded();
+await shot("18g-publication-standard-missing");
+await app.evaluate(({ nativeTheme }) => {
+  nativeTheme.themeSource = "dark";
+});
+await page.evaluate(() => document.documentElement.classList.add("dark"));
+await shot("18h-publication-standard-missing-dark");
+await correctedQuality.scrollIntoViewIfNeeded();
+await shot("18i-publication-standard-dark");
+await app.evaluate(({ nativeTheme }) => {
+  nativeTheme.themeSource = "system";
+});
+await page.evaluate(() => document.documentElement.classList.remove("dark"));
 const correctedId = (await correctedCard.innerText()).match(/Candidato (C-[0-9A-F]{8})/)[1];
 await send(`[riverifica:${correctedId}:git_status]`);
 await correctedCard.getByText("Il via libera del Coordinatore non vale più: sono cambiate evidenze o decisioni.").waitFor({ timeout: 20_000 });
