@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { BOT_SHAPES, type BotAnimation, type BotExpression } from "@shared/agentBot";
 import { AGENT_PALETTE } from "@shared/identity";
-import { BOT_UNIT, botDetail, CLAY, botPose, clampBotSize, closedPath, mixPose, type PoseInput, pointCount, renderPose, shapeOutline } from "./botGeometry";
+import { BOT_UNIT, botDetail, CLAY, botPose, clampBotSize, closedPath, mixPose, type PoseInput, pointCount, renderPose, shapeOutline, weaveStrength } from "./botGeometry";
 
 const ANIMATIONS: BotAnimation[] = ["idle", "thinking", "wink", "wide", "alert", "notification", "exclamation", "sleep"];
 const EXPRESSIONS: BotExpression[] = ["neutral", "attentive", "surprised", "excited", "happy", "laughing", "angry", "sad", "scared", "sleepy"];
@@ -39,6 +39,11 @@ describe("bot geometry (W16)", () => {
     expect(botDetail(24)).toBe("mid");
     expect(botDetail(48)).toBe("high");
     expect(pointCount("low")).toBeLessThan(pointCount("high"));
+    // The fabric shows on big bots, fades at mid size and is gone on small ones.
+    expect(weaveStrength("high")).toBe(1);
+    expect(weaveStrength("mid")).toBeGreaterThan(0);
+    expect(weaveStrength("mid")).toBeLessThan(1);
+    expect(weaveStrength("low")).toBe(0);
   });
 
   it("gives every move three outlines of the same length, so moves morph point by point", () => {
@@ -46,7 +51,6 @@ describe("bot geometry (W16)", () => {
       for (const animation of ANIMATIONS) {
         const pose = botPose(input({ animation, detail, t: 1.7, moving: true }));
         for (const blob of pose.blobs) expect(blob).toHaveLength(pointCount(detail));
-        expect(pose.thread).toHaveLength(5);
       }
     }
     const halfway = mixPose(botPose(input()), botPose(input({ animation: "thinking" })), 0.5);
@@ -88,7 +92,7 @@ describe("bot geometry (W16)", () => {
     expect(right.x).toBeGreaterThan(left.x);
   });
 
-  it("keeps the white stitches readable on the clay of every palette color", () => {
+  it("keeps the white stitches readable on the woven clay of every palette color", () => {
     const rgb = (hex: string) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
     const mix = (a: number[], b: number[], k: number) => a.map((v, i) => v * k + b[i]! * (1 - k));
     const lum = (c: number[]) => {
@@ -113,7 +117,9 @@ describe("bot geometry (W16)", () => {
       for (const shape of BOT_SHAPES) {
         for (const eye of botPose(input({ shape })).eyes) {
           const offset = Math.hypot(eye.x * BOT_UNIT - CLAY.cx, eye.y * BOT_UNIT - CLAY.cy) / CLAY.r;
-          const ratio = 1.05 / (lum(clay(offset)) + 0.05);
+          // The worst spot: a pale thread of the weave (`.bot-weave-across`) right beside the eye, on a big bot.
+          const thread = mix(pale, [255, 255, 255], 0.8);
+          const ratio = 1.05 / (lum(mix(thread, clay(offset), 0.26 * weaveStrength("high"))) + 0.05);
           expect(ratio, `${entry.color} ${shape}`).toBeGreaterThanOrEqual(3);
         }
       }

@@ -1,14 +1,14 @@
 import { useEffect, useId, useMemo, useRef } from "react";
 import { ACTIVITY_LOOK, type AgentActivity, type BotShape, stableHash, transitionMove } from "@shared/agentBot";
 import type { AgentColor } from "@shared/domain";
-import { badgeTransform, BADGE_RADIUS, BOT_VIEWBOX, CLAY, botDetail, botPose, clampBotSize, renderPose } from "@/lib/botGeometry";
+import { badgeTransform, BADGE_RADIUS, BOT_VIEWBOX, CLAY, botDetail, botPose, clampBotSize, renderPose, weaveStrength } from "@/lib/botGeometry";
 import { type BotNodes, registerBot } from "@/lib/botEngine";
 import { cn } from "@/lib/cn";
 import { agentStyle } from "./AgentIdentity";
 
 /**
- * An agent's bot (W16, ADR 0007): a soft body in the agent's color with a seam, two stitches for eyes and a thread
- * that trails behind it. The body is the agent's own (a shape per role); the move and the eyes follow its state.
+ * An agent's bot (W16, ADR 0007): a soft body of woven fabric in the agent's color, with a stitched seam and two
+ * stitches for eyes. The body is the agent's own (a shape per role); the move and the eyes follow its state.
  * Drawn from scratch in SVG; `botEngine` animates it while it is on screen.
  */
 export function AgentBot({
@@ -53,7 +53,7 @@ export function AgentBot({
       blobs: [part<SVGPathElement>("blob-0")!, part<SVGPathElement>("blob-1")!, part<SVGPathElement>("blob-2")!],
       dim: part<SVGPathElement>("dim")!,
       seam: part<SVGPathElement>("seam"),
-      thread: part<SVGPathElement>("thread"),
+      weave: part<SVGPathElement>("weave"),
       eyes: part<SVGGElement>("eyes")!,
       eyePaths: [part<SVGPathElement>("eye-0")!, part<SVGPathElement>("eye-1")!],
       badge: part<SVGCircleElement>("badge")!,
@@ -73,7 +73,9 @@ export function AgentBot({
     if (move) handle.current?.play(move.animation, move.expression, move.seconds);
   }, [shape, activity, detail, number]);
 
-  const showThread = detail !== "low";
+  // Small bots stay clean: no seam and no fabric under 24 px.
+  const detailed = detail !== "low";
+  const weave = weaveStrength(detail);
   return (
     <svg
       key={detail}
@@ -101,14 +103,19 @@ export function AgentBot({
           <stop offset={CLAY.stops[2]} className="bot-stop-base" />
           <stop offset={CLAY.stops[3]} className="bot-stop-shade" />
         </radialGradient>
+        {/* A basket weave: pale threads across, deep threads down, alternating square by square. */}
+        <pattern id={`${id}-weave`} patternUnits="userSpaceOnUse" width={12} height={12}>
+          <path className="bot-weave-across" d="M1.5 3H4.5M7.5 9H10.5" />
+          <path className="bot-weave-down" d="M9 1.5V4.5M3 7.5V10.5" />
+        </pattern>
       </defs>
       <g data-part="root" transform={still.root}>
-        {showThread ? <path data-part="thread" className="bot-thread" d={still.thread} /> : null}
         {still.blobs.map((d, i) => (
           <path key={i} data-part={`blob-${i}`} d={d} fill={`url(#${id}-clay)`} />
         ))}
         <path data-part="dim" className="bot-shade" d={still.blobs[0]} opacity={still.dim * 0.5} />
-        {showThread ? <path data-part="seam" className="bot-seam" d={still.seam} opacity={still.body} /> : null}
+        {detailed ? <path data-part="weave" d={still.blobs[0]} fill={`url(#${id}-weave)`} opacity={still.body * weave} /> : null}
+        {detailed ? <path data-part="seam" className="bot-seam" d={still.seam} opacity={still.body} /> : null}
         <g data-part="eyes" opacity={still.body} className="bot-eye">
           <path data-part="eye-0" d={still.eyes[0].d} transform={still.eyes[0].transform} />
           <path data-part="eye-1" d={still.eyes[1].d} transform={still.eyes[1].transform} />

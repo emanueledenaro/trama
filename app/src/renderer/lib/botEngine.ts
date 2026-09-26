@@ -1,5 +1,5 @@
 import type { BotAnimation, BotExpression, BotShape } from "@shared/agentBot";
-import { badgeTransform, type BotDetail, type BotPose, botPose, mixPose, type Point, renderPose } from "./botGeometry";
+import { badgeTransform, type BotDetail, type BotPose, botPose, mixPose, type Point, renderPose, weaveStrength } from "./botGeometry";
 
 /**
  * One animation loop for every bot on screen (W16). A bot moves only while it is visible (IntersectionObserver), so
@@ -12,7 +12,7 @@ export interface BotNodes {
   blobs: [SVGPathElement, SVGPathElement, SVGPathElement];
   dim: SVGPathElement;
   seam: SVGPathElement | null;
-  thread: SVGPathElement | null;
+  weave: SVGPathElement | null;
   eyes: SVGGElement;
   eyePaths: [SVGPathElement, SVGPathElement];
   badge: SVGCircleElement;
@@ -76,7 +76,7 @@ if (typeof window !== "undefined") {
 
 const seconds = () => performance.now() / 1000;
 
-function write(nodes: BotNodes, pose: BotPose) {
+function write(nodes: BotNodes, pose: BotPose, weave: number) {
   const r = renderPose(pose);
   nodes.root.setAttribute("transform", r.root);
   r.blobs.forEach((d, i) => nodes.blobs[i]!.setAttribute("d", d));
@@ -86,7 +86,10 @@ function write(nodes: BotNodes, pose: BotPose) {
     nodes.seam.setAttribute("d", r.seam);
     nodes.seam.setAttribute("opacity", String(r.body));
   }
-  nodes.thread?.setAttribute("d", r.thread);
+  if (nodes.weave) {
+    nodes.weave.setAttribute("d", r.blobs[0]);
+    nodes.weave.setAttribute("opacity", String(r.body * weave));
+  }
   nodes.eyes.setAttribute("opacity", String(r.body));
   r.eyes.forEach((eye, i) => {
     nodes.eyePaths[i]!.setAttribute("d", eye.d);
@@ -104,7 +107,7 @@ function current(instance: Instance, now: number): { animation: BotAnimation; ex
 function drawStill(instance: Instance) {
   const { state } = instance;
   instance.pose = botPose({ ...state, t: 0, look: null, moving: false });
-  write(instance.nodes, instance.pose);
+  write(instance.nodes, instance.pose, weaveStrength(instance.state.detail));
 }
 
 function tick() {
@@ -131,7 +134,7 @@ function tick() {
     const move = current(instance, now);
     const target = botPose({ ...instance.state, ...move, t: now, look: looks[index] ?? null, moving: true });
     instance.pose = instance.pose ? mixPose(instance.pose, target, 1 - Math.exp(-step / 0.11)) : target;
-    write(instance.nodes, instance.pose);
+    write(instance.nodes, instance.pose, weaveStrength(instance.state.detail));
   });
   if (active.length) schedule();
 }

@@ -33,8 +33,6 @@ export interface BotPose {
   dim: number;
   /** The notification knot at the top right, 0 to 1. */
   badge: number;
-  /** The thread, five points drawn behind the body. */
-  thread: Point[];
   offset: { x: number; y: number; rotate: number };
 }
 
@@ -52,11 +50,16 @@ export function clampBotSize(size: number): number {
   return Math.min(MAXIMUM_BOT_SIZE, Math.max(MINIMUM_BOT_SIZE, Math.round(size)));
 }
 
-/** Small bots drop the thread, the seam and the weave, and keep bigger eyes so they stay readable. */
+/** Small bots drop the seam and the weave, and keep bigger eyes so they stay readable. */
 export function botDetail(size: number): BotDetail {
   if (size < 24) return "low";
   if (size < 48) return "mid";
   return "high";
+}
+
+/** How strongly the fabric texture shows: full on big bots, faded at mid size, none on small ones. */
+export function weaveStrength(detail: BotDetail): number {
+  return detail === "high" ? 1 : detail === "mid" ? 0.45 : 0;
 }
 
 export function pointCount(detail: BotDetail): number {
@@ -238,18 +241,6 @@ function bodyBlob(input: PoseInput, count: number): Point[] {
 
 const circle = (count: number, cx: number, cy: number, r: number) => formOutline(count, { cx, cy, a: r, b: r });
 
-/** The thread behind the body: it comes out at the lower right and trails away, waving a little. */
-function bodyThread(input: PoseInput): Point[] {
-  const wave = input.moving ? 0.05 * Math.sin(input.t * 2 + input.seed) : 0;
-  return [
-    { x: 0.2, y: 0.3 },
-    { x: 0.66, y: 0.66 },
-    { x: 0.98, y: 0.9 + wave * 0.4 },
-    { x: 1.16, y: 0.94 + wave },
-    { x: 1.3, y: 0.86 + wave * 1.6 },
-  ];
-}
-
 /** The pose of one move at time `t`. */
 export function botPose(input: PoseInput): BotPose {
   const count = pointCount(input.detail);
@@ -262,7 +253,6 @@ export function botPose(input: PoseInput): BotPose {
     body: 1,
     dim: 0,
     badge: 0,
-    thread: bodyThread(input),
     offset: still,
   };
   switch (input.animation) {
@@ -279,7 +269,7 @@ export function botPose(input: PoseInput): BotPose {
       return { ...base, eyes: eyePair(input, "surprised", false), badge: pulse };
     }
     case "thinking": {
-      // Three knots on a thread, the middle one larger and darker, tightening one after the other.
+      // Three knots in a row, the middle one larger and darker, tightening one after the other.
       const knot = (i: number) => (input.moving ? 1 + 0.28 * Math.max(0, Math.sin((t * TAU) / 1.3 - i * 1.1)) : 1);
       const wave = (x: number) => (input.moving ? 0.04 * Math.sin(t * 2.4 + x * 3) : 0);
       return {
@@ -287,7 +277,6 @@ export function botPose(input: PoseInput): BotPose {
         blobs: [circle(count, 0, wave(0), 0.26 * knot(1)), circle(count, -0.6, wave(-0.6), 0.18 * knot(0)), circle(count, 0.6, wave(0.6), 0.18 * knot(2))],
         body: 0,
         dim: 1,
-        thread: [-1.2, -0.6, 0, 0.6, 1.2].map((x) => ({ x, y: wave(x) })),
       };
     }
     case "alert": {
@@ -299,13 +288,6 @@ export function botPose(input: PoseInput): BotPose {
         ...base,
         blobs: [formOutline(count, { cx: 0.06, cy: -0.2, a: 0.2, b: 0.58, n: 2.2, rotate: 14 }), dot, dot],
         body: 0,
-        thread: [
-          { x: -0.16, y: 0.66 },
-          { x: -0.02, y: 0.82 },
-          { x: 0.2, y: 0.9 },
-          { x: 0.4, y: 0.88 },
-          { x: 0.56, y: 0.8 },
-        ],
         offset: { x: shake, y: 0, rotate: shake * 40 },
       };
     }
@@ -317,31 +299,17 @@ export function botPose(input: PoseInput): BotPose {
         ...base,
         blobs: [formOutline(count, { cx: 0, cy: -0.22, a: 0.2, b: 0.56, n: 2.4, taper: 0.35 }), dot, dot],
         body: 0,
-        thread: [
-          { x: 0, y: 0.7 },
-          { x: 0.16, y: 0.86 },
-          { x: 0.38, y: 0.92 },
-          { x: 0.58, y: 0.88 },
-          { x: 0.72, y: 0.8 },
-        ],
         offset: { x: 0, y: hop, rotate: 0 },
       };
     }
     case "sleep": {
-      // A small spool with its thread, breathing slowly.
+      // A small spool, breathing slowly.
       const r = 0.24 * (input.moving ? 1 + 0.12 * Math.sin((t * TAU) / 4 + input.seed) : 1);
-      const spool = circle(count, 0, 0.1, r);
+      const spool = formOutline(count, { cx: 0, cy: 0.1, a: r * 1.1, b: r * 0.85, n: 3.2 });
       return {
         ...base,
         blobs: [spool, spool, spool],
         body: 0,
-        thread: [
-          { x: 0, y: 0.1 },
-          { x: 0.22, y: 0.26 },
-          { x: 0.46, y: 0.34 },
-          { x: 0.66, y: 0.3 },
-          { x: 0.82, y: 0.22 },
-        ],
       };
     }
   }
@@ -366,7 +334,6 @@ export function mixPose(a: BotPose, b: BotPose, k: number): BotPose {
     body: lerp(a.body, b.body, k),
     dim: lerp(a.dim, b.dim, k),
     badge: lerp(a.badge, b.badge, k),
-    thread: lerpPoints(a.thread, b.thread, k),
     offset: { x: lerp(a.offset.x, b.offset.x, k), y: lerp(a.offset.y, b.offset.y, k), rotate: lerp(a.offset.rotate, b.offset.rotate, k) },
   };
 }
@@ -384,17 +351,6 @@ export function closedPath(points: Point[]): string {
     d += `C${f(p1.x + (p2.x - p0.x) / 6)} ${f(p1.y + (p2.y - p0.y) / 6)} ${f(p2.x - (p3.x - p1.x) / 6)} ${f(p2.y - (p3.y - p1.y) / 6)} ${f(p2.x)} ${f(p2.y)}`;
   }
   return `${d}Z`;
-}
-
-/** A smooth open line through the points, in viewBox units. */
-export function openPath(points: Point[]): string {
-  const p = points.map(scaled);
-  let d = `M${f(p[0]!.x)} ${f(p[0]!.y)}`;
-  for (let i = 0; i < p.length - 1; i++) {
-    const [p0, p1, p2, p3] = [p[Math.max(0, i - 1)]!, p[i]!, p[i + 1]!, p[Math.min(p.length - 1, i + 2)]!];
-    d += `C${f(p1.x + (p2.x - p0.x) / 6)} ${f(p1.y + (p2.y - p0.y) / 6)} ${f(p2.x - (p3.x - p1.x) / 6)} ${f(p2.y - (p3.y - p1.y) / 6)} ${f(p2.x)} ${f(p2.y)}`;
-  }
-  return d;
 }
 
 /** A stitch: a stadium of the eye's size, centred on the origin, in viewBox units. */
@@ -421,7 +377,6 @@ export function seamPath(points: Point[]): string {
 export interface RenderedPose {
   blobs: [string, string, string];
   seam: string;
-  thread: string;
   eyes: [{ d: string; transform: string }, { d: string; transform: string }];
   body: number;
   dim: number;
@@ -433,7 +388,6 @@ export function renderPose(pose: BotPose): RenderedPose {
   return {
     blobs: [closedPath(pose.blobs[0]), closedPath(pose.blobs[1]), closedPath(pose.blobs[2])],
     seam: seamPath(pose.blobs[0]),
-    thread: openPath(pose.thread),
     eyes: [
       { d: eyePath(pose.eyes[0]), transform: eyeTransform(pose.eyes[0]) },
       { d: eyePath(pose.eyes[1]), transform: eyeTransform(pose.eyes[1]) },
