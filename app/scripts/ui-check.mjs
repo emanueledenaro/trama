@@ -1191,11 +1191,16 @@ await page.evaluate(() => document.documentElement.classList.remove("dark"));
 // F01: focus mode on a candidate. Trama runs the real checks first, then code-review's Standards and Spec axes, and
 // the report keeps them apart. The slice candidate reads its slice as the spec; the corrected one has none.
 const focusAudit = page.getByTestId("focus-audit");
+// An examination that ends in "failed" says why: the check reports that text instead of waiting out its timeout.
+const auditDone = async () => {
+  await page.locator('[data-testid="focus-audit"]:is([data-status="done"], [data-status="failed"])').waitFor({ timeout: 60_000 });
+  if ((await focusAudit.getAttribute("data-status")) !== "done") throw new Error(`Focus mode failed: ${await focusAudit.innerText()}`);
+};
 const focusActions = await sliceCandidate.locator(".cta-row button").allTextContents();
 if (!focusActions.some((label) => label.includes("Focus mode"))) throw new Error(`No Focus mode on the candidate: ${focusActions}`);
 await sliceCandidate.getByRole("button", { name: "Focus mode" }).click();
 await focusAudit.waitFor({ timeout: 20_000 });
-await page.locator('[data-testid="focus-audit"][data-status="done"]').waitFor({ timeout: 60_000 });
+await auditDone();
 for (const check of ["swift_build", "swift_test"]) {
   await focusAudit.locator(`[data-testid="candidate-evidence"][data-check="${check}"]:not([data-result="missing"])`).waitFor();
 }
@@ -1218,7 +1223,7 @@ await page.evaluate(() => document.documentElement.classList.remove("dark"));
 await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
 await correctedCard.scrollIntoViewIfNeeded();
 await correctedCard.getByRole("button", { name: "Focus mode" }).click();
-await page.locator('[data-testid="focus-audit"][data-status="done"]').waitFor({ timeout: 60_000 });
+await auditDone();
 await focusAudit.locator('[data-testid="audit-axis"][data-axis="spec"][data-status="skipped"]').getByText("no spec available", { exact: true }).waitFor();
 await focusAudit.locator('[data-testid="candidate-evidence"][data-check="git_diff_check"][data-result="pass"]').waitFor();
 await shot("20c-focus-audit-no-spec");

@@ -1,8 +1,9 @@
 import { workState } from "./core/workPhase";
 import { openGrillingQuestions } from "@shared/grilling";
-import { chmod, cp, mkdtemp } from "node:fs/promises";
+import { chmod, cp, mkdtemp, realpath, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { existsSync } from "node:fs";
 import { afterEach, describe, expect, it } from "vitest";
 import type { AppState, ProjectDocument } from "@shared/domain";
 import { decisionDependents, dialogEvents, findGoal, projectGoals } from "@shared/goals";
@@ -110,6 +111,28 @@ describe("TramaController", () => {
     const project = controller!.snapshot.project!;
     expect(project.document.createdFromIdea).toBe("Un'app per salvare ricette di famiglia");
     expect(project.snapshot.headSHA).toMatch(/^[0-9a-f]{40}$/);
+  });
+
+  it("opens the Coordinator of a project opened while the previous one's was still starting (F01)", async () => {
+    await setup();
+    const first = await mkdtemp(join(tmpdir(), "trama-first-"));
+    const second = await mkdtemp(join(tmpdir(), "trama-second-"));
+    for (const path of [first, second]) await cp(join(root, "resources/DemoProject"), path, { recursive: true });
+    const gate = join(await mkdtemp(join(tmpdir(), "trama-gate-")), "initialize");
+    process.env.FAKE_CODEX_INITIALIZE_GATE = gate;
+    try {
+      // The first project's Coordinator waits for its app-server to start; the person opens another project meanwhile.
+      await controller!.openProject(first);
+      await until(() => existsSync(`${gate}.held`));
+      await controller!.openProject(second);
+      const project = controller!.snapshot.project!;
+      expect(project.rootPath).toBe(await realpath(second));
+      await writeFile(gate, "");
+      // Well within the 15 s an app-server request may take: the second project does not wait on the first one's.
+      await until(() => project.phase.kind === "ready", 5_000);
+    } finally {
+      delete process.env.FAKE_CODEX_INITIALIZE_GATE;
+    }
   });
 
   it("studies the project, answers a message and records references", async () => {
