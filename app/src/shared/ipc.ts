@@ -113,7 +113,7 @@ export interface ActionMap {
   "candidate:publish": [{ candidateId: string }, void];
   "candidate:previewPullRequest": [
     { candidateId: string },
-    { repository: string | null; head: string | null; base: string; title: string; body: string },
+    { repository: string | null; head: string | null; base: string; title: string; message: string; body: string },
   ];
   "codex:refresh": [void, void];
   "codex:login": [void, void];

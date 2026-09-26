@@ -442,7 +442,7 @@ describe("team and candidate tools under the mandate (V04, V05)", () => {
       snapshot: { modules: MODULES },
       startAssignment: (id: string) => void started.push(id),
       stopAssignment: (id: string) => void stopped.push(id),
-      reviewWorkspace: async () => ({ snapshotId: "snap-1", baseSHA: "base", diff: "+nota", changedFiles: ["NOTE.md"], excludedSensitiveFiles: [] }),
+      reviewWorkspace: async () => ({ snapshotId: "snap-1", baseSHA: "base", diff: "+nota", changedFiles: ["NOTE.md"], excludedSensitiveFiles: [], whitespaceErrors: [] }),
       headSHA: async () => "base",
     } as unknown as ToolContext;
     return { context, started, stopped };
@@ -563,5 +563,35 @@ describe("team and candidate tools under the mandate (V04, V05)", () => {
     grant(document, ["executeInWorktree", "integrateCandidate"]);
     expect(await refusal("clear_candidate", { candidate: candidate.id }, context)).toContain("candidate_not_verified");
     expect(candidate.clearance).toBeNull();
+  });
+
+  it("declare_candidate derives the Conventional Commits message and set_commit_message corrects it or refuses it (Q01)", async () => {
+    const document = emptyDocument("p");
+    const { context } = mandateContext(document);
+    const decision = decide(document, { id: null, value: "Un ordine pagato va in revisione", acceptedExample: "Ordine 42", rationale: "r" });
+    confirmTeam(document, proposeTeam(document, { requestId: null, summary: null, members: [{ name: "Ada", competence: "Swift", reason: "r", moduleIds: [] }] }).id, null, null);
+    grant(document, ["executeInWorktree"]);
+    // The Coordinator's choices at assignment: an unknown type is refused, a known one is kept with the scope.
+    expect(await refusal("assign_task", { ...order, commitType: "wip" }, context)).toContain("commitType must be one of");
+    expect(await refusal("assign_task", { ...order, commitScope: "two words" }, context)).toContain("commitScope");
+    const assigned = parse(await runCoordinatorTool("assign_task", { ...order, commitType: "fix", commitScope: "orders", hotfix: true }, context));
+    const assignment = developers(document)[0]!.assignments.find((a) => a.id === assigned.assignmentID)!;
+    expect(assignment.commit).toEqual({ type: "fix", scope: "orders", hotfix: true });
+    recordWorkspace(document, assignment.id, WORKTREE as never);
+    beginTurn(document, assignment.id, "t1", "gpt-5.5");
+    endTurn(document, assignment.id, "t1", { kind: "completed", text: "fatto" });
+
+    const declared = parse(await runCoordinatorTool("declare_candidate", { assignment: assignment.id, decisionIDs: [decision.id] }, context));
+    const candidate = document.candidates[0]!;
+    expect(declared.commitMessage).toBe(`fix(orders): documenta l'annullamento\n\nRefs: #12\nTrama-Candidate: ${candidate.id}`);
+    expect(declared.whitespaceErrors).toEqual([]);
+    expect(candidate.whitespaceErrors).toEqual([]);
+
+    expect(await refusal("set_commit_message", { candidate: candidate.id, type: "wip" }, context)).toContain("invalid_commit_message");
+    expect(await refusal("set_commit_message", { candidate: candidate.id, scope: "two words" }, context)).toMatch(/senza spazi/);
+    expect(candidate.commit!.type).toBe("fix");
+    const corrected = parse(await runCoordinatorTool("set_commit_message", { candidate: candidate.id, type: "docs", scope: "", description: "Describe order cancellation" }, context));
+    expect(corrected.pullRequestTitle).toBe("docs: describe order cancellation");
+    expect(candidate.commit).toMatchObject({ type: "docs", scope: null, correctedBy: "coordinator" });
   });
 });
