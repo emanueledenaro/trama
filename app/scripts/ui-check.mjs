@@ -1322,9 +1322,9 @@ await shot("19h-developer-question-resumed");
 await setLook("claudeAgent", true);
 await shot("19i-developer-question-resumed-claude-dark");
 await setLook(questionLook.provider, questionLook.dark);
-// W08: independent movement, after W06's question work (one more assignment card). The person sets the project's parallel limit in the settings; a verified slice unblocks
-// the ones that depended on it, and with continuous work on the free developer takes the next ready one in its modules
-// by itself, without a Coordinator turn.
+// W08: independent movement, after the work of #204 and W06 (two more assignment cards). The person sets the project's
+// parallel limit in the settings; a verified slice unblocks the ones that depended on it, and with continuous work on
+// the free developer takes the next ready one in its modules by itself, without a Coordinator turn.
 await page.getByRole("button", { name: "Impostazioni" }).click();
 const parallelSettings = page.getByTestId("settings");
 await parallelSettings.getByRole("button", { name: /^Metodo di lavoro/ }).first().click();
@@ -1347,17 +1347,19 @@ await page.getByRole("button", { name: "Impostazioni" }).click();
 await page.getByTestId("settings").waitFor({ state: "hidden" });
 // The first slice is verified on new work that passes its check and the technical review: S2 and S3 become ready.
 await send("[assegna:S1]");
-const verifiedSliceWork = assignmentCards.nth(5);
+const verifiedSliceWork = assignmentCards.nth(6);
 await verifiedSliceWork.getByText("Concluso", { exact: true }).waitFor({ timeout: 20_000 });
 await send(`[candidato:${await cardAssignment(verifiedSliceWork)}:${candidateDecision}]`);
 const teamSlices = sliceSpec.getByTestId("plan-slices");
 await teamSlices.locator('[data-testid="plan-slice"][data-state="done"]').first().waitFor({ timeout: 30_000 });
 const unblocked = await teamSlices.getByTestId("plan-slice").evaluateAll((items) => items.map((item) => item.getAttribute("data-state")));
 if (unblocked.join() !== "done,ready,ready") throw new Error(`A verified slice did not unblock its dependents: ${unblocked}`);
-if ((await assignmentCards.count()) !== 6) throw new Error("A developer took a slice while continuous work was off");
-// Continuous work on: Ada is free and takes S2 in autonomy; the assignment card says so and the slice shows who took it.
+if ((await assignmentCards.count()) !== 7) throw new Error("A developer took a slice while continuous work was off");
+// Continuous work on: at the next event of the work (here the end of a Coordinator turn) Ada is free and takes S2 in
+// autonomy; the assignment card says so and the slice shows who took it.
 await page.evaluate(() => window.trama.invoke("settings:update", { continuousWork: true }));
-const pickedCard = assignmentCards.nth(6);
+await send("Come procede il lavoro?");
+const pickedCard = assignmentCards.nth(7);
 await pickedCard.getByTestId("assignment-self-picked").waitFor({ timeout: 20_000 });
 await pickedCard.getByText(/^S2 Il supporto vede gli ordini in revisione$/).waitFor();
 const pickedSlice = teamSlices.locator('[data-testid="plan-slice"][data-self-picked="yes"]').first();

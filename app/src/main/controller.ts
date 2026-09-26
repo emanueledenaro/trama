@@ -4924,17 +4924,6 @@ export class TramaController {
     if (update.theme) this.host.applyTheme(update.theme);
     this.publish();
     await this.saveSettings();
-    if (update.continuousWork === true) {
-      // Continuous work turned on: the Coordinator's move that waited for it starts now, one per project, and free
-      // developers may take the ready slices (W08).
-      const project = this.state.project;
-      if (project?.stateWritable) {
-        const latest = new Map<string, string>();
-        for (const request of project.document.requests) latest.set(request.goalId ?? "", request.id);
-        for (const requestId of latest.values()) this.continueWork(project, requestId, "continuousWorkOn");
-      }
-      void this.runDuties();
-    }
   }
 
   dismissError(): void {

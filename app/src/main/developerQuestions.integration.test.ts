@@ -57,7 +57,7 @@ function slicedPlan(requestId: string): WorkPlan {
     },
     slicing: {
       status: "approved",
-      tickets: [{ id: "S1", title: "Stato in revisione", whatToBuild: "Un ordine pagato annullato va in revisione", acceptanceCriteria: ["L'ordine 42 va in revisione"], blockedBy: [], issue: null }],
+      tickets: [{ id: "S1", title: "Stato in revisione", whatToBuild: "Un ordine pagato annullato va in revisione [domanda]", acceptanceCriteria: ["L'ordine 42 va in revisione"], blockedBy: [], issue: null }],
       feedback: null,
       approvedAt: at,
       failure: null,
@@ -109,12 +109,13 @@ async function ready() {
 describe("a developer's question to the Coordinator (W06)", () => {
   it("pauses the slice, gets the Coordinator's answer from facts and resumes in the same worktree", async () => {
     const document = await ready();
-    // "[domanda]" makes the developer ask with ask_coordinator. The Coordinator assigns the slice while continuous work
-    // is off, so Ada does not take it by herself first (W08); turning it on starts the Coordinator's answer by itself.
-    await controller!.send("[assegna] [domanda]", null, null, null);
-    const work = findSpecialist(document, "Ada")!.assignments[0]!;
-    await until(() => work.status === "paused");
+    // With continuous work on, Ada takes the ready slice by herself (W08). "[domanda]" in the slice makes her ask with
+    // ask_coordinator; Trama starts the Coordinator's answer by itself.
     await controller!.updateSettings({ continuousWork: true });
+    await controller!.send("Come procede il lavoro?", null, null, null);
+    await until(() => findSpecialist(document, "Ada")!.assignments.length > 0);
+    const work = findSpecialist(document, "Ada")!.assignments[0]!;
+    expect(work).toMatchObject({ selfPicked: true, slice: { planId: "P-W06", sliceId: "S1" } });
     await until(() => work.status === "completed");
     const question = work.questions![0]!;
     expect(question).toMatchObject({ question: expect.stringContaining("buono"), context: expect.stringContaining("carta") });
