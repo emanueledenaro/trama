@@ -9,6 +9,8 @@
 [![CI](https://github.com/emanueledenaro/trama/actions/workflows/electron.yml/badge.svg)](https://github.com/emanueledenaro/trama/actions/workflows/electron.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 ![Status: alpha](https://img.shields.io/badge/status-alpha-orange.svg)
+[![Latest release](https://img.shields.io/github/v/release/emanueledenaro/trama?include_prereleases&label=release)](https://github.com/emanueledenaro/trama/releases)
+[![CodeQL](https://github.com/emanueledenaro/trama/actions/workflows/codeql.yml/badge.svg)](https://github.com/emanueledenaro/trama/actions/workflows/codeql.yml)
 ![Platforms](https://img.shields.io/badge/platforms-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey.svg)
 
 [Quick start](#quick-start) · [How it works](#how-it-works) · [Providers](#providers) · [Status](#status-and-known-limits) · [Contributing](#contributing)
@@ -177,7 +179,7 @@ npm run dist        # package with electron-builder
 
 </details>
 
-CI ([`electron.yml`](.github/workflows/electron.yml)) runs type check, tests, build and `ui-check` on Ubuntu with Node 22. The [`release.yml`](.github/workflows/release.yml) workflow builds packages for macOS, Windows and Linux on every `v*` tag; they are signed and notarized only when the signing secrets are set. `main` is a protected branch: changes land through a pull request, never a direct push.
+CI ([`electron.yml`](.github/workflows/electron.yml)) runs type check, tests, build and `ui-check` on Ubuntu with Node 22. [CodeQL](.github/workflows/codeql.yml) and a [dependency check](.github/workflows/dependencies.yml) with a license policy run on every pull request. The [`release.yml`](.github/workflows/release.yml) workflow builds packages for macOS, Windows and Linux on every `v*` tag; they are signed and notarized only when the signing secrets are set. Versions come from Conventional Commits and are listed in [CHANGELOG.md](CHANGELOG.md); the release steps are in [CONTRIBUTING.md](CONTRIBUTING.md#releases). `main` is a protected branch: changes land through a pull request, never a direct push.
 
 ## Status and known limits
 
@@ -194,13 +196,14 @@ The complete list is in [ADR 0011](docs/adr/0011-app-desktop-electron-con-design
 
 ## Contributing
 
-Issues and pull requests are welcome. Before you start:
+Issues and pull requests are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) before you start: it covers setup, the checks to run, Conventional Commits, branch names, the pull request flow and releases. The project rules are in [AGENTS.md](AGENTS.md) and the vocabulary in [CONTEXT.md](CONTEXT.md).
 
-- Read [AGENTS.md](AGENTS.md) for the project rules and [CONTEXT.md](CONTEXT.md) for the vocabulary.
 - Commits follow [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/), for example `feat(app): add the search palette`.
 - Branches follow [Conventional Branch](https://conventionalbranch.org/): `feature/`, `bugfix/` or `hotfix/` with a short English description.
 - Source code, comments and commit messages are in English. The interface, issues and pull requests are in Italian.
-- Run `npm run typecheck` and `npm test` in `app/` before opening a pull request. `main` is protected: only a pull request with green CI gets merged.
+- `main` is protected: only a pull request with green CI gets merged.
+- Everyone taking part follows the [Code of Conduct](CODE_OF_CONDUCT.md).
+- Questions go to [SUPPORT.md](SUPPORT.md); security problems are reported privately as described in [SECURITY.md](SECURITY.md).
 
 ## Acknowledgements
 

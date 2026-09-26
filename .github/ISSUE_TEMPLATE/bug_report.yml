@@ -1,0 +1,55 @@
+name: Bug
+description: Qualcosa non funziona come dovrebbe.
+labels: [bug, needs-triage]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Grazie della segnalazione. Le issue di Trama si scrivono in italiano (vedi [AGENTS.md](https://github.com/emanueledenaro/trama/blob/main/AGENTS.md)). Una vulnerabilità di sicurezza va segnalata in privato, come spiega [SECURITY.md](https://github.com/emanueledenaro/trama/blob/main/SECURITY.md).
+  - type: textarea
+    id: descrizione
+    attributes:
+      label: Cosa succede
+      description: Il comportamento osservato, con eventuali messaggi di errore.
+    validations:
+      required: true
+  - type: textarea
+    id: passi
+    attributes:
+      label: Passi per riprodurre
+      placeholder: |
+        1. Aprire il progetto di esempio
+        2. ...
+    validations:
+      required: true
+  - type: textarea
+    id: atteso
+    attributes:
+      label: Cosa ti aspettavi
+    validations:
+      required: true
+  - type: input
+    id: versione
+    attributes:
+      label: Versione o commit
+      description: La versione della release, oppure lo SHA del commit se avvii Trama dai sorgenti.
+    validations:
+      required: true
+  - type: dropdown
+    id: sistema
+    attributes:
+      label: Sistema operativo
+      options: [macOS, Linux, Windows]
+    validations:
+      required: true
+  - type: input
+    id: provider
+    attributes:
+      label: Provider e modello
+      description: Per esempio Codex con il modello scelto, Claude, Pi. Lasciare vuoto se non c'entra.
+  - type: textarea
+    id: log
+    attributes:
+      label: Log o schermate
+      description: Togliere token, credenziali e percorsi privati prima di incollare.
+      render: text

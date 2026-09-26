@@ -1,0 +1,65 @@
+name: Preparazione del rilascio
+# Opens the pull request release/vX.Y.Z with the new CHANGELOG.md section and
+# the version in app/package.json. See CONTRIBUTING.md, "Releases".
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Versione esplicita (X.Y.Z). Vuota: calcolata dai Conventional Commits dall'ultimo tag v*"
+        required: false
+        type: string
+permissions:
+  contents: write
+  pull-requests: write
+concurrency:
+  group: release-prepare
+  cancel-in-progress: false
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          # A personal token lets the pull request start the required checks.
+          token: ${{ secrets.RELEASE_TOKEN || github.token }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Test dello script
+        run: node --test scripts/release/lib.test.mjs
+      - name: Changelog
+        id: changelog
+        env:
+          VERSION: ${{ inputs.version }}
+        run: node scripts/release/cli.mjs prepare "$VERSION"
+      - name: Versione del pacchetto
+        working-directory: app
+        env:
+          VERSION: ${{ steps.changelog.outputs.version }}
+        run: npm version "$VERSION" --no-git-tag-version --allow-same-version
+      - name: Pull request
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN || github.token }}
+          VERSION: ${{ steps.changelog.outputs.version }}
+        run: |
+          branch="release/v$VERSION"
+          if git ls-remote --exit-code --heads origin "$branch" >/dev/null; then
+            echo "Il branch $branch esiste già: chiudere o unire la PR aperta prima di rigenerarla." >&2
+            exit 1
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "$branch"
+          git add CHANGELOG.md app/package.json app/package-lock.json
+          git commit -m "chore(release): v$VERSION"
+          git push origin "$branch"
+          {
+            echo "Rilascio \`v$VERSION\` preparato dal workflow \`release-prepare.yml\`."
+            echo
+            echo "Rivedere la sezione di \`CHANGELOG.md\`: si può correggere in questa PR. All'unione su \`main\`, \`release-publish.yml\` crea il tag \`v$VERSION\` e la release con queste note."
+            echo
+            echo "Il commit di unione su \`main\` usa l'oggetto \`chore(release): v$VERSION (#<numero>)\`."
+          } > body.md
+          gh pr create --base main --head "$branch" --title "chore(release): v$VERSION" --body-file body.md
