@@ -22,6 +22,8 @@ I nomi dei branch usano un prefisso per il tipo di lavoro:
 
 La descrizione è in inglese, minuscola, con parole separate da trattini, per esempio `feature/electron-app`.
 
+Un controllo automatico in CI verifica, a ogni pull request, i commit (compresi i merge), il titolo della PR e il nome del branch. Il commit di unione su `main` ha un oggetto conforme, per esempio `feat(app): add the search palette (#123)`; l'oggetto proposto di default da GitHub non lo è e va sostituito a mano. Dettagli, esempi ed hook locale facoltativo in `docs/agents/conventional-commits.md`.
+
 L'interfaccia dell'app, la documentazione di prodotto, le issue, le pull request e le comunicazioni con la persona restano in italiano, salvo quando un termine tecnico o una fonte richiedono l'inglese. Fa eccezione il `README.md`, che è in inglese e si rivolge a chi scopre il progetto su GitHub. Segue la struttura dei README open source: presentazione e schermata, stato del progetto, avvio rapido, funzionamento, provider, sviluppo, limiti noti, contributi e licenza. Le schermate stanno in `docs/images/readme/` e vengono da `npm run ui-check`. Il README riporta solo fatti verificati e rimanda ai registri in `docs/verifiche/`.
 
 Non tradurre retroattivamente dati persistiti, contenuti storici, nomi di API esterne o testo già pubblicato soltanto per applicare questa regola.
@@ -39,6 +41,10 @@ Le skill usano il vocabolario predefinito. La mappatura è in `docs/agents/triag
 ### Domain docs
 
 Un solo contesto in `CONTEXT.md` e `docs/adr/`. Per esplorare o modificare il dominio leggere `docs/agents/domain.md`.
+
+### Conventional commits
+
+Il controllo gira in CI su ogni pull request e copre commit, merge, titolo della PR e nome del branch. Regole, esempi e hook locale facoltativo in `docs/agents/conventional-commits.md`.
 
 ## Confini
 
