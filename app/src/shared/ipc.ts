@@ -127,6 +127,11 @@ export interface ActionMap {
   "providers:refresh": [{ provider?: ProviderId }, void];
   "provider:login": [{ provider: ProviderId }, { url: string | null; command: string | null }];
   "github:refresh": [void, void];
+  /** The person's answer on sharing the presence (G01): from a chat proposal, or the switch in Impostazioni and Gruppo. */
+  "presence:consent": [{ share: boolean; proposal?: import("./presence").PresenceProposal | null }, void];
+  /** Pauses or resumes sharing without withdrawing the consent (G01). */
+  "presence:pause": [{ paused: boolean }, void];
+  "presence:refresh": [void, void];
   "github:createIssue": [{ title: string; body: string }, void];
   "settings:update": [Partial<AppSettings>, void];
   "monitor:update": [{ enabled?: boolean; openAtLogin?: boolean; intervalSeconds?: number; addRepository?: string; removeRepository?: string }, void];

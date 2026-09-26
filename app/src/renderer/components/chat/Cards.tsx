@@ -1006,3 +1006,43 @@ export function ConflictCard({ assessmentId }: { assessmentId: string }) {
     </CardFrame>
   );
 }
+
+/**
+ * Decision 6: Trama asks, in the chat, whether to share the presence in this project, with the reason and "Non ora"
+ * and "Condividi" on the right. The second proposal comes once, after a conflict the presence would have shown.
+ */
+export function PresenceConsentCard({ proposal, detail }: { proposal: string; detail: string | null }) {
+  const consent = useUi((s) => s.app?.project?.document.presence ?? null);
+  const pending = consent?.pending === proposal;
+  const answer = proposal === "initial" || proposal === "conflict" ? consent?.answers[proposal] : undefined;
+  return (
+    <CardFrame
+      icon={<IconUsersGroup stroke={1.8} />}
+      title="Condividere la presenza?"
+      anchor="presence-consent"
+      className={cn(!pending && "opacity-80")}
+      aside={answer ? <Badge tone={answer === "shared" ? "success" : "secondary"}>{answer === "shared" ? "Condivisa" : "Non ora"}</Badge> : null}
+    >
+      <div data-testid="presence-consent" data-proposal={proposal} className="space-y-1.5 text-ui text-foreground/90">
+        {detail ? <p>{detail}</p> : <p>In questo progetto lavorano anche altre persone.</p>}
+        <p>
+          Se condividi la presenza, chi collabora con te vede su quale branch lavori tu e i tuoi agenti, i percorsi dei file che toccate e la
+          richiesta in corso. Così vi accorgete prima di un lavoro doppio o di un conflitto e il progetto resta coerente.
+        </p>
+        <p className="text-ui-sm text-muted-foreground">
+          Trama non condivide mai il contenuto dei file. Puoi mettere in pausa o smettere quando vuoi, da Impostazioni o da Gruppo.
+        </p>
+      </div>
+      {pending ? (
+        <div className="cta-row mt-3">
+          <Button size="sm" variant="outline" onClick={() => void act("presence:consent", { share: false, proposal: proposal as "initial" | "conflict" })}>
+            Non ora
+          </Button>
+          <Button size="sm" onClick={() => void act("presence:consent", { share: true, proposal: proposal as "initial" | "conflict" })}>
+            Condividi
+          </Button>
+        </div>
+      ) : null}
+    </CardFrame>
+  );
+}

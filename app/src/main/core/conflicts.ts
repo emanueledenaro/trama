@@ -14,8 +14,27 @@ export type ConflictClassification = ConflictAssessment["classification"];
 
 const isObjectId = (value: string) => /^[0-9a-f]{40}([0-9a-f]{24})?$/.test(value);
 
-/** Where the remote revision comes from: GitHub through gh's credentials, or a local bare repository in tests. */
-export type RemoteSource = { kind: "github"; repository: string } | { kind: "local"; path: string };
+/**
+ * Where the remote revision comes from: GitHub through gh's credentials, a local bare repository (tests, shared
+ * folders), or any other remote URL with the credentials the person already set up for git.
+ */
+export type RemoteSource = { kind: "github"; repository: string } | { kind: "local"; path: string } | { kind: "url"; url: string };
+
+/** The URL and the git options to reach a remote without prompting and without the repository's hooks. */
+export function remoteTransport(source: RemoteSource): { url: string; options: string[] } {
+  switch (source.kind) {
+    case "github":
+      return {
+        url: `https://github.com/${source.repository}.git`,
+        options: ["-c", "credential.helper=", "-c", "credential.helper=!gh auth git-credential", "-c", "protocol.file.allow=never"],
+      };
+    case "local":
+      return { url: source.path, options: ["-c", "credential.helper=", "-c", "protocol.file.allow=always"] };
+    case "url":
+      // The person's own credential helpers and SSH keys stay in use; local paths are refused.
+      return { url: source.url, options: ["-c", "protocol.file.allow=never"] };
+  }
+}
 
 /** A bare cache that shares the source's objects and fetches one remote revision at a time. */
 export async function fetchRemoteRevision(sourceRoot: string, source: RemoteSource, sha: string, cacheRoot: string): Promise<string> {
@@ -23,16 +42,12 @@ export async function fetchRemoteRevision(sourceRoot: string, source: RemoteSour
   if (!isObjectId(revision)) throw new Error(`Revisione non valida: ${sha}`);
   await mkdir(cacheRoot, { recursive: true });
   const root = await realpath(cacheRoot);
-  const identity = `${source.kind === "github" ? source.repository.toLowerCase() : source.path}\0${sourceRoot}`;
+  const { url: remote, options: transport } = remoteTransport(source);
+  const identity = `${source.kind === "github" ? source.repository.toLowerCase() : remote}\0${sourceRoot}`;
   const cache = join(root, `${createHash("sha256").update(identity).digest("hex").slice(0, 32)}.git`);
   if (!existsSync(cache)) {
     await git(["clone", "--shared", "--bare", "--no-checkout", "--", sourceRoot, cache], root, false, 120_000);
   }
-  const transport =
-    source.kind === "github"
-      ? ["-c", "credential.helper=", "-c", "credential.helper=!gh auth git-credential", "-c", "protocol.file.allow=never"]
-      : ["-c", "credential.helper=", "-c", "protocol.file.allow=always"];
-  const remote = source.kind === "github" ? `https://github.com/${source.repository}.git` : source.path;
   const fetch = await runProcess(
     "git",
     [...transport, "fetch", "--no-tags", "--force", `--depth=${MAXIMUM_HISTORY_DEPTH}`, remote, `${revision}:refs/trama-cache/${revision}`],
