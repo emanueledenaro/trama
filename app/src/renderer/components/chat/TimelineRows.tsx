@@ -4,16 +4,21 @@ import {
   IconBolt,
   IconBrain,
   IconChevronRight,
+  IconClockPause,
   IconCopy,
   IconFileText,
   IconInfoCircle,
   IconPlayerStop,
   IconPlayerTrackNext,
+  IconShieldLock,
   IconTerminal2,
   IconTool,
 } from "@tabler/icons-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { isUsableAccount, type ProviderId, READ_OUTSIDE_SCOPE_TITLE } from "@shared/codex";
 import type { ConversationEvent, NextStepView } from "@shared/domain";
+import { RECOVERY_LABELS, type RecoveryAction, readableFailure } from "@shared/providerFailure";
+import { PROVIDERS, supportsReadOnly } from "@shared/providers";
 import { extractPastes, pasteSizeLabel, pasteTitle } from "@shared/pastedText";
 import { formatDuration, type TimelineRow, turnFailureText } from "@shared/timeline";
 import { cn } from "@/lib/cn";
@@ -110,6 +115,7 @@ function PersonMessage({ row }: { row: Extract<TimelineRow, { kind: "person" }> 
 function activityIcon(event: ConversationEvent) {
   const content = event.content;
   if (content.type !== "activity") return <IconInfoCircle />;
+  if (content.title === READ_OUTSIDE_SCOPE_TITLE) return <IconShieldLock className="text-destructive" />;
   if (content.tone === "error") return <IconAlertTriangle className="text-destructive" />;
   if (content.title.startsWith("Strumento") || content.title.includes(":")) return <IconTool />;
   if (content.title === "Ragionamento") return <IconBrain />;
@@ -121,7 +127,9 @@ function activityIcon(event: ConversationEvent) {
 function ActivityRow({ event }: { event: ConversationEvent }) {
   const [open, setOpen] = useState(false);
   if (event.content.type !== "activity") return null;
-  const { title, detail } = event.content;
+  const { title } = event.content;
+  // A failed turn or assignment never shows a provider's JSON body, also in records written before P10.
+  const detail = event.content.tone === "error" && /non (?:è )?riuscit|in attesa del provider/i.test(title) ? readableFailure(event.content.detail) : event.content.detail;
   const isCommand = !title.includes(" ") || /^(git|ls|cat|rg|sed|grep|find|swift|npm|node|bun)\b/.test(title);
   return (
     <div className="group/tool-row">
@@ -291,40 +299,140 @@ function Reply({ row, latest }: { row: Extract<TimelineRow, { kind: "reply" }>; 
   );
 }
 
+/** Seconds left until `at`, ticking each second while it is set. */
+function useSecondsUntil(at: string | null): number | null {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!at) return;
+    const timer = setInterval(() => setNow(Date.now()), 1_000);
+    return () => clearInterval(timer);
+  }, [at]);
+  return at ? Math.max(0, Math.ceil((Date.parse(at) - now) / 1_000)) : null;
+}
+
+const retryWait = (seconds: number) => (seconds >= 90 ? `${Math.round(seconds / 60)} minuti` : seconds === 1 ? "1 secondo" : `${seconds} secondi`);
+
 function TurnFailure({ row }: { row: Extract<TimelineRow, { kind: "failure" }> }) {
-  // An interrupted turn is not an error: same place and Riprova, neutral colors, and the reason when there is one.
-  const { title, detail } = row.interrupted
-    ? { title: "Turno interrotto", detail: /^turno interrotto\.?$/i.test(row.message.trim()) ? null : row.message || null }
-    : turnFailureText(row.message);
+  const providers = useUi((s) => s.app!.providers);
+  const waiting = useUi((s) => (s.app?.project?.providerRetry?.requestId === row.requestId ? s.app.project.providerRetry : null));
+  const openModelPicker = useUi((s) => s.openModelPicker);
+  const [technical, setTechnical] = useState(false);
+  const [hint, setHint] = useState<string | null>(null);
+  const seconds = useSecondsUntil(waiting?.at ?? null);
+  const descriptor = row.provider ? PROVIDERS.find((p) => p.id === row.provider) : undefined;
+  const retry = () => void act("coordinator:retryRequest", { requestId: row.requestId });
+
+  if (row.interrupted) {
+    // An interrupted turn is not an error: same place and Riprova, neutral colors, and the reason when there is one.
+    const detail = /^turno interrotto\.?$/i.test(row.message.trim()) ? null : row.message || null;
+    return (
+      <div role="status" className="mb-4 flex items-start gap-2.5 rounded-xl border border-[color:var(--color-border)] bg-[var(--color-background-button-secondary)] px-3.5 py-3">
+        <IconPlayerStop className="mt-0.5 size-4 shrink-0 text-muted-foreground" stroke={1.8} />
+        <div className="min-w-0 flex-1">
+          <div className="text-ui font-medium text-foreground">Turno interrotto</div>
+          {detail ? <p className="mt-0.5 text-ui-sm break-words text-muted-foreground">{detail}</p> : null}
+        </div>
+        <Button size="xs" variant="outline" className="shrink-0" onClick={retry}>
+          Riprova
+        </Button>
+      </div>
+    );
+  }
+
+  // The provider's error in the person's words (P10): cause, whether it passes, the actions; the raw text only on request.
+  const { failure } = turnFailureText(row.message, descriptor?.name ?? null);
+  const other = (Object.keys(providers) as ProviderId[]).find(
+    (id) => id !== row.provider && supportsReadOnly(id) && isUsableAccount(providers[id]?.account),
+  );
+  const actions = failure.actions.filter((action) => action !== "changeProvider" || other);
+  const run = (action: RecoveryAction) => {
+    switch (action) {
+      case "retry":
+        return retry();
+      case "changeModel":
+        return openModelPicker(row.provider);
+      case "changeProvider":
+        return openModelPicker(other ?? null);
+      case "addKey":
+        if (failure.keyUrl) void act("shell:openExternal", { url: failure.keyUrl });
+        return;
+      case "signIn":
+        if (!row.provider || row.provider === "codex") return void act("codex:login", undefined);
+        return void act("provider:login", { provider: row.provider }).then((result) =>
+          setHint(result?.command ? `Esegui ${result.command} nel terminale, poi premi Controlla di nuovo.` : null),
+        );
+      case "checkAgain":
+        return void act("providers:refresh", row.provider ? { provider: row.provider } : {});
+    }
+  };
   return (
     <div
-      role={row.interrupted ? "status" : "alert"}
+      role="alert"
+      data-failure-kind={failure.kind}
       className={cn(
-        "mb-4 flex items-start gap-2.5 rounded-xl border px-3.5 py-3",
-        row.interrupted
-          ? "border-[color:var(--color-border)] bg-[var(--color-background-button-secondary)]"
+        "mb-4 rounded-xl border px-3.5 py-3",
+        failure.temporary
+          ? "border-[color:color-mix(in_srgb,var(--warning)_40%,transparent)] bg-[color-mix(in_srgb,var(--warning)_9%,transparent)]"
           : "border-[color:color-mix(in_srgb,var(--destructive)_35%,transparent)] bg-[color-mix(in_srgb,var(--destructive)_8%,transparent)]",
       )}
     >
-      {row.interrupted ? (
-        <IconPlayerStop className="mt-0.5 size-4 shrink-0 text-muted-foreground" stroke={1.8} />
-      ) : (
-        <IconAlertTriangle className="mt-0.5 size-4 shrink-0 text-[var(--destructive)]" stroke={1.8} />
-      )}
-      <div className="min-w-0 flex-1">
-        <div className="text-ui font-medium text-foreground">{title}</div>
-        {detail ? <p className="mt-0.5 text-ui-sm break-words text-muted-foreground">{detail}</p> : null}
+      <div className="flex items-start gap-2.5">
+        {failure.temporary ? (
+          <IconClockPause className="mt-0.5 size-4 shrink-0 text-[var(--warning)]" stroke={1.8} />
+        ) : (
+          <IconAlertTriangle className="mt-0.5 size-4 shrink-0 text-[var(--destructive)]" stroke={1.8} />
+        )}
+        <div className="min-w-0 flex-1">
+          <div className="text-ui font-medium text-foreground">{failure.title}</div>
+          <p className="mt-0.5 text-ui-sm break-words text-muted-foreground">{failure.explanation}</p>
+          {failure.providerMessage ? (
+            <p className="mt-1 text-ui-sm break-words text-muted-foreground/80">
+              {descriptor ? `${descriptor.name} dice` : "Il provider dice"}: {failure.providerMessage}
+            </p>
+          ) : null}
+          {waiting && seconds !== null ? (
+            <p className="mt-1.5 text-ui-sm text-foreground/90" data-testid="provider-retry">
+              {seconds > 0
+                ? `Trama riprova da sola tra ${retryWait(seconds)}, tentativo ${waiting.attempt} di ${waiting.maxAttempts}.`
+                : `Trama riprova ora, tentativo ${waiting.attempt} di ${waiting.maxAttempts}.`}
+            </p>
+          ) : null}
+          {hint ? <p className="mt-1 text-ui-sm text-foreground/80">{hint}</p> : null}
+          {failure.technical ? (
+            <button
+              type="button"
+              aria-expanded={technical}
+              onClick={() => setTechnical(!technical)}
+              className="mt-1.5 inline-flex items-center gap-1 text-ui-xs text-muted-foreground transition-colors hover:text-foreground"
+            >
+              Dettagli tecnici <DisclosureChevron open={technical} />
+            </button>
+          ) : null}
+          {technical && failure.technical ? (
+            <pre className="mt-1 max-h-48 overflow-auto rounded-lg bg-[var(--app-chat-code-surface)] px-2.5 py-1.5 font-mono text-[11px] whitespace-pre-wrap break-all text-muted-foreground">
+              {failure.technical}
+            </pre>
+          ) : null}
+        </div>
       </div>
-      <Button
-        size="xs"
-        variant="outline"
-        className="shrink-0"
-        onClick={() =>
-          void act("coordinator:send", { text: row.text, moduleId: null, model: null, effort: null, images: [], provider: null, goalId: row.goalId })
-        }
-      >
-        Riprova
-      </Button>
+      <div className="cta-row mt-2.5">
+        {waiting ? (
+          <>
+            <Button size="xs" variant="outline" onClick={() => void act("coordinator:stopRetry", undefined)}>
+              Ferma i tentativi
+            </Button>
+            <Button size="xs" onClick={retry}>
+              Riprova ora
+            </Button>
+          </>
+        ) : (
+          actions.map((action, index) => (
+            <Button key={action} size="xs" variant={index === actions.length - 1 ? "default" : "outline"} onClick={() => run(action)}>
+              {RECOVERY_LABELS[action]}
+            </Button>
+          ))
+        )}
+      </div>
     </div>
   );
 }

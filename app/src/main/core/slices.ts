@@ -202,6 +202,8 @@ export function sliceViews(document: ProjectDocument, plan: WorkPlan): SliceView
     let state: SliceView["state"];
     if (assignments.some((a) => delivered(document, a))) state = "done";
     else if (latest && isActive(latest)) state = "working";
+    // A developer's question pauses the slice until its answer (W06); the slices that wait for it stay blocked.
+    else if (latest?.status === "paused") state = "paused";
     else if (waitingFor.length) state = "blocked";
     else if (ticket.pause) state = "paused";
     else if (latest?.status === "completed") state = "verifying";
@@ -224,6 +226,11 @@ export function sliceAssignmentProblem(document: ProjectDocument, plan: WorkPlan
     case "blocked":
       return `Slice ${sliceId} is blocked by ${view.waitingFor.join(", ")}: assign it when they are done.`;
     case "paused": {
+      // Two pauses: the developer's question (W06), or the slice's own pause with its reason (W08).
+      const questioned = document.team.specialists.some((s) => s.assignments.some((a) => a.id === view.assignmentId && a.status === "paused"));
+      if (questioned) {
+        return `Slice ${sliceId} is paused: its developer (${view.assignmentId}) waits for the answer to a question, and resumes by itself once it has it. Assign another ready slice.`;
+      }
       const pause = plan.slicing.tickets.find((t) => t.id === sliceId)?.pause;
       return `Slice ${sliceId} is paused${pause ? `: ${pause.reason}` : ""}. Assign another ready slice until the pause is cleared.`;
     }
@@ -253,7 +260,8 @@ export function slicesText(plan: WorkPlan, views: SliceView[], developersAtWork:
     const ticket = tickets.find((t) => t.id === view.id)!;
     const issue = ticket.issue ? ` issue #${ticket.issue.number},` : "";
     const pause = view.state === "paused" ? ticket.pause : null;
-    const waiting = view.state === "blocked" ? ` da ${view.waitingFor.join(", ")}` : pause ? `: ${pause.reason}` : "";
+    const waiting =
+      view.state === "blocked" ? ` da ${view.waitingFor.join(", ")}` : pause ? `: ${pause.reason}` : view.state === "paused" ? " per una domanda dello sviluppatore" : "";
     const assignment = view.assignmentId && view.state !== "ready" ? `, incarico ${view.assignmentId}` : "";
     lines.push(`- ${view.id} «${ticket.title}»:${issue} ${STATE_TEXT[view.state]}${waiting}${assignment}.`);
     if (view.state === "ready" || view.state === "verifying") {

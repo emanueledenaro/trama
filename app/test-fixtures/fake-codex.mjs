@@ -7,6 +7,11 @@ if (process.argv[2] === "sandbox") {
   const { spawnSync } = await import("node:child_process");
   const rest = process.argv.slice(process.argv.indexOf("--") + 1);
   const result = spawnSync(rest[0], rest.slice(1), { stdio: "inherit" });
+  // With FAKE_CODEX_LOG_CHECKS the end of each check joins the request log, so a test can read what ran before what.
+  if (process.env.FAKE_CODEX_LOG && process.env.FAKE_CODEX_LOG_CHECKS) {
+    const { appendFileSync } = await import("node:fs");
+    appendFileSync(process.env.FAKE_CODEX_LOG, `${JSON.stringify({ method: "sandbox/ended", params: { command: rest } })}\n`);
+  }
   process.exit(result.status ?? 1);
 }
 
@@ -16,10 +21,32 @@ if (process.argv[2] === "mcp" && process.argv[3] === "list") {
 }
 
 const account = process.env.FAKE_CODEX_ACCOUNT ?? "chatgpt";
+/** Turns answered with a temporary 429 so far; FAKE_CODEX_RATE_LIMITS says how many (default 1). */
+let rateLimitedTurns = 0;
 const send = (message) => process.stdout.write(`${JSON.stringify(message)}\n`);
 let threads = 0;
 const toolServers = new Map();
+// The permission profiles each thread received (issue #206): turns resolve their profile here, as Codex does.
+const threadProfiles = new Map();
+const profileRoots = (threadId, id) => {
+  const profile = id ? threadProfiles.get(threadId)?.config?.[`permissions.${id}`] : null;
+  return profile ? Object.entries(profile.filesystem ?? {}).filter(([path]) => path.startsWith("/")) : null;
+};
+// The folder a turn may write: from its permission profile, or from the older sandbox policy.
+const writableRootOf = (params) => {
+  const roots = profileRoots(params.threadId, params.permissions ?? threadProfiles.get(params.threadId)?.permissions);
+  if (roots) return roots.find(([, access]) => access === "write")?.[0] ?? null;
+  return params.sandboxPolicy?.type === "workspaceWrite" ? params.sandboxPolicy.writableRoots[0] : null;
+};
+// Like Codex's sandbox: without a profile a read-only turn reads the whole disk; with one only its folders.
+const readableIn = (params, path) => {
+  const roots = profileRoots(params.threadId, params.permissions ?? threadProfiles.get(params.threadId)?.permissions);
+  return !roots || roots.some(([root, access]) => access !== "none" && (path === root || path.startsWith(`${root}/`)));
+};
 const receivedByThread = new Map();
+// Threads opened for "[lento:sempre]" work: the Coordinator's instructions carry the tag, so a resumed turn, whose
+// prompt only says to go on, stays running until interrupted like the first one. "[lento]" work ends when resumed.
+const slowThreads = new Set();
 // The first slice Trama lists as ready in the Coordinator's message (M05), as assign_task's slice argument.
 const readySlice = (text) => {
   const id = text.match(/^- (S\d+) «[^»]*»:[^\n]* pronta\./m)?.[1];
@@ -90,12 +117,33 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
       const threadId = `thread-${process.pid}-${++threads}`;
       const server = params.config?.["mcp_servers.trama"];
       if (server) toolServers.set(threadId, server);
+      threadProfiles.set(threadId, { permissions: params.permissions ?? null, config: params.config ?? {} });
+      if (String(params.developerInstructions ?? "").includes("[lento:sempre]")) slowThreads.add(threadId);
       return send({ id, result: { thread: { id: threadId } } });
     }
     case "turn/start": {
       const turnId = `turn-${++turns}`;
       const threadId = params.threadId;
       const text = params.input[0].text;
+      if (text.includes("[limite-temporaneo]") && rateLimitedTurns < Number(process.env.FAKE_CODEX_RATE_LIMITS ?? 1)) {
+        // A provider that answers 429 with a shared upstream limit (P10), then is available again.
+        rateLimitedTurns += 1;
+        send({ id, result: { turn: { id: turnId } } });
+        const body = {
+          message: "Provider returned error",
+          code: 429,
+          metadata: {
+            raw: "qwen/qwen3.8-27b:free is temporarily rate-limited upstream. Please retry shortly, or add your own key to accumulate your rate limits: https://openrouter.ai/settings/integrations",
+            provider_name: "Chutes",
+            limit_source: "upstream_provider_shared_pool",
+          },
+        };
+        setTimeout(
+          () => send({ method: "turn/completed", params: { threadId, turn: { id: turnId, status: "failed", error: { message: `429: ${JSON.stringify(body)}` } } } }),
+          20,
+        );
+        return;
+      }
       if (text.includes("[attesa]")) {
         // Answers turn/start late and then keeps running until interrupted.
         setTimeout(() => send({ id, result: { turn: { id: turnId } } }), 150);
@@ -167,8 +215,19 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
               findings: 1,
               worst: `Possibile Mysterious Name in ${file}`,
             };
-        // Long enough for the two axes to overlap when Trama runs them in parallel.
-        setTimeout(() => finish(JSON.stringify(answer)), 300);
+        // With FAKE_CODEX_AUDIT_GATE the axis answers only once the test creates that file, so a test can hold both
+        // sessions open at once and act while an examination is still running, without relying on timing.
+        const gate = process.env.FAKE_CODEX_AUDIT_GATE;
+        if (gate) {
+          const { existsSync } = await import("node:fs");
+          const release = setInterval(() => {
+            if (!existsSync(gate)) return;
+            clearInterval(release);
+            finish(JSON.stringify(answer));
+          }, 10);
+          return;
+        }
+        setTimeout(() => finish(JSON.stringify(answer)), 10);
         return;
       }
       if (required.includes("loopCommand")) {
@@ -189,6 +248,28 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
         return;
       }
       if (required.includes("topRecommendation")) {
+        // FAKE_CODEX_MEMORY_PROBE replays the live proof of issue #206: before the review, Clean Code greps Codex's
+        // global memory for the project. The file is read only when the thread's sandbox lets it.
+        let memory = "";
+        if (process.env.FAKE_CODEX_MEMORY_PROBE) {
+          const { join } = await import("node:path");
+          const { homedir } = await import("node:os");
+          const { readFileSync } = await import("node:fs");
+          const file = join(process.env.CODEX_HOME || join(homedir(), ".codex"), "memories", "MEMORY.md");
+          const command = `/bin/bash -lc 'rg -n -i "ordini|improve-codebase-architecture|architecture review" ${file}'`;
+          let output = `rg: ${file}: No such file or directory (os error 2)\n`;
+          let exitCode = 2;
+          if (readableIn(params, file)) {
+            try {
+              output = readFileSync(file, "utf8");
+              exitCode = 0;
+              memory = ` Memoria letta: ${output.trim()}`;
+            } catch {
+              // No memory file: rg fails as above.
+            }
+          }
+          send({ method: "item/completed", params: { threadId, turnId, item: { id: "rg-memory", type: "commandExecution", command, exitCode, status: exitCode === 0 ? "completed" : "failed", aggregatedOutput: output } } });
+        }
         const candidate = (title, strength) => ({
           title,
           files: ["Sources/Orders/CancelPaidOrder.swift"],
@@ -198,7 +279,7 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
           strength,
           adrConflict: "",
         });
-        const answer = { candidates: [candidate("Approfondire l'annullamento", "Strong"), candidate("Unire i pagamenti", "Speculative")], topRecommendation: `Skill ricevute: ${seen.join(", ")}` };
+        const answer = { candidates: [candidate("Approfondire l'annullamento", "Strong"), candidate("Unire i pagamenti", "Speculative")], topRecommendation: `Skill ricevute: ${seen.join(", ")}${memory}` };
         setTimeout(() => finish(JSON.stringify(answer)), 10);
         return;
       }
@@ -277,14 +358,18 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
       }
       if (params.outputSchema) {
         const verdict = text.includes("RIFIUTA") ? "changesRequested" : "approved";
-        setTimeout(() => finish(JSON.stringify({ verdict, summary: "Il diff rispetta le decisioni indicate." })), 10);
+        // The technical review against Trama's Clean Code standard (Q03) answers with findings, file and line.
+        const findings = text.includes("Misure deterministiche di Trama")
+          ? [{ severity: "suggestion", rule: "kiss", file: "NOTE.md", line: 1, message: "La nota può dire in una riga sola cosa documenta." }]
+          : [];
+        setTimeout(() => finish(JSON.stringify({ verdict, summary: "Il diff rispetta le decisioni indicate.", findings })), 10);
         return;
       }
-      if (params.sandboxPolicy?.type === "workspaceWrite") {
+      if (writableRootOf(params)) {
         // A specialist with its own worktree: write one file there, as Codex would.
         const { writeFileSync } = await import("node:fs");
         const { join } = await import("node:path");
-        const root = params.sandboxPolicy.writableRoots[0];
+        const root = writableRootOf(params);
         if (text.includes("## Trama binding for the domain-modeling skill")) {
           // The documentation and domain role (M03): copy the proposed glossary block into CONTEXT.md.
           const glossary = text.match(/sotto `## Language`:\n\n```md\n([\s\S]*?)\n```/)?.[1] ?? "";
@@ -301,13 +386,29 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
           const { appendFileSync } = await import("node:fs");
           appendFileSync(tracked, "// Nota dello specialista   \n");
         }
-        if (text.includes("[lento]")) return; // stays running until interrupted
+        if (text.includes("[lento]") || slowThreads.has(threadId)) return; // stays running until interrupted
         if (text.includes("## Trama binding for the tdd skill")) {
           // The developer of a slice (M06) runs implement and tdd, and reports the confirmed seams it tested.
           const skills = params.input.filter((item) => item.type === "skill").map((item) => item.name);
           const seam = text.match(/## Seam confermati dalla persona\n1\. /) ? "\n- 1: NOTE.md" : "\n- none";
+          if (text.includes("[domanda]") && toolServers.has(threadId)) {
+            // W06: a doubt the spec does not answer goes to the Coordinator with ask_coordinator; the work pauses.
+            const question = "Un ordine pagato con un buono va in revisione come uno pagato con la carta?";
+            const asked = await callTool(threadId, "ask_coordinator", { question, context: "La spec parla solo di pagamenti con la carta" });
+            toolDone("ask_coordinator", asked);
+            const report = `\n\nFiles touched:\n- NOTE.md\nTests written:\n- none\nTested seams:\n- none\nDoubts:\n- Domanda al Coordinatore: ${question}`;
+            setTimeout(() => finish(`Mi fermo: ho chiesto al Coordinatore. ${asked.content[0].text}${report}`), 30);
+            return;
+          }
+          // The answer to the developer's question reaches the resumed session (W06).
+          const answer = text.match(/^Risposta (?:del Coordinatore|della persona[^:]*): (.*)$/m)?.[1];
+          if (answer) {
+            const report = `\n\nFiles touched:\n- NOTE.md\nTests written:\n- NOTE.md\nTested seams:${seam}\nDoubts:\n- none`;
+            setTimeout(() => finish(`Ripreso con la risposta: ${answer}${report}`), 30);
+            return;
+          }
           // The structured report of W05, which extends M06's tested seams.
-          const report = `\n\nFiles touched:\n- NOTE.md\nTests written:\n- NOTE.md\nTested seams:${seam}\nDoubts:\n- Il rimborso manuale resta fuori da questa fetta`;
+          const report = `\n\nFiles touched:\n- NOTE.md\nTests written:\n- NOTE.md\nTested seams:${seam}\nDoubts:\n- Il rimborso manuale resta fuori da questa fetta\nStandard exceptions:\n- none`;
           setTimeout(() => finish(`Ho scritto NOTE.md nel worktree. Skill ricevute: ${skills.join(", ")}${report}`), 30);
           return;
         }
@@ -333,6 +434,35 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
         calls.push(["run_readonly_check", { check: "git_status" }]);
         for (const [tool, args] of calls) toolDone(tool, await callTool(threadId, tool, args));
         finish("Saved what stood out.");
+        return;
+      }
+      // W06: the Coordinator answers the first developer question that waits for it, from facts or on a Pact card.
+      const answerDeveloper = async (block) => {
+        const id = text.match(/^- (DQ-[0-9A-F]+): [^\n]*aspetta la tua risposta/m)?.[1];
+        if (!id) return "Nessuna domanda aspetta una risposta.";
+        const result = block
+          ? await callTool(threadId, "request_decision", {
+              category: "product",
+              question: "Un ordine pagato con un buono va in revisione?",
+              concreteCase: "Ordine 42, pagato con un buono, annullato dal cliente",
+              alternatives: [
+                { behavior: "Va in revisione come gli altri", example: "L'ordine 42 va in revisione" },
+                { behavior: "Il buono torna subito al cliente", example: "Il buono dell'ordine 42 torna valido" },
+              ],
+              blocksQuestionID: id,
+            })
+          : await callTool(threadId, "answer_question", {
+              question: id,
+              answer: "Sì: un buono è un pagamento, e la spec manda in revisione ogni ordine pagato.",
+              sources: ["Sources/Orders/CancelPaidOrder.swift", "spec: Ordini pagati annullati in revisione"],
+            });
+        toolDone(block ? "request_decision" : "answer_question", result);
+        if (result.isError) return `Rifiutato: ${result.content[0].text}`;
+        return block ? `La domanda ${id} spetta alla persona: l'ho messa su una scheda del Patto.` : `Ho risposto alla domanda ${id}.`;
+      };
+      const developerMarker = text.match(/\[(rispondi|blocca)-dubbio\]/);
+      if (developerMarker && toolServers.has(threadId)) {
+        finish(await answerDeveloper(developerMarker[1] === "blocca"));
         return;
       }
       const automatic = text.match(/Mossa automatica di Trama: (\w+)/);
@@ -364,6 +494,8 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
               instructions: "Scrivi una nota",
             });
             done.push(assigned.isError ? `Rifiutato: ${assigned.content[0].text}` : "Ho assegnato la fetta ad Ada.");
+          } else if (automatic[1] === "answerQuestion") {
+            done.push(await answerDeveloper(process.env.FAKE_CODEX_QUESTION === "block"));
           } else if (automatic[1] === "verifyCandidate") {
             const team = json(await call("read_team", {}));
             const assignment = team.specialists.map((s) => s.assignment).find((a) => a?.status === "completed");
@@ -459,7 +591,7 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
               ? ["git_status", "swift_build", "swift_test"]
               : ["git_status"],
           tools: ["edits"],
-          instructions: `${text.includes("[lento]") ? "[lento] " : ""}${text.includes("[spazi]") ? "[spazi] " : ""}Scrivi una nota`,
+          instructions: `${text.includes("[lento]") ? "[lento] " : ""}${text.includes("[lento:sempre]") ? "[lento:sempre] " : ""}${text.includes("[spazi]") ? "[spazi] " : ""}${text.includes("[domanda]") ? "[domanda] " : ""}Scrivi una nota`,
         }).then((result) => {
           toolDone("assign_task", result);
           finish(result.isError ? `Rifiutato: ${result.content[0].text}` : "Ho assegnato il lavoro ad Ada.");

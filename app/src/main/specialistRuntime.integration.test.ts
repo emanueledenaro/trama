@@ -78,7 +78,8 @@ describe("specialist runtime (V04)", () => {
       authorizedActions: ["executeInWorktree"],
       limits: [],
     });
-    await controller.send("[assegna] [lento]", null, null, null);
+    // "[lento:sempre]": the resumed turn too runs until stopped, so the stop below never races its end.
+    await controller.send("[assegna] [lento:sempre]", null, null, null);
     const specialist = findSpecialist(document, "Ada")!;
     const assignment = specialist.assignments[0]!;
     await until(() => assignment.status === "running");
@@ -89,14 +90,21 @@ describe("specialist runtime (V04)", () => {
     // Its own thread, distinct from the Coordinator's, opened in the worktree with the Coordinator's instructions.
     const opened = (await requests()).filter((r) => r.method === "thread/start" && r.params.cwd === worktree);
     expect(opened).toHaveLength(1);
-    expect(opened[0]!.params).toMatchObject({ model: assignment.model, sandbox: "workspace-write", approvalPolicy: "never" });
-    expect(opened[0]!.params.developerInstructions).toContain("Instructions from the Coordinator:\n[lento] Scrivi una nota");
+    expect(opened[0]!.params).toMatchObject({ model: assignment.model, permissions: "trama_write", approvalPolicy: "never" });
+    // The write profile writes only the worktree, reads no private folder and has no network (issue #206).
+    const config = opened[0]!.params.config as { features: Record<string, boolean>; "permissions.trama_write": { filesystem: Record<string, string> } };
+    const profile = config["permissions.trama_write"];
+    expect(profile).toMatchObject({ filesystem: { ":minimal": "read", [worktree]: "write", [repo]: "read" }, network: { enabled: false } });
+    expect(Object.entries(profile.filesystem).filter(([, access]) => access === "write").map(([path]) => path)).toEqual([worktree]);
+    expect(config.features).toMatchObject({ memories: false });
+    expect(opened[0]!.params.developerInstructions).toContain("Instructions from the Coordinator:\n[lento:sempre] Scrivi una nota");
     expect(assignment.threadId).toBeTruthy();
     expect(assignment.threadId).not.toBe(document.coordinator.threadId);
     // The turn writes only in the worktree, without network.
     const turn = (await requests()).filter((r) => r.method === "turn/start" && r.params.cwd === worktree).at(-1)!;
     expect(turn.params.model).toBe(assignment.model);
-    expect(turn.params.sandboxPolicy).toMatchObject({ type: "workspaceWrite", writableRoots: [worktree], networkAccess: false });
+    expect(turn.params).toMatchObject({ permissions: "trama_write" });
+    expect(turn.params.sandboxPolicy).toBeUndefined();
     await until(() => existsSync(join(worktree, "NOTE.md")));
 
     // Stop: first requested, then confirmed when the turn ends; the turn and its history stay.
@@ -114,9 +122,9 @@ describe("specialist runtime (V04)", () => {
     await until(() => assignment.status === "running" && assignment.turns.length === 2);
     expect(assignment.workspace!.worktreeRoot).toBe(worktree);
     const resumed = (await requests()).filter((r) => r.method === "thread/resume").at(-1)!;
-    expect(resumed.params).toMatchObject({ threadId: thread, cwd: worktree, model: "gpt-5.5-fast", sandbox: "workspace-write" });
+    expect(resumed.params).toMatchObject({ threadId: thread, cwd: worktree, model: "gpt-5.5-fast", permissions: "trama_write" });
     const second = (await requests()).filter((r) => r.method === "turn/start" && r.params.cwd === worktree).at(-1)!;
-    expect(second.params).toMatchObject({ model: "gpt-5.5-fast", sandboxPolicy: { type: "workspaceWrite", writableRoots: [worktree], networkAccess: false } });
+    expect(second.params).toMatchObject({ model: "gpt-5.5-fast", permissions: "trama_write" });
     expect(assignment.turns[1]).toMatchObject({ number: 2, model: "gpt-5.5-fast" });
     await controller.stopSpecialistWork(assignment.id);
     await until(() => assignment.status === "stopped");

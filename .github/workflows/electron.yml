@@ -18,6 +18,8 @@ jobs:
           cache-dependency-path: app/package-lock.json
       - name: Dipendenze
         run: npm ci
+      - name: Nomi dei file su dischi senza distinzione di maiuscole
+        run: npm run check:names
       - name: Controllo dei tipi
         run: npm run typecheck
       - name: Test
