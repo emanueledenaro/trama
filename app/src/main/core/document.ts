@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { ProviderId } from "@shared/codex";
 import type { ConversationEvent, EventContent, EventOrigin, ProjectDocument } from "@shared/domain";
 import { requestGoalId } from "@shared/goals";
+import { interruptAudits } from "./audit";
 import { completeTeam } from "./team";
 
 function assignmentGoalId(document: ProjectDocument, assignmentId: string): string | null {
@@ -82,6 +83,8 @@ export function normalizeDocument(raw: Partial<ProjectDocument>, projectId: stri
       plan.slicing.failure = "La divisione in fette si è interrotta prima della fine: chiedila di nuovo.";
     }
   }
+  // Focus mode lost its sessions too (F01): the examination stays, marked as interrupted.
+  interruptAudits(document);
   return document;
 }
 

@@ -165,6 +165,30 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
         setTimeout(() => finish(JSON.stringify(answer)), 10);
         return;
       }
+      if (required.includes("findings") && required.includes("worst")) {
+        // Focus mode (F01): one axis of code-review, named by its binding. Without the skill input it has no method.
+        const skills = params.input.filter((item) => item.type === "skill").map((item) => item.name);
+        if (!skills.includes("code-review")) {
+          setTimeout(() => finish(JSON.stringify({ report: "", findings: 0, worst: "" })), 10);
+          return;
+        }
+        const fixedPoint = text.match(/Punto fisso: ([0-9a-f]+)/)?.[1] ?? "?";
+        const file = text.match(/File cambiati: ([^,\n]+?)(?:,|\.\n|\.$)/m)?.[1] ?? "?";
+        const answer = text.includes("You are the Spec sub-agent")
+          ? {
+              report: `### Requisiti mancanti o parziali\n\n- Il criterio \"Un ordine non pagato si annulla come prima\" non ha un test nel diff.\n\n### Fuori perimetro\n\nNessuno.\n\nFonte: ${text.match(/Spec, fonte: ([^(]+)/)?.[1]?.trim() ?? "?"}. Skill ricevute: ${skills.join(", ")}.`,
+              findings: 1,
+              worst: "Il criterio sull'ordine non pagato non ha un test",
+            }
+          : {
+              report: `### Violazioni documentate\n\nNessuna.\n\n### Smell (giudizio)\n\n- Possibile Mysterious Name in \`${file}\`.\n\nDiff letto con \`git diff ${fixedPoint}\`. Skill ricevute: ${skills.join(", ")}.`,
+              findings: 1,
+              worst: `Possibile Mysterious Name in ${file}`,
+            };
+        // Long enough for the two axes to overlap when Trama runs them in parallel.
+        setTimeout(() => finish(JSON.stringify(answer)), 300);
+        return;
+      }
       if (required.includes("loopCommand")) {
         const modules = (text.match(/Moduli del progetto: (.*)\./)?.[1] ?? "").split(", ").filter((m) => m && m !== "nessuno");
         const answer = {
