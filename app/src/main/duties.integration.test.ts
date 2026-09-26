@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { cp, mkdtemp, writeFile } from "node:fs/promises";
+import { cp, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -138,5 +138,32 @@ describe("fixed roles' automatic work (W11)", () => {
     expect(card.alternatives.map((a) => a.behavior)).toEqual(["Approfondire: Approfondire l'annullamento", "Approfondire: Unire i pagamenti", "Nessuno per ora"]);
     expect(document.events.some((e) => e.content.type === "card" && e.content.kind === "decision" && e.content.referenceId === card.id)).toBe(true);
     expect(document.decisions).toHaveLength(0);
+  }, 90_000);
+
+  it("turns grilling decisions into glossary and ADR proposals, written only within the mandate in a worktree (M03)", async () => {
+    const repo = await repository();
+    const document = await open(repo);
+    await controller!.send("[grilling:1] Gli ordini pagati annullati vanno in revisione", null, null, null);
+    for (const question of [...document.decisionRequests]) await controller!.answerDecision(question.id, 1, null);
+    expect(document.decisions).toHaveLength(2);
+
+    // The read-only Coordinator proposes: without a mandate nothing is written.
+    await controller!.send("[dominio]", null, null, null);
+    const [proposal] = document.domainProposals ?? [];
+    expect(proposal).toMatchObject({ decisionIds: [document.decisions.at(-1)!.id], assignmentId: null, scopeModuleIds: ["root"] });
+    expect(proposal!.waiting).toMatch(/mandato/);
+    expect(document.events.some((e) => e.content.type === "card" && e.content.kind === "domainProposal" && e.content.referenceId === proposal!.id)).toBe(true);
+    expect(work(document, "documentation")).toHaveLength(0);
+    expect(existsSync(join(repo, "CONTEXT.md"))).toBe(false);
+
+    // A mandate that covers the glossary's module lets the documentation and domain role write it in its worktree.
+    await controller!.grantMandate({ requestId: null, objectives: ["Glossario"], priorities: [], scopeModuleIds: ["root"], authorizedActions: ["executeInWorktree"], limits: [] });
+    await until(() => work(document, "documentation")[0]?.status === "completed", 40_000);
+    const [writing] = work(document, "documentation");
+    expect(writing).toMatchObject({ id: proposal!.assignmentId, tools: ["commands", "edits"], duty: { skill: "domain-modeling", trigger: { kind: "domainProposal", proposalId: proposal!.id } } });
+    expect(writing!.result).toContain(`skill:domain-modeling:${join(skills, "domain-modeling/SKILL.md")}`);
+    const glossary = await readFile(join(writing!.workspace!.worktreeRoot, "CONTEXT.md"), "utf8");
+    expect(glossary).toContain("**Ordine in revisione**:\nUn ordine pagato e annullato che aspetta la decisione di una persona.\n_Avoid_: Ordine sospeso, Rimborso in attesa");
+    expect(existsSync(join(repo, "CONTEXT.md"))).toBe(false);
   }, 90_000);
 });

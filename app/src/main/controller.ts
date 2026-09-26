@@ -40,7 +40,7 @@ import {
   COORDINATOR_TOOLS,
   learningTools,
   developerInstructions,
-  GRILLING_BINDING,
+  COORDINATOR_SKILLS,
   NEXT_STEP_RULES,
   runCoordinatorTool,
   type TicketUpdate,
@@ -198,8 +198,9 @@ import {
 } from "@shared/onboarding";
 import { buildStudy, fingerprints, partsToInject, studyText } from "./core/study";
 import { CoordinatorToolServer, TOOL_SERVER_NAME } from "./core/toolServer";
-import { deliverNativeSkill, loadNativeSkill, type NativeSkill } from "./core/nativeSkills";
-import { concludeDuty, dutyModel, type DutyRunner, dutySession, nextDuty, recordCheckOutcome, withinMandate } from "./core/duties";
+import { deliverNativeSkills, loadNativeSkill, type NativeSkill } from "./core/nativeSkills";
+import { concludeDuty, dutyModel, type DutyRunner, dutySession, nextDuty, recordCheckOutcome, startDomainWriting, startWaitingDomainWriting, withinMandate } from "./core/duties";
+import { findDomainProposal } from "@shared/domainDocs";
 
 /** The model Trama prefers for the Coordinator when the Codex catalogue offers it. */
 const PREFERRED_COORDINATOR_MODEL = "gpt-5.6-luna";
@@ -214,9 +215,9 @@ const PROVIDER_CHECK_TIMEOUT_MS = 20_000;
 const LEFT_PROJECT_NOTE = "Hai lasciato il progetto mentre il Coordinatore rispondeva.";
 
 /**
- * Coordinator rules added after threads were opened (writing, next step, grilling): a resumed thread receives them
- * once, in a turn. `key` identifies them in `rulesSent` whatever the provider; Codex gets the grilling SKILL.md as a
- * native skill input.
+ * Coordinator rules added after threads were opened (writing, next step, grilling, domain modeling): a resumed thread
+ * receives them once, in a turn. `key` identifies them in `rulesSent` whatever the provider; Codex gets the skills'
+ * SKILL.md files as native skill inputs.
  */
 interface LateRules {
   key: string;
@@ -224,10 +225,13 @@ interface LateRules {
   skills: LoadedSkill[];
 }
 
-function lateRules(grilling: NativeSkill, provider: ProviderId): LateRules {
+/** The Coordinator's AI Hero skills with their bindings: grill-with-docs, grilling and domain-modeling (M02, M03). */
+const coordinatorSkillParts = (skills: NativeSkill[]) => skills.map((skill, index) => ({ skill, binding: COORDINATOR_SKILLS[index]!.binding }));
+
+function lateRules(skills: NativeSkill[], provider: ProviderId): LateRules {
   const style = messageStyle("the person");
-  const full = [style, NEXT_STEP_RULES, deliverNativeSkill(grilling, GRILLING_BINDING, false).text].join("\n\n");
-  const delivery = deliverNativeSkill(grilling, GRILLING_BINDING, provider === "codex");
+  const full = [style, NEXT_STEP_RULES, deliverNativeSkills(coordinatorSkillParts(skills), false).text].join("\n\n");
+  const delivery = deliverNativeSkills(coordinatorSkillParts(skills), provider === "codex");
   return {
     key: `sha256:${createHash("sha256").update(full).digest("hex")}`,
     text: [style, NEXT_STEP_RULES, delivery.text].join("\n\n"),
@@ -1292,6 +1296,14 @@ export class TramaController {
           defaultProvider: provider,
           providers: this.connectedProviders(),
           startAssignment: (id) => void this.startAssignment(id),
+          startDomainWriting: (proposalId) => {
+            const proposal = findDomainProposal(current.document, proposalId);
+            const assignment = proposal ? startDomainWriting(current.document, proposal, this.dutyRunner(current.document)) : null;
+            if (!assignment) return null;
+            appendEvent(current.document, "trama", { type: "card", kind: "assignment", title: "Incarico", detail: null, referenceId: assignment.id }, current.runningRequestId);
+            void this.startAssignment(assignment.id);
+            return assignment.id;
+          },
           stopAssignment: (id) => void this.stopAssignmentRuntime(id),
           decisionChanged: (id) => this.stopWorkDependingOn(id),
           updateTicket: (input) => this.updateTicket(input, current.runningRequestId),
@@ -1363,8 +1375,8 @@ export class TramaController {
       document.coordinator.study = study;
       if (this.runtime !== runtime) return;
       const previous = document.coordinator.threadId;
-      const rules = lateRules(await this.grillingSkill(), provider);
-      // Codex takes the grilling skill as a native skill input in the thread's first turn, the others in their instructions.
+      const rules = lateRules(await this.coordinatorSkills(), provider);
+      // Codex takes the Coordinator's skills as native skill inputs in the thread's first turn, the others in their instructions.
       const inInstructions = rules.skills.length === 0;
       const opening = await runtime.client.openThread({
         model,
@@ -1372,7 +1384,7 @@ export class TramaController {
         developerInstructions: developerInstructions(
           project.name,
           this.learningFor(project).promptContext().guidance,
-          inInstructions ? deliverNativeSkill(await this.grillingSkill(), GRILLING_BINDING, false).text : null,
+          inInstructions ? deliverNativeSkills(coordinatorSkillParts(await this.coordinatorSkills()), false).text : null,
         ),
         resumeThreadId: previous,
       });
@@ -1425,20 +1437,14 @@ export class TramaController {
     }
   }
 
-  private grillingLoad: Promise<NativeSkill> | null = null;
-
-  /** AI Hero's grilling skill as bundled with Trama (M02). */
-  private grillingSkill(): Promise<NativeSkill> {
-    this.grillingLoad ??= loadNativeSkill(join(this.host.aiHeroResourceDirectory, "skills"), "grilling").catch((error: unknown) => {
-      this.grillingLoad = null;
-      throw error;
-    });
-    return this.grillingLoad;
+  /** The Coordinator's AI Hero skills as bundled with Trama, in the order of COORDINATOR_SKILLS (M02, M03). */
+  private coordinatorSkills(): Promise<NativeSkill[]> {
+    return Promise.all(COORDINATOR_SKILLS.map(({ name }) => this.nativeSkill(name)));
   }
 
   /** The late rules the Coordinator thread has not received yet, marked as sent: a section and skill inputs. */
   private async pendingRules(document: ProjectDocument, provider: ProviderId): Promise<{ section: string; skills: LoadedSkill[] } | null> {
-    const rules = lateRules(await this.grillingSkill(), provider);
+    const rules = lateRules(await this.coordinatorSkills(), provider);
     if (document.coordinator.rulesSent === rules.key) return null;
     document.coordinator.rulesSent = rules.key;
     return { section: `## Regole aggiornate da Trama\nThese rules replace the earlier ones on the same subjects:\n${rules.text}`, skills: rules.skills };
@@ -1700,7 +1706,7 @@ export class TramaController {
         effort,
         fastMode: this.fastModeFor(dialogComposer(document, goal?.id ?? null), activeProvider, selectedModel),
         images: attachments,
-        // The grilling skill of the late rules goes once, next to the skills the person invoked.
+        // The skills of the late rules go once, next to the skills the person invoked.
         skills: [...(rules?.skills ?? []).filter((r) => !skills.some((s) => s.name === r.name)), ...skills],
         onEvent: (event) => this.handleTurnEvent(project, request, event),
       });
@@ -2542,7 +2548,18 @@ export class TramaController {
 
   private async startNextDuty(): Promise<void> {
     const project = this.state.project;
-    if (!project || project.isDemo || !project.stateWritable || this.quitting) return;
+    if (!project || !project.stateWritable || this.quitting) return;
+    if (project.isDemo) {
+      // The example project runs no automatic work of its own, but a glossary and ADR proposal drawn from the
+      // person's decisions waits only for the mandate there too (M03).
+      const writing = startWaitingDomainWriting(project.document, this.dutyRunner(project.document));
+      if (writing) {
+        appendEvent(project.document, "trama", { type: "card", kind: "assignment", title: "Incarico", detail: null, referenceId: writing.id });
+        void this.startAssignment(writing.id);
+        this.changed();
+      }
+      return;
+    }
     const headSHA = await this.headSHA(project.rootPath);
     if (this.state.project !== project) return;
     const assignment = nextDuty(project.document, {

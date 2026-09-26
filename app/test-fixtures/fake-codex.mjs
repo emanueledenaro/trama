@@ -197,6 +197,14 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
         const { writeFileSync } = await import("node:fs");
         const { join } = await import("node:path");
         const root = params.sandboxPolicy.writableRoots[0];
+        if (text.includes("## Trama binding for the domain-modeling skill")) {
+          // The documentation and domain role (M03): copy the proposed glossary block into CONTEXT.md.
+          const glossary = text.match(/sotto `## Language`:\n\n```md\n([\s\S]*?)\n```/)?.[1] ?? "";
+          writeFileSync(join(root, "CONTEXT.md"), `# Negozio\n\nGli ordini del negozio.\n\n## Language\n\n${glossary}\n`);
+          send({ method: "item/completed", params: { threadId, turnId, item: { id: "fc", type: "fileChange", status: "completed", changes: [{ path: "CONTEXT.md" }] } } });
+          setTimeout(() => finish(`Ho scritto CONTEXT.md nel worktree. Skill ricevute: ${seen.join(", ")}`), 30);
+          return;
+        }
         writeFileSync(join(root, "NOTE.md"), "Lavoro dello specialista\n");
         send({ method: "item/completed", params: { threadId, turnId, item: { id: "fc", type: "fileChange", status: "completed", changes: [{ path: "NOTE.md" }] } } });
         if (text.includes("[lento]")) return; // stays running until interrupted
@@ -304,6 +312,26 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
           toolDone("rename_specialist", result);
           finish(result.isError ? `Rifiutato: ${result.content[0].text}` : `Ho rinominato ${renameMatch[1]} in ${renameMatch[2]}.`);
         });
+        return;
+      }
+      if (text.includes("[dominio]")) {
+        // domain-modeling in the Coordinator (M03): a Pact decision resolves a term and an ADR.
+        const pact = await callTool(threadId, "read_pact", {});
+        toolDone("read_pact", pact);
+        const decision = JSON.parse(pact.content[0].text).decisions.at(-1);
+        const result = await callTool(threadId, "propose_domain_docs", {
+          decisionIDs: decision ? [decision.id] : [],
+          terms: [{ term: "Ordine in revisione", definition: "Un ordine pagato e annullato che aspetta la decisione di una persona.", avoid: ["Ordine sospeso", "Rimborso in attesa"] }],
+          adrs: [
+            {
+              title: "Gli ordini pagati annullati vanno in revisione",
+              body: "Un ordine pagato e annullato non viene rimborsato subito: va in revisione. Lo abbiamo deciso per evitare rimborsi automatici sbagliati.",
+              consideredOptions: ["Rimborso automatico"],
+            },
+          ],
+        });
+        toolDone("propose_domain_docs", result);
+        finish(result.isError ? `Rifiutato: ${result.content[0].text}` : "Ho proposto glossario e ADR dalle decisioni.");
         return;
       }
       if (text.includes("[assegna]")) {

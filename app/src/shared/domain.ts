@@ -22,6 +22,8 @@ export type CardKind =
   | "plan"
   | "conflict"
   | "goal"
+  /** Glossary terms and ADRs the Coordinator drew from the person's decisions (M03); referenceId is the proposal. */
+  | "domainProposal"
   /** A move of the Coordinator that Trama started by itself within the mandate (W04); referenceId is its request. */
   | "automaticStep";
 
@@ -375,7 +377,7 @@ export interface SpecialistAssignment {
 }
 
 /** The AI Hero skill a fixed role runs when Trama starts its work by itself (W11). */
-export type DutySkill = "triage" | "diagnosing-bugs" | "improve-codebase-architecture";
+export type DutySkill = "triage" | "diagnosing-bugs" | "improve-codebase-architecture" | "domain-modeling";
 
 /** What made Trama start a fixed role's work: a rule of Trama, never the model's judgment (W11). */
 export type DutyTrigger =
@@ -383,7 +385,9 @@ export type DutyTrigger =
   | { kind: "failedCheck"; failureId: string }
   /** `afterWork`: the finished work that changed code, known when the review started. */
   | { kind: "idleTeam"; headSHA: string; afterWork: string[] }
-  | { kind: "diagnosisFix"; diagnosisId: string };
+  | { kind: "diagnosisFix"; diagnosisId: string }
+  /** The documentation and domain role writes a domain proposal in its worktree, within the mandate (M03). */
+  | { kind: "domainProposal"; proposalId: string };
 
 export type TriageCategory = "bug" | "enhancement";
 export type TriageState = "needs-triage" | "needs-info" | "ready-for-agent" | "ready-for-human" | "wontfix";
@@ -476,6 +480,50 @@ export interface CheckFailure {
   output: string;
   at: string;
   diagnosisId: string | null;
+}
+
+/** A glossary term in the shape of domain-modeling's CONTEXT-FORMAT.md. */
+export interface GlossaryTerm {
+  term: string;
+  /** One or two sentences: what the term is. */
+  definition: string;
+  /** The other words for the same concept, listed under `_Avoid_`. */
+  avoid: string[];
+}
+
+/** An ADR in the shape of domain-modeling's ADR-FORMAT.md; the optional sections are left out when empty. */
+export interface AdrProposal {
+  title: string;
+  /** One to three sentences: the context, the decision and why. */
+  body: string;
+  consideredOptions: string[];
+  consequences: string | null;
+}
+
+/**
+ * Glossary terms and ADRs the Coordinator drew from Pact decisions while it grilled a request (M03). The Coordinator
+ * is read-only: the documentation and domain role writes them in its worktree, only within the mandate.
+ */
+export interface DomainProposal {
+  id: string;
+  requestId: string | null;
+  /** The Pact decisions the terms and ADRs come from. */
+  decisionIds: string[];
+  /** The glossary the terms go to, relative to the project root: `CONTEXT.md` in a single-context repo. */
+  contextPath: string;
+  /** Where the ADRs go: `docs/adr` next to the glossary. */
+  adrDirectory: string;
+  terms: GlossaryTerm[];
+  adrs: AdrProposal[];
+  /** The modules the files belong to, `root` for a root CONTEXT.md and `docs` for docs/adr: no other work may run there. */
+  moduleIds: string[];
+  /** Those of them that are modules of the project: the mandate's scope must cover them. */
+  scopeModuleIds: string[];
+  createdAt: string;
+  /** The documentation and domain assignment that writes the proposal. */
+  assignmentId: string | null;
+  /** Why the writing has not started yet. */
+  waiting: string | null;
 }
 
 /** Trama's own bookkeeping for the fixed roles' automatic work (W11). */
@@ -733,6 +781,8 @@ export interface ProjectDocument {
   exercises?: import("./onboarding").ExerciseRecord;
   /** The fixed roles' automatic work (W11); absent until Trama first needs it. */
   duties?: DutyLedger;
+  /** Glossary and ADR proposals drawn from the person's decisions (M03); absent before the first one. */
+  domainProposals?: DomainProposal[];
 }
 
 export interface PactDemo {
