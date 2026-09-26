@@ -166,4 +166,37 @@ describe("fixed roles' automatic work (W11)", () => {
     expect(glossary).toContain("**Ordine in revisione**:\nUn ordine pagato e annullato che aspetta la decisione di una persona.\n_Avoid_: Ordine sospeso, Rimborso in attesa");
     expect(existsSync(join(repo, "CONTEXT.md"))).toBe(false);
   }, 90_000);
+
+  it("skips an issue with a linked pull request, shows the state of the automatic work and starts Clean Code on request (issue #231)", async () => {
+    const document = await open(await repository());
+    const state = () => Object.fromEntries((controller!.snapshot.project!.automaticWork ?? []).map((w) => [w.kind, w]));
+    expect(state().architectureReview).toMatchObject({ state: "idle", onRequest: { allowed: false } });
+    expect(state().architectureReview!.onRequest).toMatchObject({ reason: expect.stringContaining("mandato") });
+    await expect(controller!.startAutomaticWork({ kind: "architectureReview" })).rejects.toThrow(/mandato/);
+    await controller!.grantMandate({
+      requestId: null,
+      objectives: ["Correggere i bug"],
+      priorities: [],
+      scopeModuleIds: ["Sources/Orders"],
+      authorizedActions: ["executeInWorktree"],
+      limits: [],
+    });
+    const project = controller!.snapshot.project!;
+    project.github = { repository: "o/r", status: "ready", message: null, issues: [issue(1)], snapshot: null, events: [] };
+    await controller!.runDuties();
+    const snapshot = { repository: "o/r", defaultBranch: "main", branches: [], fetchedAt: "", warnings: [] };
+    const pullRequests = [{ number: 3, title: "W16", author: "rita", headRef: "feature/issue-2-avatars", headSHA: "c".repeat(40), baseRef: "main", url: "", draft: false, updatedAt: "" }];
+    project.github = { ...project.github, issues: [issue(1), issue(2)], snapshot: { ...snapshot, pullRequests } };
+    await controller!.runDuties();
+    expect(work(document, "bugTriage")).toHaveLength(0);
+    expect(state().triage!.detail).toContain("#2, che ha la pull request #3 collegata");
+
+    await controller!.startAutomaticWork({ kind: "architectureReview" });
+    const [review] = work(document, "cleanCode");
+    expect(review!.duty).toMatchObject({ skill: "improve-codebase-architecture", requestedBy: "person" });
+    expect(document.events.some((e) => e.content.type === "card" && e.content.kind === "assignment" && e.content.referenceId === review!.id)).toBe(true);
+    await until(() => review!.status === "completed", 40_000);
+    expect(review!.duty?.outcome).toMatchObject({ kind: "architecture" });
+    expect(state().architectureReview!.onRequest).toMatchObject({ allowed: false, reason: expect.stringContaining("aspetta ancora la tua risposta") });
+  }, 60_000);
 });

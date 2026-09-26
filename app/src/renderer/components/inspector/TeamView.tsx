@@ -18,6 +18,7 @@ import { cn } from "@/lib/cn";
 import { formatRelativeTime } from "@/lib/format";
 import { act, useUi } from "@/lib/store";
 import { specialistQuestion } from "@/lib/askCoordinator";
+import { AutomaticWorkSection } from "./AutomaticWork";
 import { EmptyNote, InspectorSection } from "./Inspector";
 import { Sep } from "@/components/ui/sep";
 
@@ -156,6 +157,7 @@ export function TeamView() {
           {project.isDemo ? " Nel progetto di esempio restano ferme." : project.document.mandate?.status === "granted" ? "" : " Si attivano quando concedi un mandato."}
         </p>
       </InspectorSection>
+      <AutomaticWorkSection />
       {pending ? (
         <InspectorSection title="Proposta in attesa">
           <TeamProposalCard proposalId={pending.id} />
@@ -288,6 +290,7 @@ export function SpecialistView({ id }: { id: string }) {
           ))}
         </div>
       </InspectorSection>
+      {fixed ? <AutomaticWorkSection role={specialist.role} /> : null}
       {current && ["stopped", "failed"].includes(current.status) ? <AssignmentProvider assignment={current} /> : null}
       {current?.workspace && !current.workspaceRemovedAt && ["stopped", "failed", "completed"].includes(current.status) ? (
         <InspectorSection title="Worktree">
