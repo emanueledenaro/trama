@@ -1,5 +1,5 @@
 import type { ProviderId } from "@shared/codex";
-import { supportsReadOnly } from "@shared/providers";
+import { catalogOffers, supportsReadOnly, type CatalogEntry } from "@shared/providers";
 import type { AssignmentCommit, Candidate, CommitConventions, MandateAction, ProjectDocument, SpecialistTool, TechnicalReview, WorkKind } from "@shared/domain";
 import { DEFAULT_CONVENTIONS, validateCommitMessage } from "./conventions";
 import { candidateCommit } from "./quality";
@@ -589,8 +589,11 @@ export interface ToolContext {
   defaultModel: string | null;
   /** The Coordinator's provider: the default for new assignments. */
   defaultProvider: ProviderId;
-  /** Providers the person connected (authenticated), with their models. Only these may run specialists (ADR 0008). */
-  providers: { id: ProviderId; models: string[] }[];
+  /**
+   * Providers the person connected (authenticated), with their models. Only these may run specialists (ADR 0008).
+   * `catalog` adds the levels each model offers, when the provider lists them.
+   */
+  providers: { id: ProviderId; models: string[]; catalog?: CatalogEntry[] }[];
   /** Starts the runtime of an assignment that was just recorded. */
   startAssignment(id: string): void;
   /** A developer's question got its answer (W06): Trama resumes the paused work when it can. */
@@ -1016,7 +1019,7 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
         const requestedModel = typeof args.model === "string" && args.model.trim() ? args.model.trim() : null;
         const model = requestedModel ?? (providerId === context.defaultProvider ? context.defaultModel : provider.models[0] ?? null);
         if (!model) return toolFailure("invalid_arguments", "model is required: no default model is available.");
-        if (provider.models.length && !provider.models.includes(model)) {
+        if (provider.models.length && !catalogOffers(providerId, provider.catalog ?? provider.models, model)) {
           return toolFailure("invalid_model", `Model ${model} is not in the ${providerId} catalogue: ${provider.models.join(", ")}.`);
         }
         const namedGoal = typeof args.goalID === "string" && args.goalID.trim() ? args.goalID.trim() : null;
