@@ -27,7 +27,9 @@ export type CardKind =
   /** A move of the Coordinator that Trama started by itself within the mandate (W04); referenceId is its request. */
   | "automaticStep"
   /** Trama asks whether to share the presence in this project (G01); referenceId is the proposal, `initial` or `conflict`. */
-  | "presenceConsent";
+  | "presenceConsent"
+  /** The Coordinator points out an overlap with a colleague's work (G03); referenceId is the overlap's id. */
+  | "overlap";
 
 export interface ConflictAssessment {
   id: string;
@@ -37,6 +39,8 @@ export interface ConflictAssessment {
   references: string[];
   classification: "conflict" | "overlap" | "clean" | "unknown";
   conflictingFiles: string[];
+  /** The lines in conflict for each file, in the candidate's version (G03); absent in older assessments. */
+  conflictingLines?: Record<string, import("./overlap").LineRange[]>;
   detail: string;
   checkedAt: string;
 }
@@ -935,6 +939,8 @@ export interface ProjectDocument {
   focus?: TaskFocus;
   /** The person's consent to share the presence in this project (G01); absent until Trama first proposes it. */
   presence?: import("./presence").PresenceConsent;
+  /** The overlaps the Coordinator already pointed out in the chat (G03), so each one is said once. */
+  overlapNotices?: string[];
 }
 
 export interface PactDemo {
@@ -1065,6 +1071,8 @@ export interface ActiveProjectState {
   aiHeroPrepared?: boolean;
   /** Who works on what (G01), computed by the main process; absent until the first reading and in the example project. */
   presence?: import("./presence").PresenceView | null;
+  /** The person's work against the colleagues' presence (G03); absent without a presence reading. */
+  overlaps?: import("./overlap").OverlapView | null;
 }
 
 /** A message waiting for the running turn to end; it has no request and no event until it leaves. */
