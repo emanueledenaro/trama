@@ -182,6 +182,7 @@ const handlers: { [K in ActionName]: Handler<K> } = {
   "presence:refresh": () => controller.refreshPresence(),
   "presence:commentPullRequest": ({ number, body }) => controller.commentColleaguePullRequest(number, body),
   "settings:update": (update) => controller.updateSettings(update),
+  "project:settings": (update) => controller.updateProjectSettings(update),
   "monitor:update": (update) => controller.updateMonitor(update),
   "monitor:poll": () => controller.pollMonitor(),
   "skills:prepare": () => controller.prepareSkills(),

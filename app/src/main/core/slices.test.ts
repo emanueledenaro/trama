@@ -306,13 +306,38 @@ describe("assigning only unblocked slices (M05)", () => {
     expect(workState(document, "r1").moves.map((m) => m.move)).not.toContain("assignWork");
   });
 
+  it("follows the project's parallel limit when the person changes it (W08)", () => {
+    const tickets = [ticket(1), ticket(2), ticket(3), ticket(4)];
+    const { document, plan } = project("approved", tickets);
+    document.settings = { parallelDevelopers: 1 };
+    work(document, "Ada", "S1", 3, "Sources/Orders");
+    expect(() => work(document, "Bruno", "S2", 4, "Sources/Payments")).toThrow(/1 developer is already at work, the project's limit/);
+    expect(workState(document, "r1").slices?.limit).toBe(1);
+    document.settings = { parallelDevelopers: 4 };
+    work(document, "Bruno", "S2", 4, "Sources/Payments");
+    work(document, "Carla", "S3", 5, "Sources/Support");
+    work(document, "Dario", "S4", 6, "Sources/Mail");
+    expect(sliceViews(document, plan).map((v) => v.state)).toEqual(["working", "working", "working", "working"]);
+  });
+
+  it("keeps a paused slice out of the frontier until the pause is cleared (W06)", () => {
+    const { document, plan } = project();
+    verified(document, work(document, "Ada", "S1", 3).id);
+    plan.slicing!.tickets[1]!.pause = { reason: "Aspetta la decisione sul rimborso", since: at(9).toISOString() };
+    expect(sliceViews(document, plan).map((v) => v.state)).toEqual(["done", "paused", "ready"]);
+    expect(sliceAssignmentProblem(document, plan, "S2")).toBe("Slice S2 is paused: Aspetta la decisione sul rimborso. Assign another ready slice until the pause is cleared.");
+    expect(slicesText(plan, sliceViews(document, plan), 0, 3)).toContain("- S2 «Fetta 2»: in pausa: Aspetta la decisione sul rimborso.");
+    plan.slicing!.tickets[1]!.pause = null;
+    expect(sliceViews(document, plan)[1]!.state).toBe("ready");
+  });
+
   it("tells the Coordinator the slices, what the ready ones deliver and the limit", () => {
     const { document, plan } = project();
     plan.slicing!.tickets[0]!.issue = { number: 8, url: "u", at: "" };
-    const text = slicesText(plan, sliceViews(document, plan), 0);
+    const text = slicesText(plan, sliceViews(document, plan), 0, 3);
     expect(text).toContain("- S1 «Fetta 1»: issue #8, pronta.\n  Cosa consegna: Comportamento 1\n  - [ ] Criterio 1");
     expect(text).toContain("- S2 «Fetta 2»: bloccata da S1.");
-    expect(text).toContain("Sviluppatori al lavoro: 0 di 3.");
+    expect(text).toContain("Sviluppatori al lavoro: 0 di 3, il limite del progetto.");
     expect(text).not.toContain("Comportamento 2");
   });
 });

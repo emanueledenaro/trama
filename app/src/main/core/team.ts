@@ -20,6 +20,7 @@ import type {
 import { isOpenQuestion } from "@shared/domain";
 import type { ProviderId } from "@shared/codex";
 import { shortId } from "@shared/ids";
+import { DEFAULT_PARALLEL_DEVELOPERS, parallelDevelopers } from "@shared/parallel";
 import { freeAgentColor, isAgentColor, tagFromCompetence } from "@shared/identity";
 import { FIXED_ROLES, isFixedRole, roleProfile } from "@shared/roster";
 import { readDeveloperReport } from "./implementation";
@@ -126,8 +127,11 @@ export function findSpecialist(document: ProjectDocument, reference: string): Sp
   return document.team.specialists.find((s) => key(s.name) === key(reference)) ?? null;
 }
 
-/** At most this many developers work at the same time in a project (spec #137, Q5); the fixed roles do not count. */
-export const MAX_PARALLEL_DEVELOPERS = 3;
+/**
+ * At most this many developers work at the same time in a project unless the person changes it in the project's
+ * settings (spec #137, Q5; W08); the fixed roles do not count.
+ */
+export const MAX_PARALLEL_DEVELOPERS = DEFAULT_PARALLEL_DEVELOPERS;
 
 /** Developers at work now: developers with an active assignment. */
 export function activeDevelopers(document: ProjectDocument): number {
@@ -379,6 +383,8 @@ export interface AssignmentOrder {
   slice?: { planId: string; sliceId: string } | null;
   /** The seams to test in the contract (W05); the caller checks that the contract is complete. */
   seams?: ContractSeam[];
+  /** The developer took the slice by itself (W08). */
+  selfPicked?: boolean;
 }
 
 function requireIndependent(document: ProjectDocument, moduleIds: string[], specialistId: string): void {
@@ -422,10 +428,11 @@ export function assign(
   }
   if (pending.length) throw new TeamError("dependencies_pending", `These assignments are not completed yet: ${pending.join(", ")}.`);
   requireIndependent(document, moduleIds, specialist.id);
-  if (specialist.role === "developer" && activeDevelopers(document) >= MAX_PARALLEL_DEVELOPERS) {
+  const limit = parallelDevelopers(document);
+  if (specialist.role === "developer" && activeDevelopers(document) >= limit) {
     throw new TeamError(
       "parallel_limit",
-      `${MAX_PARALLEL_DEVELOPERS} developers are already at work: assign more when one of them ends (spec #137).`,
+      `${limit} ${limit === 1 ? "developer is" : "developers are"} already at work, the project's limit: assign more when one of them ends (spec #137).`,
     );
   }
   const decisionVersions: Record<string, number> = {};
@@ -456,6 +463,7 @@ export function assign(
       workspace: null,
       ...(order.slice ? { slice: order.slice } : {}),
       ...(order.seams ? { seams: order.seams } : {}),
+      ...(order.selfPicked ? { selfPicked: true } : {}),
     },
     now,
   );
@@ -483,6 +491,7 @@ type AssignmentFields = Pick<
   | "duty"
   | "slice"
   | "seams"
+  | "selfPicked"
 >;
 
 /** New work of a specialist: the assignment starts in preparation and the specialist is at work. */

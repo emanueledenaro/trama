@@ -17,6 +17,7 @@ import type { ProviderAccount, ProviderId } from "@shared/codex";
 import { DEFAULT_LEARNING_SETTINGS, type LearningSettings, type ThemePreference } from "@shared/domain";
 import { capabilityLines, PROVIDERS, type ProviderDescriptor } from "@shared/providers";
 import { AIHERO_ATTRIBUTION } from "@shared/skills";
+import { MAX_PARALLEL_DEVELOPERS_SETTING, MIN_PARALLEL_DEVELOPERS, parallelDevelopers } from "@shared/parallel";
 import { ProviderIcon } from "@/components/ProviderIcon";
 import { Spinner } from "@/components/Spinner";
 import { Button } from "@/components/ui/button";
@@ -471,7 +472,49 @@ function MethodSection() {
           onChange={(value) => void act("settings:update", { continuousWork: value })}
         />
       </Group>
+      <ParallelDevelopersGroup />
     </>
+  );
+}
+
+const PARALLEL_OPTIONS = Array.from({ length: MAX_PARALLEL_DEVELOPERS_SETTING - MIN_PARALLEL_DEVELOPERS + 1 }, (_, index) => MIN_PARALLEL_DEVELOPERS + index);
+
+/** W08: how many developers work at the same time in the open project; three unless the person changes it. */
+function ParallelDevelopersGroup() {
+  const project = useUi((s) => s.app?.project ?? null);
+  const usable = project && !project.isDemo && project.stateWritable;
+  const limit = project ? parallelDevelopers(project.document) : null;
+  return (
+    <Group
+      title="Sviluppatori in parallelo"
+      note="Ogni sviluppatore libero prende in autonomia la prossima fetta pronta nei suoi moduli, dentro il mandato e con il lavoro continuo attivo. I ruoli fissi non contano nel limite."
+    >
+      <Row
+        label={project ? `Al massimo in ${project.name}` : "Al massimo nel progetto aperto"}
+        description={!project ? "Apri un progetto per scegliere il limite." : project.isDemo ? "Il progetto di esempio non ha un limite da scegliere." : "Tre, se non lo cambi."}
+        control={
+          usable ? (
+            <div role="radiogroup" aria-label="Sviluppatori in parallelo" className="flex rounded-lg bg-[var(--color-background-button-secondary)] p-0.5" data-testid="parallel-developers">
+              {PARALLEL_OPTIONS.map((value) => (
+                <button
+                  key={value}
+                  type="button"
+                  role="radio"
+                  aria-checked={limit === value}
+                  onClick={() => void act("project:settings", { parallelDevelopers: value })}
+                  className={cn(
+                    "flex h-6 min-w-7 items-center justify-center rounded-md px-2 text-ui-sm tabular-nums transition-colors",
+                    limit === value ? "bg-[var(--color-background-surface)] text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  {value}
+                </button>
+              ))}
+            </div>
+          ) : null
+        }
+      />
+    </Group>
   );
 }
 

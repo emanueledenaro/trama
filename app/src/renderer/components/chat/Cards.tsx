@@ -513,6 +513,11 @@ export function AssignmentCard({ assignmentId }: { assignmentId: string }) {
         <AgentName agent={specialist} /> <span className="text-muted-foreground"><Sep />{specialist.competence}</span>
       </Field>
       <Field label="Obiettivo">{assignment.objective}</Field>
+      {assignment.selfPicked ? (
+        <Field label="Presa">
+          <span data-testid="assignment-self-picked">In autonomia: era la prossima fetta pronta nei moduli dello sviluppatore, dentro il mandato.</span>
+        </Field>
+      ) : null}
       <DutyFields assignment={assignment} />
       {assignment.exercise ? <Field label="Esercizio">{assignment.exercise}</Field> : null}
       <Field label="Perimetro">{assignment.moduleIds.length ? assignment.moduleIds.map(moduleName).join(", ") : "Tutto il progetto"}</Field>
@@ -531,7 +536,7 @@ export function AssignmentCard({ assignmentId }: { assignmentId: string }) {
       <Field label="Provider e modello scelti all'assegnazione">
         {providerLabel(assignment.provider)}<Sep />{assignment.model}
         <div className="mt-0.5 text-ui-sm text-muted-foreground">
-          {assignment.duty && assignment.modelReason
+          {(assignment.duty || assignment.selfPicked) && assignment.modelReason
             ? assignment.modelReason
             : assignment.modelReason
               ? `Motivazione del Coordinatore: ${assignment.modelReason}`
@@ -664,6 +669,7 @@ const BLOCKER_TEXT: Record<string, string> = {
   EVIDENCE_STALE: "Verifica non più valida",
   CHECK_FAILED: "Verifica non superata",
   REMOTE_CONFLICT: "Conflitto con il lavoro di un collega",
+  WORKTREE_CONFLICT: "Conflitto con il worktree di un altro sviluppatore",
 };
 
 /** One required check of a candidate; a failed one opens on the command and the original output Trama recorded (V05). */
@@ -1113,15 +1119,23 @@ export function ConflictCard({ assessmentId }: { assessmentId: string }) {
   const exercise = isExerciseAssessment(assessment);
   // A comparison made on an older snapshot of the candidate, or against a head that moved on, is obsolete (T13).
   const candidate = project.document.candidates.find((c) => c.id === assessment.candidateId);
+  // Against another developer's worktree (W08) the other side is that candidate, not a remote head.
+  const worktree = Boolean(assessment.otherCandidateId);
+  const other = worktree ? project.document.candidates.find((c) => c.id === assessment.otherCandidateId) : undefined;
+  const otherMoved =
+    worktree &&
+    (!other ||
+      other.snapshotId !== assessment.otherSnapshotId ||
+      project.document.candidates.filter((c) => c.assignmentId === other.assignmentId).at(-1)?.id !== other.id);
   const heads =
-    project.github.snapshot && !exercise
+    project.github.snapshot && !exercise && !worktree
       ? new Set([...project.github.snapshot.branches.map((b) => b.sha.toLowerCase()), ...project.github.snapshot.pullRequests.map((p) => p.headSHA.toLowerCase())])
       : null;
-  const obsolete = (candidate && candidate.snapshotId !== assessment.snapshotId) || (heads !== null && !heads.has(assessment.remoteSHA.toLowerCase()));
+  const obsolete = (candidate && candidate.snapshotId !== assessment.snapshotId) || otherMoved || (heads !== null && !heads.has(assessment.remoteSHA.toLowerCase()));
   return (
     <CardFrame
       icon={<IconGitBranch stroke={1.8} />}
-      title={exercise ? "Esercizio di conflitto" : "Lavoro dei colleghi"}
+      title={exercise ? "Esercizio di conflitto" : worktree ? "Worktree del team" : "Lavoro dei colleghi"}
       aside={
         <>
           {exercise ? <Badge tone="info">Esercizio</Badge> : null}
@@ -1130,7 +1144,11 @@ export function ConflictCard({ assessmentId }: { assessmentId: string }) {
       }
     >
       {obsolete ? (
-        <p className="mb-1 text-ui-xs text-muted-foreground">Il candidato o il lavoro del collega sono cambiati dopo questo confronto: Trama ne farà uno nuovo.</p>
+        <p className="mb-1 text-ui-xs text-muted-foreground">
+          {worktree
+            ? "Uno dei due candidati è cambiato dopo questo confronto: Trama ne farà uno nuovo."
+            : "Il candidato o il lavoro del collega sono cambiati dopo questo confronto: Trama ne farà uno nuovo."}
+        </p>
       ) : null}
       {exercise ? (
         <p className="mb-1 text-ui-sm text-muted-foreground">Modifica simulata da Trama in una copia locale separata: non è il lavoro di un collaboratore reale.</p>
@@ -1140,7 +1158,8 @@ export function ConflictCard({ assessmentId }: { assessmentId: string }) {
         <button type="button" className="font-mono text-[11.5px] text-[var(--color-text-accent)] hover:underline" onClick={() => setInspector({ kind: "candidate", id: assessment.candidateId })}>
           {assessment.candidateId}
         </button>{" "}
-        e {assessment.references.join(", ")} ({assessment.remoteSHA.slice(0, 7)}).
+        e {assessment.references.join(", ")}
+        {worktree ? "" : ` (${assessment.remoteSHA.slice(0, 7)})`}.
       </p>
       <p className="mt-1 text-ui-sm text-muted-foreground">{assessment.detail}</p>
       {assessment.conflictingFiles.length ? (

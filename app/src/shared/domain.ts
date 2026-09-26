@@ -41,6 +41,12 @@ export interface ConflictAssessment {
   conflictingFiles: string[];
   /** The lines in conflict for each file, in the candidate's version (G03); absent in older assessments. */
   conflictingLines?: Record<string, import("./overlap").LineRange[]>;
+  /**
+   * Set when the other side is another developer's worktree in this project, not a remote head (W08): its candidate
+   * and the snapshot compared. `remoteSHA` is then the temporary commit Trama made of that candidate.
+   */
+  otherCandidateId?: string;
+  otherSnapshotId?: string;
   detail: string;
   checkedAt: string;
 }
@@ -424,6 +430,8 @@ export interface SpecialistAssignment {
   seams?: ContractSeam[];
   /** The developer's structured report (W05), read from its last answer: its statement, never evidence. */
   report?: DeveloperReport | null;
+  /** Set when the developer took the slice by itself, within the mandate, instead of the Coordinator assigning it (W08). */
+  selfPicked?: boolean;
 }
 
 /** A seam the developer must test, as the contract of the assignment names it (W05). */
@@ -852,6 +860,11 @@ export interface SliceTicket {
   blockedBy: string[];
   /** The GitHub issue the slice was published as; null while it stays in Trama. */
   issue: { number: number; url: string; at: string } | null;
+  /**
+   * Set while the slice is paused, as when a developer's question became a Pact card that blocks the work (W06):
+   * nobody picks it until the pause is cleared. Absent or null means not paused.
+   */
+  pause?: { reason: string; since: string } | null;
 }
 
 /**
@@ -870,7 +883,7 @@ export interface PlanSlicing {
 }
 
 /** Where a slice of an approved breakdown stands, computed by Trama from its assignments and candidates (M05). */
-export type SliceState = "blocked" | "ready" | "working" | "verifying" | "done";
+export type SliceState = "blocked" | "paused" | "ready" | "working" | "verifying" | "done";
 
 export interface SliceView {
   id: string;
@@ -969,6 +982,13 @@ export interface ProjectDocument {
   presence?: import("./presence").PresenceConsent;
   /** The overlaps the Coordinator already pointed out in the chat (G03), so each one is said once. */
   overlapNotices?: string[];
+  /** The person's settings for this project; absent until they first change one. */
+  settings?: ProjectSettings;
+}
+
+export interface ProjectSettings {
+  /** Developers at work at the same time (W08); absent means three. */
+  parallelDevelopers?: number;
 }
 
 export interface PactDemo {
