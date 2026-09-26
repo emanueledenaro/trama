@@ -114,6 +114,18 @@ const UNRELEASED_RE = /^## \[Unreleased\][^\n]*\n/m;
 const NEXT_SECTION_RE = /^## \[/m;
 const LINKS_RE = /^\[[^\]]+\]: \S+$/m;
 
+// Finds the `## [version]` heading line with plain string comparison, so the
+// version never becomes part of a regular expression.
+function findHeading(changelog, version) {
+  const prefix = `## [${version}]`;
+  let index = 0;
+  for (const line of changelog.split('\n')) {
+    if (line.startsWith(prefix)) return { index, length: line.length + 1 };
+    index += line.length + 1;
+  }
+  return null;
+}
+
 /**
  * Moves the hand-written `## [Unreleased]` notes, merged with the generated
  * groups, into a new `## [version] - date` section and updates the links at
@@ -122,7 +134,7 @@ const LINKS_RE = /^\[[^\]]+\]: \S+$/m;
 export function releaseChangelog(changelog, { version, date, previousTag, generated, repoUrl }) {
   const start = UNRELEASED_RE.exec(changelog);
   if (!start) throw new Error('CHANGELOG.md has no "## [Unreleased]" section');
-  if (new RegExp(`^## \\[${version.replaceAll('.', '\\.')}\\]`, 'm').test(changelog)) {
+  if (findHeading(changelog, version)) {
     throw new Error(`CHANGELOG.md already has a section for ${version}`);
   }
   const bodyStart = start.index + start[0].length;
@@ -156,10 +168,9 @@ export function releaseChangelog(changelog, { version, date, previousTag, genera
 
 /** Returns the body of the `## [version]` section, for the release notes. */
 export function extractSection(changelog, version) {
-  const heading = new RegExp(`^## \\[${version.replaceAll('.', '\\.')}\\][^\\n]*\\n`, 'm');
-  const start = heading.exec(changelog);
+  const start = findHeading(changelog, version);
   if (!start) return null;
-  const rest = changelog.slice(start.index + start[0].length);
+  const rest = changelog.slice(start.index + start.length);
   const nextSection = NEXT_SECTION_RE.exec(rest);
   const links = LINKS_RE.exec(rest);
   const end = Math.min(nextSection?.index ?? rest.length, links?.index ?? rest.length);

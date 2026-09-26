@@ -160,3 +160,8 @@ test('extracts the notes of a version', () => {
   assert.equal(extractSection(CHANGELOG, '0.1.0'), '### Added\n\n- First.');
   assert.equal(extractSection(CHANGELOG, '9.9.9'), null);
 });
+
+test('treats the version as plain text, not as a pattern', () => {
+  assert.equal(extractSection(CHANGELOG, '0.1.*'), null);
+  assert.equal(extractSection(CHANGELOG, '0.1'), null);
+});
