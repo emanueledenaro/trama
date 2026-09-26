@@ -987,6 +987,52 @@ export interface ProjectDocument {
   overlapNotices?: string[];
   /** How the project adapts Trama's Clean Code standard (Q03); absent means every rule is on. */
   cleanCode?: import("./cleanCode").CleanCodeSettings;
+  /** Focus mode examinations (F01); absent until the person first opens focus mode. */
+  audits?: FocusAudit[];
+}
+
+export type AuditStatus = "checking" | "reviewing" | "done" | "failed";
+
+/** One axis of AI Hero's code-review skill, run as a read-only session of its own (F01). */
+export interface AuditAxis {
+  /** "skipped": the skill skips the Spec sub-agent when there is no spec. */
+  status: "waiting" | "running" | "done" | "skipped" | "failed";
+  /** The sub-agent's report in Markdown, as it wrote it; the skill's "no spec available" when skipped. */
+  report: string | null;
+  findings: number | null;
+  /** The worst finding within this axis, in one line; null when there is none. */
+  worst: string | null;
+  threadId: string | null;
+  model: string | null;
+  startedAt: string | null;
+  finishedAt: string | null;
+  failure: string | null;
+}
+
+/**
+ * Focus mode on one target (F01, spec #124): Trama runs the real checks in the sandbox, then the two axes of
+ * code-review in parallel and read-only. The checks are evidence; the axes' findings are the model's judgement.
+ */
+export interface FocusAudit {
+  id: string;
+  target: { kind: "candidate"; candidateId: string; assignmentId: string };
+  /** The fixed point of code-review: the candidate's base commit. */
+  fixedPoint: string;
+  snapshotId: string;
+  changedFiles: string[];
+  status: AuditStatus;
+  /** Trama's evidence from the checks run for this examination, in the order they ran. */
+  checks: CandidateEvidence[];
+  /** Where the Spec axis read the spec from, in Italian; null when no spec was found. */
+  specSource: string | null;
+  standards: AuditAxis;
+  spec: AuditAxis;
+  /** The skill's closing line, per axis: total findings and the worst one within each axis. */
+  summary: string | null;
+  failure: string | null;
+  startedAt: string;
+  updatedAt: string;
+  finishedAt: string | null;
 }
 
 export interface PactDemo {

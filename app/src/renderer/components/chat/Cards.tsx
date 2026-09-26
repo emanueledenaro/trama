@@ -14,6 +14,7 @@ import {
   IconTelescope,
   IconUsersGroup,
   IconUsers,
+  IconFocus2,
 } from "@tabler/icons-react";
 import {
   type AssignmentStatus,
@@ -669,7 +670,7 @@ const BLOCKER_TEXT: Record<string, string> = {
 };
 
 /** One required check of a candidate; a failed one opens on the command and the original output Trama recorded (V05). */
-function EvidenceRow({ check, evidence }: { check: string; evidence: CandidateEvidence | null }) {
+export function EvidenceRow({ check, evidence }: { check: string; evidence: CandidateEvidence | null }) {
   const [open, setOpen] = useState(false);
   const failed = evidence?.result === "fail";
   return (
@@ -1005,6 +1006,18 @@ export function CandidateCard({ candidateId }: { candidateId: string }) {
             Apri il diff
           </Button>
         )}
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => {
+            // Focus mode opens the latest examination of this candidate, or starts the first one (F01).
+            const latest = (project.document.audits ?? []).filter((a) => a.target.candidateId === candidateId).at(-1);
+            if (latest) setInspector({ kind: "audit", id: latest.id });
+            else void act("candidate:focusAudit", { candidateId }).then((id) => id && setInspector({ kind: "audit", id }));
+          }}
+        >
+          <IconFocus2 /> Focus mode
+        </Button>
         {report.blockers.length === 0 && !approved ? (
           <Button size="sm" variant="outline" onClick={() => void act("candidate:approve", { candidateId })}>
             Approva questo candidato
