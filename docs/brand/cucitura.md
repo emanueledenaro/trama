@@ -29,7 +29,7 @@ Il punto ha le estremità arrotondate, come nei bot. La cucitura è un SVG, senz
 | `fileDrop` | Il composer mentre si trascinano immagini | Qui arrivano le immagini. Accanto c'è il testo "Rilascia le immagini per allegarle al messaggio" |
 | `focus` | Il task in focus nella barra di focus | Questo è il lavoro in corso. Accanto ci sono l'icona di focus, il titolo e la fase |
 | `firstGoal` | Il riquadro "Formula il primo obiettivo" nel dialogo del progetto | Qui va il primo obiettivo. Accanto ci sono l'icona e il testo |
-| `logo` | Il marchio di Trama nella schermata iniziale | Trama è cucita come i suoi agenti |
+| `logo` | Il marchio di Trama nella scelta del progetto ("Su cosa vuoi lavorare?"), fuori dallo spazio di rispetto del simbolo | Trama è cucita come i suoi agenti. Accanto ci sono il titolo e il testo della schermata |
 
 ## Regola d'uso
 

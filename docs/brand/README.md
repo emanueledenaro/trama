@@ -106,4 +106,4 @@ Lo script riscrive gli SVG, le icone dell'app, le favicon, i tracciati del compo
 
 ## Cucitura
 
-La cucitura dei bot è l'altro tratto del marchio nell'interfaccia. Token, usi ammessi e regola d'uso sono in [cucitura.md](cucitura.md). Nella schermata iniziale la cucitura incornicia lo spazio del simbolo fuori dallo spazio di rispetto e non tocca il simbolo.
+La cucitura dei bot è l'altro tratto del marchio nell'interfaccia. Token, usi ammessi e regola d'uso sono in [cucitura.md](cucitura.md). Nella scelta del progetto la cucitura incornicia lo spazio del simbolo fuori dallo spazio di rispetto e non tocca il simbolo.
