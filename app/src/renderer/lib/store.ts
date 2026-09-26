@@ -15,6 +15,8 @@ export type InspectorTarget =
   | { kind: "team" }
   | { kind: "specialist"; id: string }
   | { kind: "candidate"; id: string }
+  /** Focus mode on a candidate (F01): the report of one examination. */
+  | { kind: "audit"; id: string }
   | { kind: "group" }
   | { kind: "work" }
   | { kind: "issues" }
