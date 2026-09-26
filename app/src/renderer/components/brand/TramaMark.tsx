@@ -1,6 +1,6 @@
 import { useId, type SVGProps } from "react";
 import { cn } from "@/lib/cn";
-import { tramaMarkColors, usesSmallGlyph, type TramaMarkPalette, type TramaMarkVariant } from "./tramaMark";
+import { tramaMarkColors, usesSmallGlyph, type TramaMarkPalette, type TramaMarkVariant } from "./tramaMarkPalette";
 import {
   GLYPH_PATH,
   GLYPH_SHADOWS,
@@ -13,7 +13,7 @@ import {
   TILE_VIEW_BOX,
 } from "./tramaMarkGeometry";
 
-export type { TramaMarkPalette, TramaMarkVariant } from "./tramaMark";
+export type { TramaMarkPalette, TramaMarkVariant } from "./tramaMarkPalette";
 
 export interface TramaMarkProps extends Omit<SVGProps<SVGSVGElement>, "children" | "width" | "height" | "viewBox"> {
   /** Side in CSS pixels. Up to 32 the simplified glyph is drawn. Default 24. */
