@@ -80,7 +80,7 @@ function candidate(document: ProjectDocument, assignmentId: string, check: "pass
   const value = declareCandidate(
     document,
     { assignmentId, decisionIds: [decision.id], unresolvedChoices: [], externalEffects: [] },
-    { snapshotId: `snap-${assignmentId}`, baseSHA: "base", diff: "+x", changedFiles: ["NOTE.md"], excludedSensitiveFiles: [] },
+    { snapshotId: `snap-${assignmentId}`, baseSHA: "base", diff: "+x", changedFiles: ["NOTE.md"], excludedSensitiveFiles: [], whitespaceErrors: [] },
   );
   if (check) recordEvidence(document, value.id, { check: "git_status", passed: check === "pass", command: "git status", output: "", snapshotId: value.snapshotId });
   if (review) recordTechnicalReview(document, value.id, { reviewerThreadId: "reviewer", authorThreadId: "author", verdict: review, summary: "Letto" });
