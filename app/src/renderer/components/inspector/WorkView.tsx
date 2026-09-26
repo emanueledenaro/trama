@@ -1,10 +1,17 @@
-import type { CandidateState } from "@shared/domain";
+import type { CandidateState, WorkPlan } from "@shared/domain";
 import { CANDIDATE_STATE } from "@/components/chat/Cards";
 import { Badge } from "@/components/ui/field";
-import { useUi } from "@/lib/store";
+import { act, useUi } from "@/lib/store";
 import { EmptyNote, InspectorSection } from "./Inspector";
 
 const ORDER: CandidateState[] = ["decided", "building", "verified"];
+const PLAN_STATUS: Record<WorkPlan["status"], { label: string; tone: "info" | "warning" | "destructive" | "secondary" }> = {
+  planning: { label: "In preparazione", tone: "secondary" },
+  seams: { label: "Seam da rivedere", tone: "warning" },
+  ready: { label: "Da rivedere", tone: "info" },
+  stale: { label: "Da rivalutare", tone: "warning" },
+  failed: { label: "Non riuscito", tone: "destructive" },
+};
 const TITLES: Record<CandidateState, string> = { decided: "Deciso", building: "In costruzione", verified: "Verificato" };
 
 export function WorkView() {
@@ -51,10 +58,13 @@ export function WorkView() {
           {[...plans].reverse().map((plan) => (
             <div key={plan.id} className="flex items-center gap-2 py-1 text-ui-sm">
               <span className="font-mono text-[11px] text-muted-foreground">{plan.id}</span>
-              <span className="min-w-0 flex-1 truncate text-foreground/90">{plan.proposal?.summary ?? plan.summary}</span>
-              <Badge tone={plan.status === "ready" ? "info" : plan.status === "failed" ? "destructive" : "secondary"}>
-                {plan.status === "ready" ? "Da rivedere" : plan.status === "failed" ? "Non riuscito" : "In preparazione"}
-              </Badge>
+              <span className="min-w-0 flex-1 truncate text-foreground/90">{plan.spec?.sections?.title ?? plan.proposal?.summary ?? plan.summary}</span>
+              {plan.spec?.issue ? (
+                <button type="button" className="shrink-0" onClick={() => void act("shell:openExternal", { url: plan.spec!.issue!.url })}>
+                  <Badge tone="success">Issue #{plan.spec.issue.number}</Badge>
+                </button>
+              ) : null}
+              <Badge tone={PLAN_STATUS[plan.status].tone}>{PLAN_STATUS[plan.status].label}</Badge>
             </div>
           ))}
         </InspectorSection>

@@ -166,7 +166,7 @@ describe("team flow", () => {
     expect(confirmation).toMatchObject({ text: "Confermo la comprensione condivisa: procedi.", step: { by: "person" } });
 
     // Trama starts the plan by itself: a line in the chat, not a message of the person.
-    await until(() => document.plans.length === 1 && document.plans[0]!.status === "ready", 20_000);
+    await until(() => document.plans.length === 1 && document.plans[0]!.status === "seams", 20_000);
     const plan = document.plans[0]!;
     const planning = automatic()[0]!;
     expect(planning).toMatchObject({ text: "Prepara il piano.", step: { move: "preparePlan", by: "trama" }, state: "completed" });
@@ -177,10 +177,11 @@ describe("team flow", () => {
     const sent = document.events.find((e) => e.requestId === planning.id && e.content.type === "activity" && e.content.title === "Messaggio inviato al Coordinatore");
     expect(sent?.content).toMatchObject({ detail: expect.stringContaining("mossa automatica: Prepara il piano") });
 
-    // The plan asks a product question: the work waits for the person.
+    // The plan proposes the seams to test (to-spec, M04): confirming them is the person's, so the work waits.
     await idle();
     expect(automatic()).toHaveLength(1);
-    await controller.answerDecision(plan.decisionRequestIds[0]!, 0, null);
+    expect(workState(document, document.requests.at(-1)!.id).moves).toEqual([expect.objectContaining({ move: "confirmSeams", actor: "person" })]);
+    controller.answerSeams({ planId: plan.id, confirmed: true, note: null });
 
     // Then Trama assigns the slice, and once Ada ends it runs the checks and the review, up to the person's candidate.
     const specialist = findSpecialist(document, "Ada")!;

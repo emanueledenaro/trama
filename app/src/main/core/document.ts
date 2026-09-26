@@ -67,7 +67,12 @@ export function normalizeDocument(raw: Partial<ProjectDocument>, projectId: stri
   }
   // A plan still "planning" on disk lost its planner: it would block a new plan for the same request.
   for (const plan of document.plans) {
-    if (plan.status === "planning") {
+    if (plan.status === "planning" && plan.spec?.seamsAnswer) {
+      // The spec was being written after the seam check (M04): the seams wait for the person's answer again.
+      plan.status = "seams";
+      plan.spec.seamsAnswer = null;
+      plan.failure = "La scrittura della spec si è interrotta prima della fine: rispondi di nuovo sui seam.";
+    } else if (plan.status === "planning") {
       plan.status = "failed";
       plan.failure = "La preparazione si è interrotta prima della fine: chiedi di nuovo il piano.";
     }

@@ -88,7 +88,15 @@ export interface ActionMap {
   "specialist:rename": [{ specialistId: string; name: string }, void];
   "specialist:setColor": [{ specialistId: string; color: AgentColor }, void];
   "plan:cancel": [{ planId: string }, void];
-  "plan:edit": [{ planId: string; steps: string[]; proposedBehavior: string; acceptedExample: string }, void];
+  /** A plan written as a spec is corrected by its sections (M04); a plan written before M04 by its steps. */
+  "plan:edit": [
+    { planId: string; sections: import("./domain").SpecSections } | { planId: string; steps: string[]; proposedBehavior: string; acceptedExample: string },
+    void,
+  ];
+  /** The person's answer to the seam check of a spec: confirmed, or corrected in their own words (M04). */
+  "plan:answerSeams": [{ planId: string; confirmed: boolean; note: string | null }, void];
+  /** Publishes a written spec on GitHub, when it stayed in Trama or its publication failed (M04). */
+  "plan:publish": [{ planId: string }, void];
   "pactDemo:run": [void, void];
   "pactDemo:approve": [void, void];
   "candidate:approve": [{ candidateId: string }, void];

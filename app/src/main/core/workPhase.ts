@@ -44,6 +44,7 @@ export const NEXT_MOVES: NextMove[] = [
   "confirmUnderstanding",
   "grantMandate",
   "confirmTeam",
+  "confirmSeams",
   "reviewPlan",
   "reviewCandidate",
   "mergePullRequest",
@@ -178,6 +179,10 @@ export function workState(document: ProjectDocument, requestId: string | null): 
   if (plan) {
     switch (plan.status) {
       case "planning":
+        return finish("spec");
+      case "seams":
+        // The planner proposed the seams to test (to-spec); the spec is written once the person confirms them (M04).
+        add(person("confirmSeams", "Conferma i seam", plan.id));
         return finish("spec");
       case "failed":
         preparePlan();

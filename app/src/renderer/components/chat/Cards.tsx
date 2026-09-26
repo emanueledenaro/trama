@@ -27,6 +27,7 @@ import { cn } from "@/lib/cn";
 import { act, useUi } from "@/lib/store";
 import { ACTION_LABELS } from "@/lib/labels";
 import { ChatMarkdown } from "./ChatMarkdown";
+import { PlanSpecBody } from "./PlanSpec";
 import { DutyFields } from "./DutyFields";
 import { Sep } from "@/components/ui/sep";
 import { AgentName } from "@/components/AgentIdentity";
@@ -723,11 +724,13 @@ export function PlanCard({ planId }: { planId: string }) {
       aside={
         plan.status === "planning" ? (
           <span className="flex items-center gap-1.5 text-ui-sm text-muted-foreground">
-            <Spinner /> In preparazione
+            <Spinner /> {plan.spec?.seamsAnswer ? "Scrittura della spec" : "In preparazione"}
             <button type="button" className="hover:text-foreground" onClick={() => void act("plan:cancel", { planId: plan.id })}>
               Annulla
             </button>
           </span>
+        ) : plan.status === "seams" ? (
+          <Badge tone="warning">Seam da rivedere</Badge>
         ) : plan.status === "stale" ? (
           <Badge tone="warning">Da rivalutare</Badge>
         ) : plan.status === "failed" ? (
@@ -741,6 +744,7 @@ export function PlanCard({ planId }: { planId: string }) {
         {plan.orderedBy === "coordinator" ? "Chiesto dal Coordinatore" : "Chiesto da te"}<Sep />{plan.summary}
       </p>
       {plan.failure ? <Field label="Errore">{plan.failure}</Field> : null}
+      {plan.spec ? <PlanSpecBody plan={plan} /> : null}
       {proposal ? (
         <>
           <Field label="Sintesi">{proposal.summary}</Field>

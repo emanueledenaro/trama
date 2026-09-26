@@ -90,12 +90,13 @@ export interface RequestStep {
 /** The phase of a request's work, computed by Trama from the records, never by the model (W01). */
 export type WorkPhase = "clarification" | "spec" | "slices" | "execution" | "verification" | "candidate" | "merged" | "blocked";
 
-/** A move that takes the work on: the first seven are the person's, the last three the Coordinator's (W01). */
+/** A move that takes the work on: the first eight are the person's, the last three the Coordinator's (W01). */
 export type NextMove =
   | "answerQuestions"
   | "confirmUnderstanding"
   | "grantMandate"
   | "confirmTeam"
+  | "confirmSeams"
   | "reviewPlan"
   | "reviewCandidate"
   | "mergePullRequest"
@@ -642,15 +643,67 @@ export interface WorkPlan {
   moduleIds: string[];
   summary: string;
   issueNumber: number | null;
-  /** stale: the repository changed while the planner read it; the plan must be re-evaluated (T06). */
-  status: "planning" | "ready" | "failed" | "stale";
+  /**
+   * seams: the planner proposed the seams to test and waits for the person's answer before it writes the spec (M04).
+   * stale: the repository changed while the planner read it; the plan must be re-evaluated (T06).
+   */
+  status: "planning" | "seams" | "ready" | "failed" | "stale";
+  /** The plan of a request written before M04; a plan written with to-spec keeps `spec` instead. */
   proposal: PlanProposal | null;
-  /** Set when the person corrected the proposal. */
+  /** The plan as a spec, written with AI Hero's to-spec skill (M04); absent in plans written before it. */
+  spec?: PlanSpec | null;
+  /** Set when the person corrected the proposal or the spec. */
   editedAt?: string | null;
   failure: string | null;
   decisionRequestIds: string[];
   createdAt: string;
   updatedAt: string;
+}
+
+/** A seam at which the work of a spec is tested, in codebase-design's words (M04). */
+export interface SpecSeam {
+  /** Where the tests cross: the module and the interface they go through. */
+  seam: string;
+  /** A seam the code already has, which to-spec prefers, or a new one. */
+  existing: boolean;
+  /** What the tests check there. */
+  tests: string;
+}
+
+/** The sections of to-spec's template, in its order, and the title the spec takes in the issue tracker. */
+export interface SpecSections {
+  title: string;
+  problemStatement: string;
+  solution: string;
+  userStories: string[];
+  implementationDecisions: string[];
+  testingDecisions: string[];
+  outOfScope: string;
+  furtherNotes: string;
+}
+
+/** The person's answer to to-spec's seam check: the seams as proposed, or a correction in their own words. */
+export interface SeamsAnswer {
+  confirmed: boolean;
+  note: string | null;
+  at: string;
+}
+
+/** A plan written as a spec with AI Hero's to-spec skill and codebase-design's vocabulary (M04). */
+export interface PlanSpec {
+  /** The seams to test: proposed by the planner, then as checked with the person. */
+  seams: SpecSeam[];
+  /** Null while the seams wait for the person. */
+  seamsAnswer: SeamsAnswer | null;
+  /** Null until the planner wrote the spec after the person's answer. */
+  sections: SpecSections | null;
+  affectedModuleIDs: string[];
+  references: string[];
+  requiredDecisionIDs: string[];
+  /** The GitHub issue the spec was published as; null while the spec stays in Trama. */
+  issue: { number: number; url: string; at: string } | null;
+  /** Why the last publication or update on GitHub did not succeed. */
+  publishFailure: string | null;
 }
 
 /** A behavior example of a goal: accepted means it must happen, refused means it must not. */
