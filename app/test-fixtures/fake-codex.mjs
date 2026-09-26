@@ -395,6 +395,14 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
           // The developer of a slice (M06) runs implement and tdd, and reports the confirmed seams it tested.
           const skills = params.input.filter((item) => item.type === "skill").map((item) => item.name);
           const seam = text.match(/## Seam confermati dalla persona\n1\. /) ? "\n- 1: NOTE.md" : "\n- none";
+          // The answer to the developer's question reaches the resumed session (W06). It comes first: the slice
+          // briefing of the resumed turn can still carry "[domanda]" when the slice itself asks for it (W08).
+          const answer = text.match(/^Risposta (?:del Coordinatore|della persona[^:]*): (.*)$/m)?.[1];
+          if (answer) {
+            const report = `\n\nFiles touched:\n- NOTE.md\nTests written:\n- NOTE.md\nTested seams:${seam}\nDoubts:\n- none`;
+            setTimeout(() => finish(`Ripreso con la risposta: ${answer}${report}`), 30);
+            return;
+          }
           if (text.includes("[domanda]") && toolServers.has(threadId)) {
             // W06: a doubt the spec does not answer goes to the Coordinator with ask_coordinator; the work pauses.
             const question = "Un ordine pagato con un buono va in revisione come uno pagato con la carta?";
@@ -402,13 +410,6 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
             toolDone("ask_coordinator", asked);
             const report = `\n\nFiles touched:\n- NOTE.md\nTests written:\n- none\nTested seams:\n- none\nDoubts:\n- Domanda al Coordinatore: ${question}`;
             setTimeout(() => finish(`Mi fermo: ho chiesto al Coordinatore. ${asked.content[0].text}${report}`), 30);
-            return;
-          }
-          // The answer to the developer's question reaches the resumed session (W06).
-          const answer = text.match(/^Risposta (?:del Coordinatore|della persona[^:]*): (.*)$/m)?.[1];
-          if (answer) {
-            const report = `\n\nFiles touched:\n- NOTE.md\nTests written:\n- NOTE.md\nTested seams:${seam}\nDoubts:\n- none`;
-            setTimeout(() => finish(`Ripreso con la risposta: ${answer}${report}`), 30);
             return;
           }
           // The structured report of W05, which extends M06's tested seams.

@@ -1322,6 +1322,69 @@ await shot("19h-developer-question-resumed");
 await setLook("claudeAgent", true);
 await shot("19i-developer-question-resumed-claude-dark");
 await setLook(questionLook.provider, questionLook.dark);
+// W08: independent movement, after the work of #204 and W06 (two more assignment cards). The person sets the project's
+// parallel limit in the settings; a verified slice unblocks the ones that depended on it, and with continuous work on
+// the free developer takes the next ready one in its modules by itself, without a Coordinator turn.
+await page.getByRole("button", { name: "Impostazioni" }).click();
+const parallelSettings = page.getByTestId("settings");
+await parallelSettings.getByRole("button", { name: /^Metodo di lavoro/ }).first().click();
+const parallelPicker = parallelSettings.getByTestId("parallel-developers");
+await parallelPicker.getByRole("radio", { name: "3", checked: true }).waitFor();
+await parallelPicker.getByRole("radio", { name: "2" }).click();
+await parallelPicker.getByRole("radio", { name: "2", checked: true }).waitFor();
+await parallelPicker.scrollIntoViewIfNeeded();
+await shot("22a-parallel-developers");
+await app.evaluate(({ nativeTheme }) => {
+  nativeTheme.themeSource = "dark";
+});
+await page.evaluate(() => document.documentElement.classList.add("dark"));
+await shot("22b-parallel-developers-dark");
+await app.evaluate(({ nativeTheme }) => {
+  nativeTheme.themeSource = "system";
+});
+await page.evaluate(() => document.documentElement.classList.remove("dark"));
+await page.getByRole("button", { name: "Impostazioni" }).click();
+await page.getByTestId("settings").waitFor({ state: "hidden" });
+// The first slice is verified on new work that passes its check and the technical review: S2 and S3 become ready.
+await send("[assegna:S1]");
+const verifiedSliceWork = assignmentCards.nth(6);
+await verifiedSliceWork.getByText("Concluso", { exact: true }).waitFor({ timeout: 20_000 });
+await send(`[candidato:${await cardAssignment(verifiedSliceWork)}:${candidateDecision}]`);
+const teamSlices = sliceSpec.getByTestId("plan-slices");
+await teamSlices.locator('[data-testid="plan-slice"][data-state="done"]').first().waitFor({ timeout: 30_000 });
+const unblocked = await teamSlices.getByTestId("plan-slice").evaluateAll((items) => items.map((item) => item.getAttribute("data-state")));
+if (unblocked.join() !== "done,ready,ready") throw new Error(`A verified slice did not unblock its dependents: ${unblocked}`);
+if ((await assignmentCards.count()) !== 7) throw new Error("A developer took a slice while continuous work was off");
+// Continuous work on: at the next event of the work (here the end of a Coordinator turn) Ada is free and takes S2 in
+// autonomy; the assignment card says so and the slice shows who took it.
+await page.evaluate(() => window.trama.invoke("settings:update", { continuousWork: true }));
+await send("Come procede il lavoro?");
+const pickedCard = assignmentCards.nth(7);
+await pickedCard.getByTestId("assignment-self-picked").waitFor({ timeout: 20_000 });
+await pickedCard.getByText(/^S2 Il supporto vede gli ordini in revisione$/).waitFor();
+const pickedSlice = teamSlices.locator('[data-testid="plan-slice"][data-self-picked="yes"]').first();
+await pickedSlice.getByTestId("plan-slice-worker").getByText("Ada, presa in autonomia").waitFor({ timeout: 20_000 });
+if ((await pickedSlice.locator("span").first().textContent())?.trim() !== "2. Il supporto vede gli ordini in revisione") throw new Error("The free developer did not take the next ready slice");
+await teamSlices.getByTestId("plan-slices-parallel").getByText(/Sviluppatori al lavoro: \d di 2\./).waitFor();
+await page.evaluate(() => window.trama.invoke("settings:update", { continuousWork: false }));
+// A Coordinator move that continuous work started meanwhile keeps running in this check (FAKE_CODEX_AUTOMATIC=wait):
+// the person stops it before the next project opens.
+const runningMoves = page.getByTestId("automatic-step").getByRole("button", { name: "Ferma" });
+for (let tries = 0; (await runningMoves.count()) && tries < 10; tries += 1) {
+  await runningMoves.first().click().catch(() => undefined);
+  await page.waitForTimeout(500);
+}
+await pickedSlice.evaluate((item) => item.scrollIntoView({ block: "center" }));
+await shot("22c-slice-self-picked");
+await app.evaluate(({ nativeTheme }) => {
+  nativeTheme.themeSource = "dark";
+});
+await page.evaluate(() => document.documentElement.classList.add("dark"));
+await shot("22d-slice-self-picked-dark");
+await app.evaluate(({ nativeTheme }) => {
+  nativeTheme.themeSource = "system";
+});
+await page.evaluate(() => document.documentElement.classList.remove("dark"));
 // M07, Ask Trama: /ask-trama is in the composer with the original skill's description, and its button starts the
 // message. The Coordinator runs ask-trama and proposes a route instead of naming a command; each step says how Trama
 // runs it. "Avvia il percorso" starts the first flow inside Trama: here grilling, round 1.
