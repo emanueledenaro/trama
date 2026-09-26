@@ -173,8 +173,8 @@ function aiHeroStep(app: AppState): StepState {
   if (!project && app.onboarding.aiHeroPreparedAt) return { ...base, status: "done", detail: "Metodo preparato in un tuo progetto." };
   const choice = app.onboarding.methodChoice;
   if (!project && choice) {
-    // The answer is the step while no project is open; the setting decides what happens when one opens.
-    const prepare = choice.prepare && app.settings.autoPrepareMethod !== false;
+    // The answer is the step while no project is open; what happens when one opens follows the current setting.
+    const prepare = shouldAutoPrepareMethod(app.settings, app.onboarding);
     return {
       ...base,
       status: "done",
@@ -215,6 +215,14 @@ export function guideSteps(app: AppState): StepState[] {
 /** Where the guide resumes: the first step neither done nor skipped. */
 export function resumeStep(steps: StepState[]): string | null {
   return steps.find((s) => s.status !== "done" && s.status !== "skipped")?.id ?? null;
+}
+
+/**
+ * Whether opening a project copies the AI Hero method by itself: the setting says so, and the person did not
+ * postpone the step. "Rimanda" leaves the method unprepared until the person chooses (B02).
+ */
+export function shouldAutoPrepareMethod(settings: AppState["settings"], onboarding: OnboardingState): boolean {
+  return settings.autoPrepareMethod !== false && !onboarding.skippedSteps.includes("aiHero");
 }
 
 /** The welcome (B02) shows by itself once, on a clean first launch; afterwards the guide reopens it. */

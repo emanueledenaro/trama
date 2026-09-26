@@ -16,6 +16,7 @@ import {
   recentProjectStatus,
   resumeSetupStep,
   setupSteps,
+  shouldAutoPrepareMethod,
   shouldShowWelcomeOnLaunch,
   UNKNOWN_GITHUB_CLI,
 } from "./onboarding";
@@ -183,12 +184,30 @@ describe("welcome on the first launch", () => {
     const prepared = setupSteps(app).find((s) => s.id === "aiHero")!;
     expect(prepared.status).toBe("done");
     expect(prepared.detail).toContain("primo tuo progetto");
+    // The welcome's "Non preparare" also turns the setting off, as the controller does.
     app.onboarding.methodChoice = { prepare: false, at: "t" };
+    app.settings = { ...app.settings, autoPrepareMethod: false };
     expect(setupSteps(app).find((s) => s.id === "aiHero")!.detail).toContain("non preparare");
     // A project without the skills still asks for them: the answer does not claim a copy that did not happen.
     app.onboarding.methodChoice = { prepare: true, at: "t" };
     app.project = project(emptyDocument("real"), { isDemo: false, name: "Mio" });
     expect(statusOf(setupSteps(app)).aiHero).toBe("pending");
+  });
+
+  it("prepares the method on opening only when the setting says so and the step was not postponed", () => {
+    const app = appState();
+    expect(shouldAutoPrepareMethod(app.settings, app.onboarding)).toBe(true);
+    expect(shouldAutoPrepareMethod({ ...app.settings, autoPrepareMethod: false }, app.onboarding)).toBe(false);
+    expect(shouldAutoPrepareMethod(app.settings, { ...app.onboarding, skippedSteps: ["aiHero"] })).toBe(false);
+  });
+
+  it("describes the AI Hero answer from the current setting", () => {
+    const app = appState();
+    app.onboarding.methodChoice = { prepare: false, at: "t" };
+    app.settings = { ...app.settings, autoPrepareMethod: true };
+    expect(setupSteps(app).find((s) => s.id === "aiHero")!.detail).toContain("primo tuo progetto");
+    app.settings = { ...app.settings, autoPrepareMethod: false };
+    expect(setupSteps(app).find((s) => s.id === "aiHero")!.detail).toContain("non preparare");
   });
 
   it("reads old settings without the welcome fields", () => {

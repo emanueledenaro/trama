@@ -207,6 +207,7 @@ import {
   normalizeOnboarding,
   type ObservedStep,
   parseRepositoryInput,
+  shouldAutoPrepareMethod,
   UNKNOWN_GITHUB_CLI,
 } from "@shared/onboarding";
 import { buildStudy, fingerprints, partsToInject, studyText } from "./core/study";
@@ -862,7 +863,7 @@ export class TramaController {
       if (!isDemo) void this.refreshGitHub();
       this.watchProject(root);
       if (!isDemo) this.startPresence(project);
-      if (!isDemo && loaded.writable && this.state.settings.autoPrepareMethod !== false && !hasAiHero(root)) {
+      if (!isDemo && loaded.writable && shouldAutoPrepareMethod(this.state.settings, this.state.onboarding) && !hasAiHero(root)) {
         // T04: the method is ready when the project opens; existing files are never overwritten.
         void this.prepareSkills().catch((error) => this.fail(error));
       }

@@ -1,3 +1,4 @@
+import { Dialog as DialogPrimitive } from "@base-ui/react/dialog";
 import { IconChevronDown, IconX } from "@tabler/icons-react";
 import { useEffect, useMemo, useState } from "react";
 import type { ProviderId } from "@shared/codex";
@@ -209,66 +210,57 @@ export function WelcomeView() {
     if (page && page !== "hello" && useUi.getState().app?.gitHubCli.status === "unknown") void act("onboarding:checkGitHub", undefined);
   }, [page]);
 
-  useEffect(() => {
-    if (!page) return;
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && !useUi.getState().dialog) close();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page]);
-
-  if (!page || !app) return null;
+  if (!app) return null;
   const close = () => {
     setWelcome(null);
     void act("onboarding:update", { welcomeClosed: true });
   };
-  const index = page === "hello" ? -1 : SETUP_STEP_IDS.indexOf(page);
-  // The person already answered or skipped something here: the welcome resumes instead of starting over.
-  const resuming = app.onboarding.skippedSteps.some((id) => SETUP_STEP_IDS.includes(id)) || app.onboarding.methodChoice !== null;
+  const index = !page || page === "hello" ? -1 : SETUP_STEP_IDS.indexOf(page);
+  // The person has been here before: the button says so. Either way it starts at the first step still open.
+  const resuming =
+    app.onboarding.welcomeClosedAt !== null ||
+    app.onboarding.skippedSteps.some((id) => SETUP_STEP_IDS.includes(id)) ||
+    app.onboarding.methodChoice !== null;
   const step = index >= 0 ? steps[index]! : null;
 
+  // The shared dialog primitive keeps the focus inside, makes the window behind inert and gives the focus back.
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-label="Benvenuto in Trama"
-      data-testid="welcome"
-      data-page={page}
-      className="chat-pane-enter fixed inset-0 z-[45] flex flex-col bg-[var(--color-background-surface)]"
-    >
-      <div className="drag-region flex h-[46px] shrink-0 items-center justify-end gap-3 px-3 sm:px-5">
-        {step ? <StepProgress steps={steps} current={step.id as GuideStepId} /> : null}
-        <Button variant="ghost" size="icon-sm" aria-label="Chiudi il benvenuto" onClick={close}>
-          <IconX className="size-4" />
-        </Button>
-      </div>
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto flex min-h-full w-full max-w-[34rem] flex-col justify-center px-4 pt-4 pb-12 sm:px-6">
-          {step ? (
-            <SetupStep
-              key={step.id}
-              step={step}
-              index={index}
-              total={SETUP_STEP_IDS.length}
-              onBack={() => setWelcome(index === 0 ? "hello" : SETUP_STEP_IDS[index - 1]!)}
-              onNext={() => {
-                const next = nextSetupStep(step.id as GuideStepId);
-                if (next) setWelcome(next);
-                else close();
-              }}
-            />
-          ) : (
-            <Hello
-              steps={steps}
-              resuming={resuming}
-              onStart={() => setWelcome(resuming ? resumeSetupStep(app) : SETUP_STEP_IDS[0]!)}
-              onClose={close}
-            />
-          )}
-        </div>
-      </div>
-    </div>
+    <DialogPrimitive.Root open={page !== null} onOpenChange={(open) => (open ? null : close())}>
+      <DialogPrimitive.Portal>
+        <DialogPrimitive.Popup
+          aria-label="Benvenuto in Trama"
+          data-testid="welcome"
+          data-page={page ?? undefined}
+          className="chat-pane-enter fixed inset-0 z-[45] flex flex-col bg-[var(--color-background-surface)] text-foreground outline-none"
+        >
+          <div className="drag-region flex h-[46px] shrink-0 items-center justify-end gap-3 px-3 sm:px-5">
+            {step ? <StepProgress steps={steps} current={step.id as GuideStepId} /> : null}
+            <Button variant="ghost" size="icon-sm" aria-label="Chiudi il benvenuto" onClick={close}>
+              <IconX className="size-4" />
+            </Button>
+          </div>
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            <div className="mx-auto flex min-h-full w-full max-w-[34rem] flex-col justify-center px-4 pt-4 pb-12 sm:px-6">
+              {step ? (
+                <SetupStep
+                  key={step.id}
+                  step={step}
+                  index={index}
+                  total={SETUP_STEP_IDS.length}
+                  onBack={() => setWelcome(index === 0 ? "hello" : SETUP_STEP_IDS[index - 1]!)}
+                  onNext={() => {
+                    const next = nextSetupStep(step.id as GuideStepId);
+                    if (next) setWelcome(next);
+                    else close();
+                  }}
+                />
+              ) : page ? (
+                <Hello steps={steps} resuming={resuming} onStart={() => setWelcome(resumeSetupStep(app))} onClose={close} />
+              ) : null}
+            </div>
+          </div>
+        </DialogPrimitive.Popup>
+      </DialogPrimitive.Portal>
+    </DialogPrimitive.Root>
   );
 }

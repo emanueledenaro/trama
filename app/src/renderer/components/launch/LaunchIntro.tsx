@@ -54,15 +54,21 @@ export function LaunchIntro({ ready }: { ready: boolean }) {
     };
   }, []);
 
-  const timing = { elapsedMs: elapsed, readyAtMs: readyAt, reducedMotion };
-  const phase = held ? "playing" : introPhase(timing);
-  const next = held ? null : nextIntroChange(timing);
+  const phase = held ? "playing" : introPhase({ elapsedMs: elapsed, readyAtMs: readyAt, reducedMotion });
 
+  // Each change is scheduled from the current instant, not from the last rendered one: the state can arrive
+  // long after the last tick.
   useEffect(() => {
-    if (next === null) return;
-    const timer = setTimeout(() => setElapsed(performance.now() - start.current), Math.max(0, next));
+    if (held || removed || phase === "gone") return;
+    const now = performance.now() - start.current;
+    const wait = nextIntroChange({ elapsedMs: now, readyAtMs: readyAt, reducedMotion });
+    if (wait === null) {
+      setElapsed(now);
+      return;
+    }
+    const timer = setTimeout(() => setElapsed(performance.now() - start.current), Math.max(0, wait));
     return () => clearTimeout(timer);
-  }, [next, elapsed]);
+  }, [held, removed, phase, readyAt, reducedMotion, elapsed]);
 
   if (phase === "gone" || removed) return null;
   return (

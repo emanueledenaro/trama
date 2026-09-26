@@ -1,5 +1,5 @@
 import { IconBrandGithub, IconFolder, IconFolderOpen, IconPlus, IconSchool, IconUsers, IconX } from "@tabler/icons-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ProjectOverview } from "@shared/domain";
 import { hasUsableProvider, recentProjectStatus } from "@shared/onboarding";
 import { BrandMark } from "@/components/brand/BrandMark";
@@ -72,18 +72,29 @@ export function ProjectPicker() {
   const setDialog = useUi((s) => s.setDialog);
   const [entries, setEntries] = useState<Map<string, ProjectOverview>>(new Map());
   const recents = app.recentProjects.slice(0, 8);
-  const recentKey = recents.map((r) => r.id).join(",");
+  const hasRecents = recents.length > 0;
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const loaded = useRef(false);
 
+  // Re-read the summaries when the state changes, at most every half second, as the overview does: a parked
+  // project's agents may finish while the picker is open.
   useEffect(() => {
-    if (!recentKey) return;
+    if (!hasRecents) return;
     let live = true;
-    void act("overview:read", undefined).then((result) => {
-      if (live && result) setEntries(new Map(result.map((entry) => [entry.id, entry])));
-    });
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(
+      () =>
+        void act("overview:read", undefined).then((result) => {
+          if (live && result) setEntries(new Map(result.map((entry) => [entry.id, entry])));
+        }),
+      loaded.current ? 500 : 0,
+    );
+    loaded.current = true;
     return () => {
       live = false;
+      if (timer.current) clearTimeout(timer.current);
     };
-  }, [recentKey]);
+  }, [app, hasRecents]);
 
   const startExample = () => void act("exercise:start", { exercise: "first" }).then(() => useUi.getState().setExercise("first"));
 

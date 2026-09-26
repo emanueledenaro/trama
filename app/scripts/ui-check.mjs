@@ -132,6 +132,18 @@ const setTheme = async (theme) => {
 
 // The welcome: logo, what Trama does, then the configuration in three steps that reuse the guide's states.
 await welcome.getByRole("heading", { name: "Benvenuto in Trama" }).waitFor();
+// The welcome is modal: Tab cycles inside it (through the dialog's focus guards) and never reaches the window behind.
+for (let press = 0; press < 8; press++) {
+  await page.keyboard.press("Tab");
+  const focus = await page.evaluate(() => {
+    const active = document.activeElement;
+    return {
+      inside: Boolean(active?.closest('[data-testid="welcome"]') || active?.hasAttribute("data-base-ui-focus-guard")),
+      element: active?.outerHTML.slice(0, 160) ?? "none",
+    };
+  });
+  if (!focus.inside) throw new Error(`Tab left the welcome for ${focus.element}`);
+}
 await primaryLast(welcome.locator(".cta-row").last(), "Welcome");
 for (const [size, width, height] of sizes) {
   await page.setViewportSize({ width, height });
@@ -144,6 +156,9 @@ for (const [size, width, height] of sizes) {
 await setTheme("system");
 await page.setViewportSize({ width: 1280, height: 820 });
 await welcome.getByRole("button", { name: "Configura", exact: true }).click();
+// The configuration starts at the first step still open: the fake Codex account already completes the provider.
+await welcome.getByRole("heading", { name: /Collega GitHub/ }).waitFor();
+await welcome.getByRole("button", { name: "Indietro" }).click();
 // 1. Provider: Codex and Claude with their state, the others behind a toggle, the actions to restore.
 await welcome.getByRole("heading", { name: /Collega un provider/ }).waitFor();
 await welcome.locator('[data-provider-row="codex"]').waitFor();
