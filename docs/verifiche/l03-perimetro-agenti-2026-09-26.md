@@ -11,11 +11,11 @@ Controllo di #206 sul branch `bugfix/issue-206-agents-stay-in-project-prvhfy`. N
 ## Cosa cambia
 
 - `app/src/main/core/readScope.ts` definisce il perimetro di una sessione. Comprende la cartella di lavoro, il progetto (serve a Git in un worktree) e le skill del pacchetto (`resources/AIHero/skills`), che il controller passa come `readableRoots`. I link simbolici vengono risolti.
-- Codex: ogni thread riceve due profili di permessi, `trama_read` e `trama_write`. Leggono solo le cartelle minime della piattaforma (`:minimal`), il perimetro e le cartelle delle toolchain sul PATH, senza rete. Non leggono mai la home, una sua cartella diretta o la cartella di Codex. `trama_write` scrive solo il worktree. Ogni turno sceglie il profilo con `permissions` al posto di `sandboxPolicy`. Le memorie sono spente in due modi: `--disable memories` all'avvio di app-server e `features.memories = false` nel thread.
-- Claude: gli strumenti di lettura rifiutano un percorso fuori dal perimetro. Nei turni con worktree la sandbox dei comandi nega la lettura della home e della cartella di Codex, tranne il perimetro e le toolchain.
+- Codex: ogni thread riceve due profili di permessi, `trama_read` e `trama_write`. Leggono solo le cartelle minime della piattaforma (`:minimal`), il perimetro e le cartelle delle toolchain sul PATH, senza rete. Di una cartella `bin` sul PATH si legge tutta l'installazione solo per i prefissi di sistema (come `/usr` o `/opt/homebrew`) e per le versioni dei gestori noti (come `~/.nvm/versions/node/v22`); per ogni altra `bin`, per esempio quella di un progetto aggiunta da direnv, si legge solo la cartella `bin`. Non leggono mai la home o la cartella di Codex. `trama_write` scrive solo il worktree. Ogni turno sceglie il profilo con `permissions` al posto di `sandboxPolicy`. Le memorie sono spente in due modi: `--disable memories` all'avvio di app-server e `features.memories = false` nel thread.
+- Claude: gli strumenti di lettura rifiutano un percorso fuori dal perimetro. Nei turni con worktree la sandbox dei comandi nega la lettura della home, della cartella di Codex e di ogni cartella di primo livello che non è della piattaforma (come `/workspace` o `/Volumes`), poi riapre il perimetro e le toolchain.
 - Pi: `read`, `grep`, `find` e `ls` rifiutano un percorso fuori dal perimetro prima di leggerlo.
 - Antigravity: l'hook di Trama rifiuta una lettura fuori dal perimetro (`denied-read`). Il controllo iniziale dell'hook verifica anche questo rifiuto.
-- ACP (Cursor, Devin, Droid, Grok): permessi e `fs/read_text_file` accettano il perimetro intero e rifiutano il resto. `~` viene espanso.
+- ACP (Cursor, Devin, Droid, Grok): permessi e `fs/read_text_file` accettano il perimetro intero e rifiutano il resto. `~` viene espanso. Una lettura o una ricerca senza un percorso che Trama possa controllare viene rifiutata.
 - OpenCode era già coperto dalla regola `external_directory` in `deny`.
 - Registrazione: ogni lettura rifiutata diventa l'evento `readOutsideScope` e un'attività "Lettura fuori dal progetto bloccata", con il percorso e la richiesta. Resta nel documento del progetto e si vede nel lavoro dell'agente o del Coordinatore. Per Codex, Trama riconosce i percorsi privati nei comandi (home e cartella di Codex fuori dal perimetro), perché la sandbox li nasconde senza dire chi li ha chiesti.
 
@@ -35,5 +35,6 @@ Controllo di #206 sul branch `bugfix/issue-206-agents-stay-in-project-prvhfy`. N
 ## Non verificato
 
 - Il profilo su macOS con Seatbelt: la prova con il binario reale è stata fatta solo su Linux.
+- La sandbox dei comandi di Claude con l'elenco delle cartelle negate: è provata solo nelle opzioni che Trama passa all'SDK, non con Claude Code reale.
 - Una prova dal vivo con Codex `gpt-6-luna` dopo la correzione.
 - Una toolchain installata direttamente in una cartella della home, come `~/.local/bin` con collegamenti verso `~/.local/share`: Trama ammette solo la cartella `bin`, e un collegamento che ne esce resta illeggibile nei comandi degli agenti. Le verifiche di Trama (`checks.ts`) non cambiano.

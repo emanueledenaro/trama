@@ -443,10 +443,14 @@ export function decidePermission(input: {
 }): PermissionDecision {
   if (input.hostTool) return "allow";
   switch (input.kind) {
-    case "read":
-    case "search":
     case "think":
       return input.paths.every((path) => (input.readableRoots ?? [input.cwd]).some((root) => resolvesInside(root, path))) ? "allow" : "reject";
+    case "read":
+    case "search":
+      // A read with no path Trama can check is refused: the agent is not in a sandbox Trama controls (issue #206).
+      return input.paths.length > 0 && input.paths.every((path) => (input.readableRoots ?? [input.cwd]).some((root) => resolvesInside(root, path)))
+        ? "allow"
+        : "reject";
     case "edit":
     case "delete":
     case "move":

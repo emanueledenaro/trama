@@ -286,6 +286,10 @@ describe("ACP policy helpers", () => {
     const skills = mkdtempSync(join(tmpdir(), "trama-acp-skills-"));
     expect(decidePermission({ kind: "read", paths: [join(skills, "tdd/SKILL.md")], cwd, writableRoot: null, hostTool: false, readableRoots: [cwd, skills] })).toBe("allow");
     expect(decidePermission({ kind: "search", paths: ["/etc"], cwd, writableRoot: null, hostTool: false, readableRoots: [cwd, skills] })).toBe("reject");
+    // A read or search without a path Trama can check is refused; thinking needs no path.
+    expect(decidePermission({ kind: "read", paths: [], cwd, writableRoot: null, hostTool: false })).toBe("reject");
+    expect(decidePermission({ kind: "search", paths: [], cwd, writableRoot: null, hostTool: false })).toBe("reject");
+    expect(decidePermission({ kind: "think", paths: [], cwd, writableRoot: null, hostTool: false })).toBe("allow");
   });
 
   it("rejects edits through a dangling symlink or a link that leaves the root", () => {

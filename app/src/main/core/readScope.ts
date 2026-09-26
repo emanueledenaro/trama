@@ -3,9 +3,9 @@
  * Trama authorizes, such as the bundled skills. Codex's own home, with its memories, the person's other
  * projects and the rest of the home folder stay out, for every provider.
  */
-import { realpathSync } from "node:fs";
+import { readdirSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
-import { basename, dirname, isAbsolute, join, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { containedWriteTarget } from "./providers/providerSupport";
 import { isInside } from "./providers/types";
 
@@ -47,25 +47,70 @@ export function isReadable(roots: readonly string[], cwd: string, path: string, 
   return roots.some((root) => containedWriteTarget(root, absolute) !== null);
 }
 
+/** Installation prefixes a shell may read whole: the system's and those of known toolchain installers. */
+const SYSTEM_PREFIX = /^\/(?:usr|usr\/local|opt\/homebrew|opt\/local|opt\/[^/]+|nix\/store\/[^/]+)$/;
+/** Version managers under the home folder: each pattern names one installed version, relative to the home. */
+const HOME_TOOLCHAIN_PREFIXES = [
+  /^\.nvm\/versions\/node\/[^/]+$/,
+  /^\.volta\/tools\/image\/[^/]+\/[^/]+$/,
+  /^\.asdf\/installs\/[^/]+\/[^/]+$/,
+  /^\.local\/share\/mise\/installs\/[^/]+\/[^/]+$/,
+  /^\.local\/share\/fnm\/node-versions\/[^/]+\/installation$/,
+  /^\.pyenv\/versions\/[^/]+$/,
+  /^\.rbenv\/versions\/[^/]+$/,
+  /^\.rustup\/toolchains\/[^/]+$/,
+];
+
 /**
  * Folders of the toolchains on `pathEntries` that a sandboxed shell may read, so a specialist can still run
- * `node`, `git` or `swift`. A `bin` folder brings its installation prefix (as `~/.nvm/versions/node/v22`),
- * but never the home folder, one of its direct children (as `~/.local`) or anything holding Codex's home:
- * there only the `bin` folder itself is allowed.
+ * `node`, `git` or `swift`. A `bin` folder brings its installation prefix only when the prefix is a system one
+ * (as `/usr` or `/opt/homebrew`) or a version manager's install (as `~/.nvm/versions/node/v22`); any other
+ * `bin`, such as a project's added by direnv, is allowed alone. Nothing that holds the home folder or Codex's
+ * home is ever allowed.
  */
 export function toolchainRoots(pathEntries: readonly string[], home = homedir(), codexHome = codexHomeDirectory(home)): string[] {
   const roots: string[] = [];
   const holdsPrivateData = (folder: string) =>
-    folder === dirname(folder) || isInside(folder, home) || isInside(folder, codexHome) || isInside(codexHome, folder);
+    folder === dirname(folder) || folder === home || isInside(folder, home) || isInside(folder, codexHome) || isInside(codexHome, folder);
+  const knownPrefix = (prefix: string) =>
+    isInside(home, prefix) ? HOME_TOOLCHAIN_PREFIXES.some((pattern) => pattern.test(relative(home, prefix).split(sep).join("/"))) : SYSTEM_PREFIX.test(prefix);
   for (const entry of pathEntries) {
     if (!isAbsolute(entry)) continue;
     const bin = resolve(entry);
-    const prefix = basename(bin) === "bin" ? dirname(bin) : bin;
-    const candidate = holdsPrivateData(prefix) || dirname(prefix) === home ? bin : prefix;
+    const prefix = dirname(bin);
+    const candidate = basename(bin) === "bin" && knownPrefix(prefix) ? prefix : bin;
     if (holdsPrivateData(candidate) || roots.includes(candidate)) continue;
     roots.push(candidate);
   }
   return roots;
+}
+
+/** Top-level folders of the platform that a sandboxed shell needs; every other one may hold projects or data. */
+const SYSTEM_TOP_LEVEL = new Set([
+  "bin", "sbin", "usr", "lib", "lib32", "lib64", "libx32", "etc", "dev", "proc", "sys", "run", "tmp", "var", "opt", "nix", "boot",
+  "bin.usr-is-merged", "lib.usr-is-merged", "sbin.usr-is-merged", "System", "Library", "Applications", "private", "cores",
+]);
+
+/**
+ * What a sandbox that works by denial must hide so it matches the readable roots (Claude's command sandbox): the
+ * home folder, Codex's home and every top-level folder that is not the platform's, such as `/workspace` or
+ * `/Volumes`. The sandbox then allows back the readable roots and the toolchains.
+ */
+export function deniedReadFolders(home = homedir(), codexHome = codexHomeDirectory(home), topLevel: readonly string[] = listRoot()): string[] {
+  const denied = [home, codexHome];
+  for (const name of topLevel) {
+    const folder = `/${name}`;
+    if (!SYSTEM_TOP_LEVEL.has(name) && !denied.some((d) => isInside(d, folder))) denied.push(folder);
+  }
+  return denied;
+}
+
+function listRoot(): string[] {
+  try {
+    return readdirSync("/");
+  } catch {
+    return [];
+  }
 }
 
 /**

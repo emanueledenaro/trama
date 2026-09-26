@@ -257,7 +257,8 @@ describe("query options", () => {
     expect(options.sandbox).toMatchObject({ enabled: true, allowUnsandboxedCommands: false, filesystem: { allowWrite: ["/work"] } });
     // Commands cannot read the home folder or Codex's home, except the project and the toolchains (issue #206).
     const filesystem = (options.sandbox as { filesystem: { denyRead: string[]; allowRead: string[] } }).filesystem;
-    expect(filesystem.denyRead).toEqual([homedir(), process.env.CODEX_HOME || join(homedir(), ".codex")]);
+    expect(filesystem.denyRead.slice(0, 2)).toEqual([homedir(), process.env.CODEX_HOME || join(homedir(), ".codex")]);
+    expect(filesystem.denyRead).not.toContain("/usr");
     expect(filesystem.allowRead).toContain("/work");
     expect(options.outputFormat).toEqual({ type: "json_schema", schema: { type: "object" } });
   });

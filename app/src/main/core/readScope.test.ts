@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { codexPermissionProfiles, expandHome, isReadable, privatePathsInCommand, readableRoots, toolchainRoots } from "./readScope";
+import { codexPermissionProfiles, deniedReadFolders, expandHome, isReadable, privatePathsInCommand, readableRoots, toolchainRoots } from "./readScope";
 
 const home = "/home/rita";
 const codexHome = "/home/rita/.codex";
@@ -36,11 +36,48 @@ describe("read scope of agent sessions (issue #206)", () => {
   it("lets a shell reach the toolchains on PATH but never the home folder or Codex's home", () => {
     expect(
       toolchainRoots(
-        ["/usr/bin", "/bin", "/opt/homebrew/bin", "/home/rita/.nvm/versions/node/v22.1.0/bin", "/home/rita/.local/bin", "/home/rita", "/home/rita/.codex/bin", "relative/bin"],
+        [
+          "/usr/bin",
+          "/bin",
+          "/opt/homebrew/bin",
+          "/opt/node22/bin",
+          "/home/rita/.nvm/versions/node/v22.1.0/bin",
+          "/home/rita/.local/bin",
+          "/home/rita",
+          "/home/rita/.codex/bin",
+          "relative/bin",
+          // A project's own bin, as direnv adds it, never opens the project around it.
+          "/home/rita/progetti/altro/bin",
+          "/workspace/altro/node_modules/.bin",
+          "/workspace/altro/bin",
+        ],
         home,
         codexHome,
       ),
-    ).toEqual(["/usr", "/bin", "/opt/homebrew", "/home/rita/.nvm/versions/node/v22.1.0", "/home/rita/.local/bin"]);
+    ).toEqual([
+      "/usr",
+      "/bin",
+      "/opt/homebrew",
+      "/opt/node22",
+      "/home/rita/.nvm/versions/node/v22.1.0",
+      "/home/rita/.local/bin",
+      "/home/rita/progetti/altro/bin",
+      "/workspace/altro/node_modules/.bin",
+      "/workspace/altro/bin",
+    ]);
+  });
+
+  it("hides every top-level folder that is not the platform's from a sandbox that works by denial", () => {
+    expect(deniedReadFolders(home, codexHome, ["bin", "usr", "etc", "tmp", "home", "workspace", "mnt", "Users", "Volumes", "System", "private"])).toEqual([
+      home,
+      codexHome,
+      "/home",
+      "/workspace",
+      "/mnt",
+      "/Users",
+      "/Volumes",
+    ]);
+    expect(deniedReadFolders("/Users/rita", "/Users/rita/.codex", ["Users", "Applications"])).toEqual(["/Users/rita", "/Users/rita/.codex", "/Users"]);
   });
 
   it("names the private paths a shell command reaches outside the roots", () => {

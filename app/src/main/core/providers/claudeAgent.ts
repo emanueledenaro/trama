@@ -42,7 +42,7 @@ import {
   ProviderError,
   extractJsonAnswer,
 } from "./types";
-import { codexHomeDirectory, expandHome, readableRoots, toolchainRoots } from "../readScope";
+import { deniedReadFolders, expandHome, readableRoots, toolchainRoots } from "../readScope";
 import { absoluteUnnormalized, isWritableTarget, PendingTurn } from "./providerSupport";
 
 type ClaudeSdk = typeof import("@anthropic-ai/claude-agent-sdk");
@@ -524,11 +524,11 @@ export function buildQueryOptions(input: QueryOptionsInput): ClaudeQueryOptions 
             failIfUnavailable: true,
             autoAllowBashIfSandboxed: true,
             allowUnsandboxedCommands: false,
-            // Commands read nothing private: the home folder and Codex's home are denied, except the readable
-            // roots and the toolchains on PATH (issue #206).
+            // Commands read only the readable roots, the toolchains on PATH and the platform's folders: the home,
+            // Codex's home and every other top-level folder are denied (issue #206).
             filesystem: {
               allowWrite: [input.policy.writableRoot!],
-              denyRead: [homedir(), codexHomeDirectory()],
+              denyRead: deniedReadFolders(),
               allowRead: [
                 ...(input.policy.readableRoots ?? [input.policy.cwd]),
                 ...toolchainRoots([dirname(input.executable), ...(input.env.PATH ?? "").split(delimiter).filter(Boolean)]),
