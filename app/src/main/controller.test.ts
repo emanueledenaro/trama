@@ -88,6 +88,20 @@ describe("TramaController", () => {
     await until(() => events.some((e) => e.content.type === "activity" && e.content.title.startsWith("Metodo di lavoro AI Hero")));
   });
 
+  it("does not prepare the AI Hero method on opening when the person postponed the step (B02)", async () => {
+    const { project } = await setup();
+    const { existsSync } = await import("node:fs");
+    await controller!.updateSettings({ autoPrepareMethod: true });
+    await controller!.updateOnboarding({ skipStep: "aiHero" });
+    await controller!.openProject(project);
+    await until(() => controller!.snapshot.project?.phase.kind === "ready");
+    expect(existsSync(join(project, ".agents/skills/AIHERO-VERSION.md"))).toBe(false);
+    // Choosing afterwards takes the step back, and the next opening prepares it.
+    await controller!.updateOnboarding({ methodChoice: true });
+    await controller!.openProject(project);
+    await until(() => existsSync(join(project, ".agents/skills/AIHERO-MANIFEST.json")));
+  });
+
   it("creates a project from an idea as a Git repository and remembers the idea (T10)", async () => {
     await setup();
     const parent = await mkdtemp(join(tmpdir(), "trama-parent-"));
@@ -160,15 +174,19 @@ describe("TramaController", () => {
     expect(dialogEvents(document.events, second).map((e) => e.content.type)).toEqual(["card"]);
     expect(dialogEvents(document.events, null).some((e) => e.content.type === "personMessage")).toBe(false);
 
-    // A message queued in one dialog stays there even if the person moves on before it leaves.
-    const running = controller!.send("Primo messaggio", null, null, null, [], null, null);
+    // A message queued in one dialog stays there even if the person moves on before it leaves. "[attesa]" keeps the
+    // first turn running until it is interrupted: a reply that ends by itself could finish between two checks.
+    const running = controller!.send("[attesa] Primo messaggio", null, null, null, [], null, null);
     await until(() => project.runningRequestId !== null);
+    const firstId = project.runningRequestId!;
     await controller!.send("In coda per il secondo obiettivo", null, null, null, [], null, second);
+    expect(controller!.snapshot.project!.queuedMessages.map((q) => [q.text, q.goalId])).toEqual([["In coda per il secondo obiettivo", second]]);
+    await interruptOnceSent(document, firstId);
     await running;
-    await until(() => document.requests.filter((r) => r.state === "completed").length === 3);
+    await until(() => document.requests.some((r) => r.text === "In coda per il secondo obiettivo" && r.state === "completed"));
     const queued = document.requests.find((r) => r.text === "In coda per il secondo obiettivo")!;
     expect(queued.goalId).toBe(second);
-    expect(document.requests.find((r) => r.text === "Primo messaggio")!.goalId ?? null).toBeNull();
+    expect(document.requests.find((r) => r.id === firstId)!.goalId ?? null).toBeNull();
 
     // Goals, dialogs and drafts survive a restart.
     await controller!.stop();
@@ -495,6 +513,67 @@ describe("TramaController", () => {
       expect(workState(document, document.requests.at(-1)!.id).moves.map((m) => m.move)).toEqual(["preparePlan"]);
     } finally {
       delete process.env.FAKE_CODEX_AUTOMATIC;
+    }
+  }, 60_000);
+
+  it("retries a turn after a temporary 429 with a growing wait, without writing the message again (P10)", async () => {
+    process.env.TRAMA_PROVIDER_RETRY_MS = "40";
+    process.env.FAKE_CODEX_RATE_LIMITS = "2";
+    try {
+      await setup();
+      const project = controller!.snapshot.project!;
+      const document = project.document;
+      await controller!.send("[limite-temporaneo] Come funziona l'annullamento?", null, null, null);
+      const first = document.requests[0]!;
+      expect(first.state).toBe("failed");
+      expect(project.providerRetry).toMatchObject({ requestId: first.id, attempt: 1, maxAttempts: 5, provider: "ChatGPT" });
+      // A temporary limit does not block the provider.
+      expect(controller!.snapshot.codex.account?.kind).toBe("chatgpt");
+      await until(() => document.requests.at(-1)?.state === "completed", 10_000);
+      expect(document.requests.map((r) => [r.state, r.retry?.attempt ?? null])).toEqual([
+        ["failed", null],
+        ["failed", 1],
+        ["completed", 2],
+      ]);
+      expect(document.requests[2]!.retry?.of).toBe(document.requests[1]!.id);
+      expect(project.providerRetry ?? null).toBeNull();
+      // One message of the person; the retries are Trama's lines, and no activity shows the provider's JSON.
+      expect(document.events.filter((e) => e.content.type === "personMessage")).toHaveLength(1);
+      const activities = document.events.flatMap((e) => (e.content.type === "activity" ? [e.content] : []));
+      expect(activities.map((a) => a.title)).toContain("Nuovo tentativo automatico (2 di 5)");
+      const failed = activities.filter((a) => a.title === "Il turno non è riuscito");
+      expect(failed).toHaveLength(2);
+      for (const activity of failed) {
+        expect(activity.detail).toMatch(/^Limite temporaneo del provider\. /);
+        expect(activity.detail).not.toContain("{");
+      }
+    } finally {
+      delete process.env.TRAMA_PROVIDER_RETRY_MS;
+      delete process.env.FAKE_CODEX_RATE_LIMITS;
+    }
+  }, 60_000);
+
+  it("stops the automatic retries at the person's request, and a new message replaces them (P10)", async () => {
+    process.env.TRAMA_PROVIDER_RETRY_MS = "60000";
+    try {
+      await setup();
+      const project = controller!.snapshot.project!;
+      const document = project.document;
+      await controller!.send("[limite-temporaneo] Ci sei?", null, null, null);
+      expect(project.providerRetry).toMatchObject({ attempt: 1 });
+      controller!.stopProviderRetry();
+      expect(project.providerRetry).toBeNull();
+      expect(document.events.at(-1)?.content).toMatchObject({ type: "activity", title: "Tentativi automatici fermati" });
+
+      // Riprova repeats the failed turn at once, as Trama's line; the fake provider is available again.
+      await controller!.retryRequest(document.requests[0]!.id);
+      expect(document.requests.map((r) => [r.state, r.retry?.attempt ?? null])).toEqual([
+        ["failed", null],
+        ["completed", 0],
+      ]);
+      expect(document.events.filter((e) => e.content.type === "personMessage")).toHaveLength(1);
+    } finally {
+      delete process.env.TRAMA_PROVIDER_RETRY_MS;
     }
   }, 60_000);
 
@@ -1003,6 +1082,6 @@ describe("initializeRepository", () => {
     await writeFile(join(project, "README.md"), "# Nuovo\n");
     await initializeRepository(project);
     expect((await git(["rev-parse", "--abbrev-ref", "HEAD"], project)).trim()).toBe("main");
-    expect((await git(["log", "--format=%s"], project)).trim()).toBe("Start the project");
+    expect((await git(["log", "--format=%s"], project)).trim()).toBe("chore: start the project");
   });
 });

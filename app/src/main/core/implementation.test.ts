@@ -121,7 +121,7 @@ function work(document: ProjectDocument, slice: boolean, requiredChecks = ["git_
   );
 }
 
-const capture = (id: string) => ({ snapshotId: `snap-${id}`, baseSHA: "base", diff: "+x", changedFiles: ["NOTE.md"], excludedSensitiveFiles: [] });
+const capture = (id: string) => ({ snapshotId: `snap-${id}`, baseSHA: "base", diff: "+x", changedFiles: ["NOTE.md"], excludedSensitiveFiles: [], whitespaceErrors: [] });
 
 describe("the developer of a slice runs implement and tdd with their original text (M06)", () => {
   it("delivers implement, tdd and tdd's reference files byte for byte, each followed by its binding", async () => {
@@ -267,9 +267,11 @@ describe("the contract reaches the developer and its structured report is saved 
     "- 4: OtherTests",
     REPORT_HEADINGS.doubts,
     "- none",
+    REPORT_HEADINGS.exceptions,
+    "- fewArguments: Sources/Orders/OrderState.swift: the initializer mirrors the four stored properties",
   ].join("\n");
 
-  it("reads files, tests, seams and doubts, keeping every seam of the contract and one outside it visible", () => {
+  it("reads files, tests, seams, doubts and the exceptions to the standard, keeping every seam of the contract and one outside it visible", () => {
     expect(readDeveloperReport(answer, seams)).toEqual({
       filesTouched: ["Sources/Orders/CancelPaidOrder.swift", "Sources/Orders/OrderState.swift"],
       testsWritten: ["Tests/OrdersTests/CancelPaidOrderTests.swift"],
@@ -279,9 +281,16 @@ describe("the contract reaches the developer and its structured report is saved 
         { seam: "Seam 4", agreed: false, tests: "OtherTests" },
       ],
       doubts: [],
+      exceptions: ["fewArguments: Sources/Orders/OrderState.swift: the initializer mirrors the four stored properties"],
     });
     // A block left out stays null, so the card can say the developer did not report it.
-    expect(readDeveloperReport(`${REPORT_HEADINGS.doubts}\n- Chi rimborsa?`, seams)).toEqual({ filesTouched: null, testsWritten: null, seams: null, doubts: ["Chi rimborsa?"] });
+    expect(readDeveloperReport(`${REPORT_HEADINGS.doubts}\n- Chi rimborsa?`, seams)).toEqual({
+      filesTouched: null,
+      testsWritten: null,
+      seams: null,
+      doubts: ["Chi rimborsa?"],
+      exceptions: null,
+    });
     expect(readDeveloperReport("Fatto.", seams)).toBeNull();
   });
 

@@ -108,6 +108,10 @@ const handlers: { [K in ActionName]: Handler<K> } = {
     const parent = await chooseFolder("Scegli la cartella");
     if (parent) await controller.createProject(parent, name, idea);
   },
+  "project:clone": async ({ repository }) => {
+    const parent = await chooseFolder("Scegli dove clonare il progetto");
+    if (parent) await controller.cloneProject(parent, repository);
+  },
   "project:close": () => controller.closeProject(),
   "project:refresh": () => controller.refreshProject(),
   "project:forgetRecent": ({ id }) => controller.forgetRecent(id),
@@ -125,6 +129,8 @@ const handlers: { [K in ActionName]: Handler<K> } = {
   "coordinator:takeStep": ({ requestId }) => controller.takeStep(requestId),
   "coordinator:interrupt": () => controller.interrupt(),
   "coordinator:retry": () => controller.startCoordinator(),
+  "coordinator:retryRequest": ({ requestId }) => controller.retryRequest(requestId),
+  "coordinator:stopRetry": () => controller.stopProviderRetry(),
   "coordinator:selectModel": ({ model, effort, provider, goalId }) => controller.selectModel(model, effort, provider ?? null, goalId ?? null),
   "coordinator:setFastMode": ({ enabled, goalId }) => controller.setFastMode(enabled, goalId ?? null),
   "coordinator:selectProvider": ({ provider, goalId }) => controller.selectProvider(provider, goalId ?? null),
@@ -173,7 +179,7 @@ const handlers: { [K in ActionName]: Handler<K> } = {
   "plan:slice": async ({ planId }) => controller.slicePlan(planId),
   "plan:publishSlices": ({ planId }) => controller.publishPlanSlices(planId),
   "plan:publish": ({ planId }) => controller.publishPlanSpec(planId),
-  "candidate:previewPullRequest": async ({ candidateId }) => controller.previewPullRequest(candidateId),
+  "candidate:previewPullRequest": ({ candidateId }) => controller.previewPullRequest(candidateId),
   "providers:refresh": ({ provider }) => (provider ? controller.refreshProvider(provider) : controller.refreshProviders()),
   "provider:login": ({ provider }) => controller.loginProvider(provider),
   "github:refresh": () => controller.refreshGitHub(),
@@ -182,6 +188,7 @@ const handlers: { [K in ActionName]: Handler<K> } = {
   "presence:pause": ({ paused }) => controller.pausePresence(paused),
   "presence:refresh": () => controller.refreshPresence(),
   "presence:commentPullRequest": ({ number, body }) => controller.commentColleaguePullRequest(number, body),
+  "project:cleanCode": (change) => controller.updateCleanCode(change),
   "settings:update": (update) => controller.updateSettings(update),
   "monitor:update": (update) => controller.updateMonitor(update),
   "monitor:poll": () => controller.pollMonitor(),
@@ -282,6 +289,7 @@ function buildMenu(): void {
       role: "help",
       label: "Aiuto",
       submenu: [
+        { label: "Benvenuto in Trama", click: () => sendMenu("welcome") },
         { label: "Guida introduttiva", click: () => sendMenu("guide") },
         { label: "Esercizi sul progetto di esempio", click: () => sendMenu("exercises") },
       ],

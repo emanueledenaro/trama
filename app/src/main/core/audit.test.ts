@@ -119,7 +119,7 @@ function candidateOf(document: ProjectDocument, slice: boolean, issueNumber: num
   const candidate = declareCandidate(
     document,
     { assignmentId: assignment.id, decisionIds: [document.decisions[0]!.id], unresolvedChoices: [], externalEffects: [] },
-    { snapshotId: "snap-1", baseSHA: "0a1b2c3d", diff: "+++ b/NOTE.md\n+x", changedFiles: ["NOTE.md"], excludedSensitiveFiles: [] },
+    { snapshotId: "snap-1", baseSHA: "0a1b2c3d", diff: "+++ b/NOTE.md\n+x", changedFiles: ["NOTE.md"], excludedSensitiveFiles: [], whitespaceErrors: [] },
     at(4),
   );
   return { assignment, candidate };

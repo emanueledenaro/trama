@@ -12,6 +12,7 @@
     "build": "vite build && node scripts/build-electron.mjs",
     "start": "npm run build && electron .",
     "typecheck": "tsc --noEmit -p tsconfig.json",
+    "check:names": "node scripts/check-file-names.mjs",
     "test": "vitest run",
     "dist": "npm run build && electron-builder",
     "ui-check": "npm run build && node scripts/ui-check.mjs ui-check"
@@ -66,6 +67,7 @@
     ],
     "mac": {
       "category": "public.app-category.developer-tools",
+      "icon": "resources/icons/icon.icns",
       "target": [
         "dmg",
         "zip"
@@ -74,12 +76,14 @@
       "notarize": false
     },
     "linux": {
+      "icon": "resources/icons/png",
       "target": [
         "AppImage"
       ],
       "category": "Development"
     },
     "win": {
+      "icon": "resources/icons/icon.ico",
       "target": [
         "nsis"
       ]

@@ -21,6 +21,8 @@ export interface ActionMap {
   "project:open": [{ path: string }, void];
   "project:openDemo": [void, void];
   "project:create": [{ name: string; idea: string }, void];
+  /** Clones a GitHub repository (`owner/name` or its URL) into a folder the person chooses, then opens it (B02). */
+  "project:clone": [{ repository: string }, void];
   "project:close": [void, void];
   "project:refresh": [void, void];
   "project:forgetRecent": [{ id: string }, void];
@@ -44,6 +46,10 @@ export interface ActionMap {
   "coordinator:takeStep": [{ requestId: string }, void];
   "coordinator:interrupt": [void, void];
   "coordinator:retry": [void, void];
+  /** Repeats a failed turn without writing the message again (P10). */
+  "coordinator:retryRequest": [{ requestId: string }, void];
+  /** Stops the automatic retries after a temporary provider limit (P10). */
+  "coordinator:stopRetry": [void, void];
   "coordinator:selectModel": [{ model: string; effort: string | null; provider?: ProviderId | null; goalId?: string | null }, void];
   "coordinator:setFastMode": [{ enabled: boolean; goalId?: string | null }, void];
   "coordinator:selectProvider": [{ provider: ProviderId; goalId?: string | null }, void];
@@ -113,7 +119,7 @@ export interface ActionMap {
   "candidate:publish": [{ candidateId: string }, void];
   "candidate:previewPullRequest": [
     { candidateId: string },
-    { repository: string | null; head: string | null; base: string; title: string; body: string },
+    { repository: string | null; head: string | null; base: string; title: string; message: string; body: string },
   ];
   "codex:refresh": [void, void];
   "codex:login": [void, void];
@@ -137,13 +143,18 @@ export interface ActionMap {
   /** Sends the message the person wrote to a colleague as a comment on the colleague's open pull request (G03). */
   "presence:commentPullRequest": [{ number: number; body: string }, void];
   "github:createIssue": [{ title: string; body: string }, void];
+  /** Adapts Trama's Clean Code standard to the open project (Q03): one rule on or off, or the person's note. */
+  "project:cleanCode": [{ rule?: import("./cleanCode").CleanCodeRuleId; enabled?: boolean; note?: string | null }, void];
   "settings:update": [Partial<AppSettings>, void];
   "monitor:update": [{ enabled?: boolean; openAtLogin?: boolean; intervalSeconds?: number; addRepository?: string; removeRepository?: string }, void];
   "monitor:poll": [void, void];
   "skills:prepare": [void, { pathsCreated: string[]; existingPreserved: string[]; warnings: string[]; version: string }];
   "app:dismissError": [void, void];
-  /** The first-run guide: opened once, skipped, steps skipped or taken back (C12). */
-  "onboarding:update": [{ shown?: boolean; dismissed?: boolean; skipStep?: GuideStepId; unskipStep?: GuideStepId }, void];
+  /** The first-run guide and the welcome: opened once, skipped, steps skipped or taken back, the method chosen (C12, B02). */
+  "onboarding:update": [
+    { shown?: boolean; dismissed?: boolean; skipStep?: GuideStepId; unskipStep?: GuideStepId; methodChoice?: boolean; welcomeClosed?: boolean },
+    void,
+  ];
   "onboarding:checkGitHub": [void, void];
   /** Opens the example project and records that an exercise started (C13, C14). */
   "exercise:start": [{ exercise: ExerciseId }, void];

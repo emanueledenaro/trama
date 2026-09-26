@@ -33,6 +33,11 @@ export interface OpenThreadOptions {
    * can do it. The learning review relies on this and also stops a session that uses one (ADR 0014).
    */
   hostToolsOnly?: boolean;
+  /**
+   * Folders outside `cwd` the session may read, such as the project of a worktree and Trama's bundled skills.
+   * Every other read outside `cwd` is refused (issue #206).
+   */
+  readableRoots?: string[];
 }
 
 export interface RunTurnOptions {
@@ -95,6 +100,8 @@ export class ProviderError extends Error {
       | "invalidModel"
       | "turnAlreadyRunning"
       | "blocked"
+      /** A temporary or shared limit (P10): the provider stays usable and the turn may be retried. */
+      | "rateLimited"
       | "unsupportedSandbox",
     message: string,
   ) {

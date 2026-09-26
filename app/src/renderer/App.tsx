@@ -1,10 +1,11 @@
 import { useEffect, useRef } from "react";
 import type { ProviderId } from "@shared/codex";
 import { dialogComposer, findGoal } from "@shared/goals";
-import { shouldOpenGuideOnLaunch } from "@shared/onboarding";
+import { shouldShowWelcomeOnLaunch } from "@shared/onboarding";
 import { ChatView } from "@/components/chat/ChatView";
 import { Dialogs } from "@/components/Dialogs";
 import { Inspector } from "@/components/inspector/Inspector";
+import { WelcomeView } from "@/components/launch/WelcomeView";
 import { ResizeHandle, useResizableWidth } from "@/lib/resizable";
 import { Sidebar } from "@/components/sidebar/Sidebar";
 import { Toast } from "@/components/Toast";
@@ -49,6 +50,7 @@ export function App() {
   const inspector = useUi((s) => s.inspector);
   const sidebar = useResizableWidth("trama.sidebarWidth", { initial: 256, min: 208, max: (viewport) => Math.min(440, viewport * 0.35) });
   const mainView = useUi((s) => s.mainView);
+  const welcomeOpen = useUi((s) => s.welcome !== null);
 
   useEffect(() => {
     void window.trama.getState().then(setApp);
@@ -58,6 +60,7 @@ export function App() {
       if (command === "settings") ui.openSettings("general");
       else if (command === "createProject") ui.setDialog("createProject");
       else if (command === "guide") ui.setDialog("guide");
+      else if (command === "welcome") ui.setWelcome("hello");
       else if (command === "exercises") {
         const exercise = ui.exercise ?? "first";
         void act("exercise:start", { exercise }).then(() => useUi.getState().setExercise(exercise));
@@ -83,13 +86,13 @@ export function App() {
   }, [app?.platform]);
   useThemeClass(app?.settings.theme);
 
-  // The guide opens by itself once, on a first launch with no projects (C12).
-  const guideChecked = useRef(false);
+  // The welcome shows by itself once, on a first launch with no projects (B02); the guide reopens it (C12).
+  const welcomeChecked = useRef(false);
   useEffect(() => {
-    if (!app || guideChecked.current) return;
-    guideChecked.current = true;
-    if (shouldOpenGuideOnLaunch(app)) {
-      useUi.getState().setDialog("guide");
+    if (!app || welcomeChecked.current) return;
+    welcomeChecked.current = true;
+    if (shouldShowWelcomeOnLaunch(app)) {
+      useUi.getState().setWelcome("hello");
       void act("onboarding:update", { shown: true });
     }
   }, [app]);
@@ -111,6 +114,8 @@ export function App() {
       <div
         className="flex h-svh w-full bg-[var(--app-shell-background)]"
         data-sidebar-state={sidebarOpen ? "expanded" : "collapsed"}
+        // Behind the welcome the window is inert, even when the focus was not yet inside it (B02).
+        inert={welcomeOpen}
       >
         <div
           className={cn(
@@ -150,6 +155,7 @@ export function App() {
           </main>
         </div>
       </div>
+      <WelcomeView />
       <Dialogs />
       <Toast />
     </TooltipProvider>

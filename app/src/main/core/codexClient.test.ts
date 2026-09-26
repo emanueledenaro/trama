@@ -125,7 +125,7 @@ describe("restrictedAppServerArguments", () => {
     const { restrictedAppServerArguments } = await import("./codexClient");
     const args = await restrictedAppServerArguments(fake, "trama");
     expect(args).toContain('mcp_servers.github={command="/usr/bin/false",enabled=false}');
-    expect(args.slice(-8)).toEqual(["--disable", "apps", "--disable", "plugins", "--disable", "hooks", "--disable", "multi_agent"]);
+    expect(args.slice(-10)).toEqual(["--disable", "apps", "--disable", "plugins", "--disable", "hooks", "--disable", "multi_agent", "--disable", "memories"]);
     await expect(restrictedAppServerArguments(fake, "github")).rejects.toThrow(/riservato/);
   });
 
@@ -182,6 +182,49 @@ describe("CodexClient failures (T02)", () => {
       });`;
     client = new CodexClient({ executable: await script(source) });
     expect(await client.readAccount()).toEqual({ kind: "chatgpt", email: null, plan: "pro" });
+  });
+
+  // The end of an interrupted turn can arrive after the next turn started on the same thread: it must not close the new one.
+  it("ignores a late turn/completed of an earlier turn on the same thread", async () => {
+    const source = `
+      const readline = require("node:readline");
+      const send = (m) => process.stdout.write(JSON.stringify(m) + "\\n");
+      let turns = 0;
+      readline.createInterface({ input: process.stdin }).on("line", (line) => {
+        const { id, method, params } = JSON.parse(line);
+        if (method === "initialize") return send({ id, result: { userAgent: "fake" } });
+        if (method === "account/read") return send({ id, result: { account: { type: "chatgpt", email: null, planType: "pro" } } });
+        if (method === "thread/start") return send({ id, result: { thread: { id: "t" } } });
+        if (method === "turn/interrupt") {
+          send({ id, result: {} });
+          return send({ method: "turn/completed", params: { threadId: "t", turn: { id: params.turnId, status: "interrupted" } } });
+        }
+        if (method === "turn/start") {
+          const turnId = "turn-" + ++turns;
+          send({ id, result: { turn: { id: turnId } } });
+          if (turns === 2) {
+            // The stale end arrives both before and after the client knows the new turn's id.
+            const stale = () => send({ method: "turn/completed", params: { threadId: "t", turn: { id: "turn-1", status: "completed" } } });
+            stale();
+            setTimeout(stale, 20);
+            setTimeout(() => {
+              send({ method: "item/completed", params: { threadId: "t", turnId, item: { id: "m", type: "agentMessage", phase: "final_answer", text: "secondo" } } });
+              send({ method: "turn/completed", params: { threadId: "t", turn: { id: turnId, status: "completed" } } });
+            }, 50);
+          }
+          return;
+        }
+        if (id !== undefined) send({ id, error: { code: -32601, message: "unknown " + method } });
+      });`;
+    client = new CodexClient({ executable: await script(source) });
+    const { threadId } = await client.openThread({ model: "gpt-5.5", cwd: process.cwd(), developerInstructions: "test" });
+    let started: () => void;
+    const turnStarted = new Promise<void>((resolve) => (started = resolve));
+    const first = client.runTurn({ threadId, prompt: "primo", cwd: process.cwd(), model: "gpt-5.5", onEvent: (e) => e.type === "turnStarted" && started() });
+    await turnStarted;
+    await client.interrupt();
+    await expect(first).rejects.toThrow(/interrott/);
+    expect(await client.runTurn({ threadId, prompt: "secondo", cwd: process.cwd(), model: "gpt-5.5", onEvent: () => undefined })).toBe("secondo");
   });
 
   it("reports a missing executable", async () => {

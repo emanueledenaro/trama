@@ -46,7 +46,8 @@ const asObject = (value: Json | undefined): JsonObject | null =>
 const asString = (value: Json | undefined): string | null => (typeof value === "string" ? value : null);
 const asArray = (value: Json | undefined): Json[] => (Array.isArray(value) ? value : []);
 
-function searchPath(): string[] {
+/** Folders searched for Codex, also on the PATH app-server gets. */
+export function searchPath(): string[] {
   const home = homedir();
   return [
     ...(process.env.PATH ?? "").split(delimiter).filter(Boolean),
@@ -112,7 +113,8 @@ export async function restrictedAppServerArguments(executable: string, reservedS
         : '{url="http://127.0.0.1:9/mcp",enabled=false}';
     args.push("-c", `mcp_servers.${name}=${value}`);
   }
-  args.push("--disable", "apps", "--disable", "plugins", "--disable", "hooks", "--disable", "multi_agent");
+  // Codex memories point the model at ~/.codex/memories, which holds other projects' notes (issue #206).
+  args.push("--disable", "apps", "--disable", "plugins", "--disable", "hooks", "--disable", "multi_agent", "--disable", "memories");
   return args;
 }
 
@@ -142,6 +144,8 @@ export interface ThreadOptions {
   sandbox?: "read-only" | "workspace-write";
   /** Resume this thread when it still exists; otherwise start a new one. */
   resumeThreadId?: string | null;
+  /** Named permission profile, defined in `config`; replaces `sandbox`. */
+  permissions?: string;
 }
 
 export interface TurnOptions {
@@ -156,6 +160,8 @@ export interface TurnOptions {
   images?: string[];
   /** The only directory the turn may write; the turn is read-only when absent. */
   writableRoot?: string | null;
+  /** Named permission profile of the thread; replaces the sandbox policy built from `writableRoot`. */
+  permissions?: string;
   /** Skills the person invoked, sent as skill input items. */
   skills?: LoadedSkill[];
   /** JSON schema the final answer must follow. */
@@ -176,6 +182,8 @@ export class CodexClient {
   /** A turn waiting for app-server to start: nothing to interrupt yet. */
   private pendingTurn: { interrupted: boolean; stopped: boolean } | null = null;
   private stderrTail = "";
+  /** Turns already over: a late event of theirs, such as the end of an interrupted turn, never reaches the next one. */
+  private readonly endedTurnIds = new Set<string>();
 
   constructor(
     private readonly options: {
@@ -308,7 +316,7 @@ export class CodexClient {
       model: options.model,
       cwd: options.cwd,
       approvalPolicy: "never",
-      sandbox: options.sandbox ?? "read-only",
+      ...(options.permissions ? { permissions: options.permissions } : { sandbox: options.sandbox ?? "read-only" }),
       developerInstructions: options.developerInstructions,
     };
     if (options.config) common.config = options.config;
@@ -365,11 +373,11 @@ export class CodexClient {
         messagePhases: new Map(),
         onEvent: options.onEvent,
         resolve: (text) => {
-          this.activeTurn = null;
+          this.endTurn(turn);
           resolve(text);
         },
         reject: (error) => {
-          this.activeTurn = null;
+          this.endTurn(turn);
           reject(error);
         },
       };
@@ -385,7 +393,10 @@ export class CodexClient {
         model: options.model,
         ...(typeof options.fastMode === "boolean" ? { serviceTier: options.fastMode ? "fast" : "default" } : {}),
         approvalPolicy: "never",
-        sandboxPolicy: options.writableRoot
+      };
+      if (options.permissions) params.permissions = options.permissions;
+      else
+        params.sandboxPolicy = options.writableRoot
           ? {
               type: "workspaceWrite",
               writableRoots: [options.writableRoot],
@@ -393,8 +404,7 @@ export class CodexClient {
               excludeTmpdirEnvVar: true,
               excludeSlashTmp: true,
             }
-          : { type: "readOnly", networkAccess: false },
-      };
+          : { type: "readOnly", networkAccess: false };
       if (options.effort) params.effort = options.effort;
       if (options.outputSchema) params.outputSchema = options.outputSchema;
       this.request("turn/start", params)
@@ -419,6 +429,13 @@ export class CodexClient {
       return;
     }
     await this.request("turn/interrupt", { threadId: turn.threadId, turnId: turn.turnId });
+  }
+
+  private endTurn(turn: ActiveTurn): void {
+    if (this.activeTurn === turn) this.activeTurn = null;
+    if (!turn.turnId) return;
+    this.endedTurnIds.add(turn.turnId);
+    if (this.endedTurnIds.size > 100) this.endedTurnIds.delete(this.endedTurnIds.values().next().value!);
   }
 
   private adoptTurnId(turn: ActiveTurn, turnId: string): void {
@@ -477,6 +494,8 @@ export class CodexClient {
       },
     });
     this.child = child;
+    // Turn ids belong to one app-server process.
+    this.endedTurnIds.clear();
     createInterface({ input: child.stdout }).on("line", (line) => this.receive(line));
     child.stderr.on("data", (chunk: Buffer) => {
       this.stderrTail = (this.stderrTail + chunk.toString("utf8")).slice(-4_000);
@@ -595,8 +614,9 @@ export class CodexClient {
   private matchingTurn(params: JsonObject): ActiveTurn | null {
     const turn = this.activeTurn;
     if (!turn || asString(params.threadId) !== turn.threadId) return null;
-    const received = asString(params.turnId);
-    if (turn.turnId && received && received !== turn.turnId) return null;
+    // Item events carry turnId; turn/started and turn/completed carry the turn itself.
+    const received = asString(params.turnId) ?? asString(asObject(params.turn)?.id);
+    if (received && (this.endedTurnIds.has(received) || (turn.turnId && received !== turn.turnId))) return null;
     return turn;
   }
 

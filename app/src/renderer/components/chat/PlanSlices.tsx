@@ -1,4 +1,5 @@
 import type { SliceState, SliceTicket, WorkPlan } from "@shared/domain";
+import { readableFailure } from "@shared/providerFailure";
 import { useState } from "react";
 import { Spinner } from "@/components/Spinner";
 import { Button } from "@/components/ui/button";
@@ -14,6 +15,7 @@ const STATE: Record<SliceState, { label: string; tone: "secondary" | "info" | "s
   blocked: { label: "Bloccata", tone: "secondary" },
   ready: { label: "Pronta", tone: "info" },
   working: { label: "In lavoro", tone: "warning" },
+  paused: { label: "In pausa", tone: "warning" },
   verifying: { label: "In verifica", tone: "warning" },
   done: { label: "Fatta", tone: "success" },
 };
@@ -69,7 +71,7 @@ export function PlanSlices({ plan }: { plan: WorkPlan }) {
       ) : null}
       {slicing.status === "failed" ? (
         <div className="mt-1">
-          <p className="text-ui-sm text-warning">{slicing.failure ?? "La divisione in fette non è riuscita."}</p>
+          <p className="text-ui-sm text-warning">{readableFailure(slicing.failure) ?? "La divisione in fette non è riuscita."}</p>
           <div className="cta-row mt-2">
             <Button size="sm" onClick={() => void act("plan:slice", { planId: plan.id })}>
               Dividi di nuovo in fette
