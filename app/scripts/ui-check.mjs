@@ -1235,7 +1235,7 @@ await blockedRead.first().scrollIntoViewIfNeeded();
 for (const dark of [false, true]) {
   await page.evaluate((theme) => window.trama.invoke("settings:update", { theme }), dark ? "dark" : "light");
   await page.waitForFunction((wanted) => document.documentElement.classList.contains("dark") === wanted, dark);
-  await shot(`20-read-outside-project-${dark ? "dark" : "light"}`);
+  await shot(`21-read-outside-project-${dark ? "dark" : "light"}`);
 }
 await page.evaluate(() => window.trama.invoke("settings:update", { theme: "system" }));
 await app.close();

@@ -30,7 +30,7 @@ Controllo di #206 sul branch `bugfix/issue-206-agents-stay-in-project-prvhfy`. N
 - `app/src/main/readScope.integration.test.ts` ripete la sequenza dal vivo con il Codex di prova. Prima c'è un controllo fallito, poi diagnosi, correzione e revisione dell'architettura di Clean Code, che esegue lo stesso `rg` sulla memoria. La memoria non arriva a Trama, l'attività registra il percorso e ogni thread ha le memorie spente e un profilo senza la cartella di Codex. Con il runtime Codex di prima lo stesso test fallisce e la memoria compare nell'esito.
 - `app/src/main/core/providers/codex.test.ts`: il Codex di prova legge la memoria senza profilo e la nasconde con il profilo di Trama. Un turno che chiede di scrivere fuori dalla cartella del thread viene rifiutato.
 - `app/src/main/core/readScope.test.ts`, e i test dei provider in `claudeAgent.test.ts`, `pi.test.ts`, `antigravity.test.ts` e `acp/acpRuntime.test.ts`: letture dentro e fuori dal perimetro, `~`, `..` e link simbolici, eventi registrati.
-- `node scripts/ui-check.mjs`, passo `20-read-outside-project`: la revisione di Clean Code mostra "Lettura fuori dal progetto bloccata" con il percorso di `MEMORY.md` e il comando. Il testo della memoria non compare nella finestra. Tema chiaro e scuro.
+- `node scripts/ui-check.mjs`, passo `21-read-outside-project`: la revisione di Clean Code mostra "Lettura fuori dal progetto bloccata" con il percorso di `MEMORY.md` e il comando. Il testo della memoria non compare nella finestra. Tema chiaro e scuro.
 
 ## Non verificato
 

@@ -3310,7 +3310,14 @@ export class TramaController {
     run?.clients.add(client);
     try {
       if (this.quitting) throw new Error("Trama si sta chiudendo.");
-      const opening = await client.openThread({ model: runner.model, cwd, developerInstructions: turn.instructions, sandbox: "read-only", ephemeral: true });
+      const opening = await client.openThread({
+        model: runner.model,
+        cwd,
+        developerInstructions: turn.instructions,
+        sandbox: "read-only",
+        ephemeral: true,
+        readableRoots: this.readableRoots(project),
+      });
       axisThread(audit, axis, opening.threadId);
       this.changedIn(project);
       const raw = await client.runTurn({
