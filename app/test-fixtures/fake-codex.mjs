@@ -469,7 +469,6 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
       if (automatic) {
         // A move Trama started by itself (W04). FAKE_CODEX_AUTOMATIC=wait keeps the turn running until interrupted,
         // =idle answers without making the move; otherwise the fake makes it like a Coordinator that follows the rules.
-        if (process.env.FAKE_CODEX_AUTOMATIC === "wait") return;
         const call = async (tool, args) => {
           const result = await callTool(threadId, tool, args);
           toolDone(tool, result);
@@ -477,6 +476,30 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
         };
         const json = (result) => JSON.parse(result.content[0].text);
         const done = [];
+        // The live run of issue #204: the work that ended has "[luna]" in its objective, and the Coordinator passes the
+        // assignment id to verify_candidate. With "[luna]" it tries twice and gives up, as gpt-6-luna did; with
+        // "[luna-segue]" it follows what the tool answers: declare the candidate first, then verify it.
+        if (automatic[1] === "verifyCandidate" && process.env.FAKE_CODEX_AUTOMATIC !== "idle") {
+          const team = json(await callTool(threadId, "read_team", {}));
+          const live = team.specialists.map((s) => s.assignment).find((a) => a?.status === "completed" && /\[luna(-segue)?\]/.test(a.objective));
+          if (live) {
+            const attempt = () => call("verify_candidate", { candidate: live.id, check: "git_status" });
+            const refused = await attempt();
+            const code = refused.isError ? json(refused).error.code : null;
+            if (code === "candidate_not_declared" && live.objective.includes("[luna-segue]")) {
+              const decision = json(await call("read_pact", {})).decisions[0];
+              const { candidateID } = json(await call("declare_candidate", { assignment: live.id, decisionIDs: [decision.id] }));
+              await call("verify_candidate", { candidate: candidateID, check: "git_status" });
+              await call("review_candidate", { candidate: candidateID });
+              finish(`Ho dichiarato e verificato il candidato ${candidateID}.`);
+              return;
+            }
+            const again = await attempt();
+            finish(`Non posso eseguire le verifiche: ${again.isError ? json(again).error.message : "nessun errore"}`);
+            return;
+          }
+        }
+        if (process.env.FAKE_CODEX_AUTOMATIC === "wait") return;
         if (process.env.FAKE_CODEX_AUTOMATIC !== "idle") {
           if (automatic[1] === "preparePlan") {
             await call("prepare_plan", { kind: "agreedTicket", moduleIDs: ["Sources/Orders"], summary: "Revisione degli ordini pagati annullati" });
@@ -581,7 +604,8 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
           ...(text.includes("[senza-contratto]") ? { dependencies: [] } : contract(slice)),
           specialist: "Ada",
           kind: "agreedTicket",
-          objective: "Documenta l'annullamento",
+          // "[luna]" and "[luna-segue]" mark the work whose automatic verification replays the live run of issue #204.
+          objective: `${text.match(/\[luna(?:-segue)?\]/)?.[0]?.concat(" ") ?? ""}Documenta l'annullamento`,
           moduleIDs: ["Sources/Orders"],
           // "[spazi]" leaves trailing whitespace, "[correggi-spazi]" is the correction: both must pass git_diff_check (V05).
           // "[test]" also names the project's build and test suite, as for the work of a slice (M06).
@@ -639,7 +663,33 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
         });
         return;
       }
-      const grillingMatch = text.match(/\[grilling:(\d+)\]/);
+      if (text.includes("$ask-trama")) {
+        // Ask Trama (M07): the skill picks a route and the Coordinator proposes it; "[strumento]" picks a standalone skill
+        // behind a new session, "[inventata]" a skill ask-trama does not name.
+        const route = text.includes("[strumento]")
+          ? { path: "standalone", steps: ["prototype"], boundary: "clear" }
+          : text.includes("[riassunto]")
+            ? { path: "mainFlow", steps: ["to-spec", "to-tickets", "implement"], boundary: "compact" }
+            : { path: "mainFlow", steps: [text.includes("[inventata]") ? "deploy" : "grill-with-docs", "prototype", "to-spec", "to-tickets", "implement", "code-review"], boundary: "continue" };
+        const result = await callTool(threadId, "propose_route", {
+          situation: "Gli ordini pagati annullati devono andare in revisione invece del rimborso automatico.",
+          ...route,
+          reason: "È un'idea da costruire in questo repository: si parte dal grilling con i documenti e si scende fino all'implementazione.",
+        });
+        toolDone("propose_route", result);
+        finish(result.isError ? `Rifiutato: ${result.content[0].text}` : "Ti propongo il flusso principale, dal grilling all'implementazione.");
+        return;
+      }
+      const started = text.startsWith("Studio del progetto scritto da Trama") ? null : text.match(/Avvia il percorso (AT-[0-9A-F]+)/);
+      if (started && !text.includes("[grilling:")) {
+        // The start message of a route (M07): a route that starts with a skill or the spec reports the skills it received,
+        // a route that starts with grilling opens round 1.
+        if (/Primo passo: (prototype|to-spec)/.test(text)) {
+          setTimeout(() => finish(`Percorso ${started[1]} avviato. Skill ricevute: ${seen.join(", ")}`), 10);
+          return;
+        }
+      }
+      const grillingMatch = text.match(/\[grilling:(\d+)\]/) ?? (started ? [null, "1"] : null);
       if (grillingMatch) {
         // A grilling round (M01): round 1 asks two questions of the frontier, later rounds one.
         const round = Number(grillingMatch[1]);

@@ -1,6 +1,6 @@
 import type { ProviderId } from "@shared/codex";
 import { supportsReadOnly } from "@shared/providers";
-import type { AssignmentCommit, CommitConventions, MandateAction, ProjectDocument, SpecialistTool, TechnicalReview, WorkKind } from "@shared/domain";
+import type { AssignmentCommit, Candidate, CommitConventions, MandateAction, ProjectDocument, SpecialistTool, TechnicalReview, WorkKind } from "@shared/domain";
 import { DEFAULT_CONVENTIONS, validateCommitMessage } from "./conventions";
 import { candidateCommit } from "./quality";
 import { messageStyle } from "./messageStyle";
@@ -12,7 +12,7 @@ import type { RepositorySnapshot } from "@shared/repository";
 import type { GitHubState } from "@shared/domain";
 import { createDecisionRequest, createMandateRequest, DELEGABLE_ACTIONS, DomainError, MAXIMUM_ALTERNATIVES } from "./pact";
 import { ALL_CHECKS, CHECKS, type CheckResult, type ReadOnlyCheck } from "./checks";
-import { candidateReport, CandidateError, clearCandidate, declareCandidate, findCandidate } from "./candidates";
+import { candidateReport, CandidateError, clearCandidate, declareCandidate, findCandidate, latestCandidate } from "./candidates";
 import { studyText } from "./study";
 import { findGoal, requestGoalId } from "@shared/goals";
 import { isFixedRole, roleDuties } from "@shared/roster";
@@ -29,6 +29,7 @@ import {
   findSpecialist,
   isActive,
   isTeamConfirmed,
+  needsWorktree,
   PERSON_ONLY_KINDS,
   proposeTeam,
   refusalMessage,
@@ -43,6 +44,8 @@ import { sliceAssignmentProblem } from "./slices";
 import { agreedSeams, contractSeams, seamNumber } from "./implementation";
 import { answerFromFacts, blockOnPerson, QuestionError, requireAskedQuestion } from "./developerQuestions";
 import { NEXT_MOVES, workRequests, workState } from "./workPhase";
+import { ASK_TRAMA_BINDING, proposeRoute, RouteError, routeReport } from "./askTrama";
+import { PHASE_BOUNDARIES, ROUTE_PATHS } from "@shared/askTrama";
 import type { PresenceView } from "@shared/presence";
 import { fileOverlaps, goalOverlaps, moduleOverlaps, occupantName, presenceForTool } from "./coordinatorPresence";
 
@@ -474,7 +477,7 @@ export const COORDINATOR_TOOLS: ToolDefinition[] = [
   },
   {
     name: "verify_candidate",
-    description: `Run one of the candidate's required checks in the Codex sandbox on the candidate's own worktree and record the result as evidence of that exact candidate. Allowed without a mandate; the output is Trama's evidence, not yours. A failed check keeps its original output and blocks the green light; changing the work means declaring a new candidate. Checks: ${ALL_CHECKS.join(", ")}.`,
+    description: `Run one of the candidate's required checks in the Codex sandbox on the candidate's own worktree and record the result as evidence of that exact candidate. candidate is the candidateID declare_candidate returned (C-…); an assignment id (A-…) stands for the latest candidate declared from it, and an assignment that ended without one must be declared first with declare_candidate. Allowed without a mandate; the output is Trama's evidence, not yours. A failed check keeps its original output and blocks the green light; changing the work means declaring a new candidate. Checks: ${ALL_CHECKS.join(", ")}.`,
     properties: { candidate: text, check: { type: "string", enum: ALL_CHECKS } },
     required: ["candidate", "check"],
     readOnly: true,
@@ -525,6 +528,20 @@ export const COORDINATOR_TOOLS: ToolDefinition[] = [
     readOnly: false,
   },
   {
+    name: "propose_route",
+    description:
+      "Propose to the person the route the ask-trama skill chose for their situation (M07): the section of the skill it comes from (path), its skills in order (steps, names as ask-trama writes them, without the slash) and the phase-boundary option for the move from this conversation to its first phase (boundary, by PHASE-BOUNDARIES.md). Trama shows it as a card and says how it runs each step: a Trama flow, the skill itself, or not available in Trama. A new proposal supersedes the one still waiting. Nothing starts until the person confirms; then Trama applies the boundary and writes you the start message.",
+    properties: {
+      situation: text,
+      path: { type: "string", enum: [...ROUTE_PATHS] },
+      steps: list(1),
+      boundary: { type: "string", enum: [...PHASE_BOUNDARIES] },
+      reason: text,
+    },
+    required: ["situation", "path", "steps", "boundary", "reason"],
+    readOnly: false,
+  },
+  {
     name: "declare_next_step",
     description:
       "Close a turn about the work with its one next step: a move among the moves Trama allows now for this request (\"Fase del lavoro\" in Trama's message lists them; a refusal lists the current ones). Trama shows the person's move as one button under your reply; your own move you make now with your tools, and Trama starts it by itself when the turn ends without it. Call it last, after the tools that change the work; reason is one line for the person. A second call replaces the first. Declare nothing when nothing is to do.",
@@ -564,7 +581,9 @@ export interface ToolContext {
   /** Called after a tool changed the document: persist and publish. */
   changed(): void;
   /** Adds a conversation card for a request the Coordinator put to the person. */
-  addCard(kind: "mandate" | "decision" | "teamProposal" | "assignment" | "candidate" | "goal" | "domainProposal", title: string, referenceId: string): void;
+  addCard(kind: "mandate" | "decision" | "teamProposal" | "assignment" | "candidate" | "goal" | "domainProposal" | "route", title: string, referenceId: string): void;
+  /** The skills ask-trama names and the skills of Trama's bundled package, for propose_route (M07). */
+  askTramaCatalog(): Promise<{ references: string[]; bundled: string[] }>;
   /** Models of the Coordinator's provider, and the Coordinator's own model. */
   models: string[];
   defaultModel: string | null;
@@ -603,6 +622,33 @@ export interface ToolContext {
   headSHA(): Promise<string | null>;
   /** Starts Trama's planner in the background and returns the plan id. */
   orderPlan(order: { kind: WorkKind; moduleIds: string[]; summary: string; issueNumber: number | null }): string;
+}
+
+/**
+ * The candidate a tool names. An assignment id stands for the latest candidate declared from it; an assignment
+ * that ended without one gets the move to make first, declare_candidate, instead of a bare refusal (issue #204).
+ */
+function candidateArgument(document: ProjectDocument, value: Json | undefined): { candidate: Candidate } | { failure: ToolResult } {
+  const id = typeof value === "string" ? value.trim() : "";
+  const candidate = findCandidate(document, id);
+  if (candidate) return { candidate };
+  const assignment = id ? findAssignment(document, id) : null;
+  if (!assignment) return { failure: toolFailure("unknown_candidate", `There is no candidate ${String(value)}.`) };
+  const declared = latestCandidate(document, assignment.id);
+  if (declared) return { candidate: declared };
+  if (!needsWorktree(assignment)) {
+    return { failure: toolFailure("not_a_candidate", `${assignment.id} is a read-only assignment: it has no worktree, so it has no candidate to verify.`) };
+  }
+  if (isActive(assignment)) {
+    return { failure: toolFailure("assignment_running", `${assignment.id} is an assignment that is still running: declare its candidate with declare_candidate when it ends.`) };
+  }
+  const decisions = Object.keys(assignment.decisionVersions ?? {});
+  return {
+    failure: toolFailure(
+      "candidate_not_declared",
+      `${assignment.id} is an assignment, not a candidate, and no candidate was declared from it yet. First call declare_candidate with assignment ${assignment.id} and the Pact decisions it must respect${decisions.length ? ` (the assignment relies on ${decisions.join(", ")})` : ""}, then call this tool again with the candidateID it returns.`,
+    ),
+  };
 }
 
 /** The learning tools of a turn with the person: writes are theirs ("learn"), never the review's. */
@@ -1079,6 +1125,27 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
       }
       case "read_goals":
         return toolSuccess({ goals: goalsForTool(document), dialogGoalID: requestGoalId(document, context.runningRequestId) });
+      case "propose_route": {
+        try {
+          const catalog = await context.askTramaCatalog();
+          const route = proposeRoute(document, {
+            situation: args.situation,
+            path: args.path,
+            steps: args.steps,
+            boundary: args.boundary,
+            reason: args.reason,
+            requestId: context.runningRequestId,
+            goalId: requestGoalId(document, context.runningRequestId) ?? null,
+            ...catalog,
+          });
+          context.addCard("route", "Percorso di Ask Trama", route.id);
+          context.changed();
+          return toolSuccess(routeReport(route));
+        } catch (error) {
+          if (error instanceof RouteError) return toolFailure("invalid_arguments", error.message);
+          throw error;
+        }
+      }
       case "read_presence":
         return toolSuccess(presenceForTool(document, context.presence, context.snapshot.modules, { terms: strings(args.terms), moduleIds: strings(args.moduleIDs) }));
       case "propose_domain_docs": {
@@ -1278,8 +1345,9 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
         return toolSuccess({ candidateID: candidate.id, commitMessage: commit.message, pullRequestTitle: commit.message.split("\n")[0]! });
       }
       case "verify_candidate": {
-        const candidate = findCandidate(document, typeof args.candidate === "string" ? args.candidate : "");
-        if (!candidate) return toolFailure("unknown_candidate", `There is no candidate ${String(args.candidate)}.`);
+        const found = candidateArgument(document, args.candidate);
+        if ("failure" in found) return found.failure;
+        const candidate = found.candidate;
         const check = args.check as ReadOnlyCheck;
         if (!candidate.requiredChecks.includes(check)) {
           return toolFailure("check_not_required", `${String(args.check)} is not one of the required checks of candidate ${candidate.id}.`);
@@ -1297,14 +1365,16 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
         });
       }
       case "review_candidate": {
-        const candidate = findCandidate(document, typeof args.candidate === "string" ? args.candidate : "");
-        if (!candidate) return toolFailure("unknown_candidate", `There is no candidate ${String(args.candidate)}.`);
+        const found = candidateArgument(document, args.candidate);
+        if ("failure" in found) return found.failure;
+        const candidate = found.candidate;
         const review = await context.reviewCandidate(candidate.id);
         return toolSuccess({ candidateID: candidate.id, reviewID: review.id, verdict: review.verdict, summary: review.summary });
       }
       case "clear_candidate": {
-        const candidate = findCandidate(document, typeof args.candidate === "string" ? args.candidate : "");
-        if (!candidate) return toolFailure("unknown_candidate", `There is no candidate ${String(args.candidate)}.`);
+        const found = candidateArgument(document, args.candidate);
+        if ("failure" in found) return found.failure;
+        const candidate = found.candidate;
         const authorization = authorize(document.mandate, "integrateCandidate", candidate.touchedModules);
         if (authorization !== "authorized") return refused(authorization, "integrateCandidate");
         clearCandidate(document, candidate.id, "Coordinatore", await context.headSHA());
@@ -1397,11 +1467,12 @@ export const DOMAIN_MODELING_BINDING = [
   "\"Offer\" an ADR: the proposal card is the offer. The person reviews the written files as a candidate: when the writing assignment ends, declare it with declare_candidate, bound to the same decisions.",
 ].join("\n");
 
-/** The AI Hero skills of the Coordinator, in the order they reach it, with their bindings (M02, M03). */
+/** The AI Hero skills of the Coordinator, in the order they reach it, with their bindings (M02, M03, M07). */
 export const COORDINATOR_SKILLS: { name: string; binding: string }[] = [
   { name: "grill-with-docs", binding: GRILL_WITH_DOCS_BINDING },
   { name: "grilling", binding: GRILLING_BINDING },
   { name: "domain-modeling", binding: DOMAIN_MODELING_BINDING },
+  { name: "ask-trama", binding: ASK_TRAMA_BINDING },
 ];
 
 /**
