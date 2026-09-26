@@ -9,7 +9,6 @@ Verifiche eseguite su Linux, in un container senza Codex reale e senza `gh`, sul
 
 ## Non verificato
 
-- Il logo definitivo: `TramaMark` di B01 (#199) non era ancora disponibile. Lo spazio `BrandMark` mostra il logo provvisorio e l'animazione lavora sui suoi tracciati.
 - La clonazione reale da GitHub, con `gh` e con `git`: nel container non c'è rete verso GitHub né `gh`.
 - L'accesso reale a Codex o a un altro provider dal passo del benvenuto.
 
