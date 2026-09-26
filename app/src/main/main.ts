@@ -185,6 +185,7 @@ const handlers: { [K in ActionName]: Handler<K> } = {
   "github:refresh": () => controller.refreshGitHub(),
   "github:createIssue": ({ title, body }) => controller.createGitHubIssue(title, body),
   "presence:consent": ({ share, proposal }) => controller.setPresenceConsent(share, proposal ?? null),
+  "route:answer": ({ routeId, start }) => controller.answerRoute(routeId, start),
   "presence:pause": ({ paused }) => controller.pausePresence(paused),
   "presence:refresh": () => controller.refreshPresence(),
   "presence:commentPullRequest": ({ number, body }) => controller.commentColleaguePullRequest(number, body),
