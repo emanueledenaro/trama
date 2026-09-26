@@ -157,6 +157,7 @@ const handlers: { [K in ActionName]: Handler<K> } = {
   "pactDemo:run": () => controller.runPactDemo(),
   "pactDemo:approve": () => controller.approvePactDemo(),
   "candidate:approve": ({ candidateId }) => controller.approveCandidateByPerson(candidateId),
+  "candidate:focusAudit": async ({ candidateId }) => controller.startFocusAudit(candidateId),
   "candidate:publish": ({ candidateId }) => controller.publishCandidateByPerson(candidateId),
   "codex:refresh": () => controller.refreshCodex(),
   "codex:login": () => controller.login(),

@@ -3,6 +3,7 @@ import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/cn";
 import { ResizeHandle, useResizableWidth } from "@/lib/resizable";
 import { useUi } from "@/lib/store";
+import { AuditView } from "./AuditView";
 import { CandidateView } from "./CandidateView";
 import { GoalView, GoalsView } from "./GoalsView";
 import { GroupView } from "./GroupView";
@@ -28,6 +29,7 @@ const TITLES = {
   team: "Team del progetto",
   specialist: "Specialista",
   candidate: "Candidato",
+  audit: "Focus mode",
   group: "Il lavoro del gruppo",
   work: "Lavoro",
   issues: "Issue del progetto",
@@ -99,6 +101,7 @@ export function Inspector() {
         {target.kind === "team" ? <TeamView /> : null}
         {target.kind === "specialist" ? <SpecialistView id={target.id} /> : null}
         {target.kind === "candidate" ? <CandidateView id={target.id} /> : null}
+        {target.kind === "audit" ? <AuditView id={target.id} /> : null}
         {target.kind === "group" ? <GroupView /> : null}
         {target.kind === "work" ? <WorkView /> : null}
         {target.kind === "issues" ? <IssuesView /> : null}
