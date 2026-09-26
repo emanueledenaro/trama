@@ -367,7 +367,7 @@ const effortKey = (value: string | null | undefined): string | undefined => valu
  * Always rebuilds the CLI display label, so a corrupted `slug\tName (Effort)` row never reaches `--model`.
  * A missing, empty or unsupported effort falls back to the model's default level: `agy` rejects a known
  * model without one. `supportedEfforts` are the levels `agy models` listed; without them Trama uses the
- * levels of `agy` 1.2.11.
+ * levels of `agy` 1.2.11. A level in the name that the model does not offer is replaced the same way.
  */
 export function resolveAntigravityCliModelLabel(
   model: string,
@@ -377,9 +377,9 @@ export function resolveAntigravityCliModelLabel(
 ): string {
   const parsed = parseAntigravityCliModelLabel(model);
   if (!parsed) return model;
-  if (parsed.effort) return `${parsed.model} (${effortLabel(parsed.effort)})`;
   const supported = supportedEfforts?.length ? supportedEfforts : (ANTIGRAVITY_KNOWN_MODELS[parsed.model] ?? []);
-  const candidates = [effortKey(effort), effortKey(discoveredDefaultEffort), DEFAULT_EFFORT_BY_MODEL[parsed.model], supported[0]];
+  // A level in the name wins only when the model offers it: `Gemini 3.1 Pro (Medium)` has no such level.
+  const candidates = [parsed.effort, effortKey(effort), effortKey(discoveredDefaultEffort), DEFAULT_EFFORT_BY_MODEL[parsed.model], supported[0]];
   const chosen = candidates.find((value): value is string => Boolean(value) && (supported.length === 0 || supported.includes(value!)));
   return chosen ? `${parsed.model} (${effortLabel(chosen)})` : parsed.model;
 }
@@ -833,6 +833,13 @@ export function antigravityHelpOffersEffort(help: string): boolean {
   return /^\s*(?:-\w,\s*)?--effort(?![\w-])/m.test(help);
 }
 
+/**
+ * Levels `agy models` listed, shared by every runtime: the controller discovers models on one instance
+ * and runs the Coordinator and the specialists on others.
+ */
+const defaultEffortByModel = new Map<string, string>();
+const effortsByModel = new Map<string, string[]>();
+
 const helpTexts = new Map<string, Promise<string>>();
 
 function helpText(binary: string): Promise<string> {
@@ -980,8 +987,6 @@ export class AntigravityRuntime implements AgentRuntime {
   private readonly home: string;
   private readonly threadStoreFile: string;
   private readonly threads = new Map<string, ThreadState>();
-  private readonly defaultEffortByModel = new Map<string, string>();
-  private readonly effortsByModel = new Map<string, string[]>();
   private active: ActiveTurn | null = null;
   /** A turn still in setup: no process exists yet to stop. */
   private pending: PendingTurn | null = null;
@@ -1058,8 +1063,8 @@ export class AntigravityRuntime implements AgentRuntime {
 
   private rememberEfforts(models: ProviderModel[]): void {
     for (const model of models) {
-      if (model.defaultReasoningEffort) this.defaultEffortByModel.set(model.model, model.defaultReasoningEffort);
-      if (model.supportedReasoningEfforts.length) this.effortsByModel.set(model.model, model.supportedReasoningEfforts);
+      if (model.defaultReasoningEffort) defaultEffortByModel.set(model.model, model.defaultReasoningEffort);
+      if (model.supportedReasoningEfforts.length) effortsByModel.set(model.model, model.supportedReasoningEfforts);
     }
   }
 
@@ -1141,6 +1146,7 @@ export class AntigravityRuntime implements AgentRuntime {
     const pending = new PendingTurn(options.onEvent, "Antigravity è stato chiuso.");
     let sandboxFlag = false;
     let effortFlag = false;
+    const named = parseAntigravityCliModelLabel(options.model);
     this.pending = pending;
     const toolServer = this.options.toolServer ?? null;
     let text: string;
@@ -1157,6 +1163,11 @@ export class AntigravityRuntime implements AgentRuntime {
       }
       effortFlag = await effortFlagAvailable(binary);
       pending.checkpoint();
+      if (named && !named.effort && !effortsByModel.has(named.model) && !ANTIGRAVITY_KNOWN_MODELS[named.model]) {
+        // A model Trama has no levels for: ask `agy models` once, since agy rejects a name without its level.
+        await this.listModels().catch(() => undefined);
+        pending.checkpoint();
+      }
       const skillText = await inlineSkillInstructions("antigravity", options.skills);
       pending.checkpoint();
       const attachments = await attachedFilesBlock(options.images);
@@ -1191,8 +1202,8 @@ export class AntigravityRuntime implements AgentRuntime {
     const cliModel = resolveAntigravityCliModelLabel(
       options.model,
       options.effort,
-      this.defaultEffortByModel.get(options.model),
-      this.effortsByModel.get(options.model),
+      defaultEffortByModel.get(named?.model ?? options.model),
+      effortsByModel.get(named?.model ?? options.model),
     );
     const eventFile = join(runDir, "hooks.ndjson");
     const logFile = join(runDir, "agy.log");

@@ -74,7 +74,19 @@ export function catalogModel(provider: string, model: string): { model: string; 
   return match?.[1] && match[2] ? { model: match[1].trim(), effort: match[2].trim().toLowerCase() } : { model, effort: null };
 }
 
-/** True when the catalogue offers the model, by its own name or, for Antigravity, by the name with its level. */
-export function catalogOffers(provider: string, models: readonly string[], model: string): boolean {
-  return models.includes(model) || models.includes(catalogModel(provider, model).model);
+/** A catalogue row: the model name, with the levels it offers when the provider lists them. */
+export type CatalogEntry = string | { model: string; supportedReasoningEfforts?: readonly string[] };
+
+/**
+ * True when the catalogue offers the model, by its own name or, for Antigravity, by the name with a level
+ * the model offers: `Gemini 3.1 Pro (Medium)` is refused when Gemini 3.1 Pro lists only Low and High.
+ */
+export function catalogOffers(provider: string, models: readonly CatalogEntry[], model: string): boolean {
+  const find = (name: string) => models.find((entry) => (typeof entry === "string" ? entry : entry.model) === name);
+  if (find(model) !== undefined) return true;
+  const named = catalogModel(provider, model);
+  const base = named.effort ? find(named.model) : undefined;
+  if (base === undefined) return false;
+  const efforts = typeof base === "string" ? [] : (base.supportedReasoningEfforts ?? []);
+  return efforts.length === 0 || efforts.includes(named.effort!);
 }

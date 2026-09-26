@@ -19,4 +19,16 @@ describe("catalogue names", () => {
     expect(catalogOffers("antigravity", antigravity, "Gemini 9 Ultra (High)")).toBe(false);
     expect(catalogOffers("codex", ["gpt-6-luna"], "gpt-6-luna (High)")).toBe(false);
   });
+
+  it("refuses a level the model does not offer when the catalogue lists the levels", () => {
+    const catalog = [
+      { model: "Gemini 3.1 Pro", supportedReasoningEfforts: ["low", "high"] },
+      { model: "Claude Sonnet 4.6", supportedReasoningEfforts: ["thinking"] },
+    ];
+    expect(catalogOffers("antigravity", catalog, "Gemini 3.1 Pro (Low)")).toBe(true);
+    expect(catalogOffers("antigravity", catalog, "Gemini 3.1 Pro (Medium)")).toBe(false);
+    expect(catalogOffers("antigravity", catalog, "Claude Sonnet 4.6 (Thinking)")).toBe(true);
+    expect(catalogOffers("antigravity", catalog, "Claude Sonnet 4.6 (High)")).toBe(false);
+    expect(catalogOffers("antigravity", catalog, "Gemini 3.1 Pro")).toBe(true);
+  });
 });

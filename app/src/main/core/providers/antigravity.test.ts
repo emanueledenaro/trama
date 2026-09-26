@@ -38,6 +38,8 @@ const REAL_MODELS = [
   "Gemini 3.6 Flash (High)", "Gemini 3.6 Flash (Medium)", "Gemini 3.6 Flash (Low)",
   "Gemini 3.1 Pro (High)", "Gemini 3.1 Pro (Low)",
   "Claude Sonnet 4.6 (Thinking)", "Claude Opus 4.6 (Thinking)", "GPT-OSS 120B (Medium)",
+  // A model newer than Trama's built-in list, to test the levels agy models reports.
+  ...(process.env.FAKE_AGY_EXTRA_MODEL ? [process.env.FAKE_AGY_EXTRA_MODEL] : []),
 ];
 if (args[0] === "--version") { console.log("agy " + (process.env.FAKE_AGY_VERSION || "1.2.0")); process.exit(0); }
 if (args[0] === "--help") {
@@ -183,7 +185,7 @@ beforeEach(async () => {
 afterEach(async () => {
   runtime?.stop();
   runtime = null;
-  for (const key of ["FAKE_AGY_SCENARIO", "FAKE_AGY_VERSION", "FAKE_AGY_MODELS", "FAKE_AGY_LOG", "FAKE_AGY_PLUGIN", "FAKE_AGY_HELP_SANDBOX", "FAKE_AGY_STRICT_MODELS", "TRAMA_SECRET"]) delete process.env[key];
+  for (const key of ["FAKE_AGY_SCENARIO", "FAKE_AGY_VERSION", "FAKE_AGY_MODELS", "FAKE_AGY_LOG", "FAKE_AGY_PLUGIN", "FAKE_AGY_HELP_SANDBOX", "FAKE_AGY_STRICT_MODELS", "FAKE_AGY_EXTRA_MODEL", "TRAMA_SECRET"]) delete process.env[key];
   clearUsageLimitsForTests();
   await rm(root, { recursive: true, force: true });
 });
@@ -279,6 +281,8 @@ describe("Antigravity models and health", () => {
     // The levels agy models listed win over the built-in ones.
     expect(resolveAntigravityCliModelLabel("Gemini 3.9 Flash", null, "medium", ["low", "medium"])).toBe("Gemini 3.9 Flash (Medium)");
     expect(resolveAntigravityCliModelLabel("Gemini 3.9 Flash", "high", null, ["low"])).toBe("Gemini 3.9 Flash (Low)");
+    // A level in the name that the model does not offer becomes the default too.
+    expect(resolveAntigravityCliModelLabel("Gemini 3.1 Pro (Medium)")).toBe("Gemini 3.1 Pro (Low)");
     // A label that already carries its level stays as it is.
     expect(resolveAntigravityCliModelLabel("Gemini 3.7 Flash (Medium)", "low")).toBe("Gemini 3.7 Flash (Medium)");
     // A custom model without known levels goes through unchanged.
@@ -532,6 +536,38 @@ describe("Antigravity turns", () => {
       return args[at + 2] === "--effort" ? [args[at + 1], args[at + 3]] : [args[at + 1]];
     });
     expect(sent).toEqual([["Gemini 3.8 Flash", "high"], ["Gemini 3.1 Pro", "low"], ["Claude Opus 4.6 (Thinking)"]]);
+  });
+
+  it("uses the levels one runtime discovered in another runtime's turn", async () => {
+    process.env.FAKE_AGY_STRICT_MODELS = "1";
+    process.env.FAKE_AGY_MODELS = "real";
+    process.env.FAKE_AGY_EXTRA_MODEL = "Gemini 3.9 Flash (Medium)";
+    // The controller discovers models on one instance and runs turns on others.
+    const discovery = make();
+    await discovery.listModels();
+    discovery.stop();
+    runtime = make();
+    const worktree = join(root, "worktree");
+    const { threadId } = await runtime.openThread({ model: "Gemini 3.9 Flash", cwd: worktree, developerInstructions: "", sandbox: "workspace-write" });
+    await expect(
+      runtime.runTurn({ threadId, prompt: "ciao", cwd: worktree, model: "Gemini 3.9 Flash", writableRoot: worktree, onEvent: () => undefined }),
+    ).resolves.toBe('{"ok":true}');
+    const args = (await logLines()).at(-1)!.args as string[];
+    expect(args.slice(args.indexOf("--model"), args.indexOf("--model") + 4)).toEqual(["--model", "Gemini 3.9 Flash", "--effort", "medium"]);
+  });
+
+  it("asks agy models for the levels of a model Trama does not know yet", async () => {
+    process.env.FAKE_AGY_STRICT_MODELS = "1";
+    process.env.FAKE_AGY_MODELS = "real";
+    process.env.FAKE_AGY_EXTRA_MODEL = "Gemini 4.0 Flash (Low)";
+    runtime = make();
+    const worktree = join(root, "worktree");
+    const { threadId } = await runtime.openThread({ model: "Gemini 4.0 Flash", cwd: worktree, developerInstructions: "", sandbox: "workspace-write" });
+    await expect(
+      runtime.runTurn({ threadId, prompt: "ciao", cwd: worktree, model: "Gemini 4.0 Flash", writableRoot: worktree, onEvent: () => undefined }),
+    ).resolves.toBe('{"ok":true}');
+    const args = (await logLines()).at(-1)!.args as string[];
+    expect(args.slice(args.indexOf("--model"), args.indexOf("--model") + 4)).toEqual(["--model", "Gemini 4.0 Flash", "--effort", "low"]);
   });
 
   it("reports an unknown model as unavailable with a change-model hint, not as raw JSON", async () => {
