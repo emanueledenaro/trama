@@ -1,0 +1,30 @@
+name: Conventional Commits
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Test dello script
+        run: node --test scripts/conventional-commits/lib.test.mjs
+      - name: Nome del branch
+        env:
+          BRANCH_NAME: ${{ github.head_ref }}
+        run: node scripts/conventional-commits/cli.mjs branch-name "$BRANCH_NAME"
+      - name: Titolo della PR
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: node scripts/conventional-commits/cli.mjs pr-title "$PR_TITLE"
+      - name: Commit della PR
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: node scripts/conventional-commits/cli.mjs commit-range "$BASE_SHA" "$HEAD_SHA"
