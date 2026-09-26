@@ -91,16 +91,19 @@ describe("deriveTimelineRows", () => {
 });
 
 describe("turnFailureText", () => {
-  it("says in plain words that the model is not available for the account, and keeps the provider's message", () => {
-    expect(turnFailureText(error)).toEqual({
-      title: "Il modello scelto non è disponibile con questo account",
-      detail: "The 'gpt-6-sol' model is not supported when using Codex with a ChatGPT account. Scegli un altro modello dal selettore e riprova.",
+  it("says in plain words that the model is not available for the account, and keeps the provider's message apart", () => {
+    const text = turnFailureText(error, "ChatGPT");
+    expect(text).toMatchObject({
+      title: "Il modello scelto non è disponibile",
+      detail: "ChatGPT non offre questo modello con l'account collegato. Scegli un altro modello o un altro provider, poi riprova.",
     });
+    expect(text.failure.providerMessage).toBe("The 'gpt-6-sol' model is not supported when using Codex with a ChatGPT account.");
+    expect(text.failure.actions.at(-1)).toBe("changeModel");
   });
 
   it("keeps an unknown provider message, out of its JSON envelope", () => {
-    expect(turnFailureText('{"error":{"message":"Server overloaded"}}')).toEqual({ title: "Il Coordinatore non ha potuto rispondere", detail: "Server overloaded" });
-    expect(turnFailureText("socket closed")).toEqual({ title: "Il Coordinatore non ha potuto rispondere", detail: "socket closed" });
+    expect(turnFailureText('{"error":{"message":"Tool schema rejected"}}')).toMatchObject({ title: "Il Coordinatore non ha potuto rispondere", detail: "Tool schema rejected" });
+    expect(turnFailureText("socket closed")).toMatchObject({ title: "Il Coordinatore non ha potuto rispondere", detail: "socket closed" });
   });
 });
 

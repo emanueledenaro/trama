@@ -95,6 +95,8 @@ export class ProviderError extends Error {
       | "invalidModel"
       | "turnAlreadyRunning"
       | "blocked"
+      /** A temporary or shared limit (P10): the provider stays usable and the turn may be retried. */
+      | "rateLimited"
       | "unsupportedSandbox",
     message: string,
   ) {

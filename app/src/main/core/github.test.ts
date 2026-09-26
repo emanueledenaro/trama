@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ghEnvironment, parseGitHubRemote } from "./github";
+import { ghEnvironment, ghSearchPath, parseGitHubRemote } from "./github";
 
 describe("github", () => {
   it("accepts only github.com remotes", () => {
@@ -14,6 +14,19 @@ describe("github", () => {
     process.env.GITHUB_TOKEN = "x";
     expect(ghEnvironment().GITHUB_TOKEN).toBeUndefined();
     delete process.env.GITHUB_TOKEN;
+  });
+
+  it("looks for gh in Homebrew's folders too, as an app opened from the Finder has no terminal PATH", () => {
+    expect(ghSearchPath("/usr/bin:/bin").split(":")).toEqual(["/usr/bin", "/bin", "/opt/homebrew/bin", "/usr/local/bin", "/home/linuxbrew/.linuxbrew/bin"]);
+    // The inherited order comes first and nothing repeats.
+    expect(ghSearchPath("/usr/local/bin:/usr/bin").split(":")).toEqual(["/usr/local/bin", "/usr/bin", "/opt/homebrew/bin", "/home/linuxbrew/.linuxbrew/bin"]);
+    const path = process.env.PATH;
+    process.env.PATH = "/usr/bin:/bin";
+    try {
+      expect(ghEnvironment().PATH).toContain("/opt/homebrew/bin");
+    } finally {
+      process.env.PATH = path;
+    }
   });
 });
 
