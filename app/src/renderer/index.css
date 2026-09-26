@@ -1358,31 +1358,57 @@ button {
   background: color-mix(in srgb, var(--background) 30%, transparent);
 }
 
-/* The draggable edge of a side panel: invisible until hovered or dragged, then a thin line of light. */
-.panel-resize-handle {
-  width: 10px;
-  cursor: col-resize;
+/* The sash between two panels (Sash in lib/resizable.tsx). At rest it draws nothing: the panels' own 1px border is
+   the only line. The grip is a wider invisible band centered on that border. After a short hover it fills with the
+   provider's accent; the keyboard focus and a drag fill it at once, and it stays filled until the drag ends. */
+.sash {
+  --sash-size: 4px;
+  --sash-hover-delay: 300ms;
+  --sash-hover-border: var(--color-text-accent);
+  position: absolute;
+  z-index: 20;
   touch-action: none;
   outline: none;
+  background-color: transparent;
+  transition: background-color 0.1s ease-out;
 }
-.panel-resize-handle::after {
-  content: "";
-  position: absolute;
+.sash--vertical {
   inset-block: 0;
-  left: 50%;
-  width: 2px;
-  transform: translateX(-50%);
-  border-radius: 2px;
-  background: color-mix(in srgb, var(--glow-1, var(--info)) 70%, var(--foreground));
-  opacity: 0;
-  transition: opacity 0.15s ease;
-}
-.panel-resize-handle:hover::after,
-.panel-resize-handle:focus-visible::after,
-.panel-resize-handle[data-active]::after {
-  opacity: 0.55;
-}
-body:has(.panel-resize-handle[data-active]) {
+  left: calc(var(--sash-size) / -2);
+  width: var(--sash-size);
   cursor: col-resize;
+}
+.sash--horizontal {
+  inset-inline: 0;
+  top: calc(var(--sash-size) / -2);
+  height: var(--sash-size);
+  cursor: row-resize;
+}
+.sash:hover {
+  background-color: var(--sash-hover-border);
+  transition-delay: var(--sash-hover-delay);
+}
+.sash:focus-visible,
+.sash[data-active] {
+  background-color: var(--sash-hover-border);
+  transition-delay: 0s;
+}
+body:has(.sash[data-active]) {
   user-select: none;
+}
+body:has(.sash--vertical[data-active]) {
+  cursor: col-resize;
+}
+body:has(.sash--horizontal[data-active]) {
+  cursor: row-resize;
+}
+@media (forced-colors: active) {
+  .sash {
+    forced-color-adjust: none;
+  }
+  .sash:hover,
+  .sash:focus-visible,
+  .sash[data-active] {
+    background-color: Highlight;
+  }
 }

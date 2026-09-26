@@ -1,7 +1,7 @@
 import { IconArrowsDiagonal, IconArrowsDiagonalMinimize2, IconX } from "@tabler/icons-react";
 import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/cn";
-import { ResizeHandle, useResizableWidth } from "@/lib/resizable";
+import { Sash, useResizableWidth } from "@/lib/resizable";
 import { useUi } from "@/lib/store";
 import { AuditView } from "./AuditView";
 import { CandidateView } from "./CandidateView";
@@ -60,16 +60,15 @@ export function Inspector() {
       // The dialog keeps at least CHAT_MIN_WIDTH; below that the inspector floats over it (see the container query above).
       style={{ width: `min(${panel.width}px, max(${panel.bounds.min}px, calc(100% - ${CHAT_MIN_WIDTH}px)))` }}
     >
-      <ResizeHandle
+      <Sash
         side="left"
         label="Larghezza dell'ispettore"
-        width={panel.width}
+        size={panel.width}
         min={panel.bounds.min}
         max={panel.bounds.max}
         onResize={panel.setWidth}
         onReset={panel.reset}
         onDragChange={panel.setResizing}
-        className="absolute inset-y-0 -left-1 z-20"
       />
       <div className="chat-surface-divider drag-region flex h-[46px] shrink-0 items-center gap-2 px-4">
         <h3 className="min-w-0 flex-1 truncate font-system-ui text-ui text-foreground">{TITLES[target.kind]}</h3>

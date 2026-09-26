@@ -6,7 +6,7 @@ import { ChatView } from "@/components/chat/ChatView";
 import { Dialogs } from "@/components/Dialogs";
 import { Inspector } from "@/components/inspector/Inspector";
 import { WelcomeView } from "@/components/launch/WelcomeView";
-import { ResizeHandle, useResizableWidth } from "@/lib/resizable";
+import { Sash, useResizableWidth } from "@/lib/resizable";
 import { Sidebar } from "@/components/sidebar/Sidebar";
 import { Toast } from "@/components/Toast";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -136,17 +136,16 @@ export function App() {
         </div>
         <div className="relative flex h-svh min-h-0 min-w-0 flex-1">
           {sidebarOpen ? (
-            <ResizeHandle
+            <Sash
               side="right"
               label="Larghezza della barra laterale. Clic per nasconderla"
-              width={sidebar.width}
+              size={sidebar.width}
               min={sidebar.bounds.min}
               max={sidebar.bounds.max}
               onResize={sidebar.setWidth}
               onReset={sidebar.reset}
               onClick={() => useUi.getState().toggleSidebar()}
               onDragChange={sidebar.setResizing}
-              className="absolute inset-y-0 -left-1 z-20"
             />
           ) : null}
           <main className="chat-content-card @container/main relative z-[15] flex min-w-0 flex-1 overflow-hidden">
