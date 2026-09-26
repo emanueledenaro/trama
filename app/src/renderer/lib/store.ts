@@ -197,7 +197,7 @@ export const useUi = create<UiState>((set, get) => ({
 }));
 
 /** The main process's error without Electron's IPC prefix. */
-const errorText = (error: unknown) => (error as Error).message.replace(/^Error invoking remote method '[^']+': (Error: )?/, "");
+export const errorText = (error: unknown) => (error as Error).message.replace(/^Error invoking remote method '[^']+': (Error: )?/, "");
 
 /** Invokes a main-process action and shows its error as a toast. */
 export async function act<K extends ActionName>(action: K, payload: ActionPayload<K>): Promise<ActionResult<K> | undefined> {

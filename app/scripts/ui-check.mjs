@@ -1,7 +1,7 @@
 // Launches the built app with the fake Codex server and saves screenshots of the main screens.
 // Usage: node scripts/ui-check.mjs <output-dir>
 import { execFileSync } from "node:child_process";
-import { cp, mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { _electron as electron } from "playwright";
@@ -851,6 +851,11 @@ await writeFile(join(presenceSeed, "src", "payments.js"), "export const pay = (o
 presenceGit(presenceSeed, "add", ".");
 presenceGit(presenceSeed, "commit", "-q", "-m", "Pagamenti");
 presenceGit(presenceSeed, "push", "-q", presenceRemote, "main");
+// G03: Bea's branch is on the remote and changes the same line Ada changes in her checkout.
+presenceGit(presenceSeed, "checkout", "-q", "-b", "feature/rimborsi");
+await writeFile(join(presenceSeed, "src", "payments.js"), "export const pay = (order) => order.total - order.refund;\n");
+presenceGit(presenceSeed, "commit", "-q", "-am", "Rimborsi");
+presenceGit(presenceSeed, "push", "-q", presenceRemote, "feature/rimborsi");
 const beaRecord = {
   version: 1,
   user: "bea-at-example.com",
@@ -917,4 +922,48 @@ await page.getByTestId("settings").getByRole("switch", { name: "Condividi la pre
 await page.getByTestId("settings").getByRole("button", { name: "Metti in pausa" }).click();
 await page.getByTestId("settings").getByRole("button", { name: "Riprendi" }).waitFor();
 await shot("16c-presence-settings");
+await page.getByTestId("settings").getByRole("button", { name: "Riprendi" }).click();
+await page.getByRole("button", { name: "Impostazioni" }).click();
+await page.getByTestId("settings").waitFor({ state: "hidden" });
+
+// G03, sovrapposizioni: Ada and Bea change the same line of src/payments.js. The merge probe runs in Trama's folders
+// and confirms the conflict with its line; the Coordinator says it in the chat, the focus bar warns, the map marks the
+// module and the file, and the message to Bea is ready to copy. Nothing is blocked or sent by Trama.
+const overlapCard = page.locator('[data-anchor="presence-overlap"]').filter({ has: page.locator('[data-testid="overlap-card"][data-level="conflict"]') });
+await overlapCard.first().waitFor({ timeout: 60_000 });
+if (!(await overlapCard.first().innerText()).includes("riga 1")) throw new Error(`Overlap card without the line in conflict: ${await overlapCard.first().innerText()}`);
+await overlapCard.first().scrollIntoViewIfNeeded();
+await shot("16d-overlap-chat");
+const focusOverlap = page.locator('[data-testid="focus-overlap"][data-level="conflict"]');
+await focusOverlap.waitFor({ timeout: 10_000 });
+await focusOverlap.getByRole("button", { name: /^Dettagli/ }).click();
+await focusOverlap.getByRole("button", { name: "Scrivi a Bea" }).first().click();
+const colleagueMessage = focusOverlap.getByTestId("colleague-message");
+const draft = await colleagueMessage.getByRole("textbox").inputValue();
+if (!draft.includes("Ciao Bea") || !draft.includes("src/payments.js") || !draft.includes("riga 1") || /[\u2013\u2014]/.test(draft)) {
+  throw new Error(`Message to the colleague: ${draft}`);
+}
+const closeBox = await colleagueMessage.getByRole("button", { name: "Chiudi" }).boundingBox();
+const copyBox = await colleagueMessage.getByRole("button", { name: "Copia il messaggio" }).boundingBox();
+if (!closeBox || !copyBox || closeBox.x >= copyBox.x) throw new Error("Message to the colleague: Copia il messaggio is not the last call to action");
+await shot("16e-overlap-focus");
+await page.evaluate(() => window.trama.invoke("settings:update", { theme: "dark" }));
+await page.waitForFunction(() => document.documentElement.classList.contains("dark"));
+await shot("16f-overlap-focus-dark");
+await page.evaluate(() => window.trama.invoke("settings:update", { theme: "system" }));
+await colleagueMessage.getByRole("button", { name: "Copia il messaggio" }).click();
+await colleagueMessage.getByTestId("colleague-message-done").waitFor();
+await page.getByRole("button", { name: "Mappa del progetto" }).click();
+const markedModule = page.getByRole("listbox", { name: "Moduli" }).getByRole("option").filter({ has: page.locator('[data-overlap="conflict"]') });
+await markedModule.first().waitFor({ timeout: 10_000 });
+await page.getByTestId("map-overlap-legend").waitFor();
+await shot("16g-overlap-map");
+await markedModule.first().click();
+await page.locator('[data-overlap="conflict"]').filter({ hasText: "Bea" }).first().waitFor();
+await page.getByTestId("module-overlaps").waitFor();
+await shot("16h-overlap-module");
+// Never a block: Ada's checkout and branch are as she left them, and Bea's branch did not move.
+if (!(await readFile(join(presenceProject, "src", "payments.js"), "utf8")).includes("CONTENUTO PRIVATO")) throw new Error("The probe changed the checkout");
+if (presenceGit(presenceProject, "symbolic-ref", "--short", "HEAD").trim() !== "feature/carrello") throw new Error("The probe changed the branch");
+if (presenceGit(presenceRemote, "rev-parse", "feature/rimborsi").trim() !== presenceGit(presenceSeed, "rev-parse", "feature/rimborsi").trim()) throw new Error("Bea's branch moved");
 await app.close();

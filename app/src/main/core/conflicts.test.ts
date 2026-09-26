@@ -56,6 +56,8 @@ describe("remote conflicts", () => {
     const result = await assess(context, sha);
     expect(result.classification).toBe("conflict");
     expect(result.conflictingFiles).toEqual(["a.txt"]);
+    // G03: the lines in conflict, in the candidate's version.
+    expect(result.conflictingLines).toEqual({ "a.txt": [{ start: 2, end: 2 }] });
     expect((await git(["status", "--porcelain"], context.repo)).trim()).toBe("");
   });
 

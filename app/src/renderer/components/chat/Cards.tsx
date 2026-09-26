@@ -13,6 +13,7 @@ import {
   IconShieldCheck,
   IconTelescope,
   IconUsersGroup,
+  IconUsers,
 } from "@tabler/icons-react";
 import { type AssignmentStatus, type CandidateEvidence, type CandidateState, isOpenQuestion } from "@shared/domain";
 import { isExerciseAssessment } from "@shared/onboarding";
@@ -33,6 +34,8 @@ import { PlanSpecBody } from "./PlanSpec";
 import { DutyFields } from "./DutyFields";
 import { Sep } from "@/components/ui/sep";
 import { AgentName } from "@/components/AgentIdentity";
+import { OverlapRow } from "@/components/OverlapNotice";
+import { compareSides, linesLabel, type OverlapItem } from "@shared/overlap";
 
 function CardFrame({
   icon,
@@ -749,6 +752,7 @@ export function CandidateCard({ candidateId }: { candidateId: string }) {
           </Field>
         ) : null;
       })()}
+      {candidate.pullRequest?.mergedAt ? null : <CandidateOverlaps candidateId={candidate.id} />}
       {candidate.clearance ? (
         <p className="mt-2 text-ui-sm text-muted-foreground">
           {report.clearanceInvalidated ? "Il via libera del Coordinatore non vale più: sono cambiate evidenze o decisioni." : "Via libera del Coordinatore."}
@@ -998,6 +1002,7 @@ export function ConflictCard({ assessmentId }: { assessmentId: string }) {
             {assessment.conflictingFiles.map((file) => (
               <span key={file} className="rounded-md bg-[var(--color-background-button-secondary)] px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground">
                 {file}
+                {assessment.conflictingLines?.[file]?.length ? <span className="font-sans">, {linesLabel(assessment.conflictingLines[file]!)}</span> : null}
               </span>
             ))}
           </div>
@@ -1043,6 +1048,64 @@ export function PresenceConsentCard({ proposal, detail }: { proposal: string; de
           </Button>
         </div>
       ) : null}
+    </CardFrame>
+  );
+}
+
+/**
+ * G03, before publishing or merging (decision 4): the candidate's files against the colleagues' presence, with the
+ * conflicts the merge probes found. A warning, never a lock: the buttons stay where they are.
+ */
+function CandidateOverlaps({ candidateId }: { candidateId: string }) {
+  const project = useUi((s) => s.app?.project)!;
+  const overlaps = project.overlaps;
+  const candidate = project.document.candidates.find((c) => c.id === candidateId);
+  if (!overlaps || !candidate || !project.presence) return null;
+  const specialist = project.document.team.specialists.find((s) => s.id === candidate.specialistId);
+  const items = compareSides({
+    sides: [{ mine: specialist?.name ?? candidate.specialistId, files: candidate.changedFiles, moduleIds: [] }],
+    others: project.presence.others,
+    modules: project.snapshot.modules.map((m) => ({ id: m.id, name: m.name, relativePath: m.relativePath, files: m.files.map((f) => f.relativePath) })),
+    probes: overlaps.probes,
+    pullRequests: project.github.snapshot?.pullRequests ?? [],
+  });
+  if (!items.length) return null;
+  return (
+    <Field label={candidate.pullRequest ? "Prima di unire, i colleghi" : "Prima di pubblicare, i colleghi"}>
+      <div data-testid="candidate-overlaps" className="divide-y divide-[color:var(--app-surface-divider)]">
+        {items.map((item) => (
+          <OverlapRow key={item.id} item={item} />
+        ))}
+      </div>
+    </Field>
+  );
+}
+
+/** The live overlap behind a Coordinator's card, when it still holds. */
+function findOverlap(project: { overlaps?: { items: OverlapItem[]; tasks: Record<string, OverlapItem[]> } | null }, id: string): OverlapItem | null {
+  const overlaps = project.overlaps;
+  if (!overlaps) return null;
+  return overlaps.items.find((i) => i.id === id) ?? Object.values(overlaps.tasks).flat().find((i) => i.id === id) ?? null;
+}
+
+/**
+ * Decision 9: the Coordinator points out an overlap in the chat, with the message to the colleague ready. The text
+ * is the one said at the time; the files, the lines and the message follow the presence as it is now.
+ */
+export function OverlapCard({ overlapId, title, detail }: { overlapId: string; title: string; detail: string | null }) {
+  const project = useUi((s) => s.app?.project)!;
+  const item = findOverlap(project, overlapId);
+  return (
+    <CardFrame
+      icon={<IconUsers stroke={1.8} />}
+      title={title}
+      anchor="presence-overlap"
+      aside={item ? null : <Badge tone="secondary">Non più attuale</Badge>}
+    >
+      <div data-testid="overlap-card" data-level={item?.level ?? "gone"}>
+        {detail ? <p className="text-ui text-foreground/90">{detail}</p> : null}
+        {item ? <OverlapRow item={item} /> : <p className="mt-1 text-ui-xs text-muted-foreground">La presenza dei colleghi è cambiata dopo questo avviso.</p>}
+      </div>
     </CardFrame>
   );
 }
