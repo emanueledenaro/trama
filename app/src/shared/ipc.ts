@@ -131,6 +131,8 @@ export interface ActionMap {
   "presence:consent": [{ share: boolean; proposal?: import("./presence").PresenceProposal | null }, void];
   /** Pauses or resumes sharing without withdrawing the consent (G01). */
   "presence:pause": [{ paused: boolean }, void];
+  /** The person starts or declines the route Ask Trama proposed (M07). */
+  "route:answer": [{ routeId: string; start: boolean }, void];
   "presence:refresh": [void, void];
   "github:createIssue": [{ title: string; body: string }, void];
   "settings:update": [Partial<AppSettings>, void];

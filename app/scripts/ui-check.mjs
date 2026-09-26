@@ -875,6 +875,52 @@ await app.evaluate(({ nativeTheme }) => {
 });
 await page.evaluate(() => document.documentElement.classList.remove("dark"));
 
+// M07, Ask Trama: /ask-trama is in the composer with the original skill's description, and its button starts the
+// message. The Coordinator runs ask-trama and proposes a route instead of naming a command; each step says how Trama
+// runs it. "Avvia il percorso" starts the first flow inside Trama: here grilling, round 1.
+await page.getByRole("button", { name: "Interrompi" }).waitFor({ state: "hidden", timeout: 20_000 });
+await composer().fill("");
+await composer().pressSequentially("/ask");
+const skillMenu = page.getByRole("listbox", { name: "Skill" });
+await skillMenu.getByRole("option", { name: /\/ask-trama/ }).getByText("Ask which skill or flow fits your situation. A router over the skills in this repo.").waitFor({ timeout: 10_000 });
+await shot("20-ask-trama-menu");
+await page.keyboard.press("Escape");
+await composer().fill("");
+await page.getByRole("button", { name: "Ask Trama", exact: true }).click();
+await expectAsked("/ask-trama ", "Ask Trama");
+await page.keyboard.type("Gli ordini pagati annullati devono andare in revisione invece del rimborso automatico.");
+await page.keyboard.press("Enter");
+const routeCard = page.locator('[data-anchor="route"]').last();
+await routeCard.getByText("Proposto", { exact: true }).waitFor({ timeout: 20_000 });
+for (const expected of ["Flusso principale", "grill-with-docs", "Grilling prima del piano, con glossario e ADR", "prototype", "Skill nel Coordinatore", "Piano scritto come spec", "Revisione tecnica del candidato", "Confine di fase: Continua"]) {
+  if (!(await routeCard.innerText()).includes(expected)) throw new Error(`The Ask Trama route does not show "${expected}"`);
+}
+if (await page.getByText("Chi vede gli ordini in revisione?").count()) throw new Error("Ask Trama started a flow before the person confirmed the route");
+const skipRoute = await routeCard.getByRole("button", { name: "Non avviare" }).boundingBox();
+const startRoute = await routeCard.getByRole("button", { name: "Avvia il percorso" }).boundingBox();
+const routeBox = await routeCard.boundingBox();
+if (!skipRoute || !startRoute || !routeBox || skipRoute.x >= startRoute.x || routeBox.x + routeBox.width - (startRoute.x + startRoute.width) > 20) {
+  throw new Error("Ask Trama route: Non avviare and Avvia il percorso are not on the right, primary last");
+}
+await routeCard.scrollIntoViewIfNeeded();
+await shot("20a-ask-trama-route");
+const routeLook = await page.evaluate(() => ({ provider: document.documentElement.dataset.provider ?? null, dark: document.documentElement.classList.contains("dark") }));
+for (const provider of ["codex", "claudeAgent"]) {
+  for (const dark of [false, true]) {
+    await setLook(provider, dark);
+    await shot(`20b-ask-trama-route-${provider}-${dark ? "dark" : "light"}`);
+  }
+}
+await setLook(routeLook.provider, routeLook.dark);
+await routeCard.getByRole("button", { name: "Avvia il percorso" }).click();
+await routeCard.getByText("Avviato", { exact: true }).waitFor({ timeout: 20_000 });
+await page.getByText(/^Avvia il percorso AT-[0-9A-F]{8} di Ask Trama/).last().waitFor({ timeout: 20_000 });
+await page.getByText("Chi vede gli ordini in revisione?").last().waitFor({ timeout: 20_000 });
+if (await routeCard.getByRole("button", { name: "Avvia il percorso" }).count()) throw new Error("A started route can be started again");
+await page.getByRole("button", { name: "Interrompi" }).waitFor({ state: "hidden", timeout: 20_000 });
+await page.getByText("Chi vede gli ordini in revisione?").last().scrollIntoViewIfNeeded();
+await shot("20c-ask-trama-started");
+
 // G01, presenza: a project with a colleague on a local bare remote. The colleague's record is already there; Trama
 // proposes the consent in the chat once, with "Non ora" and "Condividi" on the right, and publishes only after
 // "Condividi": names, branches and paths, never the content of a file.

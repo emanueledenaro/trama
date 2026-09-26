@@ -368,10 +368,10 @@ describe("TramaController", () => {
     expect(second.spec ?? null).toBeNull();
   });
 
-  it("gives the Coordinator thread the original grill-with-docs, grilling and domain-modeling skills once, also when it is already open (M02, M03)", async () => {
+  it("gives the Coordinator thread the original grill-with-docs, grilling, domain-modeling and ask-trama skills once, also when it is already open (M02, M03, M07)", async () => {
     await setup();
     const document = controller!.snapshot.project!.document;
-    const skill = ["grill-with-docs", "grilling", "domain-modeling"].map((name) => `skill:${name}:${join(root, `resources/AIHero/skills/${name}/SKILL.md`)}`);
+    const skill = ["grill-with-docs", "grilling", "domain-modeling", "ask-trama"].map((name) => `skill:${name}:${join(root, `resources/AIHero/skills/${name}/SKILL.md`)}`);
     const received = async () => {
       await controller!.send("[ricevuti]", null, null, null);
       return JSON.parse((document.events.at(-1)!.content as { text: string }).text) as string[];

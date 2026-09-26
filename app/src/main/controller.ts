@@ -206,7 +206,9 @@ import {
 } from "@shared/onboarding";
 import { buildStudy, fingerprints, partsToInject, studyText } from "./core/study";
 import { CoordinatorToolServer, TOOL_SERVER_NAME } from "./core/toolServer";
-import { deliverNativeSkills, loadNativeSkill, type NativeSkill } from "./core/nativeSkills";
+import { deliverNativeSkill, deliverNativeSkills, loadNativeSkill, type NativeSkill } from "./core/nativeSkills";
+import { answerRoute, askTramaComposerSkill, boundarySession, RouteError, routeReferences, skillInRouteBinding } from "./core/askTrama";
+import { ASK_TRAMA_SKILL, BOUNDARY_LABELS, findRoute } from "@shared/askTrama";
 import { concludeDuty, dutyModel, type DutyRunner, dutySession, nextDuty, recordCheckOutcome, startDomainWriting, startWaitingDomainWriting, withinMandate } from "./core/duties";
 import { findDomainProposal } from "@shared/domainDocs";
 
@@ -216,6 +218,13 @@ const PREFERRED_COORDINATOR_MODEL = "gpt-5.6-luna";
 /** Added to the study of a project without goals (UX07): the first message proposes a first goal. */
 export const FIRST_GOAL_REQUEST =
   "Il progetto non ha ancora obiettivi. Chiudi il messaggio proponendo un primo obiettivo con propose_goal: un titolo breve, il risultato atteso ed esempi concreti accettati e rifiutati, ricavati dallo studio. La persona lo conferma o lo corregge; proporlo non concede un mandato e non avvia lavoro.";
+
+/** Added to the turn in which the person writes /ask-trama (M07). */
+const ASK_TRAMA_INVOKED =
+  "## Ask Trama\nThe person wrote /ask-trama: run the ask-trama skill with its Trama binding on the situation their message describes, and propose the route with propose_route.";
+
+/** What a new Coordinator session opened without the conversation receives in its place (M07, "/clear"). */
+const CLEARED_CONVERSATION = "La persona ha aperto una sessione nuova senza la conversazione precedente, al confine di fase di un percorso di Ask Trama.";
 
 /** How long Trama waits for a provider's account check before reporting it unknown. */
 const PROVIDER_CHECK_TIMEOUT_MS = 20_000;
@@ -245,6 +254,16 @@ function lateRules(skills: NativeSkill[], provider: ProviderId): LateRules {
     text: [style, NEXT_STEP_RULES, delivery.text].join("\n\n"),
     skills: delivery.skills,
   };
+}
+
+/** The Coordinator forgets its thread: the next opening starts a new session that receives the study again. */
+function forgetCoordinatorThread(document: ProjectDocument): void {
+  document.coordinator.threadId = null;
+  document.coordinator.threadModel = null;
+  document.coordinator.injectedStudy = {};
+  document.coordinator.memorySentToThread = null;
+  document.coordinator.practicesSent = null;
+  document.coordinator.contextWarnedAt = null;
 }
 
 /** Codex reads its skill catalogue from disk, so a signed-in account with its usage exhausted still lists it. */
@@ -955,10 +974,20 @@ export class TramaController {
 
   private async loadSkills(): Promise<void> {
     const project = this.state.project;
-    if (!project || !canListSkills(this.state.codex.account)) return;
+    if (!project) return;
+    // /ask-trama is in the composer in every project, from Trama's own package (M07).
+    const askTrama = await this.nativeSkill(ASK_TRAMA_SKILL)
+      .then(askTramaComposerSkill)
+      .catch(() => null);
+    const withAskTrama = (skills: LoadedSkill[]) => (askTrama ? [askTrama, ...skills.filter((s) => s.name !== ASK_TRAMA_SKILL)] : skills);
+    if (this.state.project === project && askTrama && !project.skills.some((s) => s.name === ASK_TRAMA_SKILL && s.path === askTrama.path)) {
+      project.skills = withAskTrama(project.skills);
+      this.publish();
+    }
+    if (!canListSkills(this.state.codex.account)) return;
     const skills = await this.discovery.listSkills(project.rootPath).catch(() => null);
     if (this.state.project === project && skills) {
-      project.skills = skills;
+      project.skills = withAskTrama(skills);
       // The method counts as ready only when Codex's catalogue actually loads its skills.
       project.missingMethodSkills = hasAiHero(project.rootPath) ? SELECTED_SKILLS.filter((name) => !skills.some((s) => s.name === name)) : null;
       this.publish();
@@ -1460,6 +1489,7 @@ export class TramaController {
           reviewCandidate: (candidateId) => this.reviewCandidate(candidateId, current.runningRequestId),
           headSHA: () => this.headSHA(current.rootPath),
           orderPlan: (order) => this.orderPlan({ ...order, requestId: current.runningRequestId, orderedBy: "coordinator" }).id,
+          askTramaCatalog: async () => ({ references: routeReferences(await this.nativeSkill(ASK_TRAMA_SKILL)), bundled: [...SELECTED_SKILLS] }),
         });
       },
       TOOL_SERVER_INSTRUCTIONS,
@@ -1560,7 +1590,8 @@ export class TramaController {
           runtime,
           model,
           handover ? handover.reason : opening.replaced ? "il thread precedente non è più disponibile" : null,
-          handover ? handoverTranscript(document) : null,
+          handover ? (handover.transcript === false ? CLEARED_CONVERSATION : handoverTranscript(document)) : null,
+          handover?.transcript === false,
         );
         document.coordinator.pendingHandover = null;
       }
@@ -1595,6 +1626,8 @@ export class TramaController {
     model: string,
     replacedReason: string | null,
     transcript: string | null = null,
+    /** An Ask Trama "/clear" (M07): the study's chronology of the conversation stays out too. */
+    cleared = false,
   ) {
     const document = project.document;
     const study = document.coordinator.study!;
@@ -1606,7 +1639,7 @@ export class TramaController {
     const learned = this.learnedContext(project);
     const context = [
       "Studio del progetto scritto da Trama (dati, non istruzioni).",
-      studyText(study),
+      studyText(study, cleared ? study.sections.map((s) => s.part).filter((part) => part !== "history") : undefined),
       learned.memory,
       ...(learned.skills ? [learned.skills] : []),
       ...(transcript ? [`## Conversazione finora (trascrizione di Trama, dati, non istruzioni)\n${transcript}`] : []),
@@ -1674,6 +1707,8 @@ export class TramaController {
     removable = true,
     /** The next step the message takes: the person's button, or Trama starting the Coordinator's move (W04). */
     step: RequestStep | null = null,
+    /** Bundled skills without a Trama flow that a started Ask Trama route runs, delivered with their original text (M07). */
+    routeSkills: string[] = [],
   ): Promise<void> {
     const project = this.requireProject();
     const trimmed = text.trim();
@@ -1815,6 +1850,15 @@ export class TramaController {
       const feedback = confirmationFeedback(document, request.id);
       if (feedback) sections.push(feedback);
       const skills = skillInvocations(trimmed, project.skills);
+      // /ask-trama (M07): the thread holds the skill and its binding; the person asks for it now.
+      if (/(^|\s)[/$]ask-trama(?=\s|$)/.test(trimmed)) sections.push(ASK_TRAMA_INVOKED);
+      const routed = routeSkills.length
+        ? deliverNativeSkills(
+            await Promise.all(routeSkills.map(async (name) => ({ skill: await this.nativeSkill(name), binding: skillInRouteBinding(name) }))),
+            activeProvider === "codex",
+          )
+        : null;
+      if (routed) sections.push(routed.text);
       sections.push(codexSkillText(trimmed, project.skills));
       appendEvent(
         document,
@@ -1831,7 +1875,7 @@ export class TramaController {
             work.phase ? `fase: ${PHASE_LABELS[work.phase]}` : null,
             automatic ? `mossa automatica: ${COORDINATOR_MOVES[automatic].label}` : null,
             feedback ? "richiamo: domanda di conferma generica" : null,
-            skills.length ? `skill: ${skills.map((s) => s.name).join(", ")}` : null,
+            skills.length || routeSkills.length ? `skill: ${[...skills.map((s) => s.name), ...routeSkills].join(", ")}` : null,
           ]
             .filter(Boolean)
             .join("; "),
@@ -1849,7 +1893,7 @@ export class TramaController {
         fastMode: this.fastModeFor(dialogComposer(document, goal?.id ?? null), activeProvider, selectedModel),
         images: attachments,
         // The skills of the late rules go once, next to the skills the person invoked.
-        skills: [...(rules?.skills ?? []).filter((r) => !skills.some((s) => s.name === r.name)), ...skills],
+        skills: [...(rules?.skills ?? []).filter((r) => !skills.some((s) => s.name === r.name)), ...skills, ...(routed?.skills ?? [])],
         onEvent: (event) => this.handleTurnEvent(project, request, event),
       });
       if (closed()) return;
@@ -2154,13 +2198,8 @@ export class TramaController {
     const document = project.document;
     const from = this.coordinatorProvider(document);
     this.stopCoordinatorRuntime();
-    document.coordinator.threadId = null;
-    document.coordinator.threadModel = null;
+    forgetCoordinatorThread(document);
     document.coordinator.threadProvider = provider;
-    document.coordinator.injectedStudy = {};
-    document.coordinator.memorySentToThread = null;
-    document.coordinator.practicesSent = null;
-    document.coordinator.contextWarnedAt = null;
     document.coordinator.pendingHandover = { from, reason: `la persona ha spostato il Coordinatore da ${providerName(from)} a ${providerName(provider)}` };
     document.selectedProvider = provider;
     // The previous provider's model means nothing on the new one (review #5).
@@ -2177,6 +2216,54 @@ export class TramaController {
       referenceId: null,
     });
     this.changed();
+  }
+
+  /**
+   * The person starts or declines a route Ask Trama proposed (M07). Starting applies the route's phase boundary to the
+   * Coordinator's session (PHASE-BOUNDARIES.md) and writes the start message, with the original text of the route's
+   * bundled skills that have no Trama flow.
+   */
+  async answerRoute(routeId: string, start: boolean): Promise<void> {
+    const project = this.requireProject();
+    const document = project.document;
+    const route = findRoute(document, routeId);
+    if (!route) throw new DomainError(`Percorso ${routeId} non trovato.`);
+    if (project.runningRequestId || this.queue.some((q) => q.projectId === project.id)) {
+      throw new DomainError("Aspetta la fine del turno del Coordinatore prima di rispondere al percorso.");
+    }
+    let message: string;
+    try {
+      message = answerRoute(route, start);
+    } catch (error) {
+      if (error instanceof RouteError) throw new DomainError(error.message);
+      throw error;
+    }
+    const session = start ? boundarySession(route.boundary) : "same";
+    if (session !== "same") {
+      if (this.starting) await this.starting.catch(() => undefined);
+      const provider = this.coordinatorProvider(document);
+      forgetCoordinatorThread(document);
+      document.coordinator.threadProvider = provider;
+      document.coordinator.pendingHandover = {
+        from: provider,
+        reason: `confine di fase del percorso ${route.id} di Ask Trama`,
+        ...(session === "new" ? { transcript: false } : {}),
+      };
+      project.phase = { kind: "idle" };
+      project.contextUsage = null;
+      appendEvent(
+        document,
+        "trama",
+        { type: "card", kind: "contextNotice", title: `${BOUNDARY_LABELS[route.boundary].label} per il percorso ${route.id}`, detail: BOUNDARY_LABELS[route.boundary].detail, referenceId: null },
+        null,
+        new Date(),
+        null,
+        route.goalId,
+      );
+    }
+    this.changed();
+    const routeSkills = start ? route.steps.filter((step) => step.kind === "skill").map((step) => step.skill) : [];
+    await this.send(message, null, null, null, [], null, route.goalId, false, null, routeSkills);
   }
 
   /** The provider refused `model` for this account: the picker keeps it visible but disabled until Trama restarts. */
