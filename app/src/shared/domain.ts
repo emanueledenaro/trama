@@ -28,6 +28,8 @@ export type CardKind =
   | "automaticStep"
   /** Trama asks whether to share the presence in this project (G01); referenceId is the proposal, `initial` or `conflict`. */
   | "presenceConsent"
+  /** The route Ask Trama chose for the person's situation (M07); referenceId is the route. */
+  | "route"
   /** The Coordinator points out an overlap with a colleague's work (G03); referenceId is the overlap's id. */
   | "overlap";
 
@@ -298,7 +300,8 @@ export interface CoordinatorState {
   /** The provider that owns `threadId`; absent means Codex. */
   threadProvider?: ProviderId;
   /** Set when the person moved the Coordinator to another provider: the next study hands the conversation over. */
-  pendingHandover?: { from: ProviderId; reason: string } | null;
+  /** `transcript` false: the new session starts without the conversation (an Ask Trama "/clear", M07). */
+  pendingHandover?: { from: ProviderId; reason: string; transcript?: boolean } | null;
   injectedStudy: Partial<Record<StudyPart, string>>;
   memory: CoordinatorMemory;
   study: ProjectStudy | null;
@@ -1080,6 +1083,8 @@ export interface ProjectDocument {
   focus?: TaskFocus;
   /** The person's consent to share the presence in this project (G01); absent until Trama first proposes it. */
   presence?: import("./presence").PresenceConsent;
+  /** Routes the Coordinator proposed with the ask-trama skill (M07); absent before the first one. */
+  routes?: import("./askTrama").AskTramaRoute[];
   /** The overlaps the Coordinator already pointed out in the chat (G03), so each one is said once. */
   overlapNotices?: string[];
   /** How the project adapts Trama's Clean Code standard (Q03); absent means every rule is on. */

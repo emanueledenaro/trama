@@ -663,7 +663,33 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
         });
         return;
       }
-      const grillingMatch = text.match(/\[grilling:(\d+)\]/);
+      if (text.includes("$ask-trama")) {
+        // Ask Trama (M07): the skill picks a route and the Coordinator proposes it; "[strumento]" picks a standalone skill
+        // behind a new session, "[inventata]" a skill ask-trama does not name.
+        const route = text.includes("[strumento]")
+          ? { path: "standalone", steps: ["prototype"], boundary: "clear" }
+          : text.includes("[riassunto]")
+            ? { path: "mainFlow", steps: ["to-spec", "to-tickets", "implement"], boundary: "compact" }
+            : { path: "mainFlow", steps: [text.includes("[inventata]") ? "deploy" : "grill-with-docs", "prototype", "to-spec", "to-tickets", "implement", "code-review"], boundary: "continue" };
+        const result = await callTool(threadId, "propose_route", {
+          situation: "Gli ordini pagati annullati devono andare in revisione invece del rimborso automatico.",
+          ...route,
+          reason: "È un'idea da costruire in questo repository: si parte dal grilling con i documenti e si scende fino all'implementazione.",
+        });
+        toolDone("propose_route", result);
+        finish(result.isError ? `Rifiutato: ${result.content[0].text}` : "Ti propongo il flusso principale, dal grilling all'implementazione.");
+        return;
+      }
+      const started = text.startsWith("Studio del progetto scritto da Trama") ? null : text.match(/Avvia il percorso (AT-[0-9A-F]+)/);
+      if (started && !text.includes("[grilling:")) {
+        // The start message of a route (M07): a route that starts with a skill or the spec reports the skills it received,
+        // a route that starts with grilling opens round 1.
+        if (/Primo passo: (prototype|to-spec)/.test(text)) {
+          setTimeout(() => finish(`Percorso ${started[1]} avviato. Skill ricevute: ${seen.join(", ")}`), 10);
+          return;
+        }
+      }
+      const grillingMatch = text.match(/\[grilling:(\d+)\]/) ?? (started ? [null, "1"] : null);
       if (grillingMatch) {
         // A grilling round (M01): round 1 asks two questions of the frontier, later rounds one.
         const round = Number(grillingMatch[1]);
