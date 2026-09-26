@@ -52,7 +52,7 @@ export function Inspector() {
         if (event.key === "Escape" && !event.defaultPrevented) setInspector(null);
       }}
       className={cn(
-        "@container/inspector relative flex max-w-full shrink-0 flex-col border-l border-[color:var(--app-surface-divider)] bg-[var(--color-background-surface)]",
+        "@container/inspector relative flex max-w-full shrink-0 flex-col bg-[var(--color-background-surface)]",
         !panel.resizing && "transition-[width] duration-200 ease-out",
         // Below this width a docked inspector would squeeze the dialog, so it floats over the chat instead.
         "@max-[859px]/main:absolute @max-[859px]/main:inset-y-0 @max-[859px]/main:right-0 @max-[859px]/main:z-30 @max-[859px]/main:max-w-full @max-[859px]/main:shadow-2xl",

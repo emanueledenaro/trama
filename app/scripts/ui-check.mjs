@@ -506,7 +506,7 @@ await domainCard.scrollIntoViewIfNeeded();
 await shot("04k-domain-proposal-written");
 await page.getByRole("button", { name: "Mappa del progetto" }).click();
 await shot("05-map");
-// #229: every panel separator is the same sash. At rest it draws nothing over the panel border; after a short hover
+// #229: every panel separator is the same sash. At rest it draws a 1px line in the border color and no grip dots; after a short hover
 // it takes the provider's accent, and while dragged it stays lit. Double-click and the arrow keys change the width.
 {
   const sidebarSash = page.getByRole("separator", { name: /Larghezza della barra laterale/ });
@@ -519,13 +519,30 @@ await shot("05-map");
       element.append(probe);
       const accent = getComputedStyle(probe).color;
       probe.remove();
-      const drawn = ["::before", "::after"].filter((pseudo) => getComputedStyle(element, pseudo).content !== "none");
-      return { background: style.backgroundColor, accent, width: element.getBoundingClientRect().width, cursor: style.cursor, drawn, children: element.childElementCount };
+      probe.style.color = "var(--color-border)";
+      element.append(probe);
+      const border = getComputedStyle(probe).color;
+      probe.remove();
+      const line = getComputedStyle(element, "::before");
+      const after = getComputedStyle(element, "::after").content;
+      return {
+        background: style.backgroundColor,
+        accent,
+        border,
+        line: { color: line.backgroundColor, width: line.width, visible: line.content !== "none" && line.display !== "none" },
+        after,
+        width: element.getBoundingClientRect().width,
+        cursor: style.cursor,
+        zIndex: style.zIndex,
+        children: element.childElementCount,
+        text: element.textContent,
+      };
     });
   const transparent = (color) => color === "rgba(0, 0, 0, 0)" || color === "transparent";
   for (const sash of [sidebarSash, inspectorSash]) {
     const rest = await look(sash);
-    if (!transparent(rest.background) || rest.drawn.length || rest.children) throw new Error(`A sash shows at rest: ${JSON.stringify(rest)}`);
+    if (!transparent(rest.background) || rest.children || rest.text || (rest.after !== "none" && rest.after !== "normal")) throw new Error(`A sash shows a grip at rest: ${JSON.stringify(rest)}`);
+    if (!rest.line.visible || rest.line.width !== "1px" || rest.line.color !== rest.border) throw new Error(`A sash draws no 1px border line at rest: ${JSON.stringify(rest)}`);
     if (rest.width !== 4 || rest.cursor !== "col-resize") throw new Error(`A sash is not a 4px col-resize grip: ${JSON.stringify(rest)}`);
   }
   const sidebarBox = await sidebarSash.boundingBox();
@@ -535,6 +552,7 @@ await shot("05-map");
   await page.waitForTimeout(500);
   const hovered = await look(sidebarSash);
   if (hovered.background !== hovered.accent) throw new Error(`The hovered sash is not the provider's accent: ${JSON.stringify(hovered)}`);
+  if (Number(hovered.zIndex) < 20) throw new Error(`The hovered sash is not above the content: ${JSON.stringify(hovered)}`);
   for (const mode of ["light", "dark"]) {
     await page.evaluate((dark) => document.documentElement.classList.toggle("dark", dark), mode === "dark");
     await shot(`22-sash-hover-${mode}`);

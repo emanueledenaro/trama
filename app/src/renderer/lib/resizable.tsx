@@ -72,9 +72,9 @@ export function sashKeyDelta(side: SashSide, key: string, shift: boolean): numbe
 }
 
 /**
- * The separator between two panels, the same for every resizable panel. At rest it adds nothing to the panel's own
- * 1px border: it is a wider invisible grip centered on that border. After a short hover, while focused from the
- * keyboard and while dragged, it fills with the provider's accent (index.css, `.sash`).
+ * The separator between two panels, the same for every resizable panel. At rest it draws the 1px border line between
+ * the panels, centered in a wider invisible grip, so the panels themselves draw no border on that edge. After a short
+ * hover, while focused from the keyboard and while dragged, it fills with the provider's accent (index.css, `.sash`).
  * Drag to resize, double-click or Home to return to the default size, arrow keys to step.
  * The sash sits on the start edge (left or top) of its positioned parent.
  * A click without dragging calls `onClick`, so an edge that used to toggle the panel keeps doing it.
