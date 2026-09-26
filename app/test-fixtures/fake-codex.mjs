@@ -7,6 +7,11 @@ if (process.argv[2] === "sandbox") {
   const { spawnSync } = await import("node:child_process");
   const rest = process.argv.slice(process.argv.indexOf("--") + 1);
   const result = spawnSync(rest[0], rest.slice(1), { stdio: "inherit" });
+  // With FAKE_CODEX_LOG_CHECKS the end of each check joins the request log, so a test can read what ran before what.
+  if (process.env.FAKE_CODEX_LOG && process.env.FAKE_CODEX_LOG_CHECKS) {
+    const { appendFileSync } = await import("node:fs");
+    appendFileSync(process.env.FAKE_CODEX_LOG, `${JSON.stringify({ method: "sandbox/ended", params: { command: rest } })}\n`);
+  }
   process.exit(result.status ?? 1);
 }
 
@@ -16,6 +21,8 @@ if (process.argv[2] === "mcp" && process.argv[3] === "list") {
 }
 
 const account = process.env.FAKE_CODEX_ACCOUNT ?? "chatgpt";
+/** Turns answered with a temporary 429 so far; FAKE_CODEX_RATE_LIMITS says how many (default 1). */
+let rateLimitedTurns = 0;
 const send = (message) => process.stdout.write(`${JSON.stringify(message)}\n`);
 let threads = 0;
 const toolServers = new Map();
@@ -100,6 +107,25 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
       const turnId = `turn-${++turns}`;
       const threadId = params.threadId;
       const text = params.input[0].text;
+      if (text.includes("[limite-temporaneo]") && rateLimitedTurns < Number(process.env.FAKE_CODEX_RATE_LIMITS ?? 1)) {
+        // A provider that answers 429 with a shared upstream limit (P10), then is available again.
+        rateLimitedTurns += 1;
+        send({ id, result: { turn: { id: turnId } } });
+        const body = {
+          message: "Provider returned error",
+          code: 429,
+          metadata: {
+            raw: "qwen/qwen3.8-27b:free is temporarily rate-limited upstream. Please retry shortly, or add your own key to accumulate your rate limits: https://openrouter.ai/settings/integrations",
+            provider_name: "Chutes",
+            limit_source: "upstream_provider_shared_pool",
+          },
+        };
+        setTimeout(
+          () => send({ method: "turn/completed", params: { threadId, turn: { id: turnId, status: "failed", error: { message: `429: ${JSON.stringify(body)}` } } } }),
+          20,
+        );
+        return;
+      }
       if (text.includes("[attesa]")) {
         // Answers turn/start late and then keeps running until interrupted.
         setTimeout(() => send({ id, result: { turn: { id: turnId } } }), 150);
@@ -171,8 +197,19 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
               findings: 1,
               worst: `Possibile Mysterious Name in ${file}`,
             };
-        // Long enough for the two axes to overlap when Trama runs them in parallel.
-        setTimeout(() => finish(JSON.stringify(answer)), 300);
+        // With FAKE_CODEX_AUDIT_GATE the axis answers only once the test creates that file, so a test can hold both
+        // sessions open at once and act while an examination is still running, without relying on timing.
+        const gate = process.env.FAKE_CODEX_AUDIT_GATE;
+        if (gate) {
+          const { existsSync } = await import("node:fs");
+          const release = setInterval(() => {
+            if (!existsSync(gate)) return;
+            clearInterval(release);
+            finish(JSON.stringify(answer));
+          }, 10);
+          return;
+        }
+        setTimeout(() => finish(JSON.stringify(answer)), 10);
         return;
       }
       if (required.includes("loopCommand")) {
@@ -281,7 +318,11 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
       }
       if (params.outputSchema) {
         const verdict = text.includes("RIFIUTA") ? "changesRequested" : "approved";
-        setTimeout(() => finish(JSON.stringify({ verdict, summary: "Il diff rispetta le decisioni indicate." })), 10);
+        // The technical review against Trama's Clean Code standard (Q03) answers with findings, file and line.
+        const findings = text.includes("Misure deterministiche di Trama")
+          ? [{ severity: "suggestion", rule: "kiss", file: "NOTE.md", line: 1, message: "La nota può dire in una riga sola cosa documenta." }]
+          : [];
+        setTimeout(() => finish(JSON.stringify({ verdict, summary: "Il diff rispetta le decisioni indicate.", findings })), 10);
         return;
       }
       if (params.sandboxPolicy?.type === "workspaceWrite") {
@@ -327,7 +368,7 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
             return;
           }
           // The structured report of W05, which extends M06's tested seams.
-          const report = `\n\nFiles touched:\n- NOTE.md\nTests written:\n- NOTE.md\nTested seams:${seam}\nDoubts:\n- Il rimborso manuale resta fuori da questa fetta`;
+          const report = `\n\nFiles touched:\n- NOTE.md\nTests written:\n- NOTE.md\nTested seams:${seam}\nDoubts:\n- Il rimborso manuale resta fuori da questa fetta\nStandard exceptions:\n- none`;
           setTimeout(() => finish(`Ho scritto NOTE.md nel worktree. Skill ricevute: ${skills.join(", ")}${report}`), 30);
           return;
         }

@@ -87,6 +87,8 @@ export interface CoordinatorRequest {
   nextStep?: NextStep | null;
   /** The next step this message takes (W04): the person's button, or Trama starting the Coordinator's move by itself. */
   step?: RequestStep | null;
+  /** Set when the request repeats a failed one (P10): its id, and the automatic attempt (0 when the person pressed Riprova). */
+  retry?: { of: string; attempt: number } | null;
 }
 
 /** A next step taken by a message: the person pressed its button, or Trama started the Coordinator's own move (W04). */
@@ -532,6 +534,8 @@ export interface DeveloperReport {
   /** Every seam of the contract, with the tests the developer named or null; a number outside it is not agreed. */
   seams: TestedSeam[] | null;
   doubts: string[] | null;
+  /** The rules of Trama's Clean Code standard the developer set aside, and why (Q03). Absent in reports before Q03. */
+  exceptions?: string[] | null;
 }
 
 /** The AI Hero skill a fixed role runs when Trama starts its work by itself (W11). */
@@ -765,6 +769,20 @@ export interface TechnicalReview {
   verdict: "approved" | "changesRequested";
   summary: string;
   at: string;
+  /** What the reviewer found against Trama's Clean Code standard (Q03): its judgement, never evidence. */
+  findings?: import("./cleanCode").ReviewFinding[];
+  /** Trama's own measures of the candidate against the standard (Q03): the only evidence of the review. */
+  standard?: StandardCheck | null;
+}
+
+/** The deterministic part of a technical review (Q03): the standard's version, the rules on and what Trama measured. */
+export interface StandardCheck {
+  version: number;
+  rules: import("./cleanCode").CleanCodeRuleId[];
+  filesMeasured: number;
+  functionsMeasured: number;
+  /** The measures past their limit. */
+  measures: import("./cleanCode").CodeMeasure[];
 }
 
 export interface Candidate {
@@ -1062,6 +1080,8 @@ export interface ProjectDocument {
   presence?: import("./presence").PresenceConsent;
   /** The overlaps the Coordinator already pointed out in the chat (G03), so each one is said once. */
   overlapNotices?: string[];
+  /** How the project adapts Trama's Clean Code standard (Q03); absent means every rule is on. */
+  cleanCode?: import("./cleanCode").CleanCodeSettings;
   /** Focus mode examinations (F01); absent until the person first opens focus mode. */
   audits?: FocusAudit[];
 }
@@ -1240,6 +1260,8 @@ export interface ActiveProjectState {
   presence?: import("./presence").PresenceView | null;
   /** The person's work against the colleagues' presence (G03); absent without a presence reading. */
   overlaps?: import("./overlap").OverlapView | null;
+  /** The automatic retry after a temporary provider limit, while it waits (P10). */
+  providerRetry?: import("./providerFailure").ProviderRetryView | null;
 }
 
 /** A message waiting for the running turn to end; it has no request and no event until it leaves. */

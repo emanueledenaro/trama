@@ -11,6 +11,7 @@ import type {
   WorkPhase,
   WorkPlan,
 } from "@shared/domain";
+import { readableFailure } from "@shared/providerFailure";
 import { isOpenQuestion, pendingMandateRequest } from "@shared/domain";
 import { grillingSubject } from "@shared/grilling";
 import { PROVIDERS } from "@shared/providers";
@@ -229,7 +230,7 @@ export function workState(document: ProjectDocument, requestId: string | null): 
         return finish("spec");
       case "failed":
         preparePlan();
-        return finish("blocked", `Il piano ${plan.id} non è riuscito${plan.failure ? `: ${plan.failure}` : "."}`);
+        return finish("blocked", `Il piano ${plan.id} non è riuscito${plan.failure ? `: ${readableFailure(plan.failure)}` : "."}`);
       case "stale":
         preparePlan();
         return finish("blocked", `Il repository è cambiato mentre si scriveva il piano ${plan.id}: va rifatto.`);
@@ -265,7 +266,7 @@ function readyPlan(
       return moves.finish("slices");
     case "failed":
       moves.add(person("reviewPlan", "Rivedi il piano", plan.id));
-      return moves.finish("blocked", `La divisione in fette del piano ${plan.id} non è riuscita${slicing.failure ? `: ${slicing.failure}` : "."}`);
+      return moves.finish("blocked", `La divisione in fette del piano ${plan.id} non è riuscita${slicing.failure ? `: ${readableFailure(slicing.failure)}` : "."}`);
     case "approved":
       moves.assignWork();
       return moves.finish("slices");
