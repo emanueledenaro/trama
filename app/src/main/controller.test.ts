@@ -88,6 +88,20 @@ describe("TramaController", () => {
     await until(() => events.some((e) => e.content.type === "activity" && e.content.title.startsWith("Metodo di lavoro AI Hero")));
   });
 
+  it("does not prepare the AI Hero method on opening when the person postponed the step (B02)", async () => {
+    const { project } = await setup();
+    const { existsSync } = await import("node:fs");
+    await controller!.updateSettings({ autoPrepareMethod: true });
+    await controller!.updateOnboarding({ skipStep: "aiHero" });
+    await controller!.openProject(project);
+    await until(() => controller!.snapshot.project?.phase.kind === "ready");
+    expect(existsSync(join(project, ".agents/skills/AIHERO-VERSION.md"))).toBe(false);
+    // Choosing afterwards takes the step back, and the next opening prepares it.
+    await controller!.updateOnboarding({ methodChoice: true });
+    await controller!.openProject(project);
+    await until(() => existsSync(join(project, ".agents/skills/AIHERO-MANIFEST.json")));
+  });
+
   it("creates a project from an idea as a Git repository and remembers the idea (T10)", async () => {
     await setup();
     const parent = await mkdtemp(join(tmpdir(), "trama-parent-"));
