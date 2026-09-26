@@ -91,6 +91,7 @@ import {
   AUTOMATIC_MOVE_DETAIL,
   automaticMove,
   automaticMoveSection,
+  choicesInText,
   confirmationFeedback,
   type ContinuationGuards,
   stalledMove,
@@ -288,6 +289,9 @@ interface LateRules {
 /** How Trama records a read the session tried outside its folders (issue #206). */
 const readOutsideScopeDetail = (event: Extract<TurnEvent, { type: "readOutsideScope" }>) =>
   `${event.path} non appartiene al progetto: Trama non lo lascia leggere.\nRichiesta: ${event.tool}`;
+
+/** The activity Trama records when the Coordinator wrote options for the person to pick instead of opening a card (issue #228). */
+const CHOICES_IN_TEXT_TITLE = "Scelta scritta nel testo invece che in una scheda";
 
 /** How Trama records one of the provider's own tools it blocked, with what the agent was told to use (issue #228). */
 const toolRefusedDetail = (event: Extract<TurnEvent, { type: "toolRefused" }>) => `Richiesta: ${event.tool}\n${event.reason}`;
@@ -2177,6 +2181,9 @@ export class TramaController {
       const references = referencedPaths(reply, paths);
       if (reply) {
         recordReply(document, request.id, reply, selectedModel, references, activeProvider);
+        // Options to pick in the text leave the person without a card: recorded, and the next turn is told (issue #228).
+        const choice = choicesInText(reply);
+        if (choice) appendEvent(document, "trama", { type: "activity", title: CHOICES_IN_TEXT_TITLE, detail: choice, tone: "error" }, request.id);
         // A write in this turn already reset its counter: the review it would have started is not due.
         const writes = this.turnLearningWrites.get(request.id) ?? [];
         const reviewSkills = !writes.includes("skill_manage") && finishTurnSkillNudge(this.coordinatorLearning(document), this.turnToolIterations.get(request.id) ?? 0);

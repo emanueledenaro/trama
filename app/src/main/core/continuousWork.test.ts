@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { CoordinatorRequest, MandateAction, ProjectDocument, RequestStep, WorkPlan } from "@shared/domain";
 import { placeGrillingQuestion } from "@shared/grilling";
-import { AUTOMATIC_MOVES_IN_A_ROW, automaticMove, automaticMoveSection, closingConfirmation, confirmationFeedback, type ContinuationGuards, stalledMove } from "./continuousWork";
+import { AUTOMATIC_MOVES_IN_A_ROW, automaticMove, automaticMoveSection, choicesInText, closingConfirmation, confirmationFeedback, type ContinuationGuards, stalledMove } from "./continuousWork";
 import { declareCandidate, recordEvidence, recordTechnicalReview } from "./candidates";
 import { emptyDocument, recordReply } from "./document";
 import { answerDecisionRequest, createDecisionRequest, createMandateRequest, grantMandate } from "./pact";
@@ -362,5 +362,20 @@ describe("stalledMove: an automatic move the turn did not make is shown with its
   it("tells the Coordinator that the checks run on a candidate, declared first from the assignment", () => {
     expect(automaticMoveSection("verifyCandidate")).toContain("chiama prima declare_candidate, poi verify_candidate con il candidateID");
     expect(automaticMoveSection("preparePlan")).not.toContain("declare_candidate");
+  });
+});
+
+describe("choicesInText: options for the person to pick written in a reply (issue #228)", () => {
+  it("finds numbered or lettered options with a request to pick one", () => {
+    const reply = "Posso andare avanti in tre modi:\n\n1. Amplio il mandato a docs/\n2. Scrivo solo il codice\n3. Mi fermo\n\nRispondimi con 1, 2 o 3.";
+    expect(choicesInText(reply)).toBe("Rispondimi con 1, 2 o 3.");
+    expect(choicesInText("Due strade:\n**1.** Rimborso\n**2.** Revisione\nQuale preferisci?")).toBe("Quale preferisci?");
+    expect(choicesInText("a) Rimborso\nb) Revisione\nDimmi quale scegli.")).toBe("Dimmi quale scegli.");
+  });
+
+  it("leaves plain lists and single options alone", () => {
+    expect(choicesInText("Ho fatto:\n1. Letto Orders\n2. Scritto il test")).toBeNull();
+    expect(choicesInText("1. Solo un passo. Rispondimi con ok.")).toBeNull();
+    expect(choicesInText("")).toBeNull();
   });
 });
