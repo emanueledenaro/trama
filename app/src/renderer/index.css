@@ -1076,6 +1076,61 @@ button {
   order: 1;
 }
 
+/*
+ * The seam (W17): the stitched edge of the agents' bots, used as a sparing accent. The bot draws its seam with
+ * the `--bot-seam-*` values in its 216-unit viewBox; the interface draws the same stitch as a bot at its largest
+ * size (96 px), so `--seam-scale` is 96 / 216. At most one seam shows on a screen (Seam.tsx, docs/brand/cucitura.md).
+ */
+:root {
+  --bot-seam-width: 3.5;
+  --bot-seam-dash: 7;
+  --bot-seam-gap: 8;
+  --seam-scale: calc(96 / 216);
+  --seam-width: calc(var(--bot-seam-width) * var(--seam-scale) * 1px);
+  --seam-dash: calc(var(--bot-seam-dash) * var(--seam-scale) * 1px);
+  --seam-gap: calc(var(--bot-seam-gap) * var(--seam-scale) * 1px);
+  --seam-color: var(--color-text-accent);
+  --seam-opacity: 0.7;
+}
+.seam {
+  position: relative;
+}
+.seam-stitch {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+.seam-stitch rect {
+  x: calc(var(--seam-width) / 2);
+  y: calc(var(--seam-width) / 2);
+  width: calc(100% - var(--seam-width));
+  height: calc(100% - var(--seam-width));
+  rx: var(--seam-radius, 12px);
+  fill: none;
+  stroke: var(--seam-color);
+  stroke-opacity: var(--seam-opacity);
+  stroke-width: var(--seam-width);
+  stroke-dasharray: var(--seam-dash) var(--seam-gap);
+  stroke-linecap: round;
+}
+/* With high contrast the stitch becomes a continuous, fully opaque edge. */
+@media (prefers-contrast: more) {
+  .seam-stitch rect {
+    stroke-dasharray: none;
+    stroke-opacity: 1;
+  }
+}
+@media (forced-colors: active) {
+  .seam-stitch rect {
+    stroke: CanvasText;
+    stroke-dasharray: none;
+    stroke-opacity: 1;
+  }
+}
+
 /* Chat cards (decisions, mandate, team, candidate): glass over the provider's light, like the rest of the chat. */
 .chat-card {
   border: 1px solid color-mix(in srgb, var(--foreground) 12%, transparent);

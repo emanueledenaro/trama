@@ -23,6 +23,7 @@ import { GoalDialogHeader } from "@/components/inspector/GoalsView";
 import { OverviewView } from "@/components/OverviewView";
 import { SettingsView } from "@/components/settings/SettingsView";
 import { NavigationButtons, SidebarTrigger } from "@/components/sidebar/Sidebar";
+import { useSeam } from "@/components/Seam";
 import { Spinner } from "@/components/Spinner";
 import { TramaLogo } from "@/components/TramaLogo";
 import { Button } from "@/components/ui/button";
@@ -200,7 +201,7 @@ function Landing() {
   return (
     <div className="chat-pane-enter relative flex min-h-0 flex-1 items-center justify-center overflow-y-auto">
       <div className="mx-auto flex w-full max-w-[var(--app-chat-max-width)] min-w-0 flex-col items-center gap-4 px-6 text-center select-none">
-        <TramaLogo className="size-10" />
+        <LandingMark />
         <h2 className="text-[26px] leading-[1.15] font-normal tracking-[-0.015em] text-foreground/95 sm:text-[30px]">Su cosa vuoi lavorare?</h2>
         {app.loadingProject ? (
           <p className="flex items-center gap-2 text-ui text-muted-foreground">
@@ -251,6 +252,17 @@ function Landing() {
   );
 }
 
+/** Trama's mark on the start screen, stitched like the bots (W17). */
+function LandingMark() {
+  const seam = useSeam("logo", { radius: "18px" });
+  return (
+    <div className="relative flex size-16 items-center justify-center" data-testid="landing-mark">
+      <TramaLogo className="size-10" />
+      {seam.stitch}
+    </div>
+  );
+}
+
 function ProjectIntro() {
   const project = useUi((s) => s.app?.project)!;
   const phase = project.phase;
@@ -284,8 +296,17 @@ function ProjectIntro() {
 /** Offered in the project dialog while the project has no goal the person confirmed (UX07). */
 function FirstGoalPrompt() {
   const setInspector = useUi((s) => s.setInspector);
+  // A place to fill (W17): the seam when no other use on the screen holds it, the dashed border otherwise.
+  const seam = useSeam("firstGoal", { radius: "calc(var(--radius) * 1.4)" });
   return (
-    <div className="my-3 flex flex-wrap items-center gap-3 rounded-xl border border-dashed border-[color:var(--color-border)] px-3.5 py-3" data-testid="first-goal">
+    <div
+      className={cn(
+        "relative my-3 flex flex-wrap items-center gap-3 rounded-xl border px-3.5 py-3",
+        seam.shown ? "border-transparent" : "border-dashed border-[color:var(--color-border)]",
+      )}
+      data-testid="first-goal"
+    >
+      {seam.stitch}
       <IconTarget className="size-4 shrink-0 text-muted-foreground" stroke={1.8} />
       <p className="min-w-[14rem] flex-1 text-ui text-muted-foreground">
         Descrivi un risultato e qualche esempio verificabile: il Coordinatore lo discute con te nel suo dialogo. Non concede un mandato.
