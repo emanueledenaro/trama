@@ -17,8 +17,24 @@ const IMAGE_EXTENSIONS: Record<string, string> = {
   "image/webp": "webp",
 };
 
-/** Writes through a temporary file and a rename, so a crash never leaves half a file. */
-export async function writeAtomically(path: string, contents: string): Promise<void> {
+const pendingWrites = new Map<string, Promise<void>>();
+
+/**
+ * Writes through a temporary file and a rename, so a crash never leaves half a file. Writes to one path run in the
+ * order they were asked: otherwise a slow deferred save could land after a newer one and put older contents back.
+ */
+export function writeAtomically(path: string, contents: string): Promise<void> {
+  const previous = pendingWrites.get(path) ?? Promise.resolve();
+  const write = previous.catch(() => undefined).then(() => writeNow(path, contents));
+  const settled = write.catch(() => undefined);
+  pendingWrites.set(path, settled);
+  void settled.then(() => {
+    if (pendingWrites.get(path) === settled) pendingWrites.delete(path);
+  });
+  return write;
+}
+
+async function writeNow(path: string, contents: string): Promise<void> {
   await mkdir(dirname(path), { recursive: true });
   const temporary = `${path}.${randomUUID()}.tmp`;
   await writeFile(temporary, contents, { mode: 0o600 });
