@@ -894,7 +894,9 @@ git("-c", "user.name=Trama UI", "-c", "user.email=ui@trama.local", "commit", "-q
 git("remote", "add", "origin", "https://github.com/trama-ui/negozio.git");
 
 // Reopening (UX01): after a restart the same goal is in the list and opens from the keyboard alone.
-({ app, page } = await launch({ PATH: `${ghBin}:${process.env.PATH}`, FAKE_GH_TEAM: "1" }));
+// P10: the fake Codex answers the "[limite-temporaneo]" turns with OpenRouter's upstream 429 twice, then works again;
+// a short first wait keeps the automatic retry within the check.
+({ app, page } = await launch({ PATH: `${ghBin}:${process.env.PATH}`, FAKE_GH_TEAM: "1", TRAMA_PROVIDER_RETRY_MS: "4000", FAKE_CODEX_RATE_LIMITS: "2" }));
 const goalsRow = page.getByRole("button", { name: /^Obiettivi/ }).first();
 await goalsRow.waitFor({ timeout: 30_000 });
 // B02: after the first launch the welcome never shows by itself again.
@@ -1376,8 +1378,22 @@ await page.getByTestId("settings").getByRole("button", { name: "Metti in pausa" 
 await page.getByTestId("settings").getByRole("button", { name: "Riprendi" }).waitFor();
 await shot("16c-presence-settings");
 await page.getByTestId("settings").getByRole("button", { name: "Riprendi" }).click();
+
+// P10, GitHub CLI: with gh logged in, Collegamenti says so without the guide, and Controlla di nuovo reads it again.
+await page.getByTestId("settings").getByRole("button", { name: /^Collegamenti/ }).first().click();
+const githubRow = page.getByTestId("settings").getByText("Collegato come trama-ui.");
+await githubRow.waitFor({ timeout: 15_000 });
+if (await page.getByTestId("settings").getByText("gh auth login").count()) throw new Error("Collegamenti asks for gh auth login while gh is logged in");
+await page.getByTestId("settings").getByRole("button", { name: "Controlla di nuovo" }).click();
+await githubRow.waitFor({ timeout: 15_000 });
+await shot("20-github-connected-light");
+await page.evaluate(() => window.trama.invoke("settings:update", { theme: "dark" }));
+await page.waitForFunction(() => document.documentElement.classList.contains("dark"));
+await shot("20a-github-connected-dark");
+await page.evaluate(() => window.trama.invoke("settings:update", { theme: "system" }));
 await page.getByRole("button", { name: "Impostazioni" }).click();
 await page.getByTestId("settings").waitFor({ state: "hidden" });
+
 
 // G03, sovrapposizioni: Ada and Bea change the same line of src/payments.js. The merge probe runs in Trama's folders
 // and confirms the conflict with its line; the Coordinator says it in the chat, the focus bar warns, the map marks the
@@ -1419,6 +1435,72 @@ await shot("16h-overlap-module");
 if (!(await readFile(join(presenceProject, "src", "payments.js"), "utf8")).includes("CONTENUTO PRIVATO")) throw new Error("The probe changed the checkout");
 if (presenceGit(presenceProject, "symbolic-ref", "--short", "HEAD").trim() !== "feature/carrello") throw new Error("The probe changed the branch");
 if (presenceGit(presenceRemote, "rev-parse", "feature/rimborsi").trim() !== presenceGit(presenceSeed, "rev-parse", "feature/rimborsi").trim()) throw new Error("Bea's branch moved");
+// P10, provider limits: a temporary 429 reads as such, with no JSON; Trama retries by itself with a growing wait,
+// the person can stop it, and the actions sit on the right with the primary last. Then the provider recovers.
+await page.getByLabel("Messaggio al Coordinatore").fill("[limite-temporaneo] Come si annulla un ordine?");
+await page.keyboard.press("Enter");
+const limitCard = page.locator('[role="alert"][data-failure-kind="temporaryLimit"]').last();
+await limitCard.waitFor({ timeout: 30_000 });
+await limitCard.getByText("Limite temporaneo del provider").waitFor();
+await limitCard.getByTestId("provider-retry").getByText(/Trama riprova da sola tra \d+ secondi, tentativo 1 di 5\./).waitFor();
+const noJson = async (where) => {
+  const text = await limitCard.innerText();
+  if (/[{}]|limit_source|"code"/.test(text)) throw new Error(`${where}: the limit card shows the provider's JSON: ${text}`);
+};
+await noJson("waiting");
+for (const provider of ["codex", "pi"]) {
+  for (const dark of [false, true]) {
+    await setLook(provider, dark);
+    await shot(`20b-provider-limit-waiting-${provider}-${dark ? "dark" : "light"}`);
+  }
+}
+await setLook(null, false);
+await limitCard.getByRole("button", { name: "Ferma i tentativi" }).click();
+await limitCard.getByTestId("provider-retry").waitFor({ state: "detached", timeout: 10_000 });
+const limitActions = ["Aggiungi la tua chiave", "Cambia modello", "Riprova"];
+const actionBoxes = [];
+for (const name of limitActions) actionBoxes.push(await limitCard.getByRole("button", { name, exact: true }).boundingBox());
+const cardBox = await limitCard.boundingBox();
+if (actionBoxes.some((box) => !box) || !cardBox) throw new Error("The limit card misses Aggiungi la tua chiave, Cambia modello or Riprova");
+if (!actionBoxes.every((box, index) => index === 0 || box.x > actionBoxes[index - 1].x)) throw new Error("The limit actions are not in order with Riprova last");
+const lastAction = actionBoxes.at(-1);
+if (cardBox.x + cardBox.width - (lastAction.x + lastAction.width) > 24) throw new Error("The limit actions are not on the right");
+if ((await limitCard.getByRole("button", { name: "Riprova", exact: true }).getAttribute("data-variant")) !== "default") throw new Error("Riprova is not the primary action");
+await noJson("stopped");
+await limitCard.getByRole("button", { name: "Dettagli tecnici" }).click();
+await limitCard.getByText(/upstream_provider_shared_pool/).waitFor();
+for (const dark of [false, true]) {
+  await setLook(null, dark);
+  await shot(`20c-provider-limit-actions-${dark ? "dark" : "light"}`);
+}
+await setLook(null, false);
+// Cambia modello opens the picker on the provider's models.
+await limitCard.getByRole("button", { name: "Cambia modello", exact: true }).click();
+await page.getByRole("listbox", { name: "Modelli" }).waitFor({ timeout: 5_000 });
+await shot("20d-provider-limit-change-model");
+await page.keyboard.press("Escape");
+await page.getByRole("listbox", { name: "Modelli" }).waitFor({ state: "detached" });
+// Riprova meets the second 429, and the automatic retry after it finds the provider available again.
+const personMessage = () => page.getByText("[limite-temporaneo] Come si annulla un ordine?", { exact: true }).count();
+const messagesBefore = await personMessage();
+const fakeReplies = () => page.getByText("Questa risposta arriva dal server di prova").count();
+const repliesBefore = await fakeReplies();
+await limitCard.getByRole("button", { name: "Riprova", exact: true }).click();
+const retryLine = page.getByTestId("provider-retry").last();
+await retryLine.getByText(/tentativo 1 di 5/).waitFor({ timeout: 30_000 });
+await shot("20e-provider-limit-retrying");
+await retryLine.waitFor({ state: "detached", timeout: 30_000 });
+for (let tries = 0; (await fakeReplies()) <= repliesBefore; tries++) {
+  if (tries > 120) throw new Error("The provider did not recover after the automatic retry");
+  await page.waitForTimeout(250);
+}
+if ((await page.locator('[role="alert"][data-failure-kind="temporaryLimit"]').count()) !== 2) throw new Error("Expected the two 429 failures in the chat");
+if ((await personMessage()) !== messagesBefore) throw new Error("A retry wrote the person's message again");
+for (const dark of [false, true]) {
+  await setLook(null, dark);
+  await shot(`20f-provider-recovered-${dark ? "dark" : "light"}`);
+}
+await setLook(null, false);
 
 // B02: with no project open the picker lists the recent projects with their path, last work, state and colleagues.
 // Switching projects never replays the launch intro.

@@ -21,6 +21,8 @@ if (process.argv[2] === "mcp" && process.argv[3] === "list") {
 }
 
 const account = process.env.FAKE_CODEX_ACCOUNT ?? "chatgpt";
+/** Turns answered with a temporary 429 so far; FAKE_CODEX_RATE_LIMITS says how many (default 1). */
+let rateLimitedTurns = 0;
 const send = (message) => process.stdout.write(`${JSON.stringify(message)}\n`);
 let threads = 0;
 const toolServers = new Map();
@@ -105,6 +107,25 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
       const turnId = `turn-${++turns}`;
       const threadId = params.threadId;
       const text = params.input[0].text;
+      if (text.includes("[limite-temporaneo]") && rateLimitedTurns < Number(process.env.FAKE_CODEX_RATE_LIMITS ?? 1)) {
+        // A provider that answers 429 with a shared upstream limit (P10), then is available again.
+        rateLimitedTurns += 1;
+        send({ id, result: { turn: { id: turnId } } });
+        const body = {
+          message: "Provider returned error",
+          code: 429,
+          metadata: {
+            raw: "qwen/qwen3.8-27b:free is temporarily rate-limited upstream. Please retry shortly, or add your own key to accumulate your rate limits: https://openrouter.ai/settings/integrations",
+            provider_name: "Chutes",
+            limit_source: "upstream_provider_shared_pool",
+          },
+        };
+        setTimeout(
+          () => send({ method: "turn/completed", params: { threadId, turn: { id: turnId, status: "failed", error: { message: `429: ${JSON.stringify(body)}` } } } }),
+          20,
+        );
+        return;
+      }
       if (text.includes("[attesa]")) {
         // Answers turn/start late and then keeps running until interrupted.
         setTimeout(() => send({ id, result: { turn: { id: turnId } } }), 150);

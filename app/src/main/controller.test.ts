@@ -516,6 +516,67 @@ describe("TramaController", () => {
     }
   }, 60_000);
 
+  it("retries a turn after a temporary 429 with a growing wait, without writing the message again (P10)", async () => {
+    process.env.TRAMA_PROVIDER_RETRY_MS = "40";
+    process.env.FAKE_CODEX_RATE_LIMITS = "2";
+    try {
+      await setup();
+      const project = controller!.snapshot.project!;
+      const document = project.document;
+      await controller!.send("[limite-temporaneo] Come funziona l'annullamento?", null, null, null);
+      const first = document.requests[0]!;
+      expect(first.state).toBe("failed");
+      expect(project.providerRetry).toMatchObject({ requestId: first.id, attempt: 1, maxAttempts: 5, provider: "ChatGPT" });
+      // A temporary limit does not block the provider.
+      expect(controller!.snapshot.codex.account?.kind).toBe("chatgpt");
+      await until(() => document.requests.at(-1)?.state === "completed", 10_000);
+      expect(document.requests.map((r) => [r.state, r.retry?.attempt ?? null])).toEqual([
+        ["failed", null],
+        ["failed", 1],
+        ["completed", 2],
+      ]);
+      expect(document.requests[2]!.retry?.of).toBe(document.requests[1]!.id);
+      expect(project.providerRetry ?? null).toBeNull();
+      // One message of the person; the retries are Trama's lines, and no activity shows the provider's JSON.
+      expect(document.events.filter((e) => e.content.type === "personMessage")).toHaveLength(1);
+      const activities = document.events.flatMap((e) => (e.content.type === "activity" ? [e.content] : []));
+      expect(activities.map((a) => a.title)).toContain("Nuovo tentativo automatico (2 di 5)");
+      const failed = activities.filter((a) => a.title === "Il turno non è riuscito");
+      expect(failed).toHaveLength(2);
+      for (const activity of failed) {
+        expect(activity.detail).toMatch(/^Limite temporaneo del provider\. /);
+        expect(activity.detail).not.toContain("{");
+      }
+    } finally {
+      delete process.env.TRAMA_PROVIDER_RETRY_MS;
+      delete process.env.FAKE_CODEX_RATE_LIMITS;
+    }
+  }, 60_000);
+
+  it("stops the automatic retries at the person's request, and a new message replaces them (P10)", async () => {
+    process.env.TRAMA_PROVIDER_RETRY_MS = "60000";
+    try {
+      await setup();
+      const project = controller!.snapshot.project!;
+      const document = project.document;
+      await controller!.send("[limite-temporaneo] Ci sei?", null, null, null);
+      expect(project.providerRetry).toMatchObject({ attempt: 1 });
+      controller!.stopProviderRetry();
+      expect(project.providerRetry).toBeNull();
+      expect(document.events.at(-1)?.content).toMatchObject({ type: "activity", title: "Tentativi automatici fermati" });
+
+      // Riprova repeats the failed turn at once, as Trama's line; the fake provider is available again.
+      await controller!.retryRequest(document.requests[0]!.id);
+      expect(document.requests.map((r) => [r.state, r.retry?.attempt ?? null])).toEqual([
+        ["failed", null],
+        ["completed", 0],
+      ]);
+      expect(document.events.filter((e) => e.content.type === "personMessage")).toHaveLength(1);
+    } finally {
+      delete process.env.TRAMA_PROVIDER_RETRY_MS;
+    }
+  }, 60_000);
+
   it("tells the Coordinator when its previous reply closed with a generic confirmation question (W04)", async () => {
     await setup();
     const project = controller!.snapshot.project!;
