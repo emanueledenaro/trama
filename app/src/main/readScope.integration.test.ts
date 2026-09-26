@@ -100,13 +100,15 @@ describe("agents stay in the project (issue #206)", () => {
       const config = session.params.config as Record<string, { filesystem?: Record<string, string> } & Record<string, unknown>>;
       expect(config.features).toMatchObject({ memories: false });
       expect(session.params.sandbox).toBeUndefined();
+      expect(["trama_read", "trama_write"]).toContain(session.params.permissions);
       const readable = Object.keys(config["permissions.trama_read"]!.filesystem!);
       expect(readable).toEqual(expect.arrayContaining([":minimal", repo, join(root, "resources/AIHero/skills")]));
       expect(readable.some((path) => codexHome.startsWith(path) || path.startsWith(codexHome))).toBe(false);
     }
     for (const turn of requests.filter((r) => r.method === "turn/start")) {
       expect(turn.params.sandboxPolicy).toBeUndefined();
-      expect(["trama_read", "trama_write"]).toContain(turn.params.permissions);
+      // Each turn keeps the profile its thread was opened with.
+      expect(turn.params.permissions).toBeUndefined();
     }
   }, 90_000);
 });

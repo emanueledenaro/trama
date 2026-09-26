@@ -122,6 +122,10 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
       return send({ id, result: { thread: { id: threadId } } });
     }
     case "turn/start": {
+      // Codex 0.155 rebuilds the configuration of a turn that names a profile without the thread's `config`.
+      if (params.permissions && params.permissions === threadProfiles.get(params.threadId)?.permissions) {
+        return send({ id, error: { code: -32600, message: "failed to load configuration: default_permissions requires a `[permissions]` table" } });
+      }
       const turnId = `turn-${++turns}`;
       const threadId = params.threadId;
       const text = params.input[0].text;
