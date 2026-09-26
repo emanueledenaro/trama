@@ -2575,7 +2575,7 @@ export class TramaController {
     }
     const session = start ? boundarySession(route.boundary) : "same";
     if (session !== "same") {
-      if (this.starting) await this.starting.catch(() => undefined);
+      if (this.starting) await this.starting.attempt.catch(() => undefined);
       const provider = this.coordinatorProvider(document);
       forgetCoordinatorThread(document);
       document.coordinator.threadProvider = provider;
