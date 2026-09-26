@@ -1,6 +1,6 @@
 import type { ProviderId } from "@shared/codex";
 import { supportsReadOnly } from "@shared/providers";
-import type { AssignmentCommit, CommitConventions, MandateAction, ProjectDocument, SpecialistTool, TechnicalReview, WorkKind } from "@shared/domain";
+import type { AssignmentCommit, Candidate, CommitConventions, MandateAction, ProjectDocument, SpecialistTool, TechnicalReview, WorkKind } from "@shared/domain";
 import { DEFAULT_CONVENTIONS, validateCommitMessage } from "./conventions";
 import { candidateCommit } from "./quality";
 import { messageStyle } from "./messageStyle";
@@ -12,7 +12,7 @@ import type { RepositorySnapshot } from "@shared/repository";
 import type { GitHubState } from "@shared/domain";
 import { createDecisionRequest, createMandateRequest, DELEGABLE_ACTIONS, DomainError, MAXIMUM_ALTERNATIVES } from "./pact";
 import { ALL_CHECKS, CHECKS, type CheckResult, type ReadOnlyCheck } from "./checks";
-import { candidateReport, CandidateError, clearCandidate, declareCandidate, findCandidate } from "./candidates";
+import { candidateReport, CandidateError, clearCandidate, declareCandidate, findCandidate, latestCandidate } from "./candidates";
 import { studyText } from "./study";
 import { findGoal, requestGoalId } from "@shared/goals";
 import { isFixedRole, roleDuties } from "@shared/roster";
@@ -29,6 +29,7 @@ import {
   findSpecialist,
   isActive,
   isTeamConfirmed,
+  needsWorktree,
   PERSON_ONLY_KINDS,
   proposeTeam,
   refusalMessage,
@@ -476,7 +477,7 @@ export const COORDINATOR_TOOLS: ToolDefinition[] = [
   },
   {
     name: "verify_candidate",
-    description: `Run one of the candidate's required checks in the Codex sandbox on the candidate's own worktree and record the result as evidence of that exact candidate. Allowed without a mandate; the output is Trama's evidence, not yours. A failed check keeps its original output and blocks the green light; changing the work means declaring a new candidate. Checks: ${ALL_CHECKS.join(", ")}.`,
+    description: `Run one of the candidate's required checks in the Codex sandbox on the candidate's own worktree and record the result as evidence of that exact candidate. candidate is the candidateID declare_candidate returned (C-…); an assignment id (A-…) stands for the latest candidate declared from it, and an assignment that ended without one must be declared first with declare_candidate. Allowed without a mandate; the output is Trama's evidence, not yours. A failed check keeps its original output and blocks the green light; changing the work means declaring a new candidate. Checks: ${ALL_CHECKS.join(", ")}.`,
     properties: { candidate: text, check: { type: "string", enum: ALL_CHECKS } },
     required: ["candidate", "check"],
     readOnly: true,
@@ -621,6 +622,33 @@ export interface ToolContext {
   headSHA(): Promise<string | null>;
   /** Starts Trama's planner in the background and returns the plan id. */
   orderPlan(order: { kind: WorkKind; moduleIds: string[]; summary: string; issueNumber: number | null }): string;
+}
+
+/**
+ * The candidate a tool names. An assignment id stands for the latest candidate declared from it; an assignment
+ * that ended without one gets the move to make first, declare_candidate, instead of a bare refusal (issue #204).
+ */
+function candidateArgument(document: ProjectDocument, value: Json | undefined): { candidate: Candidate } | { failure: ToolResult } {
+  const id = typeof value === "string" ? value.trim() : "";
+  const candidate = findCandidate(document, id);
+  if (candidate) return { candidate };
+  const assignment = id ? findAssignment(document, id) : null;
+  if (!assignment) return { failure: toolFailure("unknown_candidate", `There is no candidate ${String(value)}.`) };
+  const declared = latestCandidate(document, assignment.id);
+  if (declared) return { candidate: declared };
+  if (!needsWorktree(assignment)) {
+    return { failure: toolFailure("not_a_candidate", `${assignment.id} is a read-only assignment: it has no worktree, so it has no candidate to verify.`) };
+  }
+  if (isActive(assignment)) {
+    return { failure: toolFailure("assignment_running", `${assignment.id} is an assignment that is still running: declare its candidate with declare_candidate when it ends.`) };
+  }
+  const decisions = Object.keys(assignment.decisionVersions ?? {});
+  return {
+    failure: toolFailure(
+      "candidate_not_declared",
+      `${assignment.id} is an assignment, not a candidate, and no candidate was declared from it yet. First call declare_candidate with assignment ${assignment.id} and the Pact decisions it must respect${decisions.length ? ` (the assignment relies on ${decisions.join(", ")})` : ""}, then call this tool again with the candidateID it returns.`,
+    ),
+  };
 }
 
 /** The learning tools of a turn with the person: writes are theirs ("learn"), never the review's. */
@@ -1317,8 +1345,9 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
         return toolSuccess({ candidateID: candidate.id, commitMessage: commit.message, pullRequestTitle: commit.message.split("\n")[0]! });
       }
       case "verify_candidate": {
-        const candidate = findCandidate(document, typeof args.candidate === "string" ? args.candidate : "");
-        if (!candidate) return toolFailure("unknown_candidate", `There is no candidate ${String(args.candidate)}.`);
+        const found = candidateArgument(document, args.candidate);
+        if ("failure" in found) return found.failure;
+        const candidate = found.candidate;
         const check = args.check as ReadOnlyCheck;
         if (!candidate.requiredChecks.includes(check)) {
           return toolFailure("check_not_required", `${String(args.check)} is not one of the required checks of candidate ${candidate.id}.`);
@@ -1336,14 +1365,16 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
         });
       }
       case "review_candidate": {
-        const candidate = findCandidate(document, typeof args.candidate === "string" ? args.candidate : "");
-        if (!candidate) return toolFailure("unknown_candidate", `There is no candidate ${String(args.candidate)}.`);
+        const found = candidateArgument(document, args.candidate);
+        if ("failure" in found) return found.failure;
+        const candidate = found.candidate;
         const review = await context.reviewCandidate(candidate.id);
         return toolSuccess({ candidateID: candidate.id, reviewID: review.id, verdict: review.verdict, summary: review.summary });
       }
       case "clear_candidate": {
-        const candidate = findCandidate(document, typeof args.candidate === "string" ? args.candidate : "");
-        if (!candidate) return toolFailure("unknown_candidate", `There is no candidate ${String(args.candidate)}.`);
+        const found = candidateArgument(document, args.candidate);
+        if ("failure" in found) return found.failure;
+        const candidate = found.candidate;
         const authorization = authorize(document.mandate, "integrateCandidate", candidate.touchedModules);
         if (authorization !== "authorized") return refused(authorization, "integrateCandidate");
         clearCandidate(document, candidate.id, "Coordinatore", await context.headSHA());
