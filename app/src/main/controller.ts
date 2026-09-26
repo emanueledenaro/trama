@@ -67,6 +67,7 @@ import { openingInput, resumeInput, specialistInstructions } from "./core/specia
 import { prepareDemoProject } from "./core/demoProject";
 import { appendEvent, emptyDocument, handoverTranscript, moveEvent, recordReply, referencedPaths } from "./core/document";
 import { candidateGoalId, dialogComposer, findGoal, projectGoals, requestGoalId } from "@shared/goals";
+import { focusTask, focusText, focusView, pauseTask, resumeTask } from "./core/focus";
 import { COORDINATOR_MOVES, type CoordinatorMove, nextStepViews, PHASE_LABELS, workState, workStateText } from "./core/workPhase";
 import {
   AUTOMATIC_MOVE_DETAIL,
@@ -488,6 +489,7 @@ export class TramaController {
       project.document.candidates.map((c) => [c.id, candidateReport(project.document, c, project.snapshot.headSHA)]),
     );
     project.nextSteps = nextStepViews(project.document);
+    project.focus = focusView(project.document);
     project.pactDemoBlockers = project.document.pactDemo ? inspectPactDemo(project.document, project.document.pactDemo) : [];
     this.recordCompletedExercises(project);
   }
@@ -816,6 +818,7 @@ export class TramaController {
         queuedMessages: [],
         candidateReports: {},
         nextSteps: {},
+        focus: { focus: null, queue: [] },
         skills: [],
         pactDemoBlockers: [],
         aiHeroPrepared: hasAiHero(root),
@@ -1664,6 +1667,9 @@ export class TramaController {
       const work = workState(document, request.id);
       sections.push(workStateText(work));
       if (automatic) sections.push(automaticMoveSection(automatic));
+      // Every turn: the task in focus and the queue, so the Coordinator brings a conversation that drifts back to the focus (W02).
+      const focus = focusText(document, request.id);
+      if (focus) sections.push(focus);
       // The previous reply closed with a generic confirmation question: Trama tells the Coordinator, not the model's own memory (W04).
       const feedback = confirmationFeedback(document, request.id);
       if (feedback) sections.push(feedback);
@@ -2094,6 +2100,31 @@ export class TramaController {
     else restoreGoal(project.document, goal.id);
     await this.saveGoalChange(project, previous, null);
     return goal.id;
+  }
+
+  /** Puts a task in focus, on pause or back in the queue (W02), saved before the person sees it. */
+  async changeFocus(action: "focus" | "pause" | "resume", taskId: string): Promise<void> {
+    const project = this.requireProject();
+    const document = project.document;
+    const previous = document.focus;
+    const change = { focus: focusTask, pause: pauseTask, resume: resumeTask }[action];
+    change(document, taskId);
+    const rollBack = () => {
+      if (previous === undefined) delete document.focus;
+      else document.focus = previous;
+    };
+    if (!project.stateWritable) {
+      rollBack();
+      throw new Error("Il focus non è stato salvato: lo stato del progetto non è leggibile e Trama non lo sovrascrive.");
+    }
+    try {
+      await this.storage.saveDocument(document);
+    } catch (error) {
+      rollBack();
+      this.publish();
+      throw new Error(`Il focus non è stato salvato: ${(error as Error).message}`);
+    }
+    this.publish();
   }
 
   /** Deletes a goal whose dialog is empty (W03); a goal with history is archived instead. */
