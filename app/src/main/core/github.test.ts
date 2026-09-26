@@ -1,7 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { ghEnvironment, ghSearchPath, parseGitHubRemote } from "./github";
+import { ghEnvironment, ghSearchPath, linkedIssueNumbers, parseGitHubRemote } from "./github";
 
 describe("github", () => {
+  it("finds the issues a pull request names in its title, body and branch (issue #231)", () => {
+    expect(linkedIssueNumbers("W16: avatar animati (#187)", "Closes #187\nVedi anche owner/repo#9 e &#39;", "feature/w16-animated-agent-avatars")).toEqual([187]);
+    expect(linkedIssueNumbers("fix", null, "bugfix/issue-231-fixed-role-duties")).toEqual([231]);
+    expect(linkedIssueNumbers("fix", "", "feature/gh-12_x")).toEqual([12]);
+    expect(linkedIssueNumbers("v1.2", "", "release/v1.2.0")).toEqual([]);
+  });
+
   it("accepts only github.com remotes", () => {
     expect(parseGitHubRemote("git@github.com:emanueledenaro/trama.git")).toBe("emanueledenaro/trama");
     expect(parseGitHubRemote("https://github.com/a/b\n")).toBe("a/b");

@@ -635,6 +635,8 @@ export interface AssignmentDuty {
   outcome: DutyOutcome | null;
   /** The session ended with an answer Trama could not read. */
   unreadable?: boolean;
+  /** Who asked Trama to start it now, outside its rule (issue #231); absent when Trama's rule started it. */
+  requestedBy?: "person" | "coordinator";
 }
 
 /** A check that failed on the project checkout or on a candidate, waiting for or under diagnosis (W11). */
@@ -701,10 +703,42 @@ export interface DomainProposal {
   waiting: string | null;
 }
 
+/** An issue Trama saw for the first time after it started watching the project. */
+export interface NewIssue {
+  number: number;
+  seenAt: string;
+  /** Why the issue no longer goes to triage; null while it is still new. Once set it stays, also after a reopening. */
+  dropped: string | null;
+}
+
+/** The fixed roles' automatic work, as the person and the Coordinator see it (issue #231). */
+export type AutomaticWorkKind = "triage" | "diagnosis" | "architectureReview" | "domainWriting";
+
+/** The automatic work the person or the Coordinator may start now, outside Trama's rule. */
+export type AutomaticWorkRequest = { kind: "architectureReview" } | { kind: "triage"; issueNumber: number };
+
+export interface AutomaticWorkStatus {
+  kind: AutomaticWorkKind;
+  role: TeamRole;
+  /** running: at work now; due: starts at Trama's next look; waiting: has work but something holds it; idle: nothing to do. */
+  state: "running" | "due" | "waiting" | "idle";
+  /** The assignment at work, while running. */
+  assignmentId: string | null;
+  /** In the person's words: what it does, when it starts and why it has not started yet. */
+  detail: string;
+  /** Whether the person or the Coordinator may start it now on request; null for work that only Trama's rule starts. */
+  onRequest: { allowed: true } | { allowed: false; reason: string } | null;
+}
+
 /** Trama's own bookkeeping for the fixed roles' automatic work (W11). */
 export interface DutyLedger {
   /** The highest issue number when Trama first read the project's issues: only issues above it are new. */
   issueBaseline: number | null;
+  /**
+   * Each issue above the baseline as Trama first read it, and why it stopped counting as new (issue #231): closed,
+   * already evaluated, already in work or with a linked pull request. Absent in ledgers written before it.
+   */
+  newIssues?: NewIssue[];
   failures: CheckFailure[];
   /** The last result of each check on the project checkout, to recognize a regression. */
   checkoutChecks: Record<string, { headSHA: string | null; passed: boolean }>;
@@ -1200,6 +1234,8 @@ export interface GitHubPullRequest {
   updatedAt: string;
   /** Opened from a fork: its head lives in another repository. */
   fromFork?: boolean;
+  /** The issues the pull request names in its title, body or branch (#12, Closes #12, issue-12-...). */
+  linkedIssues?: number[];
   checks?: "success" | "failure" | "pending" | "none";
   reviewState?: "approved" | "changesRequested" | "commented" | "none";
 }
@@ -1287,6 +1323,8 @@ export interface ActiveProjectState {
   presence?: import("./presence").PresenceView | null;
   /** The person's work against the colleagues' presence (G03); absent without a presence reading. */
   overlaps?: import("./overlap").OverlapView | null;
+  /** Where each fixed role's automatic work stands (issue #231), computed by the main process. */
+  automaticWork?: AutomaticWorkStatus[];
   /** The automatic retry after a temporary provider limit, while it waits (P10). */
   providerRetry?: import("./providerFailure").ProviderRetryView | null;
 }
