@@ -13,6 +13,7 @@ import { classifyProviderFailure, containsJson, failureSummary, type ProviderRet
 import type { ImageAttachmentInput } from "@shared/ipc";
 import type {
   ActiveProjectState,
+  AutomaticWorkRequest,
   Candidate,
   FocusAudit,
   WorktreeSession,
@@ -35,6 +36,7 @@ import type {
   WorkPlan,
   RecentProject,
   RequestStep,
+  SpecialistAssignment,
 } from "@shared/domain";
 import { isOpenQuestion } from "@shared/domain";
 import { resolveCodexExecutable } from "./core/codexClient";
@@ -243,7 +245,20 @@ import { CoordinatorToolServer, TOOL_SERVER_NAME, toolFailure, toolSuccess } fro
 import { deliverNativeSkill, deliverNativeSkills, loadNativeSkill, type NativeSkill } from "./core/nativeSkills";
 import { answerRoute, askTramaComposerSkill, boundarySession, RouteError, routeReferences, skillInRouteBinding } from "./core/askTrama";
 import { ASK_TRAMA_SKILL, BOUNDARY_LABELS, findRoute } from "@shared/askTrama";
-import { concludeDuty, dutyModel, type DutyRunner, dutySession, nextDuty, recordCheckOutcome, startDomainWriting, startWaitingDomainWriting, withinMandate } from "./core/duties";
+import {
+  automaticWorkStatus,
+  concludeDuty,
+  type DutyContext,
+  dutyModel,
+  type DutyRunner,
+  dutySession,
+  nextDuty,
+  recordCheckOutcome,
+  startDomainWriting,
+  startDutyOnRequest,
+  startWaitingDomainWriting,
+  withinMandate,
+} from "./core/duties";
 import { findDomainProposal } from "@shared/domainDocs";
 
 /** The model Trama prefers for the Coordinator when the Codex catalogue offers it. */
@@ -589,6 +604,7 @@ export class TramaController {
       project.document.plans.filter((p) => p.slicing?.status === "approved").map((p) => [p.id, sliceViews(project.document, p)]),
     );
     project.focus = focusView(project.document);
+    project.automaticWork = project.isDemo ? [] : automaticWorkStatus(project.document, this.dutyContext(project, project.snapshot.headSHA));
     project.overlaps = projectOverlaps(project, this.presenceProbes);
     project.pactDemoBlockers = project.document.pactDemo ? inspectPactDemo(project.document, project.document.pactDemo) : [];
     this.recordCompletedExercises(project);
@@ -1707,6 +1723,8 @@ export class TramaController {
           providers: this.connectedProviders(),
           startAssignment: (id) => void this.startAssignment(id),
           questionAnswered: () => this.resumeAnsweredWork(current),
+          automaticWork: () => automaticWorkStatus(current.document, this.dutyContext(current, current.snapshot.headSHA)),
+          startAutomaticWork: async (request) => (await this.startDutyOnRequest(current, request, "coordinator", current.runningRequestId)).id,
           startDomainWriting: (proposalId) => {
             const proposal = findDomainProposal(current.document, proposalId);
             const assignment = proposal ? startDomainWriting(current.document, proposal, this.dutyRunner(current.document)) : null;
@@ -3266,6 +3284,44 @@ export class TramaController {
     return chosen ? { provider, model: chosen.model, modelReason: chosen.reason } : null;
   }
 
+  /** What the rules of the fixed roles' automatic work read about the project now. */
+  private dutyContext(project: ActiveProjectState, headSHA: string | null): DutyContext {
+    const ready = project.github.status === "ready";
+    return {
+      issues: ready ? project.github.issues : null,
+      pullRequests: ready ? (project.github.snapshot?.pullRequests ?? null) : null,
+      headSHA,
+      coordinatorBusy: project.phase.kind !== "ready" || project.runningRequestId !== null,
+      moduleIds: project.snapshot.modules.map((m) => m.id),
+      runner: this.dutyRunner(project.document),
+    };
+  }
+
+  /**
+   * Starts a fixed role's automatic work now, because the person or the Coordinator asked for it (issue #231).
+   * Throws DutyRequestError, in the person's words, when the mandate, the provider or the role do not allow it.
+   */
+  private async startDutyOnRequest(
+    project: ActiveProjectState,
+    request: AutomaticWorkRequest,
+    requestedBy: "person" | "coordinator",
+    requestId: string | null,
+  ): Promise<SpecialistAssignment> {
+    if (!project.stateWritable) throw new DomainError("Lo stato di questo progetto è in sola lettura.");
+    if (project.isDemo) throw new DomainError("Nel progetto di esempio i compiti automatici restano fermi.");
+    const headSHA = await this.headSHA(project.rootPath);
+    const assignment = startDutyOnRequest(project.document, request, this.dutyContext(project, headSHA), requestedBy);
+    appendEvent(project.document, "trama", { type: "card", kind: "assignment", title: "Incarico", detail: null, referenceId: assignment.id }, requestId);
+    this.changedIn(project);
+    void this.startAssignment(assignment.id);
+    return assignment;
+  }
+
+  /** The person starts a fixed role's automatic work now, from the Team view or an issue (issue #231). */
+  async startAutomaticWork(request: AutomaticWorkRequest): Promise<void> {
+    await this.startDutyOnRequest(this.requireProject(), request, "person", null);
+  }
+
   private dutiesRun: Promise<void> | null = null;
   private dutiesAgain = false;
 
@@ -3309,13 +3365,7 @@ export class TramaController {
     }
     const headSHA = await this.headSHA(project.rootPath);
     if (this.state.project !== project) return;
-    const assignment = nextDuty(project.document, {
-      issues: project.github.status === "ready" ? project.github.issues : null,
-      headSHA,
-      coordinatorBusy: project.phase.kind !== "ready" || project.runningRequestId !== null,
-      moduleIds: project.snapshot.modules.map((m) => m.id),
-      runner: this.dutyRunner(project.document),
-    });
+    const assignment = nextDuty(project.document, this.dutyContext(project, headSHA));
     if (assignment) {
       appendEvent(project.document, "trama", { type: "card", kind: "assignment", title: "Incarico", detail: null, referenceId: assignment.id });
       void this.startAssignment(assignment.id);

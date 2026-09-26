@@ -1,5 +1,5 @@
 import type { ProviderId } from "./codex";
-import type { AgentColor, AppSettings, DecisionAlternative, GoalStatus, MandateAction, ProjectOverview } from "./domain";
+import type { AgentColor, AppSettings, AutomaticWorkRequest, DecisionAlternative, GoalStatus, MandateAction, ProjectOverview } from "./domain";
 import type { ExerciseId, GuideStepId, ObservedStep } from "./onboarding";
 
 export interface GoalExampleInputPayload {
@@ -95,6 +95,8 @@ export interface ActionMap {
   "specialist:remove": [{ specialistId: string; reason: string }, void];
   "specialist:rename": [{ specialistId: string; name: string }, void];
   "specialist:setColor": [{ specialistId: string; color: AgentColor }, void];
+  /** The person starts a fixed role's automatic work now (issue #231). */
+  "automaticWork:start": [AutomaticWorkRequest, void];
   "plan:cancel": [{ planId: string }, void];
   /** A plan written as a spec is corrected by its sections (M04); a plan written before M04 by its steps. */
   "plan:edit": [
