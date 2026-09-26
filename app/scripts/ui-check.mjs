@@ -449,6 +449,104 @@ await page.getByText(/^Bea$/).first().waitFor({ timeout: 20_000 });
 await page.getByText("ha lavorato per").first().waitFor();
 await shot("04e5-team-renamed-in-chat");
 
+// W16: each agent is a bot in its own color; no two agents of the team share a body, the chat shows them too, the
+// bots move only without reduced motion, and they read in light and dark.
+const botState = (root) =>
+  root.evaluate((el) =>
+    [...el.querySelectorAll('[data-testid="agent-bot"]')].map((bot) => ({
+      shape: bot.dataset.shape,
+      color: bot.style.getPropertyValue("--agent-light"),
+      name: bot.dataset.agent,
+      d: bot.querySelector('[data-part="blob-0"]')?.getAttribute("d"),
+    })),
+  );
+const chatBots = await botState(page.locator("main").first());
+if (!chatBots.length) throw new Error("The chat shows no agent bot");
+await page.getByRole("button", { name: /^Team/ }).first().click();
+await teamPanel.getByText("Chiarimento e spec", { exact: true }).waitFor();
+const teamBots = await botState(teamPanel);
+const bodies = new Map();
+for (const bot of teamBots) {
+  const other = bodies.get(`${bot.shape}${bot.color}`);
+  if (other && other !== bot.name) throw new Error(`${bot.name} and ${other} look the same: ${bot.shape}`);
+  bodies.set(`${bot.shape}${bot.color}`, bot.name);
+}
+if (new Set(teamBots.map((b) => b.shape)).size < 12) throw new Error(`The team has too few bodies: ${[...new Set(teamBots.map((b) => b.shape))]}`);
+// W16, sizes: 32 px in the Team rows and in the chat, and never a bot under 20 px anywhere.
+const botSizes = await page.evaluate(() => [...document.querySelectorAll('[data-testid="agent-bot"]')].map((bot) => Math.round(bot.getBoundingClientRect().width)));
+if (Math.min(...botSizes) < 20) throw new Error(`A bot is smaller than 20 px: ${botSizes}`);
+const rowBot = await teamPanel.getByTestId("team-figure").first().getByTestId("agent-bot").boundingBox();
+if (!rowBot || rowBot.width < 32) throw new Error(`The Team rows' bots are under 32 px: ${rowBot?.width}`);
+// W16, cost: CSS runs the steady moves; the frame loop runs only while the cursor moves or a bot morphs, at most
+// 24 times per second, and not at all at rest. Reduced motion stops everything and keeps the still pose.
+await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.focus());
+await page.waitForFunction(() => !document.documentElement.classList.contains("bots-paused"), null, { timeout: 5_000 });
+const botFrames = () => page.evaluate(() => ({ frames: window.__tramaBots.frames, at: performance.now() }));
+const perSecond = (from, to) => ((to.frames - from.frames) * 1000) / (to.at - from.at);
+// CPU of the renderer and GPU processes over a few seconds, from Electron's own metrics.
+const cpuOver = async (ms) => {
+  await app.evaluate(({ app: electronApp }) => electronApp.getAppMetrics());
+  await page.waitForTimeout(ms);
+  return app.evaluate(({ app: electronApp }) =>
+    electronApp
+      .getAppMetrics()
+      .filter((m) => m.type === "Tab" || m.type === "GPU")
+      .reduce((sum, m) => sum + m.cpu.percentCPUUsage, 0),
+  );
+};
+const liveBot = teamPanel.locator('[data-testid="agent-bot"][data-live]').first();
+if (!(await liveBot.evaluate((bot) => bot.getAnimations().length > 0))) throw new Error("The bots in view do not breathe");
+// The steady moves advance in steps, so the window is redrawn a few times per second, not at every frame.
+const smooth = await page.evaluate(() =>
+  document
+    .getAnimations()
+    .filter((a) => a.effect?.target?.closest?.(".agent-bot"))
+    .filter((a) => !a.effect.getKeyframes().slice(0, -1).every((k) => String(k.easing).startsWith("steps"))).length,
+);
+if (smooth) throw new Error(`${smooth} bot animations run at every frame instead of in steps`);
+const eyeOf = (bot) => bot.locator('[data-part="eye-0"]').getAttribute("transform");
+const follower = teamPanel.locator('[data-testid="agent-bot"][data-live]:is([data-activity="idle"], [data-activity="done"], [data-activity="waiting"])').first();
+const followerBox = await follower.boundingBox();
+const eyesBefore = await eyeOf(follower);
+const movingFrom = await botFrames();
+for (let i = 0; i < 40; i++) {
+  await page.mouse.move(followerBox.x + followerBox.width / 2 + 200 * Math.cos(i / 6), followerBox.y + followerBox.height / 2 + 120 * Math.sin(i / 6));
+  await page.waitForTimeout(50);
+}
+const movingRate = perSecond(movingFrom, await botFrames());
+if (movingRate > 24 * 1.1) throw new Error(`The bot loop ran ${movingRate.toFixed(1)} frames per second while the cursor moved, over 24`);
+if ((await eyeOf(follower)) === eyesBefore) throw new Error("The eyes do not follow the cursor");
+await page.waitForTimeout(800);
+const restFrom = await botFrames();
+await page.waitForTimeout(3_000);
+const restFrames = (await botFrames()).frames - restFrom.frames;
+if (restFrames > 3) throw new Error(`The bot loop ran ${restFrames} frames in 3 s at rest`);
+const cpuMoving = await cpuOver(3_000);
+await page.emulateMedia({ reducedMotion: "reduce" });
+const cpuStill = await cpuOver(3_000);
+await page.emulateMedia({ reducedMotion: "no-preference" });
+if (cpuMoving - cpuStill > 5) throw new Error(`The bots at rest cost ${(cpuMoving - cpuStill).toFixed(1)}% of CPU, over 5%`);
+console.log(
+  `bots: ${botSizes.length} on screen, ${movingRate.toFixed(1)} frames/s with the cursor moving, ${restFrames} frames in 3 s at rest, ` +
+    `renderer+GPU CPU at rest ${cpuMoving.toFixed(1)}% animated, ${cpuStill.toFixed(1)}% with reduced motion`,
+);
+const firstBot = teamPanel.getByTestId("agent-bot").first();
+const outline = () => firstBot.locator('[data-part="blob-0"]').getAttribute("d");
+await page.emulateMedia({ reducedMotion: "reduce" });
+await page.waitForTimeout(200);
+const stillBefore = await outline();
+if (await liveBot.evaluate((bot) => bot.getAnimations().some((a) => a.playState === "running"))) throw new Error("A bot breathes with reduced motion");
+await page.waitForTimeout(600);
+if ((await outline()) !== stillBefore) throw new Error("A bot moves with reduced motion");
+await page.emulateMedia({ reducedMotion: "no-preference" });
+await shot("04e6-bots-team-light");
+await page.evaluate(() => document.documentElement.classList.add("dark"));
+await shot("04e7-bots-team-dark");
+await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
+await shot("04e8-bots-chat-dark");
+await page.evaluate(() => document.documentElement.classList.remove("dark"));
+await shot("04e9-bots-chat-light");
+
 // Learning (ADR 0014): the Coordinator saves a note, then a review the person asks for writes memory and a skill.
 await page.getByLabel("Messaggio al Coordinatore").fill("[memoria] ricorda il gestore di pacchetti");
 await page.keyboard.press("Enter");
