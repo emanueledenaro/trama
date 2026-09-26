@@ -499,6 +499,17 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
         });
         return;
       }
+      if (text.includes("[presenza]") && toolServers.has(threadId)) {
+        // "Chi sta toccando i pagamenti?" (G04): the answer comes from read_presence only, and says whether the turn's
+        // message carried the presence section.
+        const result = await callTool(threadId, "read_presence", { terms: ["pagament", "payment"] });
+        toolDone("read_presence", result);
+        const { people } = JSON.parse(result.content[0].text);
+        const who = people.map((p) => `${p.who} su ${p.branch} (${p.files.join(", ")})`).join("; ");
+        const section = text.includes("## Presenza dei colleghi") ? "Sezione presenza ricevuta." : "Sezione presenza assente.";
+        await finish(`${who ? `Sta toccando i pagamenti: ${who}.` : "Nessuno visibile nella presenza sta toccando i pagamenti."} ${section}`);
+        return;
+      }
       if (text.startsWith("Studio del progetto scritto da Trama") && text.includes("propose_goal")) {
         // A project without goals: the study closes with a first goal (UX07).
         const result = await callTool(threadId, "propose_goal", {
