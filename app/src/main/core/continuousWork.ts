@@ -1,5 +1,5 @@
 import type { NextMove, ProjectDocument } from "@shared/domain";
-import { COORDINATOR_MOVES, type CoordinatorMove, workRequests, workState } from "./workPhase";
+import { COORDINATOR_MOVES, type CoordinatorMove, type WorkState, workRequests, workState } from "./workPhase";
 
 /**
  * Continuous work (W04): when the next move of the work is the Coordinator's own and the mandate allows it
@@ -78,7 +78,69 @@ export function automaticMoveSection(move: CoordinatorMove): string {
     "## Mossa automatica di Trama",
     `Mossa automatica di Trama: ${move} ("${COORDINATOR_MOVES[move].label}"). La mossa spetta a te e il mandato la consente: Trama l'ha avviata da sola dopo l'ultimo evento del lavoro, non è un messaggio della persona.`,
     "Falla ora con i tuoi strumenti, senza chiedere conferme alla persona. Se non puoi farla, scrivi il motivo in una riga. La persona può fermare il turno.",
+    ...(move === "verifyCandidate"
+      ? [
+          "Le verifiche girano su un candidato, non su un incarico: per un incarico concluso senza candidato chiama prima declare_candidate, poi verify_candidate con il candidateID che restituisce. La fase del lavoro qui sopra elenca gli incarichi e i candidati.",
+        ]
+      : []),
   ].join("\n");
+}
+
+/** A Coordinator move Trama started that the turn did not make, and why, in the person's words (issue #204). */
+export interface StalledMove {
+  move: CoordinatorMove;
+  reason: string;
+}
+
+/**
+ * The automatic move of `requestId` when its turn ended without making it, or null. Pure. The work then waits for
+ * the person, so the chat shows the move again as the next step with Trama's reason, instead of stopping in silence.
+ * A move the Coordinator made in part, or a next step it declared itself, is not a stall.
+ */
+export function stalledMove(document: ProjectDocument, requestId: string): StalledMove | null {
+  const request = document.requests.find((r) => r.id === requestId);
+  if (!request || request.state !== "completed" || request.step?.by !== "trama" || request.nextStep) return null;
+  const move = request.step.move as CoordinatorMove;
+  if (!(move in COORDINATOR_MOVES)) return null;
+  const state = workState(document, request.id);
+  if (!state.moves.some((m) => m.actor === "coordinator" && m.move === move)) return null;
+  const reason = stallReason(document, request.id, request.createdAt, move, state);
+  return reason ? { move, reason: `La mossa automatica non è riuscita: ${reason}`.slice(0, 240) } : null;
+}
+
+function stallReason(document: ProjectDocument, requestId: string, since: string, move: CoordinatorMove, state: WorkState): string | null {
+  switch (move) {
+    case "preparePlan":
+      return document.plans.some((p) => p.requestId === requestId) ? null : "il Coordinatore non ha avviato il piano.";
+    case "assignWork": {
+      const assigned = document.team.specialists.some((s) => s.assignments.some((a) => a.requestId === requestId));
+      return assigned ? null : "il Coordinatore non ha assegnato il lavoro.";
+    }
+    case "verifyCandidate": {
+      const targets = state.verification;
+      if (!targets) return null;
+      // Any candidate of this work declared, checked or reviewed in the turn means the Coordinator made the move, at least
+      // in part, including one that is done and so no longer among the targets.
+      const work = workRequests(document, requestId);
+      const moved = document.candidates.some((candidate) => {
+        const assignment = document.team.specialists.flatMap((s) => s.assignments).find((a) => a.id === candidate.assignmentId);
+        if (!assignment?.requestId || !work?.has(assignment.requestId)) return false;
+        const times = [candidate.declaredAt, candidate.technicalReview?.at, ...Object.values(candidate.evidence).map((e) => e.recordedAt)];
+        return times.some((t) => t !== undefined && t >= since);
+      });
+      if (moved) return null;
+      if (targets.undeclared.length) {
+        const [first, ...others] = targets.undeclared;
+        return others.length
+          ? `gli incarichi ${targets.undeclared.join(", ")} sono conclusi ma i loro candidati non sono stati dichiarati.`
+          : `l'incarico ${first} è concluso ma il suo candidato non è stato dichiarato.`;
+      }
+      return `le verifiche di ${targets.unverified.join(", ")} non sono partite.`;
+    }
+    case "answerQuestion":
+      // An unanswered question keeps its work paused and stays among the moves (W06): no stall to report.
+      return null;
+  }
 }
 
 /**

@@ -5,7 +5,7 @@ import { declareCandidate, recordEvidence, recordTechnicalReview } from "./candi
 import { emptyDocument } from "./document";
 import { answerDecisionRequest, createDecisionRequest, createMandateRequest, grantMandate } from "./pact";
 import { assign, confirmTeam, endTurn, proposeTeam } from "./team";
-import { nextStepViews, workState } from "./workPhase";
+import { nextStepViews, workState, workStateText } from "./workPhase";
 
 const at = (minute: number) => new Date(Date.UTC(2026, 8, 25, 10, minute));
 
@@ -240,6 +240,23 @@ describe("workState: the phase and the allowed moves of a request (W01)", () => 
     expect(workState(document, "r3")).toMatchObject({ phase: "verification", moves: [{ move: "verifyCandidate", targetId: declared.id }] });
     recordEvidence(document, declared.id, { check: "git_status", passed: true, command: "git status", output: "", snapshotId: declared.snapshotId });
     expect(workState(document, "r3").phase).toBe("verification");
+  });
+
+  it("names what the verification acts on: the assignment to declare first, then the candidate (issue #204)", () => {
+    const { document, assignment } = withAssignment();
+    endTurn(document, assignment.id, null, { kind: "completed", text: "Fatto" });
+    const undeclared = workState(document, "r3");
+    expect(undeclared.verification).toEqual({ undeclared: [assignment.id], unverified: [] });
+    const text = workStateText(undeclared);
+    expect(text).toContain(`Incarichi conclusi senza candidato: ${assignment.id}.`);
+    expect(text).toContain("prima declare_candidate");
+    expect(text).toContain("poi verify_candidate con il candidateID");
+
+    const declared = candidate(document, assignment.id, null, null);
+    expect(workState(document, "r3").verification).toEqual({ undeclared: [], unverified: [declared.id] });
+    expect(workStateText(workState(document, "r3"))).toContain(`Candidati da verificare: ${declared.id}.`);
+    candidate(document, assignment.id, "pass", "approved");
+    expect(workState(document, "r3").verification).toBeUndefined();
   });
 
   it("is candidate when the work is verified and approved by the reviewer, then waits for the merge", () => {
