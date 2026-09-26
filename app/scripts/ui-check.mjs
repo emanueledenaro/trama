@@ -138,6 +138,9 @@ await welcome.getByRole("heading", { name: "Benvenuto in Trama" }).waitFor();
 await page.waitForFunction(() => Boolean(document.activeElement?.closest('[data-testid="welcome"]')), null, { timeout: 10_000 });
 for (let press = 0; press < 8; press++) {
   await page.keyboard.press("Tab");
+  // A Tab that lands on a focus guard is sent back inside on the next frame; a person never types faster than that,
+  // but Playwright does, and a second Tab before the redirect reached the window behind on a loaded runner.
+  await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
   const focus = await page.evaluate(() => {
     const active = document.activeElement;
     return {
