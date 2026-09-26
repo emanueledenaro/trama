@@ -62,6 +62,11 @@ export class CoordinatorToolServer {
     return `http://127.0.0.1:${address?.port ?? 0}/mcp`;
   }
 
+  /** The tool names, so a provider's refusal can name the Trama tool to use (issue #228). */
+  get toolNames(): string[] {
+    return this.tools.map((tool) => tool.name);
+  }
+
   stop(): void {
     this.server?.close();
     this.server = null;

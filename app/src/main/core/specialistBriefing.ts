@@ -4,6 +4,7 @@ import { CHECKS, type ReadOnlyCheck } from "./checks";
 import { needsWorktree } from "./team";
 import { contractBriefing, REPORT_HEADINGS } from "./implementation";
 import { answerBriefing, asksCoordinator } from "./developerQuestions";
+import { providerToolsRule } from "./providers/toolRefusal";
 
 export function specialistInstructions(projectName: string, specialist: Specialist, assignment: SpecialistAssignment): string {
   const lines = [
@@ -15,6 +16,7 @@ export function specialistInstructions(projectName: string, specialist: Speciali
       : "This assignment is read-only: read the project and report. Do not change files and do not use the network.",
     `Stay inside these modules: ${assignment.moduleIds.join(", ")}.`,
     "Do not start other agents and do not ask for broader permissions. If the sandbox stops you, say so in your answer instead of working around it.",
+    providerToolsRule(asksCoordinator(specialist, assignment) ? "developer" : "none"),
     messageStyle("the Coordinator"),
     "Name the files you touched with their path relative to the worktree root.",
   ];

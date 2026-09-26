@@ -97,7 +97,7 @@ export async function runReviewSession(input: ReviewSessionInput): Promise<Revie
   await server.start();
   const runtime = createRuntime(input.provider, {
     executable: input.executable,
-    toolServer: { name: TOOL_SERVER_NAME, url: server.url, token: server.token },
+    toolServer: { name: TOOL_SERVER_NAME, url: server.url, token: server.token, tools: server.toolNames },
     requestTimeoutMs: 15_000,
   });
   let usedTokens: number | null = null;

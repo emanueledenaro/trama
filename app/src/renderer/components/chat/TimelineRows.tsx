@@ -18,7 +18,7 @@ import { useEffect, useState } from "react";
 import { isUsableAccount, type ProviderId, READ_OUTSIDE_SCOPE_TITLE } from "@shared/codex";
 import type { ConversationEvent, NextStepView } from "@shared/domain";
 import { RECOVERY_LABELS, type RecoveryAction, readableFailure } from "@shared/providerFailure";
-import { PROVIDERS, supportsReadOnly } from "@shared/providers";
+import { PROVIDERS, canCoordinate } from "@shared/providers";
 import { extractPastes, pasteSizeLabel, pasteTitle } from "@shared/pastedText";
 import { formatDuration, type TimelineRow, turnFailureText } from "@shared/timeline";
 import { cn } from "@/lib/cn";
@@ -359,7 +359,7 @@ function TurnFailure({ row }: { row: Extract<TimelineRow, { kind: "failure" }> }
   // The provider's error in the person's words (P10): cause, whether it passes, the actions; the raw text only on request.
   const { failure } = turnFailureText(row.message, descriptor?.name ?? null);
   const other = (Object.keys(providers) as ProviderId[]).find(
-    (id) => id !== row.provider && supportsReadOnly(id) && isUsableAccount(providers[id]?.account),
+    (id) => id !== row.provider && canCoordinate(id) && isUsableAccount(providers[id]?.account),
   );
   const actions = failure.actions.filter((action) => action !== "changeProvider" || other);
   const run = (action: RecoveryAction) => {

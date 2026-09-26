@@ -1,9 +1,10 @@
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { TurnEvent } from "@shared/codex";
 import { CodexClient } from "../codexClient";
+import { CoordinatorToolServer, toolSuccess } from "../toolServer";
 import { CodexRuntime } from "./codex";
 
 const fake = join(import.meta.dirname, "../../../../test-fixtures/fake-codex.mjs");
@@ -62,5 +63,39 @@ describe("Codex runtime read scope (issue #206)", () => {
     await expect(runtime.runTurn({ threadId, prompt: "scrivi", cwd: project, model: "gpt-5.5", writableRoot: project, onEvent: () => undefined })).rejects.toThrow(
       /scrivere fuori/,
     );
+  });
+});
+
+describe("Codex runtime and the provider's own tools (issue #228)", () => {
+  it("turns off web search, apps and the person's MCP servers, and names read_issues after a gh command fails", async () => {
+    const server = new CoordinatorToolServer(
+      [{ name: "read_issues", description: "Read GitHub issues.", properties: {}, required: [], readOnly: true }],
+      async () => toolSuccess({ issues: [{ number: 228 }] }),
+      "",
+    );
+    await server.start();
+    const log = join(project, "codex.log");
+    process.env.FAKE_CODEX_LOG = log;
+    const runtime = new CodexRuntime({ executable: fake, toolServer: { name: "trama", url: server.url, token: server.token, tools: server.toolNames } });
+    stop = () => {
+      runtime.stop();
+      server.stop();
+      delete process.env.FAKE_CODEX_LOG;
+    };
+    const { threadId } = await runtime.openThread({ model: "gpt-5.5", cwd: project, developerInstructions: "test" });
+    const events: TurnEvent[] = [];
+    const run = () => runtime.runTurn({ threadId, prompt: "[issue-gh] leggi le issue", cwd: project, model: "gpt-5.5", onEvent: (e) => events.push(e) });
+    expect(await run()).toBe("github");
+    expect(events).toContainEqual({
+      type: "toolRefused",
+      itemId: "gh",
+      tool: "/bin/bash -lc 'gh issue list'",
+      reason: expect.stringContaining("Gli strumenti GitHub del provider sono bloccati: per le issue usa read_issues di Trama."),
+    });
+    expect(await run()).toBe(`trama: ${JSON.stringify({ issues: [{ number: 228 }] })}`);
+    const started = (await readFile(log, "utf8")).split("\n").filter(Boolean).map((line) => JSON.parse(line) as { method: string; params: { config?: Record<string, unknown> } });
+    const config = started.find((entry) => entry.method === "thread/start")!.params.config!;
+    expect(config).toMatchObject({ web_search: "disabled", features: expect.objectContaining({ apps: false, plugins: false }) });
+    expect(config["mcp_servers.trama"]).toMatchObject({ url: server.url });
   });
 });

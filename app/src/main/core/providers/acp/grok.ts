@@ -68,6 +68,8 @@ const GROK_READ_ONLY_TOOL_NAMES = new Set([
   "wait_tasks",
 ]);
 const GROK_NETWORK_TOOL_NAMES = new Set(["web_fetch", "web_search"]);
+/** Grok's file tools: a read-only turn refuses them for the sandbox, not as a provider tool with a Trama equivalent. */
+const GROK_FILE_TOOL_NAMES = new Set(["edit_file", "write_file", "hashline_edit"]);
 
 /** Chooses the headless auth method (resolveGrokAcpAuthMethodId). */
 export function resolveGrokAuthMethod(advertised: string[], hasApiKey: boolean): string {
@@ -99,8 +101,13 @@ export function grokHookResponse(params: JsonObject, policy: AcpTurnPolicy): Jso
   if (hostToolName(policy.hostServerName, { title: params.toolName, rawInput: params.toolInput ?? null }) !== null) return {};
   const deny = (reason: string) => ({ decision: "deny", systemMessage: `Trama blocca lo strumento Grok "${toolName || "sconosciuto"}": ${reason}` });
   if (!policy.active) return deny("nessun turno attivo.");
-  if (GROK_NETWORK_TOOL_NAMES.has(toolName)) return deny("l'accesso alla rete non è consentito.");
-  if (!policy.writableRoot && !GROK_READ_ONLY_TOOL_NAMES.has(toolName)) return deny("il turno è in sola lettura.");
+  // The refusal names the Trama tool to use instead and becomes a readable activity (issue #228).
+  const refuse = (fallback: string) =>
+    deny(policy.refuse?.({ itemId: asString(params.toolUseId) ?? asString(params.toolCallId) ?? `grok-${toolName}`, tool: toolName || "sconosciuto" }) ?? fallback);
+  if (GROK_NETWORK_TOOL_NAMES.has(toolName)) return refuse("l'accesso alla rete non è consentito.");
+  if (!policy.writableRoot && !GROK_READ_ONLY_TOOL_NAMES.has(toolName)) {
+    return GROK_FILE_TOOL_NAMES.has(toolName) ? deny("il turno è in sola lettura.") : refuse("il turno è in sola lettura.");
+  }
   return {};
 }
 
