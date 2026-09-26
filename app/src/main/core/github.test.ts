@@ -1,7 +1,27 @@
+import { mkdtemp, symlink } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { ghEnvironment, ghSearchPath, linkedIssueNumbers, parseGitHubRemote } from "./github";
+import { ghEnvironment, ghSearchPath, linkedIssueNumbers, listIssuesAndPullLinks, parseGitHubRemote } from "./github";
 
 describe("github", () => {
+  it("reads the issues a merged pull request names from the issues list (issue #231)", async () => {
+    const bin = await mkdtemp(join(tmpdir(), "trama-gh-"));
+    await symlink(join(process.cwd(), "test-fixtures/fake-gh.mjs"), join(bin, "gh"));
+    const saved = { path: process.env.PATH, merged: process.env.FAKE_GH_MERGED_PULL };
+    process.env.PATH = `${bin}:${saved.path}`;
+    process.env.FAKE_GH_MERGED_PULL = "1";
+    try {
+      const read = await listIssuesAndPullLinks("o/r");
+      expect(read.issues.map((i) => i.number)).toEqual([7]);
+      expect(read.pullRequestLinks).toEqual([{ number: 8, linkedIssues: [7] }]);
+    } finally {
+      process.env.PATH = saved.path;
+      if (saved.merged === undefined) delete process.env.FAKE_GH_MERGED_PULL;
+      else process.env.FAKE_GH_MERGED_PULL = saved.merged;
+    }
+  });
+
   it("finds the issues a pull request names in its title, body and branch (issue #231)", () => {
     expect(linkedIssueNumbers("W16: avatar animati (#187)", "Closes #187\nVedi anche owner/repo#9 e &#39;", "feature/w16-animated-agent-avatars")).toEqual([187]);
     expect(linkedIssueNumbers("fix", null, "bugfix/issue-231-fixed-role-duties")).toEqual([231]);

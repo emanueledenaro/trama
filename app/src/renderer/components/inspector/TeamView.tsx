@@ -64,8 +64,8 @@ function DeveloperRow({ specialist }: { specialist: Specialist }) {
   const goal = current ? findGoal(project.document, current.goalId) : null;
   return (
     <button type="button" data-testid="team-developer" onClick={() => setInspector({ kind: "specialist", id: specialist.id })} className={ROW}>
-      <span className="mt-0.5 flex w-4 justify-center">
-        <AgentAvatar agent={specialist} />
+      <span className="flex w-8 justify-center">
+        <AgentAvatar agent={specialist} size={32} />
       </span>
       <span className="min-w-0 flex-1">
         <span className="block text-ui text-foreground">
@@ -93,7 +93,7 @@ function FigureRow({ figure }: { figure: RosterFigure }) {
   const specialist = figure.specialists[0];
   const body = (
     <>
-      <span className="mt-0.5 flex w-4 justify-center">{specialist ? <AgentAvatar agent={specialist} /> : null}</span>
+      <span className="flex w-8 justify-center">{specialist ? <AgentAvatar agent={specialist} size={32} /> : null}</span>
       <span className="min-w-0 flex-1">
         <span className="flex items-center gap-1.5 text-ui text-foreground">
           {specialist ? <AgentName agent={specialist} avatar={false} /> : figure.profile.name}
@@ -213,16 +213,24 @@ export function SpecialistView({ id }: { id: string }) {
         <button type="button" className="inline-flex items-center gap-1 text-ui-sm text-muted-foreground hover:text-foreground" onClick={() => setInspector({ kind: "team" })}>
           <IconArrowLeft className="size-3.5" /> Team
         </button>
-        <div className="mt-2 flex items-center gap-2">
-          <AgentAvatar agent={specialist} className="size-5 text-ui-xs" />
-          <h3 className="text-ui-lg font-medium text-foreground">{specialist.name}</h3>
-          <AgentTag agent={specialist} className="text-ui-sm" />
-          <Badge>{specialist.id}</Badge>
-          <span className="ml-auto flex items-center gap-1.5 text-ui-sm text-muted-foreground">
-            <StatusDot status={specialist.status} /> {STATUS_LABEL[specialist.status]}
-          </span>
+        {/* The bot sits beside the header, so it takes no room from the name and the status; the row wraps before
+            anything is cut, and the status never shrinks. */}
+        <div className="mt-2 flex items-start gap-3" data-testid="specialist-header">
+          <AgentAvatar agent={specialist} size={48} />
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+              <h3 className="min-w-0 max-w-full truncate text-ui-lg font-medium text-foreground" title={specialist.name}>
+                {specialist.name}
+              </h3>
+              <AgentTag agent={specialist} className="text-ui-sm" />
+              <Badge>{specialist.id}</Badge>
+              <span className="ml-auto flex shrink-0 items-center gap-1.5 whitespace-nowrap text-ui-sm text-muted-foreground" data-testid="specialist-status">
+                <StatusDot status={specialist.status} /> {STATUS_LABEL[specialist.status]}
+              </span>
+            </div>
+            <p className="mt-0.5 text-ui text-muted-foreground">{specialist.competence}</p>
+          </div>
         </div>
-        <p className="mt-0.5 text-ui text-muted-foreground">{specialist.competence}</p>
         <div className="cta-row mt-3">
           {specialist.status !== "removed" && !fixed ? (
             <Button
@@ -381,7 +389,7 @@ function RenameSpecialist({ specialist, onDone }: { specialist: Specialist; onDo
 function AgentColorPicker({ specialist }: { specialist: Specialist }) {
   return (
     <InspectorSection title="Colore">
-      <p className="text-ui-sm text-muted-foreground">Il colore sta solo sull'avatar e sul tag. Badge e schede restano sui colori di stato.</p>
+      <p className="text-ui-sm text-muted-foreground">Il colore sta solo sul bot e sul tag. Badge e schede restano sui colori di stato.</p>
       <div className="mt-2 flex flex-wrap gap-1.5" role="radiogroup" aria-label="Colore dell'agente">
         {AGENT_PALETTE.map((entry) => {
           const selected = entry.color === specialist.color;
@@ -394,13 +402,13 @@ function AgentColorPicker({ specialist }: { specialist: Specialist }) {
                 aria-label={entry.label}
                 data-testid="agent-color"
                 className={cn(
-                  "agent-identity agent-avatar size-6 text-ui-xs transition-shadow",
+                  "agent-identity inline-flex size-10 items-center justify-center rounded-full transition-shadow",
                   selected ? "ring-2 ring-[var(--agent)] ring-offset-1 ring-offset-background" : "hover:ring-1 hover:ring-[var(--agent)]",
                 )}
                 style={agentStyle({ color: entry.color })}
                 onClick={() => (selected ? undefined : void act("specialist:setColor", { specialistId: specialist.id, color: entry.color }))}
               >
-                {[...specialist.name.trim()][0]?.toLocaleUpperCase("it") ?? "?"}
+                <AgentAvatar agent={{ ...specialist, color: entry.color }} activity="idle" size={32} />
               </button>
             </Tooltip>
           );

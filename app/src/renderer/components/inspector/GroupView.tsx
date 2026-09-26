@@ -1,5 +1,6 @@
 import { IconFileCode, IconGitBranch, IconGitPullRequest, IconRefresh, IconTarget } from "@tabler/icons-react";
 import { useEffect, useState } from "react";
+import { presenceActivity } from "@shared/agentBot";
 import { isAgentColor } from "@shared/identity";
 import type { PresenceTask } from "@shared/presence";
 import { groupBoard, type BoardRow, type GroupBoard } from "@shared/presenceBoard";
@@ -20,10 +21,10 @@ type Tab = "pulls" | "branches" | "news";
 
 const TASK_KIND: Record<PresenceTask["kind"], string> = { goal: "Obiettivo", work: "Lavoro", assignment: "Incarico" };
 
-/** A person's avatar: the initial on a neutral tint, since the colors belong to the agents (W15). */
+/** A person's avatar: the initial on a neutral tint, since the colors and the bots belong to the agents (W15, W16). */
 function PersonAvatar({ name }: { name: string }) {
   return (
-    <span aria-hidden className="agent-avatar bg-secondary text-secondary-foreground">
+    <span aria-hidden className="person-avatar bg-secondary text-secondary-foreground">
       {[...name.trim()][0]?.toLocaleUpperCase("it") ?? "?"}
     </span>
   );
@@ -32,7 +33,15 @@ function PersonAvatar({ name }: { name: string }) {
 function Identity({ row }: { row: BoardRow }) {
   if (row.kind === "agent" && row.agent) {
     const color = isAgentColor(row.agent.color) ? row.agent.color : "blue";
-    return <AgentName agent={{ name: row.name, color, tag: row.agent.tag, competence: row.agent.tag }} className="text-foreground/90" />;
+    // A colleague's agent sleeps when its person is idle or away (G01); this person's own agents show their state here.
+    const activity = row.self || row.freshness === "github" ? undefined : presenceActivity({ task: row.task }, row.freshness);
+    return (
+      <AgentName
+        agent={{ id: row.agent.id, name: row.name, color, tag: row.agent.tag, competence: row.agent.tag }}
+        activity={activity}
+        className="text-foreground/90"
+      />
+    );
   }
   return (
     <span className="inline-flex min-w-0 items-center gap-1.5">

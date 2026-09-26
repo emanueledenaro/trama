@@ -118,7 +118,8 @@ import {
   commentOnIssue,
   addBlockedBy,
   createIssue,
-  listIssues,
+  linkedIssueNumbers,
+  listIssuesAndPullLinks,
   readGitHubRepository,
   classifyGitHubError,
   readGitHubCapabilities,
@@ -1119,10 +1120,11 @@ export class TramaController {
       return;
     }
     let issues = project.github.issues;
+    let pullRequestLinks = project.github.pullRequestLinks;
     let message: string | null = null;
     const capabilities = await readGitHubCapabilities(repository);
     try {
-      issues = await listIssues(repository);
+      ({ issues, pullRequestLinks } = await listIssuesAndPullLinks(repository));
     } catch (error) {
       message = `GitHub CLI non ha letto le issue: ${classifyGitHubError((error as Error).message).message}`;
     }
@@ -1133,6 +1135,7 @@ export class TramaController {
       status: message ? "unavailable" : "ready",
       message,
       issues: message ? [] : issues,
+      pullRequestLinks: message ? [] : pullRequestLinks,
       snapshot: checkpoint.snapshot,
       events: checkpoint.events,
       capabilities,
@@ -1149,9 +1152,9 @@ export class TramaController {
   private async refreshIssues(project: ActiveProjectState): Promise<void> {
     const repository = project.github.repository;
     if (!repository || project.github.status !== "ready") return;
-    const issues = await listIssues(repository).catch(() => null);
-    if (!issues || this.state.project !== project) return;
-    project.github = { ...project.github, issues };
+    const read = await listIssuesAndPullLinks(repository).catch(() => null);
+    if (!read || this.state.project !== project) return;
+    project.github = { ...project.github, ...read };
     this.publish();
     void this.runDuties();
   }
@@ -3287,9 +3290,11 @@ export class TramaController {
   /** What the rules of the fixed roles' automatic work read about the project now. */
   private dutyContext(project: ActiveProjectState, headSHA: string | null): DutyContext {
     const ready = project.github.status === "ready";
+    // The open pull requests with their branch, and those of every state GitHub listed with the issues.
+    const open = (project.github.snapshot?.pullRequests ?? []).map((p) => ({ number: p.number, linkedIssues: p.linkedIssues ?? linkedIssueNumbers(p.title, null, p.headRef) }));
     return {
       issues: ready ? project.github.issues : null,
-      pullRequests: ready ? (project.github.snapshot?.pullRequests ?? null) : null,
+      pullRequests: ready ? [...open, ...(project.github.pullRequestLinks ?? [])] : null,
       headSHA,
       coordinatorBusy: project.phase.kind !== "ready" || project.runningRequestId !== null,
       moduleIds: project.snapshot.modules.map((m) => m.id),
@@ -3310,6 +3315,8 @@ export class TramaController {
     if (!project.stateWritable) throw new DomainError("Lo stato di questo progetto è in sola lettura.");
     if (project.isDemo) throw new DomainError("Nel progetto di esempio i compiti automatici restano fermi.");
     const headSHA = await this.headSHA(project.rootPath);
+    // The person may have opened another project meanwhile: the work would be recorded where nothing starts it.
+    if (this.state.project !== project) throw new DomainError("Il progetto è cambiato: il lavoro automatico non è partito.");
     const assignment = startDutyOnRequest(project.document, request, this.dutyContext(project, headSHA), requestedBy);
     appendEvent(project.document, "trama", { type: "card", kind: "assignment", title: "Incarico", detail: null, referenceId: assignment.id }, requestId);
     this.changedIn(project);
