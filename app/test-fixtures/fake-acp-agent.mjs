@@ -59,6 +59,33 @@ async function prompt(id, params) {
     send({ id, result: { stopReason: "cancelled" } });
     return;
   }
+  const fsRead = /fsread (\S+)/.exec(text);
+  if (fsRead) {
+    const answer = await askClient("fs/read_text_file", { sessionId, path: fsRead[1] });
+    const reply = answer.error ? `refused: ${answer.error.message}` : `read: ${answer.result.content}`;
+    update(sessionId, { sessionUpdate: "agent_message_chunk", content: { type: "text", text: reply } });
+    send({ id, result: { stopReason: "end_turn" } });
+    return;
+  }
+  const read = /^grep (\S+)/.exec(text);
+  if (read) {
+    // A search the agent asks permission for, as Cursor does for a read outside its folder (issue #206).
+    const toolCall = { toolCallId: "grep-1", title: "Grep", kind: "search", status: "pending", rawInput: { pattern: "ordini", path: read[1] } };
+    update(sessionId, { sessionUpdate: "tool_call", ...toolCall });
+    const answer = await askClient("session/request_permission", {
+      sessionId,
+      toolCall,
+      options: [
+        { optionId: "yes", name: "Allow", kind: "allow_once" },
+        { optionId: "no", name: "Reject", kind: "reject_once" },
+      ],
+    });
+    const allowed = answer.result?.outcome?.outcome === "selected" && answer.result.outcome.optionId === "yes";
+    update(sessionId, { sessionUpdate: "tool_call_update", toolCallId: "grep-1", status: allowed ? "completed" : "failed" });
+    update(sessionId, { sessionUpdate: "agent_message_chunk", content: { type: "text", text: allowed ? "allowed" : "rejected" } });
+    send({ id, result: { stopReason: "end_turn" } });
+    return;
+  }
   const fsWrite = /fswrite (\S+)/.exec(text);
   if (fsWrite) {
     const answer = await askClient("fs/write_text_file", { sessionId, path: fsWrite[1], content: "scritto" });

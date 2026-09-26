@@ -125,7 +125,7 @@ describe("restrictedAppServerArguments", () => {
     const { restrictedAppServerArguments } = await import("./codexClient");
     const args = await restrictedAppServerArguments(fake, "trama");
     expect(args).toContain('mcp_servers.github={command="/usr/bin/false",enabled=false}');
-    expect(args.slice(-8)).toEqual(["--disable", "apps", "--disable", "plugins", "--disable", "hooks", "--disable", "multi_agent"]);
+    expect(args.slice(-10)).toEqual(["--disable", "apps", "--disable", "plugins", "--disable", "hooks", "--disable", "multi_agent", "--disable", "memories"]);
     await expect(restrictedAppServerArguments(fake, "github")).rejects.toThrow(/riservato/);
   });
 

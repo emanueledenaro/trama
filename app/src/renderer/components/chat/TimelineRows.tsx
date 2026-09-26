@@ -10,11 +10,12 @@ import {
   IconInfoCircle,
   IconPlayerStop,
   IconPlayerTrackNext,
+  IconShieldLock,
   IconTerminal2,
   IconTool,
 } from "@tabler/icons-react";
 import { useEffect, useState } from "react";
-import { isUsableAccount, type ProviderId } from "@shared/codex";
+import { isUsableAccount, type ProviderId, READ_OUTSIDE_SCOPE_TITLE } from "@shared/codex";
 import type { ConversationEvent, NextStepView } from "@shared/domain";
 import { RECOVERY_LABELS, type RecoveryAction, readableFailure } from "@shared/providerFailure";
 import { PROVIDERS, supportsReadOnly } from "@shared/providers";
@@ -114,6 +115,7 @@ function PersonMessage({ row }: { row: Extract<TimelineRow, { kind: "person" }> 
 function activityIcon(event: ConversationEvent) {
   const content = event.content;
   if (content.type !== "activity") return <IconInfoCircle />;
+  if (content.title === READ_OUTSIDE_SCOPE_TITLE) return <IconShieldLock className="text-destructive" />;
   if (content.tone === "error") return <IconAlertTriangle className="text-destructive" />;
   if (content.title.startsWith("Strumento") || content.title.includes(":")) return <IconTool />;
   if (content.title === "Ragionamento") return <IconBrain />;

@@ -134,8 +134,13 @@ const setTheme = async (theme) => {
 // The welcome: logo, what Trama does, then the configuration in three steps that reuse the guide's states.
 await welcome.getByRole("heading", { name: "Benvenuto in Trama" }).waitFor();
 // The welcome is modal: Tab cycles inside it (through the dialog's focus guards) and never reaches the window behind.
+// The dialog takes the focus once it has opened, which a slow machine shows after the heading: wait for it first.
+await page.waitForFunction(() => Boolean(document.activeElement?.closest('[data-testid="welcome"]')), null, { timeout: 10_000 });
 for (let press = 0; press < 8; press++) {
   await page.keyboard.press("Tab");
+  // A Tab that lands on a focus guard is sent back inside on the next frame; a person never types faster than that,
+  // but Playwright does, and a second Tab before the redirect reached the window behind on a loaded runner.
+  await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
   const focus = await page.evaluate(() => {
     const active = document.activeElement;
     return {
@@ -1603,6 +1608,58 @@ for (const dark of [false, true]) {
   await page.evaluate((theme) => window.trama.invoke("settings:update", { theme }), dark ? "dark" : "light");
   await page.waitForFunction((wanted) => document.documentElement.classList.contains("dark") === wanted, dark);
   await shot(`19a-antigravity-coordinator-${dark ? "dark" : "light"}`);
+}
+await page.evaluate(() => window.trama.invoke("settings:update", { theme: "system" }));
+await app.close();
+
+// L03 #206: agents stay in the project. As in the live proof of 26 September, Clean Code's architecture review greps
+// Codex's global memory (~/.codex/memories/MEMORY.md). The fake Codex applies the thread's permission profile like the
+// real sandbox: the file stays hidden, nothing from it reaches Trama, and the review's activity shows the refused read.
+const scopeCodexHome = await mkdtemp(join(tmpdir(), "trama-ui-codex-home-"));
+await mkdir(join(scopeCodexHome, "memories"));
+const scopeMemory = join(scopeCodexHome, "memories", "MEMORY.md");
+await writeFile(scopeMemory, "ordini: nota privata di un altro progetto\n");
+const scopeProject = await mkdtemp(join(tmpdir(), "trama-ui-perimetro-"));
+await cp(resolve("resources/DemoProject"), scopeProject, { recursive: true });
+await writeFile(join(scopeProject, "package.json"), JSON.stringify({ name: "negozio", private: true, scripts: { test: "node -e \"process.exit(1)\"" } }));
+execFileSync("git", ["-C", scopeProject, "init", "-q", "-b", "main"]);
+execFileSync("git", ["-C", scopeProject, "add", "."]);
+execFileSync("git", ["-C", scopeProject, "-c", "user.name=Trama UI", "-c", "user.email=ui@trama.local", "commit", "-q", "-m", "Negozio"]);
+({ app, page } = await launch({ CODEX_HOME: scopeCodexHome, FAKE_CODEX_MEMORY_PROBE: "1" }));
+await page.evaluate(() => window.trama.invoke("settings:update", { continuousWork: false, theme: "light" }));
+await page.evaluate((path) => window.trama.invoke("project:open", { path }), scopeProject);
+await page.getByTestId("dialog-title").filter({ hasText: "trama-ui-perimetro" }).waitFor({ timeout: 30_000 });
+await page.getByText("Ho letto lo studio").first().waitFor({ timeout: 30_000 });
+await page.evaluate(() =>
+  window.trama.invoke("mandate:grant", {
+    requestId: null,
+    objectives: ["Correggere i bug"],
+    priorities: [],
+    scopeModuleIds: ["Sources/Orders"],
+    authorizedActions: ["executeInWorktree"],
+    limits: [],
+  }),
+);
+await composer().fill("[verifica:node_test]");
+await page.keyboard.press("Enter");
+// The failed check is diagnosed and fixed; then the free team gets the architecture review, which ends with a Pact card.
+await page.getByText(/Approfondire l'annullamento/).first().waitFor({ timeout: 90_000 });
+const blockedRead = page.getByRole("button", { name: "Lettura fuori dal progetto bloccata" });
+for (const group of await page.getByRole("button", { name: /ha lavorato per/ }).all()) {
+  if (await blockedRead.count()) break;
+  await group.click();
+}
+await blockedRead.first().waitFor({ timeout: 10_000 });
+if ((await blockedRead.count()) !== 1) throw new Error(`Expected one refused read, got ${await blockedRead.count()}`);
+await blockedRead.first().click();
+const blockedDetail = await blockedRead.first().locator("xpath=..").innerText();
+if (!blockedDetail.includes(scopeMemory) || !blockedDetail.includes("rg -n -i")) throw new Error(`Refused read without its path and request: ${blockedDetail}`);
+if ((await page.locator("body").innerText()).includes("nota privata")) throw new Error("Codex's memory reached Trama");
+await blockedRead.first().scrollIntoViewIfNeeded();
+for (const dark of [false, true]) {
+  await page.evaluate((theme) => window.trama.invoke("settings:update", { theme }), dark ? "dark" : "light");
+  await page.waitForFunction((wanted) => document.documentElement.classList.contains("dark") === wanted, dark);
+  await shot(`21-read-outside-project-${dark ? "dark" : "light"}`);
 }
 await page.evaluate(() => window.trama.invoke("settings:update", { theme: "system" }));
 await app.close();

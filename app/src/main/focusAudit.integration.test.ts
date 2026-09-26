@@ -136,7 +136,7 @@ describe("focus mode on a candidate (F01)", () => {
     const skillPath = join(root, "resources/AIHero/skills/code-review/SKILL.md");
     for (const threadId of [audit.standards.threadId, audit.spec.threadId]) {
       const turn = requests.find((r) => r.method === "turn/start" && r.params.threadId === threadId)!;
-      expect(turn.params).toMatchObject({ cwd: work.workspace!.worktreeRoot, sandboxPolicy: { type: "readOnly", networkAccess: false } });
+      expect(turn.params).toMatchObject({ cwd: work.workspace!.worktreeRoot, permissions: "trama_read" });
       const input = turn.params.input as { type: string; name?: string; path?: string; text?: string }[];
       expect(input).toContainEqual(expect.objectContaining({ type: "skill", name: "code-review", path: skillPath }));
       expect(input[0]!.text).toContain("## Trama binding for the code-review skill");
