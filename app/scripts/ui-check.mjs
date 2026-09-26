@@ -69,6 +69,35 @@ await shot("00b-guide-github");
 await guide.getByRole("button", { name: "Continua più tardi" }).click();
 await guide.waitFor({ state: "hidden" });
 await shot("01-landing");
+// B01: Trama's mark sits in the sidebar's brand slot and on the start screen, in the colors of the provider theme,
+// light and dark. The brand slot's gradient must change with the provider and with the theme.
+const brandLook = (provider, dark) =>
+  page.evaluate(
+    ([name, isDark]) => {
+      if (name) document.documentElement.dataset.provider = name;
+      else delete document.documentElement.dataset.provider;
+      document.documentElement.classList.toggle("dark", isDark);
+    },
+    [provider, dark],
+  );
+const startLook = await page.evaluate(() => ({ provider: document.documentElement.dataset.provider ?? null, dark: document.documentElement.classList.contains("dark") }));
+if ((await page.locator('[data-testid="brand-slot"] [data-trama-mark="glyph"]').count()) !== 1) throw new Error("No Trama mark in the sidebar's brand slot");
+if ((await page.locator("[data-trama-mark]").count()) < 2) throw new Error("No Trama mark on the start screen");
+const markColors = new Set();
+for (const provider of ["codex", "claudeAgent", "grok"]) {
+  for (const dark of [false, true]) {
+    await brandLook(provider, dark);
+    const color = await page.evaluate(() => {
+      const stop = document.querySelector('[data-testid="brand-slot"] [data-trama-mark] stop');
+      return stop ? getComputedStyle(stop).stopColor : null;
+    });
+    if (!color) throw new Error(`No gradient in the brand slot's mark with ${provider}`);
+    markColors.add(color);
+    await shot(`01b-brand-${provider}-${dark ? "dark" : "light"}`);
+  }
+}
+if (markColors.size !== 6) throw new Error(`The mark does not follow the provider theme: ${[...markColors].join(", ")}`);
+await brandLook(startLook.provider, startLook.dark);
 await page.getByText("Esplora il progetto di esempio").click();
 await page.getByText("Ho letto lo studio").first().waitFor({ timeout: 20_000 });
 await shot("02-demo-study");
@@ -552,6 +581,16 @@ await settings.getByRole("button", { name: /^Collegamenti/ }).first().click();
 await shot("11-connections");
 await settings.getByRole("button", { name: /^Generale/ }).first().click();
 await shot("12-settings");
+// B01: Informazioni shows the mark on its tile with the version, in every provider theme.
+await settings.getByTestId("about-trama").locator('[data-trama-mark="tile"]').waitFor();
+for (const provider of ["codex", "claudeAgent", "grok"]) {
+  for (const dark of [false, true]) {
+    await brandLook(provider, dark);
+    await settings.getByTestId("about-trama").scrollIntoViewIfNeeded();
+    await shot(`12b-about-${provider}-${dark ? "dark" : "light"}`);
+  }
+}
+await brandLook(startLook.provider, startLook.dark);
 // W12, Impostazioni: the theme follows the choice at once.
 await page.getByRole("radio", { name: "Scuro" }).click();
 await page.getByRole("radio", { name: "Scuro", checked: true }).waitFor();
@@ -780,7 +819,8 @@ const cardAssignment = async (card) => (await card.innerText()).match(/Incarico 
 await send("[assegna] [lento]");
 const slowCard = assignmentCards.first();
 await slowCard.getByText("Al lavoro", { exact: true }).waitFor({ timeout: 20_000 });
-await slowCard.getByText(/trama\//).waitFor();
+// Q01: the branch follows Conventional Branch and stays recognizable as Trama's work.
+await slowCard.getByText(/(feature|chore)\/[a-z0-9-]+-trama-[0-9a-f]{8}/).waitFor();
 const slowActions = await slowCard.locator(".cta-row button").allTextContents();
 if (slowActions.at(-1)?.trim() !== "Ferma") throw new Error(`Ferma is not the last call to action: ${slowActions}`);
 await slowCard.getByRole("button", { name: "Ferma" }).click();
@@ -835,6 +875,33 @@ await correctedCard.getByText("Via libera del Coordinatore.").waitFor();
 if ((await failedCard.innerText()).includes("Deciso")) throw new Error("The failed candidate took the correction's state");
 await correctedCard.scrollIntoViewIfNeeded();
 await shot("18d-candidate-corrected");
+// Q01: before publishing, the card shows the quality standard. The corrected candidate meets it, with its Conventional
+// Commits message; the failed one says what is missing and how to fix it. Both themes.
+const correctedQuality = correctedCard.locator('[data-testid="candidate-quality"][data-ready="yes"]');
+await correctedQuality.waitFor({ timeout: 20_000 });
+const commitItem = correctedQuality.locator('[data-testid="quality-item"][data-code="COMMIT_MESSAGE"][data-passed="yes"]');
+if (!/(feat|docs|chore)(\([a-z0-9-]+\))?: \S/.test(await commitItem.innerText())) throw new Error(`The commit message is not in Conventional Commits: ${await commitItem.innerText()}`);
+const failedQuality = failedCard.locator('[data-testid="candidate-quality"][data-ready="no"]');
+for (const code of ["VERIFIED", "DIFF_CHECK"]) await failedQuality.locator(`[data-testid="quality-item"][data-code="${code}"][data-passed="no"]`).waitFor();
+await failedQuality.getByText(/trailing whitespace/).first().waitFor();
+await failedQuality.getByText(/^Come sistemarlo:/).first().waitFor();
+const correctedActions = await correctedCard.locator(".cta-row button").allTextContents();
+if (correctedActions.at(-1)?.trim() !== "Approva questo candidato") throw new Error(`Unexpected calls to action on the candidate: ${correctedActions}`);
+await correctedQuality.scrollIntoViewIfNeeded();
+await shot("18f-publication-standard");
+await failedQuality.scrollIntoViewIfNeeded();
+await shot("18g-publication-standard-missing");
+await app.evaluate(({ nativeTheme }) => {
+  nativeTheme.themeSource = "dark";
+});
+await page.evaluate(() => document.documentElement.classList.add("dark"));
+await shot("18h-publication-standard-missing-dark");
+await correctedQuality.scrollIntoViewIfNeeded();
+await shot("18i-publication-standard-dark");
+await app.evaluate(({ nativeTheme }) => {
+  nativeTheme.themeSource = "system";
+});
+await page.evaluate(() => document.documentElement.classList.remove("dark"));
 const correctedId = (await correctedCard.innerText()).match(/Candidato (C-[0-9A-F]{8})/)[1];
 await send(`[riverifica:${correctedId}:git_status]`);
 await correctedCard.getByText("Il via libera del Coordinatore non vale più: sono cambiate evidenze o decisioni.").waitFor({ timeout: 20_000 });
@@ -908,6 +975,55 @@ await app.evaluate(({ nativeTheme }) => {
   nativeTheme.themeSource = "system";
 });
 await page.evaluate(() => document.documentElement.classList.remove("dark"));
+
+// F01: focus mode on a candidate. Trama runs the real checks first, then code-review's Standards and Spec axes, and
+// the report keeps them apart. The slice candidate reads its slice as the spec; the corrected one has none.
+const focusAudit = page.getByTestId("focus-audit");
+const focusActions = await sliceCandidate.locator(".cta-row button").allTextContents();
+if (!focusActions.some((label) => label.includes("Focus mode"))) throw new Error(`No Focus mode on the candidate: ${focusActions}`);
+await sliceCandidate.getByRole("button", { name: "Focus mode" }).click();
+await focusAudit.waitFor({ timeout: 20_000 });
+await page.locator('[data-testid="focus-audit"][data-status="done"]').waitFor({ timeout: 60_000 });
+for (const check of ["swift_build", "swift_test"]) {
+  await focusAudit.locator(`[data-testid="candidate-evidence"][data-check="${check}"]:not([data-result="missing"])`).waitFor();
+}
+await focusAudit.locator('[data-testid="audit-axis"][data-axis="standards"][data-status="done"]').getByText(/Mysterious Name/).first().waitFor();
+await focusAudit.locator('[data-testid="audit-axis"][data-axis="spec"][data-status="done"]').getByText(/Fonte: Fetta S1/).waitFor();
+const auditText = await focusAudit.innerText();
+const [checksAt, standardsAt, specAt] = ["Verifiche reali", "Standards", "Spec"].map((heading) => auditText.indexOf(heading));
+if (!(checksAt >= 0 && checksAt < standardsAt && standardsAt < specAt)) throw new Error("Focus mode: the checks are not first, or Standards and Spec are out of order");
+await focusAudit.getByTestId("focus-audit-summary").getByText(/Standards: 1 rilievo.*Spec: 1 rilievo/).waitFor();
+await shot("20a-focus-audit");
+await app.evaluate(({ nativeTheme }) => {
+  nativeTheme.themeSource = "dark";
+});
+await page.evaluate(() => document.documentElement.classList.add("dark"));
+await shot("20b-focus-audit-dark");
+await app.evaluate(({ nativeTheme }) => {
+  nativeTheme.themeSource = "system";
+});
+await page.evaluate(() => document.documentElement.classList.remove("dark"));
+await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
+await correctedCard.scrollIntoViewIfNeeded();
+await correctedCard.getByRole("button", { name: "Focus mode" }).click();
+await page.locator('[data-testid="focus-audit"][data-status="done"]').waitFor({ timeout: 60_000 });
+await focusAudit.locator('[data-testid="audit-axis"][data-axis="spec"][data-status="skipped"]').getByText("no spec available", { exact: true }).waitFor();
+await focusAudit.locator('[data-testid="candidate-evidence"][data-check="git_diff_check"][data-result="pass"]').waitFor();
+await shot("20c-focus-audit-no-spec");
+await app.evaluate(({ nativeTheme }) => {
+  nativeTheme.themeSource = "dark";
+});
+await page.evaluate(() => document.documentElement.classList.add("dark"));
+await shot("20d-focus-audit-no-spec-dark");
+await app.evaluate(({ nativeTheme }) => {
+  nativeTheme.themeSource = "system";
+});
+await page.evaluate(() => document.documentElement.classList.remove("dark"));
+// Opened again, the card shows the same examination instead of starting a new one.
+await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
+await correctedCard.getByRole("button", { name: "Focus mode" }).click();
+await page.locator('[data-testid="focus-audit"][data-status="done"]').waitFor({ timeout: 10_000 });
+await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
 
 // G01, presenza: a project with a colleague on a local bare remote. The colleague's record is already there; Trama
 // proposes the consent in the chat once, with "Non ora" and "Condividi" on the right, and publishes only after

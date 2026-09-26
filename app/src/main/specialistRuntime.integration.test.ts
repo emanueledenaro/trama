@@ -85,7 +85,7 @@ describe("specialist runtime (V04)", () => {
     await until(() => assignment.status === "running");
     const worktree = assignment.workspace!.worktreeRoot;
     expect(worktree.startsWith(repo)).toBe(false);
-    expect(assignment.workspace!.branch).toMatch(/^trama\//);
+    expect(assignment.workspace!.branch).toMatch(/^feature\/[a-z0-9-]+-trama-[0-9a-f]{8}$/);
 
     // Its own thread, distinct from the Coordinator's, opened in the worktree with the Coordinator's instructions.
     const opened = (await requests()).filter((r) => r.method === "thread/start" && r.params.cwd === worktree);

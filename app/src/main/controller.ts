@@ -12,6 +12,9 @@ import { isUnsupportedModelError } from "@shared/timeline";
 import type { ImageAttachmentInput } from "@shared/ipc";
 import type {
   ActiveProjectState,
+  Candidate,
+  FocusAudit,
+  WorktreeSession,
   AgentColor,
   AppSettings,
   AppState,
@@ -63,7 +66,7 @@ import {
   rollbackPractice,
 } from "./core/practices";
 import { checkItems, closeBlockers, evidenceProblems, parseChecklist, progressComment, progressKey, progressMarker } from "./core/tickets";
-import { developerSkillsDelivery, sliceBriefing } from "./core/implementation";
+import { assignmentSlice, developerSkillsDelivery, sliceBriefing } from "./core/implementation";
 import { openingInput, resumeInput, specialistInstructions } from "./core/specialistBriefing";
 import { prepareDemoProject } from "./core/demoProject";
 import { appendEvent, emptyDocument, handoverTranscript, moveEvent, recordReply, referencedPaths } from "./core/document";
@@ -155,9 +158,12 @@ import {
   type TurnEnd,
 } from "./core/team";
 import { prepareWorktree, removeWorktree, reviewWorktree, validateWorktree } from "./core/workspace";
+import { AuditError, type AxisName, type AxisTurn, auditSpec, axisThread, axisTurn, beginAxes, closeAudit, failAudit, findAudit, finishAxis, openAudit, readAxisAnswer, recordAuditCheck } from "./core/audit";
 import { approveCandidate, candidateReport, findCandidate, latestCandidate, recordEvidence, recordTechnicalReview } from "./core/candidates";
 import { assessConflict } from "./core/conflicts";
 import { pullRequestBody, publishCandidate } from "./core/publication";
+import { branchPrefix, commitHeader, readProjectConventions, requireValidCommitMessage, validateCommitMessage } from "./core/conventions";
+import { candidateCommit, qualityGate, qualityMissing, relatedIssue, workCommitType } from "./core/quality";
 import {
   applyAutomaticTransitions,
   autoSummary,
@@ -298,17 +304,21 @@ function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promi
   });
 }
 
+/** The first commit of a project Trama creates, in Conventional Commits (Q01). */
+export const INITIAL_COMMIT_MESSAGE = "chore: start the project";
+
 /**
  * A new project is a Git repository with a first commit, so worktrees, candidates and conflict checks
  * work from the start. The person's Git identity signs the commit; without one, Trama signs it.
  */
 export async function initializeRepository(root: string): Promise<void> {
+  requireValidCommitMessage(INITIAL_COMMIT_MESSAGE);
   await git(["init", "-b", "main"], root, false);
   await git(["add", "README.md"], root, false);
   try {
-    await git(["commit", "-m", "Start the project"], root, false);
+    await git(["commit", "-m", INITIAL_COMMIT_MESSAGE], root, false);
   } catch {
-    await git(["-c", "user.name=Trama", "-c", "user.email=trama@localhost", "commit", "-m", "Start the project"], root, false);
+    await git(["-c", "user.name=Trama", "-c", "user.email=trama@localhost", "commit", "-m", INITIAL_COMMIT_MESSAGE], root, false);
   }
 }
 
@@ -500,7 +510,10 @@ export class TramaController {
       .filter((q) => q.projectId === project.id)
       .map((q) => ({ id: q.id, text: q.text, goalId: q.goalId, imageCount: q.images.length, queuedAt: q.queuedAt, removable: q.removable }));
     project.candidateReports = Object.fromEntries(
-      project.document.candidates.map((c) => [c.id, candidateReport(project.document, c, project.snapshot.headSHA)]),
+      project.document.candidates.map((c) => {
+        const report = candidateReport(project.document, c, project.snapshot.headSHA);
+        return [c.id, { ...report, quality: qualityGate(project.document, c, report, project.github.repository) }];
+      }),
     );
     project.nextSteps = nextStepViews(project.document);
     project.sliceViews = Object.fromEntries(
@@ -556,6 +569,7 @@ export class TramaController {
     this.quitting = true;
     for (const [, planner] of this.planners) planner.stop();
     this.planners.clear();
+    for (const [, run] of this.auditRuns) for (const client of run.clients) client.stop();
     for (const [, timer] of this.providerWaits) clearTimeout(timer);
     this.providerWaits.clear();
     await this.stopSpecialistsForQuit();
@@ -1452,7 +1466,7 @@ export class TramaController {
   private readonly parkedProjects = new Map<string, ActiveProjectState>();
 
   private hasRunningWork(projectId: string): boolean {
-    return [...this.specialistRuntimes.values()].some((r) => r.projectId === projectId);
+    return [...this.specialistRuntimes.values()].some((r) => r.projectId === projectId) || [...this.auditRuns.values()].some((r) => r.projectId === projectId);
   }
 
   /**
@@ -1595,6 +1609,7 @@ export class TramaController {
             await validateWorktree(assignment.workspace, this.worktreesRoot);
             return reviewWorktree(assignment.workspace);
           },
+          conventions: () => readProjectConventions(current.rootPath),
           verifyCandidate: (candidateId, check) => this.verifyCandidate(candidateId, check, current.runningRequestId),
           reviewCandidate: (candidateId) => this.reviewCandidate(candidateId, current.runningRequestId),
           headSHA: () => this.headSHA(current.rootPath),
@@ -2661,7 +2676,15 @@ export class TramaController {
         if (assignment.workspace) {
           await validateWorktree(assignment.workspace, this.worktreesRoot);
         } else {
-          const workspace = await prepareWorktree(project.rootPath, `${specialist.name} ${assignment.id}`, this.worktreesRoot);
+          // The branch follows Conventional Branch or the project's prefixes (Q01), with the issue number when there is one.
+          const conventions = await readProjectConventions(project.rootPath);
+          const type = workCommitType(assignment, conventions);
+          const title = assignmentSlice(document, assignment)?.ticket.title ?? assignment.objective;
+          const workspace = await prepareWorktree(project.rootPath, title, this.worktreesRoot, {
+            prefix: branchPrefix(type, assignment.commit?.hotfix ?? false, conventions),
+            issue: relatedIssue(document, assignment),
+            conventions,
+          });
           recordWorkspace(document, assignmentId, workspace);
           this.specialistActivity(project, assignmentId, preKey, "Worktree pronto", workspace.branch, "info");
           // The specialist can run the project's tests only with its dependencies; lent from the checkout.
@@ -3082,6 +3105,18 @@ export class TramaController {
     return (await git(["rev-parse", "--verify", "HEAD"], root).catch(() => "")).trim() || null;
   }
 
+  /** Runs a read-only check in a candidate's worktree, in the sandbox, and captures the worktree as it is after the check. */
+  private async runCandidateCheck(project: ActiveProjectState, workspace: WorktreeSession, check: ReadOnlyCheck) {
+    await validateWorktree(workspace, this.worktreesRoot);
+    const result = await runReadOnlyCheck(check, workspace.worktreeRoot, {
+      codexExecutable: resolveCodexExecutable(this.host.codexExecutable),
+      scratchRoot: join(this.storage.root, "Checks"),
+      // The worktree has no node_modules: Node checks borrow the project checkout's, when the lockfiles match.
+      dependencyRoot: project.rootPath,
+    });
+    return { result, snapshot: await reviewWorktree(workspace) };
+  }
+
   private async verifyCandidate(candidateId: string, check: ReadOnlyCheck, requestId: string | null) {
     const project = this.requireProject();
     const document = project.document;
@@ -3089,15 +3124,7 @@ export class TramaController {
     if (!candidate) throw new Error(`Unknown candidate ${candidateId}.`);
     const assignment = findAssignment(document, candidate.assignmentId);
     if (!assignment?.workspace) throw new Error(`Candidate ${candidateId} has no worktree.`);
-    await validateWorktree(assignment.workspace, this.worktreesRoot);
-    const executable = resolveCodexExecutable(this.host.codexExecutable);
-    const result = await runReadOnlyCheck(check, assignment.workspace.worktreeRoot, {
-      codexExecutable: executable,
-      scratchRoot: join(this.storage.root, "Checks"),
-      // The worktree has no node_modules: Node checks borrow the project checkout's, when the lockfiles match.
-      dependencyRoot: project.rootPath,
-    });
-    const snapshot = await reviewWorktree(assignment.workspace);
+    const { result, snapshot } = await this.runCandidateCheck(project, assignment.workspace, check);
     recordEvidence(document, candidateId, {
       check,
       passed: result.exitCode === 0,
@@ -3202,6 +3229,107 @@ export class TramaController {
     }
   }
 
+  // MARK: Focus mode
+
+  /**
+   * The person opens focus mode on a candidate (F01): the fixed point is its base. Trama runs the real checks in the
+   * sandbox first, then the two axes of code-review in parallel, read-only. Returns the examination's id at once;
+   * the report fills in as the work goes and stays in the project.
+   */
+  startFocusAudit(candidateId: string): string {
+    const project = this.requireProject();
+    const candidate = findCandidate(project.document, candidateId);
+    if (!candidate) throw new DomainError("Candidato non trovato.");
+    let audit: FocusAudit;
+    try {
+      audit = openAudit(project.document, candidate);
+    } catch (error) {
+      if (error instanceof AuditError) throw new DomainError(error.message);
+      throw error;
+    }
+    this.changed();
+    this.auditRuns.set(audit.id, { projectId: project.id, clients: new Set() });
+    void this.runAudit(project, audit.id);
+    return audit.id;
+  }
+
+  /** Running examinations are running work: their project stays loaded when the person leaves it (C07). */
+  private readonly auditRuns = new Map<string, { projectId: string; clients: Set<AgentRuntime> }>();
+
+  private async runAudit(project: ActiveProjectState, auditId: string): Promise<void> {
+    const document = project.document;
+    const audit = findAudit(document, auditId)!;
+    try {
+      const candidate = findCandidate(document, audit.target.candidateId)!;
+      const assignment = findAssignment(document, candidate.assignmentId);
+      if (!assignment?.workspace || assignment.workspaceRemovedAt) throw new Error("Il candidato non ha più il suo worktree: la focus mode non può leggerlo.");
+      // The facts first: Trama's own checks in the sandbox, on the candidate as declared. Focus mode reads only: the
+      // evidence goes in the report and leaves the candidate's evidence, green light and approval as they are.
+      for (const check of candidate.requiredChecks) {
+        if (!(check in CHECKS)) continue;
+        const { result, snapshot } = await this.runCandidateCheck(project, assignment.workspace, check as ReadOnlyCheck);
+        if (snapshot.snapshotId !== candidate.snapshotId) {
+          throw new Error(`Il worktree è cambiato dopo la dichiarazione del candidato ${candidate.id}: la focus mode esamina solo il candidato dichiarato.`);
+        }
+        recordAuditCheck(audit, {
+          check,
+          result: result.exitCode === 0 ? "pass" : "fail",
+          command: result.command.join(" "),
+          output: result.output,
+          snapshotId: snapshot.snapshotId,
+          decisionVersions: { ...candidate.decisionVersions },
+          recordedAt: new Date().toISOString(),
+        });
+        this.changedIn(project);
+      }
+      // Cheap models for the axes (spec #124, Q3): the fixed roles' lightest model, read-only.
+      const runner = this.dutyRunner(document);
+      if (!runner) throw new Error("Nessun modello in sola lettura disponibile per gli assi di code-review.");
+      const skill = await this.nativeSkill("code-review");
+      const spec = auditSpec(document, assignment, project.github.issues);
+      const axes = beginAxes(audit, spec?.source ?? null, runner.model);
+      this.changedIn(project);
+      const input = { projectName: project.name, audit, candidate, assignment, spec };
+      await Promise.all(axes.map((axis) => this.runAuditAxis(project, audit, axis, axisTurn(input, axis, skill, runner.provider === "codex"), runner, assignment.workspace!.worktreeRoot)));
+      closeAudit(audit);
+    } catch (error) {
+      failAudit(audit, (error as Error).message);
+    } finally {
+      this.auditRuns.delete(auditId);
+      this.changedIn(project);
+      this.releaseParkedProject(project);
+    }
+  }
+
+  /** One axis of code-review: a read-only session of its own, in the candidate's worktree. */
+  private async runAuditAxis(project: ActiveProjectState, audit: FocusAudit, axis: AxisName, turn: AxisTurn, runner: DutyRunner, cwd: string): Promise<void> {
+    const client = createRuntime(runner.provider, { executable: runner.provider === "codex" ? this.host.codexExecutable : null, requestTimeoutMs: 15_000 });
+    const run = this.auditRuns.get(audit.id);
+    run?.clients.add(client);
+    try {
+      if (this.quitting) throw new Error("Trama si sta chiudendo.");
+      const opening = await client.openThread({ model: runner.model, cwd, developerInstructions: turn.instructions, sandbox: "read-only", ephemeral: true });
+      axisThread(audit, axis, opening.threadId);
+      this.changedIn(project);
+      const raw = await client.runTurn({
+        threadId: opening.threadId,
+        prompt: turn.prompt,
+        cwd,
+        model: runner.model,
+        skills: turn.skills,
+        outputSchema: turn.outputSchema,
+        onEvent: () => undefined,
+      });
+      finishAxis(audit, axis, readAxisAnswer(raw));
+    } catch (error) {
+      finishAxis(audit, axis, { failure: (error as Error).message });
+    } finally {
+      run?.clients.delete(client);
+      client.stop();
+      this.changedIn(project);
+    }
+  }
+
   async approveCandidateByPerson(candidateId: string): Promise<void> {
     const project = this.requireProject();
     approveCandidate(project.document, candidateId, "Persona", await this.headSHA(project.rootPath));
@@ -3209,18 +3337,34 @@ export class TramaController {
   }
 
   /** What publishing will send: shown to the person before the push (T11). */
-  previewPullRequest(candidateId: string): { repository: string | null; head: string | null; base: string; title: string; body: string } {
+  async previewPullRequest(
+    candidateId: string,
+  ): Promise<{ repository: string | null; head: string | null; base: string; title: string; message: string; body: string }> {
     const project = this.requireProject();
     const candidate = findCandidate(project.document, candidateId);
     if (!candidate) throw new DomainError("Candidato non trovato.");
     const assignment = findAssignment(project.document, candidate.assignmentId)!;
+    const message = await this.candidateMessage(project, candidate);
     return {
       repository: project.github.repository,
       head: assignment.workspace?.branch ?? null,
       base: project.snapshot.branch ?? "main",
-      title: assignment.objective,
-      body: pullRequestBody(candidate, assignment, project.document.decisions),
+      title: commitHeader(message),
+      message,
+      body: pullRequestBody(candidate, assignment, project.document.decisions, relatedIssue(project.document, assignment)),
     };
+  }
+
+  /**
+   * The commit message of a candidate, checked against the rules the project declares now (Q01). A candidate declared
+   * before Q01 gets its message here; a message the rules no longer accept is refused with what is wrong.
+   */
+  private async candidateMessage(project: ActiveProjectState, candidate: Candidate): Promise<string> {
+    const conventions = await readProjectConventions(project.rootPath);
+    if (!candidate.commit) candidate.commit = candidateCommit(project.document, candidate, conventions);
+    const problems = validateCommitMessage(candidate.commit.message, conventions);
+    if (problems.length) throw new DomainError(`Trama non scrive questo messaggio di commit: ${problems.join(" ")} Chiedi al Coordinatore di correggerlo.`);
+    return candidate.commit.message;
   }
 
   async publishCandidateByPerson(candidateId: string): Promise<void> {
@@ -3234,6 +3378,10 @@ export class TramaController {
     if (candidate.pullRequest) throw new DomainError(`Il candidato è già pubblicato: ${candidate.pullRequest.url}`);
     const repository = project.github.repository;
     if (!repository) throw new DomainError("Il progetto non ha un remoto GitHub.");
+    // The quality standard comes before anything leaves the machine (Q01).
+    const message = await this.candidateMessage(project, candidate);
+    const missing = qualityMissing(qualityGate(document, candidate, report, repository));
+    if (missing.length) throw new DomainError(`Il candidato non rispetta lo standard di pubblicazione: ${missing.map((m) => m.detail).join(" ")}`);
     const capabilities = await readGitHubCapabilities(repository);
     if (capabilities.status !== "ready") throw new DomainError(capabilities.message ?? "GitHub non è raggiungibile.");
     if (!capabilities.canPush) throw new DomainError(`Il tuo account GitHub non ha il permesso di push su ${repository}.`);
@@ -3244,8 +3392,9 @@ export class TramaController {
       assignment,
       repository,
       baseBranch,
-      title: assignment.objective,
-      body: pullRequestBody(candidate, assignment, document.decisions),
+      message,
+      conventions: candidate.commit!.conventions,
+      body: pullRequestBody(candidate, assignment, document.decisions, relatedIssue(document, assignment)),
     });
     candidate.pullRequest = { ...published, at: new Date().toISOString() };
     appendEvent(document, "trama", { type: "activity", title: `Pull request #${published.number} pubblicata`, detail: published.url, tone: "tool" });

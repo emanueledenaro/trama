@@ -17,6 +17,7 @@ import type { ProviderAccount, ProviderId } from "@shared/codex";
 import { DEFAULT_LEARNING_SETTINGS, type LearningSettings, type ThemePreference } from "@shared/domain";
 import { capabilityLines, PROVIDERS, type ProviderDescriptor } from "@shared/providers";
 import { AIHERO_ATTRIBUTION } from "@shared/skills";
+import { TramaMark } from "@/components/brand/TramaMark";
 import { ProviderIcon } from "@/components/ProviderIcon";
 import { Spinner } from "@/components/Spinner";
 import { Button } from "@/components/ui/button";
@@ -199,6 +200,17 @@ function GeneralSection() {
             </Button>
           }
         />
+      </Group>
+      <Group title="Informazioni">
+        <div className="flex items-center gap-3 px-4 py-3" data-testid="about-trama">
+          <TramaMark size={40} variant="tile" />
+          <div className="min-w-0 flex-1">
+            <div className="text-ui text-foreground">Trama</div>
+            <div className="mt-0.5 text-ui-sm text-muted-foreground">
+              Versione {__TRAMA_VERSION__}. Coordina decisioni, lavoro e verifiche su un repository locale.
+            </div>
+          </div>
+        </div>
       </Group>
     </>
   );

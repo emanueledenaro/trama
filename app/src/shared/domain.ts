@@ -417,6 +417,8 @@ export interface SpecialistAssignment {
   duty?: AssignmentDuty | null;
   /** The slice of the plan's approved breakdown this work delivers (M05); absent for work outside one. */
   slice?: { planId: string; sliceId: string } | null;
+  /** The commit type and scope the Coordinator chose for the work, and whether it is a hotfix (Q01); absent means derived. */
+  commit?: AssignmentCommit | null;
   /**
    * The seams to test in the contract of the assignment (W05). For a slice, the seams the person confirmed in the
    * spec, with their number there. Absent in assignments made before the contract, and in a fixed role's work.
@@ -424,6 +426,51 @@ export interface SpecialistAssignment {
   seams?: ContractSeam[];
   /** The developer's structured report (W05), read from its last answer: its statement, never evidence. */
   report?: DeveloperReport | null;
+}
+
+/** The Coordinator's correction of what Trama derives for the work's commit and branch (Q01). */
+export interface AssignmentCommit {
+  type: string | null;
+  /** Null lets Trama derive the scope; an empty string asks for no scope. */
+  scope: string | null;
+  hotfix: boolean;
+}
+
+/**
+ * The rules a project declares for what Trama writes in its repository (Q01): Conventional Commits 1.0.0 and
+ * Conventional Branch names unless AGENTS.md, CONTRIBUTING.md, commitlint or its branches say otherwise.
+ */
+export interface CommitConventions {
+  /** Where the rules come from, for example `AGENTS.md` or `.commitlintrc.json`; empty for the defaults. */
+  sources: string[];
+  types: string[];
+  /** The scopes commitlint allows; null when any scope is allowed. */
+  scopes: string[] | null;
+  headerMaxLength: number;
+  /** Conventional Branch types (feature, bugfix, hotfix, release, chore) or the project's own prefixes for them. */
+  branchPrefixes: { feature: string; bugfix: string; hotfix: string; release: string; chore: string };
+}
+
+/** The commit Trama will write for a candidate (Q01), derived from the work and correctable by the Coordinator. */
+export interface CandidateCommit {
+  type: string;
+  scope: string | null;
+  description: string;
+  /** The description of an incompatible change; null when the change is compatible. */
+  breaking: string | null;
+  message: string;
+  conventions: CommitConventions;
+  correctedBy: "coordinator" | null;
+}
+
+/** One condition of the quality standard a candidate meets before Trama publishes it (Q01). */
+export interface QualityItem {
+  code: "VERIFIED" | "COMMIT_MESSAGE" | "NO_SECRETS" | "DIFF_CHECK" | "ISSUE_LINKED" | "PACT_SETTLED";
+  passed: boolean;
+  /** What Trama found, in the person's words. */
+  detail: string;
+  /** How to fix it; null when the condition holds. */
+  fix: string | null;
 }
 
 /** A seam the developer must test, as the contract of the assignment names it (W05). */
@@ -712,6 +759,10 @@ export interface Candidate {
    * The developer's statement, never evidence. Null when the developer reported none; absent outside a slice.
    */
   testedSeams?: TestedSeam[] | null;
+  /** The commit Trama will write (Q01); absent in candidates declared before it. */
+  commit?: CandidateCommit;
+  /** What `git diff --check` reported on the candidate's snapshot (Q01); absent in candidates declared before it. */
+  whitespaceErrors?: string[];
 }
 
 /** A seam as the developer of a slice reported it (M06). */
@@ -747,6 +798,8 @@ export interface CandidateReport {
   blockers: CandidateBlocker[];
   clearanceInvalidated: boolean;
   approvalInvalidated: boolean;
+  /** The quality standard before publishing (Q01); absent where the report is computed without the project. */
+  quality?: QualityItem[];
 }
 
 export interface PlanProposal {
@@ -969,6 +1022,52 @@ export interface ProjectDocument {
   presence?: import("./presence").PresenceConsent;
   /** The overlaps the Coordinator already pointed out in the chat (G03), so each one is said once. */
   overlapNotices?: string[];
+  /** Focus mode examinations (F01); absent until the person first opens focus mode. */
+  audits?: FocusAudit[];
+}
+
+export type AuditStatus = "checking" | "reviewing" | "done" | "failed";
+
+/** One axis of AI Hero's code-review skill, run as a read-only session of its own (F01). */
+export interface AuditAxis {
+  /** "skipped": the skill skips the Spec sub-agent when there is no spec. */
+  status: "waiting" | "running" | "done" | "skipped" | "failed";
+  /** The sub-agent's report in Markdown, as it wrote it; the skill's "no spec available" when skipped. */
+  report: string | null;
+  findings: number | null;
+  /** The worst finding within this axis, in one line; null when there is none. */
+  worst: string | null;
+  threadId: string | null;
+  model: string | null;
+  startedAt: string | null;
+  finishedAt: string | null;
+  failure: string | null;
+}
+
+/**
+ * Focus mode on one target (F01, spec #124): Trama runs the real checks in the sandbox, then the two axes of
+ * code-review in parallel and read-only. The checks are evidence; the axes' findings are the model's judgement.
+ */
+export interface FocusAudit {
+  id: string;
+  target: { kind: "candidate"; candidateId: string; assignmentId: string };
+  /** The fixed point of code-review: the candidate's base commit. */
+  fixedPoint: string;
+  snapshotId: string;
+  changedFiles: string[];
+  status: AuditStatus;
+  /** Trama's evidence from the checks run for this examination, in the order they ran. */
+  checks: CandidateEvidence[];
+  /** Where the Spec axis read the spec from, in Italian; null when no spec was found. */
+  specSource: string | null;
+  standards: AuditAxis;
+  spec: AuditAxis;
+  /** The skill's closing line, per axis: total findings and the worst one within each axis. */
+  summary: string | null;
+  failure: string | null;
+  startedAt: string;
+  updatedAt: string;
+  finishedAt: string | null;
 }
 
 export interface PactDemo {
