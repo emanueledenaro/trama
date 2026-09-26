@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // Stand-in for GitHub CLI in tests and the UI check: one repository with one open issue and no pull requests.
 // With FAKE_GH_TEAM a colleague who does not use Trama has one open pull request and there is one more branch,
-// for the Gruppo view (G02).
+// for the Gruppo view (G02). With FAKE_GH_MERGED_PULL the issues list also holds a merged pull request that names #7,
+// as GitHub lists pull requests with the issues (issue #231).
 // It never reaches GitHub; anything it does not know fails like a gh error. With FAKE_GH_LOG it writes every call,
 // one JSON array per line, to that file, and it answers the issue writes Trama makes when it publishes a spec (M04)
 // and its slices with their blocking links (M05).
@@ -57,6 +58,21 @@ if (rest === "/issues") {
             labels: [{ name: "bug" }],
             updated_at: "2026-09-25T09:00:00Z",
           },
+          ...(process.env.FAKE_GH_MERGED_PULL
+            ? [
+                {
+                  number: 8,
+                  title: "Annullo dal riepilogo",
+                  state: "closed",
+                  body: "Closes #7",
+                  html_url: `https://github.com/${name}/pull/8`,
+                  user: { login: "collega" },
+                  labels: [],
+                  updated_at: "2026-09-25T10:00:00Z",
+                  pull_request: { merged_at: "2026-09-25T10:00:00Z" },
+                },
+              ]
+            : []),
         ]
       : [],
   );

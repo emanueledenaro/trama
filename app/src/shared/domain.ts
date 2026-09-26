@@ -1275,11 +1275,19 @@ export interface MonitorState {
   status: Record<string, { lastSuccessAt: string | null; lastError: string | null; consecutiveFailures: number }>;
 }
 
+/** The issues a pull request names, open or not (issue #231). */
+export interface PullRequestLink {
+  number: number;
+  linkedIssues: number[];
+}
+
 export interface GitHubState {
   repository: string | null;
   status: "idle" | "loading" | "ready" | "unavailable";
   message: string | null;
   issues: GitHubIssue[];
+  /** The pull requests of every state that GitHub listed with the issues, and the issues they name; absent before the first reading. */
+  pullRequestLinks?: PullRequestLink[];
   snapshot: GitHubSnapshot | null;
   events: TeamEvent[];
   /** What the person's gh session can do on this repository (T03). */

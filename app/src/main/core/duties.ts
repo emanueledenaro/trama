@@ -12,7 +12,7 @@ import type {
   DomainProposal,
   DutyLedger,
   GitHubIssue,
-  GitHubPullRequest,
+  PullRequestLink,
   ProjectDocument,
   SpecialistAssignment,
   TriageOutcome,
@@ -24,7 +24,6 @@ import type { LoadedSkill } from "@shared/skills";
 import { roleProfile } from "@shared/roster";
 import { findCandidate } from "./candidates";
 import { CHECKS, type ReadOnlyCheck } from "./checks";
-import { linkedIssueNumbers } from "./github";
 import { deliverNativeSkill, type NativeSkill, RULES_ABOVE } from "./nativeSkills";
 import { domainProposalText } from "./domainDocs";
 import { createDecisionRequest } from "./pact";
@@ -64,8 +63,8 @@ export interface DutyContext {
   moduleIds: string[];
   /** The provider and model the sessions run on; null when none can run them now. */
   runner: DutyRunner | null;
-  /** The open pull requests as GitHub listed them; null or absent when not read. */
-  pullRequests?: GitHubPullRequest[] | null;
+  /** The pull requests GitHub listed, open or not, with the issues they name; null or absent when not read. */
+  pullRequests?: PullRequestLink[] | null;
 }
 
 /** Checks whose failure is a bug to diagnose; the Git checks describe the checkout's state, not the code. */
@@ -213,7 +212,7 @@ export function observeIssues(document: ProjectDocument, context: Pick<DutyConte
 }
 
 /** Why an issue no longer counts as new for triage; null while it still does. */
-function notNewReason(document: ProjectDocument, issue: GitHubIssue, pullRequests: GitHubPullRequest[] | null): string | null {
+function notNewReason(document: ProjectDocument, issue: GitHubIssue, pullRequests: PullRequestLink[] | null): string | null {
   if (issue.state === "closed") return "è stata chiusa";
   const role = issue.labels.find((label) => (EVALUATED_STATES as string[]).includes(label.toLowerCase()));
   if (role) return `ha già lo stato di triage \`${role}\``;
@@ -221,7 +220,7 @@ function notNewReason(document: ProjectDocument, issue: GitHubIssue, pullRequest
   if (work) return `è già in lavoro nell'incarico ${work.id}`;
   const plan = document.plans.find((p) => p.issueNumber === issue.number);
   if (plan) return `è già in lavoro nel piano ${plan.id}`;
-  const pull = pullRequests?.find((p) => (p.linkedIssues ?? linkedIssueNumbers(p.title, null, p.headRef)).includes(issue.number));
+  const pull = pullRequests?.find((p) => p.linkedIssues.includes(issue.number));
   if (pull) return `ha la pull request #${pull.number} collegata`;
   return null;
 }
@@ -534,10 +533,31 @@ function diagnosisRule(document: ProjectDocument): RuleState {
   return { state: "due", detail: `Parte ora sulla verifica ${failure.title} non superata.` };
 }
 
-function domainWritingRule(document: ProjectDocument): RuleState {
-  const proposal = (document.domainProposals ?? []).find((p) => !p.assignmentId);
-  if (!proposal) return { state: "idle", detail: "Nessuna proposta di glossario o ADR da scrivere: parte quando il Coordinatore ne trae una dalle tue decisioni." };
-  return { state: "waiting", detail: proposal.waiting ?? `La proposta ${proposal.id} parte al prossimo controllo di Trama.` };
+/** Where the writing of the first unwritten domain proposal stands, with the checks of startDomainWriting as they are now. */
+function domainWritingRule(document: ProjectDocument, context: Pick<DutyContext, "runner">): RuleState {
+  const proposals = (document.domainProposals ?? []).filter((p) => !p.assignmentId);
+  if (!proposals.length) return { state: "idle", detail: "Nessuna proposta di glossario o ADR da scrivere: parte quando il Coordinatore ne trae una dalle tue decisioni." };
+  const ready = proposals.find((p) => authorize(document.mandate, "executeInWorktree", p.scopeModuleIds, "agreedTicket") === "authorized");
+  if (!ready) {
+    const proposal = proposals[0]!;
+    const granted = document.mandate?.status === "granted";
+    return {
+      state: "waiting",
+      detail: granted
+        ? `Il mandato non permette di scrivere la proposta ${proposal.id}${proposal.scopeModuleIds.length ? ` su ${proposal.scopeModuleIds.join(", ")}` : ""}: aspetta una correzione del mandato.`
+        : `La proposta ${proposal.id} aspetta un mandato.`,
+    };
+  }
+  const busy = roleWork(document, "documentation");
+  if (busy) return { state: "waiting", detail: `La proposta ${ready.id} aspetta che il ruolo Documentazione e dominio finisca l'incarico ${busy.id}.` };
+  // assignDuty refuses work on modules another assignment is working on (work_not_independent).
+  const overlapping = activeAssignments(document).find((a) => a.moduleIds.some((id) => ready.moduleIds.includes(id)));
+  if (overlapping) {
+    const shared = overlapping.moduleIds.filter((id) => ready.moduleIds.includes(id));
+    return { state: "waiting", detail: `La scrittura della proposta ${ready.id} aspetta che finisca il lavoro in corso su ${shared.join(", ")} (incarico ${overlapping.id}).` };
+  }
+  if (!context.runner) return { state: "waiting", detail: `La proposta ${ready.id} aspetta. ${RUNNER_MISSING}` };
+  return { state: "due", detail: `Parte ora la scrittura della proposta ${ready.id}.` };
 }
 
 const WORK: { kind: AutomaticWorkStatus["kind"]; role: DutyRole; skill: AssignmentDuty["skill"]; onRequest: AutomaticWorkRequest["kind"] | null }[] = [
@@ -566,7 +586,7 @@ export function automaticWorkStatus(document: ProjectDocument, context: Omit<Dut
           ? diagnosisRule(document)
           : kind === "architectureReview"
             ? architectureRule(document, context)
-            : domainWritingRule(document);
+            : domainWritingRule(document, context);
     return { ...base, ...withPrerequisites(document, context, rule), assignmentId: null };
   });
 }
