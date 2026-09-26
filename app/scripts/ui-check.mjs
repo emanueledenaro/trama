@@ -1008,7 +1008,7 @@ for (let tries = 0; (await runningMoves.count()) && tries < 10; tries += 1) {
   await runningMoves.first().click().catch(() => undefined);
   await page.waitForTimeout(500);
 }
-await teamSlices.scrollIntoViewIfNeeded();
+await pickedSlice.evaluate((item) => item.scrollIntoView({ block: "center" }));
 await shot("21c-slice-self-picked");
 await app.evaluate(({ nativeTheme }) => {
   nativeTheme.themeSource = "dark";
