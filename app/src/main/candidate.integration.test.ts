@@ -104,7 +104,9 @@ describe("verified candidate in the chat (V05)", () => {
     expect(review.reviewerThreadId).not.toBe(document.coordinator.threadId);
     const requests = (await readFile(log, "utf8")).trim().split("\n").map((line) => JSON.parse(line) as Request);
     const reviewer = requests.find((r) => r.method === "turn/start" && r.params.threadId === review.reviewerThreadId)!;
-    expect(reviewer.params).toMatchObject({ cwd: fix.workspace!.worktreeRoot, permissions: "trama_read" });
+    expect(reviewer.params).toMatchObject({ cwd: fix.workspace!.worktreeRoot });
+    expect(reviewer.params).not.toHaveProperty("permissions");
+    expect(reviewer.params).not.toHaveProperty("sandboxPolicy");
     expect(String((reviewer.params.input as { text: string }[])[0]!.text)).toContain(`Revisione tecnica del candidato ${corrected.id}`);
     expect(corrected).toMatchObject({ humanApproval: null, pullRequest: null });
     // Verified and approved, the candidate gets the Coordinator's green light; new evidence withdraws it.

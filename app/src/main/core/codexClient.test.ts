@@ -77,6 +77,30 @@ describe("CodexClient", () => {
     ]);
   });
 
+  it("names a permission profile on a turn only to switch it, as Codex 0.155 fails on the thread's own", async () => {
+    const worktree = await mkdtemp(join(tmpdir(), "trama-worktree-"));
+    const log = join(await mkdtemp(join(tmpdir(), "trama-log-")), "codex.log");
+    process.env.FAKE_CODEX_LOG = log;
+    client = new CodexClient({ executable: fake });
+    const profile = (access: string) => ({ filesystem: { ":minimal": "read", [worktree]: access }, network: { enabled: false } });
+    const { threadId } = await client.openThread({
+      model: "gpt-5.5",
+      cwd: worktree,
+      developerInstructions: "test",
+      permissions: "trama_write",
+      config: { "permissions.trama_read": profile("read"), "permissions.trama_write": profile("write") },
+    });
+    const turn = (permissions: string) =>
+      client!.runTurn({ threadId, prompt: "ciao", cwd: worktree, model: "gpt-5.5", permissions, onEvent: () => undefined });
+    await turn("trama_write");
+    await turn("trama_read");
+    await turn("trama_read");
+    const requests = (await readFile(log, "utf8")).trim().split("\n").map((line) => JSON.parse(line) as { method: string; params: Record<string, unknown> });
+    const turns = requests.filter((r) => r.method === "turn/start");
+    expect(turns.map((r) => r.params.permissions)).toEqual([undefined, "trama_read", undefined]);
+    expect(turns.every((r) => r.params.sandboxPolicy === undefined)).toBe(true);
+  });
+
   it("streams a turn and resolves with the final answer", async () => {
     client = new CodexClient({ executable: fake });
     const { threadId, replaced } = await client.openThread({
