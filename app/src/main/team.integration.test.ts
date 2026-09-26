@@ -194,21 +194,27 @@ describe("team flow", () => {
     // Then Trama assigns the first unblocked slice, and once Ada ends it runs the checks and the review, up to the person's candidate.
     const specialist = findSpecialist(document, "Ada")!;
     await until(() => document.candidates[0]?.technicalReview?.verdict === "approved", 30_000);
-    await idle();
-    expect(automatic().map((r) => r.step!.move)).toEqual(["preparePlan", "assignWork", "verifyCandidate"]);
-    expect(specialist.assignments[0]!.requestId).toBe(automatic()[1]!.id);
-    expect(specialist.assignments[0]!.slice).toEqual({ planId: plan.id, sliceId: "S1" });
+    expect(automatic().map((r) => r.step!.move).slice(0, 3)).toEqual(["preparePlan", "assignWork", "verifyCandidate"]);
+    const first = specialist.assignments[0]!;
+    expect(first.requestId).toBe(automatic()[1]!.id);
+    expect(first.slice).toEqual({ planId: plan.id, sliceId: "S1" });
     expect(document.candidates[0]!.evidence.git_status?.result).toBe("pass");
-    // The verified slice unblocks the two that depended on it: they can be assigned beside the person's candidate.
-    const latest = document.requests.at(-1)!;
-    expect(workState(document, latest.id)).toMatchObject({
-      phase: "candidate",
-      moves: [
-        { move: "reviewCandidate", actor: "person" },
-        { move: "assignWork", actor: "coordinator" },
-      ],
+    // The verified slice unblocks the two that depended on it, and Ada, free again, takes the next one in autonomy (W08):
+    // no Coordinator turn assigns it. S3 is on the same module, so it waits for S2.
+    await until(() => specialist.assignments.some((a) => a.slice?.sliceId === "S2"), 20_000);
+    const picked = specialist.assignments.find((a) => a.slice?.sliceId === "S2")!;
+    expect(picked).toMatchObject({
+      selfPicked: true,
+      requestId: plan.requestId,
+      moduleIds: ["Sources/Orders"],
+      dependencies: [first.id],
+      requiredChecks: first.requiredChecks,
+      seams: first.seams,
     });
-    expect(sliceViews(document, plan).map((v) => v.state)).toEqual(["done", "ready", "ready"]);
+    expect(document.events.some((e) => e.content.type === "activity" && e.content.title === "Ada prende in autonomia la fetta S2")).toBe(true);
+    expect(sliceViews(document, plan)[0]!.state).toBe("done");
+    await controller.updateSettings({ continuousWork: false });
+    await idle();
   }, 60_000);
 
   it("runs a read-only check for the Coordinator", async () => {

@@ -1,4 +1,5 @@
-import type { SliceState, SliceTicket, WorkPlan } from "@shared/domain";
+import type { ProjectDocument, SliceState, SliceTicket, SliceView, WorkPlan } from "@shared/domain";
+import { parallelDevelopers } from "@shared/parallel";
 import { readableFailure } from "@shared/providerFailure";
 import { useState } from "react";
 import { Spinner } from "@/components/Spinner";
@@ -13,18 +14,47 @@ import { act, useUi } from "@/lib/store";
 
 const STATE: Record<SliceState, { label: string; tone: "secondary" | "info" | "success" | "warning" }> = {
   blocked: { label: "Bloccata", tone: "secondary" },
+  paused: { label: "In pausa", tone: "warning" },
   ready: { label: "Pronta", tone: "info" },
   working: { label: "In lavoro", tone: "warning" },
-  paused: { label: "In pausa", tone: "warning" },
   verifying: { label: "In verifica", tone: "warning" },
   done: { label: "Fatta", tone: "success" },
 };
 
 const number = (id: string) => id.replace(/^S/, "");
 
-function Ticket({ ticket, index, state, showCriteria }: { ticket: SliceTicket; index: number; state: SliceState | null; showCriteria: boolean }) {
+const ACTIVE = ["preparing", "running", "stopRequested"];
+
+/** Who works on the slice now, and whether they took it by themselves (W08); null when nobody does. */
+function worker(document: ProjectDocument, view: SliceView | null): { name: string; selfPicked: boolean } | null {
+  if (!view?.assignmentId || (view.state !== "working" && view.state !== "verifying")) return null;
+  for (const specialist of document.team.specialists) {
+    const assignment = specialist.assignments.find((a) => a.id === view.assignmentId);
+    if (assignment) return { name: specialist.name, selfPicked: assignment.selfPicked === true };
+  }
+  return null;
+}
+
+function Ticket({
+  ticket,
+  index,
+  state,
+  who,
+  showCriteria,
+}: {
+  ticket: SliceTicket;
+  index: number;
+  state: SliceState | null;
+  who: { name: string; selfPicked: boolean } | null;
+  showCriteria: boolean;
+}) {
   return (
-    <li data-testid="plan-slice" data-state={state ?? "proposed"} className="rounded-lg border border-[color:var(--color-border)] px-3 py-2">
+    <li
+      data-testid="plan-slice"
+      data-state={state ?? "proposed"}
+      data-self-picked={who?.selfPicked ? "yes" : undefined}
+      className="rounded-lg border border-[color:var(--color-border)] px-3 py-2"
+    >
       <div className="flex items-start gap-2">
         <span className="min-w-0 flex-1 text-ui text-foreground">
           {index + 1}. {ticket.title}
@@ -39,6 +69,13 @@ function Ticket({ ticket, index, state, showCriteria }: { ticket: SliceTicket; i
       <div className="mt-0.5 text-ui-sm text-muted-foreground">
         {ticket.blockedBy.length ? `Bloccata da: ${ticket.blockedBy.map(number).join(", ")}` : "Può iniziare subito"}
       </div>
+      {who ? (
+        <div className="mt-0.5 text-ui-sm text-muted-foreground" data-testid="plan-slice-worker">
+          {who.name}
+          {who.selfPicked ? ", presa in autonomia" : ""}
+        </div>
+      ) : null}
+      {state === "paused" && ticket.pause ? <div className="mt-0.5 text-ui-sm text-warning">In pausa: {ticket.pause.reason}</div> : null}
       <div className="mt-0.5 text-ui-sm text-foreground/90">{ticket.whatToBuild}</div>
       {showCriteria ? (
         <ul className="mt-1 list-disc space-y-0.5 pl-4 text-ui-sm text-foreground/80">
@@ -60,6 +97,11 @@ export function PlanSlices({ plan }: { plan: WorkPlan }) {
   if (!slicing) return null;
   const connected = Boolean(project.github.repository) && project.github.status !== "unavailable";
   const unpublished = slicing.tickets.some((t) => !t.issue);
+  const document = project.document;
+  const atWork = document.team.specialists.filter(
+    (s) => s.role === "developer" && s.status !== "removed" && s.assignments.some((a) => ACTIVE.includes(a.status)),
+  ).length;
+  const limit = parallelDevelopers(document);
 
   return (
     <div className="mt-3" data-testid="plan-slices" data-status={slicing.status}>
@@ -88,15 +130,19 @@ export function PlanSlices({ plan }: { plan: WorkPlan }) {
       {slicing.tickets.length && slicing.status !== "drafting" ? (
         <>
           <ol className="mt-2 space-y-1.5">
-            {slicing.tickets.map((ticket, index) => (
-              <Ticket
-                key={ticket.id}
-                ticket={ticket}
-                index={index}
-                state={slicing.status === "approved" ? (views.find((v) => v.id === ticket.id)?.state ?? null) : null}
-                showCriteria={showCriteria}
-              />
-            ))}
+            {slicing.tickets.map((ticket, index) => {
+              const view = slicing.status === "approved" ? (views.find((v) => v.id === ticket.id) ?? null) : null;
+              return (
+                <Ticket
+                  key={ticket.id}
+                  ticket={ticket}
+                  index={index}
+                  state={view?.state ?? null}
+                  who={worker(document, view)}
+                  showCriteria={showCriteria}
+                />
+              );
+            })}
           </ol>
           <button type="button" className="mt-2 text-ui-sm text-[var(--color-text-accent)] hover:underline" onClick={() => setShowCriteria(!showCriteria)}>
             {showCriteria ? "Nascondi i criteri di accettazione" : "Mostra i criteri di accettazione"}
@@ -155,6 +201,11 @@ export function PlanSlices({ plan }: { plan: WorkPlan }) {
           )}
           {slicing.publishFailure ? <span className="text-warning">{slicing.publishFailure}</span> : null}
         </div>
+      ) : null}
+      {slicing.status === "approved" && views.some((v) => v.state !== "done") ? (
+        <p className="mt-1 text-ui-sm text-muted-foreground" data-testid="plan-slices-parallel">
+          Sviluppatori al lavoro: {atWork} di {limit}. Chi è libero prende in autonomia la prossima fetta pronta nei suoi moduli.
+        </p>
       ) : null}
     </div>
   );

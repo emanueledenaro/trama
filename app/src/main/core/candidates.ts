@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import type { Candidate, CandidateBlocker, CandidateReport, CandidateState, ProjectDocument, TechnicalReview } from "@shared/domain";
+import type { Candidate, CandidateBlocker, CandidateReport, CandidateState, ConflictAssessment, ProjectDocument, TechnicalReview } from "@shared/domain";
 import { shortId } from "@shared/ids";
 import { agreedSeams, assignmentSlice, readTestedSeams } from "./implementation";
 import { findAssignment } from "./team";
@@ -22,6 +22,17 @@ export function findCandidate(document: ProjectDocument, id: string): Candidate 
 
 export function latestCandidate(document: ProjectDocument, assignmentId: string): Candidate | null {
   return document.candidates.filter((c) => c.assignmentId === assignmentId).at(-1) ?? null;
+}
+
+/**
+ * Whether an assessment still describes its other side: always for a remote head; for another developer's worktree
+ * (W08), while that candidate is still the latest of its assignment at the snapshot compared.
+ */
+export function worktreeAssessmentCurrent(document: ProjectDocument, assessment: ConflictAssessment): boolean {
+  if (!assessment.otherCandidateId) return true;
+  const other = document.candidates.find((c) => c.id === assessment.otherCandidateId);
+  if (!other || other.snapshotId !== assessment.otherSnapshotId) return false;
+  return latestCandidate(document, other.assignmentId)?.id === other.id;
 }
 
 /** Binds a captured worktree to the assignment's modules and checks and to the decisions named. */
@@ -130,10 +141,15 @@ export function inspectCandidate(document: ProjectDocument, candidate: Candidate
     if (evidence.result === "fail") blockers.push({ code: "CHECK_FAILED", detail: check });
   }
   // A merge conflict reproduced against a colleague's work on this exact snapshot blocks the green light.
+  // Against another developer's worktree (W08) it holds while that candidate is still the one compared.
   for (const assessment of document.conflicts ?? []) {
     if (assessment.candidateId !== candidate.id || assessment.snapshotId !== candidate.snapshotId) continue;
+    if (!worktreeAssessmentCurrent(document, assessment)) continue;
     if (assessment.classification === "conflict") {
-      blockers.push({ code: "REMOTE_CONFLICT", detail: `${assessment.references.join(", ")}: ${assessment.conflictingFiles.join(", ")}` });
+      blockers.push({
+        code: assessment.otherCandidateId ? "WORKTREE_CONFLICT" : "REMOTE_CONFLICT",
+        detail: `${assessment.references.join(", ")}: ${assessment.conflictingFiles.join(", ")}`,
+      });
     }
   }
   return blockers;
