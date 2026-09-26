@@ -922,8 +922,10 @@ await sliceSpec.locator('[data-testid="plan-slice"][data-state="paused"]').getBy
 await questionWork.scrollIntoViewIfNeeded();
 await shot("19e-developer-question");
 await send("[blocca-dubbio]");
-const blockingCard = page.locator(".chat-card", { has: page.getByTestId("blocks-work") }).last();
+// The card keeps the developer's question after the answer; only the "Blocca il lavoro" badge goes.
+const blockingCard = page.locator(".chat-card", { has: page.getByTestId("blocked-work") }).last();
 await blockingCard.waitFor({ timeout: 20_000 });
+await blockingCard.getByTestId("blocks-work").getByText("Blocca il lavoro").waitFor();
 await blockingCard.getByTestId("blocked-work").getByText(/buono/).waitFor();
 await blockingCard.getByText("Il lavoro resta in pausa finché non rispondi. Il resto del team va avanti.").waitFor();
 await questionWork.locator('[data-testid="assignment-question"][data-state="waitingForPerson"]').getByText("Blocca il lavoro").waitFor();
