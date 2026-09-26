@@ -728,4 +728,88 @@ await expectAsked("Valuta l'impatto delle ultime novità dei colleghi", "Gruppo,
 await groupPanel.waitFor({ state: "detached" });
 await shot("15c-group-ask-narrow");
 await composer().fill("");
+
+// G01, presenza: a project with a colleague on a local bare remote. The colleague's record is already there; Trama
+// proposes the consent in the chat once, with "Non ora" and "Condividi" on the right, and publishes only after
+// "Condividi": names, branches and paths, never the content of a file.
+await page.setViewportSize({ width: 1280, height: 820 });
+const presenceRemote = await mkdtemp(join(tmpdir(), "trama-ui-presence-remote-"));
+const presenceSeed = await mkdtemp(join(tmpdir(), "trama-ui-presence-bea-"));
+const presenceProject = await mkdtemp(join(tmpdir(), "trama-ui-squadra-"));
+const gitIn = (cwd, ...args) => execFileSync("git", ["-C", cwd, ...args], { encoding: "utf8" });
+gitIn(presenceRemote, "init", "-q", "--bare", "-b", "main");
+gitIn(presenceSeed, "init", "-q", "-b", "main");
+gitIn(presenceSeed, "config", "user.name", "Bea");
+gitIn(presenceSeed, "config", "user.email", "bea@example.com");
+await mkdir(join(presenceSeed, "src"));
+await writeFile(join(presenceSeed, "src", "payments.js"), "export const pay = (order) => order.total;\n");
+gitIn(presenceSeed, "add", ".");
+gitIn(presenceSeed, "commit", "-q", "-m", "Pagamenti");
+gitIn(presenceSeed, "push", "-q", presenceRemote, "main");
+const beaRecord = {
+  version: 1,
+  user: "bea-at-example.com",
+  name: "Bea",
+  activeBranch: "feature/rimborsi",
+  alsoOn: [],
+  localBranches: ["main", "feature/rimborsi"],
+  files: ["src/payments.js"],
+  task: { kind: "goal", title: "Rimborsi parziali" },
+  since: new Date(Date.now() - 20 * 60_000).toISOString(),
+  lastActivityAt: new Date().toISOString(),
+  updatedAt: new Date().toISOString(),
+  closedAt: null,
+  agents: [],
+};
+gitIn(presenceSeed, "checkout", "-q", "--orphan", "presence");
+gitIn(presenceSeed, "rm", "-rq", "--cached", ".");
+await writeFile(join(presenceSeed, "presence.json"), JSON.stringify(beaRecord));
+gitIn(presenceSeed, "add", "presence.json");
+gitIn(presenceSeed, "commit", "-q", "-m", "presence");
+gitIn(presenceSeed, "push", "-q", presenceRemote, "HEAD:refs/trama/presence/bea-at-example.com");
+execFileSync("git", ["clone", "-q", presenceRemote, presenceProject]);
+gitIn(presenceProject, "config", "user.name", "Ada");
+gitIn(presenceProject, "config", "user.email", "ada@example.com");
+gitIn(presenceProject, "checkout", "-q", "-b", "feature/carrello");
+await writeFile(join(presenceProject, "src", "payments.js"), "export const pay = () => 'CONTENUTO PRIVATO';\n");
+await page.evaluate((path) => window.trama.invoke("project:open", { path }), presenceProject);
+await page.getByTestId("dialog-title").filter({ hasText: "trama-ui-squadra" }).waitFor({ timeout: 30_000 });
+const consentCard = page.locator('[data-anchor="presence-consent"]');
+await consentCard.getByRole("button", { name: "Condividi" }).waitFor({ timeout: 30_000 });
+const notNow = await consentCard.getByRole("button", { name: "Non ora" }).boundingBox();
+const share = await consentCard.getByRole("button", { name: "Condividi" }).boundingBox();
+const consentBox = await consentCard.boundingBox();
+if (!notNow || !share || !consentBox || notNow.x >= share.x || consentBox.x + consentBox.width - (share.x + share.width) > 20) {
+  throw new Error("Presence consent: Non ora and Condividi are not on the right, primary last");
+}
+if (gitIn(presenceRemote, "for-each-ref", "refs/trama/presence/ada-at-example.com").trim()) throw new Error("Presence shared before consent");
+await shot("16-presence-consent");
+await consentCard.getByRole("button", { name: "Condividi" }).click();
+await consentCard.getByText("Condivisa").waitFor({ timeout: 10_000 });
+let adaRecord = "";
+for (let attempt = 0; attempt < 60 && !adaRecord; attempt++) {
+  await page.waitForTimeout(250);
+  if (gitIn(presenceRemote, "for-each-ref", "refs/trama/presence/ada-at-example.com").trim()) {
+    adaRecord = gitIn(presenceRemote, "cat-file", "blob", "refs/trama/presence/ada-at-example.com:presence.json");
+  }
+}
+if (!adaRecord.includes("feature/carrello") || !adaRecord.includes("src/payments.js")) throw new Error(`Presence not published: ${adaRecord}`);
+if (adaRecord.includes("CONTENUTO PRIVATO")) throw new Error("Presence published a file's content");
+if (gitIn(presenceRemote, "branch", "--list").includes("presence")) throw new Error("Presence shows up as a branch");
+await page.getByRole("button", { name: /^Gruppo/ }).first().click();
+const presencePanel = page.getByTestId("presence-list");
+await presencePanel.getByText("Ada (tu)").waitFor({ timeout: 10_000 });
+await presencePanel.getByText("Bea").waitFor({ timeout: 10_000 });
+await presencePanel.getByText("Rimborsi parziali").waitFor();
+await shot("16a-presence-group");
+await page.evaluate(() => window.trama.invoke("settings:update", { theme: "dark" }));
+await page.waitForFunction(() => document.documentElement.classList.contains("dark"));
+await shot("16b-presence-group-dark");
+await page.evaluate(() => window.trama.invoke("settings:update", { theme: "system" }));
+await page.getByRole("button", { name: "Impostazioni" }).click();
+await page.getByTestId("settings").getByRole("button", { name: /^Presenza/ }).first().click();
+await page.getByTestId("settings").getByRole("switch", { name: "Condividi la presenza", checked: true }).waitFor();
+await page.getByTestId("settings").getByRole("button", { name: "Metti in pausa" }).click();
+await page.getByTestId("settings").getByRole("button", { name: "Riprendi" }).waitFor();
+await shot("16c-presence-settings");
 await app.close();

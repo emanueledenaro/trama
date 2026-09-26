@@ -25,7 +25,7 @@ export type InspectorTarget =
 export type MainView = "dialog" | "overview" | "settings";
 
 /** The sections of the settings page; "connections" holds ChatGPT, GitHub and the providers. */
-export type SettingsSection = "general" | "connections" | "method" | "learning" | "monitor";
+export type SettingsSection = "general" | "connections" | "method" | "learning" | "monitor" | "presence";
 
 export type DialogName = "createProject" | "search" | "guide" | null;
 

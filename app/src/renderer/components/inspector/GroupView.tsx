@@ -9,6 +9,7 @@ import { act, useUi } from "@/lib/store";
 import { GROUP_IMPACT_QUESTION } from "@/lib/askCoordinator";
 import { EmptyNote, InspectorSection } from "./Inspector";
 import { Sep } from "@/components/ui/sep";
+import { PresenceControls, PresenceList, presenceStatusLine } from "@/components/PresencePanel";
 
 type Tab = "pulls" | "branches" | "news";
 
@@ -56,6 +57,18 @@ export function GroupView() {
           </>
         )}
       </InspectorSection>
+      {!project.isDemo ? (
+        <InspectorSection
+          title="Presenza"
+          aside={<PresenceControls view={project.presence} consentChoice={project.document.presence?.choice ?? null} />}
+        >
+          <p className="text-ui-sm text-muted-foreground">{presenceStatusLine(project.presence)}</p>
+          {project.presence?.message ? <p className="mt-1 text-ui-sm text-foreground/80">{project.presence.message}</p> : null}
+          <div className="-mx-2 mt-2">
+            <PresenceList view={project.presence} />
+          </div>
+        </InspectorSection>
+      ) : null}
       {snapshot ? (
         <>
           <div className="px-4 pt-3">

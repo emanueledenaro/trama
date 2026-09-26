@@ -25,7 +25,9 @@ export type CardKind =
   /** Glossary terms and ADRs the Coordinator drew from the person's decisions (M03); referenceId is the proposal. */
   | "domainProposal"
   /** A move of the Coordinator that Trama started by itself within the mandate (W04); referenceId is its request. */
-  | "automaticStep";
+  | "automaticStep"
+  /** Trama asks whether to share the presence in this project (G01); referenceId is the proposal, `initial` or `conflict`. */
+  | "presenceConsent";
 
 export interface ConflictAssessment {
   id: string;
@@ -917,6 +919,8 @@ export interface ProjectDocument {
   domainProposals?: DomainProposal[];
   /** The task in focus and the paused ones (W02); absent until the person first chooses. */
   focus?: TaskFocus;
+  /** The person's consent to share the presence in this project (G01); absent until Trama first proposes it. */
+  presence?: import("./presence").PresenceConsent;
 }
 
 export interface PactDemo {
@@ -1045,6 +1049,8 @@ export interface ActiveProjectState {
   focus: FocusView;
   /** The AI Hero skills Trama copies are present in the project. */
   aiHeroPrepared?: boolean;
+  /** Who works on what (G01), computed by the main process; absent until the first reading and in the example project. */
+  presence?: import("./presence").PresenceView | null;
 }
 
 /** A message waiting for the running turn to end; it has no request and no event until it leaves. */
