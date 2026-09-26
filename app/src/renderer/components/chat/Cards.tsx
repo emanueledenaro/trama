@@ -14,7 +14,7 @@ import {
   IconTelescope,
   IconUsersGroup,
 } from "@tabler/icons-react";
-import { type AssignmentStatus, type CandidateState, isOpenQuestion } from "@shared/domain";
+import { type AssignmentStatus, type CandidateEvidence, type CandidateState, isOpenQuestion } from "@shared/domain";
 import { isExerciseAssessment } from "@shared/onboarding";
 import { findGoal } from "@shared/goals";
 import { adrMarkdown, adrPath, findDomainProposal, glossaryEntry } from "@shared/domainDocs";
@@ -650,6 +650,45 @@ const BLOCKER_TEXT: Record<string, string> = {
   REMOTE_CONFLICT: "Conflitto con il lavoro di un collega",
 };
 
+/** One required check of a candidate; a failed one opens on the command and the original output Trama recorded (V05). */
+function EvidenceRow({ check, evidence }: { check: string; evidence: CandidateEvidence | null }) {
+  const [open, setOpen] = useState(false);
+  const failed = evidence?.result === "fail";
+  return (
+    <div data-testid="candidate-evidence" data-check={check} data-result={evidence?.result ?? "missing"}>
+      <div className="flex items-center gap-1.5 text-ui-sm">
+        {evidence?.result === "pass" ? (
+          <IconCircleCheck className="size-3.5 text-success" />
+        ) : failed ? (
+          <IconCircleX className="size-3.5 text-destructive" />
+        ) : (
+          <span className="inline-block size-3.5 rounded-full border border-dashed border-muted-foreground/50" />
+        )}
+        <span className="font-mono text-[11.5px]">{check}</span>
+        <span className="text-muted-foreground">{evidence ? (evidence.result === "pass" ? "superata" : "non superata") : "non eseguita"}</span>
+        {failed ? (
+          <button
+            type="button"
+            aria-expanded={open}
+            className="ml-auto inline-flex items-center gap-1 text-muted-foreground hover:text-foreground"
+            onClick={() => setOpen(!open)}
+          >
+            Output originale <IconChevronRight className={cn("size-3.5 transition-transform", open && "rotate-90")} />
+          </button>
+        ) : null}
+      </div>
+      {failed && open ? (
+        <div className="mt-1 rounded-lg bg-[var(--app-chat-code-surface)] px-3 py-2" data-testid="evidence-output">
+          <p className="font-mono text-[11px] text-muted-foreground">{evidence.command}</p>
+          <pre className="mt-1 max-h-48 overflow-auto whitespace-pre-wrap font-mono text-[11px] leading-[1.55] text-foreground/85">
+            {evidence.output || "Il controllo non ha scritto niente."}
+          </pre>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export function CandidateCard({ candidateId }: { candidateId: string }) {
   const project = useUi((s) => s.app?.project)!;
   const setInspector = useUi((s) => s.setInspector);
@@ -676,22 +715,9 @@ export function CandidateCard({ candidateId }: { candidateId: string }) {
       </Field>
       <Field label="Evidenze delle verifiche">
         <div className="space-y-0.5">
-          {candidate.requiredChecks.map((check) => {
-            const evidence = candidate.evidence[check];
-            return (
-              <div key={check} className="flex items-center gap-1.5 text-ui-sm">
-                {evidence?.result === "pass" ? (
-                  <IconCircleCheck className="size-3.5 text-success" />
-                ) : evidence?.result === "fail" ? (
-                  <IconCircleX className="size-3.5 text-destructive" />
-                ) : (
-                  <span className="inline-block size-3.5 rounded-full border border-dashed border-muted-foreground/50" />
-                )}
-                <span className="font-mono text-[11.5px]">{check}</span>
-                <span className="text-muted-foreground">{evidence ? (evidence.result === "pass" ? "superata" : "non superata") : "non eseguita"}</span>
-              </div>
-            );
-          })}
+          {candidate.requiredChecks.map((check) => (
+            <EvidenceRow key={check} check={check} evidence={candidate.evidence[check] ?? null} />
+          ))}
         </div>
       </Field>
       {candidate.technicalReview ? (

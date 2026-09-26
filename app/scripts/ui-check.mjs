@@ -1,7 +1,7 @@
 // Launches the built app with the fake Codex server and saves screenshots of the main screens.
 // Usage: node scripts/ui-check.mjs <output-dir>
 import { execFileSync } from "node:child_process";
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { _electron as electron } from "playwright";
@@ -729,6 +729,111 @@ await groupPanel.waitFor({ state: "detached" });
 await shot("15c-group-ask-narrow");
 await composer().fill("");
 
+// V04 and V05 on a fresh copy of the example project. The person stops a developer's work and resumes it; a check fails
+// on a candidate and the card opens its original output; the correction is a new candidate that gets the green light,
+// and new evidence withdraws it.
+await page.setViewportSize({ width: 1280, height: 820 });
+// The person drives each step here, so Trama's automatic moves (W04, checked above) stay off.
+await page.evaluate(() => window.trama.invoke("settings:update", { continuousWork: false }));
+const candidateProject = await mkdtemp(join(tmpdir(), "trama-ui-candidato-"));
+await cp(resolve("resources/DemoProject"), candidateProject, { recursive: true });
+const gitIn = (...args) => execFileSync("git", ["-C", candidateProject, ...args], { stdio: "ignore" });
+gitIn("init", "-q", "-b", "main");
+gitIn("add", ".");
+gitIn("-c", "user.name=Trama UI", "-c", "user.email=ui@trama.local", "commit", "-q", "-m", "Negozio");
+await page.evaluate((path) => window.trama.invoke("project:open", { path }), candidateProject);
+await page.getByTestId("dialog-title").filter({ hasText: "trama-ui-candidato" }).waitFor({ timeout: 30_000 });
+await page.getByText("Ho letto lo studio").first().waitFor({ timeout: 30_000 });
+const send = async (text) => {
+  await composer().fill(text);
+  await page.keyboard.press("Enter");
+};
+await send("[proponi-team]");
+await page.getByRole("button", { name: "Conferma il team" }).click({ timeout: 20_000 });
+await page.getByText("Team confermato").first().waitFor({ timeout: 20_000 });
+await send("[chiedi-decisione]");
+await page.getByRole("button", { name: /Va in revisione/ }).click({ timeout: 20_000 });
+await page.getByRole("button", { name: "Registra la decisione" }).last().click();
+await page.getByText("Apri nel Patto").first().waitFor({ timeout: 20_000 });
+const candidateDecision = (await page.locator("body").innerText()).match(/Decisione (D-[0-9A-F]{8})/)[1];
+await page.getByRole("button", { name: /^Mandato/ }).first().click();
+await page.getByRole("button", { name: "Scrivi", exact: true }).click();
+await page.getByRole("textbox", { name: "Obiettivi" }).fill("Documentare l'annullamento degli ordini");
+await page.getByRole("checkbox", { name: /Orders/ }).check();
+await page.getByRole("checkbox", { name: /worktree/ }).check();
+await page.getByRole("checkbox", { name: /Integrare candidati/ }).check();
+await page.getByRole("button", { name: "Concedi mandato" }).click();
+await page.getByText(/Mandato v1/).first().waitFor({ timeout: 20_000 });
+await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
+const assignmentCards = page.locator(".chat-card").filter({ hasText: /^Incarico A-/ }).filter({ hasText: "Ada" });
+const cardAssignment = async (card) => (await card.innerText()).match(/Incarico (A-[0-9A-F]{8})/)[1];
+
+// V04: the stop is first requested, then confirmed; the work and its turn stay, and it resumes in the same worktree.
+await send("[assegna] [lento]");
+const slowCard = assignmentCards.first();
+await slowCard.getByText("Al lavoro", { exact: true }).waitFor({ timeout: 20_000 });
+await slowCard.getByText(/trama\//).waitFor();
+const slowActions = await slowCard.locator(".cta-row button").allTextContents();
+if (slowActions.at(-1)?.trim() !== "Ferma") throw new Error(`Ferma is not the last call to action: ${slowActions}`);
+await slowCard.getByRole("button", { name: "Ferma" }).click();
+await slowCard.getByText("Fermato", { exact: true }).waitFor({ timeout: 20_000 });
+// The turn's activities are one row, opened on request.
+const stoppedTurn = page.getByRole("button", { name: /ha lavorato per/ }).first();
+await stoppedTurn.click();
+await page.getByText("Arresto confermato").first().waitFor({ timeout: 20_000 });
+await stoppedTurn.scrollIntoViewIfNeeded();
+await shot("18a-specialist-stopped");
+await slowCard.getByRole("button", { name: "Riprendi" }).click();
+await slowCard.getByText("Concluso", { exact: true }).waitFor({ timeout: 20_000 });
+
+// V05: the work leaves trailing whitespace; git_diff_check fails on the candidate with git's own output.
+await send("[assegna] [spazi]");
+const spacesCard = assignmentCards.nth(1);
+await spacesCard.getByText("Concluso", { exact: true }).waitFor({ timeout: 20_000 });
+await send(`[candidato:${await cardAssignment(spacesCard)}:${candidateDecision}:tutte]`);
+const candidateCards = page.locator(".chat-card").filter({ has: page.getByTestId("candidate-evidence") });
+const failedCard = candidateCards.first();
+await failedCard.locator('[data-testid="candidate-evidence"][data-check="git_diff_check"][data-result="fail"]').waitFor({ timeout: 30_000 });
+await page.getByText(/Via libera rifiutato: .*candidate_not_verified/).first().waitFor({ timeout: 20_000 });
+await failedCard.getByText("In costruzione", { exact: true }).waitFor();
+await failedCard.getByText("Verifica non superata").waitFor();
+await failedCard.getByRole("button", { name: "Output originale" }).click();
+const failedOutput = failedCard.getByTestId("evidence-output");
+await failedOutput.getByText(/trailing whitespace\./).waitFor();
+await failedOutput.getByText(/git -C .* diff --check HEAD/).waitFor();
+if (await failedCard.getByRole("button", { name: "Approva questo candidato" }).count()) throw new Error("A candidate with a failed check can be approved");
+await failedCard.scrollIntoViewIfNeeded();
+await shot("18b-candidate-check-failed");
+await app.evaluate(({ nativeTheme }) => {
+  nativeTheme.themeSource = "dark";
+});
+await page.evaluate(() => document.documentElement.classList.add("dark"));
+await shot("18c-candidate-check-failed-dark");
+await app.evaluate(({ nativeTheme }) => {
+  nativeTheme.themeSource = "system";
+});
+await page.evaluate(() => document.documentElement.classList.remove("dark"));
+
+// The correction is new work and a new candidate, with new evidence; the failed one keeps its own.
+await send("[assegna] [correggi-spazi]");
+const fixCard = assignmentCards.nth(2);
+await fixCard.getByText("Concluso", { exact: true }).waitFor({ timeout: 20_000 });
+await send(`[candidato:${await cardAssignment(fixCard)}:${candidateDecision}:tutte]`);
+const correctedCard = candidateCards.nth(1);
+await correctedCard.getByText("Deciso", { exact: true }).waitFor({ timeout: 30_000 });
+await correctedCard.locator('[data-testid="candidate-evidence"][data-check="git_diff_check"][data-result="pass"]').waitFor();
+await correctedCard.getByText("Revisione tecnica, approvata").waitFor();
+await correctedCard.getByText("Via libera del Coordinatore.").waitFor();
+if ((await failedCard.innerText()).includes("Deciso")) throw new Error("The failed candidate took the correction's state");
+await correctedCard.scrollIntoViewIfNeeded();
+await shot("18d-candidate-corrected");
+const correctedId = (await correctedCard.innerText()).match(/Candidato (C-[0-9A-F]{8})/)[1];
+await send(`[riverifica:${correctedId}:git_status]`);
+await correctedCard.getByText("Il via libera del Coordinatore non vale più: sono cambiate evidenze o decisioni.").waitFor({ timeout: 20_000 });
+await correctedCard.getByText("Verificato", { exact: true }).waitFor();
+await correctedCard.scrollIntoViewIfNeeded();
+await shot("18e-clearance-withdrawn");
+
 // G01, presenza: a project with a colleague on a local bare remote. The colleague's record is already there; Trama
 // proposes the consent in the chat once, with "Non ora" and "Condividi" on the right, and publishes only after
 // "Condividi": names, branches and paths, never the content of a file.
@@ -736,16 +841,16 @@ await page.setViewportSize({ width: 1280, height: 820 });
 const presenceRemote = await mkdtemp(join(tmpdir(), "trama-ui-presence-remote-"));
 const presenceSeed = await mkdtemp(join(tmpdir(), "trama-ui-presence-bea-"));
 const presenceProject = await mkdtemp(join(tmpdir(), "trama-ui-squadra-"));
-const gitIn = (cwd, ...args) => execFileSync("git", ["-C", cwd, ...args], { encoding: "utf8" });
-gitIn(presenceRemote, "init", "-q", "--bare", "-b", "main");
-gitIn(presenceSeed, "init", "-q", "-b", "main");
-gitIn(presenceSeed, "config", "user.name", "Bea");
-gitIn(presenceSeed, "config", "user.email", "bea@example.com");
+const presenceGit = (cwd, ...args) => execFileSync("git", ["-C", cwd, ...args], { encoding: "utf8" });
+presenceGit(presenceRemote, "init", "-q", "--bare", "-b", "main");
+presenceGit(presenceSeed, "init", "-q", "-b", "main");
+presenceGit(presenceSeed, "config", "user.name", "Bea");
+presenceGit(presenceSeed, "config", "user.email", "bea@example.com");
 await mkdir(join(presenceSeed, "src"));
 await writeFile(join(presenceSeed, "src", "payments.js"), "export const pay = (order) => order.total;\n");
-gitIn(presenceSeed, "add", ".");
-gitIn(presenceSeed, "commit", "-q", "-m", "Pagamenti");
-gitIn(presenceSeed, "push", "-q", presenceRemote, "main");
+presenceGit(presenceSeed, "add", ".");
+presenceGit(presenceSeed, "commit", "-q", "-m", "Pagamenti");
+presenceGit(presenceSeed, "push", "-q", presenceRemote, "main");
 const beaRecord = {
   version: 1,
   user: "bea-at-example.com",
@@ -761,16 +866,16 @@ const beaRecord = {
   closedAt: null,
   agents: [],
 };
-gitIn(presenceSeed, "checkout", "-q", "--orphan", "presence");
-gitIn(presenceSeed, "rm", "-rq", "--cached", ".");
+presenceGit(presenceSeed, "checkout", "-q", "--orphan", "presence");
+presenceGit(presenceSeed, "rm", "-rq", "--cached", ".");
 await writeFile(join(presenceSeed, "presence.json"), JSON.stringify(beaRecord));
-gitIn(presenceSeed, "add", "presence.json");
-gitIn(presenceSeed, "commit", "-q", "-m", "presence");
-gitIn(presenceSeed, "push", "-q", presenceRemote, "HEAD:refs/trama/presence/bea-at-example.com");
+presenceGit(presenceSeed, "add", "presence.json");
+presenceGit(presenceSeed, "commit", "-q", "-m", "presence");
+presenceGit(presenceSeed, "push", "-q", presenceRemote, "HEAD:refs/trama/presence/bea-at-example.com");
 execFileSync("git", ["clone", "-q", presenceRemote, presenceProject]);
-gitIn(presenceProject, "config", "user.name", "Ada");
-gitIn(presenceProject, "config", "user.email", "ada@example.com");
-gitIn(presenceProject, "checkout", "-q", "-b", "feature/carrello");
+presenceGit(presenceProject, "config", "user.name", "Ada");
+presenceGit(presenceProject, "config", "user.email", "ada@example.com");
+presenceGit(presenceProject, "checkout", "-q", "-b", "feature/carrello");
 await writeFile(join(presenceProject, "src", "payments.js"), "export const pay = () => 'CONTENUTO PRIVATO';\n");
 await page.evaluate((path) => window.trama.invoke("project:open", { path }), presenceProject);
 await page.getByTestId("dialog-title").filter({ hasText: "trama-ui-squadra" }).waitFor({ timeout: 30_000 });
@@ -782,20 +887,20 @@ const consentBox = await consentCard.boundingBox();
 if (!notNow || !share || !consentBox || notNow.x >= share.x || consentBox.x + consentBox.width - (share.x + share.width) > 20) {
   throw new Error("Presence consent: Non ora and Condividi are not on the right, primary last");
 }
-if (gitIn(presenceRemote, "for-each-ref", "refs/trama/presence/ada-at-example.com").trim()) throw new Error("Presence shared before consent");
+if (presenceGit(presenceRemote, "for-each-ref", "refs/trama/presence/ada-at-example.com").trim()) throw new Error("Presence shared before consent");
 await shot("16-presence-consent");
 await consentCard.getByRole("button", { name: "Condividi" }).click();
 await consentCard.getByText("Condivisa").waitFor({ timeout: 10_000 });
 let adaRecord = "";
 for (let attempt = 0; attempt < 60 && !adaRecord; attempt++) {
   await page.waitForTimeout(250);
-  if (gitIn(presenceRemote, "for-each-ref", "refs/trama/presence/ada-at-example.com").trim()) {
-    adaRecord = gitIn(presenceRemote, "cat-file", "blob", "refs/trama/presence/ada-at-example.com:presence.json");
+  if (presenceGit(presenceRemote, "for-each-ref", "refs/trama/presence/ada-at-example.com").trim()) {
+    adaRecord = presenceGit(presenceRemote, "cat-file", "blob", "refs/trama/presence/ada-at-example.com:presence.json");
   }
 }
 if (!adaRecord.includes("feature/carrello") || !adaRecord.includes("src/payments.js")) throw new Error(`Presence not published: ${adaRecord}`);
 if (adaRecord.includes("CONTENUTO PRIVATO")) throw new Error("Presence published a file's content");
-if (gitIn(presenceRemote, "branch", "--list").includes("presence")) throw new Error("Presence shows up as a branch");
+if (presenceGit(presenceRemote, "branch", "--list").includes("presence")) throw new Error("Presence shows up as a branch");
 await page.getByRole("button", { name: /^Gruppo/ }).first().click();
 const presencePanel = page.getByTestId("presence-list");
 await presencePanel.getByText("Ada (tu)").waitFor({ timeout: 10_000 });

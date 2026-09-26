@@ -1,3 +1,5 @@
+import { mkdtemp, readFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { TurnEvent } from "@shared/codex";
@@ -10,6 +12,7 @@ afterEach(() => {
   client?.stop();
   delete process.env.FAKE_CODEX_ACCOUNT;
   delete process.env.FAKE_CODEX_LIMITS;
+  delete process.env.FAKE_CODEX_LOG;
 });
 
 describe("CodexClient", () => {
@@ -52,6 +55,26 @@ describe("CodexClient", () => {
     client = new CodexClient({ executable: fake });
     expect(await client.readAccount()).toEqual({ kind: "unsupported", type: "apiKey" });
     await expect(client.listModels()).rejects.toThrow(/solo un account ChatGPT/);
+  });
+
+  it("asks for a sandbox without network: read-only, or writable only in the given root (V04)", async () => {
+    const worktree = await mkdtemp(join(tmpdir(), "trama-worktree-"));
+    const log = join(await mkdtemp(join(tmpdir(), "trama-log-")), "codex.log");
+    process.env.FAKE_CODEX_LOG = log;
+    client = new CodexClient({ executable: fake });
+    const reader = await client.openThread({ model: "gpt-5.5", cwd: process.cwd(), developerInstructions: "test" });
+    await client.runTurn({ threadId: reader.threadId, prompt: "ciao", cwd: process.cwd(), model: "gpt-5.5", onEvent: () => undefined });
+    const writer = await client.openThread({ model: "gpt-5.5", cwd: worktree, developerInstructions: "test", sandbox: "workspace-write" });
+    await client.runTurn({ threadId: writer.threadId, prompt: "scrivi", cwd: worktree, model: "gpt-5.5", writableRoot: worktree, onEvent: () => undefined });
+    const requests = (await readFile(log, "utf8")).trim().split("\n").map((line) => JSON.parse(line) as { method: string; params: Record<string, unknown> });
+    expect(requests.filter((r) => r.method === "thread/start").map((r) => [r.params.sandbox, r.params.approvalPolicy])).toEqual([
+      ["read-only", "never"],
+      ["workspace-write", "never"],
+    ]);
+    expect(requests.filter((r) => r.method === "turn/start").map((r) => r.params.sandboxPolicy)).toEqual([
+      { type: "readOnly", networkAccess: false },
+      { type: "workspaceWrite", writableRoots: [worktree], networkAccess: false, excludeTmpdirEnvVar: true, excludeSlashTmp: true },
+    ]);
   });
 
   it("streams a turn and resolves with the final answer", async () => {
@@ -104,6 +127,17 @@ describe("restrictedAppServerArguments", () => {
     expect(args).toContain('mcp_servers.github={command="/usr/bin/false",enabled=false}');
     expect(args.slice(-8)).toEqual(["--disable", "apps", "--disable", "plugins", "--disable", "hooks", "--disable", "multi_agent"]);
     await expect(restrictedAppServerArguments(fake, "github")).rejects.toThrow(/riservato/);
+  });
+
+  // A loaded machine can take more than five seconds to start Codex (#169); that is slow, not a missing inventory.
+  it("waits for a slow Codex instead of reading an empty inventory", async () => {
+    const { mkdtemp, writeFile, chmod } = await import("node:fs/promises");
+    const { tmpdir } = await import("node:os");
+    const { restrictedAppServerArguments } = await import("./codexClient");
+    const path = join(await mkdtemp(join(tmpdir(), "trama-codex-")), "codex");
+    await writeFile(path, `#!${process.execPath}\nsetTimeout(() => process.stdout.write('[{"name":"github","transport":{"type":"stdio"}}]'), 5_500);`);
+    await chmod(path, 0o755);
+    expect(await restrictedAppServerArguments(path, "trama")).toContain('mcp_servers.github={command="/usr/bin/false",enabled=false}');
   });
 });
 

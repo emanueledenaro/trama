@@ -1,10 +1,11 @@
-import { type ChildProcessWithoutNullStreams, execFile, spawn } from "node:child_process";
+import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process";
 import { accessSync, constants } from "node:fs";
 import { homedir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
 import { createInterface } from "node:readline";
 import type { AccountStatus, CodexModel, TurnEvent } from "@shared/codex";
 import type { LoadedSkill } from "@shared/skills";
+import { runProcess } from "./process";
 
 type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
 export type JsonObject = { [key: string]: Json };
@@ -78,47 +79,41 @@ export function resolveCodexExecutable(configured?: string | null): string {
  * Arguments of the restricted runtime: every global MCP server of the person is disabled, and apps,
  * plugins, hooks and sub-agents are off, so the Coordinator only reaches Trama's own tools.
  */
-export function restrictedAppServerArguments(executable: string, reservedServerName: string | null): Promise<string[]> {
-  return new Promise((resolve, reject) => {
-    execFile(
-      executable,
-      ["mcp", "list", "--json"],
-      { timeout: 5_000, maxBuffer: 1_048_576, env: { ...process.env, PATH: [dirname(executable), ...searchPath()].join(delimiter) } },
-      (error, stdout) => {
-        if (error) {
-          reject(new CodexError("executableNotFound", "Codex non ha restituito l'inventario MCP necessario al runtime ristretto."));
-          return;
-        }
-        let rows: unknown;
-        try {
-          rows = JSON.parse(stdout);
-        } catch {
-          reject(new CodexError("malformedMessage", "Inventario MCP non leggibile."));
-          return;
-        }
-        const args = [...APP_SERVER_ARGUMENTS];
-        for (const row of Array.isArray(rows) ? rows : []) {
-          const name = typeof row?.name === "string" ? row.name : "";
-          const type = typeof row?.transport?.type === "string" ? row.transport.type : "";
-          if (!/^[A-Za-z0-9_-]+$/.test(name)) {
-            reject(new CodexError("malformedMessage", "L'inventario MCP contiene una voce senza nome valido."));
-            return;
-          }
-          if (name === reservedServerName) {
-            reject(new CodexError("malformedMessage", `Un server MCP globale usa il nome ${name}, riservato agli strumenti di Trama.`));
-            return;
-          }
-          const value =
-            type === "stdio"
-              ? '{command="/usr/bin/false",enabled=false}'
-              : '{url="http://127.0.0.1:9/mcp",enabled=false}';
-          args.push("-c", `mcp_servers.${name}=${value}`);
-        }
-        args.push("--disable", "apps", "--disable", "plugins", "--disable", "hooks", "--disable", "multi_agent");
-        resolve(args);
-      },
-    );
-  });
+export async function restrictedAppServerArguments(executable: string, reservedServerName: string | null): Promise<string[]> {
+  // runProcess, not execFile: when execFile's timeout fires just as the child exits 0, it drops the output and reports
+  // success, so a slow start on a loaded machine read as an empty, unreadable inventory. The limit only guards a hang.
+  const result = await runProcess(executable, ["mcp", "list", "--json"], {
+    env: { ...process.env, PATH: [dirname(executable), ...searchPath()].join(delimiter) },
+    timeoutMs: 20_000,
+    outputLimit: 1_048_576,
+  }).catch(() => null);
+  if (!result || result.exitCode !== 0) {
+    throw new CodexError("executableNotFound", "Codex non ha restituito l'inventario MCP necessario al runtime ristretto.");
+  }
+  let rows: unknown;
+  try {
+    rows = JSON.parse(result.stdout);
+  } catch {
+    throw new CodexError("malformedMessage", "Inventario MCP non leggibile.");
+  }
+  const args = [...APP_SERVER_ARGUMENTS];
+  for (const row of Array.isArray(rows) ? rows : []) {
+    const name = typeof row?.name === "string" ? row.name : "";
+    const type = typeof row?.transport?.type === "string" ? row.transport.type : "";
+    if (!/^[A-Za-z0-9_-]+$/.test(name)) {
+      throw new CodexError("malformedMessage", "L'inventario MCP contiene una voce senza nome valido.");
+    }
+    if (name === reservedServerName) {
+      throw new CodexError("malformedMessage", `Un server MCP globale usa il nome ${name}, riservato agli strumenti di Trama.`);
+    }
+    const value =
+      type === "stdio"
+        ? '{command="/usr/bin/false",enabled=false}'
+        : '{url="http://127.0.0.1:9/mcp",enabled=false}';
+    args.push("-c", `mcp_servers.${name}=${value}`);
+  }
+  args.push("--disable", "apps", "--disable", "plugins", "--disable", "hooks", "--disable", "multi_agent");
+  return args;
 }
 
 /** One ordered turn that is waiting for `turn/completed`. */

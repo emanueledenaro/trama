@@ -69,6 +69,52 @@ describe("candidates", () => {
     expect(report.approvalInvalidated).toBe(true);
   });
 
+  it("keeps a technical review apart from the person's approval and from a merge (V05)", () => {
+    const { document, candidate } = setup();
+    recordEvidence(document, candidate.id, { check: "git_status", passed: true, command: "git status", output: "", snapshotId: "snap" });
+    const review = recordTechnicalReview(document, candidate.id, { reviewerThreadId: "r", authorThreadId: "a", verdict: "approved", summary: "ok" });
+    expect(Object.keys(review).sort()).toEqual(["at", "authorThreadId", "id", "reviewerThreadId", "summary", "verdict"]);
+    expect(candidate).toMatchObject({ technicalReview: review, humanApproval: null, clearance: null, pullRequest: null });
+    clearCandidate(document, candidate.id, "Coordinatore", "base");
+    // The Coordinator's green light is not the person's approval either.
+    expect(candidate.humanApproval).toBeNull();
+    expect(candidate.pullRequest).toBeNull();
+  });
+
+  it("invalidates the green light and the approval when new evidence arrives (V05)", () => {
+    const { document, candidate } = setup();
+    recordEvidence(document, candidate.id, { check: "git_status", passed: true, command: "git status", output: "", snapshotId: "snap" }, new Date("2026-09-26T08:00:00Z"));
+    recordTechnicalReview(document, candidate.id, { reviewerThreadId: "r", authorThreadId: "a", verdict: "approved", summary: "ok" });
+    clearCandidate(document, candidate.id, "Coordinatore", "base");
+    approveCandidate(document, candidate.id, "Persona", "base");
+    expect(candidateReport(document, candidate, "base")).toMatchObject({ state: "decided", clearanceInvalidated: false, approvalInvalidated: false });
+    recordEvidence(document, candidate.id, { check: "git_status", passed: true, command: "git status", output: "", snapshotId: "snap" }, new Date("2026-09-26T08:05:00Z"));
+    expect(candidate.humanApproval).toBeNull();
+    expect(candidateReport(document, candidate, "base")).toMatchObject({ state: "verified", clearanceInvalidated: true });
+  });
+
+  it("keeps a failed check with its original output, and a correction is a new candidate with its own evidence (V05)", () => {
+    const { document, decision, candidate } = setup();
+    const output = "Sources/Orders/CancelPaidOrder.swift:12: trailing whitespace.\n+// Nota   ";
+    recordEvidence(document, candidate.id, { check: "git_status", passed: false, command: "git diff --check HEAD", output, snapshotId: "snap" });
+    expect(candidate.evidence.git_status).toMatchObject({ result: "fail", command: "git diff --check HEAD", output });
+    expect(candidateReport(document, candidate, "base")).toMatchObject({ state: "building", blockers: [{ code: "CHECK_FAILED", detail: "git_status" }] });
+    expect(() => clearCandidate(document, candidate.id, "Coordinatore", "base")).toThrow(/not verified/);
+    // The corrected worktree is another snapshot: the old candidate refuses its evidence, a new one takes it.
+    expect(() => recordEvidence(document, candidate.id, { check: "git_status", passed: true, command: "c", output: "", snapshotId: "fixed" })).toThrow(/Declare a new candidate/);
+    const fixed = declareCandidate(
+      document,
+      { assignmentId: candidate.assignmentId, decisionIds: [decision.id], unresolvedChoices: [], externalEffects: [] },
+      { snapshotId: "fixed", baseSHA: "base", diff: "d2", changedFiles: ["a"], excludedSensitiveFiles: [] },
+    );
+    expect(fixed.id).not.toBe(candidate.id);
+    expect(fixed.evidence).toEqual({});
+    recordEvidence(document, fixed.id, { check: "git_status", passed: true, command: "git diff --check HEAD", output: "", snapshotId: "fixed" });
+    expect(candidateReport(document, fixed, "base").state).toBe("verified");
+    expect(candidate.evidence.git_status?.result).toBe("fail");
+    expect(candidateReport(document, candidate, "base").state).toBe("building");
+  });
+
   it("blocks failed checks and unresolved choices", () => {
     const { document, candidate } = setup();
     candidate.unresolvedChoices = ["Quale messaggio mostrare"];
