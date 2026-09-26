@@ -91,5 +91,6 @@ jobs:
           GH_REPO: ${{ github.repository }}
           TAG: ${{ inputs.tag }}
         run: |
-          gh release upload "$TAG" packages/*
+          # A retry after a failed publish finds the assets already there.
+          gh release upload "$TAG" packages/* --clobber
           gh release edit "$TAG" --draft=false --latest

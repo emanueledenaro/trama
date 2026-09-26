@@ -17,6 +17,7 @@ jobs:
       contents: write
     outputs:
       tag: ${{ steps.draft.outputs.tag }}
+      ref: ${{ steps.draft.outputs.ref }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -38,11 +39,15 @@ jobs:
             exit 0
           fi
           if gh release view "$tag" >/dev/null 2>&1; then
-            echo "La bozza $tag esiste già: la riprendo."
+            # A resumed draft keeps its original target: build that commit, not the new push.
+            ref=$(gh release view "$tag" --json targetCommitish --jq .targetCommitish)
+            echo "La bozza $tag esiste già: la riprendo sul commit $ref."
           else
-            gh release create "$tag" --draft --target "$GITHUB_SHA" --title "$tag" --notes-file notes.md
+            ref="$GITHUB_SHA"
+            gh release create "$tag" --draft --target "$ref" --title "$tag" --notes-file notes.md
           fi
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "ref=$ref" >> "$GITHUB_OUTPUT"
   package:
     needs: draft
     if: needs.draft.outputs.tag != ''
@@ -50,6 +55,6 @@ jobs:
       contents: write
     uses: ./.github/workflows/release.yml
     with:
-      ref: ${{ github.sha }}
+      ref: ${{ needs.draft.outputs.ref }}
       tag: ${{ needs.draft.outputs.tag }}
     secrets: inherit

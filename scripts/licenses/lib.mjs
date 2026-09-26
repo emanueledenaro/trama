@@ -33,13 +33,51 @@ export const EXCEPTIONS = [
   },
 ];
 
-/** Evaluates a simple SPDX expression with OR, AND and parentheses. */
+/**
+ * Evaluates an SPDX expression: identifiers, OR, AND (which binds tighter),
+ * parentheses and `WITH` exceptions (judged by the license they modify).
+ */
 export function isAllowed(expression) {
-  const text = (expression ?? '').trim().replace(/^\((.*)\)$/, '$1').trim();
-  if (text.length === 0) return false;
-  if (/ OR /.test(text)) return text.split(/ OR /).some((part) => isAllowed(part));
-  if (/ AND /.test(text)) return text.split(/ AND /).every((part) => isAllowed(part));
-  return ALLOWED.has(text);
+  const tokens = (expression ?? '').replace(/[()]/g, ' $& ').trim().split(/\s+/).filter(Boolean);
+  if (tokens.length === 0) return false;
+  let position = 0;
+  const peek = () => tokens[position];
+  const fail = () => {
+    throw new Error(`unreadable SPDX expression "${expression}"`);
+  };
+  function primary() {
+    const token = tokens[position++];
+    if (token === '(') {
+      const value = or();
+      if (tokens[position++] !== ')') fail();
+      return value;
+    }
+    if (token === undefined || token === ')' || token === 'OR' || token === 'AND' || token === 'WITH') fail();
+    if (peek() === 'WITH') position += 2;
+    return ALLOWED.has(token);
+  }
+  function and() {
+    let value = primary();
+    while (peek() === 'AND') {
+      position += 1;
+      value = primary() && value;
+    }
+    return value;
+  }
+  function or() {
+    let value = and();
+    while (peek() === 'OR') {
+      position += 1;
+      value = and() || value;
+    }
+    return value;
+  }
+  try {
+    const value = or();
+    return position === tokens.length && value;
+  } catch {
+    return false;
+  }
 }
 
 export function packageName(path) {

@@ -8,6 +8,21 @@ test('accepts permissive licenses and SPDX choices', () => {
   assert.equal(isAllowed('GPL-3.0-only OR MIT'), true);
 });
 
+test('respects parentheses and AND precedence', () => {
+  assert.equal(isAllowed('(MIT OR Apache-2.0) AND ISC'), true);
+  assert.equal(isAllowed('ISC AND (GPL-3.0-only OR MIT)'), true);
+  assert.equal(isAllowed('(MIT OR Apache-2.0) AND GPL-3.0-only'), false);
+  assert.equal(isAllowed('MIT OR ISC AND GPL-3.0-only'), true);
+  assert.equal(isAllowed('GPL-3.0-only AND ISC OR BSD-3-Clause'), true);
+  assert.equal(isAllowed('Apache-2.0 WITH LLVM-exception'), true);
+});
+
+test('rejects malformed expressions', () => {
+  assert.equal(isAllowed('(MIT OR ISC'), false);
+  assert.equal(isAllowed('MIT OR'), false);
+  assert.equal(isAllowed('MIT ISC'), false);
+});
+
 test('rejects copyleft, unknown and missing licenses', () => {
   assert.equal(isAllowed('GPL-3.0-only'), false);
   assert.equal(isAllowed('AGPL-3.0-or-later'), false);
