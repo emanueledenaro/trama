@@ -1145,3 +1145,42 @@ if (!(await readFile(join(presenceProject, "src", "payments.js"), "utf8")).inclu
 if (presenceGit(presenceProject, "symbolic-ref", "--short", "HEAD").trim() !== "feature/carrello") throw new Error("The probe changed the branch");
 if (presenceGit(presenceRemote, "rev-parse", "feature/rimborsi").trim() !== presenceGit(presenceSeed, "rev-parse", "feature/rimborsi").trim()) throw new Error("Bea's branch moved");
 await app.close();
+
+// P11: Antigravity works in every role. A fake agy first on the PATH and a separate HOME for its capture plugin:
+// the picker offers it like the other providers, and the Coordinator runs on it in the read-only profile.
+const agyBin = await mkdtemp(join(tmpdir(), "trama-ui-agy-"));
+const agyHome = await mkdtemp(join(tmpdir(), "trama-ui-agy-home-"));
+const agyLog = join(agyBin, "calls.log");
+await writeFile(join(agyBin, "agy"), `#!/bin/sh\nexec "${process.execPath}" "${resolve("test-fixtures/fake-agy.mjs")}" "$@"\n`, { mode: 0o755 });
+const agyProject = await mkdtemp(join(tmpdir(), "trama-ui-agy-project-"));
+execFileSync("git", ["-C", agyProject, "init", "-q", "-b", "main"]);
+await writeFile(join(agyProject, "README.md"), "# Magazzino\n");
+execFileSync("git", ["-C", agyProject, "add", "."]);
+execFileSync("git", ["-C", agyProject, "-c", "user.name=Trama UI", "-c", "user.email=ui@trama.local", "commit", "-q", "-m", "Magazzino"]);
+({ app, page } = await launch({ PATH: `${agyBin}:${process.env.PATH}`, HOME: agyHome, FAKE_AGY_LOG: agyLog }));
+await page.evaluate((path) => window.trama.invoke("project:open", { path }), agyProject);
+await page.getByTestId("dialog-title").filter({ hasText: "trama-ui-agy-project" }).waitFor({ timeout: 30_000 });
+await page.getByRole("button", { name: /^Provider e modello del Coordinatore/ }).click();
+await page.getByRole("tab", { name: "Antigravity" }).click();
+const agyModel = page.getByRole("listbox", { name: "Modelli" }).getByText("Gemini 3.5 Flash").first();
+await agyModel.waitFor({ timeout: 20_000 });
+if (await page.getByText("Solo per specialisti con worktree").count()) throw new Error("Antigravity is still offered only to specialists");
+await shot("19-antigravity-picker");
+await agyModel.click();
+await page.getByRole("button", { name: "Provider e modello del Coordinatore: Antigravity" }).waitFor({ timeout: 20_000 });
+await composer().fill("Cosa contiene il progetto?");
+await page.keyboard.press("Enter");
+await page.getByText("Ho letto il progetto in sola lettura").first().waitFor({ timeout: 30_000 });
+const agyCalls = await readFile(agyLog, "utf8");
+if (!/"profile":"read-only"/.test(agyCalls)) throw new Error(`The Antigravity Coordinator did not run read-only: ${agyCalls}`);
+for (const expected of ["allowed view_file", "denied write_to_file", "denied run_command"]) {
+  if (!agyCalls.includes(expected)) throw new Error(`Antigravity read-only hook: no "${expected}" in ${agyCalls}`);
+}
+if ((await readFile(join(agyProject, "README.md"), "utf8")) !== "# Magazzino\n") throw new Error("The read-only Antigravity turn changed a file");
+for (const dark of [false, true]) {
+  await page.evaluate((theme) => window.trama.invoke("settings:update", { theme }), dark ? "dark" : "light");
+  await page.waitForFunction((wanted) => document.documentElement.classList.contains("dark") === wanted, dark);
+  await shot(`19a-antigravity-coordinator-${dark ? "dark" : "light"}`);
+}
+await page.evaluate(() => window.trama.invoke("settings:update", { theme: "system" }));
+await app.close();
