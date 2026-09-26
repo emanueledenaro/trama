@@ -1,6 +1,7 @@
 // The first-run guide (C12) and the exercises on the example project (C13, C14).
 // Every step state is derived from AppState or from the project document: nothing is marked done
 // by a timer, by the renderer or by a model's claim.
+import { readableFailure } from "./providerFailure";
 import { isUsableAccount, type ProviderId } from "./codex";
 import type { AppState, Candidate, ConflictAssessment, ProjectDocument, ProjectOverview, SpecialistAssignment } from "./domain";
 
@@ -133,7 +134,7 @@ function providerStep(app: AppState): StepState {
     codex?.kind === "unsupported"
       ? `Codex usa un account di tipo ${codex.type}: Trama accetta solo un account ChatGPT.`
       : codex?.kind === "unavailable" || codex?.kind === "blocked"
-        ? `Codex: ${codex.message}`
+        ? `Codex: ${readableFailure(codex.message)}`
         : "Nessun provider ha un account utilizzabile. Accedi con ChatGPT o a un altro provider, poi verifica.";
   return { ...base, status: "pending", detail };
 }

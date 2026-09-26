@@ -1,10 +1,11 @@
 import { IconFileCode, IconGitBranch, IconGitPullRequest, IconRefresh, IconTarget } from "@tabler/icons-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { presenceActivity } from "@shared/agentBot";
 import { isAgentColor } from "@shared/identity";
 import type { PresenceTask } from "@shared/presence";
 import { groupBoard, type BoardRow, type GroupBoard } from "@shared/presenceBoard";
 import { AgentName } from "@/components/AgentIdentity";
+import { GitHubCliDescription } from "@/components/GitHubCliStatus";
 import { Spinner } from "@/components/Spinner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/field";
@@ -173,6 +174,11 @@ export function GroupView() {
   const askCoordinator = useUi((s) => s.askCoordinator);
   const presence = project.isDemo ? null : project.presence;
   const board = groupBoard({ presence, snapshot, github: Boolean(repository), now: new Date() });
+  const gitHubCli = useUi((s) => s.app!.gitHubCli);
+  // GitHub CLI is read when Gruppo opens too, so a login made in the terminal shows up here (P10).
+  useEffect(() => {
+    if (useUi.getState().app?.gitHubCli.status !== "checking") void act("onboarding:checkGitHub", undefined);
+  }, []);
   return (
     <>
       <InspectorSection
@@ -194,6 +200,18 @@ export function GroupView() {
           </div>
         }
       >
+        {!project.isDemo && gitHubCli.status !== "ready" ? (
+          <div className="mb-2 rounded-lg bg-[var(--color-background-button-secondary)] px-2.5 py-2" data-testid="group-github-cli">
+            <p className="text-ui-sm text-muted-foreground">
+              <GitHubCliDescription state={gitHubCli} />
+            </p>
+            <div className="cta-row mt-1.5">
+              <Button size="xs" variant="outline" disabled={gitHubCli.status === "checking"} onClick={() => void act("onboarding:checkGitHub", undefined)}>
+                Controlla di nuovo
+              </Button>
+            </div>
+          </div>
+        ) : null}
         {!repository ? (
           <EmptyNote>{github.message ?? "Il progetto non ha un remoto GitHub."}</EmptyNote>
         ) : (
