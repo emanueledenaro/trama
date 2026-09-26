@@ -8,7 +8,7 @@ import { COORDINATOR_MOVES, type CoordinatorMove, type WorkState, workRequests, 
  * decisions, the mandate, the team and merging.
  */
 
-/** What changed the work: a Coordinator turn ended, a plan ended, a specialist's assignment ended. */
+/** What changed the work: a Coordinator turn ended, a plan ended, a specialist's assignment ended or paused on a question. */
 export type WorkEvent = "turnEnded" | "planEnded" | "assignmentEnded";
 
 /**
@@ -62,9 +62,12 @@ export function automaticMove(document: ProjectDocument, requestId: string, even
   if (!workRequests(document, latest.id)?.has(subject.id)) return null;
   const state = workState(document, latest.id);
   if (!state.phase || state.phase === "blocked") return null;
-  if (state.moves.some((m) => m.actor === "person" && WAITS_FOR_PERSON.includes(m.move))) return null;
+  // A Pact card that blocks a developer's work (W06) holds only that work: the team goes on with the rest.
+  const holds = (move: NextMove) => WAITS_FOR_PERSON.includes(move) && !(move === "answerQuestions" && state.questionsHoldOnlyTheirWork);
   const option = state.moves.find((m) => m.actor === "coordinator");
   if (!option) return null;
+  // A developer's question waits for the Coordinator, never for an unrelated card of the person (W06).
+  if (option.move !== "answerQuestion" && state.moves.some((m) => m.actor === "person" && holds(m.move))) return null;
   const move = option.move as CoordinatorMove;
   return { move, ...COORDINATOR_MOVES[move], goalId, model: latest.model, effort: latest.effort };
 }
@@ -134,6 +137,9 @@ function stallReason(document: ProjectDocument, requestId: string, since: string
       }
       return `le verifiche di ${targets.unverified.join(", ")} non sono partite.`;
     }
+    case "answerQuestion":
+      // An unanswered question keeps its work paused and stays among the moves (W06): no stall to report.
+      return null;
   }
 }
 

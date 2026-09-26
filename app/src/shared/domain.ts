@@ -87,6 +87,8 @@ export interface CoordinatorRequest {
   nextStep?: NextStep | null;
   /** The next step this message takes (W04): the person's button, or Trama starting the Coordinator's move by itself. */
   step?: RequestStep | null;
+  /** Set when the request repeats a failed one (P10): its id, and the automatic attempt (0 when the person pressed Riprova). */
+  retry?: { of: string; attempt: number } | null;
 }
 
 /** A next step taken by a message: the person pressed its button, or Trama started the Coordinator's own move (W04). */
@@ -133,7 +135,7 @@ export interface FocusView {
   queue: FocusTask[];
 }
 
-/** A move that takes the work on: the first nine are the person's, the last three the Coordinator's (W01). */
+/** A move that takes the work on: the first nine are the person's, the last four the Coordinator's (W01, W06). */
 export type NextMove =
   | "answerQuestions"
   | "confirmUnderstanding"
@@ -146,7 +148,8 @@ export type NextMove =
   | "mergePullRequest"
   | "preparePlan"
   | "assignWork"
-  | "verifyCandidate";
+  | "verifyCandidate"
+  | "answerQuestion";
 
 /** The move the Coordinator chose among the allowed ones, with its one-line reason. */
 export interface NextStep {
@@ -259,6 +262,8 @@ export interface DecisionRequest {
    * decision and no longer waits for an answer. Absent in documents written before withdrawals.
    */
   withdrawal?: { reason: string; withdrawnAt: string } | null;
+  /** Set when the card answers a developer's question (W06): it blocks that work until the person answers. */
+  blocksWork?: { assignmentId: string; questionId: string } | null;
 }
 
 /** A question still waiting for the person: neither answered nor withdrawn. */
@@ -349,7 +354,8 @@ export interface TeamProposal {
 }
 
 export type SpecialistStatus = "available" | "working" | "stopping" | "stopped" | "removed";
-export type AssignmentStatus = "preparing" | "running" | "stopRequested" | "stopped" | "completed" | "failed";
+/** `paused`: the developer asked the Coordinator a question (W06) and waits for the answer; its slice is on hold. */
+export type AssignmentStatus = "preparing" | "running" | "stopRequested" | "stopped" | "completed" | "failed" | "paused";
 
 export interface WorktreeSession {
   sourceRoot: string;
@@ -428,6 +434,42 @@ export interface SpecialistAssignment {
   seams?: ContractSeam[];
   /** The developer's structured report (W05), read from its last answer: its statement, never evidence. */
   report?: DeveloperReport | null;
+  /** The questions the developer asked the Coordinator during the work (W06), oldest first. */
+  questions?: DeveloperQuestion[];
+}
+
+/**
+ * A question a developer asked the Coordinator with its tool (W06). The work pauses when the developer's turn ends
+ * and resumes in the same session with the answer: the Coordinator's, from facts, or the person's, when the
+ * Coordinator put it on a Pact card that blocks the work.
+ */
+export interface DeveloperQuestion {
+  id: string;
+  question: string;
+  /** What the developer needs the answer for, in its words. */
+  context: string | null;
+  askedAt: string;
+  answer: DeveloperAnswer | null;
+  /** When Trama resumed the work with the answer; null while it waits. */
+  resumedAt: string | null;
+}
+
+export type DeveloperAnswer =
+  /** The Coordinator answered from facts it names: files, Pact decisions, issues, the spec. */
+  | { kind: "facts"; text: string; sources: string[]; answeredAt: string }
+  /**
+   * The answer is the person's: a Pact card that blocks the work (`decisionRequestId`). `text` and `answeredAt`
+   * are set when the person answers or withdraws the card.
+   */
+  | { kind: "person"; decisionRequestId: string; since: string; text: string | null; answeredAt: string | null };
+
+/** Where a developer's question stands: waiting for the Coordinator, for the person on a Pact card, or answered. */
+export type DeveloperQuestionState = "asked" | "waitingForPerson" | "answered";
+
+export function developerQuestionState(question: Pick<DeveloperQuestion, "answer">): DeveloperQuestionState {
+  if (!question.answer) return "asked";
+  if (question.answer.kind === "person" && !question.answer.answeredAt) return "waitingForPerson";
+  return "answered";
 }
 
 /** The Coordinator's correction of what Trama derives for the work's commit and branch (Q01). */
@@ -494,6 +536,8 @@ export interface DeveloperReport {
   /** Every seam of the contract, with the tests the developer named or null; a number outside it is not agreed. */
   seams: TestedSeam[] | null;
   doubts: string[] | null;
+  /** The rules of Trama's Clean Code standard the developer set aside, and why (Q03). Absent in reports before Q03. */
+  exceptions?: string[] | null;
 }
 
 /** The AI Hero skill a fixed role runs when Trama starts its work by itself (W11). */
@@ -727,6 +771,20 @@ export interface TechnicalReview {
   verdict: "approved" | "changesRequested";
   summary: string;
   at: string;
+  /** What the reviewer found against Trama's Clean Code standard (Q03): its judgement, never evidence. */
+  findings?: import("./cleanCode").ReviewFinding[];
+  /** Trama's own measures of the candidate against the standard (Q03): the only evidence of the review. */
+  standard?: StandardCheck | null;
+}
+
+/** The deterministic part of a technical review (Q03): the standard's version, the rules on and what Trama measured. */
+export interface StandardCheck {
+  version: number;
+  rules: import("./cleanCode").CleanCodeRuleId[];
+  filesMeasured: number;
+  functionsMeasured: number;
+  /** The measures past their limit. */
+  measures: import("./cleanCode").CodeMeasure[];
 }
 
 export interface Candidate {
@@ -925,7 +983,7 @@ export interface PlanSlicing {
 }
 
 /** Where a slice of an approved breakdown stands, computed by Trama from its assignments and candidates (M05). */
-export type SliceState = "blocked" | "ready" | "working" | "verifying" | "done";
+export type SliceState = "blocked" | "ready" | "working" | "paused" | "verifying" | "done";
 
 export interface SliceView {
   id: string;
@@ -1024,6 +1082,8 @@ export interface ProjectDocument {
   presence?: import("./presence").PresenceConsent;
   /** The overlaps the Coordinator already pointed out in the chat (G03), so each one is said once. */
   overlapNotices?: string[];
+  /** How the project adapts Trama's Clean Code standard (Q03); absent means every rule is on. */
+  cleanCode?: import("./cleanCode").CleanCodeSettings;
   /** Focus mode examinations (F01); absent until the person first opens focus mode. */
   audits?: FocusAudit[];
 }
@@ -1202,6 +1262,8 @@ export interface ActiveProjectState {
   presence?: import("./presence").PresenceView | null;
   /** The person's work against the colleagues' presence (G03); absent without a presence reading. */
   overlaps?: import("./overlap").OverlapView | null;
+  /** The automatic retry after a temporary provider limit, while it waits (P10). */
+  providerRetry?: import("./providerFailure").ProviderRetryView | null;
 }
 
 /** A message waiting for the running turn to end; it has no request and no event until it leaves. */

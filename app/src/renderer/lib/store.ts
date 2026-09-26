@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import type { ProviderId } from "@shared/codex";
 import type { AppState } from "@shared/domain";
 import type { ActionName, ActionPayload, ActionResult } from "@shared/ipc";
 import type { ExerciseId, GuideStepId } from "@shared/onboarding";
@@ -27,7 +28,7 @@ export type InspectorTarget =
 export type MainView = "dialog" | "overview" | "settings";
 
 /** The sections of the settings page; "connections" holds ChatGPT, GitHub and the providers. */
-export type SettingsSection = "general" | "connections" | "method" | "learning" | "monitor" | "presence";
+export type SettingsSection = "general" | "connections" | "method" | "standard" | "learning" | "monitor" | "presence";
 
 export type DialogName = "createProject" | "cloneProject" | "search" | "guide" | null;
 
@@ -86,6 +87,12 @@ interface UiState {
   askCoordinator(text: string, options?: { goalId?: string | null; moduleId?: string | null }): void;
   takeComposerPrefill(): string | null;
   setComposerModule(moduleId: string | null): void;
+  /**
+   * A recovery action asked the Coordinator's picker to open (P10): on the current provider's models, or on
+   * `provider` when the action changes provider. `nonce` changes at each request.
+   */
+  pickerRequest: { provider: ProviderId | null; nonce: number } | null;
+  openModelPicker(provider?: ProviderId | null): void;
 }
 
 const readSidebar = () => {
@@ -204,6 +211,9 @@ export const useUi = create<UiState>((set, get) => ({
     return text;
   },
   setComposerModule: (composerModuleId) => set({ composerModuleId }),
+  pickerRequest: null,
+  openModelPicker: (provider = null) =>
+    set((state) => ({ pickerRequest: { provider, nonce: (state.pickerRequest?.nonce ?? 0) + 1 }, mainView: "dialog" })),
 }));
 
 /** The main process's error without Electron's IPC prefix. */
