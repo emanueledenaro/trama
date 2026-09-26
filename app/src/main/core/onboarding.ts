@@ -20,6 +20,27 @@ export async function readGitHubCliStatus(): Promise<GitHubCliState> {
   }
 }
 
+/**
+ * Clones `owner/name` into `destination` (B02). With gh logged in, `gh repo clone` uses its session, so private
+ * repositories work; otherwise plain `git clone` over https, which reaches public repositories. Hooks never run.
+ */
+export async function cloneRepository(repository: string, destination: string, useGh: boolean): Promise<void> {
+  const env = { ...(useGh ? ghEnvironment() : process.env), GIT_TERMINAL_PROMPT: "0" };
+  const [command, args] = useGh
+    ? ["gh", ["repo", "clone", repository, destination, "--", "--quiet", "-c", "core.hooksPath=/dev/null"]]
+    : ["git", ["-c", "core.hooksPath=/dev/null", "clone", "--quiet", "--", `https://github.com/${repository}.git`, destination]];
+  const result = await runProcess(command, args, { env, timeoutMs: 10 * 60_000 });
+  if (result.timedOut) throw new Error(`La clonazione di ${repository} non è finita entro 10 minuti.`);
+  if (result.exitCode !== 0) {
+    const reason = result.stderr.trim().split("\n").at(-1)?.trim();
+    throw new Error(
+      /not found|could not read|Authentication failed|terminal prompts disabled/i.test(result.stderr) && !useGh
+        ? `${repository} non si clona senza accesso. Se è privato, collega GitHub CLI con gh auth login e riprova.`
+        : `La clonazione di ${repository} non è riuscita${reason ? `: ${reason}` : "."}`,
+    );
+  }
+}
+
 /** The marker file the AI Hero setup writes in a project. */
 export const hasAiHero = (projectRoot: string): boolean => existsSync(join(projectRoot, ".agents", "skills", "AIHERO-VERSION.md"));
 

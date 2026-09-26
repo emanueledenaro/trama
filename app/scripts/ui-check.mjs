@@ -58,18 +58,162 @@ const expectAsked = async (fragment, control) => {
   if (!asked) throw new Error(`${control}: no "${fragment}" in the focused composer, it holds: ${await composer().inputValue().catch(() => "no composer")}`);
 };
 
-await page.getByText("Su cosa vuoi lavorare?").waitFor();
-// First launch: the guide opens by itself once, with the real state of each step.
-const guide = page.getByRole("dialog", { name: "Guida introduttiva" });
-await guide.waitFor();
-await guide.locator('[data-step="github"][data-status]:not([data-status="checking"])').waitFor();
-await shot("00-guide-first-run");
-await guide.getByRole("button", { name: /Collega GitHub CLI/ }).click();
-await shot("00b-guide-github");
-await guide.getByRole("button", { name: "Continua più tardi" }).click();
-await guide.waitFor({ state: "hidden" });
-await shot("01-landing");
-// B01: Trama's mark sits in the sidebar's brand slot and on the start screen, in the colors of the provider theme,
+// B02, first launch. The intro plays over the app while the state loads and leaves by itself; the welcome follows.
+const welcome = page.getByTestId("welcome");
+await welcome.waitFor();
+await page.getByTestId("launch-intro").waitFor({ state: "detached", timeout: 1_500 });
+const lookOf = () => page.evaluate(() => ({ provider: document.documentElement.dataset.provider ?? null, dark: document.documentElement.classList.contains("dark") }));
+const setLookTo = (provider, dark) =>
+  page.evaluate(
+    ([name, isDark]) => {
+      if (name) document.documentElement.dataset.provider = name;
+      else delete document.documentElement.dataset.provider;
+      document.documentElement.classList.toggle("dark", isDark);
+    },
+    [provider, dark],
+  );
+// Frames of the intro: replayed and held, its animations paused at fixed times, in the light and dark themes of two providers.
+const introFrames = async (label, times) => {
+  await page.evaluate(() => window.dispatchEvent(new Event("trama:replay-intro")));
+  await page.getByTestId("launch-intro").waitFor();
+  for (const time of times) {
+    // Only the intro's own animations: pausing the others would freeze the welcome's buttons mid-transition.
+    await page.evaluate((t) => {
+      for (const animation of document.querySelector('[data-testid="launch-intro"]').getAnimations({ subtree: true })) {
+        animation.pause();
+        animation.currentTime = t;
+      }
+    }, time);
+    await page.screenshot({ path: join(out, `00-intro-${label}-${String(time).padStart(4, "0")}ms.png`) });
+  }
+  const running = await page.evaluate(() => document.querySelector('[data-testid="launch-intro"]')?.getAnimations({ subtree: true }).length ?? 0);
+  await page.evaluate(() => window.dispatchEvent(new Event("trama:end-intro")));
+  await page.getByTestId("launch-intro").waitFor({ state: "detached", timeout: 1_500 });
+  return running;
+};
+const firstLook = await lookOf();
+await setLookTo(null, false);
+if (!(await introFrames("light", [0, 200, 450, 700, 1100]))) throw new Error("The intro does not animate");
+await setLookTo("claudeAgent", true);
+await introFrames("claude-dark", [200, 700, 1100]);
+await setLookTo("codex", true);
+await introFrames("codex-dark", [700]);
+// With reduced motion only the still mark shows.
+await page.emulateMedia({ reducedMotion: "reduce" });
+await setLookTo(null, false);
+if (await introFrames("reduced-motion", [0])) throw new Error("The intro animates with prefers-reduced-motion");
+await page.emulateMedia({ reducedMotion: "no-preference" });
+await setLookTo(firstLook.provider, firstLook.dark);
+
+// The CTA rows put the primary action last, on the right.
+const primaryLast = async (row, where) => {
+  const buttons = await row.locator(":scope > button").evaluateAll((nodes) =>
+    nodes.map((node) => ({ variant: node.dataset.variant, right: node.getBoundingClientRect().right, top: node.getBoundingClientRect().top })),
+  );
+  const primary = buttons.filter((b) => b.variant === "default");
+  if (primary.length !== 1) throw new Error(`${where}: expected one primary action, found ${primary.length}`);
+  const lastRow = Math.max(...buttons.map((b) => b.top));
+  if (primary[0].top !== lastRow || buttons.some((b) => b.top === lastRow && b.right > primary[0].right)) throw new Error(`${where}: the primary action is not last`);
+};
+const noHorizontalScroll = async (where) => {
+  if (await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)) throw new Error(`Horizontal page scroll: ${where}`);
+};
+const sizes = [
+  ["wide", 1280, 820],
+  ["narrow", 720, 640],
+];
+const themes = [
+  ["light", "light"],
+  ["dark", "dark"],
+];
+const setTheme = async (theme) => {
+  await page.evaluate((value) => window.trama.invoke("settings:update", { theme: value }), theme);
+  await page.waitForFunction((dark) => document.documentElement.classList.contains("dark") === dark, theme === "dark");
+};
+
+// The welcome: logo, what Trama does, then the configuration in three steps that reuse the guide's states.
+await welcome.getByRole("heading", { name: "Benvenuto in Trama" }).waitFor();
+// The welcome is modal: Tab cycles inside it (through the dialog's focus guards) and never reaches the window behind.
+for (let press = 0; press < 8; press++) {
+  await page.keyboard.press("Tab");
+  const focus = await page.evaluate(() => {
+    const active = document.activeElement;
+    return {
+      inside: Boolean(active?.closest('[data-testid="welcome"]') || active?.hasAttribute("data-base-ui-focus-guard")),
+      element: active?.outerHTML.slice(0, 160) ?? "none",
+    };
+  });
+  if (!focus.inside) throw new Error(`Tab left the welcome for ${focus.element}`);
+}
+await primaryLast(welcome.locator(".cta-row").last(), "Welcome");
+for (const [size, width, height] of sizes) {
+  await page.setViewportSize({ width, height });
+  for (const [label, theme] of themes) {
+    await setTheme(theme);
+    await noHorizontalScroll(`welcome ${size} ${label}`);
+    await shot(`00a-welcome-${size}-${label}`);
+  }
+}
+await setTheme("system");
+await page.setViewportSize({ width: 1280, height: 820 });
+await welcome.getByRole("button", { name: "Configura", exact: true }).click();
+// The configuration starts at the first step still open: the fake Codex account already completes the provider.
+await welcome.getByRole("heading", { name: /Collega GitHub/ }).waitFor();
+await welcome.getByRole("button", { name: "Indietro" }).click();
+// 1. Provider: Codex and Claude with their state, the others behind a toggle, the actions to restore.
+await welcome.getByRole("heading", { name: /Collega un provider/ }).waitFor();
+await welcome.locator('[data-provider-row="codex"]').waitFor();
+await welcome.locator('[data-provider-row="claudeAgent"]').waitFor();
+if (await welcome.locator('[data-provider-row="cursor"]').count()) throw new Error("The other providers are not behind their toggle");
+await welcome.getByRole("button", { name: "Controlla di nuovo" }).waitFor();
+await shot("00b-welcome-provider");
+await welcome.getByRole("button", { name: /^Altri provider/ }).click();
+await welcome.locator('[data-provider-row="cursor"]').waitFor();
+await shot("00b-welcome-provider-all");
+await setTheme("dark");
+await shot("00b-welcome-provider-dark");
+await page.setViewportSize({ width: 720, height: 640 });
+await noHorizontalScroll("welcome provider narrow");
+await shot("00b-welcome-provider-narrow-dark");
+await setTheme("system");
+await page.setViewportSize({ width: 1280, height: 820 });
+await welcome.getByRole("button", { name: "Continua" }).click();
+// 2. GitHub, optional: postponed, it stays "Saltato" and the guide can take it back.
+await welcome.getByRole("heading", { name: /Collega GitHub/ }).waitFor();
+await welcome.locator('[data-testid="welcome-step-state"]:not([data-status="checking"])').waitFor();
+await shot("00c-welcome-github");
+await welcome.getByRole("button", { name: "Rimanda" }).click();
+// 3. AI Hero: the answer is the step while no project is open.
+await welcome.getByRole("heading", { name: /Il metodo AI Hero/ }).waitFor();
+await primaryLast(welcome.locator(".cta-row").nth(0), "Welcome, AI Hero");
+await shot("00d-welcome-aihero");
+await page.setViewportSize({ width: 720, height: 640 });
+await shot("00d-welcome-aihero-narrow");
+await setTheme("dark");
+await shot("00d-welcome-aihero-narrow-dark");
+await setTheme("system");
+await page.setViewportSize({ width: 1280, height: 820 });
+await welcome.getByRole("button", { name: "Prepara il metodo" }).click();
+await welcome.locator('[data-testid="welcome-step-state"][data-status="done"]').waitFor();
+await shot("00e-welcome-aihero-chosen");
+await welcome.getByRole("button", { name: "Scegli un progetto" }).click();
+await welcome.waitFor({ state: "detached" });
+
+// The project picker: open, clone, create and the example, with the primary action last, at every size and theme.
+const picker = page.getByTestId("project-picker");
+await picker.getByText("Su cosa vuoi lavorare?").waitFor();
+for (const [size, width, height] of sizes) {
+  await page.setViewportSize({ width, height });
+  await primaryLast(picker.getByTestId("picker-actions"), `Project picker ${size}`);
+  for (const [label, theme] of themes) {
+    await setTheme(theme);
+    await noHorizontalScroll(`picker ${size} ${label}`);
+    await shot(`01-picker-${size}-${label}`);
+  }
+}
+await setTheme("system");
+await page.setViewportSize({ width: 1280, height: 820 });
+// B01: Trama's mark sits in the sidebar's brand slot and on the project picker, in the colors of the provider theme,
 // light and dark. The brand slot's gradient must change with the provider and with the theme.
 const brandLook = (provider, dark) =>
   page.evaluate(
@@ -82,7 +226,7 @@ const brandLook = (provider, dark) =>
   );
 const startLook = await page.evaluate(() => ({ provider: document.documentElement.dataset.provider ?? null, dark: document.documentElement.classList.contains("dark") }));
 if ((await page.locator('[data-testid="brand-slot"] [data-trama-mark="glyph"]').count()) !== 1) throw new Error("No Trama mark in the sidebar's brand slot");
-if ((await page.locator("[data-trama-mark]").count()) < 2) throw new Error("No Trama mark on the start screen");
+if ((await page.locator("[data-trama-mark]").count()) < 2) throw new Error("No Trama mark on the project picker");
 const markColors = new Set();
 for (const provider of ["codex", "claudeAgent", "grok"]) {
   for (const dark of [false, true]) {
@@ -98,7 +242,36 @@ for (const provider of ["codex", "claudeAgent", "grok"]) {
 }
 if (markColors.size !== 6) throw new Error(`The mark does not follow the provider theme: ${[...markColors].join(", ")}`);
 await brandLook(startLook.provider, startLook.dark);
-await page.getByText("Esplora il progetto di esempio").click();
+await picker.getByRole("button", { name: "Clona da GitHub" }).click();
+const cloneDialog = page.getByRole("dialog", { name: "Clona da GitHub" });
+await cloneDialog.getByRole("textbox").fill("non è un repository");
+if (await cloneDialog.getByRole("button", { name: "Scegli la cartella" }).isEnabled()) throw new Error("Clone accepts an invalid repository");
+await cloneDialog.getByRole("textbox").fill("https://github.com/emanueledenaro/trama");
+await cloneDialog.getByRole("button", { name: "Scegli la cartella" }).waitFor({ state: "visible" });
+if (!(await cloneDialog.getByRole("button", { name: "Scegli la cartella" }).isEnabled())) throw new Error("Clone refuses a GitHub URL");
+await shot("01a-picker-clone");
+await cloneDialog.getByRole("button", { name: "Annulla" }).click();
+await cloneDialog.waitFor({ state: "hidden" });
+
+// The guide keeps the steps' state and reopens the welcome; the welcome does not reopen by itself.
+await picker.getByRole("button", { name: "Guida introduttiva" }).click();
+const guide = page.getByRole("dialog", { name: "Guida introduttiva" });
+await guide.waitFor();
+await guide.locator('[data-step="github"][data-status="skipped"]').waitFor();
+await guide.locator('[data-step="aiHero"][data-status="done"]').waitFor();
+await shot("01b-guide-after-welcome");
+await guide.getByRole("button", { name: "Rivedi il benvenuto" }).click();
+await welcome.getByRole("button", { name: "Riprendi la configurazione" }).click();
+await welcome.getByRole("heading", { name: /Collega GitHub/ }).waitFor();
+await shot("01c-welcome-resumed");
+await welcome.getByRole("button", { name: "Chiudi il benvenuto" }).click();
+await welcome.waitFor({ state: "detached" });
+
+// The example project, as the exercise.
+await picker.getByRole("button", { name: "Prova l'esempio" }).click();
+await page.getByRole("complementary", { name: "Esercizio" }).waitFor({ timeout: 20_000 });
+await shot("01d-picker-example-exercise");
+await page.getByRole("complementary", { name: "Esercizio" }).getByRole("button", { name: "Chiudi l'esercizio" }).click();
 await page.getByText("Ho letto lo studio").first().waitFor({ timeout: 20_000 });
 await shot("02-demo-study");
 // The context and model pickers share one panel.
@@ -724,6 +897,8 @@ git("remote", "add", "origin", "https://github.com/trama-ui/negozio.git");
 ({ app, page } = await launch({ PATH: `${ghBin}:${process.env.PATH}`, FAKE_GH_TEAM: "1" }));
 const goalsRow = page.getByRole("button", { name: /^Obiettivi/ }).first();
 await goalsRow.waitFor({ timeout: 30_000 });
+// B02: after the first launch the welcome never shows by itself again.
+if (await page.getByTestId("welcome").count()) throw new Error("The welcome showed again after the first launch");
 // M04: the spec is still there to read after the restart.
 await page.locator('[data-testid="plan-spec"][data-status="ready"]').first().getByText("Ordini pagati annullati in revisione").waitFor({ timeout: 30_000 });
 await goalsRow.focus();
@@ -1247,6 +1422,25 @@ await shot("16h-overlap-module");
 if (!(await readFile(join(presenceProject, "src", "payments.js"), "utf8")).includes("CONTENUTO PRIVATO")) throw new Error("The probe changed the checkout");
 if (presenceGit(presenceProject, "symbolic-ref", "--short", "HEAD").trim() !== "feature/carrello") throw new Error("The probe changed the branch");
 if (presenceGit(presenceRemote, "rev-parse", "feature/rimborsi").trim() !== presenceGit(presenceSeed, "rev-parse", "feature/rimborsi").trim()) throw new Error("Bea's branch moved");
+
+// B02: with no project open the picker lists the recent projects with their path, last work, state and colleagues.
+// Switching projects never replays the launch intro.
+if (await page.getByTestId("launch-intro").count()) throw new Error("The launch intro played on a project switch");
+await page.evaluate(() => window.trama.invoke("project:close", undefined));
+const recentPicker = page.getByTestId("project-picker");
+await recentPicker.waitFor();
+await recentPicker.getByTestId("recent-project").filter({ hasText: /collega attivo|colleghi attivi/ }).first().waitFor({ timeout: 20_000 });
+for (const [size, width, height] of sizes) {
+  await page.setViewportSize({ width, height });
+  await primaryLast(recentPicker.getByTestId("picker-actions"), `Project picker with recents ${size}`);
+  for (const [label, theme] of themes) {
+    await setTheme(theme);
+    await noHorizontalScroll(`picker with recents ${size} ${label}`);
+    await shot(`01e-picker-recents-${size}-${label}`);
+  }
+}
+await setTheme("system");
+await page.setViewportSize({ width: 1280, height: 820 });
 await app.close();
 
 // P11: Antigravity works in every role. A fake agy first on the PATH and a separate HOME for its capture plugin:

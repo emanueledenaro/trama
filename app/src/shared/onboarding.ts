@@ -2,7 +2,7 @@
 // Every step state is derived from AppState or from the project document: nothing is marked done
 // by a timer, by the renderer or by a model's claim.
 import { isUsableAccount, type ProviderId } from "./codex";
-import type { AppState, Candidate, ConflictAssessment, ProjectDocument, SpecialistAssignment } from "./domain";
+import type { AppState, Candidate, ConflictAssessment, ProjectDocument, ProjectOverview, SpecialistAssignment } from "./domain";
 
 export type GuideStepId = "provider" | "github" | "project" | "aiHero" | "exercise";
 export type ExerciseId = "first" | "change" | "revision" | "conflict";
@@ -29,6 +29,13 @@ export interface OnboardingState {
   completedExercises: Partial<Record<ExerciseId, string>>;
   /** Set when Trama found or prepared AI Hero in a project. */
   aiHeroPreparedAt: string | null;
+  /**
+   * The person's answer to "prepare the AI Hero method in the projects I open?" (B02). Before any project is
+   * open this answer is the whole step; the copy happens when a project opens, as `autoPrepareMethod` says.
+   */
+  methodChoice: { prepare: boolean; at: string } | null;
+  /** When the person reached the end of the welcome or closed it (B02). It never opens by itself again. */
+  welcomeClosedAt: string | null;
 }
 
 export const EMPTY_ONBOARDING: OnboardingState = {
@@ -37,6 +44,8 @@ export const EMPTY_ONBOARDING: OnboardingState = {
   skippedSteps: [],
   completedExercises: {},
   aiHeroPreparedAt: null,
+  methodChoice: null,
+  welcomeClosedAt: null,
 };
 
 export const GUIDE_STEP_IDS: GuideStepId[] = ["provider", "github", "project", "aiHero", "exercise"];
@@ -56,6 +65,11 @@ export function normalizeOnboarding(raw: Partial<OnboardingState> | null | undef
     skippedSteps: Array.isArray(value.skippedSteps) ? value.skippedSteps.filter((s): s is GuideStepId => GUIDE_STEP_IDS.includes(s)) : [],
     completedExercises: completed,
     aiHeroPreparedAt: typeof value.aiHeroPreparedAt === "string" ? value.aiHeroPreparedAt : null,
+    methodChoice:
+      value.methodChoice && typeof value.methodChoice.prepare === "boolean" && typeof value.methodChoice.at === "string"
+        ? { prepare: value.methodChoice.prepare, at: value.methodChoice.at }
+        : null,
+    welcomeClosedAt: typeof value.welcomeClosedAt === "string" ? value.welcomeClosedAt : null,
   };
 }
 
@@ -157,7 +171,19 @@ function aiHeroStep(app: AppState): StepState {
   const project = app.project && !app.project.isDemo ? app.project : null;
   if (project?.aiHeroPrepared) return { ...base, status: "done", detail: `Le skill AI Hero sono presenti in ${project.name}.` };
   if (!project && app.onboarding.aiHeroPreparedAt) return { ...base, status: "done", detail: "Metodo preparato in un tuo progetto." };
-  if (!project) return { ...base, status: "blocked", detail: "Apri prima un tuo progetto: il metodo si copia nel progetto scelto." };
+  const choice = app.onboarding.methodChoice;
+  if (!project && choice) {
+    // The answer is the step while no project is open; what happens when one opens follows the current setting.
+    const prepare = shouldAutoPrepareMethod(app.settings, app.onboarding);
+    return {
+      ...base,
+      status: "done",
+      detail: prepare
+        ? "Trama copia le skill nel primo tuo progetto che apri, senza toccare i file che esistono già."
+        : "Hai scelto di non preparare il metodo. Puoi prepararlo da Impostazioni, Metodo di lavoro.",
+    };
+  }
+  if (!project) return { ...base, status: "pending", detail: "Scegli se Trama deve copiare le skill di AI Hero nei tuoi progetti quando li apri. I file esistenti restano invariati." };
   return { ...base, status: "pending", detail: `Copia le skill in ${project.name}. I file esistenti restano invariati.` };
 }
 
@@ -191,8 +217,56 @@ export function resumeStep(steps: StepState[]): string | null {
   return steps.find((s) => s.status !== "done" && s.status !== "skipped")?.id ?? null;
 }
 
-export function shouldOpenGuideOnLaunch(app: AppState): boolean {
-  return !app.onboarding.firstRunShownAt && !app.onboarding.dismissedAt && app.recentProjects.length === 0 && !app.project;
+/**
+ * Whether opening a project copies the AI Hero method by itself: the setting says so, and the person did not
+ * postpone the step. "Rimanda" leaves the method unprepared until the person chooses (B02).
+ */
+export function shouldAutoPrepareMethod(settings: AppState["settings"], onboarding: OnboardingState): boolean {
+  return settings.autoPrepareMethod !== false && !onboarding.skippedSteps.includes("aiHero");
+}
+
+/** The welcome (B02) shows by itself once, on a clean first launch; afterwards the guide reopens it. */
+export function shouldShowWelcomeOnLaunch(app: AppState): boolean {
+  return (
+    !app.onboarding.firstRunShownAt &&
+    !app.onboarding.welcomeClosedAt &&
+    !app.onboarding.dismissedAt &&
+    app.recentProjects.length === 0 &&
+    !app.project
+  );
+}
+
+// MARK: Welcome (B02)
+
+/** The configuration the welcome walks through, in order: the same steps as the guide, not a second guide. */
+export const SETUP_STEP_IDS: GuideStepId[] = ["provider", "github", "aiHero"];
+
+/** The welcome's configuration steps with the guide's real state. */
+export function setupSteps(app: AppState): StepState[] {
+  const steps = guideSteps(app);
+  return SETUP_STEP_IDS.map((id) => steps.find((s) => s.id === id)!);
+}
+
+/**
+ * Where the welcome's configuration resumes: the first step neither done nor skipped, then the first one
+ * skipped (resuming is taking it back), else the first step.
+ */
+export function resumeSetupStep(app: AppState): GuideStepId {
+  const steps = setupSteps(app);
+  const id = resumeStep(steps) ?? steps.find((s) => s.status === "skipped")?.id ?? SETUP_STEP_IDS[0]!;
+  return id as GuideStepId;
+}
+
+/** The step after `id` in the welcome, or null at the end, where the project picker follows. */
+export function nextSetupStep(id: GuideStepId): GuideStepId | null {
+  const index = SETUP_STEP_IDS.indexOf(id);
+  return index >= 0 ? (SETUP_STEP_IDS[index + 1] ?? null) : null;
+}
+
+/** What fills the window once the state is read: the welcome, the project picker, or the open project. */
+export function launchScreen(app: AppState): "welcome" | "picker" | "project" {
+  if (app.project) return "project";
+  return shouldShowWelcomeOnLaunch(app) ? "welcome" : "picker";
 }
 
 // MARK: Exercises
@@ -368,3 +442,44 @@ export function exerciseSteps(id: ExerciseId, document: ProjectDocument, context
 }
 
 export const isComplete = (steps: StepState[]): boolean => steps.every((s) => s.optional || s.status === "done");
+
+// MARK: Project picker (B02)
+
+/**
+ * Reads what the person typed to clone a project: `owner/name`, or a github.com URL (https, ssh or git@).
+ * Returns `owner/name`, or null when it is not a GitHub repository.
+ */
+export function parseRepositoryInput(input: string): string | null {
+  const trimmed = input.trim().replace(/\/+$/, "").replace(/\.git$/, "");
+  const match =
+    trimmed.match(/^(?:https?:\/\/)?(?:www\.)?github\.com\/([^/\s]+)\/([^/\s#?]+)(?:[/#?].*)?$/i) ??
+    trimmed.match(/^(?:ssh:\/\/)?git@github\.com[:/]([^/\s]+)\/([^/\s]+)$/i) ??
+    trimmed.match(/^([^/\s:]+)\/([^/\s:]+)$/);
+  if (!match) return null;
+  const owner = match[1]!;
+  const name = match[2]!.replace(/\.git$/, "");
+  if (!/^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/.test(owner)) return null;
+  if (!/^[A-Za-z0-9_.-]{1,100}$/.test(name) || name === "." || name === "..") return null;
+  return `${owner}/${name}`;
+}
+
+const count = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+
+/**
+ * What a recent project's row says about it in the picker, from the overview's records only: the work and the
+ * colleagues. Nothing is inferred when a record is missing.
+ */
+export function recentProjectStatus(entry: ProjectOverview | null): { work: string[]; colleagues: string | null } {
+  if (!entry) return { work: [], colleagues: null };
+  if (entry.source === "unreadable") return { work: ["Stato non leggibile"], colleagues: null };
+  if (entry.source === "notSaved") return { work: ["Ancora da studiare"], colleagues: null };
+  const work: string[] = [];
+  if (entry.runningWork) work.push(count(entry.runningWork, "agente al lavoro", "agenti al lavoro"));
+  if (entry.pendingDecisions) work.push(count(entry.pendingDecisions, "decisione in attesa", "decisioni in attesa"));
+  if (entry.blockedWork) work.push(count(entry.blockedWork, "lavoro fermo", "lavori fermi"));
+  if (entry.toApprove) work.push(count(entry.toApprove, "risultato da approvare", "risultati da approvare"));
+  if (!work.length) work.push("Niente in attesa");
+  const colleagues =
+    entry.colleagues === null ? null : entry.colleagues === 0 ? "Nessun collega attivo" : count(entry.colleagues, "collega attivo", "colleghi attivi");
+  return { work, colleagues };
+}
