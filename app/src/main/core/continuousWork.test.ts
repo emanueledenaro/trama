@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { CoordinatorRequest, MandateAction, ProjectDocument, RequestStep, WorkPlan } from "@shared/domain";
 import { placeGrillingQuestion } from "@shared/grilling";
 import { AUTOMATIC_MOVES_IN_A_ROW, automaticMove, automaticMoveSection, closingConfirmation, confirmationFeedback, type ContinuationGuards, stalledMove } from "./continuousWork";
-import { declareCandidate, recordEvidence } from "./candidates";
+import { declareCandidate, recordEvidence, recordTechnicalReview } from "./candidates";
 import { emptyDocument, recordReply } from "./document";
 import { answerDecisionRequest, createDecisionRequest, createMandateRequest, grantMandate } from "./pact";
 import { assign, confirmTeam, endTurn, proposeTeam } from "./team";
@@ -318,6 +318,29 @@ describe("stalledMove: an automatic move the turn did not make is shown with its
 
     candidate.evidence = {};
     move.nextStep = { move: "verifyCandidate", reason: "Le verifiche aspettano.", declaredAt: "" };
+    expect(stalledMove(document, "r5")).toBeNull();
+  });
+
+  it("is null when the turn verified one ended assignment and left another one without a candidate", () => {
+    const { document, assignment } = ended();
+    const other = assign(
+      document,
+      { specialist: "Ada", kind: "agreedTicket", objective: "Pagamenti", issueNumber: null, exercise: null, moduleIds: ["Sources/Payments"], dependencies: [], model: "gpt-5.5", tools: ["edits"], requiredChecks: ["git_status"], instructions: "Scrivi" },
+      document.mandate!.version,
+      "r4",
+      new Date(Date.UTC(2026, 8, 25, 10, 3)),
+    );
+    endTurn(document, other.id, null, { kind: "completed", text: "Fatto" });
+    expect(stalledMove(document, "r5")?.reason).toContain(`gli incarichi ${assignment.id}, ${other.id} sono conclusi`);
+    const at = new Date(Date.UTC(2026, 8, 25, 10, 6));
+    const done = declareCandidate(
+      document,
+      { assignmentId: assignment.id, decisionIds: [document.decisions[0]!.id], unresolvedChoices: [], externalEffects: [] },
+      { snapshotId: "snap", baseSHA: "base", diff: "+x", changedFiles: ["NOTE.md"], excludedSensitiveFiles: [] },
+      at,
+    );
+    recordEvidence(document, done.id, { check: "git_status", passed: true, command: "git status", output: "", snapshotId: "snap" }, at);
+    recordTechnicalReview(document, done.id, { reviewerThreadId: "reviewer", authorThreadId: "author", verdict: "approved", summary: "Letto" }, at);
     expect(stalledMove(document, "r5")).toBeNull();
   });
 

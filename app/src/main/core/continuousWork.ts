@@ -116,20 +116,23 @@ function stallReason(document: ProjectDocument, requestId: string, since: string
     case "verifyCandidate": {
       const targets = state.verification;
       if (!targets) return null;
+      // Any candidate of this work declared, checked or reviewed in the turn means the Coordinator made the move, at least
+      // in part, including one that is done and so no longer among the targets.
+      const work = workRequests(document, requestId);
+      const moved = document.candidates.some((candidate) => {
+        const assignment = document.team.specialists.flatMap((s) => s.assignments).find((a) => a.id === candidate.assignmentId);
+        if (!assignment?.requestId || !work?.has(assignment.requestId)) return false;
+        const times = [candidate.declaredAt, candidate.technicalReview?.at, ...Object.values(candidate.evidence).map((e) => e.recordedAt)];
+        return times.some((t) => t !== undefined && t >= since);
+      });
+      if (moved) return null;
       if (targets.undeclared.length) {
         const [first, ...others] = targets.undeclared;
         return others.length
           ? `gli incarichi ${targets.undeclared.join(", ")} sono conclusi ma i loro candidati non sono stati dichiarati.`
           : `l'incarico ${first} è concluso ma il suo candidato non è stato dichiarato.`;
       }
-      // A candidate that got evidence or a review in this turn moved on: the Coordinator made the move, at least in part.
-      const moved = targets.unverified.some((id) => {
-        const candidate = document.candidates.find((c) => c.id === id);
-        if (!candidate) return false;
-        const times = [candidate.declaredAt, candidate.technicalReview?.at, ...Object.values(candidate.evidence).map((e) => e.recordedAt)];
-        return times.some((t) => t !== undefined && t >= since);
-      });
-      return moved ? null : `le verifiche di ${targets.unverified.join(", ")} non sono partite.`;
+      return `le verifiche di ${targets.unverified.join(", ")} non sono partite.`;
     }
   }
 }
