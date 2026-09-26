@@ -24,7 +24,7 @@ In `app/`, su Linux:
 - `npm ci`: riuscito.
 - `npx tsc --noEmit -p .`: nessun errore.
 - `npx vitest run`: 66 file, 584 test superati, 3 saltati. Uno dei saltati è il test UX01 del salvataggio fallito, che si salta quando il processo gira come root (commit `dc017f6`, issue #169).
-- `npm run build` e poi `xvfb-run -a node scripts/ui-check.mjs`: **fallito**, due volte su due, allo stesso punto. A `ui-check.mjs:534` il clic su "Ferma" nel passo automatico "Prepara il piano" va in timeout. Il pulsante compare (la riga 531 passa), poi il clic non riesce. Sembra che il passo finisca prima del clic, ma non l'ho dimostrato. Questo PR non tocca il codice, quindi il difetto è già su `main`. Va aperto un ticket a parte.
+- `npm run build` e poi `xvfb-run -a node scripts/ui-check.mjs`: **fallito**, due volte su due, allo stesso punto. A `ui-check.mjs:534` il clic su "Ferma" nel passo automatico "Prepara il piano" va in timeout. Il pulsante compare (la riga 531 passa), poi il clic non riesce. Sembra che il passo finisca prima del clic, ma non l'ho dimostrato. Sulla CI della PR (Ubuntu, `xvfb-run -a npm run ui-check`) lo stesso codice passa, quindi il fallimento dipende dai tempi di questo ambiente. Resta un passo sensibile ai tempi, da seguire in un ticket a parte.
 
 ## Riepilogo
 
@@ -108,7 +108,7 @@ La prima prova reale è unita con la PR #112 (`docs/verifiche/v09-trama-su-trama
 - **Percorso di base per ogni provider collegato: non soddisfatto.** Pi ha fatto messaggio, lettura del mandato, interruzione, riavvio e ripresa (registro, righe 62-69). Claude ha fatto studio, team, mandato e incarico, senza interruzione, ripresa e candidato (righe 49-60). Codex non è stato eseguito (righe 40-47). Cursor, Antigravity, Grok, Devin e OpenCode non sono stati provati; Droid non è collegato.
 - **Documento in `docs/verifiche`: parziale.** Esiste, ma non c'è il controllo fallito e poi corretto dentro Trama e non c'è un candidato dichiarato. Le prove reali di #34 restano da fare: `docs/verifiche/c02-streaming-fonti-2026-09-24.md` usa solo il Codex di prova.
 - **Piano operativo aggiornato: non soddisfatto.** `docs/piano-operativo.md` è fermo al 20 settembre (`62d9ed7`), cita ancora ADR 0008 e Swift e indica P01 "in corso", mentre #80 è chiuso.
-- **Percorso da clone pulito: parziale.** Su macOS `npm ci`, typecheck e build riescono (registro, righe 26-38). Il test UX01 è instabile (#169). Il ui-check su Linux fallisce oggi a `ui-check.mjs:534` (vedi sopra).
+- **Percorso da clone pulito: parziale.** Su macOS `npm ci`, typecheck e build riescono (registro, righe 26-38). Il test UX01 è instabile (#169). Il ui-check è passato sulla CI ma è fallito nella sandbox di questa verifica a `ui-check.mjs:534` (vedi sopra).
 - **Nessuna regressione su scanner, Patto, worktree, GitHub, monitor e modelli: solo nei test automatici** (`repositoryScanner.test.ts`, `pact.test.ts`, `workspace.test.ts`, `github.test.ts`, `monitor.test.ts` in `app/src/main/core/`). Le verifiche Node aggiunte dopo la prova (`app/src/main/core/checks.ts:64-80`, test in `checks.test.ts`) non sono state riprovate nel percorso reale.
 - **Revisione Standards e Spec: non registrata.**
 
