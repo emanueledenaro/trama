@@ -3,8 +3,8 @@ import { existsSync, type FSWatcher, watch } from "node:fs";
 import { mkdir, readFile as readFileText, realpath, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { isUsableAccount, type ProviderAccount, type ProviderId, type ProviderModel, READ_OUTSIDE_SCOPE_TITLE, type TurnEvent } from "@shared/codex";
-import { PROVIDERS, catalogModel, catalogOffers, supportsReadOnly, type CatalogEntry } from "@shared/providers";
+import { isUsableAccount, type ProviderAccount, type ProviderId, type ProviderModel, READ_OUTSIDE_SCOPE_TITLE, TOOL_REFUSED_TITLE, type TurnEvent } from "@shared/codex";
+import { PROVIDERS, canCoordinate, catalogModel, catalogOffers, coordinatorUnavailableReason, supportsReadOnly, type CatalogEntry } from "@shared/providers";
 import { shortId } from "@shared/ids";
 import { mentionContextBlock } from "@shared/mentions";
 import { codexSkillText, type LoadedSkill, skillInvocations } from "@shared/skills";
@@ -303,6 +303,9 @@ interface LateRules {
 /** How Trama records a read the session tried outside its folders (issue #206). */
 const readOutsideScopeDetail = (event: Extract<TurnEvent, { type: "readOutsideScope" }>) =>
   `${event.path} non appartiene al progetto: Trama non lo lascia leggere.\nRichiesta: ${event.tool}`;
+
+/** How Trama records one of the provider's own tools it blocked, with what the agent was told to use (issue #228). */
+const toolRefusedDetail = (event: Extract<TurnEvent, { type: "toolRefused" }>) => `Richiesta: ${event.tool}\n${event.reason}`;
 
 const coordinatorSkillParts = (skills: NativeSkill[]) => skills.map((skill, index) => ({ skill, binding: COORDINATOR_SKILLS[index]!.binding }));
 
@@ -1752,7 +1755,7 @@ export class TramaController {
     await toolServer.start();
     const client = createRuntime(provider, {
       executable: provider === "codex" ? this.host.codexExecutable : null,
-      toolServer: { name: TOOL_SERVER_NAME, url: toolServer.url, token: toolServer.token },
+      toolServer: { name: TOOL_SERVER_NAME, url: toolServer.url, token: toolServer.token, tools: toolServer.toolNames },
       requestTimeoutMs: 15_000,
     });
     this.runtime = { client, provider, toolServer, projectId: project.id };
@@ -1784,9 +1787,7 @@ export class TramaController {
     if (!this.state.providers[provider].account) await this.refreshProvider(provider);
     // The person may have opened another project meanwhile: its own attempt owns the runtime now.
     if (this.state.project !== project) return;
-    const reason = supportsReadOnly(provider)
-      ? providerUnavailableReason(provider, this.state.providers[provider].account)
-      : `${providerName(provider)} lavora solo con un worktree e non può fare da Coordinatore. Scegli un altro provider dal composer.`;
+    const reason = coordinatorUnavailableReason(provider) ?? providerUnavailableReason(provider, this.state.providers[provider].account);
     if (reason) {
       project.phase = { kind: "unavailable", message: reason };
       this.publish();
@@ -1943,6 +1944,10 @@ export class TramaController {
           this.publish();
         } else if (event.type === "tokenUsage") {
           project.contextUsage = { usedTokens: event.usedTokens, contextWindow: event.contextWindow };
+        } else if (event.type === "toolRefused") {
+          // A refusal during the study is visible too (issue #228).
+          appendEvent(document, "trama", { type: "activity", title: TOOL_REFUSED_TITLE, detail: toolRefusedDetail(event), tone: "error" }, null);
+          this.changed();
         }
       },
     });
@@ -2472,6 +2477,9 @@ export class TramaController {
       case "readOutsideScope":
         activity(READ_OUTSIDE_SCOPE_TITLE, readOutsideScopeDetail(event), "error");
         return;
+      case "toolRefused":
+        activity(TOOL_REFUSED_TITLE, toolRefusedDetail(event), "error");
+        return;
       case "reasoning":
         activity("Ragionamento", event.text, "info");
         return;
@@ -2652,7 +2660,7 @@ export class TramaController {
     if (account?.kind !== "blocked" || this.state.project !== project) return;
     // On a real block the Coordinator proposes the providers that can work now (P10).
     const others = (Object.keys(this.state.providers) as ProviderId[]).filter(
-      (id) => id !== provider && hasAdapter(id) && supportsReadOnly(id) && isUsableAccount(this.state.providers[id]?.account),
+      (id) => id !== provider && hasAdapter(id) && canCoordinate(id) && isUsableAccount(this.state.providers[id]?.account),
     );
     const proposal = others.length
       ? ` Puoi passare a ${others.map(providerName).join(", ")} con Cambia provider: ${others.length === 1 ? "è già collegato" : "sono già collegati"}.`
@@ -2974,7 +2982,7 @@ export class TramaController {
     const client = createRuntime(provider, {
       executable: provider === "codex" ? this.host.codexExecutable : null,
       requestTimeoutMs: 15_000,
-      ...(toolServer ? { toolServer: { name: TOOL_SERVER_NAME, url: toolServer.url, token: toolServer.token } } : {}),
+      ...(toolServer ? { toolServer: { name: TOOL_SERVER_NAME, url: toolServer.url, token: toolServer.token, tools: toolServer.toolNames } } : {}),
     });
     this.specialistRuntimes.set(assignmentId, { client, projectId: project.id });
     const resumed = assignment.turns.length > 0;
@@ -3105,6 +3113,9 @@ export class TramaController {
               return;
             case "readOutsideScope":
               this.specialistActivity(project, assignmentId, key, READ_OUTSIDE_SCOPE_TITLE, readOutsideScopeDetail(event), "error");
+              return;
+            case "toolRefused":
+              this.specialistActivity(project, assignmentId, key, TOOL_REFUSED_TITLE, toolRefusedDetail(event), "error");
               return;
             default:
               return;

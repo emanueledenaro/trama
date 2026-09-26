@@ -416,6 +416,9 @@ describe("Pi host tools", () => {
       expect(events).toContainEqual({ type: "toolCallStarted", itemId: "m1", server: "trama", tool: "propose_team" });
       expect(events).toContainEqual(expect.objectContaining({ type: "toolCallCompleted", server: "trama", succeeded: true }));
 
+      // Issue #228: Pi has no GitHub, web or shell tool of its own here, and extensions stay off.
+      expect(options.tools.filter((name) => /bash|web|fetch|github/i.test(name))).toEqual([]);
+
       const denied = new PiRuntime({ toolServer: { name: "trama", url, token: "wrong" } });
       await expect(denied.openThread({ model: "anthropic/claude-x", cwd: root, developerInstructions: "" })).rejects.toThrow(/401/);
     } finally {

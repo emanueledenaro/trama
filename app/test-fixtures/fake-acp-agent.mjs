@@ -1,5 +1,6 @@
 // Minimal Agent Client Protocol agent for the ACP runtime tests. It speaks ndjson JSON-RPC on
 // stdio and appends every message it receives to FAKE_ACP_LOG, so tests can assert on requests.
+import { spawn } from "node:child_process";
 import { appendFileSync } from "node:fs";
 import { createInterface } from "node:readline";
 
@@ -14,6 +15,35 @@ let sessions = 0;
 const pendingClient = new Map();
 const cancelWaiters = new Map();
 let modelValue = "m1";
+/** MCP servers of each session, as session/new passed them. */
+const mcpServersBySession = new Map();
+
+/** Calls one tool on an MCP server of the session: stdio servers are spawned, HTTP servers get a POST. */
+async function callMcpTool(server, name, args) {
+  const call = { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name, arguments: args } };
+  if (server.type === "http") {
+    const headers = Object.fromEntries(server.headers.map((h) => [h.name, h.value]));
+    const response = await fetch(server.url, { method: "POST", headers: { "Content-Type": "application/json", ...headers }, body: JSON.stringify(call) });
+    return (await response.json()).result;
+  }
+  const env = { ...process.env, ...Object.fromEntries(server.env.map((e) => [e.name, e.value])) };
+  const child = spawn(server.command, server.args, { env, stdio: ["pipe", "pipe", "inherit"] });
+  const replies = new Map();
+  createInterface({ input: child.stdout }).on("line", (line) => {
+    const message = JSON.parse(line);
+    replies.get(message.id)?.(message);
+  });
+  const request = (message) =>
+    new Promise((resolve) => {
+      replies.set(message.id, resolve);
+      child.stdin.write(`${JSON.stringify(message)}\n`);
+    });
+  await request({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "fake-acp", version: "1" } } });
+  child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" })}\n`);
+  const reply = await request(call);
+  child.stdin.end();
+  return reply.result;
+}
 const configOptions = () => [
   {
     id: "model",
@@ -49,6 +79,7 @@ async function prompt(id, params) {
   const sessionId = params.sessionId;
   const text = params.prompt.filter((b) => b.type === "text").map((b) => b.text).join("\n");
   if (text.includes("silent")) return;
+  if (text.includes("exit now")) process.exit(0);
   if (text.includes("limit")) {
     send({ id, error: { code: -32000, message: "You've hit your usage limit. Try again in 2 hours." } });
     return;
@@ -57,6 +88,34 @@ async function prompt(id, params) {
     update(sessionId, { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "working" } });
     await new Promise((resolve) => cancelWaiters.set(sessionId, resolve));
     send({ id, result: { stopReason: "cancelled" } });
+    return;
+  }
+  if (text.includes("leggi le issue")) {
+    // Like Devin in the local run (issue #228): first its own GitHub tool; once Trama names read_issues, that one.
+    if (text.includes("read_issues di Trama")) {
+      const server = mcpServersBySession.get(sessionId)?.find((s) => s.name === "trama");
+      const result = server ? await callMcpTool(server, "read_issues", { state: "open" }) : null;
+      const reply = result ? `trama: ${result.content[0].text}` : "nessuno strumento di Trama";
+      update(sessionId, { sessionUpdate: "agent_message_chunk", content: { type: "text", text: reply } });
+      send({ id, result: { stopReason: "end_turn" } });
+      return;
+    }
+    // "come lettura": the agent labels its connector a read with no path, as some agents do.
+    const kind = text.includes("come lettura") ? "read" : "other";
+    const toolCall = { toolCallId: "gh-1", title: "Calling list_issues from github", kind, status: "pending", rawInput: { server: "github", tool: "list_issues" } };
+    update(sessionId, { sessionUpdate: "tool_call", ...toolCall });
+    const answer = await askClient("session/request_permission", {
+      sessionId,
+      toolCall,
+      options: [
+        { optionId: "yes", name: "Allow", kind: "allow_once" },
+        { optionId: "no", name: "Reject", kind: "reject_once" },
+      ],
+    });
+    const allowed = answer.result?.outcome?.outcome === "selected" && answer.result.outcome.optionId === "yes";
+    update(sessionId, { sessionUpdate: "tool_call_update", toolCallId: "gh-1", status: allowed ? "completed" : "failed" });
+    update(sessionId, { sessionUpdate: "agent_message_chunk", content: { type: "text", text: allowed ? "allowed" : "rejected" } });
+    send({ id, result: { stopReason: "end_turn" } });
     return;
   }
   const fsRead = /fsread (\S+)/.exec(text);
@@ -157,6 +216,7 @@ createInterface({ input: process.stdin }).on("line", (line) => {
       return;
     case "session/new":
       sessions += 1;
+      mcpServersBySession.set(`session-${sessions}`, params.mcpServers ?? []);
       send({ id, result: { sessionId: `session-${sessions}`, configOptions: configOptions() } });
       return;
     case "session/load":
