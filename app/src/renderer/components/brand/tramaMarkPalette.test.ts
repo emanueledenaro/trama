@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import { BRAND_COLORS, PROVIDER_COLORS, SMALL_MARK_MAX, tramaMarkColors, usesSmallGlyph } from "./tramaMark";
+import { BRAND_COLORS, PROVIDER_COLORS, SMALL_MARK_MAX, tramaMarkColors, usesSmallGlyph } from "./tramaMarkPalette";
 import { GLYPH_PATH, SMALL_GLYPH_PATH } from "./tramaMarkGeometry";
 
 const repo = resolve(import.meta.dirname, "../../../../..");
