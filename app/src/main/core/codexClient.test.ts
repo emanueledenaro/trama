@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -13,7 +14,16 @@ afterEach(() => {
   delete process.env.FAKE_CODEX_ACCOUNT;
   delete process.env.FAKE_CODEX_LIMITS;
   delete process.env.FAKE_CODEX_LOG;
+  delete process.env.FAKE_CODEX_INITIALIZE_GATE;
 });
+
+async function until(check: () => boolean, timeout = 10_000): Promise<void> {
+  const start = Date.now();
+  while (!check()) {
+    if (Date.now() - start > timeout) throw new Error("timeout");
+    await new Promise((r) => setTimeout(r, 20));
+  }
+}
 
 describe("CodexClient", () => {
   it("reads a ChatGPT account and lists models", async () => {
@@ -22,6 +32,18 @@ describe("CodexClient", () => {
     const models = await client.listModels();
     expect(models[0]).toMatchObject({ model: "gpt-5.5", isDefault: true, defaultReasoningEffort: "medium", supportsFastMode: false });
     expect(models[1]).toMatchObject({ model: "gpt-5.5-fast", supportsFastMode: true });
+  });
+
+  it("ends a request still waiting for its answer when the client stops, not at its timeout", async () => {
+    const gate = join(await mkdtemp(join(tmpdir(), "trama-gate-")), "initialize");
+    process.env.FAKE_CODEX_INITIALIZE_GATE = gate;
+    client = new CodexClient({ executable: fake, requestTimeoutMs: 15_000 });
+    const reading = client.readAccount();
+    await until(() => existsSync(`${gate}.held`));
+    const stoppedAt = Date.now();
+    client.stop();
+    expect(await reading).toEqual({ kind: "unavailable", message: "Codex è stato chiuso." });
+    expect(Date.now() - stoppedAt).toBeLessThan(1_000);
   });
 
   it("sends the fast service tier only when the turn asks for one", async () => {

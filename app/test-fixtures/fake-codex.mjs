@@ -79,8 +79,21 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
     appendFileSync(process.env.FAKE_CODEX_LOG, `${JSON.stringify({ method, params })}\n`);
   }
   switch (method) {
-    case "initialize":
-      return send({ id, result: { userAgent: "fake", codexHome: "/tmp", platformFamily: "unix", platformOs: "linux" } });
+    case "initialize": {
+      const result = { userAgent: "fake", codexHome: "/tmp", platformFamily: "unix", platformOs: "linux" };
+      // With FAKE_CODEX_INITIALIZE_GATE the process answers initialize only once the test creates that file, so a test
+      // can act while Trama is still starting a Coordinator, as on a slow machine. "<gate>.held" says it is waiting.
+      const gate = process.env.FAKE_CODEX_INITIALIZE_GATE;
+      if (!gate) return send({ id, result });
+      const { existsSync, writeFileSync } = await import("node:fs");
+      writeFileSync(`${gate}.held`, "");
+      const release = setInterval(() => {
+        if (!existsSync(gate)) return;
+        clearInterval(release);
+        send({ id, result });
+      }, 10);
+      return;
+    }
     case "initialized":
       return;
     case "account/read":

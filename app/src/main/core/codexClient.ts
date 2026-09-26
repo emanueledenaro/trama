@@ -466,7 +466,14 @@ export class CodexClient {
   stop(): void {
     if (this.pendingTurn) this.pendingTurn.stopped = true;
     this.pendingTurn = null;
-    this.activeTurn?.reject(new CodexError("processExited", "Codex è stato chiuso."));
+    const closed = new CodexError("processExited", "Codex è stato chiuso.");
+    this.activeTurn?.reject(closed);
+    // The process's exit no longer reaches `fail` once `child` is cleared: its requests end here, not at their timeout.
+    for (const [, pending] of this.pending) {
+      clearTimeout(pending.timer);
+      pending.reject(closed);
+    }
+    this.pending.clear();
     this.child?.kill();
     this.child = null;
     this.initializing = null;

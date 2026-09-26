@@ -1741,16 +1741,21 @@ export class TramaController {
     return this.runtime;
   }
 
-  private starting: Promise<void> | null = null;
+  private starting: { project: ActiveProjectState | null; attempt: Promise<void> } | null = null;
 
-  /** Opens or resumes the Coordinator thread; concurrent callers share the same attempt. */
+  /**
+   * Opens or resumes the Coordinator thread; concurrent callers for the same project share the same attempt. An
+   * attempt still running for a project the person has left gives up on its own, so the project now selected gets
+   * an attempt of its own instead of that one, which would never open it.
+   */
   startCoordinator(): Promise<void> {
-    if (!this.starting) {
-      this.starting = this.openCoordinator().finally(() => {
-        this.starting = null;
-      });
-    }
-    return this.starting;
+    const project = this.state.project;
+    if (this.starting?.project === project) return this.starting.attempt;
+    const attempt: Promise<void> = this.openCoordinator().finally(() => {
+      if (this.starting?.attempt === attempt) this.starting = null;
+    });
+    this.starting = { project, attempt };
+    return attempt;
   }
 
   private async openCoordinator(): Promise<void> {
@@ -1759,6 +1764,8 @@ export class TramaController {
     const document = project.document;
     const provider = this.coordinatorProvider(document);
     if (!this.state.providers[provider].account) await this.refreshProvider(provider);
+    // The person may have opened another project meanwhile: its own attempt owns the runtime now.
+    if (this.state.project !== project) return;
     const reason = supportsReadOnly(provider)
       ? providerUnavailableReason(provider, this.state.providers[provider].account)
       : `${providerName(provider)} lavora solo con un worktree e non può fare da Coordinatore. Scegli un altro provider dal composer.`;
@@ -1981,7 +1988,7 @@ export class TramaController {
     }
     if (provider && provider !== this.coordinatorProvider(project.document)) {
       // Let an opening or a study in progress end first, so the switch is not undone by its late result.
-      if (this.starting) await this.starting.catch(() => undefined);
+      if (this.starting) await this.starting.attempt.catch(() => undefined);
       if (provider !== this.coordinatorProvider(project.document)) this.switchCoordinatorProvider(project, provider, model, effort);
     }
     const attachments = retry ? (retry.of.attachments ?? []) : await this.storage.saveAttachments(project.id, images);
@@ -2586,7 +2593,7 @@ export class TramaController {
     }
     const session = start ? boundarySession(route.boundary) : "same";
     if (session !== "same") {
-      if (this.starting) await this.starting.catch(() => undefined);
+      if (this.starting) await this.starting.attempt.catch(() => undefined);
       const provider = this.coordinatorProvider(document);
       forgetCoordinatorThread(document);
       document.coordinator.threadProvider = provider;
