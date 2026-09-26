@@ -1,45 +1,73 @@
-import type { Candidate, PactDecision, SpecialistAssignment } from "@shared/domain";
+import type { Candidate, CommitConventions, PactDecision, SpecialistAssignment } from "@shared/domain";
+import { commitHeader, parseCommitMessage, requireValidCommitMessage } from "./conventions";
 import { ghEnvironment } from "./github";
 import { git, runProcess } from "./process";
+import { candidateTrailer } from "./quality";
 import { reviewWorktree } from "./workspace";
 
-export function pullRequestBody(candidate: Candidate, assignment: SpecialistAssignment, decisions: PactDecision[]): string {
+/**
+ * The body of Trama's pull request (Q01): what changes, the checks Trama ran with their outcome, the seams the developer
+ * says it tested (a statement, not evidence), the limits and the linked issue. The title is the commit's header.
+ */
+export function pullRequestBody(candidate: Candidate, assignment: SpecialistAssignment, decisions: PactDecision[], issue: number | null = null): string {
+  const commitBody = candidate.commit ? parseCommitMessage(candidate.commit.message, candidate.commit.conventions).commit?.body : null;
   const lines = [
-    `Candidato ${candidate.id} dell'incarico ${assignment.id}, preparato in Trama.`,
+    "## Cosa cambia",
     "",
-    `Obiettivo: ${assignment.objective}`,
+    commitBody ?? assignment.objective,
+    "",
+    ...candidate.changedFiles.map((path) => `- \`${path}\``),
+    "",
+    "## Verifiche eseguite da Trama",
+    "",
+    ...candidate.requiredChecks.map((check) => {
+      const evidence = candidate.evidence?.[check];
+      return `- \`${check}\`: ${evidence ? (evidence.result === "pass" ? "superata" : "non superata") : "non eseguita"}`;
+    }),
+  ];
+  if (candidate.technicalReview) {
+    lines.push(`- Revisione tecnica: ${candidate.technicalReview.verdict === "approved" ? "approvata" : "modifiche richieste"}. ${candidate.technicalReview.summary}`.trimEnd());
+  }
+  if (candidate.testedSeams !== undefined) {
+    lines.push("", "## Seam testati, secondo lo sviluppatore", "");
+    if (candidate.testedSeams === null) lines.push("Lo sviluppatore non ha riportato i seam testati.");
+    else if (!candidate.testedSeams.length) lines.push("La spec non ha seam confermati.");
+    else lines.push(...candidate.testedSeams.map((s) => `- ${s.seam}: ${s.tests ? `test ${s.tests}` : "nessun test riportato"}${s.agreed ? "" : ", fuori dai seam confermati"}`));
+    lines.push("", "È una dichiarazione dello sviluppatore, non un'evidenza: contano le verifiche eseguite da Trama.");
+  }
+  lines.push(
     "",
     "## Decisioni del Patto",
+    "",
     ...candidate.requiredDecisionIds.map((id) => {
       const decision = decisions.find((d) => d.id === id);
       return `- ${id} v${candidate.decisionVersions[id]}: ${decision?.value ?? "decisione non trovata"}`;
     }),
-    "",
-    "## Verifiche eseguite da Trama",
-    ...candidate.requiredChecks.map((check) => {
-      const evidence = candidate.evidence[check];
-      return `- ${check}: ${evidence ? (evidence.result === "pass" ? "superata" : "non superata") : "non eseguita"}`;
-    }),
-    "",
-    "## File",
-    ...candidate.changedFiles.map((path) => `- \`${path}\``),
+  );
+  const limits = [
+    ...candidate.unresolvedChoices.map((c) => `Scelta non risolta: ${c}`),
+    ...candidate.externalEffects.map((e) => `Effetto esterno: ${e}`),
+    ...(candidate.testedSeams ?? []).filter((s) => s.agreed && !s.tests).map((s) => `Seam senza test riportato: ${s.seam}`),
+    ...(candidate.commit?.breaking ? [`Modifica incompatibile: ${candidate.commit.breaking}`] : []),
   ];
-  if (candidate.technicalReview) {
-    lines.push("", `Revisione tecnica: ${candidate.technicalReview.verdict === "approved" ? "approvata" : "modifiche richieste"}. ${candidate.technicalReview.summary}`);
-  }
+  lines.push("", "## Limiti", "", ...(limits.length ? limits.map((l) => `- ${l}`) : ["Nessun limite noto a Trama. Le verifiche coprono solo i controlli elencati sopra."]));
+  lines.push("", "## Issue", "", issue ? `Refs #${issue}` : "Nessuna issue collegata.");
+  lines.push("", `Candidato ${candidate.id} dell'incarico ${assignment.id}, preparato in Trama.`);
   return lines.join("\n");
 }
 
 /**
- * Commits the captured candidate in its own worktree, pushes its trama/ branch and opens a pull request.
- * The candidate must still match the worktree byte for byte.
+ * Commits the captured candidate in its own worktree with a valid Conventional Commits message, pushes its branch and
+ * opens a pull request titled with the commit's header. The candidate must still match the worktree byte for byte.
  */
 export async function publishCandidate(input: {
   candidate: Candidate;
   assignment: SpecialistAssignment;
   repository: string;
   baseBranch: string;
-  title: string;
+  /** The Conventional Commits message; its header is the pull request's title. */
+  message: string;
+  conventions: CommitConventions;
   body: string;
 }): Promise<{ url: string; number: number; branch: string }> {
   const workspace = input.assignment.workspace;
@@ -52,12 +80,19 @@ export async function publishCandidate(input: {
   if (review.snapshotId !== input.candidate.snapshotId) {
     throw new Error("Il worktree è cambiato dopo la dichiarazione del candidato: serve un nuovo candidato con nuove verifiche.");
   }
-  const marker = `Candidato ${input.candidate.id} preparato con Trama.`;
-  const committed = (await git(["log", "--format=%H", "--fixed-strings", `--grep=${marker}`, `${workspace.baseSHA}..HEAD`], root)).trim();
+  // Trama refuses to write a message that breaks Conventional Commits or the project's rules (Q01).
+  requireValidCommitMessage(input.message, input.conventions);
+  const marker = candidateTrailer(input.candidate.id);
+  if (!input.message.split("\n").includes(marker)) throw new Error(`Il messaggio di commit non porta il marcatore del candidato (${marker}).`);
+  const title = commitHeader(input.message);
+  // Commits before Q01 carried the marker as a sentence.
+  const legacyMarker = `Candidato ${input.candidate.id} preparato con Trama.`;
+  const committed = (
+    await git(["log", "--format=%H", "--fixed-strings", `--grep=${marker}`, `--grep=${legacyMarker}`, `${workspace.baseSHA}..HEAD`], root)
+  ).trim();
   if (!committed) {
     await git(["add", "--", ...input.candidate.changedFiles], root, false);
-    const commitArgs = ["commit", "--no-verify", "-m", input.title, "-m", marker];
-    await git(commitArgs, root, false);
+    await git(["commit", "--no-verify", "--cleanup=whitespace", "-m", input.message], root, false);
   }
   const push = await runProcess("git", ["-c", "core.hooksPath=/dev/null", "push", "-u", "origin", workspace.branch], {
     cwd: root,
@@ -80,7 +115,7 @@ export async function publishCandidate(input: {
       "POST",
       `repos/${input.repository}/pulls`,
       "--raw-field",
-      `title=${input.title}`,
+      `title=${title}`,
       "--raw-field",
       `body=${input.body}`,
       "--raw-field",

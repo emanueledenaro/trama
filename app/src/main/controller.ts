@@ -12,6 +12,7 @@ import { isUnsupportedModelError } from "@shared/timeline";
 import type { ImageAttachmentInput } from "@shared/ipc";
 import type {
   ActiveProjectState,
+  Candidate,
   AgentColor,
   AppSettings,
   AppState,
@@ -63,7 +64,7 @@ import {
   rollbackPractice,
 } from "./core/practices";
 import { checkItems, closeBlockers, evidenceProblems, parseChecklist, progressComment, progressKey, progressMarker } from "./core/tickets";
-import { developerSkillsDelivery, sliceBriefing } from "./core/implementation";
+import { assignmentSlice, developerSkillsDelivery, sliceBriefing } from "./core/implementation";
 import { openingInput, resumeInput, specialistInstructions } from "./core/specialistBriefing";
 import { prepareDemoProject } from "./core/demoProject";
 import { appendEvent, emptyDocument, handoverTranscript, moveEvent, recordReply, referencedPaths } from "./core/document";
@@ -157,6 +158,8 @@ import { prepareWorktree, removeWorktree, reviewWorktree, validateWorktree } fro
 import { approveCandidate, candidateReport, findCandidate, latestCandidate, recordEvidence, recordTechnicalReview } from "./core/candidates";
 import { assessConflict } from "./core/conflicts";
 import { pullRequestBody, publishCandidate } from "./core/publication";
+import { branchPrefix, commitHeader, deriveCommitType, readProjectConventions, requireValidCommitMessage, validateCommitMessage } from "./core/conventions";
+import { candidateCommit, qualityGate, qualityMissing, relatedIssue } from "./core/quality";
 import {
   applyAutomaticTransitions,
   autoSummary,
@@ -294,17 +297,21 @@ function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promi
   });
 }
 
+/** The first commit of a project Trama creates, in Conventional Commits (Q01). */
+export const INITIAL_COMMIT_MESSAGE = "chore: start the project";
+
 /**
  * A new project is a Git repository with a first commit, so worktrees, candidates and conflict checks
  * work from the start. The person's Git identity signs the commit; without one, Trama signs it.
  */
 export async function initializeRepository(root: string): Promise<void> {
+  requireValidCommitMessage(INITIAL_COMMIT_MESSAGE);
   await git(["init", "-b", "main"], root, false);
   await git(["add", "README.md"], root, false);
   try {
-    await git(["commit", "-m", "Start the project"], root, false);
+    await git(["commit", "-m", INITIAL_COMMIT_MESSAGE], root, false);
   } catch {
-    await git(["-c", "user.name=Trama", "-c", "user.email=trama@localhost", "commit", "-m", "Start the project"], root, false);
+    await git(["-c", "user.name=Trama", "-c", "user.email=trama@localhost", "commit", "-m", INITIAL_COMMIT_MESSAGE], root, false);
   }
 }
 
@@ -496,7 +503,10 @@ export class TramaController {
       .filter((q) => q.projectId === project.id)
       .map((q) => ({ id: q.id, text: q.text, goalId: q.goalId, imageCount: q.images.length, queuedAt: q.queuedAt, removable: q.removable }));
     project.candidateReports = Object.fromEntries(
-      project.document.candidates.map((c) => [c.id, candidateReport(project.document, c, project.snapshot.headSHA)]),
+      project.document.candidates.map((c) => {
+        const report = candidateReport(project.document, c, project.snapshot.headSHA);
+        return [c.id, { ...report, quality: qualityGate(project.document, c, report, project.github.repository) }];
+      }),
     );
     project.nextSteps = nextStepViews(project.document);
     project.sliceViews = Object.fromEntries(
@@ -1456,6 +1466,7 @@ export class TramaController {
             await validateWorktree(assignment.workspace, this.worktreesRoot);
             return reviewWorktree(assignment.workspace);
           },
+          conventions: () => readProjectConventions(current.rootPath),
           verifyCandidate: (candidateId, check) => this.verifyCandidate(candidateId, check, current.runningRequestId),
           reviewCandidate: (candidateId) => this.reviewCandidate(candidateId, current.runningRequestId),
           headSHA: () => this.headSHA(current.rootPath),
@@ -2519,7 +2530,15 @@ export class TramaController {
         if (assignment.workspace) {
           await validateWorktree(assignment.workspace, this.worktreesRoot);
         } else {
-          const workspace = await prepareWorktree(project.rootPath, `${specialist.name} ${assignment.id}`, this.worktreesRoot);
+          // The branch follows Conventional Branch or the project's prefixes (Q01), with the issue number when there is one.
+          const conventions = await readProjectConventions(project.rootPath);
+          const type = assignment.commit?.type ?? deriveCommitType(assignment.kind, [], conventions);
+          const title = assignmentSlice(document, assignment)?.ticket.title ?? assignment.objective;
+          const workspace = await prepareWorktree(project.rootPath, title, this.worktreesRoot, {
+            prefix: branchPrefix(type, assignment.commit?.hotfix ?? false, conventions),
+            issue: relatedIssue(document, assignment),
+            conventions,
+          });
           recordWorkspace(document, assignmentId, workspace);
           this.specialistActivity(project, assignmentId, preKey, "Worktree pronto", workspace.branch, "info");
           // The specialist can run the project's tests only with its dependencies; lent from the checkout.
@@ -3067,18 +3086,34 @@ export class TramaController {
   }
 
   /** What publishing will send: shown to the person before the push (T11). */
-  previewPullRequest(candidateId: string): { repository: string | null; head: string | null; base: string; title: string; body: string } {
+  async previewPullRequest(
+    candidateId: string,
+  ): Promise<{ repository: string | null; head: string | null; base: string; title: string; message: string; body: string }> {
     const project = this.requireProject();
     const candidate = findCandidate(project.document, candidateId);
     if (!candidate) throw new DomainError("Candidato non trovato.");
     const assignment = findAssignment(project.document, candidate.assignmentId)!;
+    const message = await this.candidateMessage(project, candidate);
     return {
       repository: project.github.repository,
       head: assignment.workspace?.branch ?? null,
       base: project.snapshot.branch ?? "main",
-      title: assignment.objective,
-      body: pullRequestBody(candidate, assignment, project.document.decisions),
+      title: commitHeader(message),
+      message,
+      body: pullRequestBody(candidate, assignment, project.document.decisions, relatedIssue(project.document, assignment)),
     };
+  }
+
+  /**
+   * The commit message of a candidate, checked against the rules the project declares now (Q01). A candidate declared
+   * before Q01 gets its message here; a message the rules no longer accept is refused with what is wrong.
+   */
+  private async candidateMessage(project: ActiveProjectState, candidate: Candidate): Promise<string> {
+    const conventions = await readProjectConventions(project.rootPath);
+    if (!candidate.commit) candidate.commit = candidateCommit(project.document, candidate, conventions);
+    const problems = validateCommitMessage(candidate.commit.message, conventions);
+    if (problems.length) throw new DomainError(`Trama non scrive questo messaggio di commit: ${problems.join(" ")} Chiedi al Coordinatore di correggerlo.`);
+    return candidate.commit.message;
   }
 
   async publishCandidateByPerson(candidateId: string): Promise<void> {
@@ -3092,6 +3127,10 @@ export class TramaController {
     if (candidate.pullRequest) throw new DomainError(`Il candidato è già pubblicato: ${candidate.pullRequest.url}`);
     const repository = project.github.repository;
     if (!repository) throw new DomainError("Il progetto non ha un remoto GitHub.");
+    // The quality standard comes before anything leaves the machine (Q01).
+    const message = await this.candidateMessage(project, candidate);
+    const missing = qualityMissing(qualityGate(document, candidate, report, repository));
+    if (missing.length) throw new DomainError(`Il candidato non rispetta lo standard di pubblicazione: ${missing.map((m) => m.detail).join(" ")}`);
     const capabilities = await readGitHubCapabilities(repository);
     if (capabilities.status !== "ready") throw new DomainError(capabilities.message ?? "GitHub non è raggiungibile.");
     if (!capabilities.canPush) throw new DomainError(`Il tuo account GitHub non ha il permesso di push su ${repository}.`);
@@ -3102,8 +3141,9 @@ export class TramaController {
       assignment,
       repository,
       baseBranch,
-      title: assignment.objective,
-      body: pullRequestBody(candidate, assignment, document.decisions),
+      message,
+      conventions: candidate.commit!.conventions,
+      body: pullRequestBody(candidate, assignment, document.decisions, relatedIssue(document, assignment)),
     });
     candidate.pullRequest = { ...published, at: new Date().toISOString() };
     appendEvent(document, "trama", { type: "activity", title: `Pull request #${published.number} pubblicata`, detail: published.url, tone: "tool" });
