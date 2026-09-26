@@ -61,6 +61,14 @@ export async function readGitHubRepository(root: string): Promise<string | null>
   }
 }
 
+/** Issue references in a pull request: `#12` in its title or body (not `owner/repo#12`) and `issue-12` in its branch. */
+export function linkedIssueNumbers(title: string, body: string | null, headRef: string): number[] {
+  const numbers = new Set<number>();
+  for (const match of `${title}\n${body ?? ""}`.matchAll(/(?<![\w/&])#(\d+)\b/g)) numbers.add(Number(match[1]));
+  for (const match of headRef.matchAll(/(?:^|[/_-])(?:issues?|gh)[-_]?(\d+)(?=$|[/_-])/gi)) numbers.add(Number(match[1]));
+  return [...numbers].filter((n) => n > 0).sort((a, b) => a - b);
+}
+
 interface RawIssue {
   number: number;
   title: string;

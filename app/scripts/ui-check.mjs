@@ -1930,3 +1930,62 @@ for (const dark of [false, true]) {
 }
 await page.evaluate(() => window.trama.invoke("settings:update", { theme: "system" }));
 await app.close();
+
+// Issue #231: the fixed roles' automatic work says where it stands and why it has not started, in the Team view and on
+// the role's page; the person starts Clean Code's review now, with the call to action on the right. Both themes.
+const dutyProject = await mkdtemp(join(tmpdir(), "trama-ui-compiti-"));
+await cp(resolve("resources/DemoProject"), dutyProject, { recursive: true });
+execFileSync("git", ["-C", dutyProject, "init", "-q", "-b", "main"]);
+execFileSync("git", ["-C", dutyProject, "add", "."]);
+execFileSync("git", ["-C", dutyProject, "-c", "user.name=Trama UI", "-c", "user.email=ui@trama.local", "commit", "-q", "-m", "Negozio"]);
+({ app, page } = await launch());
+await page.evaluate(() => window.trama.invoke("settings:update", { continuousWork: false, theme: "light" }));
+await page.evaluate((path) => window.trama.invoke("project:open", { path }), dutyProject);
+await page.getByTestId("dialog-title").filter({ hasText: "trama-ui-compiti" }).waitFor({ timeout: 30_000 });
+await page.getByText("Ho letto lo studio").first().waitFor({ timeout: 30_000 });
+await page.getByRole("button", { name: /^Team/ }).first().click();
+const dutyPanel = page.getByTestId("inspector");
+const reviewWork = dutyPanel.locator('[data-testid="automatic-work"][data-work="architectureReview"]');
+await reviewWork.waitFor({ timeout: 20_000 });
+// Without a mandate nothing starts, and the view says why.
+await reviewWork.getByText(/Senza un mandato concesso/).waitFor();
+if (!(await reviewWork.getByTestId("automatic-work-start").isDisabled())) throw new Error("The review can start without a mandate");
+await dutyPanel.locator('[data-testid="automatic-work"][data-work="triage"]').waitFor();
+await page.evaluate(() =>
+  window.trama.invoke("mandate:grant", {
+    requestId: null,
+    objectives: ["Rivedere l'architettura"],
+    priorities: [],
+    scopeModuleIds: ["Sources/Orders"],
+    authorizedActions: ["executeInWorktree"],
+    limits: [],
+  }),
+);
+const startReview = reviewWork.locator('[data-testid="automatic-work-start"]:not([disabled])');
+await startReview.waitFor({ timeout: 20_000 });
+await primaryLast(reviewWork.locator(".cta-row"), "Lavoro automatico");
+const startBox = await startReview.boundingBox();
+const workBox = await reviewWork.boundingBox();
+if (!startBox || !workBox || workBox.x + workBox.width - (startBox.x + startBox.width) > 2) throw new Error("Avvia ora la revisione is not on the right");
+await reviewWork.scrollIntoViewIfNeeded();
+for (const dark of [false, true]) {
+  await page.evaluate((theme) => window.trama.invoke("settings:update", { theme }), dark ? "dark" : "light");
+  await page.waitForFunction((wanted) => document.documentElement.classList.contains("dark") === wanted, dark);
+  await shot(`22a-automatic-work-${dark ? "dark" : "light"}`);
+}
+await startReview.click();
+// The review runs on request and ends with its Pact card; the card waits for the person, so the button says why it waits.
+await page.getByRole("main").getByText("Su richiesta tua: revisione al commit", { exact: false }).first().waitFor({ timeout: 30_000 });
+await page.getByText(/Approfondire l'annullamento/).first().waitFor({ timeout: 60_000 });
+await reviewWork.getByText(/aspetta ancora la tua risposta/).waitFor({ timeout: 20_000 });
+await dutyPanel.getByTestId("team-figure").filter({ hasText: "Clean Code" }).first().click();
+const roleWork = dutyPanel.locator('[data-testid="automatic-work"][data-work="architectureReview"]');
+await roleWork.waitFor();
+await roleWork.scrollIntoViewIfNeeded();
+for (const dark of [false, true]) {
+  await page.evaluate((theme) => window.trama.invoke("settings:update", { theme }), dark ? "dark" : "light");
+  await page.waitForFunction((wanted) => document.documentElement.classList.contains("dark") === wanted, dark);
+  await shot(`22b-automatic-work-role-${dark ? "dark" : "light"}`);
+}
+await page.evaluate(() => window.trama.invoke("settings:update", { theme: "system" }));
+await app.close();

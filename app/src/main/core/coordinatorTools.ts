@@ -1,6 +1,18 @@
 import type { ProviderId } from "@shared/codex";
 import { catalogOffers, supportsReadOnly, type CatalogEntry } from "@shared/providers";
-import type { AssignmentCommit, Candidate, CommitConventions, MandateAction, ProjectDocument, SpecialistTool, TechnicalReview, WorkKind } from "@shared/domain";
+import type {
+  AssignmentCommit,
+  AutomaticWorkRequest,
+  AutomaticWorkStatus,
+  Candidate,
+  CommitConventions,
+  MandateAction,
+  ProjectDocument,
+  Specialist,
+  SpecialistTool,
+  TechnicalReview,
+  WorkKind,
+} from "@shared/domain";
 import { DEFAULT_CONVENTIONS, validateCommitMessage } from "./conventions";
 import { candidateCommit } from "./quality";
 import { messageStyle } from "./messageStyle";
@@ -19,6 +31,7 @@ import { isFixedRole, roleDuties } from "@shared/roster";
 import { GrillingError, grillingSettled, openGrillingQuestions, placeGrillingQuestion } from "@shared/grilling";
 import { goalsForTool, proposeGoal } from "./goals";
 import { DomainProposalError, proposeDomainDocs } from "./domainDocs";
+import { DutyRequestError } from "./duties";
 import {
   addSpecialist,
   assign,
@@ -301,10 +314,21 @@ export const COORDINATOR_TOOLS: ToolDefinition[] = [
   {
     name: "read_team",
     description:
-      "Read the project team: the proposal and the person's answer, each specialist with its role (a fixed role or developer), competence, reason, the moments of the flow it works at with the AI Hero skills it relies on there, status and current assignment, and what composeTeam and executeInWorktree would get now.",
-    properties: {},
+      "Read the project team. Without arguments: a summary that fits any team, one line per specialist (id, name, role, whether it is a fixed role, status, last update and current assignment), a page of at most " +
+      "20 specialists (page), the automatic work of the fixed roles (automaticWork: for each, running, due, waiting or idle, why it has not started and whether start_automatic_work may start it now), the pending team proposal, what composeTeam and executeInWorktree would get now, and the connected providers with their models. " +
+      "Pass specialistID (id or name) for one specialist in full: competence, reason, modules, the moments of the flow it works at with the AI Hero skills it relies on there, its current assignment with result, report and questions, and its latest assignments. Always read the team state with it before saying what the team is doing.",
+    properties: { specialistID: text, page: { type: "integer", minimum: 1 } },
     required: [],
     readOnly: true,
+  },
+  {
+    name: "start_automatic_work",
+    description:
+      "Within the mandate, ask Trama to start a fixed role's automatic work now, when the person asks for it or the work needs it: work architectureReview has Clean Code review the architecture with improve-codebase-architecture (its proposals reach the person as a Pact card); work triage has bug triage and debugger triage the open issue issueNumber with the triage skill. " +
+      "Trama runs it as its rule would, with the same role, skill and light model, and says in the conversation that it started on request; the automatic rules stay as they are. Trama refuses it without a granted mandate, without a connected provider, while the role is already at work or, for a review, while the previous review's card waits for the person: the refusal says why. Never simulate this work with assign_task.",
+    properties: { work: { type: "string", enum: ["architectureReview", "triage"] }, issueNumber: { type: "integer", minimum: 1 }, reason: text },
+    required: ["work", "reason"],
+    readOnly: false,
   },
   {
     name: "read_presence",
@@ -599,6 +623,10 @@ export interface ToolContext {
   startAssignment(id: string): void;
   /** A developer's question got its answer (W06): Trama resumes the paused work when it can. */
   questionAnswered?(assignmentId: string): void;
+  /** Where each fixed role's automatic work stands now (issue #231); absent where Trama runs none. */
+  automaticWork?(): AutomaticWorkStatus[];
+  /** Starts a fixed role's automatic work now, on the Coordinator's request; throws DutyRequestError when refused. */
+  startAutomaticWork?(request: AutomaticWorkRequest): Promise<string>;
   /**
    * Has the documentation and domain role write a domain proposal within the mandate (M03), with the fixed roles'
    * provider and model; returns the assignment, or null when the writing waits and the proposal says why.
@@ -717,6 +745,74 @@ function refused(authorization: ReturnType<typeof authorize>, action: MandateAct
 
 const strings = (value: Json | undefined): string[] =>
   Array.isArray(value) ? value.filter((v): v is string => typeof v === "string") : [];
+
+/** At most this many specialists in one page of read_team. */
+const TEAM_PAGE = 20;
+
+const clip = (value: string, limit: number) => (value.length > limit ? `${value.slice(0, limit)}…` : value);
+
+/** One line of read_team: enough to know who is doing what, whatever the size of the team. */
+function specialistSummary(specialist: Specialist): JsonObject {
+  const current = currentAssignment(specialist);
+  return {
+    id: specialist.id,
+    name: specialist.name,
+    tag: specialist.tag,
+    color: specialist.color,
+    role: specialist.role,
+    fixedRole: isFixedRole(specialist.role),
+    status: specialist.status,
+    lastUpdate: clip(specialist.lastUpdate, 200),
+    updatedAt: specialist.updatedAt,
+    assignment: current
+      ? {
+          id: current.id,
+          status: current.status,
+          objective: clip(current.objective, 200),
+          startedByTrama: current.duty ? current.duty.skill : null,
+          ...(current.duty?.requestedBy ? { requestedBy: current.duty.requestedBy } : {}),
+        }
+      : null,
+  };
+}
+
+/** read_team with specialistID: one specialist in full. */
+function specialistDetail(specialist: Specialist): JsonObject {
+  const current = currentAssignment(specialist);
+  return {
+    ...specialistSummary(specialist),
+    competence: specialist.competence,
+    reason: specialist.reason,
+    moments: roleDuties(specialist.role) as unknown as Json,
+    moduleIDs: specialist.moduleIds,
+    model: specialist.model,
+    assignment: current
+      ? {
+          id: current.id,
+          status: current.status,
+          objective: current.objective,
+          moduleIDs: current.moduleIds,
+          model: current.model,
+          modelReason: current.modelReason ?? null,
+          goalID: current.goalId ?? null,
+          worktreeBranch: current.workspace?.branch ?? null,
+          result: current.result,
+          // The developer's structured report (W05): its statement, never evidence.
+          report: (current.report ?? null) as unknown as Json,
+          // The developer's questions to the Coordinator (W06), with their answers.
+          questions: (current.questions ?? []) as unknown as Json,
+          failure: current.failure,
+          startedByTrama: current.duty
+            ? ({ skill: current.duty.skill, trigger: current.duty.trigger, ...(current.duty.requestedBy ? { requestedBy: current.duty.requestedBy } : {}) } as unknown as Json)
+            : null,
+        }
+      : null,
+    latestAssignments: specialist.assignments
+      .slice(-6, -1)
+      .reverse()
+      .map((a) => ({ id: a.id, status: a.status, objective: clip(a.objective, 160), lastUpdate: clip(a.lastUpdate, 160) })),
+  };
+}
 
 export async function runCoordinatorTool(name: string, args: JsonObject, context: ToolContext): Promise<ToolResult> {
   const { document } = context;
@@ -889,54 +985,62 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
       }
       case "read_team": {
         const team = document.team;
+        if (typeof args.specialistID === "string" && args.specialistID.trim()) {
+          const specialist = findSpecialist(document, args.specialistID);
+          if (!specialist) return toolFailure("unknown_specialist", `Unknown specialist: ${args.specialistID}. read_team without arguments lists them.`);
+          return toolSuccess(specialistDetail(specialist));
+        }
+        const pages = Math.max(1, Math.ceil(team.specialists.length / TEAM_PAGE));
+        const page = typeof args.page === "number" ? Math.min(pages, Math.max(1, Math.floor(args.page))) : 1;
+        const pending = team.proposals.find((p) => !p.resolution);
         return toolSuccess({
           confirmed: isTeamConfirmed(document),
-          proposals: team.proposals.map((p) => ({ id: p.id, summary: p.summary, members: p.members as unknown as Json, resolution: (p.resolution?.kind ?? "pending") as Json })),
-          specialists: team.specialists.map((specialist) => {
-            const current = currentAssignment(specialist);
-            return {
-              id: specialist.id,
-              name: specialist.name,
-              tag: specialist.tag,
-              color: specialist.color,
-              role: specialist.role,
-              fixedRole: isFixedRole(specialist.role),
-              competence: specialist.competence,
-              reason: specialist.reason,
-              moments: roleDuties(specialist.role) as unknown as Json,
-              moduleIDs: specialist.moduleIds,
-              status: specialist.status,
-              model: specialist.model,
-              lastUpdate: specialist.lastUpdate,
-              assignment: current
-                ? {
-                    id: current.id,
-                    status: current.status,
-                    objective: current.objective,
-                    moduleIDs: current.moduleIds,
-                    model: current.model,
-                    modelReason: current.modelReason ?? null,
-                    goalID: current.goalId ?? null,
-                    worktreeBranch: current.workspace?.branch ?? null,
-                    result: current.result,
-                    // The developer's structured report (W05): its statement, never evidence.
-                    report: (current.report ?? null) as unknown as Json,
-                    // The developer's questions to the Coordinator (W06), with their answers.
-                    questions: (current.questions ?? []) as unknown as Json,
-                    failure: current.failure,
-                    startedByTrama: current.duty ? ({ skill: current.duty.skill, trigger: current.duty.trigger } as unknown as Json) : null,
-                  }
-                : null,
-            };
-          }),
+          pendingProposal: pending
+            ? { id: pending.id, summary: pending.summary, members: pending.members.map((m) => ({ name: m.name, competence: clip(m.competence, 160) })) }
+            : null,
+          page,
+          pages,
+          specialistCount: team.specialists.length,
+          specialists: team.specialists.slice((page - 1) * TEAM_PAGE, page * TEAM_PAGE).map(specialistSummary),
+          automaticWork: (context.automaticWork?.() ?? []).map((w) => ({
+            work: w.kind,
+            role: w.role,
+            state: w.state,
+            assignmentID: w.assignmentId,
+            detail: w.detail,
+            ...(w.onRequest ? { startNow: w.onRequest.allowed ? "allowed" : w.onRequest.reason } : {}),
+          })),
           authority: {
             composeTeam: authorize(document.mandate, "composeTeam"),
             executeInWorktree: authorize(document.mandate, "executeInWorktree"),
           },
           models: context.models,
-          providers: context.providers as unknown as Json,
+          providers: context.providers.map((p) => ({
+            id: p.id,
+            models: (p.catalog ?? p.models).map((entry) =>
+              typeof entry === "string" ? entry : { model: entry.model, ...(entry.supportedReasoningEfforts?.length ? { efforts: [...entry.supportedReasoningEfforts] } : {}) },
+            ),
+          })) as unknown as Json,
           defaultProvider: context.defaultProvider,
+          note: "Pass specialistID for one specialist in full: competence, reason, moments, current assignment with result, report and questions.",
         });
+      }
+      case "start_automatic_work": {
+        if (!context.startAutomaticWork) return toolFailure("unavailable", "Trama runs no automatic work in this project.");
+        const request: AutomaticWorkRequest | null =
+          args.work === "architectureReview"
+            ? { kind: "architectureReview" }
+            : args.work === "triage" && typeof args.issueNumber === "number"
+              ? { kind: "triage", issueNumber: args.issueNumber }
+              : null;
+        if (!request) return toolFailure("invalid_arguments", "work must be architectureReview, or triage with the issueNumber of an open issue.");
+        try {
+          const assignmentID = await context.startAutomaticWork(request);
+          return toolSuccess({ assignmentID, status: "started", note: "Trama started it on your request and shows it in the conversation; its result reaches you in the team report." });
+        } catch (error) {
+          if (error instanceof DutyRequestError) return toolFailure(error.code, error.message);
+          throw error;
+        }
       }
       case "propose_team": {
         const members = (Array.isArray(args.specialists) ? args.specialists : []).map((m) => {
@@ -1498,6 +1602,7 @@ export function developerInstructions(projectName: string, learningGuidance: str
     ...(skills ? [skills] : []),
     "Every project has the full team: the fixed roles (QA, UX, research, documentation and domain, bug triage and debugger, spec reviewer, Clean Code, regression guardian, security, performance, DevOps), always present and never removed, and the developers chosen for the project. Each figure has a competence, the AI Hero skills it relies on and its moments in the flow (clarification and spec, slices, candidate, background); read_team lists them.",
     "Under a granted mandate Trama starts some fixed-role work by itself, on its own rules: bug triage and debugger triages each new GitHub issue with the triage skill, diagnoses a failed test or a regression with diagnosing-bugs and fixes a reproduced bug in an assignment within the mandate; Clean Code reviews the architecture with improve-codebase-architecture when the team is free, and its proposals reach the person as a Pact decision card. Their results reach you in the team report: build on them and do not start the same work again.",
+    "read_team shows that automatic work in automaticWork: whether each one is running, when it starts and why it has not started yet. When the person asks about it, answer from there, with the reason and what starts it. When the person asks for a triage or a Clean Code review now, start it with start_automatic_work within the mandate; never simulate it with assign_task, and never say it cannot be asked for.",
     "At the end of your study propose the project's developers with propose_team: one developer per real need, each with a competence and the reason this project needs it, never one to fill a role. The person confirms or corrects it once, and only that answer creates the developers. From then on you change them yourself within the mandate, with create_specialist and stop_specialist, and you say it in the conversation. Give each developer a tag: its role in one or two Italian words (Interfaccia, Provider), shown colored beside its name. When the person asks to rename a developer, do it with rename_specialist, without a mandate; fixed roles keep their names.",
     "Within the mandate, assign_task gives a developer work in a provider session and worktree that Trama owns: objective, ticket or exercise, modules, dependencies, required checks, your instructions and the provider and model you propose for it. Assign in parallel only work that is independent, and read_team to see where each specialist stands. stop_specialist asks Trama to stop work: the stop is first requested and then confirmed, and what was done is kept.",
     "run_readonly_check runs a check on the project checkout without writing to it; you may use it without a mandate.",
