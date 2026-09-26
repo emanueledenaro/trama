@@ -165,11 +165,14 @@ import {
   changeAssignmentProvider,
   refreshDecisionVersions,
   resumeAssignment,
+  resumePausedAssignment,
   stopOrphanedAssignments,
+  TeamError,
   teamMessage,
   teamReport,
   type TurnEnd,
 } from "./core/team";
+import { answeredWork, ASK_COORDINATOR_TOOL, askCoordinator, asksCoordinator, DEVELOPER_TOOL_SERVER_INSTRUCTIONS, personAnswered, QuestionError } from "./core/developerQuestions";
 import { prepareWorktree, removeWorktree, reviewWorktree, validateWorktree } from "./core/workspace";
 import { AuditError, type AxisName, type AxisTurn, auditSpec, axisThread, axisTurn, beginAxes, closeAudit, failAudit, findAudit, finishAxis, openAudit, readAxisAnswer, recordAuditCheck } from "./core/audit";
 import { approveCandidate, candidateReport, findCandidate, latestCandidate, recordEvidence, recordTechnicalReview } from "./core/candidates";
@@ -230,7 +233,7 @@ import {
   UNKNOWN_GITHUB_CLI,
 } from "@shared/onboarding";
 import { buildStudy, fingerprints, partsToInject, studyText } from "./core/study";
-import { CoordinatorToolServer, TOOL_SERVER_NAME } from "./core/toolServer";
+import { CoordinatorToolServer, TOOL_SERVER_NAME, toolFailure, toolSuccess } from "./core/toolServer";
 import { deliverNativeSkills, loadNativeSkill, type NativeSkill } from "./core/nativeSkills";
 import { concludeDuty, dutyModel, type DutyRunner, dutySession, nextDuty, recordCheckOutcome, startDomainWriting, startWaitingDomainWriting, withinMandate } from "./core/duties";
 import { findDomainProposal } from "@shared/domainDocs";
@@ -837,6 +840,8 @@ export class TramaController {
         // Work that waited for a provider while the project was parked is checked again now.
         const waiting = new Set(parked.document.team.specialists.flatMap((sp) => sp.assignments.flatMap((a) => (a.waitingForProvider ? [a.waitingForProvider.provider] : []))));
         for (const provider of waiting) void this.resumeWaitingWork(provider);
+        // Answers that arrived while the project was parked resume their work now (W06).
+        this.resumeAnsweredWork(parked);
         return;
       }
       const loaded = await this.storage.loadDocument(id);
@@ -911,6 +916,8 @@ export class TramaController {
       if (!isDemo) void this.refreshGitHub();
       this.watchProject(root);
       if (!isDemo) this.startPresence(project);
+      // Paused work whose question got its answer before a restart resumes now (W06).
+      if (loaded.writable) this.resumeAnsweredWork(project);
       if (!isDemo && loaded.writable && shouldAutoPrepareMethod(this.state.settings, this.state.onboarding) && !hasAiHero(root)) {
         // T04: the method is ready when the project opens; existing files are never overwritten.
         void this.prepareSkills().catch((error) => this.fail(error));
@@ -1656,6 +1663,7 @@ export class TramaController {
           defaultProvider: provider,
           providers: this.connectedProviders(),
           startAssignment: (id) => void this.startAssignment(id),
+          questionAnswered: () => this.resumeAnsweredWork(current),
           startDomainWriting: (proposalId) => {
             const proposal = findDomainProposal(current.document, proposalId);
             const assignment = proposal ? startDomainWriting(current.document, proposal, this.dutyRunner(current.document)) : null;
@@ -2718,6 +2726,8 @@ export class TramaController {
     const goalId = request.goalId && findGoal(project.document, request.goalId) ? request.goalId : null;
     if (goalId) linkDecision(project.document, goalId, decision.id);
     this.stopWorkDependingOn(decision.id);
+    // A card that blocked a developer's work (W06): the work resumes with the person's answer.
+    if (personAnswered(project.document, request)) this.resumeAnsweredWork(project);
     this.changed();
     // The answer goes back to the dialog the question was asked in, whatever the person is looking at.
     await this.send(decisionMessage(request, decision), null, null, null, [], null, goalId, false);
@@ -2731,6 +2741,7 @@ export class TramaController {
     const project = this.requireProject();
     const request = withdrawDecisionRequest(project.document, requestId, reason);
     const goalId = request.goalId && findGoal(project.document, request.goalId) ? request.goalId : null;
+    if (personAnswered(project.document, request)) this.resumeAnsweredWork(project);
     this.changed();
     await this.send(withdrawalMessage(request), null, null, null, [], null, goalId, false);
   }
@@ -2827,9 +2838,13 @@ export class TramaController {
       this.specialistActivity(project, assignmentId, `${assignment.turns.length + 1}`, "Incarico in attesa del provider", blocked, "error");
       return;
     }
+    // A developer asks the Coordinator with its one Trama tool (W06); a fixed role's automatic work has none.
+    const toolServer = asksCoordinator(specialist, assignment) ? this.developerToolServer(project, assignmentId) : null;
+    if (toolServer) await toolServer.start();
     const client = createRuntime(provider, {
       executable: provider === "codex" ? this.host.codexExecutable : null,
       requestTimeoutMs: 15_000,
+      ...(toolServer ? { toolServer: { name: TOOL_SERVER_NAME, url: toolServer.url, token: toolServer.token } } : {}),
     });
     this.specialistRuntimes.set(assignmentId, { client, projectId: project.id });
     const resumed = assignment.turns.length > 0;
@@ -2972,6 +2987,7 @@ export class TramaController {
       outcome = /interrott/i.test(message) ? { kind: "interrupted" } : { kind: "failed", message: describeFailure(message) };
     } finally {
       client.stop();
+      toolServer?.stop();
       this.specialistRuntimes.delete(assignmentId);
     }
     if (turnId) {
@@ -2989,7 +3005,9 @@ export class TramaController {
         ? ["Incarico concluso", final.result]
         : final.status === "stopped"
           ? ["Arresto confermato", final.stops.at(-1)?.reason ?? null]
-          : ["Incarico non riuscito", final.failure];
+          : final.status === "paused"
+            ? ["In pausa per una domanda", final.lastUpdate]
+            : ["Incarico non riuscito", final.failure];
     this.specialistActivity(project, assignmentId, turnId ? `${final.turns.length}` : preKey, title, detail, final.status === "failed" ? "error" : "info");
     const stop = final.stops.at(-1);
     if (final.status === "stopped" && stop?.thenRemove) {
@@ -3033,9 +3051,57 @@ export class TramaController {
     }
     if (final.status === "completed") this.rateLimitStreak.delete(provider);
     this.changedIn(project);
+    // A developer freed by this end may resume work whose question has its answer (W06).
+    this.resumeAnsweredWork(project);
     this.continueWork(project, final.requestId, "assignmentEnded");
     this.releaseParkedProject(project);
     void this.runDuties();
+  }
+
+  /** The developer's tool server (W06): ask_coordinator records the question on its running work. */
+  private developerToolServer(project: ActiveProjectState, assignmentId: string): CoordinatorToolServer {
+    return new CoordinatorToolServer(
+      [ASK_COORDINATOR_TOOL],
+      async (name, args) => {
+        if (name !== ASK_COORDINATOR_TOOL.name) return toolFailure("unknown_tool", `Unknown tool ${name}.`);
+        try {
+          const question = askCoordinator(project.document, assignmentId, {
+            question: typeof args.question === "string" ? args.question : "",
+            context: typeof args.context === "string" ? args.context : null,
+          });
+          const turns = findAssignment(project.document, assignmentId)?.turns.length ?? 0;
+          this.specialistActivity(project, assignmentId, `${turns}`, `Domanda ${question.id} al Coordinatore`, question.question, "info");
+          return toolSuccess({
+            questionID: question.id,
+            status: "recorded",
+            note: "Stop working now: end your answer with the report of the assignment and list this question under Doubts. Trama pauses your work and resumes this session with the answer.",
+          });
+        } catch (error) {
+          if (error instanceof QuestionError) return toolFailure(error.code, error.message);
+          throw error;
+        }
+      },
+      DEVELOPER_TOOL_SERVER_INSTRUCTIONS,
+    );
+  }
+
+  /**
+   * Resumes the paused work whose question has its answer (W06), when its developer is free and the team has room;
+   * the rest waits for the next end of work.
+   */
+  private resumeAnsweredWork(project: ActiveProjectState): void {
+    if (this.quitting || project !== this.state.project) return;
+    for (const assignment of answeredWork(project.document)) {
+      if (!withinMandate(project.document, assignment)) continue;
+      try {
+        resumePausedAssignment(project.document, assignment.id);
+      } catch (error) {
+        if (error instanceof TeamError) continue;
+        throw error;
+      }
+      this.specialistActivity(project, assignment.id, `${assignment.turns.length + 1}`, "Risposta ricevuta", "Trama riprende il lavoro con la risposta.", "info");
+      void this.startAssignment(assignment.id);
+    }
   }
 
   private readonly skillLoads = new Map<string, Promise<NativeSkill>>();
@@ -3206,7 +3272,9 @@ export class TramaController {
     if (findAssignment(project.document, assignmentId)?.workspaceRemovedAt) {
       throw new DomainError("Il worktree di questo incarico è stato rimosso: assegna un nuovo incarico.");
     }
-    resumeAssignment(project.document, assignmentId);
+    // Paused work with its answer resumes like Trama resumes it (W06); other work was stopped or failed.
+    if (paused.status === "paused") resumePausedAssignment(project.document, assignmentId);
+    else resumeAssignment(project.document, assignmentId);
     const moved = refreshDecisionVersions(project.document, assignmentId);
     if (moved.length) {
       appendEvent(

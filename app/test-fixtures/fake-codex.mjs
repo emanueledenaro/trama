@@ -391,6 +391,22 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
           // The developer of a slice (M06) runs implement and tdd, and reports the confirmed seams it tested.
           const skills = params.input.filter((item) => item.type === "skill").map((item) => item.name);
           const seam = text.match(/## Seam confermati dalla persona\n1\. /) ? "\n- 1: NOTE.md" : "\n- none";
+          if (text.includes("[domanda]") && toolServers.has(threadId)) {
+            // W06: a doubt the spec does not answer goes to the Coordinator with ask_coordinator; the work pauses.
+            const question = "Un ordine pagato con un buono va in revisione come uno pagato con la carta?";
+            const asked = await callTool(threadId, "ask_coordinator", { question, context: "La spec parla solo di pagamenti con la carta" });
+            toolDone("ask_coordinator", asked);
+            const report = `\n\nFiles touched:\n- NOTE.md\nTests written:\n- none\nTested seams:\n- none\nDoubts:\n- Domanda al Coordinatore: ${question}`;
+            setTimeout(() => finish(`Mi fermo: ho chiesto al Coordinatore. ${asked.content[0].text}${report}`), 30);
+            return;
+          }
+          // The answer to the developer's question reaches the resumed session (W06).
+          const answer = text.match(/^Risposta (?:del Coordinatore|della persona[^:]*): (.*)$/m)?.[1];
+          if (answer) {
+            const report = `\n\nFiles touched:\n- NOTE.md\nTests written:\n- NOTE.md\nTested seams:${seam}\nDoubts:\n- none`;
+            setTimeout(() => finish(`Ripreso con la risposta: ${answer}${report}`), 30);
+            return;
+          }
           // The structured report of W05, which extends M06's tested seams.
           const report = `\n\nFiles touched:\n- NOTE.md\nTests written:\n- NOTE.md\nTested seams:${seam}\nDoubts:\n- Il rimborso manuale resta fuori da questa fetta\nStandard exceptions:\n- none`;
           setTimeout(() => finish(`Ho scritto NOTE.md nel worktree. Skill ricevute: ${skills.join(", ")}${report}`), 30);
@@ -418,6 +434,35 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
         calls.push(["run_readonly_check", { check: "git_status" }]);
         for (const [tool, args] of calls) toolDone(tool, await callTool(threadId, tool, args));
         finish("Saved what stood out.");
+        return;
+      }
+      // W06: the Coordinator answers the first developer question that waits for it, from facts or on a Pact card.
+      const answerDeveloper = async (block) => {
+        const id = text.match(/^- (DQ-[0-9A-F]+): [^\n]*aspetta la tua risposta/m)?.[1];
+        if (!id) return "Nessuna domanda aspetta una risposta.";
+        const result = block
+          ? await callTool(threadId, "request_decision", {
+              category: "product",
+              question: "Un ordine pagato con un buono va in revisione?",
+              concreteCase: "Ordine 42, pagato con un buono, annullato dal cliente",
+              alternatives: [
+                { behavior: "Va in revisione come gli altri", example: "L'ordine 42 va in revisione" },
+                { behavior: "Il buono torna subito al cliente", example: "Il buono dell'ordine 42 torna valido" },
+              ],
+              blocksQuestionID: id,
+            })
+          : await callTool(threadId, "answer_question", {
+              question: id,
+              answer: "Sì: un buono è un pagamento, e la spec manda in revisione ogni ordine pagato.",
+              sources: ["Sources/Orders/CancelPaidOrder.swift", "spec: Ordini pagati annullati in revisione"],
+            });
+        toolDone(block ? "request_decision" : "answer_question", result);
+        if (result.isError) return `Rifiutato: ${result.content[0].text}`;
+        return block ? `La domanda ${id} spetta alla persona: l'ho messa su una scheda del Patto.` : `Ho risposto alla domanda ${id}.`;
+      };
+      const developerMarker = text.match(/\[(rispondi|blocca)-dubbio\]/);
+      if (developerMarker && toolServers.has(threadId)) {
+        finish(await answerDeveloper(developerMarker[1] === "blocca"));
         return;
       }
       const automatic = text.match(/Mossa automatica di Trama: (\w+)/);
@@ -449,6 +494,8 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
               instructions: "Scrivi una nota",
             });
             done.push(assigned.isError ? `Rifiutato: ${assigned.content[0].text}` : "Ho assegnato la fetta ad Ada.");
+          } else if (automatic[1] === "answerQuestion") {
+            done.push(await answerDeveloper(process.env.FAKE_CODEX_QUESTION === "block"));
           } else if (automatic[1] === "verifyCandidate") {
             const team = json(await call("read_team", {}));
             const assignment = team.specialists.map((s) => s.assignment).find((a) => a?.status === "completed");
@@ -544,7 +591,7 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
               ? ["git_status", "swift_build", "swift_test"]
               : ["git_status"],
           tools: ["edits"],
-          instructions: `${text.includes("[lento]") ? "[lento] " : ""}${text.includes("[lento:sempre]") ? "[lento:sempre] " : ""}${text.includes("[spazi]") ? "[spazi] " : ""}Scrivi una nota`,
+          instructions: `${text.includes("[lento]") ? "[lento] " : ""}${text.includes("[lento:sempre]") ? "[lento:sempre] " : ""}${text.includes("[spazi]") ? "[spazi] " : ""}${text.includes("[domanda]") ? "[domanda] " : ""}Scrivi una nota`,
         }).then((result) => {
           toolDone("assign_task", result);
           finish(result.isError ? `Rifiutato: ${result.content[0].text}` : "Ho assegnato il lavoro ad Ada.");
