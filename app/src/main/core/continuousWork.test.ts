@@ -305,7 +305,7 @@ describe("stalledMove: an automatic move the turn did not make is shown with its
     const candidate = declareCandidate(
       document,
       { assignmentId: assignment.id, decisionIds: [decision.id], unresolvedChoices: [], externalEffects: [] },
-      { snapshotId: "snap", baseSHA: "base", diff: "+x", changedFiles: ["NOTE.md"], excludedSensitiveFiles: [] },
+      { snapshotId: "snap", baseSHA: "base", diff: "+x", changedFiles: ["NOTE.md"], excludedSensitiveFiles: [], whitespaceErrors: [] },
       new Date(Date.UTC(2026, 8, 25, 10, 6)),
     );
     expect(stalledMove(document, "r5")).toBeNull();
@@ -336,7 +336,7 @@ describe("stalledMove: an automatic move the turn did not make is shown with its
     const done = declareCandidate(
       document,
       { assignmentId: assignment.id, decisionIds: [document.decisions[0]!.id], unresolvedChoices: [], externalEffects: [] },
-      { snapshotId: "snap", baseSHA: "base", diff: "+x", changedFiles: ["NOTE.md"], excludedSensitiveFiles: [] },
+      { snapshotId: "snap", baseSHA: "base", diff: "+x", changedFiles: ["NOTE.md"], excludedSensitiveFiles: [], whitespaceErrors: [] },
       at,
     );
     recordEvidence(document, done.id, { check: "git_status", passed: true, command: "git status", output: "", snapshotId: "snap" }, at);
