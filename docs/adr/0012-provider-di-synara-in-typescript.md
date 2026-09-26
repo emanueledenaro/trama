@@ -16,3 +16,24 @@ Tutti i provider, Codex compreso, passano da una forma comune, `AgentRuntime` in
 Alternative scartate: tenere il catalogo statico e rimandare gli adattatori (lascia Trama ferma quando Codex si blocca, il problema che ha motivato l'ADR 0009); includere l'intero server di Synara (porta database, WebSocket e funzioni che Trama non usa, come già scartato nell'ADR 0011).
 
 Conseguenze: il pacchetto dell'app cresce per gli SDK di Claude e Pi. Ogni adattatore ha test unitari sulle parti pure (stato dell'accesso, eventi, permessi) con SDK o CLI finti. Le prove reali richiedono gli account dei provider e restano da fare con V09. Dove un provider non può garantire una delle regole sopra, l'adattatore lo dichiara e si rifiuta di aprire la sessione per quel ruolo invece di aggirare la regola.
+
+## Antigravity in sola lettura (P11, 26 settembre 2026)
+
+In modalità print (`agy -p`) la CLI di Antigravity non può fermarsi per le approvazioni, quindi Trama la avvia con `--dangerously-skip-permissions`. All'inizio Trama la usava solo per gli specialisti con un worktree proprio. Ora Antigravity fa tutti i ruoli, come gli altri provider.
+
+Decisione: l'hook di cattura che Trama installa come plugin applica uno di due profili, scelto per turno con la variabile `TRAMA_ANTIGRAVITY_PROFILE`.
+
+- Profilo worktree, per gli specialisti, invariato: strumenti di lettura noti, modifiche ai file solo dentro il worktree, strumenti MCP di Trama.
+- Profilo sola lettura, per Coordinatore, pianificatori, revisori e verifiche: strumenti di lettura noti e strumenti MCP di Trama.
+
+In entrambi i profili l'hook nega `run_command`, gli strumenti web e browser, i subagenti e ogni strumento che non riconosce. Un valore del profilo diverso da `worktree`, o assente, vale come sola lettura.
+
+La sola lettura non parte mai senza l'hook:
+
+- prima della sessione Trama esegue l'hook installato con lo stesso comando che usa la CLI e controlla che neghi una modifica e un comando di shell e permetta una lettura;
+- durante il turno, se la CLI produce un passo prima di aver chiamato l'hook, Trama ferma il processo;
+- in entrambi i casi la sessione o il turno falliscono con un motivo chiaro e l'azione da fare: aggiornare Antigravity CLI con `agy update` o reinstallarlo.
+
+Il flag `--sandbox` della CLI è una difesa in più, non la regola. Trama lo aggiunge ai turni in sola lettura solo quando `agy --help` lo elenca come opzione senza valore. Non abbiamo potuto verificarne il comportamento senza la CLI reale, quindi la regola resta l'hook; la prova dal vivo con `agy` controlla anche questo flag.
+
+Alternative scartate: tenere Antigravity solo per gli specialisti (la persona vuole tutti i ruoli); affidare la sola lettura solo a `--sandbox` (comportamento non documentato e non verificabile nei test).

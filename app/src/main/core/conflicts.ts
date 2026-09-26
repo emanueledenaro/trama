@@ -4,6 +4,7 @@ import { existsSync } from "node:fs";
 import { copyFile, lstat, mkdir, realpath, rm } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
 import type { ConflictAssessment, WorktreeSession } from "@shared/domain";
+import { conflictRanges, type LineRange } from "@shared/overlap";
 import { GIT_SAFE_OPTIONS, git, gitEnvironment, runProcess } from "./process";
 import { reviewWorktree } from "./workspace";
 
@@ -82,7 +83,7 @@ export async function probeConflict(
   otherSHA: string,
   objectRepository: string,
   probeRoot: string,
-): Promise<{ status: "clean" | "conflict" | "unavailable"; conflictingFiles: string[]; detail: string }> {
+): Promise<{ status: "clean" | "conflict" | "unavailable"; conflictingFiles: string[]; lines: Record<string, LineRange[]>; detail: string }> {
   const review = await reviewWorktree(session);
   if (review.snapshotId !== snapshotId) throw new Error("Il candidato è cambiato durante la prova.");
   await mkdir(probeRoot, { recursive: true });
@@ -130,21 +131,40 @@ export async function probeConflict(
       { cwd: clone, env: gitEnvironment(false), timeoutMs: 120_000 },
     );
     const base = await runProcess("git", [...GIT_SAFE_OPTIONS, "merge-base", candidateSHA, otherSHA], { cwd: clone, env: gitEnvironment(true) });
-    if (base.exitCode !== 0) return { status: "unavailable", conflictingFiles: [], detail: "Le due revisioni non hanno una base comune verificabile." };
+    if (base.exitCode !== 0) return { status: "unavailable", conflictingFiles: [], lines: {}, detail: "Le due revisioni non hanno una base comune verificabile." };
     const merge = await runProcess("git", [...GIT_SAFE_OPTIONS, "merge-tree", "--write-tree", "--name-only", "--messages", candidateSHA, otherSHA], {
       cwd: clone,
       env: gitEnvironment(true),
     });
-    if (merge.exitCode === 0) return { status: "clean", conflictingFiles: [], detail: "La fusione temporanea è stata riprodotta senza conflitti testuali." };
-    if (merge.exitCode !== 1) return { status: "unavailable", conflictingFiles: [], detail: `git merge-tree non ha completato la prova: ${merge.stderr.trim()}` };
+    if (merge.exitCode === 0) return { status: "clean", conflictingFiles: [], lines: {}, detail: "La fusione temporanea è stata riprodotta senza conflitti testuali." };
+    if (merge.exitCode !== 1) return { status: "unavailable", conflictingFiles: [], lines: {}, detail: `git merge-tree non ha completato la prova: ${merge.stderr.trim()}` };
     // Output: the tree id, the conflicted file names, a blank line and the messages.
-    const lines = merge.stdout.split("\n");
-    const blank = lines.indexOf("", 1);
-    const files = lines.slice(1, blank < 0 ? undefined : blank).filter(Boolean);
-    return { status: "conflict", conflictingFiles: [...new Set(files)].sort(), detail: "La fusione temporanea produce conflitti testuali." };
+    const output = merge.stdout.split("\n");
+    const blank = output.indexOf("", 1);
+    const files = [...new Set(output.slice(1, blank < 0 ? undefined : blank).filter(Boolean))].sort();
+    const lines = await conflictLines(clone, output[0]!.trim(), files);
+    return { status: "conflict", conflictingFiles: files, lines, detail: "La fusione temporanea produce conflitti testuali." };
   } finally {
     await rm(clone, { recursive: true, force: true });
   }
+}
+
+const MAXIMUM_LINE_FILES = 20;
+
+/**
+ * The lines in conflict (G03): the merged tree `git merge-tree` wrote holds each conflicted file with its markers; the
+ * ranges are in the candidate's version. A file without text markers (binary, deleted on one side) has no lines.
+ */
+export async function conflictLines(repository: string, tree: string, files: string[]): Promise<Record<string, LineRange[]>> {
+  const lines: Record<string, LineRange[]> = {};
+  if (!isObjectId(tree)) return lines;
+  for (const file of files.slice(0, MAXIMUM_LINE_FILES)) {
+    const blob = await runProcess("git", [...GIT_SAFE_OPTIONS, "cat-file", "blob", `${tree}:${file}`], { cwd: repository, env: gitEnvironment(true) });
+    if (blob.exitCode !== 0 || blob.stdout.length > MAXIMUM_CANDIDATE_BYTES) continue;
+    const ranges = conflictRanges(blob.stdout);
+    if (ranges.length) lines[file] = ranges;
+  }
+  return lines;
 }
 
 export async function remoteChangedFiles(objectRepository: string, baseSHA: string, remoteSHA: string): Promise<string[]> {
@@ -184,6 +204,7 @@ export async function assessConflict(input: {
       ...base,
       classification,
       conflictingFiles: result.status === "conflict" ? result.conflictingFiles : overlap,
+      ...(result.status === "conflict" && Object.keys(result.lines).length ? { conflictingLines: result.lines } : {}),
       detail:
         classification === "overlap"
           ? `Nessun conflitto testuale, ma entrambe le revisioni cambiano ${overlap.join(", ")}.`

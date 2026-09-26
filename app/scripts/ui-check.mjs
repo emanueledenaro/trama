@@ -1,7 +1,7 @@
 // Launches the built app with the fake Codex server and saves screenshots of the main screens.
 // Usage: node scripts/ui-check.mjs <output-dir>
 import { execFileSync } from "node:child_process";
-import { cp, mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { _electron as electron } from "playwright";
@@ -858,9 +858,35 @@ await sliceSeams.getByRole("button", { name: "Conferma i seam" }).click({ timeou
 const sliceSpec = page.locator('[data-testid="plan-spec"][data-status="ready"]').last();
 await sliceSpec.getByTestId("plan-slices").getByRole("button", { name: "Conferma le fette" }).click({ timeout: 20_000 });
 await sliceSpec.getByText("Restano in Trama").waitFor({ timeout: 20_000 });
+// W05: an assignment without its contract (seams, Pact decisions) is refused with a clear tool failure; no card appears.
+await send("[assegna] [senza-contratto]");
+await page.getByText(/Rifiutato: .*incomplete_contract.*seams.*decisionIDs/).last().waitFor({ timeout: 20_000 });
+if ((await assignmentCards.count()) !== 3) throw new Error("An assignment without its contract reached a developer");
 await send("[assegna] [test]");
 const sliceWork = assignmentCards.nth(3);
 await sliceWork.getByText("Concluso", { exact: true }).waitFor({ timeout: 20_000 });
+// W05: the card shows the contract the slice reached the developer with and the developer's structured report,
+// as a statement apart from Trama's evidence.
+const contract = sliceWork.getByTestId("assignment-contract");
+await contract.getByTestId("contract-seam").getByText(/CancelPaidOrder/).waitFor();
+await contract.getByText("Nessuna").first().waitFor();
+const developerReport = sliceWork.getByTestId("assignment-report");
+await developerReport.getByTestId("report-files").getByText("NOTE.md").waitFor();
+await developerReport.getByTestId("report-tests").getByText("NOTE.md").waitFor();
+await developerReport.locator('[data-testid="report-seam"][data-tested="yes"][data-agreed="yes"]').getByText(/CancelPaidOrder/).waitFor();
+await developerReport.getByTestId("report-doubts").getByText(/rimborso manuale/).waitFor();
+await developerReport.getByText(/non un'evidenza/).waitFor();
+await developerReport.scrollIntoViewIfNeeded();
+await shot("19c-assignment-contract-report");
+await app.evaluate(({ nativeTheme }) => {
+  nativeTheme.themeSource = "dark";
+});
+await page.evaluate(() => document.documentElement.classList.add("dark"));
+await shot("19d-assignment-contract-report-dark");
+await app.evaluate(({ nativeTheme }) => {
+  nativeTheme.themeSource = "system";
+});
+await page.evaluate(() => document.documentElement.classList.remove("dark"));
 await send(`[candidato:${await cardAssignment(sliceWork)}:${candidateDecision}]`);
 const sliceCandidate = candidateCards.nth(2);
 const testedSeams = sliceCandidate.getByTestId("candidate-tested-seams");
@@ -902,6 +928,11 @@ await writeFile(join(presenceSeed, "src", "payments.js"), "export const pay = (o
 presenceGit(presenceSeed, "add", ".");
 presenceGit(presenceSeed, "commit", "-q", "-m", "Pagamenti");
 presenceGit(presenceSeed, "push", "-q", presenceRemote, "main");
+// G03: Bea's branch is on the remote and changes the same line Ada changes in her checkout.
+presenceGit(presenceSeed, "checkout", "-q", "-b", "feature/rimborsi");
+await writeFile(join(presenceSeed, "src", "payments.js"), "export const pay = (order) => order.total - order.refund;\n");
+presenceGit(presenceSeed, "commit", "-q", "-am", "Rimborsi");
+presenceGit(presenceSeed, "push", "-q", presenceRemote, "feature/rimborsi");
 const beaRecord = {
   version: 1,
   user: "bea-at-example.com",
@@ -1025,6 +1056,7 @@ await page.getByTestId("settings").getByRole("switch", { name: "Condividi la pre
 await page.getByTestId("settings").getByRole("button", { name: "Metti in pausa" }).click();
 await page.getByTestId("settings").getByRole("button", { name: "Riprendi" }).waitFor();
 await shot("16c-presence-settings");
+await page.getByTestId("settings").getByRole("button", { name: "Riprendi" }).click();
 
 // P10, GitHub CLI: with gh logged in, Collegamenti says so without the guide, and Controlla di nuovo reads it again.
 await page.getByTestId("settings").getByRole("button", { name: /^Collegamenti/ }).first().click();
@@ -1041,6 +1073,47 @@ await page.evaluate(() => window.trama.invoke("settings:update", { theme: "syste
 await page.getByRole("button", { name: "Impostazioni" }).click();
 await page.getByTestId("settings").waitFor({ state: "hidden" });
 
+
+// G03, sovrapposizioni: Ada and Bea change the same line of src/payments.js. The merge probe runs in Trama's folders
+// and confirms the conflict with its line; the Coordinator says it in the chat, the focus bar warns, the map marks the
+// module and the file, and the message to Bea is ready to copy. Nothing is blocked or sent by Trama.
+const overlapCard = page.locator('[data-anchor="presence-overlap"]').filter({ has: page.locator('[data-testid="overlap-card"][data-level="conflict"]') });
+await overlapCard.first().waitFor({ timeout: 60_000 });
+if (!(await overlapCard.first().innerText()).includes("riga 1")) throw new Error(`Overlap card without the line in conflict: ${await overlapCard.first().innerText()}`);
+await overlapCard.first().scrollIntoViewIfNeeded();
+await shot("16d-overlap-chat");
+const focusOverlap = page.locator('[data-testid="focus-overlap"][data-level="conflict"]');
+await focusOverlap.waitFor({ timeout: 10_000 });
+await focusOverlap.getByRole("button", { name: /^Dettagli/ }).click();
+await focusOverlap.getByRole("button", { name: "Scrivi a Bea" }).first().click();
+const colleagueMessage = focusOverlap.getByTestId("colleague-message");
+const draft = await colleagueMessage.getByRole("textbox").inputValue();
+if (!draft.includes("Ciao Bea") || !draft.includes("src/payments.js") || !draft.includes("riga 1") || /[\u2013\u2014]/.test(draft)) {
+  throw new Error(`Message to the colleague: ${draft}`);
+}
+const closeBox = await colleagueMessage.getByRole("button", { name: "Chiudi" }).boundingBox();
+const copyBox = await colleagueMessage.getByRole("button", { name: "Copia il messaggio" }).boundingBox();
+if (!closeBox || !copyBox || closeBox.x >= copyBox.x) throw new Error("Message to the colleague: Copia il messaggio is not the last call to action");
+await shot("16e-overlap-focus");
+await page.evaluate(() => window.trama.invoke("settings:update", { theme: "dark" }));
+await page.waitForFunction(() => document.documentElement.classList.contains("dark"));
+await shot("16f-overlap-focus-dark");
+await page.evaluate(() => window.trama.invoke("settings:update", { theme: "system" }));
+await colleagueMessage.getByRole("button", { name: "Copia il messaggio" }).click();
+await colleagueMessage.getByTestId("colleague-message-done").waitFor();
+await page.getByRole("button", { name: "Mappa del progetto" }).click();
+const markedModule = page.getByRole("listbox", { name: "Moduli" }).getByRole("option").filter({ has: page.locator('[data-overlap="conflict"]') });
+await markedModule.first().waitFor({ timeout: 10_000 });
+await page.getByTestId("map-overlap-legend").waitFor();
+await shot("16g-overlap-map");
+await markedModule.first().click();
+await page.locator('[data-overlap="conflict"]').filter({ hasText: "Bea" }).first().waitFor();
+await page.getByTestId("module-overlaps").waitFor();
+await shot("16h-overlap-module");
+// Never a block: Ada's checkout and branch are as she left them, and Bea's branch did not move.
+if (!(await readFile(join(presenceProject, "src", "payments.js"), "utf8")).includes("CONTENUTO PRIVATO")) throw new Error("The probe changed the checkout");
+if (presenceGit(presenceProject, "symbolic-ref", "--short", "HEAD").trim() !== "feature/carrello") throw new Error("The probe changed the branch");
+if (presenceGit(presenceRemote, "rev-parse", "feature/rimborsi").trim() !== presenceGit(presenceSeed, "rev-parse", "feature/rimborsi").trim()) throw new Error("Bea's branch moved");
 // P10, provider limits: a temporary 429 reads as such, with no JSON; Trama retries by itself with a growing wait,
 // the person can stop it, and the actions sit on the right with the primary last. Then the provider recovers.
 await page.getByLabel("Messaggio al Coordinatore").fill("[limite-temporaneo] Come si annulla un ordine?");
@@ -1107,4 +1180,43 @@ for (const dark of [false, true]) {
   await shot(`20f-provider-recovered-${dark ? "dark" : "light"}`);
 }
 await setLook(null, false);
+await app.close();
+
+// P11: Antigravity works in every role. A fake agy first on the PATH and a separate HOME for its capture plugin:
+// the picker offers it like the other providers, and the Coordinator runs on it in the read-only profile.
+const agyBin = await mkdtemp(join(tmpdir(), "trama-ui-agy-"));
+const agyHome = await mkdtemp(join(tmpdir(), "trama-ui-agy-home-"));
+const agyLog = join(agyBin, "calls.log");
+await writeFile(join(agyBin, "agy"), `#!/bin/sh\nexec "${process.execPath}" "${resolve("test-fixtures/fake-agy.mjs")}" "$@"\n`, { mode: 0o755 });
+const agyProject = await mkdtemp(join(tmpdir(), "trama-ui-agy-project-"));
+execFileSync("git", ["-C", agyProject, "init", "-q", "-b", "main"]);
+await writeFile(join(agyProject, "README.md"), "# Magazzino\n");
+execFileSync("git", ["-C", agyProject, "add", "."]);
+execFileSync("git", ["-C", agyProject, "-c", "user.name=Trama UI", "-c", "user.email=ui@trama.local", "commit", "-q", "-m", "Magazzino"]);
+({ app, page } = await launch({ PATH: `${agyBin}:${process.env.PATH}`, HOME: agyHome, FAKE_AGY_LOG: agyLog }));
+await page.evaluate((path) => window.trama.invoke("project:open", { path }), agyProject);
+await page.getByTestId("dialog-title").filter({ hasText: "trama-ui-agy-project" }).waitFor({ timeout: 30_000 });
+await page.getByRole("button", { name: /^Provider e modello del Coordinatore/ }).click();
+await page.getByRole("tab", { name: "Antigravity" }).click();
+const agyModel = page.getByRole("listbox", { name: "Modelli" }).getByText("Gemini 3.5 Flash").first();
+await agyModel.waitFor({ timeout: 20_000 });
+if (await page.getByText("Solo per specialisti con worktree").count()) throw new Error("Antigravity is still offered only to specialists");
+await shot("19-antigravity-picker");
+await agyModel.click();
+await page.getByRole("button", { name: "Provider e modello del Coordinatore: Antigravity" }).waitFor({ timeout: 20_000 });
+await composer().fill("Cosa contiene il progetto?");
+await page.keyboard.press("Enter");
+await page.getByText("Ho letto il progetto in sola lettura").first().waitFor({ timeout: 30_000 });
+const agyCalls = await readFile(agyLog, "utf8");
+if (!/"profile":"read-only"/.test(agyCalls)) throw new Error(`The Antigravity Coordinator did not run read-only: ${agyCalls}`);
+for (const expected of ["allowed view_file", "denied write_to_file", "denied run_command"]) {
+  if (!agyCalls.includes(expected)) throw new Error(`Antigravity read-only hook: no "${expected}" in ${agyCalls}`);
+}
+if ((await readFile(join(agyProject, "README.md"), "utf8")) !== "# Magazzino\n") throw new Error("The read-only Antigravity turn changed a file");
+for (const dark of [false, true]) {
+  await page.evaluate((theme) => window.trama.invoke("settings:update", { theme }), dark ? "dark" : "light");
+  await page.waitForFunction((wanted) => document.documentElement.classList.contains("dark") === wanted, dark);
+  await shot(`19a-antigravity-coordinator-${dark ? "dark" : "light"}`);
+}
+await page.evaluate(() => window.trama.invoke("settings:update", { theme: "system" }));
 await app.close();

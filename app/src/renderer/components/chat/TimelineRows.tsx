@@ -33,6 +33,7 @@ import {
   DomainProposalCard,
   ContextNoticeCard,
   PresenceConsentCard,
+  OverlapCard,
   DecisionCard,
   GrillingRoundCard,
   MandateCard,
@@ -459,6 +460,7 @@ export function TimelineRowView({ row, streaming = false, latest = false }: { ro
       if (row.cardKind === "conflict" && content.referenceId) return <ConflictCard assessmentId={content.referenceId} />;
       if (row.cardKind === "goal" && content.referenceId) return <GoalCard goalId={content.referenceId} />;
       if (row.cardKind === "domainProposal" && content.referenceId) return <DomainProposalCard proposalId={content.referenceId} />;
+      if (row.cardKind === "overlap" && content.referenceId) return <OverlapCard overlapId={content.referenceId} title={content.title} detail={content.detail} />;
       if (row.cardKind === "presenceConsent" && content.referenceId) return <PresenceConsentCard proposal={content.referenceId} detail={content.detail} />;
       if (row.cardKind === "automaticStep") return <AutomaticStepRow label={content.title} requestId={content.referenceId} />;
       return <ContextNoticeCard title={content.title} detail={content.detail} />;

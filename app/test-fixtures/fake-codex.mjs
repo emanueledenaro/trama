@@ -28,6 +28,13 @@ const readySlice = (text) => {
   return id ? { slice: id } : {};
 };
 
+// The contract of assign_task (W05): the seams to test, by number for a slice whose spec has confirmed seams.
+const contract = (slice) => ({
+  seams: slice.slice ? ["1"] : ["Il file NOTE.md nel worktree"],
+  decisionIDs: [],
+  dependencies: [],
+});
+
 async function callTool(threadId, name, args) {
   const server = toolServers.get(threadId);
   const response = await fetch(server.url, {
@@ -295,8 +302,10 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
         if (text.includes("## Trama binding for the tdd skill")) {
           // The developer of a slice (M06) runs implement and tdd, and reports the confirmed seams it tested.
           const skills = params.input.filter((item) => item.type === "skill").map((item) => item.name);
-          const seam = text.match(/## Seam confermati dalla persona\n1\. /) ? "\n\nTested seams:\n- 1: NOTE.md" : "";
-          setTimeout(() => finish(`Ho scritto NOTE.md nel worktree. Skill ricevute: ${skills.join(", ")}${seam}`), 30);
+          const seam = text.match(/## Seam confermati dalla persona\n1\. /) ? "\n- 1: NOTE.md" : "\n- none";
+          // The structured report of W05, which extends M06's tested seams.
+          const report = `\n\nFiles touched:\n- NOTE.md\nTests written:\n- NOTE.md\nTested seams:${seam}\nDoubts:\n- Il rimborso manuale resta fuori da questa fetta`;
+          setTimeout(() => finish(`Ho scritto NOTE.md nel worktree. Skill ricevute: ${skills.join(", ")}${report}`), 30);
           return;
         }
         setTimeout(() => finish("Ho scritto NOTE.md nel worktree."), 30);
@@ -342,6 +351,7 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
           } else if (automatic[1] === "assignWork") {
             const assigned = await call("assign_task", {
               ...readySlice(text),
+              ...contract(readySlice(text)),
               specialist: "Ada",
               kind: "agreedTicket",
               objective: "Mandare in revisione gli ordini pagati annullati",
@@ -429,8 +439,11 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
       if (text.includes("[assegna")) {
         // [assegna] or [assegna:<slice>]: without a slice the fake names the first ready one Trama lists (M05).
         const named = text.match(/\[assegna:(\w+)\]/)?.[1];
+        const slice = named ? { slice: named } : readySlice(text);
         callTool(threadId, "assign_task", {
-          ...(named ? { slice: named } : readySlice(text)),
+          ...slice,
+          // "[senza-contratto]" leaves out the seams and the Pact decisions: Trama refuses the assignment (W05).
+          ...(text.includes("[senza-contratto]") ? { dependencies: [] } : contract(slice)),
           specialist: "Ada",
           kind: "agreedTicket",
           objective: "Documenta l'annullamento",

@@ -182,6 +182,7 @@ const handlers: { [K in ActionName]: Handler<K> } = {
   "presence:consent": ({ share, proposal }) => controller.setPresenceConsent(share, proposal ?? null),
   "presence:pause": ({ paused }) => controller.pausePresence(paused),
   "presence:refresh": () => controller.refreshPresence(),
+  "presence:commentPullRequest": ({ number, body }) => controller.commentColleaguePullRequest(number, body),
   "settings:update": (update) => controller.updateSettings(update),
   "monitor:update": (update) => controller.updateMonitor(update),
   "monitor:poll": () => controller.pollMonitor(),
