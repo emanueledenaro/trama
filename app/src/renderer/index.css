@@ -451,8 +451,20 @@
   stroke: var(--background);
   stroke-width: 7;
 }
-/* In the components layer, so text utilities on a tag still apply. */
+/* In the components layer, so color and text utilities on a tag or a person's avatar still apply. */
 @layer components {
+  .person-avatar {
+    display: inline-flex;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    border-radius: 9999px;
+    font-size: var(--text-ui-2xs);
+    font-weight: 600;
+    line-height: 1;
+  }
   .agent-tag {
     color: var(--agent);
     font-size: var(--text-ui-xs);

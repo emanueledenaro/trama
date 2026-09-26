@@ -168,7 +168,7 @@ export function freshnessLabel(entry: PresenceFreshness, now: Date): string {
   return "attivo ora";
 }
 
-function relativeAgo(iso: string | null, now: Date): string {
+export function relativeAgo(iso: string | null, now: Date): string {
   if (!iso) return "tempo fa";
   const minutes = Math.max(0, Math.round((now.getTime() - Date.parse(iso)) / 60_000));
   if (minutes < 1) return "adesso";
