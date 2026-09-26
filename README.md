@@ -112,7 +112,7 @@ The vocabulary (Coordinator, Pact, mandate, candidate, moment) is defined in [CO
 | Claude | yes | Base path: message, Trama tool, interrupt, restart, resume |
 | Pi | yes | Base path: message, Trama tool, interrupt, restart, resume |
 | Cursor, Grok, Devin, OpenCode | yes | No, fake CLIs and servers only |
-| Antigravity | yes | No. Works only in a worktree, without shell or network |
+| Antigravity | yes | No, fake CLI only. Every role: read-only for the Coordinator, planners, reviewers and checks, edits only in a specialist's worktree, never shell or network |
 | Droid | yes | No. Not detected on the test machine |
 
 The adapters are ported from [Synara](https://github.com/Emanuele-web04/synara) ([ADR 0012](docs/adr/0012-provider-di-synara-in-typescript.md)). Credentials stay with each provider's official CLI. Trama does not read `auth.json` or copy tokens.
