@@ -19,6 +19,9 @@ import {
   parseAntigravityModelLines,
   parseAntigravityPrintResult,
   resolveAntigravityCliModelLabel,
+  ANTIGRAVITY_KNOWN_MODELS,
+  antigravityHelpOffersEffort,
+  antigravityModelArgs,
 } from "./antigravity";
 import { clearUsageLimitsForTests, parseUsageLimit } from "./providerSupport";
 import { CoordinatorToolServer, toolSuccess } from "../toolServer";
@@ -28,13 +31,26 @@ const FAKE_AGY = String.raw`
 const fs = require("node:fs");
 const args = process.argv.slice(2);
 const scenario = process.env.FAKE_AGY_SCENARIO || "success";
+// The labels agy 1.2.11 accepts, copied from the error in issue #209.
+const REAL_MODELS = [
+  "Gemini 3.8 Flash (High)", "Gemini 3.8 Flash (Medium)", "Gemini 3.8 Flash (Low)",
+  "Gemini 3.7 Flash (High)", "Gemini 3.7 Flash (Medium)", "Gemini 3.7 Flash (Low)",
+  "Gemini 3.6 Flash (High)", "Gemini 3.6 Flash (Medium)", "Gemini 3.6 Flash (Low)",
+  "Gemini 3.1 Pro (High)", "Gemini 3.1 Pro (Low)",
+  "Claude Sonnet 4.6 (Thinking)", "Claude Opus 4.6 (Thinking)", "GPT-OSS 120B (Medium)",
+];
 if (args[0] === "--version") { console.log("agy " + (process.env.FAKE_AGY_VERSION || "1.2.0")); process.exit(0); }
 if (args[0] === "--help") {
-  console.log("Usage: agy [options]\n  -p, --print <prompt>  Print mode" + (process.env.FAKE_AGY_HELP_SANDBOX ? "\n  --sandbox             Run tools in a sandbox" : ""));
+  console.log(
+    "Usage: agy [options]\n  -p, --print <prompt>  Print mode" +
+      (process.env.FAKE_AGY_HELP_SANDBOX ? "\n  --sandbox             Run tools in a sandbox" : "") +
+      (process.env.FAKE_AGY_STRICT_MODELS ? "\n  --model <model>       Model\n  --effort <level>      Reasoning effort (low|medium|high)" : ""),
+  );
   process.exit(0);
 }
 if (args[0] === "models") {
   if (process.env.FAKE_AGY_MODELS === "signedout") { console.error("Error: not logged in. Run agy to sign in."); process.exit(1); }
+  if (process.env.FAKE_AGY_MODELS === "real") { console.log(REAL_MODELS.join("\n")); process.exit(0); }
   console.log("gemini-3-5-flash\tGemini 3.5 Flash (Medium)\ngemini-3-5-flash-high\tGemini 3.5 Flash (High)\nclaude-opus\tClaude Opus 4.6 (Thinking)");
   process.exit(0);
 }
@@ -50,6 +66,19 @@ fs.appendFileSync(process.env.FAKE_AGY_LOG, JSON.stringify({ args, cwd: process.
   profile: process.env.TRAMA_ANTIGRAVITY_PROFILE,
   tokenFile: process.env.TRAMA_ANTIGRAVITY_MCP_TOKEN_FILE, hostTools: process.env.TRAMA_ANTIGRAVITY_HOST_TOOLS,
   leaked: process.env.TRAMA_SECRET } }) + "\n");
+// Like agy 1.2.11, a strict run joins --model and --effort into one label and refuses any label outside
+// the list, a bare name included. This pairing is inferred from the error text in issue #209.
+if (process.env.FAKE_AGY_STRICT_MODELS) {
+  const flag = (name) => (args.indexOf(name) >= 0 ? args[args.indexOf(name) + 1] : "");
+  const model = flag("--model");
+  const effort = flag("--effort");
+  const label = effort ? model + " (" + effort.charAt(0).toUpperCase() + effort.slice(1) + ")" : model;
+  if (!REAL_MODELS.includes(label) || (effort && !["low", "medium", "high"].includes(effort))) {
+    const error = "invalid model selection (--model \"" + model + "\" --effort \"" + effort + "\"): model " + model + " is not recognized as a known model or custom model in settings";
+    process.stdout.write(JSON.stringify({ event: "error", message: error }) + "\n");
+    process.exit(1);
+  }
+}
 // Like the real CLI, every hook runs the installed capture script and honors its decision.
 const capture = require("node:path").join(process.env.FAKE_AGY_PLUGIN, "capture.cjs");
 const hook = (event, payload) =>
@@ -154,7 +183,7 @@ beforeEach(async () => {
 afterEach(async () => {
   runtime?.stop();
   runtime = null;
-  for (const key of ["FAKE_AGY_SCENARIO", "FAKE_AGY_VERSION", "FAKE_AGY_MODELS", "FAKE_AGY_LOG", "FAKE_AGY_PLUGIN", "FAKE_AGY_HELP_SANDBOX", "TRAMA_SECRET"]) delete process.env[key];
+  for (const key of ["FAKE_AGY_SCENARIO", "FAKE_AGY_VERSION", "FAKE_AGY_MODELS", "FAKE_AGY_LOG", "FAKE_AGY_PLUGIN", "FAKE_AGY_HELP_SANDBOX", "FAKE_AGY_STRICT_MODELS", "TRAMA_SECRET"]) delete process.env[key];
   clearUsageLimitsForTests();
   await rm(root, { recursive: true, force: true });
 });
@@ -214,6 +243,48 @@ describe("Antigravity models and health", () => {
     expect(resolveAntigravityCliModelLabel("slug\tGemini 3.1 Pro")).toBe("Gemini 3.1 Pro (Low)");
   });
 
+  it("builds a label agy 1.2.11 accepts for every model and effort in its list", async () => {
+    process.env.FAKE_AGY_MODELS = "real";
+    runtime = make();
+    const models = await runtime.listModels();
+    expect(models.map((model) => model.model)).toEqual(Object.keys(ANTIGRAVITY_KNOWN_MODELS));
+    expect(models.find((model) => model.isDefault)?.model).toBe("Gemini 3.8 Flash");
+    for (const model of models) {
+      expect(model.supportedReasoningEfforts).toEqual(ANTIGRAVITY_KNOWN_MODELS[model.model]);
+      expect(model.defaultReasoningEffort).not.toBeNull();
+    }
+    const accepted = [
+      "Gemini 3.8 Flash (High)", "Gemini 3.8 Flash (Medium)", "Gemini 3.8 Flash (Low)",
+      "Gemini 3.7 Flash (High)", "Gemini 3.7 Flash (Medium)", "Gemini 3.7 Flash (Low)",
+      "Gemini 3.6 Flash (High)", "Gemini 3.6 Flash (Medium)", "Gemini 3.6 Flash (Low)",
+      "Gemini 3.1 Pro (High)", "Gemini 3.1 Pro (Low)",
+      "Claude Sonnet 4.6 (Thinking)", "Claude Opus 4.6 (Thinking)", "GPT-OSS 120B (Medium)",
+    ];
+    const built = Object.entries(ANTIGRAVITY_KNOWN_MODELS).flatMap(([model, efforts]) =>
+      efforts.map((effort) => resolveAntigravityCliModelLabel(model, effort)),
+    );
+    expect(built.sort()).toEqual([...accepted].sort());
+  });
+
+  it("never sends a bare name: a missing, empty or foreign effort becomes the model default", () => {
+    expect(resolveAntigravityCliModelLabel("Gemini 3.8 Flash")).toBe("Gemini 3.8 Flash (High)");
+    expect(resolveAntigravityCliModelLabel("Gemini 3.8 Flash", "")).toBe("Gemini 3.8 Flash (High)");
+    expect(resolveAntigravityCliModelLabel("Gemini 3.8 Flash", null, "")).toBe("Gemini 3.8 Flash (High)");
+    expect(resolveAntigravityCliModelLabel("Gemini 3.8 Flash", "  ")).toBe("Gemini 3.8 Flash (High)");
+    expect(resolveAntigravityCliModelLabel("Gemini 3.8 Flash", "low")).toBe("Gemini 3.8 Flash (Low)");
+    // An effort from another provider or model is not sent: agy has no such level.
+    expect(resolveAntigravityCliModelLabel("Gemini 3.1 Pro", "medium")).toBe("Gemini 3.1 Pro (Low)");
+    expect(resolveAntigravityCliModelLabel("Claude Sonnet 4.6", "xhigh")).toBe("Claude Sonnet 4.6 (Thinking)");
+    expect(resolveAntigravityCliModelLabel("GPT-OSS 120B", "high")).toBe("GPT-OSS 120B (Medium)");
+    // The levels agy models listed win over the built-in ones.
+    expect(resolveAntigravityCliModelLabel("Gemini 3.9 Flash", null, "medium", ["low", "medium"])).toBe("Gemini 3.9 Flash (Medium)");
+    expect(resolveAntigravityCliModelLabel("Gemini 3.9 Flash", "high", null, ["low"])).toBe("Gemini 3.9 Flash (Low)");
+    // A label that already carries its level stays as it is.
+    expect(resolveAntigravityCliModelLabel("Gemini 3.7 Flash (Medium)", "low")).toBe("Gemini 3.7 Flash (Medium)");
+    // A custom model without known levels goes through unchanged.
+    expect(resolveAntigravityCliModelLabel("My Custom Model")).toBe("My Custom Model");
+  });
+
   it("reads the account from the version and model probes", async () => {
     runtime = make();
     expect(await runtime.readAccount()).toEqual({ kind: "authenticated", label: "Antigravity CLI 1.2.0" });
@@ -271,6 +342,15 @@ describe("Antigravity sandbox", () => {
     await expect(
       runtime.openThread({ model: "Gemini 3.5 Flash", cwd: join(root, "worktree"), developerInstructions: "", sandbox: "workspace-write" }),
     ).resolves.toMatchObject({ replaced: false });
+  });
+
+  it("splits the level into --effort only when the CLI lists it and documents the level", () => {
+    expect(antigravityHelpOffersEffort("  --effort <level>      Reasoning effort (low|medium|high)")).toBe(true);
+    expect(antigravityHelpOffersEffort("  --efforts <x>\n  --model <m>")).toBe(false);
+    expect(antigravityModelArgs("Gemini 3.8 Flash (High)", true)).toEqual(["--model", "Gemini 3.8 Flash", "--effort", "high"]);
+    expect(antigravityModelArgs("Claude Sonnet 4.6 (Thinking)", true)).toEqual(["--model", "Claude Sonnet 4.6 (Thinking)"]);
+    expect(antigravityModelArgs("Gemini 3.8 Flash (High)", false)).toEqual(["--model", "Gemini 3.8 Flash (High)"]);
+    expect(antigravityModelArgs("My Custom Model", true)).toEqual(["--model", "My Custom Model"]);
   });
 
   it("reads the --sandbox switch from the CLI help", () => {
@@ -433,6 +513,40 @@ describe("Antigravity capture plugin scripts", () => {
 });
 
 describe("Antigravity turns", () => {
+  it("runs a bare model name against an agy that rejects names without the effort level", async () => {
+    process.env.FAKE_AGY_STRICT_MODELS = "1";
+    process.env.FAKE_AGY_MODELS = "real";
+    runtime = make();
+    const worktree = join(root, "worktree");
+    const run = async (model: string, effort?: string | null) => {
+      const { threadId } = await runtime!.openThread({ model, cwd: worktree, developerInstructions: "", sandbox: "workspace-write" });
+      return runtime!.runTurn({ threadId, prompt: "ciao", cwd: worktree, model, effort, writableRoot: worktree, onEvent: () => undefined });
+    };
+    await expect(run("Gemini 3.8 Flash", "")).resolves.toBe('{"ok":true}');
+    await expect(run("Gemini 3.1 Pro", "medium")).resolves.toBe('{"ok":true}');
+    await runtime.listModels();
+    await expect(run("Claude Opus 4.6", null)).resolves.toBe('{"ok":true}');
+    const sent = (await logLines()).map((line) => {
+      const args = line.args as string[];
+      const at = args.indexOf("--model");
+      return args[at + 2] === "--effort" ? [args[at + 1], args[at + 3]] : [args[at + 1]];
+    });
+    expect(sent).toEqual([["Gemini 3.8 Flash", "high"], ["Gemini 3.1 Pro", "low"], ["Claude Opus 4.6 (Thinking)"]]);
+  });
+
+  it("reports an unknown model as unavailable with a change-model hint, not as raw JSON", async () => {
+    process.env.FAKE_AGY_STRICT_MODELS = "1";
+    runtime = make();
+    const worktree = join(root, "worktree");
+    const { threadId } = await runtime.openThread({ model: "Gemini 9 Ultra", cwd: worktree, developerInstructions: "", sandbox: "workspace-write" });
+    const failure = runtime.runTurn({ threadId, prompt: "ciao", cwd: worktree, model: "Gemini 9 Ultra", writableRoot: worktree, onEvent: () => undefined });
+    await expect(failure).rejects.toMatchObject({
+      code: "invalidModel",
+      message: expect.stringMatching(/^Il modello Gemini 9 Ultra non è disponibile in Antigravity CLI\. Cambia modello e riprova\. Dettaglio di agy: invalid model selection/),
+    });
+    await expect(failure).rejects.not.toMatchObject({ message: expect.stringContaining("{") });
+  });
+
   it("streams a turn from the fake CLI and maps hooks to events", async () => {
     process.env.TRAMA_SECRET = "should-not-leak";
     runtime = make(true);

@@ -4,7 +4,7 @@ import { mkdir, readFile as readFileText, realpath, stat, writeFile } from "node
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { isUsableAccount, type ProviderAccount, type ProviderId, type ProviderModel, type TurnEvent } from "@shared/codex";
-import { PROVIDERS, supportsReadOnly } from "@shared/providers";
+import { PROVIDERS, catalogModel, catalogOffers, supportsReadOnly } from "@shared/providers";
 import { shortId } from "@shared/ids";
 import { mentionContextBlock } from "@shared/mentions";
 import { codexSkillText, type LoadedSkill, skillInvocations } from "@shared/skills";
@@ -1518,7 +1518,7 @@ export class TramaController {
   private coordinatorModel(document: ProjectDocument, provider = this.coordinatorProvider(document)): string | null {
     const models = this.state.providers[provider]?.models ?? [];
     const chosen = (document.selectedProvider ?? "codex") === provider ? document.selectedModel : (document.providerPreferences?.[provider]?.model ?? null);
-    if (chosen) return models.length === 0 || models.some((m) => m.model === chosen) ? chosen : null;
+    if (chosen) return models.length === 0 || catalogOffers(provider, models.map((m) => m.model), chosen) ? chosen : null;
     return (
       (provider === "codex" ? models.find((m) => m.model === PREFERRED_COORDINATOR_MODEL)?.model : undefined) ??
       models.find((m) => m.isDefault)?.model ??
@@ -1530,7 +1530,7 @@ export class TramaController {
   private coordinatorModelProblem(document: ProjectDocument, provider: ProviderId): string {
     const models = this.state.providers[provider]?.models ?? [];
     const chosen = (document.selectedProvider ?? "codex") === provider ? document.selectedModel : null;
-    if (chosen && models.length && !models.some((m) => m.model === chosen)) {
+    if (chosen && models.length && !catalogOffers(provider, models.map((m) => m.model), chosen)) {
       return `Il modello ${chosen} non è più nel catalogo di ${providerName(provider)}. Scegline un altro dal composer.`;
     }
     return `${providerName(provider)} non ha restituito modelli disponibili.`;
@@ -2120,8 +2120,9 @@ export class TramaController {
       const move = automaticMove(project.document, requestId, event, guards);
       if (!move) continue;
       // The model of the dialog's latest turn, while the Coordinator's provider still offers it.
-      const models = this.state.providers[this.coordinatorProvider(project.document)]?.models ?? [];
-      const model = move.model && (models.length === 0 || models.some((m) => m.model === move.model)) ? move.model : null;
+      const provider = this.coordinatorProvider(project.document);
+      const models = this.state.providers[provider]?.models ?? [];
+      const model = move.model && (models.length === 0 || catalogOffers(provider, models.map((m) => m.model), move.model)) ? move.model : null;
       const step: RequestStep = { move: move.move, by: "trama" };
       const starting = { projectId: project.id };
       this.automaticStarting = starting;
@@ -2255,6 +2256,10 @@ export class TramaController {
     if (goalId) requireGoal(project.document, goalId);
     const selection = dialogComposer(project.document, goalId);
     const id = provider ?? selection.selectedProvider ?? "codex";
+    // A name with its level, as Antigravity lists it, becomes the catalogue model and that level.
+    const named = catalogModel(id, model);
+    model = named.model;
+    effort = named.effort ?? effort;
     selection.selectedProvider = id;
     selection.selectedModel = model;
     selection.selectedEffort = effort;
@@ -2958,7 +2963,9 @@ export class TramaController {
     const reason = providerUnavailableReason(provider, this.state.providers[provider]?.account ?? null);
     if (reason) throw new DomainError(reason);
     const models = this.state.providers[provider].models;
-    if (models.length && !models.some((m) => m.model === model)) throw new DomainError(`Il modello ${model} non è nel catalogo di ${providerName(provider)}.`);
+    if (models.length && !catalogOffers(provider, models.map((m) => m.model), model)) {
+      throw new DomainError(`Il modello ${model} non è nel catalogo di ${providerName(provider)}.`);
+    }
     const assignment = changeAssignmentProvider(project.document, assignmentId, provider, model);
     appendEvent(
       project.document,

@@ -147,6 +147,9 @@ describe("TramaController", () => {
     expect(document.composerDraft).toBe("bozza del progetto");
     expect(findGoal(document, second)!.dialog).toMatchObject({ selectedModel: "gpt-5.5", selectedEffort: "high" });
     expect(document.selectedEffort).toBeNull();
+    // An Antigravity name with its level, as agy lists it, is stored as catalogue model plus level (issue #209).
+    await controller!.selectModel("Gemini 3.8 Flash (High)", null, "antigravity", first);
+    expect(findGoal(document, first)!.dialog).toMatchObject({ selectedProvider: "antigravity", selectedModel: "Gemini 3.8 Flash", selectedEffort: "high" });
 
     await controller!.send("Da dove partiamo?", null, null, null, [], null, first);
     const request = document.requests.at(-1)!;

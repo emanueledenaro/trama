@@ -1,5 +1,5 @@
 import type { ProviderId } from "@shared/codex";
-import { supportsReadOnly } from "@shared/providers";
+import { catalogOffers, supportsReadOnly } from "@shared/providers";
 import type { MandateAction, ProjectDocument, SpecialistTool, TechnicalReview, WorkKind } from "@shared/domain";
 import { messageStyle } from "./messageStyle";
 import type { WorkspaceReview } from "./workspace";
@@ -919,7 +919,7 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
         const requestedModel = typeof args.model === "string" && args.model.trim() ? args.model.trim() : null;
         const model = requestedModel ?? (providerId === context.defaultProvider ? context.defaultModel : provider.models[0] ?? null);
         if (!model) return toolFailure("invalid_arguments", "model is required: no default model is available.");
-        if (provider.models.length && !provider.models.includes(model)) {
+        if (provider.models.length && !catalogOffers(providerId, provider.models, model)) {
           return toolFailure("invalid_model", `Model ${model} is not in the ${providerId} catalogue: ${provider.models.join(", ")}.`);
         }
         const namedGoal = typeof args.goalID === "string" && args.goalID.trim() ? args.goalID.trim() : null;

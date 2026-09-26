@@ -17,6 +17,7 @@ export const EFFORT_LABELS: Record<string, string> = {
   xhigh: "Molto alto",
   max: "Massimo",
   ultra: "Ultra",
+  thinking: "Ragionamento",
 };
 
 /** Provider catalogues separate facts with " · "; Trama shows them as a plain list. */

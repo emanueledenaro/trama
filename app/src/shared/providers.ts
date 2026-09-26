@@ -64,3 +64,17 @@ export function capabilityLines(c: ProviderCapabilities): { label: string; value
 
 /** True when the provider can run read-only sessions: the Coordinator, planners, reviewers, read-only specialists. */
 export const supportsReadOnly = (id: string): boolean => PROVIDERS.find((p) => p.id === id)?.capabilities.supportsReadOnlySessions !== false;
+
+/**
+ * The catalogue name and level of a model. Antigravity lists a model once and names each level in
+ * parentheses, as `agy models` prints it: `Gemini 3.8 Flash (High)` is `Gemini 3.8 Flash` at `high` (issue #209).
+ */
+export function catalogModel(provider: string, model: string): { model: string; effort: string | null } {
+  const match = provider === "antigravity" ? /^(.*?)\s+\(([^()]+)\)$/u.exec(model.trim()) : null;
+  return match?.[1] && match[2] ? { model: match[1].trim(), effort: match[2].trim().toLowerCase() } : { model, effort: null };
+}
+
+/** True when the catalogue offers the model, by its own name or, for Antigravity, by the name with its level. */
+export function catalogOffers(provider: string, models: readonly string[], model: string): boolean {
+  return models.includes(model) || models.includes(catalogModel(provider, model).model);
+}

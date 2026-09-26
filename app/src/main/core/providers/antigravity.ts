@@ -58,7 +58,7 @@ import {
   usageLimitError,
 } from "./providerSupport";
 
-const DEFAULT_MODEL = "Gemini 3.5 Flash";
+const DEFAULT_MODEL = "Gemini 3.8 Flash";
 const PRINT_TIMEOUT = "30m";
 const POLL_INTERVAL_MS = 75;
 const VERSION_TIMEOUT_MS = 4_000;
@@ -281,7 +281,22 @@ export function parseAntigravityPrintResult(stdout: string): AntigravityPrintRes
 
 // ── Models (`agy models`) ────────────────────────────────────────────────
 
+/**
+ * The labels `agy` 1.2.11 accepts, as display name and effort levels (issue #209). `--model` takes the
+ * full label, such as `Gemini 3.8 Flash (High)`: a bare name is rejected as an unknown model.
+ */
+export const ANTIGRAVITY_KNOWN_MODELS: Readonly<Record<string, readonly string[]>> = {
+  "Gemini 3.8 Flash": ["low", "medium", "high"],
+  "Gemini 3.7 Flash": ["low", "medium", "high"],
+  "Gemini 3.6 Flash": ["low", "medium", "high"],
+  "Gemini 3.1 Pro": ["low", "high"],
+  "Claude Sonnet 4.6": ["thinking"],
+  "Claude Opus 4.6": ["thinking"],
+  "GPT-OSS 120B": ["medium"],
+};
+
 const DEFAULT_EFFORT_BY_MODEL: Readonly<Record<string, string>> = {
+  "Gemini 3.8 Flash": "high",
   "Gemini 3.7 Flash": "high",
   "Gemini 3.6 Flash": "medium",
   "Gemini 3.5 Flash": "medium",
@@ -346,20 +361,53 @@ export function parseAntigravityModelLines(output: string): ProviderModel[] {
   return models;
 }
 
-/** Always rebuilds the CLI display label, so a corrupted `slug\tName (Effort)` row never reaches `--model`. */
+const effortKey = (value: string | null | undefined): string | undefined => value?.trim().toLowerCase() || undefined;
+
+/**
+ * Always rebuilds the CLI display label, so a corrupted `slug\tName (Effort)` row never reaches `--model`.
+ * A missing, empty or unsupported effort falls back to the model's default level: `agy` rejects a known
+ * model without one. `supportedEfforts` are the levels `agy models` listed; without them Trama uses the
+ * levels of `agy` 1.2.11.
+ */
 export function resolveAntigravityCliModelLabel(
   model: string,
   effort?: string | null,
-  discoveredDefaultEffort?: string,
+  discoveredDefaultEffort?: string | null,
+  supportedEfforts?: readonly string[],
 ): string {
   const parsed = parseAntigravityCliModelLabel(model);
   if (!parsed) return model;
-  const chosen =
-    parsed.effort ??
-    effort?.trim().toLowerCase() ??
-    discoveredDefaultEffort?.trim().toLowerCase() ??
-    DEFAULT_EFFORT_BY_MODEL[parsed.model];
+  if (parsed.effort) return `${parsed.model} (${effortLabel(parsed.effort)})`;
+  const supported = supportedEfforts?.length ? supportedEfforts : (ANTIGRAVITY_KNOWN_MODELS[parsed.model] ?? []);
+  const candidates = [effortKey(effort), effortKey(discoveredDefaultEffort), DEFAULT_EFFORT_BY_MODEL[parsed.model], supported[0]];
+  const chosen = candidates.find((value): value is string => Boolean(value) && (supported.length === 0 || supported.includes(value!)));
   return chosen ? `${parsed.model} (${effortLabel(chosen)})` : parsed.model;
+}
+
+/** The values `agy --effort` documents. */
+const EFFORT_FLAG_VALUES = ["low", "medium", "high"];
+
+/**
+ * `--model` and `--effort` for a resolved label. With `--effort` (agy 1.1.5 and later) the name and the
+ * level travel apart, as agy reports them: `--model "Gemini 3.8 Flash" --effort "high"`. A level the flag
+ * does not document, such as Thinking, stays in the label, and so does every level on an older CLI.
+ */
+export function antigravityModelArgs(label: string, effortFlag: boolean): string[] {
+  const parsed = parseAntigravityCliModelLabel(label);
+  if (effortFlag && parsed?.effort && EFFORT_FLAG_VALUES.includes(parsed.effort)) {
+    return ["--model", parsed.model, "--effort", parsed.effort];
+  }
+  return ["--model", label];
+}
+
+/** `agy` refused the `--model` label: an unknown model, or a known one without its effort level. */
+export function isAntigravityUnknownModelError(message: string): boolean {
+  return /invalid model selection|not recognized as a known model|unknown model/i.test(message);
+}
+
+/** The refusal in plain Italian with the label Trama sent, so the person can pick another model. */
+export function antigravityUnknownModelMessage(cliModel: string, detail: string): string {
+  return `Il modello ${cliModel} non è disponibile in Antigravity CLI. Cambia modello e riprova. Dettaglio di agy: ${detail.trim()}`;
 }
 
 export function antigravityPromptCommandLineIssue(prompt: string, platform: NodeJS.Platform = process.platform): string | null {
@@ -780,18 +828,26 @@ export function antigravityHelpOffersSandbox(help: string): boolean {
   return false;
 }
 
-const sandboxFlags = new Map<string, Promise<boolean>>();
-
-function sandboxFlagAvailable(binary: string): Promise<boolean> {
-  let flag = sandboxFlags.get(binary);
-  if (!flag) {
-    flag = runHelper(binary, ["--help"], { timeoutMs: HELP_TIMEOUT_MS })
-      .then((result) => !result.timedOut && antigravityHelpOffersSandbox(`${result.stdout}\n${result.stderr}`))
-      .catch(() => false);
-    sandboxFlags.set(binary, flag);
-  }
-  return flag;
+/** True when `agy --help` lists `--effort` (agy 1.1.5 and later). */
+export function antigravityHelpOffersEffort(help: string): boolean {
+  return /^\s*(?:-\w,\s*)?--effort(?![\w-])/m.test(help);
 }
+
+const helpTexts = new Map<string, Promise<string>>();
+
+function helpText(binary: string): Promise<string> {
+  let help = helpTexts.get(binary);
+  if (!help) {
+    help = runHelper(binary, ["--help"], { timeoutMs: HELP_TIMEOUT_MS })
+      .then((result) => (result.timedOut ? "" : `${result.stdout}\n${result.stderr}`))
+      .catch(() => "");
+    helpTexts.set(binary, help);
+  }
+  return help;
+}
+
+const sandboxFlagAvailable = (binary: string): Promise<boolean> => helpText(binary).then(antigravityHelpOffersSandbox);
+const effortFlagAvailable = (binary: string): Promise<boolean> => helpText(binary).then(antigravityHelpOffersEffort);
 
 // ── Hook events and transcript ───────────────────────────────────────────
 
@@ -925,6 +981,7 @@ export class AntigravityRuntime implements AgentRuntime {
   private readonly threadStoreFile: string;
   private readonly threads = new Map<string, ThreadState>();
   private readonly defaultEffortByModel = new Map<string, string>();
+  private readonly effortsByModel = new Map<string, string[]>();
   private active: ActiveTurn | null = null;
   /** A turn still in setup: no process exists yet to stop. */
   private pending: PendingTurn | null = null;
@@ -1002,6 +1059,7 @@ export class AntigravityRuntime implements AgentRuntime {
   private rememberEfforts(models: ProviderModel[]): void {
     for (const model of models) {
       if (model.defaultReasoningEffort) this.defaultEffortByModel.set(model.model, model.defaultReasoningEffort);
+      if (model.supportedReasoningEfforts.length) this.effortsByModel.set(model.model, model.supportedReasoningEfforts);
     }
   }
 
@@ -1082,6 +1140,7 @@ export class AntigravityRuntime implements AgentRuntime {
 
     const pending = new PendingTurn(options.onEvent, "Antigravity è stato chiuso.");
     let sandboxFlag = false;
+    let effortFlag = false;
     this.pending = pending;
     const toolServer = this.options.toolServer ?? null;
     let text: string;
@@ -1096,6 +1155,8 @@ export class AntigravityRuntime implements AgentRuntime {
         sandboxFlag = await sandboxFlagAvailable(binary);
         pending.checkpoint();
       }
+      effortFlag = await effortFlagAvailable(binary);
+      pending.checkpoint();
       const skillText = await inlineSkillInstructions("antigravity", options.skills);
       pending.checkpoint();
       const attachments = await attachedFilesBlock(options.images);
@@ -1127,7 +1188,12 @@ export class AntigravityRuntime implements AgentRuntime {
       // The turn below registers synchronously, so an interrupt from here on reaches it.
       if (this.pending === pending) this.pending = null;
     }
-    const cliModel = resolveAntigravityCliModelLabel(options.model, options.effort, this.defaultEffortByModel.get(options.model));
+    const cliModel = resolveAntigravityCliModelLabel(
+      options.model,
+      options.effort,
+      this.defaultEffortByModel.get(options.model),
+      this.effortsByModel.get(options.model),
+    );
     const eventFile = join(runDir, "hooks.ndjson");
     const logFile = join(runDir, "agy.log");
 
@@ -1136,8 +1202,7 @@ export class AntigravityRuntime implements AgentRuntime {
       "--dangerously-skip-permissions",
       // Extra layer for read-only turns; the capture hook stays the rule Trama relies on.
       ...(sandboxFlag ? ["--sandbox"] : []),
-      "--model",
-      cliModel,
+      ...antigravityModelArgs(cliModel, effortFlag),
       "--output-format",
       "stream-json",
       "--log-file",
@@ -1318,6 +1383,10 @@ export class AntigravityRuntime implements AgentRuntime {
               stderr.trim() ||
               (result?.state === undefined && result !== undefined ? "Antigravity CLI è terminato senza un risultato completo." : "") ||
               `Antigravity CLI è terminato con codice ${code ?? 1}.`;
+            if (isAntigravityUnknownModelError(message)) {
+              settle({ kind: "failed", error: new ProviderError("invalidModel", antigravityUnknownModelMessage(cliModel, message)) });
+              return;
+            }
             const blocked = usageLimitError("antigravity", "Antigravity", message);
             settle({ kind: "failed", error: blocked ?? new ProviderError("rpcError", message) });
             if (blocked) this.options.onAccountChanged?.();
