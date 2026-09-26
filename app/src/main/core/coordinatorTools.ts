@@ -38,6 +38,7 @@ import {
 import { type ToolDefinition, type ToolResult, toolFailure, toolSuccess } from "./toolServer";
 import type { CriterionReport } from "./tickets";
 import { sliceAssignmentProblem } from "./slices";
+import { agreedSeams, contractSeams, seamNumber } from "./implementation";
 import { NEXT_MOVES, workRequests, workState } from "./workPhase";
 
 export interface TicketUpdate {
@@ -342,7 +343,7 @@ export const COORDINATOR_TOOLS: ToolDefinition[] = [
   {
     name: "assign_task",
     description:
-      "Within the mandate (executeInWorktree), assign work to a developer, named by id or name. Trama starts it in a provider session it owns, in its own worktree when tools include edits, without network. Give the objective, the issue or exercise, the modules, the assignments it depends on, the Pact decisions the work relies on (decisionIDs: the work stops if one changes), the checks the result must pass and your instructions for the specialist. provider and model default to yours; propose another connected provider or model only when the work needs it (read_team lists them). In modelReason say why this provider and model fit the work: first the quality the work needs, then the cost among adequate models; say so when you lack evidence. goalID names the goal the work serves; it defaults to the goal of the dialog you are answering. Assign in parallel only independent work: different modules and no unfinished dependency. When the plan of the work has approved slices (to-tickets), work with edits delivers one slice: name it in slice (S1, S2, ...); Trama refuses a slice whose blockers are not done, a slice someone is working on, and more than three developers at work at once. The developer of a slice runs AI Hero's implement and tdd skills, testing only at the seams the person confirmed and reporting the seams it tested: name in requiredChecks the project's typecheck and test checks when it has them (node_typecheck and node_test, or swift_build and swift_test), because only Trama's run of them on the candidate counts as evidence. Work goes only to developers: a fixed role works at its own moments, which Trama starts, and assign_task refuses it. kind newFeature and tradeOff always go to the person.",
+      "Within the mandate (executeInWorktree), assign work to a developer, named by id or name. Trama starts it in a provider session it owns, in its own worktree when tools include edits, without network. Every assignment carries a contract, and Trama refuses an incomplete one (incomplete_contract): the objective; seams, the seams the developer tests (for a slice, the numbers of the seams the person confirmed in the spec (1, 2, ...); otherwise each seam in words; at least one for work with edits, unless the spec of the slice has no confirmed seam); decisionIDs, the Pact decisions the work relies on (the work stops if one changes; [] only when no decision applies); dependencies, the assignments it depends on ([] when none); requiredChecks, the checks the result must pass (at least one for work with edits). Add the issue or exercise, the modules and your instructions for the specialist. The developer ends with a structured report (files touched, tests written, seams covered, doubts) that Trama saves on the assignment: read_team shows it, as the developer's statement and never as evidence. provider and model default to yours; propose another connected provider or model only when the work needs it (read_team lists them). In modelReason say why this provider and model fit the work: first the quality the work needs, then the cost among adequate models; say so when you lack evidence. goalID names the goal the work serves; it defaults to the goal of the dialog you are answering. Assign in parallel only independent work: different modules and no unfinished dependency. When the plan of the work has approved slices (to-tickets), work with edits delivers one slice: name it in slice (S1, S2, ...); Trama refuses a slice whose blockers are not done, a slice someone is working on, and more than three developers at work at once. The developer of a slice runs AI Hero's implement and tdd skills, testing only at the seams the person confirmed and reporting the seams it tested: name in requiredChecks the project's typecheck and test checks when it has them (node_typecheck and node_test, or swift_build and swift_test), because only Trama's run of them on the candidate counts as evidence. Work goes only to developers: a fixed role works at its own moments, which Trama starts, and assign_task refuses it. kind newFeature and tradeOff always go to the person.",
     properties: {
       specialist: text,
       kind: { type: "string", enum: WORK_KINDS },
@@ -350,6 +351,7 @@ export const COORDINATOR_TOOLS: ToolDefinition[] = [
       issueNumber: { type: "integer", minimum: 1 },
       exercise: text,
       moduleIDs: list(1),
+      seams: list(0),
       dependencies: list(0),
       decisionIDs: list(0),
       provider: text,
@@ -361,7 +363,7 @@ export const COORDINATOR_TOOLS: ToolDefinition[] = [
       requiredChecks: { type: "array", items: { type: "string", enum: ALL_CHECKS } },
       instructions: text,
     },
-    required: ["specialist", "kind", "objective", "moduleIDs", "requiredChecks", "instructions"],
+    required: ["specialist", "kind", "objective", "moduleIDs", "seams", "decisionIDs", "dependencies", "requiredChecks", "instructions"],
     readOnly: false,
   },
   {
@@ -591,6 +593,32 @@ function runLearningTool(name: string, args: JsonObject, context: ToolContext): 
   }
 }
 
+/**
+ * The parts of an assignment contract (W05) the Coordinator left out: objective, seams, Pact decisions, required
+ * checks and dependencies. A list may be empty only when it says so: [] for no decision or no dependency. Work with
+ * edits names at least one check and one seam; the seams of a slice are checked against its spec later.
+ */
+function missingContract(args: JsonObject, withEdits: boolean): string[] {
+  const listed = (key: string) => Array.isArray(args[key]);
+  const missing: string[] = [];
+  if (typeof args.objective !== "string" || !args.objective.trim()) missing.push("objective");
+  if (!listed("seams")) missing.push("seams (the seams the developer tests; [] only for read-only work or a slice whose spec has no confirmed seam)");
+  if (!listed("decisionIDs")) missing.push("decisionIDs (the Pact decisions the work relies on; [] when none applies)");
+  if (!listed("dependencies")) missing.push("dependencies (the assignments this work depends on; [] when none)");
+  if (!listed("requiredChecks") || (withEdits && !strings(args.requiredChecks).length)) {
+    missing.push(withEdits ? "requiredChecks (at least one check the result must pass)" : "requiredChecks (the checks the result must pass; [] when none)");
+  }
+  return missing;
+}
+
+function incompleteContract(missing: string[]): ToolResult {
+  return toolFailure(
+    "incomplete_contract",
+    `The assignment contract is incomplete, so Trama did not assign the work. Missing: ${missing.join("; ")}. ` +
+      "Every assignment names its objective, seams, decisionIDs, dependencies and requiredChecks.",
+  );
+}
+
 function refused(authorization: ReturnType<typeof authorize>, action: MandateAction, outside: string[] = []): ToolResult {
   return toolFailure(authorization, refusalMessage(authorization, action, outside));
 }
@@ -778,6 +806,8 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
                     goalID: current.goalId ?? null,
                     worktreeBranch: current.workspace?.branch ?? null,
                     result: current.result,
+                    // The developer's structured report (W05): its statement, never evidence.
+                    report: (current.report ?? null) as unknown as Json,
                     failure: current.failure,
                     startedByTrama: current.duty ? ({ skill: current.duty.skill, trigger: current.duty.trigger } as unknown as Json) : null,
                   }
@@ -847,6 +877,9 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
                 : "The team has no developers yet: propose them with propose_team or add one with create_specialist."),
           );
         }
+        const withEdits = strings(args.tools).includes("edits");
+        const missing = missingContract(args, withEdits);
+        if (missing.length) return incompleteContract(missing);
         const moduleIds = strings(args.moduleIDs);
         const known = new Set(context.snapshot.modules.map((m) => m.id));
         const unknown = moduleIds.filter((id) => !known.has(id));
@@ -894,6 +927,25 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
           return toolFailure("unknown_slice", "The plan of this work has no approved slices.");
         }
         const ticket = slice ? plan!.slicing!.tickets.find((t) => t.id === slice.sliceId) : null;
+        // The seams of the contract (W05): for a slice, numbers of the seams the person confirmed in its spec.
+        const namedSeams = strings(args.seams);
+        const confirmed = slice ? agreedSeams(plan!) : [];
+        if (confirmed.length) {
+          const outside = namedSeams.filter((entry) => {
+            const number = seamNumber(entry);
+            return number === null || number < 1 || number > confirmed.length;
+          });
+          if (outside.length || !namedSeams.length) {
+            return incompleteContract([
+              `seams (the slice's spec has ${confirmed.length} confirmed seams: name the ones this slice tests by number, ${confirmed.map((c, index) => `${index + 1} "${c.seam}"`).join(", ")}${outside.length ? `; not a confirmed seam: ${outside.join(", ")}` : ""})`,
+            ]);
+          }
+        } else if (slice && namedSeams.length) {
+          return incompleteContract(["seams ([] for this slice: its spec has no seam the person confirmed, so the developer writes no new test)"]);
+        } else if (withEdits && !namedSeams.length && !slice) {
+          return incompleteContract(["seams (at least one seam the developer tests, in words)"]);
+        }
+        const seams = contractSeams(namedSeams, confirmed.length ? confirmed : null);
         const assignment = assign(
           document,
           {
@@ -913,6 +965,7 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
             requiredChecks: checks,
             instructions: typeof args.instructions === "string" ? args.instructions : "",
             slice,
+            seams,
           },
           document.mandate!.version,
           context.runningRequestId,
