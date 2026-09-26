@@ -673,6 +673,20 @@ export interface Candidate {
   goalId?: string | null;
   /** The person's observations of the goal's examples on this exact snapshot (UX06). */
   exampleObservations?: ExampleObservation[];
+  /**
+   * The seams the developer of a slice says it tested (M06), against the seams the person confirmed in the spec.
+   * The developer's statement, never evidence. Null when the developer reported none; absent outside a slice.
+   */
+  testedSeams?: TestedSeam[] | null;
+}
+
+/** A seam as the developer of a slice reported it (M06). */
+export interface TestedSeam {
+  seam: string;
+  /** False for a seam the developer named outside the ones the person confirmed. */
+  agreed: boolean;
+  /** The tests the developer named at this seam; null when it did not report testing it. */
+  tests: string | null;
 }
 
 /** The person observed, or did not observe, a goal example on one candidate snapshot. */
