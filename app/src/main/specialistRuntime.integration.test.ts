@@ -63,6 +63,9 @@ describe("specialist runtime (V04)", () => {
     await controller.openProject(repo);
     await until(() => controller!.snapshot.project?.phase.kind === "ready");
     const document = controller.snapshot.project!.document;
+    // The AI Hero method is still being written into the checkout after the project is ready: wait for it to finish,
+    // or the snapshot below catches half an installation (it raced with the presence work G01 starts on open).
+    await until(() => document.events.some((e) => e.content.type === "activity" && e.content.title.startsWith("Metodo di lavoro AI Hero")));
     const before = await checkoutState(repo);
 
     await controller.send("[proponi-team]", null, null, null);
