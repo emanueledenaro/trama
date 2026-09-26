@@ -279,6 +279,8 @@ describe("the contract of an assignment and the developer's report (W05)", () =>
       testsWritten: ["Tests/CancelPaidOrderTests.swift"],
       seams: [{ seam: "L'interfaccia di CancelPaidOrder", agreed: true, tests: "CancelPaidOrderTests" }],
       doubts: [],
+      // No exceptions block: the developer did not report the exceptions to the standard (Q03).
+      exceptions: null,
     };
     expect(developers(document)[0]!.assignments[0]!.report).toEqual(report);
     const team = parse(await runCoordinatorTool("read_team", {}, context));

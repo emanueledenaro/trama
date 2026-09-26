@@ -181,6 +181,7 @@ const handlers: { [K in ActionName]: Handler<K> } = {
   "presence:pause": ({ paused }) => controller.pausePresence(paused),
   "presence:refresh": () => controller.refreshPresence(),
   "presence:commentPullRequest": ({ number, body }) => controller.commentColleaguePullRequest(number, body),
+  "project:cleanCode": (change) => controller.updateCleanCode(change),
   "settings:update": (update) => controller.updateSettings(update),
   "monitor:update": (update) => controller.updateMonitor(update),
   "monitor:poll": () => controller.pollMonitor(),

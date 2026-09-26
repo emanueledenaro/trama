@@ -21,9 +21,11 @@ import {
   type CandidateState,
   type DeveloperReport,
   type SpecialistAssignment,
+  type TechnicalReview,
   type TestedSeam,
   isOpenQuestion,
 } from "@shared/domain";
+import { CLEAN_CODE_RULES, type CodeMeasure } from "@shared/cleanCode";
 import { isExerciseAssessment } from "@shared/onboarding";
 import { findGoal } from "@shared/goals";
 import { adrMarkdown, adrPath, findDomainProposal, glossaryEntry } from "@shared/domainDocs";
@@ -787,12 +789,24 @@ function ContractFields({ assignment, decisions }: { assignment: SpecialistAssig
 }
 
 /** One block of the developer's report: null when it left the block out, an empty list when it said there was nothing. */
-function ReportList({ label, items, testId }: { label: string; items: string[] | null; testId: string }) {
+function ReportList({
+  label,
+  items,
+  testId,
+  missing = "Non riportati",
+  none = "Nessuno",
+}: {
+  label: string;
+  items: string[] | null;
+  testId: string;
+  missing?: string;
+  none?: string;
+}) {
   return (
     <div className="mt-1" data-testid={testId} data-reported={items === null ? "no" : "yes"}>
       <div className="text-ui-xs text-muted-foreground/70">{label}</div>
       {items === null ? (
-        <p className="text-ui-sm text-muted-foreground">Non riportati</p>
+        <p className="text-ui-sm text-muted-foreground">{missing}</p>
       ) : items.length ? (
         <ul className="space-y-0.5 text-ui-sm">
           {items.map((item) => (
@@ -802,7 +816,7 @@ function ReportList({ label, items, testId }: { label: string; items: string[] |
           ))}
         </ul>
       ) : (
-        <p className="text-ui-sm text-muted-foreground">Nessuno</p>
+        <p className="text-ui-sm text-muted-foreground">{none}</p>
       )}
     </div>
   );
@@ -830,9 +844,84 @@ function ReportField({ report }: { report: DeveloperReport | null }) {
               )}
             </div>
             <ReportList label="Dubbi" items={report.doubts} testId="report-doubts" />
+            {report.exceptions !== undefined ? (
+              <ReportList label="Eccezioni allo standard" items={report.exceptions} testId="report-exceptions" missing="Non riportate" none="Nessuna" />
+            ) : null}
           </>
         )}
         <p className="mt-1 text-ui-xs text-muted-foreground">{STATEMENT_NOTE}</p>
+      </div>
+    </Field>
+  );
+}
+
+const MEASURE_TEXT: Record<CodeMeasure["kind"], (m: CodeMeasure) => string> = {
+  arguments: (m) => `${m.subject} ha ${m.value} argomenti, il limite è ${m.limit}`,
+  functionLength: (m) => `${m.subject} è lunga ${m.value} righe, il limite è ${m.limit}`,
+  duplication: (m) => `${m.value} righe uguali a ${m.subject}`,
+};
+
+const REVIEW_NOTE = "I rilievi sono il giudizio del revisore, non un'evidenza. Contano le misure e le verifiche eseguite da Trama.";
+
+/** The technical review (V05) with the findings against the Clean Code standard and Trama's own measures (Q03). */
+function TechnicalReviewField({ review }: { review: TechnicalReview }) {
+  const findings = [...(review.findings ?? [])].sort((a, b) => (a.severity === b.severity ? 0 : a.severity === "blocking" ? -1 : 1));
+  const standard = review.standard;
+  const ruleLabel = (id: string | null) => CLEAN_CODE_RULES.find((rule) => rule.id === id)?.label ?? "Altro";
+  return (
+    <Field label={`Revisione tecnica, ${review.verdict === "approved" ? "approvata" : "modifiche richieste"}`}>
+      <div data-testid="technical-review" data-verdict={review.verdict}>
+        <p>{review.summary}</p>
+        {standard ? (
+          <div className="mt-1.5" data-testid="review-measures">
+            <div className="text-ui-xs text-muted-foreground/70">
+              Misure di Trama, standard v{standard.version}: {standard.filesMeasured === 1 ? "1 file" : `${standard.filesMeasured} file`}
+              <Sep />
+              {standard.functionsMeasured === 1 ? "1 funzione" : `${standard.functionsMeasured} funzioni`}
+            </div>
+            {standard.measures.length ? (
+              <ul className="space-y-0.5 text-ui-sm">
+                {standard.measures.map((m) => (
+                  <li key={`${m.kind}-${m.file}-${m.line}`} data-testid="review-measure" data-kind={m.kind} className="break-words">
+                    <span className="font-mono text-[11.5px]">
+                      {m.file}:{m.line}
+                    </span>
+                    <Sep />
+                    {MEASURE_TEXT[m.kind](m)}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-ui-sm text-muted-foreground">Nessuna misura oltre il limite</p>
+            )}
+          </div>
+        ) : null}
+        {review.findings !== undefined ? (
+          <div className="mt-1.5" data-testid="review-findings">
+            <div className="text-ui-xs text-muted-foreground/70">Rilievi del revisore</div>
+            {findings.length ? (
+              <ul className="space-y-1 text-ui-sm">
+                {findings.map((f) => (
+                  <li key={`${f.file}-${f.line}-${f.message}`} data-testid="review-finding" data-severity={f.severity} className="break-words">
+                    <span className="mr-1.5 inline-flex items-center gap-1.5 align-middle">
+                      <Badge tone={f.severity === "blocking" ? "destructive" : "info"}>{f.severity === "blocking" ? "Bloccante" : "Suggerimento"}</Badge>
+                      <span className="font-mono text-[11.5px] text-foreground/90">
+                        {f.file}
+                        {f.line ? `:${f.line}` : ""}
+                      </span>
+                    </span>
+                    <span className="text-muted-foreground">{ruleLabel(f.rule)}</span>
+                    <Sep />
+                    {f.message}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-ui-sm text-muted-foreground">Nessun rilievo</p>
+            )}
+            <p className="mt-1 text-ui-xs text-muted-foreground">{REVIEW_NOTE}</p>
+          </div>
+        ) : null}
       </div>
     </Field>
   );
@@ -870,11 +959,7 @@ export function CandidateCard({ candidateId }: { candidateId: string }) {
           ))}
         </div>
       </Field>
-      {candidate.technicalReview ? (
-        <Field label={`Revisione tecnica, ${candidate.technicalReview.verdict === "approved" ? "approvata" : "modifiche richieste"}`}>
-          {candidate.technicalReview.summary}
-        </Field>
-      ) : null}
+      {candidate.technicalReview ? <TechnicalReviewField review={candidate.technicalReview} /> : null}
       {report.blockers.length ? (
         <Field label="Cosa manca">
           <ul className="space-y-0.5 text-ui-sm">
