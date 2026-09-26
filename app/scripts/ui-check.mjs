@@ -331,6 +331,11 @@ const approveBox = await approvePlan.boundingBox();
 const specBox = await writtenSpec.boundingBox();
 if (!approveBox || !specBox || specBox.x + specBox.width - (approveBox.x + approveBox.width) > 2) throw new Error("The plan's approval is not on the right");
 await shot("04c3-plan-spec-actions");
+// The seams held the work for the person; with the spec written it goes on by itself within the mandate (W04).
+// The check stops that move, so the queue below starts from an idle Coordinator.
+const assignStep = page.getByTestId("automatic-step").filter({ hasText: "Assegna il lavoro" }).last();
+await assignStep.getByRole("button", { name: "Ferma" }).click({ timeout: 20_000 });
+await page.getByRole("button", { name: "Interrompi" }).waitFor({ state: "hidden", timeout: 20_000 });
 // A message sent while the Coordinator works waits in the queue and can be deleted after a confirmation.
 await page.getByLabel("Messaggio al Coordinatore").fill("[attesa] Spiegami gli ordini");
 await page.keyboard.press("Enter");
@@ -462,6 +467,9 @@ await page.getByRole("checkbox", { name: /Preparare piani/ }).check();
 await page.getByRole("button", { name: "Salva correzione" }).click();
 await page.getByText(/Mandato v3/).first().waitFor({ timeout: 20_000 });
 await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
+// The correction is a turn of the project dialog, whose M04 spec is ready: Trama goes on there with the slices.
+// The check stops that move, which belongs to the other dialog, before the goal dialog's own work.
+await page.getByRole("button", { name: "Interrompi" }).click({ timeout: 20_000 });
 await page.getByRole("button", { name: "Interrompi" }).waitFor({ state: "hidden", timeout: 20_000 });
 if (await page.getByTestId("automatic-step").count()) throw new Error("Trama went on before the person confirmed the shared understanding");
 await page.getByLabel("Messaggio al Coordinatore").fill("[passo:confirmUnderstanding] Riassumi quello che abbiamo deciso");

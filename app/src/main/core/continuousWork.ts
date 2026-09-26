@@ -11,8 +11,11 @@ import { COORDINATOR_MOVES, type CoordinatorMove, workRequests, workState } from
 /** What changed the work: a Coordinator turn ended, a plan ended, a specialist's assignment ended. */
 export type WorkEvent = "turnEnded" | "planEnded" | "assignmentEnded";
 
-/** The person's moves that hold the work: a product decision, the shared understanding, the mandate, the team. */
-const WAITS_FOR_PERSON: NextMove[] = ["answerQuestions", "confirmUnderstanding", "grantMandate", "confirmTeam"];
+/**
+ * The person's moves that hold the work: a product decision, the shared understanding, the mandate, the team,
+ * and the seams to-spec proposed for the spec (M04).
+ */
+const WAITS_FOR_PERSON: NextMove[] = ["answerQuestions", "confirmUnderstanding", "grantMandate", "confirmTeam", "confirmSeams"];
 
 /** Automatic moves in a row in one dialog, without a message of the person, after which Trama waits for the person. */
 export const AUTOMATIC_MOVES_IN_A_ROW = 5;

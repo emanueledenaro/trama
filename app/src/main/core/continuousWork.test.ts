@@ -145,6 +145,18 @@ describe("automaticMove: the Coordinator's move Trama starts by itself (W04)", (
     expect(moveOf(document, "r3", "planEnded")).toBe("assignWork");
   });
 
+  it("stops on the seams to-spec proposed: confirming them is the person's move (M04)", () => {
+    const document = confirmed();
+    request(document, "r3");
+    const proposed = plan(document, "r3", "seams");
+    team(document);
+    expect(moveOf(document, "r3", "planEnded")).toBeNull();
+    expect(moveOf(document, "r3")).toBeNull();
+    // Once the person confirmed them and the spec is written, the slices go on by themselves.
+    proposed.status = "ready";
+    expect(moveOf(document, "r3", "planEnded")).toBe("assignWork");
+  });
+
   it("runs the checks once the specialists ended, never while one still works", () => {
     const document = confirmed();
     request(document, "r3");
