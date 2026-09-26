@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 // Stand-in for GitHub CLI in tests and the UI check: one repository with one open issue and no pull requests.
+// With FAKE_GH_TEAM a colleague who does not use Trama has one open pull request and there is one more branch,
+// for the Gruppo view (G02).
 // It never reaches GitHub; anything it does not know fails like a gh error. With FAKE_GH_LOG it writes every call,
 // one JSON array per line, to that file, and it answers the issue writes Trama makes when it publishes a spec (M04)
 // and its slices with their blocking links (M05).
@@ -59,6 +61,35 @@ if (rest === "/issues") {
       : [],
   );
 }
-if (rest === "/branches") reply(firstPage ? [{ name: "main", commit: { sha: "0123456789abcdef0123456789abcdef01234567" } }] : []);
-if (rest === "/pulls") reply([]);
+const team = Boolean(process.env.FAKE_GH_TEAM);
+const branches = [
+  { name: "main", commit: { sha: "0123456789abcdef0123456789abcdef01234567" } },
+  ...(team
+    ? [
+        { name: "feature/annullo-ordini", commit: { sha: "1111111111111111111111111111111111111111" } },
+        { name: "spike/vecchio-checkout", commit: { sha: "2222222222222222222222222222222222222222" } },
+      ]
+    : []),
+];
+if (rest === "/branches") reply(firstPage ? branches : []);
+if (rest === "/pulls") {
+  reply(
+    team && firstPage
+      ? [
+          {
+            number: 12,
+            title: "Annullo degli ordini dal riepilogo",
+            user: { login: "collega" },
+            head: { ref: "feature/annullo-ordini", sha: "1111111111111111111111111111111111111111", repo: { full_name: name } },
+            base: { ref: "main" },
+            html_url: `https://github.com/${name}/pull/12`,
+            draft: false,
+            updated_at: new Date(Date.now() - 40 * 60_000).toISOString(),
+          },
+        ]
+      : [],
+  );
+}
+if (/^\/pulls\/\d+\/reviews$/.test(rest)) reply([]);
+if (/^\/commits\/[0-9a-f]+\/check-runs$/.test(rest)) reply({ check_runs: [] });
 fail(`fake gh: ${endpoint} not supported`);

@@ -145,6 +145,7 @@ import {
   setSpecialistColor,
   requestStop,
   assignmentsAffectedByDecision,
+  authorize,
   changeAssignmentProvider,
   refreshDecisionVersions,
   resumeAssignment,
@@ -190,6 +191,7 @@ import { hasAiHero, readGitHubCliStatus, simulateColleagueChanges } from "./core
 import { type AgentWork, type PresenceContext, PresenceService } from "./core/presence";
 import { overlapModules, probeColleagues, projectOverlaps } from "./core/overlap";
 import { compareSides, coordinatorNotice, type PresenceProbe } from "@shared/overlap";
+import { type AgentOverlap, agentOverlapKey, agentOverlaps, occupantName, presenceSection } from "./core/coordinatorPresence";
 import { emptyConsent, type PresenceProposal, type PresenceTask, shouldProposeConsent, shouldReproposeConsent } from "@shared/presence";
 import { agentTag } from "@shared/identity";
 import {
@@ -1122,6 +1124,7 @@ export class TramaController {
         if (project.stateWritable && shouldProposeConsent(project.document.presence, hasCollaborators)) this.proposePresence(project, "initial", []);
         this.noticeOverlaps(project);
         this.publish();
+        this.reactToAgentOverlaps(project);
       },
     });
     this.presence = service;
@@ -1194,6 +1197,38 @@ export class TramaController {
       referenceId: proposal,
     });
     this.changedIn(project);
+  }
+
+  /** Overlaps between the person's agents and someone else already told to the Coordinator, by project (G04). */
+  private toldOverlaps = new Map<string, Set<string>>();
+
+  /**
+   * Decision 10: when one of the person's agents starts touching the same files as a colleague, Trama starts a
+   * Coordinator turn within the mandate so it moves or postpones the agent's task. Each overlap is told once; while
+   * the Coordinator is busy it waits for the next presence tick, and the turn's presence section lists it anyway.
+   */
+  private reactToAgentOverlaps(project: ActiveProjectState): void {
+    const overlaps = agentOverlaps(project.document, project.presence);
+    const told = this.toldOverlaps.get(project.id) ?? new Set<string>();
+    const current = new Set(overlaps.map(agentOverlapKey));
+    // An overlap that ended is forgotten, so a new one on the same files is told again.
+    for (const key of told) if (!current.has(key)) told.delete(key);
+    this.toldOverlaps.set(project.id, told);
+    const fresh = overlaps.filter((overlap) => !told.has(agentOverlapKey(overlap)));
+    if (!fresh.length || this.quitting || this.state.project !== project || !project.stateWritable) return;
+    const guards = this.continuationGuards(project);
+    if (!guards.enabled || guards.busy || guards.unavailable) return;
+    if (authorize(project.document.mandate, "executeInWorktree") !== "authorized") return;
+    const first = fresh[0]!;
+    const goalId = first.goalId && (project.document.goals ?? []).some((g) => g.id === first.goalId) ? first.goalId : null;
+    for (const overlap of fresh) told.add(agentOverlapKey(overlap));
+    const starting = { projectId: project.id };
+    this.automaticStarting = starting;
+    void this.send(overlapMessage(fresh), null, null, null, [], null, goalId, false, { move: "assignWork", by: "trama" })
+      .catch((error) => this.fail(error))
+      .finally(() => {
+        if (this.automaticStarting === starting) this.automaticStarting = null;
+      });
   }
 
   async setPresenceConsent(share: boolean, proposal: PresenceProposal | null): Promise<void> {
@@ -1530,6 +1565,7 @@ export class TramaController {
           snapshot: current.snapshot,
           github: current.github,
           runningRequestId: current.runningRequestId,
+          presence: current.presence ?? null,
           changed: () => this.changed(),
           addCard: (kind, title, referenceId) =>
             appendEvent(current.document, "trama", { type: "card", kind, title, detail: null, referenceId }, current.runningRequestId),
@@ -1914,6 +1950,9 @@ export class TramaController {
       // Every turn: the task in focus and the queue, so the Coordinator brings a conversation that drifts back to the focus (W02).
       const focus = focusText(document, request.id);
       if (focus) sections.push(focus);
+      // Every turn while colleagues are at work: who touches what and the rules of decisions 10 and 11 (G04).
+      const presence = presenceSection(document, project.presence, project.snapshot.modules);
+      if (presence) sections.push(presence);
       // The previous reply closed with a generic confirmation question: Trama tells the Coordinator, not the model's own memory (W04).
       const feedback = confirmationFeedback(document, request.id);
       if (feedback) sections.push(feedback);
@@ -4237,4 +4276,16 @@ export class TramaController {
     this.state.error = null;
     this.publish();
   }
+}
+
+/** What Trama writes to the Coordinator when its agents overlap someone else (G04, decision 10). */
+function overlapMessage(overlaps: AgentOverlap[]): string {
+  const lines = overlaps.slice(0, 5).map(
+    (o) => `- l'incarico ${o.assignmentId} di ${o.specialistName}${o.slice ? ` (fetta ${o.slice})` : ""} tocca ${o.files.slice(0, 8).join(", ")}, come ${occupantName(o.occupant)}.`,
+  );
+  return [
+    "Presenza: un tuo sviluppatore si sovrappone al lavoro di un collega.",
+    ...lines,
+    "Sposta o rimanda il suo compito: fermalo con stop_specialist e dagli un'altra fetta pronta, o riassegna la stessa fetta quando il collega ha lasciato quei file. Non chiedere al collega di fermarsi.",
+  ].join("\n");
 }
