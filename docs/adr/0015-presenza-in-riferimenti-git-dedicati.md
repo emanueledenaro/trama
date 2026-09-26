@@ -1,6 +1,6 @@
 # La presenza passa per riferimenti git dedicati sul remoto del progetto
 
-Stato: proposta il 26 settembre 2026 per G01 (#174) della specifica #173 (decisioni 1, 2, 5, 6, 7 e 8). La prova diretta su GitHub resta da ripetere fuori dall'ambiente di sviluppo di G01: vedi "Verifica" più sotto.
+Stato: proposta il 26 settembre 2026 per G01 (#174) della specifica #173 (decisioni 1, 2, 5, 6, 7 e 8). La prova su GitHub è stata eseguita il 26 settembre 2026 dal coordinatore: vedi "Verifica" più sotto.
 
 La specifica #173 chiede che chi usa Trama condivida con il team la propria presenza: branch attivo, branch locali, percorsi dei file toccati, richiesta in corso e da quanto, insieme agli agenti di Trama. La decisione 5 esclude un server nuovo e chiede di passare per git, con qualunque remoto, e di verificare che GitHub accetti riferimenti come `refs/trama/presence/<utente>` senza mostrarli come branch.
 
@@ -20,7 +20,8 @@ Decisione:
 
 - Test di integrazione con un remoto bare locale (`app/src/main/core/presence.test.ts`): senza consenso nulla arriva al remoto; con il consenso il record contiene branch e percorsi e non il contenuto; un clone e un fetch ordinari non vedono il riferimento come branch; chi ha solo la lettura vede senza scrivere; pausa, chiusura e revoca funzionano; un remoto che rifiuta il namespace (`receive.hideRefs`, lo stesso meccanismo con cui GitHub protegge `refs/pull`) porta alla sola lettura.
 - Passo `16-presence-*` di `npm run ui-check`: proposta in chat, pubblicazione dopo "Condividi" su un remoto bare, nessun branch nuovo, quadro in Gruppo con tema chiaro e scuro, pausa in Impostazioni.
-- Prova su GitHub non eseguita. Dall'ambiente di sviluppo di G01 il push di `refs/trama/presence/probe-test` verso `emanueledenaro/trama` è stato respinto con HTTP 403 dal proxy della sessione, mentre il push del branch `feature/g01-presence` è riuscito: il rifiuto viene dalla politica della sessione e non dice nulla su GitHub. Anche la documentazione di GitHub non era raggiungibile dalla sessione. Resta quindi da confermare con un account reale:
+- Prova su GitHub, eseguita dal coordinatore il 26 settembre 2026 dal Mac della persona su `emanueledenaro/trama` (PR #178): `refs/trama/presence/probe-test` viene accettato, si legge con `git ls-remote` e con l'API dei riferimenti, non compare tra i branch e si cancella con un push vuoto. Il riferimento di prova è stato rimosso subito dopo. Dall'ambiente di sviluppo di G01 la stessa prova non era possibile: il proxy della sessione rispondeva con HTTP 403.
+- Per ripetere la prova:
 
   ```sh
   git push origin HEAD:refs/trama/presence/prova
@@ -30,8 +31,7 @@ Decisione:
   git push origin :refs/trama/presence/prova
   ```
 
-  Ci aspettiamo che GitHub accetti il push, perché l'API "Create a reference" accetta qualunque nome completo che inizia con `refs` e ha almeno due barre, e che non lo mostri tra i branch, perché la lista dei branch legge solo `refs/heads`. Se la prova smentisce l'attesa, Trama non si rompe: il rifiuto del push la porta alla sola lettura con il motivo visibile, e questo ADR va sostituito con l'alternativa scelta.
+  Se GitHub cambiasse comportamento, Trama non si rompe: il rifiuto del push la porta alla sola lettura con il motivo visibile.
+- CI: i workflow di questo repository partono solo su `main`, pull request e tag, quindi un push di presenza non avvia la CI. Un repository con un trigger `push` senza filtri va controllato a parte.
 
 Alternative scartate: un branch dedicato come `trama/presence`, che comparirebbe tra i branch, nelle regole di protezione e nei trigger della CI; git notes, che si attaccano a commit e non a persone e si fondono male tra più autori; un file nel repository, che cambierebbe il lavoro della persona e finirebbe nelle pull request; un server o un servizio di terzi, esclusi dalla decisione 5.
-
-Rischio aperto: non è verificato se un push fuori da `refs/heads` e `refs/tags` avvii i workflow di GitHub Actions con un trigger `push` senza filtri. Da controllare insieme alla prova su GitHub.
