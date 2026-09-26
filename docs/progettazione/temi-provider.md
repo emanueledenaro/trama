@@ -17,3 +17,7 @@ I colori vengono dai siti ufficiali, letti il 25 settembre 2026 con gli stili ca
 | Pi | `#f3f2f0` / `#161d27` (`--bg-canvas`) | azzurro `#6a9fcc`, blu marea `#4b607c` | pi.dev |
 
 Gli accenti usati per il testo sono una tonalità più scura del colore del marchio in modalità chiara e più chiara in modalità scura, per restare leggibili. La luce sul vetro di Grok, ChatGPT e OpenCode è neutra perché i loro marchi sono monocromatici.
+
+## Separatori dei pannelli
+
+Tutti i separatori tra pannelli (barra laterale, ispettore e ogni pannello ridimensionabile) usano lo stesso componente `Sash` in `app/src/renderer/lib/resizable.tsx`, con lo stile `.sash` in `index.css`. A riposo non disegna nulla: resta solo il bordo di 1 px del pannello. L'area da afferrare è larga 4 px, centrata sul bordo e invisibile. Dopo 300 ms di hover, con il focus da tastiera e durante il trascinamento si colora con l'accento del testo del provider (`--color-text-accent`), in chiaro e in scuro; con i colori forzati usa `Highlight`. Il cursore è `col-resize` per i separatori verticali e `row-resize` per quelli orizzontali. Il doppio clic e il tasto Home riportano il pannello alla misura predefinita, le frecce la cambiano di 16 px (64 px con Maiusc) entro i limiti di `useResizableWidth`.
