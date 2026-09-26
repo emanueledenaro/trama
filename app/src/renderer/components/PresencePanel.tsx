@@ -1,4 +1,5 @@
 import { IconGitBranch } from "@tabler/icons-react";
+import { presenceActivity } from "@shared/agentBot";
 import { isAgentColor } from "@shared/identity";
 import { freshnessLabel, type PresenceEntry, type PresenceView } from "@shared/presence";
 import { AgentName } from "@/components/AgentIdentity";
@@ -66,7 +67,10 @@ function Person({ entry }: { entry: PresenceEntry }) {
       ) : null}
       {record.agents.map((agent) => (
         <div key={agent.id} className="mt-1 ml-3 flex items-center gap-1.5 text-ui-xs text-muted-foreground">
-          <AgentName agent={{ name: agent.name, color: isAgentColor(agent.color) ? agent.color : "blue", tag: agent.tag, competence: agent.tag }} />
+          <AgentName
+            agent={{ id: agent.id, name: agent.name, color: isAgentColor(agent.color) ? agent.color : "blue", tag: agent.tag, competence: agent.tag }}
+            activity={entry.self ? undefined : presenceActivity(agent, entry.status)}
+          />
           {agent.branch ? <span className="truncate font-mono">{agent.branch}</span> : null}
         </div>
       ))}
