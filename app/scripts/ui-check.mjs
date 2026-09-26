@@ -384,6 +384,48 @@ await page.getByText(/^Bea$/).first().waitFor({ timeout: 20_000 });
 await page.getByText("ha lavorato per").first().waitFor();
 await shot("04e5-team-renamed-in-chat");
 
+// W16: each agent is a bot in its own color; no two agents of the team share a body, the chat shows them too, the
+// bots move only without reduced motion, and they read in light and dark.
+const botState = (root) =>
+  root.evaluate((el) =>
+    [...el.querySelectorAll('[data-testid="agent-bot"]')].map((bot) => ({
+      shape: bot.dataset.shape,
+      color: bot.style.getPropertyValue("--agent-light"),
+      name: bot.dataset.agent,
+      d: bot.querySelector('[data-part="blob-0"]')?.getAttribute("d"),
+    })),
+  );
+const chatBots = await botState(page.locator("main").first());
+if (!chatBots.length) throw new Error("The chat shows no agent bot");
+await page.getByRole("button", { name: /^Team/ }).first().click();
+await teamPanel.getByText("Chiarimento e spec", { exact: true }).waitFor();
+const teamBots = await botState(teamPanel);
+const bodies = new Map();
+for (const bot of teamBots) {
+  const other = bodies.get(`${bot.shape}${bot.color}`);
+  if (other && other !== bot.name) throw new Error(`${bot.name} and ${other} look the same: ${bot.shape}`);
+  bodies.set(`${bot.shape}${bot.color}`, bot.name);
+}
+if (new Set(teamBots.map((b) => b.shape)).size < 12) throw new Error(`The team has too few bodies: ${[...new Set(teamBots.map((b) => b.shape))]}`);
+const firstBot = teamPanel.getByTestId("agent-bot").first();
+const outline = () => firstBot.locator('[data-part="blob-0"]').getAttribute("d");
+await page.emulateMedia({ reducedMotion: "reduce" });
+await page.waitForTimeout(200);
+const stillBefore = await outline();
+await page.waitForTimeout(600);
+if ((await outline()) !== stillBefore) throw new Error("A bot moves with reduced motion");
+await page.emulateMedia({ reducedMotion: "no-preference" });
+const movingBefore = await outline();
+await page.waitForTimeout(600);
+if ((await outline()) === movingBefore) throw new Error("The bots do not move");
+await shot("04e6-bots-team-light");
+await page.evaluate(() => document.documentElement.classList.add("dark"));
+await shot("04e7-bots-team-dark");
+await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
+await shot("04e8-bots-chat-dark");
+await page.evaluate(() => document.documentElement.classList.remove("dark"));
+await shot("04e9-bots-chat-light");
+
 // Learning (ADR 0014): the Coordinator saves a note, then a review the person asks for writes memory and a skill.
 await page.getByLabel("Messaggio al Coordinatore").fill("[memoria] ricorda il gestore di pacchetti");
 await page.keyboard.press("Enter");

@@ -2,9 +2,9 @@ import type { AgentColor, Specialist } from "./domain";
 
 /**
  * An agent's identity (W15, #158): its own color from a fixed palette and a short colored tag with its role.
- * The color lives only on the identity (avatar with the initial, tag); badges and cards keep the status colors
- * (ADR 0007). Each shade is readable as text and on the avatar tint over every theme, light and dark, and
- * with every provider theme: `identity.test.ts` checks it against `index.css`.
+ * The color lives only on the identity (the bot, W16, and the tag); badges and cards keep the status colors
+ * (ADR 0007). Each shade is readable as text over every theme, light and dark, and with every provider theme:
+ * `identity.test.ts` checks it against `index.css`.
  */
 
 export interface AgentPaletteEntry {

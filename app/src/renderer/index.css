@@ -413,7 +413,7 @@
   background: color-mix(in srgb, var(--color-text-accent) 26%, transparent);
 }
 
-/* An agent's own color (W15, ADR 0007): only on its identity, the avatar with the initial and the role tag.
+/* An agent's own color (W15, ADR 0007): only on its identity, the bot and the role tag.
    AgentIdentity.tsx sets both shades from the palette in @shared/identity; identity.test.ts checks them against
    every --surface above. Badges and cards keep the status colors. */
 .agent-identity {
@@ -422,9 +422,62 @@
 :root.dark .agent-identity {
   --agent: var(--agent-dark);
 }
-/* In the components layer, so size and text utilities on an avatar or a tag still apply. */
+/* The bot (W16): the same woven body in every theme, from the palette's pale shade to its deep one, so the white
+   stitches of the eyes stay readable on light and dark surfaces. The fabric's threads and the badge knot come from
+   the same two shades. */
+.agent-bot {
+  display: inline-block;
+  flex-shrink: 0;
+  vertical-align: middle;
+}
+.agent-bot .bot-stop-light {
+  stop-color: color-mix(in srgb, var(--agent-dark) 70%, white);
+}
+.agent-bot .bot-stop-soft {
+  stop-color: color-mix(in srgb, var(--agent-dark) 50%, var(--agent-light));
+}
+.agent-bot .bot-stop-base {
+  stop-color: var(--agent-light);
+}
+.agent-bot .bot-stop-shade {
+  stop-color: color-mix(in srgb, var(--agent-light) 65%, black);
+}
+.agent-bot .bot-weave-across,
+.agent-bot .bot-weave-down {
+  fill: none;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+}
+.agent-bot .bot-weave-across {
+  stroke: color-mix(in srgb, var(--agent-dark) 80%, white);
+  stroke-opacity: 0.26;
+}
+.agent-bot .bot-weave-down {
+  stroke: color-mix(in srgb, var(--agent-light) 60%, black);
+  stroke-opacity: 0.34;
+}
+.agent-bot .bot-shade {
+  fill: color-mix(in srgb, var(--agent-light) 55%, black);
+}
+.agent-bot .bot-seam {
+  fill: none;
+  stroke: white;
+  stroke-opacity: 0.45;
+  stroke-width: 3.5;
+  stroke-dasharray: 7 8;
+  stroke-linecap: round;
+}
+.agent-bot .bot-eye {
+  fill: white;
+}
+.agent-bot .bot-badge {
+  fill: color-mix(in srgb, var(--agent-light) 60%, black);
+  stroke: var(--background);
+  stroke-width: 7;
+}
+/* In the components layer, so color and text utilities on a tag or a person's avatar still apply. */
 @layer components {
-  .agent-avatar {
+  .person-avatar {
     display: inline-flex;
     flex-shrink: 0;
     align-items: center;
@@ -432,8 +485,6 @@
     width: 16px;
     height: 16px;
     border-radius: 9999px;
-    background: color-mix(in srgb, var(--agent) 16%, transparent);
-    color: var(--agent);
     font-size: var(--text-ui-2xs);
     font-weight: 600;
     line-height: 1;
