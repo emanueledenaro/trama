@@ -79,7 +79,7 @@ export function PlanSlices({ plan }: { plan: WorkPlan }) {
       ) : null}
       {slicing.status === "proposed" ? (
         <p className="mt-1 text-ui text-foreground/90">
-          Il lavoro diviso in fette, ognuna con quelle che la bloccano. La grana va bene? I blocchi sono giusti? Qualche fetta va unita o divisa?
+          Il lavoro diviso in fette, ognuna con quelle che la bloccano. La granularità va bene? I blocchi sono giusti? Qualche fetta va unita o divisa?
         </p>
       ) : null}
 
