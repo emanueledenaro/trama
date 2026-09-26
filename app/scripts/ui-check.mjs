@@ -1033,7 +1033,7 @@ await page.getByRole("tab", { name: "Antigravity" }).click();
 const agyModel = page.getByRole("listbox", { name: "Modelli" }).getByText("Gemini 3.5 Flash").first();
 await agyModel.waitFor({ timeout: 20_000 });
 if (await page.getByText("Solo per specialisti con worktree").count()) throw new Error("Antigravity is still offered only to specialists");
-await shot("18-antigravity-picker");
+await shot("19-antigravity-picker");
 await agyModel.click();
 await page.getByRole("button", { name: "Provider e modello del Coordinatore: Antigravity" }).waitFor({ timeout: 20_000 });
 await composer().fill("Cosa contiene il progetto?");
@@ -1048,7 +1048,7 @@ if ((await readFile(join(agyProject, "README.md"), "utf8")) !== "# Magazzino\n")
 for (const dark of [false, true]) {
   await page.evaluate((theme) => window.trama.invoke("settings:update", { theme }), dark ? "dark" : "light");
   await page.waitForFunction((wanted) => document.documentElement.classList.contains("dark") === wanted, dark);
-  await shot(`18a-antigravity-coordinator-${dark ? "dark" : "light"}`);
+  await shot(`19a-antigravity-coordinator-${dark ? "dark" : "light"}`);
 }
 await page.evaluate(() => window.trama.invoke("settings:update", { theme: "system" }));
 await app.close();
