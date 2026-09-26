@@ -1,5 +1,5 @@
 import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { TurnEvent } from "@shared/codex";
@@ -79,10 +79,12 @@ const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   hook("pre-invocation", {});
   tool(1, "run_command", { CommandLine: "\"curl https://example.com > /etc/x\"" }, { toolOutput: "ok\nexited with code 0" });
   tool(2, "write_to_file", { TargetFile: process.cwd() + "/a.txt" }, { error: "" });
-  tool(3, "view_file", { AbsolutePath: "/x" }, { error: "boom" });
+  tool(3, "view_file", { AbsolutePath: process.cwd() + "/README.md" }, { error: "boom" });
   tool(4, "search_web", { query: "x" }, { error: "" });
   tool(5, "write_to_file", { TargetFile: "/tmp/outside.txt" }, { error: "" });
   tool(6, "invoke_subagent", { Task: "x" }, { error: "" });
+  // Issue #206: a read of Codex's global memory, outside the project.
+  tool(7, "grep_search", { SearchPath: "~/.codex/memories/MEMORY.md", Query: "ordini" }, { error: "" });
   await wait(250);
   if (scenario === "limit") {
     out({ event: "result", result: { status: "ERROR", error: "RESOURCE_EXHAUSTED: quota exceeded, retry in 2 hours" } });
@@ -394,6 +396,7 @@ describe("Antigravity capture plugin scripts", () => {
       TRAMA_ANTIGRAVITY_PROFILE: "read-only",
       TRAMA_ANTIGRAVITY_WRITABLE_ROOT: worktree,
       TRAMA_ANTIGRAVITY_HOST_TOOLS: "propose_plan,read_goals",
+      TRAMA_ANTIGRAVITY_READABLE_ROOTS: JSON.stringify([worktree]),
     };
     const decide = async (event: Record<string, unknown>, extra: Record<string, string> = {}) =>
       (await runScript("capture.cjs", hookScriptSource(), ["pre-tool"], JSON.stringify(event), { ...env, ...extra })).stdout.trim();
@@ -403,6 +406,16 @@ describe("Antigravity capture plugin scripts", () => {
     for (const event of READ_ONLY_RECORDED_ALLOWED(worktree)) {
       expect(JSON.parse(await decide(event)), JSON.stringify(event)).toEqual({ decision: "allow" });
     }
+    // Reads outside the readable roots are refused (issue #206), symlinks and ~ included.
+    await symlink(root, join(worktree, "up"));
+    const outsideReads = [
+      ["view_file", { AbsolutePath: "~/.codex/memories/MEMORY.md" }],
+      ["grep_search", { SearchPath: join(root, "home"), Query: "x" }],
+      ["list_dir", { DirectoryPath: join(worktree, "up") }],
+      ["codebase_search", { Query: "x", TargetDirectories: [worktree, "/etc"] }],
+      ["view_code_item", { File: join(worktree, "..", "agy") }],
+    ].map(([name, args], stepIdx) => ({ conversationId: "c", stepIdx, toolCall: { name, args } }));
+    for (const event of outsideReads) expect(await decide(event), JSON.stringify(event)).toBe("{}");
     // No profile at all is read-only too; only an explicit worktree profile edits.
     const edit = { conversationId: "c", stepIdx: 9, toolCall: { name: "write_to_file", args: { TargetFile: join(worktree, "a.txt") } } };
     const withoutProfile = { ...env } as Record<string, string>;
@@ -416,6 +429,7 @@ describe("Antigravity capture plugin scripts", () => {
     expect(await invoke("subagent")).toBe("{}");
     const kinds = (await readFile(events, "utf8")).trim().split("\n").map((line) => line.split("\t")[0]);
     expect(kinds.filter((kind) => kind === "denied-tool")).toHaveLength(READ_ONLY_RECORDED_DENIALS(worktree).length + 1);
+    expect(kinds.filter((kind) => kind === "denied-read")).toHaveLength(outsideReads.length);
     expect(kinds.at(-1)).toBe("denied-invocation");
     const hostTools = new Set(["propose_plan"]);
     expect(isAllowedAntigravityToolIn("read-only", "write_to_file", hostTools)).toBe(false);
@@ -471,7 +485,11 @@ describe("Antigravity turns", () => {
     expect(log).toContain("denied search_web");
     expect(log).toContain("denied write_to_file");
     expect(log).toContain("denied invoke_subagent");
-    expect(log.match(/denied /g)).toHaveLength(4);
+    expect(log).toContain("denied grep_search");
+    expect(log.match(/denied /g)).toHaveLength(5);
+    // The read outside the project is refused and recorded with its path (issue #206).
+    expect(events).toContainEqual(expect.objectContaining({ type: "toolCallCompleted", tool: "grep_search", succeeded: false, error: expect.stringMatching(/legge solo nel progetto/) }));
+    expect(events).toContainEqual(expect.objectContaining({ type: "readOutsideScope", tool: "grep_search", path: join(homedir(), ".codex/memories/MEMORY.md") }));
     // Tools outside the allow-list are denied too, with their own explanation.
     expect(events).toContainEqual(
       expect.objectContaining({ type: "toolCallCompleted", tool: "invoke_subagent", succeeded: false, error: expect.stringMatching(/solo lettura/) }),
@@ -556,7 +574,7 @@ describe("Antigravity turns", () => {
     for (const name of ["run_command", "search_web", "invoke_subagent"]) expect(log).toContain(`denied ${name}`);
     // Both edits are denied, the one inside the cwd too.
     expect(log.match(/denied write_to_file/g)).toHaveLength(2);
-    expect(log.match(/denied /g)).toHaveLength(5);
+    expect(log.match(/denied /g)).toHaveLength(6);
     expect(events.filter((event) => event.type === "fileChangeCompleted").every((event) => !event.succeeded)).toBe(true);
     expect(events).toContainEqual(expect.objectContaining({ type: "fileChangeCompleted", paths: [join(root, "a.txt")], succeeded: false }));
     expect(events).toContainEqual(

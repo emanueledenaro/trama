@@ -1,5 +1,5 @@
 import { chmodSync, mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { TurnEvent } from "@shared/codex";
@@ -140,6 +140,18 @@ describe("tool permissions", () => {
     expect(decideToolPermission("Bash", { command: "ls" }, readOnly, identity).allow).toBe(false);
   });
 
+  it("keeps read tools inside the project and the folders Trama allows (issue #206)", () => {
+    const scoped = { ...readOnly, readableRoots: ["/repo", "/app/skills"] };
+    expect(decideToolPermission("Read", { file_path: "src/a.ts" }, scoped, identity).allow).toBe(true);
+    expect(decideToolPermission("Read", { file_path: "/app/skills/tdd/SKILL.md" }, scoped, identity).allow).toBe(true);
+    expect(decideToolPermission("Grep", { pattern: "ordini" }, scoped, identity).allow).toBe(true);
+    const memory = decideToolPermission("Grep", { pattern: "ordini", path: "~/.codex/memories/MEMORY.md" }, scoped, identity);
+    expect(memory).toMatchObject({ allow: false, outsideRead: resolve(homedir(), ".codex/memories/MEMORY.md") });
+    expect(decideToolPermission("Read", { file_path: "../altro/.env" }, scoped, identity)).toMatchObject({ allow: false, outsideRead: "/altro/.env" });
+    expect(decideToolPermission("Glob", { pattern: "*", path: "/home" }, scoped, identity).allow).toBe(false);
+    expect(decideToolPermission("LS", { path: "/etc" }, readOnly, identity).allow).toBe(false);
+  });
+
   it("denies network, interactive and unknown tools", () => {
     for (const tool of ["WebFetch", "WebSearch", "AskUserQuestion", "Task", "SomethingNew"]) {
       expect(decideToolPermission(tool, {}, writable, identity).allow).toBe(false);
@@ -243,6 +255,11 @@ describe("query options", () => {
     expect(options.effort).toBe("xhigh");
     expect(options.disallowedTools).not.toContain("Edit");
     expect(options.sandbox).toMatchObject({ enabled: true, allowUnsandboxedCommands: false, filesystem: { allowWrite: ["/work"] } });
+    // Commands cannot read the home folder or Codex's home, except the project and the toolchains (issue #206).
+    const filesystem = (options.sandbox as { filesystem: { denyRead: string[]; allowRead: string[] } }).filesystem;
+    expect(filesystem.denyRead.slice(0, 2)).toEqual([homedir(), process.env.CODEX_HOME || join(homedir(), ".codex")]);
+    expect(filesystem.denyRead).not.toContain("/usr");
+    expect(filesystem.allowRead).toContain("/work");
     expect(options.outputFormat).toEqual({ type: "json_schema", schema: { type: "object" } });
   });
 });

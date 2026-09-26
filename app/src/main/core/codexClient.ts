@@ -46,7 +46,8 @@ const asObject = (value: Json | undefined): JsonObject | null =>
 const asString = (value: Json | undefined): string | null => (typeof value === "string" ? value : null);
 const asArray = (value: Json | undefined): Json[] => (Array.isArray(value) ? value : []);
 
-function searchPath(): string[] {
+/** Folders searched for Codex, also on the PATH app-server gets. */
+export function searchPath(): string[] {
   const home = homedir();
   return [
     ...(process.env.PATH ?? "").split(delimiter).filter(Boolean),
@@ -112,7 +113,8 @@ export async function restrictedAppServerArguments(executable: string, reservedS
         : '{url="http://127.0.0.1:9/mcp",enabled=false}';
     args.push("-c", `mcp_servers.${name}=${value}`);
   }
-  args.push("--disable", "apps", "--disable", "plugins", "--disable", "hooks", "--disable", "multi_agent");
+  // Codex memories point the model at ~/.codex/memories, which holds other projects' notes (issue #206).
+  args.push("--disable", "apps", "--disable", "plugins", "--disable", "hooks", "--disable", "multi_agent", "--disable", "memories");
   return args;
 }
 
@@ -142,6 +144,8 @@ export interface ThreadOptions {
   sandbox?: "read-only" | "workspace-write";
   /** Resume this thread when it still exists; otherwise start a new one. */
   resumeThreadId?: string | null;
+  /** Named permission profile, defined in `config`; replaces `sandbox`. */
+  permissions?: string;
 }
 
 export interface TurnOptions {
@@ -156,6 +160,8 @@ export interface TurnOptions {
   images?: string[];
   /** The only directory the turn may write; the turn is read-only when absent. */
   writableRoot?: string | null;
+  /** Named permission profile of the thread; replaces the sandbox policy built from `writableRoot`. */
+  permissions?: string;
   /** Skills the person invoked, sent as skill input items. */
   skills?: LoadedSkill[];
   /** JSON schema the final answer must follow. */
@@ -310,7 +316,7 @@ export class CodexClient {
       model: options.model,
       cwd: options.cwd,
       approvalPolicy: "never",
-      sandbox: options.sandbox ?? "read-only",
+      ...(options.permissions ? { permissions: options.permissions } : { sandbox: options.sandbox ?? "read-only" }),
       developerInstructions: options.developerInstructions,
     };
     if (options.config) common.config = options.config;
@@ -387,7 +393,10 @@ export class CodexClient {
         model: options.model,
         ...(typeof options.fastMode === "boolean" ? { serviceTier: options.fastMode ? "fast" : "default" } : {}),
         approvalPolicy: "never",
-        sandboxPolicy: options.writableRoot
+      };
+      if (options.permissions) params.permissions = options.permissions;
+      else
+        params.sandboxPolicy = options.writableRoot
           ? {
               type: "workspaceWrite",
               writableRoots: [options.writableRoot],
@@ -395,8 +404,7 @@ export class CodexClient {
               excludeTmpdirEnvVar: true,
               excludeSlashTmp: true,
             }
-          : { type: "readOnly", networkAccess: false },
-      };
+          : { type: "readOnly", networkAccess: false };
       if (options.effort) params.effort = options.effort;
       if (options.outputSchema) params.outputSchema = options.outputSchema;
       this.request("turn/start", params)

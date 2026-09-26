@@ -26,6 +26,23 @@ let rateLimitedTurns = 0;
 const send = (message) => process.stdout.write(`${JSON.stringify(message)}\n`);
 let threads = 0;
 const toolServers = new Map();
+// The permission profiles each thread received (issue #206): turns resolve their profile here, as Codex does.
+const threadProfiles = new Map();
+const profileRoots = (threadId, id) => {
+  const profile = id ? threadProfiles.get(threadId)?.config?.[`permissions.${id}`] : null;
+  return profile ? Object.entries(profile.filesystem ?? {}).filter(([path]) => path.startsWith("/")) : null;
+};
+// The folder a turn may write: from its permission profile, or from the older sandbox policy.
+const writableRootOf = (params) => {
+  const roots = profileRoots(params.threadId, params.permissions ?? threadProfiles.get(params.threadId)?.permissions);
+  if (roots) return roots.find(([, access]) => access === "write")?.[0] ?? null;
+  return params.sandboxPolicy?.type === "workspaceWrite" ? params.sandboxPolicy.writableRoots[0] : null;
+};
+// Like Codex's sandbox: without a profile a read-only turn reads the whole disk; with one only its folders.
+const readableIn = (params, path) => {
+  const roots = profileRoots(params.threadId, params.permissions ?? threadProfiles.get(params.threadId)?.permissions);
+  return !roots || roots.some(([root, access]) => access !== "none" && (path === root || path.startsWith(`${root}/`)));
+};
 const receivedByThread = new Map();
 // Threads opened for "[lento:sempre]" work: the Coordinator's instructions carry the tag, so a resumed turn, whose
 // prompt only says to go on, stays running until interrupted like the first one. "[lento]" work ends when resumed.
@@ -100,6 +117,7 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
       const threadId = `thread-${process.pid}-${++threads}`;
       const server = params.config?.["mcp_servers.trama"];
       if (server) toolServers.set(threadId, server);
+      threadProfiles.set(threadId, { permissions: params.permissions ?? null, config: params.config ?? {} });
       if (String(params.developerInstructions ?? "").includes("[lento:sempre]")) slowThreads.add(threadId);
       return send({ id, result: { thread: { id: threadId } } });
     }
@@ -230,6 +248,28 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
         return;
       }
       if (required.includes("topRecommendation")) {
+        // FAKE_CODEX_MEMORY_PROBE replays the live proof of issue #206: before the review, Clean Code greps Codex's
+        // global memory for the project. The file is read only when the thread's sandbox lets it.
+        let memory = "";
+        if (process.env.FAKE_CODEX_MEMORY_PROBE) {
+          const { join } = await import("node:path");
+          const { homedir } = await import("node:os");
+          const { readFileSync } = await import("node:fs");
+          const file = join(process.env.CODEX_HOME || join(homedir(), ".codex"), "memories", "MEMORY.md");
+          const command = `/bin/bash -lc 'rg -n -i "ordini|improve-codebase-architecture|architecture review" ${file}'`;
+          let output = `rg: ${file}: No such file or directory (os error 2)\n`;
+          let exitCode = 2;
+          if (readableIn(params, file)) {
+            try {
+              output = readFileSync(file, "utf8");
+              exitCode = 0;
+              memory = ` Memoria letta: ${output.trim()}`;
+            } catch {
+              // No memory file: rg fails as above.
+            }
+          }
+          send({ method: "item/completed", params: { threadId, turnId, item: { id: "rg-memory", type: "commandExecution", command, exitCode, status: exitCode === 0 ? "completed" : "failed", aggregatedOutput: output } } });
+        }
         const candidate = (title, strength) => ({
           title,
           files: ["Sources/Orders/CancelPaidOrder.swift"],
@@ -239,7 +279,7 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
           strength,
           adrConflict: "",
         });
-        const answer = { candidates: [candidate("Approfondire l'annullamento", "Strong"), candidate("Unire i pagamenti", "Speculative")], topRecommendation: `Skill ricevute: ${seen.join(", ")}` };
+        const answer = { candidates: [candidate("Approfondire l'annullamento", "Strong"), candidate("Unire i pagamenti", "Speculative")], topRecommendation: `Skill ricevute: ${seen.join(", ")}${memory}` };
         setTimeout(() => finish(JSON.stringify(answer)), 10);
         return;
       }
@@ -325,11 +365,11 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
         setTimeout(() => finish(JSON.stringify({ verdict, summary: "Il diff rispetta le decisioni indicate.", findings })), 10);
         return;
       }
-      if (params.sandboxPolicy?.type === "workspaceWrite") {
+      if (writableRootOf(params)) {
         // A specialist with its own worktree: write one file there, as Codex would.
         const { writeFileSync } = await import("node:fs");
         const { join } = await import("node:path");
-        const root = params.sandboxPolicy.writableRoots[0];
+        const root = writableRootOf(params);
         if (text.includes("## Trama binding for the domain-modeling skill")) {
           // The documentation and domain role (M03): copy the proposed glossary block into CONTEXT.md.
           const glossary = text.match(/sotto `## Language`:\n\n```md\n([\s\S]*?)\n```/)?.[1] ?? "";
