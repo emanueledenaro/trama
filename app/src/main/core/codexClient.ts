@@ -176,6 +176,8 @@ export class CodexClient {
   /** A turn waiting for app-server to start: nothing to interrupt yet. */
   private pendingTurn: { interrupted: boolean; stopped: boolean } | null = null;
   private stderrTail = "";
+  /** Turns already over: a late event of theirs, such as the end of an interrupted turn, never reaches the next one. */
+  private readonly endedTurnIds = new Set<string>();
 
   constructor(
     private readonly options: {
@@ -365,11 +367,11 @@ export class CodexClient {
         messagePhases: new Map(),
         onEvent: options.onEvent,
         resolve: (text) => {
-          this.activeTurn = null;
+          this.endTurn(turn);
           resolve(text);
         },
         reject: (error) => {
-          this.activeTurn = null;
+          this.endTurn(turn);
           reject(error);
         },
       };
@@ -419,6 +421,13 @@ export class CodexClient {
       return;
     }
     await this.request("turn/interrupt", { threadId: turn.threadId, turnId: turn.turnId });
+  }
+
+  private endTurn(turn: ActiveTurn): void {
+    if (this.activeTurn === turn) this.activeTurn = null;
+    if (!turn.turnId) return;
+    this.endedTurnIds.add(turn.turnId);
+    if (this.endedTurnIds.size > 100) this.endedTurnIds.delete(this.endedTurnIds.values().next().value!);
   }
 
   private adoptTurnId(turn: ActiveTurn, turnId: string): void {
@@ -477,6 +486,8 @@ export class CodexClient {
       },
     });
     this.child = child;
+    // Turn ids belong to one app-server process.
+    this.endedTurnIds.clear();
     createInterface({ input: child.stdout }).on("line", (line) => this.receive(line));
     child.stderr.on("data", (chunk: Buffer) => {
       this.stderrTail = (this.stderrTail + chunk.toString("utf8")).slice(-4_000);
@@ -595,8 +606,9 @@ export class CodexClient {
   private matchingTurn(params: JsonObject): ActiveTurn | null {
     const turn = this.activeTurn;
     if (!turn || asString(params.threadId) !== turn.threadId) return null;
-    const received = asString(params.turnId);
-    if (turn.turnId && received && received !== turn.turnId) return null;
+    // Item events carry turnId; turn/started and turn/completed carry the turn itself.
+    const received = asString(params.turnId) ?? asString(asObject(params.turn)?.id);
+    if (received && (this.endedTurnIds.has(received) || (turn.turnId && received !== turn.turnId))) return null;
     return turn;
   }
 
