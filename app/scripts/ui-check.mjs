@@ -213,6 +213,30 @@ await page.getByRole("button", { name: "Approva questo candidato" }).first().cli
 await page.waitForTimeout(500);
 await shot("04h-candidate-approved");
 await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
+// M03: the person's decisions feed the glossary and the ADRs. The read-only Coordinator proposes them in the formats
+// of domain-modeling; only within the mandate the documentation and domain role writes them, in its own worktree.
+await composer().fill("[dominio]");
+await page.keyboard.press("Enter");
+const domainCard = page.locator(".chat-card", { has: page.getByTestId("domain-proposal") }).last();
+await domainCard.getByText("In attesa", { exact: true }).waitFor({ timeout: 20_000 });
+await domainCard.getByText(/Il mandato non permette di lavorare in un worktree su root/).waitFor();
+for (const expected of ["Ordine in revisione", "Ordine sospeso, Rimborso in attesa", "Gli ordini pagati annullati vanno in revisione", "docs/adr/NNNN-"]) {
+  if (!(await domainCard.innerText()).includes(expected)) throw new Error(`The domain proposal does not show "${expected}"`);
+}
+if (await page.getByText("Documentazione e dominio", { exact: true }).count()) throw new Error("The documentation role started writing outside the mandate");
+await domainCard.scrollIntoViewIfNeeded();
+await shot("04j-domain-proposal-waiting");
+await page.getByRole("button", { name: /^Mandato/ }).first().click();
+await page.getByRole("button", { name: "Correggi", exact: true }).click();
+await page.getByRole("checkbox", { name: /^Root/ }).check();
+await page.getByRole("button", { name: "Salva correzione" }).click();
+await page.getByText(/Mandato v3/).first().waitFor({ timeout: 20_000 });
+await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
+await domainCard.getByText("Scritta", { exact: true }).waitFor({ timeout: 30_000 });
+await domainCard.getByText(/ha scritto la proposta nel worktree dell'incarico A-/).waitFor();
+await page.getByRole("button", { name: "Interrompi" }).waitFor({ state: "hidden", timeout: 20_000 });
+await domainCard.scrollIntoViewIfNeeded();
+await shot("04k-domain-proposal-written");
 await page.getByRole("button", { name: "Mappa del progetto" }).click();
 await shot("05-map");
 await page.getByRole("button", { name: /Orders/ }).first().click();
@@ -247,6 +271,8 @@ await app.evaluate(({ nativeTheme }) => {
 await page.evaluate(() => document.documentElement.classList.add("dark"));
 await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
 await shot("10-dark");
+await page.locator(".chat-card", { has: page.getByTestId("domain-proposal") }).last().scrollIntoViewIfNeeded();
+await shot("10a-dark-domain-proposal");
 // Goals (UX01, UX02, UX07): the project has only the goal the Coordinator proposed, so it offers the first one.
 await page.getByTestId("goal-card").first().waitFor();
 await page.getByRole("button", { name: "Formula il primo obiettivo" }).first().click();
@@ -465,7 +491,7 @@ await page.getByRole("button", { name: /^Mandato/ }).first().click();
 await page.getByRole("button", { name: "Correggi", exact: true }).click();
 await page.getByRole("checkbox", { name: /Preparare piani/ }).check();
 await page.getByRole("button", { name: "Salva correzione" }).click();
-await page.getByText(/Mandato v3/).first().waitFor({ timeout: 20_000 });
+await page.getByText(/Mandato v4/).first().waitFor({ timeout: 20_000 });
 await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
 // The correction is a turn of the project dialog, whose M04 spec is ready: Trama goes on there with the slices.
 // The check stops that move, which belongs to the other dialog, before the goal dialog's own work.

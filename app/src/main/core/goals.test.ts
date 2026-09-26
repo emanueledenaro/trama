@@ -273,6 +273,7 @@ function toolContext(document: ProjectDocument, runningRequestId: string | null 
     proposePractice: async () => ({ practiceID: "PR-1", version: 1 }),
     readPractices: async () => ({}),
     startAssignment: () => undefined,
+    startDomainWriting: () => null,
     updateTicket: async () => {
       throw new Error("unused");
     },

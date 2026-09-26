@@ -8,15 +8,18 @@ import {
   ARCHITECTURE_BINDING,
   concludeDuty,
   DIAGNOSIS_BINDING,
+  DOMAIN_WRITING_BINDING,
   type DutyContext,
   dutyModel,
   dutySession,
   FIX_BINDING,
   nextDuty,
   recordCheckOutcome,
+  startDomainWriting,
   TRIAGE_BINDING,
   withinMandate,
 } from "./duties";
+import { proposeDomainDocs } from "./domainDocs";
 import { loadNativeSkill } from "./nativeSkills";
 import { answerDecisionRequest, decide, grantMandate, withdrawDecisionRequest } from "./pact";
 import { assign, beginTurn, confirmTeam, endTurn, findAssignment, proposeTeam, recordWorkspace } from "./team";
@@ -391,11 +394,24 @@ describe("sessions with the original skills (W11)", () => {
     const reviewed = project();
     withCandidate(reviewed);
     const review = nextDuty(reviewed, context())!;
+
+    const documented = project();
+    const decision = decide(documented, { id: null, value: "Le bozze si salvano da sole", acceptedExample: "Bozza salvata dopo 5 s", rationale: "r" });
+    const proposal = proposeDomainDocs(documented, {
+      requestId: null,
+      decisionIds: [decision.id],
+      contextPath: undefined,
+      terms: [{ term: "Bozza", definition: "Un testo non ancora pubblicato.", avoid: ["Draft"] }],
+      adrs: [],
+      projectModuleIds: ["app", "docs"],
+    });
+    const writing = startDomainWriting(documented, proposal, runner)!;
     return [
       { skill: "triage", binding: TRIAGE_BINDING, document: triaged, assignment: triage },
       { skill: "diagnosing-bugs", binding: DIAGNOSIS_BINDING, document: diagnosed, assignment: diagnosis },
       { skill: "diagnosing-bugs", binding: FIX_BINDING, document: fixed, assignment: fix },
       { skill: "improve-codebase-architecture", binding: ARCHITECTURE_BINDING, document: reviewed, assignment: review },
+      { skill: "domain-modeling", binding: DOMAIN_WRITING_BINDING, document: documented, assignment: writing },
     ];
   }
 
@@ -420,7 +436,7 @@ describe("sessions with the original skills (W11)", () => {
   });
 
   it("gives the session the data that started it", () => {
-    const [triage, diagnosis, fix, review] = duties();
+    const [triage, diagnosis, fix, review, writing] = duties();
     const session = (d: ReturnType<typeof duties>[number]) =>
       dutySession({ projectName: "Bozze", document: d.document, assignment: d.assignment, moduleIds: ["app", "docs"], issue: issue(7), resumed: false, skill: { name: "x", skillPath: "/x/SKILL.md", files: [{ relativePath: "SKILL.md", text: "S" }] }, nativeInput: false });
     expect(session(triage!).prompt).toContain("Premo Salva e non succede niente.");
@@ -429,6 +445,8 @@ describe("sessions with the original skills (W11)", () => {
     expect(session(diagnosis!).prompt).toContain("app, docs");
     expect(session(fix!).instructions).toContain("Git worktree");
     expect(session(review!).prompt).toContain(HEAD.slice(0, 7));
+    expect(session(writing!).instructions).toContain("Git worktree");
+    expect(session(writing!).prompt).toContain("**Bozza**:\nUn testo non ancora pubblicato.\n_Avoid_: Draft");
   });
 
   it("binds each skill to Trama without restating its method", async () => {
@@ -437,6 +455,7 @@ describe("sessions with the original skills (W11)", () => {
       ["diagnosing-bugs", DIAGNOSIS_BINDING],
       ["diagnosing-bugs", FIX_BINDING],
       ["improve-codebase-architecture", ARCHITECTURE_BINDING],
+      ["domain-modeling", DOMAIN_WRITING_BINDING],
     ];
     for (const [name, binding] of bindings) {
       const original = await readFile(join(skillsDirectory, name, "SKILL.md"), "utf8");

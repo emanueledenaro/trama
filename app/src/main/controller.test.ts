@@ -368,20 +368,20 @@ describe("TramaController", () => {
     expect(second.spec ?? null).toBeNull();
   });
 
-  it("gives the Coordinator thread the original grilling skill once, also when it is already open (M02)", async () => {
+  it("gives the Coordinator thread the original grill-with-docs, grilling and domain-modeling skills once, also when it is already open (M02, M03)", async () => {
     await setup();
     const document = controller!.snapshot.project!.document;
-    const skill = `skill:grilling:${join(root, "resources/AIHero/skills/grilling/SKILL.md")}`;
+    const skill = ["grill-with-docs", "grilling", "domain-modeling"].map((name) => `skill:${name}:${join(root, `resources/AIHero/skills/${name}/SKILL.md`)}`);
     const received = async () => {
       await controller!.send("[ricevuti]", null, null, null);
       return JSON.parse((document.events.at(-1)!.content as { text: string }).text) as string[];
     };
     // A new Codex thread receives the skill as a native skill input in its first turn, the study.
-    expect(await received()).toEqual([skill, "rules"]);
-    // A thread opened before M02 holds the paraphrased grilling rules: it receives the skill once, like other late rules.
-    document.coordinator.rulesSent = "the M01 rules";
-    expect(await received()).toEqual([skill, "rules", skill, "rules"]);
-    expect(await received()).toEqual([skill, "rules", skill, "rules"]);
+    expect(await received()).toEqual([...skill, "rules"]);
+    // A thread opened before M03 holds the earlier rules: it receives the skills once, like other late rules.
+    document.coordinator.rulesSent = "the M02 rules";
+    expect(await received()).toEqual([...skill, "rules", ...skill, "rules"]);
+    expect(await received()).toEqual([...skill, "rules", ...skill, "rules"]);
   });
 
   it("grills a request in rounds and starts the plan only when no question is open (M01)", async () => {
