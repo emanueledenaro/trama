@@ -18,7 +18,7 @@
 </div>
 
 > [!WARNING]
-> Trama is in **alpha**. The base path has run with real Claude and Pi accounts, but no change has yet gone from request to verified candidate on a real project. Read [Status and known limits](#status-and-known-limits) before relying on it.
+> Trama is in **alpha**. The base path has run with real Claude and Pi accounts. The first live run with real Codex (26 September, `gpt-6-luna`) went from a request to a developer's finished worktree, then stopped short of a verified candidate on a known bug ([issue #67 comment](https://github.com/emanueledenaro/trama/issues/67), [#204](https://github.com/emanueledenaro/trama/issues/204)). Read [Status and known limits](#status-and-known-limits) before relying on it.
 
 ## Why Trama
 
@@ -32,23 +32,27 @@ Trama puts one **Coordinator** between you and the agents:
 
 ## Features
 
-- **Grilling before planning.** A request is clarified in numbered rounds of decision cards, each with a recommended answer, using the original [`grilling`](docs/aihero-attribution.md) skill. The plan starts only when the round is answered.
-- **A full team per project.** The developers the Coordinator proposes, plus eleven fixed roles (QA, UX, research, documentation and domain, bug triage, spec review, Clean Code, regression guardian, security, performance, DevOps), each with its moment in the flow.
-- **Goals with examples.** Outcomes with accepted and rejected examples that tasks, candidates and decisions link to explicitly.
+- **The AI Hero method, run natively.** A request is clarified in numbered rounds with `grilling`; `domain-modeling` proposes glossary terms and ADRs from the decisions taken; `to-spec` turns the plan into a spec with the seams you confirm; `to-tickets` splits it into vertical slices with their acceptance criteria. Each developer ships a slice with `implement` and `tdd`. Bug triage, failed-check diagnosis and Clean Code's architecture review start on their own within the mandate. Every skill keeps Matt Pocock's original text, with a thin Trama binding.
+- **A focused work loop.** The chat leads with the task in focus, its phase and the one next step allowed right now; the rest wait in a queue, started ones first. Inside the mandate the Coordinator takes its own next moves - preparing the plan, assigning work, running checks - and stops only for product decisions, the mandate, the team and the merge.
+- **An assignment contract and a developer's report.** Every task carries its goal, the seams to test, the Pact decisions it depends on and the checks required; Trama refuses an incomplete one. Each developer closes with a structured report of files touched, tests written and seams covered - a claim, never evidence.
+- **Presence and collaboration.** The map, the focus bar and the Team view show who, person or agent, is working on which branch and files, shared over dedicated git refs with your consent. Overlaps are flagged at three levels, same module, same file, real conflict, and the Coordinator itself steers new assignments away from files a colleague already has open.
+- **Focus mode with native code review.** Open a candidate and Trama runs its real checks first, then two read-only passes of the `code-review` skill in parallel, Standards and Spec, against the candidate's base commit.
+- **Nine providers, every role.** Codex, Claude, Cursor, Grok, Droid, Devin, OpenCode, Antigravity and Pi behind one runtime interface. Antigravity now works in every role, not only for developers: read-only for the Coordinator, planners, reviewers and checks, edits only inside a developer's own worktree.
 - **Checks Trama runs itself.** `git_status`, `git_diff_check`, `swift_build`, `swift_test`, `node_test` and `node_typecheck`, with Node checks in a sandbox that allows only local networking.
-- **Nine providers.** Codex, Claude, Cursor, Grok, Droid, Devin, OpenCode, Antigravity and Pi behind one runtime interface.
-- **Skills included.** The full set of Matt Pocock's engineering and productivity skills, callable with `/` in the composer.
+- **Goals with examples.** Outcomes with accepted and rejected examples that tasks, candidates and decisions link to explicitly.
 - **Memory and learning.** The Coordinator keeps notes on you and the project, searches past conversations and maintains the skills it learns, ported from Hermes Agent.
 - **Repository map.** Swift and JavaScript/TypeScript projects are indexed into modules from their real paths, with secrets and symlinks excluded.
 
 <table>
   <tr>
-    <td width="50%"><img src="docs/images/readme/decision.png" alt="A decision card with two alternatives and a free answer field"></td>
-    <td width="50%"><img src="docs/images/readme/team.png" alt="The Team panel listing roles by moment"></td>
+    <td width="33%"><img src="docs/images/readme/decision.png" alt="A decision card with two alternatives and a free answer field"></td>
+    <td width="33%"><img src="docs/images/readme/team.png" alt="The Team panel listing fixed roles and developers by moment"></td>
+    <td width="33%"><img src="docs/images/readme/focus-mode.png" alt="Focus mode on a candidate, with its real checks and the Standards and Spec review"></td>
   </tr>
   <tr>
     <td align="center"><sub>A decision card: a concrete case, alternatives with examples, or your own words.</sub></td>
     <td align="center"><sub>The team, moment by moment.</sub></td>
+    <td align="center"><sub>Focus mode: real checks first, then Standards and Spec in parallel.</sub></td>
   </tr>
 </table>
 
@@ -62,7 +66,7 @@ There is no signed release yet, so Trama runs from source.
 
 - macOS, Linux or Windows, with Git and Node.js 22.
 - At least one provider you are already signed in to from its CLI. For Codex this means a **ChatGPT account**: Trama refuses API keys and non-OpenAI providers for Codex, so it never moves you to API billing silently.
-- Optional: [GitHub CLI](https://cli.github.com/) (`gh auth login`) for issues and pull requests.
+- Optional: [GitHub CLI](https://cli.github.com/) (`gh auth login`) for issues, pull requests and presence.
 - Optional: `bubblewrap` on Linux, so Node tests that open a local server can run in Trama's sandbox. macOS uses the built-in `sandbox-exec`.
 
 **Run it**
@@ -81,6 +85,7 @@ npm run dev
 3. Read the Coordinator's study of the project and confirm the developers it proposes.
 4. Send a request. Pick a module as context with `@` or a skill with `/`.
 5. Answer the rounds of questions and the mandate card. Only your answers enter the Pact and the mandate.
+6. Follow the focus bar for the task in focus and the queue behind it. Inside the mandate, the Coordinator keeps moving between rounds on its own; you step in for product decisions, the mandate, the team and the merge.
 
 ## How it works
 
@@ -88,27 +93,30 @@ npm run dev
 flowchart LR
     R[Request] --> G[Grilling rounds]
     G -->|your answers| P[Pact]
-    P --> PL[Plan]
-    PL -->|within the mandate| A[Tasks in worktrees]
+    P --> PL[Spec and slices]
+    PL -->|within the mandate| A[Assignment contract in worktrees]
     A --> C[Candidate]
-    C --> V[Checks run by Trama]
+    C --> V[Checks and focus mode review]
     V --> AP[Your approval]
     AP --> PR[Branch and pull request]
 ```
 
-1. **Clarify.** The Coordinator reads the code for facts and asks you only what the code cannot answer, one round at a time.
+1. **Clarify.** The Coordinator reads the code for facts and asks you only what the code cannot answer, one round at a time, with `grilling`.
 2. **Decide.** Each answer is a versioned decision in the Pact. Changing a decision invalidates only the work that depended on it.
-3. **Delegate.** Within the mandate, the Coordinator assigns tasks to developers. Each works in a dedicated worktree, with its provider and model recorded.
-4. **Verify.** A candidate carries its diff, the decisions it relies on and the check results. Trama runs the checks itself; a later relevant change revokes the approval.
-5. **Publish.** With your explicit action, Trama prepares an immutable commit and opens the pull request through `gh`.
+3. **Plan.** `to-spec` writes the request as a spec with the seams you confirm; `to-tickets` splits it into vertical slices in dependency order.
+4. **Delegate.** Within the mandate, the Coordinator assigns ready slices to developers, one each, through an assignment contract: goal, seams, decisions and checks required. Each works in a dedicated worktree with `implement` and `tdd`, and closes with a structured report.
+5. **Verify.** A candidate carries its diff, the decisions it relies on and the check results Trama ran itself. Focus mode adds a read-only Standards and Spec review on demand. A later relevant change revokes the approval.
+6. **Publish.** With your explicit action, Trama prepares an immutable commit and opens the pull request through `gh`.
 
-The vocabulary (Coordinator, Pact, mandate, candidate, moment) is defined in [CONTEXT.md](CONTEXT.md), and the reasons behind the design are in the [ADRs](docs/adr/).
+Throughout, presence shows who else is on the same files, and the Coordinator avoids assigning work where a colleague already has it open.
+
+The vocabulary (Coordinator, Pact, mandate, candidate, moment, presence, focus mode) is defined in [CONTEXT.md](CONTEXT.md), and the reasons behind the design are in the [ADRs](docs/adr/).
 
 ## Providers
 
 | Provider | Adapter | Tested with a real account |
 | --- | --- | --- |
-| Codex (ChatGPT) | yes | Not yet in the Electron app: the test account had used up its quota ([V09](docs/verifiche/v09-trama-su-trama-2026-09-24.md)) |
+| Codex (ChatGPT) | yes | Live in the Electron app on 26 September with real `gpt-6-luna`: study, team, mandate, assignment contract and a developer's finished worktree. Stopped before a verified candidate, on a bug in `verify_candidate` ([issue #67 comment](https://github.com/emanueledenaro/trama/issues/67), [#204](https://github.com/emanueledenaro/trama/issues/204)) |
 | Claude | yes | Base path: message, Trama tool, interrupt, restart, resume |
 | Pi | yes | Base path: message, Trama tool, interrupt, restart, resume |
 | Cursor, Grok, Devin, OpenCode | yes | No, fake CLIs and servers only |
@@ -124,7 +132,7 @@ The adapters are ported from [Synara](https://github.com/Emanuele-web04/synara) 
 | `TRAMA_CODEX_PATH` | Codex executable to use instead of the one in `PATH` |
 | `TRAMA_DATA_DIR` | Data folder to use instead of the default |
 
-Data lives in the user data folder under `Trama/Desktop`: `~/Library/Application Support/Trama/Desktop` on macOS, `~/.config/Trama/Desktop` on Linux, `%APPDATA%\Trama\Desktop` on Windows. What the Coordinator learns is stored under `Learning/` in the same folder, never in your repository. On first launch Trama imports recent projects from the former SwiftUI version without modifying its files.
+Data lives in the user data folder under `Trama/Desktop`: `~/Library/Application Support/Trama/Desktop` on macOS, `~/.config/Trama/Desktop` on Linux, `%APPDATA%\Trama\Desktop` on Windows. What the Coordinator learns is stored under `Learning/` in the same folder, never in your repository. Presence is shared over `refs/trama/presence/<user>` on your project's `origin`, only with your consent, never in the repository itself. On first launch Trama imports recent projects from the former SwiftUI version without modifying its files.
 
 ## Development
 
@@ -145,32 +153,35 @@ npm run dist        # package with electron-builder
 
 | Path | Contents |
 | --- | --- |
-| `app/src/main` | Main process: repository scanner, Coordinator, MCP tool server on `127.0.0.1`, Pact, mandate, team, goals, checks, GitHub, persistence |
+| `app/src/main` | Main process: repository scanner, Coordinator, MCP tool server on `127.0.0.1`, Pact, mandate, team, goals, checks, presence, GitHub, persistence |
 | `app/src/main/core/providers` | The nine provider adapters behind `AgentRuntime` |
 | `app/src/main/core/learning` | Memory and learning loop ported from [Hermes Agent](https://github.com/NousResearch/hermes-agent) ([ADR 0014](docs/adr/0014-apprendimento-di-hermes.md)) |
 | `app/src/main/core/nativeSkills.ts` | Delivers a bundled skill unchanged, with a binding to Trama's tools |
+| `app/src/main/core/audit.ts` | Focus mode: real checks first, then the `code-review` skill on two read-only sessions |
+| `app/src/main/core/presence.ts` | Presence over dedicated git refs, and overlap checks against colleagues' branches |
 | `app/src/preload` | Typed IPC bridge. The renderer has no Node access |
 | `app/src/renderer` | React, Tailwind CSS 4 and `@base-ui/react` on Synara's design tokens |
-| `app/src/shared` | Shared types and logic: timeline, grilling rounds, team roster |
+| `app/src/shared` | Shared types and logic: timeline, grilling rounds, team roster, presence, overlap |
 | `app/resources/AIHero` | Bundled skills, license and `bundle.json` with every renamed file |
 | `app/resources/DemoProject` | The sample project |
 | `app/test-fixtures/fake-codex.mjs` | Fake app server for tests and `ui-check`. Its replies are not Codex results |
 
 </details>
 
-CI ([`electron.yml`](.github/workflows/electron.yml)) runs type check, tests, build and `ui-check` on Ubuntu with Node 22. The [`release.yml`](.github/workflows/release.yml) workflow builds packages for macOS, Windows and Linux on every `v*` tag; they are signed and notarized only when the signing secrets are set.
+CI ([`electron.yml`](.github/workflows/electron.yml)) runs type check, tests, build and `ui-check` on Ubuntu with Node 22. The [`release.yml`](.github/workflows/release.yml) workflow builds packages for macOS, Windows and Linux on every `v*` tag; they are signed and notarized only when the signing secrets are set. `main` is a protected branch: changes land through a pull request, never a direct push.
 
 ## Status and known limits
 
-- **End to end.** No candidate has yet been declared and verified from start to finish on a real project. The full Codex path still has to run.
-- **Fixed roles.** Under a granted mandate, bug triage, diagnosis of failed checks and Clean Code's architecture review start on their own ([#148](https://github.com/emanueledenaro/trama/issues/148)). The other roles do not run yet: the parallel review of a candidate by every reviewer is still open ([#147](https://github.com/emanueledenaro/trama/issues/147)).
-- **Pull requests.** Publishing is tested up to the branch push. Creating the PR with `gh` has not been tested on a real repository.
-- **Sandbox.** The Node sandbox with local networking is tested on macOS only. On Windows, tests that open a local server fail under the Codex sandbox.
+- **End to end.** No candidate has yet been declared and verified end to end on a real project. The closest live run (26 September, real Codex `gpt-6-luna`) reached a developer's finished worktree and stopped before declaring a candidate, on a bug in `verify_candidate` ([issue #67 comment](https://github.com/emanueledenaro/trama/issues/67), [#204](https://github.com/emanueledenaro/trama/issues/204)).
+- **Candidate gate.** Focus mode reviews one candidate on demand with two axes, Standards and Spec. Running every fixed role over a candidate automatically, in parallel, is still open ([#147](https://github.com/emanueledenaro/trama/issues/147)).
+- **Pull requests.** Publishing is tested up to the branch push. Creating the PR with `gh` has not been tested from the app on a real repository.
+- **Sandbox.** The Node sandbox with local networking is tested on macOS only. On Windows, tests that open a local server fail under the Codex sandbox. The Linux `bubblewrap` path is coded but not tested on a real Linux machine.
 - **Provider switch.** Switching providers mid-conversation is verified only live.
+- **Presence.** Verified against a local bare remote and, once, directly against GitHub. A remote other than GitHub or a local folder, and a repository whose CI triggers on any push, are not verified.
 - **Distribution.** No signed or notarized package has been produced yet.
 - **Planning docs.** Some documents in `docs/` still describe the SwiftUI version.
 
-The complete list is in [ADR 0011](docs/adr/0011-app-desktop-electron-con-design-synara.md) and in [GitHub Issues](https://github.com/emanueledenaro/trama/issues). Code or a passing local test alone does not close a ticket.
+The complete list is in [ADR 0011](docs/adr/0011-app-desktop-electron-con-design-synara.md) and in [GitHub Issues](https://github.com/emanueledenaro/trama/issues). Code or a passing local test alone does not close a ticket; the verification logs are in [`docs/verifiche/`](docs/verifiche/).
 
 ## Contributing
 
@@ -178,9 +189,9 @@ Issues and pull requests are welcome. Before you start:
 
 - Read [AGENTS.md](AGENTS.md) for the project rules and [CONTEXT.md](CONTEXT.md) for the vocabulary.
 - Commits follow [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/), for example `feat(app): add the search palette`.
-- Branches use `feature/`, `bugfix/` or `hotfix/` with a short English description.
+- Branches follow [Conventional Branch](https://conventionalbranch.org/): `feature/`, `bugfix/` or `hotfix/` with a short English description.
 - Source code, comments and commit messages are in English. The interface, issues and pull requests are in Italian.
-- Run `npm run typecheck` and `npm test` in `app/` before opening a pull request.
+- Run `npm run typecheck` and `npm test` in `app/` before opening a pull request. `main` is protected: only a pull request with green CI gets merged.
 
 ## Acknowledgements
 
