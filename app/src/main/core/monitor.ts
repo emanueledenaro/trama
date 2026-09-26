@@ -3,7 +3,7 @@ import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { GitHubPullRequest, GitHubSnapshot, TeamEvent } from "@shared/domain";
-import { checksConclusion, ghEnvironment } from "./github";
+import { checksConclusion, ghEnvironment, linkedIssueNumbers } from "./github";
 import { runProcess } from "./process";
 import { writeAtomically } from "./storage";
 
@@ -31,6 +31,7 @@ async function paged<T>(endpoint: string): Promise<{ values: T[]; reachedLimit: 
 interface RawPullRequest {
   number: number;
   title: string;
+  body?: string | null;
   user?: { login?: string } | null;
   head: { ref: string; sha: string; repo?: { full_name?: string } | null };
   base: { ref: string };
@@ -82,6 +83,7 @@ export async function fetchGitHubSnapshot(repository: string, previous: GitHubSn
           draft: p.draft === true,
           updatedAt: p.updated_at,
           fromFork: Boolean(p.head.repo?.full_name && p.head.repo.full_name.toLowerCase() !== repository.toLowerCase()),
+          linkedIssues: linkedIssueNumbers(p.title, p.body ?? null, p.head.ref),
         }),
       )
       .sort((a, b) => a.number - b.number),
