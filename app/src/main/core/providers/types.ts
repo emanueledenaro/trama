@@ -16,6 +16,8 @@ export interface HostToolServer {
   name: string;
   url: string;
   token: string;
+  /** Names of the tools the server offers, so a refusal can name the one to use instead (issue #228). */
+  tools?: readonly string[];
 }
 
 export interface OpenThreadOptions {

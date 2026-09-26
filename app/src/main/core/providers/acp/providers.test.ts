@@ -90,6 +90,27 @@ describe("Grok", () => {
     expect(grokHookResponse({ ...base, toolName: "read_file" }, { ...readOnly, active: false })).toMatchObject({ decision: "deny" });
   });
 
+  it("tells Grok which Trama tool replaces a blocked tool and records the refusal (issue #228)", () => {
+    const base = { hookCallbackId: "trama-sandbox-guard", hookEventName: "pre_tool_use" };
+    const refused: string[] = [];
+    const policy = {
+      active: true,
+      cwd: "/r",
+      writableRoot: null,
+      hostServerName: "trama",
+      refuse: ({ tool }: { tool: string }) => {
+        refused.push(tool);
+        return "Gli strumenti GitHub del provider sono bloccati: per le issue usa read_issues di Trama.";
+      },
+    };
+    expect(grokHookResponse({ ...base, toolName: "mcp__github__list_issues" }, policy)).toEqual({
+      decision: "deny",
+      systemMessage: 'Trama blocca lo strumento Grok "mcp__github__list_issues": Gli strumenti GitHub del provider sono bloccati: per le issue usa read_issues di Trama.',
+    });
+    expect(grokHookResponse({ ...base, toolName: "edit_file" }, policy)).toMatchObject({ systemMessage: expect.stringContaining("sola lettura") });
+    expect(refused).toEqual(["mcp__github__list_issues"]);
+  });
+
   it("parses `grok models`", () => {
     const models = parseGrokModels("Default model: grok-build\nAvailable models:\n  * grok-code-fast-1\n  * grok-build (default)\n\nOther text");
     expect(models.map((m) => [m.model, m.isDefault])).toEqual([

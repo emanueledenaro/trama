@@ -10,8 +10,11 @@ import {
   toolchainRoots,
 } from "../readScope";
 import { type AgentRuntime, type OpenThreadOptions, ProviderError, type RunTurnOptions, type RuntimeOptions } from "./types";
+import { ToolRefusals } from "./toolRefusal";
 
 const TOKEN_ENVIRONMENT_VARIABLE = "TRAMA_COORDINATOR_TOKEN";
+/** A command that reaches GitHub or the network, which the read-only sandbox stops. */
+const NETWORK_COMMAND = /(?:^|[\s;&|('"])(?:gh|curl|wget)\s|\bgit\s+(?:fetch|pull|push|clone|ls-remote)\b/;
 
 /** The folders of the Codex executable, as installed and as resolved, so its sandbox can start it again. */
 function executableFolders(configured: string | null | undefined): string[] {
@@ -33,6 +36,8 @@ export class CodexRuntime implements AgentRuntime {
   private readonly client: CodexClient;
   /** What the open thread may read and write. */
   private scope: { roots: string[]; writableRoot: string | null } | null = null;
+  /** GitHub and network commands the sandbox stopped; the next prompt names the Trama tool to use (issue #228). */
+  private readonly refusals = new ToolRefusals(() => this.options.toolServer?.tools ?? []);
 
   constructor(private readonly options: RuntimeOptions = {}) {
     const toolServer = options.toolServer ?? null;
@@ -110,14 +115,18 @@ export class CodexRuntime implements AgentRuntime {
     if (options.writableRoot && resolve(options.writableRoot) !== scope.writableRoot) {
       return Promise.reject(new ProviderError("unsupportedSandbox", "Il turno chiede di scrivere fuori dalla cartella del thread di Codex."));
     }
+    const notice = this.refusals.takeNotice();
     return this.client.runTurn({
       ...options,
+      prompt: notice ? `${notice}\n\n${options.prompt}` : options.prompt,
       permissions: options.writableRoot ? CODEX_WRITE_PROFILE : CODEX_READ_PROFILE,
       outputSchema: options.outputSchema as never,
       onEvent: (event) => {
         options.onEvent(event);
-        // The profile already hid these files; Trama records that the session tried (issue #206).
         if (event.type !== "commandCompleted") return;
+        // Web search, apps and the person's MCP servers are off; a failed gh or network command meets the sandbox (issue #228).
+        if (!event.succeeded && NETWORK_COMMAND.test(event.command)) this.refusals.record({ itemId: event.itemId, tool: event.command, kind: "execute" }, options.onEvent);
+        // The profile already hid these files; Trama records that the session tried (issue #206).
         for (const path of privatePathsInCommand(event.command, options.cwd, scope.roots)) {
           options.onEvent({ type: "readOutsideScope", itemId: event.itemId, path, tool: event.command });
         }
