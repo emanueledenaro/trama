@@ -10,6 +10,7 @@ import {
   IconSettings,
   IconSun,
   IconTools,
+  IconUsers,
 } from "@tabler/icons-react";
 import { useState } from "react";
 import type { ProviderAccount, ProviderId } from "@shared/codex";
@@ -22,6 +23,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/field";
 import { cn } from "@/lib/cn";
 import { act, type SettingsSection, useUi } from "@/lib/store";
+import { PresenceControls, presenceStatusLine } from "@/components/PresencePanel";
 
 const SECTIONS: { id: SettingsSection; label: string; icon: React.ReactNode }[] = [
   { id: "general", label: "Generale", icon: <IconSettings stroke={1.7} /> },
@@ -29,6 +31,7 @@ const SECTIONS: { id: SettingsSection; label: string; icon: React.ReactNode }[] 
   { id: "method", label: "Metodo di lavoro", icon: <IconTools stroke={1.7} /> },
   { id: "learning", label: "Apprendimento", icon: <IconBrain stroke={1.7} /> },
   { id: "monitor", label: "Monitor", icon: <IconEye stroke={1.7} /> },
+  { id: "presence", label: "Presenza", icon: <IconUsers stroke={1.7} /> },
 ];
 
 /** The settings page: a section list on the left, one section at a time on the right. */
@@ -73,6 +76,7 @@ export function SettingsView() {
           {section === "method" ? <MethodSection /> : null}
           {section === "learning" ? <LearningSection /> : null}
           {section === "monitor" ? <MonitorSection /> : null}
+          {section === "presence" ? <PresenceSection /> : null}
         </div>
       </div>
     </div>
@@ -121,7 +125,7 @@ function Row({ label, description, control, children }: { label: React.ReactNode
   );
 }
 
-function Toggle({ checked, onChange, label }: { checked: boolean; onChange: (value: boolean) => void; label: string }) {
+export function Toggle({ checked, onChange, label }: { checked: boolean; onChange: (value: boolean) => void; label: string }) {
   return (
     <button
       type="button"
@@ -539,6 +543,37 @@ function MonitorSection() {
             }
           />
         ) : null}
+      </Group>
+    </>
+  );
+}
+
+/** Decision 6: the presence switch, always here, with the pause; the consent belongs to the open project. */
+function PresenceSection() {
+  const project = useUi((s) => s.app?.project ?? null);
+  return (
+    <>
+      <PageHeader
+        title="Presenza"
+        description="Chi usa Trama condivide con il team su quale branch lavora, i percorsi dei file che tocca e la richiesta in corso, sul remoto del progetto. Mai il contenuto dei file. Il consenso vale per progetto."
+      />
+      <Group note="La presenza si aggiorna ogni 45 secondi e subito al cambio di branch. Dopo 7 giorni senza aggiornamenti sparisce.">
+        {!project ? (
+          <Row label={<span className="text-muted-foreground">Apri un progetto per scegliere se condividere la presenza.</span>} />
+        ) : project.isDemo ? (
+          <Row label={<span className="text-muted-foreground">Il progetto di esempio non condivide la presenza.</span>} />
+        ) : (
+          <Row
+            label={`Condividi la presenza in ${project.name}`}
+            description={
+              <>
+                {presenceStatusLine(project.presence)}
+                {project.presence?.message ? <span className="mt-1 block text-foreground/80">{project.presence.message}</span> : null}
+              </>
+            }
+            control={<PresenceControls view={project.presence} consentChoice={project.document.presence?.choice ?? null} />}
+          />
+        )}
       </Group>
     </>
   );

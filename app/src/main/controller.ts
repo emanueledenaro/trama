@@ -187,6 +187,9 @@ import { PROJECT_DIALOG_ID } from "./core/learning/sessionSearch";
 import { git } from "./core/process";
 import { AppStorage } from "./core/storage";
 import { hasAiHero, readGitHubCliStatus, simulateColleagueChanges } from "./core/onboarding";
+import { type AgentWork, type PresenceContext, PresenceService } from "./core/presence";
+import { emptyConsent, type PresenceProposal, type PresenceTask, shouldProposeConsent, shouldReproposeConsent } from "@shared/presence";
+import { agentTag } from "@shared/identity";
 import {
   EMPTY_ONBOARDING,
   EXERCISE_IDS,
@@ -558,6 +561,7 @@ export class TramaController {
     for (const [, review] of this.learningReviews) review.abort();
     this.learningReviews.clear();
     this.unwatchProject();
+    await this.stopPresence();
     await this.flushSave();
     this.stopRuntime();
     for (const [, parked] of this.parkedProjects) {
@@ -772,6 +776,7 @@ export class TramaController {
         this.publishNow();
         if (!isDemo) void this.refreshGitHub();
         this.watchProject(root);
+        if (!isDemo) this.startPresence(parked);
         void this.loadSkills();
         void this.startCoordinator();
         // Work that waited for a provider while the project was parked is checked again now.
@@ -850,6 +855,7 @@ export class TramaController {
       this.publishNow();
       if (!isDemo) void this.refreshGitHub();
       this.watchProject(root);
+      if (!isDemo) this.startPresence(project);
       if (!isDemo && loaded.writable && this.state.settings.autoPrepareMethod !== false && !hasAiHero(root)) {
         // T04: the method is ready when the project opens; existing files are never overwritten.
         void this.prepareSkills().catch((error) => this.fail(error));
@@ -993,6 +999,7 @@ export class TramaController {
     };
     this.updateMonitorStatus(repository, checkpoint);
     this.publish();
+    void this.presence?.tick();
     void this.assessRemoteConflicts();
     void this.recordMergedPullRequests(project, repository);
     void this.runDuties();
@@ -1076,6 +1083,7 @@ export class TramaController {
           document.conflicts.push(assessment);
           if (assessment.classification === "conflict" || assessment.classification === "overlap") {
             appendEvent(document, "trama", { type: "card", kind: "conflict", title: "Conflitto", detail: null, referenceId: assessment.id });
+            if (shouldReproposeConsent(document.presence, assessment.classification)) this.proposePresence(project, "conflict", references);
             if (assessment.classification === "conflict") {
               this.host.notify(
                 "Trama: conflitto con il lavoro di un collega",
@@ -1090,6 +1098,126 @@ export class TramaController {
     } finally {
       this.assessingConflicts = false;
     }
+  }
+
+  // MARK: Presence (G01)
+
+  private presence: PresenceService | null = null;
+
+  private startPresence(project: ActiveProjectState): void {
+    void this.stopPresence();
+    const service: PresenceService = new PresenceService({
+      cacheRoot: join(this.storage.root, "Presence"),
+      context: (): PresenceContext | null => (this.state.project === project && this.presence === service ? this.presenceContext(project) : null),
+      onView: (view) => {
+        if (this.state.project !== project || this.presence !== service) return;
+        const { hasCollaborators, ...rest } = view;
+        project.presence = rest;
+        if (project.stateWritable && shouldProposeConsent(project.document.presence, hasCollaborators)) {
+          this.proposePresence(project, "initial", []);
+          return;
+        }
+        this.publish();
+      },
+    });
+    this.presence = service;
+    service.start(project.rootPath);
+  }
+
+  private async stopPresence(): Promise<void> {
+    const service = this.presence;
+    this.presence = null;
+    if (!service) return;
+    // A close must not hang on a slow remote: the record then expires by itself (decision 7).
+    await Promise.race([service.stop(), new Promise((resolve) => setTimeout(resolve, 5_000).unref?.())]);
+  }
+
+  /** What the presence needs from Trama: the consent, the work in focus and the agents at work. */
+  private presenceContext(project: ActiveProjectState): PresenceContext {
+    const document = project.document;
+    const focus = project.focus.focus;
+    const assignments = document.team.specialists.flatMap((specialist) => specialist.assignments.map((assignment) => ({ specialist, assignment })));
+    const withWorktree = assignments.filter(({ assignment }) => assignment.workspace && !assignment.workspaceRemovedAt);
+    const inFocus = focus
+      ? withWorktree
+          .filter(({ assignment }) => (focus.goalId ? assignment.goalId === focus.goalId : !assignment.goalId && assignment.requestId !== null))
+          .sort((a, b) => b.assignment.createdAt.localeCompare(a.assignment.createdAt))[0]
+      : undefined;
+    const task: PresenceTask | null = focus ? { kind: focus.goalId ? "goal" : "work", title: focus.title } : null;
+    const agents: AgentWork[] = withWorktree
+      .filter(({ assignment }) => ["preparing", "running", "stopRequested"].includes(assignment.status))
+      .map(({ specialist, assignment }) => ({
+        id: specialist.id,
+        name: specialist.name,
+        color: specialist.color,
+        tag: agentTag(specialist),
+        worktreeRoot: assignment.workspace!.worktreeRoot,
+        branch: assignment.workspace!.branch,
+        baseSHA: assignment.workspace!.baseSHA,
+        task: { kind: "assignment", title: assignment.objective.split("\n")[0]!.slice(0, 160) },
+        since: assignment.createdAt,
+        updatedAt: assignment.updatedAt,
+      }));
+    return {
+      root: project.rootPath,
+      consent: document.presence ?? null,
+      canPush: project.github.capabilities?.status === "ready" ? project.github.capabilities.canPush : null,
+      githubLogin: project.github.capabilities?.login ?? null,
+      focusBranch: inFocus?.assignment.workspace?.branch ?? null,
+      task,
+      agents,
+    };
+  }
+
+  /**
+   * Decision 6: the proposal in the project dialog, with the reason to share and "Non ora" and "Condividi". The first
+   * one when the project has other collaborators; the second and last after a conflict the presence would have shown.
+   */
+  private proposePresence(project: ActiveProjectState, proposal: PresenceProposal, references: string[]): void {
+    const consent = (project.document.presence ??= emptyConsent());
+    const now = new Date().toISOString();
+    if (proposal === "initial") consent.proposedAt = now;
+    else consent.reproposedAt = now;
+    consent.pending = proposal;
+    appendEvent(project.document, "trama", {
+      type: "card",
+      kind: "presenceConsent",
+      title: "Condividere la presenza?",
+      detail:
+        proposal === "conflict"
+          ? `Il tuo lavoro si sovrappone a ${references.join(", ") || "quello di un collega"}. Con la presenza condivisa ve ne sareste accorti prima.`
+          : null,
+      referenceId: proposal,
+    });
+    this.changedIn(project);
+  }
+
+  async setPresenceConsent(share: boolean, proposal: PresenceProposal | null): Promise<void> {
+    const project = this.requireProject();
+    if (project.isDemo) throw new DomainError("Il progetto di esempio non condivide la presenza.");
+    const consent = (project.document.presence ??= emptyConsent());
+    const now = new Date().toISOString();
+    consent.choice = share ? "shared" : "declined";
+    consent.decidedAt = now;
+    consent.proposedAt ??= now;
+    if (share) consent.paused = false;
+    if (proposal && consent.pending === proposal) consent.answers[proposal] = consent.choice;
+    consent.pending = null;
+    this.changed();
+    await this.presence?.tick();
+  }
+
+  async pausePresence(paused: boolean): Promise<void> {
+    const project = this.requireProject();
+    const consent = project.document.presence;
+    if (consent?.choice !== "shared") throw new DomainError("Prima scegli di condividere la presenza.");
+    consent.paused = paused;
+    this.changed();
+    await this.presence?.tick();
+  }
+
+  async refreshPresence(): Promise<void> {
+    await this.presence?.tick();
   }
 
   async createGitHubIssue(title: string, body: string): Promise<void> {
@@ -1194,6 +1322,7 @@ export class TramaController {
    * working in their own runtime and write to their own project's history.
    */
   private parkSelectedProject(): void {
+    void this.stopPresence();
     const project = this.state.project;
     // The Coordinator's turn stops with its runtime: it ends here, in its own project, before the late rejection arrives.
     const left = project?.runningRequestId ? project.document.requests.find((r) => r.id === project.runningRequestId) : undefined;
