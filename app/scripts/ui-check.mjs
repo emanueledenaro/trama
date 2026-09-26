@@ -1232,6 +1232,52 @@ await correctedCard.getByRole("button", { name: "Focus mode" }).click();
 await page.locator('[data-testid="focus-audit"][data-status="done"]').waitFor({ timeout: 10_000 });
 await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
 
+// W06: a developer with a doubt asks the Coordinator with ask_coordinator, and the slice pauses. The question stays in
+// the report's doubts. The Coordinator puts it on a Pact card that blocks the work; the person's answer resumes the
+// developer in the same session, and the card and the assignment say so.
+await send("[assegna:S1] [test] [domanda]");
+const questionWork = assignmentCards.nth(4);
+await questionWork.getByText("In pausa", { exact: true }).waitFor({ timeout: 20_000 });
+await questionWork.locator('[data-testid="assignment-question"][data-state="asked"]').getByText(/buono/).waitFor();
+await questionWork.getByText("Aspetta il Coordinatore").waitFor();
+await questionWork.getByTestId("report-doubts").getByText(/Domanda al Coordinatore/).waitFor();
+await sliceSpec.locator('[data-testid="plan-slice"][data-state="paused"]').getByText("In pausa").waitFor({ timeout: 20_000 });
+await questionWork.scrollIntoViewIfNeeded();
+await shot("19e-developer-question");
+await send("[blocca-dubbio]");
+// The card keeps the developer's question after the answer; only the "Blocca il lavoro" badge goes.
+const blockingCard = page.locator(".chat-card", { has: page.getByTestId("blocked-work") }).last();
+await blockingCard.waitFor({ timeout: 20_000 });
+await blockingCard.getByTestId("blocks-work").getByText("Blocca il lavoro").waitFor();
+await blockingCard.getByTestId("blocked-work").getByText(/buono/).waitFor();
+await blockingCard.getByText("Il lavoro resta in pausa finché non rispondi. Il resto del team va avanti.").waitFor();
+await questionWork.locator('[data-testid="assignment-question"][data-state="waitingForPerson"]').getByText("Blocca il lavoro").waitFor();
+await blockingCard.getByRole("button", { name: /Va in revisione come gli altri/ }).click();
+const blockingActions = await blockingCard.locator(".cta-row").last().locator("button").allTextContents();
+if (blockingActions.at(-1)?.trim() !== "Registra la decisione") throw new Error(`Registra la decisione is not the last call to action: ${blockingActions}`);
+const recordBox = await blockingCard.getByRole("button", { name: "Registra la decisione" }).boundingBox();
+const blockingBox = await blockingCard.boundingBox();
+if (!recordBox || !blockingBox || blockingBox.x + blockingBox.width - (recordBox.x + recordBox.width) > 20) throw new Error("Registra la decisione is not on the right");
+await blockingCard.scrollIntoViewIfNeeded();
+await shot("19f-blocking-card");
+const questionLook = await page.evaluate(() => ({ provider: document.documentElement.dataset.provider ?? null, dark: document.documentElement.classList.contains("dark") }));
+for (const provider of ["codex", "claudeAgent"]) {
+  await setLook(provider, true);
+  await shot(`19g-blocking-card-${provider}-dark`);
+}
+await setLook(questionLook.provider, questionLook.dark);
+await blockingCard.getByRole("button", { name: "Registra la decisione" }).click();
+await questionWork.getByText("Concluso", { exact: true }).waitFor({ timeout: 30_000 });
+await questionWork.locator('[data-testid="assignment-question"][data-state="resumed"]').getByText("Lavoro ripreso").waitFor();
+await questionWork.getByTestId("question-answer").getByText(/Va in revisione come gli altri/).waitFor();
+await blockingCard.getByText("Il lavoro è ripreso con la tua risposta.").waitFor();
+if (await blockingCard.getByTestId("blocks-work").count()) throw new Error("An answered card still says it blocks the work");
+await questionWork.scrollIntoViewIfNeeded();
+await shot("19h-developer-question-resumed");
+await setLook("claudeAgent", true);
+await shot("19i-developer-question-resumed-claude-dark");
+await setLook(questionLook.provider, questionLook.dark);
+
 // G01, presenza: a project with a colleague on a local bare remote. The colleague's record is already there; Trama
 // proposes the consent in the chat once, with "Non ora" and "Condividi" on the right, and publishes only after
 // "Condividi": names, branches and paths, never the content of a file.
