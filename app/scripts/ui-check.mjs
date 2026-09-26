@@ -684,7 +684,7 @@ git("remote", "add", "origin", "https://github.com/trama-ui/negozio.git");
 // Reopening (UX01): after a restart the same goal is in the list and opens from the keyboard alone.
 // P10: the fake Codex answers the "[limite-temporaneo]" turns with OpenRouter's upstream 429 twice, then works again;
 // a short first wait keeps the automatic retry within the check.
-({ app, page } = await launch({ PATH: `${ghBin}:${process.env.PATH}`, TRAMA_PROVIDER_RETRY_MS: "4000", FAKE_CODEX_RATE_LIMITS: "2" }));
+({ app, page } = await launch({ PATH: `${ghBin}:${process.env.PATH}`, FAKE_GH_TEAM: "1", TRAMA_PROVIDER_RETRY_MS: "4000", FAKE_CODEX_RATE_LIMITS: "2" }));
 const goalsRow = page.getByRole("button", { name: /^Obiettivi/ }).first();
 await goalsRow.waitFor({ timeout: 30_000 });
 // M04: the spec is still there to read after the restart.
@@ -723,6 +723,14 @@ await page.getByRole("button", { name: /^Gruppo/ }).first().click();
 const groupPanel = page.getByTestId("inspector");
 await groupPanel.getByRole("button", { name: "Segui in background" }).click();
 await groupPanel.getByText("Monitor attivo").waitFor({ timeout: 10_000 });
+// G02, decision 9a: a colleague who does not use Trama appears with what GitHub shows, their pull request and branch;
+// a branch nobody explains stays apart.
+const githubOnly = groupPanel.locator('[data-testid="group-row"][data-kind="github"]').filter({ hasText: "collega" });
+await githubOnly.getByText("#12 Annullo degli ordini dal riepilogo").waitFor({ timeout: 20_000 });
+await githubOnly.getByText("feature/annullo-ordini").waitFor();
+await githubOnly.getByText(/^su GitHub/).waitFor();
+await groupPanel.getByTestId("group-other-branches").getByText(/spike\/vecchio-checkout/).waitFor();
+await groupPanel.locator('[data-testid="group-row"][data-self="true"]').getByText("trama-ui (tu)").waitFor({ timeout: 20_000 });
 await shot("15b-group-follow");
 await page.setViewportSize({ width: 720, height: 640 });
 await groupPanel.getByRole("button", { name: "Chiedi al Coordinatore l'impatto" }).click();
@@ -899,15 +907,27 @@ const beaRecord = {
   user: "bea-at-example.com",
   name: "Bea",
   activeBranch: "feature/rimborsi",
-  alsoOn: [],
-  localBranches: ["main", "feature/rimborsi"],
+  alsoOn: ["fix/iva-rimborsi"],
+  localBranches: ["main", "feature/rimborsi", "fix/iva-rimborsi"],
   files: ["src/payments.js"],
   task: { kind: "goal", title: "Rimborsi parziali" },
   since: new Date(Date.now() - 20 * 60_000).toISOString(),
   lastActivityAt: new Date().toISOString(),
   updatedAt: new Date().toISOString(),
   closedAt: null,
-  agents: [],
+  agents: [
+    {
+      id: "lia",
+      name: "Lia",
+      color: "violet",
+      tag: "Interfaccia",
+      branch: "trama/lia-rimborsi",
+      files: ["src/refunds-view.js"],
+      task: { kind: "assignment", title: "Schermata dei rimborsi" },
+      since: new Date(Date.now() - 30 * 60_000).toISOString(),
+      lastActivityAt: new Date(Date.now() - 12 * 60_000).toISOString(),
+    },
+  ],
 };
 presenceGit(presenceSeed, "checkout", "-q", "--orphan", "presence");
 presenceGit(presenceSeed, "rm", "-rq", "--cached", ".");
@@ -944,16 +964,61 @@ for (let attempt = 0; attempt < 60 && !adaRecord; attempt++) {
 if (!adaRecord.includes("feature/carrello") || !adaRecord.includes("src/payments.js")) throw new Error(`Presence not published: ${adaRecord}`);
 if (adaRecord.includes("CONTENUTO PRIVATO")) throw new Error("Presence published a file's content");
 if (presenceGit(presenceRemote, "branch", "--list").includes("presence")) throw new Error("Presence shows up as a branch");
+// G04: the Coordinator reads the presence. "Chi sta toccando i pagamenti?" gets Bea's branch and files from
+// read_presence, and the turn's message carries the presence section with the rules for assigning around colleagues.
+await page.getByText("Ho letto lo studio").first().waitFor({ timeout: 30_000 });
+await composer().fill("[presenza] Chi sta toccando i pagamenti?");
+await page.keyboard.press("Enter");
+const presenceAnswer = page.locator(".chat-row, [data-testid='coordinator-message'], p", { hasText: "Sta toccando i pagamenti: Bea su feature/rimborsi" }).last();
+await presenceAnswer.waitFor({ timeout: 30_000 });
+const presenceReply = await presenceAnswer.innerText();
+if (!presenceReply.includes("src/payments.js") || !presenceReply.includes("Sezione presenza ricevuta")) throw new Error(`Presence answer: ${presenceReply}`);
+await presenceAnswer.scrollIntoViewIfNeeded();
+await shot("16d-presence-coordinator");
+// G02: Gruppo is the picture of who works on what. One row per person and per agent, with identity, active branch,
+// "anche su", the request, the files and the freshness; the person's own switch is in the view, on the right.
 await page.getByRole("button", { name: /^Gruppo/ }).first().click();
-const presencePanel = page.getByTestId("presence-list");
-await presencePanel.getByText("Ada (tu)").waitFor({ timeout: 10_000 });
-await presencePanel.getByText("Bea").waitFor({ timeout: 10_000 });
-await presencePanel.getByText("Rimborsi parziali").waitFor();
+const presencePanel = page.getByTestId("group-board");
+const rows = presencePanel.locator('[data-testid="group-row"]');
+const adaRow = rows.filter({ hasText: "Ada (tu)" });
+await adaRow.getByText("feature/carrello").waitFor({ timeout: 10_000 });
+const beaRow = rows.filter({ hasText: "Bea" }).and(page.locator('[data-kind="person"]'));
+await beaRow.getByText("feature/rimborsi").waitFor({ timeout: 10_000 });
+await beaRow.getByText(/anche su/).waitFor();
+await beaRow.getByText("fix/iva-rimborsi").waitFor();
+await beaRow.getByText("Rimborsi parziali").waitFor();
+await beaRow.getByText("src/payments.js").waitFor();
+await beaRow.getByText("attivo ora").waitFor();
+const liaRow = rows.and(page.locator('[data-kind="agent"]')).filter({ hasText: "Lia" });
+await liaRow.getByTestId("agent-tag").getByText("[Interfaccia]").waitFor();
+await liaRow.getByText("trama/lia-rimborsi").waitFor();
+await liaRow.getByText("Schermata dei rimborsi").waitFor();
+await liaRow.getByText(/^inattivo da 1[2-9] min$/).waitFor();
+const ownSwitch = page.getByTestId("inspector").getByRole("switch", { name: "Condividi la presenza", checked: true });
+await ownSwitch.waitFor();
+const groupInspector = await page.getByTestId("inspector").boundingBox();
+const switchBox = await ownSwitch.boundingBox();
+if (!groupInspector || !switchBox || switchBox.x < groupInspector.x + groupInspector.width / 2) throw new Error("Gruppo: the sharing switch is not on the right");
 await shot("16a-presence-group");
-await page.evaluate(() => window.trama.invoke("settings:update", { theme: "dark" }));
-await page.waitForFunction(() => document.documentElement.classList.contains("dark"));
-await shot("16b-presence-group-dark");
-await page.evaluate(() => window.trama.invoke("settings:update", { theme: "system" }));
+const groupLook = await page.evaluate(() => ({ provider: document.documentElement.dataset.provider ?? null, dark: document.documentElement.classList.contains("dark") }));
+for (const provider of ["codex", "claudeAgent"]) {
+  for (const dark of [false, true]) {
+    await setLook(provider, dark);
+    await shot(`16b-presence-group-${provider}-${dark ? "dark" : "light"}`);
+  }
+}
+await setLook(groupLook.provider, groupLook.dark);
+// A wide inspector puts the details beside each name; a narrow window floats it over the chat without a horizontal scroll.
+await page.getByTestId("inspector").getByRole("button", { name: "Allarga l'ispettore" }).click();
+await page.waitForTimeout(400);
+await shot("16d-presence-group-wide");
+await page.getByTestId("inspector").getByRole("button", { name: "Larghezza normale" }).click();
+await page.setViewportSize({ width: 720, height: 640 });
+await page.waitForTimeout(400);
+if (await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)) throw new Error("Horizontal page scroll in Gruppo at 720x640");
+if (await page.getByTestId("inspector").evaluate((node) => node.scrollWidth > node.clientWidth + 1)) throw new Error("Gruppo overflows the inspector at 720x640");
+await shot("16e-presence-group-narrow");
+await page.setViewportSize({ width: 1280, height: 820 });
 await page.getByRole("button", { name: "Impostazioni" }).click();
 await page.getByTestId("settings").getByRole("button", { name: /^Presenza/ }).first().click();
 await page.getByTestId("settings").getByRole("switch", { name: "Condividi la presenza", checked: true }).waitFor();
