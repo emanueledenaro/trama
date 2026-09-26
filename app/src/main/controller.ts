@@ -13,6 +13,7 @@ import type { ImageAttachmentInput } from "@shared/ipc";
 import type {
   ActiveProjectState,
   FocusAudit,
+  WorktreeSession,
   AgentColor,
   AppSettings,
   AppState,
@@ -558,6 +559,7 @@ export class TramaController {
     this.quitting = true;
     for (const [, planner] of this.planners) planner.stop();
     this.planners.clear();
+    for (const [, run] of this.auditRuns) for (const client of run.clients) client.stop();
     for (const [, timer] of this.providerWaits) clearTimeout(timer);
     this.providerWaits.clear();
     await this.stopSpecialistsForQuit();
@@ -1454,7 +1456,7 @@ export class TramaController {
   private readonly parkedProjects = new Map<string, ActiveProjectState>();
 
   private hasRunningWork(projectId: string): boolean {
-    return [...this.specialistRuntimes.values()].some((r) => r.projectId === projectId);
+    return [...this.specialistRuntimes.values()].some((r) => r.projectId === projectId) || [...this.auditRuns.values()].some((r) => r.projectId === projectId);
   }
 
   /**
@@ -3084,21 +3086,26 @@ export class TramaController {
     return (await git(["rev-parse", "--verify", "HEAD"], root).catch(() => "")).trim() || null;
   }
 
-  private async verifyCandidate(candidateId: string, check: ReadOnlyCheck, requestId: string | null, project = this.requireProject()) {
+  /** Runs a read-only check in a candidate's worktree, in the sandbox, and captures the worktree as it is after the check. */
+  private async runCandidateCheck(project: ActiveProjectState, workspace: WorktreeSession, check: ReadOnlyCheck) {
+    await validateWorktree(workspace, this.worktreesRoot);
+    const result = await runReadOnlyCheck(check, workspace.worktreeRoot, {
+      codexExecutable: resolveCodexExecutable(this.host.codexExecutable),
+      scratchRoot: join(this.storage.root, "Checks"),
+      // The worktree has no node_modules: Node checks borrow the project checkout's, when the lockfiles match.
+      dependencyRoot: project.rootPath,
+    });
+    return { result, snapshot: await reviewWorktree(workspace) };
+  }
+
+  private async verifyCandidate(candidateId: string, check: ReadOnlyCheck, requestId: string | null) {
+    const project = this.requireProject();
     const document = project.document;
     const candidate = findCandidate(document, candidateId);
     if (!candidate) throw new Error(`Unknown candidate ${candidateId}.`);
     const assignment = findAssignment(document, candidate.assignmentId);
     if (!assignment?.workspace) throw new Error(`Candidate ${candidateId} has no worktree.`);
-    await validateWorktree(assignment.workspace, this.worktreesRoot);
-    const executable = resolveCodexExecutable(this.host.codexExecutable);
-    const result = await runReadOnlyCheck(check, assignment.workspace.worktreeRoot, {
-      codexExecutable: executable,
-      scratchRoot: join(this.storage.root, "Checks"),
-      // The worktree has no node_modules: Node checks borrow the project checkout's, when the lockfiles match.
-      dependencyRoot: project.rootPath,
-    });
-    const snapshot = await reviewWorktree(assignment.workspace);
+    const { result, snapshot } = await this.runCandidateCheck(project, assignment.workspace, check);
     recordEvidence(document, candidateId, {
       check,
       passed: result.exitCode === 0,
@@ -3222,9 +3229,13 @@ export class TramaController {
       throw error;
     }
     this.changed();
+    this.auditRuns.set(audit.id, { projectId: project.id, clients: new Set() });
     void this.runAudit(project, audit.id);
     return audit.id;
   }
+
+  /** Running examinations are running work: their project stays loaded when the person leaves it (C07). */
+  private readonly auditRuns = new Map<string, { projectId: string; clients: Set<AgentRuntime> }>();
 
   private async runAudit(project: ActiveProjectState, auditId: string): Promise<void> {
     const document = project.document;
@@ -3233,11 +3244,23 @@ export class TramaController {
       const candidate = findCandidate(document, audit.target.candidateId)!;
       const assignment = findAssignment(document, candidate.assignmentId);
       if (!assignment?.workspace || assignment.workspaceRemovedAt) throw new Error("Il candidato non ha più il suo worktree: la focus mode non può leggerlo.");
-      // The facts first: Trama's own checks in the sandbox, on the candidate as declared.
+      // The facts first: Trama's own checks in the sandbox, on the candidate as declared. Focus mode reads only: the
+      // evidence goes in the report and leaves the candidate's evidence, green light and approval as they are.
       for (const check of candidate.requiredChecks) {
         if (!(check in CHECKS)) continue;
-        await this.verifyCandidate(candidate.id, check as ReadOnlyCheck, null, project);
-        recordAuditCheck(audit, candidate.evidence[check]!);
+        const { result, snapshot } = await this.runCandidateCheck(project, assignment.workspace, check as ReadOnlyCheck);
+        if (snapshot.snapshotId !== candidate.snapshotId) {
+          throw new Error(`Il worktree è cambiato dopo la dichiarazione del candidato ${candidate.id}: la focus mode esamina solo il candidato dichiarato.`);
+        }
+        recordAuditCheck(audit, {
+          check,
+          result: result.exitCode === 0 ? "pass" : "fail",
+          command: result.command.join(" "),
+          output: result.output,
+          snapshotId: snapshot.snapshotId,
+          decisionVersions: { ...candidate.decisionVersions },
+          recordedAt: new Date().toISOString(),
+        });
         this.changedIn(project);
       }
       // Cheap models for the axes (spec #124, Q3): the fixed roles' lightest model, read-only.
@@ -3253,14 +3276,19 @@ export class TramaController {
     } catch (error) {
       failAudit(audit, (error as Error).message);
     } finally {
+      this.auditRuns.delete(auditId);
       this.changedIn(project);
+      this.releaseParkedProject(project);
     }
   }
 
   /** One axis of code-review: a read-only session of its own, in the candidate's worktree. */
   private async runAuditAxis(project: ActiveProjectState, audit: FocusAudit, axis: AxisName, turn: AxisTurn, runner: DutyRunner, cwd: string): Promise<void> {
     const client = createRuntime(runner.provider, { executable: runner.provider === "codex" ? this.host.codexExecutable : null, requestTimeoutMs: 15_000 });
+    const run = this.auditRuns.get(audit.id);
+    run?.clients.add(client);
     try {
+      if (this.quitting) throw new Error("Trama si sta chiudendo.");
       const opening = await client.openThread({ model: runner.model, cwd, developerInstructions: turn.instructions, sandbox: "read-only", ephemeral: true });
       axisThread(audit, axis, opening.threadId);
       this.changedIn(project);
@@ -3277,6 +3305,7 @@ export class TramaController {
     } catch (error) {
       finishAxis(audit, axis, { failure: (error as Error).message });
     } finally {
+      run?.clients.delete(client);
       client.stop();
       this.changedIn(project);
     }

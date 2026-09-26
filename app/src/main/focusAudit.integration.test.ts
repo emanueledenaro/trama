@@ -76,6 +76,7 @@ describe("focus mode on a candidate (F01)", () => {
     work.issueNumber = 12;
     project.github.issues.push({ number: 12, title: "Annullare un ordine pagato", state: "open", body: "Un ordine pagato annullato va in revisione.", url: "u", author: null, labels: [], updatedAt: "" });
     const checksBefore = (await readFile(log, "utf8")).length;
+    const untouched = JSON.parse(JSON.stringify({ evidence: candidate.evidence, clearance: candidate.clearance, humanApproval: candidate.humanApproval }));
 
     const auditId = controller.startFocusAudit(candidate.id);
     const audit = document.audits!.find((a) => a.id === auditId)!;
@@ -111,14 +112,26 @@ describe("focus mode on a candidate (F01)", () => {
       expect(input).toContainEqual(expect.objectContaining({ type: "skill", name: "code-review", path: skillPath }));
       expect(input[0]!.text).toContain("## Trama binding for the code-review skill");
     }
-    // The candidate itself is untouched: focus mode reads only.
-    expect(candidate).toMatchObject({ humanApproval: null, pullRequest: null });
+    // The candidate itself is untouched: focus mode reads only, and its checks leave evidence, green light and approval as they are.
+    expect(JSON.parse(JSON.stringify({ evidence: candidate.evidence, clearance: candidate.clearance, humanApproval: candidate.humanApproval }))).toEqual(untouched);
+    expect(candidate.pullRequest).toBeNull();
 
     // Without a spec the Spec axis does not run and says so in the skill's words.
     work.issueNumber = null;
     const secondId = controller.startFocusAudit(candidate.id);
     const second = document.audits!.find((a) => a.id === secondId)!;
+    // The person leaves the project during the examination: the project stays loaded until it ends, and opens again with it.
+    const other = await mkdtemp(join(tmpdir(), "trama-other-"));
+    await cp(join(root, "resources/DemoProject"), other, { recursive: true });
+    await git(["init", "-b", "main"], other, false);
+    await controller.openProject(other);
+    expect(second.status).not.toBe("done");
+    expect(controller.snapshot.backgroundProjects.map((p) => p.id)).toContain(project.id);
     await until(() => second.status === "done");
+    await until(() => !controller!.snapshot.backgroundProjects.some((p) => p.id === project.id));
+    await controller.openProject(repo);
+    await until(() => controller!.snapshot.project?.phase.kind === "ready");
+    expect(controller.snapshot.project!.document.audits!.find((a) => a.id === secondId)).toMatchObject({ status: "done" });
     expect(second.specSource).toBeNull();
     expect(second.spec).toMatchObject({ status: "skipped", report: NO_SPEC, threadId: null });
     expect(second.summary).toContain(`Spec: ${NO_SPEC}.`);
