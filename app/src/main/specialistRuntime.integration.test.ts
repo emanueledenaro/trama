@@ -103,7 +103,8 @@ describe("specialist runtime (V04)", () => {
     // The turn writes only in the worktree, without network.
     const turn = (await requests()).filter((r) => r.method === "turn/start" && r.params.cwd === worktree).at(-1)!;
     expect(turn.params.model).toBe(assignment.model);
-    expect(turn.params).toMatchObject({ permissions: "trama_write" });
+    // The thread already runs under trama_write: the turn names no profile and no sandbox (Codex 0.155).
+    expect(turn.params).not.toHaveProperty("permissions");
     expect(turn.params.sandboxPolicy).toBeUndefined();
     await until(() => existsSync(join(worktree, "NOTE.md")));
 
@@ -124,7 +125,8 @@ describe("specialist runtime (V04)", () => {
     const resumed = (await requests()).filter((r) => r.method === "thread/resume").at(-1)!;
     expect(resumed.params).toMatchObject({ threadId: thread, cwd: worktree, model: "gpt-5.5-fast", permissions: "trama_write" });
     const second = (await requests()).filter((r) => r.method === "turn/start" && r.params.cwd === worktree).at(-1)!;
-    expect(second.params).toMatchObject({ model: "gpt-5.5-fast", permissions: "trama_write" });
+    expect(second.params).toMatchObject({ model: "gpt-5.5-fast" });
+    expect(second.params).not.toHaveProperty("permissions");
     expect(assignment.turns[1]).toMatchObject({ number: 2, model: "gpt-5.5-fast" });
     await controller.stopSpecialistWork(assignment.id);
     await until(() => assignment.status === "stopped");
