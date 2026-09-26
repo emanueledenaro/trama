@@ -133,6 +133,13 @@ const setTheme = async (theme) => {
 
 // The welcome: logo, what Trama does, then the configuration in three steps that reuse the guide's states.
 await welcome.getByRole("heading", { name: "Benvenuto in Trama" }).waitFor();
+// Behind the welcome the window is inert: its controls cannot take the focus, whatever the timing of the dialog.
+const behind = await page.evaluate(() => {
+  const toggle = document.querySelector('button[aria-label="Mostra o nascondi la barra laterale"]');
+  toggle?.focus();
+  return { found: Boolean(toggle), focused: document.activeElement === toggle };
+});
+if (!behind.found || behind.focused) throw new Error(`The window behind the welcome is not inert: ${JSON.stringify(behind)}`);
 // The welcome is modal: Tab cycles inside it (through the dialog's focus guards) and never reaches the window behind.
 for (let press = 0; press < 8; press++) {
   await page.keyboard.press("Tab");
