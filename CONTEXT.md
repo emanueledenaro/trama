@@ -98,4 +98,10 @@ Revisione tecnica: la valutazione di un candidato da parte di un revisore distin
 
 Via libera del Coordinatore: l'autorizzazione all'integrazione di un candidato verificato entro il mandato del Product Owner. È distinta dal via libera umano; i casi distruttivi seri richiedono l'intervento della persona.
 
+Messaggio di commit di Trama: il messaggio con cui Trama scrive un candidato nel repository del progetto. Segue le regole che il progetto dichiara in `AGENTS.md`, `CONTRIBUTING.md` o nella configurazione di commitlint; se il progetto non ne dichiara, segue Conventional Commits 1.0.0: `<tipo>[ambito]: <descrizione>`, il perché nel corpo, `Refs: #N` e `Trama-Candidate` nel footer. Trama deduce tipo e ambito dal lavoro, dai file e dai moduli; il Coordinatore li può correggere. Un messaggio non valido viene rifiutato prima del commit. Il titolo della pull request è il titolo del commit. Da evitare: titolo dell'incarico come commit.
+
+Branch di lavoro: il branch del worktree in cui uno sviluppatore lavora. Segue la convenzione del progetto oppure Conventional Branch: `feature/`, `bugfix/`, `hotfix/`, `release/` o `chore/`, poi `issue-N-` quando il lavoro ha una issue e una descrizione breve con minuscole, cifre e trattini. Termina con `-trama-` e un identificativo, che lo rende riconoscibile come lavoro di Trama e unico. Trama lo convalida prima di crearlo. I branch `trama/` creati prima restano riconosciuti.
+
+Standard di pubblicazione: le condizioni che un candidato rispetta prima che Trama apra la pull request: è verificato, il messaggio di commit è valido, non contiene segreti né file sensibili, `git diff --check` è pulito, la issue è collegata quando esiste e nessuna domanda del Patto è rimasta aperta. La scheda del candidato mostra ogni condizione, quelle che mancano e come sistemarle. Non sostituisce la revisione della persona.
+
 Miglioramento del team: un cambiamento della composizione o del metodo di lavoro degli specialisti, motivato dai risultati osservati e verificabile rispetto al metodo precedente. Comprende ruoli, istruzioni, modelli disponibili e procedure; conserva le decisioni e i controlli del progetto.
