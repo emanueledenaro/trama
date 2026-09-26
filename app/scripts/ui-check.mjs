@@ -506,31 +506,31 @@ await domainCard.scrollIntoViewIfNeeded();
 await shot("04k-domain-proposal-written");
 await page.getByRole("button", { name: "Mappa del progetto" }).click();
 await shot("05-map");
-// #229: every panel separator is the same sash. At rest it draws a 1px line in the border color and no grip dots; after a short hover
-// it takes the provider's accent, and while dragged it stays lit. Double-click and the arrow keys change the width.
+// #229: every panel separator is the same sash, as in VS Code (base/browser/ui/sash). At rest the sash draws nothing and
+// the 1px line is the panel's own border; no grip dots anywhere. After 300ms of hover its 4px ::before takes the
+// provider's accent, and while dragged it stays lit. Double-click and the arrow keys change the width.
 {
   const sidebarSash = page.getByRole("separator", { name: /Larghezza della barra laterale/ });
   const inspectorSash = page.getByRole("separator", { name: "Larghezza dell'ispettore" });
   const look = (sash) =>
     sash.evaluate((element) => {
       const style = getComputedStyle(element);
-      const probe = document.createElement("span");
-      probe.style.color = "var(--color-text-accent)";
-      element.append(probe);
-      const accent = getComputedStyle(probe).color;
-      probe.remove();
-      probe.style.color = "var(--color-border)";
-      element.append(probe);
-      const border = getComputedStyle(probe).color;
-      probe.remove();
-      const line = getComputedStyle(element, "::before");
-      const after = getComputedStyle(element, "::after").content;
+      const color = (value) => {
+        const probe = document.createElement("span");
+        probe.style.color = value;
+        element.append(probe);
+        const resolved = getComputedStyle(probe).color;
+        probe.remove();
+        return resolved;
+      };
+      const strip = getComputedStyle(element, "::before");
       return {
         background: style.backgroundColor,
-        accent,
-        border,
-        line: { color: line.backgroundColor, width: line.width, visible: line.content !== "none" && line.display !== "none" },
-        after,
+        strip: strip.backgroundColor,
+        stripWidth: strip.width,
+        after: getComputedStyle(element, "::after").content,
+        accent: color("var(--color-text-accent)"),
+        border: color("var(--color-border)"),
         width: element.getBoundingClientRect().width,
         cursor: style.cursor,
         zIndex: style.zIndex,
@@ -541,18 +541,30 @@ await shot("05-map");
   const transparent = (color) => color === "rgba(0, 0, 0, 0)" || color === "transparent";
   for (const sash of [sidebarSash, inspectorSash]) {
     const rest = await look(sash);
-    if (!transparent(rest.background) || rest.children || rest.text || (rest.after !== "none" && rest.after !== "normal")) throw new Error(`A sash shows a grip at rest: ${JSON.stringify(rest)}`);
-    if (!rest.line.visible || rest.line.width !== "1px" || rest.line.color !== rest.border) throw new Error(`A sash draws no 1px border line at rest: ${JSON.stringify(rest)}`);
-    if (rest.width !== 4 || rest.cursor !== "col-resize") throw new Error(`A sash is not a 4px col-resize grip: ${JSON.stringify(rest)}`);
+    if (!transparent(rest.background) || !transparent(rest.strip) || rest.children || rest.text || (rest.after !== "none" && rest.after !== "normal"))
+      throw new Error(`A sash shows something at rest: ${JSON.stringify(rest)}`);
+    if (rest.width !== 4 || !["col-resize", "ew-resize"].includes(rest.cursor) || rest.zIndex !== "35") throw new Error(`A sash is not a 4px resize grip at z-index 35: ${JSON.stringify(rest)}`);
   }
+  // The line at rest is the panels' border: the sidebar's right edge and the inspector's left edge.
+  const borders = await page.evaluate(() => {
+    const probe = document.createElement("span");
+    probe.style.color = "var(--color-border)";
+    document.body.append(probe);
+    const border = getComputedStyle(probe).color;
+    probe.remove();
+    const sidebar = getComputedStyle(document.querySelector(".app-sidebar-surface"));
+    const inspector = getComputedStyle(document.querySelector('[data-testid="inspector"]'));
+    return { border, sidebar: [sidebar.borderRightWidth, sidebar.borderRightColor], inspector: [inspector.borderLeftWidth, inspector.borderLeftColor] };
+  });
+  for (const [width, color] of [borders.sidebar, borders.inspector])
+    if (width !== "1px" || color !== borders.border) throw new Error(`A panel has no 1px border line: ${JSON.stringify(borders)}`);
   const sidebarBox = await sidebarSash.boundingBox();
   await page.mouse.move(sidebarBox.x + sidebarBox.width / 2, 300);
   await page.waitForTimeout(100);
-  if (!transparent((await look(sidebarSash)).background)) throw new Error("The sash lights up before the hover delay");
-  await page.waitForTimeout(500);
+  if (!transparent((await look(sidebarSash)).strip)) throw new Error("The sash lights up before the hover delay");
+  await page.waitForTimeout(250);
   const hovered = await look(sidebarSash);
-  if (hovered.background !== hovered.accent) throw new Error(`The hovered sash is not the provider's accent: ${JSON.stringify(hovered)}`);
-  if (Number(hovered.zIndex) < 20) throw new Error(`The hovered sash is not above the content: ${JSON.stringify(hovered)}`);
+  if (hovered.strip !== hovered.accent || hovered.stripWidth !== "4px") throw new Error(`After 350ms of hover the sash is not a 4px accent strip: ${JSON.stringify(hovered)}`);
   for (const mode of ["light", "dark"]) {
     await page.evaluate((dark) => document.documentElement.classList.toggle("dark", dark), mode === "dark");
     await shot(`22-sash-hover-${mode}`);
@@ -565,12 +577,12 @@ await shot("05-map");
   await page.mouse.move(inspectorBox.x + inspectorBox.width / 2 - 60, 300, { steps: 6 });
   await page.waitForTimeout(200);
   const dragged = await look(inspectorSash);
-  if (dragged.background !== dragged.accent) throw new Error(`The dragged sash is not lit: ${JSON.stringify(dragged)}`);
+  if (dragged.strip !== dragged.accent) throw new Error(`The dragged sash is not lit: ${JSON.stringify(dragged)}`);
   await shot("22-sash-drag-light");
   await page.mouse.up();
   await page.mouse.move(640, 500);
   if (Number(await inspectorSash.getAttribute("aria-valuenow")) !== startWidth + 60) throw new Error("Dragging the sash does not widen the inspector");
-  await page.waitForFunction(() => getComputedStyle(document.querySelector('[aria-label="Larghezza dell\'ispettore"]')).backgroundColor === "rgba(0, 0, 0, 0)");
+  await page.waitForFunction(() => getComputedStyle(document.querySelector('[aria-label="Larghezza dell\'ispettore"]'), "::before").backgroundColor === "rgba(0, 0, 0, 0)");
   await inspectorSash.dblclick();
   await page.waitForFunction(() => document.querySelector('[aria-label="Larghezza dell\'ispettore"]')?.getAttribute("aria-valuenow") === "420");
   await inspectorSash.focus();

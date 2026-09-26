@@ -1194,91 +1194,96 @@ button {
   background: color-mix(in srgb, var(--background) 30%, transparent);
 }
 
-/* The sash between two panels (Sash in lib/resizable.tsx), the only separator of every resizable panel. At rest it
-   draws a 1px line in the theme's border color (::before), centered in an invisible 4px grip. After a short hover it
-   fills with the provider's accent above the content; the keyboard focus and a drag fill it at once, and it stays
-   filled until the drag ends. */
+/* The sash between two panels (Sash in lib/resizable.tsx), modeled on VS Code (base/browser/ui/sash/sash.css).
+   It draws nothing at rest: the 1px line is the panel's own border. It is an absolute 4px grip centered on that
+   border, above the content. The `hover` class, added after 300ms (Sash), the `active` class of a drag and the
+   keyboard focus paint its 4px ::before in the provider's accent. */
 .sash {
   --sash-size: 4px;
-  --sash-hover-delay: 300ms;
-  --sash-line: var(--color-border);
   --sash-hover-border: var(--color-text-accent);
   position: absolute;
-  z-index: 40;
+  z-index: 35;
   touch-action: none;
   outline: none;
-  background-color: transparent;
-  transition: background-color 0.1s ease-out;
-}
-.sash::before {
-  content: "";
-  position: absolute;
-  background-color: var(--sash-line);
-  pointer-events: none;
-  transition: background-color 0.1s ease-out;
-}
-.sash--vertical::before {
-  inset-block: 0;
-  left: calc(50% - 0.5px);
-  width: 1px;
-}
-.sash--horizontal::before {
-  inset-inline: 0;
-  top: calc(50% - 0.5px);
-  height: 1px;
-}
-.sash:hover::before {
-  background-color: var(--sash-hover-border);
-  transition-delay: var(--sash-hover-delay);
-}
-.sash:focus-visible::before,
-.sash[data-active]::before {
-  background-color: var(--sash-hover-border);
-  transition-delay: 0s;
 }
 .sash--vertical {
   inset-block: 0;
   left: calc(var(--sash-size) / -2);
   width: var(--sash-size);
-  cursor: col-resize;
+  cursor: ew-resize;
 }
 .sash--horizontal {
   inset-inline: 0;
   top: calc(var(--sash-size) / -2);
   height: var(--sash-size);
-  cursor: row-resize;
+  cursor: ns-resize;
 }
-.sash:hover {
-  background-color: var(--sash-hover-border);
-  transition-delay: var(--sash-hover-delay);
-}
-.sash:focus-visible,
-.sash[data-active] {
-  background-color: var(--sash-hover-border);
-  transition-delay: 0s;
-}
-body:has(.sash[data-active]) {
-  user-select: none;
-}
-body:has(.sash--vertical[data-active]) {
+:root[data-platform="darwin"] .sash--vertical {
   cursor: col-resize;
 }
-body:has(.sash--horizontal[data-active]) {
+:root[data-platform="darwin"] .sash--horizontal {
+  cursor: row-resize;
+}
+.sash--vertical.sash--minimum {
+  cursor: e-resize;
+}
+.sash--vertical.sash--maximum {
+  cursor: w-resize;
+}
+.sash--horizontal.sash--minimum {
+  cursor: s-resize;
+}
+.sash--horizontal.sash--maximum {
+  cursor: n-resize;
+}
+.sash::before {
+  content: "";
+  position: absolute;
+  pointer-events: none;
+  background: transparent;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .sash::before {
+    transition: background-color 0.1s ease-out;
+  }
+}
+.sash--vertical::before {
+  inset-block: 0;
+  left: calc(50% - (var(--sash-size) / 2));
+  width: var(--sash-size);
+}
+.sash--horizontal::before {
+  inset-inline: 0;
+  top: calc(50% - (var(--sash-size) / 2));
+  height: var(--sash-size);
+}
+.sash.hover::before,
+.sash.active::before,
+.sash:focus-visible::before {
+  background: var(--sash-hover-border);
+}
+body:has(.sash.active) {
+  user-select: none;
+}
+body:has(.sash--vertical.active) {
+  cursor: ew-resize;
+}
+body:has(.sash--horizontal.active) {
+  cursor: ns-resize;
+}
+:root[data-platform="darwin"] body:has(.sash--vertical.active) {
+  cursor: col-resize;
+}
+:root[data-platform="darwin"] body:has(.sash--horizontal.active) {
   cursor: row-resize;
 }
 @media (forced-colors: active) {
   .sash {
     forced-color-adjust: none;
   }
-  .sash::before {
-    background-color: CanvasText;
-  }
-  .sash:hover,
-  .sash:focus-visible,
-  .sash[data-active],
-  .sash:hover::before,
-  .sash:focus-visible::before,
-  .sash[data-active]::before {
-    background-color: Highlight;
+  .sash.hover::before,
+  .sash.active::before,
+  .sash:focus-visible::before {
+    background: Highlight;
   }
 }
