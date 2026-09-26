@@ -12,14 +12,16 @@ import { specMarkdown } from "./plan";
 export const TESTED_SEAMS_HEADING = "Tested seams:";
 
 /**
- * The developer's structured report (W05) extends M06's tested seams with three more blocks, one item per line
- * (`- <item>`, or `- none`). The seams block keeps its M06 form.
+ * The developer's structured report (W05) extends M06's tested seams with more blocks, one item per line
+ * (`- <item>`, or `- none`). The seams block keeps its M06 form; the exceptions to Trama's Clean Code standard
+ * come last (Q03).
  */
 export const REPORT_HEADINGS = {
   filesTouched: "Files touched:",
   testsWritten: "Tests written:",
   seams: TESTED_SEAMS_HEADING,
   doubts: "Doubts:",
+  exceptions: "Standard exceptions:",
 } as const;
 
 /** The report's shape, as the developer writes it at the end of its answer. */
@@ -32,6 +34,8 @@ export const REPORT_TEMPLATE = [
   "- <seam number>: <test files or test names>",
   REPORT_HEADINGS.doubts,
   "- <open question, assumption or seam left open>",
+  REPORT_HEADINGS.exceptions,
+  "- <rule of the standard>: <file>: <why it gave way>",
 ].join("\n");
 
 /**
@@ -53,7 +57,7 @@ export const TDD_BINDING = [
   "\"Confirm them with the user\" and \"Ask: what's the public interface, and which seams should we test?\": the person already answered on the plan card. The confirmed seams are the numbered list in the message; this session cannot reach the person. Write tests only at those seams. When a behaviour of the slice needs a seam that is not in the list, write no test there: name it in your answer as something left open.",
   "\"Use the /codebase-design skill for the vocabulary\": the spec and its seams are already written in codebase-design's words. That skill is not part of this session; read the seams as they are written.",
   "\"Refactoring belongs to the review stage (the code-review skill)\": leave refactoring to Trama's technical review of the candidate.",
-  `Report (a Trama addition): end your answer with the report of the assignment, four blocks in this order: \`${REPORT_HEADINGS.filesTouched}\`, \`${REPORT_HEADINGS.testsWritten}\`, \`${TESTED_SEAMS_HEADING}\` and \`${REPORT_HEADINGS.doubts}\`, one \`- <item>\` per line and \`- none\` for an empty block. Under \`${TESTED_SEAMS_HEADING}\` write one line per seam of the contract you tested, \`- <seam number>: <test files or test names>\`, and leave out a seam you did not test. Trama saves the report on the assignment and copies the seams onto the candidate as your statement, never as evidence: only Trama's checks count as evidence.`,
+  `Report (a Trama addition): end your answer with the report of the assignment, five blocks in this order: \`${REPORT_HEADINGS.filesTouched}\`, \`${REPORT_HEADINGS.testsWritten}\`, \`${TESTED_SEAMS_HEADING}\`, \`${REPORT_HEADINGS.doubts}\` and \`${REPORT_HEADINGS.exceptions}\`, one \`- <item>\` per line and \`- none\` for an empty block. Under \`${TESTED_SEAMS_HEADING}\` write one line per seam of the contract you tested, \`- <seam number>: <test files or test names>\`, and leave out a seam you did not test. Trama saves the report on the assignment and copies the seams onto the candidate as your statement, never as evidence: only Trama's checks count as evidence.`,
 ].join("\n");
 
 export interface DeveloperSkills {
@@ -146,7 +150,7 @@ export function contractBriefing(assignment: SpecialistAssignment): string[] {
     lines.push("Nessuno: non scrivere test nuovi e dillo nei dubbi.");
   }
   lines.push(
-    "Alla fine della risposta scrivi il rapporto con questi quattro blocchi, nello stesso ordine e con le stesse intestazioni in inglese; `- none` per un blocco vuoto:",
+    "Alla fine della risposta scrivi il rapporto con questi cinque blocchi, nello stesso ordine e con le stesse intestazioni in inglese; `- none` per un blocco vuoto:",
     REPORT_TEMPLATE,
   );
   return lines;
@@ -183,6 +187,7 @@ export function readDeveloperReport(answer: string | null, seams: ContractSeam[]
     testsWritten: readBlock(answer, REPORT_HEADINGS.testsWritten),
     seams: readTestedSeams(answer, seams),
     doubts: readBlock(answer, REPORT_HEADINGS.doubts),
+    exceptions: readBlock(answer, REPORT_HEADINGS.exceptions),
   };
   return Object.values(report).every((block) => block === null) ? null : report;
 }

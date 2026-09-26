@@ -494,6 +494,8 @@ export interface DeveloperReport {
   /** Every seam of the contract, with the tests the developer named or null; a number outside it is not agreed. */
   seams: TestedSeam[] | null;
   doubts: string[] | null;
+  /** The rules of Trama's Clean Code standard the developer set aside, and why (Q03). Absent in reports before Q03. */
+  exceptions?: string[] | null;
 }
 
 /** The AI Hero skill a fixed role runs when Trama starts its work by itself (W11). */
@@ -727,6 +729,20 @@ export interface TechnicalReview {
   verdict: "approved" | "changesRequested";
   summary: string;
   at: string;
+  /** What the reviewer found against Trama's Clean Code standard (Q03): its judgement, never evidence. */
+  findings?: import("./cleanCode").ReviewFinding[];
+  /** Trama's own measures of the candidate against the standard (Q03): the only evidence of the review. */
+  standard?: StandardCheck | null;
+}
+
+/** The deterministic part of a technical review (Q03): the standard's version, the rules on and what Trama measured. */
+export interface StandardCheck {
+  version: number;
+  rules: import("./cleanCode").CleanCodeRuleId[];
+  filesMeasured: number;
+  functionsMeasured: number;
+  /** The measures past their limit. */
+  measures: import("./cleanCode").CodeMeasure[];
 }
 
 export interface Candidate {
@@ -1024,6 +1040,8 @@ export interface ProjectDocument {
   presence?: import("./presence").PresenceConsent;
   /** The overlaps the Coordinator already pointed out in the chat (G03), so each one is said once. */
   overlapNotices?: string[];
+  /** How the project adapts Trama's Clean Code standard (Q03); absent means every rule is on. */
+  cleanCode?: import("./cleanCode").CleanCodeSettings;
   /** Focus mode examinations (F01); absent until the person first opens focus mode. */
   audits?: FocusAudit[];
 }
