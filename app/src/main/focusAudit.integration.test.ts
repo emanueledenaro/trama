@@ -1,4 +1,4 @@
-import { cp, mkdtemp, readFile } from "node:fs/promises";
+import { cp, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -13,6 +13,7 @@ afterEach(async () => {
   await controller?.stop();
   controller = null;
   delete process.env.FAKE_CODEX_LOG;
+  delete process.env.FAKE_CODEX_AUDIT_GATE;
 });
 
 async function until(check: () => boolean, timeout = 15_000): Promise<void> {
@@ -78,24 +79,29 @@ describe("focus mode on a candidate (F01)", () => {
     const checksBefore = (await readFile(log, "utf8")).length;
     const untouched = JSON.parse(JSON.stringify({ evidence: candidate.evidence, clearance: candidate.clearance, humanApproval: candidate.humanApproval }));
 
+    // The fake axes answer only once the test opens their gate: the test sees the examination while it runs.
+    const gates = await mkdtemp(join(tmpdir(), "trama-gates-"));
+    process.env.FAKE_CODEX_AUDIT_GATE = join(gates, "first");
     const auditId = controller.startFocusAudit(candidate.id);
     const audit = document.audits!.find((a) => a.id === auditId)!;
     expect(audit).toMatchObject({ target: { kind: "candidate", candidateId: candidate.id }, fixedPoint: candidate.baseSHA, status: "checking" });
     expect(() => controller!.startFocusAudit(candidate.id)).toThrow("già in corso");
-    await until(() => audit.status === "done");
 
-    // The real checks come first, in the sandbox, as Trama's evidence on this snapshot.
+    // Two axes, each its own session, both open and running at once: neither can answer until the gate opens.
+    await until(() => audit.standards.threadId !== null && audit.spec.threadId !== null);
+    expect(audit).toMatchObject({ status: "reviewing", standards: { status: "running" }, spec: { status: "running" } });
+    expect(audit.standards.threadId).not.toBe(audit.spec.threadId);
+    // The real checks came first, in the sandbox, as Trama's evidence on this snapshot: all of them ended before the axes started.
     expect(candidate.requiredChecks.length).toBeGreaterThan(0);
     expect(audit.checks.map((c) => [c.check, c.result, c.snapshotId])).toEqual(candidate.requiredChecks.map((check) => [check, "pass", candidate.snapshotId]));
-    expect(audit.checks.every((c) => c.recordedAt < audit.standards.startedAt! && c.recordedAt < audit.spec.startedAt!)).toBe(true);
-    // Two axes, each its own session, both running at once.
+    await writeFile(join(gates, "first"), "");
+    await until(() => audit.status === "done");
+
     expect(audit.specSource).toBe("Issue #12");
     expect(audit.standards).toMatchObject({ status: "done", findings: 1, worst: expect.stringContaining("Mysterious Name") });
     expect(audit.spec).toMatchObject({ status: "done", findings: 1 });
     expect(audit.standards.report).toContain(`git diff ${candidate.baseSHA}`);
     expect(audit.spec.report).toContain("Fonte: Issue #12");
-    expect(audit.standards.startedAt! < audit.spec.finishedAt! && audit.spec.startedAt! < audit.standards.finishedAt!).toBe(true);
-    expect(audit.standards.threadId).not.toBe(audit.spec.threadId);
     expect(audit.summary).toBe(
       `Standards: 1 rilievo, il più grave: Possibile Mysterious Name in ${candidate.changedFiles[0]}. Spec: 1 rilievo, il più grave: Il criterio sull'ordine non pagato non ha un test.`,
     );
@@ -118,6 +124,7 @@ describe("focus mode on a candidate (F01)", () => {
 
     // Without a spec the Spec axis does not run and says so in the skill's words.
     work.issueNumber = null;
+    process.env.FAKE_CODEX_AUDIT_GATE = join(gates, "second");
     const secondId = controller.startFocusAudit(candidate.id);
     const second = document.audits!.find((a) => a.id === secondId)!;
     // The person leaves the project during the examination: the project stays loaded until it ends, and opens again with it.
@@ -127,6 +134,7 @@ describe("focus mode on a candidate (F01)", () => {
     await controller.openProject(other);
     expect(second.status).not.toBe("done");
     expect(controller.snapshot.backgroundProjects.map((p) => p.id)).toContain(project.id);
+    await writeFile(join(gates, "second"), "");
     await until(() => second.status === "done");
     await until(() => !controller!.snapshot.backgroundProjects.some((p) => p.id === project.id));
     await controller.openProject(repo);

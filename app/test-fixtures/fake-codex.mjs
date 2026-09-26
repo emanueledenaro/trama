@@ -167,8 +167,19 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
               findings: 1,
               worst: `Possibile Mysterious Name in ${file}`,
             };
-        // Long enough for the two axes to overlap when Trama runs them in parallel.
-        setTimeout(() => finish(JSON.stringify(answer)), 300);
+        // With FAKE_CODEX_AUDIT_GATE the axis answers only once the test creates that file, so a test can hold both
+        // sessions open at once and act while an examination is still running, without relying on timing.
+        const gate = process.env.FAKE_CODEX_AUDIT_GATE;
+        if (gate) {
+          const { existsSync } = await import("node:fs");
+          const release = setInterval(() => {
+            if (!existsSync(gate)) return;
+            clearInterval(release);
+            finish(JSON.stringify(answer));
+          }, 10);
+          return;
+        }
+        setTimeout(() => finish(JSON.stringify(answer)), 10);
         return;
       }
       if (required.includes("loopCommand")) {
