@@ -426,8 +426,8 @@ export class CodexClient {
   private endTurn(turn: ActiveTurn): void {
     if (this.activeTurn === turn) this.activeTurn = null;
     if (!turn.turnId) return;
+    // Kept until the app-server process changes: a late event can name any earlier turn of that process.
     this.endedTurnIds.add(turn.turnId);
-    if (this.endedTurnIds.size > 100) this.endedTurnIds.delete(this.endedTurnIds.values().next().value!);
   }
 
   private adoptTurnId(turn: ActiveTurn, turnId: string): void {
