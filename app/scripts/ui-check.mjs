@@ -134,6 +134,8 @@ const setTheme = async (theme) => {
 // The welcome: logo, what Trama does, then the configuration in three steps that reuse the guide's states.
 await welcome.getByRole("heading", { name: "Benvenuto in Trama" }).waitFor();
 // The welcome is modal: Tab cycles inside it (through the dialog's focus guards) and never reaches the window behind.
+// The dialog takes the focus once it has opened, which a slow machine shows after the heading: wait for it first.
+await page.waitForFunction(() => Boolean(document.activeElement?.closest('[data-testid="welcome"]')), null, { timeout: 10_000 });
 for (let press = 0; press < 8; press++) {
   await page.keyboard.press("Tab");
   const focus = await page.evaluate(() => {
