@@ -417,6 +417,34 @@ export interface SpecialistAssignment {
   duty?: AssignmentDuty | null;
   /** The slice of the plan's approved breakdown this work delivers (M05); absent for work outside one. */
   slice?: { planId: string; sliceId: string } | null;
+  /**
+   * The seams to test in the contract of the assignment (W05). For a slice, the seams the person confirmed in the
+   * spec, with their number there. Absent in assignments made before the contract, and in a fixed role's work.
+   */
+  seams?: ContractSeam[];
+  /** The developer's structured report (W05), read from its last answer: its statement, never evidence. */
+  report?: DeveloperReport | null;
+}
+
+/** A seam the developer must test, as the contract of the assignment names it (W05). */
+export interface ContractSeam {
+  /** The number the developer uses in its report: the seam's number in the spec for a slice. */
+  number: number;
+  seam: string;
+  /** What the test at this seam verifies, when the spec says it. */
+  tests: string | null;
+}
+
+/**
+ * The developer's structured report at the end of the work (W05), extending the tested seams of M06.
+ * A section the developer left out is null; an empty list means it said there was nothing.
+ */
+export interface DeveloperReport {
+  filesTouched: string[] | null;
+  testsWritten: string[] | null;
+  /** Every seam of the contract, with the tests the developer named or null; a number outside it is not agreed. */
+  seams: TestedSeam[] | null;
+  doubts: string[] | null;
 }
 
 /** The AI Hero skill a fixed role runs when Trama starts its work by itself (W11). */

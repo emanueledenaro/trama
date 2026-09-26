@@ -856,9 +856,35 @@ await sliceSeams.getByRole("button", { name: "Conferma i seam" }).click({ timeou
 const sliceSpec = page.locator('[data-testid="plan-spec"][data-status="ready"]').last();
 await sliceSpec.getByTestId("plan-slices").getByRole("button", { name: "Conferma le fette" }).click({ timeout: 20_000 });
 await sliceSpec.getByText("Restano in Trama").waitFor({ timeout: 20_000 });
+// W05: an assignment without its contract (seams, Pact decisions) is refused with a clear tool failure; no card appears.
+await send("[assegna] [senza-contratto]");
+await page.getByText(/Rifiutato: .*incomplete_contract.*seams.*decisionIDs/).last().waitFor({ timeout: 20_000 });
+if ((await assignmentCards.count()) !== 3) throw new Error("An assignment without its contract reached a developer");
 await send("[assegna] [test]");
 const sliceWork = assignmentCards.nth(3);
 await sliceWork.getByText("Concluso", { exact: true }).waitFor({ timeout: 20_000 });
+// W05: the card shows the contract the slice reached the developer with and the developer's structured report,
+// as a statement apart from Trama's evidence.
+const contract = sliceWork.getByTestId("assignment-contract");
+await contract.getByTestId("contract-seam").getByText(/CancelPaidOrder/).waitFor();
+await contract.getByText("Nessuna").first().waitFor();
+const developerReport = sliceWork.getByTestId("assignment-report");
+await developerReport.getByTestId("report-files").getByText("NOTE.md").waitFor();
+await developerReport.getByTestId("report-tests").getByText("NOTE.md").waitFor();
+await developerReport.locator('[data-testid="report-seam"][data-tested="yes"][data-agreed="yes"]').getByText(/CancelPaidOrder/).waitFor();
+await developerReport.getByTestId("report-doubts").getByText(/rimborso manuale/).waitFor();
+await developerReport.getByText(/non un'evidenza/).waitFor();
+await developerReport.scrollIntoViewIfNeeded();
+await shot("19c-assignment-contract-report");
+await app.evaluate(({ nativeTheme }) => {
+  nativeTheme.themeSource = "dark";
+});
+await page.evaluate(() => document.documentElement.classList.add("dark"));
+await shot("19d-assignment-contract-report-dark");
+await app.evaluate(({ nativeTheme }) => {
+  nativeTheme.themeSource = "system";
+});
+await page.evaluate(() => document.documentElement.classList.remove("dark"));
 await send(`[candidato:${await cardAssignment(sliceWork)}:${candidateDecision}]`);
 const sliceCandidate = candidateCards.nth(2);
 const testedSeams = sliceCandidate.getByTestId("candidate-tested-seams");

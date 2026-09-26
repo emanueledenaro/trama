@@ -146,7 +146,7 @@ describe("Coordinator tools with the presence (G04)", () => {
     const document = teamDocument();
     const started: string[] = [];
     const tools = { ...context(document), presence: view([entry(bea)]), startAssignment: (id: string) => void started.push(id) } as ToolContext;
-    const order = { specialist: "Ada", kind: "agreedTicket", objective: "o", requiredChecks: [], tools: ["edits"], instructions: "i" };
+    const order = { specialist: "Ada", kind: "agreedTicket", objective: "o", seams: ["Il rimborso di un ordine"], decisionIDs: [], dependencies: [], requiredChecks: ["git_diff_check"], tools: ["edits"], instructions: "i" };
 
     const refused = await runCoordinatorTool("assign_task", { ...order, moduleIDs: ["src/payments"] }, tools);
     expect(refused.isError).toBe(true);
@@ -163,8 +163,8 @@ describe("Coordinator tools with the presence (G04)", () => {
   it("assign_task goes on over an overlap only with the person's words, and read-only work is never held", async () => {
     const document = teamDocument();
     const tools = { ...context(document), presence: view([entry(bea)]), startAssignment: () => undefined } as ToolContext;
-    const order = { specialist: "Ada", kind: "agreedTicket", objective: "o", moduleIDs: ["src/payments"], requiredChecks: [], instructions: "i" };
-    const readOnly = await runCoordinatorTool("assign_task", { ...order, tools: [] }, tools);
+    const order = { specialist: "Ada", kind: "agreedTicket", objective: "o", moduleIDs: ["src/payments"], seams: ["Il rimborso di un ordine"], decisionIDs: [], dependencies: [], requiredChecks: ["git_diff_check"], instructions: "i" };
+    const readOnly = await runCoordinatorTool("assign_task", { ...order, seams: [], requiredChecks: [], tools: [] }, tools);
     expect(readOnly.isError).toBeFalsy();
     const document2 = teamDocument();
     const tools2 = { ...context(document2), presence: view([entry(bea)]), startAssignment: () => undefined } as ToolContext;
@@ -176,7 +176,7 @@ describe("Coordinator tools with the presence (G04)", () => {
     const document = teamDocument();
     const result = await runCoordinatorTool(
       "assign_task",
-      { specialist: "Ada", kind: "agreedTicket", objective: "o", moduleIDs: ["src/payments"], requiredChecks: [], tools: ["edits"], instructions: "i" },
+      { specialist: "Ada", kind: "agreedTicket", objective: "o", moduleIDs: ["src/payments"], seams: ["Il rimborso di un ordine"], decisionIDs: [], dependencies: [], requiredChecks: ["git_diff_check"], tools: ["edits"], instructions: "i" },
       { ...context(document), startAssignment: () => undefined } as ToolContext,
     );
     expect(result.isError).toBeFalsy();

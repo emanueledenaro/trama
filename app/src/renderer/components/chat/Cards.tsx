@@ -15,7 +15,15 @@ import {
   IconUsersGroup,
   IconUsers,
 } from "@tabler/icons-react";
-import { type AssignmentStatus, type CandidateEvidence, type CandidateState, type TestedSeam, isOpenQuestion } from "@shared/domain";
+import {
+  type AssignmentStatus,
+  type CandidateEvidence,
+  type CandidateState,
+  type DeveloperReport,
+  type SpecialistAssignment,
+  type TestedSeam,
+  isOpenQuestion,
+} from "@shared/domain";
 import { isExerciseAssessment } from "@shared/onboarding";
 import { findGoal } from "@shared/goals";
 import { adrMarkdown, adrPath, findDomainProposal, glossaryEntry } from "@shared/domainDocs";
@@ -508,7 +516,11 @@ export function AssignmentCard({ assignmentId }: { assignmentId: string }) {
       <DutyFields assignment={assignment} />
       {assignment.exercise ? <Field label="Esercizio">{assignment.exercise}</Field> : null}
       <Field label="Perimetro">{assignment.moduleIds.length ? assignment.moduleIds.map(moduleName).join(", ") : "Tutto il progetto"}</Field>
-      {assignment.dependencies.length ? <Field label="Dipendenze">{assignment.dependencies.join(", ")}</Field> : null}
+      {assignment.seams ? (
+        <ContractFields assignment={assignment} decisions={project.document.decisions} />
+      ) : assignment.dependencies.length ? (
+        <Field label="Dipendenze">{assignment.dependencies.join(", ")}</Field>
+      ) : null}
       {goal ? (
         <Field label="Obiettivo del progetto">
           <button type="button" className="text-left text-[var(--color-text-accent)] hover:underline" onClick={() => setInspector({ kind: "goal", id: goal.id })}>
@@ -542,6 +554,7 @@ export function AssignmentCard({ assignmentId }: { assignmentId: string }) {
       ) : null}
       <p className="mt-2 text-ui-sm text-muted-foreground">{assignment.lastUpdate}</p>
       {assignment.failure ? <Field label="Errore">{assignment.failure}</Field> : null}
+      {assignment.report !== undefined ? <ReportField report={assignment.report} /> : null}
       {assignment.result ? (
         <div className="mt-2">
           <button type="button" className="inline-flex items-center gap-1 text-ui-sm text-muted-foreground hover:text-foreground" onClick={() => setShowResult(!showResult)}>
@@ -692,6 +705,26 @@ function EvidenceRow({ check, evidence }: { check: string; evidence: CandidateEv
   );
 }
 
+const STATEMENT_NOTE = "È una dichiarazione dello sviluppatore, non un'evidenza: contano le verifiche eseguite da Trama.";
+
+/** Seams as the developer reported them (M06, W05), each with its tests or none, and marked when outside the agreed ones. */
+function TestedSeamList({ seams, itemTestId, outside }: { seams: TestedSeam[]; itemTestId: string; outside: string }) {
+  return (
+    <ul className="space-y-0.5 text-ui-sm">
+      {seams.map((s) => (
+        <li key={`${s.seam}-${s.tests}`} data-testid={itemTestId} data-tested={s.tests ? "yes" : "no"} data-agreed={s.agreed ? "yes" : "no"}>
+          {s.seam}
+          <span className="text-muted-foreground">
+            <Sep />
+            {s.tests ? `test: ${s.tests}` : "nessun test riportato"}
+            {s.agreed ? null : `, ${outside}`}
+          </span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 /** The seams the developer of a slice says it tested (M06): its statement, shown apart from Trama's evidence. */
 function TestedSeamsField({ seams }: { seams: TestedSeam[] | null }) {
   return (
@@ -702,20 +735,104 @@ function TestedSeamsField({ seams }: { seams: TestedSeam[] | null }) {
         ) : seams.length === 0 ? (
           <p className="text-ui-sm text-muted-foreground">La spec non ha seam confermati.</p>
         ) : (
-          <ul className="space-y-0.5 text-ui-sm">
+          <TestedSeamList seams={seams} itemTestId="candidate-tested-seam" outside="fuori dai seam confermati" />
+        )}
+        <p className="mt-1 text-ui-xs text-muted-foreground">{STATEMENT_NOTE}</p>
+      </div>
+    </Field>
+  );
+}
+
+/** The contract the assignment reached the developer with (W05): seams to test, Pact decisions and dependencies. */
+function ContractFields({ assignment, decisions }: { assignment: SpecialistAssignment; decisions: { id: string; version: number }[] }) {
+  const setInspector = useUi((s) => s.setInspector);
+  const seams = assignment.seams ?? [];
+  const relied = Object.entries(assignment.decisionVersions ?? {});
+  return (
+    <div data-testid="assignment-contract">
+      <Field label="Seam da testare">
+        {seams.length ? (
+          <ol className="space-y-0.5 text-ui-sm">
             {seams.map((s) => (
-              <li key={`${s.seam}-${s.tests}`} data-testid="candidate-tested-seam" data-tested={s.tests ? "yes" : "no"} data-agreed={s.agreed ? "yes" : "no"}>
+              <li key={s.number} data-testid="contract-seam">
+                <span className="text-muted-foreground">{s.number}. </span>
                 {s.seam}
-                <span className="text-muted-foreground">
-                  <Sep />
-                  {s.tests ? `test: ${s.tests}` : "nessun test riportato"}
-                  {s.agreed ? null : ", fuori dai seam confermati"}
-                </span>
               </li>
             ))}
-          </ul>
+          </ol>
+        ) : (
+          <span className="text-ui-sm text-muted-foreground">Nessuno: il lavoro non scrive test nuovi.</span>
         )}
-        <p className="mt-1 text-ui-xs text-muted-foreground">È una dichiarazione dello sviluppatore, non un'evidenza: contano le verifiche eseguite da Trama.</p>
+      </Field>
+      <Field label="Decisioni del Patto">
+        {relied.length ? (
+          relied.map(([id, version]) => {
+            const current = decisions.find((d) => d.id === id);
+            return (
+              <button key={id} type="button" className="mr-2 font-mono text-[11.5px] text-[var(--color-text-accent)] hover:underline" onClick={() => setInspector({ kind: "decision", id })}>
+                {id} v{version}
+                {current && current.version !== version ? <span className="text-warning"> (ora v{current.version})</span> : null}
+              </button>
+            );
+          })
+        ) : (
+          <span className="text-ui-sm text-muted-foreground">Nessuna</span>
+        )}
+      </Field>
+      <Field label="Dipendenze">
+        {assignment.dependencies.length ? assignment.dependencies.join(", ") : <span className="text-ui-sm text-muted-foreground">Nessuna</span>}
+      </Field>
+    </div>
+  );
+}
+
+/** One block of the developer's report: null when it left the block out, an empty list when it said there was nothing. */
+function ReportList({ label, items, testId }: { label: string; items: string[] | null; testId: string }) {
+  return (
+    <div className="mt-1" data-testid={testId} data-reported={items === null ? "no" : "yes"}>
+      <div className="text-ui-xs text-muted-foreground/70">{label}</div>
+      {items === null ? (
+        <p className="text-ui-sm text-muted-foreground">Non riportati</p>
+      ) : items.length ? (
+        <ul className="space-y-0.5 text-ui-sm">
+          {items.map((item) => (
+            <li key={item} className="break-words">
+              {item}
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="text-ui-sm text-muted-foreground">Nessuno</p>
+      )}
+    </div>
+  );
+}
+
+/** The developer's structured report (W05), saved when the work ended: its statement, never evidence. */
+function ReportField({ report }: { report: DeveloperReport | null }) {
+  return (
+    <Field label="Rapporto dello sviluppatore">
+      <div data-testid="assignment-report">
+        {report === null ? (
+          <p className="text-ui-sm text-muted-foreground">Lo sviluppatore non ha consegnato il rapporto.</p>
+        ) : (
+          <>
+            <ReportList label="File toccati" items={report.filesTouched} testId="report-files" />
+            <ReportList label="Test scritti" items={report.testsWritten} testId="report-tests" />
+            <div className="mt-1" data-testid="report-seams" data-reported={report.seams === null ? "no" : "yes"}>
+              <div className="text-ui-xs text-muted-foreground/70">Seam coperti</div>
+              {report.seams === null ? (
+                <p className="text-ui-sm text-muted-foreground">Non riportati</p>
+              ) : report.seams.length ? (
+                <TestedSeamList seams={report.seams} itemTestId="report-seam" outside="fuori dal contratto" />
+              ) : (
+                <p className="text-ui-sm text-muted-foreground">Nessuno nel contratto</p>
+              )}
+            </div>
+            <ReportList label="Dubbi" items={report.doubts} testId="report-doubts" />
+          </>
+        )}
+        <p className="mt-1 text-ui-xs text-muted-foreground">{STATEMENT_NOTE}</p>
       </div>
     </Field>
   );
