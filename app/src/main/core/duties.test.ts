@@ -93,7 +93,7 @@ function withCandidate(document: ProjectDocument) {
   const candidate = declareCandidate(
     document,
     { assignmentId: work.id, decisionIds: [decision.id], unresolvedChoices: [], externalEffects: [] },
-    { snapshotId: "snap-1", baseSHA: HEAD, diff: "", changedFiles: ["app/save.ts"], excludedSensitiveFiles: [] },
+    { snapshotId: "snap-1", baseSHA: HEAD, diff: "", changedFiles: ["app/save.ts"], excludedSensitiveFiles: [], whitespaceErrors: [] },
   );
   return { work, candidate };
 }
