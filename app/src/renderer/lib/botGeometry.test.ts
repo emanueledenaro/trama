@@ -59,7 +59,7 @@ describe("bot geometry (W16)", () => {
     expect(renderPose(halfway).blobs[0]).toMatch(/^M.*Z$/);
   });
 
-  it("turns the body into knots, marks and a spool, and hides the eyes there", () => {
+  it("turns the body into knots and marks, and hides the eyes there; asleep it keeps its body with closed eyes", () => {
     const body = botPose(input());
     expect(body.body).toBe(1);
     expect(body.blobs[1]).toEqual(body.blobs[0]);
@@ -68,9 +68,11 @@ describe("bot geometry (W16)", () => {
     expect([centre(1), centre(0), centre(2)]).toEqual([expect.closeTo(-0.6, 1), expect.closeTo(0, 1), expect.closeTo(0.6, 1)]);
     expect(thinking.dim).toBe(1);
     expect(thinking.body).toBe(0);
-    for (const animation of ["alert", "exclamation", "sleep"] as const) expect(botPose(input({ animation })).body).toBe(0);
-    const spool = botPose(input({ animation: "sleep" }));
-    expect(Math.max(...spool.blobs[0].map((p) => p.x))).toBeLessThan(0.3);
+    for (const animation of ["alert", "exclamation"] as const) expect(botPose(input({ animation })).body).toBe(0);
+    const asleep = botPose(input({ animation: "sleep", expression: "sleepy" }));
+    expect(asleep.body).toBe(1);
+    expect(asleep.blobs[0]).toEqual(body.blobs[0]);
+    expect(asleep.eyes[0].h).toBeLessThan(asleep.eyes[0].w / 3);
     expect(botPose(input({ animation: "notification" })).badge).toBe(1);
     expect(body.badge).toBe(0);
   });

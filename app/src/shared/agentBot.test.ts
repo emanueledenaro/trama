@@ -84,7 +84,7 @@ describe("agent bot shapes (W16)", () => {
 });
 
 describe("agent bot state (W16)", () => {
-  const at = (a: ReturnType<typeof agent>, candidates: ReturnType<typeof candidate>[] = []) => agentActivity(a, { candidates, now: NOW });
+  const at = (a: ReturnType<typeof agent>, candidates: ReturnType<typeof candidate>[] = []) => agentActivity(a, { candidates });
 
   it("follows the agent's work", () => {
     expect(at(agent(null))).toBe("idle");
@@ -100,11 +100,14 @@ describe("agent bot state (W16)", () => {
     expect(at(agent({ status: "completed" }))).toBe("done");
   });
 
-  it("sleeps out of the team or after presence's idle time, unless it works or waits for the person", () => {
-    expect(at(agent(null, "removed"))).toBe("inactive");
-    expect(at(agent({ status: "completed" }, "available", old))).toBe("inactive");
+  it("keeps an agent of the team awake however long it has been still; only one out of the team sleeps", () => {
+    // Created with the team and never assigned, quiet for longer than presence's idle time: still at rest, eyes open.
+    expect(at(agent(null, "available", old))).toBe("idle");
+    expect(ACTIVITY_LOOK[at(agent(null, "available", old))].expression).toBe("neutral");
+    expect(at(agent({ status: "completed" }, "available", old))).toBe("done");
     expect(at(agent({ status: "running" }, "working", old))).toBe("working");
     expect(at(agent({ status: "completed" }, "available", old), [candidate()])).toBe("waiting");
+    expect(at(agent(null, "removed"))).toBe("inactive");
   });
 
   it("maps each state to its move and expression", () => {

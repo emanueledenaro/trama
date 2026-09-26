@@ -409,6 +409,17 @@ const teamPanel = page.getByTestId("inspector");
 await teamPanel.getByText("Chiarimento e spec", { exact: true }).waitFor();
 await teamPanel.getByRole("button", { name: /^Ada/ }).waitFor();
 await shot("04e-team-inspector");
+// W16: right after the team is generated, every agent rests with its eyes open; only an agent out of the team sleeps.
+const teamEyes = await teamPanel.evaluate((el) =>
+  [...el.querySelectorAll('[data-testid="agent-bot"]')].map((bot) => ({
+    agent: bot.dataset.agent,
+    activity: bot.dataset.activity,
+    eyes: Number(bot.querySelector('[data-part="eyes"]')?.getAttribute("opacity") ?? 0),
+    open: Math.max(...[...bot.querySelectorAll('[data-part^="eye-"]')].map((eye) => eye.getBBox().height)),
+  })),
+);
+const shut = teamEyes.filter((bot) => bot.activity === "inactive" || bot.eyes < 1 || bot.open < 5);
+if (shut.length) throw new Error(`Bots without open eyes right after the team: ${JSON.stringify(shut)}`);
 // W15: each agent has an avatar with its initial and a colored tag; the tag comes from the proposal.
 await teamPanel.getByTestId("team-developer").getByTestId("agent-tag").filter({ hasText: "[Ordini]" }).waitFor();
 if ((await teamPanel.getByTestId("team-figure").getByTestId("agent-tag").count()) < 5) throw new Error("The fixed roles have no tag");
@@ -439,6 +450,29 @@ await teamPanel.getByTestId("team-figure").filter({ hasText: "Guardiano delle re
 await teamPanel.getByText("Quando interviene").waitFor();
 if (await teamPanel.getByRole("button", { name: "Togli dal team" }).count()) throw new Error("A fixed role offers to leave the team");
 await shot("04e2-team-fixed-role");
+// W16: at the inspector's minimum width, with a long name, the header keeps the name on one line and the status whole.
+await page.setViewportSize({ width: 980, height: 820 });
+await page.waitForTimeout(300);
+const header = await teamPanel.getByTestId("specialist-header").evaluate((el) => {
+  const inspector = el.closest('[data-testid="inspector"]').getBoundingClientRect();
+  const status = el.querySelector('[data-testid="specialist-status"]');
+  const name = el.querySelector("h3");
+  const box = status.getBoundingClientRect();
+  return {
+    inspector: Math.round(inspector.width),
+    statusInside: box.left >= inspector.left && box.right <= inspector.right,
+    statusWhole: status.scrollWidth <= status.clientWidth + 1,
+    nameLines: Math.round(name.getBoundingClientRect().height / parseFloat(getComputedStyle(name).lineHeight)),
+  };
+});
+if (header.inspector > 345) throw new Error(`The inspector is not at its minimum width: ${header.inspector}`);
+if (!header.statusInside || !header.statusWhole) throw new Error(`The specialist's status is cut at the minimum width: ${JSON.stringify(header)}`);
+if (header.nameLines !== 1) throw new Error(`The specialist's name wraps at the minimum width: ${JSON.stringify(header)}`);
+await shot("04e2b-specialist-narrow");
+await page.evaluate(() => document.documentElement.classList.add("dark"));
+await shot("04e2c-specialist-narrow-dark");
+await page.evaluate(() => document.documentElement.classList.remove("dark"));
+await page.setViewportSize({ width: 1280, height: 820 });
 if (await teamPanel.getByRole("button", { name: "Rinomina", exact: true }).count()) throw new Error("A fixed role offers a rename");
 await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
 // W13: the person asks the Coordinator to rename the developer, without a new mandate; the chat follows the new name.
@@ -1767,6 +1801,16 @@ await ownSwitch.waitFor();
 const groupInspector = await page.getByTestId("inspector").boundingBox();
 const switchBox = await ownSwitch.boundingBox();
 if (!groupInspector || !switchBox || switchBox.x < groupInspector.x + groupInspector.width / 2) throw new Error("Gruppo: the sharing switch is not on the right");
+// W16: the agent of a colleague who is idle sleeps: same body and color, eyes closed, and Z's rising above it.
+const liaBot = liaRow.getByTestId("agent-bot");
+if ((await liaBot.getAttribute("data-move")) !== "sleep") throw new Error("An idle colleague's agent does not sleep");
+const sleeping = await liaBot.evaluate((bot) => ({
+  shape: bot.dataset.shape,
+  zzz: getComputedStyle(bot.querySelector('[data-part="zzz"]')).display,
+  risingZ: bot.querySelectorAll(".bot-z").length,
+  moving: bot.getAnimations({ subtree: true }).filter((a) => a.effect?.target?.classList?.contains("bot-z")).length,
+}));
+if (!sleeping.shape || sleeping.zzz === "none" || sleeping.risingZ !== 3 || sleeping.moving !== 3) throw new Error(`The sleeping bot has no rising Z's: ${JSON.stringify(sleeping)}`);
 await shot("16a-presence-group");
 const groupLook = await page.evaluate(() => ({ provider: document.documentElement.dataset.provider ?? null, dark: document.documentElement.classList.contains("dark") }));
 for (const provider of ["codex", "claudeAgent"]) {

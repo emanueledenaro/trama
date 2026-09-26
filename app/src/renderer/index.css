@@ -486,8 +486,50 @@
   animation: bot-breathe 3.6s steps(8) var(--bot-delay, 0s) infinite alternate;
 }
 .agent-bot[data-live][data-move="sleep"] {
-  transform-origin: 50% 55%;
+  transform-origin: 50% 85%;
   animation: bot-sleep 4.5s steps(10) var(--bot-delay, 0s) infinite alternate;
+}
+/* Asleep, the bot keeps its body with closed eyes, faded, and Z's rise from its top right. */
+.agent-bot[data-move="sleep"] [data-part="root"] {
+  opacity: 0.6;
+}
+.agent-bot .bot-zzz {
+  display: none;
+}
+.agent-bot[data-move="sleep"] .bot-zzz {
+  display: inline;
+}
+.agent-bot .bot-z {
+  opacity: 0;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+/* Still (off screen, or with reduced motion), one Z stays. */
+.agent-bot .bot-z-2 {
+  opacity: 1;
+}
+.agent-bot .bot-z-halo,
+.agent-bot .bot-z-mark {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.agent-bot .bot-z-halo {
+  stroke: var(--background);
+  stroke-width: 18;
+}
+.agent-bot .bot-z-mark {
+  stroke: var(--agent);
+  stroke-width: 9;
+}
+.agent-bot[data-live][data-move="sleep"] .bot-z {
+  animation: bot-z 3.6s steps(18) infinite;
+}
+.agent-bot[data-live][data-move="sleep"] .bot-z-2 {
+  animation-delay: 1.2s;
+}
+.agent-bot[data-live][data-move="sleep"] .bot-z-3 {
+  animation-delay: 2.4s;
 }
 .agent-bot[data-live][data-move="exclamation"] {
   animation: bot-hop 0.75s steps(5) infinite alternate;
@@ -520,10 +562,29 @@
 }
 @keyframes bot-sleep {
   from {
-    transform: scale(0.92);
+    transform: scale(0.97, 0.99);
   }
   to {
-    transform: scale(1.08);
+    transform: scale(1.03, 1.01);
+  }
+}
+@keyframes bot-z {
+  0% {
+    opacity: 0;
+    transform: translate(-12px, 14px) rotate(-8deg);
+  }
+  20% {
+    opacity: 1;
+  }
+  45% {
+    transform: translate(-2px, 2px) rotate(8deg);
+  }
+  70% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(10px, -14px) rotate(-6deg);
   }
 }
 @keyframes bot-hop {

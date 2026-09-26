@@ -303,16 +303,10 @@ export function botPose(input: PoseInput): BotPose {
         offset: { x: 0, y: hop, rotate: 0 },
       };
     }
-    case "sleep": {
-      // A small spool, breathing slowly.
-      const r = 0.24 * (input.moving ? 1 + 0.12 * Math.sin((t * TAU) / 4 + input.seed) : 1);
-      const spool = formOutline(count, { cx: 0, cy: 0.1, a: r * 1.1, b: r * 0.85, n: 3.2 });
-      return {
-        ...base,
-        blobs: [spool, spool, spool],
-        body: 0,
-      };
-    }
+    case "sleep":
+      // Asleep, the bot keeps its body, color, weave and seam, and closes its eyes: it stays recognisable. The Z's
+      // above it, the slow breath and the faded body come from CSS (`.agent-bot[data-move="sleep"]`).
+      return { ...base, eyes: eyePair(input, "sleepy", false) };
   }
 }
 

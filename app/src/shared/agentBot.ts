@@ -1,5 +1,5 @@
 import type { Candidate, Specialist, TeamRole } from "./domain";
-import { PRESENCE_IDLE_MS, type PresenceStatus } from "./presence";
+import type { PresenceStatus } from "./presence";
 
 /**
  * The agent's bot (W16, #187): a soft body in the agent's own color (W15), with two stitches for eyes and a thread
@@ -157,18 +157,19 @@ export const ACTIVITY_LABEL: Record<AgentActivity, string> = {
   inactive: "inattivo",
 };
 
-type ActivityAgent = Pick<Specialist, "id" | "status" | "updatedAt"> & {
-  assignments: Pick<Specialist["assignments"][number], "status" | "updatedAt" | "waitingForProvider">[];
+type ActivityAgent = Pick<Specialist, "id" | "status"> & {
+  assignments: Pick<Specialist["assignments"][number], "status" | "waitingForProvider">[];
 };
 type ActivityCandidate = Pick<Candidate, "specialistId" | "clearance" | "humanApproval" | "pullRequest">;
 
 /**
- * The state an agent's bot shows, from the team and assignment model. In order: out of the team or quiet for longer
- * than presence's idle time (G01) sleeps; work being prepared thinks; running work works; a cleared candidate that
- * waits for the person's approval notifies; a failed or stopped work, or one waiting for its provider, is blocked;
- * finished work is done.
+ * The state an agent's bot shows, from the team and assignment model. In order: out of the team sleeps; work being
+ * prepared thinks; running work works; a cleared candidate that waits for the person's approval notifies; a failed
+ * or stopped work, or one waiting for its provider, is blocked; finished work is done; otherwise it rests. An agent
+ * of the team that has not worked for a while still rests with its eyes open: only an agent out of the team, or a
+ * colleague's agent whose person is idle or away (`presenceActivity`), sleeps.
  */
-export function agentActivity(agent: ActivityAgent, context: { candidates: ActivityCandidate[]; now: Date }): AgentActivity {
+export function agentActivity(agent: ActivityAgent, context: { candidates: ActivityCandidate[] }): AgentActivity {
   if (agent.status === "removed") return "inactive";
   const current = agent.assignments.at(-1);
   if (current?.waitingForProvider) return "blocked";
@@ -178,8 +179,6 @@ export function agentActivity(agent: ActivityAgent, context: { candidates: Activ
   const waiting = context.candidates.some((c) => c.specialistId === agent.id && c.clearance && !c.humanApproval && !c.pullRequest);
   if (waiting) return "waiting";
   if (current?.status === "failed" || agent.status === "stopped") return "blocked";
-  const last = Math.max(Date.parse(agent.updatedAt) || 0, Date.parse(current?.updatedAt ?? "") || 0);
-  if (context.now.getTime() - last > PRESENCE_IDLE_MS) return "inactive";
   if (current?.status === "completed") return "done";
   return "idle";
 }

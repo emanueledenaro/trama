@@ -6,6 +6,17 @@ import { type BotNodes, registerBot } from "@/lib/botEngine";
 import { cn } from "@/lib/cn";
 import { agentStyle } from "./AgentIdentity";
 
+/** Where the sleeping Z's start, in viewBox units, and how big each is. */
+const SLEEP_Z = [
+  { x: 80, y: -72, size: 30 },
+  { x: 112, y: -112, size: 44 },
+  { x: 150, y: -156, size: 60 },
+];
+const zPath = (size: number) => {
+  const h = size / 2;
+  return `M${-h} ${-h}H${h}L${-h} ${h}H${h}`;
+};
+
 /**
  * An agent's bot (W16, ADR 0007): a soft body of woven fabric in the agent's color, with a stitched seam and two
  * stitches for eyes. The body is the agent's own (a shape per role); the move and the eyes follow its state.
@@ -123,6 +134,19 @@ export function AgentBot({
         </g>
         <circle data-part="badge" className="bot-badge" r={BADGE_RADIUS} transform={badgeTransform(still.badge)} />
       </g>
+      {/* Asleep, three Z's of growing size rise from the top right, sway and fade; CSS shows and moves them. */}
+      {detailed ? (
+        <g className="bot-zzz" data-part="zzz">
+          {SLEEP_Z.map((z, i) => (
+            <g key={i} transform={`translate(${z.x} ${z.y})`}>
+              <g className={`bot-z bot-z-${i + 1}`}>
+                <path className="bot-z-halo" d={zPath(z.size)} />
+                <path className="bot-z-mark" d={zPath(z.size)} />
+              </g>
+            </g>
+          ))}
+        </g>
+      ) : null}
     </svg>
   );
 }

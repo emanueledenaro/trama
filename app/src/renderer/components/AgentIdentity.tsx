@@ -1,4 +1,4 @@
-import { type CSSProperties, useMemo, useSyncExternalStore } from "react";
+import { type CSSProperties, useMemo } from "react";
 import { type AgentActivity, agentActivity, botShapeFor, teamBotShapes } from "@shared/agentBot";
 import type { Specialist } from "@shared/domain";
 import { agentTag, paletteEntry } from "@shared/identity";
@@ -20,25 +20,7 @@ export function agentStyle(agent: Pick<Specialist, "color">): CSSProperties {
   return { "--agent-light": entry.light, "--agent-dark": entry.dark } as CSSProperties;
 }
 
-/** A clock that ticks every half minute, shared by all bots, so an agent falls asleep without other changes. */
-let clockNow = Date.now();
-const clockListeners = new Set<() => void>();
-let clockTimer: ReturnType<typeof setInterval> | null = null;
-function subscribeClock(listener: () => void) {
-  clockListeners.add(listener);
-  clockTimer ??= setInterval(() => {
-    clockNow = Date.now();
-    for (const l of clockListeners) l();
-  }, 30_000);
-  return () => {
-    clockListeners.delete(listener);
-    if (!clockListeners.size && clockTimer) {
-      clearInterval(clockTimer);
-      clockTimer = null;
-    }
-  };
-}
-const useClock = () => useSyncExternalStore(subscribeClock, () => clockNow);
+
 
 const NO_SPECIALISTS: Specialist[] = [];
 
@@ -46,13 +28,12 @@ const NO_SPECIALISTS: Specialist[] = [];
 function useAgentBot(agent: Agent, activity: AgentActivity | undefined) {
   const specialists = useUi((s) => s.app?.project?.document.team.specialists ?? NO_SPECIALISTS);
   const candidates = useUi((s) => s.app?.project?.document.candidates);
-  const now = useClock();
   const shapes = useMemo(() => teamBotShapes(specialists), [specialists]);
   const shape = (agent.id && shapes.get(agent.id)) || botShapeFor(agent);
   const member = agent.id ? specialists.find((s) => s.id === agent.id) : undefined;
   const state =
     activity ??
-    (member ? agentActivity(member, { candidates: candidates ?? [], now: new Date(now) }) : "idle");
+    (member ? agentActivity(member, { candidates: candidates ?? [] }) : "idle");
   return { shape, activity: state };
 }
 

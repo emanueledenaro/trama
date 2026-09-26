@@ -211,16 +211,24 @@ export function SpecialistView({ id }: { id: string }) {
         <button type="button" className="inline-flex items-center gap-1 text-ui-sm text-muted-foreground hover:text-foreground" onClick={() => setInspector({ kind: "team" })}>
           <IconArrowLeft className="size-3.5" /> Team
         </button>
-        <div className="mt-2 flex items-center gap-2">
-          <AgentAvatar agent={specialist} size={64} />
-          <h3 className="text-ui-lg font-medium text-foreground">{specialist.name}</h3>
-          <AgentTag agent={specialist} className="text-ui-sm" />
-          <Badge>{specialist.id}</Badge>
-          <span className="ml-auto flex items-center gap-1.5 text-ui-sm text-muted-foreground">
-            <StatusDot status={specialist.status} /> {STATUS_LABEL[specialist.status]}
-          </span>
+        {/* The bot sits beside the header, so it takes no room from the name and the status; the row wraps before
+            anything is cut, and the status never shrinks. */}
+        <div className="mt-2 flex items-start gap-3" data-testid="specialist-header">
+          <AgentAvatar agent={specialist} size={48} />
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+              <h3 className="min-w-0 max-w-full truncate text-ui-lg font-medium text-foreground" title={specialist.name}>
+                {specialist.name}
+              </h3>
+              <AgentTag agent={specialist} className="text-ui-sm" />
+              <Badge>{specialist.id}</Badge>
+              <span className="ml-auto flex shrink-0 items-center gap-1.5 whitespace-nowrap text-ui-sm text-muted-foreground" data-testid="specialist-status">
+                <StatusDot status={specialist.status} /> {STATUS_LABEL[specialist.status]}
+              </span>
+            </div>
+            <p className="mt-0.5 text-ui text-muted-foreground">{specialist.competence}</p>
+          </div>
         </div>
-        <p className="mt-0.5 text-ui text-muted-foreground">{specialist.competence}</p>
         <div className="cta-row mt-3">
           {specialist.status !== "removed" && !fixed ? (
             <Button
