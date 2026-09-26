@@ -39,6 +39,11 @@ let turns = 0;
 
 createInterface({ input: process.stdin }).on("line", async (line) => {
   const { id, method, params } = JSON.parse(line);
+  // FAKE_CODEX_LOG names a file that receives each session and turn request, so tests can read what Trama asked for.
+  if (process.env.FAKE_CODEX_LOG && (method === "thread/start" || method === "thread/resume" || method === "turn/start")) {
+    const { appendFileSync } = await import("node:fs");
+    appendFileSync(process.env.FAKE_CODEX_LOG, `${JSON.stringify({ method, params })}\n`);
+  }
   switch (method) {
     case "initialize":
       return send({ id, result: { userAgent: "fake", codexHome: "/tmp", platformFamily: "unix", platformOs: "linux" } });
@@ -259,6 +264,12 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
         }
         writeFileSync(join(root, "NOTE.md"), "Lavoro dello specialista\n");
         send({ method: "item/completed", params: { threadId, turnId, item: { id: "fc", type: "fileChange", status: "completed", changes: [{ path: "NOTE.md" }] } } });
+        // "[spazi]" leaves trailing whitespace in a tracked file, so git_diff_check fails on the candidate (V05).
+        const tracked = join(root, "Sources/Orders/CancelPaidOrder.swift");
+        if (text.includes("[spazi]")) {
+          const { appendFileSync } = await import("node:fs");
+          appendFileSync(tracked, "// Nota dello specialista   \n");
+        }
         if (text.includes("[lento]")) return; // stays running until interrupted
         setTimeout(() => finish("Ho scritto NOTE.md nel worktree."), 30);
         return;
@@ -396,23 +407,34 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
           kind: "agreedTicket",
           objective: "Documenta l'annullamento",
           moduleIDs: ["Sources/Orders"],
-          requiredChecks: ["git_status"],
+          // "[spazi]" leaves trailing whitespace, "[correggi-spazi]" is the correction: both must pass git_diff_check (V05).
+          requiredChecks: text.includes("[spazi]") || text.includes("[correggi-spazi]") ? ["git_status", "git_diff_check"] : ["git_status"],
           tools: ["edits"],
-          instructions: text.includes("[lento]") ? "[lento] Scrivi una nota" : "Scrivi una nota",
+          instructions: `${text.includes("[lento]") ? "[lento] " : ""}${text.includes("[spazi]") ? "[spazi] " : ""}Scrivi una nota`,
         }).then((result) => {
           toolDone("assign_task", result);
           finish(result.isError ? `Rifiutato: ${result.content[0].text}` : "Ho assegnato il lavoro ad Ada.");
         });
         return;
       }
-      const candidateMatch = text.match(/\[candidato:(A-[0-9A-F]+):(D-[0-9A-F]+)\]/);
+      // [riverifica:<candidate>:<check>] runs a required check again: new evidence invalidates an earlier green light (V05).
+      const recheckMatch = text.match(/\[riverifica:(C-[0-9A-F]+):(\w+)\]/);
+      if (recheckMatch) {
+        const verified = await callTool(threadId, "verify_candidate", { candidate: recheckMatch[1], check: recheckMatch[2] });
+        toolDone("verify_candidate", verified);
+        finish(verified.isError ? `Rifiutato: ${verified.content[0].text}` : `Ho eseguito di nuovo ${recheckMatch[2]} su ${recheckMatch[1]}.`);
+        return;
+      }
+      // [candidato:<assignment>:<decision>] verifies git_status; [candidato:<assignment>:<decision>:<check>] that check, and
+      // with "tutte" every required check.
+      const candidateMatch = text.match(/\[candidato:(A-[0-9A-F]+):(D-[0-9A-F]+)(?::(\w+))?\]/);
       if (candidateMatch) {
         callTool(threadId, "declare_candidate", { assignment: candidateMatch[1], decisionIDs: [candidateMatch[2]] }).then(async (declared) => {
           toolDone("declare_candidate", declared);
           if (declared.isError) return finish(`Rifiutato: ${declared.content[0].text}`);
-          const { candidateID } = JSON.parse(declared.content[0].text);
-          const verified = await callTool(threadId, "verify_candidate", { candidate: candidateID, check: "git_status" });
-          toolDone("verify_candidate", verified);
+          const { candidateID, requiredChecks } = JSON.parse(declared.content[0].text);
+          const checks = candidateMatch[3] === "tutte" ? requiredChecks : [candidateMatch[3] ?? "git_status"];
+          for (const check of checks) toolDone("verify_candidate", await callTool(threadId, "verify_candidate", { candidate: candidateID, check }));
           const reviewed = await callTool(threadId, "review_candidate", { candidate: candidateID });
           toolDone("review_candidate", reviewed);
           const cleared = await callTool(threadId, "clear_candidate", { candidate: candidateID });
