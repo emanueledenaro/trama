@@ -50,6 +50,7 @@ export function App() {
   const inspector = useUi((s) => s.inspector);
   const sidebar = useResizableWidth("trama.sidebarWidth", { initial: 256, min: 208, max: (viewport) => Math.min(440, viewport * 0.35) });
   const mainView = useUi((s) => s.mainView);
+  const welcomeOpen = useUi((s) => s.welcome !== null);
 
   useEffect(() => {
     void window.trama.getState().then(setApp);
@@ -113,6 +114,8 @@ export function App() {
       <div
         className="flex h-svh w-full bg-[var(--app-shell-background)]"
         data-sidebar-state={sidebarOpen ? "expanded" : "collapsed"}
+        // Behind the welcome the window is inert, even when the focus was not yet inside it (B02).
+        inert={welcomeOpen}
       >
         <div
           className={cn(
