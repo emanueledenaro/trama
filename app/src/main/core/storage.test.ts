@@ -21,6 +21,17 @@ describe("AppStorage", () => {
     expect(await readFile(storage.documentPath("p1"), "utf8")).toBe("{ non è json");
   });
 
+  // A deferred save that started first must not finish last and put the older document back (#169).
+  it("keeps the latest of two overlapping saves", async () => {
+    const storage = new AppStorage(await mkdtemp(join(tmpdir(), "trama-storage-")));
+    const older = emptyDocument("p1");
+    older.composerDraft = "x".repeat(32 * 1_048_576);
+    const newer = emptyDocument("p1");
+    newer.composerDraft = "ultima";
+    await Promise.all([storage.saveDocument(older), storage.saveDocument(newer)]);
+    expect((await storage.loadDocument("p1")).document?.composerDraft).toBe("ultima");
+  });
+
   it("accepts only supported images within the limits", async () => {
     const storage = new AppStorage(await mkdtemp(join(tmpdir(), "trama-storage-")));
     const png = { name: "a.png", mimeType: "image/png", dataBase64: Buffer.from("png").toString("base64") };
