@@ -463,8 +463,9 @@
   fill: none;
   stroke: white;
   stroke-opacity: 0.45;
-  stroke-width: 3.5;
-  stroke-dasharray: 7 8;
+  /* The same stitch the interface uses as an accent (W17): its tokens are defined with the seam below. */
+  stroke-width: var(--bot-seam-width);
+  stroke-dasharray: calc(var(--bot-seam-dash) * 1px) calc(var(--bot-seam-gap) * 1px);
   stroke-linecap: round;
 }
 .agent-bot .bot-eye {
