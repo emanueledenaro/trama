@@ -511,7 +511,7 @@ const actionsOnRight = async (size) => {
   }
 };
 await actionsOnRight("1280x820");
-await shot("16-focus-bar-queue");
+await shot("17-focus-bar-queue");
 await pause.click();
 const focusIs = (title, equal) =>
   page.waitForFunction(([text, same]) => (document.querySelector('[data-testid="focus-title"]')?.textContent?.trim() === text) === same, [title, equal], {
@@ -520,11 +520,11 @@ const focusIs = (title, equal) =>
 await focusIs(firstFocus, false);
 const pausedItem = queue.locator('[data-testid="focus-queue-item"][data-status="paused"]').filter({ hasText: firstFocus });
 await pausedItem.waitFor({ timeout: 10_000 });
-await shot("16a-focus-paused-next");
+await shot("17a-focus-paused-next");
 await pausedItem.getByRole("button", { name: "Metti in focus" }).click();
 await focusIs(firstFocus, true);
 await queue.locator('[data-status="paused"]').first().waitFor({ state: "detached", timeout: 10_000 });
-await shot("16b-focus-back");
+await shot("17b-focus-back");
 // Light and dark on two providers' themes, then a narrow window where the bar wraps without a horizontal scroll.
 const look = await page.evaluate(() => ({ provider: document.documentElement.dataset.provider ?? null, dark: document.documentElement.classList.contains("dark") }));
 const setLook = (provider, dark) =>
@@ -539,7 +539,7 @@ const setLook = (provider, dark) =>
 for (const provider of ["codex", "claudeAgent"]) {
   for (const dark of [false, true]) {
     await setLook(provider, dark);
-    await shot(`16c-focus-${provider}-${dark ? "dark" : "light"}`);
+    await shot(`17c-focus-${provider}-${dark ? "dark" : "light"}`);
   }
 }
 await setLook(look.provider, look.dark);
@@ -547,7 +547,7 @@ await page.setViewportSize({ width: 720, height: 640 });
 await page.waitForTimeout(400);
 if (await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)) throw new Error("Horizontal page scroll with the focus bar at 720x640");
 await actionsOnRight("720x640");
-await shot("16d-focus-narrow");
+await shot("17d-focus-narrow");
 await queueToggle.click();
 await queue.waitFor({ state: "detached" });
 await page.setViewportSize({ width: 1280, height: 820 });
