@@ -7,6 +7,7 @@ import type {
   AssignmentDuty,
   CheckFailure,
   DiagnosisOutcome,
+  DomainProposal,
   DutyLedger,
   GitHubIssue,
   ProjectDocument,
@@ -20,6 +21,7 @@ import type { LoadedSkill } from "@shared/skills";
 import { findCandidate } from "./candidates";
 import { CHECKS, type ReadOnlyCheck } from "./checks";
 import { deliverNativeSkill, type NativeSkill } from "./nativeSkills";
+import { domainProposalText } from "./domainDocs";
 import { createDecisionRequest } from "./pact";
 import { extractJsonAnswer } from "./providers/types";
 import { openingInput, resumeInput, specialistInstructions } from "./specialistBriefing";
@@ -31,7 +33,9 @@ import { activeAssignments, assignDuty, authorize, findAssignment, isActive, Tea
  * - a failed check or a regression opens a diagnosis by the same role with `diagnosing-bugs`, and a bug its loop
  *   reproduced becomes a fix with a regression test, as an assignment within the mandate;
  * - a free team that changed code gets Clean Code's `improve-codebase-architecture`, whose proposals reach the
- *   person as a Pact decision card and never as edits.
+ *   person as a Pact decision card and never as edits;
+ * - a glossary and ADR proposal the Coordinator drew from the person's decisions is written by the documentation and
+ *   domain role with `domain-modeling`, in a worktree, only within the mandate (M03).
  * Every session runs the original AI Hero skill with a binding that only maps its words to Trama (#118).
  */
 
@@ -148,12 +152,13 @@ export function nextDuty(document: ProjectDocument, context: DutyContext, now = 
     startFix(document, runner, context.moduleIds, now) ??
     startDiagnosis(document, runner, now) ??
     startTriage(document, context, runner, now) ??
+    startWaitingDomainWriting(document, runner, now) ??
     startArchitectureReview(document, context, runner, now)
   );
 }
 
 /** Whether a role is free for new work. */
-function roleFree(document: ProjectDocument, role: "bugTriage" | "cleanCode"): boolean {
+function roleFree(document: ProjectDocument, role: "bugTriage" | "cleanCode" | "documentation"): boolean {
   const specialist = teamMembers(document).find((s) => s.role === role);
   const current = specialist?.assignments.at(-1);
   return Boolean(specialist) && !(current && isActive(current));
@@ -322,9 +327,88 @@ function startArchitectureReview(document: ProjectDocument, context: DutyContext
   );
 }
 
+/**
+ * The documentation and domain role writes a proposal's glossary terms and ADRs in its worktree (M03). The mandate must
+ * grant executeInWorktree and cover the project modules the files belong to; otherwise, or while the role is busy,
+ * the proposal waits and `waiting` says why. Returns the assignment, or null when the writing waits.
+ */
+export function startDomainWriting(
+  document: ProjectDocument,
+  proposal: DomainProposal,
+  runner: DutyRunner | null,
+  now = new Date(),
+): SpecialistAssignment | null {
+  if (proposal.assignmentId) return null;
+  const authorization = authorize(document.mandate, "executeInWorktree", proposal.scopeModuleIds, "agreedTicket");
+  if (authorization !== "authorized") {
+    proposal.waiting =
+      authorization === "mandate_missing" || authorization === "mandate_revoked"
+        ? "Senza un mandato valido nessuno scrive i file: la proposta aspetta il mandato."
+        : `Il mandato non permette di lavorare in un worktree${proposal.scopeModuleIds.length ? ` su ${proposal.scopeModuleIds.join(", ")}` : ""}: la proposta aspetta una correzione del mandato.`;
+    return null;
+  }
+  if (!runner) {
+    proposal.waiting = "Nessun provider può eseguire ora il lavoro del ruolo Documentazione e dominio.";
+    return null;
+  }
+  if (!roleFree(document, "documentation")) {
+    proposal.waiting = "Il ruolo Documentazione e dominio è occupato: scrive la proposta appena è libero.";
+    return null;
+  }
+  const files = [...(proposal.terms.length ? [proposal.contextPath] : []), ...(proposal.adrs.length ? [`${proposal.adrDirectory}/`] : [])];
+  try {
+    const assignment = giveDuty(
+      document,
+      {
+        role: "documentation",
+        kind: "agreedTicket",
+        objective: `Glossario e ADR dalle decisioni ${proposal.decisionIds.join(", ")}`,
+        instructions: `Scrivi la proposta ${proposal.id} con la skill domain-modeling in ${files.join(" e ")}.\n\n${domainProposalText(proposal)}`,
+        moduleIds: proposal.moduleIds,
+        issueNumber: null,
+        ...runner,
+        tools: ["commands", "edits"],
+        requiredChecks: [],
+        workspace: null,
+        duty: { skill: "domain-modeling", trigger: { kind: "domainProposal", proposalId: proposal.id }, outcome: null },
+      },
+      now,
+    );
+    assignment.decisionVersions = Object.fromEntries(
+      proposal.decisionIds.flatMap((id) => document.decisions.filter((d) => d.id === id).map((d) => [id, d.version] as const)),
+    );
+    proposal.assignmentId = assignment.id;
+    proposal.waiting = null;
+    return assignment;
+  } catch (error) {
+    if (!(error instanceof TeamError)) throw error;
+    proposal.waiting =
+      error.code === "work_not_independent"
+        ? `La scrittura aspetta che finisca il lavoro in corso su ${proposal.moduleIds.join(", ")}.`
+        : "La scrittura aspetta: il ruolo Documentazione e dominio non può prenderla ora.";
+    return null;
+  }
+}
+
+/** The first waiting domain proposal the mandate now lets the documentation and domain role write; null when none. */
+export function startWaitingDomainWriting(document: ProjectDocument, runner: DutyRunner | null, now = new Date()): SpecialistAssignment | null {
+  for (const proposal of document.domainProposals ?? []) {
+    if (proposal.assignmentId) continue;
+    const assignment = startDomainWriting(document, proposal, runner, now);
+    if (assignment) return assignment;
+  }
+  return null;
+}
+
 /** Read-only automatic work runs under any granted mandate; work that writes needs executeInWorktree on its modules. */
 export function withinMandate(document: ProjectDocument, assignment: SpecialistAssignment): boolean {
   if (assignment.duty && !assignment.tools.includes("edits")) return document.mandate?.status === "granted";
+  const trigger = assignment.duty?.trigger;
+  if (trigger?.kind === "domainProposal") {
+    // Glossary and ADR files may sit outside the project's modules: the mandate covers those that are modules.
+    const proposal = document.domainProposals?.find((p) => p.id === trigger.proposalId);
+    return authorize(document.mandate, "executeInWorktree", proposal?.scopeModuleIds ?? assignment.moduleIds) === "authorized";
+  }
   return authorize(document.mandate, "executeInWorktree", assignment.moduleIds) === "authorized";
 }
 
@@ -382,6 +466,16 @@ export const ARCHITECTURE_BINDING = [
   "\"Present candidates as an HTML report\" and opening it: this session writes no file and opens nothing. Your final answer is the report: one entry per candidate with the fields of its card and the recommendation strength, then the top recommendation. Trama shows it to the person.",
   "\"Ask the user\" which candidate to explore: Trama asks it for you, as a Pact decision card with your candidates. Stop there.",
   "The grilling loop and edits to CONTEXT.md or the ADRs are not in this session: the person's choice goes to the Coordinator, who grills it and turns it into slices.",
+].join("\n");
+
+/** Trama's binding for AI Hero's domain-modeling skill when the documentation and domain role writes a proposal (M03). */
+export const DOMAIN_WRITING_BINDING = [
+  `Trama runs the domain-modeling skill above with its own text. These lines only map its words to Trama; they do not change its method. ${RULES_ABOVE}`,
+  "When Trama uses it (a Trama addition): the Coordinator ran the skill while it grilled the person, and the terms and ADRs it resolved are in your instructions, drawn from the person's Pact decisions. This assignment writes them, within the mandate.",
+  "\"The user\" is the Coordinator, who reads your report; the person reviews the result as a Trama candidate. You cannot talk to the person here: the terms and ADRs are settled, so write them as given and do not add others.",
+  "\"Challenge against the glossary\" and \"Cross-reference with code\": when an entry conflicts with CONTEXT.md, an ADR or the code, leave that entry unwritten and say why in your report; the Coordinator puts it to the person.",
+  "\"Update CONTEXT.md inline\" and \"Create files lazily\": write the entries into the glossary named in your instructions, creating it when it is missing, and each ADR in its directory with the next number. Change no other file.",
+  "You work in a Trama worktree. Commit: do not commit; Trama captures the worktree as a candidate. List the files you wrote in your report.",
 ].join("\n");
 
 const TRIAGE_SCHEMA = {
@@ -447,7 +541,7 @@ export interface DutySession {
   prompt: string;
   /** Skill input items, for providers that take them (Codex). */
   skills: LoadedSkill[];
-  /** The schema of the answer Trama reads; null for a fix, which reports in prose. */
+  /** The schema of the answer Trama reads; null for a fix and a domain writing, which report in prose. */
   outputSchema: Record<string, unknown> | null;
 }
 
@@ -525,9 +619,20 @@ export function dutySession(input: DutySessionInput): DutySession {
   const duty = assignment.duty!;
   const specialist = document.team.specialists.find((s) => s.id === assignment.specialistId)!;
   const isFix = duty.trigger.kind === "diagnosisFix";
-  const binding = duty.skill === "triage" ? TRIAGE_BINDING : duty.skill === "improve-codebase-architecture" ? ARCHITECTURE_BINDING : isFix ? FIX_BINDING : DIAGNOSIS_BINDING;
+  const writesDomain = duty.trigger.kind === "domainProposal";
+  const binding =
+    duty.skill === "triage"
+      ? TRIAGE_BINDING
+      : duty.skill === "improve-codebase-architecture"
+        ? ARCHITECTURE_BINDING
+        : writesDomain
+          ? DOMAIN_WRITING_BINDING
+          : isFix
+            ? FIX_BINDING
+            : DIAGNOSIS_BINDING;
   const delivery = deliverNativeSkill(input.skill, binding, input.nativeInput);
-  if (isFix) {
+  // A fix and the domain writing work in a worktree like any assignment, and report in prose.
+  if (isFix || writesDomain) {
     const task = input.resumed ? resumeInput(assignment, document.decisions) : openingInput(assignment, document.decisions);
     return {
       instructions: specialistInstructions(input.projectName, specialist, assignment),
@@ -706,7 +811,7 @@ function outcomeLine(assignment: SpecialistAssignment): string {
 export function concludeDuty(document: ProjectDocument, assignmentId: string, answer: string, now = new Date()): { decisionRequestId: string | null } {
   const assignment = findAssignment(document, assignmentId);
   const duty = assignment?.duty;
-  if (!assignment || !duty || duty.trigger.kind === "diagnosisFix") return { decisionRequestId: null };
+  if (!assignment || !duty || duty.trigger.kind === "diagnosisFix" || duty.trigger.kind === "domainProposal") return { decisionRequestId: null };
   let parsed: Json | null = null;
   try {
     const value: unknown = JSON.parse(extractJsonAnswer(answer));

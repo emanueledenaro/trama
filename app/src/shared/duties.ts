@@ -36,6 +36,10 @@ export function dutyTriggerText(document: ProjectDocument, duty: AssignmentDuty)
       return `Team libero dopo aver cambiato il codice, commit ${short(trigger.headSHA)}`;
     case "diagnosisFix":
       return `Bug riprodotto dalla diagnosi ${trigger.diagnosisId}`;
+    case "domainProposal": {
+      const proposal = document.domainProposals?.find((p) => p.id === trigger.proposalId);
+      return `Proposta di glossario e ADR ${trigger.proposalId}${proposal ? ` dalle decisioni ${proposal.decisionIds.join(", ")}` : ""}`;
+    }
   }
 }
 

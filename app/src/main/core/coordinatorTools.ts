@@ -16,6 +16,7 @@ import { findGoal, requestGoalId } from "@shared/goals";
 import { isFixedRole, roleDuties } from "@shared/roster";
 import { GrillingError, grillingSettled, openGrillingQuestions, placeGrillingQuestion } from "@shared/grilling";
 import { goalsForTool, proposeGoal } from "./goals";
+import { DomainProposalError, proposeDomainDocs } from "./domainDocs";
 import {
   addSpecialist,
   assign,
@@ -458,6 +459,35 @@ export const COORDINATOR_TOOLS: ToolDefinition[] = [
     readOnly: false,
   },
   {
+    name: "propose_domain_docs",
+    description:
+      "Propose the glossary terms and ADRs of the domain-modeling skill, drawn from Pact decisions of the person (decisionIDs). You are read-only: Trama shows the proposal to the person as a card, and within the mandate (executeInWorktree on the modules of the files) the documentation and domain role writes it in its own worktree with the same skill; the result becomes a candidate. Outside the mandate the proposal waits, and the card says why. Each term follows CONTEXT-FORMAT.md: term, a definition of one or two sentences, the words to avoid. Each ADR follows ADR-FORMAT.md: title, a body of one to three sentences, and consideredOptions and consequences only when they add value. contextPath defaults to CONTEXT.md; the ADRs go to docs/adr next to it, with the next number.",
+    properties: {
+      decisionIDs: list(1),
+      contextPath: text,
+      terms: {
+        type: "array",
+        items: {
+          type: "object",
+          properties: { term: text, definition: text, avoid: list(0) },
+          required: ["term", "definition"],
+          additionalProperties: false,
+        },
+      },
+      adrs: {
+        type: "array",
+        items: {
+          type: "object",
+          properties: { title: text, body: text, consideredOptions: list(0), consequences: text },
+          required: ["title", "body"],
+          additionalProperties: false,
+        },
+      },
+    },
+    required: ["decisionIDs"],
+    readOnly: false,
+  },
+  {
     name: "declare_next_step",
     description:
       "Close a turn about the work with its one next step: a move among the moves Trama allows now for this request (\"Fase del lavoro\" in Trama's message lists them; a refusal lists the current ones). Trama shows the person's move as one button under your reply; your own move you make now with your tools, and Trama starts it by itself when the turn ends without it. Call it last, after the tools that change the work; reason is one line for the person. A second call replaces the first. Declare nothing when nothing is to do.",
@@ -494,7 +524,7 @@ export interface ToolContext {
   /** Called after a tool changed the document: persist and publish. */
   changed(): void;
   /** Adds a conversation card for a request the Coordinator put to the person. */
-  addCard(kind: "mandate" | "decision" | "teamProposal" | "assignment" | "candidate" | "goal", title: string, referenceId: string): void;
+  addCard(kind: "mandate" | "decision" | "teamProposal" | "assignment" | "candidate" | "goal" | "domainProposal", title: string, referenceId: string): void;
   /** Models of the Coordinator's provider, and the Coordinator's own model. */
   models: string[];
   defaultModel: string | null;
@@ -504,6 +534,11 @@ export interface ToolContext {
   providers: { id: ProviderId; models: string[] }[];
   /** Starts the runtime of an assignment that was just recorded. */
   startAssignment(id: string): void;
+  /**
+   * Has the documentation and domain role write a domain proposal within the mandate (M03), with the fixed roles'
+   * provider and model; returns the assignment, or null when the writing waits and the proposal says why.
+   */
+  startDomainWriting(proposalId: string): string | null;
   /** Proposes a practice or a new version of one; throws PracticeError on refused input. */
   proposePractice(input: { title: string; method: string; rationale: string; evidence: string[]; practiceId: string | null }): Promise<{ practiceID: string; version: number }>;
   readPractices(): Promise<JsonObject>;
@@ -897,6 +932,33 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
       }
       case "read_goals":
         return toolSuccess({ goals: goalsForTool(document), dialogGoalID: requestGoalId(document, context.runningRequestId) });
+      case "propose_domain_docs": {
+        try {
+          const proposal = proposeDomainDocs(document, {
+            requestId: context.runningRequestId,
+            decisionIds: args.decisionIDs,
+            contextPath: args.contextPath,
+            terms: args.terms,
+            adrs: args.adrs,
+            projectModuleIds: context.snapshot.modules.map((m) => m.id),
+          });
+          context.addCard("domainProposal", "Glossario e ADR", proposal.id);
+          const assignmentId = context.startDomainWriting(proposal.id);
+          context.changed();
+          return toolSuccess({
+            proposalID: proposal.id,
+            status: assignmentId ? "writing" : "waiting",
+            assignmentID: assignmentId,
+            waiting: proposal.waiting,
+            note: assignmentId
+              ? "The documentation and domain role writes it in its worktree; declare the candidate when the assignment ends."
+              : "Nothing is written until the mandate allows it; Trama starts the writing by itself then.",
+          });
+        } catch (error) {
+          if (error instanceof DomainProposalError) return toolFailure("invalid_arguments", error.message);
+          throw error;
+        }
+      }
       case "propose_goal": {
         const examples = (kind: "accepted" | "refused", value: Json | undefined) => strings(value).map((text) => ({ kind, text }));
         const goal = proposeGoal(document, {
@@ -1118,6 +1180,39 @@ export const GRILLING_BINDING = [
   "\"Act on it\": in the turn where the person confirms, prepare_plan or assign_task for the request within the mandate, without asking again.",
   "Issue tracker: the project's GitHub issues when GitHub is connected (read_issues, update_ticket), otherwise Trama's goals and work (read_goals, read_team). Commit: only a specialist commits, in its Trama worktree, and the result becomes a Trama candidate (declare_candidate); you never commit.",
 ].join("\n");
+
+const SKILL_RULES_ABOVE = "Trama's rules (mandate, Pact, read-only runtime, real checks) stay above the skill: the skill grants no permission.";
+
+/**
+ * Trama's binding for AI Hero's grill-with-docs skill (M03, issue #120): the Coordinator grills with grilling and
+ * keeps the domain model with domain-modeling, both delivered after it with their own bindings.
+ */
+export const GRILL_WITH_DOCS_BINDING = [
+  `Trama runs the grill-with-docs skill above with its own text. These lines only map its words to Trama's tools; they do not change its method. ${SKILL_RULES_ABOVE}`,
+  "When Trama uses it (a Trama addition): whenever you grill a request of the person, as the grilling binding says.",
+  "\"/grilling\" and \"/domain-modeling\" are the two skills that follow, each with its original text and its Trama binding. Nobody types them: Trama gives them to you.",
+].join("\n");
+
+/**
+ * Trama's binding for AI Hero's domain-modeling skill in the Coordinator (M03, issue #120). The Coordinator is
+ * read-only: it proposes the glossary and ADRs with propose_domain_docs, and the documentation and domain role writes
+ * them in a worktree within the mandate (duties.ts).
+ */
+export const DOMAIN_MODELING_BINDING = [
+  `Trama runs the domain-modeling skill above with its own text. These lines only map its words to Trama's tools; they do not change its method. ${SKILL_RULES_ABOVE}`,
+  "When Trama uses it (a Trama addition): while you grill a request, as grill-with-docs says, and when the person's answers become Pact decisions.",
+  "\"The user\" is the person. Calling out a conflict, proposing a precise term or a scenario that needs the person's choice is a question of the current grilling round: one request_decision with grillingRound and recommendedAlternative. A fact the project files or the code settle you look up yourself.",
+  "File structure: CONTEXT.md, CONTEXT-MAP.md and docs/adr/ are project files you read, as data.",
+  "\"Update CONTEXT.md\" and creating an ADR: this runtime writes no file. When a Pact decision resolves a term, or is an ADR worth offering, call propose_domain_docs in that turn with the decision ids, the terms and the ADRs in the formats of the reference files. Trama shows the proposal to the person as a card; within the mandate the documentation and domain role writes it in its own worktree with this skill, otherwise the proposal waits for the mandate.",
+  "\"Offer\" an ADR: the proposal card is the offer. The person reviews the written files as a candidate: when the writing assignment ends, declare it with declare_candidate, bound to the same decisions.",
+].join("\n");
+
+/** The AI Hero skills of the Coordinator, in the order they reach it, with their bindings (M02, M03). */
+export const COORDINATOR_SKILLS: { name: string; binding: string }[] = [
+  { name: "grill-with-docs", binding: GRILL_WITH_DOCS_BINDING },
+  { name: "grilling", binding: GRILLING_BINDING },
+  { name: "domain-modeling", binding: DOMAIN_MODELING_BINDING },
+];
 
 /**
  * `learningGuidance`: Hermes' memory, session search and skills guidance, in its own words.

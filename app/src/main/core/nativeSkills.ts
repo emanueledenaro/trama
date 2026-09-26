@@ -65,3 +65,9 @@ export function deliverNativeSkill(skill: NativeSkill, binding: string, nativeIn
     skills: nativeInput ? [{ name: skill.name, path: skill.skillPath, enabled: true, description: null }] : [],
   };
 }
+
+/** Several skills for one agent, each followed by its binding, in the given order. */
+export function deliverNativeSkills(parts: { skill: NativeSkill; binding: string }[], nativeInput: boolean): SkillDelivery {
+  const deliveries = parts.map(({ skill, binding }) => deliverNativeSkill(skill, binding, nativeInput));
+  return { text: deliveries.map((d) => d.text).join("\n\n"), skills: deliveries.flatMap((d) => d.skills) };
+}

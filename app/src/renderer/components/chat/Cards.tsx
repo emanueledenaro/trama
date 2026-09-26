@@ -1,4 +1,5 @@
 import {
+  IconBook2,
   IconBriefcase,
   IconCircleCheck,
   IconCircleX,
@@ -16,6 +17,7 @@ import {
 import { type AssignmentStatus, type CandidateState, isOpenQuestion } from "@shared/domain";
 import { isExerciseAssessment } from "@shared/onboarding";
 import { findGoal } from "@shared/goals";
+import { adrMarkdown, adrPath, findDomainProposal, glossaryEntry } from "@shared/domainDocs";
 import { PROVIDERS } from "@shared/providers";
 import type { ActionResult } from "@shared/ipc";
 import { Spinner } from "@/components/Spinner";
@@ -562,6 +564,71 @@ export function AssignmentCard({ assignmentId }: { assignmentId: string }) {
           )}
         </div>
       ) : null}
+    </CardFrame>
+  );
+}
+
+/**
+ * Glossary terms and ADRs the Coordinator drew from the person's decisions (M03), in the formats of the domain-modeling
+ * skill. The Coordinator writes nothing: the documentation and domain role writes them within the mandate.
+ */
+export function DomainProposalCard({ proposalId }: { proposalId: string }) {
+  const document = useUi((s) => s.app?.project?.document);
+  const setInspector = useUi((s) => s.setInspector);
+  const proposal = document ? findDomainProposal(document, proposalId) : null;
+  if (!document || !proposal) return null;
+  const assignment = proposal.assignmentId ? document.team.specialists.flatMap((s) => s.assignments).find((a) => a.id === proposal.assignmentId) : null;
+  const written = assignment?.status === "completed";
+  const writing = assignment ? ["preparing", "running", "stopRequested"].includes(assignment.status) : false;
+  const status = written
+    ? { label: "Scritta", tone: "success" as const }
+    : writing
+      ? { label: "In scrittura", tone: "info" as const }
+      : assignment
+        ? { label: "Scrittura ferma", tone: "warning" as const }
+        : { label: "In attesa", tone: "secondary" as const };
+  return (
+    <CardFrame
+      anchor="domain-proposal"
+      icon={<IconBook2 stroke={1.8} />}
+      title={`Glossario e ADR ${proposal.id}`}
+      aside={<Badge tone={status.tone}>{status.label}</Badge>}
+    >
+      <div data-testid="domain-proposal">
+        <Field label="Dalle decisioni del Patto">
+          {proposal.decisionIds.map((id, index) => (
+            <span key={id}>
+              {index ? ", " : null}
+              <button type="button" className="text-[var(--color-text-accent)] hover:underline" onClick={() => setInspector({ kind: "decision", id })}>
+                {id}
+              </button>
+            </span>
+          ))}
+        </Field>
+        {proposal.terms.length ? (
+          <Field label={`Termini per ${proposal.contextPath}`}>
+            <div className="mt-1 rounded-lg bg-[var(--app-chat-code-surface)] px-3 py-2">
+              <ChatMarkdown text={proposal.terms.map(glossaryEntry).join("\n\n")} />
+            </div>
+          </Field>
+        ) : null}
+        {proposal.adrs.map((adr) => (
+          <Field key={adr.title} label={`ADR ${adrPath(proposal, adr)}`}>
+            <div className="mt-1 rounded-lg bg-[var(--app-chat-code-surface)] px-3 py-2">
+              <ChatMarkdown text={adrMarkdown(adr)} />
+            </div>
+          </Field>
+        ))}
+        <p className="mt-2 text-ui-sm text-muted-foreground">
+          {!assignment
+            ? (proposal.waiting ?? "Il Coordinatore non scrive file: la proposta aspetta il mandato.")
+            : written
+              ? `Documentazione e dominio ha scritto la proposta nel worktree dell'incarico ${assignment.id}. La rivedi come candidato.`
+              : writing
+                ? `Documentazione e dominio la scrive nel worktree dell'incarico ${assignment.id}, con la skill domain-modeling.`
+                : `L'incarico ${assignment.id} si è fermato prima di finire: lo trovi nella sua scheda.`}
+        </p>
+      </div>
     </CardFrame>
   );
 }
