@@ -59,6 +59,8 @@ describe("remote conflicts", () => {
     expect((await git(["status", "--porcelain"], context.repo)).trim()).toBe("");
   });
 
+  // One scenario per test: each builds its own repositories with dozens of git processes, and a single test running
+  // them all came close to the time limit on a loaded machine (#169).
   it("tells overlap from clean work", async () => {
     const context = await setup();
     await writeFile(join(context.session.worktreeRoot, "a.txt"), "UNO\ndue\ntre\n");
@@ -68,10 +70,17 @@ describe("remote conflicts", () => {
     expect(overlap.conflictingFiles).toEqual(["a.txt"]);
     const clean = await assess(context, await colleaguePush(context.colleague, "b.txt", "B\n"));
     expect(clean.classification).toBe("overlap"); // a.txt changed earlier on the same branch
-    const separate = await setup();
-    await writeFile(join(separate.session.worktreeRoot, "a.txt"), "UNO\ndue\ntre\n");
-    expect((await assess(separate, await colleaguePush(separate.colleague, "b.txt", "B\n"))).classification).toBe("clean");
-    const unknown = await assess(context, "0".repeat(40));
-    expect(unknown.classification).toBe("unknown");
+  });
+
+  it("finds clean work when the remote changes other files", async () => {
+    const context = await setup();
+    await writeFile(join(context.session.worktreeRoot, "a.txt"), "UNO\ndue\ntre\n");
+    expect((await assess(context, await colleaguePush(context.colleague, "b.txt", "B\n"))).classification).toBe("clean");
+  });
+
+  it("reports an unknown remote revision", async () => {
+    const context = await setup();
+    await writeFile(join(context.session.worktreeRoot, "a.txt"), "UNO\ndue\ntre\n");
+    expect((await assess(context, "0".repeat(40))).classification).toBe("unknown");
   });
 });

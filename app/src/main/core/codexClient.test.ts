@@ -105,6 +105,17 @@ describe("restrictedAppServerArguments", () => {
     expect(args.slice(-8)).toEqual(["--disable", "apps", "--disable", "plugins", "--disable", "hooks", "--disable", "multi_agent"]);
     await expect(restrictedAppServerArguments(fake, "github")).rejects.toThrow(/riservato/);
   });
+
+  // A loaded machine can take more than five seconds to start Codex (#169); that is slow, not a missing inventory.
+  it("waits for a slow Codex instead of reading an empty inventory", async () => {
+    const { mkdtemp, writeFile, chmod } = await import("node:fs/promises");
+    const { tmpdir } = await import("node:os");
+    const { restrictedAppServerArguments } = await import("./codexClient");
+    const path = join(await mkdtemp(join(tmpdir(), "trama-codex-")), "codex");
+    await writeFile(path, `#!${process.execPath}\nsetTimeout(() => process.stdout.write('[{"name":"github","transport":{"type":"stdio"}}]'), 5_500);`);
+    await chmod(path, 0o755);
+    expect(await restrictedAppServerArguments(path, "trama")).toContain('mcp_servers.github={command="/usr/bin/false",enabled=false}');
+  });
 });
 
 describe("CodexClient failures (T02)", () => {
