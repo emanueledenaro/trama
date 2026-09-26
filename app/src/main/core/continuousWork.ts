@@ -174,9 +174,42 @@ export function closingConfirmation(text: string): string | null {
   return asks && GENERIC_CONFIRMATION.some((pattern) => pattern.test(sentence)) ? sentence : null;
 }
 
+/** A line that opens a numbered or lettered option: "1. ", "2) ", "a) ", "**1.** ". */
+const OPTION_LINE = /^\s*(?:[-*]\s+)?(?:\*\*)?(?:\d{1,2}|[a-c])[.)](?:\*\*)?\s+\S/i;
+/** How the reply asks the person to pick one of those options in the text. */
+const PICK_IN_TEXT =
+  /\b(?:rispondimi|rispondi|rispondete|scrivimi|dimmi) (?:con|solo)\b|\b(?:scegli|scegliete|indica|indicami)\b|\bdimmi (?:tra|fra|quale|quali|il numero|l'opzione|un'opzione)\b|\b(?:quale|quali|cosa|che cosa)\b[^.?!\n]{0,40}\bprefer(?:isci|ite)\b/i;
+
+/**
+ * The sentence with which a Coordinator reply asks the person to pick one of numbered options in the text
+ * ("1. ... 2. ... Rispondimi con 1, 2 o 3") instead of opening a card with request_decision or request_mandate
+ * (issue #228), or null. Pure, so Trama's feedback does not depend on the model.
+ */
+export function choicesInText(text: string): string | null {
+  const lines = text.split("\n");
+  if (lines.filter((line) => OPTION_LINE.test(line)).length < 2) return null;
+  // The request to pick sits outside the options: "1. Scegli il pagamento" is an option, not the question.
+  const rest = lines.filter((line) => !OPTION_LINE.test(line)).join("\n").replace(/[*_`]/g, "");
+  const sentence = rest.split(/(?<=[.!?])\s+|\n/).find((part) => PICK_IN_TEXT.test(part));
+  return sentence ? sentence.trim() : null;
+}
+
+/** Cards the person answers: a request that opened one gave the person its buttons. */
+const CHOICE_CARDS = new Set(["mandate", "decision", "teamProposal", "goal", "domainProposal"]);
+
+/**
+ * The options the Coordinator wrote in the reply of `requestId` for the person to pick, when that request opened no
+ * card the person answers (issue #228). A reply that recaps the options of a card it opened is fine.
+ */
+export function choicesWithoutCard(document: ProjectDocument, requestId: string, reply: string): string | null {
+  const opened = document.events.some((e) => e.requestId === requestId && e.content.type === "card" && CHOICE_CARDS.has(e.content.kind));
+  return opened ? null : choicesInText(reply);
+}
+
 /**
  * What the Coordinator reads when its previous reply in the dialog of `requestId` closed with a generic confirmation
- * question (W04): the question, and that it goes on by itself within the mandate. Null otherwise.
+ * question (W04), or asked the person to pick numbered options in the text (issue #228): what it wrote, and the
+ * card that belongs there. Null otherwise.
  */
 export function confirmationFeedback(document: ProjectDocument, requestId: string): string | null {
   const index = document.requests.findIndex((r) => r.id === requestId);
@@ -186,6 +219,13 @@ export function confirmationFeedback(document: ProjectDocument, requestId: strin
   if (!previous) return null;
   const reply = document.events.findLast((e) => e.requestId === previous.id && e.content.type === "coordinatorText");
   if (reply?.content.type !== "coordinatorText") return null;
+  const choice = choicesWithoutCard(document, previous.id, reply.content.text);
+  if (choice) {
+    return [
+      "## Scelta scritta nel testo",
+      `La tua risposta precedente chiedeva alla persona di scegliere tra opzioni numerate nel testo ("${choice.slice(0, 200)}"): la persona non ha avuto una scheda né i pulsanti. Ogni scelta della persona passa da request_decision, e un mandato più ampio da request_mandate. Apri ora la scheda con le stesse opzioni, invece di riscriverle nel testo.`,
+    ].join("\n");
+  }
   const question = closingConfirmation(reply.content.text);
   if (!question) return null;
   return [

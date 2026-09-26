@@ -541,6 +541,26 @@ describe("ClaudeAgentRuntime", () => {
     expect(events.some((e) => e.type === "toolRefused")).toBe(false);
   });
 
+  it("gives Trama's tools to every turn, a resumed one after an interrupt included (issue #228)", async () => {
+    const toolServer = { name: "trama", url: "http://127.0.0.1:1/mcp", token: "t", tools: ["request_decision"] };
+    const runtime = new ClaudeAgentRuntime({ executable, toolServer });
+    const { threadId } = await runtime.openThread({ model: "sonnet", cwd: "/repo", developerInstructions: "" });
+    sdk.query.mockReturnValueOnce(fakeQuery([{ type: "system", subtype: "init", session_id: threadId }], { waitForInterrupt: true }));
+    const first = runtime.runTurn({ threadId, prompt: "Lavora", cwd: "/repo", model: "sonnet", onEvent: () => undefined });
+    await vi.waitFor(() => expect(sdk.query).toHaveBeenCalled());
+    await runtime.interrupt();
+    await expect(first).rejects.toThrow(/interrotto/);
+    sdk.getSessionInfo.mockResolvedValueOnce({ sessionId: threadId });
+    await runtime.openThread({ model: "sonnet", cwd: "/repo", developerInstructions: "", resumeThreadId: threadId });
+    sdk.query.mockReturnValueOnce(fakeQuery([result({ session_id: threadId })]));
+    await runtime.runTurn({ threadId, prompt: "Riprendi", cwd: "/repo", model: "sonnet", onEvent: () => undefined });
+    for (const call of sdk.query.mock.calls) {
+      expect(call[0].options.mcpServers).toHaveProperty("trama");
+      expect(call[0].options.allowedTools).toEqual(["mcp__trama"]);
+    }
+    expect(sdk.query.mock.calls.at(-1)![0].options).toMatchObject({ resume: threadId });
+  });
+
   it("interrupts a running turn", async () => {
     const runtime = new ClaudeAgentRuntime({ executable });
     const { threadId } = await runtime.openThread({ model: "sonnet", cwd: "/repo", developerInstructions: "" });

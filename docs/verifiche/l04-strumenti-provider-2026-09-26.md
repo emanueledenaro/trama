@@ -21,6 +21,14 @@ Controllo di #228 sul branch `bugfix/issue-228-provider-github-tools`. Nella pro
 
 Nella prova in locale con Claude Haiku in sola lettura (triage dei ruoli fissi), in 3 incarichi su 6 l'agente scriveva "Il tool StructuredOutput non è disponibile in questa sessione Trama (read-only)" e Trama non leggeva la risposta. Con `outputFormat` l'SDK di Claude restituisce la risposta attraverso lo strumento `StructuredOutput`, e il filtro degli strumenti lo rifiutava come uno strumento sconosciuto. Ora `decideToolPermission` lo ammette sempre: è l'uscita che Trama stessa chiede. Codex usa lo schema nativo di app-server senza strumenti; Pi, OpenCode, Antigravity e gli agenti ACP chiedono il JSON nel testo del prompt e Trama lo estrae dalla risposta, quindi non c'è uno strumento da ammettere. Test: `claudeAgent.test.ts` ("lets a read-only turn return the structured answer Trama asked for"), con il fake dell'SDK; per ACP resta il test esistente dello schema in `acpRuntime.test.ts`.
 
+## Scelte scritte nel testo
+
+Nella prova in locale con il Coordinatore su Claude Sonnet, invece di aprire una scheda con `request_mandate` o `request_decision`, il Coordinatore scriveva in chat "1. Amplio il mandato... 2. ... 3. ... Rispondimi con 1, 2 o 3". La persona non aveva né la scheda né i pulsanti.
+
+- Strumenti in ogni turno: Claude riceve il server MCP di Trama in ogni `query`, anche dopo un turno interrotto e una ripresa della sessione. Test: "gives Trama's tools to every turn, a resumed one after an interrupt included" in `claudeAgent.test.ts`. Codex riceve `mcp_servers.trama` nella config del thread, anche con `thread/resume`.
+- Istruzioni: il Coordinatore legge che non deve mai scrivere opzioni numerate o con lettere da scegliere nel testo; ogni scelta passa da `request_decision`, un mandato più ampio da `request_mandate`.
+- Rilevamento: `choicesInText` in `continuousWork.ts` riconosce almeno due righe di opzioni con una richiesta di scegliere ("rispondimi con", "scegli tra", "quale preferisci"). Trama registra l'attività "Scelta scritta nel testo invece che in una scheda" e al turno dopo manda al Coordinatore la sezione "Scelta scritta nel testo", che lo rimanda alla scheda. Il controllo è nel controller e vale per ogni provider. Test: `continuousWork.test.ts` e, con Codex di prova, `providerTools.integration.test.ts`. Non c'è un test del controller con Claude di prova: il controller usa Codex nei test di integrazione.
+
 ## Provider per provider
 
 "Fake" indica l'agente o la CLI di prova in `app/test-fixtures` o i finti SDK dei test. "Reale" indica il binario o l'SDK del provider. In questa verifica nessun binario reale è stato eseguito: l'ambiente non ha le CLI dei provider né gli accessi.

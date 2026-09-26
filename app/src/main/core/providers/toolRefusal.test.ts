@@ -42,6 +42,7 @@ describe("provider tool refusals (issue #228)", () => {
     expect(providerToolsRule("developer")).toContain("ask_coordinator");
     expect(providerToolsRule("none")).not.toContain("command,");
     expect(developerInstructions("Demo")).toContain(providerToolsRule("coordinator"));
+    expect(developerInstructions("Demo")).toContain("Never write numbered or lettered options in your text for the person to pick");
     expect(TOOL_SERVER_INSTRUCTIONS).toContain("instead of your provider's own GitHub, web and command tools");
   });
 });

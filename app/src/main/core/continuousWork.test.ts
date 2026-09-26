@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import type { CoordinatorRequest, MandateAction, ProjectDocument, RequestStep, WorkPlan } from "@shared/domain";
 import { placeGrillingQuestion } from "@shared/grilling";
-import { AUTOMATIC_MOVES_IN_A_ROW, automaticMove, automaticMoveSection, closingConfirmation, confirmationFeedback, type ContinuationGuards, stalledMove } from "./continuousWork";
+import { AUTOMATIC_MOVES_IN_A_ROW, automaticMove, automaticMoveSection, choicesInText, choicesWithoutCard, closingConfirmation, confirmationFeedback, type ContinuationGuards, stalledMove } from "./continuousWork";
 import { declareCandidate, recordEvidence, recordTechnicalReview } from "./candidates";
-import { emptyDocument, recordReply } from "./document";
+import { appendEvent, emptyDocument, recordReply } from "./document";
 import { answerDecisionRequest, createDecisionRequest, createMandateRequest, grantMandate } from "./pact";
 import { assign, confirmTeam, endTurn, proposeTeam } from "./team";
 
@@ -362,5 +362,45 @@ describe("stalledMove: an automatic move the turn did not make is shown with its
   it("tells the Coordinator that the checks run on a candidate, declared first from the assignment", () => {
     expect(automaticMoveSection("verifyCandidate")).toContain("chiama prima declare_candidate, poi verify_candidate con il candidateID");
     expect(automaticMoveSection("preparePlan")).not.toContain("declare_candidate");
+  });
+});
+
+describe("choicesInText: options for the person to pick written in a reply (issue #228)", () => {
+  it("finds numbered or lettered options with a request to pick one", () => {
+    const reply = "Posso andare avanti in tre modi:\n\n1. Amplio il mandato a docs/\n2. Scrivo solo il codice\n3. Mi fermo\n\nRispondimi con 1, 2 o 3.";
+    expect(choicesInText(reply)).toBe("Rispondimi con 1, 2 o 3.");
+    expect(choicesInText("Due strade:\n**1.** Rimborso\n**2.** Revisione\nQuale preferisci?")).toBe("Quale preferisci?");
+    expect(choicesInText("a) Rimborso\nb) Revisione\nDimmi quale scegli.")).toBe("Dimmi quale scegli.");
+    expect(choicesInText("1. Rimborso\n2. Revisione\n\nScegli 1 o 2.")).toBe("Scegli 1 o 2.");
+    expect(choicesInText("1. Rimborso\n2. Revisione\n\nQuale delle due preferisci?")).toBe("Quale delle due preferisci?");
+  });
+
+  it("leaves plain lists and single options alone", () => {
+    expect(choicesInText("Ho fatto:\n1. Letto Orders\n2. Scritto il test")).toBeNull();
+    expect(choicesInText("1. Solo un passo. Rispondimi con ok.")).toBeNull();
+    expect(choicesInText("Ho fatto:\n1. Scegli il file di Orders\n2. Indica il test\nFatto.")).toBeNull();
+    expect(choicesInText("")).toBeNull();
+  });
+});
+
+describe("confirmationFeedback: options in the text send the Coordinator back to a card (issue #228)", () => {
+  const options = "Tre strade:\n1. Amplio il mandato\n2. Solo il codice\n3. Mi fermo\n\nRispondimi con 1, 2 o 3.";
+
+  it("asks for the card when the reply opened none", () => {
+    const document = emptyDocument("p");
+    request(document, "r1");
+    recordReply(document, "r1", options, "gpt-5.5", []);
+    request(document, "r2");
+    expect(confirmationFeedback(document, "r2")).toContain("## Scelta scritta nel testo");
+  });
+
+  it("leaves a reply alone when its request already opened the card", () => {
+    const document = emptyDocument("p");
+    request(document, "r1");
+    appendEvent(document, "trama", { type: "card", kind: "decision", title: "Decisione", detail: null, referenceId: "D-1" }, "r1");
+    recordReply(document, "r1", options, "gpt-5.5", []);
+    request(document, "r2");
+    expect(confirmationFeedback(document, "r2")).toBeNull();
+    expect(choicesWithoutCard(document, "r1", options)).toBeNull();
   });
 });

@@ -1,4 +1,4 @@
-import { cp, mkdtemp } from "node:fs/promises";
+import { cp, mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -12,6 +12,7 @@ afterEach(async () => {
   await controller?.stop();
   controller = null;
   delete process.env.FAKE_CODEX_STUDY_GH;
+  delete process.env.FAKE_CODEX_LOG;
 });
 
 const newController = (dataDir: string) =>
@@ -35,6 +36,36 @@ async function until(check: () => boolean, timeout = 40_000): Promise<void> {
 }
 
 describe("the Coordinator uses Trama's tools, never the provider's (issue #228)", () => {
+  it("records options written in the reply instead of a card and sends the Coordinator back to request_decision", async () => {
+    const log = join(await mkdtemp(join(tmpdir(), "trama-log-")), "codex.log");
+    process.env.FAKE_CODEX_LOG = log;
+    const repo = await mkdtemp(join(tmpdir(), "trama-provider-tools-"));
+    await cp(join(root, "resources/DemoProject"), repo, { recursive: true });
+    await git(["init", "-b", "main"], repo, false);
+    await git(["add", "."], repo, false);
+    await git(["-c", "user.name=T", "-c", "user.email=t@t", "commit", "-m", "init"], repo, false);
+    controller = newController(await mkdtemp(join(tmpdir(), "trama-data-")));
+    await controller.start();
+    await controller.openProject(repo);
+    await until(() => controller!.snapshot.project?.phase.kind === "ready" && controller!.snapshot.project.github.status !== "loading", 20_000);
+    const document = controller.snapshot.project!.document;
+    const replies = () => document.events.filter((e) => e.content.type === "coordinatorText").length;
+    const before = replies();
+
+    await controller.send("[scelte] documenta anche docs/", null, null, null);
+    await until(() => replies() > before);
+    const problems = document.events.filter((e) => e.content.type === "activity" && e.content.title === "Scelta scritta nel testo invece che in una scheda");
+    expect(problems).toHaveLength(1);
+    expect(problems[0]!.content).toMatchObject({ tone: "error", detail: "Rispondimi con 1, 2 o 3." });
+
+    await controller.send("[scelte] allora?", null, null, null);
+    await until(() => replies() > before + 1);
+    const turns = (await readFile(log, "utf8")).trim().split("\n").map((line) => JSON.parse(line) as { method: string; params: { input?: Array<{ text?: string }> } });
+    const last = turns.filter((t) => t.method === "turn/start").at(-1)!;
+    expect(last.params.input![0]!.text).toContain("## Scelta scritta nel testo");
+    expect(last.params.input![0]!.text).toContain("request_decision");
+  }, 90_000);
+
   it("records a refusal during the project study as an activity", async () => {
     process.env.FAKE_CODEX_STUDY_GH = "1";
     const repo = await mkdtemp(join(tmpdir(), "trama-provider-tools-"));

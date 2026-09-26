@@ -192,6 +192,11 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
         setTimeout(() => finish(JSON.stringify(seen)), 10);
         return;
       }
+      if (text.includes("[scelte]") && !text.includes("## Scelta scritta nel testo")) {
+        // Issue #228: options to pick written in the reply instead of a request_decision card.
+        setTimeout(() => finish("Posso andare avanti in tre modi:\n\n1. Amplio il mandato a docs/\n2. Scrivo solo il codice\n3. Mi fermo qui\n\nRispondimi con 1, 2 o 3."), 10);
+        return;
+      }
       if (text.includes("[issue-gh]")) {
         // Issue #228: Codex tries `gh` in the read-only sandbox, which has no network; once Trama names read_issues, that one.
         if (text.includes("read_issues di Trama") && toolServers.has(threadId)) {
