@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { guideSteps, resumeStep } from "@shared/onboarding";
+import { TramaMark } from "@/components/brand/TramaMark";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { act, useUi } from "@/lib/store";
@@ -28,6 +29,7 @@ export function GuideDialog() {
       open={open}
       onOpenChange={(value) => setDialog(value ? "guide" : null)}
       title="Guida introduttiva"
+      icon={<TramaMark size={36} variant="tile" />}
       description="Configura Trama e prova il metodo su una copia locale di esempio. Puoi interrompere e riprendere da Impostazioni o dal menu Aiuto."
       className="w-[min(36rem,calc(100vw-2rem))]"
       footer={

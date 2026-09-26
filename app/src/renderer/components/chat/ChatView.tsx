@@ -23,7 +23,7 @@ import { GoalDialogHeader } from "@/components/inspector/GoalsView";
 import { OverviewView } from "@/components/OverviewView";
 import { SettingsView } from "@/components/settings/SettingsView";
 import { NavigationButtons, SidebarTrigger } from "@/components/sidebar/Sidebar";
-import { BrandMark } from "@/components/brand/BrandMark";
+import { TramaMark } from "@/components/brand/TramaMark";
 import { Button } from "@/components/ui/button";
 import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/cn";
@@ -197,7 +197,7 @@ function ProjectIntro() {
   const phase = project.phase;
   return (
     <div className="flex flex-col items-center gap-3 px-6 pt-[18vh] pb-8 text-center select-none">
-      <BrandMark size={40} variant="glyph" />
+      <TramaMark size={44} />
       <h2 className="text-[26px] leading-[1.15] font-normal tracking-[-0.015em] text-foreground/95">
         {project.isDemo ? "Progetto di esempio" : project.name}
       </h2>

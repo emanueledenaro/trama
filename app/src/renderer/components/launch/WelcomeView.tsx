@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { ProviderId } from "@shared/codex";
 import { type GuideStepId, nextSetupStep, resumeSetupStep, SETUP_STEP_IDS, setupSteps, type StepState } from "@shared/onboarding";
 import { PROVIDERS } from "@shared/providers";
-import { BrandMark } from "@/components/brand/BrandMark";
+import { TramaMark } from "@/components/brand/TramaMark";
 import { StepActions } from "@/components/onboarding/StepActions";
 import { STATUS_LABEL, StepIcon } from "@/components/onboarding/StepRow";
 import { ProviderIcon } from "@/components/ProviderIcon";
@@ -113,7 +113,7 @@ function StepProgress({ steps, current }: { steps: StepState[]; current: GuideSt
 function Hello({ steps, resuming, onStart, onClose }: { steps: StepState[]; resuming: boolean; onStart: () => void; onClose: () => void }) {
   return (
     <>
-      <BrandMark size={72} variant="tile" />
+      <TramaMark size={72} variant="tile" />
       <h1 className="mt-6 text-[28px] leading-[1.15] font-normal tracking-[-0.015em] text-foreground sm:text-[32px]">Benvenuto in Trama</h1>
       <p className="mt-3 text-ui-lg text-foreground/85">Un team di agenti lavora sul tuo progetto: tu decidi, loro costruiscono.</p>
       <p className="mt-2 text-ui text-muted-foreground">
@@ -148,7 +148,7 @@ function SetupStep({ step, index, total, onBack, onNext }: { step: StepState; in
   return (
     <>
       <div className="flex items-center gap-3">
-        <BrandMark size={28} variant="glyph" />
+        <TramaMark size={28} />
         <span className="text-ui-sm text-muted-foreground">
           Passo {index + 1} di {total}
         </span>

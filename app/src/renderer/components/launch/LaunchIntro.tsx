@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { BrandMark } from "@/components/brand/BrandMark";
+import { TramaMark } from "@/components/brand/TramaMark";
 import { cn } from "@/lib/cn";
 import { introPhase, nextIntroChange } from "@/lib/launchIntro";
 
@@ -85,7 +85,7 @@ export function LaunchIntro({ ready }: { ready: boolean }) {
       )}
     >
       <div key={run} className={cn("launch-intro-mark", reducedMotion && "launch-intro-still")}>
-        <BrandMark size={88} variant="glyph" />
+        <TramaMark size={96} />
       </div>
     </div>
   );

@@ -77,8 +77,9 @@ const introFrames = async (label, times) => {
   await page.evaluate(() => window.dispatchEvent(new Event("trama:replay-intro")));
   await page.getByTestId("launch-intro").waitFor();
   for (const time of times) {
+    // Only the intro's own animations: pausing the others would freeze the welcome's buttons mid-transition.
     await page.evaluate((t) => {
-      for (const animation of document.getAnimations()) {
+      for (const animation of document.querySelector('[data-testid="launch-intro"]').getAnimations({ subtree: true })) {
         animation.pause();
         animation.currentTime = t;
       }
@@ -212,6 +213,35 @@ for (const [size, width, height] of sizes) {
 }
 await setTheme("system");
 await page.setViewportSize({ width: 1280, height: 820 });
+// B01: Trama's mark sits in the sidebar's brand slot and on the project picker, in the colors of the provider theme,
+// light and dark. The brand slot's gradient must change with the provider and with the theme.
+const brandLook = (provider, dark) =>
+  page.evaluate(
+    ([name, isDark]) => {
+      if (name) document.documentElement.dataset.provider = name;
+      else delete document.documentElement.dataset.provider;
+      document.documentElement.classList.toggle("dark", isDark);
+    },
+    [provider, dark],
+  );
+const startLook = await page.evaluate(() => ({ provider: document.documentElement.dataset.provider ?? null, dark: document.documentElement.classList.contains("dark") }));
+if ((await page.locator('[data-testid="brand-slot"] [data-trama-mark="glyph"]').count()) !== 1) throw new Error("No Trama mark in the sidebar's brand slot");
+if ((await page.locator("[data-trama-mark]").count()) < 2) throw new Error("No Trama mark on the project picker");
+const markColors = new Set();
+for (const provider of ["codex", "claudeAgent", "grok"]) {
+  for (const dark of [false, true]) {
+    await brandLook(provider, dark);
+    const color = await page.evaluate(() => {
+      const stop = document.querySelector('[data-testid="brand-slot"] [data-trama-mark] stop');
+      return stop ? getComputedStyle(stop).stopColor : null;
+    });
+    if (!color) throw new Error(`No gradient in the brand slot's mark with ${provider}`);
+    markColors.add(color);
+    await shot(`01b-brand-${provider}-${dark ? "dark" : "light"}`);
+  }
+}
+if (markColors.size !== 6) throw new Error(`The mark does not follow the provider theme: ${[...markColors].join(", ")}`);
+await brandLook(startLook.provider, startLook.dark);
 await picker.getByRole("button", { name: "Clona da GitHub" }).click();
 const cloneDialog = page.getByRole("dialog", { name: "Clona da GitHub" });
 await cloneDialog.getByRole("textbox").fill("non è un repository");
@@ -724,6 +754,16 @@ await settings.getByRole("button", { name: /^Collegamenti/ }).first().click();
 await shot("11-connections");
 await settings.getByRole("button", { name: /^Generale/ }).first().click();
 await shot("12-settings");
+// B01: Informazioni shows the mark on its tile with the version, in every provider theme.
+await settings.getByTestId("about-trama").locator('[data-trama-mark="tile"]').waitFor();
+for (const provider of ["codex", "claudeAgent", "grok"]) {
+  for (const dark of [false, true]) {
+    await brandLook(provider, dark);
+    await settings.getByTestId("about-trama").scrollIntoViewIfNeeded();
+    await shot(`12b-about-${provider}-${dark ? "dark" : "light"}`);
+  }
+}
+await brandLook(startLook.provider, startLook.dark);
 // W12, Impostazioni: the theme follows the choice at once.
 await page.getByRole("radio", { name: "Scuro" }).click();
 await page.getByRole("radio", { name: "Scuro", checked: true }).waitFor();
