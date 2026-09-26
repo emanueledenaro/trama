@@ -283,7 +283,7 @@ export function DecisionCard({ requestId }: { requestId: string }) {
       {blocked && blockedWork ? (
         <Field label="Domanda dello sviluppatore">
           <div data-testid="blocked-work">
-            <AgentName agent={blocked} />
+            <AgentName agent={blocked} size={32} />
             <Sep />
             {blockedWork.slice ? `fetta ${blockedWork.slice.sliceId}, ` : ""}incarico {blockedWork.id}
             {blockedQuestion ? <div className="mt-0.5 text-ui-sm text-foreground/90">«{blockedQuestion.question}»</div> : null}

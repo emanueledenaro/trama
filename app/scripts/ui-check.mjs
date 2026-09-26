@@ -488,7 +488,7 @@ await shot("04e5-team-renamed-in-chat");
 const botState = (root) =>
   root.evaluate((el) =>
     [...el.querySelectorAll('[data-testid="agent-bot"]')].map((bot) => ({
-      shape: bot.dataset.shape,
+      shape: `${bot.dataset.shape}/${bot.dataset.variant}`,
       color: bot.style.getPropertyValue("--agent-light"),
       name: bot.dataset.agent,
       d: bot.querySelector('[data-part="blob-0"]')?.getAttribute("d"),

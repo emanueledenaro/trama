@@ -24,6 +24,7 @@ const zPath = (size: number) => {
  */
 export function AgentBot({
   shape,
+  variant = 0,
   color,
   activity,
   seed,
@@ -31,6 +32,8 @@ export function AgentBot({
   className,
 }: {
   shape: BotShape;
+  /** The body's proportions, for developers who would otherwise look alike (`teamBotBodies`). */
+  variant?: number;
   color: AgentColor;
   activity: AgentActivity;
   /** The agent's id, so two bots in the same state do not move in step. */
@@ -47,12 +50,12 @@ export function AgentBot({
   const svg = useRef<SVGSVGElement>(null);
   const handle = useRef<ReturnType<typeof registerBot> | null>(null);
   const previous = useRef<AgentActivity | null>(null);
-  const state = { shape, animation: look.animation, expression: look.expression, followsCursor: look.followsCursor, detail, seed: number };
+  const state = { shape, variant, animation: look.animation, expression: look.expression, followsCursor: look.followsCursor, detail, seed: number };
 
   // The first frame, drawn by React: the still pose of the expression, the same the loop starts from.
   const still = useMemo(
     () => renderPose(botPose({ ...state, t: 0, look: null, moving: false })),
-    [shape, look.animation, look.expression, detail, number],
+    [shape, variant, look.animation, look.expression, detail, number],
   );
 
   useEffect(() => {
@@ -82,7 +85,7 @@ export function AgentBot({
     const move = transitionMove(previous.current, activity);
     previous.current = activity;
     if (move) handle.current?.play(move.animation, move.expression, move.seconds);
-  }, [shape, activity, detail, number]);
+  }, [shape, variant, activity, detail, number]);
 
   // Small bots stay clean: no seam and no fabric under 24 px.
   const detailed = detail !== "low";
@@ -101,6 +104,7 @@ export function AgentBot({
       data-move={look.animation}
       data-agent={seed}
       data-shape={shape}
+      data-variant={variant}
       data-activity={activity}
       data-detail={detail}
       data-testid="agent-bot"

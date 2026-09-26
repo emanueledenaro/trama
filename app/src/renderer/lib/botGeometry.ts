@@ -1,4 +1,4 @@
-import type { BotAnimation, BotExpression, BotShape } from "@shared/agentBot";
+import { type BotAnimation, type BotExpression, type BotShape, bodyAspect } from "@shared/agentBot";
 
 /**
  * The bot's drawing (W16, ADR 0007), as pure functions so a frame can be tested and drawn without animation.
@@ -183,6 +183,8 @@ const EXPRESSIONS: Record<BotExpression, { w: number; h: number; dy: number; rot
 
 export interface PoseInput {
   shape: BotShape;
+  /** The body's proportions (`bodyAspect`): 0, or absent, is the shape as drawn. */
+  variant?: number;
   animation: BotAnimation;
   expression: BotExpression;
   /** Seconds; 0 gives the still frame of the expression. */
@@ -197,7 +199,8 @@ export interface PoseInput {
 }
 
 function eyePair(input: PoseInput, expression: BotExpression, wink: boolean): [EyePose, EyePose] {
-  const place = EYES[input.shape];
+  const aspect = bodyAspect(input.variant ?? 0);
+  const place = { y: EYES[input.shape].y * aspect.y, gap: EYES[input.shape].gap * aspect.x };
   const preset = EXPRESSIONS[expression];
   const grow = input.detail === "low" ? 1.45 : 1;
   // By default the stitches glance up and to the right; the cursor takes over when it is near.
@@ -227,8 +230,9 @@ function eyePair(input: PoseInput, expression: BotExpression, wink: boolean): [E
 
 /** The body form, breathing and slightly soft on its outline when it moves. */
 function bodyBlob(input: PoseInput, count: number): Point[] {
-  const outline = shapeOutline(input.shape, count);
-  if (!input.moving) return outline.map((p) => ({ ...p }));
+  const aspect = bodyAspect(input.variant ?? 0);
+  const outline = shapeOutline(input.shape, count).map((p) => ({ x: p.x * aspect.x, y: p.y * aspect.y }));
+  if (!input.moving) return outline;
   const breath = Math.sin((input.t * TAU) / 3.6 + input.seed);
   const sx = 1 + 0.018 * breath;
   const sy = 1 - 0.012 * breath;

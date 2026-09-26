@@ -34,6 +34,7 @@ export interface BotNodes {
 
 export interface BotState {
   shape: BotShape;
+  variant: number;
   animation: BotAnimation;
   expression: BotExpression;
   followsCursor: boolean;
@@ -184,6 +185,7 @@ function targetPose(instance: Instance, now: number): BotPose {
   const winking = now < instance.winkUntil && current.animation === "idle" && current.expression === "neutral";
   const pose = botPose({
     shape: instance.state.shape,
+    variant: instance.state.variant,
     animation: winking ? "wink" : current.animation,
     expression: current.expression,
     t: 0,

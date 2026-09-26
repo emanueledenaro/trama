@@ -1,5 +1,5 @@
 import { type CSSProperties, useMemo } from "react";
-import { type AgentActivity, agentActivity, botShapeFor, teamBotShapes } from "@shared/agentBot";
+import { type AgentActivity, agentActivity, botShapeFor, teamBotBodies } from "@shared/agentBot";
 import type { Specialist } from "@shared/domain";
 import { agentTag, paletteEntry } from "@shared/identity";
 import { cn } from "@/lib/cn";
@@ -20,21 +20,23 @@ export function agentStyle(agent: Pick<Specialist, "color">): CSSProperties {
   return { "--agent-light": entry.light, "--agent-dark": entry.dark } as CSSProperties;
 }
 
-
-
 const NO_SPECIALISTS: Specialist[] = [];
 
 /** The agent's body within its project, so no two agents of the team look the same, and its state. */
 function useAgentBot(agent: Agent, activity: AgentActivity | undefined) {
   const specialists = useUi((s) => s.app?.project?.document.team.specialists ?? NO_SPECIALISTS);
   const candidates = useUi((s) => s.app?.project?.document.candidates);
-  const shapes = useMemo(() => teamBotShapes(specialists), [specialists]);
-  const shape = (agent.id && shapes.get(agent.id)) || botShapeFor(agent);
+  const reports = useUi((s) => s.app?.project?.candidateReports);
+  const bodies = useMemo(() => teamBotBodies(specialists), [specialists]);
+  const body = (agent.id && bodies.get(agent.id)) || { shape: botShapeFor(agent), variant: 0 };
   const member = agent.id ? specialists.find((s) => s.id === agent.id) : undefined;
-  const state =
-    activity ??
-    (member ? agentActivity(member, { candidates: candidates ?? [] }) : "idle");
-  return { shape, activity: state };
+  // A clearance that new evidence or decisions voided no longer makes the agent wait for the person.
+  const checked = useMemo(
+    () => (candidates ?? []).map((c) => ({ ...c, clearanceValid: !reports?.[c.id]?.clearanceInvalidated })),
+    [candidates, reports],
+  );
+  const state = activity ?? (member ? agentActivity(member, { candidates: checked }) : "idle");
+  return { ...body, activity: state };
 }
 
 export function AgentAvatar({
@@ -54,6 +56,7 @@ export function AgentAvatar({
   return (
     <AgentBot
       shape={bot.shape}
+      variant={bot.variant}
       color={agent.color}
       activity={bot.activity}
       seed={agent.id ?? agent.name}

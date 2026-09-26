@@ -8,7 +8,9 @@ import {
   developerShape,
   presenceActivity,
   ROLE_SHAPES,
-  teamBotShapes,
+  BODY_VARIANTS,
+  bodyAspect,
+  teamBotBodies,
   transitionMove,
 } from "./agentBot";
 import { AGENT_PALETTE } from "./identity";
@@ -64,22 +66,33 @@ describe("agent bot shapes (W16)", () => {
   it("never gives two active agents of a project the same body and color", () => {
     const fixed: Member[] = FIXED_ROLES.map((role, i) => ({ id: `F-${i}`, role, color: AGENT_PALETTE[i % 9]!.color, status: "available", createdAt: "2026-09-01T00:00:00Z" }));
     const developers = Array.from({ length: 30 }, (_, i) => developer(`S-${i}`, AGENT_PALETTE[i % 9]!.color, `2026-09-02T00:00:${String(i).padStart(2, "0")}Z`));
-    const shapes = teamBotShapes([...fixed, ...developers]);
-    const looks = [...fixed, ...developers].map((m) => `${shapes.get(m.id)}:${m.color}`);
+    const bodies = teamBotBodies([...fixed, ...developers]);
+    const look = (m: Member) => `${bodies.get(m.id)!.shape}:${bodies.get(m.id)!.variant}:${m.color}`;
+    const looks = [...fixed, ...developers].map(look);
     expect(new Set(looks).size).toBe(looks.length);
-    // The first six developers all get different bodies, whatever their colors.
-    expect(new Set(developers.slice(0, 6).map((d) => shapes.get(d.id))).size).toBe(6);
+    // The first six developers all get different shapes, whatever their colors.
+    expect(new Set(developers.slice(0, 6).map((d) => bodies.get(d.id)!.shape)).size).toBe(6);
+  });
+
+  it("keeps many developers of one color apart through the body's proportions", () => {
+    const same = Array.from({ length: 6 * BODY_VARIANTS }, (_, i) => developer(`S-${i}`, "teal", `2026-09-02T00:${String(i).padStart(2, "0")}:00Z`));
+    const bodies = teamBotBodies(same);
+    const looks = same.map((d) => `${bodies.get(d.id)!.shape}:${bodies.get(d.id)!.variant}`);
+    expect(new Set(looks).size).toBe(same.length);
+    const aspects = Array.from({ length: BODY_VARIANTS }, (_, v) => JSON.stringify(bodyAspect(v)));
+    expect(new Set(aspects).size).toBe(BODY_VARIANTS);
+    expect(bodyAspect(0)).toEqual({ x: 1, y: 1 });
   });
 
   it("keeps an earlier developer's body when another joins, and ignores removed ones", () => {
     const first = developer("S-A", "blue", "2026-09-01T00:00:00Z");
-    const before = teamBotShapes([first]).get("S-A");
+    const before = teamBotBodies([first]).get("S-A")!.shape;
     const clash = Array.from({ length: 200 }, (_, i) => `S-${i}`).find((id) => developerShape(id) === before)!;
-    const after = teamBotShapes([first, developer(clash, "indigo", "2026-09-03T00:00:00Z")]);
-    expect(after.get("S-A")).toBe(before);
-    expect(after.get(clash)).not.toBe(before);
-    const removed = teamBotShapes([developer("S-A", "blue", "2026-09-01T00:00:00Z", "removed"), developer(clash, "indigo", "2026-09-03T00:00:00Z")]);
-    expect(removed.get(clash)).toBe(before);
+    const after = teamBotBodies([first, developer(clash, "indigo", "2026-09-03T00:00:00Z")]);
+    expect(after.get("S-A")!.shape).toBe(before);
+    expect(after.get(clash)!.shape).not.toBe(before);
+    const removed = teamBotBodies([developer("S-A", "blue", "2026-09-01T00:00:00Z", "removed"), developer(clash, "indigo", "2026-09-03T00:00:00Z")]);
+    expect(removed.get(clash)!.shape).toBe(before);
   });
 });
 
@@ -94,6 +107,9 @@ describe("agent bot state (W16)", () => {
     expect(at(agent({ status: "completed" }), [candidate()])).toBe("waiting");
     expect(at(agent({ status: "completed" }), [candidate({ humanApproval: { actor: "p", fingerprint: "f", at: recent } })])).toBe("done");
     expect(at(agent({ status: "completed" }), [candidate({ clearance: null })])).toBe("done");
+    // A clearance voided by new evidence or decisions, or an older candidate, does not make the agent wait.
+    expect(at(agent({ status: "completed" }), [candidate({ clearanceValid: false })])).toBe("done");
+    expect(at(agent({ status: "completed" }), [candidate(), candidate({ clearance: null })])).toBe("done");
     expect(at(agent({ status: "failed" }))).toBe("blocked");
     expect(at(agent({ status: "stopped" }, "stopped"))).toBe("blocked");
     expect(at(agent({ status: "running", waitingForProvider: { provider: "codex", until: null, since: recent } }, "working"))).toBe("blocked");
