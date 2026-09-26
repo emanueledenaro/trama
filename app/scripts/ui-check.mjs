@@ -962,6 +962,17 @@ for (let attempt = 0; attempt < 60 && !adaRecord; attempt++) {
 if (!adaRecord.includes("feature/carrello") || !adaRecord.includes("src/payments.js")) throw new Error(`Presence not published: ${adaRecord}`);
 if (adaRecord.includes("CONTENUTO PRIVATO")) throw new Error("Presence published a file's content");
 if (presenceGit(presenceRemote, "branch", "--list").includes("presence")) throw new Error("Presence shows up as a branch");
+// G04: the Coordinator reads the presence. "Chi sta toccando i pagamenti?" gets Bea's branch and files from
+// read_presence, and the turn's message carries the presence section with the rules for assigning around colleagues.
+await page.getByText("Ho letto lo studio").first().waitFor({ timeout: 30_000 });
+await composer().fill("[presenza] Chi sta toccando i pagamenti?");
+await page.keyboard.press("Enter");
+const presenceAnswer = page.locator(".chat-row, [data-testid='coordinator-message'], p", { hasText: "Sta toccando i pagamenti: Bea su feature/rimborsi" }).last();
+await presenceAnswer.waitFor({ timeout: 30_000 });
+const presenceReply = await presenceAnswer.innerText();
+if (!presenceReply.includes("src/payments.js") || !presenceReply.includes("Sezione presenza ricevuta")) throw new Error(`Presence answer: ${presenceReply}`);
+await presenceAnswer.scrollIntoViewIfNeeded();
+await shot("16d-presence-coordinator");
 // G02: Gruppo is the picture of who works on what. One row per person and per agent, with identity, active branch,
 // "anche su", the request, the files and the freshness; the person's own switch is in the view, on the right.
 await page.getByRole("button", { name: /^Gruppo/ }).first().click();

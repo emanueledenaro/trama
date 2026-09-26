@@ -16,6 +16,15 @@ Decisione:
 - **Branch attivo.** È il branch del lavoro in focus in Trama, cioè il worktree dell'incarico più recente del task in focus; altrimenti il branch cambiato per ultimo. Gli altri branch cambiati negli ultimi 7 giorni sono "anche su".
 - **La presenza è un'informazione, non un'evidenza.** Chiunque abbia il push può scrivere un riferimento con un altro nome. Trama tratta ogni record dei colleghi come dato non fidato: lo valida, lo tronca, scarta percorsi assoluti o con `..`, e non lo usa per decidere verifiche o unioni.
 
+## Uso da parte del Coordinatore (G04, #177)
+
+Il Coordinatore legge la presenza con lo strumento `read_presence` e la riceve a ogni turno nella sezione "Presenza dei colleghi", finché qualcun altro è al lavoro. Contano i colleghi attivi o inattivi e i loro agenti; un record chiuso non occupa nulla.
+
+- `assign_task` con modifiche rifiuta il lavoro quando un collega tocca file nei moduli dell'incarico. Se il Coordinatore elenca i file che il lavoro toccherà (`expectedFiles`), il rifiuto scatta solo quando uno di quei file è occupato. Il Coordinatore sceglie allora un'altra fetta pronta o rimanda questa. Procede lo stesso solo con le parole della persona in `overlapAcceptedByPerson`. Le regole di M05 e W08 restano: solo fette sbloccate, al massimo tre sviluppatori, solo sviluppatori.
+- Quando un agente della persona tocca gli stessi file di un collega, Trama avvia un turno del Coordinatore dentro il mandato, una volta per sovrapposizione, perché sposti o rimandi il compito con `stop_specialist` e una nuova assegnazione.
+- `propose_goal` segnala chi lavora già a qualcosa di simile, confrontando le parole del compito e del branch dei colleghi con titolo e risultato dell'obiettivo.
+- Alle domande su chi tocca cosa il Coordinatore risponde solo con quello che `read_presence` restituisce. Trama non blocca mai le persone.
+
 ## Verifica
 
 - Test di integrazione con un remoto bare locale (`app/src/main/core/presence.test.ts`): senza consenso nulla arriva al remoto; con il consenso il record contiene branch e percorsi e non il contenuto; un clone e un fetch ordinari non vedono il riferimento come branch; chi ha solo la lettura vede senza scrivere; pausa, chiusura e revoca funzionano; un remoto che rifiuta il namespace (`receive.hideRefs`, lo stesso meccanismo con cui GitHub protegge `refs/pull`) porta alla sola lettura.
