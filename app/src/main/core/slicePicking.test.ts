@@ -116,7 +116,7 @@ function verify(document: ProjectDocument, assignmentId: string) {
   const candidate = declareCandidate(
     document,
     { assignmentId, decisionIds: [decision(document).id], unresolvedChoices: [], externalEffects: [] },
-    { snapshotId: `snap-${assignmentId}`, baseSHA: "base", diff: "+x", changedFiles: ["NOTE.md"], excludedSensitiveFiles: [] },
+    { snapshotId: `snap-${assignmentId}`, baseSHA: "base", diff: "+x", changedFiles: ["NOTE.md"], excludedSensitiveFiles: [], whitespaceErrors: [] },
   );
   for (const check of findAssignment(document, assignmentId)!.requiredChecks) {
     recordEvidence(document, candidate.id, { check, passed: true, command: check, output: "", snapshotId: candidate.snapshotId });
