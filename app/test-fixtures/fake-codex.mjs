@@ -20,6 +20,11 @@ const send = (message) => process.stdout.write(`${JSON.stringify(message)}\n`);
 let threads = 0;
 const toolServers = new Map();
 const receivedByThread = new Map();
+// The first slice Trama lists as ready in the Coordinator's message (M05), as assign_task's slice argument.
+const readySlice = (text) => {
+  const id = text.match(/^- (S\d+) «[^»]*»:[^\n]* pronta\./m)?.[1];
+  return id ? { slice: id } : {};
+};
 
 async function callTool(threadId, name, args) {
   const server = toolServers.get(threadId);
@@ -161,6 +166,43 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
         setTimeout(() => finish(JSON.stringify(answer)), 10);
         return;
       }
+      if (required.includes("tickets")) {
+        // The slicer runs AI Hero's to-tickets (M05): three tracer bullets, the last two blocked only by the first,
+        // so they can run in parallel. A new round after the person's correction splits the last one in two.
+        const skills = params.input.filter((item) => item.type === "skill").map((item) => item.name);
+        if (!skills.includes("to-tickets")) {
+          setTimeout(() => finish("Mi manca la skill to-tickets."), 10);
+          return;
+        }
+        const sources = JSON.parse(text.slice(text.lastIndexOf("Fonti: ") + 7));
+        const correction = text.match(/## Risposta della persona\n(.*)/)?.[1] ?? null;
+        const parent = text.match(/La spec è la issue #(\d+)/)?.[1] ?? null;
+        const tickets = [
+          {
+            title: "Stato in revisione per un ordine pagato annullato",
+            whatToBuild: `Un ordine pagato annullato passa in revisione invece di essere rimborsato. Skill ricevute: ${skills.join(", ")}. Issue genitore: ${parent ?? "nessuna"}.`,
+            acceptanceCriteria: ["Annullare l'ordine pagato 42 lo porta in revisione", "Un ordine non pagato si annulla come prima"],
+            blockedBy: [],
+          },
+          {
+            title: "Il supporto vede gli ordini in revisione",
+            whatToBuild: "La persona del supporto apre l'elenco degli ordini in revisione e ne sceglie uno.",
+            acceptanceCriteria: ["L'ordine 42 compare nell'elenco in revisione"],
+            blockedBy: [1],
+          },
+          {
+            title: "Il cliente sa che l'ordine è in revisione",
+            whatToBuild: "Il cliente vede lo stato in revisione nel riepilogo dell'ordine.",
+            acceptanceCriteria: ["Il riepilogo dell'ordine 42 dice In revisione"],
+            blockedBy: [1],
+          },
+        ];
+        if (correction) {
+          tickets.push({ title: "Il supporto rimborsa l'ordine in revisione", whatToBuild: `Correzione ricevuta: ${correction}`, acceptanceCriteria: ["Il rimborso dell'ordine 42 chiude la revisione"], blockedBy: [2] });
+        }
+        setTimeout(() => finish(JSON.stringify({ sourceSnapshotID: sources.sourceSnapshotID, tickets })), 10);
+        return;
+      }
       if (params.outputSchema?.required?.includes("seams")) {
         // The planner runs AI Hero's to-spec (M04): the seam turn, then the spec turn with the person's answer.
         // Like a real planner it needs the skills: without both skill inputs it answers no JSON.
@@ -260,6 +302,7 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
             done.push("Ho chiesto il piano al pianificatore.");
           } else if (automatic[1] === "assignWork") {
             const assigned = await call("assign_task", {
+              ...readySlice(text),
               specialist: "Ada",
               kind: "agreedTicket",
               objective: "Mandare in revisione gli ordini pagati annullati",
@@ -344,8 +387,11 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
         finish(result.isError ? `Rifiutato: ${result.content[0].text}` : "Ho proposto glossario e ADR dalle decisioni.");
         return;
       }
-      if (text.includes("[assegna]")) {
+      if (text.includes("[assegna")) {
+        // [assegna] or [assegna:<slice>]: without a slice the fake names the first ready one Trama lists (M05).
+        const named = text.match(/\[assegna:(\w+)\]/)?.[1];
         callTool(threadId, "assign_task", {
+          ...(named ? { slice: named } : readySlice(text)),
           specialist: "Ada",
           kind: "agreedTicket",
           objective: "Documenta l'annullamento",

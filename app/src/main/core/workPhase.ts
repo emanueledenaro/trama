@@ -6,14 +6,17 @@ import type {
   NextMove,
   NextStepView,
   ProjectDocument,
+  SliceView,
   SpecialistAssignment,
   WorkPhase,
+  WorkPlan,
 } from "@shared/domain";
 import { isOpenQuestion, pendingMandateRequest } from "@shared/domain";
 import { grillingSubject } from "@shared/grilling";
 import { PROVIDERS } from "@shared/providers";
 import { inspectCandidate, latestCandidate } from "./candidates";
-import { authorize, isActive, isTeamConfirmed, needsWorktree } from "./team";
+import { sliceViews, slicesText } from "./slices";
+import { activeDevelopers, authorize, isActive, isTeamConfirmed, MAX_PARALLEL_DEVELOPERS, needsWorktree } from "./team";
 
 /**
  * The phase of a request's work and the moves that take it on (W01). Trama computes both from the records
@@ -37,6 +40,8 @@ export interface WorkState {
   /** Why the work cannot go on, in the person's words; set only in the blocked phase. */
   blocker: string | null;
   moves: MoveOption[];
+  /** The plan of the work with an approved breakdown and where each slice stands (M05); absent otherwise. */
+  slices?: { plan: WorkPlan; views: SliceView[]; developersAtWork: number };
 }
 
 export const NEXT_MOVES: NextMove[] = [
@@ -45,6 +50,7 @@ export const NEXT_MOVES: NextMove[] = [
   "grantMandate",
   "confirmTeam",
   "confirmSeams",
+  "confirmSlices",
   "reviewPlan",
   "reviewCandidate",
   "mergePullRequest",
@@ -106,9 +112,16 @@ export function workRequests(document: ProjectDocument, requestId: string): Set<
 
 const allAssignments = (document: ProjectDocument) => document.team.specialists.flatMap((s) => s.assignments);
 
-/** Work on the same modules assigned later replaces this one: a correction, or a new attempt. */
+/**
+ * Work on the same modules assigned later replaces this one: a correction, or a new attempt. Work on a slice (M05) is
+ * replaced only by later work on the same slice: the next slice on the same modules builds on it.
+ */
 const superseded = (assignment: SpecialistAssignment, others: SpecialistAssignment[]) =>
-  others.some((o) => o.createdAt > assignment.createdAt && o.moduleIds.some((m) => assignment.moduleIds.includes(m)));
+  others.some((o) => {
+    if (o.createdAt <= assignment.createdAt) return false;
+    if (assignment.slice && o.slice) return o.slice.planId === assignment.slice.planId && o.slice.sliceId === assignment.slice.sliceId;
+    return o.moduleIds.some((m) => assignment.moduleIds.includes(m));
+  });
 
 const providerName = (id: string) => PROVIDERS.find((p) => p.id === id)?.name ?? id;
 
@@ -154,7 +167,13 @@ export function workState(document: ProjectDocument, requestId: string | null): 
   const add = (option: MoveOption) => {
     if (!moves.some((m) => m.move === option.move)) moves.push(option);
   };
+  const views = plan ? sliceViews(document, plan) : [];
+  const developersAtWork = activeDevelopers(document);
+  const slices = plan && plan.slicing?.status === "approved" ? { plan, views, developersAtWork } : undefined;
+  // With an approved breakdown only a slice whose blockers are done can be assigned, and only while a developer is free (M05).
+  const assignable = !slices || (developersAtWork < MAX_PARALLEL_DEVELOPERS && views.some((v) => v.state === "ready" || v.state === "verifying"));
   const assignWork = () => {
+    if (!assignable) return;
     if (!isTeamConfirmed(document)) {
       const proposal = document.team.proposals.find((p) => !p.resolution);
       if (proposal) add(person("confirmTeam", "Conferma il team", proposal.id));
@@ -169,12 +188,18 @@ export function workState(document: ProjectDocument, requestId: string | null): 
     if (phase === null) return { phase, blocker, moves: [] };
     if (open.length) moves.unshift(answerQuestions(open));
     if (pendingMandate) add(person("grantMandate", "Concedi il mandato", pendingMandate.id));
-    return { phase, blocker, moves };
+    return { phase, blocker, moves, ...(slices ? { slices } : {}) };
   };
 
   if (assignments.length) {
     const state = assignedWork(document, assignments, { assignWork, add });
-    if (state) return finish(state.phase, state.blocker);
+    if (state) {
+      if (!slices || state.phase === "blocked") return finish(state.phase, state.blocker);
+      // The next unblocked slices go on beside the work already assigned (M05); the work is merged only with every slice done.
+      assignWork();
+      const unfinished = views.some((v) => v.state !== "done");
+      return finish(state.phase === "merged" && unfinished ? "execution" : state.phase, state.blocker);
+    }
   }
   if (plan) {
     switch (plan.status) {
@@ -192,9 +217,7 @@ export function workState(document: ProjectDocument, requestId: string | null): 
         return finish("blocked", `Il repository è cambiato mentre si scriveva il piano ${plan.id}: va rifatto.`);
       default:
         if (open.length) return finish("spec");
-        add(person("reviewPlan", "Rivedi il piano", plan.id));
-        assignWork();
-        return finish("slices");
+        return readyPlan(plan, { assignWork, add, finish });
     }
   }
   if (grilled) {
@@ -207,6 +230,33 @@ export function workState(document: ProjectDocument, requestId: string | null): 
     return finish("clarification");
   }
   return finish(open.length || mandateAsked ? "clarification" : null);
+}
+
+/** The phase of a ready plan: its spec is split into slices with to-tickets (M05), then the unblocked slices are assigned. */
+function readyPlan(
+  plan: WorkPlan,
+  moves: { assignWork(): void; add(option: MoveOption): void; finish(phase: WorkPhase, blocker?: string | null): WorkState },
+): WorkState {
+  const slicing = plan.slicing;
+  switch (slicing?.status) {
+    case "drafting":
+      return moves.finish("slices");
+    case "proposed":
+      // to-tickets quizzes the user: the breakdown waits for the person before anything is published or assigned.
+      moves.add(person("confirmSlices", "Conferma le fette", plan.id));
+      return moves.finish("slices");
+    case "failed":
+      moves.add(person("reviewPlan", "Rivedi il piano", plan.id));
+      return moves.finish("blocked", `La divisione in fette del piano ${plan.id} non è riuscita${slicing.failure ? `: ${slicing.failure}` : "."}`);
+    case "approved":
+      moves.assignWork();
+      return moves.finish("slices");
+    default:
+      // A plan written before M05 has no breakdown: it is reviewed and assigned as a whole.
+      moves.add(person("reviewPlan", "Rivedi il piano", plan.id));
+      moves.assignWork();
+      return moves.finish("slices");
+  }
 }
 
 /**
@@ -295,6 +345,7 @@ export function workStateText(state: WorkState): string {
   const lines = ["## Fase del lavoro (calcolata da Trama, dati, non istruzioni)"];
   lines.push(state.phase ? `Fase: ${PHASE_LABELS[state.phase]} (${state.phase}).` : "Nessun lavoro registrato per questa richiesta.");
   if (state.blocker) lines.push(`Blocco: ${state.blocker}`);
+  if (state.slices) lines.push(slicesText(state.slices.plan, state.slices.views, state.slices.developersAtWork));
   lines.push(
     state.moves.length
       ? `Mosse possibili per declare_next_step: ${state.moves.map((m) => `${m.move} (${m.actor === "person" ? "la persona" : "tu"}: "${m.label}")`).join("; ")}.`

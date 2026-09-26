@@ -76,6 +76,11 @@ export function normalizeDocument(raw: Partial<ProjectDocument>, projectId: stri
       plan.status = "failed";
       plan.failure = "La preparazione si è interrotta prima della fine: chiedi di nuovo il piano.";
     }
+    // A breakdown still being drawn lost its slicer (M05): the person asks for it again from the plan card.
+    if (plan.slicing?.status === "drafting") {
+      plan.slicing.status = "failed";
+      plan.slicing.failure = "La divisione in fette si è interrotta prima della fine: chiedila di nuovo.";
+    }
   }
   return document;
 }

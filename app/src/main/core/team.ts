@@ -124,6 +124,14 @@ export function findSpecialist(document: ProjectDocument, reference: string): Sp
   return document.team.specialists.find((s) => key(s.name) === key(reference)) ?? null;
 }
 
+/** At most this many developers work at the same time in a project (spec #137, Q5); the fixed roles do not count. */
+export const MAX_PARALLEL_DEVELOPERS = 3;
+
+/** Developers at work now: developers with an active assignment. */
+export function activeDevelopers(document: ProjectDocument): number {
+  return document.team.specialists.filter((s) => s.role === "developer" && s.status !== "removed" && s.assignments.some(isActive)).length;
+}
+
 export function activeAssignments(document: ProjectDocument): SpecialistAssignment[] {
   return document.team.specialists.flatMap((s) => s.assignments.filter(isActive));
 }
@@ -365,6 +373,8 @@ export interface AssignmentOrder {
   tools: SpecialistTool[];
   requiredChecks: string[];
   instructions: string;
+  /** The slice of an approved breakdown the work delivers (M05); the caller checks that it may start. */
+  slice?: { planId: string; sliceId: string } | null;
 }
 
 function requireIndependent(document: ProjectDocument, moduleIds: string[], specialistId: string): void {
@@ -408,6 +418,12 @@ export function assign(
   }
   if (pending.length) throw new TeamError("dependencies_pending", `These assignments are not completed yet: ${pending.join(", ")}.`);
   requireIndependent(document, moduleIds, specialist.id);
+  if (specialist.role === "developer" && activeDevelopers(document) >= MAX_PARALLEL_DEVELOPERS) {
+    throw new TeamError(
+      "parallel_limit",
+      `${MAX_PARALLEL_DEVELOPERS} developers are already at work: assign more when one of them ends (spec #137).`,
+    );
+  }
   const decisionVersions: Record<string, number> = {};
   for (const id of cleaned(order.decisionIds ?? [])) {
     const decision = document.decisions.find((d) => d.id === id);
@@ -434,6 +450,7 @@ export function assign(
       instructions,
       mandateVersion,
       workspace: null,
+      ...(order.slice ? { slice: order.slice } : {}),
     },
     now,
   );
@@ -459,6 +476,7 @@ type AssignmentFields = Pick<
   | "mandateVersion"
   | "workspace"
   | "duty"
+  | "slice"
 >;
 
 /** New work of a specialist: the assignment starts in preparation and the specialist is at work. */

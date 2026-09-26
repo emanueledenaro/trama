@@ -798,6 +798,14 @@ export function PlanCard({ planId }: { planId: string }) {
           </span>
         ) : plan.status === "seams" ? (
           <Badge tone="warning">Seam da rivedere</Badge>
+        ) : plan.status === "ready" && plan.slicing?.status === "drafting" ? (
+          <span className="flex items-center gap-1.5 text-ui-sm text-muted-foreground">
+            <Spinner /> Divisione in fette
+          </span>
+        ) : plan.status === "ready" && plan.slicing?.status === "proposed" ? (
+          <Badge tone="warning">Fette da rivedere</Badge>
+        ) : plan.status === "ready" && plan.slicing?.status === "approved" ? (
+          <Badge tone="success">Fette confermate</Badge>
         ) : plan.status === "stale" ? (
           <Badge tone="warning">Da rivalutare</Badge>
         ) : plan.status === "failed" ? (

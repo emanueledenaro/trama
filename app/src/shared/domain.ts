@@ -125,13 +125,14 @@ export interface FocusView {
   queue: FocusTask[];
 }
 
-/** A move that takes the work on: the first eight are the person's, the last three the Coordinator's (W01). */
+/** A move that takes the work on: the first nine are the person's, the last three the Coordinator's (W01). */
 export type NextMove =
   | "answerQuestions"
   | "confirmUnderstanding"
   | "grantMandate"
   | "confirmTeam"
   | "confirmSeams"
+  | "confirmSlices"
   | "reviewPlan"
   | "reviewCandidate"
   | "mergePullRequest"
@@ -408,6 +409,8 @@ export interface SpecialistAssignment {
   reportedStatus: AssignmentStatus | null;
   /** Set when Trama started this work of a fixed role by itself (W11); absent for work the Coordinator assigned. */
   duty?: AssignmentDuty | null;
+  /** The slice of the plan's approved breakdown this work delivers (M05); absent for work outside one. */
+  slice?: { planId: string; sliceId: string } | null;
 }
 
 /** The AI Hero skill a fixed role runs when Trama starts its work by itself (W11). */
@@ -733,6 +736,8 @@ export interface WorkPlan {
   proposal: PlanProposal | null;
   /** The plan as a spec, written with AI Hero's to-spec skill (M04); absent in plans written before it. */
   spec?: PlanSpec | null;
+  /** The spec split into vertical slices with AI Hero's to-tickets skill (M05); absent before the spec is written. */
+  slicing?: PlanSlicing | null;
   /** Set when the person corrected the proposal or the spec. */
   editedAt?: string | null;
   failure: string | null;
@@ -785,6 +790,47 @@ export interface PlanSpec {
   issue: { number: number; url: string; at: string } | null;
   /** Why the last publication or update on GitHub did not succeed. */
   publishFailure: string | null;
+}
+
+/** A ticket of to-tickets (M05): a tracer-bullet vertical slice with the tickets that block it. */
+export interface SliceTicket {
+  /** S1, S2, ... in dependency order: blockers first. */
+  id: string;
+  title: string;
+  /** The end-to-end behaviour the slice makes work, from the person's perspective. */
+  whatToBuild: string;
+  acceptanceCriteria: string[];
+  /** Ids of the slices that must be done before this one can start; empty when it can start immediately. */
+  blockedBy: string[];
+  /** The GitHub issue the slice was published as; null while it stays in Trama. */
+  issue: { number: number; url: string; at: string } | null;
+}
+
+/**
+ * The spec split with AI Hero's to-tickets skill (M05). drafting: the slicer works; proposed: the breakdown waits
+ * for the person, as to-tickets quizzes the user; approved: Trama published it and assigns its unblocked slices.
+ */
+export interface PlanSlicing {
+  status: "drafting" | "proposed" | "approved" | "failed";
+  tickets: SliceTicket[];
+  /** The person's correction of the last breakdown, which the next draft receives. */
+  feedback: string | null;
+  approvedAt: string | null;
+  failure: string | null;
+  /** Why the publication on GitHub did not fully succeed. */
+  publishFailure: string | null;
+}
+
+/** Where a slice of an approved breakdown stands, computed by Trama from its assignments and candidates (M05). */
+export type SliceState = "blocked" | "ready" | "working" | "verifying" | "done";
+
+export interface SliceView {
+  id: string;
+  state: SliceState;
+  /** Blocking slices that are not done yet. */
+  waitingFor: string[];
+  /** The latest assignment of the slice, when there is one. */
+  assignmentId: string | null;
 }
 
 /** A behavior example of a goal: accepted means it must happen, refused means it must not. */
@@ -993,6 +1039,8 @@ export interface ActiveProjectState {
   candidateReports: Record<string, CandidateReport>;
   /** The next step of the latest request of each dialog, by request id, while it is still allowed (W01). */
   nextSteps: Record<string, NextStepView>;
+  /** Where each slice of an approved breakdown stands, by plan id (M05); computed by the main process. */
+  sliceViews?: Record<string, SliceView[]>;
   /** The task in focus and the queue, computed by the main process (W02). */
   focus: FocusView;
   /** The AI Hero skills Trama copies are present in the project. */

@@ -94,6 +94,7 @@ import { orderByAttention, summarizeProject, unreadableProject } from "./core/ov
 import {
   closeIssue,
   commentOnIssue,
+  addBlockedBy,
   createIssue,
   listIssues,
   readGitHubRepository,
@@ -122,6 +123,7 @@ import {
 } from "./core/pact";
 import { availableChecks, CHECKS, lendNodeDependencies, type ReadOnlyCheck, runReadOnlyCheck } from "./core/checks";
 import { checkSpecSections, PlanError, type PlannerSkills, plannerTurn, readPlannerAnswer, SPEC_TRIAGE_LABEL, specMarkdown } from "./core/plan";
+import { draftSlicing, readSlicerAnswer, sliceViews, slicerTurn, TICKET_TRIAGE_LABEL, ticketMarkdown } from "./core/slices";
 import { approvePactDemo, inspectPactDemo, runPactDemo } from "./core/pactDemo";
 import { readRepositoryFile, scanRepository } from "./core/repositoryScanner";
 import { messageStyle } from "./core/messageStyle";
@@ -493,6 +495,9 @@ export class TramaController {
       project.document.candidates.map((c) => [c.id, candidateReport(project.document, c, project.snapshot.headSHA)]),
     );
     project.nextSteps = nextStepViews(project.document);
+    project.sliceViews = Object.fromEntries(
+      project.document.plans.filter((p) => p.slicing?.status === "approved").map((p) => [p.id, sliceViews(project.document, p)]),
+    );
     project.focus = focusView(project.document);
     project.pactDemoBlockers = project.document.pactDemo ? inspectPactDemo(project.document, project.document.pactDemo) : [];
     this.recordCompletedExercises(project);
@@ -3164,6 +3169,8 @@ export class TramaController {
       appendEvent(project.document, "person", { type: "activity", title: `Spec del piano ${plan.id} corretta`, detail: plan.spec.sections.title, tone: "info" }, plan.requestId);
       this.changed();
       if (plan.spec.issue) void this.updatePublishedSpec(project, plan);
+      // A breakdown the person has not approved yet is redrawn on the corrected spec (M05).
+      if (plan.status === "ready" && (plan.slicing?.status === "proposed" || plan.slicing?.status === "failed")) this.startSlicing(project, plan, null);
       return;
     }
     if (!plan?.proposal) throw new DomainError("Il piano non ha ancora una proposta da correggere.");
@@ -3224,7 +3231,7 @@ export class TramaController {
     if (!spec?.sections || spec.issue || !repository) return;
     try {
       const issue = await createIssue(repository, spec.sections.title, specMarkdown(spec.sections), [SPEC_TRIAGE_LABEL]);
-      spec.issue = { ...issue, at: new Date().toISOString() };
+      spec.issue = { number: issue.number, url: issue.url, at: new Date().toISOString() };
       spec.publishFailure = null;
       appendEvent(
         project.document,
@@ -3311,6 +3318,8 @@ export class TramaController {
       }
       plan.status = "ready";
       await this.publishSpec(project, plan);
+      // The spec written, to-tickets splits it into vertical slices (M05).
+      this.startSlicing(project, plan, null);
     } catch (error) {
       if (plan.status !== "planning") return;
       plan.status = "failed";
@@ -3318,6 +3327,151 @@ export class TramaController {
       void this.noticeIfBlocked(project, provider, plan.failure, plan.requestId);
     } finally {
       this.planners.delete(plan.id);
+      client.stop();
+      plan.updatedAt = new Date().toISOString();
+      this.changedIn(project);
+      this.continueWork(project, plan.requestId, "planEnded");
+    }
+  }
+
+  // MARK: Slices
+
+  /** Starts a round of the slicer on the ready spec: the first draft, or the next one with the person's correction. */
+  private startSlicing(project: ActiveProjectState, plan: WorkPlan, feedback: string | null): void {
+    if (plan.status !== "ready" || !plan.spec?.sections || plan.slicing?.status === "drafting" || plan.slicing?.status === "approved") return;
+    plan.slicing = draftSlicing(plan.slicing, feedback);
+    plan.updatedAt = new Date().toISOString();
+    this.changedIn(project);
+    void this.runSlicer(project, plan);
+  }
+
+  /**
+   * The person answers to-tickets' quiz on the plan card (M05): the breakdown as proposed, which Trama then publishes
+   * and starts assigning, or a correction in their own words for a new round of the slicer.
+   */
+  async answerSlices(input: { planId: string; confirmed: boolean; note: string | null }): Promise<void> {
+    const project = this.requireProject();
+    const plan = project.document.plans.find((p) => p.id === input.planId);
+    const slicing = plan?.slicing;
+    if (!plan || slicing?.status !== "proposed") throw new DomainError("Il piano non aspetta una risposta sulle fette.");
+    const note = input.note?.trim() || null;
+    if (!input.confirmed && !note) throw new DomainError("Scrivi cosa cambiare nelle fette.");
+    const now = new Date().toISOString();
+    appendEvent(
+      project.document,
+      "person",
+      { type: "activity", title: input.confirmed ? `Fette del piano ${plan.id} confermate` : `Fette del piano ${plan.id} corrette`, detail: input.confirmed ? null : note, tone: "info" },
+      plan.requestId,
+    );
+    if (!input.confirmed) {
+      this.startSlicing(project, plan, note);
+      return;
+    }
+    slicing.status = "approved";
+    slicing.approvedAt = now;
+    slicing.failure = null;
+    plan.updatedAt = now;
+    this.changed();
+    await this.publishSlices(project, plan);
+    this.continueWork(project, plan.requestId, "planEnded");
+  }
+
+  /** The person asks again for the slices of a ready spec: after a failed round, or for a plan written before M05. */
+  slicePlan(planId: string): void {
+    const project = this.requireProject();
+    const plan = project.document.plans.find((p) => p.id === planId);
+    if (!plan?.spec?.sections || plan.status !== "ready") throw new DomainError("Il piano non ha una spec pronta da dividere in fette.");
+    if (plan.slicing && plan.slicing.status !== "failed") throw new DomainError("Le fette del piano sono già in preparazione o proposte.");
+    this.startSlicing(project, plan, null);
+  }
+
+  /**
+   * to-tickets' publication of the approved breakdown: one GitHub issue per slice in dependency order, blockers first,
+   * with the ready-for-agent label, the spec as parent and the blocking issues, also as GitHub's native dependency.
+   * Without GitHub the slices stay in Trama. A retry publishes only the slices still missing.
+   */
+  private async publishSlices(project: ActiveProjectState, plan: WorkPlan): Promise<void> {
+    const slicing = plan.slicing;
+    const repository = this.specRepository(project);
+    if (slicing?.status !== "approved" || !repository) return;
+    const ids = new Map<string, number>();
+    const problems: string[] = [];
+    for (const ticket of slicing.tickets) {
+      if (ticket.issue) continue;
+      try {
+        const issue = await createIssue(repository, ticket.title, ticketMarkdown(ticket, slicing.tickets, plan.spec?.issue?.number ?? null), [TICKET_TRIAGE_LABEL]);
+        ticket.issue = { number: issue.number, url: issue.url, at: new Date().toISOString() };
+        if (issue.id !== undefined) ids.set(ticket.id, issue.id);
+        for (const blocker of ticket.blockedBy) {
+          const blockingId = ids.get(blocker);
+          if (blockingId === undefined) continue;
+          await addBlockedBy(repository, issue.number, blockingId).catch((error: unknown) => {
+            problems.push(`#${issue.number} bloccata da ${blocker} solo nel testo: ${classifyGitHubError((error as Error).message).message}`);
+          });
+        }
+      } catch (error) {
+        problems.push(`La fetta ${ticket.id} non è stata pubblicata: ${classifyGitHubError((error as Error).message).message}`);
+        // A later slice would reference a blocker that has no issue: the rest waits for a retry.
+        break;
+      }
+    }
+    slicing.publishFailure = problems.length ? problems.join(" ") : null;
+    const published = slicing.tickets.filter((t) => t.issue).map((t) => `#${t.issue!.number}`);
+    if (published.length) {
+      appendEvent(
+        project.document,
+        "trama",
+        { type: "activity", title: `Fette del piano ${plan.id} pubblicate come issue`, detail: published.join(", "), tone: "tool" },
+        plan.requestId,
+      );
+      void this.refreshGitHub();
+    }
+    this.changedIn(project);
+  }
+
+  /** The person publishes the slices that are still only in Trama: GitHub was connected later, or a publication failed. */
+  async publishPlanSlices(planId: string): Promise<void> {
+    const project = this.requireProject();
+    const plan = project.document.plans.find((p) => p.id === planId);
+    if (plan?.slicing?.status !== "approved") throw new DomainError("Il piano non ha fette approvate da pubblicare.");
+    if (!this.specRepository(project)) throw new DomainError("GitHub non è collegato: le fette restano in Trama.");
+    await this.publishSlices(project, plan);
+    if (plan.slicing.publishFailure) throw new DomainError(plan.slicing.publishFailure);
+  }
+
+  /** Runs a round of the slicer with AI Hero's to-tickets (M05); the breakdown then waits for the person. */
+  private async runSlicer(project: ActiveProjectState, plan: WorkPlan): Promise<void> {
+    const document = project.document;
+    const slicing = plan.slicing;
+    if (slicing?.status !== "drafting") return;
+    const key = `${plan.id}:slices`;
+    const provider = this.coordinatorProvider(document);
+    const model = document.coordinator.threadModel ?? this.coordinatorModel(document, provider);
+    const client = createRuntime(provider, { executable: provider === "codex" ? this.host.codexExecutable : null, requestTimeoutMs: 15_000 });
+    this.planners.set(key, client);
+    try {
+      if (!model) throw new Error("Nessun modello disponibile per dividere il lavoro in fette.");
+      const turn = slicerTurn(await this.nativeSkill("to-tickets"), provider === "codex", { plan, snapshot: project.snapshot });
+      const opening = await client.openThread({ model, cwd: project.rootPath, developerInstructions: turn.developerInstructions, ephemeral: true });
+      const raw = await client.runTurn({
+        threadId: opening.threadId,
+        prompt: turn.prompt,
+        cwd: project.rootPath,
+        model,
+        outputSchema: turn.outputSchema,
+        skills: turn.skills,
+        onEvent: () => undefined,
+      });
+      if (plan.slicing !== slicing || slicing.status !== "drafting") return; // replaced meanwhile: a late result does not come back
+      slicing.tickets = readSlicerAnswer(extractJsonAnswer(raw), turn.sources.sourceSnapshotID);
+      slicing.status = "proposed";
+    } catch (error) {
+      if (plan.slicing !== slicing || slicing.status !== "drafting") return;
+      slicing.status = "failed";
+      slicing.failure = (error as Error).message;
+      void this.noticeIfBlocked(project, provider, slicing.failure, plan.requestId);
+    } finally {
+      if (this.planners.get(key) === client) this.planners.delete(key);
       client.stop();
       plan.updatedAt = new Date().toISOString();
       this.changedIn(project);

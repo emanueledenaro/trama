@@ -585,6 +585,28 @@ describe("TramaController", () => {
     const activities = document.events.flatMap((e) => (e.content.type === "activity" ? [e.content.title] : []));
     expect(activities).toContain(`Seam del piano ${plan.id} confermati`);
 
+    // M05: the written spec goes to the slicer, which runs to-tickets; the breakdown waits for the person.
+    await until(() => plan.slicing?.status === "proposed");
+    expect(plan.slicing!.tickets.map((t) => [t.id, t.blockedBy])).toEqual([
+      ["S1", []],
+      ["S2", ["S1"]],
+      ["S3", ["S1"]],
+    ]);
+    expect(plan.slicing!.tickets[0]!.whatToBuild).toContain("Skill ricevute: to-tickets. Issue genitore: nessuna.");
+    await expect(controller!.answerSlices({ planId: plan.id, confirmed: false, note: " " })).rejects.toThrow(/cosa cambiare/);
+    // A correction starts a new round with the previous breakdown and the person's words.
+    await controller!.answerSlices({ planId: plan.id, confirmed: false, note: "Aggiungi il rimborso del supporto" });
+    expect(plan.slicing!.status).toBe("drafting");
+    await until(() => plan.slicing?.status === "proposed");
+    expect(plan.slicing!.tickets).toHaveLength(4);
+    expect(plan.slicing!.tickets[3]).toMatchObject({ blockedBy: ["S2"], whatToBuild: "Correzione ricevuta: Aggiungi il rimborso del supporto" });
+    await controller!.answerSlices({ planId: plan.id, confirmed: true, note: null });
+    // Without GitHub the slices stay in Trama, as the plan's slices.
+    expect(plan.slicing).toMatchObject({ status: "approved", publishFailure: null });
+    expect(plan.slicing!.tickets.every((t) => t.issue === null)).toBe(true);
+    await expect(controller!.publishPlanSlices(plan.id)).rejects.toThrow(/GitHub non è collegato/);
+    expect(controller!.snapshot.project!.sliceViews![plan.id]!.map((v) => v.state)).toEqual(["ready", "blocked", "blocked", "blocked"]);
+
     await controller!.stop();
     controller = new TramaController(data, {
       publish: () => undefined,
@@ -600,6 +622,7 @@ describe("TramaController", () => {
     await until(() => controller!.snapshot.project?.phase.kind === "ready" || controller!.snapshot.project?.phase.kind === "unavailable");
     const reopened = controller.snapshot.project!.document.plans[0]!;
     expect(reopened).toMatchObject({ id: plan.id, status: "ready", spec: { seams: plan.spec!.seams, sections: plan.spec!.sections, issue: null } });
+    expect(reopened.slicing).toEqual(plan.slicing);
   }, 60_000);
 
   it("publishes the spec as a GitHub issue with the ready-for-agent label when GitHub is connected (M04)", async () => {
@@ -640,6 +663,24 @@ describe("TramaController", () => {
       expect(patched).toContain("repos/trama-fixture/ordini-finti/issues/7");
       expect(patched).toContain("title=Revisione degli ordini pagati annullati");
       expect(plan.spec!.publishFailure).toBeNull();
+
+      // M05: the approved slices become issues in dependency order, with the spec as parent and native blocking links.
+      await until(() => plan.slicing?.status === "proposed");
+      expect(plan.slicing!.tickets[0]!.whatToBuild).toContain("Issue genitore: 7.");
+      await controller!.answerSlices({ planId: plan.id, confirmed: true, note: null });
+      expect(plan.slicing!.tickets.map((t) => t.issue?.number)).toEqual([8, 9, 10]);
+      expect(plan.slicing!.publishFailure).toBeNull();
+      const tickets = calls().filter((c) => c.includes("POST") && c.includes("repos/trama-fixture/ordini-finti/issues")).slice(1);
+      expect(tickets.map((c) => c.find((a) => a.startsWith("title=")))).toEqual(plan.slicing!.tickets.map((t) => `title=${t.title}`));
+      for (const ticket of tickets) expect(ticket).toContain("labels[]=ready-for-agent");
+      expect(tickets[1]!.find((a) => a.startsWith("body="))).toMatch(/^body=## Parent\n\n#7\n\n## What to build\n\n.*## Blocked by\n\n- #8$/s);
+      const links = calls().filter((c) => c.some((a) => a.endsWith("/dependencies/blocked_by")));
+      expect(links.map((c) => [c.find((a) => a.includes("/dependencies/")), c.at(-1)])).toEqual([
+        ["repos/trama-fixture/ordini-finti/issues/9/dependencies/blocked_by", "issue_id=1008"],
+        ["repos/trama-fixture/ordini-finti/issues/10/dependencies/blocked_by", "issue_id=1008"],
+      ]);
+      // The spec's issue, the parent, is not modified by the publication.
+      expect(calls().filter((c) => c.includes("PATCH"))).toHaveLength(1);
     } finally {
       // Background GitHub refreshes must reach the fake gh only: stop, wait until it has been quiet, then restore PATH.
       await controller?.stop();
