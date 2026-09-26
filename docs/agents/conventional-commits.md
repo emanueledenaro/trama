@@ -6,7 +6,7 @@ Il repository verifica [Conventional Commits 1.0.0](https://www.conventionalcomm
 
 - **Ogni commit della pull request, compresi i merge.** La prima riga segue `<tipo>[(ambito)][!]: <descrizione>`, con tipo tra `feat`, `fix`, `docs`, `refactor`, `test`, `build`, `ci`, `chore`, `perf`, `style`, `revert`.
 - **Il titolo della pull request**, nello stesso formato.
-- **Il nome del branch**: `feature/`, `bugfix/` o `hotfix/` seguiti da parole minuscole in inglese separate da trattini, per esempio `feature/search-palette`.
+- **Il nome del branch**, secondo Conventional Branch 1.1.0: regole ed esempi in `docs/agents/branch-naming.md`.
 
 Il job fallisce con un messaggio che indica il commit (con lo sha breve), il titolo o il branch non conforme, e il formato atteso.
 

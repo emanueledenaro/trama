@@ -23,7 +23,7 @@ function reportAndExit(results) {
     console.error(`  - ${failure.reason}`);
   }
   console.error(
-    '\nSee docs/agents/conventional-commits.md for the expected format.',
+    '\nSee docs/agents/conventional-commits.md and docs/agents/branch-naming.md for the expected format.',
   );
   process.exit(1);
 }

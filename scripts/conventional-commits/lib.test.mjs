@@ -40,30 +40,49 @@ test('rejects an uppercase type', () => {
   assert.equal(checkHeader('Feat(app): add the search palette').ok, false);
 });
 
-test('accepts a valid feature branch name', () => {
-  assert.equal(checkBranchName('feature/search-palette').ok, true);
-});
+// Conventional Branch 1.1.0 conformance fixtures, from
+// https://github.com/conventional-branch/conventional-branch/blob/main/tests/fixtures.json
+const BRANCH_FIXTURES = [
+  ['main', true, 'trunk branch'],
+  ['master', true, 'trunk branch'],
+  ['develop', true, 'trunk branch'],
+  ['feature/add-login-page', true, 'new feature'],
+  ['feat/add-login-page', true, 'short alias for feature'],
+  ['bugfix/fix-header-bug', true, 'bug fix'],
+  ['fix/header-bug', true, 'short alias for bugfix'],
+  ['hotfix/security-patch', true, 'urgent fix'],
+  ['release/v1.2.0', true, 'release with dotted version'],
+  ['chore/update-dependencies', true, 'non-code task'],
+  ['feature/issue-123-new-login', true, 'feature with ticket number'],
+  ['chore/123', true, 'digits-only description segment'],
+  ['feature/a', true, 'single-character description'],
+  ['ai/refactor-auth-flow', true, 'generic AI agent prefix'],
+  ['claude/security-patch', true, 'Claude Code by Anthropic'],
+  ['codex/optimize-query', true, 'OpenAI Codex'],
+  ['copilot/add-login-page', true, 'GitHub Copilot'],
+  ['cursor/fix-header-bug', true, 'Cursor'],
+  ['Feature/Add-Login', false, 'uppercase letters not allowed'],
+  ['Main', false, 'trunk branch must be lowercase'],
+  ['feature/new--login', false, 'consecutive hyphens not allowed'],
+  ['feature/-new-login', false, 'leading hyphen in description'],
+  ['feature/new-login-', false, 'trailing hyphen in description'],
+  ['feature/new..login', false, 'consecutive dots not allowed'],
+  ['feature/.new', false, 'leading dot in description'],
+  ['feature/new.', false, 'trailing dot in description'],
+  ['release/v1.-2.0', false, 'hyphen adjacent to dot'],
+  ['fix/header bug', false, 'spaces not allowed'],
+  ['fix/header_bug', false, 'underscores not allowed'],
+  ['unknown/some-task', false, 'unknown prefix type'],
+  ['feature', false, 'prefixed type without a description'],
+  ['feature/', false, 'empty description'],
+  ['/add-login', false, 'missing type'],
+  ['feature/a/b', false, 'description must not contain a slash'],
+  // Repo-specific case: a plain docs/ prefix is not part of Conventional Branch.
+  ['docs/old-tickets-audit', false, 'unknown prefix type'],
+];
 
-test('accepts a valid branch name with digits', () => {
-  assert.equal(checkBranchName('bugfix/fix-crash-42').ok, true);
-});
-
-test('accepts a valid hotfix branch name', () => {
-  assert.equal(checkBranchName('hotfix/guard-reveal-paths').ok, true);
-});
-
-test('rejects a branch without an allowed prefix', () => {
-  assert.equal(checkBranchName('docs/old-tickets-audit').ok, false);
-});
-
-test('rejects an uppercase branch name', () => {
-  assert.equal(checkBranchName('feature/Search-Palette').ok, false);
-});
-
-test('rejects a claude-prefixed branch name', () => {
-  assert.equal(checkBranchName('claude/c-tickets-audit-x').ok, false);
-});
-
-test('rejects a branch with underscores', () => {
-  assert.equal(checkBranchName('feature/search_palette').ok, false);
-});
+for (const [branch, valid, reason] of BRANCH_FIXTURES) {
+  test(`branch "${branch}" is ${valid ? 'valid' : 'invalid'}: ${reason}`, () => {
+    assert.equal(checkBranchName(branch).ok, valid);
+  });
+}
