@@ -59,7 +59,7 @@ export const TRAMA_FLOWS: Readonly<Record<string, string>> = {
   "to-tickets": "Fette verticali del piano",
   implement: "Incarico a uno sviluppatore, con implement e tdd",
   tdd: "Incarico a uno sviluppatore, con implement e tdd",
-  "code-review": "Revisione tecnica del candidato",
+  "code-review": "Revisione del candidato e focus mode",
   triage: "Triage delle issue, dal ruolo Bug triage e debugger",
   "diagnosing-bugs": "Diagnosi di un difetto, dal ruolo Bug triage e debugger",
   "improve-codebase-architecture": "Revisione dell'architettura, dal ruolo Clean Code",

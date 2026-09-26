@@ -38,7 +38,7 @@ const FLOW_STARTS: Readonly<Record<string, string>> = {
   "to-tickets": "Trama's planner runs it on a written spec and shows the slices on the plan card; without a plan, start with prepare_plan",
   implement: "assign_task to a developer: one approved slice per assignment, or the whole piece of work when it fits one session",
   tdd: "assign_task to a developer, whose session runs implement and tdd",
-  "code-review": "declare_candidate, verify_candidate on its required checks, then review_candidate, which runs in a thread distinct from the author's",
+  "code-review": "declare_candidate, verify_candidate on its required checks, then review_candidate, which runs in a thread distinct from the author's; the skill itself runs when the person opens Focus mode on the candidate card: Trama's real checks first, then its Standards and Spec axes",
   triage: "within the mandate the Bug triage and debugger role triages each new GitHub issue by itself; without a mandate, propose one with request_mandate",
   "diagnosing-bugs": "run the failing check with run_readonly_check or verify_candidate: within the mandate the Bug triage and debugger role diagnoses the failure by itself",
   "improve-codebase-architecture": "within the mandate the Clean Code role runs it by itself when the team is free after work that changed code; its proposals reach the person as a Pact decision card",

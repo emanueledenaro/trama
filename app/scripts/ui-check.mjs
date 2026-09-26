@@ -909,6 +909,55 @@ await app.evaluate(({ nativeTheme }) => {
 });
 await page.evaluate(() => document.documentElement.classList.remove("dark"));
 
+// F01: focus mode on a candidate. Trama runs the real checks first, then code-review's Standards and Spec axes, and
+// the report keeps them apart. The slice candidate reads its slice as the spec; the corrected one has none.
+const focusAudit = page.getByTestId("focus-audit");
+const focusActions = await sliceCandidate.locator(".cta-row button").allTextContents();
+if (!focusActions.some((label) => label.includes("Focus mode"))) throw new Error(`No Focus mode on the candidate: ${focusActions}`);
+await sliceCandidate.getByRole("button", { name: "Focus mode" }).click();
+await focusAudit.waitFor({ timeout: 20_000 });
+await page.locator('[data-testid="focus-audit"][data-status="done"]').waitFor({ timeout: 60_000 });
+for (const check of ["swift_build", "swift_test"]) {
+  await focusAudit.locator(`[data-testid="candidate-evidence"][data-check="${check}"]:not([data-result="missing"])`).waitFor();
+}
+await focusAudit.locator('[data-testid="audit-axis"][data-axis="standards"][data-status="done"]').getByText(/Mysterious Name/).first().waitFor();
+await focusAudit.locator('[data-testid="audit-axis"][data-axis="spec"][data-status="done"]').getByText(/Fonte: Fetta S1/).waitFor();
+const auditText = await focusAudit.innerText();
+const [checksAt, standardsAt, specAt] = ["Verifiche reali", "Standards", "Spec"].map((heading) => auditText.indexOf(heading));
+if (!(checksAt >= 0 && checksAt < standardsAt && standardsAt < specAt)) throw new Error("Focus mode: the checks are not first, or Standards and Spec are out of order");
+await focusAudit.getByTestId("focus-audit-summary").getByText(/Standards: 1 rilievo.*Spec: 1 rilievo/).waitFor();
+await shot("20a-focus-audit");
+await app.evaluate(({ nativeTheme }) => {
+  nativeTheme.themeSource = "dark";
+});
+await page.evaluate(() => document.documentElement.classList.add("dark"));
+await shot("20b-focus-audit-dark");
+await app.evaluate(({ nativeTheme }) => {
+  nativeTheme.themeSource = "system";
+});
+await page.evaluate(() => document.documentElement.classList.remove("dark"));
+await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
+await correctedCard.scrollIntoViewIfNeeded();
+await correctedCard.getByRole("button", { name: "Focus mode" }).click();
+await page.locator('[data-testid="focus-audit"][data-status="done"]').waitFor({ timeout: 60_000 });
+await focusAudit.locator('[data-testid="audit-axis"][data-axis="spec"][data-status="skipped"]').getByText("no spec available", { exact: true }).waitFor();
+await focusAudit.locator('[data-testid="candidate-evidence"][data-check="git_diff_check"][data-result="pass"]').waitFor();
+await shot("20c-focus-audit-no-spec");
+await app.evaluate(({ nativeTheme }) => {
+  nativeTheme.themeSource = "dark";
+});
+await page.evaluate(() => document.documentElement.classList.add("dark"));
+await shot("20d-focus-audit-no-spec-dark");
+await app.evaluate(({ nativeTheme }) => {
+  nativeTheme.themeSource = "system";
+});
+await page.evaluate(() => document.documentElement.classList.remove("dark"));
+// Opened again, the card shows the same examination instead of starting a new one.
+await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
+await correctedCard.getByRole("button", { name: "Focus mode" }).click();
+await page.locator('[data-testid="focus-audit"][data-status="done"]').waitFor({ timeout: 10_000 });
+await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
+
 // M07, Ask Trama: /ask-trama is in the composer with the original skill's description, and its button starts the
 // message. The Coordinator runs ask-trama and proposes a route instead of naming a command; each step says how Trama
 // runs it. "Avvia il percorso" starts the first flow inside Trama: here grilling, round 1.
@@ -917,7 +966,7 @@ await composer().fill("");
 await composer().pressSequentially("/ask");
 const skillMenu = page.getByRole("listbox", { name: "Skill" });
 await skillMenu.getByRole("option", { name: /\/ask-trama/ }).getByText("Ask which skill or flow fits your situation. A router over the skills in this repo.").waitFor({ timeout: 10_000 });
-await shot("20-ask-trama-menu");
+await shot("21-ask-trama-menu");
 await page.keyboard.press("Escape");
 await composer().fill("");
 await page.getByRole("button", { name: "Ask Trama", exact: true }).click();
@@ -926,7 +975,7 @@ await page.keyboard.type("Gli ordini pagati annullati devono andare in revisione
 await page.keyboard.press("Enter");
 const routeCard = page.locator('[data-anchor="route"]').last();
 await routeCard.getByText("Proposto", { exact: true }).waitFor({ timeout: 20_000 });
-for (const expected of ["Flusso principale", "grill-with-docs", "Grilling prima del piano, con glossario e ADR", "prototype", "Skill nel Coordinatore", "Piano scritto come spec", "Revisione tecnica del candidato", "Confine di fase: Continua"]) {
+for (const expected of ["Flusso principale", "grill-with-docs", "Grilling prima del piano, con glossario e ADR", "prototype", "Skill nel Coordinatore", "Piano scritto come spec", "Revisione del candidato e focus mode", "Confine di fase: Continua"]) {
   if (!(await routeCard.innerText()).includes(expected)) throw new Error(`The Ask Trama route does not show "${expected}"`);
 }
 if (await page.getByText("Chi vede gli ordini in revisione?").count()) throw new Error("Ask Trama started a flow before the person confirmed the route");
@@ -937,12 +986,12 @@ if (!skipRoute || !startRoute || !routeBox || skipRoute.x >= startRoute.x || rou
   throw new Error("Ask Trama route: Non avviare and Avvia il percorso are not on the right, primary last");
 }
 await routeCard.scrollIntoViewIfNeeded();
-await shot("20a-ask-trama-route");
+await shot("21a-ask-trama-route");
 const routeLook = await page.evaluate(() => ({ provider: document.documentElement.dataset.provider ?? null, dark: document.documentElement.classList.contains("dark") }));
 for (const provider of ["codex", "claudeAgent"]) {
   for (const dark of [false, true]) {
     await setLook(provider, dark);
-    await shot(`20b-ask-trama-route-${provider}-${dark ? "dark" : "light"}`);
+    await shot(`21b-ask-trama-route-${provider}-${dark ? "dark" : "light"}`);
   }
 }
 await setLook(routeLook.provider, routeLook.dark);
@@ -953,7 +1002,7 @@ await page.getByText("Chi vede gli ordini in revisione?").last().waitFor({ timeo
 if (await routeCard.getByRole("button", { name: "Avvia il percorso" }).count()) throw new Error("A started route can be started again");
 await page.getByRole("button", { name: "Interrompi" }).waitFor({ state: "hidden", timeout: 20_000 });
 await page.getByText("Chi vede gli ordini in revisione?").last().scrollIntoViewIfNeeded();
-await shot("20c-ask-trama-started");
+await shot("21c-ask-trama-started");
 
 // G01, presenza: a project with a colleague on a local bare remote. The colleague's record is already there; Trama
 // proposes the consent in the chat once, with "Non ora" and "Condividi" on the right, and publishes only after
