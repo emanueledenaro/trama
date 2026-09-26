@@ -559,6 +559,68 @@ await pendingCard.getByRole("button", { name: "Accetta la proposta" }).waitFor()
 await supersededCard.scrollIntoViewIfNeeded();
 await shot("15-mandate-superseded");
 
+// W02: the focus bar at the top of the chat shows the task in focus with its phase and what holds it; the queue
+// lists the others. Pausing the task in focus passes the focus to the next one; "Metti in focus" takes it back.
+const focusBar = page.getByTestId("focus-bar");
+await focusBar.waitFor({ timeout: 20_000 });
+const focusTitle = async () => (await focusBar.getByTestId("focus-title").textContent()).trim();
+const firstFocus = await focusTitle();
+await focusBar.getByTestId("focus-phase").first().waitFor();
+const queueToggle = focusBar.getByRole("button", { name: /^In coda/ });
+await queueToggle.click();
+const queue = focusBar.getByTestId("focus-queue");
+await queue.waitFor();
+if (!(await queue.getByTestId("focus-queue-item").count())) throw new Error("The task queue is empty");
+const pause = focusBar.getByRole("button", { name: "Metti in pausa" });
+const actionsOnRight = async (size) => {
+  const bar = await focusBar.boundingBox();
+  const button = await pause.boundingBox();
+  if (!bar || !button || button.x + button.width > bar.x + bar.width || button.x < bar.x + bar.width / 2) {
+    throw new Error(`The focus bar's actions are not on the right at ${size}`);
+  }
+};
+await actionsOnRight("1280x820");
+await shot("17-focus-bar-queue");
+await pause.click();
+const focusIs = (title, equal) =>
+  page.waitForFunction(([text, same]) => (document.querySelector('[data-testid="focus-title"]')?.textContent?.trim() === text) === same, [title, equal], {
+    timeout: 10_000,
+  });
+await focusIs(firstFocus, false);
+const pausedItem = queue.locator('[data-testid="focus-queue-item"][data-status="paused"]').filter({ hasText: firstFocus });
+await pausedItem.waitFor({ timeout: 10_000 });
+await shot("17a-focus-paused-next");
+await pausedItem.getByRole("button", { name: "Metti in focus" }).click();
+await focusIs(firstFocus, true);
+await queue.locator('[data-status="paused"]').first().waitFor({ state: "detached", timeout: 10_000 });
+await shot("17b-focus-back");
+// Light and dark on two providers' themes, then a narrow window where the bar wraps without a horizontal scroll.
+const look = await page.evaluate(() => ({ provider: document.documentElement.dataset.provider ?? null, dark: document.documentElement.classList.contains("dark") }));
+const setLook = (provider, dark) =>
+  page.evaluate(
+    ([name, isDark]) => {
+      if (name) document.documentElement.dataset.provider = name;
+      else delete document.documentElement.dataset.provider;
+      document.documentElement.classList.toggle("dark", isDark);
+    },
+    [provider, dark],
+  );
+for (const provider of ["codex", "claudeAgent"]) {
+  for (const dark of [false, true]) {
+    await setLook(provider, dark);
+    await shot(`17c-focus-${provider}-${dark ? "dark" : "light"}`);
+  }
+}
+await setLook(look.provider, look.dark);
+await page.setViewportSize({ width: 720, height: 640 });
+await page.waitForTimeout(400);
+if (await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)) throw new Error("Horizontal page scroll with the focus bar at 720x640");
+await actionsOnRight("720x640");
+await shot("17d-focus-narrow");
+await queueToggle.click();
+await queue.waitFor({ state: "detached" });
+await page.setViewportSize({ width: 1280, height: 820 });
+
 // T19: the window sizes the layout is checked at, from the minimum (720x640) to full HD.
 // A narrow dialog gets the inspector floating over it, so the chat and the composer keep their width.
 for (const [width, height] of [[720, 640], [1040, 700], [1280, 800], [1440, 900], [1920, 1080]]) {

@@ -60,6 +60,8 @@ export interface ActionMap {
     /** The goal id, returned once the change is saved. */
     string,
   ];
+  /** Puts a task in focus, on pause, or back in the queue from the pause (W02). */
+  "focus:change": [{ action: "focus" | "pause" | "resume"; taskId: string }, void];
   "candidate:observeExample": [{ candidateId: string; exampleId: string; observed: boolean; snapshotId: string }, void];
   "overview:read": [void, ProjectOverview[]];
   "coordinator:setContextThreshold": [{ percent: number }, void];

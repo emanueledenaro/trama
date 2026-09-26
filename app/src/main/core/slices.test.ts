@@ -21,6 +21,7 @@ import {
   TO_TICKETS_BINDING,
 } from "./slices";
 import { assign, confirmTeam, endTurn, MAX_PARALLEL_DEVELOPERS, proposeTeam, TeamError } from "./team";
+import { focusView } from "./focus";
 import { workState } from "./workPhase";
 
 const skillsDirectory = join(import.meta.dirname, "../../../resources/AIHero/skills");
@@ -326,6 +327,11 @@ describe("the phase of sliced work (M05)", () => {
       blocker: null,
       moves: [{ move: "confirmSlices", actor: "person", label: "Conferma le fette", targetId: plan.id, url: null, message: null }],
     });
+  });
+
+  it("shows the breakdown in the focus bar: phase fette, waiting for the person's confirmation (W02)", () => {
+    const { document } = project("proposed");
+    expect(focusView(document).focus).toMatchObject({ id: "work:r1", phase: "slices", phaseLabel: "fette", waitingFor: "Conferma le fette" });
   });
 
   it("is blocked when the breakdown failed, with the plan card to try again", () => {
