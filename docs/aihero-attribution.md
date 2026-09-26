@@ -24,6 +24,8 @@ Tutte le skill delle cartelle `skills/engineering`, `skills/productivity` e `ski
 
 Trama esegue anche le skill incluse dentro il proprio flusso, con il testo originale (issue #118). `app/src/main/core/nativeSkills.ts` consegna `SKILL.md` e i file di riferimento accanto senza modifiche, seguiti da un collegamento di Trama separato che traduce i verbi generici della skill negli strumenti di Trama. La prima skill consegnata così è `grilling`. Con il lavoro automatico dei ruoli fissi (issue #148) si aggiungono `triage`, `diagnosing-bugs` e `improve-codebase-architecture`, con i collegamenti in `app/src/main/core/duties.ts`.
 
+Con la issue #120 il Coordinatore riceve `grill-with-docs`, `grilling` e `domain-modeling`, in quest'ordine, ciascuna con il proprio collegamento (`COORDINATOR_SKILLS` in `app/src/main/core/coordinatorTools.ts`). `domain-modeling` arriva con i suoi file di riferimento `CONTEXT-FORMAT.md` e `ADR-FORMAT.md`. Il Coordinatore è in sola lettura: quando una decisione del Patto chiarisce un termine o merita un ADR, lo propone con lo strumento `propose_domain_docs`. Trama controlla la proposta sul formato dei file di riferimento e la mostra come scheda. I file li scrive il ruolo fisso Documentazione e dominio, con la stessa skill e il collegamento `DOMAIN_WRITING_BINDING` in `app/src/main/core/duties.ts`, in un incarico con worktree proprio e solo dentro il mandato. Senza mandato la proposta aspetta. Il risultato si rivede come candidato. Lo strumento `propose_domain_docs` e il controllo del formato sono aggiunte di Trama.
+
 ## Nomi cambiati
 
 Il metodo e il testo delle istruzioni restano quelli originali. Cambiano solo questi nomi e riferimenti al marchio:
