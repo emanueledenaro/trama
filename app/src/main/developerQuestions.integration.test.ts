@@ -109,10 +109,12 @@ async function ready() {
 describe("a developer's question to the Coordinator (W06)", () => {
   it("pauses the slice, gets the Coordinator's answer from facts and resumes in the same worktree", async () => {
     const document = await ready();
-    await controller!.updateSettings({ continuousWork: true });
-    // "[domanda]" makes the developer ask with ask_coordinator; Trama starts the Coordinator's answer by itself.
+    // "[domanda]" makes the developer ask with ask_coordinator. The Coordinator assigns the slice while continuous work
+    // is off, so Ada does not take it by herself first (W08); turning it on starts the Coordinator's answer by itself.
     await controller!.send("[assegna] [domanda]", null, null, null);
     const work = findSpecialist(document, "Ada")!.assignments[0]!;
+    await until(() => work.status === "paused");
+    await controller!.updateSettings({ continuousWork: true });
     await until(() => work.status === "completed");
     const question = work.questions![0]!;
     expect(question).toMatchObject({ question: expect.stringContaining("buono"), context: expect.stringContaining("carta") });

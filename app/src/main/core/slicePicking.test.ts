@@ -241,6 +241,15 @@ describe("independent movement (W08)", () => {
     expect(first!.assignment).toMatchObject({ provider: "claudeAgent", model: "sonnet" });
   });
 
+  it("keeps a developer whose work is paused on a question out of the free ones (W06)", () => {
+    const tickets = [ticket(1, [], "Sources/Orders"), ticket(2, [], "Anche Sources/Orders")];
+    const { document } = project(tickets);
+    const [first] = picked(pickSlices(document, input()));
+    first!.assignment.status = "paused";
+    // Ada waits for the answer in her worktree: she takes nothing else, and nobody else knows Orders.
+    expect(picked(pickSlices(document, input()))).toEqual([]);
+  });
+
   it("gives a slice on several modules only to a developer who covers them all", () => {
     const { document } = project([ticket(1, [], "Il rimborso tocca Sources/Orders e Sources/Payments")]);
     // Ada knows only Orders and Bruno only Payments: neither takes the slice, which keeps its whole scope.

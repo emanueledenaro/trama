@@ -8,8 +8,11 @@ import { COORDINATOR_MOVES, type CoordinatorMove, workRequests, workState } from
  * decisions, the mandate, the team and merging.
  */
 
-/** What changed the work: a Coordinator turn ended, a plan ended, a specialist's assignment ended or paused on a question. */
-export type WorkEvent = "turnEnded" | "planEnded" | "assignmentEnded";
+/**
+ * What changed the work: a Coordinator turn ended, a plan ended, a specialist's assignment ended or paused on a question,
+ * or the person turned continuous work on, so the move that waited for it can start now.
+ */
+export type WorkEvent = "turnEnded" | "planEnded" | "assignmentEnded" | "continuousWorkOn";
 
 /**
  * The person's moves that hold the work: a product decision, the shared understanding, the mandate, the team,

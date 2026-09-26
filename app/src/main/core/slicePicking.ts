@@ -107,8 +107,9 @@ export function pickSlices(document: ProjectDocument, input: PickInput): PickOut
   if (!isTeamConfirmed(document) || document.mandate?.status !== "granted") return [];
   const outcomes: PickOutcome[] = [];
   const limit = parallelDevelopers(document);
+  // A developer whose work is paused on a question (W06) keeps its worktree for the answer: it is not free.
   const free = developers(document)
-    .filter((s) => !s.assignments.some(isActive))
+    .filter((s) => !s.assignments.some((a) => isActive(a) || a.status === "paused"))
     .sort((a, b) => freeSince(a).localeCompare(freeSince(b)));
   for (const plan of currentPlans(document)) {
     const tickets = plan.slicing!.tickets;
