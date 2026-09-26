@@ -53,15 +53,21 @@ function BoardRowView({ row }: { row: BoardRow }) {
       data-kind={row.kind}
       data-self={row.self || undefined}
       className={cn(
-        "grid gap-x-4 gap-y-0.5 rounded-lg px-2 py-1.5 @min-[640px]/inspector:grid-cols-[minmax(0,13rem)_minmax(0,1fr)]",
-        row.kind === "agent" && "ml-4 border-l border-[color:var(--app-surface-divider)] pl-3",
+        "grid gap-x-4 gap-y-0.5 rounded-lg px-2 py-1.5",
+        // The agent's indent comes off its first column, so every row's details start at the same place.
+        row.kind === "agent"
+          ? "ml-4 border-l border-[color:var(--app-surface-divider)] pl-3 @min-[560px]/inspector:grid-cols-[minmax(0,11.25rem)_minmax(0,1fr)]"
+          : "@min-[560px]/inspector:grid-cols-[minmax(0,13rem)_minmax(0,1fr)]",
       )}
     >
-      <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-ui @min-[640px]/inspector:content-start">
-        <span className="min-w-0 flex-1">
+      <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-ui @min-[560px]/inspector:content-start">
+        <span className="min-w-0 max-w-full">
           <Identity row={row} />
         </span>
-        <Badge tone={FRESHNESS_TONE[row.freshness]}>{row.freshnessLabel}</Badge>
+        {/* Wraps under the name when both do not fit, and stays on the right. */}
+        <Badge tone={FRESHNESS_TONE[row.freshness]} className="ml-auto">
+          {row.freshnessLabel}
+        </Badge>
       </div>
       <div className="min-w-0 space-y-0.5 text-ui-xs text-muted-foreground">
         {row.kind === "github" ? <div>Non condivide la presenza: branch e pull request da GitHub.</div> : null}
