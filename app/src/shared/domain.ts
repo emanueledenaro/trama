@@ -90,6 +90,39 @@ export interface RequestStep {
 /** The phase of a request's work, computed by Trama from the records, never by the model (W01). */
 export type WorkPhase = "clarification" | "spec" | "slices" | "execution" | "verification" | "candidate" | "merged" | "blocked";
 
+/**
+ * What the person put in focus and on pause among the project's tasks (W02). Everything else about a task
+ * (its phase, its blocker, whether it is closed) is computed from the records.
+ */
+export interface TaskFocus {
+  /** The task the person chose to work on; absent, stale or paused means the first open task in the queue. */
+  taskId: string | null;
+  pausedTaskIds: string[];
+}
+
+/** A task of the project as the focus bar and the queue show it (W02). */
+export interface FocusTask {
+  /** `goal:<goal id>` for a goal's work, `work:<first request id>` for work in the project dialog. */
+  id: string;
+  /** The dialog the task lives in; null is the project dialog. */
+  goalId: string | null;
+  title: string;
+  /** Null when the task has no work yet: a goal nobody started. */
+  phase: WorkPhase | null;
+  phaseLabel: string;
+  /** Why the work cannot go on; set only in the blocked phase. */
+  blocker: string | null;
+  /** The person's move the work waits for, as its button says it ("Rispondi alla domanda"); null when none. */
+  waitingFor: string | null;
+  status: "focus" | "queued" | "paused";
+}
+
+/** The task in focus and the others, queued first, then paused (W02). */
+export interface FocusView {
+  focus: FocusTask | null;
+  queue: FocusTask[];
+}
+
 /** A move that takes the work on: the first seven are the person's, the last three the Coordinator's (W01). */
 export type NextMove =
   | "answerQuestions"
@@ -733,6 +766,8 @@ export interface ProjectDocument {
   exercises?: import("./onboarding").ExerciseRecord;
   /** The fixed roles' automatic work (W11); absent until Trama first needs it. */
   duties?: DutyLedger;
+  /** The task in focus and the paused ones (W02); absent until the person first chooses. */
+  focus?: TaskFocus;
 }
 
 export interface PactDemo {
@@ -855,6 +890,8 @@ export interface ActiveProjectState {
   candidateReports: Record<string, CandidateReport>;
   /** The next step of the latest request of each dialog, by request id, while it is still allowed (W01). */
   nextSteps: Record<string, NextStepView>;
+  /** The task in focus and the queue, computed by the main process (W02). */
+  focus: FocusView;
   /** The AI Hero skills Trama copies are present in the project. */
   aiHeroPrepared?: boolean;
 }

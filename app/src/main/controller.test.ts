@@ -235,6 +235,23 @@ describe("TramaController", () => {
     expect(findGoal((await storage.loadDocument(project.id)).document!, id)!.title).toBe("Revisione degli ordini");
   });
 
+  it("saves the focus before showing it and passes it to the next task on pause (W02)", async () => {
+    const { data } = await setup();
+    const project = controller!.snapshot.project!;
+    const storage = new AppStorage(data);
+    const first = await controller!.createGoal({ title: "Revisione", outcome: "Ordini in revisione", examples: [] });
+    const second = await controller!.createGoal({ title: "Catalogo", outcome: "Ricerca veloce", examples: [] });
+    expect(controller!.snapshot.project!.focus.focus).toMatchObject({ id: `goal:${first}`, title: "Revisione", phaseLabel: "da avviare" });
+    await controller!.changeFocus("pause", `goal:${first}`);
+    expect((await storage.loadDocument(project.id)).document!.focus).toEqual({ taskId: `goal:${second}`, pausedTaskIds: [`goal:${first}`] });
+    const view = controller!.snapshot.project!.focus;
+    expect(view.focus?.id).toBe(`goal:${second}`);
+    expect(view.queue).toMatchObject([{ id: `goal:${first}`, status: "paused" }]);
+    await controller!.changeFocus("focus", `goal:${first}`);
+    expect(controller!.snapshot.project!.focus.focus?.id).toBe(`goal:${first}`);
+    await expect(controller!.changeFocus("pause", "goal:G-00000000")).rejects.toThrow(/non è aperto/);
+  });
+
   it("refuses a message to a goal that does not exist", async () => {
     await setup();
     await expect(controller!.send("Ciao", null, null, null, [], null, "G-00000000")).rejects.toThrow(/non trovato/);

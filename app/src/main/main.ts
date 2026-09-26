@@ -134,6 +134,7 @@ const handlers: { [K in ActionName]: Handler<K> } = {
   "goal:update": ({ id, ...change }) => controller.updateGoal(id, change),
   "goal:archive": ({ id, archived }) => controller.archiveGoal(id, archived),
   "goal:delete": ({ id }) => controller.deleteGoal(id),
+  "focus:change": ({ action, taskId }) => controller.changeFocus(action, taskId),
   "candidate:observeExample": (input) => controller.observeExample(input),
   "overview:read": () => controller.projectsOverview(),
   "coordinator:setContextThreshold": ({ percent }) => controller.setContextThreshold(percent),
