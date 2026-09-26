@@ -7,6 +7,11 @@ if (process.argv[2] === "sandbox") {
   const { spawnSync } = await import("node:child_process");
   const rest = process.argv.slice(process.argv.indexOf("--") + 1);
   const result = spawnSync(rest[0], rest.slice(1), { stdio: "inherit" });
+  // With FAKE_CODEX_LOG_CHECKS the end of each check joins the request log, so a test can read what ran before what.
+  if (process.env.FAKE_CODEX_LOG && process.env.FAKE_CODEX_LOG_CHECKS) {
+    const { appendFileSync } = await import("node:fs");
+    appendFileSync(process.env.FAKE_CODEX_LOG, `${JSON.stringify({ method: "sandbox/ended", params: { command: rest } })}\n`);
+  }
   process.exit(result.status ?? 1);
 }
 
@@ -171,8 +176,19 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
               findings: 1,
               worst: `Possibile Mysterious Name in ${file}`,
             };
-        // Long enough for the two axes to overlap when Trama runs them in parallel.
-        setTimeout(() => finish(JSON.stringify(answer)), 300);
+        // With FAKE_CODEX_AUDIT_GATE the axis answers only once the test creates that file, so a test can hold both
+        // sessions open at once and act while an examination is still running, without relying on timing.
+        const gate = process.env.FAKE_CODEX_AUDIT_GATE;
+        if (gate) {
+          const { existsSync } = await import("node:fs");
+          const release = setInterval(() => {
+            if (!existsSync(gate)) return;
+            clearInterval(release);
+            finish(JSON.stringify(answer));
+          }, 10);
+          return;
+        }
+        setTimeout(() => finish(JSON.stringify(answer)), 10);
         return;
       }
       if (required.includes("loopCommand")) {
