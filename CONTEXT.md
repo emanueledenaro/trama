@@ -2,7 +2,7 @@
 
 Trama è un'app macOS per esplorare un repository e collegare una richiesta ai moduli, alle decisioni e alle verifiche che la riguardano.
 
-Un progetto è una cartella locale. Un modulo raggruppa file rilevati in una directory; il raggruppamento non prova una responsabilità architetturale. Una richiesta conserva il modulo selezionato. Un piano descrive modifiche proposte e resta distinguibile dal codice esistente.
+Un progetto è una cartella locale. Un modulo raggruppa file rilevati in una directory; il raggruppamento non prova una responsabilità architetturale. Una richiesta conserva il modulo selezionato. Un piano descrive modifiche proposte e resta distinguibile dal codice esistente. Il piano di una richiesta è una spec, scritta dal pianificatore con la skill `to-spec` di AI Hero sulla conversazione della richiesta e sulle risposte del chiarimento: prima propone i seam da testare, con il vocabolario di `codebase-design`, e la persona li conferma o li corregge con parole sue; poi scrive la spec con le sezioni del template. Con GitHub collegato la spec diventa una issue con l'etichetta `ready-for-agent`; altrimenti resta in Trama come piano della richiesta.
 
 Una decisione registra un comportamento, un esempio e una motivazione. Ogni modifica della decisione incrementa la sua versione. Una delega collega il lavoro alle versioni delle decisioni e al perimetro ammesso. Un candidato identifica la versione concreta del lavoro. Un'evidenza appartiene a un candidato e a una specifica versione delle verifiche. Una revisione umana riguarda esattamente quel candidato; nuove evidenze o decisioni pertinenti invalidano il via libera.
 

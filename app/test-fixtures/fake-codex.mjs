@@ -88,9 +88,10 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
       const toolDone = (tool, result) =>
         send({ method: "item/completed", params: { threadId, turnId, item: { id: `tool-${tool}`, type: "mcpToolCall", server: "trama", tool, status: "completed", result } } });
       // "[passo:<move>]" closes the turn with that next step (W01), after the turn's other tools; a refusal ends up in the reply.
+      // Only the Coordinator's threads have Trama's tools: a planner or a review quoting the request declares nothing.
       const declareStep = async () => {
         const step = text.match(/\[passo:(\w+)\]/);
-        if (!step) return "";
+        if (!step || !toolServers.has(threadId)) return "";
         const result = await callTool(threadId, "declare_next_step", { move: step[1], reason: "Il lavoro aspetta questo passo." });
         toolDone("declare_next_step", result);
         return result.isError ? ` | Passo rifiutato: ${result.content[0].text}` : "";
@@ -160,31 +161,40 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
         setTimeout(() => finish(JSON.stringify(answer)), 10);
         return;
       }
-      if (params.outputSchema?.required?.includes("sourceSnapshotID")) {
-        const sources = JSON.parse(text.slice(text.indexOf("Fonti: ") + 7));
-        const plan = {
+      if (params.outputSchema?.required?.includes("seams")) {
+        // The planner runs AI Hero's to-spec (M04): the seam turn, then the spec turn with the person's answer.
+        // Like a real planner it needs the skills: without both skill inputs it answers no JSON.
+        const skills = params.input.filter((item) => item.type === "skill").map((item) => item.name);
+        if (!skills.includes("to-spec") || !skills.includes("codebase-design")) {
+          setTimeout(() => finish("Mi mancano le skill to-spec e codebase-design."), 10);
+          return;
+        }
+        const sources = JSON.parse(text.slice(text.lastIndexOf("Fonti: ") + 7));
+        const seams = [{ seam: "L'interfaccia di CancelPaidOrder: annullare un ordine pagato", existing: true, tests: "Un ordine pagato annullato va in revisione" }];
+        if (!params.outputSchema.required.includes("problemStatement")) {
+          setTimeout(() => finish(JSON.stringify({ sourceSnapshotID: sources.sourceSnapshotID, seams })), 10);
+          return;
+        }
+        const answer = text.match(/## Risposta della persona sui seam\n(.*)/)?.[1] ?? "nessuna";
+        const spec = {
           sourceSnapshotID: sources.sourceSnapshotID,
-          summary: "Mandare in revisione gli ordini pagati annullati",
-          steps: ["Leggere CancelPaidOrder.swift", "Cambiare lo stato", "Aggiungere un test"],
+          title: "Ordini pagati annullati in revisione",
+          problemStatement: "Un ordine pagato e annullato viene rimborsato subito, senza che nessuno lo controlli.",
+          solution: "L'ordine pagato e annullato va in revisione e il supporto decide il rimborso.",
+          userStories: [
+            "Come persona del supporto, voglio vedere gli ordini pagati annullati in revisione, così che possa decidere il rimborso",
+            "Come cliente, voglio sapere che il mio ordine è in revisione, così che non mi aspetti un rimborso immediato",
+          ],
+          implementationDecisions: ["Lo stato review si aggiunge agli stati dell'ordine"],
+          testingDecisions: ["Si prova l'annullamento attraverso l'interfaccia di CancelPaidOrder, il seam esistente"],
+          outOfScope: "Le email al cliente.",
+          furtherNotes: `Skill ricevute: ${skills.join(", ")}. Risposta sui seam: ${answer}`,
+          seams: answer.startsWith("Correzione") ? [...seams, { seam: "Il rimborso manuale del supporto", existing: false, tests: "Il supporto rimborsa l'ordine 42" }] : seams,
           affectedModuleIDs: sources.knownModuleIDs.slice(0, 1),
           references: sources.knownFiles.slice(0, 1),
           requiredDecisionIDs: [],
-          proposedBehavior: "Un ordine pagato annullato va in revisione",
-          acceptedExample: "Ordine 42 pagato e annullato: stato review",
-          rationale: "Evita rimborsi automatici errati",
-          questions: [
-            {
-              scenario: "Ordine pagato con carta",
-              question: "Il cliente riceve una email?",
-              options: [
-                { label: "Sì", behavior: "Email immediata", example: "Email alle 10:01", rationale: "Trasparenza" },
-                { label: "No", behavior: "Nessuna email", example: "Nessun messaggio", rationale: "Meno rumore" },
-              ],
-              revisesDecisionID: null,
-            },
-          ],
         };
-        setTimeout(() => finish(JSON.stringify(plan)), 10);
+        setTimeout(() => finish(JSON.stringify(spec)), 10);
         return;
       }
       if (params.outputSchema) {

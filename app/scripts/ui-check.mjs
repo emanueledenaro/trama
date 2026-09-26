@@ -317,6 +317,51 @@ await page.waitForTimeout(500);
 await page.getByRole("button", { name: "Interrompi" }).waitFor({ state: "hidden", timeout: 20_000 });
 await round.scrollIntoViewIfNeeded();
 await shot("14b-grilling-withdrawn");
+// M04: the plan follows to-spec, once the grilling round above is complete (a plan waits for open questions).
+// The seams come first and wait for the person, with the confirmation on the right; then the spec with the
+// template's sections, which stays in Trama without GitHub.
+const seamChecks = page.locator('[data-testid="plan-spec"][data-status="seams"]');
+const earlierSeamChecks = await seamChecks.count();
+await page.getByLabel("Messaggio al Coordinatore").fill("[piano]");
+await page.keyboard.press("Enter");
+const seamCheck = seamChecks.nth(earlierSeamChecks);
+const confirmSeams = seamCheck.getByRole("button", { name: "Conferma i seam" });
+await confirmSeams.waitFor({ timeout: 20_000 });
+await seamCheck.scrollIntoViewIfNeeded();
+const confirmBox = await confirmSeams.boundingBox();
+const seamBox = await seamCheck.boundingBox();
+if (!confirmBox || !seamBox || seamBox.x + seamBox.width - (confirmBox.x + confirmBox.width) > 2) throw new Error("Conferma i seam is not on the right");
+await shot("04c1-plan-seams");
+// The next step "Conferma i seam" targets the plan card, like "Rivedi il piano": the button brings the card into view.
+await page.getByLabel("Messaggio al Coordinatore").fill("[passo:confirmSeams] A che punto è il piano?");
+await page.keyboard.press("Enter");
+const seamsStep = page.getByTestId("next-step").getByRole("button", { name: "Conferma i seam" }).last();
+await seamsStep.waitFor({ timeout: 20_000 });
+await page.getByRole("button", { name: "Interrompi" }).waitFor({ state: "hidden", timeout: 20_000 });
+await seamsStep.click();
+await page.waitForTimeout(800);
+if (!(await seamCheck.evaluate((card) => { const box = card.getBoundingClientRect(); return box.bottom > 0 && box.top < window.innerHeight; }))) {
+  throw new Error("The next step Conferma i seam did not bring the plan card into view");
+}
+await shot("04c1b-next-step-seams");
+await confirmSeams.click();
+const writtenSpec = page.locator('[data-testid="plan-spec"][data-status="ready"]').last();
+await writtenSpec.getByText("Resta in Trama").waitFor({ timeout: 20_000 });
+await writtenSpec.getByRole("button", { name: /Mostra tutta la spec/ }).click();
+await writtenSpec.getByText("Decisioni sui test").waitFor();
+await writtenSpec.scrollIntoViewIfNeeded();
+await shot("04c2-plan-spec");
+const approvePlan = writtenSpec.getByRole("button", { name: "Approva il piano e chiedi di realizzarlo" });
+await approvePlan.evaluate((button) => button.scrollIntoView({ block: "center" }));
+const approveBox = await approvePlan.boundingBox();
+const specBox = await writtenSpec.boundingBox();
+if (!approveBox || !specBox || specBox.x + specBox.width - (approveBox.x + approveBox.width) > 2) throw new Error("The plan's approval is not on the right");
+await shot("04c3-plan-spec-actions");
+// The seams held the work for the person; with the spec written it goes on by itself within the mandate (W04).
+// The check stops that move, so the queue below starts from an idle Coordinator.
+const assignStep = page.getByTestId("automatic-step").filter({ hasText: "Assegna il lavoro" }).last();
+await assignStep.getByRole("button", { name: "Ferma" }).click({ timeout: 20_000 });
+await page.getByRole("button", { name: "Interrompi" }).waitFor({ state: "hidden", timeout: 20_000 });
 // A message sent while the Coordinator works waits in the queue and can be deleted after a confirmation.
 await page.getByLabel("Messaggio al Coordinatore").fill("[attesa] Spiegami gli ordini");
 await page.keyboard.press("Enter");
@@ -448,6 +493,9 @@ await page.getByRole("checkbox", { name: /Preparare piani/ }).check();
 await page.getByRole("button", { name: "Salva correzione" }).click();
 await page.getByText(/Mandato v4/).first().waitFor({ timeout: 20_000 });
 await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
+// The correction is a turn of the project dialog, whose M04 spec is ready: Trama goes on there with the slices.
+// The check stops that move, which belongs to the other dialog, before the goal dialog's own work.
+await page.getByRole("button", { name: "Interrompi" }).click({ timeout: 20_000 });
 await page.getByRole("button", { name: "Interrompi" }).waitFor({ state: "hidden", timeout: 20_000 });
 if (await page.getByTestId("automatic-step").count()) throw new Error("Trama went on before the person confirmed the shared understanding");
 await page.getByLabel("Messaggio al Coordinatore").fill("[passo:confirmUnderstanding] Riassumi quello che abbiamo deciso");
@@ -554,6 +602,8 @@ git("remote", "add", "origin", "https://github.com/trama-ui/negozio.git");
 ({ app, page } = await launch({ PATH: `${ghBin}:${process.env.PATH}` }));
 const goalsRow = page.getByRole("button", { name: /^Obiettivi/ }).first();
 await goalsRow.waitFor({ timeout: 30_000 });
+// M04: the spec is still there to read after the restart.
+await page.locator('[data-testid="plan-spec"][data-status="ready"]').first().getByText("Ordini pagati annullati in revisione").waitFor({ timeout: 30_000 });
 await goalsRow.focus();
 await page.keyboard.press("Enter");
 await page.getByRole("button", { name: "Nuovo obiettivo" }).focus();

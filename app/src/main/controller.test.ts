@@ -302,7 +302,7 @@ describe("TramaController", () => {
     }
   });
 
-  it("prepares a plan for a request and turns its questions into decision cards", async () => {
+  it("prepares a plan for a request as a spec: the seams first, and no decision cards (M04)", async () => {
     await setup();
     const project = controller!.snapshot.project!;
     await controller!.send("Come si annulla un ordine pagato?", null, null, null);
@@ -310,10 +310,12 @@ describe("TramaController", () => {
     controller!.orderPlan({ requestId: request.id, orderedBy: "person", kind: "agreedTicket", moduleIds: [], summary: request.text, issueNumber: null });
     const plan = project.document.plans[0]!;
     await until(() => plan.status !== "planning");
-    expect(plan.status).toBe("ready");
-    expect(plan.proposal?.steps).toHaveLength(3);
-    expect(plan.decisionRequestIds).toHaveLength(1);
-    expect(project.document.decisionRequests[0]!.question).toBe("Il cliente riceve una email?");
+    expect(plan.status).toBe("seams");
+    expect(plan.spec).toMatchObject({ seams: [{ existing: true, tests: "Un ordine pagato annullato va in revisione" }], seamsAnswer: null, sections: null });
+    expect(plan.proposal).toBeNull();
+    // to-spec does not interview the person: the plan asks no decision.
+    expect(plan.decisionRequestIds).toHaveLength(0);
+    expect(project.document.decisionRequests).toHaveLength(0);
   });
 
   it("lets the person correct a plan and cancel one being prepared (T06)", async () => {
@@ -324,9 +326,19 @@ describe("TramaController", () => {
     controller!.orderPlan({ requestId, orderedBy: "person", kind: "agreedTicket", moduleIds: [], summary: "Annullamento", issueNumber: null });
     const plan = project.document.plans[0]!;
     await until(() => plan.status !== "planning");
-    expect(() => controller!.editPlan({ planId: plan.id, steps: [" "], proposedBehavior: "x", acceptedExample: "" })).toThrow(/almeno un passo/);
-    controller!.editPlan({ planId: plan.id, steps: ["Blocca l'annullamento", ""], proposedBehavior: "Serve una revisione", acceptedExample: "Ordine 42" });
-    expect(plan.proposal?.steps).toEqual(["Blocca l'annullamento"]);
+    // The person corrects the seams in their own words; the planner writes the spec with the correction.
+    expect(() => controller!.answerSeams({ planId: plan.id, confirmed: false, note: " " })).toThrow(/cosa cambiare/);
+    controller!.answerSeams({ planId: plan.id, confirmed: false, note: "Testa anche il rimborso manuale" });
+    expect(() => controller!.answerSeams({ planId: plan.id, confirmed: true, note: null })).toThrow(/non aspetta/);
+    await until(() => plan.status !== "planning");
+    expect(plan.status).toBe("ready");
+    expect(plan.spec?.seamsAnswer).toMatchObject({ confirmed: false, note: "Testa anche il rimborso manuale" });
+    expect(plan.spec?.seams.map((s) => s.seam)).toEqual(["L'interfaccia di CancelPaidOrder: annullare un ordine pagato", "Il rimborso manuale del supporto"]);
+    expect(plan.spec?.sections?.furtherNotes).toContain("Correzione: Testa anche il rimborso manuale");
+    const sections = plan.spec!.sections!;
+    expect(() => controller!.editPlan({ planId: plan.id, sections: { ...sections, solution: " " } })).toThrow(/titolo, problema e soluzione/);
+    controller!.editPlan({ planId: plan.id, sections: { ...sections, userStories: ["Come supporto, voglio rivedere l'ordine, così che decida io", ""] } });
+    expect(plan.spec?.sections?.userStories).toEqual(["Come supporto, voglio rivedere l'ordine, così che decida io"]);
     expect(plan.editedAt).toBeTruthy();
 
     const second = controller!.orderPlan({ requestId, orderedBy: "person", kind: "agreedTicket", moduleIds: [], summary: "Altro", issueNumber: null });
@@ -336,6 +348,7 @@ describe("TramaController", () => {
     await new Promise((r) => setTimeout(r, 300));
     expect(second.status).toBe("failed");
     expect(second.proposal).toBeNull();
+    expect(second.spec ?? null).toBeNull();
   });
 
   it("gives the Coordinator thread the original grill-with-docs, grilling and domain-modeling skills once, also when it is already open (M02, M03)", async () => {
@@ -520,7 +533,111 @@ describe("TramaController", () => {
     await controller!.grantMandate({ requestId: null, objectives: ["o"], priorities: [], scopeModuleIds: ["Sources/Orders"], authorizedActions: ["plan"], limits: [] });
     await controller!.send("[piano]", null, null, null);
     expect(project.document.plans[0]?.orderedBy).toBe("coordinator");
-    await until(() => project.document.plans[0]!.status === "ready");
+    await until(() => project.document.plans[0]!.status === "seams");
+  });
+
+  // A grilling round, two planner turns and a restart: slower than the default timeout on a loaded machine.
+  it("writes the spec with to-spec once the person confirms the seams, keeps it in Trama and after a restart (M04)", async () => {
+    const { data } = await setup();
+    const project = controller!.snapshot.project!;
+    const document = project.document;
+    await controller!.send("[grilling:1] Gli ordini pagati annullati vanno in revisione", null, null, null);
+    for (const question of [...document.decisionRequests]) await controller!.answerDecision(question.id, 1, null);
+    await controller!.grantMandate({ requestId: null, objectives: ["o"], priorities: [], scopeModuleIds: ["Sources/Orders"], authorizedActions: ["plan"], limits: [] });
+    await controller!.send("[piano]", null, null, null);
+    const plan = document.plans[0]!;
+    await until(() => plan.status !== "planning");
+
+    // to-spec's seam check: nothing is written or published before the person's answer.
+    expect(plan.status).toBe("seams");
+    expect(plan.spec).toMatchObject({ seamsAnswer: null, sections: null, issue: null });
+    await expect(controller!.publishPlanSpec(plan.id)).rejects.toThrow(/spec pronta/);
+    controller!.answerSeams({ planId: plan.id, confirmed: true, note: null });
+    expect(plan.status).toBe("planning");
+    await until(() => plan.status !== "planning");
+
+    expect(plan.status).toBe("ready");
+    expect(plan.spec!.sections).toMatchObject({ title: "Ordini pagati annullati in revisione", userStories: [expect.stringMatching(/^Come persona del supporto/), expect.any(String)] });
+    // Both skills reached the planner as Codex skill inputs, and the spec turn had the person's answer.
+    expect(plan.spec!.sections!.furtherNotes).toBe("Skill ricevute: to-spec, codebase-design. Risposta sui seam: Confermati come proposti.");
+    expect(plan.spec!.seams).toHaveLength(1);
+    expect(plan.spec!.affectedModuleIDs).toHaveLength(1);
+    // Without GitHub the spec stays in Trama, and publishing it says why.
+    expect(plan.spec!.issue).toBeNull();
+    await expect(controller!.publishPlanSpec(plan.id)).rejects.toThrow(/GitHub non è collegato/);
+    const activities = document.events.flatMap((e) => (e.content.type === "activity" ? [e.content.title] : []));
+    expect(activities).toContain(`Seam del piano ${plan.id} confermati`);
+
+    await controller!.stop();
+    controller = new TramaController(data, {
+      publish: () => undefined,
+      openExternal: async () => undefined,
+      applyTheme: () => undefined,
+      notify: () => undefined,
+      setOpenAtLogin: () => undefined,
+      aiHeroResourceDirectory: join(root, "resources/AIHero"),
+      demoResourceDirectory: "",
+      codexExecutable: join(root, "test-fixtures/fake-codex.mjs"),
+    });
+    await controller.start();
+    await until(() => controller!.snapshot.project?.phase.kind === "ready" || controller!.snapshot.project?.phase.kind === "unavailable");
+    const reopened = controller.snapshot.project!.document.plans[0]!;
+    expect(reopened).toMatchObject({ id: plan.id, status: "ready", spec: { seams: plan.spec!.seams, sections: plan.spec!.sections, issue: null } });
+  }, 60_000);
+
+  it("publishes the spec as a GitHub issue with the ready-for-agent label when GitHub is connected (M04)", async () => {
+    const bin = await mkdtemp(join(tmpdir(), "trama-bin-"));
+    const log = join(bin, "gh.log");
+    const { symlink } = await import("node:fs/promises");
+    const { existsSync, readFileSync } = await import("node:fs");
+    const { execFileSync } = await import("node:child_process");
+    const calls = () => readFileSync(log, "utf8").trim().split("\n").map((line) => JSON.parse(line) as string[]);
+    await symlink(join(root, "test-fixtures/fake-gh.mjs"), join(bin, "gh"));
+    const path = process.env.PATH;
+    process.env.PATH = `${bin}:${path}`;
+    process.env.FAKE_GH_LOG = log;
+    try {
+      const { project: projectPath } = await setup();
+      execFileSync("git", ["init", "-q", "-b", "main"], { cwd: projectPath });
+      execFileSync("git", ["remote", "add", "origin", "https://github.com/trama-fixture/ordini-finti.git"], { cwd: projectPath });
+      await controller!.refreshGitHub();
+      const project = controller!.snapshot.project!;
+      expect(project.github).toMatchObject({ repository: "trama-fixture/ordini-finti", status: "ready" });
+      await controller!.send("Gli ordini pagati annullati vanno in revisione", null, null, null);
+      const plan = controller!.orderPlan({ requestId: project.document.requests[0]!.id, orderedBy: "person", kind: "agreedTicket", moduleIds: [], summary: "Revisione", issueNumber: null });
+      await until(() => plan.status === "seams");
+      controller!.answerSeams({ planId: plan.id, confirmed: true, note: null });
+      await until(() => plan.status === "ready" && plan.spec?.issue !== null);
+
+      expect(plan.spec!.issue).toMatchObject({ number: 7, url: "https://github.com/trama-fixture/ordini-finti/issues/7" });
+      const created = calls().find((c) => c.includes("POST"))!;
+      expect(created).toContain("repos/trama-fixture/ordini-finti/issues");
+      expect(created).toContain("title=Ordini pagati annullati in revisione");
+      expect(created).toContain("labels[]=ready-for-agent");
+      expect(created.find((a) => a.startsWith("body="))).toMatch(/^body=## Problem Statement\n\nUn ordine pagato/);
+
+      // A correction of the published spec updates its issue.
+      controller!.editPlan({ planId: plan.id, sections: { ...plan.spec!.sections!, title: "Revisione degli ordini pagati annullati" } });
+      await until(() => calls().some((c) => c.includes("PATCH")));
+      const patched = calls().find((c) => c.includes("PATCH"))!;
+      expect(patched).toContain("repos/trama-fixture/ordini-finti/issues/7");
+      expect(patched).toContain("title=Revisione degli ordini pagati annullati");
+      expect(plan.spec!.publishFailure).toBeNull();
+    } finally {
+      // Background GitHub refreshes must reach the fake gh only: stop, wait until it has been quiet, then restore PATH.
+      await controller?.stop();
+      controller = null;
+      const logSize = () => (existsSync(log) ? readFileSync(log, "utf8").length : 0);
+      let before = -1;
+      let after = logSize();
+      while (after !== before) {
+        await new Promise((r) => setTimeout(r, 1_000));
+        before = after;
+        after = logSize();
+      }
+      process.env.PATH = path;
+      delete process.env.FAKE_GH_LOG;
+    }
   });
 
   it("closes a turn left running in a project the person leaves, and ignores its late end (C02)", async () => {

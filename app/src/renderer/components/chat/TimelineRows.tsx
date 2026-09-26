@@ -200,7 +200,8 @@ function NextStepRow({ step, requestId }: { step: NextStepView; requestId: strin
     if (step.move === "grantMandate") setInspector({ kind: "mandate" });
     else if (step.move === "confirmTeam") setInspector({ kind: "team" });
     else if (step.move === "answerQuestions") setInspector({ kind: "pact" });
-    else if (step.move === "reviewPlan") setInspector({ kind: "work" });
+    // Seams and plan review both act on the plan card (M04): the work panel lists the plans.
+    else if (step.move === "reviewPlan" || step.move === "confirmSeams") setInspector({ kind: "work" });
   };
   return (
     <div className="cta-row mt-2" data-testid="next-step">
