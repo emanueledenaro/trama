@@ -18,6 +18,7 @@ import type {
   WorktreeSession,
   AgentColor,
   AppSettings,
+  ProjectSettings,
   AppState,
   CoordinatorPhase,
   CoordinatorRequest,
@@ -178,6 +179,9 @@ import { prepareWorktree, removeWorktree, reviewWorktree, validateWorktree } fro
 import { AuditError, type AxisName, type AxisTurn, auditSpec, axisThread, axisTurn, beginAxes, closeAudit, failAudit, findAudit, finishAxis, openAudit, readAxisAnswer, recordAuditCheck } from "./core/audit";
 import { approveCandidate, candidateReport, findCandidate, latestCandidate, recordEvidence, recordTechnicalReview } from "./core/candidates";
 import { assessConflict } from "./core/conflicts";
+import { pickSlices } from "./core/slicePicking";
+import { assessWorktreePair, worktreePairs } from "./core/worktreeConflicts";
+import { clampParallelDevelopers } from "@shared/parallel";
 import { pullRequestBody, publishCandidate } from "./core/publication";
 import { branchPrefix, commitHeader, readProjectConventions, requireValidCommitMessage, validateCommitMessage } from "./core/conventions";
 import { candidateCommit, qualityGate, qualityMissing, relatedIssue, workCommitType } from "./core/quality";
@@ -243,6 +247,8 @@ import { findDomainProposal } from "@shared/domainDocs";
 
 /** The model Trama prefers for the Coordinator when the Codex catalogue offers it. */
 const PREFERRED_COORDINATOR_MODEL = "gpt-5.6-luna";
+/** The line the chat shows when a developer takes a slice by itself (W08). */
+const SELF_PICK_DETAIL = "Era la prossima fetta pronta nei suoi moduli: la prende senza aspettare il Coordinatore, dentro il mandato e il limite di sviluppatori in parallelo del progetto.";
 
 /** Added to the study of a project without goals (UX07): the first message proposes a first goal. */
 export const FIRST_GOAL_REQUEST =
@@ -3248,6 +3254,7 @@ export class TramaController {
         do {
           this.dutiesAgain = false;
           await this.startNextDuty();
+          await this.moveTeam();
         } while (this.dutiesAgain);
       } finally {
         this.dutiesRun = null;
@@ -3284,6 +3291,92 @@ export class TramaController {
       void this.startAssignment(assignment.id);
     }
     this.changed();
+  }
+
+  /**
+   * Independent movement (W08): each free developer takes the next ready slice that fits it, within the mandate and the
+   * project's parallel limit, when continuous work is on; then the team's worktrees are compared before merging.
+   */
+  private async moveTeam(): Promise<void> {
+    const project = this.state.project;
+    if (!project || !project.stateWritable || this.quitting || project.isDemo) return;
+    if (this.state.settings.continuousWork !== false) this.pickFreeSlices(project);
+    await this.assessWorktreeConflicts(project);
+  }
+
+  private pickFreeSlices(project: ActiveProjectState): void {
+    const document = project.document;
+    const provider = this.coordinatorProvider(document);
+    const model = document.coordinator.threadModel ?? this.coordinatorModel(document, provider);
+    const outcomes = pickSlices(document, {
+      modules: project.snapshot.modules,
+      presence: project.presence ?? null,
+      providers: this.connectedProviders(),
+      fallback: model ? { provider, model } : null,
+    });
+    const picked = outcomes.filter((o) => o.kind === "picked");
+    if (!picked.length) return;
+    for (const { assignment, sliceId } of picked) {
+      const name = document.team.specialists.find((s) => s.id === assignment.specialistId)?.name ?? assignment.specialistId;
+      // The chat shows the pick at the end of the work's dialog, where the person is reading now.
+      const goalId = assignment.goalId ?? null;
+      const requestId = document.requests.filter((r) => (r.goalId ?? null) === goalId).at(-1)?.id ?? assignment.requestId;
+      appendEvent(document, "trama", { type: "activity", title: `${name} prende in autonomia la fetta ${sliceId}`, detail: SELF_PICK_DETAIL, tone: "info" }, requestId);
+      appendEvent(document, "trama", { type: "card", kind: "assignment", title: "Incarico", detail: null, referenceId: assignment.id }, requestId);
+    }
+    this.changedIn(project);
+    for (const { assignment } of picked) void this.startAssignment(assignment.id);
+  }
+
+  private comparingWorktrees = false;
+
+  /**
+   * Merges each pair of the team's open candidates that change the same files (W08), four probes at a time, until no
+   * pair is left to compare: with six developers a new candidate can open five pairs at once.
+   */
+  private async assessWorktreeConflicts(project: ActiveProjectState): Promise<void> {
+    if (this.comparingWorktrees) return;
+    this.comparingWorktrees = true;
+    try {
+      for (let pairs = worktreePairs(project.document).slice(0, 4); pairs.length; pairs = worktreePairs(project.document).slice(0, 4)) {
+        for (const pair of pairs) {
+          const assessment = await assessWorktreePair(project.document, pair, join(this.storage.root, "ConflictProbe"));
+          if (this.state.project !== project) return;
+          const document = project.document;
+          (document.conflicts ??= []).push(assessment);
+          if (assessment.classification === "conflict" || assessment.classification === "overlap") {
+            const assignment = findAssignment(document, pair.mine.assignmentId);
+            appendEvent(document, "trama", { type: "card", kind: "conflict", title: "Conflitto", detail: null, referenceId: assessment.id }, assignment?.requestId ?? null);
+            if (assessment.classification === "conflict") {
+              this.host.notify(
+                "Trama: conflitto tra due worktree",
+                `Il candidato ${pair.mine.id} entra in conflitto con ${pair.other.id}: si risolve prima dell'unione.`,
+                this.state.settings.sounds === true,
+              );
+            }
+          }
+          this.changedIn(project);
+        }
+      }
+    } finally {
+      this.comparingWorktrees = false;
+    }
+  }
+
+  /** The person changes a setting of the open project (W08: the developers in parallel). */
+  updateProjectSettings(update: ProjectSettings): void {
+    const project = this.requireProject();
+    if (!project.stateWritable) throw new DomainError("Lo stato di questo progetto è in sola lettura.");
+    const settings = { ...(project.document.settings ?? {}) };
+    if (update.parallelDevelopers !== undefined) {
+      const limit = clampParallelDevelopers(update.parallelDevelopers);
+      if (limit === null) throw new DomainError("Il numero di sviluppatori in parallelo deve essere un numero intero.");
+      settings.parallelDevelopers = limit;
+    }
+    project.document.settings = settings;
+    this.changedIn(project);
+    // A higher limit lets free developers take the ready slices now.
+    void this.runDuties();
   }
 
   private async stopAssignmentRuntime(assignmentId: string): Promise<void> {

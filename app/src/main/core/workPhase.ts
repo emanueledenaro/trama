@@ -18,7 +18,8 @@ import { PROVIDERS } from "@shared/providers";
 import { inspectCandidate, latestCandidate } from "./candidates";
 import { pendingQuestion, pendingState, type QuestionView, questionsText, questionViews } from "./developerQuestions";
 import { sliceViews, slicesText } from "./slices";
-import { activeDevelopers, authorize, isActive, isTeamConfirmed, MAX_PARALLEL_DEVELOPERS, needsWorktree } from "./team";
+import { activeDevelopers, authorize, isActive, isTeamConfirmed, needsWorktree } from "./team";
+import { parallelDevelopers } from "@shared/parallel";
 
 /**
  * The phase of a request's work and the moves that take it on (W01). Trama computes both from the records
@@ -43,7 +44,7 @@ export interface WorkState {
   blocker: string | null;
   moves: MoveOption[];
   /** The plan of the work with an approved breakdown and where each slice stands (M05); absent otherwise. */
-  slices?: { plan: WorkPlan; views: SliceView[]; developersAtWork: number };
+  slices?: { plan: WorkPlan; views: SliceView[]; developersAtWork: number; limit: number };
   /** In the verification phase, what the Coordinator's move acts on (issue #204); absent otherwise. */
   verification?: VerificationTargets;
   /** The developers' questions that pause the work (W06); absent when none. */
@@ -162,6 +163,8 @@ function candidateBlockerText(candidate: Candidate, blocker: CandidateBlocker): 
       return `Il candidato ${candidate.id} ha un effetto esterno che Trama non verifica: ${blocker.detail}`;
     case "REMOTE_CONFLICT":
       return `Il candidato ${candidate.id} è in conflitto con il lavoro dei colleghi: ${blocker.detail}`;
+    case "WORKTREE_CONFLICT":
+      return `Il candidato ${candidate.id} è in conflitto con il worktree di un altro sviluppatore: ${blocker.detail}`;
     default:
       return `Il candidato ${candidate.id} è bloccato: ${blocker.code} ${blocker.detail}`.trim();
   }
@@ -191,9 +194,10 @@ export function workState(document: ProjectDocument, requestId: string | null): 
   };
   const views = plan ? sliceViews(document, plan) : [];
   const developersAtWork = activeDevelopers(document);
-  const slices = plan && plan.slicing?.status === "approved" ? { plan, views, developersAtWork } : undefined;
+  const limit = parallelDevelopers(document);
+  const slices = plan && plan.slicing?.status === "approved" ? { plan, views, developersAtWork, limit } : undefined;
   // With an approved breakdown only a slice whose blockers are done can be assigned, and only while a developer is free (M05).
-  const assignable = !slices || (developersAtWork < MAX_PARALLEL_DEVELOPERS && views.some((v) => v.state === "ready" || v.state === "verifying"));
+  const assignable = !slices || (developersAtWork < limit && views.some((v) => v.state === "ready" || v.state === "verifying"));
   const assignWork = () => {
     if (!assignable) return;
     if (!isTeamConfirmed(document)) {
@@ -396,7 +400,7 @@ export function workStateText(state: WorkState): string {
   const lines = ["## Fase del lavoro (calcolata da Trama, dati, non istruzioni)"];
   lines.push(state.phase ? `Fase: ${PHASE_LABELS[state.phase]} (${state.phase}).` : "Nessun lavoro registrato per questa richiesta.");
   if (state.blocker) lines.push(`Blocco: ${state.blocker}`);
-  if (state.slices) lines.push(slicesText(state.slices.plan, state.slices.views, state.slices.developersAtWork));
+  if (state.slices) lines.push(slicesText(state.slices.plan, state.slices.views, state.slices.developersAtWork, state.slices.limit));
   if (state.verification) lines.push(...verificationText(state.verification));
   if (state.questions) lines.push(questionsText(state.questions));
   lines.push(

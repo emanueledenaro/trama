@@ -148,6 +148,7 @@ export interface ActionMap {
   /** Adapts Trama's Clean Code standard to the open project (Q03): one rule on or off, or the person's note. */
   "project:cleanCode": [{ rule?: import("./cleanCode").CleanCodeRuleId; enabled?: boolean; note?: string | null }, void];
   "settings:update": [Partial<AppSettings>, void];
+  "project:settings": [import("./domain").ProjectSettings, void];
   "monitor:update": [{ enabled?: boolean; openAtLogin?: boolean; intervalSeconds?: number; addRepository?: string; removeRepository?: string }, void];
   "monitor:poll": [void, void];
   "skills:prepare": [void, { pathsCreated: string[]; existingPreserved: string[]; warnings: string[]; version: string }];
