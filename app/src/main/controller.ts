@@ -9,6 +9,7 @@ import { shortId } from "@shared/ids";
 import { mentionContextBlock } from "@shared/mentions";
 import { codexSkillText, type LoadedSkill, skillInvocations } from "@shared/skills";
 import { isUnsupportedModelError } from "@shared/timeline";
+import { classifyProviderFailure, containsJson, failureSummary, type ProviderRetryView, retryDelayMs } from "@shared/providerFailure";
 import type { ImageAttachmentInput } from "@shared/ipc";
 import type {
   ActiveProjectState,
@@ -231,6 +232,13 @@ export const FIRST_GOAL_REQUEST =
 
 /** How long Trama waits for a provider's account check before reporting it unknown. */
 const PROVIDER_CHECK_TIMEOUT_MS = 20_000;
+/** Automatic retries of a Coordinator turn after a temporary provider limit (P10). */
+const PROVIDER_RETRY_ATTEMPTS = 5;
+/** The first wait before a retry; it doubles at each attempt. TRAMA_PROVIDER_RETRY_MS shortens it for the UI check. */
+const providerRetryBaseMs = (): number => {
+  const configured = Number(process.env.TRAMA_PROVIDER_RETRY_MS);
+  return Number.isFinite(configured) && configured > 0 ? configured : 30_000;
+};
 /** Why a Coordinator turn ended when the person opened or closed another project during it (C02). */
 const LEFT_PROJECT_NOTE = "Hai lasciato il progetto mentre il Coordinatore rispondeva.";
 
@@ -281,8 +289,13 @@ export function providerUnavailableReason(id: ProviderId, account: ProviderAccou
         : `${name} usa un account di tipo ${account.type}, che Trama non supporta.`;
     case "unavailable":
       return account.message;
-    case "blocked":
-      return `${name} è bloccato: ${account.message}${account.until ? ` Si sblocca il ${new Date(account.until).toLocaleString("it-IT")}.` : ""} Puoi aspettare o scegliere un altro provider.`;
+    case "blocked": {
+      // The account keeps the provider's text for the technical detail; the person reads its class (P10).
+      const failure = classifyProviderFailure(account.message, { provider: name });
+      const cause = failure.kind === "temporaryLimit" ? "ha un limite temporaneo" : "ha esaurito la quota del piano";
+      const until = account.until ?? failure.until;
+      return `${name} è bloccato: ${cause}.${until ? ` Si sblocca il ${new Date(until).toLocaleString("it-IT")}.` : ""} Puoi aspettare o scegliere un altro provider.`;
+    }
     case "signedOut": {
       const command = PROVIDERS.find((p) => p.id === id)?.signInCommand;
       return id === "codex"
@@ -330,6 +343,8 @@ export async function initializeRepository(root: string): Promise<void> {
 
 /** A failure message the person can act on: network problems are named as such (C11). */
 export function describeFailure(message: string): string {
+  // A provider's JSON body never reaches a card: its class in plain words, the raw text stays in the logs (P10).
+  if (containsJson(message)) return failureSummary(message);
   if (/ENOTFOUND|EAI_AGAIN|ECONNREFUSED|ECONNRESET|ETIMEDOUT|getaddrinfo|network|offline|fetch failed/i.test(message)) {
     return `Rete non raggiungibile: ${message}. Trama riprova quando la rete torna e la persona riprende il lavoro.`;
   }
@@ -560,6 +575,8 @@ export class TramaController {
     this.publishNow();
     void this.refreshCodex();
     void this.refreshProviders();
+    // GitHub CLI is read at startup too: "not checked yet" never reads as "not connected" (P10).
+    void this.checkGitHubCli();
     const last = this.state.recentProjects.find((p) => p.id === this.lastProjectId);
     if (last && existsSync(last.path)) {
       await this.openProject(last.path, last.isDemo).catch((error) => this.fail(error));
@@ -573,6 +590,7 @@ export class TramaController {
 
   async stop(): Promise<void> {
     this.quitting = true;
+    this.cancelProviderRetry(null);
     for (const [, planner] of this.planners) planner.stop();
     this.planners.clear();
     for (const [, run] of this.auditRuns) for (const client of run.clients) client.stop();
@@ -1440,12 +1458,15 @@ export class TramaController {
 
   private readonly providerWaits = new Map<ProviderId, NodeJS.Timeout>();
 
-  /** One timer per provider: no burst of retries while it is blocked. */
-  private scheduleProviderWait(provider: ProviderId): void {
+  /** Temporary limits in a row per provider, so the wait of specialists grows (P10); a completed assignment resets it. */
+  private readonly rateLimitStreak = new Map<ProviderId, number>();
+
+  /** One timer per provider: no burst of retries while it is blocked. `delayMs` is the wait after a temporary limit. */
+  private scheduleProviderWait(provider: ProviderId, delayMs: number | null = null): void {
     if (this.quitting || this.providerWaits.has(provider)) return;
     const account = this.state.providers[provider]?.account;
     const until = account?.kind === "blocked" && account.until ? Date.parse(account.until) : Number.NaN;
-    const delay = Number.isFinite(until) ? Math.max(60_000, until - Date.now() + 30_000) : 15 * 60_000;
+    const delay = delayMs ?? (Number.isFinite(until) ? Math.max(60_000, until - Date.now() + 30_000) : 15 * 60_000);
     const timer = setTimeout(() => {
       this.providerWaits.delete(provider);
       void this.resumeWaitingWork(provider);
@@ -1514,6 +1535,7 @@ export class TramaController {
       project.runningRequestId = null;
     }
     this.stopCoordinatorRuntime();
+    this.cancelProviderRetry(project);
     if (!project) return;
     project.phase = { kind: "idle" };
     project.streaming = null;
@@ -1856,10 +1878,14 @@ export class TramaController {
     removable = true,
     /** The next step the message takes: the person's button, or Trama starting the Coordinator's move (W04). */
     step: RequestStep | null = null,
+    /** The failed request this one repeats (P10): the chat does not show the message a second time. */
+    retry: { of: CoordinatorRequest; attempt: number } | null = null,
   ): Promise<void> {
     const project = this.requireProject();
     const trimmed = text.trim();
     if (!trimmed) return;
+    // A new message or a step decides for the person: a waiting automatic retry no longer applies.
+    if (!retry) this.cancelProviderRetry(project);
     const goal = goalId ? requireGoal(project.document, goalId) : null;
     // Only a message the person typed empties the composer; a recorded choice or a step's button leaves the draft alone.
     const typed = removable && !step;
@@ -1889,7 +1915,7 @@ export class TramaController {
       if (this.starting) await this.starting.catch(() => undefined);
       if (provider !== this.coordinatorProvider(project.document)) this.switchCoordinatorProvider(project, provider, model, effort);
     }
-    const attachments = await this.storage.saveAttachments(project.id, images);
+    const attachments = retry ? (retry.of.attachments ?? []) : await this.storage.saveAttachments(project.id, images);
     const document = project.document;
     const module = moduleId ? project.snapshot.modules.find((m) => m.id === moduleId) : undefined;
     const activeProvider = this.coordinatorProvider(document);
@@ -1908,11 +1934,25 @@ export class TramaController {
       attachments,
       ...(goal ? { goalId: goal.id } : {}),
       ...(step ? { step } : {}),
+      ...(retry ? { retry: { of: retry.of.id, attempt: retry.attempt } } : {}),
     };
     document.requests.push(request);
     if (typed) dialogComposer(document, goal?.id ?? null).composerDraft = "";
     const automatic = step?.by === "trama" ? (step.move as CoordinatorMove) : null;
-    if (automatic) {
+    if (retry) {
+      // The message is already in the chat, above the failure: the retry is a line of Trama's (P10).
+      appendEvent(
+        document,
+        "trama",
+        {
+          type: "activity",
+          title: retry.attempt > 0 ? `Nuovo tentativo automatico (${retry.attempt} di ${PROVIDER_RETRY_ATTEMPTS})` : "Nuovo tentativo",
+          detail: retry.attempt > 0 ? `Dopo il limite temporaneo di ${providerName(activeProvider)}, Trama riprova il messaggio.` : "Trama riprova il messaggio del turno non riuscito.",
+          tone: "info",
+        },
+        request.id,
+      );
+    } else if (automatic) {
       // A move Trama started by itself is not the person's message: the chat shows it as its own line, with a stop (W04).
       appendEvent(
         document,
@@ -2064,13 +2104,21 @@ export class TramaController {
       request.state = interrupted ? "interrupted" : "failed";
       request.completedAt = new Date().toISOString();
       request.failure = message;
+      const failure = interrupted ? null : classifyProviderFailure(message, { provider: providerName(activeProvider) });
       appendEvent(
         document,
         "trama",
-        { type: "activity", title: interrupted ? "Turno interrotto" : "Il turno non è riuscito", detail: interrupted ? null : message, tone: interrupted ? "info" : "error" },
+        {
+          type: "activity",
+          title: interrupted ? "Turno interrotto" : "Il turno non è riuscito",
+          detail: failure ? (failure.kind === "unknown" ? failure.explanation : `${failure.title}. ${failure.explanation}`) : null,
+          tone: interrupted ? "info" : "error",
+        },
         request.id,
       );
       if (selectedModel && isUnsupportedModelError(message)) this.markModelUnsupported(activeProvider, selectedModel);
+      // A temporary limit passes by itself: Trama retries with a growing wait, and the person can stop it (P10).
+      if (failure?.kind === "temporaryLimit") this.scheduleProviderRetry(project, request, failure.until);
       const code = errorCode(error);
       if (code === "rpcError" && /thread|rollout|session/i.test(message)) {
         document.coordinator.threadId = null;
@@ -2088,6 +2136,71 @@ export class TramaController {
       if (!this.dispatchQueued()) this.continueAfterTurn(project, request.id);
       void this.runDuties();
     }
+  }
+
+  // MARK: Retries after a temporary provider limit (P10)
+
+  private providerRetryTimer: { projectId: string; timer: NodeJS.Timeout } | null = null;
+
+  /** Schedules the next automatic retry of `request`, with a doubling wait, up to PROVIDER_RETRY_ATTEMPTS. */
+  private scheduleProviderRetry(project: ActiveProjectState, request: CoordinatorRequest, until: string | null): void {
+    const attempt = (request.retry?.attempt ?? 0) + 1;
+    this.cancelProviderRetry(project);
+    if (this.quitting || attempt > PROVIDER_RETRY_ATTEMPTS) return;
+    const provider = request.provider ?? this.coordinatorProvider(project.document);
+    const delay = retryDelayMs(attempt, providerRetryBaseMs(), until);
+    const view: ProviderRetryView = { requestId: request.id, provider: providerName(provider), attempt, maxAttempts: PROVIDER_RETRY_ATTEMPTS, at: new Date(Date.now() + delay).toISOString() };
+    project.providerRetry = view;
+    const timer = setTimeout(() => {
+      if (this.providerRetryTimer?.timer === timer) this.providerRetryTimer = null;
+      void this.fireProviderRetry(project, view).catch((error) => this.fail(error));
+    }, delay);
+    timer.unref?.();
+    this.providerRetryTimer = { projectId: project.id, timer };
+  }
+
+  private cancelProviderRetry(project: ActiveProjectState | null): void {
+    if (this.providerRetryTimer && (!project || this.providerRetryTimer.projectId === project.id)) {
+      clearTimeout(this.providerRetryTimer.timer);
+      this.providerRetryTimer = null;
+    }
+    if (project?.providerRetry) project.providerRetry = null;
+  }
+
+  private async fireProviderRetry(project: ActiveProjectState, view: ProviderRetryView): Promise<void> {
+    if (project.providerRetry !== view) return;
+    project.providerRetry = null;
+    // The person left the project, or another turn or message came first: the retry no longer applies.
+    if (this.quitting || this.state.project !== project || project.runningRequestId || this.queue.some((q) => q.projectId === project.id)) {
+      this.changed();
+      return;
+    }
+    const failed = project.document.requests.find((r) => r.id === view.requestId);
+    if (failed?.state !== "failed") return;
+    // The dialog's model now, so a model the person picked after the failure is the one retried.
+    await this.send(failed.text, failed.moduleId, null, failed.effort, [], null, failed.goalId ?? null, false, failed.step ?? null, {
+      of: failed,
+      attempt: view.attempt,
+    });
+  }
+
+  /** The person repeats a failed turn (Riprova): same message, model and step, without writing it again (P10). */
+  async retryRequest(requestId: string): Promise<void> {
+    const project = this.requireProject();
+    const failed = project.document.requests.find((r) => r.id === requestId);
+    if (!failed || (failed.state !== "failed" && failed.state !== "interrupted")) throw new DomainError("Questo turno non si può più ripetere.");
+    this.cancelProviderRetry(project);
+    await this.send(failed.text, failed.moduleId, null, failed.effort, [], null, failed.goalId ?? null, false, failed.step ?? null, { of: failed, attempt: 0 });
+  }
+
+  /** The person stops the automatic retries: the failure stays with its actions. */
+  stopProviderRetry(): void {
+    const project = this.state.project;
+    if (!project?.providerRetry) return;
+    const { requestId, provider } = project.providerRetry;
+    this.cancelProviderRetry(project);
+    appendEvent(project.document, "trama", { type: "activity", title: "Tentativi automatici fermati", detail: `Hai fermato i tentativi con ${provider}.`, tone: "info" }, requestId);
+    this.changed();
   }
 
   /** Sends the next queued message of the selected project; false when none left. */
@@ -2380,10 +2493,17 @@ export class TramaController {
     await this.refreshProvider(provider);
     const account = this.state.providers[provider].account;
     if (account?.kind !== "blocked" || this.state.project !== project) return;
+    // On a real block the Coordinator proposes the providers that can work now (P10).
+    const others = (Object.keys(this.state.providers) as ProviderId[]).filter(
+      (id) => id !== provider && hasAdapter(id) && supportsReadOnly(id) && isUsableAccount(this.state.providers[id]?.account),
+    );
+    const proposal = others.length
+      ? ` Puoi passare a ${others.map(providerName).join(", ")} con Cambia provider: ${others.length === 1 ? "è già collegato" : "sono già collegati"}.`
+      : "";
     appendEvent(
       project.document,
       "trama",
-      { type: "card", kind: "contextNotice", title: `${providerName(provider)} bloccato`, detail: providerUnavailableReason(provider, account), referenceId: null },
+      { type: "card", kind: "contextNotice", title: `${providerName(provider)} bloccato`, detail: `${providerUnavailableReason(provider, account)}${proposal}`, referenceId: null },
       requestId,
     );
     this.changed();
@@ -2854,7 +2974,7 @@ export class TramaController {
         // The specialist stays in the team when it cannot be removed.
       }
     }
-    if (final.status === "failed" && outcome.kind === "failed" && /limit|quota|rate|usage|utilizzo/i.test(outcome.message)) {
+    if (final.status === "failed" && outcome.kind === "failed" && /limit|quota|rate|usage|utilizzo|limite/i.test(outcome.message)) {
       await this.refreshProvider(provider);
       const account = this.state.providers[provider]?.account;
       if (account?.kind === "blocked") {
@@ -2869,8 +2989,24 @@ export class TramaController {
         );
         this.host.notify(`Trama: ${providerName(provider)} bloccato`, `L'incarico ${assignmentId} aspetta che ${providerName(provider)} si sblocchi.`, this.state.settings.sounds === true);
         this.scheduleProviderWait(provider);
+      } else if (classifyProviderFailure(outcome.message).kind === "temporaryLimit" && isUsableAccount(account)) {
+        // A temporary limit (P10): the assignment waits a growing time, then resumes like after a block.
+        const streak = (this.rateLimitStreak.get(provider) ?? 0) + 1;
+        this.rateLimitStreak.set(provider, streak);
+        const delay = retryDelayMs(Math.min(streak, PROVIDER_RETRY_ATTEMPTS), providerRetryBaseMs() * 2);
+        final.waitingForProvider = { provider, until: new Date(Date.now() + delay).toISOString(), since: new Date().toISOString() };
+        this.specialistActivity(
+          project,
+          assignmentId,
+          `${final.turns.length}`,
+          `In attesa che il limite temporaneo di ${providerName(provider)} passi`,
+          `Non è la quota dell'account. Trama riprende da sola l'incarico tra ${Math.round(delay / 1_000)} secondi, se il mandato lo copre ancora.`,
+          "info",
+        );
+        this.scheduleProviderWait(provider, delay);
       }
     }
+    if (final.status === "completed") this.rateLimitStreak.delete(provider);
     this.changedIn(project);
     this.continueWork(project, final.requestId, "assignmentEnded");
     this.releaseParkedProject(project);
@@ -4069,10 +4205,16 @@ export class TramaController {
 
   checkGitHubCli(): Promise<void> {
     this.gitHubCliCheck ??= (async () => {
+      const before = this.state.gitHubCli.status;
       this.state.gitHubCli = { ...this.state.gitHubCli, status: "checking" };
       this.publish();
       this.state.gitHubCli = await readGitHubCliStatus();
       this.publish();
+      // gh became usable (a login in the terminal): the project's GitHub reading may have failed before it.
+      const project = this.state.project;
+      if (before !== "ready" && this.state.gitHubCli.status === "ready" && project && !project.isDemo && project.github.status === "unavailable") {
+        void this.refreshGitHub().catch(() => undefined);
+      }
     })().finally(() => {
       this.gitHubCliCheck = null;
     });
