@@ -33,6 +33,7 @@ import { formatRelativeTime } from "@/lib/format";
 import { act, type InspectorTarget, refreshProject, useUi } from "@/lib/store";
 import { ExercisePanel } from "@/components/onboarding/ExercisePanel";
 import { Composer } from "./Composer";
+import { FocusBar } from "./FocusBar";
 import { TimelineRowView } from "./TimelineRows";
 
 const HEADER_CHIP =
@@ -434,15 +435,19 @@ export function ChatView({ isMac }: { isMac: boolean }) {
       ) : mainView === "settings" ? (
         <SettingsView />
       ) : project ? (
-        <div key={`${project.id}:${goalId ?? "project"}`} className="chat-pane-enter relative flex min-h-0 flex-1 flex-col">
-          <Timeline />
-          <ExercisePanel />
-          <div className="chat-composer-dock pointer-events-none absolute inset-x-0 bottom-0 px-3 pb-3 sm:px-5 sm:pb-4">
-            <div className="pointer-events-auto">
-              <Composer />
+        <>
+          {/* Outside the dialog's pane: the bar and its open queue stay while the person moves between dialogs (W02). */}
+          <FocusBar key={project.id} />
+          <div key={`${project.id}:${goalId ?? "project"}`} className="chat-pane-enter relative flex min-h-0 flex-1 flex-col">
+            <Timeline />
+            <ExercisePanel />
+            <div className="chat-composer-dock pointer-events-none absolute inset-x-0 bottom-0 px-3 pb-3 sm:px-5 sm:pb-4">
+              <div className="pointer-events-auto">
+                <Composer />
+              </div>
             </div>
           </div>
-        </div>
+        </>
       ) : (
         <Landing />
       )}
