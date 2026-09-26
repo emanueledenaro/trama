@@ -177,7 +177,8 @@ export function closingConfirmation(text: string): string | null {
 /** A line that opens a numbered or lettered option: "1. ", "2) ", "a) ", "**1.** ". */
 const OPTION_LINE = /^\s*(?:[-*]\s+)?(?:\*\*)?(?:\d{1,2}|[a-c])[.)](?:\*\*)?\s+\S/i;
 /** How the reply asks the person to pick one of those options in the text. */
-const PICK_IN_TEXT = /\b(?:rispondimi|rispondi|rispondete|scrivimi|dimmi) (?:con|solo)\b|\b(?:scegli|scegliete|indica|indicami|dimmi) (?:tra|fra|quale|il numero|l'opzione|un'opzione)\b|\bquale (?:opzione )?preferisci\b/i;
+const PICK_IN_TEXT =
+  /\b(?:rispondimi|rispondi|rispondete|scrivimi|dimmi) (?:con|solo)\b|\b(?:scegli|scegliete|indica|indicami)\b|\bdimmi (?:tra|fra|quale|quali|il numero|l'opzione|un'opzione)\b|\b(?:quale|quali|cosa|che cosa)\b[^.?!\n]{0,40}\bprefer(?:isci|ite)\b/i;
 
 /**
  * The sentence with which a Coordinator reply asks the person to pick one of numbered options in the text
@@ -187,9 +188,22 @@ const PICK_IN_TEXT = /\b(?:rispondimi|rispondi|rispondete|scrivimi|dimmi) (?:con
 export function choicesInText(text: string): string | null {
   const lines = text.split("\n");
   if (lines.filter((line) => OPTION_LINE.test(line)).length < 2) return null;
-  const clean = text.replace(/[*_`]/g, "");
-  const sentence = clean.split(/(?<=[.!?])\s+|\n/).find((part) => PICK_IN_TEXT.test(part));
+  // The request to pick sits outside the options: "1. Scegli il pagamento" is an option, not the question.
+  const rest = lines.filter((line) => !OPTION_LINE.test(line)).join("\n").replace(/[*_`]/g, "");
+  const sentence = rest.split(/(?<=[.!?])\s+|\n/).find((part) => PICK_IN_TEXT.test(part));
   return sentence ? sentence.trim() : null;
+}
+
+/** Cards the person answers: a request that opened one gave the person its buttons. */
+const CHOICE_CARDS = new Set(["mandate", "decision", "teamProposal", "goal", "domainProposal"]);
+
+/**
+ * The options the Coordinator wrote in the reply of `requestId` for the person to pick, when that request opened no
+ * card the person answers (issue #228). A reply that recaps the options of a card it opened is fine.
+ */
+export function choicesWithoutCard(document: ProjectDocument, requestId: string, reply: string): string | null {
+  const opened = document.events.some((e) => e.requestId === requestId && e.content.type === "card" && CHOICE_CARDS.has(e.content.kind));
+  return opened ? null : choicesInText(reply);
 }
 
 /**
@@ -205,7 +219,7 @@ export function confirmationFeedback(document: ProjectDocument, requestId: strin
   if (!previous) return null;
   const reply = document.events.findLast((e) => e.requestId === previous.id && e.content.type === "coordinatorText");
   if (reply?.content.type !== "coordinatorText") return null;
-  const choice = choicesInText(reply.content.text);
+  const choice = choicesWithoutCard(document, previous.id, reply.content.text);
   if (choice) {
     return [
       "## Scelta scritta nel testo",

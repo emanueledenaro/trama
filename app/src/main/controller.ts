@@ -93,7 +93,7 @@ import {
   AUTOMATIC_MOVE_DETAIL,
   automaticMove,
   automaticMoveSection,
-  choicesInText,
+  choicesWithoutCard,
   confirmationFeedback,
   type ContinuationGuards,
   stalledMove,
@@ -2200,7 +2200,7 @@ export class TramaController {
       if (reply) {
         recordReply(document, request.id, reply, selectedModel, references, activeProvider);
         // Options to pick in the text leave the person without a card: recorded, and the next turn is told (issue #228).
-        const choice = choicesInText(reply);
+        const choice = choicesWithoutCard(document, request.id, reply);
         if (choice) appendEvent(document, "trama", { type: "activity", title: CHOICES_IN_TEXT_TITLE, detail: choice, tone: "error" }, request.id);
         // A write in this turn already reset its counter: the review it would have started is not due.
         const writes = this.turnLearningWrites.get(request.id) ?? [];
