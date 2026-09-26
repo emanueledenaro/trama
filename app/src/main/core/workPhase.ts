@@ -42,6 +42,17 @@ export interface WorkState {
   moves: MoveOption[];
   /** The plan of the work with an approved breakdown and where each slice stands (M05); absent otherwise. */
   slices?: { plan: WorkPlan; views: SliceView[]; developersAtWork: number };
+  /** In the verification phase, what the Coordinator's move acts on (issue #204); absent otherwise. */
+  verification?: VerificationTargets;
+}
+
+/**
+ * What verifying the work means now: the worktree assignments that ended without a candidate, which the Coordinator
+ * declares first with declare_candidate, and the declared candidates still missing evidence or an approving review.
+ */
+export interface VerificationTargets {
+  undeclared: string[];
+  unverified: string[];
 }
 
 export const NEXT_MOVES: NextMove[] = [
@@ -184,21 +195,21 @@ export function workState(document: ProjectDocument, requestId: string | null): 
   const preparePlan = () => {
     if (may("plan")) add(coordinator("preparePlan"));
   };
-  const finish = (phase: WorkPhase | null, blocker: string | null = null): WorkState => {
+  const finish = (phase: WorkPhase | null, blocker: string | null = null, verification?: VerificationTargets): WorkState => {
     if (phase === null) return { phase, blocker, moves: [] };
     if (open.length) moves.unshift(answerQuestions(open));
     if (pendingMandate) add(person("grantMandate", "Concedi il mandato", pendingMandate.id));
-    return { phase, blocker, moves, ...(slices ? { slices } : {}) };
+    return { phase, blocker, moves, ...(slices ? { slices } : {}), ...(verification ? { verification } : {}) };
   };
 
   if (assignments.length) {
     const state = assignedWork(document, assignments, { assignWork, add });
     if (state) {
-      if (!slices || state.phase === "blocked") return finish(state.phase, state.blocker);
+      if (!slices || state.phase === "blocked") return finish(state.phase, state.blocker, state.verification);
       // The next unblocked slices go on beside the work already assigned (M05); the work is merged only with every slice done.
       assignWork();
       const unfinished = views.some((v) => v.state !== "done");
-      return finish(state.phase === "merged" && unfinished ? "execution" : state.phase, state.blocker);
+      return finish(state.phase === "merged" && unfinished ? "execution" : state.phase, state.blocker, state.verification);
     }
   }
   if (plan) {
@@ -278,7 +289,7 @@ function assignedWork(
   document: ProjectDocument,
   assignments: SpecialistAssignment[],
   moves: { assignWork(): void; add(option: MoveOption): void },
-): { phase: WorkPhase; blocker: string | null } | null {
+): { phase: WorkPhase; blocker: string | null; verification?: VerificationTargets } | null {
   const items = assignments.map((assignment) => ({ assignment, candidate: latestCandidate(document, assignment.id) }));
   for (const { assignment, candidate } of items) {
     if (isActive(assignment) && assignment.waitingForProvider) {
@@ -304,13 +315,16 @@ function assignedWork(
   // Only work in a worktree becomes a candidate; read-only work that ended leaves the phase to the plan.
   const edits = items.filter((i) => needsWorktree(i.assignment));
   if (!edits.length) return null;
-  const unverified = edits.find((i) => !i.candidate || inspectCandidate(document, i.candidate, null).length || i.candidate.technicalReview?.verdict !== "approved");
-  if (unverified) {
-    const needsDeclaring = edits.some((i) => !i.candidate);
-    if (!needsDeclaring || authorize(document.mandate, "executeInWorktree") === "authorized") {
-      moves.add(coordinator("verifyCandidate", unverified.candidate?.id ?? null));
+  const pending = edits.filter((i) => !i.candidate || inspectCandidate(document, i.candidate, null).length || i.candidate.technicalReview?.verdict !== "approved");
+  if (pending.length) {
+    const verification: VerificationTargets = {
+      undeclared: pending.filter((i) => !i.candidate).map((i) => i.assignment.id),
+      unverified: pending.flatMap((i) => (i.candidate ? [i.candidate.id] : [])),
+    };
+    if (!verification.undeclared.length || authorize(document.mandate, "executeInWorktree") === "authorized") {
+      moves.add(coordinator("verifyCandidate", pending[0]!.candidate?.id ?? null));
     }
-    return { phase: "verification", blocker: null };
+    return { phase: "verification", blocker: null, verification };
   }
   const unpublished = edits.find((i) => !i.candidate!.pullRequest);
   if (unpublished) {
@@ -346,10 +360,28 @@ export function workStateText(state: WorkState): string {
   lines.push(state.phase ? `Fase: ${PHASE_LABELS[state.phase]} (${state.phase}).` : "Nessun lavoro registrato per questa richiesta.");
   if (state.blocker) lines.push(`Blocco: ${state.blocker}`);
   if (state.slices) lines.push(slicesText(state.slices.plan, state.slices.views, state.slices.developersAtWork));
+  if (state.verification) lines.push(...verificationText(state.verification));
   lines.push(
     state.moves.length
       ? `Mosse possibili per declare_next_step: ${state.moves.map((m) => `${m.move} (${m.actor === "person" ? "la persona" : "tu"}: "${m.label}")`).join("; ")}.`
       : "Nessuna mossa possibile ora.",
   );
   return lines.join("\n");
+}
+
+/**
+ * The verification move spelled out (issue #204): an assignment id is not a candidate, so an assignment that ended
+ * without one is declared first, and verify_candidate takes the candidateID declare_candidate returns.
+ */
+export function verificationText(targets: VerificationTargets): string[] {
+  const lines: string[] = [];
+  if (targets.undeclared.length) {
+    lines.push(
+      `Incarichi conclusi senza candidato: ${targets.undeclared.join(", ")}. Per ognuno prima declare_candidate (assignment: l'id dell'incarico, decisionIDs: le decisioni del Patto che deve rispettare), poi verify_candidate con il candidateID che restituisce, per ogni verifica richiesta, poi review_candidate.`,
+    );
+  }
+  if (targets.unverified.length) {
+    lines.push(`Candidati da verificare: ${targets.unverified.join(", ")}. verify_candidate per ogni verifica richiesta che manca, poi review_candidate.`);
+  }
+  return lines;
 }

@@ -76,6 +76,7 @@ import {
   automaticMoveSection,
   confirmationFeedback,
   type ContinuationGuards,
+  stalledMove,
   type WorkEvent,
 } from "./core/continuousWork";
 import { openGrillingQuestions } from "@shared/grilling";
@@ -2013,6 +2014,12 @@ export class TramaController {
         }
       } else {
         appendEvent(document, "trama", { type: "activity", title: "Il Coordinatore non ha scritto una risposta", detail: null, tone: "info" }, request.id);
+      }
+      // An automatic move the turn did not make comes back as the next step, with Trama's reason: the work never stops in silence (issue #204).
+      const stalled = stalledMove(document, request.id);
+      if (stalled && request.step) {
+        request.step.stalled = stalled.reason;
+        request.nextStep = { move: stalled.move, reason: stalled.reason, declaredAt: new Date().toISOString() };
       }
     } catch (error) {
       if (closed()) return;

@@ -562,4 +562,50 @@ describe("team and candidate tools under the mandate (V04, V05)", () => {
     expect(await refusal("clear_candidate", { candidate: candidate.id }, context)).toContain("candidate_not_verified");
     expect(candidate.clearance).toBeNull();
   });
+
+  it("verify_candidate on an ended assignment says to declare the candidate first, then resolves to it (issue #204)", async () => {
+    const document = emptyDocument("p");
+    const verified: string[] = [];
+    const context = {
+      ...mandateContext(document).context,
+      verifyCandidate: async (id: string) => {
+        verified.push(id);
+        return { exitCode: 0, output: "pulito", command: ["git", "status"] };
+      },
+    } as unknown as ToolContext;
+    const decision = decide(document, { id: null, value: "Un ordine pagato va in revisione", acceptedExample: "Ordine 42", rationale: "r" });
+    confirmTeam(document, proposeTeam(document, { requestId: null, summary: null, members: [{ name: "Ada", competence: "Swift", reason: "r", moduleIds: [] }] }).id, null, null);
+    grant(document, ["executeInWorktree"]);
+    const assignment = assign(document, { ...order, moduleIds: ["Sources/Orders"], model: "gpt-5.5" } as never, 1, null);
+    recordWorkspace(document, assignment.id, WORKTREE as never);
+    beginTurn(document, assignment.id, "t1", "gpt-5.5");
+
+    // While the work runs there is nothing to declare yet.
+    expect(await refusal("verify_candidate", { candidate: assignment.id, check: "git_status" }, context)).toContain("assignment_running");
+    endTurn(document, assignment.id, "t1", { kind: "completed", text: "fatto" });
+
+    // The live sequence: the Coordinator passes the assignment id, twice. Each answer names the move to make first.
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const refused = parse(await runCoordinatorTool("verify_candidate", { candidate: assignment.id, check: "git_status" }, context));
+      expect(refused.error.code).toBe("candidate_not_declared");
+      expect(refused.error.message).toContain(`declare_candidate with assignment ${assignment.id}`);
+      expect(refused.error.message).toContain("candidateID");
+    }
+    expect(verified).toEqual([]);
+    expect(await refusal("verify_candidate", { candidate: "C-NESSUNO", check: "git_status" }, context)).toContain("unknown_candidate");
+
+    // Once declared, the assignment id stands for its latest candidate.
+    const declared = parse(await runCoordinatorTool("declare_candidate", { assignment: assignment.id, decisionIDs: [decision.id] }, context));
+    const result = parse(await runCoordinatorTool("verify_candidate", { candidate: assignment.id, check: "git_status" }, context));
+    expect(result).toMatchObject({ candidateID: declared.candidateID, check: "git_status", passed: true });
+    expect(verified).toEqual([declared.candidateID]);
+  });
+
+  it("verify_candidate on read-only work says it has no candidate", async () => {
+    const document = emptyDocument("p");
+    const { context } = mandateContext(document);
+    confirmTeam(document, proposeTeam(document, { requestId: null, summary: null, members: [{ name: "Ada", competence: "Swift", reason: "r", moduleIds: [] }] }).id, null, null);
+    const assignment = assign(document, { ...order, tools: [], moduleIds: ["Sources/Orders"], model: "gpt-5.5" } as never, 1, null);
+    expect(await refusal("verify_candidate", { candidate: assignment.id, check: "git_status" }, context)).toContain("not_a_candidate");
+  });
 });

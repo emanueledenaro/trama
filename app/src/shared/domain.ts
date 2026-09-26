@@ -93,6 +93,8 @@ export interface CoordinatorRequest {
 export interface RequestStep {
   move: NextMove;
   by: "person" | "trama";
+  /** Set when Trama's automatic turn ended without making the move: why, in the person's words (issue #204). */
+  stalled?: string | null;
 }
 
 /** The phase of a request's work, computed by Trama from the records, never by the model (W01). */

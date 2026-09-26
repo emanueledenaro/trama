@@ -794,9 +794,42 @@ await shot("18a-specialist-stopped");
 await slowCard.getByRole("button", { name: "Riprendi" }).click();
 await slowCard.getByText("Concluso", { exact: true }).waitFor({ timeout: 20_000 });
 
+// Issue #204: the work ends, Trama starts the checks by itself and the Coordinator verifies the assignment instead of a
+// candidate, as in the live run. The move comes back under the reply with Trama's reason and its button on the right.
+await page.evaluate(() => window.trama.invoke("settings:update", { continuousWork: true }));
+await send("[assegna] [luna]");
+const lunaCard = assignmentCards.nth(1);
+await lunaCard.getByText("Concluso", { exact: true }).waitFor({ timeout: 20_000 });
+const lunaAssignment = await cardAssignment(lunaCard);
+const stalledStep = page.locator('[data-testid="automatic-step"][data-stalled="true"]').filter({ hasText: "Esegui le verifiche" });
+await stalledStep.getByText("Mossa automatica non riuscita").waitFor({ timeout: 30_000 });
+const retryStep = page.getByTestId("next-step").filter({ hasText: `l'incarico ${lunaAssignment} è concluso ma il suo candidato non è stato dichiarato` });
+await retryStep.waitFor({ timeout: 20_000 });
+const retryButton = retryStep.getByRole("button", { name: "Esegui le verifiche" });
+const retryBox = await retryButton.boundingBox();
+const retryRowBox = await retryStep.boundingBox();
+if (!retryBox || !retryRowBox || retryRowBox.x + retryRowBox.width - (retryBox.x + retryBox.width) > 2) throw new Error("Esegui le verifiche is not on the right");
+await page.evaluate(() => window.trama.invoke("settings:update", { continuousWork: false }));
+await retryStep.scrollIntoViewIfNeeded();
+await shot("18a2-automatic-move-stalled");
+await app.evaluate(({ nativeTheme }) => {
+  nativeTheme.themeSource = "dark";
+});
+await page.evaluate(() => document.documentElement.classList.add("dark"));
+await shot("18a3-automatic-move-stalled-dark");
+await app.evaluate(({ nativeTheme }) => {
+  nativeTheme.themeSource = "system";
+});
+await page.evaluate(() => document.documentElement.classList.remove("dark"));
+// The person takes the move again: it reaches the Coordinator as the person's message, and the button goes away.
+await retryButton.click();
+await page.getByText("Esegui le verifiche del lavoro.").last().waitFor({ timeout: 20_000 });
+await page.getByRole("button", { name: "Interrompi" }).waitFor({ state: "hidden", timeout: 20_000 });
+if (await retryStep.count()) throw new Error("The stalled move is still offered after the person took it");
+
 // V05: the work leaves trailing whitespace; git_diff_check fails on the candidate with git's own output.
 await send("[assegna] [spazi]");
-const spacesCard = assignmentCards.nth(1);
+const spacesCard = assignmentCards.nth(2);
 await spacesCard.getByText("Concluso", { exact: true }).waitFor({ timeout: 20_000 });
 await send(`[candidato:${await cardAssignment(spacesCard)}:${candidateDecision}:tutte]`);
 const candidateCards = page.locator(".chat-card").filter({ has: page.getByTestId("candidate-evidence") });
@@ -824,7 +857,7 @@ await page.evaluate(() => document.documentElement.classList.remove("dark"));
 
 // The correction is new work and a new candidate, with new evidence; the failed one keeps its own.
 await send("[assegna] [correggi-spazi]");
-const fixCard = assignmentCards.nth(2);
+const fixCard = assignmentCards.nth(3);
 await fixCard.getByText("Concluso", { exact: true }).waitFor({ timeout: 20_000 });
 await send(`[candidato:${await cardAssignment(fixCard)}:${candidateDecision}:tutte]`);
 const correctedCard = candidateCards.nth(1);
@@ -859,9 +892,9 @@ await sliceSpec.getByText("Restano in Trama").waitFor({ timeout: 20_000 });
 // W05: an assignment without its contract (seams, Pact decisions) is refused with a clear tool failure; no card appears.
 await send("[assegna] [senza-contratto]");
 await page.getByText(/Rifiutato: .*incomplete_contract.*seams.*decisionIDs/).last().waitFor({ timeout: 20_000 });
-if ((await assignmentCards.count()) !== 3) throw new Error("An assignment without its contract reached a developer");
+if ((await assignmentCards.count()) !== 4) throw new Error("An assignment without its contract reached a developer");
 await send("[assegna] [test]");
-const sliceWork = assignmentCards.nth(3);
+const sliceWork = assignmentCards.nth(4);
 await sliceWork.getByText("Concluso", { exact: true }).waitFor({ timeout: 20_000 });
 // W05: the card shows the contract the slice reached the developer with and the developer's structured report,
 // as a statement apart from Trama's evidence.
