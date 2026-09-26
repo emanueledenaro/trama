@@ -550,6 +550,12 @@ function domainWritingRule(document: ProjectDocument, context: Pick<DutyContext,
   }
   const busy = roleWork(document, "documentation");
   if (busy) return { state: "waiting", detail: `La proposta ${ready.id} aspetta che il ruolo Documentazione e dominio finisca l'incarico ${busy.id}.` };
+  // assignDuty refuses work on modules another assignment is working on (work_not_independent).
+  const overlapping = activeAssignments(document).find((a) => a.moduleIds.some((id) => ready.moduleIds.includes(id)));
+  if (overlapping) {
+    const shared = overlapping.moduleIds.filter((id) => ready.moduleIds.includes(id));
+    return { state: "waiting", detail: `La scrittura della proposta ${ready.id} aspetta che finisca il lavoro in corso su ${shared.join(", ")} (incarico ${overlapping.id}).` };
+  }
   if (!context.runner) return { state: "waiting", detail: `La proposta ${ready.id} aspetta. ${RUNNER_MISSING}` };
   return { state: "due", detail: `Parte ora la scrittura della proposta ${ready.id}.` };
 }

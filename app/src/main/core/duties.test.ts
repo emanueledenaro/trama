@@ -610,6 +610,11 @@ describe("the state of the domain writing (issue #231)", () => {
     document.domainProposals = [proposal(["app"])];
     expect(writing(document)).toMatchObject({ state: "due", detail: expect.stringContaining("P-1") });
     expect(writing(document, { runner: null }).detail).toContain("provider");
+    // Another assignment at work on the proposal's modules: assignDuty would refuse it, so it waits.
+    const { work } = withCandidate(document);
+    work.status = "running";
+    expect(writing(document)).toMatchObject({ state: "waiting", detail: expect.stringContaining(`app (incarico ${work.id})`) });
+    work.status = "completed";
     document.domainProposals = [proposal(["docs"])];
     expect(writing(document)).toMatchObject({ state: "waiting", detail: expect.stringContaining("correzione del mandato") });
     expect(writing(project(null))).toMatchObject({ state: "idle" });
