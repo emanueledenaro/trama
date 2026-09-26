@@ -1,7 +1,7 @@
 // Launches the built app with the fake Codex server and saves screenshots of the main screens.
 // Usage: node scripts/ui-check.mjs <output-dir>
 import { execFileSync } from "node:child_process";
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { _electron as electron } from "playwright";
@@ -728,4 +728,109 @@ await expectAsked("Valuta l'impatto delle ultime novità dei colleghi", "Gruppo,
 await groupPanel.waitFor({ state: "detached" });
 await shot("15c-group-ask-narrow");
 await composer().fill("");
+
+// V04 and V05 on a fresh copy of the example project. The person stops a developer's work and resumes it; a check fails
+// on a candidate and the card opens its original output; the correction is a new candidate that gets the green light,
+// and new evidence withdraws it.
+await page.setViewportSize({ width: 1280, height: 820 });
+// The person drives each step here, so Trama's automatic moves (W04, checked above) stay off.
+await page.evaluate(() => window.trama.invoke("settings:update", { continuousWork: false }));
+const candidateProject = await mkdtemp(join(tmpdir(), "trama-ui-candidato-"));
+await cp(resolve("resources/DemoProject"), candidateProject, { recursive: true });
+const gitIn = (...args) => execFileSync("git", ["-C", candidateProject, ...args], { stdio: "ignore" });
+gitIn("init", "-q", "-b", "main");
+gitIn("add", ".");
+gitIn("-c", "user.name=Trama UI", "-c", "user.email=ui@trama.local", "commit", "-q", "-m", "Negozio");
+await page.evaluate((path) => window.trama.invoke("project:open", { path }), candidateProject);
+await page.getByTestId("dialog-title").filter({ hasText: "trama-ui-candidato" }).waitFor({ timeout: 30_000 });
+await page.getByText("Ho letto lo studio").first().waitFor({ timeout: 30_000 });
+const send = async (text) => {
+  await composer().fill(text);
+  await page.keyboard.press("Enter");
+};
+await send("[proponi-team]");
+await page.getByRole("button", { name: "Conferma il team" }).click({ timeout: 20_000 });
+await page.getByText("Team confermato").first().waitFor({ timeout: 20_000 });
+await send("[chiedi-decisione]");
+await page.getByRole("button", { name: /Va in revisione/ }).click({ timeout: 20_000 });
+await page.getByRole("button", { name: "Registra la decisione" }).last().click();
+await page.getByText("Apri nel Patto").first().waitFor({ timeout: 20_000 });
+const candidateDecision = (await page.locator("body").innerText()).match(/Decisione (D-[0-9A-F]{8})/)[1];
+await page.getByRole("button", { name: /^Mandato/ }).first().click();
+await page.getByRole("button", { name: "Scrivi", exact: true }).click();
+await page.getByRole("textbox", { name: "Obiettivi" }).fill("Documentare l'annullamento degli ordini");
+await page.getByRole("checkbox", { name: /Orders/ }).check();
+await page.getByRole("checkbox", { name: /worktree/ }).check();
+await page.getByRole("checkbox", { name: /Integrare candidati/ }).check();
+await page.getByRole("button", { name: "Concedi mandato" }).click();
+await page.getByText(/Mandato v1/).first().waitFor({ timeout: 20_000 });
+await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
+const assignmentCards = page.locator(".chat-card").filter({ hasText: /^Incarico A-/ }).filter({ hasText: "Ada" });
+const cardAssignment = async (card) => (await card.innerText()).match(/Incarico (A-[0-9A-F]{8})/)[1];
+
+// V04: the stop is first requested, then confirmed; the work and its turn stay, and it resumes in the same worktree.
+await send("[assegna] [lento]");
+const slowCard = assignmentCards.first();
+await slowCard.getByText("Al lavoro", { exact: true }).waitFor({ timeout: 20_000 });
+await slowCard.getByText(/trama\//).waitFor();
+const slowActions = await slowCard.locator(".cta-row button").allTextContents();
+if (slowActions.at(-1)?.trim() !== "Ferma") throw new Error(`Ferma is not the last call to action: ${slowActions}`);
+await slowCard.getByRole("button", { name: "Ferma" }).click();
+await slowCard.getByText("Fermato", { exact: true }).waitFor({ timeout: 20_000 });
+// The turn's activities are one row, opened on request.
+const stoppedTurn = page.getByRole("button", { name: /ha lavorato per/ }).first();
+await stoppedTurn.click();
+await page.getByText("Arresto confermato").first().waitFor({ timeout: 20_000 });
+await stoppedTurn.scrollIntoViewIfNeeded();
+await shot("18a-specialist-stopped");
+await slowCard.getByRole("button", { name: "Riprendi" }).click();
+await slowCard.getByText("Concluso", { exact: true }).waitFor({ timeout: 20_000 });
+
+// V05: the work leaves trailing whitespace; git_diff_check fails on the candidate with git's own output.
+await send("[assegna] [spazi]");
+const spacesCard = assignmentCards.nth(1);
+await spacesCard.getByText("Concluso", { exact: true }).waitFor({ timeout: 20_000 });
+await send(`[candidato:${await cardAssignment(spacesCard)}:${candidateDecision}:tutte]`);
+const candidateCards = page.locator(".chat-card").filter({ has: page.getByTestId("candidate-evidence") });
+const failedCard = candidateCards.first();
+await failedCard.locator('[data-testid="candidate-evidence"][data-check="git_diff_check"][data-result="fail"]').waitFor({ timeout: 30_000 });
+await page.getByText(/Via libera rifiutato: .*candidate_not_verified/).first().waitFor({ timeout: 20_000 });
+await failedCard.getByText("In costruzione", { exact: true }).waitFor();
+await failedCard.getByText("Verifica non superata").waitFor();
+await failedCard.getByRole("button", { name: "Output originale" }).click();
+const failedOutput = failedCard.getByTestId("evidence-output");
+await failedOutput.getByText(/trailing whitespace\./).waitFor();
+await failedOutput.getByText(/git -C .* diff --check HEAD/).waitFor();
+if (await failedCard.getByRole("button", { name: "Approva questo candidato" }).count()) throw new Error("A candidate with a failed check can be approved");
+await failedCard.scrollIntoViewIfNeeded();
+await shot("18b-candidate-check-failed");
+await app.evaluate(({ nativeTheme }) => {
+  nativeTheme.themeSource = "dark";
+});
+await page.evaluate(() => document.documentElement.classList.add("dark"));
+await shot("18c-candidate-check-failed-dark");
+await app.evaluate(({ nativeTheme }) => {
+  nativeTheme.themeSource = "system";
+});
+await page.evaluate(() => document.documentElement.classList.remove("dark"));
+
+// The correction is new work and a new candidate, with new evidence; the failed one keeps its own.
+await send("[assegna] [correggi-spazi]");
+const fixCard = assignmentCards.nth(2);
+await fixCard.getByText("Concluso", { exact: true }).waitFor({ timeout: 20_000 });
+await send(`[candidato:${await cardAssignment(fixCard)}:${candidateDecision}:tutte]`);
+const correctedCard = candidateCards.nth(1);
+await correctedCard.getByText("Deciso", { exact: true }).waitFor({ timeout: 30_000 });
+await correctedCard.locator('[data-testid="candidate-evidence"][data-check="git_diff_check"][data-result="pass"]').waitFor();
+await correctedCard.getByText("Revisione tecnica, approvata").waitFor();
+await correctedCard.getByText("Via libera del Coordinatore.").waitFor();
+if ((await failedCard.innerText()).includes("Deciso")) throw new Error("The failed candidate took the correction's state");
+await correctedCard.scrollIntoViewIfNeeded();
+await shot("18d-candidate-corrected");
+const correctedId = (await correctedCard.innerText()).match(/Candidato (C-[0-9A-F]{8})/)[1];
+await send(`[riverifica:${correctedId}:git_status]`);
+await correctedCard.getByText("Il via libera del Coordinatore non vale più: sono cambiate evidenze o decisioni.").waitFor({ timeout: 20_000 });
+await correctedCard.getByText("Verificato", { exact: true }).waitFor();
+await correctedCard.scrollIntoViewIfNeeded();
+await shot("18e-clearance-withdrawn");
 await app.close();

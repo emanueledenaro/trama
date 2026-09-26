@@ -37,6 +37,29 @@ describe("deriveTimelineRows", () => {
     expect(rows[1]).toMatchObject({ interrupted: true, message: "Trama è stato chiuso mentre il Coordinatore lavorava." });
   });
 
+  it("gathers a specialist's activities into one row per turn, open while the turn runs and timed once it ends (V04)", () => {
+    const activity = (sequence: number, turn: number, title: string, minute: number): ConversationEvent => ({
+      ...event(sequence, { type: "activity", title, detail: null, tone: "tool" }, null),
+      createdAt: `2026-09-24T12:0${minute}:00.000Z`,
+      assignmentId: "A-1",
+      workKey: `A-1:${turn}`,
+    });
+    const events = [
+      activity(1, 1, "Avvio dell'incarico", 0),
+      activity(2, 1, "Ha modificato un file", 1),
+      activity(3, 1, "Arresto confermato", 2),
+      activity(4, 2, "Ripresa dell'incarico", 3),
+      activity(5, 2, "git status", 4),
+    ];
+    const rows = deriveTimelineRows(events, [], null, new Set(["A-1:2"]));
+    expect(rows.map((r) => r.kind)).toEqual(["work", "work"]);
+    const [first, second] = rows as Extract<(typeof rows)[number], { kind: "work" }>[];
+    expect(first).toMatchObject({ assignmentId: "A-1", requestId: null, running: false, durationMs: 120_000 });
+    expect(first!.activities.map((a) => a.content.type === "activity" && a.content.title)).toEqual(["Avvio dell'incarico", "Ha modificato un file", "Arresto confermato"]);
+    expect(second).toMatchObject({ assignmentId: "A-1", running: true, durationMs: null });
+    expect(second!.activities).toHaveLength(2);
+  });
+
   it("groups the decision cards of a grilling round into one row per round (M01)", () => {
     const question = (id: string, round: number | null): DecisionRequest => ({
       id,

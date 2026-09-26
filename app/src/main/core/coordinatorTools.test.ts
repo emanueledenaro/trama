@@ -1,14 +1,14 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import type { ProjectDocument } from "@shared/domain";
+import type { MandateAction, ProjectDocument } from "@shared/domain";
 import { placeGrillingQuestion } from "@shared/grilling";
 import { FIXED_ROLES } from "@shared/roster";
 import { COORDINATOR_TOOLS, developerInstructions, GRILLING_BINDING, NEXT_STEP_RULES, runCoordinatorTool, type ToolContext } from "./coordinatorTools";
 import { emptyDocument } from "./document";
 import { deliverNativeSkill, loadNativeSkill } from "./nativeSkills";
-import { answerDecisionRequest, createDecisionRequest, grantMandate } from "./pact";
-import { confirmTeam, developers } from "./team";
+import { answerDecisionRequest, createDecisionRequest, decide, grantMandate, revokeMandate } from "./pact";
+import { assign, beginTurn, confirmTeam, developers, endTurn, proposeTeam, recordWorkspace } from "./team";
 import { NEXT_MOVES } from "./workPhase";
 
 /** Only what read_team and propose_team use. */
@@ -298,5 +298,142 @@ describe("declare_next_step: the one next step of a turn (W01)", () => {
     await declare("answerQuestions", context("r1"), "Rispondi, poi preparo il piano.");
     expect(document.requests[0]!.nextStep?.reason).toBe("Rispondi, poi preparo il piano.");
     expect((await declare("answerQuestions", context("r1"), " ")).isError).toBe(true);
+  });
+});
+
+describe("team and candidate tools under the mandate (V04, V05)", () => {
+  const MODULES = [
+    { id: "Sources/Orders", name: "Orders", relativePath: "Sources/Orders", files: [] },
+    { id: "Sources/Payments", name: "Payments", relativePath: "Sources/Payments", files: [] },
+  ];
+  const WORKTREE = { worktreeRoot: "/tmp/w", branch: "trama/ada", baseSHA: "base" };
+
+  function mandateContext(document: ProjectDocument) {
+    const started: string[] = [];
+    const stopped: string[] = [];
+    const context = {
+      ...teamContext(document),
+      snapshot: { modules: MODULES },
+      startAssignment: (id: string) => void started.push(id),
+      stopAssignment: (id: string) => void stopped.push(id),
+      reviewWorkspace: async () => ({ snapshotId: "snap-1", baseSHA: "base", diff: "+nota", changedFiles: ["NOTE.md"], excludedSensitiveFiles: [] }),
+      headSHA: async () => "base",
+    } as unknown as ToolContext;
+    return { context, started, stopped };
+  }
+
+  const grant = (document: ProjectDocument, authorizedActions: MandateAction[], scopeModuleIds = ["Sources/Orders"]) =>
+    grantMandate(document, { objectives: ["o"], priorities: [], scopeModuleIds, authorizedActions, limits: [] });
+
+  const refusal = async (name: string, args: Record<string, unknown>, context: ToolContext) => {
+    const result = await runCoordinatorTool(name, args as never, context);
+    expect(result.isError).toBe(true);
+    return result.content[0]!.text;
+  };
+
+  const order = {
+    specialist: "Ada",
+    kind: "agreedTicket",
+    objective: "Documenta l'annullamento",
+    issueNumber: 12,
+    exercise: "Esercizio 1",
+    moduleIDs: ["Sources/Orders"],
+    dependencies: [],
+    requiredChecks: ["git_status", "git_diff_check"],
+    tools: ["edits"],
+    instructions: "Scrivi una nota",
+  };
+
+  it("propose_team needs no mandate, while create_specialist, assign_task and stop_specialist answer to it", async () => {
+    const document = emptyDocument("p");
+    const { context, started, stopped } = mandateContext(document);
+    // Proposing creates nobody, so it needs no mandate (ADR 0008).
+    const proposal = parse(await runCoordinatorTool("propose_team", { specialists: [{ name: "Ada", competence: "Swift", reason: "Il dominio è in Swift", moduleIDs: ["Sources/Orders"] }] }, context));
+    expect(proposal.status).toBe("shown_to_person");
+    confirmTeam(document, proposal.proposalID, null, null);
+    const draft = { name: "Bruno", competence: "Pagamenti", reason: "Serve per i rimborsi", moduleIDs: ["Sources/Payments"] };
+
+    expect(await refusal("create_specialist", draft, context)).toContain("mandate_missing");
+    expect(await refusal("assign_task", order, context)).toContain("mandate_missing");
+    grant(document, ["executeInWorktree"]);
+    expect(await refusal("create_specialist", draft, context)).toContain("not_in_mandate");
+    expect(await refusal("assign_task", { ...order, moduleIDs: ["Sources/Payments"] }, context)).toContain("outside_scope");
+    expect(await refusal("assign_task", { ...order, kind: "newFeature" }, context)).toContain("person_required");
+    expect(started).toEqual([]);
+
+    // Within the mandate the assignment records what the specialist works on and starts.
+    const assigned = parse(await runCoordinatorTool("assign_task", order, context));
+    const ada = developers(document).find((s) => s.name === "Ada")!;
+    expect(started).toEqual([assigned.assignmentID]);
+    expect(ada.assignments[0]).toMatchObject({
+      objective: "Documenta l'annullamento",
+      issueNumber: 12,
+      exercise: "Esercizio 1",
+      moduleIds: ["Sources/Orders"],
+      dependencies: [],
+      model: "gpt-5.5",
+      provider: "codex",
+      tools: ["commands", "edits"],
+      requiredChecks: ["git_status", "git_diff_check"],
+      instructions: "Scrivi una nota",
+      mandateVersion: 1,
+      status: "preparing",
+      workspace: null,
+    });
+    expect(ada).toMatchObject({ status: "working", model: "gpt-5.5", lastUpdate: "Incarico ricevuto: Documenta l'annullamento" });
+
+    // Stopping running work is an act of the mandate: refused once it is revoked, requested while it is granted.
+    revokeMandate(document, "Pausa");
+    expect(await refusal("stop_specialist", { specialist: "Ada", reason: "basta" }, context)).toContain("mandate_revoked");
+    expect(await refusal("create_specialist", draft, context)).toContain("mandate_revoked");
+    grant(document, ["executeInWorktree", "composeTeam"], ["Sources/Orders", "Sources/Payments"]);
+    const stop = parse(await runCoordinatorTool("stop_specialist", { specialist: "Ada", reason: "Cambio di piano" }, context));
+    expect(stop).toMatchObject({ assignmentID: assigned.assignmentID, status: "stop_requested" });
+    expect(stopped).toEqual([assigned.assignmentID]);
+    expect(ada.assignments[0]).toMatchObject({ status: "stopRequested", stops: [{ requestedBy: "Coordinatore", reason: "Cambio di piano", confirmedAt: null }] });
+    const created = parse(await runCoordinatorTool("create_specialist", draft, context));
+    expect(document.team.specialists.find((s) => s.id === created.specialistID)).toMatchObject({ origin: "coordinator", reason: "Serve per i rimborsi", moduleIds: ["Sources/Payments"] });
+  });
+
+  it("declare_candidate answers to the mandate and binds the candidate to base, decisions and required checks; clear_candidate needs integrateCandidate", async () => {
+    const document = emptyDocument("p");
+    const { context } = mandateContext(document);
+    const decision = decide(document, { id: null, value: "Un ordine pagato va in revisione", acceptedExample: "Ordine 42", rationale: "r" });
+    confirmTeam(document, proposeTeam(document, { requestId: null, summary: null, members: [{ name: "Ada", competence: "Swift", reason: "r", moduleIds: [] }] }).id, null, null);
+    grant(document, ["executeInWorktree"]);
+    const assignment = assign(document, { ...order, moduleIds: ["Sources/Orders"], model: "gpt-5.5" } as never, 1, null);
+    recordWorkspace(document, assignment.id, WORKTREE as never);
+    beginTurn(document, assignment.id, "t1", "gpt-5.5");
+    endTurn(document, assignment.id, "t1", { kind: "completed", text: "fatto" });
+    const args = { assignment: assignment.id, decisionIDs: [decision.id] };
+
+    revokeMandate(document, "Pausa");
+    expect(await refusal("declare_candidate", args, context)).toContain("mandate_revoked");
+    grant(document, ["executeInWorktree"], ["Sources/Payments"]);
+    expect(await refusal("declare_candidate", args, context)).toContain("outside_scope");
+    expect(document.candidates).toEqual([]);
+
+    grant(document, ["executeInWorktree"]);
+    const declared = parse(await runCoordinatorTool("declare_candidate", args, context));
+    const candidate = document.candidates[0]!;
+    expect(declared).toMatchObject({ candidateID: candidate.id, snapshot: "snap-1", changedFiles: ["NOTE.md"], requiredChecks: ["git_status", "git_diff_check"] });
+    expect(candidate).toMatchObject({
+      assignmentId: assignment.id,
+      baseSHA: "base",
+      diff: "+nota",
+      requiredDecisionIds: [decision.id],
+      decisionVersions: { [decision.id]: 1 },
+      requiredChecks: ["git_status", "git_diff_check"],
+      evidence: {},
+      technicalReview: null,
+      clearance: null,
+      humanApproval: null,
+      pullRequest: null,
+    });
+    // No green light without integrateCandidate, and none on a candidate without evidence.
+    expect(await refusal("clear_candidate", { candidate: candidate.id }, context)).toContain("not_in_mandate");
+    grant(document, ["executeInWorktree", "integrateCandidate"]);
+    expect(await refusal("clear_candidate", { candidate: candidate.id }, context)).toContain("candidate_not_verified");
+    expect(candidate.clearance).toBeNull();
   });
 });
