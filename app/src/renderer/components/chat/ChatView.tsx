@@ -23,6 +23,7 @@ import { GoalDialogHeader } from "@/components/inspector/GoalsView";
 import { OverviewView } from "@/components/OverviewView";
 import { SettingsView } from "@/components/settings/SettingsView";
 import { NavigationButtons, SidebarTrigger } from "@/components/sidebar/Sidebar";
+import { useSeam } from "@/components/Seam";
 import { TramaMark } from "@/components/brand/TramaMark";
 import { Button } from "@/components/ui/button";
 import { Tooltip } from "@/components/ui/tooltip";
@@ -225,8 +226,17 @@ function ProjectIntro() {
 /** Offered in the project dialog while the project has no goal the person confirmed (UX07). */
 function FirstGoalPrompt() {
   const setInspector = useUi((s) => s.setInspector);
+  // A place to fill (W17): the seam when no other use on the screen holds it, the dashed border otherwise.
+  const seam = useSeam("firstGoal", { radius: "calc(var(--radius) * 1.4)" });
   return (
-    <div className="my-3 flex flex-wrap items-center gap-3 rounded-xl border border-dashed border-[color:var(--color-border)] px-3.5 py-3" data-testid="first-goal">
+    <div
+      className={cn(
+        "relative my-3 flex flex-wrap items-center gap-3 rounded-xl border px-3.5 py-3",
+        seam.shown ? "border-transparent" : "border-dashed border-[color:var(--color-border)]",
+      )}
+      data-testid="first-goal"
+    >
+      {seam.stitch}
       <IconTarget className="size-4 shrink-0 text-muted-foreground" stroke={1.8} />
       <p className="min-w-[14rem] flex-1 text-ui text-muted-foreground">
         Descrivi un risultato e qualche esempio verificabile: il Coordinatore lo discute con te nel suo dialogo. Non concede un mandato.

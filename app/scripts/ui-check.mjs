@@ -58,6 +58,49 @@ const expectAsked = async (fragment, control) => {
   if (!asked) throw new Error(`${control}: no "${fragment}" in the focused composer, it holds: ${await composer().inputValue().catch(() => "no composer")}`);
 };
 
+// W17: the seam, the bots' stitch used as an accent. At most one shows on a screen, and only on the approved uses;
+// each use is saved in light and dark. With high contrast the stitch becomes a continuous edge.
+const visibleSeams = () =>
+  page.evaluate(() =>
+    [...document.querySelectorAll("svg[data-seam]")]
+      .filter((svg) => {
+        const box = svg.getBoundingClientRect();
+        return box.width > 0 && box.height > 0 && box.bottom > 0 && box.top < innerHeight;
+      })
+      .map((svg) => svg.dataset.seam),
+  );
+const expectSeam = async (use) => {
+  const seams = await visibleSeams();
+  if (seams.length > 1) throw new Error(`More than one seam on the screen: ${seams.join(", ")}`);
+  if ((seams[0] ?? null) !== use) throw new Error(`Expected the seam on ${use ?? "nothing"}, found ${seams[0] ?? "none"}`);
+};
+const seamShots = async (use, name) => {
+  await expectSeam(use);
+  const dark = await page.evaluate(() => document.documentElement.classList.contains("dark"));
+  for (const mode of ["light", "dark"]) {
+    await page.evaluate((isDark) => document.documentElement.classList.toggle("dark", isDark), mode === "dark");
+    await shot(`21-seam-${name}-${mode}`);
+  }
+  await page.evaluate((isDark) => document.documentElement.classList.toggle("dark", isDark), dark);
+};
+const expectContrastFallback = async () => {
+  for (const media of [{ contrast: "more" }, { forcedColors: "active" }]) {
+    await page.emulateMedia(media);
+    const dash = await page.evaluate(() => {
+      const rect = document.querySelector("svg[data-seam] rect");
+      return rect ? getComputedStyle(rect).strokeDasharray : null;
+    });
+    if (dash !== "none") throw new Error(`With ${JSON.stringify(media)} the seam is still dashed: ${dash}`);
+  }
+  await page.emulateMedia({ contrast: "no-preference", forcedColors: "none" });
+};
+const dragFiles = (type) =>
+  page.evaluate((eventType) => {
+    const files = new DataTransfer();
+    files.items.add(new File(["Note"], "note.txt", { type: "text/plain" }));
+    document.querySelector("form.chat-composer-surface").dispatchEvent(new DragEvent(eventType, { dataTransfer: files, bubbles: true, cancelable: true }));
+  }, type);
+
 // B02, first launch. The intro plays over the app while the state loads and leaves by itself; the welcome follows.
 const welcome = page.getByTestId("welcome");
 await welcome.waitFor();
@@ -254,6 +297,8 @@ for (const provider of ["codex", "claudeAgent", "grok"]) {
 }
 if (markColors.size !== 6) throw new Error(`The mark does not follow the provider theme: ${[...markColors].join(", ")}`);
 await brandLook(startLook.provider, startLook.dark);
+await seamShots("logo", "logo");
+await expectContrastFallback();
 await picker.getByRole("button", { name: "Clona da GitHub" }).click();
 const cloneDialog = page.getByRole("dialog", { name: "Clona da GitHub" });
 await cloneDialog.getByRole("textbox").fill("non è un repository");
@@ -286,6 +331,14 @@ await shot("01d-picker-example-exercise");
 await page.getByRole("complementary", { name: "Esercizio" }).getByRole("button", { name: "Chiudi l'esercizio" }).click();
 await page.getByText("Ho letto lo studio").first().waitFor({ timeout: 20_000 });
 await shot("02-demo-study");
+// A place to fill: the project has no goal yet. Files dragged over the composer take the seam while they are there.
+await page.getByTestId("first-goal").scrollIntoViewIfNeeded();
+await seamShots("firstGoal", "first-goal");
+await dragFiles("dragover");
+await page.getByText("Rilascia le immagini per allegarle al messaggio").waitFor();
+await seamShots("fileDrop", "file-drop");
+await dragFiles("dragleave");
+await expectSeam("firstGoal");
 // The context and model pickers share one panel.
 await page.getByRole("button", { name: "Contesto del messaggio" }).click();
 await page.getByRole("listbox", { name: "Contesto" }).waitFor();
@@ -844,6 +897,8 @@ await pausedItem.getByRole("button", { name: "Metti in focus" }).click();
 await focusIs(firstFocus, true);
 await queue.locator('[data-status="paused"]').first().waitFor({ state: "detached", timeout: 10_000 });
 await shot("17b-focus-back");
+// The work going on now: the task in focus takes the seam.
+await seamShots("focus", "focus");
 // Light and dark on two providers' themes, then a narrow window where the bar wraps without a horizontal scroll.
 const look = await page.evaluate(() => ({ provider: document.documentElement.dataset.provider ?? null, dark: document.documentElement.classList.contains("dark") }));
 const setLook = (provider, dark) =>

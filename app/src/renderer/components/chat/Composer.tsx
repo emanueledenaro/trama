@@ -10,6 +10,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ContextMeter } from "./ContextMeter";
 import { ContextPicker } from "./ContextPicker";
 import { ModelPicker } from "./ModelPicker";
+import { useSeam } from "@/components/Seam";
 import { Button } from "@/components/ui/button";
 import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/cn";
@@ -65,6 +66,8 @@ export function Composer() {
   const [images, setImages] = useState<DraftImage[]>([]);
   const [pastes, setPastes] = useState<{ id: string; text: string }[]>([]);
   const [dragging, setDragging] = useState(false);
+  // Where dragged images land (W17): the seam while they are over the composer.
+  const dropSeam = useSeam("fileDrop", { active: dragging, radius: "var(--composer-radius)" });
   const [mention, setMention] = useState<{ start: number; query: string; index: number; sigil: "@" | "$" | "/" } | null>(null);
   const textarea = useRef<HTMLTextAreaElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -224,7 +227,8 @@ export function Composer() {
         <form
           className={cn(
             "chat-composer-surface border border-[color:var(--surface-border)] shadow-[0_4px_18px_-6px_color-mix(in_srgb,var(--foreground)_7%,transparent)] transition-colors duration-200 dark:shadow-[0_6px_24px_-10px_rgba(0,0,0,0.30)]",
-            dragging && "border-[color:var(--color-text-accent)]",
+            dragging && !dropSeam.shown && "border-[color:var(--color-text-accent)]",
+            dropSeam.shown && "border-transparent",
           )}
           onSubmit={(event) => {
             event.preventDefault();
@@ -242,6 +246,16 @@ export function Composer() {
             void addFiles([...event.dataTransfer.files]);
           }}
         >
+          {dragging ? (
+            <div
+              className="pointer-events-none absolute inset-0 flex items-center justify-center gap-2 rounded-[inherit] bg-[color-mix(in_srgb,var(--popover)_86%,transparent)] text-ui text-foreground"
+              data-testid="composer-drop"
+            >
+              <IconPhotoPlus className="size-4 text-[var(--color-text-accent)]" stroke={1.8} />
+              Rilascia le immagini per allegarle al messaggio
+            </div>
+          ) : null}
+          {dropSeam.stitch}
           {pastes.length ? (
             <div className="flex flex-wrap gap-2 px-3 pt-3">
               {pastes.map((paste) => (

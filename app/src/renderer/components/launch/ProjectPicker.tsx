@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import type { ProjectOverview } from "@shared/domain";
 import { hasUsableProvider, recentProjectStatus } from "@shared/onboarding";
 import { TramaMark } from "@/components/brand/TramaMark";
+import { useSeam } from "@/components/Seam";
 import { Spinner } from "@/components/Spinner";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/cn";
@@ -13,6 +14,17 @@ const ago = (iso: string) => {
   const relative = formatRelativeTime(iso);
   return relative === "ora" ? "ora" : `${relative} fa`;
 };
+
+/** Trama's mark on the start screen, stitched like the bots (W17), outside the mark's clear space. */
+function PickerMark() {
+  const seam = useSeam("logo", { radius: "18px" });
+  return (
+    <div className="relative flex size-16 shrink-0 items-center justify-center" data-testid="picker-mark">
+      <TramaMark size={44} />
+      {seam.stitch}
+    </div>
+  );
+}
 
 function RecentRow({ recent, entry }: { recent: { id: string; name: string; path: string; isDemo: boolean; lastOpenedAt: string }; entry: ProjectOverview | null }) {
   const status = recentProjectStatus(entry);
@@ -102,7 +114,7 @@ export function ProjectPicker() {
     <div className="chat-pane-enter relative flex min-h-0 flex-1 overflow-y-auto" data-testid="project-picker">
       <div className="mx-auto my-auto w-full max-w-[44rem] px-4 py-10 sm:px-6">
         <div className="flex items-center gap-3.5">
-          <TramaMark size={44} />
+          <PickerMark />
           <div className="min-w-0">
             <h2 className="text-[24px] leading-[1.15] font-normal tracking-[-0.015em] text-foreground/95 sm:text-[28px]">Su cosa vuoi lavorare?</h2>
             <p className="mt-1 text-ui text-muted-foreground">Riprendi un progetto recente, aprine uno o prova l'esempio.</p>
