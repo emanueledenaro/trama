@@ -160,15 +160,19 @@ describe("TramaController", () => {
     expect(dialogEvents(document.events, second).map((e) => e.content.type)).toEqual(["card"]);
     expect(dialogEvents(document.events, null).some((e) => e.content.type === "personMessage")).toBe(false);
 
-    // A message queued in one dialog stays there even if the person moves on before it leaves.
-    const running = controller!.send("Primo messaggio", null, null, null, [], null, null);
+    // A message queued in one dialog stays there even if the person moves on before it leaves. "[attesa]" keeps the
+    // first turn running until it is interrupted: a reply that ends by itself could finish between two checks.
+    const running = controller!.send("[attesa] Primo messaggio", null, null, null, [], null, null);
     await until(() => project.runningRequestId !== null);
+    const firstId = project.runningRequestId!;
     await controller!.send("In coda per il secondo obiettivo", null, null, null, [], null, second);
+    expect(controller!.snapshot.project!.queuedMessages.map((q) => [q.text, q.goalId])).toEqual([["In coda per il secondo obiettivo", second]]);
+    await interruptOnceSent(document, firstId);
     await running;
-    await until(() => document.requests.filter((r) => r.state === "completed").length === 3);
+    await until(() => document.requests.some((r) => r.text === "In coda per il secondo obiettivo" && r.state === "completed"));
     const queued = document.requests.find((r) => r.text === "In coda per il secondo obiettivo")!;
     expect(queued.goalId).toBe(second);
-    expect(document.requests.find((r) => r.text === "Primo messaggio")!.goalId ?? null).toBeNull();
+    expect(document.requests.find((r) => r.id === firstId)!.goalId ?? null).toBeNull();
 
     // Goals, dialogs and drafts survive a restart.
     await controller!.stop();
