@@ -294,6 +294,7 @@ function toolContext(document: ProjectDocument, runningRequestId: string | null 
     },
     headSHA: async () => null,
     orderPlan: () => "P-1",
+    askTramaCatalog: async () => ({ references: [], bundled: [] }),
   };
 }
 
