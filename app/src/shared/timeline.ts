@@ -1,4 +1,6 @@
+import type { ProviderId } from "./codex";
 import type { CardKind, ConversationEvent, CoordinatorRequest, DecisionRequest } from "./domain";
+import { classifyProviderFailure, type ProviderFailure } from "./providerFailure";
 
 export type TimelineRow =
   | { kind: "person"; id: string; event: ConversationEvent; text: string; moduleName: string | null; imageCount: number }
@@ -17,7 +19,17 @@ export type TimelineRow =
   /** The decision cards of one grilling round (M01), shown together where the round's first card was. */
   | { kind: "grillingRound"; id: string; subjectRequestId: string; round: number; questionIds: string[] }
   /** A turn that ended in an error or was interrupted: shown in place of the reply, never only inside the collapsed work group. */
-  | { kind: "failure"; id: string; requestId: string; message: string; text: string; goalId: string | null; interrupted: boolean };
+  | {
+      kind: "failure";
+      id: string;
+      requestId: string;
+      message: string;
+      text: string;
+      goalId: string | null;
+      interrupted: boolean;
+      /** The provider the turn ran on, for the recovery actions (P10). */
+      provider: ProviderId | null;
+    };
 
 /**
  * Groups the conversation into rows: the person's message, one collapsed work group per turn,
@@ -71,6 +83,7 @@ export function deriveTimelineRows(
             text: failed.text,
             goalId: failed.goalId ?? null,
             interrupted: false,
+            provider: failed.provider ?? null,
           });
         }
         break;
@@ -141,6 +154,7 @@ export function deriveTimelineRows(
       text: request.text,
       goalId: request.goalId ?? null,
       interrupted: true,
+      provider: request.provider ?? null,
     });
   }
 
@@ -171,28 +185,13 @@ export function formatDuration(ms: number): string {
   return `${minutes}m ${Math.round(seconds - minutes * 60)}s`;
 }
 
-/** The provider refused the model for this account (Codex with ChatGPT, unknown or inaccessible models). */
-export function isUnsupportedModelError(message: string): boolean {
-  return /model.*not supported|not supported.*model|model_not_found|does not exist or you do not have access/i.test(message);
-}
+export { isUnsupportedModelError } from "./providerFailure";
 
 /**
- * A provider error in the person's words. Known cases get a plain sentence; others keep the provider's own
- * message, taken out of its JSON envelope when there is one.
+ * A turn failure in the person's words (P10): the title and the explanation of its class, never the provider's
+ * JSON. The provider's sentence and the raw text stay in `failure` for the technical detail.
  */
-export function turnFailureText(raw: string): { title: string; detail: string | null } {
-  let message = raw.trim();
-  try {
-    const parsed = JSON.parse(message) as { error?: { message?: string }; message?: string };
-    message = parsed.error?.message ?? parsed.message ?? message;
-  } catch {
-    // Not JSON: keep the text as it is.
-  }
-  if (isUnsupportedModelError(message)) {
-    return { title: "Il modello scelto non è disponibile con questo account", detail: `${message} Scegli un altro modello dal selettore e riprova.` };
-  }
-  if (/usage limit|rate limit|hit your limit|quota/i.test(message)) {
-    return { title: "Hai raggiunto il limite di utilizzo di questo provider", detail: message };
-  }
-  return { title: "Il Coordinatore non ha potuto rispondere", detail: message || null };
+export function turnFailureText(raw: string, provider?: string | null): { title: string; detail: string | null; failure: ProviderFailure } {
+  const failure = classifyProviderFailure(raw, { provider });
+  return { title: failure.title, detail: failure.explanation || null, failure };
 }

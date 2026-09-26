@@ -1,6 +1,7 @@
 import {
   IconBrain,
   IconBrandGithub,
+  IconChecklist,
   IconChevronDown,
   IconDeviceDesktop,
   IconEye,
@@ -12,16 +13,19 @@ import {
   IconTools,
   IconUsers,
 } from "@tabler/icons-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { ProviderAccount, ProviderId } from "@shared/codex";
 import { DEFAULT_LEARNING_SETTINGS, type LearningSettings, type ThemePreference } from "@shared/domain";
+import { classifyProviderFailure } from "@shared/providerFailure";
 import { capabilityLines, PROVIDERS, type ProviderDescriptor } from "@shared/providers";
 import { AIHERO_ATTRIBUTION } from "@shared/skills";
+import { GitHubCliDescription } from "@/components/GitHubCliStatus";
 import { TramaMark } from "@/components/brand/TramaMark";
 import { ProviderIcon } from "@/components/ProviderIcon";
 import { Spinner } from "@/components/Spinner";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/field";
+import { Badge, TextArea } from "@/components/ui/field";
+import { activeRules, CLEAN_CODE_RULES, CLEAN_CODE_SOURCE, CLEAN_CODE_VERSION } from "@shared/cleanCode";
 import { cn } from "@/lib/cn";
 import { act, type SettingsSection, useUi } from "@/lib/store";
 import { PresenceControls, presenceStatusLine } from "@/components/PresencePanel";
@@ -30,6 +34,7 @@ const SECTIONS: { id: SettingsSection; label: string; icon: React.ReactNode }[] 
   { id: "general", label: "Generale", icon: <IconSettings stroke={1.7} /> },
   { id: "connections", label: "Collegamenti", icon: <IconPlugConnected stroke={1.7} /> },
   { id: "method", label: "Metodo di lavoro", icon: <IconTools stroke={1.7} /> },
+  { id: "standard", label: "Standard del codice", icon: <IconChecklist stroke={1.7} /> },
   { id: "learning", label: "Apprendimento", icon: <IconBrain stroke={1.7} /> },
   { id: "monitor", label: "Monitor", icon: <IconEye stroke={1.7} /> },
   { id: "presence", label: "Presenza", icon: <IconUsers stroke={1.7} /> },
@@ -75,6 +80,7 @@ export function SettingsView() {
           {section === "general" ? <GeneralSection /> : null}
           {section === "connections" ? <ConnectionsSection /> : null}
           {section === "method" ? <MethodSection /> : null}
+          {section === "standard" ? <StandardSection /> : null}
           {section === "learning" ? <LearningSection /> : null}
           {section === "monitor" ? <MonitorSection /> : null}
           {section === "presence" ? <PresenceSection /> : null}
@@ -227,12 +233,12 @@ export function providerStatus(account: ProviderAccount | null, checking: boolea
       return { label: "Accesso richiesto", detail: null, tone: "secondary" };
     case "unsupported":
       return { label: "Account non supportato", detail: account.type, tone: "warning" };
-    case "blocked":
-      return {
-        label: "Bloccato",
-        detail: `${account.message}${account.until ? ` Si sblocca il ${new Date(account.until).toLocaleString("it-IT")}.` : ""}`,
-        tone: "warning",
-      };
+    case "blocked": {
+      // The provider's text stays out of the row: its class in plain words (P10).
+      const failure = classifyProviderFailure(account.message);
+      const until = !failure.until && account.until ? ` Si sblocca il ${new Date(account.until).toLocaleString("it-IT")}.` : "";
+      return { label: failure.kind === "temporaryLimit" ? "Limite temporaneo" : "Quota esaurita", detail: `${failure.explanation}${until}`, tone: "warning" };
+    }
     case "unavailable":
       return { label: "Non disponibile", detail: account.message, tone: "warning" };
     default:
@@ -241,7 +247,7 @@ export function providerStatus(account: ProviderAccount | null, checking: boolea
 }
 
 const GITHUB_STATUS = {
-  unknown: "Stato sconosciuto",
+  unknown: "Non ancora controllato",
   checking: "Verifica in corso",
   missing: "Non installata",
   signedOut: "Accesso richiesto",
@@ -252,6 +258,10 @@ const GITHUB_STATUS = {
 function ConnectionsSection() {
   const codex = useUi((s) => s.app!.codex);
   const gitHubCli = useUi((s) => s.app!.gitHubCli);
+  // The state is read each time the page opens, so a login made in the terminal meanwhile shows up (P10).
+  useEffect(() => {
+    if (useUi.getState().app?.gitHubCli.status !== "checking") void act("onboarding:checkGitHub", undefined);
+  }, []);
   const account = codex.account;
   const status = providerStatus(account, codex.checking);
   const codexDetail =
@@ -270,6 +280,7 @@ function ConnectionsSection() {
             onClick={() => {
               void act("codex:refresh", undefined);
               void act("providers:refresh", {});
+              void act("onboarding:checkGitHub", undefined);
             }}
           >
             <IconRefresh /> Verifica tutti
@@ -306,22 +317,21 @@ function ConnectionsSection() {
               <IconBrandGithub className="size-4" stroke={1.7} /> GitHub
             </span>
           }
-          description={
-            gitHubCli.status === "ready" ? (
-              gitHubCli.account
-            ) : gitHubCli.status === "error" && gitHubCli.detail ? (
-              gitHubCli.detail
-            ) : (
-              <>
-                Trama usa GitHub CLI. {gitHubCli.status === "missing" ? "Installala, poi esegui " : "Esegui "}
-                <code className="font-mono text-foreground/90">gh auth login</code> nel terminale.
-              </>
-            )
-          }
+          description={<GitHubCliDescription state={gitHubCli} />}
           control={
-            <Badge tone={gitHubCli.status === "ready" ? "success" : gitHubCli.status === "error" ? "warning" : "secondary"}>
-              {GITHUB_STATUS[gitHubCli.status]}
-            </Badge>
+            <>
+              <Badge tone={gitHubCli.status === "ready" ? "success" : gitHubCli.status === "error" ? "warning" : "secondary"}>
+                {GITHUB_STATUS[gitHubCli.status]}
+              </Badge>
+              <Button
+                variant="outline"
+                size="xs"
+                disabled={gitHubCli.status === "checking"}
+                onClick={() => void act("onboarding:checkGitHub", undefined)}
+              >
+                Controlla di nuovo
+              </Button>
+            </>
           }
         />
       </Group>
@@ -483,6 +493,86 @@ function MethodSection() {
           onChange={(value) => void act("settings:update", { continuousWork: value })}
         />
       </Group>
+    </>
+  );
+}
+
+/** Trama's Clean Code standard for the open project (Q03, ADR 0016): each rule on or off, and the person's note. */
+function StandardSection() {
+  const project = useUi((s) => s.app?.project ?? null);
+  const settings = project?.document.cleanCode;
+  const [note, setNote] = useState<string | null>(null);
+  const saved = settings?.note ?? "";
+  const draft = note ?? saved;
+  const on = new Set(activeRules(settings).map((rule) => rule.id));
+  return (
+    <>
+      <PageHeader
+        title="Standard del codice"
+        description={
+          <>
+            Lo standard Clean Code di Trama, versione {CLEAN_CODE_VERSION}. Gli sviluppatori lo ricevono come testo di Trama accanto alle skill, che restano col testo
+            originale, e la revisione tecnica controlla il diff anche rispetto a questo standard.
+          </>
+        }
+      />
+      {!project ? (
+        <Group>
+          <Row label={<span className="text-muted-foreground">Apri un progetto per adattare lo standard.</span>} />
+        </Group>
+      ) : (
+        <div data-testid="clean-code-settings">
+          <Group
+            title={`Regole per ${project.name}`}
+            note={
+              <>
+                Fonte: {CLEAN_CODE_SOURCE}. Prima vengono le regole del progetto (AGENTS.md, CONTRIBUTING.md, linter e formatter), poi il metodo delle skill, poi
+                questo standard. Le regole segnate come bloccanti fanno chiedere modifiche in revisione. Numero di argomenti, lunghezza delle funzioni e duplicazioni
+                li misura Trama: sono evidenze, mentre i rilievi del revisore restano un giudizio.
+              </>
+            }
+          >
+            {CLEAN_CODE_RULES.map((rule) => (
+              <Row
+                key={rule.id}
+                label={
+                  <span className="flex items-center gap-2">
+                    {rule.label}
+                    {rule.severity === "blocking" ? <Badge tone="warning">Bloccante</Badge> : null}
+                  </span>
+                }
+                description={rule.summary}
+                control={
+                  <Toggle checked={on.has(rule.id)} label={rule.label} onChange={(enabled) => void act("project:cleanCode", { rule: rule.id, enabled })} />
+                }
+              />
+            ))}
+          </Group>
+          <Group title="Adattamento al progetto" note="Il testo arriva a sviluppatori e revisore come indicazione della persona, per esempio: SOLID solo nei moduli a oggetti.">
+            <div className="px-4 py-3">
+              <TextArea
+                aria-label="Come si applica lo standard a questo progetto"
+                rows={3}
+                value={draft}
+                placeholder="Lingua, paradigma o eccezioni di questo progetto"
+                onChange={(event) => setNote(event.target.value)}
+              />
+              <div className="cta-row mt-2">
+                <Button size="sm" variant="ghost" disabled={draft === saved} onClick={() => setNote(null)}>
+                  Annulla
+                </Button>
+                <Button
+                  size="sm"
+                  disabled={draft === saved}
+                  onClick={() => void act("project:cleanCode", { note: draft }).then(() => setNote(null))}
+                >
+                  Salva
+                </Button>
+              </div>
+            </div>
+          </Group>
+        </div>
+      )}
     </>
   );
 }
