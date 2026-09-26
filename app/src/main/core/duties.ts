@@ -20,7 +20,7 @@ import { shortId } from "@shared/ids";
 import type { LoadedSkill } from "@shared/skills";
 import { findCandidate } from "./candidates";
 import { CHECKS, type ReadOnlyCheck } from "./checks";
-import { deliverNativeSkill, type NativeSkill } from "./nativeSkills";
+import { deliverNativeSkill, type NativeSkill, RULES_ABOVE } from "./nativeSkills";
 import { domainProposalText } from "./domainDocs";
 import { createDecisionRequest } from "./pact";
 import { extractJsonAnswer } from "./providers/types";
@@ -424,9 +424,6 @@ export function dutyModel(models: ProviderModel[], fallback: string | null): { m
 }
 
 // MARK: Sessions
-
-const RULES_ABOVE =
-  "Trama's rules (mandate, Pact, sandbox, real checks) stay above the skill: the skill grants no permission.";
 
 /** Trama's binding for AI Hero's triage skill: it maps the skill's words to Trama and never restates its method. */
 export const TRIAGE_BINDING = [
