@@ -8,7 +8,7 @@ import { COORDINATOR_MOVES, type CoordinatorMove, workRequests, workState } from
  * decisions, the mandate, the team and merging.
  */
 
-/** What changed the work: a Coordinator turn ended, a plan ended, a specialist's assignment ended. */
+/** What changed the work: a Coordinator turn ended, a plan ended, a specialist's assignment ended or paused on a question. */
 export type WorkEvent = "turnEnded" | "planEnded" | "assignmentEnded";
 
 /**
@@ -62,7 +62,9 @@ export function automaticMove(document: ProjectDocument, requestId: string, even
   if (!workRequests(document, latest.id)?.has(subject.id)) return null;
   const state = workState(document, latest.id);
   if (!state.phase || state.phase === "blocked") return null;
-  if (state.moves.some((m) => m.actor === "person" && WAITS_FOR_PERSON.includes(m.move))) return null;
+  // A Pact card that blocks a developer's work (W06) holds only that work: the team goes on with the rest.
+  const holds = (move: NextMove) => WAITS_FOR_PERSON.includes(move) && !(move === "answerQuestions" && state.questionsHoldOnlyTheirWork);
+  if (state.moves.some((m) => m.actor === "person" && holds(m.move))) return null;
   const option = state.moves.find((m) => m.actor === "coordinator");
   if (!option) return null;
   const move = option.move as CoordinatorMove;

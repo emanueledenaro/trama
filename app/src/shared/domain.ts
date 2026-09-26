@@ -131,7 +131,7 @@ export interface FocusView {
   queue: FocusTask[];
 }
 
-/** A move that takes the work on: the first nine are the person's, the last three the Coordinator's (W01). */
+/** A move that takes the work on: the first nine are the person's, the last four the Coordinator's (W01, W06). */
 export type NextMove =
   | "answerQuestions"
   | "confirmUnderstanding"
@@ -144,7 +144,8 @@ export type NextMove =
   | "mergePullRequest"
   | "preparePlan"
   | "assignWork"
-  | "verifyCandidate";
+  | "verifyCandidate"
+  | "answerQuestion";
 
 /** The move the Coordinator chose among the allowed ones, with its one-line reason. */
 export interface NextStep {
@@ -257,6 +258,8 @@ export interface DecisionRequest {
    * decision and no longer waits for an answer. Absent in documents written before withdrawals.
    */
   withdrawal?: { reason: string; withdrawnAt: string } | null;
+  /** Set when the card answers a developer's question (W06): it blocks that work until the person answers. */
+  blocksWork?: { assignmentId: string; questionId: string } | null;
 }
 
 /** A question still waiting for the person: neither answered nor withdrawn. */
@@ -347,7 +350,8 @@ export interface TeamProposal {
 }
 
 export type SpecialistStatus = "available" | "working" | "stopping" | "stopped" | "removed";
-export type AssignmentStatus = "preparing" | "running" | "stopRequested" | "stopped" | "completed" | "failed";
+/** `paused`: the developer asked the Coordinator a question (W06) and waits for the answer; its slice is on hold. */
+export type AssignmentStatus = "preparing" | "running" | "stopRequested" | "stopped" | "completed" | "failed" | "paused";
 
 export interface WorktreeSession {
   sourceRoot: string;
@@ -424,6 +428,42 @@ export interface SpecialistAssignment {
   seams?: ContractSeam[];
   /** The developer's structured report (W05), read from its last answer: its statement, never evidence. */
   report?: DeveloperReport | null;
+  /** The questions the developer asked the Coordinator during the work (W06), oldest first. */
+  questions?: DeveloperQuestion[];
+}
+
+/**
+ * A question a developer asked the Coordinator with its tool (W06). The work pauses when the developer's turn ends
+ * and resumes in the same session with the answer: the Coordinator's, from facts, or the person's, when the
+ * Coordinator put it on a Pact card that blocks the work.
+ */
+export interface DeveloperQuestion {
+  id: string;
+  question: string;
+  /** What the developer needs the answer for, in its words. */
+  context: string | null;
+  askedAt: string;
+  answer: DeveloperAnswer | null;
+  /** When Trama resumed the work with the answer; null while it waits. */
+  resumedAt: string | null;
+}
+
+export type DeveloperAnswer =
+  /** The Coordinator answered from facts it names: files, Pact decisions, issues, the spec. */
+  | { kind: "facts"; text: string; sources: string[]; answeredAt: string }
+  /**
+   * The answer is the person's: a Pact card that blocks the work (`decisionRequestId`). `text` and `answeredAt`
+   * are set when the person answers or withdraws the card.
+   */
+  | { kind: "person"; decisionRequestId: string; since: string; text: string | null; answeredAt: string | null };
+
+/** Where a developer's question stands: waiting for the Coordinator, for the person on a Pact card, or answered. */
+export type DeveloperQuestionState = "asked" | "waitingForPerson" | "answered";
+
+export function developerQuestionState(question: Pick<DeveloperQuestion, "answer">): DeveloperQuestionState {
+  if (!question.answer) return "asked";
+  if (question.answer.kind === "person" && !question.answer.answeredAt) return "waitingForPerson";
+  return "answered";
 }
 
 /** A seam the developer must test, as the contract of the assignment names it (W05). */
@@ -870,7 +910,7 @@ export interface PlanSlicing {
 }
 
 /** Where a slice of an approved breakdown stands, computed by Trama from its assignments and candidates (M05). */
-export type SliceState = "blocked" | "ready" | "working" | "verifying" | "done";
+export type SliceState = "blocked" | "ready" | "working" | "paused" | "verifying" | "done";
 
 export interface SliceView {
   id: string;

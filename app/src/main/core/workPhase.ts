@@ -15,6 +15,7 @@ import { isOpenQuestion, pendingMandateRequest } from "@shared/domain";
 import { grillingSubject } from "@shared/grilling";
 import { PROVIDERS } from "@shared/providers";
 import { inspectCandidate, latestCandidate } from "./candidates";
+import { pendingQuestion, pendingState, type QuestionView, questionsText, questionViews } from "./developerQuestions";
 import { sliceViews, slicesText } from "./slices";
 import { activeDevelopers, authorize, isActive, isTeamConfirmed, MAX_PARALLEL_DEVELOPERS, needsWorktree } from "./team";
 
@@ -42,6 +43,13 @@ export interface WorkState {
   moves: MoveOption[];
   /** The plan of the work with an approved breakdown and where each slice stands (M05); absent otherwise. */
   slices?: { plan: WorkPlan; views: SliceView[]; developersAtWork: number };
+  /** The developers' questions that pause the work (W06); absent when none. */
+  questions?: QuestionView[];
+  /**
+   * True when every open question of the person is a Pact card that blocks a developer's work (W06): it holds only
+   * that work, and the rest goes on.
+   */
+  questionsHoldOnlyTheirWork?: boolean;
 }
 
 export const NEXT_MOVES: NextMove[] = [
@@ -57,6 +65,7 @@ export const NEXT_MOVES: NextMove[] = [
   "preparePlan",
   "assignWork",
   "verifyCandidate",
+  "answerQuestion",
 ];
 
 export const PHASE_LABELS: Record<WorkPhase, string> = {
@@ -80,14 +89,15 @@ const person = (move: NextMove, label: string, targetId: string | null, extra: P
   ...extra,
 });
 
-/** The moves that are the Coordinator's own: Trama starts them by itself within the mandate (W04). */
-export type CoordinatorMove = "preparePlan" | "assignWork" | "verifyCandidate";
+/** The moves that are the Coordinator's own: Trama starts them by itself within the mandate (W04, W06). */
+export type CoordinatorMove = "preparePlan" | "assignWork" | "verifyCandidate" | "answerQuestion";
 
 /** The words of the Coordinator's moves: the button's label and the message that asks for the move. */
 export const COORDINATOR_MOVES: Record<CoordinatorMove, { label: string; message: string }> = {
   preparePlan: { label: "Prepara il piano", message: "Prepara il piano." },
   assignWork: { label: "Assegna il lavoro", message: "Assegna il lavoro." },
   verifyCandidate: { label: "Esegui le verifiche", message: "Esegui le verifiche del lavoro." },
+  answerQuestion: { label: "Rispondi allo sviluppatore", message: "Rispondi alla domanda dello sviluppatore." },
 };
 
 const coordinator = (move: CoordinatorMove, targetId: string | null = null): MoveOption => ({
@@ -184,15 +194,23 @@ export function workState(document: ProjectDocument, requestId: string | null): 
   const preparePlan = () => {
     if (may("plan")) add(coordinator("preparePlan"));
   };
+  const questionList = questionViews(document, assignments);
   const finish = (phase: WorkPhase | null, blocker: string | null = null): WorkState => {
     if (phase === null) return { phase, blocker, moves: [] };
     if (open.length) moves.unshift(answerQuestions(open));
     if (pendingMandate) add(person("grantMandate", "Concedi il mandato", pendingMandate.id));
-    return { phase, blocker, moves, ...(slices ? { slices } : {}) };
+    return {
+      phase,
+      blocker,
+      moves,
+      ...(slices ? { slices } : {}),
+      ...(questionList.length ? { questions: questionList } : {}),
+      ...(open.length && open.every((q) => q.blocksWork) ? { questionsHoldOnlyTheirWork: true } : {}),
+    };
   };
 
   if (assignments.length) {
-    const state = assignedWork(document, assignments, { assignWork, add });
+    const state = assignedWork(document, assignments, { assignWork, add, otherSliceReady: Boolean(slices) && assignable });
     if (state) {
       if (!slices || state.phase === "blocked") return finish(state.phase, state.blocker);
       // The next unblocked slices go on beside the work already assigned (M05); the work is merged only with every slice done.
@@ -277,9 +295,14 @@ function answerQuestions(open: DecisionRequest[]): MoveOption {
 function assignedWork(
   document: ProjectDocument,
   assignments: SpecialistAssignment[],
-  moves: { assignWork(): void; add(option: MoveOption): void },
+  moves: { assignWork(): void; add(option: MoveOption): void; otherSliceReady: boolean },
 ): { phase: WorkPhase; blocker: string | null } | null {
-  const items = assignments.map((assignment) => ({ assignment, candidate: latestCandidate(document, assignment.id) }));
+  // A developer's question pauses its work (W06): the Coordinator answers it before its other moves.
+  const paused = assignments.filter((a) => a.status === "paused");
+  for (const assignment of paused) {
+    if (pendingState(assignment) === "asked") moves.add(coordinator("answerQuestion", pendingQuestion(assignment)!.id));
+  }
+  const items = assignments.filter((a) => a.status !== "paused").map((assignment) => ({ assignment, candidate: latestCandidate(document, assignment.id) }));
   for (const { assignment, candidate } of items) {
     if (isActive(assignment) && assignment.waitingForProvider) {
       return { phase: "blocked", blocker: `L'incarico ${assignment.id} aspetta che ${providerName(assignment.waitingForProvider.provider)} torni disponibile.` };
@@ -301,6 +324,18 @@ function assignedWork(
     }
   }
   if (items.some((i) => isActive(i.assignment))) return { phase: "execution", blocker: null };
+  if (paused.length) {
+    // A question on a Pact card holds only its work: the team goes on with a ready slice meanwhile.
+    moves.assignWork();
+    if (paused.some((a) => pendingState(a) !== "waitingForPerson")) return { phase: "execution", blocker: null };
+    if (!items.length) {
+      if (moves.otherSliceReady) return { phase: "execution", blocker: null };
+      const held = paused[0]!;
+      const card = pendingQuestion(held)?.answer;
+      const what = held.slice ? `La fetta ${held.slice.sliceId}` : `L'incarico ${held.id}`;
+      return { phase: "blocked", blocker: `${what} è in pausa: lo sviluppatore aspetta la tua risposta alla domanda ${card?.kind === "person" ? card.decisionRequestId : ""}.` };
+    }
+  }
   // Only work in a worktree becomes a candidate; read-only work that ended leaves the phase to the plan.
   const edits = items.filter((i) => needsWorktree(i.assignment));
   if (!edits.length) return null;
@@ -346,6 +381,7 @@ export function workStateText(state: WorkState): string {
   lines.push(state.phase ? `Fase: ${PHASE_LABELS[state.phase]} (${state.phase}).` : "Nessun lavoro registrato per questa richiesta.");
   if (state.blocker) lines.push(`Blocco: ${state.blocker}`);
   if (state.slices) lines.push(slicesText(state.slices.plan, state.slices.views, state.slices.developersAtWork));
+  if (state.questions) lines.push(questionsText(state.questions));
   lines.push(
     state.moves.length
       ? `Mosse possibili per declare_next_step: ${state.moves.map((m) => `${m.move} (${m.actor === "person" ? "la persona" : "tu"}: "${m.label}")`).join("; ")}.`

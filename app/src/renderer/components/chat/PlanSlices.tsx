@@ -14,6 +14,7 @@ const STATE: Record<SliceState, { label: string; tone: "secondary" | "info" | "s
   blocked: { label: "Bloccata", tone: "secondary" },
   ready: { label: "Pronta", tone: "info" },
   working: { label: "In lavoro", tone: "warning" },
+  paused: { label: "In pausa", tone: "warning" },
   verifying: { label: "In verifica", tone: "warning" },
   done: { label: "Fatta", tone: "success" },
 };

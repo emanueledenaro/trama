@@ -19,9 +19,11 @@ import {
   type AssignmentStatus,
   type CandidateEvidence,
   type CandidateState,
+  type DeveloperQuestion,
   type DeveloperReport,
   type SpecialistAssignment,
   type TestedSeam,
+  developerQuestionState,
   isOpenQuestion,
 } from "@shared/domain";
 import { isExerciseAssessment } from "@shared/onboarding";
@@ -245,6 +247,10 @@ export function DecisionCard({ requestId }: { requestId: string }) {
   const withdrawal = request.withdrawal ?? null;
   const closed = Boolean(outcome || withdrawal);
   const grilling = request.grilling ?? null;
+  // A card that answers a developer's question blocks that work until the person answers (W06).
+  const blocked = request.blocksWork ? project.document.team.specialists.find((sp) => sp.assignments.some((a) => a.id === request.blocksWork!.assignmentId)) : null;
+  const blockedWork = blocked?.assignments.find((a) => a.id === request.blocksWork!.assignmentId) ?? null;
+  const blockedQuestion = blockedWork?.questions?.find((q) => q.id === request.blocksWork!.questionId) ?? null;
 
   return (
     <CardFrame
@@ -252,14 +258,38 @@ export function DecisionCard({ requestId }: { requestId: string }) {
       title={grilling ? `Domanda ${grilling.number}` : "Decisione"}
       className={grilling ? "my-2" : undefined}
       aside={
-        withdrawal ? (
-          <Badge tone="secondary">Ritirata</Badge>
-        ) : (
-          <Badge tone={request.category === "destructive" ? "destructive" : "info"}>{request.category === "destructive" ? "Caso distruttivo" : "Scelta di prodotto"}</Badge>
-        )
+        <span className="flex items-center gap-1.5">
+          {request.blocksWork && !closed ? (
+            <span data-testid="blocks-work">
+              <Badge tone="warning">Blocca il lavoro</Badge>
+            </span>
+          ) : null}
+          {withdrawal ? (
+            <Badge tone="secondary">Ritirata</Badge>
+          ) : (
+            <Badge tone={request.category === "destructive" ? "destructive" : "info"}>{request.category === "destructive" ? "Caso distruttivo" : "Scelta di prodotto"}</Badge>
+          )}
+        </span>
       }
     >
       <p className={cn("text-ui font-medium text-foreground", withdrawal && "text-foreground/70")}>{request.question}</p>
+      {blocked && blockedWork ? (
+        <Field label="Domanda dello sviluppatore">
+          <div data-testid="blocked-work">
+            <AgentName agent={blocked} />
+            <Sep />
+            {blockedWork.slice ? `fetta ${blockedWork.slice.sliceId}, ` : ""}incarico {blockedWork.id}
+            {blockedQuestion ? <div className="mt-0.5 text-ui-sm text-foreground/90">«{blockedQuestion.question}»</div> : null}
+            <div className="mt-0.5 text-ui-sm text-muted-foreground">
+              {!closed
+                ? "Il lavoro resta in pausa finché non rispondi. Il resto del team va avanti."
+                : blockedQuestion?.resumedAt
+                  ? "Il lavoro è ripreso con la tua risposta."
+                  : "Il lavoro riprende con la tua risposta appena lo sviluppatore è libero."}
+            </div>
+          </div>
+        </Field>
+      ) : null}
       <Field label="Caso concreto">{request.concreteCase}</Field>
       <div className="mt-3 space-y-1.5">
         {request.alternatives.map((alternative, index) => {
@@ -401,6 +431,7 @@ export const ASSIGNMENT_STATUS: Record<AssignmentStatus, { label: string; tone: 
   stopped: { label: "Fermato", tone: "secondary" },
   completed: { label: "Concluso", tone: "success" },
   failed: { label: "Non riuscito", tone: "destructive" },
+  paused: { label: "In pausa", tone: "warning" },
 };
 
 export function TeamProposalCard({ proposalId }: { proposalId: string }) {
@@ -555,6 +586,7 @@ export function AssignmentCard({ assignmentId }: { assignmentId: string }) {
       <p className="mt-2 text-ui-sm text-muted-foreground">{assignment.lastUpdate}</p>
       {assignment.failure ? <Field label="Errore">{assignment.failure}</Field> : null}
       {assignment.report !== undefined ? <ReportField report={assignment.report} /> : null}
+      {assignment.questions?.length ? <QuestionsField questions={assignment.questions} /> : null}
       {assignment.result ? (
         <div className="mt-2">
           <button type="button" className="inline-flex items-center gap-1 text-ui-sm text-muted-foreground hover:text-foreground" onClick={() => setShowResult(!showResult)}>
@@ -805,6 +837,46 @@ function ReportList({ label, items, testId }: { label: string; items: string[] |
         <p className="text-ui-sm text-muted-foreground">Nessuno</p>
       )}
     </div>
+  );
+}
+
+const QUESTION_STATE = {
+  asked: { label: "Aspetta il Coordinatore", tone: "warning" },
+  waitingForPerson: { label: "Blocca il lavoro", tone: "warning" },
+  answered: { label: "Risposta data", tone: "info" },
+  resumed: { label: "Lavoro ripreso", tone: "success" },
+} as const;
+
+/** The developer's questions to the Coordinator (W06) with where each stands and its answer. */
+function QuestionsField({ questions }: { questions: DeveloperQuestion[] }) {
+  return (
+    <Field label="Domande al Coordinatore">
+      <ul className="space-y-2" data-testid="assignment-questions">
+        {questions.map((question) => {
+          const key = question.resumedAt ? "resumed" : developerQuestionState(question);
+          const answer = question.answer;
+          return (
+            <li key={question.id} data-testid="assignment-question" data-state={key}>
+              <div className="flex items-start gap-2">
+                <span className="min-w-0 flex-1 break-words text-ui-sm text-foreground">{question.question}</span>
+                <Badge tone={QUESTION_STATE[key].tone}>{QUESTION_STATE[key].label}</Badge>
+              </div>
+              {question.context ? <div className="text-ui-sm text-muted-foreground">Contesto: {question.context}</div> : null}
+              {answer?.kind === "facts" ? (
+                <div className="mt-0.5 text-ui-sm text-foreground/90" data-testid="question-answer">
+                  Risposta del Coordinatore: {answer.text}
+                  <div className="text-ui-xs text-muted-foreground">Fonti: {answer.sources.join(", ")}</div>
+                </div>
+              ) : answer?.kind === "person" ? (
+                <div className="mt-0.5 text-ui-sm text-foreground/90" data-testid="question-answer">
+                  {answer.text ? `Risposta della persona: ${answer.text}` : `Aspetta la tua risposta sulla scheda ${answer.decisionRequestId}.`}
+                </div>
+              ) : null}
+            </li>
+          );
+        })}
+      </ul>
+    </Field>
   );
 }
 

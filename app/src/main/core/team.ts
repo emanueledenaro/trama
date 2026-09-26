@@ -23,6 +23,7 @@ import { shortId } from "@shared/ids";
 import { freeAgentColor, isAgentColor, tagFromCompetence } from "@shared/identity";
 import { FIXED_ROLES, isFixedRole, roleProfile } from "@shared/roster";
 import { readDeveloperReport } from "./implementation";
+import { pendingQuestion, pendingState } from "./developerQuestions";
 
 export class TeamError extends Error {
   constructor(
@@ -596,6 +597,9 @@ export function beginTurn(
   updateAssignment(document, id, now, (assignment) => {
     if (!isActive(assignment)) throw new TeamError("not_running", `Specialist ${assignment.specialistId} has no work in progress.`);
     if (assignment.status === "preparing") assignment.status = "running";
+    // The turn that starts carries the answer to the developer's question (W06): the work has resumed.
+    const question = pendingQuestion(assignment);
+    if (question && pendingState(assignment) === "answered") question.resumedAt = now.toISOString();
     assignment.turns.push({ id: turnId, number: assignment.turns.length + 1, model, provider, startedAt: now.toISOString(), endedAt: null, outcome: null });
     assignment.lastUpdate = `Turno ${assignment.turns.length} in corso con ${model}`;
   });
@@ -625,6 +629,12 @@ export function endTurn(document: ProjectDocument, id: string, turnId: string | 
       if (assignment.seams) assignment.report = readDeveloperReport(outcome.text, assignment.seams);
       assignment.failure = null;
       assignment.lastUpdate = "Incarico concluso";
+      // A developer who asked the Coordinator a question (W06) pauses until the answer: the work is not done.
+      const question = pendingQuestion(assignment);
+      if (question) {
+        assignment.status = "paused";
+        assignment.lastUpdate = `In pausa: aspetta la risposta alla domanda ${question.id}`;
+      }
     } else if (outcome.kind === "interrupted") {
       confirmStop(assignment, "Il provider ha interrotto il turno.", now);
     } else if (pendingStop(assignment)) {
@@ -701,6 +711,32 @@ export function resumeAssignment(document: ProjectDocument, id: string, now = ne
   });
 }
 
+/**
+ * Resumes paused work whose question has its answer (W06), in the same session and worktree. It waits while the
+ * developer works on something else, while three developers are at work or while someone works on its modules.
+ */
+export function resumePausedAssignment(document: ProjectDocument, id: string, now = new Date()): SpecialistAssignment {
+  const assignment = findAssignment(document, id);
+  if (!assignment) throw new TeamError("unknown_assignment", `Unknown assignment: ${id}.`);
+  if (assignment.status !== "paused" || pendingState(assignment) !== "answered") {
+    throw new TeamError("cannot_resume", `Assignment ${id} is not paused with an answered question.`);
+  }
+  const specialist = document.team.specialists.find((s) => s.id === assignment.specialistId)!;
+  if (specialist.status === "removed") throw new TeamError("specialist_removed", `Specialist ${specialist.id} was removed from the team.`);
+  const current = currentAssignment(specialist);
+  if (current && isActive(current)) throw new TeamError("specialist_busy", `Specialist ${specialist.id} is working on ${current.id}.`);
+  if (specialist.role === "developer" && activeDevelopers(document) >= MAX_PARALLEL_DEVELOPERS) {
+    throw new TeamError("parallel_limit", `${MAX_PARALLEL_DEVELOPERS} developers are already at work.`);
+  }
+  requireIndependent(document, assignment.moduleIds, specialist.id);
+  // The resumed work is the specialist's current work again, after what it did while this one waited.
+  specialist.assignments = [...specialist.assignments.filter((a) => a.id !== id), assignment];
+  return updateAssignment(document, id, now, (a) => {
+    a.status = "preparing";
+    a.lastUpdate = `Ripresa con la risposta alla domanda ${pendingQuestion(a)!.id}`;
+  });
+}
+
 /** Assignments whose status changed since the Coordinator was last told. */
 export function unreportedAssignments(document: ProjectDocument): SpecialistAssignment[] {
   return document.team.specialists.flatMap((s) => s.assignments).filter((a) => a.reportedStatus !== a.status && !isActive(a));
@@ -721,6 +757,7 @@ export const ASSIGNMENT_STATUS_TEXT: Record<AssignmentStatus, string> = {
   stopped: "fermato",
   completed: "concluso",
   failed: "non riuscito",
+  paused: "in pausa per una domanda",
 };
 
 export function teamReport(document: ProjectDocument): { text: string; ids: string[] } | null {
@@ -733,6 +770,8 @@ export function teamReport(document: ProjectDocument): { text: string; ids: stri
     let line = `- ${name} · incarico ${assignment.id} · ${ASSIGNMENT_STATUS_TEXT[assignment.status]}: ${assignment.objective}`;
     if (assignment.result) line += `\n  Risultato: ${clip(assignment.result)}`;
     if (assignment.failure) line += `\n  Errore: ${clip(assignment.failure)}`;
+    const question = assignment.status === "paused" ? pendingQuestion(assignment) : null;
+    if (question) line += `\n  Domanda ${question.id}: ${clip(question.question)}`;
     const stop = assignment.stops.at(-1);
     if (stop) line += `\n  Arresto chiesto da ${stop.requestedBy} (${stop.reason})${stop.confirmedAt ? ", confermato" : ", non ancora confermato"}.`;
     lines.push(line);

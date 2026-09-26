@@ -199,6 +199,8 @@ export function sliceViews(document: ProjectDocument, plan: WorkPlan): SliceView
     let state: SliceView["state"];
     if (assignments.some((a) => delivered(document, a))) state = "done";
     else if (latest && isActive(latest)) state = "working";
+    // A developer's question pauses the slice until its answer (W06); the slices that wait for it stay blocked.
+    else if (latest?.status === "paused") state = "paused";
     else if (waitingFor.length) state = "blocked";
     else if (latest?.status === "completed") state = "verifying";
     else state = "ready";
@@ -221,6 +223,8 @@ export function sliceAssignmentProblem(document: ProjectDocument, plan: WorkPlan
       return `Slice ${sliceId} is blocked by ${view.waitingFor.join(", ")}: assign it when they are done.`;
     case "working":
       return `Slice ${sliceId} is already assigned: ${view.assignmentId} is working on it.`;
+    case "paused":
+      return `Slice ${sliceId} is paused: its developer (${view.assignmentId}) waits for the answer to a question, and resumes by itself once it has it. Assign another ready slice.`;
     case "done":
       return `Slice ${sliceId} is already done.`;
     default:
@@ -232,6 +236,7 @@ const STATE_TEXT: Record<SliceView["state"], string> = {
   blocked: "bloccata",
   ready: "pronta",
   working: "in lavoro",
+  paused: "in pausa per una domanda dello sviluppatore",
   verifying: "in verifica",
   done: "fatta",
 };
