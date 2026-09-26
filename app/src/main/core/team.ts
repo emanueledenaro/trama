@@ -3,6 +3,7 @@ import type {
   AgentColor,
   AssignmentCommit,
   AssignmentStatus,
+  ContractSeam,
   MandateAction,
   ProjectDocument,
   ProjectMandate,
@@ -22,6 +23,7 @@ import type { ProviderId } from "@shared/codex";
 import { shortId } from "@shared/ids";
 import { freeAgentColor, isAgentColor, tagFromCompetence } from "@shared/identity";
 import { FIXED_ROLES, isFixedRole, roleProfile } from "@shared/roster";
+import { readDeveloperReport } from "./implementation";
 
 export class TeamError extends Error {
   constructor(
@@ -378,6 +380,8 @@ export interface AssignmentOrder {
   slice?: { planId: string; sliceId: string } | null;
   /** The Coordinator's correction of the commit type and scope and of the branch prefix (Q01). */
   commit?: AssignmentCommit | null;
+  /** The seams to test in the contract (W05); the caller checks that the contract is complete. */
+  seams?: ContractSeam[];
 }
 
 function requireIndependent(document: ProjectDocument, moduleIds: string[], specialistId: string): void {
@@ -455,6 +459,7 @@ export function assign(
       workspace: null,
       ...(order.slice ? { slice: order.slice } : {}),
       ...(order.commit ? { commit: order.commit } : {}),
+      ...(order.seams ? { seams: order.seams } : {}),
     },
     now,
   );
@@ -482,6 +487,7 @@ type AssignmentFields = Pick<
   | "duty"
   | "slice"
   | "commit"
+  | "seams"
 >;
 
 /** New work of a specialist: the assignment starts in preparation and the specialist is at work. */
@@ -620,6 +626,8 @@ export function endTurn(document: ProjectDocument, id: string, turnId: string | 
     if (outcome.kind === "completed") {
       assignment.status = "completed";
       assignment.result = outcome.text;
+      // Work under a contract ends with the developer's structured report (W05): its statement, never evidence.
+      if (assignment.seams) assignment.report = readDeveloperReport(outcome.text, assignment.seams);
       assignment.failure = null;
       assignment.lastUpdate = "Incarico concluso";
     } else if (outcome.kind === "interrupted") {

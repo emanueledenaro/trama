@@ -130,7 +130,7 @@ async function diffCheck(root: string, baseSHA: string, changedFiles: string[], 
 /**
  * Removes a finished assignment's worktree without losing work (T08). The worktree must be clean, and
  * commits beyond the base must already be on a pushed branch; otherwise the removal is refused. The
- * trama/ branch is deleted only when it carries no commit of its own.
+ * work branch is deleted only when it carries no commit of its own.
  */
 export async function removeWorktree(session: WorktreeSession, worktreesRoot: string, published: boolean): Promise<{ branchDeleted: boolean }> {
   await validateWorktree(session, worktreesRoot);

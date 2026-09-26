@@ -13,8 +13,18 @@ import {
   IconShieldCheck,
   IconTelescope,
   IconUsersGroup,
+  IconUsers,
 } from "@tabler/icons-react";
-import { type AssignmentStatus, type CandidateEvidence, type CandidateState, type QualityItem, type TestedSeam, isOpenQuestion } from "@shared/domain";
+import {
+  type AssignmentStatus,
+  type CandidateEvidence,
+  type CandidateState,
+  type DeveloperReport,
+  type QualityItem,
+  type SpecialistAssignment,
+  type TestedSeam,
+  isOpenQuestion,
+} from "@shared/domain";
 import { isExerciseAssessment } from "@shared/onboarding";
 import { findGoal } from "@shared/goals";
 import { adrMarkdown, adrPath, findDomainProposal, glossaryEntry } from "@shared/domainDocs";
@@ -33,6 +43,8 @@ import { PlanSpecBody } from "./PlanSpec";
 import { DutyFields } from "./DutyFields";
 import { Sep } from "@/components/ui/sep";
 import { AgentName } from "@/components/AgentIdentity";
+import { OverlapRow } from "@/components/OverlapNotice";
+import { compareSides, linesLabel, type OverlapItem } from "@shared/overlap";
 
 function CardFrame({
   icon,
@@ -505,7 +517,11 @@ export function AssignmentCard({ assignmentId }: { assignmentId: string }) {
       <DutyFields assignment={assignment} />
       {assignment.exercise ? <Field label="Esercizio">{assignment.exercise}</Field> : null}
       <Field label="Perimetro">{assignment.moduleIds.length ? assignment.moduleIds.map(moduleName).join(", ") : "Tutto il progetto"}</Field>
-      {assignment.dependencies.length ? <Field label="Dipendenze">{assignment.dependencies.join(", ")}</Field> : null}
+      {assignment.seams ? (
+        <ContractFields assignment={assignment} decisions={project.document.decisions} />
+      ) : assignment.dependencies.length ? (
+        <Field label="Dipendenze">{assignment.dependencies.join(", ")}</Field>
+      ) : null}
       {goal ? (
         <Field label="Obiettivo del progetto">
           <button type="button" className="text-left text-[var(--color-text-accent)] hover:underline" onClick={() => setInspector({ kind: "goal", id: goal.id })}>
@@ -539,6 +555,7 @@ export function AssignmentCard({ assignmentId }: { assignmentId: string }) {
       ) : null}
       <p className="mt-2 text-ui-sm text-muted-foreground">{assignment.lastUpdate}</p>
       {assignment.failure ? <Field label="Errore">{assignment.failure}</Field> : null}
+      {assignment.report !== undefined ? <ReportField report={assignment.report} /> : null}
       {assignment.result ? (
         <div className="mt-2">
           <button type="button" className="inline-flex items-center gap-1 text-ui-sm text-muted-foreground hover:text-foreground" onClick={() => setShowResult(!showResult)}>
@@ -724,6 +741,26 @@ function EvidenceRow({ check, evidence }: { check: string; evidence: CandidateEv
   );
 }
 
+const STATEMENT_NOTE = "È una dichiarazione dello sviluppatore, non un'evidenza: contano le verifiche eseguite da Trama.";
+
+/** Seams as the developer reported them (M06, W05), each with its tests or none, and marked when outside the agreed ones. */
+function TestedSeamList({ seams, itemTestId, outside }: { seams: TestedSeam[]; itemTestId: string; outside: string }) {
+  return (
+    <ul className="space-y-0.5 text-ui-sm">
+      {seams.map((s) => (
+        <li key={`${s.seam}-${s.tests}`} data-testid={itemTestId} data-tested={s.tests ? "yes" : "no"} data-agreed={s.agreed ? "yes" : "no"}>
+          {s.seam}
+          <span className="text-muted-foreground">
+            <Sep />
+            {s.tests ? `test: ${s.tests}` : "nessun test riportato"}
+            {s.agreed ? null : `, ${outside}`}
+          </span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 /** The seams the developer of a slice says it tested (M06): its statement, shown apart from Trama's evidence. */
 function TestedSeamsField({ seams }: { seams: TestedSeam[] | null }) {
   return (
@@ -734,20 +771,104 @@ function TestedSeamsField({ seams }: { seams: TestedSeam[] | null }) {
         ) : seams.length === 0 ? (
           <p className="text-ui-sm text-muted-foreground">La spec non ha seam confermati.</p>
         ) : (
-          <ul className="space-y-0.5 text-ui-sm">
+          <TestedSeamList seams={seams} itemTestId="candidate-tested-seam" outside="fuori dai seam confermati" />
+        )}
+        <p className="mt-1 text-ui-xs text-muted-foreground">{STATEMENT_NOTE}</p>
+      </div>
+    </Field>
+  );
+}
+
+/** The contract the assignment reached the developer with (W05): seams to test, Pact decisions and dependencies. */
+function ContractFields({ assignment, decisions }: { assignment: SpecialistAssignment; decisions: { id: string; version: number }[] }) {
+  const setInspector = useUi((s) => s.setInspector);
+  const seams = assignment.seams ?? [];
+  const relied = Object.entries(assignment.decisionVersions ?? {});
+  return (
+    <div data-testid="assignment-contract">
+      <Field label="Seam da testare">
+        {seams.length ? (
+          <ol className="space-y-0.5 text-ui-sm">
             {seams.map((s) => (
-              <li key={`${s.seam}-${s.tests}`} data-testid="candidate-tested-seam" data-tested={s.tests ? "yes" : "no"} data-agreed={s.agreed ? "yes" : "no"}>
+              <li key={s.number} data-testid="contract-seam">
+                <span className="text-muted-foreground">{s.number}. </span>
                 {s.seam}
-                <span className="text-muted-foreground">
-                  <Sep />
-                  {s.tests ? `test: ${s.tests}` : "nessun test riportato"}
-                  {s.agreed ? null : ", fuori dai seam confermati"}
-                </span>
               </li>
             ))}
-          </ul>
+          </ol>
+        ) : (
+          <span className="text-ui-sm text-muted-foreground">Nessuno: il lavoro non scrive test nuovi.</span>
         )}
-        <p className="mt-1 text-ui-xs text-muted-foreground">È una dichiarazione dello sviluppatore, non un'evidenza: contano le verifiche eseguite da Trama.</p>
+      </Field>
+      <Field label="Decisioni del Patto">
+        {relied.length ? (
+          relied.map(([id, version]) => {
+            const current = decisions.find((d) => d.id === id);
+            return (
+              <button key={id} type="button" className="mr-2 font-mono text-[11.5px] text-[var(--color-text-accent)] hover:underline" onClick={() => setInspector({ kind: "decision", id })}>
+                {id} v{version}
+                {current && current.version !== version ? <span className="text-warning"> (ora v{current.version})</span> : null}
+              </button>
+            );
+          })
+        ) : (
+          <span className="text-ui-sm text-muted-foreground">Nessuna</span>
+        )}
+      </Field>
+      <Field label="Dipendenze">
+        {assignment.dependencies.length ? assignment.dependencies.join(", ") : <span className="text-ui-sm text-muted-foreground">Nessuna</span>}
+      </Field>
+    </div>
+  );
+}
+
+/** One block of the developer's report: null when it left the block out, an empty list when it said there was nothing. */
+function ReportList({ label, items, testId }: { label: string; items: string[] | null; testId: string }) {
+  return (
+    <div className="mt-1" data-testid={testId} data-reported={items === null ? "no" : "yes"}>
+      <div className="text-ui-xs text-muted-foreground/70">{label}</div>
+      {items === null ? (
+        <p className="text-ui-sm text-muted-foreground">Non riportati</p>
+      ) : items.length ? (
+        <ul className="space-y-0.5 text-ui-sm">
+          {items.map((item) => (
+            <li key={item} className="break-words">
+              {item}
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="text-ui-sm text-muted-foreground">Nessuno</p>
+      )}
+    </div>
+  );
+}
+
+/** The developer's structured report (W05), saved when the work ended: its statement, never evidence. */
+function ReportField({ report }: { report: DeveloperReport | null }) {
+  return (
+    <Field label="Rapporto dello sviluppatore">
+      <div data-testid="assignment-report">
+        {report === null ? (
+          <p className="text-ui-sm text-muted-foreground">Lo sviluppatore non ha consegnato il rapporto.</p>
+        ) : (
+          <>
+            <ReportList label="File toccati" items={report.filesTouched} testId="report-files" />
+            <ReportList label="Test scritti" items={report.testsWritten} testId="report-tests" />
+            <div className="mt-1" data-testid="report-seams" data-reported={report.seams === null ? "no" : "yes"}>
+              <div className="text-ui-xs text-muted-foreground/70">Seam coperti</div>
+              {report.seams === null ? (
+                <p className="text-ui-sm text-muted-foreground">Non riportati</p>
+              ) : report.seams.length ? (
+                <TestedSeamList seams={report.seams} itemTestId="report-seam" outside="fuori dal contratto" />
+              ) : (
+                <p className="text-ui-sm text-muted-foreground">Nessuno nel contratto</p>
+              )}
+            </div>
+            <ReportList label="Dubbi" items={report.doubts} testId="report-doubts" />
+          </>
+        )}
+        <p className="mt-1 text-ui-xs text-muted-foreground">{STATEMENT_NOTE}</p>
       </div>
     </Field>
   );
@@ -816,6 +937,7 @@ export function CandidateCard({ candidateId }: { candidateId: string }) {
           </Field>
         ) : null;
       })()}
+      {candidate.pullRequest?.mergedAt ? null : <CandidateOverlaps candidateId={candidate.id} />}
       {quality.length && !candidate.pullRequest ? <QualityField items={quality} /> : null}
       {candidate.clearance ? (
         <p className="mt-2 text-ui-sm text-muted-foreground">
@@ -1069,6 +1191,7 @@ export function ConflictCard({ assessmentId }: { assessmentId: string }) {
             {assessment.conflictingFiles.map((file) => (
               <span key={file} className="rounded-md bg-[var(--color-background-button-secondary)] px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground">
                 {file}
+                {assessment.conflictingLines?.[file]?.length ? <span className="font-sans">, {linesLabel(assessment.conflictingLines[file]!)}</span> : null}
               </span>
             ))}
           </div>
@@ -1114,6 +1237,64 @@ export function PresenceConsentCard({ proposal, detail }: { proposal: string; de
           </Button>
         </div>
       ) : null}
+    </CardFrame>
+  );
+}
+
+/**
+ * G03, before publishing or merging (decision 4): the candidate's files against the colleagues' presence, with the
+ * conflicts the merge probes found. A warning, never a lock: the buttons stay where they are.
+ */
+function CandidateOverlaps({ candidateId }: { candidateId: string }) {
+  const project = useUi((s) => s.app?.project)!;
+  const overlaps = project.overlaps;
+  const candidate = project.document.candidates.find((c) => c.id === candidateId);
+  if (!overlaps || !candidate || !project.presence) return null;
+  const specialist = project.document.team.specialists.find((s) => s.id === candidate.specialistId);
+  const items = compareSides({
+    sides: [{ mine: specialist?.name ?? candidate.specialistId, files: candidate.changedFiles, moduleIds: [] }],
+    others: project.presence.others,
+    modules: project.snapshot.modules.map((m) => ({ id: m.id, name: m.name, relativePath: m.relativePath, files: m.files.map((f) => f.relativePath) })),
+    probes: overlaps.probes,
+    pullRequests: project.github.snapshot?.pullRequests ?? [],
+  });
+  if (!items.length) return null;
+  return (
+    <Field label={candidate.pullRequest ? "Prima di unire, i colleghi" : "Prima di pubblicare, i colleghi"}>
+      <div data-testid="candidate-overlaps" className="divide-y divide-[color:var(--app-surface-divider)]">
+        {items.map((item) => (
+          <OverlapRow key={item.id} item={item} />
+        ))}
+      </div>
+    </Field>
+  );
+}
+
+/** The live overlap behind a Coordinator's card, when it still holds. */
+function findOverlap(project: { overlaps?: { items: OverlapItem[]; tasks: Record<string, OverlapItem[]> } | null }, id: string): OverlapItem | null {
+  const overlaps = project.overlaps;
+  if (!overlaps) return null;
+  return overlaps.items.find((i) => i.id === id) ?? Object.values(overlaps.tasks).flat().find((i) => i.id === id) ?? null;
+}
+
+/**
+ * Decision 9: the Coordinator points out an overlap in the chat, with the message to the colleague ready. The text
+ * is the one said at the time; the files, the lines and the message follow the presence as it is now.
+ */
+export function OverlapCard({ overlapId, title, detail }: { overlapId: string; title: string; detail: string | null }) {
+  const project = useUi((s) => s.app?.project)!;
+  const item = findOverlap(project, overlapId);
+  return (
+    <CardFrame
+      icon={<IconUsers stroke={1.8} />}
+      title={title}
+      anchor="presence-overlap"
+      aside={item ? null : <Badge tone="secondary">Non più attuale</Badge>}
+    >
+      <div data-testid="overlap-card" data-level={item?.level ?? "gone"}>
+        {detail ? <p className="text-ui text-foreground/90">{detail}</p> : null}
+        {item ? <OverlapRow item={item} /> : <p className="mt-1 text-ui-xs text-muted-foreground">La presenza dei colleghi è cambiata dopo questo avviso.</p>}
+      </div>
     </CardFrame>
   );
 }

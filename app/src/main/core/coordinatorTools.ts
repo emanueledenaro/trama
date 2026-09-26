@@ -40,7 +40,10 @@ import {
 import { type ToolDefinition, type ToolResult, toolFailure, toolSuccess } from "./toolServer";
 import type { CriterionReport } from "./tickets";
 import { sliceAssignmentProblem } from "./slices";
+import { agreedSeams, contractSeams, seamNumber } from "./implementation";
 import { NEXT_MOVES, workRequests, workState } from "./workPhase";
+import type { PresenceView } from "@shared/presence";
+import { fileOverlaps, goalOverlaps, moduleOverlaps, occupantName, presenceForTool } from "./coordinatorPresence";
 
 export interface TicketUpdate {
   issueNumber: number;
@@ -79,7 +82,7 @@ const TAG = {
 };
 
 export const TOOL_SERVER_INSTRUCTIONS =
-  "Trama tools read this project's study, Pact, mandate, team, GitHub issues and conversation, keep your memory and skills and search past dialogs, put mandates, team proposals and behavior decisions to the person, run read-only checks, act only within the mandate and close a turn with its one next step.";
+  "Trama tools read this project's study, Pact, mandate, team, GitHub issues and conversation, read who works on what (presence), keep your memory and skills and search past dialogs, put mandates, team proposals and behavior decisions to the person, run read-only checks, act only within the mandate and close a turn with its one next step.";
 
 const SKILL_MANAGE_DESCRIPTION =
   "Create, update, or delete skills — your procedural memory for recurring task types. The call is an operations array (a single edit is a list of one); it applies atomically — any failure rolls every touched skill back. Ops: create (full SKILL.md; lands in this project's skill library in Trama's folder, never in the repository; must precede that skill's other ops), patch (targeted old_string/new_string fix — preferred; content alone REPLACES the whole file, read it via skill_view() first), write_file/remove_file (supporting files), delete (sole op only). Keep the description's first 57 chars a self-contained trigger: 'Use when <trigger>. <one-line behavior>.' Write lessons, not logs: imperative rule + why, no PR numbers/dates/incident narration, one rule per lesson, references/ named by topic (extend before adding). skill_view() shows format conventions.";
@@ -290,6 +293,14 @@ export const COORDINATOR_TOOLS: ToolDefinition[] = [
     readOnly: true,
   },
   {
+    name: "read_presence",
+    description:
+      "Read the presence: who works on what in the team now. Each colleague who shares their presence in Trama, and each of their Trama agents, with status (active or idle), branch, task and the paths of the files they touch (never contents), plus who was seen last and the files where your own developers overlap someone. Narrow it with terms (words to find in paths, branches, tasks and module names; give Italian and English forms, for example pagament and payment) or moduleIDs. Use it to answer questions like \"chi sta toccando i pagamenti?\" and before assigning work: answer only from what it returns, never guess.",
+    properties: { terms: list(0), moduleIDs: list(0) },
+    required: [],
+    readOnly: true,
+  },
+  {
     name: "read_goals",
     description:
       "Read the project's goals: title, status, whether the person archived it, desired outcome, accepted and refused examples and linked decisions, plus the goal of the dialog you are answering (null for the project dialog). An archived goal keeps its status and history but is out of the person's working view: do not start work on it unless the person restores it.",
@@ -344,7 +355,7 @@ export const COORDINATOR_TOOLS: ToolDefinition[] = [
   {
     name: "assign_task",
     description:
-      "Within the mandate (executeInWorktree), assign work to a developer, named by id or name. Trama starts it in a provider session it owns, in its own worktree when tools include edits, without network. Give the objective, the issue or exercise, the modules, the assignments it depends on, the Pact decisions the work relies on (decisionIDs: the work stops if one changes), the checks the result must pass and your instructions for the specialist. provider and model default to yours; propose another connected provider or model only when the work needs it (read_team lists them). In modelReason say why this provider and model fit the work: first the quality the work needs, then the cost among adequate models; say so when you lack evidence. goalID names the goal the work serves; it defaults to the goal of the dialog you are answering. Assign in parallel only independent work: different modules and no unfinished dependency. When the plan of the work has approved slices (to-tickets), work with edits delivers one slice: name it in slice (S1, S2, ...); Trama refuses a slice whose blockers are not done, a slice someone is working on, and more than three developers at work at once. The developer of a slice runs AI Hero's implement and tdd skills, testing only at the seams the person confirmed and reporting the seams it tested: name in requiredChecks the project's typecheck and test checks when it has them (node_typecheck and node_test, or swift_build and swift_test), because only Trama's run of them on the candidate counts as evidence. Work goes only to developers: a fixed role works at its own moments, which Trama starts, and assign_task refuses it. kind newFeature and tradeOff always go to the person. Trama derives the Conventional Commits type and scope of the work and its branch (feature/, bugfix/, hotfix/ or the project's own prefixes) from the kind, the files and the modules; correct them with commitType and commitScope (an empty commitScope means none), and set hotfix for an urgent fix that goes straight to the main branch.",
+      "Within the mandate (executeInWorktree), assign work to a developer, named by id or name. Trama starts it in a provider session it owns, in its own worktree when tools include edits, without network. Every assignment carries a contract, and Trama refuses an incomplete one (incomplete_contract): the objective; seams, the seams the developer tests (for a slice, the numbers of the seams the person confirmed in the spec (1, 2, ...); otherwise each seam in words; at least one for work with edits, unless the spec of the slice has no confirmed seam); decisionIDs, the Pact decisions the work relies on (the work stops if one changes; [] only when no decision applies); dependencies, the assignments it depends on ([] when none); requiredChecks, the checks the result must pass (at least one for work with edits). Add the issue or exercise, the modules and your instructions for the specialist. The developer ends with a structured report (files touched, tests written, seams covered, doubts) that Trama saves on the assignment: read_team shows it, as the developer's statement and never as evidence. provider and model default to yours; propose another connected provider or model only when the work needs it (read_team lists them). In modelReason say why this provider and model fit the work: first the quality the work needs, then the cost among adequate models; say so when you lack evidence. goalID names the goal the work serves; it defaults to the goal of the dialog you are answering. Assign in parallel only independent work: different modules and no unfinished dependency. When the plan of the work has approved slices (to-tickets), work with edits delivers one slice: name it in slice (S1, S2, ...); Trama refuses a slice whose blockers are not done, a slice someone is working on, and more than three developers at work at once. The developer of a slice runs AI Hero's implement and tdd skills, testing only at the seams the person confirmed and reporting the seams it tested: name in requiredChecks the project's typecheck and test checks when it has them (node_typecheck and node_test, or swift_build and swift_test), because only Trama's run of them on the candidate counts as evidence. Work goes only to developers: a fixed role works at its own moments, which Trama starts, and assign_task refuses it. kind newFeature and tradeOff always go to the person. Presence: work with edits avoids the files colleagues are touching now (read_presence). Trama refuses it when a colleague or a colleague's agent touches files in its modules; when you know the files the work will touch, list them in expectedFiles and Trama refuses only if one of them is taken. Then assign another ready slice or postpone this one. Only when the person told you to go ahead anyway, put their words in overlapAcceptedByPerson. Trama derives the Conventional Commits type and scope of the work and its Conventional Branch name (feature/, bugfix/, hotfix/, chore/ or the project's own prefixes, with the issue number) from the kind, the files and the modules; correct them with commitType and commitScope (an empty commitScope means none), and set hotfix for an urgent fix that goes straight to the main branch.",
     properties: {
       specialist: text,
       commitType: text,
@@ -355,6 +366,7 @@ export const COORDINATOR_TOOLS: ToolDefinition[] = [
       issueNumber: { type: "integer", minimum: 1 },
       exercise: text,
       moduleIDs: list(1),
+      seams: list(0),
       dependencies: list(0),
       decisionIDs: list(0),
       provider: text,
@@ -362,11 +374,13 @@ export const COORDINATOR_TOOLS: ToolDefinition[] = [
       modelReason: text,
       goalID: text,
       slice: text,
+      expectedFiles: list(0),
+      overlapAcceptedByPerson: text,
       tools: { type: "array", items: { type: "string", enum: ["commands", "edits"] } },
       requiredChecks: { type: "array", items: { type: "string", enum: ALL_CHECKS } },
       instructions: text,
     },
-    required: ["specialist", "kind", "objective", "moduleIDs", "requiredChecks", "instructions"],
+    required: ["specialist", "kind", "objective", "moduleIDs", "seams", "decisionIDs", "dependencies", "requiredChecks", "instructions"],
     readOnly: false,
   },
   {
@@ -534,6 +548,8 @@ export interface ToolContext {
   snapshot: RepositorySnapshot;
   github: GitHubState;
   runningRequestId: string | null;
+  /** Who works on what (G01), as the last presence tick read it; null or absent before the first reading. */
+  presence?: PresenceView | null;
   /** Called after a tool changed the document: persist and publish. */
   changed(): void;
   /** Adds a conversation card for a request the Coordinator put to the person. */
@@ -604,6 +620,32 @@ function runLearningTool(name: string, args: JsonObject, context: ToolContext): 
     default:
       return wrote(learning.skills.skillManage(args as Record<string, unknown>, skillContext));
   }
+}
+
+/**
+ * The parts of an assignment contract (W05) the Coordinator left out: objective, seams, Pact decisions, required
+ * checks and dependencies. A list may be empty only when it says so: [] for no decision or no dependency. Work with
+ * edits names at least one check and one seam; the seams of a slice are checked against its spec later.
+ */
+function missingContract(args: JsonObject, withEdits: boolean): string[] {
+  const listed = (key: string) => Array.isArray(args[key]);
+  const missing: string[] = [];
+  if (typeof args.objective !== "string" || !args.objective.trim()) missing.push("objective");
+  if (!listed("seams")) missing.push("seams (the seams the developer tests; [] only for read-only work or a slice whose spec has no confirmed seam)");
+  if (!listed("decisionIDs")) missing.push("decisionIDs (the Pact decisions the work relies on; [] when none applies)");
+  if (!listed("dependencies")) missing.push("dependencies (the assignments this work depends on; [] when none)");
+  if (!listed("requiredChecks") || (withEdits && !strings(args.requiredChecks).length)) {
+    missing.push(withEdits ? "requiredChecks (at least one check the result must pass)" : "requiredChecks (the checks the result must pass; [] when none)");
+  }
+  return missing;
+}
+
+function incompleteContract(missing: string[]): ToolResult {
+  return toolFailure(
+    "incomplete_contract",
+    `The assignment contract is incomplete, so Trama did not assign the work. Missing: ${missing.join("; ")}. ` +
+      "Every assignment names its objective, seams, decisionIDs, dependencies and requiredChecks.",
+  );
 }
 
 function refused(authorization: ReturnType<typeof authorize>, action: MandateAction, outside: string[] = []): ToolResult {
@@ -793,6 +835,8 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
                     goalID: current.goalId ?? null,
                     worktreeBranch: current.workspace?.branch ?? null,
                     result: current.result,
+                    // The developer's structured report (W05): its statement, never evidence.
+                    report: (current.report ?? null) as unknown as Json,
                     failure: current.failure,
                     startedByTrama: current.duty ? ({ skill: current.duty.skill, trigger: current.duty.trigger } as unknown as Json) : null,
                   }
@@ -862,6 +906,9 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
                 : "The team has no developers yet: propose them with propose_team or add one with create_specialist."),
           );
         }
+        const withEdits = strings(args.tools).includes("edits");
+        const missing = missingContract(args, withEdits);
+        if (missing.length) return incompleteContract(missing);
         const moduleIds = strings(args.moduleIDs);
         const known = new Set(context.snapshot.modules.map((m) => m.id));
         const unknown = moduleIds.filter((id) => !known.has(id));
@@ -908,7 +955,43 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
         } else if (sliceId) {
           return toolFailure("unknown_slice", "The plan of this work has no approved slices.");
         }
+        // Presence (G04, decision 11): work with edits avoids the files someone else is touching now.
+        let presenceWarning: Json = null;
+        if (strings(args.tools).includes("edits")) {
+          const expected = strings(args.expectedFiles).filter((path) => path && !path.startsWith("/") && !path.split("/").includes(".."));
+          const inModules = moduleOverlaps(context.presence, context.snapshot.modules, moduleIds);
+          const blocking = expected.length ? fileOverlaps(context.presence, expected) : inModules;
+          const accepted = typeof args.overlapAcceptedByPerson === "string" ? args.overlapAcceptedByPerson.trim() : "";
+          const described = blocking.map((o) => `${occupantName(o.occupant)} (${o.files.slice(0, 8).join(", ")})`);
+          if (blocking.length && !accepted) {
+            return toolFailure(
+              "presence_overlap",
+              `Someone is touching files of this work now: ${described.join("; ")}. Assign another ready slice or other modules, or postpone this one until the presence shows those files free. Never ask the colleague to stop. If you know the files the work will touch, list them in expectedFiles.`,
+            );
+          }
+          if (blocking.length) presenceWarning = { overlapAcceptedByPerson: accepted.slice(0, 400), with: described };
+          else if (inModules.length) presenceWarning = { sameModules: inModules.map((o) => `${occupantName(o.occupant)} (${o.files.slice(0, 8).join(", ")})`) };
+        }
         const ticket = slice ? plan!.slicing!.tickets.find((t) => t.id === slice.sliceId) : null;
+        // The seams of the contract (W05): for a slice, numbers of the seams the person confirmed in its spec.
+        const namedSeams = strings(args.seams);
+        const confirmed = slice ? agreedSeams(plan!) : [];
+        if (confirmed.length) {
+          const outside = namedSeams.filter((entry) => {
+            const number = seamNumber(entry);
+            return number === null || number < 1 || number > confirmed.length;
+          });
+          if (outside.length || !namedSeams.length) {
+            return incompleteContract([
+              `seams (the slice's spec has ${confirmed.length} confirmed seams: name the ones this slice tests by number, ${confirmed.map((c, index) => `${index + 1} "${c.seam}"`).join(", ")}${outside.length ? `; not a confirmed seam: ${outside.join(", ")}` : ""})`,
+            ]);
+          }
+        } else if (slice && namedSeams.length) {
+          return incompleteContract(["seams ([] for this slice: its spec has no seam the person confirmed, so the developer writes no new test)"]);
+        } else if (withEdits && !namedSeams.length && !slice) {
+          return incompleteContract(["seams (at least one seam the developer tests, in words)"]);
+        }
+        const seams = contractSeams(namedSeams, confirmed.length ? confirmed : null);
         const commitType = typeof args.commitType === "string" && args.commitType.trim() ? args.commitType.trim().toLowerCase() : null;
         const allowedTypes = ((await context.conventions?.()) ?? DEFAULT_CONVENTIONS).types;
         if (commitType && !allowedTypes.includes(commitType)) {
@@ -938,6 +1021,7 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
             instructions: typeof args.instructions === "string" ? args.instructions : "",
             slice,
             commit,
+            seams,
           },
           document.mandate!.version,
           context.runningRequestId,
@@ -954,10 +1038,13 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
           goalID: assignment.goalId ?? null,
           slice: assignment.slice?.sliceId ?? null,
           requiredChecks: assignment.requiredChecks,
+          ...(presenceWarning ? { presence: presenceWarning } : {}),
         });
       }
       case "read_goals":
         return toolSuccess({ goals: goalsForTool(document), dialogGoalID: requestGoalId(document, context.runningRequestId) });
+      case "read_presence":
+        return toolSuccess(presenceForTool(document, context.presence, context.snapshot.modules, { terms: strings(args.terms), moduleIds: strings(args.moduleIDs) }));
       case "propose_domain_docs": {
         try {
           const proposal = proposeDomainDocs(document, {
@@ -994,7 +1081,24 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
         });
         context.addCard("goal", "Obiettivo proposto", goal.id);
         context.changed();
-        return toolSuccess({ goalID: goal.id, status: "proposed", note: "The person confirms, edits or discards it. Do not assign work for it before it is open." });
+        // Presence (G04, decision 11): warn when someone already works on something like it.
+        const busy = goalOverlaps(context.presence, { title: goal.title, outcome: goal.outcome }).map((o) => ({
+          who: occupantName(o),
+          branch: o.branch,
+          task: o.task?.title ?? null,
+          files: o.files.slice(0, 20),
+        }));
+        return toolSuccess({
+          goalID: goal.id,
+          status: "proposed",
+          note: "The person confirms, edits or discards it. Do not assign work for it before it is open.",
+          ...(busy.length
+            ? {
+                alreadyInProgress: busy,
+                warning: "According to the presence someone already works on something like this goal: tell the person in one line who and on what, so they can agree with the colleague first.",
+              }
+            : {}),
+        });
       }
       case "propose_practice": {
         try {
@@ -1284,6 +1388,7 @@ export function developerInstructions(projectName: string, learningGuidance: str
     "At the end of your study propose the project's developers with propose_team: one developer per real need, each with a competence and the reason this project needs it, never one to fill a role. The person confirms or corrects it once, and only that answer creates the developers. From then on you change them yourself within the mandate, with create_specialist and stop_specialist, and you say it in the conversation. Give each developer a tag: its role in one or two Italian words (Interfaccia, Provider), shown colored beside its name. When the person asks to rename a developer, do it with rename_specialist, without a mandate; fixed roles keep their names.",
     "Within the mandate, assign_task gives a developer work in a provider session and worktree that Trama owns: objective, ticket or exercise, modules, dependencies, required checks, your instructions and the provider and model you propose for it. Assign in parallel only work that is independent, and read_team to see where each specialist stands. stop_specialist asks Trama to stop work: the stop is first requested and then confirmed, and what was done is kept.",
     "run_readonly_check runs a check on the project checkout without writing to it; you may use it without a mandate.",
+    "The presence tells who works on what in the team: colleagues who share it in Trama, with their branch, task and the paths they touch, and their agents. read_presence reads it. When you assign work avoid the files colleagues are touching; when one of your developers overlaps a colleague, move or postpone its task; when you propose a goal someone already works on, say so; answer \"who is touching X\" only from read_presence. Never block a person or ask a colleague to stop.",
     "The person works by goals: a goal has a desired outcome and accepted and refused examples. Each goal has its own dialog with you, and the project dialog holds priorities and cross-goal questions; you stay one Coordinator with one mandate and one Pact for all of them. When a message comes from a goal dialog Trama says so and gives you the goal; answer about that goal, and the work you assign there is linked to it. read_goals lists the goals; propose_goal proposes a new one that the person confirms.",
     "When a specialist's work is done, declare_candidate captures its worktree and binds it to the Pact decisions it must respect; verify_candidate runs its required checks and review_candidate asks a distinct reviewer. Within the mandate, clear_candidate gives your green light to a verified and approved candidate. The person always reviews and publishes it: never claim that work is merged or published.",
     "Trama writes commits in Conventional Commits 1.0.0, or in the rules the project declares, and names branches feature/, bugfix/ or hotfix/. It derives the type and scope from the kind of work, the files and the modules: when they are wrong, correct them with set_commit_message before the person publishes. Trama publishes only a candidate that meets its quality standard: verified, a valid message, no secrets or sensitive files, a clean git diff --check, its issue linked when one exists and no Pact question left open.",

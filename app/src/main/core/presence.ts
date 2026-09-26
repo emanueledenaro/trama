@@ -161,6 +161,19 @@ export async function readRemotePresence(cache: string, source: RemoteSource): P
   return records;
 }
 
+/** The branches on the remote and their heads, read with `git ls-remote` through the presence transport (G03). */
+export async function remoteHeads(cache: string, source: RemoteSource): Promise<Map<string, string>> {
+  const { url } = remoteTransport(source);
+  const result = await cacheGit(source, ["ls-remote", "--heads", url], cache);
+  if (result.exitCode !== 0) throw new Error(lastLine(result.stderr) || "Il remoto non risponde.");
+  const heads = new Map<string, string>();
+  for (const line of result.stdout.split("\n")) {
+    const [sha, ref] = line.trim().split(/\s+/);
+    if (sha && ref?.startsWith("refs/heads/")) heads.set(ref.slice("refs/heads/".length), sha.toLowerCase());
+  }
+  return heads;
+}
+
 /** Paths in `git status -z` output; a rename or copy carries the old path after the new one. */
 export function statusPaths(output: string): string[] {
   const entries = output.split("\0");
@@ -193,7 +206,7 @@ async function changedFiles(root: string, base: string | null): Promise<{ files:
 }
 
 /** The branch the work starts from: origin's default branch, else a local main or master. */
-async function defaultBase(root: string): Promise<string | null> {
+export async function defaultBase(root: string): Promise<string | null> {
   const head = await localGit(["symbolic-ref", "-q", "refs/remotes/origin/HEAD"], root);
   const candidates = [head.ok ? head.stdout.trim() : "", "refs/remotes/origin/main", "refs/remotes/origin/master", "refs/heads/main", "refs/heads/master"];
   for (const ref of candidates.filter(Boolean)) {
@@ -341,6 +354,11 @@ export class PresenceService {
     this.timer.unref?.();
     void this.watchHead(root);
     void this.tick();
+  }
+
+  /** The remote and the bare cache in use, once the first tick resolved them; null without a remote. */
+  remote(): { source: RemoteSource; cache: string } | null {
+    return this.source && this.cache ? { source: this.source, cache: this.cache } : null;
   }
 
   /** Runs a tick now, or once more after the one in progress. */
