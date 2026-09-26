@@ -7,6 +7,11 @@ if (process.argv[2] === "sandbox") {
   const { spawnSync } = await import("node:child_process");
   const rest = process.argv.slice(process.argv.indexOf("--") + 1);
   const result = spawnSync(rest[0], rest.slice(1), { stdio: "inherit" });
+  // With FAKE_CODEX_LOG_CHECKS the end of each check joins the request log, so a test can read what ran before what.
+  if (process.env.FAKE_CODEX_LOG && process.env.FAKE_CODEX_LOG_CHECKS) {
+    const { appendFileSync } = await import("node:fs");
+    appendFileSync(process.env.FAKE_CODEX_LOG, `${JSON.stringify({ method: "sandbox/ended", params: { command: rest } })}\n`);
+  }
   process.exit(result.status ?? 1);
 }
 

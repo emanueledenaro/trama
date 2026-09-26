@@ -14,6 +14,7 @@ afterEach(async () => {
   controller = null;
   delete process.env.FAKE_CODEX_LOG;
   delete process.env.FAKE_CODEX_AUDIT_GATE;
+  delete process.env.FAKE_CODEX_LOG_CHECKS;
 });
 
 async function until(check: () => boolean, timeout = 15_000): Promise<void> {
@@ -82,18 +83,40 @@ describe("focus mode on a candidate (F01)", () => {
     // The fake axes answer only once the test opens their gate: the test sees the examination while it runs.
     const gates = await mkdtemp(join(tmpdir(), "trama-gates-"));
     process.env.FAKE_CODEX_AUDIT_GATE = join(gates, "first");
+    // The end of each check joins the request log, so the log shows what ran before what.
+    process.env.FAKE_CODEX_LOG_CHECKS = "1";
+    const auditLog = async () =>
+      (await readFile(log, "utf8"))
+        .slice(checksBefore)
+        .split("\n")
+        .filter(Boolean)
+        .map((line) => JSON.parse(line) as Request);
     const auditId = controller.startFocusAudit(candidate.id);
     const audit = document.audits!.find((a) => a.id === auditId)!;
     expect(audit).toMatchObject({ target: { kind: "candidate", candidateId: candidate.id }, fixedPoint: candidate.baseSHA, status: "checking" });
     expect(() => controller!.startFocusAudit(candidate.id)).toThrow("già in corso");
 
-    // Two axes, each its own session, both open and running at once: neither can answer until the gate opens.
+    // Two axes, each its own session, both with a turn started while neither can answer: they run at once.
     await until(() => audit.standards.threadId !== null && audit.spec.threadId !== null);
-    expect(audit).toMatchObject({ status: "reviewing", standards: { status: "running" }, spec: { status: "running" } });
-    expect(audit.standards.threadId).not.toBe(audit.spec.threadId);
-    // The real checks came first, in the sandbox, as Trama's evidence on this snapshot: all of them ended before the axes started.
+    const axisThreads = [audit.standards.threadId!, audit.spec.threadId!];
+    expect(axisThreads[0]).not.toBe(axisThreads[1]);
+    const turnStarted = (entries: Request[], threadId: string) => entries.findIndex((r) => r.method === "turn/start" && r.params.threadId === threadId);
+    let entries = await auditLog();
+    for (const start = Date.now(); axisThreads.some((threadId) => turnStarted(entries, threadId) < 0); entries = await auditLog()) {
+      if (Date.now() - start > 15_000) throw new Error("timeout: both axis turns never started");
+      await new Promise((r) => setTimeout(r, 20));
+    }
+    expect(audit).toMatchObject({ status: "reviewing", standards: { status: "running", finishedAt: null }, spec: { status: "running", finishedAt: null } });
+    // The real checks came first, in the sandbox, as Trama's evidence on this snapshot: every check ended before either axis opened.
     expect(candidate.requiredChecks.length).toBeGreaterThan(0);
     expect(audit.checks.map((c) => [c.check, c.result, c.snapshotId])).toEqual(candidate.requiredChecks.map((check) => [check, "pass", candidate.snapshotId]));
+    const checksEnded = entries.flatMap((r, index) => (r.method === "sandbox/ended" ? [index] : []));
+    const axesOpened = entries.flatMap((r, index) =>
+      r.method === "thread/start" && String(r.params.developerInstructions).includes("reviewer of focus mode") ? [index] : [],
+    );
+    expect(checksEnded).toHaveLength(candidate.requiredChecks.length);
+    expect(axesOpened).toHaveLength(2);
+    expect(Math.max(...checksEnded)).toBeLessThan(Math.min(...axesOpened));
     await writeFile(join(gates, "first"), "");
     await until(() => audit.status === "done");
 
