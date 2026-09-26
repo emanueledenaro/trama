@@ -108,6 +108,10 @@ const handlers: { [K in ActionName]: Handler<K> } = {
     const parent = await chooseFolder("Scegli la cartella");
     if (parent) await controller.createProject(parent, name, idea);
   },
+  "project:clone": async ({ repository }) => {
+    const parent = await chooseFolder("Scegli dove clonare il progetto");
+    if (parent) await controller.cloneProject(parent, repository);
+  },
   "project:close": () => controller.closeProject(),
   "project:refresh": () => controller.refreshProject(),
   "project:forgetRecent": ({ id }) => controller.forgetRecent(id),
@@ -175,7 +179,7 @@ const handlers: { [K in ActionName]: Handler<K> } = {
   "plan:slice": async ({ planId }) => controller.slicePlan(planId),
   "plan:publishSlices": ({ planId }) => controller.publishPlanSlices(planId),
   "plan:publish": ({ planId }) => controller.publishPlanSpec(planId),
-  "candidate:previewPullRequest": async ({ candidateId }) => controller.previewPullRequest(candidateId),
+  "candidate:previewPullRequest": ({ candidateId }) => controller.previewPullRequest(candidateId),
   "providers:refresh": ({ provider }) => (provider ? controller.refreshProvider(provider) : controller.refreshProviders()),
   "provider:login": ({ provider }) => controller.loginProvider(provider),
   "github:refresh": () => controller.refreshGitHub(),
@@ -284,6 +288,7 @@ function buildMenu(): void {
       role: "help",
       label: "Aiuto",
       submenu: [
+        { label: "Benvenuto in Trama", click: () => sendMenu("welcome") },
         { label: "Guida introduttiva", click: () => sendMenu("guide") },
         { label: "Esercizi sul progetto di esempio", click: () => sendMenu("exercises") },
       ],

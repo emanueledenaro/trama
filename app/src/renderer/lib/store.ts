@@ -2,7 +2,7 @@ import { create } from "zustand";
 import type { ProviderId } from "@shared/codex";
 import type { AppState } from "@shared/domain";
 import type { ActionName, ActionPayload, ActionResult } from "@shared/ipc";
-import type { ExerciseId } from "@shared/onboarding";
+import type { ExerciseId, GuideStepId } from "@shared/onboarding";
 
 export type InspectorTarget =
   | { kind: "map" }
@@ -30,7 +30,10 @@ export type MainView = "dialog" | "overview" | "settings";
 /** The sections of the settings page; "connections" holds ChatGPT, GitHub and the providers. */
 export type SettingsSection = "general" | "connections" | "method" | "learning" | "monitor" | "presence";
 
-export type DialogName = "createProject" | "search" | "guide" | null;
+export type DialogName = "createProject" | "cloneProject" | "search" | "guide" | null;
+
+/** The welcome (B02): its first page, or one of its configuration steps. */
+export type WelcomePage = "hello" | GuideStepId;
 
 interface UiState {
   app: AppState | null;
@@ -41,6 +44,9 @@ interface UiState {
   dialogReturn: DialogName;
   /** The exercise shown in the panel over the example project's chat. */
   exercise: ExerciseId | null;
+  /** The welcome page shown over the window, null when closed (B02). */
+  welcome: WelcomePage | null;
+  setWelcome(page: WelcomePage | null): void;
   toast: string | null;
   /** "info" for a plain confirmation, such as a goal archived; errors and warnings keep the default. */
   toastTone: "warning" | "info";
@@ -104,6 +110,8 @@ export const useUi = create<UiState>((set, get) => ({
   dialog: null,
   dialogReturn: null,
   exercise: null,
+  welcome: null,
+  setWelcome: (welcome) => set({ welcome }),
   toast: null,
   toastTone: "warning",
   composerFocusRequest: 0,

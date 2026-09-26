@@ -14,7 +14,8 @@ describe("worktrees", () => {
     await git(["-c", "user.name=T", "-c", "user.email=t@t", "commit", "-m", "init"], repo, false);
     const root = await mkdtemp(join(tmpdir(), "trama-wt-"));
     const session = await prepareWorktree(repo, "Ada A-1234", root);
-    expect(session.branch).toMatch(/^trama\/ada-a-1234-[0-9a-f]{8}$/);
+    // Q01: the project's feature/ prefix, a short description and Trama's mark.
+    expect(session.branch).toMatch(/^feature\/ada-a-1234-trama-[0-9a-f]{8}$/);
     await validateWorktree(session, root);
 
     await writeFile(join(session.worktreeRoot, "a.txt"), "due\n");
@@ -26,6 +27,20 @@ describe("worktrees", () => {
     expect(review.diff).toContain("-uno");
     expect(review.diff).toContain("+nuovo");
     expect((await git(["status", "--porcelain"], repo)).trim()).toBe("");
+    expect(review.whitespaceErrors).toEqual([]);
+
+    // git diff --check runs on tracked and untracked files alike (Q01).
+    await writeFile(join(session.worktreeRoot, "a.txt"), "due  \n");
+    await writeFile(join(session.worktreeRoot, "b.txt"), "nuovo\t\n");
+    const dirty = await reviewWorktree(session);
+    expect(dirty.whitespaceErrors.join("\n")).toMatch(/a\.txt:1: trailing whitespace/);
+    expect(dirty.whitespaceErrors.join("\n")).toMatch(/b\.txt:1: trailing whitespace/);
+
+    const fix = await prepareWorktree(repo, "Correggi il totale", root, { prefix: "bugfix", issue: 142 });
+    expect(fix.branch).toMatch(/^bugfix\/issue-142-correggi-il-totale-trama-[0-9a-f]{8}$/);
+    await validateWorktree(fix, root);
+    // The name is validated before git creates anything.
+    await expect(prepareWorktree(repo, "Ada", root, { prefix: "wip" })).rejects.toThrow(/Nome di branch non valido/);
   });
 
   it("slugs names for branches", () => {
