@@ -43,6 +43,12 @@ export interface ConflictAssessment {
   conflictingFiles: string[];
   /** The lines in conflict for each file, in the candidate's version (G03); absent in older assessments. */
   conflictingLines?: Record<string, import("./overlap").LineRange[]>;
+  /**
+   * Set when the other side is another developer's worktree in this project, not a remote head (W08): its candidate
+   * and the snapshot compared. `remoteSHA` is then the temporary commit Trama made of that candidate.
+   */
+  otherCandidateId?: string;
+  otherSnapshotId?: string;
   detail: string;
   checkedAt: string;
 }
@@ -437,6 +443,8 @@ export interface SpecialistAssignment {
   seams?: ContractSeam[];
   /** The developer's structured report (W05), read from its last answer: its statement, never evidence. */
   report?: DeveloperReport | null;
+  /** Set when the developer took the slice by itself, within the mandate, instead of the Coordinator assigning it (W08). */
+  selfPicked?: boolean;
   /** The questions the developer asked the Coordinator during the work (W06), oldest first. */
   questions?: DeveloperQuestion[];
 }
@@ -968,6 +976,11 @@ export interface SliceTicket {
   blockedBy: string[];
   /** The GitHub issue the slice was published as; null while it stays in Trama. */
   issue: { number: number; url: string; at: string } | null;
+  /**
+   * Set while the slice is paused, as when a developer's question became a Pact card that blocks the work (W06):
+   * nobody picks it until the pause is cleared. Absent or null means not paused.
+   */
+  pause?: { reason: string; since: string } | null;
 }
 
 /**
@@ -1087,10 +1100,17 @@ export interface ProjectDocument {
   routes?: import("./askTrama").AskTramaRoute[];
   /** The overlaps the Coordinator already pointed out in the chat (G03), so each one is said once. */
   overlapNotices?: string[];
+  /** The person's settings for this project; absent until they first change one. */
+  settings?: ProjectSettings;
   /** How the project adapts Trama's Clean Code standard (Q03); absent means every rule is on. */
   cleanCode?: import("./cleanCode").CleanCodeSettings;
   /** Focus mode examinations (F01); absent until the person first opens focus mode. */
   audits?: FocusAudit[];
+}
+
+export interface ProjectSettings {
+  /** Developers at work at the same time (W08); absent means three. */
+  parallelDevelopers?: number;
 }
 
 export type AuditStatus = "checking" | "reviewing" | "done" | "failed";
