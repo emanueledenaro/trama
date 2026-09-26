@@ -50,14 +50,38 @@ export function useResizableWidth(key: string, bounds: WidthBounds) {
   return { width, setWidth, resizing, setResizing, reset: () => setWidth(bounds.initial), bounds: { min: bounds.min, max: upper(bounds) } };
 }
 
+/** Which way a sash moves: a vertical sash splits panels side by side, a horizontal one splits them top and bottom. */
+export type SashOrientation = "vertical" | "horizontal";
+
+/** The panel edge a sash sits on. Dragging away from the panel makes it bigger. */
+export type SashSide = "left" | "right" | "top" | "bottom";
+
+export const sashOrientation = (side: SashSide): SashOrientation => (side === "left" || side === "right" ? "vertical" : "horizontal");
+
 /**
- * The edge of a panel: drag to resize, double-click to reset, arrow keys from the keyboard.
- * `side` is the edge the handle sits on; dragging away from the panel widens it.
+ * How many pixels a key moves the edge: 16, or 64 with Shift. Only the arrows along the sash's axis count.
+ * The result is the change of the panel size, so it is already signed for the panel's side.
+ */
+export function sashKeyDelta(side: SashSide, key: string, shift: boolean): number | null {
+  const step = shift ? 64 : 16;
+  const [less, more] = sashOrientation(side) === "vertical" ? ["ArrowLeft", "ArrowRight"] : ["ArrowUp", "ArrowDown"];
+  const grows = side === "right" || side === "bottom" ? 1 : -1;
+  if (key === more) return step * grows;
+  if (key === less) return -step * grows;
+  return null;
+}
+
+/**
+ * The separator between two panels, the same for every resizable panel. At rest it adds nothing to the panel's own
+ * 1px border: it is a wider invisible grip centered on that border. After a short hover, while focused from the
+ * keyboard and while dragged, it fills with the provider's accent (index.css, `.sash`).
+ * Drag to resize, double-click or Home to return to the default size, arrow keys to step.
+ * The sash sits on the start edge (left or top) of its positioned parent.
  * A click without dragging calls `onClick`, so an edge that used to toggle the panel keeps doing it.
  */
-export function ResizeHandle({
+export function Sash({
   side,
-  width,
+  size,
   min,
   max,
   onResize,
@@ -67,63 +91,63 @@ export function ResizeHandle({
   label,
   className,
 }: {
-  side: "left" | "right";
-  width: number;
+  side: SashSide;
+  size: number;
   min: number;
   max: number;
-  onResize: (width: number) => void;
+  onResize: (size: number) => void;
   onReset: () => void;
   onClick?: () => void;
   onDragChange?: (dragging: boolean) => void;
   label: string;
   className?: string;
 }) {
-  const drag = useRef<{ x: number; width: number; moved: boolean } | null>(null);
+  const drag = useRef<{ at: number; size: number; moved: boolean } | null>(null);
   const [active, setActive] = useState(false);
   // A single click waits for a possible second one, so a double-click resets without also toggling.
   const pendingClick = useRef<number | null>(null);
   // Pointer events carry no click count, so the click itself decides; a drag that just ended is not a click.
   const lastDragMoved = useRef(false);
   useEffect(() => () => window.clearTimeout(pendingClick.current ?? undefined), []);
-  const direction = side === "left" ? -1 : 1;
+  const orientation = sashOrientation(side);
+  const direction = side === "left" || side === "top" ? -1 : 1;
+  const pointerAt = (event: React.PointerEvent) => (orientation === "vertical" ? event.clientX : event.clientY);
+  const end = () => {
+    drag.current = null;
+    setActive(false);
+    onDragChange?.(false);
+  };
   return (
     <div
       role="separator"
-      aria-orientation="vertical"
+      aria-orientation={orientation}
       aria-label={label}
-      aria-valuenow={width}
+      aria-valuenow={size}
       aria-valuemin={min}
       aria-valuemax={max}
       tabIndex={0}
       data-active={active || undefined}
-      className={cn("panel-resize-handle no-drag", `panel-resize-handle--${side}`, className)}
+      className={cn("sash no-drag", `sash--${orientation}`, className)}
       onPointerDown={(event) => {
         if (event.button !== 0) return;
         event.currentTarget.setPointerCapture(event.pointerId);
-        drag.current = { x: event.clientX, width, moved: false };
+        drag.current = { at: pointerAt(event), size, moved: false };
         setActive(true);
         onDragChange?.(true);
       }}
       onPointerMove={(event) => {
         const start = drag.current;
         if (!start) return;
-        const delta = (event.clientX - start.x) * direction;
+        const delta = (pointerAt(event) - start.at) * direction;
         if (Math.abs(delta) > 3) start.moved = true;
-        if (start.moved) onResize(start.width + delta);
+        if (start.moved) onResize(start.size + delta);
       }}
       onPointerUp={(event) => {
-        const start = drag.current;
-        drag.current = null;
-        setActive(false);
-        onDragChange?.(false);
+        lastDragMoved.current = Boolean(drag.current?.moved);
+        end();
         event.currentTarget.releasePointerCapture(event.pointerId);
-        lastDragMoved.current = Boolean(start?.moved);
       }}
-      onPointerCancel={() => {
-        drag.current = null;
-        setActive(false);
-        onDragChange?.(false);
-      }}
+      onPointerCancel={end}
       onClick={(event) => {
         if (lastDragMoved.current || !onClick || event.detail !== 1) return;
         pendingClick.current = window.setTimeout(onClick, 240);
@@ -133,9 +157,8 @@ export function ResizeHandle({
         onReset();
       }}
       onKeyDown={(event) => {
-        const step = event.shiftKey ? 64 : 16;
-        if (event.key === "ArrowLeft") onResize(width - step * direction);
-        else if (event.key === "ArrowRight") onResize(width + step * direction);
+        const delta = sashKeyDelta(side, event.key, event.shiftKey);
+        if (delta !== null) onResize(size + delta);
         else if (event.key === "Home") onReset();
         else return;
         event.preventDefault();

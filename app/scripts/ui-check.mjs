@@ -506,6 +506,65 @@ await domainCard.scrollIntoViewIfNeeded();
 await shot("04k-domain-proposal-written");
 await page.getByRole("button", { name: "Mappa del progetto" }).click();
 await shot("05-map");
+// #229: every panel separator is the same sash. At rest it draws nothing over the panel border; after a short hover
+// it takes the provider's accent, and while dragged it stays lit. Double-click and the arrow keys change the width.
+{
+  const sidebarSash = page.getByRole("separator", { name: /Larghezza della barra laterale/ });
+  const inspectorSash = page.getByRole("separator", { name: "Larghezza dell'ispettore" });
+  const look = (sash) =>
+    sash.evaluate((element) => {
+      const style = getComputedStyle(element);
+      const probe = document.createElement("span");
+      probe.style.color = "var(--color-text-accent)";
+      element.append(probe);
+      const accent = getComputedStyle(probe).color;
+      probe.remove();
+      const drawn = ["::before", "::after"].filter((pseudo) => getComputedStyle(element, pseudo).content !== "none");
+      return { background: style.backgroundColor, accent, width: element.getBoundingClientRect().width, cursor: style.cursor, drawn, children: element.childElementCount };
+    });
+  const transparent = (color) => color === "rgba(0, 0, 0, 0)" || color === "transparent";
+  for (const sash of [sidebarSash, inspectorSash]) {
+    const rest = await look(sash);
+    if (!transparent(rest.background) || rest.drawn.length || rest.children) throw new Error(`A sash shows at rest: ${JSON.stringify(rest)}`);
+    if (rest.width !== 4 || rest.cursor !== "col-resize") throw new Error(`A sash is not a 4px col-resize grip: ${JSON.stringify(rest)}`);
+  }
+  const sidebarBox = await sidebarSash.boundingBox();
+  await page.mouse.move(sidebarBox.x + sidebarBox.width / 2, 300);
+  await page.waitForTimeout(100);
+  if (!transparent((await look(sidebarSash)).background)) throw new Error("The sash lights up before the hover delay");
+  await page.waitForTimeout(500);
+  const hovered = await look(sidebarSash);
+  if (hovered.background !== hovered.accent) throw new Error(`The hovered sash is not the provider's accent: ${JSON.stringify(hovered)}`);
+  for (const mode of ["light", "dark"]) {
+    await page.evaluate((dark) => document.documentElement.classList.toggle("dark", dark), mode === "dark");
+    await shot(`22-sash-hover-${mode}`);
+  }
+  await page.evaluate(() => document.documentElement.classList.remove("dark"));
+  const inspectorBox = await inspectorSash.boundingBox();
+  const startWidth = Number(await inspectorSash.getAttribute("aria-valuenow"));
+  await page.mouse.move(inspectorBox.x + inspectorBox.width / 2, 300);
+  await page.mouse.down();
+  await page.mouse.move(inspectorBox.x + inspectorBox.width / 2 - 60, 300, { steps: 6 });
+  await page.waitForTimeout(200);
+  const dragged = await look(inspectorSash);
+  if (dragged.background !== dragged.accent) throw new Error(`The dragged sash is not lit: ${JSON.stringify(dragged)}`);
+  await shot("22-sash-drag-light");
+  await page.mouse.up();
+  await page.mouse.move(640, 500);
+  if (Number(await inspectorSash.getAttribute("aria-valuenow")) !== startWidth + 60) throw new Error("Dragging the sash does not widen the inspector");
+  await page.waitForFunction(() => getComputedStyle(document.querySelector('[aria-label="Larghezza dell\'ispettore"]')).backgroundColor === "rgba(0, 0, 0, 0)");
+  await inspectorSash.dblclick();
+  await page.waitForFunction(() => document.querySelector('[aria-label="Larghezza dell\'ispettore"]')?.getAttribute("aria-valuenow") === "420");
+  await inspectorSash.focus();
+  await page.keyboard.press("ArrowLeft");
+  if ((await inspectorSash.getAttribute("aria-valuenow")) !== "436") throw new Error("ArrowLeft does not widen the inspector");
+  await page.keyboard.press("Shift+ArrowRight");
+  if ((await inspectorSash.getAttribute("aria-valuenow")) !== "372") throw new Error("Shift+ArrowRight does not narrow the inspector by 64px");
+  await page.keyboard.press("Home");
+  if ((await inspectorSash.getAttribute("aria-valuenow")) !== "420") throw new Error("Home does not reset the inspector");
+  if ((await inspectorSash.getAttribute("aria-orientation")) !== "vertical") throw new Error("The sash has no vertical orientation");
+  await inspectorSash.blur();
+}
 await page.getByRole("button", { name: /Orders/ }).first().click();
 await shot("06-module");
 await page.getByRole("button", { name: /CancelPaidOrder.swift/ }).first().click();
