@@ -10,7 +10,7 @@ const reducedMotionQuery = () => window.matchMedia("(prefers-reduced-motion: red
  * through a short fade. It sits over the app, never in front of its loading: the app renders underneath from
  * the first frame. Switching projects does not replay it.
  *
- * `trama:replay-intro` replays it and holds it until `trama:end-intro`, so the UI check can photograph frames.
+ * `trama:replay-intro` replays it and holds it until `trama:end-intro` removes it, so the UI check can photograph frames.
  */
 export function LaunchIntro({ ready }: { ready: boolean }) {
   const start = useRef(performance.now());
@@ -18,6 +18,8 @@ export function LaunchIntro({ ready }: { ready: boolean }) {
   const [elapsed, setElapsed] = useState(0);
   const [held, setHeld] = useState(false);
   const [run, setRun] = useState(0);
+  // Set by the end of the fade or by `trama:end-intro`: the layer leaves even if a throttled timer is late.
+  const [removed, setRemoved] = useState(false);
   const [reducedMotion, setReducedMotion] = useState(() => reducedMotionQuery().matches);
 
   useEffect(() => {
@@ -35,13 +37,14 @@ export function LaunchIntro({ ready }: { ready: boolean }) {
     const replay = () => {
       start.current = performance.now();
       setElapsed(0);
+      setRemoved(false);
       setHeld(true);
       setRun((n) => n + 1);
     };
     const end = () => {
       setHeld(false);
       setReadyAt(0);
-      setElapsed(performance.now() - start.current);
+      setRemoved(true);
     };
     window.addEventListener("trama:replay-intro", replay);
     window.addEventListener("trama:end-intro", end);
@@ -61,12 +64,15 @@ export function LaunchIntro({ ready }: { ready: boolean }) {
     return () => clearTimeout(timer);
   }, [next, elapsed]);
 
-  if (phase === "gone") return null;
+  if (phase === "gone" || removed) return null;
   return (
     <div
       aria-hidden
       data-testid="launch-intro"
       data-phase={phase}
+      onTransitionEnd={(event) => {
+        if (phase === "leaving" && event.target === event.currentTarget && event.propertyName === "opacity") setRemoved(true);
+      }}
       className={cn(
         "launch-intro fixed inset-0 z-[80] flex items-center justify-center bg-[var(--color-background-surface)] transition-opacity duration-200 ease-out",
         phase === "leaving" && "pointer-events-none opacity-0",
