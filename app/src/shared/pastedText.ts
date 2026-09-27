@@ -1,4 +1,4 @@
-/** A long paste kept as a card and sent after the prompt, as in Synara's composerPastedText.ts. */
+/** A long paste kept as a card and sent after the prompt. Derived from third-party MIT code; see THIRD_PARTY_NOTICES.md. */
 export const PASTE_MINIMUM_CHARACTERS = 4_000;
 export const PASTE_MINIMUM_LINES = 25;
 

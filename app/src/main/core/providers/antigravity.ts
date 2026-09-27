@@ -1,16 +1,13 @@
 /**
  * Antigravity CLI (`agy`) runtime.
  *
- * Ported from Synara (https://github.com/Emanuele-web04/synara, MIT, Copyright (c) 2026 T3 Tools Inc.
- * and Copyright (c) 2026 Emanuele Di Pietro): provider/Layers/AntigravityAdapter.ts,
- * provider/antigravityPrintResult.ts, the Antigravity health check of provider/Layers/ProviderHealth.ts,
- * provider/providerBinaryResolution.ts and agentGateway/stdioProxyScript.ts. See docs/synara-attribution.md.
+ * Derived from third-party MIT code; see THIRD_PARTY_NOTICES.md.
  *
- * Each turn is one `agy -p` process in print mode with `--output-format stream-json`. Like Synara, a
- * global capture plugin (`~/.gemini/antigravity-cli/plugins/trama-capture`) records hook events in a
+ * Each turn is one `agy -p` process in print mode with `--output-format stream-json`. A global
+ * capture plugin (`~/.gemini/antigravity-cli/plugins/trama-capture`) records hook events in a
  * per-turn file: that is where the conversation id, the tool calls and the transcript path come from.
  *
- * Sandbox: print mode cannot pause for approvals, so Synara only runs it with
+ * Sandbox: print mode cannot pause for approvals, so it only works with
  * `--dangerously-skip-permissions` ("Full access"). As ADR 0012 requires, the capture hook enforces
  * the rules with an allow-list, in one of two profiles:
  * - worktree (specialists): known read tools, the file-edit tools when their target stays inside the
@@ -466,8 +463,8 @@ export function buildAntigravityCaptureCommand(
 }
 
 /**
- * The hook script. Besides Synara's capture, an active PreToolUse denies file-edit tools whose target
- * is outside the turn's writable root: an empty object is Antigravity's denial (see Synara #490).
+ * The hook script. Besides capturing events, an active PreToolUse denies file-edit tools whose target
+ * is outside the turn's writable root: an empty object is Antigravity's denial.
  */
 export function hookScriptSource(): string {
   return `const fs = require("node:fs");
@@ -615,7 +612,7 @@ process.stdin.on("end", () => {
   } else if (event === "pre-invocation") {
     process.stdout.write('{"decision":"allow"}\\n');
   } else {
-    // Stop must stay neutral: decision "stop" is not recognized and can hang print mode (Synara #465).
+    // Stop must stay neutral: decision "stop" is not recognized and can hang print mode.
     process.stdout.write("{}\\n");
   }
 });
@@ -846,7 +843,7 @@ function toolOutputText(payload: Record<string, unknown>): string | null {
   return null;
 }
 
-/** True when a successful post-tool left a background task running (Synara detectAntigravityBackgroundTaskStart). */
+/** True when a successful post-tool left a background task running. */
 export function isAntigravityBackgroundStart(name: string, args: Record<string, unknown> | undefined, payload: Record<string, unknown>): boolean {
   if (payload.failed === true || (typeof payload.error === "string" && payload.error.trim())) return false;
   if (name === "schedule") return true;
@@ -1508,7 +1505,7 @@ export class AntigravityRuntime implements AgentRuntime {
     }
     await this.readTranscript(turn);
     // Agent finished: when the print process lingers, tear it down so the close handler can settle.
-    // Background tasks keep the CLI alive by design, so they are left alone (Synara #465, #752).
+    // Background tasks keep the CLI alive by design, so they are left alone.
     if (stopSeen && !turn.settled && !turn.backgroundTaskStarted && turn.pendingTools.length === 0) {
       turn.stopTeardownRequested = true;
       teardownProcessTree(turn.child);
@@ -1548,7 +1545,7 @@ export class AntigravityRuntime implements AgentRuntime {
     }
   }
 
-  /** Surfaces the planner's reasoning next to its tool calls, as Synara does from the transcript. */
+  /** Surfaces the planner's reasoning next to its tool calls, read from the transcript. */
   private async readTranscript(turn: ActiveTurn): Promise<void> {
     if (!turn.transcriptPath) return;
     let batch;

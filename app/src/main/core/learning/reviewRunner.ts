@@ -1,6 +1,6 @@
 /**
- * Runs a review or curator pass in its own provider session. Hermes forks the live agent; Trama opens
- * an ephemeral, read-only session of the Coordinator's provider and model in an empty directory, with
+ * Runs a review or curator pass in its own provider session. Instead of forking the live agent, Trama
+ * opens an ephemeral, read-only session of the Coordinator's provider and model in an empty directory, with
  * the provider's own tools turned off where the adapter can, gives it the transcript, and exposes only
  * the learning tools the pass may use. If the provider still runs one of its own tools (a command, a
  * file change, another MCP server), the pass stops and refuses every later write, so nothing it read
@@ -68,7 +68,7 @@ export async function runReviewSession(input: ReviewSessionInput): Promise<Revie
     if (stopped) return toolFailure("review_stopped", `${stopped} Nothing more is saved.`);
     if (!input.allowedTools.includes(name)) return toolFailure("denied", deniedToolMessage(name, input.allowedTools));
     if (calls.length >= input.maxToolCalls) {
-      // Hermes ends the review loop at its iteration limit: the session stops here, and what it saved stays.
+      // The review loop ends at its iteration limit: the session stops here, and what it saved stays.
       if (!limitReached) {
         limitReached = true;
         abort();

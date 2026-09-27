@@ -995,7 +995,7 @@ describe("TramaController", () => {
   });
 });
 
-describe("learning ported from Hermes (ADR 0014)", () => {
+describe("the learning loop (ADR 0014)", () => {
   it("keeps memory in Trama's folder and recalls earlier dialogs only outside the live thread", async () => {
     const { data, project: root } = await setup();
     const { existsSync, readFileSync } = await import("node:fs");

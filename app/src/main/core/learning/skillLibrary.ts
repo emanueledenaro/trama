@@ -1,9 +1,6 @@
 /**
  * Agent-written skills (procedural memory): `skill_manage`, `skills_list`, `skill_view`, the skills
- * index and archive/restore, ported from Hermes Agent `tools/skill_manager_tool.py`,
- * `tools/skill_manager_guards.py`, `tools/skill_manager_batch.py`, `tools/skills_tool.py`,
- * `tools/skill_usage.py` and `agent/prompt_builder.py` (revision 58c896e, MIT, Copyright (c) 2025
- * Nous Research).
+ * index and archive/restore. Derived from third-party MIT code; see THIRD_PARTY_NOTICES.md.
  *
  * In Trama a library belongs to one project (ADR 0014): it lives in Trama's folder, never in the
  * repository, and sharing a method with other projects stays the job of practices (C15).
@@ -113,7 +110,7 @@ export class SkillLibrary {
     return found.sort();
   }
 
-  /** Finds a skill by directory name or by `category/name`, as Hermes' `_find_skill`. */
+  /** Finds a skill by directory name or by `category/name`. */
   findSkill(name: string): string | null {
     const wanted = name.replace(/\\/g, "/");
     for (const dir of this.skillDirs()) {
@@ -145,7 +142,7 @@ export class SkillLibrary {
     return error(`Skill '${name}' not found.${suffix}`);
   }
 
-  /** Hermes' `_background_review_write_guard`: the review touches only unpinned, curator-managed skills. */
+  /** Write guard of the background review: it touches only unpinned, curator-managed skills. */
   private reviewWriteGuard(name: string, action: string, context: SkillCallContext): JsonRecord | null {
     if (context.origin !== "backgroundReview") return null;
     const refuse = `Refusing background curator ${action} for`;
@@ -392,7 +389,7 @@ export class SkillLibrary {
     return files;
   }
 
-  /** One op of the flat shape; Hermes' dispatcher after the guards. */
+  /** One op of the flat shape; the dispatcher after the guards. */
   private runAction(args: JsonRecord, context: SkillCallContext): JsonRecord {
     const action = String(args.action ?? "");
     const name = String(args.name ?? "");
@@ -603,7 +600,7 @@ export class SkillLibrary {
   }
 
   /**
-   * A view counts as a use (Hermes: loading a skill is acting on it). The review and the curator only
+   * A view counts as a use (loading a skill is acting on it). The review and the curator only
    * inspect the library, so their reads do not keep a skill alive or touch its record.
    */
   private countView(name: string, context: SkillCallContext): void {
@@ -646,15 +643,14 @@ export class SkillLibrary {
     context.readMarks?.add(realTarget(skillMd));
     const { frontmatter } = parseFrontmatter(content);
     const metadata = frontmatter.metadata && typeof frontmatter.metadata === "object" ? (frontmatter.metadata as JsonRecord) : {};
-    const scoped = (metadata.hermes && typeof metadata.hermes === "object" ? metadata.hermes : metadata) as JsonRecord;
     const linked = this.linkedFiles(skill.dir);
     this.countView(skill.dirName, context);
     return {
       success: true,
       name: skill.name,
       description: skill.description,
-      tags: scoped.tags ?? frontmatter.tags ?? [],
-      related_skills: scoped.related_skills ?? frontmatter.related_skills ?? [],
+      tags: metadata.tags ?? frontmatter.tags ?? [],
+      related_skills: metadata.related_skills ?? frontmatter.related_skills ?? [],
       content,
       path: relative(this.root, skillMd).split(sep).join("/"),
       linked_files: linked,
@@ -662,7 +658,7 @@ export class SkillLibrary {
     };
   }
 
-  /** The "## Skills" block of Hermes' system prompt; empty when the library has no skill. */
+  /** The "## Skills" block of the system prompt; empty when the library has no skill. */
   indexText(): string {
     const byCategory = new Map<string, { name: string; description: string }[]>();
     for (const entry of this.entries()) {
@@ -748,7 +744,7 @@ export class SkillLibrary {
 }
 
 /**
- * Hermes lets `write_file` and `remove_file` reach SKILL.md. For the unattended review that would skip
+ * `write_file` and `remove_file` can reach SKILL.md. For the unattended review that would skip
  * the frontmatter checks or empty a skill without the archive-only delete, so it must use patch or edit.
  */
 function reviewSkillMdProblem(filePath: string, action: string, context: SkillCallContext): string | null {
@@ -756,7 +752,7 @@ function reviewSkillMdProblem(filePath: string, action: string, context: SkillCa
   return `The background review may not ${action} SKILL.md: change it with action='patch', or archive the skill with action='delete' and absorbed_into.`;
 }
 
-/** Hermes' `_op_shape_error`: the arguments each action needs, and where misfiled text belongs. */
+/** Op shape check: the arguments each action needs, and where misfiled text belongs. */
 export function opShapeError(action: string, args: JsonRecord): string | null {
   const has = (key: string) => args[key] !== undefined && args[key] !== null;
   const misplaced = (reads: string[], destination: string) => {
