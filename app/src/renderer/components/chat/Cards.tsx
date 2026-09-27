@@ -713,6 +713,8 @@ const BLOCKER_TEXT: Record<string, string> = {
   EVIDENCE_STALE: "Verifica non più valida",
   CHECK_FAILED: "Verifica non superata",
   GATE_BLOCKED: "Rilievo bloccante dei revisori",
+  GATE_RUNNING: "Revisori al lavoro",
+  GATE_FAILED: "Revisione da rilanciare",
   REMOTE_CONFLICT: "Conflitto con il lavoro di un collega",
   WORKTREE_CONFLICT: "Conflitto con il worktree di un altro sviluppatore",
 };

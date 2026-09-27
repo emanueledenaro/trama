@@ -21,12 +21,15 @@ import {
   interruptGates,
   markRegressions,
   openGate,
+  pendingReturns,
   readReviewerAnswer,
   returnFindings,
   ROLE_BRIEFS,
   reviewerTurn,
+  SECRET_NOTE,
   SESSION_ROLES,
   stopAtChecks,
+  stopAtSecrets,
   suiteChecks,
   usesCodeReview,
 } from "./gate";
@@ -202,13 +205,18 @@ describe("the candidate gate (W10)", () => {
     expect(changes.findings).toEqual([{ severity: "blocking", title: "Il revisore chiede modifiche", detail: "Nomi poco chiari.", file: null }]);
   });
 
-  it("reads a reviewer's answer and never takes an unreadable one as a pass", () => {
-    expect(readReviewerAnswer('{"report":"ok","findings":[{"severity":"blocking","title":"Segreto","detail":"","file":""},{"severity":"other","title":" ","detail":"","file":""}]}')).toEqual({
+  it("reads a reviewer's answer and never takes an unreadable or malformed one as a pass", () => {
+    expect(readReviewerAnswer('{"report":"ok","findings":[{"severity":"blocking","title":"Segreto","detail":"","file":""}]}')).toEqual({
       report: "ok",
       findings: [{ severity: "blocking", title: "Segreto", detail: "Segreto", file: null }],
     });
+    expect(readReviewerAnswer('{"report":"ok","findings":[]}')).toEqual({ report: "ok", findings: [] });
     expect(() => readReviewerAnswer("non è JSON")).toThrow(GateError);
     expect(() => readReviewerAnswer('{"report":"ok"}')).toThrow(GateError);
+    // A finding outside the schema fails the figure: it is never dropped, nor turned into a suggestion.
+    for (const finding of ['{"severity":"critical","title":"X","detail":"","file":""}', '{"severity":"blocking","title":" ","detail":"","file":""}', '{"severity":"blocking","title":"X"}', '"testo"']) {
+      expect(() => readReviewerAnswer(`{"report":"ok","findings":[${finding}]}`)).toThrow(GateError);
+    }
   });
 
   it("gives code-review's figures the skill byte for byte with the gate binding, and Trama's own brief to security and performance", async () => {
@@ -255,6 +263,38 @@ describe("the candidate gate (W10)", () => {
     // After the turn that read them, a later resumption does not repeat them.
     beginTurn(document, assignment.id, "t2", "gpt-5.5", at(11));
     expect(resumeInput(assignment, document.decisions)).not.toContain("Rilievi bloccanti");
+  });
+
+  it("blocks a secret in the diff before any model: Security's finding is Trama's, the other figures do not start", () => {
+    const document = project();
+    const { candidate } = candidateOf(document);
+    const gate = openGate(document, candidate, at(3));
+    stopAtSecrets(gate, ["chiave API in NOTE.md"], at(4));
+    expect(gateReview(gate, "security")).toMatchObject({ status: "done", threadId: null, findings: [expect.objectContaining({ severity: "blocking", title: "Segreto nel diff: chiave API in NOTE.md" })] });
+    expect(gateReview(gate, "regressionGuardian").status).toBe("running");
+    for (const role of ["specReviewer", "cleanCode", "performance", "ux", "devops", "documentation"] as const) expect(gateReview(gate, role)).toMatchObject({ status: "skipped", report: SECRET_NOTE });
+    finishReview(gate, "regressionGuardian", guardianOutcome([]), at(5));
+    closeGate(gate, at(6));
+    expect(gate.status).toBe("blocked");
+    expect(gateSummary(document, gate)).toBe(
+      "Guardiano delle regressioni: 1 suggerimento. Sicurezza: 1 rilievo bloccante, il primo: Segreto nel diff: chiave API in NOTE.md. Gli altri revisori non sono partiti: il diff contiene un segreto, e Trama non lo manda ai modelli.",
+    );
+  });
+
+  it("lists the findings still waiting for their developer, only for the latest gate of the latest candidate of completed work", () => {
+    const document = project();
+    const { assignment, candidate } = candidateOf(document);
+    endTurn(document, assignment.id, null, { kind: "completed", text: "Fatto." }, at(2));
+    const gate = openGate(document, candidate, at(3));
+    beginReviews(gate, { spec: true, model: "mini", cleanCodeModel: "gpt-5.5" }, at(4));
+    for (const role of GATE_ROLES) finishReview(gate, role, { report: "", findings: [] }, at(5));
+    finishReview(gate, "ux", { report: "", findings: [{ severity: "blocking", title: "Testo tagliato", detail: "Testo tagliato", file: null }] }, at(5));
+    closeGate(gate, at(6));
+    expect(pendingReturns(document)).toEqual([]);
+    gate.returned = { assignmentId: assignment.id, at: at(6).toISOString(), waiting: "Lo sviluppatore lavora a un altro incarico." };
+    expect(pendingReturns(document)).toEqual([gate]);
+    gate.returned.waiting = null;
+    expect(pendingReturns(document)).toEqual([]);
   });
 
   it("marks a gate still running at the reopening of the project as interrupted", () => {

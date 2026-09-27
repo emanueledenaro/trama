@@ -413,15 +413,15 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
         return;
       }
       if (required.includes("report") && required.includes("findings") && !required.includes("worst")) {
-        // The candidate gate (W10): one reviewer per session, named in the turn. Security blocks a secret in the diff;
-        // the others sign nothing to report. The skill inputs the session received go in the report.
+        // The candidate gate (W10): one reviewer per session, named in the turn. Performance blocks a note marked
+        // "[rilievo-bloccante]"; the others sign nothing to report. The skill inputs the session received go in the report.
         const role = text.match(/Cancello del candidato C-[0-9A-F]+, revisore: ([^(]+?) \(/)?.[1] ?? "?";
         const skills = params.input.filter((item) => item.type === "skill").map((item) => item.name);
-        const secret = role === "Sicurezza" && /^\+.*sk-prova-/m.test(text);
-        const answer = secret
+        const blocking = role === "Prestazioni" && /^\+.*\[rilievo-bloccante\]/m.test(text);
+        const answer = blocking
           ? {
-              report: `### Segreti\n\n- \`NOTE.md\` contiene una chiave in chiaro.\n\nSkill ricevute: ${skills.join(", ") || "nessuna"}.`,
-              findings: [{ severity: "blocking", title: "Chiave API in chiaro in NOTE.md", detail: "La riga `chiave: sk-prova-…` espone una credenziale nel repository.", file: "NOTE.md:2" }],
+              report: `### Prestazioni\n\n- \`NOTE.md\` chiede un ciclo senza limite.\n\nSkill ricevute: ${skills.join(", ") || "nessuna"}.`,
+              findings: [{ severity: "blocking", title: "Ciclo senza limite in NOTE.md", detail: "La nota chiede di rileggere tutti gli ordini a ogni richiesta.", file: "NOTE.md:2" }],
             }
           : { report: `Revisore ${role}. Skill ricevute: ${skills.join(", ") || "nessuna"}.`, findings: [] };
         // With FAKE_CODEX_GATE_HOLD the reviewer answers only once that file exists: a test sees every session open at once.
@@ -460,9 +460,11 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
           setTimeout(() => finish(`Ho scritto CONTEXT.md nel worktree. Skill ricevute: ${seen.join(", ")}`), 30);
           return;
         }
-        // "[segreto]" leaves a key in the note, which the security reviewer of the candidate gate blocks (W10); the turn
-        // that resumes with the findings writes the note without it.
-        writeFileSync(join(root, "NOTE.md"), text.includes("[segreto]") && !text.includes("Rilievi bloccanti dei revisori") ? "Lavoro dello specialista\nchiave: sk-prova-123\n" : "Lavoro dello specialista\n");
+        // "[segreto]" leaves a key in the note, which Trama's scan blocks at the candidate gate (W10); "[bloccante]" leaves
+        // a line a reviewer blocks. The turn that resumes with the findings writes the note without either.
+        const resumedWithFindings = text.includes("Rilievi bloccanti dei revisori");
+        const extra = resumedWithFindings ? "" : `${text.includes("[segreto]") ? "chiave: sk-prova-0123456789abcdefghij\n" : ""}${text.includes("[bloccante]") ? "Rileggi tutti gli ordini a ogni richiesta [rilievo-bloccante]\n" : ""}`;
+        writeFileSync(join(root, "NOTE.md"), `Lavoro dello specialista\n${extra}`);
         send({ method: "item/completed", params: { threadId, turnId, item: { id: "fc", type: "fileChange", status: "completed", changes: [{ path: "NOTE.md" }] } } });
         // "[spazi]" leaves trailing whitespace in a tracked file, so git_diff_check fails on the candidate (V05).
         const tracked = join(root, "Sources/Orders/CancelPaidOrder.swift");
@@ -682,8 +684,8 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
       if (text.includes("[assegna")) {
         // [assegna] or [assegna:<slice>]: without a slice the fake names the first ready one Trama lists (M05).
         const named = text.match(/\[assegna:(\w+)\]/)?.[1];
-        // "[segreto]" is work outside the plan: it never takes the ready slice.
-        const slice = named ? { slice: named } : text.includes("[segreto]") ? {} : readySlice(text);
+        // "[segreto]" and "[bloccante]" are work outside the plan: they never take the ready slice.
+        const slice = named ? { slice: named } : text.includes("[segreto]") || text.includes("[bloccante]") ? {} : readySlice(text);
         callTool(threadId, "assign_task", {
           ...slice,
           // "[senza-contratto]" leaves out the seams and the Pact decisions: Trama refuses the assignment (W05).
@@ -703,7 +705,7 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
                 ? ["git_status", "node_test"]
                 : ["git_status"],
           tools: ["edits"],
-          instructions: `${text.includes("[segreto]") ? "[segreto] " : ""}${text.includes("[lento]") ? "[lento] " : ""}${text.includes("[lento:sempre]") ? "[lento:sempre] " : ""}${text.includes("[spazi]") ? "[spazi] " : ""}${text.includes("[domanda]") ? "[domanda] " : ""}Scrivi una nota`,
+          instructions: `${text.includes("[segreto]") ? "[segreto] " : ""}${text.includes("[bloccante]") ? "[bloccante] " : ""}${text.includes("[lento]") ? "[lento] " : ""}${text.includes("[lento:sempre]") ? "[lento:sempre] " : ""}${text.includes("[spazi]") ? "[spazi] " : ""}${text.includes("[domanda]") ? "[domanda] " : ""}Scrivi una nota`,
         }).then((result) => {
           toolDone("assign_task", result);
           finish(result.isError ? `Rifiutato: ${result.content[0].text}` : "Ho assegnato il lavoro ad Ada.");

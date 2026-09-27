@@ -1365,8 +1365,9 @@ await app.evaluate(({ nativeTheme }) => {
   nativeTheme.themeSource = "system";
 });
 await page.evaluate(() => document.documentElement.classList.remove("dark"));
-// W10: a blocking finding goes back to the developer. Ada's note leaves a key in the diff: Sicurezza blocks it while the
-// other figures sign, the green light is refused, and the finding reaches Ada in her work, where she resumes it.
+// W10: a blocking finding goes back to the developer. Ada's note leaves a key in the diff: Trama's scan finds it for
+// Sicurezza and no model receives the diff, so the other figures do not start. The green light is refused, and the
+// finding reaches Ada in her work, where she resumes it.
 await send("[assegna] [segreto]");
 const secretWork = assignmentCards.nth(4);
 await secretWork.getByText("Concluso", { exact: true }).waitFor({ timeout: 20_000 });
@@ -1376,8 +1377,8 @@ const blockedGate = secretCandidate.locator('[data-testid="candidate-gate"][data
 await blockedGate.waitFor({ timeout: 60_000 });
 if ((await blockedGate.getByTestId("gate-review").count()) !== 8) throw new Error("The gate does not show every candidate figure");
 await blockedGate.locator('[data-testid="gate-review"][data-role="security"]').getByText("1 rilievo bloccante").waitFor();
-await blockedGate.locator('[data-testid="gate-finding"][data-severity="blocking"]').getByText("Chiave API in chiaro in NOTE.md").waitFor();
-await blockedGate.locator('[data-testid="gate-review"][data-role="devops"]').getByText("Niente da segnalare").waitFor();
+await blockedGate.locator('[data-testid="gate-finding"][data-severity="blocking"]').getByText("Segreto nel diff: chiave API in NOTE.md").waitFor();
+await blockedGate.locator('[data-testid="gate-review"][data-role="devops"][data-status="skipped"]').getByText(/il diff contiene un segreto/).waitFor();
 await blockedGate.getByTestId("gate-returned").getByText(/Rimandato a Ada con i rilievi bloccanti/).waitFor();
 await page.getByText(/Via libera rifiutato: .*GATE_BLOCKED/).last().waitFor({ timeout: 20_000 });
 await secretCandidate.getByText("Rilievo bloccante dei revisori").waitFor();
@@ -1400,7 +1401,7 @@ await page.getByRole("button", { name: /ha lavorato per/ }).last().click();
 const toDeveloper = page.getByRole("button", { name: /^Sicurezza a Ada: 1 rilievo bloccante sul candidato C-/ });
 await toDeveloper.waitFor({ timeout: 10_000 });
 await toDeveloper.click();
-await page.getByText(/Chiave API in chiaro in NOTE\.md \(NOTE\.md:2\)/).waitFor();
+await page.getByText(/Segreto nel diff: chiave API in NOTE\.md/).last().waitFor();
 await toDeveloper.evaluate((item) => item.scrollIntoView({ block: "center" }));
 await shot("23c-gate-finding-to-developer");
 await page.evaluate(() => document.documentElement.classList.add("dark"));

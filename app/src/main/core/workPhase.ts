@@ -149,7 +149,10 @@ const superseded = (assignment: SpecialistAssignment, others: SpecialistAssignme
 const providerName = (id: string) => PROVIDERS.find((p) => p.id === id)?.name ?? id;
 
 /** Candidate blockers that new work must fix; missing or stale evidence only waits for a check. */
-const hardBlockers = (blockers: CandidateBlocker[]) => blockers.filter((b) => b.code !== "EVIDENCE_MISSING" && b.code !== "EVIDENCE_STALE");
+/** Blockers that wait for Trama or the reviewers, not for new work: a check to run, the candidate gate running or to run again. */
+const WAITING_BLOCKERS = ["EVIDENCE_MISSING", "EVIDENCE_STALE", "GATE_RUNNING", "GATE_FAILED"];
+
+const hardBlockers = (blockers: CandidateBlocker[]) => blockers.filter((b) => !WAITING_BLOCKERS.includes(b.code));
 
 function candidateBlockerText(candidate: Candidate, blocker: CandidateBlocker): string {
   switch (blocker.code) {
@@ -332,12 +335,16 @@ function assignedWork(
       return { phase: "blocked", blocker: `L'incarico ${assignment.id} ${reason}` };
     }
     if (!candidate) continue;
+    // Work that resumed after its candidate, as with the gate's findings (W10), is at work: its old candidate waits.
+    if (isActive(assignment)) continue;
     const blocker = hardBlockers(inspectCandidate(document, candidate, null))[0];
     if (blocker) {
       moves.assignWork();
       return { phase: "blocked", blocker: candidateBlockerText(candidate, blocker) };
     }
-    if (candidate.technicalReview?.verdict === "changesRequested") {
+    // A gate that failed asks for the review again, not for new work.
+    const gateFailed = inspectCandidate(document, candidate, null).some((b) => b.code === "GATE_FAILED");
+    if (candidate.technicalReview?.verdict === "changesRequested" && !gateFailed) {
       moves.assignWork();
       return { phase: "blocked", blocker: `La revisione tecnica del candidato ${candidate.id} chiede modifiche.` };
     }

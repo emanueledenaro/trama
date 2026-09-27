@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { NO_SPEC, NOTHING_TO_REPORT } from "@shared/gate";
+import { SECRET_NOTE } from "./core/gate";
 import { TramaController } from "./controller";
 import { git } from "./core/process";
 import { findSpecialist } from "./core/team";
@@ -89,8 +90,8 @@ describe("the candidate gate (W10)", () => {
     process.env.FAKE_CODEX_LOG = log;
     const { project, document, decision } = await openTeam(await repository(false));
     const ada = findSpecialist(document, "Ada")!;
-    // "[segreto]" leaves a key in the note: the security reviewer blocks it.
-    await controller!.send("[assegna] [segreto]", null, null, null);
+    // "[bloccante]" leaves a line in the note that the performance reviewer blocks.
+    await controller!.send("[assegna] [bloccante]", null, null, null);
     const work = ada.assignments[0]!;
     await until(() => work.status === "completed");
     // The assignment's issue is the spec the spec reviewer reads.
@@ -122,6 +123,8 @@ describe("the candidate gate (W10)", () => {
     for (const role of sessionRoles) expect(gate.reviews.find((r) => r.role === role)).toMatchObject({ status: "running", finishedAt: null });
     // The real checks came first: the git_status evidence is on this snapshot before any reviewer opened.
     expect(candidate.evidence.git_status).toMatchObject({ result: "pass", snapshotId: candidate.snapshotId });
+    // While the reviewers work the candidate cannot reach the person.
+    expect(controller!.snapshot.project!.candidateReports[candidate.id]!.blockers.map((b) => b.code)).toEqual(["GATE_RUNNING"]);
     const skillPath = join(root, "resources/AIHero/skills/code-review/SKILL.md");
     for (const role of sessionRoles) {
       const turn = entries.find((r) => r.method === "turn/start" && r.params.threadId === threadOf(role))!;
@@ -133,25 +136,25 @@ describe("the candidate gate (W10)", () => {
     await writeFile(hold, "");
     await sent;
 
-    // Security blocks; the others sign nothing to report. The review carries the gate's verdict and the green light waits.
+    // Performance blocks; the others sign nothing to report. The review carries the gate's verdict and the green light waits.
     expect(gate.status).toBe("blocked");
-    const security = gate.reviews.find((r) => r.role === "security")!;
-    expect(security.findings).toEqual([expect.objectContaining({ severity: "blocking", title: "Chiave API in chiaro in NOTE.md", file: "NOTE.md:2" })]);
-    for (const role of ["specReviewer", "performance", "ux", "devops", "documentation"]) {
+    const performance = gate.reviews.find((r) => r.role === "performance")!;
+    expect(performance.findings).toEqual([expect.objectContaining({ severity: "blocking", title: "Ciclo senza limite in NOTE.md", file: "NOTE.md:2" })]);
+    for (const role of ["specReviewer", "security", "ux", "devops", "documentation"]) {
       expect(gate.reviews.find((r) => r.role === role)).toMatchObject({ status: "done", findings: [], report: NOTHING_TO_REPORT });
     }
     expect(gate.reviews.find((r) => r.role === "cleanCode")).toMatchObject({ status: "done", threadId: candidate.technicalReview!.reviewerThreadId });
     expect(gate.reviews.find((r) => r.role === "regressionGuardian")).toMatchObject({ status: "done", findings: [expect.objectContaining({ title: "Nessuna suite da confrontare" })] });
     expect(candidate.technicalReview).toMatchObject({ verdict: "changesRequested", gateId: gate.id });
-    expect(candidate.technicalReview!.summary).toContain("Sicurezza: 1 rilievo bloccante");
+    expect(candidate.technicalReview!.summary).toContain("Prestazioni: 1 rilievo bloccante");
     expect(candidate.clearance).toBeNull();
     expect(controller!.snapshot.project!.candidateReports[candidate.id]!.blockers).toEqual([
-      { code: "GATE_BLOCKED", detail: "Sicurezza: Chiave API in chiaro in NOTE.md" },
+      { code: "GATE_BLOCKED", detail: "Prestazioni: Ciclo senza limite in NOTE.md" },
     ]);
 
-    // The finding goes back to the developer: Security's message lands in Ada's work, and Ada resumes in the same session.
-    const message = document.events.find((e) => e.assignmentId === work.id && e.content.type === "activity" && e.content.title.startsWith("Sicurezza a Ada"));
-    expect(message).toMatchObject({ origin: "specialist", content: { detail: expect.stringContaining("Chiave API in chiaro in NOTE.md") } });
+    // The finding goes back to the developer: the reviewer's message lands in Ada's work, and Ada resumes in the same session.
+    const message = document.events.find((e) => e.assignmentId === work.id && e.content.type === "activity" && e.content.title.startsWith("Prestazioni a Ada"));
+    expect(message).toMatchObject({ origin: "specialist", content: { detail: expect.stringContaining("Ciclo senza limite in NOTE.md") } });
     expect(gate.returned).toMatchObject({ assignmentId: work.id, waiting: null });
     const authorThread = work.threadId;
     await until(() => authorTurns() === 2 && work.status === "completed");
@@ -163,8 +166,8 @@ describe("the candidate gate (W10)", () => {
     expect(resumed).toHaveLength(1);
     const resumedText = turnText(resumed[0]!);
     expect(resumedText).toContain(`Rilievi bloccanti dei revisori sul candidato ${candidate.id}`);
-    expect(resumedText).toContain("Sicurezza: Chiave API in chiaro in NOTE.md (NOTE.md:2)");
-    expect(await readFile(join(work.workspace!.worktreeRoot, "NOTE.md"), "utf8")).not.toContain("sk-prova");
+    expect(resumedText).toContain("Prestazioni: Ciclo senza limite in NOTE.md (NOTE.md:2)");
+    expect(await readFile(join(work.workspace!.worktreeRoot, "NOTE.md"), "utf8")).not.toContain("[rilievo-bloccante]");
 
     // The corrected work is a new candidate: every figure signs, the gate passes and the Coordinator's green light follows.
     delete process.env.FAKE_CODEX_GATE_HOLD;
@@ -179,6 +182,86 @@ describe("the candidate gate (W10)", () => {
     work.issueNumber = null;
     await controller!.send(`[candidato:${work.id}:${decision.id}]`, null, null, null);
     expect(document.gates![2]!.reviews.find((r) => r.role === "specReviewer")).toMatchObject({ status: "skipped", report: NO_SPEC, threadId: null });
+  }, 120_000);
+
+  it("never sends a secret in the diff to a model: Trama's scan blocks the candidate and the developer gets it back", async () => {
+    const log = join(await mkdtemp(join(tmpdir(), "trama-log-")), "codex.log");
+    process.env.FAKE_CODEX_LOG = log;
+    const { document, decision } = await openTeam(await repository(false));
+    await controller!.send("[assegna] [segreto]", null, null, null);
+    const work = findSpecialist(document, "Ada")!.assignments[0]!;
+    await until(() => work.status === "completed");
+    const before = (await readLog(log)).length;
+    await controller!.send(`[candidato:${work.id}:${decision.id}]`, null, null, null);
+    const candidate = document.candidates[0]!;
+    const gate = document.gates![0]!;
+    expect(candidate.diff).toContain("sk-prova-0123456789abcdefghij");
+    // No reviewer session opened, and no request after the declaration carries the key.
+    expect(gate.reviews.filter((r) => r.threadId !== null)).toEqual([]);
+    const after = (await readLog(log)).slice(before);
+    expect(after.filter((r) => JSON.stringify(r).includes("sk-prova-0123456789abcdefghij"))).toEqual([]);
+    expect(gate.status).toBe("blocked");
+    expect(gate.reviews.find((r) => r.role === "security")!.findings).toEqual([expect.objectContaining({ severity: "blocking", title: "Segreto nel diff: chiave API in NOTE.md" })]);
+    for (const role of ["specReviewer", "cleanCode", "performance", "ux", "devops", "documentation"]) {
+      expect(gate.reviews.find((r) => r.role === role)).toMatchObject({ status: "skipped", report: SECRET_NOTE });
+    }
+    expect(candidate.technicalReview).toMatchObject({ verdict: "changesRequested", gateId: gate.id });
+    expect(candidate.clearance).toBeNull();
+    // The developer resumes with Trama's finding and writes the note without the key.
+    expect(gate.returned).toMatchObject({ assignmentId: work.id, waiting: null });
+    await until(() => work.turns.length === 2 && work.status === "completed");
+    expect(await readFile(join(work.workspace!.worktreeRoot, "NOTE.md"), "utf8")).not.toContain("sk-prova");
+  }, 120_000);
+
+  it("keeps the findings until the developer is free, and sends them back at the next event of the work", async () => {
+    const { document, decision } = await openTeam(await repository(false));
+    await controller!.send("[assegna] [bloccante]", null, null, null);
+    const work = findSpecialist(document, "Ada")!.assignments[0]!;
+    await until(() => work.status === "completed");
+    // Ada is at work on something else when the gate blocks: the findings wait, and the work stays completed.
+    await controller!.send("[assegna] [lento]", null, null, null);
+    const other = findSpecialist(document, "Ada")!.assignments.find((a) => a.id !== work.id)!;
+    await until(() => other.status === "running");
+    await controller!.send(`[candidato:${work.id}:${decision.id}]`, null, null, null);
+    const gate = document.gates![0]!;
+    expect(gate.status).toBe("blocked");
+    expect(gate.returned).toMatchObject({ assignmentId: work.id, waiting: expect.stringContaining("altro incarico") });
+    expect(work.status).toBe("completed");
+    // The other work ends, an event of the work: the findings go back and Ada resumes.
+    await controller!.stopSpecialistWork(other.id);
+    await until(() => gate.returned?.waiting === null);
+    await until(() => work.turns.length === 2 && work.status === "completed");
+    expect(work.gateReturn).toMatchObject({ gateId: gate.id });
+  }, 120_000);
+
+  it("keeps the findings of a project the person left, and sends them back when it opens again", async () => {
+    const repo = await repository(false);
+    const { document, decision } = await openTeam(repo);
+    await controller!.send("[assegna] [bloccante]", null, null, null);
+    const work = findSpecialist(document, "Ada")!.assignments[0]!;
+    await until(() => work.status === "completed");
+    const hold = join(await mkdtemp(join(tmpdir(), "trama-hold-")), "go");
+    process.env.FAKE_CODEX_GATE_HOLD = hold;
+    const sent = controller!.send(`[candidato:${work.id}:${decision.id}]`, null, null, null);
+    await until(() => (document.gates ?? [])[0]?.reviews.find((r) => r.role === "performance")?.threadId != null);
+    // The person opens another project while the reviewers work.
+    await controller!.openProject(await repository(false));
+    await writeFile(hold, "");
+    await sent;
+    // The gate goes on in the background with the project it belongs to.
+    const gate = document.gates![0]!;
+    await until(() => gate.returned !== null);
+    expect(gate.status).toBe("blocked");
+    expect(gate.returned).toMatchObject({ waiting: expect.stringContaining("non è aperto") });
+    expect(work.status).toBe("completed");
+    // Opened again, the project sends the findings back and Ada resumes in her worktree.
+    await controller!.openProject(repo);
+    await until(() => controller!.snapshot.project?.phase.kind === "ready");
+    const reopened = controller!.snapshot.project!.document;
+    const reopenedGate = reopened.gates!.find((g) => g.id === gate.id)!;
+    const reopenedWork = findSpecialist(reopened, "Ada")!.assignments.find((a) => a.id === work.id)!;
+    await until(() => reopenedGate.returned?.waiting === null);
+    await until(() => reopenedWork.turns.length === 2 && reopenedWork.status === "completed");
   }, 120_000);
 
   it("compares the suite on the base and on the candidate, and a regression blocks the candidate", async () => {

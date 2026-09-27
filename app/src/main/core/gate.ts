@@ -5,10 +5,11 @@ import { shortId } from "@shared/ids";
 import { roleDuties, roleProfile } from "@shared/roster";
 import type { LoadedSkill } from "@shared/skills";
 import { CHECK_OUTPUT_IN_PROMPT } from "./audit";
-import { inspectCandidate } from "./candidates";
+import { inspectCandidate, latestCandidate } from "./candidates";
 import { CHECKS, type ReadOnlyCheck } from "./checks";
 import { deliverNativeSkill, type NativeSkill, RULES_ABOVE } from "./nativeSkills";
 import { extractJsonAnswer } from "./providers/types";
+import { findAssignment } from "./team";
 
 /**
  * The candidate gate (W10, spec #137 Q10): before a candidate reaches the person, Trama's real checks, then every
@@ -109,6 +110,33 @@ export function stopAtChecks(gate: CandidateGate, failed: string[], now = new Da
 }
 
 export const CHECKS_FAILED_NOTE = "Non è partito: una verifica richiesta non è passata.";
+
+export const SECRET_NOTE = "Non è partito: il diff contiene un segreto, e Trama non lo manda ai modelli.";
+
+/**
+ * Trama's own scan found a secret or a sensitive file in the diff: no model session opens on it. Security's finding is
+ * Trama's, and blocks; the guardian still compares the suite, which sends nothing to a model.
+ */
+export function stopAtSecrets(gate: CandidateGate, secrets: string[], now = new Date()): void {
+  const at = now.toISOString();
+  gate.status = "reviewing";
+  for (const review of gate.reviews) {
+    Object.assign(review, idleReview(review.role), { startedAt: at });
+    if (review.role === "regressionGuardian") {
+      review.status = "running";
+    } else if (review.role === "security") {
+      Object.assign(review, {
+        status: "done",
+        findings: secrets.map((s): GateFinding => ({ severity: "blocking", title: `Segreto nel diff: ${s}`, detail: "Trama l'ha trovato prima dei revisori: togli il segreto dal lavoro e, se è una chiave vera, revocala.", file: null })),
+        report: `Trama ha trovato nel diff: ${secrets.join(", ")}. Nessun modello ha ricevuto il diff.`,
+        finishedAt: at,
+      });
+    } else {
+      Object.assign(review, { status: "skipped", report: SECRET_NOTE, finishedAt: at });
+    }
+  }
+  gate.updatedAt = at;
+}
 
 /** The guardian found a regression: the failure the debugger diagnoses says so (W11). */
 export function markRegressions(document: ProjectDocument, gate: CandidateGate): void {
@@ -237,7 +265,8 @@ const figureName = (document: ProjectDocument, role: GateRole) =>
 
 /** One line per figure, in the order of the spec's table: what the Coordinator and the pull request read. */
 export function gateSummary(document: ProjectDocument, gate: CandidateGate): string {
-  const lines = gate.reviews.filter((r) => r.report !== CHECKS_FAILED_NOTE).map((r) => {
+  const secret = gate.reviews.some((r) => r.report === SECRET_NOTE);
+  const lines = gate.reviews.filter((r) => r.report !== CHECKS_FAILED_NOTE && r.report !== SECRET_NOTE).map((r) => {
     const name = figureName(document, r.role);
     if (r.status === "skipped") return `${name}: ${r.report ?? "saltato"}.`.replace(/\.\.$/, ".");
     if (r.status === "failed") return `${name}: revisione non riuscita.`;
@@ -247,6 +276,7 @@ export function gateSummary(document: ProjectDocument, gate: CandidateGate): str
     if (r.findings.length) return `${name}: ${r.findings.length === 1 ? "1 suggerimento" : `${r.findings.length} suggerimenti`}.`;
     return `${name}: niente da segnalare.`;
   });
+  if (secret) lines.push("Gli altri revisori non sono partiti: il diff contiene un segreto, e Trama non lo manda ai modelli.");
   if (!gate.checksFailed.length) return lines.join(" ");
   return [`Verifiche non superate: ${gate.checksFailed.join(", ")}.`, ...lines, "Gli altri revisori non sono partiti: la verifica fallita passa al debugger."].join(" ");
 }
@@ -256,6 +286,19 @@ export function returnFindings(document: ProjectDocument, gate: CandidateGate): 
   return gate.reviews.flatMap((r) =>
     blockingFindings(r).map((f) => `${figureName(document, r.role)}: ${f.title}${f.file ? ` (${f.file})` : ""}. ${f.detail === f.title ? "" : f.detail}`.trim()),
   );
+}
+
+/**
+ * The gates whose findings still wait for their developer (W10): blocked, not resumed yet, the latest gate of the latest
+ * candidate of work that is still completed. Trama tries each again when an event of the work may have freed it.
+ */
+export function pendingReturns(document: ProjectDocument): CandidateGate[] {
+  return (document.gates ?? []).filter((gate) => {
+    if (gate.status !== "blocked" || !gate.returned?.waiting) return false;
+    if (latestGate(document.gates, gate.candidateId)?.id !== gate.id) return false;
+    if (latestCandidate(document, gate.assignmentId)?.id !== gate.candidateId) return false;
+    return findAssignment(document, gate.assignmentId)?.status === "completed";
+  });
 }
 
 /** Why the work sent back has not resumed yet, in the person's words. */
@@ -387,13 +430,13 @@ export function readReviewerAnswer(raw: string): { report: string; findings: Gat
     throw new GateError("unreadable_answer", "Il revisore non ha restituito un rapporto leggibile.");
   }
   if (typeof answer.report !== "string" || !Array.isArray(answer.findings)) throw new GateError("unreadable_answer", "Il revisore non ha restituito un rapporto leggibile.");
-  const findings = answer.findings.flatMap((item): GateFinding[] => {
-    const f = item as Record<string, unknown>;
+  // A finding outside the schema makes the figure fail: dropping it could turn a blocking finding into a signature.
+  const findings = answer.findings.map((item): GateFinding => {
+    const f = (item && typeof item === "object" ? item : {}) as Record<string, unknown>;
     const title = typeof f.title === "string" ? f.title.trim() : "";
-    if (!title) return [];
-    const detail = typeof f.detail === "string" && f.detail.trim() ? f.detail.trim() : title;
-    const file = typeof f.file === "string" && f.file.trim() ? f.file.trim() : null;
-    return [{ severity: f.severity === "blocking" ? "blocking" : "advisory", title, detail, file }];
+    const valid = (f.severity === "blocking" || f.severity === "advisory") && title && typeof f.detail === "string" && typeof f.file === "string";
+    if (!valid) throw new GateError("malformed_finding", "Il revisore ha restituito un rilievo fuori dallo schema: la revisione non vale.");
+    return { severity: f.severity as GateFinding["severity"], title, detail: (f.detail as string).trim() || title, file: (f.file as string).trim() || null };
   });
   return { report: answer.report, findings };
 }

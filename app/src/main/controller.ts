@@ -199,6 +199,7 @@ import {
   guardianOutcome,
   markRegressions,
   openGate,
+  pendingReturns,
   readReviewerAnswer,
   returnFindings,
   returnWaiting,
@@ -207,6 +208,7 @@ import {
   reviewThread,
   SESSION_ROLES,
   stopAtChecks,
+  stopAtSecrets,
   suiteChecks,
   usesCodeReview,
 } from "./core/gate";
@@ -221,7 +223,7 @@ import { assessWorktreePair, worktreePairs } from "./core/worktreeConflicts";
 import { clampParallelDevelopers } from "@shared/parallel";
 import { pullRequestBody, publishCandidate } from "./core/publication";
 import { branchPrefix, commitHeader, readProjectConventions, requireValidCommitMessage, validateCommitMessage } from "./core/conventions";
-import { candidateCommit, qualityGate, qualityMissing, relatedIssue, workCommitType } from "./core/quality";
+import { candidateCommit, qualityGate, qualityMissing, relatedIssue, secretFindings, workCommitType } from "./core/quality";
 import {
   applyAutomaticTransitions,
   autoSummary,
@@ -3480,7 +3482,9 @@ export class TramaController {
    */
   private async moveTeam(): Promise<void> {
     const project = this.state.project;
-    if (!project || !project.stateWritable || this.quitting || project.isDemo) return;
+    if (!project || !project.stateWritable || this.quitting) return;
+    this.retryGateReturns(project);
+    if (project.isDemo) return;
     if (this.state.settings.continuousWork !== false) this.pickFreeSlices(project);
     await this.assessWorktreeConflicts(project);
   }
@@ -3833,6 +3837,11 @@ export class TramaController {
         this.changedIn(project);
         await this.guardSuite(project, gate, candidate);
         markRegressions(document, gate);
+      } else if (secretFindings(candidate).length) {
+        // A secret in the diff never reaches a model: Trama's scan blocks the candidate before any session opens.
+        stopAtSecrets(gate, secretFindings(candidate));
+        this.changedIn(project);
+        await this.guardSuite(project, gate, candidate);
       } else {
         const provider = this.reviewerProvider(document, assignment);
         const runner = this.dutyRunner(document);
@@ -4040,19 +4049,40 @@ export class TramaController {
         { assignmentId: assignment.id, workKey },
       );
     }
-    let waiting: string | null = null;
-    if (!withinMandate(document, assignment)) {
-      waiting = "Il mandato attuale non copre più questo incarico: il lavoro riprende quando lo concedi di nuovo.";
-    } else {
-      try {
-        reopenForFindings(document, assignment.id, { gateId: gate.id, candidateId: gate.candidateId, findings: returnFindings(document, gate) });
-      } catch (error) {
-        waiting = error instanceof TeamError ? returnWaiting(error.code, error.message) : (error as Error).message;
-      }
-    }
-    gate.returned = { assignmentId: assignment.id, at: new Date().toISOString(), waiting };
+    gate.returned = { assignmentId: assignment.id, at: new Date().toISOString(), waiting: this.resumeWithFindings(project, gate) };
     this.changedIn(project);
-    if (!waiting) void this.startAssignment(assignment.id);
+  }
+
+  /**
+   * Resumes the developer with the gate's blocking findings, in its session and worktree, and says why it cannot when
+   * it cannot. Only in the project open now: a project the person left keeps the work for when it opens again.
+   */
+  private resumeWithFindings(project: ActiveProjectState, gate: CandidateGate): string | null {
+    const document = project.document;
+    const assignment = findAssignment(document, gate.assignmentId);
+    if (!assignment) return "L'incarico non c'è più: serve un nuovo incarico.";
+    if (project !== this.state.project) return "Il progetto non è aperto: il lavoro riprende quando lo riapri.";
+    if (!withinMandate(document, assignment)) return "Il mandato attuale non copre più questo incarico: il lavoro riprende quando lo concedi di nuovo.";
+    try {
+      reopenForFindings(document, assignment.id, { gateId: gate.id, candidateId: gate.candidateId, findings: returnFindings(document, gate) });
+    } catch (error) {
+      return error instanceof TeamError ? returnWaiting(error.code, error.message) : (error as Error).message;
+    }
+    void this.startAssignment(assignment.id);
+    return null;
+  }
+
+  /** The findings that waited for their developer go back at the next event of the work that may have freed it (W10). */
+  private retryGateReturns(project: ActiveProjectState): void {
+    let moved = false;
+    for (const gate of pendingReturns(project.document)) {
+      const waiting = this.resumeWithFindings(project, gate);
+      if (waiting === gate.returned!.waiting) continue;
+      gate.returned!.waiting = waiting;
+      gate.updatedAt = new Date().toISOString();
+      moved = true;
+    }
+    if (moved) this.changedIn(project);
   }
 
   // MARK: Focus mode

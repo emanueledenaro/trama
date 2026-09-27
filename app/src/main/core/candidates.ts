@@ -142,11 +142,16 @@ export function inspectCandidate(document: ProjectDocument, candidate: Candidate
     }
     if (evidence.result === "fail") blockers.push({ code: "CHECK_FAILED", detail: check });
   }
-  // A blocking finding of the candidate gate on this snapshot (W10) stops the candidate before it reaches the person.
-  // A failed check already says so above.
+  // Once the candidate gate ran on this snapshot (W10), only a gate that passed lets the candidate reach the person:
+  // every figure signed. A failed check already says so above. A candidate never reviewed has no gate yet.
   const gate = latestGate(document.gates, candidate.id);
-  if (gate?.status === "blocked" && gate.snapshotId === candidate.snapshotId && !gate.checksFailed.length) {
-    const findings = gate.reviews.flatMap((r) => blockingFindings(r).map((f) => `${roleProfile(r.role).name}: ${f.title}`));
+  const current = gate?.snapshotId === candidate.snapshotId ? gate : null;
+  if (current?.status === "checking" || current?.status === "reviewing") {
+    blockers.push({ code: "GATE_RUNNING", detail: "I revisori del candidato sono al lavoro." });
+  } else if (current?.status === "failed") {
+    blockers.push({ code: "GATE_FAILED", detail: current.failure ?? "Una figura non ha finito la revisione." });
+  } else if (current?.status === "blocked" && !current.checksFailed.length) {
+    const findings = current.reviews.flatMap((r) => blockingFindings(r).map((f) => `${roleProfile(r.role).name}: ${f.title}`));
     blockers.push({ code: "GATE_BLOCKED", detail: findings.join("; ") });
   }
   // A merge conflict reproduced against a colleague's work on this exact snapshot blocks the green light.
