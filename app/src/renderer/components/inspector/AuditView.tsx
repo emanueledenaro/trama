@@ -1,4 +1,5 @@
-import type { AuditAxis, FocusAudit } from "@shared/domain";
+import type { AuditAxis, AuditFinding, FindingStatus, FocusAudit } from "@shared/domain";
+import { evidenceLabel, FINDING_STATUS_TEXT, findingTally } from "@shared/findings";
 import { ChatMarkdown } from "@/components/chat/ChatMarkdown";
 import { EvidenceRow } from "@/components/chat/Cards";
 import { Spinner } from "@/components/Spinner";
@@ -12,11 +13,43 @@ import { EmptyNote, InspectorSection } from "./Inspector";
 const STATUS_TEXT: Record<FocusAudit["status"], string> = {
   checking: "Verifiche reali nella sandbox",
   reviewing: "Esame degli assi Standards e Spec, in sola lettura",
+  verifying: "Verifica delle prove dei rilievi",
   done: "Esame concluso",
   failed: "Esame non riuscito",
 };
 
 const findings = (n: number) => (n === 0 ? "Nessun rilievo" : n === 1 ? "1 rilievo" : `${n} rilievi`);
+
+const STATUS_TONE: Record<FindingStatus, "secondary" | "success" | "info" | "warning"> = {
+  pending: "secondary",
+  verified: "success",
+  confirmed: "info",
+  hypothesis: "warning",
+};
+
+/** One finding with its proof and how Trama verified it (F02): a hypothesis is shown as one, never as a fact. */
+function FindingRow({ finding }: { finding: AuditFinding }) {
+  const { evidence } = finding;
+  return (
+    <li className="space-y-1 py-1.5" data-testid="audit-finding" data-finding={finding.id} data-status={finding.status} data-severity={finding.severity}>
+      <div className="flex flex-wrap items-center gap-1.5">
+        <Badge tone={STATUS_TONE[finding.status]}>{FINDING_STATUS_TEXT[finding.status]}</Badge>
+        {finding.severity === "serious" ? <Badge tone="destructive">Grave</Badge> : null}
+        <span className="text-ui-sm text-foreground">{finding.title}</span>
+      </div>
+      <p className="text-ui-sm text-muted-foreground" data-testid="audit-finding-evidence">
+        Prova: {evidence && evidence.kind !== "reproduction" ? <span className="font-mono text-[11.5px] text-foreground/85">{evidenceLabel(evidence)}</span> : evidenceLabel(evidence)}
+      </p>
+      {evidence?.kind === "reproduction" ? <p className="whitespace-pre-wrap text-ui-sm text-foreground/85">{evidence.steps}</p> : null}
+      {finding.basis ? <p className="text-ui-sm text-muted-foreground" data-testid="audit-finding-basis">{finding.basis}</p> : null}
+      {finding.observed ? (
+        <pre className="max-h-32 overflow-auto whitespace-pre-wrap rounded-lg bg-[var(--app-chat-code-surface)] px-3 py-2 font-mono text-[11px] leading-[1.55] text-foreground/85">
+          {finding.observed}
+        </pre>
+      ) : null}
+    </li>
+  );
+}
 
 function AxisBody({ axis, name }: { axis: AuditAxis; name: "standards" | "spec" }) {
   if (axis.status === "waiting") return <EmptyNote>Parte dopo le verifiche reali.</EmptyNote>;
@@ -44,6 +77,13 @@ function AxisBody({ axis, name }: { axis: AuditAxis; name: "standards" | "spec" 
         {findings(axis.findings ?? 0)}
         {axis.model ? <><Sep />{axis.model}</> : null}
       </p>
+      {axis.items?.length ? (
+        <ul className="divide-y divide-[color:var(--color-border)]" data-testid="audit-findings">
+          {axis.items.map((finding) => (
+            <FindingRow key={finding.id} finding={finding} />
+          ))}
+        </ul>
+      ) : null}
       <div className="text-ui">
         <ChatMarkdown text={axis.report ?? ""} />
       </div>
@@ -53,7 +93,7 @@ function AxisBody({ axis, name }: { axis: AuditAxis; name: "standards" | "spec" 
 
 /**
  * Focus mode on a candidate (F01): the real checks first, then the Standards and Spec reports of code-review kept
- * apart, as the skill presents them. A simple view in the inspector; the full-screen view comes later.
+ * apart, as the skill presents them, each finding with its proof and its verification (F02). A simple view in the inspector; the full-screen view comes later.
  */
 export function AuditView({ id }: { id: string }) {
   const project = useUi((s) => s.app?.project)!;
@@ -61,7 +101,8 @@ export function AuditView({ id }: { id: string }) {
   const audit = (project.document.audits ?? []).find((a) => a.id === id);
   if (!audit) return <div className="p-4"><EmptyNote>Esame non trovato.</EmptyNote></div>;
   const candidate = project.document.candidates.find((c) => c.id === audit.target.candidateId);
-  const running = audit.status === "checking" || audit.status === "reviewing";
+  const running = audit.status === "checking" || audit.status === "reviewing" || audit.status === "verifying";
+  const tally = findingTally(audit);
   const checks = candidate?.requiredChecks ?? audit.checks.map((c) => c.check);
   return (
     <div data-testid="focus-audit" data-status={audit.status}>
@@ -82,7 +123,7 @@ export function AuditView({ id }: { id: string }) {
         </p>
         {audit.status === "failed" && audit.failure ? <p className="mt-1 text-ui-sm text-destructive">{audit.failure}</p> : null}
         <p className="mt-1.5 text-ui-sm text-muted-foreground">
-          Sola lettura: la focus mode non cambia il codice. Le verifiche sono fatti; i rilievi degli assi sono giudizi del modello, non evidenze.
+          Sola lettura: la focus mode non cambia il codice. Le verifiche sono fatti. Un rilievo è verificato solo quando Trama ha ricontrollato la sua prova; un rilievo grave che Trama non può ricontrollare passa a un modello più forte; gli altri restano ipotesi.
         </p>
       </InspectorSection>
       <InspectorSection title="Verifiche reali">
@@ -105,6 +146,7 @@ export function AuditView({ id }: { id: string }) {
       {audit.summary ? (
         <InspectorSection title="Sintesi">
           <p className="text-ui-sm text-foreground" data-testid="focus-audit-summary">{audit.summary}</p>
+          {tally ? <p className="mt-1 text-ui-sm text-muted-foreground" data-testid="focus-audit-tally">Stato dei rilievi: {tally}.</p> : null}
         </InspectorSection>
       ) : null}
       {running || !candidate ? null : (

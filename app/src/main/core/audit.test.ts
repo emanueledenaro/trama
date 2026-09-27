@@ -10,6 +10,7 @@ import {
   beginAxes,
   closeAudit,
   CODE_REVIEW_BINDING,
+  type FindingDraft,
   finishAxis,
   latestAudit,
   NO_SPEC,
@@ -135,6 +136,8 @@ const evidence = (check: string, result: "pass" | "fail"): CandidateEvidence => 
   recordedAt: at(5).toISOString(),
 });
 
+const draft = (title: string): FindingDraft => ({ title, severity: "minor", evidence: null });
+
 const issue: GitHubIssue = { number: 9, title: "Annullare un ordine", state: "open", body: "Un ordine pagato va in revisione.", url: "u", author: null, labels: [], updatedAt: "" };
 
 describe("focus mode runs code-review with its original text (F01)", () => {
@@ -211,8 +214,8 @@ describe("the focus mode report (F01)", () => {
     expect(audit).toMatchObject({ target: { kind: "candidate", candidateId: candidate.id }, fixedPoint: "0a1b2c3d", snapshotId: "snap-1", changedFiles: ["NOTE.md"], status: "checking" });
     expect(() => openAudit(document, candidate)).toThrow(AuditError);
     beginAxes(audit, "Issue #8", "gpt-5.4-mini", at(6));
-    finishAxis(audit, "standards", { report: "Nessuna violazione.", findings: 0, worst: null }, at(7));
-    finishAxis(audit, "spec", { report: "Manca un test.", findings: 2, worst: "Manca il test dell'ordine non pagato." }, at(7));
+    finishAxis(audit, "standards", { report: "Nessuna violazione.", findings: [], worst: null }, at(7));
+    finishAxis(audit, "spec", { report: "Manca un test.", findings: [draft("Manca il test dell'ordine non pagato"), draft("Il messaggio non cita la revisione")], worst: "Manca il test dell'ordine non pagato." }, at(7));
     closeAudit(audit, at(8));
     expect(audit.status).toBe("done");
     expect(audit.summary).toBe("Standards: nessun rilievo. Spec: 2 rilievi, il più grave: Manca il test dell'ordine non pagato.");
@@ -225,7 +228,7 @@ describe("the focus mode report (F01)", () => {
     const audit = openAudit(document, candidateOf(document, false, null).candidate, at(5));
     expect(beginAxes(audit, null, "gpt-5.4-mini", at(6))).toEqual(["standards"]);
     expect(audit.spec).toMatchObject({ status: "skipped", report: NO_SPEC });
-    finishAxis(audit, "standards", { report: "Un rilievo.", findings: 1, worst: "Possibile Feature Envy" }, at(7));
+    finishAxis(audit, "standards", { report: "Un rilievo.", findings: [draft("Possibile Feature Envy")], worst: "Possibile Feature Envy" }, at(7));
     closeAudit(audit, at(8));
     expect(audit.summary).toBe("Standards: 1 rilievo, il più grave: Possibile Feature Envy. Spec: no spec available.");
   });
@@ -236,7 +239,7 @@ describe("the focus mode report (F01)", () => {
     const audit = openAudit(document, candidate, at(5));
     beginAxes(audit, "Issue #8", "m", at(6));
     finishAxis(audit, "standards", { failure: "Sessione chiusa." }, at(7));
-    finishAxis(audit, "spec", { report: "Ok.", findings: 0, worst: null }, at(7));
+    finishAxis(audit, "spec", { report: "Ok.", findings: [], worst: null }, at(7));
     closeAudit(audit, at(8));
     expect(audit.status).toBe("done");
     expect(audit.summary).toBe("Standards: non riuscito. Spec: nessun rilievo.");
@@ -248,8 +251,8 @@ describe("the focus mode report (F01)", () => {
   });
 
   it("reads a sub-agent's answer and refuses one without a report", () => {
-    expect(readAxisAnswer('```json\n{"report":" ## Standards ","findings":2.4,"worst":" "}\n```')).toEqual({ report: "## Standards", findings: 2, worst: null });
-    expect(() => readAxisAnswer('{"report":"","findings":0,"worst":""}')).toThrow("senza rapporto");
+    expect(readAxisAnswer('```json\n{"report":" ## Standards ","findings":2,"worst":" "}\n```')).toEqual({ report: "## Standards", findings: [], worst: null });
+    expect(() => readAxisAnswer('{"report":"","findings":[],"worst":""}')).toThrow("senza rapporto");
     expect(() => readAxisAnswer("non è JSON")).toThrow("leggibile");
   });
 
@@ -258,7 +261,7 @@ describe("the focus mode report (F01)", () => {
     const { candidate } = candidateOf(document, true);
     const done = openAudit(document, candidate, at(5));
     beginAxes(done, null, "m", at(6));
-    finishAxis(done, "standards", { report: "Ok.", findings: 0, worst: null }, at(7));
+    finishAxis(done, "standards", { report: "Ok.", findings: [], worst: null }, at(7));
     closeAudit(done, at(8));
     const running = openAudit(document, candidate, at(9));
     beginAxes(running, "Issue #8", "m", at(9));
