@@ -20,6 +20,7 @@ import type {
 import { isOpenQuestion } from "@shared/domain";
 import { STRENGTH_ORDER, TRIAGE_CATEGORY_LABEL, TRIAGE_STATE_LABEL, TRIAGE_STATES } from "@shared/duties";
 import { shortId } from "@shared/ids";
+import { activeTerms, coversAssignment } from "@shared/mandate";
 import type { LoadedSkill } from "@shared/skills";
 import { roleProfile } from "@shared/roster";
 import { findCandidate } from "./candidates";
@@ -666,14 +667,7 @@ export function startWaitingDomainWriting(document: ProjectDocument, runner: Dut
 
 /** Read-only automatic work runs under any granted mandate; work that writes needs executeInWorktree on its modules. */
 export function withinMandate(document: ProjectDocument, assignment: SpecialistAssignment): boolean {
-  if (assignment.duty && !assignment.tools.includes("edits")) return document.mandate?.status === "granted";
-  const trigger = assignment.duty?.trigger;
-  if (trigger?.kind === "domainProposal") {
-    // Glossary and ADR files may sit outside the project's modules: the mandate covers those that are modules.
-    const proposal = document.domainProposals?.find((p) => p.id === trigger.proposalId);
-    return authorize(document.mandate, "executeInWorktree", proposal?.scopeModuleIds ?? assignment.moduleIds) === "authorized";
-  }
-  return authorize(document.mandate, "executeInWorktree", assignment.moduleIds) === "authorized";
+  return coversAssignment(document, activeTerms(document.mandate), assignment);
 }
 
 /** Light models by name, as catalogues do not say what a model costs: a Trama addition. */
