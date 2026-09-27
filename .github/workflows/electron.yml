@@ -20,6 +20,8 @@ jobs:
         run: npm ci
       - name: Nomi dei file su dischi senza distinzione di maiuscole
         run: npm run check:names
+      - name: Nomi dei progetti di origine solo nei file legali
+        run: npm run check:upstream-names
       - name: Controllo dei tipi
         run: npm run typecheck
       - name: Test

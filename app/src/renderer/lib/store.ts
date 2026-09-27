@@ -67,7 +67,7 @@ interface UiState {
   closeSettings(): void;
   openDialog(goalId: string | null): void;
   openGoalOf(projectId: string, goalId: string): void;
-  /** Inspector history for the back and forward buttons, as Synara's app navigation. */
+  /** Inspector history for the back and forward buttons. */
   history: (InspectorTarget | null)[];
   historyIndex: number;
   goBack(): void;

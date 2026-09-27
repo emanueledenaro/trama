@@ -1,6 +1,6 @@
 # V08 - Forma dell'adattatore provider con Codex come unico adattatore
 
-Ticket: #71. Riferimento: `docs/reference/synara-funzioni.md`, sezioni 5, 7, 8, 9.
+Ticket: #71. Riferimento: l'analisi delle funzioni dell'implementazione di riferimento (documento rimosso), sezioni 5, 7, 8, 9.
 
 ## Cosa e implementato
 
@@ -9,7 +9,7 @@ Ticket: #71. Riferimento: `docs/reference/synara-funzioni.md`, sezioni 5, 7, 8, 
   import del thread, steering, scoperta di skill, comandi e plugin; `ProviderAccessState` con i tre
   stati; `ModelSelection` come unione discriminata con opzioni proprie per provider;
   `ProviderEvent` come formato normalizzato unico; `ProviderConformance` che lega ogni flag al
-  metodo che lo realizza (le cinque coppie di Synara piu i flag di V08); `ProviderAdapterRegistry`.
+  metodo che lo realizza (le cinque coppie del riferimento piu i flag di V08); `ProviderAdapterRegistry`.
 - `ProviderCatalogue.swift`: i nove provider con le capacita dichiarate dalla sezione 7. Solo Codex
   e disponibile; gli altri otto sono descrizioni per P02-P09.
 - `CodexEventNormalizer.swift`: la mappatura degli eventi Codex verso `ProviderEvent`, con `raw`
@@ -62,19 +62,19 @@ da fixture:
 - il collegamento e lo scollegamento reali dell'account ChatGPT;
 - l'avvio e la ripresa reali del thread del Coordinatore;
 - il valore del watchdog di inattivita misurato sui turni lunghi del Coordinatore (il valore
-  predefinito e quello di Synara, 900 s con controllo ogni 15 s);
+  predefinito e quello del riferimento, 900 s con controllo ogni 15 s);
 - i nomi e il comportamento reali di `thread/compact`, `thread/rollback` e `turn/steer` contro un
   Codex vivo;
-- la scoperta dei plugin di Codex: la dichiarazione del catalogo segue Synara, l'adattatore non la
+- la scoperta dei plugin di Codex: la dichiarazione del catalogo segue il riferimento, l'adattatore non la
   rivendica perche il trasporto di Trama non la espone.
 
 ## Deviazioni motivate
 
 - L'adattatore Codex dichiara `supportsPluginDiscovery` e `supportsPluginMentions` falsi: il
   trasporto di Trama non espone i plugin, e un flag vero senza il metodo fallirebbe il controllo di
-  conformita. Il catalogo conserva invece il valore di Synara, che descrive il provider per P02-P09.
-- I metodi obbligatori sono quelli del verticale di V08 piu `streamEvents`; i nove metodi in piu di
-  Synara (`listSessions`, `hasSession`, `readThread`, `respondToRequest`, `respondToUserInput`,
+  conformita. Il catalogo conserva invece il valore del riferimento, che descrive il provider per P02-P09.
+- I metodi obbligatori sono quelli del verticale di V08 piu `streamEvents`; i nove metodi in piu del
+  riferimento (`listSessions`, `hasSession`, `readThread`, `respondToRequest`, `respondToUserInput`,
   `stopAll`) arriveranno con i ticket che li usano.
 - `ProviderEvent` porta ancora `ContextUsageSnapshot` e `ContextCompactionState` come payload del
   contesto, perche sono gia la forma normalizzata di Codex in Trama. La generalizzazione appartiene

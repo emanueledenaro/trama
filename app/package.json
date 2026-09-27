@@ -13,6 +13,7 @@
     "start": "npm run build && electron .",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "check:names": "node scripts/check-file-names.mjs",
+    "check:upstream-names": "node scripts/check-upstream-names.mjs",
     "test": "vitest run",
     "dist": "npm run build && electron-builder",
     "ui-check": "npm run build && node scripts/ui-check.mjs ui-check"
@@ -63,6 +64,14 @@
       {
         "from": "resources/AIHero",
         "to": "AIHero"
+      },
+      {
+        "from": "../THIRD_PARTY_NOTICES.md",
+        "to": "THIRD_PARTY_NOTICES.md"
+      },
+      {
+        "from": "../docs/legal",
+        "to": "legal"
       }
     ],
     "mac": {
