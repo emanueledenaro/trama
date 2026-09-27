@@ -6,7 +6,7 @@ Trama contiene codice, testi e design derivati dai progetti qui sotto, tutti dis
 
 - Fonte: <https://github.com/Emanuele-web04/synara>
 - Revisioni: `eaa61eded31b6755d4f30ba8eabc5d905cf817cb` per gli adattatori dei provider in TypeScript e per l'interfaccia dell'app Electron; `9f91d59f182ec03722cb7fe8fe2244ef268c2c39` per la copia della licenza e per il riferimento funzionale usato in precedenza.
-- Cosa ne deriva Trama: gli adattatori dei provider in `app/src/main/core/providers/`, i token di design, la disposizione e le classi dell'interfaccia in `app/src/renderer/` e alcuni aiutanti in `app/src/shared/`. Trama non include il server di Synara né le sue icone.
+- Cosa ne deriva Trama: gli adattatori dei provider in `app/src/main/core/providers/`, i token di design, la disposizione e le classi dell'interfaccia in `app/src/renderer/` i marchi dei provider in `app/src/renderer/components/ProviderIcon.tsx` e alcuni aiutanti in `app/src/shared/`. Trama non include il server di Synara né il set di icone "Central Icons", di cui il repository di Synara non dichiara la licenza.
 - Copyright: `Copyright (c) 2026 T3 Tools Inc.` e `Copyright (c) 2026 Emanuele Di Pietro`.
 - Dettagli file per file: [docs/legal/synara-attribution.md](docs/legal/synara-attribution.md). Copia della licenza: [docs/legal/synara-LICENSE](docs/legal/synara-LICENSE).
 
@@ -77,3 +77,7 @@ SOFTWARE.
 ## Controllo
 
 `npm run check:upstream-names` in `app/` fallisce quando un file tracciato, fuori da questo file e da `docs/legal/`, nomina uno dei progetti elencati in [docs/legal/upstream-names.txt](docs/legal/upstream-names.txt), nel testo o nel percorso. Gira nel job `test` della CI.
+
+## Nei pacchetti dell'app
+
+`npm run dist` copia questo file e la cartella `docs/legal/` tra le risorse del pacchetto, in `THIRD_PARTY_NOTICES.md` e `legal/`.

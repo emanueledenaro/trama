@@ -64,6 +64,14 @@
       {
         "from": "resources/AIHero",
         "to": "AIHero"
+      },
+      {
+        "from": "../THIRD_PARTY_NOTICES.md",
+        "to": "THIRD_PARTY_NOTICES.md"
+      },
+      {
+        "from": "../docs/legal",
+        "to": "legal"
       }
     ],
     "mac": {
