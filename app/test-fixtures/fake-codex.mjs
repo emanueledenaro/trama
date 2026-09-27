@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // Minimal stand-in for `codex app-server --stdio`, used by tests and local UI checks only.
 import { createInterface } from "node:readline";
+import { existsSync } from "node:fs";
 
 if (process.argv[2] === "sandbox") {
   // No real sandbox here: run what follows "--" so the plumbing can be tested.
@@ -23,6 +24,10 @@ if (process.argv[2] === "mcp" && process.argv[3] === "list") {
 const account = process.env.FAKE_CODEX_ACCOUNT ?? "chatgpt";
 /** Turns answered with a temporary 429 so far; FAKE_CODEX_RATE_LIMITS says how many (default 1). */
 let rateLimitedTurns = 0;
+/** Turns that met a network outage so far; FAKE_CODEX_OUTAGES says how many (default 1). */
+let outageTurns = 0;
+/** While the file FAKE_CODEX_QUOTA_FILE exists, the ChatGPT quota is used up: turns fail and the rate limits say so (C11). */
+const quotaExhausted = () => Boolean(process.env.FAKE_CODEX_QUOTA_FILE && existsSync(process.env.FAKE_CODEX_QUOTA_FILE));
 const send = (message) => process.stdout.write(`${JSON.stringify(message)}\n`);
 let threads = 0;
 const toolServers = new Map();
@@ -105,7 +110,7 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
       return send({
         id,
         result: {
-          ordinaryUsageAllowed: process.env.FAKE_CODEX_LIMITS !== "exhausted",
+          ordinaryUsageAllowed: process.env.FAKE_CODEX_LIMITS !== "exhausted" && !quotaExhausted(),
           rateLimits: { limitId: "codex", primary: { usedPercent: 100, windowDurationMins: 43200, resetsAt: 1792820871 }, planType: process.env.FAKE_CODEX_LIMITS === "exhausted" ? "free" : "plus" },
         },
       });
@@ -147,6 +152,17 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
       const turnId = `turn-${++turns}`;
       const threadId = params.threadId;
       const text = params.input[0].text;
+      if (quotaExhausted() || (text.includes("[rete-assente]") && outageTurns < Number(process.env.FAKE_CODEX_OUTAGES ?? 1))) {
+        // The ChatGPT usage limit, or a network outage on the way to the provider (C11); both end the turn as failed.
+        const quota = quotaExhausted();
+        if (!quota) outageTurns += 1;
+        send({ id, result: { turn: { id: turnId } } });
+        const message = quota
+          ? "You've hit your usage limit. Upgrade to Pro (https://chatgpt.com/explore/pro), or try again later."
+          : "stream disconnected before completion: error sending request for url (https://chatgpt.com/backend-api/codex/responses): getaddrinfo ENOTFOUND chatgpt.com";
+        setTimeout(() => send({ method: "turn/completed", params: { threadId, turn: { id: turnId, status: "failed", error: { message } } } }), 20);
+        return;
+      }
       if (text.includes("[limite-temporaneo]") && rateLimitedTurns < Number(process.env.FAKE_CODEX_RATE_LIMITS ?? 1)) {
         // A provider that answers 429 with a shared upstream limit (P10), then is available again.
         rateLimitedTurns += 1;
@@ -166,8 +182,8 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
         );
         return;
       }
-      if (text.includes("[attesa]")) {
-        // Answers turn/start late and then keeps running until interrupted.
+      if (text.includes("[attesa]") && !process.env.FAKE_CODEX_NO_WAIT) {
+        // Answers turn/start late and then keeps running until interrupted; FAKE_CODEX_NO_WAIT answers it at once.
         setTimeout(() => send({ id, result: { turn: { id: turnId } } }), 150);
         return;
       }
@@ -200,6 +216,12 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
       if (text.includes("[scelte]") && !text.includes("## Scelta scritta nel testo")) {
         // Issue #228: options to pick written in the reply instead of a request_decision card.
         setTimeout(() => finish("Posso andare avanti in tre modi:\n\n1. Amplio il mandato a docs/\n2. Scrivo solo il codice\n3. Mi fermo qui\n\nRispondimi con 1, 2 o 3."), 10);
+        return;
+      }
+      if (text.includes("[pulsante]")) {
+        // Issue #269: the reply names a step button the person does not have; once Trama says so, it names none.
+        const reply = text.includes("## Pulsante che non c'è") ? "Scusa: quel pulsante non c'è." : "Ora devi usare la scheda Verifica il candidato.";
+        setTimeout(() => finish(reply), 10);
         return;
       }
       if (text.includes("[issue-gh]")) {
@@ -412,6 +434,32 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
         setTimeout(() => finish(JSON.stringify(spec)), 10);
         return;
       }
+      if (required.includes("report") && required.includes("findings") && !required.includes("worst")) {
+        // The candidate gate (W10): one reviewer per session, named in the turn. Performance blocks a note marked
+        // "[rilievo-bloccante]"; the others sign nothing to report. The skill inputs the session received go in the report.
+        const role = text.match(/Cancello del candidato C-[0-9A-F]+, revisore: ([^(]+?) \(/)?.[1] ?? "?";
+        const skills = params.input.filter((item) => item.type === "skill").map((item) => item.name);
+        const blocking = role === "Prestazioni" && /^\+.*\[rilievo-bloccante\]/m.test(text);
+        const answer = blocking
+          ? {
+              report: `### Prestazioni\n\n- \`NOTE.md\` chiede un ciclo senza limite.\n\nSkill ricevute: ${skills.join(", ") || "nessuna"}.`,
+              findings: [{ severity: "blocking", title: "Ciclo senza limite in NOTE.md", detail: "La nota chiede di rileggere tutti gli ordini a ogni richiesta.", file: "NOTE.md:2" }],
+            }
+          : { report: `Revisore ${role}. Skill ricevute: ${skills.join(", ") || "nessuna"}.`, findings: [] };
+        // With FAKE_CODEX_GATE_HOLD the reviewer answers only once that file exists: a test sees every session open at once.
+        const hold = process.env.FAKE_CODEX_GATE_HOLD;
+        if (hold) {
+          const { existsSync } = await import("node:fs");
+          const release = setInterval(() => {
+            if (!existsSync(hold)) return;
+            clearInterval(release);
+            finish(JSON.stringify(answer));
+          }, 10);
+          return;
+        }
+        setTimeout(() => finish(JSON.stringify(answer)), 10);
+        return;
+      }
       if (params.outputSchema) {
         const verdict = text.includes("RIFIUTA") ? "changesRequested" : "approved";
         // The technical review against Trama's Clean Code standard (Q03) answers with findings, file and line.
@@ -434,7 +482,11 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
           setTimeout(() => finish(`Ho scritto CONTEXT.md nel worktree. Skill ricevute: ${seen.join(", ")}`), 30);
           return;
         }
-        writeFileSync(join(root, "NOTE.md"), "Lavoro dello specialista\n");
+        // "[segreto]" leaves a key in the note, which Trama's scan blocks at the candidate gate (W10); "[bloccante]" leaves
+        // a line a reviewer blocks. The turn that resumes with the findings writes the note without either.
+        const resumedWithFindings = text.includes("Rilievi bloccanti dei revisori");
+        const extra = resumedWithFindings ? "" : `${text.includes("[segreto]") ? "chiave: sk-prova-0123456789abcdefghij\n" : ""}${text.includes("[bloccante]") ? "Rileggi tutti gli ordini a ogni richiesta [rilievo-bloccante]\n" : ""}`;
+        writeFileSync(join(root, "NOTE.md"), `Lavoro dello specialista\n${extra}`);
         send({ method: "item/completed", params: { threadId, turnId, item: { id: "fc", type: "fileChange", status: "completed", changes: [{ path: "NOTE.md" }] } } });
         // "[spazi]" leaves trailing whitespace in a tracked file, so git_diff_check fails on the candidate (V05).
         const tracked = join(root, "Sources/Orders/CancelPaidOrder.swift");
@@ -654,7 +706,8 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
       if (text.includes("[assegna")) {
         // [assegna] or [assegna:<slice>]: without a slice the fake names the first ready one Trama lists (M05).
         const named = text.match(/\[assegna:(\w+)\]/)?.[1];
-        const slice = named ? { slice: named } : readySlice(text);
+        // "[segreto]" and "[bloccante]" are work outside the plan: they never take the ready slice.
+        const slice = named ? { slice: named } : text.includes("[segreto]") || text.includes("[bloccante]") ? {} : readySlice(text);
         callTool(threadId, "assign_task", {
           ...slice,
           // "[senza-contratto]" leaves out the seams and the Pact decisions: Trama refuses the assignment (W05).
@@ -670,9 +723,11 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
             ? ["git_status", "git_diff_check"]
             : text.includes("[test]")
               ? ["git_status", "swift_build", "swift_test"]
-              : ["git_status"],
+              : text.includes("[test-node]")
+                ? ["git_status", "node_test"]
+                : ["git_status"],
           tools: ["edits"],
-          instructions: `${text.includes("[lento]") ? "[lento] " : ""}${text.includes("[lento:sempre]") ? "[lento:sempre] " : ""}${text.includes("[spazi]") ? "[spazi] " : ""}${text.includes("[domanda]") ? "[domanda] " : ""}Scrivi una nota`,
+          instructions: `${text.includes("[segreto]") ? "[segreto] " : ""}${text.includes("[bloccante]") ? "[bloccante] " : ""}${text.includes("[lento]") ? "[lento] " : ""}${text.includes("[lento:sempre]") ? "[lento:sempre] " : ""}${text.includes("[spazi]") ? "[spazi] " : ""}${text.includes("[domanda]") ? "[domanda] " : ""}Scrivi una nota`,
         }).then((result) => {
           toolDone("assign_task", result);
           finish(result.isError ? `Rifiutato: ${result.content[0].text}` : "Ho assegnato il lavoro ad Ada.");
@@ -697,8 +752,11 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
           const { candidateID, requiredChecks } = JSON.parse(declared.content[0].text);
           const checks = candidateMatch[3] === "tutte" ? requiredChecks : [candidateMatch[3] ?? "git_status"];
           for (const check of checks) toolDone("verify_candidate", await callTool(threadId, "verify_candidate", { candidate: candidateID, check }));
-          const reviewed = await callTool(threadId, "review_candidate", { candidate: candidateID });
-          toolDone("review_candidate", reviewed);
+          // "[senza-revisione]" asks for the green light without the candidate gate (W10): Trama refuses it.
+          if (!text.includes("[senza-revisione]")) {
+            const reviewed = await callTool(threadId, "review_candidate", { candidate: candidateID });
+            toolDone("review_candidate", reviewed);
+          }
           const cleared = await callTool(threadId, "clear_candidate", { candidate: candidateID });
           toolDone("clear_candidate", cleared);
           finish(cleared.isError ? `Via libera rifiutato: ${cleared.content[0].text}` : `Candidato ${candidateID} verificato e con via libera.`);

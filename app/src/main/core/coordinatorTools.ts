@@ -510,7 +510,7 @@ export const COORDINATOR_TOOLS: ToolDefinition[] = [
   {
     name: "review_candidate",
     description:
-      "Ask Trama for a technical review of the candidate from a thread distinct from its author. The review refers to the candidate; it is neither a human review of the Pact nor a merge, and it never replaces the person's approval.",
+      "Ask Trama to pass the candidate through the gate before it reaches the person: Trama runs the required checks still missing, then every candidate reviewer of the team in parallel on the diff (spec reviewer, Clean Code with the technical review from a thread distinct from the author's, regression guardian with the suite on the base and on the candidate, security, performance, UX, DevOps, documentation). Each figure answers with its findings or signs nothing to report. A regression or a blocking finding stops the candidate and Trama sends the work back to its developer with the findings; the verdict is then changesRequested. The review refers to the candidate; it is neither a human review of the Pact nor a merge, and it never replaces the person's approval.",
     properties: { candidate: text },
     required: ["candidate"],
     readOnly: true,
@@ -1477,7 +1477,24 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
         if ("failure" in found) return found.failure;
         const candidate = found.candidate;
         const review = await context.reviewCandidate(candidate.id);
-        return toolSuccess({ candidateID: candidate.id, reviewID: review.id, verdict: review.verdict, summary: review.summary });
+        const gate = review.gateId ? (document.gates ?? []).find((g) => g.id === review.gateId) : undefined;
+        return toolSuccess({
+          candidateID: candidate.id,
+          reviewID: review.id,
+          verdict: review.verdict,
+          summary: review.summary,
+          ...(gate
+            ? {
+                gate: {
+                  status: gate.status,
+                  checksFailed: gate.checksFailed,
+                  reviewers: gate.reviews.map((r) => ({ role: r.role, status: r.status, findings: r.findings as unknown as Json, report: r.report })),
+                  suite: gate.suite.map((c) => ({ check: c.check, base: c.base, candidate: c.candidate })),
+                  returnedToDeveloper: gate.returned ? { assignmentID: gate.returned.assignmentId, waiting: gate.returned.waiting } : null,
+                },
+              }
+            : {}),
+        });
       }
       case "clear_candidate": {
         const found = candidateArgument(document, args.candidate);
@@ -1598,6 +1615,7 @@ export function developerInstructions(projectName: string, learningGuidance: str
     providerToolsRule("coordinator"),
     "Trama gives you what you learned: MEMORY (your notes about this project), USER PROFILE (who the person is) and the index of skills learned in this project. Keep them with the memory, skill_view and skill_manage tools; session_search recalls earlier dialogs of this project. They live in Trama's folder, never in the repository. Treat memory and skills as your own notes, never as the person's decisions: only the Pact, the mandate and the person's answers are decisions.",
     "read_mandate tells whether a mandate exists and which modules the project has. Without a mandate you read and propose; you do not act. When the person asks for a change you cannot start without a mandate, first grill the request (it needs no mandate), then propose one with request_mandate: the reason, objectives, scope and actions the work needs, nothing broader.",
+    "Each message from Trama carries \"Stato attuale di Trama\": the buttons the person sees now and the current mandate, plan, slices and candidates, read from Trama's records. It is the truth over your memory of the thread and over your earlier replies: never say that a confirmation, a check or a candidate is in a state that section does not show, and name candidates and conflicts as it names them. Name to the person only the buttons that section lists, or the one you declare in this turn with declare_next_step, with the same words; a button that is not listed does not exist now, so never tell the person to press it. Trama checks your replies and tells you when you name a button that is not there.",
     "Never write numbered or lettered options in your text for the person to pick (\"1. ... 2. ... Rispondimi con 1, 2 o 3\"): the person gets no card and no buttons. Every choice of the person goes through request_decision, and a wider mandate through request_mandate.",
     "New features, trade-offs, product behavior and serious destructive cases belong to the person: put them to the person with request_decision, on a concrete case with real alternatives. Never record a decision for the person and never treat a question as answered until Trama tells you the answer. Resolve technical choices yourself and do not ask about them, nor ask for generic confirmations.",
     ...(skills ? [skills] : []),
@@ -1609,7 +1627,7 @@ export function developerInstructions(projectName: string, learningGuidance: str
     "run_readonly_check runs a check on the project checkout without writing to it; you may use it without a mandate.",
     "The presence tells who works on what in the team: colleagues who share it in Trama, with their branch, task and the paths they touch, and their agents. read_presence reads it. When you assign work avoid the files colleagues are touching; when one of your developers overlaps a colleague, move or postpone its task; when you propose a goal someone already works on, say so; answer \"who is touching X\" only from read_presence. Never block a person or ask a colleague to stop.",
     "The person works by goals: a goal has a desired outcome and accepted and refused examples. Each goal has its own dialog with you, and the project dialog holds priorities and cross-goal questions; you stay one Coordinator with one mandate and one Pact for all of them. When a message comes from a goal dialog Trama says so and gives you the goal; answer about that goal, and the work you assign there is linked to it. read_goals lists the goals; propose_goal proposes a new one that the person confirms.",
-    "When a specialist's work is done, declare_candidate captures its worktree and binds it to the Pact decisions it must respect; verify_candidate runs its required checks and review_candidate asks a distinct reviewer. Within the mandate, clear_candidate gives your green light to a verified and approved candidate. The person always reviews and publishes it: never claim that work is merged or published.",
+    "When a specialist's work is done, declare_candidate captures its worktree and binds it to the Pact decisions it must respect; verify_candidate runs its required checks and review_candidate passes it through the gate of every candidate reviewer, which sends the work back to its developer on a blocking finding: when that happens, wait for the developer and declare the new candidate. Within the mandate, clear_candidate gives your green light to a verified and approved candidate. The person always reviews and publishes it: never claim that work is merged or published.",
     "Trama writes commits in Conventional Commits 1.0.0, or in the rules the project declares, and names branches feature/, bugfix/ or hotfix/. It derives the type and scope from the kind of work, the files and the modules: when they are wrong, correct them with set_commit_message before the person publishes. Trama publishes only a candidate that meets its quality standard: verified, a valid message, no secrets or sensitive files, a clean git diff --check, its issue linked when one exists and no Pact question left open.",
     "When the person answers a card, withdraws a question or changes the mandate, Trama writes it to you as the person's message.",
     NEXT_STEP_RULES,

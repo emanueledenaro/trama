@@ -10,13 +10,26 @@ import { activeTerms, workStoppedBy } from "@shared/mandate";
 import { mentionContextBlock } from "@shared/mentions";
 import { codexSkillText, type LoadedSkill, skillInvocations } from "@shared/skills";
 import { isUnsupportedModelError } from "@shared/timeline";
-import { classifyProviderFailure, containsJson, failureSummary, type ProviderRetryView, retryDelayMs } from "@shared/providerFailure";
+import {
+  classifyProviderFailure,
+  containsJson,
+  failureSummary,
+  type ProviderRetryView,
+  type ProviderWaitReason,
+  quotaCheckDelayMs,
+  retryDelayMs,
+  waitReasonOf,
+} from "@shared/providerFailure";
 import type { ImageAttachmentInput } from "@shared/ipc";
 import type {
   ActiveProjectState,
   AutomaticWorkRequest,
   Candidate,
+  CandidateGate,
   FocusAudit,
+  GateRole,
+  StandardCheck,
+  TechnicalReview,
   WorktreeSession,
   AgentColor,
   AppSettings,
@@ -86,10 +99,11 @@ import {
 } from "./core/cleanCode";
 import { openingInput, resumeInput, specialistInstructions } from "./core/specialistBriefing";
 import { prepareDemoProject } from "./core/demoProject";
-import { appendEvent, emptyDocument, handoverTranscript, moveEvent, recordReply, referencedPaths } from "./core/document";
+import { appendEvent, emptyDocument, handoverTranscript, moveEvent, QUIT_NOTE, recordReply, referencedPaths } from "./core/document";
 import { candidateGoalId, dialogComposer, findGoal, projectGoals, requestGoalId } from "@shared/goals";
 import { focusTask, focusText, focusView, pauseTask, resumeTask } from "./core/focus";
 import { COORDINATOR_MOVES, type CoordinatorMove, nextStepViews, PHASE_LABELS, workState, workStateText } from "./core/workPhase";
+import { availableButtons, currentStateText, MISSING_BUTTON_TITLE, missingButtonDetail, missingButtonFeedback, missingButtons } from "./core/coordinatorGrounding";
 import {
   AUTOMATIC_MOVE_DETAIL,
   automaticMove,
@@ -174,6 +188,7 @@ import {
   changeAssignmentProvider,
   refreshDecisionVersions,
   resumeAssignment,
+  reopenForFindings,
   resumePausedAssignment,
   stopOrphanedAssignments,
   TeamError,
@@ -182,7 +197,36 @@ import {
   type TurnEnd,
 } from "./core/team";
 import { answeredWork, ASK_COORDINATOR_TOOL, askCoordinator, asksCoordinator, DEVELOPER_TOOL_SERVER_INSTRUCTIONS, personAnswered, QuestionError } from "./core/developerQuestions";
-import { prepareWorktree, removeWorktree, reviewWorktree, validateWorktree } from "./core/workspace";
+import { checkoutCommit, prepareWorktree, removeWorktree, reviewWorktree, validateWorktree } from "./core/workspace";
+import {
+  beginReviews,
+  checksToRun,
+  cleanCodeOutcome,
+  closeGate,
+  compareSuite,
+  failedChecks,
+  failGate,
+  finishReview,
+  gateReview,
+  gateSummary,
+  guardianOutcome,
+  markRegressions,
+  openGate,
+  pendingReturns,
+  readReviewerAnswer,
+  returnFindings,
+  returnWaiting,
+  type ReviewerTurn,
+  reviewerTurn,
+  reviewThread,
+  SESSION_ROLES,
+  stopAtChecks,
+  stopAtSecrets,
+  suiteChecks,
+  usesCodeReview,
+} from "./core/gate";
+import { blockingFindings, GATE_STATUS } from "@shared/gate";
+import { roleProfile } from "@shared/roster";
 import { confirmationModel, confirmationTurn, confirmFinding, NO_STRONGER_MODEL, readConfirmation, recheckFindings } from "./core/auditFindings";
 import { AuditError, type AxisName, type AxisTurn, auditSpec, axisThread, axisTurn, beginAxes, beginVerification, closeAudit, failAudit, findAudit, finishAxis, openAudit, readAxisAnswer, recordAuditCheck } from "./core/audit";
 import { approveCandidate, candidateReport, findCandidate, latestCandidate, recordEvidence, recordTechnicalReview } from "./core/candidates";
@@ -192,7 +236,7 @@ import { assessWorktreePair, worktreePairs } from "./core/worktreeConflicts";
 import { clampParallelDevelopers } from "@shared/parallel";
 import { pullRequestBody, publishCandidate } from "./core/publication";
 import { branchPrefix, commitHeader, readProjectConventions, requireValidCommitMessage, validateCommitMessage } from "./core/conventions";
-import { candidateCommit, qualityGate, qualityMissing, relatedIssue, workCommitType } from "./core/quality";
+import { candidateCommit, qualityGate, qualityMissing, relatedIssue, secretFindings, workCommitType } from "./core/quality";
 import {
   applyAutomaticTransitions,
   autoSummary,
@@ -300,8 +344,22 @@ const providerRetryBaseMs = (): number => {
   const configured = Number(process.env.TRAMA_PROVIDER_RETRY_MS);
   return Number.isFinite(configured) && configured > 0 ? configured : 30_000;
 };
+/**
+ * How often Trama checks a used up quota again while it waits to resume a turn (C11), 15 minutes by default; the reset
+ * time comes first when sooner. TRAMA_PROVIDER_CHECK_MS shortens it for the UI check.
+ */
+const providerCheckMs = (): number => {
+  const configured = Number(process.env.TRAMA_PROVIDER_CHECK_MS);
+  return Number.isFinite(configured) && configured > 0 ? configured : providerRetryBaseMs() * 30;
+};
 /** Why a Coordinator turn ended when the person opened or closed another project during it (C02). */
 const LEFT_PROJECT_NOTE = "Hai lasciato il progetto mentre il Coordinatore rispondeva.";
+/**
+ * What a repeated turn is told (C11): the attempt before may have done part of its work before it ended, so its
+ * outcome is uncertain and is reconciled before any action with effects is repeated.
+ */
+const RESUMED_TURN =
+  "## Resumed turn\nThis message was sent before and its turn ended early. Part of that work may already be done: before repeating any action with effects (proposals, assignments, plans, decisions, cards, file changes), check the conversation and the project state, and do not repeat what is already there.";
 
 /**
  * Coordinator rules added after threads were opened (writing, next step, grilling, domain modeling): a resumed thread
@@ -326,6 +384,9 @@ const CHOICES_IN_TEXT_TITLE = "Scelta scritta nel testo invece che in una scheda
 const toolRefusedDetail = (event: Extract<TurnEvent, { type: "toolRefused" }>) => `Richiesta: ${event.tool}\n${event.reason}`;
 
 const coordinatorSkillParts = (skills: NativeSkill[]) => skills.map((skill, index) => ({ skill, binding: COORDINATOR_SKILLS[index]!.binding }));
+
+/** Clean Code's part of the candidate gate (W10): the technical review's session, answer and Trama's measures. */
+type CleanCodeReview = { threadId: string; answer: ReviewAnswer; standard: StandardCheck | null };
 
 function lateRules(skills: NativeSkill[], provider: ProviderId): LateRules {
   const style = messageStyle("the person");
@@ -381,6 +442,24 @@ export function providerUnavailableReason(id: ProviderId, account: ProviderAccou
     }
     default:
       return `Stato di ${name} non ancora verificato.`;
+  }
+}
+
+/** Trama's line in the chat when a turn is repeated (P10, C11): the message is already above it. */
+function retryLine(retry: { of: CoordinatorRequest; attempt: number; reason?: ProviderWaitReason }, provider: string): { title: string; detail: string } {
+  if (retry.attempt === 0) {
+    return retry.of.state === "interrupted"
+      ? { title: "Turno ripreso", detail: "Trama riprende il messaggio del turno interrotto. Il Coordinatore controlla prima cosa era già stato fatto." }
+      : { title: "Nuovo tentativo", detail: "Trama riprova il messaggio del turno non riuscito." };
+  }
+  const title = `Nuovo tentativo automatico (${retry.attempt} di ${PROVIDER_RETRY_ATTEMPTS})`;
+  switch (retry.reason) {
+    case "quotaExhausted":
+      return { title, detail: `La quota di ${provider} è di nuovo disponibile: Trama riprende il messaggio.` };
+    case "unreachable":
+      return { title, detail: `Dopo l'interruzione di ${provider} o della rete, Trama riprova il messaggio.` };
+    default:
+      return { title, detail: `Dopo il limite temporaneo di ${provider}, Trama riprova il messaggio.` };
   }
 }
 
@@ -669,10 +748,12 @@ export class TramaController {
 
   async stop(): Promise<void> {
     this.quitting = true;
+    this.closeTurnForQuit();
     this.cancelProviderRetry(null);
     for (const [, planner] of this.planners) planner.stop();
     this.planners.clear();
     for (const [, run] of this.auditRuns) for (const client of run.clients) client.stop();
+    for (const [, run] of this.gateRuns) for (const client of run.clients) client.stop();
     for (const [, timer] of this.providerWaits) clearTimeout(timer);
     this.providerWaits.clear();
     await this.stopSpecialistsForQuit();
@@ -693,6 +774,31 @@ export class TramaController {
     this.discovery.stop();
     for (const [, runtime] of this.providerDiscovery) runtime.stop();
     this.providerDiscovery.clear();
+  }
+
+  /**
+   * Esci during a Coordinator turn (C11): the Coordinator's runtime and its tools stop first, so nothing the turn does
+   * lands after it is closed; then the turn ends as interrupted, with its reason, and the messages still queued go back
+   * to the draft of their own dialog. The person resumes it explicitly after reopening.
+   */
+  private closeTurnForQuit(): void {
+    this.stopCoordinatorRuntime();
+    const project = this.state.project;
+    if (!project) return;
+    const running = project.runningRequestId ? project.document.requests.find((r) => r.id === project.runningRequestId) : undefined;
+    if (running?.state === "running") {
+      running.state = "interrupted";
+      running.completedAt = new Date().toISOString();
+      running.failure = QUIT_NOTE;
+      appendEvent(project.document, "trama", { type: "activity", title: "Turno interrotto", detail: QUIT_NOTE, tone: "info" }, running.id);
+      project.runningRequestId = null;
+      project.streaming = null;
+    }
+    for (const item of this.queue.filter((q) => q.projectId === project.id)) {
+      const composer = dialogComposer(project.document, item.goalId);
+      composer.composerDraft = [composer.composerDraft, item.text].filter(Boolean).join("\n\n");
+    }
+    this.queue = this.queue.filter((q) => q.projectId !== project.id);
   }
 
   // MARK: Publishing
@@ -1614,7 +1720,7 @@ export class TramaController {
   private readonly parkedProjects = new Map<string, ActiveProjectState>();
 
   private hasRunningWork(projectId: string): boolean {
-    return [...this.specialistRuntimes.values()].some((r) => r.projectId === projectId) || [...this.auditRuns.values()].some((r) => r.projectId === projectId);
+    return [...this.specialistRuntimes.values()].some((r) => r.projectId === projectId) || [...this.auditRuns.values(), ...this.gateRuns.values()].some((r) => r.projectId === projectId);
   }
 
   /**
@@ -2014,7 +2120,7 @@ export class TramaController {
     /** The next step the message takes: the person's button, or Trama starting the Coordinator's move (W04). */
     step: RequestStep | null = null,
     /** The failed request this one repeats (P10): the chat does not show the message a second time. */
-    retry: { of: CoordinatorRequest; attempt: number } | null = null,
+    retry: { of: CoordinatorRequest; attempt: number; reason?: ProviderWaitReason } | null = null,
     /** Bundled skills without a Trama flow that a started Ask Trama route runs, delivered with their original text (M07). */
     routeSkills: string[] = [],
   ): Promise<void> {
@@ -2078,17 +2184,7 @@ export class TramaController {
     const automatic = step?.by === "trama" ? (step.move as CoordinatorMove) : null;
     if (retry) {
       // The message is already in the chat, above the failure: the retry is a line of Trama's (P10).
-      appendEvent(
-        document,
-        "trama",
-        {
-          type: "activity",
-          title: retry.attempt > 0 ? `Nuovo tentativo automatico (${retry.attempt} di ${PROVIDER_RETRY_ATTEMPTS})` : "Nuovo tentativo",
-          detail: retry.attempt > 0 ? `Dopo il limite temporaneo di ${providerName(activeProvider)}, Trama riprova il messaggio.` : "Trama riprova il messaggio del turno non riuscito.",
-          tone: "info",
-        },
-        request.id,
-      );
+      appendEvent(document, "trama", { type: "activity", ...retryLine(retry, providerName(activeProvider)), tone: "info" }, request.id);
     } else if (automatic) {
       // A move Trama started by itself is not the person's message: the chat shows it as its own line, with a stop (W04).
       appendEvent(
@@ -2168,6 +2264,8 @@ export class TramaController {
       // Every turn: the phase of the work this message belongs to and the moves declare_next_step accepts (W01).
       const work = workState(document, request.id);
       sections.push(workStateText(work));
+      // Every turn: the buttons the person sees and the current mandate, plan and candidates, from Trama's records (issue #269).
+      sections.push(currentStateText(document, request.id, project.snapshot.headSHA));
       if (automatic) sections.push(automaticMoveSection(automatic));
       // Every turn: the task in focus and the queue, so the Coordinator brings a conversation that drifts back to the focus (W02).
       const focus = focusText(document, request.id);
@@ -2178,6 +2276,9 @@ export class TramaController {
       // The previous reply closed with a generic confirmation question: Trama tells the Coordinator, not the model's own memory (W04).
       const feedback = confirmationFeedback(document, request.id);
       if (feedback) sections.push(feedback);
+      // The previous reply named a step button the person did not have: the Coordinator reads it back (issue #269).
+      const missingFeedback = missingButtonFeedback(document, request.id);
+      if (missingFeedback) sections.push(missingFeedback);
       const skills = skillInvocations(trimmed, project.skills);
       // /ask-trama (M07): the thread holds the skill and its binding; the person asks for it now.
       if (/(^|\s)[/$]ask-trama(?=\s|$)/.test(trimmed)) sections.push(ASK_TRAMA_INVOKED);
@@ -2189,6 +2290,7 @@ export class TramaController {
         : null;
       if (routed) sections.push(routed.text);
       sections.push(codexSkillText(trimmed, project.skills));
+      if (retry) sections.push(RESUMED_TURN);
       appendEvent(
         document,
         "trama",
@@ -2204,6 +2306,7 @@ export class TramaController {
             work.phase ? `fase: ${PHASE_LABELS[work.phase]}` : null,
             automatic ? `mossa automatica: ${COORDINATOR_MOVES[automatic].label}` : null,
             feedback ? "richiamo: domanda di conferma generica" : null,
+            missingFeedback ? "richiamo: pulsante che non c'era" : null,
             skills.length || routeSkills.length ? `skill: ${[...skills.map((s) => s.name), ...routeSkills].join(", ")}` : null,
           ]
             .filter(Boolean)
@@ -2240,6 +2343,12 @@ export class TramaController {
         // Options to pick in the text leave the person without a card: recorded, and the next turn is told (issue #228).
         const choice = choicesWithoutCard(document, request.id, reply);
         if (choice) appendEvent(document, "trama", { type: "activity", title: CHOICES_IN_TEXT_TITLE, detail: choice, tone: "error" }, request.id);
+        // A step button named in the text that the person does not have now: recorded, and the next turn is told (issue #269).
+        const buttons = availableButtons(document, request.id);
+        const missing = missingButtons(reply, buttons);
+        if (missing.length) {
+          appendEvent(document, "trama", { type: "activity", title: MISSING_BUTTON_TITLE, detail: missingButtonDetail(missing, buttons), tone: "error" }, request.id);
+        }
         // A write in this turn already reset its counter: the review it would have started is not due.
         const writes = this.turnLearningWrites.get(request.id) ?? [];
         const reviewSkills = !writes.includes("skill_manage") && finishTurnSkillNudge(this.coordinatorLearning(document), this.turnToolIterations.get(request.id) ?? 0);
@@ -2276,8 +2385,9 @@ export class TramaController {
         request.id,
       );
       if (selectedModel && isUnsupportedModelError(message)) this.markModelUnsupported(activeProvider, selectedModel);
-      // A temporary limit passes by itself: Trama retries with a growing wait, and the person can stop it (P10).
-      if (failure?.kind === "temporaryLimit") this.scheduleProviderRetry(project, request, failure.until);
+      // A limit, a used up quota or an outage passes: Trama waits and resumes the turn, and the person can stop it (P10, C11).
+      const waitReason = failure ? waitReasonOf(failure.kind) : null;
+      if (failure && waitReason) this.scheduleProviderRetry(project, request, waitReason, failure.until);
       const code = errorCode(error);
       if (code === "rpcError" && /thread|rollout|session/i.test(message)) {
         document.coordinator.threadId = null;
@@ -2297,18 +2407,26 @@ export class TramaController {
     }
   }
 
-  // MARK: Retries after a temporary provider limit (P10)
+  // MARK: Waiting to resume a turn after a limit or an outage (P10, C11)
 
   private providerRetryTimer: { projectId: string; timer: NodeJS.Timeout } | null = null;
 
-  /** Schedules the next automatic retry of `request`, with a doubling wait, up to PROVIDER_RETRY_ATTEMPTS. */
-  private scheduleProviderRetry(project: ActiveProjectState, request: CoordinatorRequest, until: string | null): void {
+  /**
+   * Schedules the next automatic retry of `request` while Trama stays open, one timer at a time so there is never a
+   * burst of retries. A temporary limit or an outage waits longer at each attempt; a used up quota waits for its reset,
+   * checking the account meanwhile, and the turn starts again only once the provider can work.
+   */
+  private scheduleProviderRetry(project: ActiveProjectState, request: CoordinatorRequest, reason: ProviderWaitReason, until: string | null): void {
     const attempt = (request.retry?.attempt ?? 0) + 1;
     this.cancelProviderRetry(project);
     if (this.quitting || attempt > PROVIDER_RETRY_ATTEMPTS) return;
     const provider = request.provider ?? this.coordinatorProvider(project.document);
-    const delay = retryDelayMs(attempt, providerRetryBaseMs(), until);
-    const view: ProviderRetryView = { requestId: request.id, provider: providerName(provider), attempt, maxAttempts: PROVIDER_RETRY_ATTEMPTS, at: new Date(Date.now() + delay).toISOString() };
+    const delay = reason === "quotaExhausted" ? quotaCheckDelayMs(providerCheckMs(), until) : retryDelayMs(attempt, providerRetryBaseMs(), until);
+    this.armProviderRetry(project, { requestId: request.id, provider: providerName(provider), reason, attempt, maxAttempts: PROVIDER_RETRY_ATTEMPTS, at: "" }, delay);
+  }
+
+  private armProviderRetry(project: ActiveProjectState, base: ProviderRetryView, delay: number): void {
+    const view: ProviderRetryView = { ...base, at: new Date(Date.now() + delay).toISOString() };
     project.providerRetry = view;
     const timer = setTimeout(() => {
       if (this.providerRetryTimer?.timer === timer) this.providerRetryTimer = null;
@@ -2328,19 +2446,55 @@ export class TramaController {
 
   private async fireProviderRetry(project: ActiveProjectState, view: ProviderRetryView): Promise<void> {
     if (project.providerRetry !== view) return;
-    project.providerRetry = null;
     // The person left the project, or another turn or message came first: the retry no longer applies.
-    if (this.quitting || this.state.project !== project || project.runningRequestId || this.queue.some((q) => q.projectId === project.id)) {
+    const stale = () =>
+      this.quitting ||
+      this.state.project !== project ||
+      project.runningRequestId !== null ||
+      this.queue.some((q) => q.projectId === project.id) ||
+      project.document.requests.at(-1)?.id !== view.requestId;
+    const failed = project.document.requests.find((r) => r.id === view.requestId);
+    if (stale() || failed?.state !== "failed") {
+      project.providerRetry = null;
       this.changed();
       return;
     }
-    const failed = project.document.requests.find((r) => r.id === view.requestId);
-    if (failed?.state !== "failed") return;
+    if (view.reason === "quotaExhausted") {
+      // The account says whether the quota came back: until then no turn starts, only another check later (C11).
+      const provider = failed.provider ?? this.coordinatorProvider(project.document);
+      await this.refreshProvider(provider);
+      if (project.providerRetry !== view) return;
+      if (stale()) {
+        project.providerRetry = null;
+        this.changed();
+        return;
+      }
+      const account = this.state.providers[provider]?.account ?? null;
+      if (providerUnavailableReason(provider, account) !== null) {
+        this.armProviderRetry(project, view, quotaCheckDelayMs(providerCheckMs(), account?.kind === "blocked" ? account.until : null));
+        this.publish();
+        return;
+      }
+    }
+    project.providerRetry = null;
     // The dialog's model now, so a model the person picked after the failure is the one retried.
     await this.send(failed.text, failed.moduleId, null, failed.effort, [], null, failed.goalId ?? null, false, failed.step ?? null, {
       of: failed,
       attempt: view.attempt,
+      reason: view.reason,
     });
+  }
+
+  /** After the computer wakes up, a turn waiting for the network or a quota is checked soon instead of at its old time (C11). */
+  resumeAfterSleep(): void {
+    const project = this.state.project;
+    const view = project?.providerRetry;
+    if (!project || !view || this.quitting || view.reason === "temporaryLimit") return;
+    const soon = 5_000;
+    if (Date.parse(view.at) - Date.now() <= soon) return;
+    this.cancelProviderRetry(project);
+    this.armProviderRetry(project, view, soon);
+    this.publish();
   }
 
   /** The person repeats a failed turn (Riprova): same message, model and step, without writing it again (P10). */
@@ -2356,9 +2510,13 @@ export class TramaController {
   stopProviderRetry(): void {
     const project = this.state.project;
     if (!project?.providerRetry) return;
-    const { requestId, provider } = project.providerRetry;
+    const { requestId, provider, reason } = project.providerRetry;
     this.cancelProviderRetry(project);
-    appendEvent(project.document, "trama", { type: "activity", title: "Tentativi automatici fermati", detail: `Hai fermato i tentativi con ${provider}.`, tone: "info" }, requestId);
+    const line =
+      reason === "quotaExhausted"
+        ? { title: "Attesa della quota fermata", detail: `Trama non aspetta più la quota di ${provider}: il turno riparte solo su tua richiesta.` }
+        : { title: "Tentativi automatici fermati", detail: `Hai fermato i tentativi con ${provider}.` };
+    appendEvent(project.document, "trama", { type: "activity", ...line, tone: "info" }, requestId);
     this.changed();
   }
 
@@ -3448,7 +3606,9 @@ export class TramaController {
    */
   private async moveTeam(): Promise<void> {
     const project = this.state.project;
-    if (!project || !project.stateWritable || this.quitting || project.isDemo) return;
+    if (!project || !project.stateWritable || this.quitting) return;
+    this.retryGateReturns(project);
+    if (project.isDemo) return;
     if (this.state.settings.continuousWork !== false) this.pickFreeSlices(project);
     await this.assessWorktreeConflicts(project);
   }
@@ -3770,26 +3930,118 @@ export class TramaController {
     return result;
   }
 
-  /** A technical review from a thread distinct from the author's, read-only in the candidate's worktree. */
-  private async reviewCandidate(candidateId: string, requestId: string | null) {
+  /**
+   * The candidate gate (W10): Trama's real checks first, then every candidate reviewer of the team in parallel on the
+   * diff. Clean Code is the technical review, from a thread distinct from the author's; the regression guardian runs
+   * the suite on the base and on the candidate; the other figures are read-only sessions on cheap models. The review
+   * recorded on the candidate carries the gate's verdict; a blocking finding sends the work back to its developer.
+   */
+  private async reviewCandidate(candidateId: string, requestId: string | null): Promise<TechnicalReview> {
     const project = this.requireProject();
     const document = project.document;
     const candidate = findCandidate(document, candidateId);
     if (!candidate) throw new Error(`Unknown candidate ${candidateId}.`);
     const assignment = findAssignment(document, candidate.assignmentId);
     if (!assignment?.workspace) throw new Error(`Candidate ${candidateId} has no worktree.`);
-    // The reviewer reads only: a worktree-only provider hands the review to the Coordinator's provider.
+    const gate = openGate(document, candidate);
+    this.changedIn(project);
+    const run = { projectId: project.id, clients: new Set<AgentRuntime>() };
+    this.gateRuns.set(gate.id, run);
+    // Set inside the parallel run: TypeScript cannot follow the assignment through the callback.
+    let cleanCode = null as CleanCodeReview | null;
+    try {
+      // The facts first: every required check without current evidence runs now, in the sandbox.
+      for (const check of checksToRun(document, candidate)) await this.verifyCandidate(candidate.id, check, requestId);
+      const failed = failedChecks(candidate);
+      if (failed.length) {
+        stopAtChecks(gate, failed);
+        this.changedIn(project);
+        await this.guardSuite(project, gate, candidate);
+        markRegressions(document, gate);
+      } else if (secretFindings(candidate).length) {
+        // A secret in the diff never reaches a model: Trama's scan blocks the candidate before any session opens.
+        stopAtSecrets(gate, secretFindings(candidate));
+        this.changedIn(project);
+        await this.guardSuite(project, gate, candidate);
+      } else {
+        const provider = this.reviewerProvider(document, assignment);
+        const runner = this.dutyRunner(document);
+        const spec = auditSpec(document, assignment, project.github.issues);
+        beginReviews(gate, { spec: spec !== null, model: runner?.model ?? null, cleanCodeModel: provider.model });
+        this.changedIn(project);
+        const input = { projectName: project.name, gate, candidate, assignment, spec };
+        const skill = await this.nativeSkill("code-review");
+        const sessions = SESSION_ROLES.filter((role) => gateReview(gate, role).status === "running").map((role) =>
+          this.runGateReviewer(project, gate, role, runner, () => reviewerTurn(input, role, usesCodeReview(role) ? skill : null, runner?.provider === "codex"), assignment.workspace!.worktreeRoot),
+        );
+        const cleanCodeRun = this.runCleanCodeReview(project, candidate, assignment, provider, run.clients).then(
+          (result) => {
+            cleanCode = result;
+            finishReview(gate, "cleanCode", cleanCodeOutcome(result.answer));
+            reviewThread(gate, "cleanCode", result.threadId);
+          },
+          (error: Error) => finishReview(gate, "cleanCode", { failure: error.message }),
+        );
+        await Promise.all([cleanCodeRun, this.guardSuite(project, gate, candidate), ...sessions]);
+      }
+      closeGate(gate);
+    } catch (error) {
+      failGate(gate, (error as Error).message);
+    } finally {
+      this.gateRuns.delete(gate.id);
+      this.changedIn(project);
+    }
+    const review = recordTechnicalReview(document, candidateId, {
+      reviewerThreadId: cleanCode?.threadId ?? `gate:${gate.id}`,
+      authorThreadId: assignment.threadId,
+      verdict: gate.status === "passed" ? "approved" : "changesRequested",
+      summary: gate.failure && gate.status === "failed" ? `${gateSummary(document, gate)} ${gate.failure}`.trim() : gateSummary(document, gate),
+      // Clean Code's findings and Trama's measures only when it reviewed: a failed check stops it before it starts.
+      ...(cleanCode ? { findings: cleanCode.answer.findings, standard: cleanCode.standard } : {}),
+      gateId: gate.id,
+    });
+    appendEvent(
+      document,
+      "trama",
+      { type: "activity", title: `Revisori sul candidato ${candidateId}: ${GATE_STATUS[gate.status].label.toLowerCase()}`, detail: review.summary, tone: gate.status === "passed" ? "tool" : "error" },
+      requestId,
+    );
+    if (gate.status === "blocked" && !gate.checksFailed.length) this.returnToDeveloper(project, gate);
+    this.changedIn(project);
+    this.releaseParkedProject(project);
+    return review;
+  }
+
+  /** Running gates are running work: their sessions stop when Trama quits. */
+  private readonly gateRuns = new Map<string, { projectId: string; clients: Set<AgentRuntime> }>();
+
+  /** Clean Code reads only: a worktree-only provider hands the review to the Coordinator's provider. */
+  private reviewerProvider(document: ProjectDocument, assignment: SpecialistAssignment): { provider: ProviderId; model: string | null } {
     const authorProvider = assignment.provider ?? "codex";
     const provider = supportsReadOnly(authorProvider) ? authorProvider : this.coordinatorProvider(document);
     const model = provider === authorProvider ? assignment.model : (document.coordinator.threadModel ?? this.coordinatorModel(document, provider));
+    return { provider, model };
+  }
+
+  /** Clean Code's part of the gate: the technical review against Trama's standard (Q03), read-only in the worktree. */
+  private async runCleanCodeReview(
+    project: ActiveProjectState,
+    candidate: Candidate,
+    assignment: SpecialistAssignment,
+    reviewer: { provider: ProviderId; model: string | null },
+    clients: Set<AgentRuntime>,
+  ): Promise<CleanCodeReview> {
+    const document = project.document;
+    const { provider, model } = reviewer;
     if (!model) throw new Error(this.coordinatorModelProblem(document, provider));
     const client = createRuntime(provider, { executable: provider === "codex" ? this.host.codexExecutable : null, requestTimeoutMs: 15_000 });
+    clients.add(client);
     try {
       // The standard's measures are Trama's own, taken before the reviewer reads anything (Q03).
-      const standard = await checkStandard(candidate, assignment.workspace.worktreeRoot, document.cleanCode);
+      const standard = await checkStandard(candidate, assignment.workspace!.worktreeRoot, document.cleanCode);
       const opening = await client.openThread({
         model,
-        cwd: assignment.workspace.worktreeRoot,
+        cwd: assignment.workspace!.worktreeRoot,
         ephemeral: true,
         readableRoots: this.readableRoots(project),
         developerInstructions: reviewerInstructions(document.cleanCode),
@@ -3811,36 +4063,147 @@ export class TramaController {
       const answer = await client.runTurn({
         threadId: opening.threadId,
         prompt,
-        cwd: assignment.workspace.worktreeRoot,
+        cwd: assignment.workspace!.worktreeRoot,
         model,
         outputSchema: REVIEW_OUTPUT_SCHEMA,
         onEvent: () => undefined,
       });
-      let parsed: ReviewAnswer;
       try {
-        parsed = readReviewAnswer(JSON.parse(extractJsonAnswer(answer)) as Record<string, unknown>);
+        return { threadId: opening.threadId, answer: readReviewAnswer(JSON.parse(extractJsonAnswer(answer)) as Record<string, unknown>), standard };
       } catch {
         throw new Error("La revisione tecnica non ha restituito un verdetto leggibile.");
       }
-      const review = recordTechnicalReview(document, candidateId, {
-        reviewerThreadId: opening.threadId,
-        authorThreadId: assignment.threadId,
-        verdict: parsed.verdict,
-        summary: parsed.summary,
-        findings: parsed.findings,
-        standard,
-      });
-      appendEvent(
-        document,
-        "trama",
-        { type: "activity", title: `Revisione tecnica di ${candidateId}: ${review.verdict === "approved" ? "approvata" : "modifiche richieste"}`, detail: review.summary, tone: "tool" },
-        requestId,
-      );
-      this.changedIn(project);
-      return review;
     } finally {
+      clients.delete(client);
       client.stop();
     }
+  }
+
+  /**
+   * The regression guardian's part of the gate: the candidate's suite on its base, in a detached checkout and in the
+   * sandbox, against the evidence on the candidate. A test that passed on the base and fails now blocks the candidate.
+   */
+  private async guardSuite(project: ActiveProjectState, gate: CandidateGate, candidate: Candidate): Promise<void> {
+    try {
+      const checks = suiteChecks(candidate);
+      if (checks.length) {
+        const base = await checkoutCommit(project.rootPath, gate.baseSHA, join(this.storage.root, "Gate"));
+        try {
+          for (const check of checks) {
+            if (this.quitting) throw new Error("Trama si sta chiudendo.");
+            const result = await runReadOnlyCheck(check, base.path, {
+              codexExecutable: resolveCodexExecutable(this.host.codexExecutable),
+              scratchRoot: join(this.storage.root, "Checks"),
+              dependencyRoot: project.rootPath,
+            }).catch((error: Error) => ({ command: [] as string[], exitCode: -1, output: error.message }));
+            const evidence = candidate.evidence[check];
+            gate.suite.push(
+              compareSuite(
+                check,
+                { result: result.command.length === 0 ? "notRun" : result.exitCode === 0 ? "pass" : "fail", output: result.output },
+                evidence ? evidence.result : "notRun",
+              ),
+            );
+            this.changedIn(project);
+          }
+        } finally {
+          await base.remove();
+        }
+      }
+      finishReview(gate, "regressionGuardian", guardianOutcome(gate.suite));
+    } catch (error) {
+      finishReview(gate, "regressionGuardian", { failure: (error as Error).message });
+    }
+  }
+
+  /** One figure of the gate: a read-only session of its own, in the candidate's worktree, on a cheap model. */
+  private async runGateReviewer(project: ActiveProjectState, gate: CandidateGate, role: GateRole, runner: DutyRunner | null, turn: () => ReviewerTurn, cwd: string): Promise<void> {
+    if (!runner) {
+      finishReview(gate, role, { failure: "Nessun modello in sola lettura disponibile per i revisori del candidato." });
+      return;
+    }
+    const client = createRuntime(runner.provider, { executable: runner.provider === "codex" ? this.host.codexExecutable : null, requestTimeoutMs: 15_000 });
+    const run = this.gateRuns.get(gate.id);
+    run?.clients.add(client);
+    try {
+      if (this.quitting) throw new Error("Trama si sta chiudendo.");
+      const { instructions, prompt, skills, outputSchema } = turn();
+      const opening = await client.openThread({ model: runner.model, cwd, developerInstructions: instructions, sandbox: "read-only", ephemeral: true, readableRoots: this.readableRoots(project) });
+      reviewThread(gate, role, opening.threadId);
+      this.changedIn(project);
+      const raw = await client.runTurn({ threadId: opening.threadId, prompt, cwd, model: runner.model, skills, outputSchema, onEvent: () => undefined });
+      finishReview(gate, role, readReviewerAnswer(raw));
+    } catch (error) {
+      finishReview(gate, role, { failure: (error as Error).message });
+    } finally {
+      run?.clients.delete(client);
+      client.stop();
+      this.changedIn(project);
+    }
+  }
+
+  /**
+   * A blocking finding goes back to the developer (W10): each reviewer's message lands in the developer's work, where
+   * the person reads it, and the work resumes in the same session and worktree with the findings, within the mandate.
+   */
+  private returnToDeveloper(project: ActiveProjectState, gate: CandidateGate): void {
+    const document = project.document;
+    const assignment = findAssignment(document, gate.assignmentId);
+    if (!assignment) return;
+    const developer = document.team.specialists.find((s) => s.id === assignment.specialistId);
+    const workKey = `${assignment.id}:${assignment.turns.length + 1}`;
+    for (const review of gate.reviews) {
+      const blocking = blockingFindings(review);
+      if (!blocking.length) continue;
+      const reviewer = document.team.specialists.find((s) => s.role === review.role && s.status !== "removed")?.name ?? roleProfile(review.role).name;
+      appendEvent(
+        document,
+        "specialist",
+        {
+          type: "activity",
+          title: `${reviewer} a ${developer?.name ?? assignment.specialistId}: ${blocking.length === 1 ? "1 rilievo bloccante" : `${blocking.length} rilievi bloccanti`} sul candidato ${gate.candidateId}`,
+          detail: blocking.map((f) => `- ${f.title}${f.file ? ` (${f.file})` : ""}${f.detail !== f.title ? `: ${f.detail}` : ""}`).join("\n"),
+          tone: "error",
+        },
+        null,
+        new Date(),
+        { assignmentId: assignment.id, workKey },
+      );
+    }
+    gate.returned = { assignmentId: assignment.id, at: new Date().toISOString(), waiting: this.resumeWithFindings(project, gate) };
+    this.changedIn(project);
+  }
+
+  /**
+   * Resumes the developer with the gate's blocking findings, in its session and worktree, and says why it cannot when
+   * it cannot. Only in the project open now: a project the person left keeps the work for when it opens again.
+   */
+  private resumeWithFindings(project: ActiveProjectState, gate: CandidateGate): string | null {
+    const document = project.document;
+    const assignment = findAssignment(document, gate.assignmentId);
+    if (!assignment) return "L'incarico non c'è più: serve un nuovo incarico.";
+    if (project !== this.state.project) return "Il progetto non è aperto: il lavoro riprende quando lo riapri.";
+    if (!withinMandate(document, assignment)) return "Il mandato attuale non copre più questo incarico: il lavoro riprende quando lo concedi di nuovo.";
+    try {
+      reopenForFindings(document, assignment.id, { gateId: gate.id, candidateId: gate.candidateId, findings: returnFindings(document, gate) });
+    } catch (error) {
+      return error instanceof TeamError ? returnWaiting(error.code, error.message) : (error as Error).message;
+    }
+    void this.startAssignment(assignment.id);
+    return null;
+  }
+
+  /** The findings that waited for their developer go back at the next event of the work that may have freed it (W10). */
+  private retryGateReturns(project: ActiveProjectState): void {
+    let moved = false;
+    for (const gate of pendingReturns(project.document)) {
+      const waiting = this.resumeWithFindings(project, gate);
+      if (waiting === gate.returned!.waiting) continue;
+      gate.returned!.waiting = waiting;
+      gate.updatedAt = new Date().toISOString();
+      moved = true;
+    }
+    if (moved) this.changedIn(project);
   }
 
   // MARK: Focus mode

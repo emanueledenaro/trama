@@ -9,6 +9,7 @@ import type { AppState, ProjectDocument } from "@shared/domain";
 import { decisionDependents, dialogEvents, findGoal, projectGoals } from "@shared/goals";
 import { deriveTimelineRows } from "@shared/timeline";
 import { TramaController } from "./controller";
+import { QUIT_NOTE } from "./core/document";
 import { AppStorage } from "./core/storage";
 import { developers } from "./core/team";
 
@@ -600,6 +601,168 @@ describe("TramaController", () => {
       expect(document.events.filter((e) => e.content.type === "personMessage")).toHaveLength(1);
     } finally {
       delete process.env.TRAMA_PROVIDER_RETRY_MS;
+    }
+  }, 60_000);
+
+  it("waits out a network outage and resumes the turn by itself, telling the Coordinator to reconcile first (C11)", async () => {
+    process.env.TRAMA_PROVIDER_RETRY_MS = "40";
+    const log = join(await mkdtemp(join(tmpdir(), "trama-log-")), "requests.jsonl");
+    process.env.FAKE_CODEX_LOG = log;
+    try {
+      await setup();
+      const project = controller!.snapshot.project!;
+      const document = project.document;
+      await controller!.send("[rete-assente] Come si annulla un ordine?", null, null, null);
+      const first = document.requests[0]!;
+      expect(first.state).toBe("failed");
+      expect(project.providerRetry).toMatchObject({ requestId: first.id, reason: "unreachable", attempt: 1, maxAttempts: 5 });
+      await until(() => document.requests.at(-1)?.state === "completed", 10_000);
+      expect(document.requests.map((r) => [r.state, r.retry?.attempt ?? null])).toEqual([
+        ["failed", null],
+        ["completed", 1],
+      ]);
+      expect(document.events.filter((e) => e.content.type === "personMessage")).toHaveLength(1);
+      const activities = document.events.flatMap((e) => (e.content.type === "activity" ? [e.content] : []));
+      expect(activities.find((a) => a.title === "Il turno non è riuscito")?.detail).toMatch(/^Provider non raggiungibile\. /);
+      expect(activities.find((a) => a.title === "Nuovo tentativo automatico (1 di 5)")?.detail).toContain("rete");
+      // The repeated turn is told that part of the first attempt may be done already.
+      const { readFile } = await import("node:fs/promises");
+      const turns = (await readFile(log, "utf8"))
+        .trim()
+        .split("\n")
+        .map((line) => JSON.parse(line) as { method: string; params: { input?: { text: string }[] } })
+        .filter((entry) => entry.method === "turn/start" && entry.params.input?.[0]?.text.includes("[rete-assente]"));
+      expect(turns.map((t) => t.params.input![0]!.text.includes("## Resumed turn"))).toEqual([false, true]);
+    } finally {
+      delete process.env.TRAMA_PROVIDER_RETRY_MS;
+      delete process.env.FAKE_CODEX_LOG;
+    }
+  }, 60_000);
+
+  it("waits for a used up quota with account checks only, and resumes the turn when it comes back (C11)", async () => {
+    process.env.TRAMA_PROVIDER_RETRY_MS = "10";
+    const quota = join(await mkdtemp(join(tmpdir(), "trama-quota-")), "exhausted");
+    process.env.FAKE_CODEX_QUOTA_FILE = quota;
+    try {
+      await setup();
+      const project = controller!.snapshot.project!;
+      const document = project.document;
+      await writeFile(quota, "");
+      await controller!.send("Riprendi il piano degli annullamenti", null, null, null);
+      const first = document.requests[0]!;
+      expect(first.state).toBe("failed");
+      expect(project.providerRetry).toMatchObject({ requestId: first.id, reason: "quotaExhausted", attempt: 1 });
+      // Several checks of the account pass, with no new turn: no burst of retries while the quota is used up.
+      await until(() => controller!.snapshot.providers.codex.account?.kind === "blocked");
+      await new Promise((r) => setTimeout(r, 1_000));
+      expect(document.requests).toHaveLength(1);
+      expect(project.providerRetry).toMatchObject({ requestId: first.id, reason: "quotaExhausted", attempt: 1 });
+
+      const { rm } = await import("node:fs/promises");
+      await rm(quota);
+      await until(() => document.requests.at(-1)?.state === "completed", 10_000);
+      expect(document.requests.map((r) => [r.state, r.retry?.attempt ?? null])).toEqual([
+        ["failed", null],
+        ["completed", 1],
+      ]);
+      expect(project.providerRetry ?? null).toBeNull();
+      const activities = document.events.flatMap((e) => (e.content.type === "activity" ? [e.content] : []));
+      expect(activities.find((a) => a.title === "Nuovo tentativo automatico (1 di 5)")?.detail).toBe(
+        "La quota di ChatGPT è di nuovo disponibile: Trama riprende il messaggio.",
+      );
+    } finally {
+      delete process.env.TRAMA_PROVIDER_RETRY_MS;
+      delete process.env.FAKE_CODEX_QUOTA_FILE;
+    }
+  }, 60_000);
+
+  it("stops waiting for a quota when the person sends a new message (C11)", async () => {
+    process.env.TRAMA_PROVIDER_RETRY_MS = "1000";
+    const quota = join(await mkdtemp(join(tmpdir(), "trama-quota-")), "exhausted");
+    process.env.FAKE_CODEX_QUOTA_FILE = quota;
+    try {
+      await setup();
+      const project = controller!.snapshot.project!;
+      const document = project.document;
+      await writeFile(quota, "");
+      await controller!.send("Primo messaggio", null, null, null);
+      expect(project.providerRetry).toMatchObject({ reason: "quotaExhausted" });
+      // The check of the account after the failure ends first, so it cannot mark the provider blocked again later.
+      await until(() => controller!.snapshot.providers.codex.account?.kind === "blocked");
+      const { rm } = await import("node:fs/promises");
+      await rm(quota);
+      await controller!.refreshCodex();
+      await until(() => controller!.snapshot.providers.codex.account?.kind === "chatgpt" && controller!.snapshot.providers.codex.models.length > 0);
+      await controller!.send("Lascia stare, parliamo d'altro", null, null, null);
+      expect(project.providerRetry ?? null).toBeNull();
+      // Waking the computer brings no cancelled wait back.
+      controller!.resumeAfterSleep();
+      await new Promise((r) => setTimeout(r, 300));
+      // The first message is not repeated after the newer one.
+      expect(document.requests.map((r) => [r.text, r.state])).toEqual([
+        ["Primo messaggio", "failed"],
+        ["Lascia stare, parliamo d'altro", "completed"],
+      ]);
+    } finally {
+      delete process.env.TRAMA_PROVIDER_RETRY_MS;
+      delete process.env.FAKE_CODEX_QUOTA_FILE;
+    }
+  }, 60_000);
+
+  it("ends a running turn on Esci with its reason, and the reopened project resumes it only when asked (C11)", async () => {
+    const { data } = await setup();
+    const project = controller!.snapshot.project!;
+    const document = project.document;
+    void controller!.send("[attesa] Prepara il piano degli annullamenti", null, null, null);
+    await until(() => project.runningRequestId !== null);
+    const turnId = project.runningRequestId!;
+    await until(() =>
+      document.events.some((e) => e.requestId === turnId && e.content.type === "activity" && e.content.title === "Messaggio inviato al Coordinatore"),
+    );
+    const goalId = await controller!.createGoal({ title: "Annullamenti", outcome: "Gli ordini annullati tornano in revisione.", examples: [] });
+    await controller!.send("Poi controlla i test", null, null, null);
+    await controller!.send("Per l'obiettivo: rileggi gli esempi", null, null, null, [], null, goalId);
+    await controller!.stop();
+    expect(document.requests.find((r) => r.id === turnId)).toMatchObject({ state: "interrupted", failure: QUIT_NOTE });
+    // A message still in the queue goes back to the draft of its own dialog instead of vanishing.
+    expect(document.composerDraft).toBe("Poi controlla i test");
+    expect(findGoal(document, goalId)!.dialog.composerDraft).toBe("Per l'obiettivo: rileggi gli esempi");
+
+    // After the restart the provider answers: the resumed turn can end.
+    process.env.FAKE_CODEX_NO_WAIT = "1";
+    try {
+      let state: AppState | null = null;
+      controller = new TramaController(data, {
+        publish: (s) => {
+          state = s;
+        },
+        openExternal: async () => undefined,
+        applyTheme: () => undefined,
+        notify: () => undefined,
+        setOpenAtLogin: () => undefined,
+        aiHeroResourceDirectory: join(root, "resources/AIHero"),
+        demoResourceDirectory: join(root, "resources/DemoProject"),
+        codexExecutable: join(root, "test-fixtures/fake-codex.mjs"),
+      });
+      await controller.start();
+      await until(() => state?.project?.document !== undefined);
+      const reopened = controller.snapshot.project!;
+      const interrupted = reopened.document.requests.find((r) => r.id === turnId)!;
+      expect(interrupted).toMatchObject({ state: "interrupted", failure: QUIT_NOTE });
+      const rows = deriveTimelineRows(reopened.document.events, reopened.document.requests, null, new Set(), reopened.document.decisionRequests);
+      expect(rows.find((r) => r.kind === "failure" && r.requestId === turnId)).toMatchObject({ interrupted: true, message: QUIT_NOTE });
+      // Esci asks for an explicit resume: nothing starts by itself on reopening.
+      await new Promise((r) => setTimeout(r, 300));
+      expect(reopened.document.requests).toHaveLength(1);
+      expect(reopened.providerRetry ?? null).toBeNull();
+
+      await controller.retryRequest(turnId);
+      const resumed = reopened.document.requests[1]!;
+      expect(resumed).toMatchObject({ text: interrupted.text, state: "completed", retry: { of: turnId, attempt: 0 } });
+      expect(reopened.document.events.some((e) => e.requestId === resumed.id && e.content.type === "activity" && e.content.title === "Turno ripreso")).toBe(true);
+      expect(reopened.document.events.filter((e) => e.content.type === "personMessage" && e.content.text === interrupted.text)).toHaveLength(1);
+    } finally {
+      delete process.env.FAKE_CODEX_NO_WAIT;
     }
   }, 60_000);
 
