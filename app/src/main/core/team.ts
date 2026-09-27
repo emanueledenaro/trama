@@ -758,6 +758,37 @@ export function resumePausedAssignment(document: ProjectDocument, id: string, no
   });
 }
 
+/**
+ * The candidate gate sent the work back (W10): the completed work resumes in the same session and worktree with the
+ * blocking findings. It waits while the developer works on something else, while the developers at work are at the
+ * limit or while someone works on its modules.
+ */
+export function reopenForFindings(
+  document: ProjectDocument,
+  id: string,
+  returned: { gateId: string; candidateId: string; findings: string[] },
+  now = new Date(),
+): SpecialistAssignment {
+  const assignment = findAssignment(document, id);
+  if (!assignment) throw new TeamError("unknown_assignment", `Unknown assignment: ${id}.`);
+  if (assignment.status !== "completed") throw new TeamError("cannot_resume", `Assignment ${id} is not completed.`);
+  if (assignment.workspaceRemovedAt || !assignment.workspace) throw new TeamError("no_worktree", `Assignment ${id} has no worktree left.`);
+  const specialist = document.team.specialists.find((s) => s.id === assignment.specialistId)!;
+  if (specialist.status === "removed") throw new TeamError("specialist_removed", `Specialist ${specialist.id} was removed from the team.`);
+  const current = currentAssignment(specialist);
+  if (current && current.id !== id && isActive(current)) throw new TeamError("specialist_busy", `Specialist ${specialist.id} is working on ${current.id}.`);
+  const limit = parallelDevelopers(document);
+  if (specialist.role === "developer" && activeDevelopers(document) >= limit) throw new TeamError("parallel_limit", `${limit} developers are already at work.`);
+  requireIndependent(document, assignment.moduleIds, specialist.id);
+  specialist.assignments = [...specialist.assignments.filter((a) => a.id !== id), assignment];
+  return updateAssignment(document, id, now, (a) => {
+    a.status = "preparing";
+    a.failure = null;
+    a.gateReturn = { ...returned, at: now.toISOString() };
+    a.lastUpdate = `Ripresa con i rilievi bloccanti sul candidato ${returned.candidateId}`;
+  });
+}
+
 /** Assignments whose status changed since the Coordinator was last told. */
 export function unreportedAssignments(document: ProjectDocument): SpecialistAssignment[] {
   return document.team.specialists.flatMap((s) => s.assignments).filter((a) => a.reportedStatus !== a.status && !isActive(a));

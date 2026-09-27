@@ -49,6 +49,8 @@ import { ACTION_LABELS } from "@/lib/labels";
 import { ChatMarkdown } from "./ChatMarkdown";
 import { PlanSpecBody } from "./PlanSpec";
 import { DutyFields } from "./DutyFields";
+import { GateField } from "./GateField";
+import { latestGate } from "@shared/gate";
 import { Sep } from "@/components/ui/sep";
 import { AgentName } from "@/components/AgentIdentity";
 import { OverlapRow } from "@/components/OverlapNotice";
@@ -717,6 +719,9 @@ const BLOCKER_TEXT: Record<string, string> = {
   EVIDENCE_MISSING: "Verifica da eseguire",
   EVIDENCE_STALE: "Verifica non più valida",
   CHECK_FAILED: "Verifica non superata",
+  GATE_BLOCKED: "Rilievo bloccante dei revisori",
+  GATE_RUNNING: "Revisori al lavoro",
+  GATE_FAILED: "Revisione da rilanciare",
   REMOTE_CONFLICT: "Conflitto con il lavoro di un collega",
   WORKTREE_CONFLICT: "Conflitto con il worktree di un altro sviluppatore",
 };
@@ -999,7 +1004,8 @@ function TechnicalReviewField({ review }: { review: TechnicalReview }) {
   return (
     <Field label={`Revisione tecnica, ${review.verdict === "approved" ? "approvata" : "modifiche richieste"}`}>
       <div data-testid="technical-review" data-verdict={review.verdict}>
-        <p>{review.summary}</p>
+        {/* With the candidate gate (W10) the summary is the gate's, shown figure by figure above. */}
+        {review.gateId ? null : <p>{review.summary}</p>}
         {standard ? (
           <div className="mt-1.5" data-testid="review-measures">
             <div className="text-ui-xs text-muted-foreground/70">
@@ -1089,6 +1095,10 @@ export function CandidateCard({ candidateId }: { candidateId: string }) {
           ))}
         </div>
       </Field>
+      {(() => {
+        const gate = latestGate(project.document.gates, candidate.id);
+        return gate ? <GateField gate={gate} document={project.document} /> : null;
+      })()}
       {candidate.technicalReview ? <TechnicalReviewField review={candidate.technicalReview} /> : null}
       {report.blockers.length ? (
         <Field label="Cosa manca">
