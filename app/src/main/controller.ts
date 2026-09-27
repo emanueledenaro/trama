@@ -1833,7 +1833,10 @@ export class TramaController {
       document.coordinator.study = study;
       if (this.runtime !== runtime || generation !== this.coordinatorGeneration) return;
       const previous = document.coordinator.threadId;
-      const rules = lateRules(await this.coordinatorSkills(), provider);
+      const skills = await this.coordinatorSkills();
+      // A model change while the skills loaded replaced this opening: its stopped runtime must not open a thread.
+      if (this.state.project !== project || this.runtime !== runtime || generation !== this.coordinatorGeneration) return;
+      const rules = lateRules(skills, provider);
       // Codex takes the Coordinator's skills as native skill inputs in the thread's first turn, the others in their instructions.
       const inInstructions = rules.skills.length === 0;
       const opening = await runtime.client.openThread({
@@ -1842,7 +1845,7 @@ export class TramaController {
         developerInstructions: developerInstructions(
           project.name,
           this.learningFor(project).promptContext().guidance,
-          inInstructions ? deliverNativeSkills(coordinatorSkillParts(await this.coordinatorSkills()), false).text : null,
+          inInstructions ? deliverNativeSkills(coordinatorSkillParts(skills), false).text : null,
         ),
         resumeThreadId: previous,
         readableRoots: this.readableRoots(project),
