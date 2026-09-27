@@ -43,6 +43,7 @@ import {
   extractJsonAnswer,
 } from "./types";
 import { deniedReadFolders, expandHome, readableRoots, toolchainRoots } from "../readScope";
+import { isGitPushCommand } from "../push";
 import { absoluteUnnormalized, isWritableTarget, PendingTurn } from "./providerSupport";
 import { externalToolKind, refusalReason } from "./toolRefusal";
 
@@ -459,6 +460,10 @@ export function decideToolPermission(
     if (!policy.writableRoot) return providerTool(typeof input.command === "string" ? input.command : toolName, "execute");
     if (input.dangerouslyDisableSandbox === true) {
       return { allow: false, reason: "Commands must run inside the sandbox." };
+    }
+    // Only Trama pushes, and only within the mandate (issue #273); the sandbox has no network either.
+    if (typeof input.command === "string" && isGitPushCommand(input.command)) {
+      return { allow: false, reason: "Only Trama pushes branches, and only when the mandate allows it: do not run git push." };
     }
     return { allow: true };
   }

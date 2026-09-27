@@ -187,6 +187,7 @@ import { pickSlices } from "./core/slicePicking";
 import { assessWorktreePair, worktreePairs } from "./core/worktreeConflicts";
 import { clampParallelDevelopers } from "@shared/parallel";
 import { pullRequestBody, publishCandidate } from "./core/publication";
+import { agentPushActivity, isGitPushCommand, pushActivity, pushAuthorization, pushRefusal } from "./core/push";
 import { branchPrefix, commitHeader, readProjectConventions, requireValidCommitMessage, validateCommitMessage } from "./core/conventions";
 import { candidateCommit, qualityGate, qualityMissing, relatedIssue, workCommitType } from "./core/quality";
 import {
@@ -2495,6 +2496,10 @@ export class TramaController {
       }
       case "commandCompleted":
         activity(event.command || "Comando", event.succeeded ? null : `Uscita ${event.exitCode ?? "?"}`, event.succeeded ? "tool" : "error");
+        if (isGitPushCommand(event.command)) {
+          const push = agentPushActivity(event.command, event.succeeded);
+          activity(push.title, push.detail, push.tone);
+        }
         return;
       case "fileChangeCompleted":
         activity(`Modifica di ${event.paths.length} file`, event.paths.join(", "), event.succeeded ? "tool" : "error");
@@ -3153,6 +3158,10 @@ export class TramaController {
                 event.succeeded ? null : `Uscita ${event.exitCode ?? "?"}${event.output ? `\n${event.output.slice(-2_000)}` : ""}`,
                 event.succeeded ? "tool" : "error",
               );
+              if (isGitPushCommand(event.command)) {
+                const push = agentPushActivity(event.command, event.succeeded);
+                this.specialistActivity(project, assignmentId, key, push.title, push.detail, push.tone);
+              }
               return;
             case "fileChangeCompleted":
               this.specialistActivity(
@@ -3986,6 +3995,14 @@ export class TramaController {
     if (candidate.pullRequest) throw new DomainError(`Il candidato è già pubblicato: ${candidate.pullRequest.url}`);
     const repository = project.github.repository;
     if (!repository) throw new DomainError("Il progetto non ha un remoto GitHub.");
+    // The mandate decides before anything is committed or pushed, even when the person asks (issue #273).
+    const refusal = pushRefusal(pushAuthorization(document.mandate));
+    if (refusal) {
+      const branch = findAssignment(document, candidate.assignmentId)?.workspace?.branch ?? "branch del candidato";
+      appendEvent(document, "trama", pushActivity({ outcome: "refused", branch, remote: "origin", reason: refusal }));
+      this.changed();
+      throw new DomainError(refusal);
+    }
     // The quality standard comes before anything leaves the machine (Q01).
     const message = await this.candidateMessage(project, candidate);
     const missing = qualityMissing(qualityGate(document, candidate, report, repository));
@@ -3995,6 +4012,7 @@ export class TramaController {
     if (!capabilities.canPush) throw new DomainError(`Il tuo account GitHub non ha il permesso di push su ${repository}.`);
     const assignment = findAssignment(document, candidate.assignmentId)!;
     const baseBranch = project.snapshot.branch ?? "main";
+    // Every push, refused, failed or done, stays in the conversation (issue #273).
     const published = await publishCandidate({
       candidate,
       assignment,
@@ -4003,6 +4021,11 @@ export class TramaController {
       message,
       conventions: candidate.commit!.conventions,
       body: pullRequestBody(candidate, assignment, document.decisions, relatedIssue(document, assignment)),
+      mandate: document.mandate,
+      onPush: (record) => {
+        appendEvent(document, "trama", pushActivity(record));
+        this.changed();
+      },
     });
     candidate.pullRequest = { ...published, at: new Date().toISOString() };
     appendEvent(document, "trama", { type: "activity", title: `Pull request #${published.number} pubblicata`, detail: published.url, tone: "tool" });
