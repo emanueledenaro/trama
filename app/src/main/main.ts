@@ -320,6 +320,7 @@ app.whenReady().then(async () => {
     void controller.pollMonitor().catch(() => undefined);
     void controller.refreshCodex();
     void controller.refreshProviders();
+    controller.resumeAfterSleep();
   });
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
