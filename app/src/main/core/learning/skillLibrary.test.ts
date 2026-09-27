@@ -18,7 +18,7 @@ beforeEach(() => {
   library = new SkillLibrary(join(root, "skills"));
 });
 
-describe("skill validation (Hermes skill_manager_tool)", () => {
+describe("skill validation", () => {
   it("checks names, frontmatter and file paths", () => {
     for (const name of ["my-skill", "skill123", "my_skill.v2", "a"]) expect(validateName(name)).toBeNull();
     for (const name of ["skill/name", "skill name", "skill@name", ""]) expect(validateName(name)).not.toBeNull();

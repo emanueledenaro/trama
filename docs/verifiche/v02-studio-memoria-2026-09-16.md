@@ -1,6 +1,6 @@
 # V02: il Coordinatore studia il progetto e lo ricorda
 
-Verifica del 16 settembre 2026 per #65. Base: `main` a `98ab84e`. Candidato sul branch `synara/coordinator-project-memory`, PR #76. Componente reale: Codex CLI 0.154.0 con l'account ChatGPT del Mac.
+Verifica del 16 settembre 2026 per #65. Base: `main` a `98ab84e`. Candidato sul branch della PR #76. Componente reale: Codex CLI 0.154.0 con l'account ChatGPT del Mac.
 
 ## Test automatici
 

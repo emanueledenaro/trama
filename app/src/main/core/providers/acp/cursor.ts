@@ -1,9 +1,7 @@
 /**
  * Cursor Agent over ACP (`cursor-agent acp`).
  *
- * Ported from Synara (https://github.com/Emanuele-web04/synara, MIT, Copyright (c) 2026 T3 Tools Inc.
- * and Emanuele Di Pietro): acp/CursorAcpSupport.ts, CursorAcpCommand.ts, CursorAcpExtension.ts,
- * Layers/CursorAdapter.ts and the Cursor part of Layers/ProviderHealth.ts.
+ * Derived from third-party MIT code; see THIRD_PARTY_NOTICES.md.
  */
 import type { ProviderAccount, ProviderModel, RuntimeOptions } from "../types";
 import {

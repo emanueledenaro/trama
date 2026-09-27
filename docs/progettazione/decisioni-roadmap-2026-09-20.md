@@ -10,7 +10,7 @@ P02 possiede il selettore unificato e la corrispondenza fra selezione e invio. T
 
 ## Composer
 
-La persona ha corretto la proposta iniziale richiedendo il comportamento di Synara. La selezione resta associata a bozza e dialogo, con preferenze separate per provider; una nuova bozza usa l'ultima selezione disponibile. Si elimina la distinzione fra modello permanente e modello valido soltanto per il prossimo messaggio. Il riferimento locale è docs/reference/synara-funzioni.md, sezione Composer; il comportamento corrente di Synara va verificato sul sorgente prima del porting.
+La persona ha corretto la proposta iniziale. La selezione resta associata a bozza e dialogo, con preferenze separate per provider; una nuova bozza usa l'ultima selezione disponibile. Si elimina la distinzione fra modello permanente e modello valido soltanto per il prossimo messaggio. La decisione è registrata nell'[ADR 0010](../adr/0010-selezione-del-composer-per-dialogo.md).
 
 Modello e sforzo vengono fotografati all'accodamento. Cambiare la selezione successivamente non cambia turni già accodati. Il provider può cambiare soltanto senza turno attivo e con coda vuota; dopo una richiesta di interruzione si attende la conferma.
 
@@ -32,4 +32,4 @@ L'aggiornamento di specifica, piano e ticket precede l'implementazione. Il merge
 
 La persona richiede gpt-5.6-luna con ragionamento medium come implementatore. Il Coordinatore segue il lavoro, confronta diff e prove con il ticket e richiede correzioni prima di accettarlo. Un solo implementatore è attivo alla volta.
 
-La richiesta successiva di portare il sistema di apprendimento Hermes è registrata in apprendimento-hermes.md. Il porting deve partire dal codice ufficiale, con revisione e licenza identificate, e collegarsi al miglioramento previsto da C15.
+La richiesta successiva di portare un sistema di apprendimento è registrata in [apprendimento.md](apprendimento.md). Il porting deve partire dal codice ufficiale, con revisione e licenza identificate, e collegarsi al miglioramento previsto da C15.
