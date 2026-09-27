@@ -213,7 +213,7 @@ function GoalFilterMenu() {
     <Menu>
       <MenuTrigger aria-label="Filtra la chat per obiettivo" data-testid="chat-filter" className={cn(HEADER_CHIP, current && HEADER_CHIP_ACTIVE)}>
         <IconTarget className="size-3.5 opacity-70" stroke={1.8} />
-        <span className="hidden max-w-[12rem] truncate @min-[640px]/chat:inline">{current ? current.title : "Tutti gli obiettivi"}</span>
+        <span className="hidden max-w-[12rem] truncate @min-[520px]/chat:inline">{current ? current.title : "Tutta la chat"}</span>
         <IconChevronDown className="size-3 opacity-60" stroke={1.8} />
       </MenuTrigger>
       <MenuPopup align="end">
