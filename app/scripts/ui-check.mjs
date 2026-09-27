@@ -2305,14 +2305,14 @@ await page.getByTestId("conflict-superseded").scrollIntoViewIfNeeded();
 for (const dark of [false, true]) {
   await page.evaluate((theme) => window.trama.invoke("settings:update", { theme }), dark ? "dark" : "light");
   await page.waitForFunction((wanted) => document.documentElement.classList.contains("dark") === wanted, dark);
-  await shot(`23a-branch-divergence-${dark ? "dark" : "light"}`);
+  await shot(`24a-branch-divergence-${dark ? "dark" : "light"}`);
 }
 await divergenceNotice.getByRole("button", { name: /^Mostra i 18 file/ }).click();
 await divergenceNotice.getByTestId("branch-divergence-files").getByText("vercel.json").waitFor();
 for (const dark of [false, true]) {
   await page.evaluate((theme) => window.trama.invoke("settings:update", { theme }), dark ? "dark" : "light");
   await page.waitForFunction((wanted) => document.documentElement.classList.contains("dark") === wanted, dark);
-  await shot(`23b-branch-divergence-files-${dark ? "dark" : "light"}`);
+  await shot(`24b-branch-divergence-files-${dark ? "dark" : "light"}`);
 }
 await divergenceNotice.getByRole("button", { name: "Chiedi al Coordinatore come riallineare" }).click();
 await expectAsked("Come li riallineiamo?", "Divergence notice, Chiedi al Coordinatore come riallineare");
