@@ -1,9 +1,7 @@
 /**
  * Devin CLI over ACP (`devin acp`).
  *
- * Ported from Synara (https://github.com/Emanuele-web04/synara, MIT, Copyright (c) 2026 T3 Tools Inc.
- * and Emanuele Di Pietro): acp/DevinAcpSupport.ts, DevinSessionConfig.ts, Layers/DevinAdapter.ts and
- * the Devin part of Layers/ProviderHealth.ts.
+ * Derived from third-party MIT code; see THIRD_PARTY_NOTICES.md.
  */
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -177,7 +175,7 @@ export const devinProfile: AcpProviderProfile = {
       env: buildChildEnvironment(executable, ["WINDSURF_API_KEY", "DEVIN_API_KEY"], apiKey ? { WINDSURF_API_KEY: apiKey } : {}),
     };
   },
-  // The model is the `--model` launch argument, as in Synara.
+  // The model is the `--model` launch argument.
   modelAtLaunch: true,
   authPolicy: "on-demand",
   async validateInitialize(initializeResult) {

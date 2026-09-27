@@ -26,7 +26,7 @@ import { mcpProxyScriptSource } from "./hostToolProxy";
 import { clearUsageLimitsForTests, parseUsageLimit } from "./providerSupport";
 import { CoordinatorToolServer, toolSuccess } from "../toolServer";
 
-/** A fake `agy` that answers health probes and prints Synara-format stream-json with hook events. */
+/** A fake `agy` that answers health probes and prints stream-json in the CLI's format with hook events. */
 const FAKE_AGY = String.raw`
 const fs = require("node:fs");
 const args = process.argv.slice(2);
@@ -144,7 +144,7 @@ const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
  * PreToolUse payloads in the shape the Antigravity CLI sends to hooks (`conversationId`, `stepIdx`,
- * `toolCall: { name, args }`), with the tool names and argument keys Synara's adapter tests record.
+ * `toolCall: { name, args }`), with the tool names and argument keys taken from third-party adapter tests (see THIRD_PARTY_NOTICES.md).
  * These are not captured from a live `agy`: the live proof in the pull request covers that.
  */
 const READ_ONLY_RECORDED_DENIALS = (worktree: string): Record<string, unknown>[] =>

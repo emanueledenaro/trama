@@ -1,6 +1,6 @@
 # V04: team di progetto e incarico in worktree
 
-Verifica del 18 settembre 2026 per #67. Base: `main` a `fb7c587` (V01, V02, V03 e V07 integrati); `main` è poi avanzato a `8ba959e` con soli documenti di pianificazione. Candidato sul branch `synara/project-team-worktree`, commit `ccb9f37`, `269008b`, `417b8c9` e `488db9d` (quest'ultimo è lavoro in corso). Componente reale: Codex CLI 0.154.0 con l'account ChatGPT del Mac.
+Verifica del 18 settembre 2026 per #67. Base: `main` a `fb7c587` (V01, V02, V03 e V07 integrati); `main` è poi avanzato a `8ba959e` con soli documenti di pianificazione. Candidato sul branch di lavoro del team, commit `ccb9f37`, `269008b`, `417b8c9` e `488db9d` (quest'ultimo è lavoro in corso). Componente reale: Codex CLI 0.154.0 con l'account ChatGPT del Mac.
 
 ## Stato
 
