@@ -31,6 +31,17 @@ export function grillingSubject(document: ProjectDocument, requestId: string | n
   return null;
 }
 
+/** The requests of the work `requestId` belongs to: its dialog, from the grilling that opened the work (or the dialog's start) to it. */
+export function workRequests(document: ProjectDocument, requestId: string): Set<string> | null {
+  const index = document.requests.findIndex((r) => r.id === requestId);
+  if (index < 0) return null;
+  const goalId = document.requests[index]!.goalId ?? null;
+  const dialog = document.requests.slice(0, index + 1).filter((r) => (r.goalId ?? null) === goalId);
+  const subject = grillingSubject(document, requestId);
+  const start = subject ? Math.max(0, dialog.findIndex((r) => r.id === subject)) : 0;
+  return new Set(dialog.slice(start).map((r) => r.id));
+}
+
 /**
  * The grilling questions still waiting for the person's answer, for the grilling that covers `requestId`.
  * A question the person withdrew is closed: it no longer blocks the next round or the plan (W03).

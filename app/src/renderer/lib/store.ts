@@ -6,6 +6,8 @@ import type { ExerciseId, GuideStepId } from "@shared/onboarding";
 
 export type InspectorTarget =
   | { kind: "map" }
+  /** Everything that waits for the person (issue #240); `key` brings one item into view. */
+  | { kind: "waiting"; key?: string }
   | { kind: "module"; id: string }
   | { kind: "file"; path: string }
   | { kind: "pact" }

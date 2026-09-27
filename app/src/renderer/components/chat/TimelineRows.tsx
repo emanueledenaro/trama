@@ -44,6 +44,7 @@ import {
   TeamProposalCard,
 } from "./Cards";
 import { ChatMarkdown } from "./ChatMarkdown";
+import { useWaiting, WaitingOr } from "@/components/WaitingView";
 import { Sep } from "@/components/ui/sep";
 
 function DisclosureChevron({ open }: { open: boolean }) {
@@ -201,11 +202,15 @@ function revealCard(id: string): boolean {
 /** The one next step the Coordinator declared, while the work still allows it (W01): one button on the right. */
 function NextStepRow({ step, requestId }: { step: NextStepView; requestId: string }) {
   const setInspector = useUi((s) => s.setInspector);
+  const waiting = useWaiting();
   const run = () => {
     if (step.url) return void act("shell:openExternal", { url: step.url });
     // A step that is a message: Trama sends it and records that the person took it (W04).
     if (step.message) return void act("coordinator:takeStep", { requestId });
     if (step.move === "reviewCandidate" && step.targetId) return setInspector({ kind: "candidate", id: step.targetId });
+    // What waits for the person is answered in Aspetta te (issue #240): the step opens its item there.
+    const item = step.actor === "person" && step.targetId ? waiting.find((i) => i.targetId === step.targetId) : undefined;
+    if (item) return setInspector({ kind: "waiting", key: item.key });
     if (step.targetId && revealCard(step.targetId)) return;
     // A card this dialog does not show still has a panel that lists it: the step never does nothing (W12).
     if (step.move === "grantMandate") setInspector({ kind: "mandate" });
@@ -465,17 +470,47 @@ export function TimelineRowView({ row, streaming = false, latest = false }: { ro
     case "failure":
       return <TurnFailure row={row} />;
     case "grillingRound":
-      return <GrillingRoundCard round={row.round} questionIds={row.questionIds} />;
+      return (
+        <GrillingRoundCard
+          round={row.round}
+          questionIds={row.questionIds}
+          renderQuestion={(id) => (
+            <WaitingOr key={id} kind="question" targetId={id}>
+              <DecisionCard requestId={id} />
+            </WaitingOr>
+          )}
+        />
+      );
     case "card": {
       const content = row.event.content;
       if (content.type !== "card") return null;
       if (row.cardKind === "study") return <StudyCard title={content.title} text={content.detail ?? ""} streaming={streaming} />;
-      if (row.cardKind === "mandate" && content.referenceId) return <MandateCard requestId={content.referenceId} />;
-      if (row.cardKind === "decision" && content.referenceId) return <DecisionCard requestId={content.referenceId} />;
-      if (row.cardKind === "teamProposal" && content.referenceId) return <TeamProposalCard proposalId={content.referenceId} />;
+      if (row.cardKind === "mandate" && content.referenceId)
+        return (
+          <WaitingOr kind="mandate" targetId={content.referenceId}>
+            <MandateCard requestId={content.referenceId} />
+          </WaitingOr>
+        );
+      if (row.cardKind === "decision" && content.referenceId)
+        return (
+          <WaitingOr kind="question" targetId={content.referenceId}>
+            <DecisionCard requestId={content.referenceId} />
+          </WaitingOr>
+        );
+      if (row.cardKind === "teamProposal" && content.referenceId)
+        return (
+          <WaitingOr kind="team" targetId={content.referenceId}>
+            <TeamProposalCard proposalId={content.referenceId} />
+          </WaitingOr>
+        );
       if (row.cardKind === "assignment" && content.referenceId) return <AssignmentCard assignmentId={content.referenceId} />;
       if (row.cardKind === "candidate" && content.referenceId) return <CandidateCard candidateId={content.referenceId} />;
-      if (row.cardKind === "plan" && content.referenceId) return <PlanCard planId={content.referenceId} />;
+      if (row.cardKind === "plan" && content.referenceId)
+        return (
+          <WaitingOr kind="plan" targetId={content.referenceId}>
+            <PlanCard planId={content.referenceId} />
+          </WaitingOr>
+        );
       if (row.cardKind === "conflict" && content.referenceId) return <ConflictCard assessmentId={content.referenceId} />;
       if (row.cardKind === "goal" && content.referenceId) return <GoalCard goalId={content.referenceId} />;
       if (row.cardKind === "domainProposal" && content.referenceId) return <DomainProposalCard proposalId={content.referenceId} />;

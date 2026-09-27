@@ -3,6 +3,7 @@ import {
   IconBrain,
   IconCircleDot,
   IconFolderOpen,
+  IconHourglass,
   IconLayoutSidebarRight,
   IconRefresh,
   IconRosetteDiscountCheck,
@@ -34,6 +35,7 @@ import { ExercisePanel } from "@/components/onboarding/ExercisePanel";
 import { ProjectPicker } from "@/components/launch/ProjectPicker";
 import { Composer } from "./Composer";
 import { FocusBar } from "./FocusBar";
+import { useWaiting, WaitingSummary } from "@/components/WaitingView";
 import { TimelineRowView } from "./TimelineRows";
 
 const HEADER_CHIP =
@@ -51,7 +53,8 @@ interface HeaderPanel {
 function PanelsMenu({ panels }: { panels: HeaderPanel[] }) {
   const inspector = useUi((s) => s.inspector);
   const toggle = useUi((s) => s.toggleInspector);
-  const waiting = panels.reduce((sum, panel) => sum + (panel.count ?? 0), 0);
+  // Everything that waits for the person is in Aspetta te (issue #240): the button shows its count, never a sum of the panels.
+  const waiting = panels.find((panel) => panel.target.kind === "waiting")?.count ?? 0;
   return (
     <Menu>
       <MenuTrigger aria-label="Pannelli" className={cn(HEADER_CHIP, inspector && HEADER_CHIP_ACTIVE)}>
@@ -104,7 +107,10 @@ function ChatHeader({ isMac }: { isMac: boolean }) {
   const openDialog = useUi((s) => s.openDialog);
   const goal = useUi((s) => (project ? findGoal(project.document, s.dialogGoalId) : null));
   const proposedGoals = project ? workingGoals(project.document).filter((g) => g.status === "proposed").length : 0;
+  const waiting = useWaiting().length;
+  const memoryProposals = app.learning?.proposals.length ?? 0;
   const panels: HeaderPanel[] = [
+    { target: { kind: "waiting" }, label: "Aspetta te", icon: <IconHourglass stroke={1.8} />, count: waiting },
     { target: { kind: "goals" }, label: "Obiettivi", icon: <IconTarget stroke={1.8} />, count: proposedGoals },
     { target: { kind: "map" }, label: "Mappa", icon: <IconSitemap stroke={1.8} /> },
     { target: { kind: "pact" }, label: "Patto", icon: <IconRosetteDiscountCheck stroke={1.8} />, count: pendingDecisions },
@@ -113,7 +119,7 @@ function ChatHeader({ isMac }: { isMac: boolean }) {
     { target: { kind: "work" }, label: "Lavoro", icon: <IconFileDiff stroke={1.8} /> },
     { target: { kind: "group" }, label: "Gruppo", icon: <IconGitPullRequest stroke={1.8} /> },
     { target: { kind: "issues" }, label: "Issue", icon: <IconCircleDot stroke={1.8} />, count: openIssues },
-    { target: { kind: "memory" }, label: "Memoria", icon: <IconBrain stroke={1.8} /> },
+    { target: { kind: "memory" }, label: "Memoria", icon: <IconBrain stroke={1.8} />, count: memoryProposals },
   ];
 
   return (
@@ -320,6 +326,8 @@ function Timeline() {
     pinned.current = true;
   }, [project.id, goalId]);
 
+  // The summary of Aspetta te sits above the composer: the timeline leaves room for it at the bottom (issue #240).
+  const waiting = useWaiting().length > 0;
   const empty = rows.length === 0 && !studying && goalId === null;
   const offerFirstGoal = goalId === null && !empty && !studying && !hasConfirmedGoal(project.document.goals);
   return (
@@ -331,7 +339,7 @@ function Timeline() {
       }}
       className="chat-timeline-scroll min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-y-contain py-3 [scrollbar-gutter:stable] sm:py-4"
     >
-      <div className="mx-auto w-full max-w-[var(--app-chat-max-width)] min-w-0 px-3 pb-40 sm:px-5">
+      <div className={cn("mx-auto w-full max-w-[var(--app-chat-max-width)] min-w-0 px-3 sm:px-5", waiting ? "pb-52" : "pb-40")}>
         {empty ? <ProjectIntro /> : null}
         {goalId ? <GoalDialogHeader goalId={goalId} /> : null}
         {rows.map((row, index) => (
@@ -394,6 +402,7 @@ export function ChatView({ isMac }: { isMac: boolean }) {
             <ExercisePanel />
             <div className="chat-composer-dock pointer-events-none absolute inset-x-0 bottom-0 px-3 pb-3 sm:px-5 sm:pb-4">
               <div className="pointer-events-auto">
+                <WaitingSummary />
                 <Composer />
               </div>
             </div>
