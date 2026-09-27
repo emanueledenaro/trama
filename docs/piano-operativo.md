@@ -1,8 +1,8 @@
 # Piano operativo vigente di Trama
 
-Stato: incremento verticale del Coordinatore approvato da Emanuele il 16 settembre 2026. Questo piano sostituisce l'ordine C03, C04, C05 con i ticket V01-V09 e mantiene requisiti, ottimizzazioni e prove precedenti. Il 17 settembre 2026 Emanuele ha aggiunto i ticket P01-P09: Trama avrà gli stessi nove provider di Synara ([ADR 0008](adr/0008-provider-di-synara-in-swift.md)).
+Stato: incremento verticale del Coordinatore approvato da Emanuele il 16 settembre 2026. Questo piano sostituisce l'ordine C03, C04, C05 con i ticket V01-V09 e mantiene requisiti, ottimizzazioni e prove precedenti. Il 17 settembre 2026 Emanuele ha aggiunto i ticket P01-P09: Trama avrà nove provider ([ADR 0008](adr/0008-provider-in-swift.md)).
 
-[Specifica dell'incremento verticale](spec-coordinatore-verticale.md) · [Specifica del Coordinatore](spec-coordinatore.md) · [ADR 0006](adr/0006-coordinatore-thread-persistente-con-strumenti.md) · [ADR 0007](adr/0007-finestra-centrata-su-decisioni-team-e-verifiche.md) · [Riferimento visivo](reference/design-app-codex.md) · [Riferimento funzionale Synara](reference/synara-funzioni.md) · [Intervista approvata](progettazione/coordinatore-intervista.md) · [Piano iniziale conservato](pianificazione/piano-iniziale-2026-09-12.md).
+[Specifica dell'incremento verticale](spec-coordinatore-verticale.md) · [Specifica del Coordinatore](spec-coordinatore.md) · [ADR 0006](adr/0006-coordinatore-thread-persistente-con-strumenti.md) · [ADR 0007](adr/0007-finestra-centrata-su-decisioni-team-e-verifiche.md) · [Riferimento visivo](reference/design-app-codex.md) · [Intervista approvata](progettazione/coordinatore-intervista.md) · [Piano iniziale conservato](pianificazione/piano-iniziale-2026-09-12.md).
 
 ## Stato reale di partenza
 
@@ -14,7 +14,7 @@ Il Coordinatore attuale apre un thread effimero a ogni messaggio, riceve solo la
 
 Integrati in `main` a `8ba959e`: V01 (#64), V02 (#65), V03 (#66) e V07 (#70), con le PR #73, #75, #77 e #89.
 
-V04 (#67) è completo nel codice, nei test e nella misura della CPU, ma non è chiudibile. La prova diretta nell'app richiede turni reali di Codex (proposta del team, mandato, incarico, turni dello specialista), non sostituibili da fixture, e il 18 settembre 2026 l'account ChatGPT ha esaurito il limite di utilizzo di Codex. Si sblocca il 19 settembre 2026 alle 14:59. Il candidato è su `synara/project-team-worktree` a `83e3592`; la checklist di #67 è non spuntata e i limiti sono scritti in [docs/verifiche/v04-team-incarico-2026-09-18.md](verifiche/v04-team-incarico-2026-09-18.md). Il branch contiene ancora il commit `488db9d` con l'aggancio temporaneo della prova (`Sources/Trama/V04Proof.swift`), che deve sparire prima della PR.
+V04 (#67) è completo nel codice, nei test e nella misura della CPU, ma non è chiudibile. La prova diretta nell'app richiede turni reali di Codex (proposta del team, mandato, incarico, turni dello specialista), non sostituibili da fixture, e il 18 settembre 2026 l'account ChatGPT ha esaurito il limite di utilizzo di Codex. Si sblocca il 19 settembre 2026 alle 14:59. Il candidato è al commit `83e3592`; la checklist di #67 è non spuntata e i limiti sono scritti in [docs/verifiche/v04-team-incarico-2026-09-18.md](verifiche/v04-team-incarico-2026-09-18.md). Il branch del candidato contiene ancora il commit `488db9d` con l'aggancio temporaneo della prova (`Sources/Trama/V04Proof.swift`), che deve sparire prima della PR.
 
 Lo stesso limite blocca V05 (#68), V06 (#69), V08 (#71) e V09 (#72): tutte richiedono esecuzioni reali. P01 (#80) è l'unico ticket senza dipendenze e senza bisogno di Codex, ed è in corso.
 
@@ -36,7 +36,7 @@ I ticket V01-V09 costruiscono il Coordinatore vero per fette verticali, ognuna d
 | [#69](https://github.com/emanueledenaro/trama/issues/69) | V06 Impianto della finestra centrato su decisioni, team e verifiche | [#67](https://github.com/emanueledenaro/trama/issues/67) |
 | [#70](https://github.com/emanueledenaro/trama/issues/70) | V07 Composer con menzioni e misuratore della finestra di contesto | [#65](https://github.com/emanueledenaro/trama/issues/65) |
 | [#71](https://github.com/emanueledenaro/trama/issues/71) | V08 Forma dell'adattatore provider con Codex come unico adattatore | [#68](https://github.com/emanueledenaro/trama/issues/68), [#70](https://github.com/emanueledenaro/trama/issues/70), [#80](https://github.com/emanueledenaro/trama/issues/80) |
-| [#80](https://github.com/emanueledenaro/trama/issues/80) | P01 Riferimento Synara per tutti i provider e attribuzione | Nessuno |
+| [#80](https://github.com/emanueledenaro/trama/issues/80) | P01 Riferimento per tutti i provider e attribuzione | Nessuno |
 | [#81](https://github.com/emanueledenaro/trama/issues/81) | P02 Adattatore Claude Agent | [#71](https://github.com/emanueledenaro/trama/issues/71), [#80](https://github.com/emanueledenaro/trama/issues/80) |
 | [#82](https://github.com/emanueledenaro/trama/issues/82) | P03 Runtime ACP condiviso e adattatore Cursor | [#81](https://github.com/emanueledenaro/trama/issues/81) |
 | [#83](https://github.com/emanueledenaro/trama/issues/83) | P04 Adattatore Grok | [#82](https://github.com/emanueledenaro/trama/issues/82) |
