@@ -40,8 +40,8 @@ const shot = async (name) => {
   console.log("saved", name);
 };
 // Issue #240: a card that waits for the person sits in Aspetta te; the chat keeps a reference that opens it there.
-const waitingItem = async (reference) => {
-  await reference.waitFor({ timeout: 20_000 });
+const waitingItem = async (reference, timeout = 20_000) => {
+  await reference.waitFor({ timeout });
   const key = await reference.getAttribute("data-waiting-key");
   await reference.getByRole("button", { name: "Apri in Aspetta te" }).click();
   const item = page.getByTestId("inspector").locator(`[data-testid="waiting-item"][data-waiting-key="${key}"]`);
@@ -2105,7 +2105,10 @@ await page.evaluate(() =>
 await composer().fill("[verifica:node_test]");
 await page.keyboard.press("Enter");
 // The failed check is diagnosed and fixed; then the free team gets the architecture review, which ends with a Pact card.
-await page.getByText(/Approfondire l'annullamento/).first().waitFor({ timeout: 90_000 });
+// The card waits for the person in Aspetta te; the chat keeps its reference (issue #240).
+const reviewCard = await waitingItem(page.locator('[data-testid="waiting-reference"][data-waiting-kind="question"]').first(), 90_000);
+await reviewCard.getByText(/Approfondire l'annullamento/).first().waitFor();
+await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
 const blockedRead = page.getByRole("button", { name: "Lettura fuori dal progetto bloccata" });
 for (const group of await page.getByRole("button", { name: /ha lavorato per/ }).all()) {
   if (await blockedRead.count()) break;
@@ -2171,7 +2174,8 @@ for (const dark of [false, true]) {
 await startReview.click();
 // The review runs on request and ends with its Pact card; the card waits for the person, so the button says why it waits.
 await page.getByRole("main").getByText("Su richiesta tua: revisione al commit", { exact: false }).first().waitFor({ timeout: 30_000 });
-await page.getByText(/Approfondire l'annullamento/).first().waitFor({ timeout: 60_000 });
+// The Pact card waits in Aspetta te: the chat shows its reference (issue #240).
+await page.locator('[data-testid="waiting-reference"][data-waiting-kind="question"]').first().waitFor({ timeout: 60_000 });
 await reviewWork.getByText(/aspetta ancora la tua risposta/).waitFor({ timeout: 20_000 });
 await dutyPanel.getByTestId("team-figure").filter({ hasText: "Clean Code" }).first().click();
 const roleWork = dutyPanel.locator('[data-testid="automatic-work"][data-work="architectureReview"]');
