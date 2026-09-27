@@ -1,6 +1,7 @@
 // Layout and classes follow Synara (github.com/Emanuele-web04/synara, MIT License, Copyright (c) 2026 T3 Tools Inc. and Emanuele Di Pietro).
 import { IconArrowUp, IconPhotoPlus, IconRoute, IconX } from "@tabler/icons-react";
 import type { ProviderId } from "@shared/codex";
+import { catalogOffers } from "@shared/providers";
 import type { ImageAttachmentInput } from "@shared/ipc";
 import { type MentionCandidate, mentionCandidates, mentionToken } from "@shared/mentions";
 import { normalizePaste, pasteSizeLabel, pasteTitle, serializePastes, shouldCollapsePaste } from "@shared/pastedText";
@@ -54,6 +55,7 @@ const unsentByDialog = new Map<string, { images: DraftImage[]; pastes: { id: str
 export function Composer() {
   const project = useUi((s) => s.app?.project)!;
   const providers = useUi((s) => s.app!.providers);
+  const preferredModels = useUi((s) => s.app!.settings.coordinatorModels);
   const goalId = useUi((s) => s.dialogGoalId);
   const goal = findGoal(project.document, goalId);
   // Each dialog has its own draft and selection (ADR 0010).
@@ -88,7 +90,10 @@ export function Composer() {
   const busy = running || project.phase.kind === "studying";
   const threadModel =
     (project.document.coordinator.threadProvider ?? "codex") === selectedProvider ? project.document.coordinator.threadModel : null;
-  const selectedModel = selection.selectedModel ?? threadModel ?? models.find((m) => m.isDefault)?.model ?? models[0]?.model ?? null;
+  // The model the person last chose in Trama, as the Coordinator's opening takes it, before the catalogue's default (issue #205).
+  const preferred = preferredModels?.[selectedProvider]?.model;
+  const preferredModel = preferred && (models.length === 0 || catalogOffers(selectedProvider, models, preferred)) ? preferred : null;
+  const selectedModel = selection.selectedModel ?? threadModel ?? preferredModel ?? models.find((m) => m.isDefault)?.model ?? models[0]?.model ?? null;
   const modelInfo = models.find((m) => m.model === selectedModel);
   // A chosen model the catalogue no longer offers stays visible as unavailable: never replaced silently (ADR 0010).
   const modelMissing = Boolean(selectedModel && models.length && !modelInfo);
