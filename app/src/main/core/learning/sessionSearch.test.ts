@@ -17,7 +17,7 @@ function conversation() {
   return { document, goal };
 }
 
-describe("SessionSearch (Hermes session_search)", () => {
+describe("SessionSearch", () => {
   it("discovers past messages, hydrates the top result and skips the live thread and specialists", () => {
     const { document } = conversation();
     const search = new SessionSearch({ document, currentSessionId: PROJECT_DIALOG_ID, liveFromSequence: 6 });

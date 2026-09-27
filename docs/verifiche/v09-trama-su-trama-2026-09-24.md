@@ -123,10 +123,10 @@ invariato.
 
 Come fanno altri progetti:
 
-- Synara confina con `sandbox-exec` solo l'helper del simulatore iOS, e solo su macOS; su Linux e
-  Windows lo esegue senza sandbox. Da Synara vengono due scelte: i percorsi passati al profilo sono
+- Un'app Electron di riferimento confina con `sandbox-exec` solo l'helper del simulatore iOS, e solo su macOS; su Linux e
+  Windows lo esegue senza sandbox. Da quell'app vengono due scelte: i percorsi passati al profilo sono
   risolti (Seatbelt confronta il percorso reale, `/var` è `/private/var`), e l'output nomina la
-  sandbox quando può essere la causa di un fallimento. Synara però, se il profilo manca, parte senza
+  sandbox quando può essere la causa di un fallimento. Quell'app però, se il profilo manca, parte senza
   sandbox; Trama invece torna alla sandbox di Codex, perché una verifica non deve poter scrivere.
 - Pi usa `@anthropic-ai/sandbox-runtime` (Apache 2.0): `sandbox-exec` su macOS, `bubblewrap` su
   Linux, un proxy per i domini permessi. Su Linux toglie la rete come Trama; su macOS la rete locale
@@ -135,7 +135,7 @@ Come fanno altri progetti:
   Windows Filtering Platform, installati una volta con i permessi di amministratore. Il filtro lascia
   la rete locale solo verso le porte del proxy, quindi un test che apre un server su una porta
   qualsiasi resterebbe bloccato anche lì.
-- Hermes esegue i comandi in un container (Docker, e altri backend remoti) con `--network=none`: il
+- Un agente open source di riferimento esegue i comandi in un container (Docker, e altri backend remoti) con `--network=none`: il
   container ha solo il loopback, che è proprio la rete locale che serve ai test. Su Windows passa da
   Docker.
 
@@ -143,7 +143,7 @@ Opzioni per Windows, da decidere:
 
 1. lasciare la sandbox di Codex e segnalare i test che falliscono per la rete (stato attuale);
 2. eseguire le verifiche in WSL 2 con `bubblewrap`, quando WSL è installato: stessa sandbox di Linux;
-3. eseguirle in un container con `--network=none`, come Hermes, quando c'è Docker;
+3. eseguirle in un container con `--network=none`, come quell'agente, quando c'è Docker;
 4. un utente dedicato con un filtro WFP scritto per Trama, che permetta tutto il loopback: richiede
    i permessi di amministratore una volta ed è il lavoro più grande.
 

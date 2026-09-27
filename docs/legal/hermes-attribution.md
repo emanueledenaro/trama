@@ -1,6 +1,6 @@
 # Attribuzione di Hermes Agent
 
-Trama porta il sistema di apprendimento di [Hermes Agent](https://github.com/NousResearch/hermes-agent), come deciso nell'[ADR 0014](adr/0014-apprendimento-di-hermes.md). La fonte è la revisione `58c896ea4ebaff5425a068f461b6c6fedadb8b40` del 24 settembre 2026. Il codice è riscritto in TypeScript in `app/src/main/core/learning`; ogni file indica in testa i file di Hermes da cui deriva. Trama non include codice Python di Hermes e non avvia i suoi servizi.
+Trama porta il sistema di apprendimento di [Hermes Agent](https://github.com/NousResearch/hermes-agent), come deciso nell'[ADR 0014](../adr/0014-apprendimento-del-coordinatore.md). La fonte è la revisione `58c896ea4ebaff5425a068f461b6c6fedadb8b40` del 24 settembre 2026. Il codice è riscritto in TypeScript in `app/src/main/core/learning`; la tabella qui sotto indica, per ogni file di Trama, i file di Hermes da cui deriva. I file derivati non nominano Hermes: in testa rimandano a `THIRD_PARTY_NOTICES.md` nella radice del repository. Trama non include codice Python di Hermes e non avvia i suoi servizi.
 
 | File di Trama | File di Hermes |
 | --- | --- |
@@ -11,6 +11,9 @@ Trama porta il sistema di apprendimento di [Hermes Agent](https://github.com/Nou
 | `skillFormat.ts`, `skillLibrary.ts`, `skillLinter.ts`, `skillUsage.ts` | `tools/skill_manager_tool.py`, `tools/skill_manager_guards.py`, `tools/skill_manager_batch.py`, `tools/skills_tool.py`, `tools/skill_linter.py`, `tools/skill_usage.py`, `agent/skill_utils.py` |
 | `review.ts`, `reviewRunner.ts` | `agent/background_review.py`, `agent/turn_context.py`, `agent/turn_finalizer.py`, `agent/prompt_builder.py` |
 | `curator.ts` | `agent/curator.py`, `agent/curator_backup.py` |
+| `threatPatterns.test.ts` | casi di `tests/tools/test_memory_tool.py` (`TestScanMemoryContent`) |
+
+Anche la guida su memoria, ricerca delle sessioni e skill che `projectLearning.ts` prepara per le istruzioni del Coordinatore (`learningGuidance` in `app/src/main/core/coordinatorTools.ts`) riprende il testo di Hermes. I due controlli di `threatPatterns.ts` sulla cartella di configurazione di Hermes (`hermes_env`, `hermes_config_mod`) e il nome `HERMES` tra le variabili d'ambiente degli agenti sono stati tolti con la issue #213: proteggevano file che Trama non ha.
 
 Hermes Agent è distribuito con licenza MIT, `Copyright (c) 2025 Nous Research`. La copia della licenza sta in [hermes-LICENSE](hermes-LICENSE), copiata senza modifiche da `LICENSE` alla revisione indicata. Il suo SHA-256 è `821556e6336796450ab852d375117b48a4887e71d255794fd6318d99982a5ab6`. I prompt e le descrizioni degli strumenti sono porzioni sostanziali copiate da Hermes, quindi la nota di copyright e la licenza restano con loro. Il testo è ripetuto qui sotto.
 

@@ -1,10 +1,7 @@
 /**
  * Helpers shared by the Antigravity and Pi runtimes.
  *
- * Ported from Synara (https://github.com/Emanuele-web04/synara, MIT, Copyright (c) 2026 T3 Tools Inc.
- * and Copyright (c) 2026 Emanuele Di Pietro): skillPromptInjection.ts, attachmentProjection.ts,
- * providerBinaryResolution.ts and the version helpers of providerMaintenance.ts / cliVersion.ts.
- * See docs/synara-attribution.md.
+ * Derived from third-party MIT code; see THIRD_PARTY_NOTICES.md.
  */
 import { type ChildProcess, spawn } from "node:child_process";
 import { accessSync, constants, constants as fsConstants, lstatSync, readdirSync, realpathSync } from "node:fs";
@@ -19,7 +16,7 @@ import { type HostToolServer, isInside, ProviderError, type TurnEvent } from "./
 // ── Skills (skillPromptInjection.ts) ─────────────────────────────────────
 
 const MAX_INLINE_SKILL_CONTENT_CHARS = 24_000;
-/** Synara's PROVIDER_SEND_TURN_MAX_INPUT_CHARS; the inline block never grows past it. */
+/** Maximum input size of a sent turn; the inline block never grows past it. */
 export const MAX_INLINE_SKILLS_CHARS = 120_000;
 const INLINE_SKILLS_HEADER =
   "The user invoked the following agent skill(s) for this request. Follow each " +
@@ -81,7 +78,7 @@ function formatBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-/** The `<attached_files>` block Synara appends for providers that read attachments with their own tools. */
+/** The `<attached_files>` block appended for providers that read attachments with their own tools. */
 export async function attachedFilesBlock(paths: string[] | undefined): Promise<string | null> {
   const lines: string[] = [];
   for (const path of paths ?? []) {

@@ -153,7 +153,7 @@ describe("Pi account and models", () => {
 
   it("lists provider-qualified models with Pi's thinking levels", async () => {
     const models = await new PiRuntime().listModels();
-    // Synara keeps Fable 5.1, Fable 5 and Opus 4.8 visible once Anthropic is authenticated.
+    // Fable 5.1, Fable 5 and Opus 4.8 stay visible once Anthropic is authenticated.
     expect(models.map((model) => model.id)).toEqual([
       "anthropic/claude-x",
       "openai/gpt-x",
