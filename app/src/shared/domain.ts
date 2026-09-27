@@ -219,10 +219,12 @@ export interface MandateRequest {
   askedAt: string;
   /**
    * Null while the request waits for the person. "superseded" means a newer request replaced it before the
-   * person answered (W14): it can no longer be granted and names the newer one in `supersededBy`.
+   * person answered (W14): it can no longer be granted and names the newer one in `supersededBy`. "rejected" means
+   * the person turned the proposal down and the mandate in force stayed as it was; "revoked" is kept for requests
+   * answered before that, when declining a proposal also revoked the mandate.
    */
   resolution: {
-    kind: "granted" | "corrected" | "revoked" | "superseded";
+    kind: "granted" | "corrected" | "rejected" | "revoked" | "superseded";
     version: number | null;
     resolvedAt: string;
     supersededBy?: string | null;
@@ -447,6 +449,8 @@ export interface SpecialistAssignment {
   selfPicked?: boolean;
   /** The questions the developer asked the Coordinator during the work (W06), oldest first. */
   questions?: DeveloperQuestion[];
+  /** The candidate gate sent the work back with blocking findings (W10); the latest return, absent before any. */
+  gateReturn?: { gateId: string; candidateId: string; findings: string[]; at: string } | null;
 }
 
 /**
@@ -820,6 +824,8 @@ export interface TechnicalReview {
   findings?: import("./cleanCode").ReviewFinding[];
   /** Trama's own measures of the candidate against the standard (Q03): the only evidence of the review. */
   standard?: StandardCheck | null;
+  /** The candidate gate this review closes (W10): the verdict is the gate's; absent in reviews before it. */
+  gateId?: string;
 }
 
 /** The deterministic part of a technical review (Q03): the standard's version, the rules on and what Trama measured. */
@@ -1140,6 +1146,8 @@ export interface ProjectDocument {
   cleanCode?: import("./cleanCode").CleanCodeSettings;
   /** Focus mode examinations (F01); absent until the person first opens focus mode. */
   audits?: FocusAudit[];
+  /** The candidate gates (W10); absent until the first candidate is reviewed. */
+  gates?: CandidateGate[];
 }
 
 export interface ProjectSettings {
@@ -1219,6 +1227,66 @@ export interface FocusAudit {
   spec: AuditAxis;
   /** The skill's closing line, per axis: total findings and the worst one within each axis. */
   summary: string | null;
+  failure: string | null;
+  startedAt: string;
+  updatedAt: string;
+  finishedAt: string | null;
+}
+
+/** The figures of the team that review a candidate at its moment (W10, spec #137 Q10). */
+export type GateRole = "specReviewer" | "cleanCode" | "regressionGuardian" | "security" | "performance" | "ux" | "devops" | "documentation";
+
+/** A reviewer's finding on the diff: its judgement, never evidence. A blocking one sends the work back to the developer. */
+export interface GateFinding {
+  severity: "blocking" | "advisory";
+  title: string;
+  detail: string;
+  /** The file it is about, with the line when known; null when it is about the whole diff. */
+  file: string | null;
+}
+
+/** One figure of the gate, reviewing the diff in a session of its own. */
+export interface GateReview {
+  role: GateRole;
+  /** "skipped": the spec reviewer has no spec, as code-review says. */
+  status: "waiting" | "running" | "done" | "skipped" | "failed";
+  findings: GateFinding[];
+  /** The report in Markdown; "Niente da segnalare." when the figure found nothing. */
+  report: string | null;
+  threadId: string | null;
+  model: string | null;
+  startedAt: string | null;
+  finishedAt: string | null;
+  failure: string | null;
+}
+
+/** One check of the suite, run by Trama on the candidate's base and on the candidate (W10). */
+export interface SuiteComparison {
+  check: string;
+  base: "pass" | "fail" | "notRun";
+  candidate: "pass" | "fail" | "notRun";
+  /** The base's output, kept when the check failed or did not run there. */
+  baseOutput: string | null;
+}
+
+/**
+ * The candidate gate (W10): before a candidate reaches the person, Trama's real checks, then every candidate reviewer
+ * of the team in parallel on the diff. A regression or a blocking finding stops the candidate and sends the work back
+ * to its developer.
+ */
+export interface CandidateGate {
+  id: string;
+  candidateId: string;
+  assignmentId: string;
+  snapshotId: string;
+  baseSHA: string;
+  status: "checking" | "reviewing" | "passed" | "blocked" | "failed";
+  /** Required checks that did not pass: the reviewers do not start and the debugger takes the failure (W11). */
+  checksFailed: string[];
+  suite: SuiteComparison[];
+  reviews: GateReview[];
+  /** The work went back to its developer with the blocking findings; `waiting` says why it has not resumed yet. */
+  returned: { assignmentId: string; at: string; waiting: string | null } | null;
   failure: string | null;
   startedAt: string;
   updatedAt: string;

@@ -1,7 +1,7 @@
 // Launches the built app with the fake Codex server and saves screenshots of the main screens.
 // Usage: node scripts/ui-check.mjs <output-dir>
 import { execFileSync } from "node:child_process";
-import { cp, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { _electron as electron } from "playwright";
@@ -622,7 +622,9 @@ await domainCard.getByText(/Il mandato non permette di lavorare in un worktree s
 for (const expected of ["Ordine in revisione", "Ordine sospeso, Rimborso in attesa", "Gli ordini pagati annullati vanno in revisione", "docs/adr/NNNN-"]) {
   if (!(await domainCard.innerText()).includes(expected)) throw new Error(`The domain proposal does not show "${expected}"`);
 }
-if (await page.getByText("Documentazione e dominio", { exact: true }).count()) throw new Error("The documentation role started writing outside the mandate");
+// The role's name also shows among the candidate's reviewers (W10): only an assignment card of the role is writing.
+const documentationWork = page.locator(".chat-card").filter({ hasText: /^Incarico A-/ }).filter({ hasText: "Documentazione e dominio" });
+if (await documentationWork.count()) throw new Error("The documentation role started writing outside the mandate");
 await domainCard.scrollIntoViewIfNeeded();
 await shot("04j-domain-proposal-waiting");
 await page.getByRole("button", { name: /^Mandato/ }).first().click();
@@ -1049,9 +1051,74 @@ const supersededCard = page.locator(".chat-card", { has: supersededNote });
 if (!(await supersededCard.getByText("Prima proposta di mandato").count())) throw new Error("The superseded card is not the first request");
 if (await supersededCard.getByRole("button").count()) throw new Error("The superseded mandate card still has buttons");
 const pendingCard = page.locator(".chat-card", { hasText: "Seconda proposta di mandato" }).last();
-await pendingCard.getByRole("button", { name: "Accetta la proposta" }).waitFor();
+await pendingCard.getByRole("button", { name: "Concedi", exact: true }).waitFor();
 await supersededCard.scrollIntoViewIfNeeded();
 await shot("15-mandate-superseded");
+
+// U03: a proposal shows what it changes in the mandate in force and which work would stop. Its buttons are
+// Rifiuta la proposta, Correggi and Concedi, primary last; revoking the mandate in force lives only in the
+// Mandate view, behind a confirmation. Rejecting leaves the mandate in force as it was.
+await pendingCard.getByTestId("mandate-diff").waitFor();
+if (!(await pendingCard.getByTestId("mandate-diff-actions").getByTestId("mandate-diff-removed").count())) {
+  throw new Error("The proposal does not say which authorized actions it takes away");
+}
+await pendingCard.getByTestId("mandate-diff-stopped").waitFor();
+if (await pendingCard.getByRole("button", { name: /Revoca/ }).count()) throw new Error("A mandate proposal still offers to revoke the mandate");
+const proposalButtons = await pendingCard.locator(".cta-row").last().getByRole("button").evaluateAll((buttons) =>
+  buttons.map((b) => ({ name: b.textContent.trim(), x: b.getBoundingClientRect().x })).sort((a, b) => a.x - b.x).map((b) => b.name),
+);
+if (proposalButtons.join("|") !== "Rifiuta la proposta|Correggi|Concedi") throw new Error(`Proposal buttons out of order: ${proposalButtons.join(", ")}`);
+for (const theme of ["light", "dark"]) {
+  await setTheme(theme);
+  await pendingCard.locator(".cta-row").last().evaluate((el) => el.scrollIntoView({ block: "center" }));
+  await shot(`15m1-mandate-proposal-card-${theme}`);
+}
+await page.getByRole("button", { name: /^Mandato/ }).first().click();
+const mandateInspector = page.getByTestId("inspector");
+await mandateInspector.getByTestId("mandate-diff").waitFor();
+const mandateState = async () => (await mandateInspector.getByText(/^Mandato (v\d+|revocato)/).first().textContent()).trim();
+const stateBefore = await mandateState();
+for (const theme of ["light", "dark"]) {
+  await setTheme(theme);
+  await mandateInspector.getByTestId("mandate-diff").scrollIntoViewIfNeeded();
+  await shot(`15m2-mandate-proposal-view-${theme}`);
+}
+await mandateInspector.getByRole("button", { name: "Revoca il mandato" }).click();
+const revokeConfirm = mandateInspector.getByTestId("mandate-revoke-confirm");
+await revokeConfirm.waitFor();
+if (!(await revokeConfirm.getByRole("button", { name: "Revoca il mandato" }).isDisabled())) throw new Error("The mandate can be revoked without a reason");
+await revokeConfirm.getByLabel("Motivo della revoca").fill("Pausa sul progetto");
+for (const theme of ["light", "dark"]) {
+  await setTheme(theme);
+  await revokeConfirm.scrollIntoViewIfNeeded();
+  await shot(`15m3-mandate-revoke-confirm-${theme}`);
+}
+await revokeConfirm.getByRole("button", { name: "Annulla" }).click();
+await revokeConfirm.waitFor({ state: "detached" });
+await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
+// With no proposal left the next move would be the Coordinator's: keep it from starting by itself here.
+await page.evaluate(() => window.trama.invoke("settings:update", { continuousWork: false }));
+await pendingCard.getByRole("button", { name: "Rifiuta la proposta" }).click();
+await pendingCard.getByLabel("Motivo del rifiuto").fill("Serve ancora il worktree");
+await pendingCard.getByRole("button", { name: "Rifiuta la proposta" }).click();
+await pendingCard.getByText("Rifiutata", { exact: true }).waitFor({ timeout: 20_000 });
+await page.getByRole("button", { name: /^Mandato/ }).first().click();
+await mandateInspector.getByText(/^Mandato (v\d+|revocato)/).first().waitFor();
+if ((await mandateState()) !== stateBefore) throw new Error(`Rejecting a proposal changed the mandate in force: ${await mandateState()}`);
+await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
+for (const theme of ["light", "dark"]) {
+  await setTheme(theme);
+  await pendingCard.getByText("Hai rifiutato la proposta", { exact: false }).evaluate((el) => el.scrollIntoView({ block: "center" }));
+  await shot(`15m4-mandate-proposal-rejected-${theme}`);
+}
+await setTheme("system");
+// The checks below expect a proposal waiting for the person.
+await page.getByRole("button", { name: "Interrompi" }).waitFor({ state: "hidden", timeout: 20_000 });
+await page.getByLabel("Messaggio al Coordinatore").fill("[chiedi-mandato:Nuova proposta di mandato]");
+await page.keyboard.press("Enter");
+await page.locator(".chat-card", { hasText: "Nuova proposta di mandato" }).last().getByRole("button", { name: "Concedi", exact: true }).waitFor({ timeout: 20_000 });
+await page.getByRole("button", { name: "Interrompi" }).waitFor({ state: "hidden", timeout: 20_000 });
+await page.evaluate(() => window.trama.invoke("settings:update", { continuousWork: true }));
 
 // W02: the focus bar at the top of the chat shows the task in focus with its phase and what holds it; the queue
 // lists the others. Pausing the task in focus passes the focus to the next one; "Metti in focus" takes it back.
@@ -1344,6 +1411,68 @@ await correctedCard.getByText("Via libera del Coordinatore.").waitFor();
 if ((await failedCard.innerText()).includes("Deciso")) throw new Error("The failed candidate took the correction's state");
 await correctedCard.scrollIntoViewIfNeeded();
 await shot("18d-candidate-corrected");
+// W10: the candidate gate on the card. Trama's checks came first; then every candidate figure of the team reviewed the
+// diff in parallel, each with its outcome: who found nothing signs "Niente da segnalare". Both themes.
+const passedGate = correctedCard.locator('[data-testid="candidate-gate"][data-status="passed"]');
+await passedGate.waitFor({ timeout: 20_000 });
+const passedRoles = await passedGate.getByTestId("gate-review").evaluateAll((rows) => rows.map((row) => row.getAttribute("data-role")));
+if (passedRoles.join() !== "specReviewer,cleanCode,regressionGuardian,security,performance,ux,devops,documentation") throw new Error(`Unexpected gate figures: ${passedRoles}`);
+await passedGate.locator('[data-testid="gate-review"][data-role="security"]').getByText("Niente da segnalare").waitFor();
+await passedGate.locator('[data-testid="gate-review"][data-role="specReviewer"][data-status="skipped"]').getByText("no spec available").waitFor();
+await passedGate.evaluate((item) => item.scrollIntoView({ block: "center" }));
+await shot("18e1-candidate-gate-passed");
+await app.evaluate(({ nativeTheme }) => {
+  nativeTheme.themeSource = "dark";
+});
+await page.evaluate(() => document.documentElement.classList.add("dark"));
+await shot("18e2-candidate-gate-passed-dark");
+await app.evaluate(({ nativeTheme }) => {
+  nativeTheme.themeSource = "system";
+});
+await page.evaluate(() => document.documentElement.classList.remove("dark"));
+// W10: a blocking finding goes back to the developer. Ada's note leaves a key in the diff: Trama's scan finds it for
+// Sicurezza and no model receives the diff, so the other figures do not start. The green light is refused, and the
+// finding reaches Ada in her work, where she resumes it.
+await send("[assegna] [segreto]");
+const secretWork = assignmentCards.nth(4);
+await secretWork.getByText("Concluso", { exact: true }).waitFor({ timeout: 20_000 });
+await send(`[candidato:${await cardAssignment(secretWork)}:${candidateDecision}]`);
+const secretCandidate = candidateCards.nth(2);
+const blockedGate = secretCandidate.locator('[data-testid="candidate-gate"][data-status="blocked"]');
+await blockedGate.waitFor({ timeout: 60_000 });
+if ((await blockedGate.getByTestId("gate-review").count()) !== 8) throw new Error("The gate does not show every candidate figure");
+await blockedGate.locator('[data-testid="gate-review"][data-role="security"]').getByText("1 rilievo bloccante").waitFor();
+await blockedGate.locator('[data-testid="gate-finding"][data-severity="blocking"]').getByText("Segreto nel diff: chiave API in NOTE.md").waitFor();
+await blockedGate.locator('[data-testid="gate-review"][data-role="devops"][data-status="skipped"]').getByText(/il diff contiene un segreto/).waitFor();
+await blockedGate.getByTestId("gate-returned").getByText(/Rimandato a Ada con i rilievi bloccanti/).waitFor();
+await page.getByText(/Via libera rifiutato: .*GATE_BLOCKED/).last().waitFor({ timeout: 20_000 });
+await secretCandidate.getByText("Rilievo bloccante dei revisori").waitFor();
+await secretCandidate.getByText("In costruzione", { exact: true }).waitFor();
+await page.getByRole("button", { name: "Interrompi" }).waitFor({ state: "hidden", timeout: 20_000 });
+await secretWork.getByText("Concluso", { exact: true }).waitFor({ timeout: 30_000 });
+await blockedGate.evaluate((item) => item.scrollIntoView({ block: "center" }));
+await shot("24a-candidate-gate-blocked");
+await app.evaluate(({ nativeTheme }) => {
+  nativeTheme.themeSource = "dark";
+});
+await page.evaluate(() => document.documentElement.classList.add("dark"));
+await shot("24b-candidate-gate-blocked-dark");
+await app.evaluate(({ nativeTheme }) => {
+  nativeTheme.themeSource = "system";
+});
+await page.evaluate(() => document.documentElement.classList.remove("dark"));
+// Security's message is in Ada's work, with the turn she resumed with it: the person reads what the agents said.
+await page.getByRole("button", { name: /ha lavorato per/ }).last().click();
+const toDeveloper = page.getByRole("button", { name: /^Sicurezza a Ada: 1 rilievo bloccante sul candidato C-/ });
+await toDeveloper.waitFor({ timeout: 10_000 });
+await toDeveloper.click();
+await page.getByText(/Segreto nel diff: chiave API in NOTE\.md/).last().waitFor();
+await toDeveloper.evaluate((item) => item.scrollIntoView({ block: "center" }));
+await shot("24c-gate-finding-to-developer");
+await page.evaluate(() => document.documentElement.classList.add("dark"));
+await shot("24d-gate-finding-to-developer-dark");
+await page.evaluate(() => document.documentElement.classList.remove("dark"));
+
 // Q03: the technical review checks the diff against Trama's Clean Code standard. The card shows Trama's measures as
 // evidence and the reviewer's findings, with file and line, as judgement; in the light and the dark theme.
 const review = correctedCard.getByTestId("technical-review");
@@ -1449,9 +1578,9 @@ await sliceSpec.getByText("Restano in Trama").waitFor({ timeout: 20_000 });
 // W05: an assignment without its contract (seams, Pact decisions) is refused with a clear tool failure; no card appears.
 await send("[assegna] [senza-contratto]");
 await page.getByText(/Rifiutato: .*incomplete_contract.*seams.*decisionIDs/).last().waitFor({ timeout: 20_000 });
-if ((await assignmentCards.count()) !== 4) throw new Error("An assignment without its contract reached a developer");
+if ((await assignmentCards.count()) !== 5) throw new Error("An assignment without its contract reached a developer");
 await send("[assegna] [test]");
-const sliceWork = assignmentCards.nth(4);
+const sliceWork = assignmentCards.nth(5);
 await sliceWork.getByText("Concluso", { exact: true }).waitFor({ timeout: 20_000 });
 // W05: the card shows the contract the slice reached the developer with and the developer's structured report,
 // as a statement apart from Trama's evidence.
@@ -1476,8 +1605,9 @@ await app.evaluate(({ nativeTheme }) => {
   nativeTheme.themeSource = "system";
 });
 await page.evaluate(() => document.documentElement.classList.remove("dark"));
-await send(`[candidato:${await cardAssignment(sliceWork)}:${candidateDecision}]`);
-const sliceCandidate = candidateCards.nth(2);
+// The Coordinator asks for the green light without the candidate gate (W10), so Trama's build and tests never ran.
+await send(`[candidato:${await cardAssignment(sliceWork)}:${candidateDecision}] [senza-revisione]`);
+const sliceCandidate = candidateCards.nth(3);
 const testedSeams = sliceCandidate.getByTestId("candidate-tested-seams");
 await testedSeams.waitFor({ timeout: 30_000 });
 await testedSeams.locator('[data-testid="candidate-tested-seam"][data-tested="yes"][data-agreed="yes"]').getByText(/CancelPaidOrder/).waitFor();
@@ -1571,7 +1701,7 @@ await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
 // the report's doubts. The Coordinator puts it on a Pact card that blocks the work; the person's answer resumes the
 // developer in the same session, and the card and the assignment say so.
 await send("[assegna:S1] [test] [domanda]");
-const questionWork = assignmentCards.nth(5);
+const questionWork = assignmentCards.nth(6);
 await questionWork.getByText("In pausa", { exact: true }).waitFor({ timeout: 20_000 });
 await questionWork.locator('[data-testid="assignment-question"][data-state="asked"]').getByText(/buono/).waitFor();
 await questionWork.getByText("Aspetta il Coordinatore").waitFor();
@@ -1637,19 +1767,19 @@ await page.getByRole("button", { name: "Impostazioni" }).click();
 await page.getByTestId("settings").waitFor({ state: "hidden" });
 // The first slice is verified on new work that passes its check and the technical review: S2 and S3 become ready.
 await send("[assegna:S1]");
-const verifiedSliceWork = assignmentCards.nth(6);
+const verifiedSliceWork = assignmentCards.nth(7);
 await verifiedSliceWork.getByText("Concluso", { exact: true }).waitFor({ timeout: 20_000 });
 await send(`[candidato:${await cardAssignment(verifiedSliceWork)}:${candidateDecision}]`);
 const teamSlices = sliceSpec.getByTestId("plan-slices");
 await teamSlices.locator('[data-testid="plan-slice"][data-state="done"]').first().waitFor({ timeout: 30_000 });
 const unblocked = await teamSlices.getByTestId("plan-slice").evaluateAll((items) => items.map((item) => item.getAttribute("data-state")));
 if (unblocked.join() !== "done,ready,ready") throw new Error(`A verified slice did not unblock its dependents: ${unblocked}`);
-if ((await assignmentCards.count()) !== 7) throw new Error("A developer took a slice while continuous work was off");
+if ((await assignmentCards.count()) !== 8) throw new Error("A developer took a slice while continuous work was off");
 // Continuous work on: at the next event of the work (here the end of a Coordinator turn) Ada is free and takes S2 in
 // autonomy; the assignment card says so and the slice shows who took it.
 await page.evaluate(() => window.trama.invoke("settings:update", { continuousWork: true }));
 await send("Come procede il lavoro?");
-const pickedCard = assignmentCards.nth(7);
+const pickedCard = assignmentCards.nth(8);
 await pickedCard.getByTestId("assignment-self-picked").waitFor({ timeout: 20_000 });
 await pickedCard.getByText(/^S2 Il supporto vede gli ordini in revisione$/).waitFor();
 const pickedSlice = teamSlices.locator('[data-testid="plan-slice"][data-self-picked="yes"]').first();
@@ -2169,4 +2299,91 @@ for (const dark of [false, true]) {
   await shot(`22b-automatic-work-role-${dark ? "dark" : "light"}`);
 }
 await page.evaluate(() => window.trama.invoke("settings:update", { theme: "system" }));
+await app.close();
+
+// C11: while Trama stays open the Coordinator's turn waits out a network outage and a used up quota and resumes by
+// itself, with no burst of turns; a turn cut by Esci comes back as interrupted after the restart and resumes only on
+// request. The quota file stands in for the ChatGPT usage limit; the waits are shortened for the check.
+const resumeProject = await mkdtemp(join(tmpdir(), "trama-ui-ripresa-"));
+await cp(resolve("resources/DemoProject"), resumeProject, { recursive: true });
+execFileSync("git", ["-C", resumeProject, "init", "-q", "-b", "main"]);
+execFileSync("git", ["-C", resumeProject, "add", "."]);
+execFileSync("git", ["-C", resumeProject, "-c", "user.name=Trama UI", "-c", "user.email=ui@trama.local", "commit", "-q", "-m", "Negozio"]);
+const quotaFile = join(await mkdtemp(join(tmpdir(), "trama-ui-quota-")), "exhausted");
+const resumeEnv = { TRAMA_PROVIDER_RETRY_MS: "3000", TRAMA_PROVIDER_CHECK_MS: "3000", FAKE_CODEX_QUOTA_FILE: quotaFile };
+({ app, page } = await launch(resumeEnv));
+await page.evaluate(() => window.trama.invoke("settings:update", { continuousWork: false, theme: "light" }));
+await page.evaluate((path) => window.trama.invoke("project:open", { path }), resumeProject);
+await page.getByTestId("dialog-title").filter({ hasText: "trama-ui-ripresa" }).waitFor({ timeout: 30_000 });
+await page.getByText("Ho letto lo studio").first().waitFor({ timeout: 30_000 });
+const serverReplies = () => page.getByText("Questa risposta arriva dal server di prova").count();
+const waitForReply = async (before, what) => {
+  for (let tries = 0; (await serverReplies()) <= before; tries++) {
+    if (tries > 120) throw new Error(`${what}: the turn did not resume`);
+    await page.waitForTimeout(250);
+  }
+};
+const lookShots = async (name) => {
+  for (const provider of ["codex", "claudeAgent"]) {
+    for (const dark of [false, true]) {
+      await setLook(provider, dark);
+      await shot(`${name}-${provider}-${dark ? "dark" : "light"}`);
+    }
+  }
+  await setLook(null, false);
+};
+
+// Network outage: the failure says so, Trama retries by itself once, and the turn ends with the provider's reply.
+let repliesSoFar = await serverReplies();
+await page.getByLabel("Messaggio al Coordinatore").fill("[rete-assente] Il servizio dei pagamenti risponde?");
+await page.keyboard.press("Enter");
+const outageCard = page.locator('[role="alert"][data-failure-kind="unreachable"]').last();
+await outageCard.waitFor({ timeout: 30_000 });
+await outageCard.getByText("Provider non raggiungibile").waitFor();
+await outageCard.getByTestId("provider-retry").getByText(/Trama riprova da sola tra \d+ secondi, tentativo 1 di 5\./).waitFor();
+await primaryLast(outageCard.locator(".cta-row"), "Outage wait");
+await lookShots("23a-coordinator-outage-waiting");
+await outageCard.getByTestId("provider-retry").waitFor({ state: "detached", timeout: 30_000 });
+await waitForReply(repliesSoFar, "Network outage");
+await shot("23b-coordinator-outage-resumed");
+
+// Used up quota: Trama checks the account, starts no turn while the quota is used up, and resumes when it is back.
+await writeFile(quotaFile, "");
+repliesSoFar = await serverReplies();
+await page.getByLabel("Messaggio al Coordinatore").fill("Prepara il riepilogo degli annullamenti");
+await page.keyboard.press("Enter");
+const quotaCard = page.locator('[role="alert"][data-failure-kind="quotaExhausted"]').last();
+await quotaCard.waitFor({ timeout: 30_000 });
+await quotaCard.getByTestId("provider-retry").getByText(/Trama controlla di nuovo la quota tra \d+ secondi e riprende il turno da sola appena si sblocca\./).waitFor();
+await quotaCard.getByRole("button", { name: "Smetti di aspettare" }).waitFor();
+await primaryLast(quotaCard.locator(".cta-row"), "Quota wait");
+await lookShots("23c-coordinator-quota-waiting");
+// Two account checks pass with the quota still used up: one failure in the chat, no new turn.
+await page.waitForTimeout(7_000);
+if ((await page.locator('[role="alert"][data-failure-kind="quotaExhausted"]').count()) !== 1) throw new Error("Trama retried the turn while the quota was used up");
+await quotaCard.getByTestId("provider-retry").waitFor();
+await rm(quotaFile);
+await quotaCard.getByTestId("provider-retry").waitFor({ state: "detached", timeout: 30_000 });
+await waitForReply(repliesSoFar, "Quota");
+if ((await page.getByText("Prepara il riepilogo degli annullamenti", { exact: true }).count()) !== 1) throw new Error("The resumed turn wrote the message again");
+await shot("23d-coordinator-quota-resumed");
+
+// Esci during a turn: after the restart the turn reads as interrupted with its reason, and nothing starts by itself.
+await page.getByLabel("Messaggio al Coordinatore").fill("[attesa] Controlla i test degli annullamenti");
+await page.keyboard.press("Enter");
+await page.getByText("[attesa] Controlla i test degli annullamenti", { exact: true }).waitFor();
+await page.waitForTimeout(1_500);
+await app.close();
+({ app, page } = await launch({ ...resumeEnv, FAKE_CODEX_NO_WAIT: "1" }));
+const quitRow = page.getByRole("status").filter({ hasText: "Trama è stato chiuso mentre il Coordinatore lavorava." });
+await quitRow.waitFor({ timeout: 30_000 });
+await quitRow.getByText("Turno interrotto").waitFor();
+await page.waitForTimeout(1_000);
+repliesSoFar = await serverReplies();
+await lookShots("23e-coordinator-closed-turn");
+if ((await serverReplies()) !== repliesSoFar) throw new Error("The interrupted turn resumed without the person");
+await quitRow.getByRole("button", { name: "Riprendi" }).click();
+await waitForReply(repliesSoFar, "Esci");
+if ((await page.getByText("[attesa] Controlla i test degli annullamenti", { exact: true }).count()) !== 1) throw new Error("The resumed turn wrote the message again");
+await shot("23f-coordinator-closed-turn-resumed");
 await app.close();

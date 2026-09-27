@@ -92,6 +92,19 @@ export const PHASE_LABELS: Record<WorkPhase, string> = {
   blocked: "bloccata",
 };
 
+/** The words of the person's step buttons; answerQuestions counts the questions when there are more than one. */
+export const PERSON_MOVE_LABELS = {
+  answerQuestions: "Rispondi alla domanda",
+  confirmUnderstanding: "Conferma la comprensione",
+  grantMandate: "Concedi il mandato",
+  confirmTeam: "Conferma il team",
+  confirmSeams: "Conferma i seam",
+  confirmSlices: "Conferma le fette",
+  reviewPlan: "Rivedi il piano",
+  reviewCandidate: "Verifica il candidato",
+  mergePullRequest: "Unisci la pull request",
+} as const satisfies Partial<Record<NextMove, string>>;
+
 const person = (move: NextMove, label: string, targetId: string | null, extra: Partial<MoveOption> = {}): MoveOption => ({
   move,
   actor: "person",
@@ -149,7 +162,10 @@ const superseded = (assignment: SpecialistAssignment, others: SpecialistAssignme
 const providerName = (id: string) => PROVIDERS.find((p) => p.id === id)?.name ?? id;
 
 /** Candidate blockers that new work must fix; missing or stale evidence only waits for a check. */
-const hardBlockers = (blockers: CandidateBlocker[]) => blockers.filter((b) => b.code !== "EVIDENCE_MISSING" && b.code !== "EVIDENCE_STALE");
+/** Blockers that wait for Trama or the reviewers, not for new work: a check to run, the candidate gate running or to run again. */
+const WAITING_BLOCKERS = ["EVIDENCE_MISSING", "EVIDENCE_STALE", "GATE_RUNNING", "GATE_FAILED"];
+
+const hardBlockers = (blockers: CandidateBlocker[]) => blockers.filter((b) => !WAITING_BLOCKERS.includes(b.code));
 
 function candidateBlockerText(candidate: Candidate, blocker: CandidateBlocker): string {
   switch (blocker.code) {
@@ -157,6 +173,8 @@ function candidateBlockerText(candidate: Candidate, blocker: CandidateBlocker): 
       return `La verifica ${blocker.detail} del candidato ${candidate.id} non è passata.`;
     case "DECISION_CHANGED":
       return `La decisione ${blocker.detail} è cambiata dopo il candidato ${candidate.id}.`;
+    case "GATE_BLOCKED":
+      return `I revisori hanno un rilievo bloccante sul candidato ${candidate.id}: ${blocker.detail}`;
     case "UNRESOLVED_CHOICE":
       return `Il candidato ${candidate.id} lascia aperta una scelta: ${blocker.detail}`;
     case "EXTERNAL_EFFECT_UNSUPPORTED":
@@ -202,7 +220,7 @@ export function workState(document: ProjectDocument, requestId: string | null): 
     if (!assignable) return;
     if (!isTeamConfirmed(document)) {
       const proposal = document.team.proposals.find((p) => !p.resolution);
-      if (proposal) add(person("confirmTeam", "Conferma il team", proposal.id));
+      if (proposal) add(person("confirmTeam", PERSON_MOVE_LABELS.confirmTeam, proposal.id));
       return;
     }
     if (may("executeInWorktree")) add(coordinator("assignWork"));
@@ -214,7 +232,7 @@ export function workState(document: ProjectDocument, requestId: string | null): 
   const finish = (phase: WorkPhase | null, blocker: string | null = null, verification?: VerificationTargets): WorkState => {
     if (phase === null) return { phase, blocker, moves: [] };
     if (open.length) moves.unshift(answerQuestions(open));
-    if (pendingMandate) add(person("grantMandate", "Concedi il mandato", pendingMandate.id));
+    if (pendingMandate) add(person("grantMandate", PERSON_MOVE_LABELS.grantMandate, pendingMandate.id));
     return {
       phase,
       blocker,
@@ -242,7 +260,7 @@ export function workState(document: ProjectDocument, requestId: string | null): 
         return finish("spec");
       case "seams":
         // The planner proposed the seams to test (to-spec); the spec is written once the person confirms them (M04).
-        add(person("confirmSeams", "Conferma i seam", plan.id));
+        add(person("confirmSeams", PERSON_MOVE_LABELS.confirmSeams, plan.id));
         return finish("spec");
       case "failed":
         preparePlan();
@@ -258,7 +276,7 @@ export function workState(document: ProjectDocument, requestId: string | null): 
   if (grilled) {
     if (!open.length) {
       if (!understandingConfirmed(document, scope, questions)) {
-        add(person("confirmUnderstanding", "Conferma la comprensione", null, { message: "Confermo la comprensione condivisa: procedi." }));
+        add(person("confirmUnderstanding", PERSON_MOVE_LABELS.confirmUnderstanding, null, { message: "Confermo la comprensione condivisa: procedi." }));
       }
       preparePlan();
     }
@@ -278,17 +296,17 @@ function readyPlan(
       return moves.finish("slices");
     case "proposed":
       // to-tickets quizzes the user: the breakdown waits for the person before anything is published or assigned.
-      moves.add(person("confirmSlices", "Conferma le fette", plan.id));
+      moves.add(person("confirmSlices", PERSON_MOVE_LABELS.confirmSlices, plan.id));
       return moves.finish("slices");
     case "failed":
-      moves.add(person("reviewPlan", "Rivedi il piano", plan.id));
+      moves.add(person("reviewPlan", PERSON_MOVE_LABELS.reviewPlan, plan.id));
       return moves.finish("blocked", `La divisione in fette del piano ${plan.id} non è riuscita${slicing.failure ? `: ${readableFailure(slicing.failure)}` : "."}`);
     case "approved":
       moves.assignWork();
       return moves.finish("slices");
     default:
       // A plan written before M05 has no breakdown: it is reviewed and assigned as a whole.
-      moves.add(person("reviewPlan", "Rivedi il piano", plan.id));
+      moves.add(person("reviewPlan", PERSON_MOVE_LABELS.reviewPlan, plan.id));
       moves.assignWork();
       return moves.finish("slices");
   }
@@ -305,7 +323,7 @@ function understandingConfirmed(document: ProjectDocument, scope: Set<string>, q
 }
 
 function answerQuestions(open: DecisionRequest[]): MoveOption {
-  return person("answerQuestions", open.length === 1 ? "Rispondi alla domanda" : `Rispondi alle ${open.length} domande`, open[0]!.id);
+  return person("answerQuestions", open.length === 1 ? PERSON_MOVE_LABELS.answerQuestions : `Rispondi alle ${open.length} domande`, open[0]!.id);
 }
 
 /** The phase of assigned work: execution, verification, candidate, merged or blocked. Null when only read-only work ended. */
@@ -330,12 +348,16 @@ function assignedWork(
       return { phase: "blocked", blocker: `L'incarico ${assignment.id} ${reason}` };
     }
     if (!candidate) continue;
+    // Work that resumed after its candidate, as with the gate's findings (W10), is at work: its old candidate waits.
+    if (isActive(assignment)) continue;
     const blocker = hardBlockers(inspectCandidate(document, candidate, null))[0];
     if (blocker) {
       moves.assignWork();
       return { phase: "blocked", blocker: candidateBlockerText(candidate, blocker) };
     }
-    if (candidate.technicalReview?.verdict === "changesRequested") {
+    // A gate that failed asks for the review again, not for new work.
+    const gateFailed = inspectCandidate(document, candidate, null).some((b) => b.code === "GATE_FAILED");
+    if (candidate.technicalReview?.verdict === "changesRequested" && !gateFailed) {
       moves.assignWork();
       return { phase: "blocked", blocker: `La revisione tecnica del candidato ${candidate.id} chiede modifiche.` };
     }
@@ -369,13 +391,13 @@ function assignedWork(
   }
   const unpublished = edits.find((i) => !i.candidate!.pullRequest);
   if (unpublished) {
-    moves.add(person("reviewCandidate", "Verifica il candidato", unpublished.candidate!.id));
+    moves.add(person("reviewCandidate", PERSON_MOVE_LABELS.reviewCandidate, unpublished.candidate!.id));
     return { phase: "candidate", blocker: null };
   }
   const unmerged = edits.find((i) => !i.candidate!.pullRequest!.mergedAt);
   if (unmerged) {
     const candidate = unmerged.candidate!;
-    moves.add(person("mergePullRequest", "Unisci la pull request", candidate.id, { url: candidate.pullRequest!.url }));
+    moves.add(person("mergePullRequest", PERSON_MOVE_LABELS.mergePullRequest, candidate.id, { url: candidate.pullRequest!.url }));
     return { phase: "candidate", blocker: null };
   }
   return { phase: "merged", blocker: null };

@@ -3,6 +3,7 @@ import type { ProviderId } from "@shared/codex";
 import type { ConversationEvent, EventContent, EventOrigin, ProjectDocument } from "@shared/domain";
 import { requestGoalId } from "@shared/goals";
 import { interruptAudits } from "./audit";
+import { interruptGates } from "./gate";
 import { completeTeam } from "./team";
 
 function assignmentGoalId(document: ProjectDocument, assignmentId: string): string | null {
@@ -45,6 +46,11 @@ export function emptyDocument(projectId: string): ProjectDocument {
   return document;
 }
 
+/** Why a Coordinator turn ended when the person quit Trama during it (C11): Esci closes the turn itself. */
+export const QUIT_NOTE = "Trama è stato chiuso mentre il Coordinatore lavorava.";
+/** Why a turn left running on disk ended: Trama stopped without Esci, a crash or a forced stop (C11). */
+export const CRASH_NOTE = "Trama si è chiuso senza fermare il turno mentre il Coordinatore lavorava.";
+
 /**
  * Fills fields added after a document was written, completes an older team with the fixed roles (W09) and marks
  * turns left running as interrupted.
@@ -60,10 +66,11 @@ export function normalizeDocument(raw: Partial<ProjectDocument>, projectId: stri
     team: { ...base.team, ...(raw.team ?? {}) },
   };
   completeTeam(document.team);
+  // Esci closes a running turn itself (C11): one still running on disk means Trama stopped without Esci.
   for (const request of document.requests) {
     if (request.state === "running") {
       request.state = "interrupted";
-      request.failure = "Trama è stato chiuso mentre il Coordinatore lavorava.";
+      request.failure = CRASH_NOTE;
     }
   }
   // A plan still "planning" on disk lost its planner: it would block a new plan for the same request.
@@ -85,6 +92,8 @@ export function normalizeDocument(raw: Partial<ProjectDocument>, projectId: stri
   }
   // Focus mode lost its sessions too (F01): the examination stays, marked as interrupted.
   interruptAudits(document);
+  // So did the candidate gate's reviewers (W10).
+  interruptGates(document);
   return document;
 }
 
