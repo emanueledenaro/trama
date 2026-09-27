@@ -3,6 +3,7 @@ import type { ProviderId } from "@shared/codex";
 import type { ConversationEvent, EventContent, EventOrigin, ProjectDocument } from "@shared/domain";
 import { requestGoalId } from "@shared/goals";
 import { interruptAudits } from "./audit";
+import { interruptGates } from "./gate";
 import { migrateToSingleChat } from "./singleChat";
 import { completeTeam } from "./team";
 
@@ -92,6 +93,8 @@ export function normalizeDocument(raw: Partial<ProjectDocument>, projectId: stri
   }
   // Focus mode lost its sessions too (F01): the examination stays, marked as interrupted.
   interruptAudits(document);
+  // So did the candidate gate's reviewers (W10).
+  interruptGates(document);
   // Goal dialogs written before the single chat become filters of the one chat (U01).
   migrateToSingleChat(document);
   return document;

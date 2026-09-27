@@ -24,7 +24,11 @@ import type {
   ActiveProjectState,
   AutomaticWorkRequest,
   Candidate,
+  CandidateGate,
   FocusAudit,
+  GateRole,
+  StandardCheck,
+  TechnicalReview,
   WorktreeSession,
   AgentColor,
   AppSettings,
@@ -181,6 +185,7 @@ import {
   changeAssignmentProvider,
   refreshDecisionVersions,
   resumeAssignment,
+  reopenForFindings,
   resumePausedAssignment,
   stopOrphanedAssignments,
   TeamError,
@@ -189,7 +194,36 @@ import {
   type TurnEnd,
 } from "./core/team";
 import { answeredWork, ASK_COORDINATOR_TOOL, askCoordinator, asksCoordinator, DEVELOPER_TOOL_SERVER_INSTRUCTIONS, personAnswered, QuestionError } from "./core/developerQuestions";
-import { prepareWorktree, removeWorktree, reviewWorktree, validateWorktree } from "./core/workspace";
+import { checkoutCommit, prepareWorktree, removeWorktree, reviewWorktree, validateWorktree } from "./core/workspace";
+import {
+  beginReviews,
+  checksToRun,
+  cleanCodeOutcome,
+  closeGate,
+  compareSuite,
+  failedChecks,
+  failGate,
+  finishReview,
+  gateReview,
+  gateSummary,
+  guardianOutcome,
+  markRegressions,
+  openGate,
+  pendingReturns,
+  readReviewerAnswer,
+  returnFindings,
+  returnWaiting,
+  type ReviewerTurn,
+  reviewerTurn,
+  reviewThread,
+  SESSION_ROLES,
+  stopAtChecks,
+  stopAtSecrets,
+  suiteChecks,
+  usesCodeReview,
+} from "./core/gate";
+import { blockingFindings, GATE_STATUS } from "@shared/gate";
+import { roleProfile } from "@shared/roster";
 import { confirmationModel, confirmationTurn, confirmFinding, NO_STRONGER_MODEL, readConfirmation, recheckFindings } from "./core/auditFindings";
 import { AuditError, type AxisName, type AxisTurn, auditSpec, axisThread, axisTurn, beginAxes, beginVerification, closeAudit, failAudit, findAudit, finishAxis, openAudit, readAxisAnswer, recordAuditCheck } from "./core/audit";
 import { approveCandidate, candidateReport, findCandidate, latestCandidate, recordEvidence, recordTechnicalReview } from "./core/candidates";
@@ -199,7 +233,7 @@ import { assessWorktreePair, worktreePairs } from "./core/worktreeConflicts";
 import { clampParallelDevelopers } from "@shared/parallel";
 import { pullRequestBody, publishCandidate } from "./core/publication";
 import { branchPrefix, commitHeader, readProjectConventions, requireValidCommitMessage, validateCommitMessage } from "./core/conventions";
-import { candidateCommit, qualityGate, qualityMissing, relatedIssue, workCommitType } from "./core/quality";
+import { candidateCommit, qualityGate, qualityMissing, relatedIssue, secretFindings, workCommitType } from "./core/quality";
 import {
   applyAutomaticTransitions,
   autoSummary,
@@ -347,6 +381,9 @@ const CHOICES_IN_TEXT_TITLE = "Scelta scritta nel testo invece che in una scheda
 const toolRefusedDetail = (event: Extract<TurnEvent, { type: "toolRefused" }>) => `Richiesta: ${event.tool}\n${event.reason}`;
 
 const coordinatorSkillParts = (skills: NativeSkill[]) => skills.map((skill, index) => ({ skill, binding: COORDINATOR_SKILLS[index]!.binding }));
+
+/** Clean Code's part of the candidate gate (W10): the technical review's session, answer and Trama's measures. */
+type CleanCodeReview = { threadId: string; answer: ReviewAnswer; standard: StandardCheck | null };
 
 function lateRules(skills: NativeSkill[], provider: ProviderId): LateRules {
   const style = messageStyle("the person");
@@ -713,6 +750,7 @@ export class TramaController {
     for (const [, planner] of this.planners) planner.stop();
     this.planners.clear();
     for (const [, run] of this.auditRuns) for (const client of run.clients) client.stop();
+    for (const [, run] of this.gateRuns) for (const client of run.clients) client.stop();
     for (const [, timer] of this.providerWaits) clearTimeout(timer);
     this.providerWaits.clear();
     await this.stopSpecialistsForQuit();
@@ -1679,7 +1717,7 @@ export class TramaController {
   private readonly parkedProjects = new Map<string, ActiveProjectState>();
 
   private hasRunningWork(projectId: string): boolean {
-    return [...this.specialistRuntimes.values()].some((r) => r.projectId === projectId) || [...this.auditRuns.values()].some((r) => r.projectId === projectId);
+    return [...this.specialistRuntimes.values()].some((r) => r.projectId === projectId) || [...this.auditRuns.values(), ...this.gateRuns.values()].some((r) => r.projectId === projectId);
   }
 
   /**
@@ -3561,7 +3599,9 @@ export class TramaController {
    */
   private async moveTeam(): Promise<void> {
     const project = this.state.project;
-    if (!project || !project.stateWritable || this.quitting || project.isDemo) return;
+    if (!project || !project.stateWritable || this.quitting) return;
+    this.retryGateReturns(project);
+    if (project.isDemo) return;
     if (this.state.settings.continuousWork !== false) this.pickFreeSlices(project);
     await this.assessWorktreeConflicts(project);
   }
@@ -3886,26 +3926,118 @@ export class TramaController {
     return result;
   }
 
-  /** A technical review from a thread distinct from the author's, read-only in the candidate's worktree. */
-  private async reviewCandidate(candidateId: string, requestId: string | null) {
+  /**
+   * The candidate gate (W10): Trama's real checks first, then every candidate reviewer of the team in parallel on the
+   * diff. Clean Code is the technical review, from a thread distinct from the author's; the regression guardian runs
+   * the suite on the base and on the candidate; the other figures are read-only sessions on cheap models. The review
+   * recorded on the candidate carries the gate's verdict; a blocking finding sends the work back to its developer.
+   */
+  private async reviewCandidate(candidateId: string, requestId: string | null): Promise<TechnicalReview> {
     const project = this.requireProject();
     const document = project.document;
     const candidate = findCandidate(document, candidateId);
     if (!candidate) throw new Error(`Unknown candidate ${candidateId}.`);
     const assignment = findAssignment(document, candidate.assignmentId);
     if (!assignment?.workspace) throw new Error(`Candidate ${candidateId} has no worktree.`);
-    // The reviewer reads only: a worktree-only provider hands the review to the Coordinator's provider.
+    const gate = openGate(document, candidate);
+    this.changedIn(project);
+    const run = { projectId: project.id, clients: new Set<AgentRuntime>() };
+    this.gateRuns.set(gate.id, run);
+    // Set inside the parallel run: TypeScript cannot follow the assignment through the callback.
+    let cleanCode = null as CleanCodeReview | null;
+    try {
+      // The facts first: every required check without current evidence runs now, in the sandbox.
+      for (const check of checksToRun(document, candidate)) await this.verifyCandidate(candidate.id, check, requestId);
+      const failed = failedChecks(candidate);
+      if (failed.length) {
+        stopAtChecks(gate, failed);
+        this.changedIn(project);
+        await this.guardSuite(project, gate, candidate);
+        markRegressions(document, gate);
+      } else if (secretFindings(candidate).length) {
+        // A secret in the diff never reaches a model: Trama's scan blocks the candidate before any session opens.
+        stopAtSecrets(gate, secretFindings(candidate));
+        this.changedIn(project);
+        await this.guardSuite(project, gate, candidate);
+      } else {
+        const provider = this.reviewerProvider(document, assignment);
+        const runner = this.dutyRunner(document);
+        const spec = auditSpec(document, assignment, project.github.issues);
+        beginReviews(gate, { spec: spec !== null, model: runner?.model ?? null, cleanCodeModel: provider.model });
+        this.changedIn(project);
+        const input = { projectName: project.name, gate, candidate, assignment, spec };
+        const skill = await this.nativeSkill("code-review");
+        const sessions = SESSION_ROLES.filter((role) => gateReview(gate, role).status === "running").map((role) =>
+          this.runGateReviewer(project, gate, role, runner, () => reviewerTurn(input, role, usesCodeReview(role) ? skill : null, runner?.provider === "codex"), assignment.workspace!.worktreeRoot),
+        );
+        const cleanCodeRun = this.runCleanCodeReview(project, candidate, assignment, provider, run.clients).then(
+          (result) => {
+            cleanCode = result;
+            finishReview(gate, "cleanCode", cleanCodeOutcome(result.answer));
+            reviewThread(gate, "cleanCode", result.threadId);
+          },
+          (error: Error) => finishReview(gate, "cleanCode", { failure: error.message }),
+        );
+        await Promise.all([cleanCodeRun, this.guardSuite(project, gate, candidate), ...sessions]);
+      }
+      closeGate(gate);
+    } catch (error) {
+      failGate(gate, (error as Error).message);
+    } finally {
+      this.gateRuns.delete(gate.id);
+      this.changedIn(project);
+    }
+    const review = recordTechnicalReview(document, candidateId, {
+      reviewerThreadId: cleanCode?.threadId ?? `gate:${gate.id}`,
+      authorThreadId: assignment.threadId,
+      verdict: gate.status === "passed" ? "approved" : "changesRequested",
+      summary: gate.failure && gate.status === "failed" ? `${gateSummary(document, gate)} ${gate.failure}`.trim() : gateSummary(document, gate),
+      // Clean Code's findings and Trama's measures only when it reviewed: a failed check stops it before it starts.
+      ...(cleanCode ? { findings: cleanCode.answer.findings, standard: cleanCode.standard } : {}),
+      gateId: gate.id,
+    });
+    appendEvent(
+      document,
+      "trama",
+      { type: "activity", title: `Revisori sul candidato ${candidateId}: ${GATE_STATUS[gate.status].label.toLowerCase()}`, detail: review.summary, tone: gate.status === "passed" ? "tool" : "error" },
+      requestId,
+    );
+    if (gate.status === "blocked" && !gate.checksFailed.length) this.returnToDeveloper(project, gate);
+    this.changedIn(project);
+    this.releaseParkedProject(project);
+    return review;
+  }
+
+  /** Running gates are running work: their sessions stop when Trama quits. */
+  private readonly gateRuns = new Map<string, { projectId: string; clients: Set<AgentRuntime> }>();
+
+  /** Clean Code reads only: a worktree-only provider hands the review to the Coordinator's provider. */
+  private reviewerProvider(document: ProjectDocument, assignment: SpecialistAssignment): { provider: ProviderId; model: string | null } {
     const authorProvider = assignment.provider ?? "codex";
     const provider = supportsReadOnly(authorProvider) ? authorProvider : this.coordinatorProvider(document);
     const model = provider === authorProvider ? assignment.model : (document.coordinator.threadModel ?? this.coordinatorModel(document, provider));
+    return { provider, model };
+  }
+
+  /** Clean Code's part of the gate: the technical review against Trama's standard (Q03), read-only in the worktree. */
+  private async runCleanCodeReview(
+    project: ActiveProjectState,
+    candidate: Candidate,
+    assignment: SpecialistAssignment,
+    reviewer: { provider: ProviderId; model: string | null },
+    clients: Set<AgentRuntime>,
+  ): Promise<CleanCodeReview> {
+    const document = project.document;
+    const { provider, model } = reviewer;
     if (!model) throw new Error(this.coordinatorModelProblem(document, provider));
     const client = createRuntime(provider, { executable: provider === "codex" ? this.host.codexExecutable : null, requestTimeoutMs: 15_000 });
+    clients.add(client);
     try {
       // The standard's measures are Trama's own, taken before the reviewer reads anything (Q03).
-      const standard = await checkStandard(candidate, assignment.workspace.worktreeRoot, document.cleanCode);
+      const standard = await checkStandard(candidate, assignment.workspace!.worktreeRoot, document.cleanCode);
       const opening = await client.openThread({
         model,
-        cwd: assignment.workspace.worktreeRoot,
+        cwd: assignment.workspace!.worktreeRoot,
         ephemeral: true,
         readableRoots: this.readableRoots(project),
         developerInstructions: reviewerInstructions(document.cleanCode),
@@ -3927,36 +4059,147 @@ export class TramaController {
       const answer = await client.runTurn({
         threadId: opening.threadId,
         prompt,
-        cwd: assignment.workspace.worktreeRoot,
+        cwd: assignment.workspace!.worktreeRoot,
         model,
         outputSchema: REVIEW_OUTPUT_SCHEMA,
         onEvent: () => undefined,
       });
-      let parsed: ReviewAnswer;
       try {
-        parsed = readReviewAnswer(JSON.parse(extractJsonAnswer(answer)) as Record<string, unknown>);
+        return { threadId: opening.threadId, answer: readReviewAnswer(JSON.parse(extractJsonAnswer(answer)) as Record<string, unknown>), standard };
       } catch {
         throw new Error("La revisione tecnica non ha restituito un verdetto leggibile.");
       }
-      const review = recordTechnicalReview(document, candidateId, {
-        reviewerThreadId: opening.threadId,
-        authorThreadId: assignment.threadId,
-        verdict: parsed.verdict,
-        summary: parsed.summary,
-        findings: parsed.findings,
-        standard,
-      });
-      appendEvent(
-        document,
-        "trama",
-        { type: "activity", title: `Revisione tecnica di ${candidateId}: ${review.verdict === "approved" ? "approvata" : "modifiche richieste"}`, detail: review.summary, tone: "tool" },
-        requestId,
-      );
-      this.changedIn(project);
-      return review;
     } finally {
+      clients.delete(client);
       client.stop();
     }
+  }
+
+  /**
+   * The regression guardian's part of the gate: the candidate's suite on its base, in a detached checkout and in the
+   * sandbox, against the evidence on the candidate. A test that passed on the base and fails now blocks the candidate.
+   */
+  private async guardSuite(project: ActiveProjectState, gate: CandidateGate, candidate: Candidate): Promise<void> {
+    try {
+      const checks = suiteChecks(candidate);
+      if (checks.length) {
+        const base = await checkoutCommit(project.rootPath, gate.baseSHA, join(this.storage.root, "Gate"));
+        try {
+          for (const check of checks) {
+            if (this.quitting) throw new Error("Trama si sta chiudendo.");
+            const result = await runReadOnlyCheck(check, base.path, {
+              codexExecutable: resolveCodexExecutable(this.host.codexExecutable),
+              scratchRoot: join(this.storage.root, "Checks"),
+              dependencyRoot: project.rootPath,
+            }).catch((error: Error) => ({ command: [] as string[], exitCode: -1, output: error.message }));
+            const evidence = candidate.evidence[check];
+            gate.suite.push(
+              compareSuite(
+                check,
+                { result: result.command.length === 0 ? "notRun" : result.exitCode === 0 ? "pass" : "fail", output: result.output },
+                evidence ? evidence.result : "notRun",
+              ),
+            );
+            this.changedIn(project);
+          }
+        } finally {
+          await base.remove();
+        }
+      }
+      finishReview(gate, "regressionGuardian", guardianOutcome(gate.suite));
+    } catch (error) {
+      finishReview(gate, "regressionGuardian", { failure: (error as Error).message });
+    }
+  }
+
+  /** One figure of the gate: a read-only session of its own, in the candidate's worktree, on a cheap model. */
+  private async runGateReviewer(project: ActiveProjectState, gate: CandidateGate, role: GateRole, runner: DutyRunner | null, turn: () => ReviewerTurn, cwd: string): Promise<void> {
+    if (!runner) {
+      finishReview(gate, role, { failure: "Nessun modello in sola lettura disponibile per i revisori del candidato." });
+      return;
+    }
+    const client = createRuntime(runner.provider, { executable: runner.provider === "codex" ? this.host.codexExecutable : null, requestTimeoutMs: 15_000 });
+    const run = this.gateRuns.get(gate.id);
+    run?.clients.add(client);
+    try {
+      if (this.quitting) throw new Error("Trama si sta chiudendo.");
+      const { instructions, prompt, skills, outputSchema } = turn();
+      const opening = await client.openThread({ model: runner.model, cwd, developerInstructions: instructions, sandbox: "read-only", ephemeral: true, readableRoots: this.readableRoots(project) });
+      reviewThread(gate, role, opening.threadId);
+      this.changedIn(project);
+      const raw = await client.runTurn({ threadId: opening.threadId, prompt, cwd, model: runner.model, skills, outputSchema, onEvent: () => undefined });
+      finishReview(gate, role, readReviewerAnswer(raw));
+    } catch (error) {
+      finishReview(gate, role, { failure: (error as Error).message });
+    } finally {
+      run?.clients.delete(client);
+      client.stop();
+      this.changedIn(project);
+    }
+  }
+
+  /**
+   * A blocking finding goes back to the developer (W10): each reviewer's message lands in the developer's work, where
+   * the person reads it, and the work resumes in the same session and worktree with the findings, within the mandate.
+   */
+  private returnToDeveloper(project: ActiveProjectState, gate: CandidateGate): void {
+    const document = project.document;
+    const assignment = findAssignment(document, gate.assignmentId);
+    if (!assignment) return;
+    const developer = document.team.specialists.find((s) => s.id === assignment.specialistId);
+    const workKey = `${assignment.id}:${assignment.turns.length + 1}`;
+    for (const review of gate.reviews) {
+      const blocking = blockingFindings(review);
+      if (!blocking.length) continue;
+      const reviewer = document.team.specialists.find((s) => s.role === review.role && s.status !== "removed")?.name ?? roleProfile(review.role).name;
+      appendEvent(
+        document,
+        "specialist",
+        {
+          type: "activity",
+          title: `${reviewer} a ${developer?.name ?? assignment.specialistId}: ${blocking.length === 1 ? "1 rilievo bloccante" : `${blocking.length} rilievi bloccanti`} sul candidato ${gate.candidateId}`,
+          detail: blocking.map((f) => `- ${f.title}${f.file ? ` (${f.file})` : ""}${f.detail !== f.title ? `: ${f.detail}` : ""}`).join("\n"),
+          tone: "error",
+        },
+        null,
+        new Date(),
+        { assignmentId: assignment.id, workKey },
+      );
+    }
+    gate.returned = { assignmentId: assignment.id, at: new Date().toISOString(), waiting: this.resumeWithFindings(project, gate) };
+    this.changedIn(project);
+  }
+
+  /**
+   * Resumes the developer with the gate's blocking findings, in its session and worktree, and says why it cannot when
+   * it cannot. Only in the project open now: a project the person left keeps the work for when it opens again.
+   */
+  private resumeWithFindings(project: ActiveProjectState, gate: CandidateGate): string | null {
+    const document = project.document;
+    const assignment = findAssignment(document, gate.assignmentId);
+    if (!assignment) return "L'incarico non c'è più: serve un nuovo incarico.";
+    if (project !== this.state.project) return "Il progetto non è aperto: il lavoro riprende quando lo riapri.";
+    if (!withinMandate(document, assignment)) return "Il mandato attuale non copre più questo incarico: il lavoro riprende quando lo concedi di nuovo.";
+    try {
+      reopenForFindings(document, assignment.id, { gateId: gate.id, candidateId: gate.candidateId, findings: returnFindings(document, gate) });
+    } catch (error) {
+      return error instanceof TeamError ? returnWaiting(error.code, error.message) : (error as Error).message;
+    }
+    void this.startAssignment(assignment.id);
+    return null;
+  }
+
+  /** The findings that waited for their developer go back at the next event of the work that may have freed it (W10). */
+  private retryGateReturns(project: ActiveProjectState): void {
+    let moved = false;
+    for (const gate of pendingReturns(project.document)) {
+      const waiting = this.resumeWithFindings(project, gate);
+      if (waiting === gate.returned!.waiting) continue;
+      gate.returned!.waiting = waiting;
+      gate.updatedAt = new Date().toISOString();
+      moved = true;
+    }
+    if (moved) this.changedIn(project);
   }
 
   // MARK: Focus mode

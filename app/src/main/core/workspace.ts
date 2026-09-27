@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
-import { lstat, mkdir, readFile, realpath } from "node:fs/promises";
+import { lstat, mkdir, mkdtemp, readFile, realpath, rm } from "node:fs/promises";
 import { join, relative } from "node:path";
 import type { CommitConventions, WorktreeSession } from "@shared/domain";
 import { git, GIT_SAFE_OPTIONS, gitEnvironment, runProcess } from "./process";
@@ -144,4 +144,27 @@ export async function removeWorktree(session: WorktreeSession, worktreesRoot: st
   if (ahead) return { branchDeleted: false };
   await git(["branch", "-d", session.branch], session.sourceRoot, false);
   return { branchDeleted: true };
+}
+
+/**
+ * A detached checkout of a commit for Trama's own runs, as the regression guardian's run of the suite on a candidate's
+ * base (W10). Nobody writes in it; `remove` deletes it and its worktree record.
+ */
+export async function checkoutCommit(repository: string, sha: string, root: string): Promise<{ path: string; remove: () => Promise<void> }> {
+  await mkdir(root, { recursive: true });
+  const path = await mkdtemp(join(root, "base-"));
+  try {
+    await git(["worktree", "add", "--detach", path, sha], repository, false);
+  } catch (error) {
+    await rm(path, { recursive: true, force: true });
+    throw error;
+  }
+  return {
+    path,
+    remove: async () => {
+      await git(["worktree", "remove", "--force", path], repository, false).catch(() => undefined);
+      await rm(path, { recursive: true, force: true });
+      await git(["worktree", "prune"], repository, false).catch(() => undefined);
+    },
+  };
 }
