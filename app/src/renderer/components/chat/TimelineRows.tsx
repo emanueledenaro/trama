@@ -23,6 +23,7 @@ import { extractPastes, pasteSizeLabel, pasteTitle } from "@shared/pastedText";
 import { formatDuration, type TimelineRow, turnFailureText } from "@shared/timeline";
 import { cn } from "@/lib/cn";
 import { formatTime } from "@/lib/format";
+import { revealCard } from "@/lib/references";
 import { act, useUi } from "@/lib/store";
 import { Button } from "@/components/ui/button";
 import { AgentName } from "@/components/AgentIdentity";
@@ -44,6 +45,7 @@ import {
   TeamProposalCard,
 } from "./Cards";
 import { ChatMarkdown } from "./ChatMarkdown";
+import { ReferenceText } from "./ReferenceText";
 import { Sep } from "@/components/ui/sep";
 
 function DisclosureChevron({ open }: { open: boolean }) {
@@ -146,7 +148,7 @@ function ActivityRow({ event }: { event: ConversationEvent }) {
       </button>
       {open && detail ? (
         <div className="mt-1 mb-1.5 ml-5.5 rounded-lg bg-[var(--app-chat-code-surface)] px-2.5 py-1.5 text-ui-sm whitespace-pre-wrap text-muted-foreground">
-          {detail}
+          <ReferenceText text={detail} />
         </div>
       ) : null}
     </div>
@@ -189,13 +191,6 @@ function WorkGroup({ row }: { row: Extract<TimelineRow, { kind: "work" }> }) {
       <div className="h-px w-full bg-border" />
     </div>
   );
-}
-
-/** Brings the card of a record into view; false when this dialog does not show it. */
-function revealCard(id: string): boolean {
-  const card = document.querySelector(`[data-anchors~="${CSS.escape(id)}"]`);
-  card?.scrollIntoView({ behavior: "smooth", block: "start" });
-  return card !== null;
 }
 
 /** The one next step the Coordinator declared, while the work still allows it (W01): one button on the right. */

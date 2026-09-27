@@ -1407,6 +1407,46 @@ await correctedCard.getByText("Verificato", { exact: true }).waitFor();
 await correctedCard.scrollIntoViewIfNeeded();
 await shot("18e-clearance-withdrawn");
 
+// Issue #277: the Coordinator cites the real ids Trama listed for it. Each one is a link that shows the readable name,
+// keeps the id on hover and opens the right record inside Trama; an id that names nothing stays plain text.
+await send("[cita]");
+const citing = page.locator(".chat-markdown").filter({ hasText: "invece non c'è" }).last();
+const candidateLink = citing.locator('a[data-reference="candidate"]');
+await candidateLink.waitFor({ timeout: 20_000 });
+const citedCandidate = await candidateLink.getAttribute("data-reference-id");
+if (!/^C-[0-9A-F]{8}$/.test(citedCandidate ?? "")) throw new Error(`The candidate link names no candidate: ${citedCandidate}`);
+const candidateText = await candidateLink.innerText();
+if (candidateText.includes(citedCandidate) || !/^di \S/.test(candidateText)) throw new Error(`The candidate link does not show a readable name: ${candidateText}`);
+if (!(await candidateLink.getAttribute("title"))?.startsWith(citedCandidate)) throw new Error("The candidate link keeps no id on hover");
+const decisionLink = citing.locator('a[data-reference="decision"]');
+await citing.locator('a[data-reference="assignment"]').waitFor();
+await decisionLink.waitFor();
+await citing.locator('[data-reference-unknown="C-00000000"]').waitFor();
+if (await citing.locator('a[data-reference-id="C-00000000"]').count()) throw new Error("An id that names nothing became a link");
+await citing.scrollIntoViewIfNeeded();
+await candidateLink.hover();
+await shot("23a-references-light");
+await app.evaluate(({ nativeTheme }) => {
+  nativeTheme.themeSource = "dark";
+});
+await page.evaluate(() => document.documentElement.classList.add("dark"));
+await shot("23b-references-dark");
+await candidateLink.click();
+const referenceInspector = page.getByTestId("inspector");
+await referenceInspector.and(page.locator('[aria-label="Candidato"]')).waitFor({ timeout: 10_000 });
+await referenceInspector.getByText(citedCandidate).first().waitFor();
+await shot("23c-reference-opened-dark");
+await app.evaluate(({ nativeTheme }) => {
+  nativeTheme.themeSource = "system";
+});
+await page.evaluate(() => document.documentElement.classList.remove("dark"));
+await shot("23d-reference-opened-light");
+const citedDecision = await decisionLink.getAttribute("data-reference-id");
+await decisionLink.click();
+await referenceInspector.and(page.locator('[aria-label="Decisione"]')).waitFor({ timeout: 10_000 });
+await referenceInspector.getByText(citedDecision).first().waitFor();
+await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
+
 // M06: the developer of a slice runs implement and tdd with their original text and reports the seams it tested.
 // The candidate shows that report apart from Trama's evidence; the build and the tests wait for Trama's own run.
 await page.getByRole("button", { name: /^Mandato/ }).first().click();

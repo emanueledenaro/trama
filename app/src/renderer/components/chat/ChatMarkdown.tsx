@@ -1,20 +1,43 @@
-import { type ComponentProps, memo } from "react";
-import ReactMarkdown, { type Components } from "react-markdown";
+import { type ComponentProps, memo, useMemo } from "react";
+import ReactMarkdown, { type Components, defaultUrlTransform, type Options } from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { parseReferenceHref } from "@shared/references";
 import { cn } from "@/lib/cn";
 import { remarkCallouts } from "@/lib/remarkCallouts";
+import { remarkReferences } from "@/lib/remarkReferences";
 import { projectFileLink } from "@/lib/chatLinks";
+import { openReference, useReferenceIndex } from "@/lib/references";
 import { act, useUi } from "@/lib/store";
 import { ChatBlockquote, ChatTable } from "./ChatBlocks";
 
-const REMARK_PLUGINS = [remarkGfm, remarkCallouts];
+/** Links to Trama's own records (issue #277) pass; every other URL goes through react-markdown's safe filter. */
+const urlTransform = (url: string) => (url.startsWith("trama:ref/") ? url : defaultUrlTransform(url));
 
 /**
- * An https link opens in the browser and a link to a project file opens it in the inspector. Any other link
- * has nowhere to go, so it stays plain text instead of a link that does nothing (W12).
+ * A reference to a record of Trama opens it inside Trama (issue #277), an https link opens in the browser and a
+ * link to a project file opens it in the inspector. Any other link has nowhere to go, so it stays plain text
+ * instead of a link that does nothing (W12).
  */
-function ChatLink({ href, children }: ComponentProps<"a">) {
-  const file = useUi((s) => (href && !href.startsWith("https://") ? projectFileLink(href, s.app?.project) : null));
+function ChatLink({ href, children, title, ...rest }: ComponentProps<"a">) {
+  const reference = href ? parseReferenceHref(href) : null;
+  const file = useUi((s) => (href && !reference && !href.startsWith("https://") ? projectFileLink(href, s.app?.project) : null));
+  if (reference) {
+    return (
+      <a
+        href={href}
+        title={title}
+        className="chat-reference"
+        data-reference={rest["data-reference" as keyof typeof rest] as string | undefined}
+        data-reference-id={rest["data-reference-id" as keyof typeof rest] as string | undefined}
+        onClick={(event) => {
+          event.preventDefault();
+          openReference(reference);
+        }}
+      >
+        {children}
+      </a>
+    );
+  }
   if (!href || (!href.startsWith("https://") && !file)) return <span title={href}>{children}</span>;
   return (
     <a
@@ -39,9 +62,11 @@ const COMPONENTS: Components = {
 };
 
 export const ChatMarkdown = memo(function ChatMarkdown({ text, user = false, className }: { text: string; user?: boolean; className?: string }) {
+  const index = useReferenceIndex();
+  const plugins = useMemo<NonNullable<Options["remarkPlugins"]>>(() => [remarkGfm, remarkCallouts, [remarkReferences, { index }]], [index]);
   return (
     <div className={cn("chat-markdown w-full min-w-0 text-foreground", user && "chat-markdown--user", className)}>
-      <ReactMarkdown remarkPlugins={REMARK_PLUGINS} components={COMPONENTS}>
+      <ReactMarkdown remarkPlugins={plugins} components={COMPONENTS} urlTransform={urlTransform}>
         {text}
       </ReactMarkdown>
     </div>

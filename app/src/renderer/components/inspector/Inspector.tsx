@@ -14,6 +14,7 @@ import { MemoryView } from "./MemoryView";
 import { SpecialistView, TeamView } from "./TeamView";
 import { FilePreview, MapView, ModuleView } from "./MapView";
 import { DecisionView, PactView } from "./PactView";
+import { BranchView, CommitView, PullRequestView } from "./GitView";
 
 /** The narrowest the dialog gets next to a docked inspector. */
 const CHAT_MIN_WIDTH = 420;
@@ -34,6 +35,9 @@ const TITLES = {
   work: "Lavoro",
   issues: "Issue del progetto",
   issue: "Issue",
+  pullRequest: "Pull request",
+  commit: "Commit",
+  branch: "Branch",
   goals: "Obiettivi",
   goal: "Obiettivo",
 } as const;
@@ -105,6 +109,9 @@ export function Inspector() {
         {target.kind === "work" ? <WorkView /> : null}
         {target.kind === "issues" ? <IssuesView /> : null}
         {target.kind === "issue" ? <IssueDetail number={target.number} /> : null}
+        {target.kind === "pullRequest" ? <PullRequestView number={target.number} /> : null}
+        {target.kind === "commit" ? <CommitView sha={target.sha} /> : null}
+        {target.kind === "branch" ? <BranchView name={target.name} /> : null}
         {target.kind === "goals" ? <GoalsView key={String(target.create)} create={target.create} /> : null}
         {target.kind === "goal" ? <GoalView key={`${target.id}:${String(target.edit)}`} id={target.id} edit={target.edit} /> : null}
       </div>

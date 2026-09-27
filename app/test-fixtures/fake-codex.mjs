@@ -43,6 +43,7 @@ const readableIn = (params, path) => {
   const roots = profileRoots(params.threadId, params.permissions ?? threadProfiles.get(params.threadId)?.permissions);
   return !roots || roots.some(([root, access]) => access !== "none" && (path === root || path.startsWith(`${root}/`)));
 };
+const referencesByThread = new Map();
 const receivedByThread = new Map();
 // Threads opened for "[lento:sempre]" work: the Coordinator's instructions carry the tag, so a resumed turn, whose
 // prompt only says to go on, stays running until interrupted like the first one. "[lento]" work ends when resumed.
@@ -193,6 +194,19 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
       seen.push(...params.input.filter((item) => item.type === "skill").map((item) => `skill:${item.name}:${item.path}`));
       if (text.includes("## Regole aggiornate da Trama")) seen.push("rules");
       receivedByThread.set(threadId, seen);
+      // Issue #277: the real ids Trama listed for the thread, kept for the turns that do not repeat the listing.
+      if (text.includes("## Riferimenti di Trama")) {
+        const listed = [...text.split("## Riferimenti di Trama")[1].matchAll(/^- (\S+)(?: \(piano [^)]+\))?: /gm)].map((m) => m[1]);
+        referencesByThread.set(threadId, listed);
+      }
+      if (text.includes("[cita]")) {
+        // Cites a candidate, its assignment and a decision by id, as the listing gave them, and one id that names nothing.
+        // Without a listing (a Trama before issue #277), the ids written in the message.
+        const listed = referencesByThread.get(threadId) ?? [...text.matchAll(/\b[ACD]-[0-9A-F]{8}\b/g)].map((m) => m[0]);
+        const pick = (prefix) => listed.findLast((id) => id.startsWith(prefix)) ?? `${prefix}-NESSUNO`;
+        setTimeout(() => finish(`Il candidato ${pick("C-")} viene dall'incarico ${pick("A-")} e rispetta la decisione ${pick("D-")}. Il candidato C-00000000 invece non c'è.`), 10);
+        return;
+      }
       if (text.includes("[ricevuti]")) {
         setTimeout(() => finish(JSON.stringify(seen)), 10);
         return;

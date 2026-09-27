@@ -163,7 +163,7 @@ export function IssueDetail({ number }: { number: number }) {
         </div>
         <div className="cta-row mt-3">
           <Button size="sm" variant="ghost" onClick={() => void act("shell:openExternal", { url: issue.url })}>
-            <IconExternalLink stroke={1.8} /> GitHub
+            <IconExternalLink stroke={1.8} /> Apri su GitHub
           </Button>
           <Button size="sm" variant={onRequest && issue.state === "open" ? "outline" : "default"} onClick={() => askCoordinator(issueQuestion(issue))}>
             <IconMessageCircle stroke={1.8} /> Chiedi al Coordinatore

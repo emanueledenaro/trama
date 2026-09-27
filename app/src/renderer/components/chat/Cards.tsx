@@ -47,6 +47,7 @@ import { cn } from "@/lib/cn";
 import { act, useUi } from "@/lib/store";
 import { ACTION_LABELS } from "@/lib/labels";
 import { ChatMarkdown } from "./ChatMarkdown";
+import { ReferenceText } from "./ReferenceText";
 import { PlanSpecBody } from "./PlanSpec";
 import { DutyFields } from "./DutyFields";
 import { Sep } from "@/components/ui/sep";
@@ -134,8 +135,14 @@ export function ContextNoticeCard({ title, detail }: { title: string; detail: st
     <div className="my-3 flex items-start gap-2 rounded-xl bg-[var(--color-background-button-secondary)] px-3.5 py-2.5 text-ui">
       <IconInfoCircle className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
       <div>
-        <div className="text-foreground/90">{title}</div>
-        {detail ? <div className="text-ui-sm text-muted-foreground">{readableFailure(detail)}</div> : null}
+        <div className="text-foreground/90">
+          <ReferenceText text={title} />
+        </div>
+        {detail ? (
+          <div className="text-ui-sm text-muted-foreground">
+            <ReferenceText text={readableFailure(detail)} />
+          </div>
+        ) : null}
       </div>
     </div>
   );

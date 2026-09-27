@@ -1,0 +1,131 @@
+import { describe, expect, it } from "vitest";
+import { emptyDocument } from "../main/core/document";
+import type { Candidate, GitHubState, SpecialistAssignment, Specialist, WorkPlan } from "./domain";
+import {
+  buildReferenceIndex,
+  lookupReference,
+  parseReferenceHref,
+  referenceHref,
+  referenceListing,
+  referenceText,
+  referenceTitle,
+  splitReferences,
+  unknownReferences,
+} from "./references";
+
+const assignment = { id: "A-11111111", objective: "Mostrare gli ordini in revisione al supporto", slice: { planId: "P-22222222", sliceId: "S2" }, workspace: { branch: "feature/support-review-trama-1a2b3c4d" } } as SpecialistAssignment;
+const luca = { id: "S-33333333", name: "Luca", origin: "coordinator", competence: "Swift", assignments: [assignment] } as unknown as Specialist;
+const security = { id: "S-44444444", name: "Sicurezza", origin: "fixedRole", competence: "Vulnerabilità", assignments: [] } as unknown as Specialist;
+const candidate = { id: "C-55555555", assignmentId: "A-11111111", specialistId: "S-33333333", baseSHA: "0123456789abcdef0123456789abcdef01234567", technicalReview: null, pullRequest: null } as unknown as Candidate;
+const plan = {
+  id: "P-22222222",
+  summary: "Revisione degli ordini",
+  proposal: null,
+  spec: null,
+  slicing: {
+    tickets: [
+      { id: "S1", title: "Il pagamento va in revisione", whatToBuild: "..." },
+      { id: "S2", title: "Il supporto vede gli ordini in revisione", whatToBuild: "..." },
+    ],
+  },
+} as unknown as WorkPlan;
+const github: GitHubState = {
+  repository: "negozio/app",
+  status: "ready",
+  message: null,
+  issues: [{ number: 13, title: "Annullo ordini pagati", state: "open", body: "", url: "https://github.com/negozio/app/issues/13", author: null, labels: [], updatedAt: "" }],
+  pullRequestLinks: [{ number: 14, linkedIssues: [13] }],
+  snapshot: null,
+  events: [],
+};
+const modules = [
+  {
+    id: "Sources/Orders",
+    name: "Orders",
+    summary: "Ordini",
+    relativePath: "Sources/Orders",
+    files: [{ id: "f", relativePath: "Sources/Orders/CancelPaidOrder.swift", lineCount: 15, contentHash: "" }],
+    dependencies: [],
+    symbol: "folder",
+  },
+];
+
+function index(ready = true) {
+  const document = emptyDocument("p");
+  document.team.specialists = [luca, security];
+  document.candidates = [candidate];
+  document.plans = [plan];
+  document.decisions = [{ id: "D-1", value: "Un ordine pagato annullato va in revisione", acceptedExample: "Ordine 42", rationale: "r", version: 1, decidedAt: "" }];
+  document.goals = [{ id: "G-66666666", title: "Annullo sicuro", outcome: "Nessun rimborso automatico" } as never];
+  return buildReferenceIndex({ document, modules, github: { ...github, status: ready ? "ready" : "loading" } });
+}
+
+const links = (text: string, ready = true) =>
+  splitReferences(text, index(ready)).map((part) => ("reference" in part ? `[${part.reference.target.kind}:${part.text}]` : "unknown" in part ? `{${part.text}}` : part.text)).join("");
+
+describe("references in messages (issue #277)", () => {
+  it("links the ids, numbers, names, paths and slices that name Trama's records", () => {
+    expect(links("Il candidato C-55555555 di Luca chiude la S2 e la #13, vedi Sources/Orders/CancelPaidOrder.swift:12 e la PR #14.")).toBe(
+      "Il candidato [candidate:C-55555555] di [specialist:Luca] chiude la [slice:S2] e la [issue:#13], vedi [file:Sources/Orders/CancelPaidOrder.swift:12] e la PR [pullRequest:#14].",
+    );
+    expect(links("Incarico A-11111111, decisione D-1, obiettivo G-66666666, piano P-22222222, modulo Sources/Orders.")).toBe(
+      "Incarico [assignment:A-11111111], decisione [decision:D-1], obiettivo [goal:G-66666666], piano [plan:P-22222222], modulo [module:Sources/Orders].",
+    );
+    expect(links("Branch feature/support-review-trama-1a2b3c4d, base 0123456.")).toBe("Branch [branch:feature/support-review-trama-1a2b3c4d], base [commit:0123456].");
+  });
+
+  it("links the composer's mentions and keeps the punctuation out", () => {
+    expect(links("Guarda @module:Sources/Orders, @issue:13 e @Sources/Orders/CancelPaidOrder.swift.")).toBe(
+      "Guarda [module:@module:Sources/Orders], [issue:@issue:13] e [file:@Sources/Orders/CancelPaidOrder.swift].",
+    );
+  });
+
+  it("leaves unknown ids as text and reports them, only when Trama can know", () => {
+    expect(links("Il candidato C-AC540E8F e la #99 non esistono; E-12345678 non si collega.")).toBe(
+      "Il candidato {C-AC540E8F} e la {#99} non esistono; E-12345678 non si collega.",
+    );
+    expect(unknownReferences("C-AC540E8F, C-AC540E8F e #99", index())).toEqual(["C-AC540E8F", "#99"]);
+    // Before GitHub answers an issue number cannot be judged.
+    expect(unknownReferences("la #99", index(false))).toEqual([]);
+    // A fixed role's name is a common word, a slice id that names nothing is not reported.
+    expect(links("Sicurezza e S9 restano testo.")).toBe("Sicurezza e S9 restano testo.");
+    expect(links("Niente url&#13; né a/#13")).toBe("Niente url&#13; né a/#13");
+  });
+
+  it("shows readable names and keeps the id for the hover", () => {
+    const refs = index();
+    const slice = lookupReference("S2", refs)!;
+    expect(slice.label).toBe("fetta 2, Il supporto vede gli ordini in revisione");
+    expect(referenceText(slice, "S2", "Ora lavoro sulla ")).toBe("fetta 2, Il supporto vede gli ordini in revisione");
+    expect(referenceText(slice, "S2", "Ora lavoro sulla fetta ")).toBe("2, Il supporto vede gli ordini in revisione");
+    const work = lookupReference("C-55555555", refs)!;
+    expect(work.label).toBe("candidato di Luca, fetta 2, Il supporto vede gli ordini in revisione");
+    expect(referenceTitle(work)).toBe("C-55555555: Mostrare gli ordini in revisione al supporto");
+    expect(referenceText(lookupReference("#13", refs)!, "#13", "Chiude ")).toBe("issue #13");
+    expect(referenceText(lookupReference("#13", refs)!, "#13", "Chiude la issue ")).toBe("#13");
+    expect(lookupReference("#13", refs)!.url).toBe("https://github.com/negozio/app/issues/13");
+    expect(lookupReference("#14", refs)!.url).toBe("https://github.com/negozio/app/pull/14");
+    expect(referenceText(lookupReference("S-33333333", refs)!, "S-33333333", "Lavora ")).toBe("Luca");
+    expect(referenceText(lookupReference("Luca", refs)!, "Luca", "")).toBe("Luca");
+  });
+
+  it("writes every target as a link and reads it back", () => {
+    const refs = index();
+    for (const token of ["#13", "#14", "A-11111111", "C-55555555", "D-1", "G-66666666", "P-22222222", "S2", "S-33333333", "Sources/Orders", "Sources/Orders/CancelPaidOrder.swift", "0123456", "feature/support-review-trama-1a2b3c4d"]) {
+      const reference = lookupReference(token, refs)!;
+      expect(parseReferenceHref(referenceHref(reference.target))).toEqual(reference.target);
+    }
+    expect(parseReferenceHref("trama:ref/nothing/x")).toBeNull();
+    expect(parseReferenceHref("https://github.com")).toBeNull();
+  });
+
+  it("lists the real ids for the Coordinator", () => {
+    const listing = referenceListing(index())!;
+    expect(listing).toContain("- C-55555555: candidato di Luca");
+    expect(listing).toContain("- S2 (piano P-22222222): fetta 2, Il supporto vede gli ordini in revisione");
+    expect(listing).toContain("- D-1: decisione «Un ordine pagato annullato va in revisione»");
+    const empty = emptyDocument("p");
+    empty.team.specialists = [];
+    expect(referenceListing(buildReferenceIndex({ document: empty, modules: [], github }))).toBeNull();
+  });
+});
