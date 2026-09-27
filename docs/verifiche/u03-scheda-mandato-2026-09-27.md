@@ -18,10 +18,10 @@ I lavori che si fermerebbero vengono dallo stesso calcolo che il controller usa 
 
 ## Verifiche eseguite
 
-Su origin/main `36ef5f3`, in `app/`:
+Su origin/main `8fb058a`, in `app/`:
 
 - `npx tsc --noEmit -p .`: nessun errore.
-- `npx vitest run`: 106 file, 934 test passati, 3 saltati.
+- `npx vitest run`: 106 file, 937 test passati, 3 saltati.
 - `npm run build`: riuscito.
 - `xvfb-run -a node scripts/ui-check.mjs`: uscita 0. Il controllo nuovo verifica la differenza, l'ordine dei pulsanti, l'assenza di Revoca sulla proposta, il motivo obbligatorio della revoca e che il rifiuto lasci il mandato uguale.
 
