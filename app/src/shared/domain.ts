@@ -28,6 +28,8 @@ export type CardKind =
   | "automaticStep"
   /** Trama asks whether to share the presence in this project (G01); referenceId is the proposal, `initial` or `conflict`. */
   | "presenceConsent"
+  /** The route Ask Trama chose for the person's situation (M07); referenceId is the route. */
+  | "route"
   /** The Coordinator points out an overlap with a colleague's work (G03); referenceId is the overlap's id. */
   | "overlap";
 
@@ -41,6 +43,12 @@ export interface ConflictAssessment {
   conflictingFiles: string[];
   /** The lines in conflict for each file, in the candidate's version (G03); absent in older assessments. */
   conflictingLines?: Record<string, import("./overlap").LineRange[]>;
+  /**
+   * Set when the other side is another developer's worktree in this project, not a remote head (W08): its candidate
+   * and the snapshot compared. `remoteSHA` is then the temporary commit Trama made of that candidate.
+   */
+  otherCandidateId?: string;
+  otherSnapshotId?: string;
   detail: string;
   checkedAt: string;
 }
@@ -95,6 +103,8 @@ export interface CoordinatorRequest {
 export interface RequestStep {
   move: NextMove;
   by: "person" | "trama";
+  /** Set when Trama's automatic turn ended without making the move: why, in the person's words (issue #204). */
+  stalled?: string | null;
 }
 
 /** The phase of a request's work, computed by Trama from the records, never by the model (W01). */
@@ -296,7 +306,8 @@ export interface CoordinatorState {
   /** The provider that owns `threadId`; absent means Codex. */
   threadProvider?: ProviderId;
   /** Set when the person moved the Coordinator to another provider: the next study hands the conversation over. */
-  pendingHandover?: { from: ProviderId; reason: string } | null;
+  /** `transcript` false: the new session starts without the conversation (an Ask Trama "/clear", M07). */
+  pendingHandover?: { from: ProviderId; reason: string; transcript?: boolean } | null;
   injectedStudy: Partial<Record<StudyPart, string>>;
   memory: CoordinatorMemory;
   study: ProjectStudy | null;
@@ -432,6 +443,8 @@ export interface SpecialistAssignment {
   seams?: ContractSeam[];
   /** The developer's structured report (W05), read from its last answer: its statement, never evidence. */
   report?: DeveloperReport | null;
+  /** Set when the developer took the slice by itself, within the mandate, instead of the Coordinator assigning it (W08). */
+  selfPicked?: boolean;
   /** The questions the developer asked the Coordinator during the work (W06), oldest first. */
   questions?: DeveloperQuestion[];
 }
@@ -622,6 +635,8 @@ export interface AssignmentDuty {
   outcome: DutyOutcome | null;
   /** The session ended with an answer Trama could not read. */
   unreadable?: boolean;
+  /** Who asked Trama to start it now, outside its rule (issue #231); absent when Trama's rule started it. */
+  requestedBy?: "person" | "coordinator";
 }
 
 /** A check that failed on the project checkout or on a candidate, waiting for or under diagnosis (W11). */
@@ -688,10 +703,42 @@ export interface DomainProposal {
   waiting: string | null;
 }
 
+/** An issue Trama saw for the first time after it started watching the project. */
+export interface NewIssue {
+  number: number;
+  seenAt: string;
+  /** Why the issue no longer goes to triage; null while it is still new. Once set it stays, also after a reopening. */
+  dropped: string | null;
+}
+
+/** The fixed roles' automatic work, as the person and the Coordinator see it (issue #231). */
+export type AutomaticWorkKind = "triage" | "diagnosis" | "architectureReview" | "domainWriting";
+
+/** The automatic work the person or the Coordinator may start now, outside Trama's rule. */
+export type AutomaticWorkRequest = { kind: "architectureReview" } | { kind: "triage"; issueNumber: number };
+
+export interface AutomaticWorkStatus {
+  kind: AutomaticWorkKind;
+  role: TeamRole;
+  /** running: at work now; due: starts at Trama's next look; waiting: has work but something holds it; idle: nothing to do. */
+  state: "running" | "due" | "waiting" | "idle";
+  /** The assignment at work, while running. */
+  assignmentId: string | null;
+  /** In the person's words: what it does, when it starts and why it has not started yet. */
+  detail: string;
+  /** Whether the person or the Coordinator may start it now on request; null for work that only Trama's rule starts. */
+  onRequest: { allowed: true } | { allowed: false; reason: string } | null;
+}
+
 /** Trama's own bookkeeping for the fixed roles' automatic work (W11). */
 export interface DutyLedger {
   /** The highest issue number when Trama first read the project's issues: only issues above it are new. */
   issueBaseline: number | null;
+  /**
+   * Each issue above the baseline as Trama first read it, and why it stopped counting as new (issue #231): closed,
+   * already evaluated, already in work or with a linked pull request. Absent in ledgers written before it.
+   */
+  newIssues?: NewIssue[];
   failures: CheckFailure[];
   /** The last result of each check on the project checkout, to recognize a regression. */
   checkoutChecks: Record<string, { headSHA: string | null; passed: boolean }>;
@@ -963,6 +1010,11 @@ export interface SliceTicket {
   blockedBy: string[];
   /** The GitHub issue the slice was published as; null while it stays in Trama. */
   issue: { number: number; url: string; at: string } | null;
+  /**
+   * Set while the slice is paused, as when a developer's question became a Pact card that blocks the work (W06):
+   * nobody picks it until the pause is cleared. Absent or null means not paused.
+   */
+  pause?: { reason: string; since: string } | null;
 }
 
 /**
@@ -1078,12 +1130,21 @@ export interface ProjectDocument {
   focus?: TaskFocus;
   /** The person's consent to share the presence in this project (G01); absent until Trama first proposes it. */
   presence?: import("./presence").PresenceConsent;
+  /** Routes the Coordinator proposed with the ask-trama skill (M07); absent before the first one. */
+  routes?: import("./askTrama").AskTramaRoute[];
   /** The overlaps the Coordinator already pointed out in the chat (G03), so each one is said once. */
   overlapNotices?: string[];
+  /** The person's settings for this project; absent until they first change one. */
+  settings?: ProjectSettings;
   /** How the project adapts Trama's Clean Code standard (Q03); absent means every rule is on. */
   cleanCode?: import("./cleanCode").CleanCodeSettings;
   /** Focus mode examinations (F01); absent until the person first opens focus mode. */
   audits?: FocusAudit[];
+}
+
+export interface ProjectSettings {
+  /** Developers at work at the same time (W08); absent means three. */
+  parallelDevelopers?: number;
 }
 
 export type AuditStatus = "checking" | "reviewing" | "done" | "failed";
@@ -1173,6 +1234,8 @@ export interface GitHubPullRequest {
   updatedAt: string;
   /** Opened from a fork: its head lives in another repository. */
   fromFork?: boolean;
+  /** The issues the pull request names in its title, body or branch (#12, Closes #12, issue-12-...). */
+  linkedIssues?: number[];
   checks?: "success" | "failure" | "pending" | "none";
   reviewState?: "approved" | "changesRequested" | "commented" | "none";
 }
@@ -1212,11 +1275,19 @@ export interface MonitorState {
   status: Record<string, { lastSuccessAt: string | null; lastError: string | null; consecutiveFailures: number }>;
 }
 
+/** The issues a pull request names, open or not (issue #231). */
+export interface PullRequestLink {
+  number: number;
+  linkedIssues: number[];
+}
+
 export interface GitHubState {
   repository: string | null;
   status: "idle" | "loading" | "ready" | "unavailable";
   message: string | null;
   issues: GitHubIssue[];
+  /** The pull requests of every state that GitHub listed with the issues, and the issues they name; absent before the first reading. */
+  pullRequestLinks?: PullRequestLink[];
   snapshot: GitHubSnapshot | null;
   events: TeamEvent[];
   /** What the person's gh session can do on this repository (T03). */
@@ -1260,6 +1331,8 @@ export interface ActiveProjectState {
   presence?: import("./presence").PresenceView | null;
   /** The person's work against the colleagues' presence (G03); absent without a presence reading. */
   overlaps?: import("./overlap").OverlapView | null;
+  /** Where each fixed role's automatic work stands (issue #231), computed by the main process. */
+  automaticWork?: AutomaticWorkStatus[];
   /** The automatic retry after a temporary provider limit, while it waits (P10). */
   providerRetry?: import("./providerFailure").ProviderRetryView | null;
 }

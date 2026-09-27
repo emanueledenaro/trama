@@ -6,6 +6,7 @@ import { placeGrillingQuestion } from "@shared/grilling";
 import { FIXED_ROLES } from "@shared/roster";
 import { COORDINATOR_TOOLS, developerInstructions, GRILLING_BINDING, NEXT_STEP_RULES, runCoordinatorTool, type ToolContext } from "./coordinatorTools";
 import { emptyDocument } from "./document";
+import { DutyRequestError } from "./duties";
 import { deliverNativeSkill, loadNativeSkill } from "./nativeSkills";
 import { answerDecisionRequest, createDecisionRequest, decide, grantMandate, revokeMandate } from "./pact";
 import { assign, beginTurn, confirmTeam, developers, endTurn, proposeTeam, recordWorkspace } from "./team";
@@ -31,15 +32,17 @@ const parse = (result: { content: { text: string }[] }) => JSON.parse(result.con
 const CONTRACT = { seams: ["La nota degli ordini"], decisionIDs: [], dependencies: [] };
 
 describe("Coordinator tools for the full team (W09)", () => {
-  it("read_team shows every figure with its role, its moments and its skills", async () => {
-    const team = parse(await runCoordinatorTool("read_team", {}, teamContext(emptyDocument("p"))));
+  it("read_team shows every figure with its role, and one figure with its moments and its skills", async () => {
+    const context = teamContext(emptyDocument("p"));
+    const team = parse(await runCoordinatorTool("read_team", {}, context));
     expect(team.specialists.filter((s: { fixedRole: boolean }) => s.fixedRole)).toHaveLength(11);
-    expect(team.specialists.find((s: { role: string }) => s.role === "regressionGuardian")).toMatchObject({
+    const guardian = team.specialists.find((s: { role: string }) => s.role === "regressionGuardian");
+    expect(guardian).toMatchObject({ name: "Guardiano delle regressioni", fixedRole: true });
+    expect(parse(await runCoordinatorTool("read_team", { specialistID: guardian.id }, context))).toMatchObject({
       name: "Guardiano delle regressioni",
-      fixedRole: true,
       moments: [{ moment: "candidate", skills: ["diagnosing-bugs"] }],
     });
-    expect(team.specialists.find((s: { role: string }) => s.role === "security").moments[0].skills).toEqual([]);
+    expect(parse(await runCoordinatorTool("read_team", { specialistID: "Sicurezza" }, context)).moments[0].skills).toEqual([]);
   });
 
   it("propose_team proposes developers only, beside the fixed roles", async () => {
@@ -283,8 +286,78 @@ describe("the contract of an assignment and the developer's report (W05)", () =>
       exceptions: null,
     };
     expect(developers(document)[0]!.assignments[0]!.report).toEqual(report);
-    const team = parse(await runCoordinatorTool("read_team", {}, context));
-    expect(team.specialists.find((s: { name: string }) => s.name === "Ada").assignment.report).toEqual(report);
+    const ada = parse(await runCoordinatorTool("read_team", { specialistID: "Ada" }, context));
+    expect(ada.assignment.report).toEqual(report);
+  });
+});
+
+describe("read_team and the automatic work of the fixed roles (issue #231)", () => {
+  it("stays small with any team: a line per specialist, one specialist in full on request, pages", async () => {
+    const document = emptyDocument("p");
+    confirmTeam(
+      document,
+      proposeTeam(document, {
+        requestId: null,
+        summary: null,
+        members: Array.from({ length: 30 }, (_, i) => ({ name: `Dev ${i + 1}`, competence: "TypeScript", reason: "r", moduleIds: ["app"] })),
+      }).id,
+      null,
+      null,
+    );
+    for (const developer of developers(document)) {
+      const work = assign(
+        document,
+        { specialist: developer.id, kind: "agreedTicket", objective: "o", issueNumber: null, exercise: null, moduleIds: ["app"], dependencies: [], model: "m", tools: ["commands"], requiredChecks: [], instructions: "i" },
+        1,
+        null,
+      );
+      beginTurn(document, work.id, `t-${work.id}`, "m");
+      endTurn(document, work.id, `t-${work.id}`, { kind: "completed", text: "Risultato lungo. ".repeat(2_000) });
+    }
+    const context = {
+      ...teamContext(document),
+      providers: [{ id: "codex", models: ["gpt-5.5"], catalog: [{ model: "gpt-5.5", displayName: "GPT", description: "d".repeat(2_000), supportedReasoningEfforts: ["low", "high"] }] }],
+      automaticWork: () => [
+        { kind: "architectureReview", role: "cleanCode", state: "waiting", assignmentId: null, detail: "Aspetta che il team sia libero: 2 incarichi sono al lavoro.", onRequest: { allowed: true } },
+      ],
+    } as unknown as ToolContext;
+    const summary = await runCoordinatorTool("read_team", {}, context);
+    expect(summary.content[0]!.text.length).toBeLessThan(20_000);
+    const team = parse(summary);
+    expect(team).toMatchObject({ page: 1, pages: 3, specialistCount: 41 });
+    expect(team.specialists).toHaveLength(20);
+    expect(team.specialists[0]).not.toHaveProperty("moments");
+    expect(team.providers).toEqual([{ id: "codex", models: [{ model: "gpt-5.5", efforts: ["low", "high"] }] }]);
+    expect(team.automaticWork).toEqual([
+      { work: "architectureReview", role: "cleanCode", state: "waiting", assignmentID: null, detail: "Aspetta che il team sia libero: 2 incarichi sono al lavoro.", startNow: "allowed" },
+    ]);
+    expect(parse(await runCoordinatorTool("read_team", { page: 3 }, context)).specialists).toHaveLength(1);
+    const one = parse(await runCoordinatorTool("read_team", { specialistID: "Dev 30" }, context));
+    expect(one.assignment.result).toContain("Risultato lungo.");
+    expect((await runCoordinatorTool("read_team", { specialistID: "Nessuno" }, context)).isError).toBe(true);
+  });
+
+  it("start_automatic_work asks Trama for the work and returns its refusal in the person's words", async () => {
+    const requests: unknown[] = [];
+    const context = {
+      ...teamContext(emptyDocument("p")),
+      startAutomaticWork: async (request: unknown) => {
+        requests.push(request);
+        if (requests.length > 1) throw new DutyRequestError("role_busy", "Clean Code è già al lavoro sull'incarico A-1: riprova quando finisce.");
+        return "A-1";
+      },
+    } as unknown as ToolContext;
+    expect(parse(await runCoordinatorTool("start_automatic_work", { work: "architectureReview", reason: "La persona la chiede" }, context))).toMatchObject({
+      assignmentID: "A-1",
+      status: "started",
+    });
+    const busy = await runCoordinatorTool("start_automatic_work", { work: "triage", issueNumber: 187, reason: "r" }, context);
+    expect(busy.isError).toBe(true);
+    expect(busy.content[0]!.text).toContain("role_busy");
+    expect(requests).toEqual([{ kind: "architectureReview" }, { kind: "triage", issueNumber: 187 }]);
+    expect((await runCoordinatorTool("start_automatic_work", { work: "triage", reason: "r" }, context)).isError).toBe(true);
+    expect(developerInstructions("Demo")).toMatch(/start_automatic_work/);
+    expect(developerInstructions("Demo")).toMatch(/never simulate it with assign_task/);
   });
 });
 
@@ -563,6 +636,52 @@ describe("team and candidate tools under the mandate (V04, V05)", () => {
     grant(document, ["executeInWorktree", "integrateCandidate"]);
     expect(await refusal("clear_candidate", { candidate: candidate.id }, context)).toContain("candidate_not_verified");
     expect(candidate.clearance).toBeNull();
+  });
+
+  it("verify_candidate on an ended assignment says to declare the candidate first, then resolves to it (issue #204)", async () => {
+    const document = emptyDocument("p");
+    const verified: string[] = [];
+    const context = {
+      ...mandateContext(document).context,
+      verifyCandidate: async (id: string) => {
+        verified.push(id);
+        return { exitCode: 0, output: "pulito", command: ["git", "status"] };
+      },
+    } as unknown as ToolContext;
+    const decision = decide(document, { id: null, value: "Un ordine pagato va in revisione", acceptedExample: "Ordine 42", rationale: "r" });
+    confirmTeam(document, proposeTeam(document, { requestId: null, summary: null, members: [{ name: "Ada", competence: "Swift", reason: "r", moduleIds: [] }] }).id, null, null);
+    grant(document, ["executeInWorktree"]);
+    const assignment = assign(document, { ...order, moduleIds: ["Sources/Orders"], model: "gpt-5.5" } as never, 1, null);
+    recordWorkspace(document, assignment.id, WORKTREE as never);
+    beginTurn(document, assignment.id, "t1", "gpt-5.5");
+
+    // While the work runs there is nothing to declare yet.
+    expect(await refusal("verify_candidate", { candidate: assignment.id, check: "git_status" }, context)).toContain("assignment_running");
+    endTurn(document, assignment.id, "t1", { kind: "completed", text: "fatto" });
+
+    // The live sequence: the Coordinator passes the assignment id, twice. Each answer names the move to make first.
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const refused = parse(await runCoordinatorTool("verify_candidate", { candidate: assignment.id, check: "git_status" }, context));
+      expect(refused.error.code).toBe("candidate_not_declared");
+      expect(refused.error.message).toContain(`declare_candidate with assignment ${assignment.id}`);
+      expect(refused.error.message).toContain("candidateID");
+    }
+    expect(verified).toEqual([]);
+    expect(await refusal("verify_candidate", { candidate: "C-NESSUNO", check: "git_status" }, context)).toContain("unknown_candidate");
+
+    // Once declared, the assignment id stands for its latest candidate.
+    const declared = parse(await runCoordinatorTool("declare_candidate", { assignment: assignment.id, decisionIDs: [decision.id] }, context));
+    const result = parse(await runCoordinatorTool("verify_candidate", { candidate: assignment.id, check: "git_status" }, context));
+    expect(result).toMatchObject({ candidateID: declared.candidateID, check: "git_status", passed: true });
+    expect(verified).toEqual([declared.candidateID]);
+  });
+
+  it("verify_candidate on read-only work says it has no candidate", async () => {
+    const document = emptyDocument("p");
+    const { context } = mandateContext(document);
+    confirmTeam(document, proposeTeam(document, { requestId: null, summary: null, members: [{ name: "Ada", competence: "Swift", reason: "r", moduleIds: [] }] }).id, null, null);
+    const assignment = assign(document, { ...order, tools: [], moduleIds: ["Sources/Orders"], model: "gpt-5.5" } as never, 1, null);
+    expect(await refusal("verify_candidate", { candidate: assignment.id, check: "git_status" }, context)).toContain("not_a_candidate");
   });
 
   it("declare_candidate derives the Conventional Commits message and set_commit_message corrects it or refuses it (Q01)", async () => {

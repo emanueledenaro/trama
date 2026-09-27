@@ -181,7 +181,7 @@ function makeRuntime(client: ReturnType<typeof fakeClient>, toolServer = true) {
   });
   sdk.client = client;
   const runtime = new OpenCodeRuntime(
-    { toolServer: toolServer ? { name: "trama", url: "http://127.0.0.1:5000/mcp", token: "tok" } : null },
+    { toolServer: toolServer ? { name: "trama", url: "http://127.0.0.1:5000/mcp", token: "tok", tools: ["read_issues"] } : null },
     { startServer, resolveExecutable: () => "/usr/bin/opencode", idleSettleMs: 1, prematureIdleGraceMs: 20 },
   );
   return { runtime, servers, stops, startServer };
@@ -316,9 +316,39 @@ describe("OpenCodeRuntime", () => {
       { type: "tokenUsage", usedTokens: 135, contextWindow: 200_000 },
       { type: "textDelta", itemId: "prt_x", delta: "Fat" },
       { type: "textDelta", itemId: "prt_x", delta: "to." },
+      { type: "toolRefused", itemId: "per_1", tool: "bash ls", reason: expect.stringContaining("I comandi del provider sono bloccati") },
       { type: "completed", text: "Fatto." },
     ]);
     expect(runtime.isRunningTurn).toBe(false);
+    runtime.stop();
+  });
+
+  it("refuses OpenCode's GitHub command with the reason and lets the turn use read_issues (issue #228)", async () => {
+    const client = fakeClient();
+    const { runtime } = makeRuntime(client);
+    await runtime.openThread({ model: "anthropic/claude-x", cwd: "/repo", developerInstructions: "" });
+    const events: TurnEvent[] = [];
+    const answer = runtime.runTurn({ threadId: "ses_new", prompt: "Leggi le issue", cwd: "/repo", model: "anthropic/claude-x", onEvent: (e) => events.push(e) });
+    await vi.waitFor(() => expect(client.session.promptAsync).toHaveBeenCalled());
+    const readIssues = (status: string) =>
+      partUpdated({ id: "prt_i", messageID: "msg_a1", type: "tool", callID: "call_i", tool: "trama_read_issues", state: { status, input: {}, output: "[]", title: "", metadata: {}, time: { start: 1, end: 2 } } });
+    client.events.push(
+      assistant("msg_a1"),
+      { type: "permission.asked", properties: { id: "per_gh", sessionID: "ses_new", permission: "bash", patterns: ["gh issue list"], metadata: {}, always: [], tool: { messageID: "msg_a1", callID: "call_gh" } } },
+      readIssues("running"),
+      readIssues("completed"),
+      partUpdated({ id: "prt_x", messageID: "msg_a1", type: "text", text: "Ecco le issue.", time: { start: 1, end: 3 } }),
+      assistant("msg_a1", { finish: "stop", time: { created: now(), completed: now() } }),
+      { type: "session.idle", properties: { sessionID: "ses_new" } },
+    );
+    await expect(answer).resolves.toBe("Ecco le issue.");
+    expect(client.permission.reply).toHaveBeenCalledWith({
+      requestID: "per_gh",
+      reply: "reject",
+      message: expect.stringContaining("Gli strumenti GitHub del provider sono bloccati: per le issue usa read_issues di Trama."),
+    });
+    expect(events).toContainEqual({ type: "toolRefused", itemId: "call_gh", tool: "bash gh issue list", reason: expect.stringContaining("read_issues") });
+    expect(events).toContainEqual({ type: "toolCallCompleted", itemId: "call_i", server: "trama", tool: "read_issues", succeeded: true, error: null });
     runtime.stop();
   });
 

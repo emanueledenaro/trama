@@ -2,7 +2,7 @@ import { Popover } from "@base-ui/react/popover";
 import { IconBolt, IconBoltFilled, IconChevronDown, IconRotateClockwise } from "@tabler/icons-react";
 import { isUsableAccount, type ProviderId } from "@shared/codex";
 import { failureSummary } from "@shared/providerFailure";
-import { PROVIDERS } from "@shared/providers";
+import { coordinatorUnavailableReason, PROVIDERS } from "@shared/providers";
 import { useEffect, useRef, useState } from "react";
 import { PROVIDER_GLOW, ProviderIcon } from "@/components/ProviderIcon";
 import { PickerHeader, PickerList, PickerNote, PickerOption, PickerPopup, PickerSearch, usePickerSearch } from "@/components/ui/picker";
@@ -18,6 +18,7 @@ export const EFFORT_LABELS: Record<string, string> = {
   xhigh: "Molto alto",
   max: "Massimo",
   ultra: "Ultra",
+  thinking: "Ragionamento",
 };
 
 /** Provider catalogues separate facts with " · "; Trama shows them as a plain list. */
@@ -170,6 +171,8 @@ export function ModelPicker({
             })
           )}
         </PickerList>
+
+        {coordinatorUnavailableReason(browsing) ? <p className="px-4 pb-2 text-ui-xs text-warning">{coordinatorUnavailableReason(browsing)}</p> : null}
 
         {modelMissing && browsing === selectedProvider ? (
           <p className="px-4 pb-2 text-ui-xs text-warning">{selectedModel} non è più disponibile: scegline un altro.</p>

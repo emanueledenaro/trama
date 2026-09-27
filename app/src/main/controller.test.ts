@@ -1,8 +1,9 @@
 import { workState } from "./core/workPhase";
 import { openGrillingQuestions } from "@shared/grilling";
-import { chmod, cp, mkdtemp } from "node:fs/promises";
+import { chmod, cp, mkdtemp, realpath, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { existsSync } from "node:fs";
 import { afterEach, describe, expect, it } from "vitest";
 import type { AppState, ProjectDocument } from "@shared/domain";
 import { decisionDependents, dialogEvents, findGoal, projectGoals } from "@shared/goals";
@@ -112,6 +113,28 @@ describe("TramaController", () => {
     expect(project.snapshot.headSHA).toMatch(/^[0-9a-f]{40}$/);
   });
 
+  it("opens the Coordinator of a project opened while the previous one's was still starting (F01)", async () => {
+    await setup();
+    const first = await mkdtemp(join(tmpdir(), "trama-first-"));
+    const second = await mkdtemp(join(tmpdir(), "trama-second-"));
+    for (const path of [first, second]) await cp(join(root, "resources/DemoProject"), path, { recursive: true });
+    const gate = join(await mkdtemp(join(tmpdir(), "trama-gate-")), "initialize");
+    process.env.FAKE_CODEX_INITIALIZE_GATE = gate;
+    try {
+      // The first project's Coordinator waits for its app-server to start; the person opens another project meanwhile.
+      await controller!.openProject(first);
+      await until(() => existsSync(`${gate}.held`));
+      await controller!.openProject(second);
+      const project = controller!.snapshot.project!;
+      expect(project.rootPath).toBe(await realpath(second));
+      await writeFile(gate, "");
+      // Well within the 15 s an app-server request may take: the second project does not wait on the first one's.
+      await until(() => project.phase.kind === "ready", 5_000);
+    } finally {
+      delete process.env.FAKE_CODEX_INITIALIZE_GATE;
+    }
+  });
+
   it("studies the project, answers a message and records references", async () => {
     await setup();
     const project = controller!.snapshot.project!;
@@ -161,6 +184,9 @@ describe("TramaController", () => {
     expect(document.composerDraft).toBe("bozza del progetto");
     expect(findGoal(document, second)!.dialog).toMatchObject({ selectedModel: "gpt-5.5", selectedEffort: "high" });
     expect(document.selectedEffort).toBeNull();
+    // An Antigravity name with its level, as agy lists it, is stored as catalogue model plus level (issue #209).
+    await controller!.selectModel("Gemini 3.8 Flash (High)", null, "antigravity", first);
+    expect(findGoal(document, first)!.dialog).toMatchObject({ selectedProvider: "antigravity", selectedModel: "Gemini 3.8 Flash", selectedEffort: "high" });
 
     await controller!.send("Da dove partiamo?", null, null, null, [], null, first);
     const request = document.requests.at(-1)!;
@@ -386,10 +412,10 @@ describe("TramaController", () => {
     expect(second.spec ?? null).toBeNull();
   });
 
-  it("gives the Coordinator thread the original grill-with-docs, grilling and domain-modeling skills once, also when it is already open (M02, M03)", async () => {
+  it("gives the Coordinator thread the original grill-with-docs, grilling, domain-modeling and ask-trama skills once, also when it is already open (M02, M03, M07)", async () => {
     await setup();
     const document = controller!.snapshot.project!.document;
-    const skill = ["grill-with-docs", "grilling", "domain-modeling"].map((name) => `skill:${name}:${join(root, `resources/AIHero/skills/${name}/SKILL.md`)}`);
+    const skill = ["grill-with-docs", "grilling", "domain-modeling", "ask-trama"].map((name) => `skill:${name}:${join(root, `resources/AIHero/skills/${name}/SKILL.md`)}`);
     const received = async () => {
       await controller!.send("[ricevuti]", null, null, null);
       return JSON.parse((document.events.at(-1)!.content as { text: string }).text) as string[];

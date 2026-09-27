@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 import type { CoordinatorRequest, MandateAction, ProjectDocument, RequestStep, WorkPlan } from "@shared/domain";
 import { placeGrillingQuestion } from "@shared/grilling";
-import { AUTOMATIC_MOVES_IN_A_ROW, automaticMove, closingConfirmation, confirmationFeedback, type ContinuationGuards } from "./continuousWork";
-import { emptyDocument, recordReply } from "./document";
+import { AUTOMATIC_MOVES_IN_A_ROW, automaticMove, automaticMoveSection, choicesInText, choicesWithoutCard, closingConfirmation, confirmationFeedback, type ContinuationGuards, stalledMove } from "./continuousWork";
+import { declareCandidate, recordEvidence, recordTechnicalReview } from "./candidates";
+import { appendEvent, emptyDocument, recordReply } from "./document";
 import { answerDecisionRequest, createDecisionRequest, createMandateRequest, grantMandate } from "./pact";
 import { assign, confirmTeam, endTurn, proposeTeam } from "./team";
 
@@ -272,5 +273,134 @@ describe("confirmationFeedback: Trama tells the Coordinator about its closing qu
     expect(confirmationFeedback(document, "g2")).toBeNull();
     expect(confirmationFeedback(document, "r1")).toBeNull();
     expect(confirmationFeedback(document, "missing")).toBeNull();
+  });
+});
+
+describe("stalledMove: an automatic move the turn did not make is shown with its reason (issue #204)", () => {
+  /** The live run: the developer ended its work, Trama started the checks, the Coordinator's turn ended without a candidate. */
+  function ended() {
+    const document = confirmed();
+    request(document, "r3");
+    plan(document, "r3");
+    team(document);
+    request(document, "r4", { step: { move: "assignWork", by: "trama" } });
+    const assignment = work(document, "r4");
+    endTurn(document, assignment.id, null, { kind: "completed", text: "Fatto" });
+    const move = request(document, "r5", { step: { move: "verifyCandidate", by: "trama" } });
+    move.createdAt = new Date(Date.UTC(2026, 8, 25, 10, 5)).toISOString();
+    return { document, assignment, move };
+  }
+
+  it("says the candidate was not declared when the checks were never run", () => {
+    const { document, assignment } = ended();
+    expect(stalledMove(document, "r5")).toEqual({
+      move: "verifyCandidate",
+      reason: `La mossa automatica non è riuscita: l'incarico ${assignment.id} è concluso ma il suo candidato non è stato dichiarato.`,
+    });
+  });
+
+  it("is null when the Coordinator made the move, even in part, or declared its own next step", () => {
+    const { document, assignment, move } = ended();
+    const decision = document.decisions[0]!;
+    const candidate = declareCandidate(
+      document,
+      { assignmentId: assignment.id, decisionIds: [decision.id], unresolvedChoices: [], externalEffects: [] },
+      { snapshotId: "snap", baseSHA: "base", diff: "+x", changedFiles: ["NOTE.md"], excludedSensitiveFiles: [], whitespaceErrors: [] },
+      new Date(Date.UTC(2026, 8, 25, 10, 6)),
+    );
+    expect(stalledMove(document, "r5")).toBeNull();
+
+    // A candidate declared before the move, with no evidence since: the checks did not start.
+    candidate.declaredAt = new Date(Date.UTC(2026, 8, 25, 10, 4)).toISOString();
+    expect(stalledMove(document, "r5")?.reason).toBe(`La mossa automatica non è riuscita: le verifiche di ${candidate.id} non sono partite.`);
+    recordEvidence(document, candidate.id, { check: "git_status", passed: true, command: "git status", output: "", snapshotId: "snap" }, new Date(Date.UTC(2026, 8, 25, 10, 6)));
+    expect(stalledMove(document, "r5")).toBeNull();
+
+    candidate.evidence = {};
+    move.nextStep = { move: "verifyCandidate", reason: "Le verifiche aspettano.", declaredAt: "" };
+    expect(stalledMove(document, "r5")).toBeNull();
+  });
+
+  it("is null when the turn verified one ended assignment and left another one without a candidate", () => {
+    const { document, assignment } = ended();
+    const other = assign(
+      document,
+      { specialist: "Ada", kind: "agreedTicket", objective: "Pagamenti", issueNumber: null, exercise: null, moduleIds: ["Sources/Payments"], dependencies: [], model: "gpt-5.5", tools: ["edits"], requiredChecks: ["git_status"], instructions: "Scrivi" },
+      document.mandate!.version,
+      "r4",
+      new Date(Date.UTC(2026, 8, 25, 10, 3)),
+    );
+    endTurn(document, other.id, null, { kind: "completed", text: "Fatto" });
+    expect(stalledMove(document, "r5")?.reason).toContain(`gli incarichi ${assignment.id}, ${other.id} sono conclusi`);
+    const at = new Date(Date.UTC(2026, 8, 25, 10, 6));
+    const done = declareCandidate(
+      document,
+      { assignmentId: assignment.id, decisionIds: [document.decisions[0]!.id], unresolvedChoices: [], externalEffects: [] },
+      { snapshotId: "snap", baseSHA: "base", diff: "+x", changedFiles: ["NOTE.md"], excludedSensitiveFiles: [], whitespaceErrors: [] },
+      at,
+    );
+    recordEvidence(document, done.id, { check: "git_status", passed: true, command: "git status", output: "", snapshotId: "snap" }, at);
+    recordTechnicalReview(document, done.id, { reviewerThreadId: "reviewer", authorThreadId: "author", verdict: "approved", summary: "Letto" }, at);
+    expect(stalledMove(document, "r5")).toBeNull();
+  });
+
+  it("is null for the person's own messages, a turn that did not end well, and a plan the Coordinator started", () => {
+    const { document, move } = ended();
+    move.step = { move: "verifyCandidate", by: "person" };
+    expect(stalledMove(document, "r5")).toBeNull();
+    move.step = { move: "verifyCandidate", by: "trama" };
+    move.state = "failed";
+    expect(stalledMove(document, "r5")).toBeNull();
+
+    const planning = confirmed();
+    request(planning, "r3", { step: { move: "preparePlan", by: "trama" } });
+    expect(stalledMove(planning, "r3")?.reason).toBe("La mossa automatica non è riuscita: il Coordinatore non ha avviato il piano.");
+    plan(planning, "r3", "planning");
+    expect(stalledMove(planning, "r3")).toBeNull();
+  });
+
+  it("tells the Coordinator that the checks run on a candidate, declared first from the assignment", () => {
+    expect(automaticMoveSection("verifyCandidate")).toContain("chiama prima declare_candidate, poi verify_candidate con il candidateID");
+    expect(automaticMoveSection("preparePlan")).not.toContain("declare_candidate");
+  });
+});
+
+describe("choicesInText: options for the person to pick written in a reply (issue #228)", () => {
+  it("finds numbered or lettered options with a request to pick one", () => {
+    const reply = "Posso andare avanti in tre modi:\n\n1. Amplio il mandato a docs/\n2. Scrivo solo il codice\n3. Mi fermo\n\nRispondimi con 1, 2 o 3.";
+    expect(choicesInText(reply)).toBe("Rispondimi con 1, 2 o 3.");
+    expect(choicesInText("Due strade:\n**1.** Rimborso\n**2.** Revisione\nQuale preferisci?")).toBe("Quale preferisci?");
+    expect(choicesInText("a) Rimborso\nb) Revisione\nDimmi quale scegli.")).toBe("Dimmi quale scegli.");
+    expect(choicesInText("1. Rimborso\n2. Revisione\n\nScegli 1 o 2.")).toBe("Scegli 1 o 2.");
+    expect(choicesInText("1. Rimborso\n2. Revisione\n\nQuale delle due preferisci?")).toBe("Quale delle due preferisci?");
+  });
+
+  it("leaves plain lists and single options alone", () => {
+    expect(choicesInText("Ho fatto:\n1. Letto Orders\n2. Scritto il test")).toBeNull();
+    expect(choicesInText("1. Solo un passo. Rispondimi con ok.")).toBeNull();
+    expect(choicesInText("Ho fatto:\n1. Scegli il file di Orders\n2. Indica il test\nFatto.")).toBeNull();
+    expect(choicesInText("")).toBeNull();
+  });
+});
+
+describe("confirmationFeedback: options in the text send the Coordinator back to a card (issue #228)", () => {
+  const options = "Tre strade:\n1. Amplio il mandato\n2. Solo il codice\n3. Mi fermo\n\nRispondimi con 1, 2 o 3.";
+
+  it("asks for the card when the reply opened none", () => {
+    const document = emptyDocument("p");
+    request(document, "r1");
+    recordReply(document, "r1", options, "gpt-5.5", []);
+    request(document, "r2");
+    expect(confirmationFeedback(document, "r2")).toContain("## Scelta scritta nel testo");
+  });
+
+  it("leaves a reply alone when its request already opened the card", () => {
+    const document = emptyDocument("p");
+    request(document, "r1");
+    appendEvent(document, "trama", { type: "card", kind: "decision", title: "Decisione", detail: null, referenceId: "D-1" }, "r1");
+    recordReply(document, "r1", options, "gpt-5.5", []);
+    request(document, "r2");
+    expect(confirmationFeedback(document, "r2")).toBeNull();
+    expect(choicesWithoutCard(document, "r1", options)).toBeNull();
   });
 });

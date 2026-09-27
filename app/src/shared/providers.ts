@@ -56,7 +56,7 @@ export function capabilityLines(c: ProviderCapabilities): { label: string; value
     { label: "Scoperta plugin", value: yesNo(c.supportsPluginDiscovery) },
     { label: "Thread persistente", value: yesNo(c.supportsPersistentThread) },
     { label: "Ripresa", value: yesNo(c.supportsResume) },
-    { label: "Strumenti host", value: yesNo(c.supportsHostTools) },
+    { label: "Strumenti di Trama", value: yesNo(c.supportsHostTools) },
     { label: "Override per turno", value: yesNo(c.supportsPerTurnOverride) },
     { label: "Uso token", value: yesNo(c.reportsTokenUsage) },
   ];
@@ -64,3 +64,45 @@ export function capabilityLines(c: ProviderCapabilities): { label: string; value
 
 /** True when the provider can run read-only sessions: the Coordinator, planners, reviewers, read-only specialists. */
 export const supportsReadOnly = (id: string): boolean => PROVIDERS.find((p) => p.id === id)?.capabilities.supportsReadOnlySessions !== false;
+
+/**
+ * Why the provider cannot be the Coordinator, or null when it can: the Coordinator needs read-only sessions and
+ * Trama's tools (read_issues and the others), because the provider's own GitHub and web tools stay blocked (issue #228).
+ */
+export function coordinatorUnavailableReason(id: string): string | null {
+  const provider = PROVIDERS.find((p) => p.id === id);
+  const name = provider?.name ?? id;
+  if (!supportsReadOnly(id)) return `${name} lavora solo con un worktree e non può fare da Coordinatore. Scegli un altro provider dal composer.`;
+  if (provider?.capabilities.supportsHostTools === false) {
+    return `${name} non riceve gli strumenti di Trama e non può fare da Coordinatore. Scegli un altro provider dal composer.`;
+  }
+  return null;
+}
+
+export const canCoordinate = (id: string): boolean => coordinatorUnavailableReason(id) === null;
+
+/**
+ * The catalogue name and level of a model. Antigravity lists a model once and names each level in
+ * parentheses, as `agy models` prints it: `Gemini 3.8 Flash (High)` is `Gemini 3.8 Flash` at `high` (issue #209).
+ */
+export function catalogModel(provider: string, model: string): { model: string; effort: string | null } {
+  const match = provider === "antigravity" ? /^(.*?)\s+\(([^()]+)\)$/u.exec(model.trim()) : null;
+  return match?.[1] && match[2] ? { model: match[1].trim(), effort: match[2].trim().toLowerCase() } : { model, effort: null };
+}
+
+/** A catalogue row: the model name, with the levels it offers when the provider lists them. */
+export type CatalogEntry = string | { model: string; supportedReasoningEfforts?: readonly string[] };
+
+/**
+ * True when the catalogue offers the model, by its own name or, for Antigravity, by the name with a level
+ * the model offers: `Gemini 3.1 Pro (Medium)` is refused when Gemini 3.1 Pro lists only Low and High.
+ */
+export function catalogOffers(provider: string, models: readonly CatalogEntry[], model: string): boolean {
+  const find = (name: string) => models.find((entry) => (typeof entry === "string" ? entry : entry.model) === name);
+  if (find(model) !== undefined) return true;
+  const named = catalogModel(provider, model);
+  const base = named.effort ? find(named.model) : undefined;
+  if (base === undefined) return false;
+  const efforts = typeof base === "string" ? [] : (base.supportedReasoningEfforts ?? []);
+  return efforts.length === 0 || efforts.includes(named.effort!);
+}

@@ -1,15 +1,17 @@
 // Layout and classes follow Synara (github.com/Emanuele-web04/synara, MIT License, Copyright (c) 2026 T3 Tools Inc. and Emanuele Di Pietro).
-import { IconArrowUp, IconPhotoPlus, IconX } from "@tabler/icons-react";
+import { IconArrowUp, IconPhotoPlus, IconRoute, IconX } from "@tabler/icons-react";
 import type { ProviderId } from "@shared/codex";
 import type { ImageAttachmentInput } from "@shared/ipc";
 import { type MentionCandidate, mentionCandidates, mentionToken } from "@shared/mentions";
 import { normalizePaste, pasteSizeLabel, pasteTitle, serializePastes, shouldCollapsePaste } from "@shared/pastedText";
 import { AIHERO_ATTRIBUTION, skillCandidates } from "@shared/skills";
+import { ASK_TRAMA_SKILL } from "@shared/askTrama";
 import { dialogComposer, findGoal } from "@shared/goals";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ContextMeter } from "./ContextMeter";
 import { ContextPicker } from "./ContextPicker";
 import { ModelPicker } from "./ModelPicker";
+import { useSeam } from "@/components/Seam";
 import { Button } from "@/components/ui/button";
 import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/cn";
@@ -65,6 +67,8 @@ export function Composer() {
   const [images, setImages] = useState<DraftImage[]>([]);
   const [pastes, setPastes] = useState<{ id: string; text: string }[]>([]);
   const [dragging, setDragging] = useState(false);
+  // Where dragged images land (W17): the seam while they are over the composer.
+  const dropSeam = useSeam("fileDrop", { active: dragging, radius: "var(--composer-radius)" });
   const [mention, setMention] = useState<{ start: number; query: string; index: number; sigil: "@" | "$" | "/" } | null>(null);
   const textarea = useRef<HTMLTextAreaElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -175,6 +179,18 @@ export function Composer() {
     saveTimer.current = setTimeout(() => void act("coordinator:saveDraft", { text: value, goalId: goal?.id ?? null }), 400);
   };
 
+  /** Ask Trama from its button (M07): the draft starts with /ask-trama and the person describes the situation after it. */
+  const openAskTrama = () => {
+    const invocation = `/${ASK_TRAMA_SKILL} `;
+    const next = text.startsWith(invocation) ? text : `${invocation}${text.trimStart()}`;
+    updateText(next);
+    setMention(null);
+    requestAnimationFrame(() => {
+      textarea.current?.focus();
+      textarea.current?.setSelectionRange(next.length, next.length);
+    });
+  };
+
   const submit = () => {
     const prompt = text.trim();
     if (!prompt && !pastes.length) return;
@@ -218,13 +234,14 @@ export function Composer() {
                 <span className="max-w-[45%] shrink-0 truncate text-ui-xs text-muted-foreground">{candidate.subtitle}</span>
               </button>
             ))}
-            {mention.sigil === "/" && project.aiHeroPrepared ? <p className="px-2 pt-1 pb-0.5 text-ui-xs text-muted-foreground">{AIHERO_ATTRIBUTION}.</p> : null}
+            {mention.sigil === "/" && (project.aiHeroPrepared || candidates.some((c) => c.title === `/${ASK_TRAMA_SKILL}`)) ? <p className="px-2 pt-1 pb-0.5 text-ui-xs text-muted-foreground">{AIHERO_ATTRIBUTION}.</p> : null}
           </div>
         ) : null}
         <form
           className={cn(
             "chat-composer-surface border border-[color:var(--surface-border)] shadow-[0_4px_18px_-6px_color-mix(in_srgb,var(--foreground)_7%,transparent)] transition-colors duration-200 dark:shadow-[0_6px_24px_-10px_rgba(0,0,0,0.30)]",
-            dragging && "border-[color:var(--color-text-accent)]",
+            dragging && !dropSeam.shown && "border-[color:var(--color-text-accent)]",
+            dropSeam.shown && "border-transparent",
           )}
           onSubmit={(event) => {
             event.preventDefault();
@@ -242,6 +259,16 @@ export function Composer() {
             void addFiles([...event.dataTransfer.files]);
           }}
         >
+          {dragging ? (
+            <div
+              className="pointer-events-none absolute inset-0 flex items-center justify-center gap-2 rounded-[inherit] bg-[color-mix(in_srgb,var(--popover)_86%,transparent)] text-ui text-foreground"
+              data-testid="composer-drop"
+            >
+              <IconPhotoPlus className="size-4 text-[var(--color-text-accent)]" stroke={1.8} />
+              Rilascia le immagini per allegarle al messaggio
+            </div>
+          ) : null}
+          {dropSeam.stitch}
           {pastes.length ? (
             <div className="flex flex-wrap gap-2 px-3 pt-3">
               {pastes.map((paste) => (
@@ -343,6 +370,11 @@ export function Composer() {
               <Tooltip label="Allega immagini">
                 <Button variant="chrome" size="icon-sm" className="shrink-0 rounded-md" aria-label="Allega immagini" onClick={() => fileInput.current?.click()}>
                   <IconPhotoPlus className="size-4 text-primary" stroke={1.7} />
+                </Button>
+              </Tooltip>
+              <Tooltip label="Ask Trama: descrivi la situazione e il Coordinatore propone il percorso">
+                <Button variant="chrome" size="icon-sm" className="shrink-0 rounded-md" aria-label="Ask Trama" onClick={openAskTrama}>
+                  <IconRoute className="size-4 text-primary" stroke={1.7} />
                 </Button>
               </Tooltip>
               <input

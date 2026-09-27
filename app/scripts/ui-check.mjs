@@ -58,6 +58,49 @@ const expectAsked = async (fragment, control) => {
   if (!asked) throw new Error(`${control}: no "${fragment}" in the focused composer, it holds: ${await composer().inputValue().catch(() => "no composer")}`);
 };
 
+// W17: the seam, the bots' stitch used as an accent. At most one shows on a screen, and only on the approved uses;
+// each use is saved in light and dark. With high contrast the stitch becomes a continuous edge.
+const visibleSeams = () =>
+  page.evaluate(() =>
+    [...document.querySelectorAll("svg[data-seam]")]
+      .filter((svg) => {
+        const box = svg.getBoundingClientRect();
+        return box.width > 0 && box.height > 0 && box.bottom > 0 && box.top < innerHeight;
+      })
+      .map((svg) => svg.dataset.seam),
+  );
+const expectSeam = async (use) => {
+  const seams = await visibleSeams();
+  if (seams.length > 1) throw new Error(`More than one seam on the screen: ${seams.join(", ")}`);
+  if ((seams[0] ?? null) !== use) throw new Error(`Expected the seam on ${use ?? "nothing"}, found ${seams[0] ?? "none"}`);
+};
+const seamShots = async (use, name) => {
+  await expectSeam(use);
+  const dark = await page.evaluate(() => document.documentElement.classList.contains("dark"));
+  for (const mode of ["light", "dark"]) {
+    await page.evaluate((isDark) => document.documentElement.classList.toggle("dark", isDark), mode === "dark");
+    await shot(`21-seam-${name}-${mode}`);
+  }
+  await page.evaluate((isDark) => document.documentElement.classList.toggle("dark", isDark), dark);
+};
+const expectContrastFallback = async () => {
+  for (const media of [{ contrast: "more" }, { forcedColors: "active" }]) {
+    await page.emulateMedia(media);
+    const dash = await page.evaluate(() => {
+      const rect = document.querySelector("svg[data-seam] rect");
+      return rect ? getComputedStyle(rect).strokeDasharray : null;
+    });
+    if (dash !== "none") throw new Error(`With ${JSON.stringify(media)} the seam is still dashed: ${dash}`);
+  }
+  await page.emulateMedia({ contrast: "no-preference", forcedColors: "none" });
+};
+const dragFiles = (type) =>
+  page.evaluate((eventType) => {
+    const files = new DataTransfer();
+    files.items.add(new File(["Note"], "note.txt", { type: "text/plain" }));
+    document.querySelector("form.chat-composer-surface").dispatchEvent(new DragEvent(eventType, { dataTransfer: files, bubbles: true, cancelable: true }));
+  }, type);
+
 // B02, first launch. The intro plays over the app while the state loads and leaves by itself; the welcome follows.
 const welcome = page.getByTestId("welcome");
 await welcome.waitFor();
@@ -254,6 +297,8 @@ for (const provider of ["codex", "claudeAgent", "grok"]) {
 }
 if (markColors.size !== 6) throw new Error(`The mark does not follow the provider theme: ${[...markColors].join(", ")}`);
 await brandLook(startLook.provider, startLook.dark);
+await seamShots("logo", "logo");
+await expectContrastFallback();
 await picker.getByRole("button", { name: "Clona da GitHub" }).click();
 const cloneDialog = page.getByRole("dialog", { name: "Clona da GitHub" });
 await cloneDialog.getByRole("textbox").fill("non è un repository");
@@ -286,6 +331,14 @@ await shot("01d-picker-example-exercise");
 await page.getByRole("complementary", { name: "Esercizio" }).getByRole("button", { name: "Chiudi l'esercizio" }).click();
 await page.getByText("Ho letto lo studio").first().waitFor({ timeout: 20_000 });
 await shot("02-demo-study");
+// A place to fill: the project has no goal yet. Files dragged over the composer take the seam while they are there.
+await page.getByTestId("first-goal").scrollIntoViewIfNeeded();
+await seamShots("firstGoal", "first-goal");
+await dragFiles("dragover");
+await page.getByText("Rilascia le immagini per allegarle al messaggio").waitFor();
+await seamShots("fileDrop", "file-drop");
+await dragFiles("dragleave");
+await expectSeam("firstGoal");
 // The context and model pickers share one panel.
 await page.getByRole("button", { name: "Contesto del messaggio" }).click();
 await page.getByRole("listbox", { name: "Contesto" }).waitFor();
@@ -356,6 +409,17 @@ const teamPanel = page.getByTestId("inspector");
 await teamPanel.getByText("Chiarimento e spec", { exact: true }).waitFor();
 await teamPanel.getByRole("button", { name: /^Ada/ }).waitFor();
 await shot("04e-team-inspector");
+// W16: right after the team is generated, every agent rests with its eyes open; only an agent out of the team sleeps.
+const teamEyes = await teamPanel.evaluate((el) =>
+  [...el.querySelectorAll('[data-testid="agent-bot"]')].map((bot) => ({
+    agent: bot.dataset.agent,
+    activity: bot.dataset.activity,
+    eyes: Number(bot.querySelector('[data-part="eyes"]')?.getAttribute("opacity") ?? 0),
+    open: Math.max(...[...bot.querySelectorAll('[data-part^="eye-"]')].map((eye) => eye.getBBox().height)),
+  })),
+);
+const shut = teamEyes.filter((bot) => bot.activity === "inactive" || bot.eyes < 1 || bot.open < 5);
+if (shut.length) throw new Error(`Bots without open eyes right after the team: ${JSON.stringify(shut)}`);
 // W15: each agent has an avatar with its initial and a colored tag; the tag comes from the proposal.
 await teamPanel.getByTestId("team-developer").getByTestId("agent-tag").filter({ hasText: "[Ordini]" }).waitFor();
 if ((await teamPanel.getByTestId("team-figure").getByTestId("agent-tag").count()) < 5) throw new Error("The fixed roles have no tag");
@@ -386,6 +450,29 @@ await teamPanel.getByTestId("team-figure").filter({ hasText: "Guardiano delle re
 await teamPanel.getByText("Quando interviene").waitFor();
 if (await teamPanel.getByRole("button", { name: "Togli dal team" }).count()) throw new Error("A fixed role offers to leave the team");
 await shot("04e2-team-fixed-role");
+// W16: at the inspector's minimum width, with a long name, the header keeps the name on one line and the status whole.
+await page.setViewportSize({ width: 980, height: 820 });
+await page.waitForTimeout(300);
+const header = await teamPanel.getByTestId("specialist-header").evaluate((el) => {
+  const inspector = el.closest('[data-testid="inspector"]').getBoundingClientRect();
+  const status = el.querySelector('[data-testid="specialist-status"]');
+  const name = el.querySelector("h3");
+  const box = status.getBoundingClientRect();
+  return {
+    inspector: Math.round(inspector.width),
+    statusInside: box.left >= inspector.left && box.right <= inspector.right,
+    statusWhole: status.scrollWidth <= status.clientWidth + 1,
+    nameLines: Math.round(name.getBoundingClientRect().height / parseFloat(getComputedStyle(name).lineHeight)),
+  };
+});
+if (header.inspector > 345) throw new Error(`The inspector is not at its minimum width: ${header.inspector}`);
+if (!header.statusInside || !header.statusWhole) throw new Error(`The specialist's status is cut at the minimum width: ${JSON.stringify(header)}`);
+if (header.nameLines !== 1) throw new Error(`The specialist's name wraps at the minimum width: ${JSON.stringify(header)}`);
+await shot("04e2b-specialist-narrow");
+await page.evaluate(() => document.documentElement.classList.add("dark"));
+await shot("04e2c-specialist-narrow-dark");
+await page.evaluate(() => document.documentElement.classList.remove("dark"));
+await page.setViewportSize({ width: 1280, height: 820 });
 if (await teamPanel.getByRole("button", { name: "Rinomina", exact: true }).count()) throw new Error("A fixed role offers a rename");
 await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
 // W13: the person asks the Coordinator to rename the developer, without a new mandate; the chat follows the new name.
@@ -395,6 +482,104 @@ await page.getByText("Ho rinominato Giulia in Bea.").first().waitFor({ timeout: 
 await page.getByText(/^Bea$/).first().waitFor({ timeout: 20_000 });
 await page.getByText("ha lavorato per").first().waitFor();
 await shot("04e5-team-renamed-in-chat");
+
+// W16: each agent is a bot in its own color; no two agents of the team share a body, the chat shows them too, the
+// bots move only without reduced motion, and they read in light and dark.
+const botState = (root) =>
+  root.evaluate((el) =>
+    [...el.querySelectorAll('[data-testid="agent-bot"]')].map((bot) => ({
+      shape: bot.dataset.shape,
+      color: bot.style.getPropertyValue("--agent-light"),
+      name: bot.dataset.agent,
+      d: bot.querySelector('[data-part="blob-0"]')?.getAttribute("d"),
+    })),
+  );
+const chatBots = await botState(page.locator("main").first());
+if (!chatBots.length) throw new Error("The chat shows no agent bot");
+await page.getByRole("button", { name: /^Team/ }).first().click();
+await teamPanel.getByText("Chiarimento e spec", { exact: true }).waitFor();
+const teamBots = await botState(teamPanel);
+const bodies = new Map();
+for (const bot of teamBots) {
+  const other = bodies.get(`${bot.shape}${bot.color}`);
+  if (other && other !== bot.name) throw new Error(`${bot.name} and ${other} look the same: ${bot.shape}`);
+  bodies.set(`${bot.shape}${bot.color}`, bot.name);
+}
+if (new Set(teamBots.map((b) => b.shape)).size < 12) throw new Error(`The team has too few bodies: ${[...new Set(teamBots.map((b) => b.shape))]}`);
+// W16, sizes: 32 px in the Team rows and in the chat, and never a bot under 20 px anywhere.
+const botSizes = await page.evaluate(() => [...document.querySelectorAll('[data-testid="agent-bot"]')].map((bot) => Math.round(bot.getBoundingClientRect().width)));
+if (Math.min(...botSizes) < 20) throw new Error(`A bot is smaller than 20 px: ${botSizes}`);
+const rowBot = await teamPanel.getByTestId("team-figure").first().getByTestId("agent-bot").boundingBox();
+if (!rowBot || rowBot.width < 32) throw new Error(`The Team rows' bots are under 32 px: ${rowBot?.width}`);
+// W16, cost: CSS runs the steady moves; the frame loop runs only while the cursor moves or a bot morphs, at most
+// 24 times per second, and not at all at rest. Reduced motion stops everything and keeps the still pose.
+await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.focus());
+await page.waitForFunction(() => !document.documentElement.classList.contains("bots-paused"), null, { timeout: 5_000 });
+const botFrames = () => page.evaluate(() => ({ frames: window.__tramaBots.frames, at: performance.now() }));
+const perSecond = (from, to) => ((to.frames - from.frames) * 1000) / (to.at - from.at);
+// CPU of the renderer and GPU processes over a few seconds, from Electron's own metrics.
+const cpuOver = async (ms) => {
+  await app.evaluate(({ app: electronApp }) => electronApp.getAppMetrics());
+  await page.waitForTimeout(ms);
+  return app.evaluate(({ app: electronApp }) =>
+    electronApp
+      .getAppMetrics()
+      .filter((m) => m.type === "Tab" || m.type === "GPU")
+      .reduce((sum, m) => sum + m.cpu.percentCPUUsage, 0),
+  );
+};
+const liveBot = teamPanel.locator('[data-testid="agent-bot"][data-live]').first();
+if (!(await liveBot.evaluate((bot) => bot.getAnimations().length > 0))) throw new Error("The bots in view do not breathe");
+// The steady moves advance in steps, so the window is redrawn a few times per second, not at every frame.
+const smooth = await page.evaluate(() =>
+  document
+    .getAnimations()
+    .filter((a) => a.effect?.target?.closest?.(".agent-bot"))
+    .filter((a) => !a.effect.getKeyframes().slice(0, -1).every((k) => String(k.easing).startsWith("steps"))).length,
+);
+if (smooth) throw new Error(`${smooth} bot animations run at every frame instead of in steps`);
+const eyeOf = (bot) => bot.locator('[data-part="eye-0"]').getAttribute("transform");
+const follower = teamPanel.locator('[data-testid="agent-bot"][data-live]:is([data-activity="idle"], [data-activity="done"], [data-activity="waiting"])').first();
+const followerBox = await follower.boundingBox();
+const eyesBefore = await eyeOf(follower);
+const movingFrom = await botFrames();
+for (let i = 0; i < 40; i++) {
+  await page.mouse.move(followerBox.x + followerBox.width / 2 + 200 * Math.cos(i / 6), followerBox.y + followerBox.height / 2 + 120 * Math.sin(i / 6));
+  await page.waitForTimeout(50);
+}
+const movingRate = perSecond(movingFrom, await botFrames());
+if (movingRate > 24 * 1.1) throw new Error(`The bot loop ran ${movingRate.toFixed(1)} frames per second while the cursor moved, over 24`);
+if ((await eyeOf(follower)) === eyesBefore) throw new Error("The eyes do not follow the cursor");
+await page.waitForTimeout(800);
+const restFrom = await botFrames();
+await page.waitForTimeout(3_000);
+const restFrames = (await botFrames()).frames - restFrom.frames;
+if (restFrames > 3) throw new Error(`The bot loop ran ${restFrames} frames in 3 s at rest`);
+const cpuMoving = await cpuOver(3_000);
+await page.emulateMedia({ reducedMotion: "reduce" });
+const cpuStill = await cpuOver(3_000);
+await page.emulateMedia({ reducedMotion: "no-preference" });
+if (cpuMoving - cpuStill > 5) throw new Error(`The bots at rest cost ${(cpuMoving - cpuStill).toFixed(1)}% of CPU, over 5%`);
+console.log(
+  `bots: ${botSizes.length} on screen, ${movingRate.toFixed(1)} frames/s with the cursor moving, ${restFrames} frames in 3 s at rest, ` +
+    `renderer+GPU CPU at rest ${cpuMoving.toFixed(1)}% animated, ${cpuStill.toFixed(1)}% with reduced motion`,
+);
+const firstBot = teamPanel.getByTestId("agent-bot").first();
+const outline = () => firstBot.locator('[data-part="blob-0"]').getAttribute("d");
+await page.emulateMedia({ reducedMotion: "reduce" });
+await page.waitForTimeout(200);
+const stillBefore = await outline();
+if (await liveBot.evaluate((bot) => bot.getAnimations().some((a) => a.playState === "running"))) throw new Error("A bot breathes with reduced motion");
+await page.waitForTimeout(600);
+if ((await outline()) !== stillBefore) throw new Error("A bot moves with reduced motion");
+await page.emulateMedia({ reducedMotion: "no-preference" });
+await shot("04e6-bots-team-light");
+await page.evaluate(() => document.documentElement.classList.add("dark"));
+await shot("04e7-bots-team-dark");
+await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
+await shot("04e8-bots-chat-dark");
+await page.evaluate(() => document.documentElement.classList.remove("dark"));
+await shot("04e9-bots-chat-light");
 
 // Learning (ADR 0014): the Coordinator saves a note, then a review the person asks for writes memory and a skill.
 await page.getByLabel("Messaggio al Coordinatore").fill("[memoria] ricorda il gestore di pacchetti");
@@ -453,6 +638,65 @@ await domainCard.scrollIntoViewIfNeeded();
 await shot("04k-domain-proposal-written");
 await page.getByRole("button", { name: "Mappa del progetto" }).click();
 await shot("05-map");
+// #229: every panel separator is the same sash. At rest it draws nothing over the panel border; after a short hover
+// it takes the provider's accent, and while dragged it stays lit. Double-click and the arrow keys change the width.
+{
+  const sidebarSash = page.getByRole("separator", { name: /Larghezza della barra laterale/ });
+  const inspectorSash = page.getByRole("separator", { name: "Larghezza dell'ispettore" });
+  const look = (sash) =>
+    sash.evaluate((element) => {
+      const style = getComputedStyle(element);
+      const probe = document.createElement("span");
+      probe.style.color = "var(--color-text-accent)";
+      element.append(probe);
+      const accent = getComputedStyle(probe).color;
+      probe.remove();
+      const drawn = ["::before", "::after"].filter((pseudo) => getComputedStyle(element, pseudo).content !== "none");
+      return { background: style.backgroundColor, accent, width: element.getBoundingClientRect().width, cursor: style.cursor, drawn, children: element.childElementCount };
+    });
+  const transparent = (color) => color === "rgba(0, 0, 0, 0)" || color === "transparent";
+  for (const sash of [sidebarSash, inspectorSash]) {
+    const rest = await look(sash);
+    if (!transparent(rest.background) || rest.drawn.length || rest.children) throw new Error(`A sash shows at rest: ${JSON.stringify(rest)}`);
+    if (rest.width !== 4 || rest.cursor !== "col-resize") throw new Error(`A sash is not a 4px col-resize grip: ${JSON.stringify(rest)}`);
+  }
+  const sidebarBox = await sidebarSash.boundingBox();
+  await page.mouse.move(sidebarBox.x + sidebarBox.width / 2, 300);
+  await page.waitForTimeout(100);
+  if (!transparent((await look(sidebarSash)).background)) throw new Error("The sash lights up before the hover delay");
+  await page.waitForTimeout(500);
+  const hovered = await look(sidebarSash);
+  if (hovered.background !== hovered.accent) throw new Error(`The hovered sash is not the provider's accent: ${JSON.stringify(hovered)}`);
+  for (const mode of ["light", "dark"]) {
+    await page.evaluate((dark) => document.documentElement.classList.toggle("dark", dark), mode === "dark");
+    await shot(`22-sash-hover-${mode}`);
+  }
+  await page.evaluate(() => document.documentElement.classList.remove("dark"));
+  const inspectorBox = await inspectorSash.boundingBox();
+  const startWidth = Number(await inspectorSash.getAttribute("aria-valuenow"));
+  await page.mouse.move(inspectorBox.x + inspectorBox.width / 2, 300);
+  await page.mouse.down();
+  await page.mouse.move(inspectorBox.x + inspectorBox.width / 2 - 60, 300, { steps: 6 });
+  await page.waitForTimeout(200);
+  const dragged = await look(inspectorSash);
+  if (dragged.background !== dragged.accent) throw new Error(`The dragged sash is not lit: ${JSON.stringify(dragged)}`);
+  await shot("22-sash-drag-light");
+  await page.mouse.up();
+  await page.mouse.move(640, 500);
+  if (Number(await inspectorSash.getAttribute("aria-valuenow")) !== startWidth + 60) throw new Error("Dragging the sash does not widen the inspector");
+  await page.waitForFunction(() => getComputedStyle(document.querySelector('[aria-label="Larghezza dell\'ispettore"]')).backgroundColor === "rgba(0, 0, 0, 0)");
+  await inspectorSash.dblclick();
+  await page.waitForFunction(() => document.querySelector('[aria-label="Larghezza dell\'ispettore"]')?.getAttribute("aria-valuenow") === "420");
+  await inspectorSash.focus();
+  await page.keyboard.press("ArrowLeft");
+  if ((await inspectorSash.getAttribute("aria-valuenow")) !== "436") throw new Error("ArrowLeft does not widen the inspector");
+  await page.keyboard.press("Shift+ArrowRight");
+  if ((await inspectorSash.getAttribute("aria-valuenow")) !== "372") throw new Error("Shift+ArrowRight does not narrow the inspector by 64px");
+  await page.keyboard.press("Home");
+  if ((await inspectorSash.getAttribute("aria-valuenow")) !== "420") throw new Error("Home does not reset the inspector");
+  if ((await inspectorSash.getAttribute("aria-orientation")) !== "vertical") throw new Error("The sash has no vertical orientation");
+  await inspectorSash.blur();
+}
 await page.getByRole("button", { name: /Orders/ }).first().click();
 await shot("06-module");
 await page.getByRole("button", { name: /CancelPaidOrder.swift/ }).first().click();
@@ -844,6 +1088,8 @@ await pausedItem.getByRole("button", { name: "Metti in focus" }).click();
 await focusIs(firstFocus, true);
 await queue.locator('[data-status="paused"]').first().waitFor({ state: "detached", timeout: 10_000 });
 await shot("17b-focus-back");
+// The work going on now: the task in focus takes the seam.
+await seamShots("focus", "focus");
 // Light and dark on two providers' themes, then a narrow window where the bar wraps without a horizontal scroll.
 const look = await page.evaluate(() => ({ provider: document.documentElement.dataset.provider ?? null, dark: document.documentElement.classList.contains("dark") }));
 const setLook = (provider, dark) =>
@@ -1023,9 +1269,42 @@ await shot("18a-specialist-stopped");
 await slowCard.getByRole("button", { name: "Riprendi" }).click();
 await slowCard.getByText("Concluso", { exact: true }).waitFor({ timeout: 20_000 });
 
+// Issue #204: the work ends, Trama starts the checks by itself and the Coordinator verifies the assignment instead of a
+// candidate, as in the live run. The move comes back under the reply with Trama's reason and its button on the right.
+await page.evaluate(() => window.trama.invoke("settings:update", { continuousWork: true }));
+await send("[assegna] [luna]");
+const lunaCard = assignmentCards.nth(1);
+await lunaCard.getByText("Concluso", { exact: true }).waitFor({ timeout: 20_000 });
+const lunaAssignment = await cardAssignment(lunaCard);
+const stalledStep = page.locator('[data-testid="automatic-step"][data-stalled="true"]').filter({ hasText: "Esegui le verifiche" });
+await stalledStep.getByText("Mossa automatica non riuscita").waitFor({ timeout: 30_000 });
+const retryStep = page.getByTestId("next-step").filter({ hasText: `l'incarico ${lunaAssignment} è concluso ma il suo candidato non è stato dichiarato` });
+await retryStep.waitFor({ timeout: 20_000 });
+const retryButton = retryStep.getByRole("button", { name: "Esegui le verifiche" });
+const retryBox = await retryButton.boundingBox();
+const retryRowBox = await retryStep.boundingBox();
+if (!retryBox || !retryRowBox || retryRowBox.x + retryRowBox.width - (retryBox.x + retryBox.width) > 2) throw new Error("Esegui le verifiche is not on the right");
+await page.evaluate(() => window.trama.invoke("settings:update", { continuousWork: false }));
+await retryStep.scrollIntoViewIfNeeded();
+await shot("18a2-automatic-move-stalled");
+await app.evaluate(({ nativeTheme }) => {
+  nativeTheme.themeSource = "dark";
+});
+await page.evaluate(() => document.documentElement.classList.add("dark"));
+await shot("18a3-automatic-move-stalled-dark");
+await app.evaluate(({ nativeTheme }) => {
+  nativeTheme.themeSource = "system";
+});
+await page.evaluate(() => document.documentElement.classList.remove("dark"));
+// The person takes the move again: it reaches the Coordinator as the person's message, and the button goes away.
+await retryButton.click();
+await page.getByText("Esegui le verifiche del lavoro.").last().waitFor({ timeout: 20_000 });
+await page.getByRole("button", { name: "Interrompi" }).waitFor({ state: "hidden", timeout: 20_000 });
+if (await retryStep.count()) throw new Error("The stalled move is still offered after the person took it");
+
 // V05: the work leaves trailing whitespace; git_diff_check fails on the candidate with git's own output.
 await send("[assegna] [spazi]");
-const spacesCard = assignmentCards.nth(1);
+const spacesCard = assignmentCards.nth(2);
 await spacesCard.getByText("Concluso", { exact: true }).waitFor({ timeout: 20_000 });
 await send(`[candidato:${await cardAssignment(spacesCard)}:${candidateDecision}:tutte]`);
 const candidateCards = page.locator(".chat-card").filter({ has: page.getByTestId("candidate-evidence") });
@@ -1053,7 +1332,7 @@ await page.evaluate(() => document.documentElement.classList.remove("dark"));
 
 // The correction is new work and a new candidate, with new evidence; the failed one keeps its own.
 await send("[assegna] [correggi-spazi]");
-const fixCard = assignmentCards.nth(2);
+const fixCard = assignmentCards.nth(3);
 await fixCard.getByText("Concluso", { exact: true }).waitFor({ timeout: 20_000 });
 await send(`[candidato:${await cardAssignment(fixCard)}:${candidateDecision}:tutte]`);
 const correctedCard = candidateCards.nth(1);
@@ -1144,9 +1423,9 @@ await sliceSpec.getByText("Restano in Trama").waitFor({ timeout: 20_000 });
 // W05: an assignment without its contract (seams, Pact decisions) is refused with a clear tool failure; no card appears.
 await send("[assegna] [senza-contratto]");
 await page.getByText(/Rifiutato: .*incomplete_contract.*seams.*decisionIDs/).last().waitFor({ timeout: 20_000 });
-if ((await assignmentCards.count()) !== 3) throw new Error("An assignment without its contract reached a developer");
+if ((await assignmentCards.count()) !== 4) throw new Error("An assignment without its contract reached a developer");
 await send("[assegna] [test]");
-const sliceWork = assignmentCards.nth(3);
+const sliceWork = assignmentCards.nth(4);
 await sliceWork.getByText("Concluso", { exact: true }).waitFor({ timeout: 20_000 });
 // W05: the card shows the contract the slice reached the developer with and the developer's structured report,
 // as a statement apart from Trama's evidence.
@@ -1198,11 +1477,16 @@ await page.evaluate(() => document.documentElement.classList.remove("dark"));
 // F01: focus mode on a candidate. Trama runs the real checks first, then code-review's Standards and Spec axes, and
 // the report keeps them apart. The slice candidate reads its slice as the spec; the corrected one has none.
 const focusAudit = page.getByTestId("focus-audit");
+// An examination that ends in "failed" says why: the check reports that text instead of waiting out its timeout.
+const auditDone = async () => {
+  await page.locator('[data-testid="focus-audit"]:is([data-status="done"], [data-status="failed"])').waitFor({ timeout: 60_000 });
+  if ((await focusAudit.getAttribute("data-status")) !== "done") throw new Error(`Focus mode failed: ${await focusAudit.innerText()}`);
+};
 const focusActions = await sliceCandidate.locator(".cta-row button").allTextContents();
 if (!focusActions.some((label) => label.includes("Focus mode"))) throw new Error(`No Focus mode on the candidate: ${focusActions}`);
 await sliceCandidate.getByRole("button", { name: "Focus mode" }).click();
 await focusAudit.waitFor({ timeout: 20_000 });
-await page.locator('[data-testid="focus-audit"][data-status="done"]').waitFor({ timeout: 60_000 });
+await auditDone();
 for (const check of ["swift_build", "swift_test"]) {
   await focusAudit.locator(`[data-testid="candidate-evidence"][data-check="${check}"]:not([data-result="missing"])`).waitFor();
 }
@@ -1225,7 +1509,7 @@ await page.evaluate(() => document.documentElement.classList.remove("dark"));
 await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
 await correctedCard.scrollIntoViewIfNeeded();
 await correctedCard.getByRole("button", { name: "Focus mode" }).click();
-await page.locator('[data-testid="focus-audit"][data-status="done"]').waitFor({ timeout: 60_000 });
+await auditDone();
 await focusAudit.locator('[data-testid="audit-axis"][data-axis="spec"][data-status="skipped"]').getByText("no spec available", { exact: true }).waitFor();
 await focusAudit.locator('[data-testid="candidate-evidence"][data-check="git_diff_check"][data-result="pass"]').waitFor();
 await shot("20c-focus-audit-no-spec");
@@ -1248,7 +1532,7 @@ await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
 // the report's doubts. The Coordinator puts it on a Pact card that blocks the work; the person's answer resumes the
 // developer in the same session, and the card and the assignment say so.
 await send("[assegna:S1] [test] [domanda]");
-const questionWork = assignmentCards.nth(4);
+const questionWork = assignmentCards.nth(5);
 await questionWork.getByText("In pausa", { exact: true }).waitFor({ timeout: 20_000 });
 await questionWork.locator('[data-testid="assignment-question"][data-state="asked"]').getByText(/buono/).waitFor();
 await questionWork.getByText("Aspetta il Coordinatore").waitFor();
@@ -1289,6 +1573,114 @@ await shot("19h-developer-question-resumed");
 await setLook("claudeAgent", true);
 await shot("19i-developer-question-resumed-claude-dark");
 await setLook(questionLook.provider, questionLook.dark);
+// W08: independent movement, after the work of #204 and W06 (two more assignment cards). The person sets the project's
+// parallel limit in the settings; a verified slice unblocks the ones that depended on it, and with continuous work on
+// the free developer takes the next ready one in its modules by itself, without a Coordinator turn.
+await page.getByRole("button", { name: "Impostazioni" }).click();
+const parallelSettings = page.getByTestId("settings");
+await parallelSettings.getByRole("button", { name: /^Metodo di lavoro/ }).first().click();
+const parallelPicker = parallelSettings.getByTestId("parallel-developers");
+await parallelPicker.getByRole("radio", { name: "3", checked: true }).waitFor();
+await parallelPicker.getByRole("radio", { name: "2" }).click();
+await parallelPicker.getByRole("radio", { name: "2", checked: true }).waitFor();
+await parallelPicker.scrollIntoViewIfNeeded();
+await shot("22a-parallel-developers");
+await app.evaluate(({ nativeTheme }) => {
+  nativeTheme.themeSource = "dark";
+});
+await page.evaluate(() => document.documentElement.classList.add("dark"));
+await shot("22b-parallel-developers-dark");
+await app.evaluate(({ nativeTheme }) => {
+  nativeTheme.themeSource = "system";
+});
+await page.evaluate(() => document.documentElement.classList.remove("dark"));
+await page.getByRole("button", { name: "Impostazioni" }).click();
+await page.getByTestId("settings").waitFor({ state: "hidden" });
+// The first slice is verified on new work that passes its check and the technical review: S2 and S3 become ready.
+await send("[assegna:S1]");
+const verifiedSliceWork = assignmentCards.nth(6);
+await verifiedSliceWork.getByText("Concluso", { exact: true }).waitFor({ timeout: 20_000 });
+await send(`[candidato:${await cardAssignment(verifiedSliceWork)}:${candidateDecision}]`);
+const teamSlices = sliceSpec.getByTestId("plan-slices");
+await teamSlices.locator('[data-testid="plan-slice"][data-state="done"]').first().waitFor({ timeout: 30_000 });
+const unblocked = await teamSlices.getByTestId("plan-slice").evaluateAll((items) => items.map((item) => item.getAttribute("data-state")));
+if (unblocked.join() !== "done,ready,ready") throw new Error(`A verified slice did not unblock its dependents: ${unblocked}`);
+if ((await assignmentCards.count()) !== 7) throw new Error("A developer took a slice while continuous work was off");
+// Continuous work on: at the next event of the work (here the end of a Coordinator turn) Ada is free and takes S2 in
+// autonomy; the assignment card says so and the slice shows who took it.
+await page.evaluate(() => window.trama.invoke("settings:update", { continuousWork: true }));
+await send("Come procede il lavoro?");
+const pickedCard = assignmentCards.nth(7);
+await pickedCard.getByTestId("assignment-self-picked").waitFor({ timeout: 20_000 });
+await pickedCard.getByText(/^S2 Il supporto vede gli ordini in revisione$/).waitFor();
+const pickedSlice = teamSlices.locator('[data-testid="plan-slice"][data-self-picked="yes"]').first();
+await pickedSlice.getByTestId("plan-slice-worker").getByText("Ada, presa in autonomia").waitFor({ timeout: 20_000 });
+if ((await pickedSlice.locator("span").first().textContent())?.trim() !== "2. Il supporto vede gli ordini in revisione") throw new Error("The free developer did not take the next ready slice");
+await teamSlices.getByTestId("plan-slices-parallel").getByText(/Sviluppatori al lavoro: \d di 2\./).waitFor();
+await page.evaluate(() => window.trama.invoke("settings:update", { continuousWork: false }));
+// A Coordinator move that continuous work started meanwhile keeps running in this check (FAKE_CODEX_AUTOMATIC=wait):
+// the person stops it before the next project opens.
+const runningMoves = page.getByTestId("automatic-step").getByRole("button", { name: "Ferma" });
+for (let tries = 0; (await runningMoves.count()) && tries < 10; tries += 1) {
+  await runningMoves.first().click().catch(() => undefined);
+  await page.waitForTimeout(500);
+}
+await pickedSlice.evaluate((item) => item.scrollIntoView({ block: "center" }));
+await shot("22c-slice-self-picked");
+await app.evaluate(({ nativeTheme }) => {
+  nativeTheme.themeSource = "dark";
+});
+await page.evaluate(() => document.documentElement.classList.add("dark"));
+await shot("22d-slice-self-picked-dark");
+await app.evaluate(({ nativeTheme }) => {
+  nativeTheme.themeSource = "system";
+});
+await page.evaluate(() => document.documentElement.classList.remove("dark"));
+// M07, Ask Trama: /ask-trama is in the composer with the original skill's description, and its button starts the
+// message. The Coordinator runs ask-trama and proposes a route instead of naming a command; each step says how Trama
+// runs it. "Avvia il percorso" starts the first flow inside Trama: here grilling, round 1.
+await page.getByRole("button", { name: "Interrompi" }).waitFor({ state: "hidden", timeout: 20_000 });
+await composer().fill("");
+await composer().pressSequentially("/ask");
+const skillMenu = page.getByRole("listbox", { name: "Skill" });
+await skillMenu.getByRole("option", { name: /\/ask-trama/ }).getByText("Ask which skill or flow fits your situation. A router over the skills in this repo.").waitFor({ timeout: 10_000 });
+await shot("21-ask-trama-menu");
+await page.keyboard.press("Escape");
+await composer().fill("");
+await page.getByRole("button", { name: "Ask Trama", exact: true }).click();
+await expectAsked("/ask-trama ", "Ask Trama");
+await page.keyboard.type("Gli ordini pagati annullati devono andare in revisione invece del rimborso automatico.");
+await page.keyboard.press("Enter");
+const routeCard = page.locator('[data-anchor="route"]').last();
+await routeCard.getByText("Proposto", { exact: true }).waitFor({ timeout: 20_000 });
+for (const expected of ["Flusso principale", "grill-with-docs", "Grilling prima del piano, con glossario e ADR", "prototype", "Skill nel Coordinatore", "Piano scritto come spec", "Revisione del candidato e focus mode", "Confine di fase: Continua"]) {
+  if (!(await routeCard.innerText()).includes(expected)) throw new Error(`The Ask Trama route does not show "${expected}"`);
+}
+if (await page.getByText("Chi vede gli ordini in revisione?").count()) throw new Error("Ask Trama started a flow before the person confirmed the route");
+const skipRoute = await routeCard.getByRole("button", { name: "Non avviare" }).boundingBox();
+const startRoute = await routeCard.getByRole("button", { name: "Avvia il percorso" }).boundingBox();
+const routeBox = await routeCard.boundingBox();
+if (!skipRoute || !startRoute || !routeBox || skipRoute.x >= startRoute.x || routeBox.x + routeBox.width - (startRoute.x + startRoute.width) > 20) {
+  throw new Error("Ask Trama route: Non avviare and Avvia il percorso are not on the right, primary last");
+}
+await routeCard.scrollIntoViewIfNeeded();
+await shot("21a-ask-trama-route");
+const routeLook = await page.evaluate(() => ({ provider: document.documentElement.dataset.provider ?? null, dark: document.documentElement.classList.contains("dark") }));
+for (const provider of ["codex", "claudeAgent"]) {
+  for (const dark of [false, true]) {
+    await setLook(provider, dark);
+    await shot(`21b-ask-trama-route-${provider}-${dark ? "dark" : "light"}`);
+  }
+}
+await setLook(routeLook.provider, routeLook.dark);
+await routeCard.getByRole("button", { name: "Avvia il percorso" }).click();
+await routeCard.getByText("Avviato", { exact: true }).waitFor({ timeout: 20_000 });
+await page.getByText(/^Avvia il percorso AT-[0-9A-F]{8} di Ask Trama/).last().waitFor({ timeout: 20_000 });
+await page.getByText("Chi vede gli ordini in revisione?").last().waitFor({ timeout: 20_000 });
+if (await routeCard.getByRole("button", { name: "Avvia il percorso" }).count()) throw new Error("A started route can be started again");
+await page.getByRole("button", { name: "Interrompi" }).waitFor({ state: "hidden", timeout: 20_000 });
+await page.getByText("Chi vede gli ordini in revisione?").last().scrollIntoViewIfNeeded();
+await shot("21c-ask-trama-started");
 
 // G01, presenza: a project with a colleague on a local bare remote. The colleague's record is already there; Trama
 // proposes the consent in the chat once, with "Non ora" and "Condividi" on the right, and publishes only after
@@ -1409,6 +1801,16 @@ await ownSwitch.waitFor();
 const groupInspector = await page.getByTestId("inspector").boundingBox();
 const switchBox = await ownSwitch.boundingBox();
 if (!groupInspector || !switchBox || switchBox.x < groupInspector.x + groupInspector.width / 2) throw new Error("Gruppo: the sharing switch is not on the right");
+// W16: the agent of a colleague who is idle sleeps: same body and color, eyes closed, and Z's rising above it.
+const liaBot = liaRow.getByTestId("agent-bot");
+if ((await liaBot.getAttribute("data-move")) !== "sleep") throw new Error("An idle colleague's agent does not sleep");
+const sleeping = await liaBot.evaluate((bot) => ({
+  shape: bot.dataset.shape,
+  zzz: getComputedStyle(bot.querySelector('[data-part="zzz"]')).display,
+  risingZ: bot.querySelectorAll(".bot-z").length,
+  moving: bot.getAnimations({ subtree: true }).filter((a) => a.effect?.target?.classList?.contains("bot-z")).length,
+}));
+if (!sleeping.shape || sleeping.zzz === "none" || sleeping.risingZ !== 3 || sleeping.moving !== 3) throw new Error(`The sleeping bot has no rising Z's: ${JSON.stringify(sleeping)}`);
 await shot("16a-presence-group");
 const groupLook = await page.evaluate(() => ({ provider: document.documentElement.dataset.provider ?? null, dark: document.documentElement.classList.contains("dark") }));
 for (const provider of ["codex", "claudeAgent"]) {
@@ -1667,6 +2069,65 @@ for (const dark of [false, true]) {
   await page.evaluate((theme) => window.trama.invoke("settings:update", { theme }), dark ? "dark" : "light");
   await page.waitForFunction((wanted) => document.documentElement.classList.contains("dark") === wanted, dark);
   await shot(`21-read-outside-project-${dark ? "dark" : "light"}`);
+}
+await page.evaluate(() => window.trama.invoke("settings:update", { theme: "system" }));
+await app.close();
+
+// Issue #231: the fixed roles' automatic work says where it stands and why it has not started, in the Team view and on
+// the role's page; the person starts Clean Code's review now, with the call to action on the right. Both themes.
+const dutyProject = await mkdtemp(join(tmpdir(), "trama-ui-compiti-"));
+await cp(resolve("resources/DemoProject"), dutyProject, { recursive: true });
+execFileSync("git", ["-C", dutyProject, "init", "-q", "-b", "main"]);
+execFileSync("git", ["-C", dutyProject, "add", "."]);
+execFileSync("git", ["-C", dutyProject, "-c", "user.name=Trama UI", "-c", "user.email=ui@trama.local", "commit", "-q", "-m", "Negozio"]);
+({ app, page } = await launch());
+await page.evaluate(() => window.trama.invoke("settings:update", { continuousWork: false, theme: "light" }));
+await page.evaluate((path) => window.trama.invoke("project:open", { path }), dutyProject);
+await page.getByTestId("dialog-title").filter({ hasText: "trama-ui-compiti" }).waitFor({ timeout: 30_000 });
+await page.getByText("Ho letto lo studio").first().waitFor({ timeout: 30_000 });
+await page.getByRole("button", { name: /^Team/ }).first().click();
+const dutyPanel = page.getByTestId("inspector");
+const reviewWork = dutyPanel.locator('[data-testid="automatic-work"][data-work="architectureReview"]');
+await reviewWork.waitFor({ timeout: 20_000 });
+// Without a mandate nothing starts, and the view says why.
+await reviewWork.getByText(/Senza un mandato concesso/).waitFor();
+if (!(await reviewWork.getByTestId("automatic-work-start").isDisabled())) throw new Error("The review can start without a mandate");
+await dutyPanel.locator('[data-testid="automatic-work"][data-work="triage"]').waitFor();
+await page.evaluate(() =>
+  window.trama.invoke("mandate:grant", {
+    requestId: null,
+    objectives: ["Rivedere l'architettura"],
+    priorities: [],
+    scopeModuleIds: ["Sources/Orders"],
+    authorizedActions: ["executeInWorktree"],
+    limits: [],
+  }),
+);
+const startReview = reviewWork.locator('[data-testid="automatic-work-start"]:not([disabled])');
+await startReview.waitFor({ timeout: 20_000 });
+await primaryLast(reviewWork.locator(".cta-row"), "Lavoro automatico");
+const startBox = await startReview.boundingBox();
+const workBox = await reviewWork.boundingBox();
+if (!startBox || !workBox || workBox.x + workBox.width - (startBox.x + startBox.width) > 2) throw new Error("Avvia ora la revisione is not on the right");
+await reviewWork.scrollIntoViewIfNeeded();
+for (const dark of [false, true]) {
+  await page.evaluate((theme) => window.trama.invoke("settings:update", { theme }), dark ? "dark" : "light");
+  await page.waitForFunction((wanted) => document.documentElement.classList.contains("dark") === wanted, dark);
+  await shot(`22a-automatic-work-${dark ? "dark" : "light"}`);
+}
+await startReview.click();
+// The review runs on request and ends with its Pact card; the card waits for the person, so the button says why it waits.
+await page.getByRole("main").getByText("Su richiesta tua: revisione al commit", { exact: false }).first().waitFor({ timeout: 30_000 });
+await page.getByText(/Approfondire l'annullamento/).first().waitFor({ timeout: 60_000 });
+await reviewWork.getByText(/aspetta ancora la tua risposta/).waitFor({ timeout: 20_000 });
+await dutyPanel.getByTestId("team-figure").filter({ hasText: "Clean Code" }).first().click();
+const roleWork = dutyPanel.locator('[data-testid="automatic-work"][data-work="architectureReview"]');
+await roleWork.waitFor();
+await roleWork.scrollIntoViewIfNeeded();
+for (const dark of [false, true]) {
+  await page.evaluate((theme) => window.trama.invoke("settings:update", { theme }), dark ? "dark" : "light");
+  await page.waitForFunction((wanted) => document.documentElement.classList.contains("dark") === wanted, dark);
+  await shot(`22b-automatic-work-role-${dark ? "dark" : "light"}`);
 }
 await page.evaluate(() => window.trama.invoke("settings:update", { theme: "system" }));
 await app.close();

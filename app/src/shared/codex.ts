@@ -32,6 +32,9 @@ export type CodexModel = ProviderModel;
 /** Title of the activity Trama records when a session tried to read outside its folders (issue #206). */
 export const READ_OUTSIDE_SCOPE_TITLE = "Lettura fuori dal progetto bloccata";
 
+/** Title of the activity Trama records when it blocked one of the provider's own tools (issue #228). */
+export const TOOL_REFUSED_TITLE = "Strumento del provider bloccato";
+
 /** A normalized event from one running turn, forwarded to the renderer. */
 export type TurnEvent =
   | { type: "turnStarted"; turnId: string }
@@ -44,6 +47,8 @@ export type TurnEvent =
   | { type: "toolCallCompleted"; itemId: string; server: string; tool: string; succeeded: boolean; error: string | null }
   /** The session tried to read outside the project, its worktree and the folders Trama allows; the read was refused. */
   | { type: "readOutsideScope"; itemId: string; path: string; tool: string }
+  /** Trama blocked one of the provider's own tools (GitHub, web, commands, connectors); `reason` names the Trama tool to use (issue #228). */
+  | { type: "toolRefused"; itemId: string; tool: string; reason: string }
   | { type: "tokenUsage"; usedTokens: number; contextWindow: number | null }
   | { type: "compacted" }
   | { type: "completed"; text: string }

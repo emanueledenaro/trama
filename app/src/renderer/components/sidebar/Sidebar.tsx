@@ -401,7 +401,7 @@ export function Sidebar({ isMac }: { isMac: boolean }) {
                           onClick={() => setInspector({ kind: "specialist", id: specialist.id })}
                           className={cn(SIDEBAR_ROW, "pl-8", inspector?.kind === "specialist" && inspector.id === specialist.id ? ROW_ACTIVE : ROW_IDLE)}
                         >
-                          <AgentAvatar agent={specialist} className="-ml-0.5" />
+                          <AgentAvatar agent={specialist} size={24} className="-my-1 -ml-1" />
                           <span className="flex min-w-0 flex-1 items-center gap-1.5 text-ui leading-5 text-foreground/95">
                             <span className="min-w-0 truncate">{specialist.name}</span>
                             <AgentTag agent={specialist} className="shrink-0" />

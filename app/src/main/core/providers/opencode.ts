@@ -43,6 +43,7 @@ import {
   type TurnEvent,
 } from "./types";
 import { currentUsageLimit, PendingTurn, usageLimitError } from "./providerSupport";
+import { externalToolKind, refusalReason } from "./toolRefusal";
 
 const HOSTNAME = "127.0.0.1";
 const SERVER_USERNAME = "opencode";
@@ -334,6 +335,8 @@ export function buildToolServerMcp(toolServer: HostToolServer): McpRemoteConfig 
 }
 
 const READ_ONLY_TOOLS = ["read", "glob", "grep", "list", "lsp", "todoread", "todowrite"];
+/** Permissions about project files: a refusal there is about the path or the sandbox, not a provider tool. */
+const OPENCODE_FILE_PERMISSIONS = new Set([...READ_ONLY_TOOLS, "edit", "external_directory", "doom_loop"]);
 
 /**
  * Session ruleset. OpenCode evaluates the last matching rule, so it starts closed (Synara's plan-mode
@@ -1223,10 +1226,10 @@ export class OpenCodeRuntime implements AgentRuntime {
         return;
       }
       case "permission.asked":
-        this.rejectRequest(client, turn, event.properties.id, "permission");
+        this.rejectRequest(client, turn, event.properties.id, "permission", event.properties);
         return;
       case "question.asked":
-        this.rejectRequest(client, turn, event.properties.id, "question");
+        this.rejectRequest(client, turn, event.properties.id, "question", null);
         return;
       case "session.status": {
         if (!turn) return;
@@ -1350,13 +1353,28 @@ export class OpenCodeRuntime implements AgentRuntime {
     turn.onEvent({ type: "tokenUsage", usedTokens: window ? Math.min(used, window) : used, contextWindow: window });
   }
 
-  /** Auto-rejects permission and question requests: Trama never asks the person during a turn. */
-  private rejectRequest(client: OpencodeClient, turn: ActiveTurn | null, requestId: string, kind: "permission" | "question"): void {
+  /**
+   * Auto-rejects permission and question requests: Trama never asks the person during a turn. A request for one of
+   * OpenCode's own tools (shell, web, sub-agents, the person's MCP servers) names the Trama tool to use (issue #228).
+   */
+  private rejectRequest(
+    client: OpencodeClient,
+    turn: ActiveTurn | null,
+    requestId: string,
+    kind: "permission" | "question",
+    request: { permission: string; patterns: string[]; tool?: { callID: string } } | null,
+  ): void {
     if (this.handledRequests.has(requestId)) return;
     this.handledRequests.add(requestId);
+    let message = "Trama non concede questo permesso.";
+    if (request && !OPENCODE_FILE_PERMISSIONS.has(request.permission)) {
+      const tool = [request.permission, ...request.patterns.filter((p) => p !== "*")].join(" ").trim();
+      message = refusalReason(externalToolKind(tool, request.permission === "bash" ? "execute" : null), this.options.toolServer?.tools ?? []);
+      turn?.onEvent({ type: "toolRefused", itemId: request.tool?.callID ?? requestId, tool, reason: message });
+    }
     const reply =
       kind === "permission"
-        ? client.permission.reply({ requestID: requestId, reply: "reject", message: "Trama non concede questo permesso." })
+        ? client.permission.reply({ requestID: requestId, reply: "reject", message })
         : client.question.reject({ requestID: requestId });
     void Promise.resolve(reply).catch(async (error: unknown) => {
       this.handledRequests.delete(requestId);

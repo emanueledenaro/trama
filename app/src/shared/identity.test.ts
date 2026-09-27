@@ -6,7 +6,7 @@ import { AGENT_PALETTE, agentTag, freeAgentColor, isAgentColor, tagFromCompetenc
 
 const css = readFileSync(join(import.meta.dirname, "../renderer/index.css"), "utf8");
 
-/** Every surface a tag or an avatar can sit on: the base theme and each provider theme, light and dark. */
+/** Every surface a tag or a bot can sit on: the base theme and each provider theme, light and dark. */
 function surfaces(): { light: string[]; dark: string[] } {
   const light: string[] = [];
   const dark: string[] = [];
@@ -30,15 +30,13 @@ const contrast = (a: number[], b: number[]) => {
   const [high, low] = [luminance(a), luminance(b)].sort((x, y) => y - x);
   return (high! + 0.05) / (low! + 0.05);
 };
-/** The avatar's background: the agent color at 16% over the surface, as `.agent-avatar` mixes it. */
-const tint = (color: number[], surface: number[]) => color.map((v, i) => v * 0.16 + surface[i]! * 0.84);
 
 function member(color: AgentColor, status: Specialist["status"] = "available"): Pick<Specialist, "color" | "status"> {
   return { color, status };
 }
 
 describe("agent identity (W15)", () => {
-  it("keeps every palette color readable on every theme, light and dark, as text and on its avatar", () => {
+  it("keeps every palette color readable as text on every theme, light and dark", () => {
     const { light, dark } = surfaces();
     expect(light.length).toBeGreaterThanOrEqual(10);
     expect(dark.length).toBeGreaterThanOrEqual(10);
@@ -48,7 +46,7 @@ describe("agent identity (W15)", () => {
         [entry.dark, dark],
       ] as const) {
         for (const surface of backgrounds) {
-          const ratio = Math.min(contrast(rgb(shade), rgb(surface)), contrast(rgb(shade), tint(rgb(shade), rgb(surface))));
+          const ratio = contrast(rgb(shade), rgb(surface));
           expect(ratio, `${entry.color} ${shade} on ${surface}`).toBeGreaterThanOrEqual(4.5);
         }
       }

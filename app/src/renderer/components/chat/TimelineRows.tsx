@@ -18,7 +18,7 @@ import { useEffect, useState } from "react";
 import { isUsableAccount, type ProviderId, READ_OUTSIDE_SCOPE_TITLE } from "@shared/codex";
 import type { ConversationEvent, NextStepView } from "@shared/domain";
 import { RECOVERY_LABELS, type RecoveryAction, readableFailure } from "@shared/providerFailure";
-import { PROVIDERS, supportsReadOnly } from "@shared/providers";
+import { PROVIDERS, canCoordinate } from "@shared/providers";
 import { extractPastes, pasteSizeLabel, pasteTitle } from "@shared/pastedText";
 import { formatDuration, type TimelineRow, turnFailureText } from "@shared/timeline";
 import { cn } from "@/lib/cn";
@@ -34,6 +34,7 @@ import {
   DomainProposalCard,
   ContextNoticeCard,
   PresenceConsentCard,
+  RouteCard,
   OverlapCard,
   DecisionCard,
   GrillingRoundCard,
@@ -159,7 +160,7 @@ function WorkGroup({ row }: { row: Extract<TimelineRow, { kind: "work" }> }) {
   );
   const tools = row.activities.filter((e) => e.content.type === "activity" && e.content.tone !== "info").length;
   // The specialist's identity leads the label (W15): avatar, name and tag in its color.
-  const who = specialist ? <AgentName agent={specialist} className="mr-1" /> : null;
+  const who = specialist ? <AgentName agent={specialist} size={32} className="mr-1" /> : null;
   const label = row.running
     ? specialist ? <>{who}sta lavorando</> : "Il Coordinatore sta lavorando"
     : row.durationMs !== null
@@ -223,24 +224,40 @@ function NextStepRow({ step, requestId }: { step: NextStepView; requestId: strin
   );
 }
 
-/** A move of the Coordinator that Trama started by itself within the mandate (W04): one line, and a stop on the right while it runs. */
+/**
+ * A move of the Coordinator that Trama started by itself within the mandate (W04): one line, and a stop on the right while
+ * it runs. A move the turn did not make says so, with Trama's reason (issue #204); its button sits under the reply, or here
+ * when the Coordinator wrote none.
+ */
 function AutomaticStepRow({ label, requestId }: { label: string; requestId: string | null }) {
   const running = useUi((s) => requestId !== null && s.app?.project?.runningRequestId === requestId);
+  const stalled = useUi((s) => (requestId ? (s.app?.project?.document.requests.find((r) => r.id === requestId)?.step?.stalled ?? null) : null));
+  const replied = useUi(
+    (s) => requestId !== null && Boolean(s.app?.project?.document.events.some((e) => e.requestId === requestId && e.content.type === "coordinatorText")),
+  );
+  const nextStep = useUi((s) => (requestId ? s.app?.project?.nextSteps[requestId] : undefined) ?? null);
   return (
-    <div className="cta-row mb-3 text-chat" data-testid="automatic-step">
-      <span className="mr-auto inline-flex min-w-0 items-center gap-1.5 text-muted-foreground">
-        <IconPlayerTrackNext className="size-3.5 shrink-0" stroke={1.8} />
-        <span className="min-w-0">
-          {running ? "Il Coordinatore va avanti da solo" : "Mossa automatica"}
-          <Sep />
-          <span className="text-foreground">{label}</span>
+    <div className="mb-3" data-testid="automatic-step" data-stalled={stalled && !running ? "true" : undefined}>
+      <div className="cta-row text-chat">
+        <span className="mr-auto inline-flex min-w-0 items-center gap-1.5 text-muted-foreground">
+          {stalled && !running ? (
+            <IconAlertTriangle className="size-3.5 shrink-0 text-warning" stroke={1.8} />
+          ) : (
+            <IconPlayerTrackNext className="size-3.5 shrink-0" stroke={1.8} />
+          )}
+          <span className="min-w-0">
+            {running ? "Il Coordinatore va avanti da solo" : stalled ? "Mossa automatica non riuscita" : "Mossa automatica"}
+            <Sep />
+            <span className="text-foreground">{label}</span>
+          </span>
         </span>
-      </span>
-      {running ? (
-        <Button size="xs" variant="outline" onClick={() => void act("coordinator:interrupt", undefined)}>
-          Ferma
-        </Button>
-      ) : null}
+        {running ? (
+          <Button size="xs" variant="outline" onClick={() => void act("coordinator:interrupt", undefined)}>
+            Ferma
+          </Button>
+        ) : null}
+      </div>
+      {stalled && !running && !replied && nextStep && requestId ? <NextStepRow step={nextStep} requestId={requestId} /> : null}
     </div>
   );
 }
@@ -342,7 +359,7 @@ function TurnFailure({ row }: { row: Extract<TimelineRow, { kind: "failure" }> }
   // The provider's error in the person's words (P10): cause, whether it passes, the actions; the raw text only on request.
   const { failure } = turnFailureText(row.message, descriptor?.name ?? null);
   const other = (Object.keys(providers) as ProviderId[]).find(
-    (id) => id !== row.provider && supportsReadOnly(id) && isUsableAccount(providers[id]?.account),
+    (id) => id !== row.provider && canCoordinate(id) && isUsableAccount(providers[id]?.account),
   );
   const actions = failure.actions.filter((action) => action !== "changeProvider" || other);
   const run = (action: RecoveryAction) => {
@@ -462,6 +479,7 @@ export function TimelineRowView({ row, streaming = false, latest = false }: { ro
       if (row.cardKind === "conflict" && content.referenceId) return <ConflictCard assessmentId={content.referenceId} />;
       if (row.cardKind === "goal" && content.referenceId) return <GoalCard goalId={content.referenceId} />;
       if (row.cardKind === "domainProposal" && content.referenceId) return <DomainProposalCard proposalId={content.referenceId} />;
+      if (row.cardKind === "route" && content.referenceId) return <RouteCard routeId={content.referenceId} />;
       if (row.cardKind === "overlap" && content.referenceId) return <OverlapCard overlapId={content.referenceId} title={content.title} detail={content.detail} />;
       if (row.cardKind === "presenceConsent" && content.referenceId) return <PresenceConsentCard proposal={content.referenceId} detail={content.detail} />;
       if (row.cardKind === "automaticStep") return <AutomaticStepRow label={content.title} requestId={content.referenceId} />;
