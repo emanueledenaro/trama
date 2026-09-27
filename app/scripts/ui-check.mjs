@@ -1,7 +1,7 @@
 // Launches the built app with the fake Codex server and saves screenshots of the main screens.
 // Usage: node scripts/ui-check.mjs <output-dir>
 import { execFileSync } from "node:child_process";
-import { cp, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { _electron as electron } from "playwright";
@@ -2175,4 +2175,91 @@ for (const dark of [false, true]) {
   await shot(`22b-automatic-work-role-${dark ? "dark" : "light"}`);
 }
 await page.evaluate(() => window.trama.invoke("settings:update", { theme: "system" }));
+await app.close();
+
+// C11: while Trama stays open the Coordinator's turn waits out a network outage and a used up quota and resumes by
+// itself, with no burst of turns; a turn cut by Esci comes back as interrupted after the restart and resumes only on
+// request. The quota file stands in for the ChatGPT usage limit; the waits are shortened for the check.
+const resumeProject = await mkdtemp(join(tmpdir(), "trama-ui-ripresa-"));
+await cp(resolve("resources/DemoProject"), resumeProject, { recursive: true });
+execFileSync("git", ["-C", resumeProject, "init", "-q", "-b", "main"]);
+execFileSync("git", ["-C", resumeProject, "add", "."]);
+execFileSync("git", ["-C", resumeProject, "-c", "user.name=Trama UI", "-c", "user.email=ui@trama.local", "commit", "-q", "-m", "Negozio"]);
+const quotaFile = join(await mkdtemp(join(tmpdir(), "trama-ui-quota-")), "exhausted");
+const resumeEnv = { TRAMA_PROVIDER_RETRY_MS: "3000", TRAMA_PROVIDER_CHECK_MS: "3000", FAKE_CODEX_QUOTA_FILE: quotaFile };
+({ app, page } = await launch(resumeEnv));
+await page.evaluate(() => window.trama.invoke("settings:update", { continuousWork: false, theme: "light" }));
+await page.evaluate((path) => window.trama.invoke("project:open", { path }), resumeProject);
+await page.getByTestId("dialog-title").filter({ hasText: "trama-ui-ripresa" }).waitFor({ timeout: 30_000 });
+await page.getByText("Ho letto lo studio").first().waitFor({ timeout: 30_000 });
+const serverReplies = () => page.getByText("Questa risposta arriva dal server di prova").count();
+const waitForReply = async (before, what) => {
+  for (let tries = 0; (await serverReplies()) <= before; tries++) {
+    if (tries > 120) throw new Error(`${what}: the turn did not resume`);
+    await page.waitForTimeout(250);
+  }
+};
+const lookShots = async (name) => {
+  for (const provider of ["codex", "claudeAgent"]) {
+    for (const dark of [false, true]) {
+      await setLook(provider, dark);
+      await shot(`${name}-${provider}-${dark ? "dark" : "light"}`);
+    }
+  }
+  await setLook(null, false);
+};
+
+// Network outage: the failure says so, Trama retries by itself once, and the turn ends with the provider's reply.
+let repliesSoFar = await serverReplies();
+await page.getByLabel("Messaggio al Coordinatore").fill("[rete-assente] Il servizio dei pagamenti risponde?");
+await page.keyboard.press("Enter");
+const outageCard = page.locator('[role="alert"][data-failure-kind="unreachable"]').last();
+await outageCard.waitFor({ timeout: 30_000 });
+await outageCard.getByText("Provider non raggiungibile").waitFor();
+await outageCard.getByTestId("provider-retry").getByText(/Trama riprova da sola tra \d+ secondi, tentativo 1 di 5\./).waitFor();
+await primaryLast(outageCard.locator(".cta-row"), "Outage wait");
+await lookShots("23a-coordinator-outage-waiting");
+await outageCard.getByTestId("provider-retry").waitFor({ state: "detached", timeout: 30_000 });
+await waitForReply(repliesSoFar, "Network outage");
+await shot("23b-coordinator-outage-resumed");
+
+// Used up quota: Trama checks the account, starts no turn while the quota is used up, and resumes when it is back.
+await writeFile(quotaFile, "");
+repliesSoFar = await serverReplies();
+await page.getByLabel("Messaggio al Coordinatore").fill("Prepara il riepilogo degli annullamenti");
+await page.keyboard.press("Enter");
+const quotaCard = page.locator('[role="alert"][data-failure-kind="quotaExhausted"]').last();
+await quotaCard.waitFor({ timeout: 30_000 });
+await quotaCard.getByTestId("provider-retry").getByText(/Trama controlla di nuovo la quota tra \d+ secondi e riprende il turno da sola appena si sblocca\./).waitFor();
+await quotaCard.getByRole("button", { name: "Smetti di aspettare" }).waitFor();
+await primaryLast(quotaCard.locator(".cta-row"), "Quota wait");
+await lookShots("23c-coordinator-quota-waiting");
+// Two account checks pass with the quota still used up: one failure in the chat, no new turn.
+await page.waitForTimeout(7_000);
+if ((await page.locator('[role="alert"][data-failure-kind="quotaExhausted"]').count()) !== 1) throw new Error("Trama retried the turn while the quota was used up");
+await quotaCard.getByTestId("provider-retry").waitFor();
+await rm(quotaFile);
+await quotaCard.getByTestId("provider-retry").waitFor({ state: "detached", timeout: 30_000 });
+await waitForReply(repliesSoFar, "Quota");
+if ((await page.getByText("Prepara il riepilogo degli annullamenti", { exact: true }).count()) !== 1) throw new Error("The resumed turn wrote the message again");
+await shot("23d-coordinator-quota-resumed");
+
+// Esci during a turn: after the restart the turn reads as interrupted with its reason, and nothing starts by itself.
+await page.getByLabel("Messaggio al Coordinatore").fill("[attesa] Controlla i test degli annullamenti");
+await page.keyboard.press("Enter");
+await page.getByText("[attesa] Controlla i test degli annullamenti", { exact: true }).waitFor();
+await page.waitForTimeout(1_500);
+await app.close();
+({ app, page } = await launch({ ...resumeEnv, FAKE_CODEX_NO_WAIT: "1" }));
+const quitRow = page.getByRole("status").filter({ hasText: "Trama è stato chiuso mentre il Coordinatore lavorava." });
+await quitRow.waitFor({ timeout: 30_000 });
+await quitRow.getByText("Turno interrotto").waitFor();
+await page.waitForTimeout(1_000);
+repliesSoFar = await serverReplies();
+await lookShots("23e-coordinator-closed-turn");
+if ((await serverReplies()) !== repliesSoFar) throw new Error("The interrupted turn resumed without the person");
+await quitRow.getByRole("button", { name: "Riprendi" }).click();
+await waitForReply(repliesSoFar, "Esci");
+if ((await page.getByText("[attesa] Controlla i test degli annullamenti", { exact: true }).count()) !== 1) throw new Error("The resumed turn wrote the message again");
+await shot("23f-coordinator-closed-turn-resumed");
 await app.close();

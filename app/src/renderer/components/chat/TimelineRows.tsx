@@ -16,7 +16,7 @@ import {
 import { useEffect, useState } from "react";
 import { isUsableAccount, type ProviderId, READ_OUTSIDE_SCOPE_TITLE } from "@shared/codex";
 import type { ConversationEvent, NextStepView } from "@shared/domain";
-import { RECOVERY_LABELS, type RecoveryAction, readableFailure } from "@shared/providerFailure";
+import { providerWaitText, RECOVERY_LABELS, type RecoveryAction, readableFailure } from "@shared/providerFailure";
 import { PROVIDERS, canCoordinate } from "@shared/providers";
 import { extractPastes, pasteSizeLabel, pasteTitle } from "@shared/pastedText";
 import { formatDuration, type TimelineRow, turnFailureText } from "@shared/timeline";
@@ -268,8 +268,6 @@ function useSecondsUntil(at: string | null): number | null {
   return at ? Math.max(0, Math.ceil((Date.parse(at) - now) / 1_000)) : null;
 }
 
-const retryWait = (seconds: number) => (seconds >= 90 ? `${Math.round(seconds / 60)} minuti` : seconds === 1 ? "1 secondo" : `${seconds} secondi`);
-
 function TurnFailure({ row }: { row: Extract<TimelineRow, { kind: "failure" }> }) {
   const providers = useUi((s) => s.app!.providers);
   const waiting = useUi((s) => (s.app?.project?.providerRetry?.requestId === row.requestId ? s.app.project.providerRetry : null));
@@ -281,7 +279,7 @@ function TurnFailure({ row }: { row: Extract<TimelineRow, { kind: "failure" }> }
   const retry = () => void act("coordinator:retryRequest", { requestId: row.requestId });
 
   if (row.interrupted) {
-    // An interrupted turn is not an error: same place and Riprova, neutral colors, and the reason when there is one.
+    // An interrupted turn is not an error: same place, neutral colors, the reason when there is one, and Riprendi (C11).
     const detail = /^turno interrotto\.?$/i.test(row.message.trim()) ? null : row.message || null;
     return (
       <div role="status" className="mb-4 flex items-start gap-2.5 rounded-xl border border-[color:var(--color-border)] bg-[var(--color-background-button-secondary)] px-3.5 py-3">
@@ -291,7 +289,7 @@ function TurnFailure({ row }: { row: Extract<TimelineRow, { kind: "failure" }> }
           {detail ? <p className="mt-0.5 text-ui-sm break-words text-muted-foreground">{detail}</p> : null}
         </div>
         <Button size="xs" variant="outline" className="shrink-0" onClick={retry}>
-          Riprova
+          Riprendi
         </Button>
       </div>
     );
@@ -350,9 +348,7 @@ function TurnFailure({ row }: { row: Extract<TimelineRow, { kind: "failure" }> }
           ) : null}
           {waiting && seconds !== null ? (
             <p className="mt-1.5 text-ui-sm text-foreground/90" data-testid="provider-retry">
-              {seconds > 0
-                ? `Trama riprova da sola tra ${retryWait(seconds)}, tentativo ${waiting.attempt} di ${waiting.maxAttempts}.`
-                : `Trama riprova ora, tentativo ${waiting.attempt} di ${waiting.maxAttempts}.`}
+              {providerWaitText(waiting, seconds)}
             </p>
           ) : null}
           {hint ? <p className="mt-1 text-ui-sm text-foreground/80">{hint}</p> : null}
@@ -377,7 +373,7 @@ function TurnFailure({ row }: { row: Extract<TimelineRow, { kind: "failure" }> }
         {waiting ? (
           <>
             <Button size="xs" variant="outline" onClick={() => void act("coordinator:stopRetry", undefined)}>
-              Ferma i tentativi
+              {waiting.reason === "quotaExhausted" ? "Smetti di aspettare" : "Ferma i tentativi"}
             </Button>
             <Button size="xs" onClick={retry}>
               Riprova ora
