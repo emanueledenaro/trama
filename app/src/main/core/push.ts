@@ -29,13 +29,13 @@ export const pushAuthorization = (mandate: ProjectMandate | null): Authorization
 export function pushRefusal(authorization: Authorization): string {
   switch (authorization) {
     case "mandate_missing":
-      return "Il progetto non ha un mandato: Trama non pubblica branch su GitHub. Concedi un mandato che permetta di aprire pull request.";
+      return "Il progetto non ha un mandato: Trama non pubblica branch su GitHub.";
     case "mandate_revoked":
-      return "Il mandato è revocato: Trama non pubblica branch su GitHub finché non ne concedi uno nuovo.";
+      return "Il mandato è revocato: Trama non pubblica branch su GitHub.";
     case "authorized":
       return "";
     default:
-      return "Il mandato non permette di aprire pull request: Trama non pubblica branch su GitHub. Correggi il mandato se vuoi pubblicare.";
+      return "Il mandato non permette di aprire pull request: Trama non pubblica branch su GitHub.";
   }
 }
 

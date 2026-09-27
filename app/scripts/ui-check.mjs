@@ -1363,7 +1363,7 @@ await mandateItem.getByText(/Il mandato non permette di aprire pull request/).wa
 await mandateItem.getByText(/^Come sistemarlo: Concedi o correggi il mandato/).waitFor();
 if ((await stoppedQuality.locator('[data-testid="quality-item"][data-passed="no"]').count()) !== 1) throw new Error("Only the mandate should stop the corrected candidate");
 if (await correctedCard.getByRole("button", { name: /Prepara la pull request/ }).count()) throw new Error("A pull request can be prepared outside the mandate");
-await mandateItem.scrollIntoViewIfNeeded();
+await mandateItem.evaluate((item) => item.scrollIntoView({ block: "center" }));
 await shot("18e1-publication-outside-mandate");
 await app.evaluate(({ nativeTheme }) => {
   nativeTheme.themeSource = "dark";
