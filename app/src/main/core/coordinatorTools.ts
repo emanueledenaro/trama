@@ -112,7 +112,7 @@ const op = (action: string, properties: Record<string, Json>, required: string[]
   required: ["name", "action", ...required],
 });
 
-/** Hermes' learning tools (ADR 0014): memory, session search and the skill library. */
+/** The learning tools (ADR 0014): memory, session search and the skill library. */
 export function learningTools(memoryEnabled: boolean, userEnabled: boolean): ToolDefinition[] {
   const surface = memoryToolSurface(memoryEnabled, userEnabled);
   const memory: ToolDefinition[] = surface.targets.length
@@ -1601,7 +1601,7 @@ export const COORDINATOR_SKILLS: { name: string; binding: string }[] = [
 ];
 
 /**
- * `learningGuidance`: Hermes' memory, session search and skills guidance, in its own words.
+ * `learningGuidance`: the memory, session search and skills guidance, verbatim.
  * `skills`: native AI Hero skills with their binding (nativeSkills.ts), when they belong in the session instructions.
  */
 export function developerInstructions(projectName: string, learningGuidance: string | null = null, skills: string | null = null): string {

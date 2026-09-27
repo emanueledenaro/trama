@@ -1,6 +1,6 @@
 # V07: composer con menzioni e misuratore di contesto
 
-Verifica del 17 settembre 2026 per #70. Base: `4b9916b` (V02). Candidato sul branch `synara/v07-composer-context-meter`. Componente reale: Codex CLI con l'account ChatGPT del Mac. Modello dei turni: `gpt-5.6-luna`.
+Verifica del 17 settembre 2026 per #70. Base: `4b9916b` (V02). Candidato sul branch del misuratore di contesto di V07. Componente reale: Codex CLI con l'account ChatGPT del Mac. Modello dei turni: `gpt-5.6-luna`.
 
 ## Test automatici
 
@@ -52,7 +52,7 @@ Il catalogo dell'account includeva `gpt-6-astra` (predefinito Codex) e `gpt-5.6-
 ## Limiti
 
 - La finestra del modello in prova è 828.400 token. Lo studio occupa il 4,1%. La soglia minima è 5% (durante la prova è stata 1%, prima ancora 10% e 50%). Con il minimo al 5% l'avviso scatta su questa finestra solo dopo il secondo turno (5,1%). Il selettore va da 5% a 95% di 5 in 5. Il predefinito resta 80%.
-- Il misuratore usa `last.totalTokens` dell'ultima richiesta, come Synara, non il cumulativo del thread. Dopo il secondo turno è salito da 34.204 a 41.921.
+- Il misuratore usa `last.totalTokens` dell'ultima richiesta, come l'implementazione di riferimento, non il cumulativo del thread. Dopo il secondo turno è salito da 34.204 a 41.921.
 - La compattazione del provider non è apparsa in questa prova. Trama osserva `thread/compacting`, `thread/compacted` e gli elementi `contextCompaction` (`item/started`, `item/updated`, `item/completed`). Non la simula.
 - Skill `/`, testo incollato e immagini sono coperti dai test e dal composer, non da un invio reale in questa prova. Non c'erano decisioni del Patto nel clone, quindi niente menzione di decisione nell'app.
 - `CFFIXED_USER_HOME` non isola `UserDefaults`. Al primo avvio `lastProject` ha aperto anche `/tmp/trama-v02-proof/luna/trama`. Quel documento è nella home isolata, non in Application Support reale. Gli avvii successivi del driver saltavano `restoreProject`.

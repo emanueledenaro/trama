@@ -1,9 +1,8 @@
 /**
- * Full-text search over past conversation messages, ported from Hermes Agent's session search
- * (https://github.com/NousResearch/hermes-agent, revision 58c896e, MIT, Copyright (c) 2025 Nous
- * Research; `hermes_state_search.py`). Hermes runs SQLite FTS5 with the `unicode61` tokenizer and
- * `bm25()`; Trama has no SQLite, so this module reproduces the same query sanitizer, query grammar,
- * BM25 ranking, snippet markers and OR-relaxed retry in memory. See docs/hermes-attribution.md.
+ * Full-text search over past conversation messages. Derived from third-party MIT code; see THIRD_PARTY_NOTICES.md. The search
+ * follows SQLite FTS5 with the `unicode61` tokenizer and `bm25()`; Trama has no SQLite, so this
+ * module reproduces the FTS5 query sanitizer, query grammar, BM25 ranking, snippet markers and
+ * OR-relaxed retry in memory.
  */
 
 export interface SearchDocument {
@@ -60,7 +59,7 @@ export function tokenize(text: string): Token[] {
 }
 
 /**
- * Hermes' `_sanitize_fts5_query`: keeps balanced quoted phrases, removes characters FTS5 treats as
+ * FTS5 query sanitizer: keeps balanced quoted phrases, removes characters FTS5 treats as
  * syntax, drops a leading `*`, a dangling leading or trailing operator, and quotes dotted, hyphenated
  * or underscored terms so `my-app.config.ts` matches as a phrase.
  */
@@ -315,7 +314,7 @@ function evaluate(query: string, indexed: IndexedDocument[], options: SearchOpti
 }
 
 /**
- * Substring search, Hermes' LIKE fallback used when tool output is searched: the boolean subset
+ * Substring search, the LIKE fallback used when tool output is searched: the boolean subset
  * compiled to case-insensitive substring tests, newest first (oldest first with sort oldest).
  */
 function substringSearch(query: string, documents: SearchDocument[], options: SearchOptions): SearchHit[] {
@@ -357,7 +356,7 @@ function substringSearch(query: string, documents: SearchDocument[], options: Se
 }
 
 /**
- * Hermes' `search_messages` route: sanitize, search tool output by substring, otherwise rank with
+ * The search route: sanitize, search tool output by substring, otherwise rank with
  * BM25 and, when nothing matches, retry once with the terms joined by OR.
  */
 export function searchMessages(query: string, documents: SearchDocument[], options: SearchOptions = {}): SearchHit[] {

@@ -103,7 +103,7 @@ function PageHeader({ title, description, actions }: { title: string; descriptio
   );
 }
 
-/** A titled card of rows, as in the Codex and Synara settings. */
+/** A titled card of rows, as in the Codex settings. */
 function Group({ title, note, children }: { title?: string; note?: React.ReactNode; children: React.ReactNode }) {
   return (
     <section className="mb-6 last:mb-0">
