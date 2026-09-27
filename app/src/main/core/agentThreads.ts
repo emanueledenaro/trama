@@ -13,7 +13,7 @@ import type {
   TechnicalReview,
   TeamRole,
 } from "@shared/domain";
-import { AGENT_THREAD_KIND_LABEL, findAgentThread, undelivered } from "@shared/agentThreads";
+import { AGENT_THREAD_KIND_LABEL } from "@shared/agentThreads";
 import { shortId } from "@shared/ids";
 import { findAssignment, teamMembers } from "./team";
 
@@ -21,18 +21,9 @@ import { findAssignment, teamMembers } from "./team";
  * The conversations between agents (W07, issue #144). The agents of a piece of work talk in threads of their own:
  * the developer and the Coordinator about a question, the reviewer and the developer about a technical review, the
  * regression guardian and the developer about a check that passed before and fails now. Every message is recorded
- * in the project, with its author; no conversation is private. The person reads them from the sidebar and may write
- * in them: the Coordinator receives the message at its next turn, the developer when its work resumes.
+ * in the project, with its author; no conversation is private. The person reads them, read-only, from the
+ * specialist's page: to tell an agent something, the person tells the Coordinator (Q32 of #239).
  */
-
-export class ThreadError extends Error {
-  constructor(
-    readonly code: "unknown_thread" | "invalid_arguments",
-    message: string,
-  ) {
-    super(message);
-  }
-}
 
 const clip = (text: string, length = 4_000) => text.trim().slice(0, length);
 
@@ -72,15 +63,8 @@ export function threadFor(document: ProjectDocument, kind: AgentThreadKind, assi
   return thread;
 }
 
-function post(
-  thread: AgentThread,
-  author: AgentThreadAuthor,
-  text: string,
-  now: Date,
-  delivery?: AgentThreadMessage["delivery"],
-  limit = 4_000,
-): AgentThreadMessage {
-  const message: AgentThreadMessage = { id: shortId("CM", randomUUID()), author, text: clip(text, limit), at: now.toISOString(), ...(delivery ? { delivery } : {}) };
+function post(thread: AgentThread, author: AgentThreadAuthor, text: string, now: Date, limit = 4_000): AgentThreadMessage {
+  const message: AgentThreadMessage = { id: shortId("CM", randomUUID()), author, text: clip(text, limit), at: now.toISOString() };
   thread.messages.push(message);
   thread.updatedAt = message.at;
   return message;
@@ -105,22 +89,18 @@ export function recordAnswer(document: ProjectDocument, assignment: SpecialistAs
       ? `${answer.text}\n\nFonti: ${answer.sources.join("; ")}`
       : `Questa scelta spetta alla persona: l'ho messa sulla scheda del Patto ${answer.decisionRequestId}. Il tuo lavoro resta in pausa finché non risponde.`;
   // The answer and its sources were already bounded one by one (W06): the sources always stay in the message.
-  post(thread, { kind: "coordinator" }, text, now, undefined, Number.MAX_SAFE_INTEGER);
+  post(thread, { kind: "coordinator" }, text, now, Number.MAX_SAFE_INTEGER);
   return thread;
 }
 
-/**
- * The person answered, or withdrew, the Pact card a question waited on. The answer already reaches both agents
- * through the card, so the message is recorded as delivered.
- */
+/** The person answered, or withdrew, the Pact card a question waited on: the answer reaches both agents through the card. */
 export function recordPersonAnswer(document: ProjectDocument, request: DecisionRequest, now = new Date()): AgentThread | null {
   if (!request.blocksWork) return null;
   const assignment = findAssignment(document, request.blocksWork.assignmentId);
   const question = assignment?.questions?.find((q) => q.id === request.blocksWork!.questionId);
   if (!assignment || question?.answer?.kind !== "person" || !question.answer.text) return null;
   const thread = threadFor(document, "question", assignment, now);
-  const at = now.toISOString();
-  post(thread, { kind: "person" }, `Dalla scheda del Patto ${request.id}: ${question.answer.text}`, now, { coordinator: at, developer: at });
+  post(thread, { kind: "person" }, `Dalla scheda del Patto ${request.id}: ${question.answer.text}`, now);
   return thread;
 }
 
@@ -153,87 +133,4 @@ export function recordRegression(document: ProjectDocument, failure: CheckFailur
   ].join("\n");
   post(thread, guardian ? { kind: "specialist", specialistId: guardian } : { kind: "coordinator" }, text, now);
   return thread;
-}
-
-/** The person writes in a conversation: the agents receive it at their next turn. */
-export function postPersonMessage(document: ProjectDocument, threadId: string, text: string, now = new Date()): AgentThreadMessage {
-  const thread = findAgentThread(document, threadId);
-  if (!thread) throw new ThreadError("unknown_thread", "Questa conversazione tra agenti non esiste più.");
-  const body = clip(text);
-  if (!body) throw new ThreadError("invalid_arguments", "Scrivi il messaggio prima di inviarlo.");
-  return post(thread, { kind: "person" }, body, now, { coordinator: null, developer: null });
-}
-
-/** The person's messages an agent is about to receive, to mark as delivered once its turn has started. */
-export interface ThreadNotes {
-  lines: string[];
-  messageIds: string[];
-}
-
-/** Records that the agent received the messages: only once its turn started, so a failed start delivers them again. */
-export function markDelivered(document: ProjectDocument, messageIds: string[], to: "coordinator" | "developer", now = new Date()): void {
-  const wanted = new Set(messageIds);
-  for (const thread of document.agentThreads ?? []) {
-    for (const message of thread.messages) {
-      if (wanted.has(message.id) && message.delivery && message.delivery[to] === null) message.delivery[to] = now.toISOString();
-    }
-  }
-}
-
-/** The person's messages the Coordinator has not read, as a section of its next turn; null without any. */
-export function coordinatorThreadNotes(document: ProjectDocument): ThreadNotes | null {
-  const lines: string[] = [];
-  const messageIds: string[] = [];
-  for (const thread of document.agentThreads ?? []) {
-    const pending = undelivered(thread, "coordinator");
-    if (!pending.length) continue;
-    const developerName = document.team.specialists.find((s) => s.id === thread.specialistIds[0])?.name ?? thread.specialistIds[0];
-    lines.push(`- ${thread.id}, «${thread.title}», incarico ${thread.assignmentId} di ${developerName}:`);
-    for (const message of pending) {
-      lines.push(`  «${message.text}»`);
-      messageIds.push(message.id);
-    }
-  }
-  if (!lines.length) return null;
-  return {
-    lines: [
-      "## Messaggi della persona nelle chat tra agenti",
-      "La persona ha letto queste conversazioni tra agenti e ci ha scritto. Tienine conto come di un suo messaggio: se cambiano il lavoro, agisci con i tuoi strumenti. Lo sviluppatore li riceve quando il suo lavoro riprende.",
-      ...lines,
-    ],
-    messageIds,
-  };
-}
-
-/** The person's messages the developer has not read, for the input of its resumed work; null without any. */
-export function developerThreadNotes(document: ProjectDocument, assignmentId: string): ThreadNotes | null {
-  const lines: string[] = [];
-  const messageIds: string[] = [];
-  for (const thread of document.agentThreads ?? []) {
-    if (thread.assignmentId !== assignmentId) continue;
-    for (const message of undelivered(thread, "developer")) {
-      lines.push(`- «${message.text}» (conversazione «${thread.title}»)`);
-      messageIds.push(message.id);
-    }
-  }
-  if (!lines.length) return null;
-  return { lines: ["## Messaggi della persona nelle chat tra agenti", "La persona ha scritto nelle conversazioni di questo lavoro. Tienine conto.", ...lines], messageIds };
-}
-
-/**
- * The developer's turn ended after it received the person's messages: its answer goes to the conversations those
- * messages came from, so the person reads the reply where they wrote.
- */
-export function recordDeveloperReply(document: ProjectDocument, assignment: SpecialistAssignment, since: string, reply: string, now = new Date()): AgentThread[] {
-  const text = clip(reply, 2_000);
-  if (!text) return [];
-  const answered: AgentThread[] = [];
-  for (const thread of document.agentThreads ?? []) {
-    if (thread.assignmentId !== assignment.id) continue;
-    const received = thread.messages.some((m) => m.author.kind === "person" && m.delivery?.developer && m.delivery.developer >= since);
-    if (!received) continue;
-    post(thread, developer(assignment), text, now);
-    answered.push(thread);
-  }
-  return answered;
 }

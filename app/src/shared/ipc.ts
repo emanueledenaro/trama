@@ -56,7 +56,6 @@ export interface ActionMap {
   "coordinator:saveDraft": [{ text: string; goalId?: string | null }, void];
   /** Deletes a message still waiting in the queue (W03); a message that reports a recorded choice stays. */
   "coordinator:deleteQueued": [{ id: string }, void];
-  "agentThread:post": [{ threadId: string; text: string }, boolean];
   "goal:create": [GoalInputPayload, string];
   /** Archives (true) or restores (false) a goal; its status and history stay (W03). Returns the goal id once saved. */
   "goal:archive": [{ id: string; archived: boolean }, string];

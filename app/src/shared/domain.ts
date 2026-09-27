@@ -1150,7 +1150,7 @@ export interface ProjectDocument {
  */
 export type AgentThreadKind = "question" | "review" | "regression";
 
-/** Who wrote a message in a conversation between agents: a member of the team, the Coordinator or the person. */
+/** Who wrote a message in a conversation between agents: a member of the team, the Coordinator, or the person on a Pact card. */
 export type AgentThreadAuthor = { kind: "specialist"; specialistId: string } | { kind: "coordinator" } | { kind: "person" };
 
 export interface AgentThreadMessage {
@@ -1158,16 +1158,11 @@ export interface AgentThreadMessage {
   author: AgentThreadAuthor;
   text: string;
   at: string;
-  /**
-   * A message of the person, and when each agent of the thread received it: the Coordinator at its next turn, the
-   * developer when its work resumes. Absent on the agents' own messages.
-   */
-  delivery?: { coordinator: string | null; developer: string | null };
 }
 
 /**
  * A conversation between agents (W07): always visible and recorded, never private. One per kind and assignment; the
- * person reads it from the sidebar and may write in it.
+ * person reads it from the specialist's page and talks only with the Coordinator (Q32 of #239).
  */
 export interface AgentThread {
   id: string;

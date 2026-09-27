@@ -602,6 +602,7 @@ export function AssignmentCard({ assignmentId }: { assignmentId: string }) {
       {assignment.failure ? <Field label="Errore">{readableFailure(assignment.failure)}</Field> : null}
       {assignment.report !== undefined ? <ReportField report={assignment.report} /> : null}
       {assignment.questions?.length ? <QuestionsField questions={assignment.questions} /> : null}
+      <ThreadLinks assignmentId={assignment.id} />
       {assignment.result ? (
         <div className="mt-2">
           <button type="button" className="inline-flex items-center gap-1 text-ui-sm text-muted-foreground hover:text-foreground" onClick={() => setShowResult(!showResult)}>
@@ -939,6 +940,24 @@ function QuestionsField({ questions }: { questions: DeveloperQuestion[] }) {
           );
         })}
       </ul>
+    </Field>
+  );
+}
+
+/** Links to the conversations between agents about this work (W07), read-only in the inspector. */
+function ThreadLinks({ assignmentId }: { assignmentId: string }) {
+  const threads = useUi((s) => s.app?.project?.document.agentThreads)?.filter((t) => t.assignmentId === assignmentId) ?? [];
+  const setInspector = useUi((s) => s.setInspector);
+  if (!threads.length) return null;
+  return (
+    <Field label="Chat tra agenti">
+      <div className="flex flex-wrap gap-x-3 gap-y-1" data-testid="assignment-threads">
+        {threads.map((thread) => (
+          <button key={thread.id} type="button" className="text-left text-ui-sm text-[var(--color-text-accent)] hover:underline" onClick={() => setInspector({ kind: "agentThread", id: thread.id })}>
+            {thread.title} ({thread.messages.length})
+          </button>
+        ))}
+      </div>
     </Field>
   );
 }

@@ -61,8 +61,7 @@ export function openingInput(assignment: SpecialistAssignment, decisions: PactDe
   return lines.join("\n");
 }
 
-/** `threadNotes`: the person's messages from the conversations between agents of this work (W07). */
-export function resumeInput(assignment: SpecialistAssignment, decisions: PactDecision[] = [], threadNotes: string[] = []): string {
+export function resumeInput(assignment: SpecialistAssignment, decisions: PactDecision[] = []): string {
   const lines = [`Riprendi l'incarico ${assignment.id}: ${assignment.objective}`];
   const stop = assignment.stops.at(-1);
   if (stop?.confirmedAt) lines.push(`Il lavoro era stato fermato (${stop.reason}). Il worktree è come l'hai lasciato.`);
@@ -72,7 +71,6 @@ export function resumeInput(assignment: SpecialistAssignment, decisions: PactDec
   // The answer to the developer's question (W06) that paused the work.
   const answer = answerBriefing(assignment);
   if (answer.length) lines.push("", ...answer, "");
-  if (threadNotes.length) lines.push("", ...threadNotes, "");
   lines.push("Continua da dove eri rimasto e riporta cosa hai fatto in questo turno.");
   if (assignment.seams) {
     const headings = Object.values(REPORT_HEADINGS).map((h) => `\`${h}\``).join(", ");

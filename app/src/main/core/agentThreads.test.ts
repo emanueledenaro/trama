@@ -1,13 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { ProjectDocument } from "@shared/domain";
-import { agentThreadsByRecent, authorName, sidebarAgentThreads, SIDEBAR_AGENT_THREADS, threadParticipants } from "@shared/agentThreads";
-import { coordinatorThreadNotes, developerThreadNotes, markDelivered, postPersonMessage, recordDeveloperReply, recordReview, ThreadError } from "./agentThreads";
+import { agentThreadsByRecent, authorName, threadParticipants } from "@shared/agentThreads";
+import { recordReview } from "./agentThreads";
 import { declareCandidate, recordTechnicalReview } from "./candidates";
 import { answerFromFacts, askCoordinator, blockOnPerson, personAnswered } from "./developerQuestions";
 import { emptyDocument } from "./document";
 import { dutyLedger, recordCheckOutcome } from "./duties";
 import { answerDecisionRequest, createDecisionRequest, grantMandate } from "./pact";
-import { resumeInput } from "./specialistBriefing";
 import { assign, beginTurn, confirmTeam, endTurn, findAssignment, proposeTeam, resumePausedAssignment } from "./team";
 
 const at = (minute: number) => new Date(Date.UTC(2026, 8, 27, 9, minute));
@@ -109,7 +108,7 @@ describe("the developer and the Coordinator talk in their own conversation (W07)
     expect(thread!.messages.at(-1)!.text.endsWith("Fonti: spec #7; Sources/Orders/CancelPaidOrder.swift")).toBe(true);
   });
 
-  it("records the Pact card and the person's answer on it, already delivered to both agents", () => {
+  it("records the Pact card and the person's answer on it", () => {
     const { document, assignment } = project();
     const question = askCoordinator(document, assignment.id, { question: "Un buono conta come pagamento?", context: null }, at(3));
     endTurn(document, assignment.id, "t1", { kind: "completed", text: "Mi fermo." }, at(4));
@@ -122,8 +121,6 @@ describe("the developer and the Coordinator talk in their own conversation (W07)
     expect(thread.messages.map((m) => m.author.kind)).toEqual(["specialist", "coordinator", "person"]);
     expect(thread.messages[1]!.text).toContain(`scheda del Patto ${request.id}`);
     expect(thread.messages[2]!.text).toMatch(new RegExp(`^Dalla scheda del Patto ${request.id}: Va in revisione`));
-    expect(thread.messages[2]!.delivery).toEqual({ coordinator: at(8).toISOString(), developer: at(8).toISOString() });
-    expect(coordinatorThreadNotes(document)).toBeNull();
   });
 });
 
@@ -176,58 +173,9 @@ describe("the reviewer and the guardian talk to the developer (W07)", () => {
   });
 });
 
-describe("the person writes in a conversation between agents (W07)", () => {
-  function asked() {
-    const { document, assignment } = project();
-    askCoordinator(document, assignment.id, { question: "Un buono conta come pagamento?", context: null }, at(3));
-    endTurn(document, assignment.id, "t1", { kind: "completed", text: "Mi fermo." }, at(4));
-    return { document, assignment, thread: document.agentThreads![0]! };
-  }
-
-  it("refuses an empty message and an unknown conversation", () => {
-    const { document, thread } = asked();
-    expect(() => postPersonMessage(document, thread.id, "   ")).toThrow(ThreadError);
-    expect(() => postPersonMessage(document, "CH-00000000", "Ciao")).toThrow(/non esiste più/);
-  });
-
-  it("delivers the message once to the Coordinator at its next turn and once to the developer when the work resumes", () => {
-    const { document, assignment, thread } = asked();
-    const message = postPersonMessage(document, thread.id, "  Sì, i buoni contano come pagamento.  ", at(6));
-    expect(message).toMatchObject({ author: { kind: "person" }, text: "Sì, i buoni contano come pagamento.", delivery: { coordinator: null, developer: null } });
-
-    const notes = coordinatorThreadNotes(document)!;
-    const text = notes.lines.join("\n");
-    expect(text).toContain("## Messaggi della persona nelle chat tra agenti");
-    expect(text).toContain(`${thread.id}, «Domanda al Coordinatore, fetta S1», incarico ${assignment.id} di Ada`);
-    expect(text).toContain("«Sì, i buoni contano come pagamento.»");
-    expect(notes.messageIds).toEqual([message.id]);
-    // A turn that never started delivers nothing: the next turn gets the message again.
-    expect(coordinatorThreadNotes(document)?.messageIds).toEqual([message.id]);
-    markDelivered(document, notes.messageIds, "coordinator", at(7));
-    expect(coordinatorThreadNotes(document)).toBeNull();
-
-    const developerNotes = developerThreadNotes(document, assignment.id)!;
-    expect(developerNotes.lines.join("\n")).toContain("«Sì, i buoni contano come pagamento.» (conversazione «Domanda al Coordinatore, fetta S1»)");
-    expect(resumeInput(assignment, [], developerNotes.lines)).toContain("## Messaggi della persona nelle chat tra agenti");
-    markDelivered(document, developerNotes.messageIds, "developer", at(9));
-    expect(developerThreadNotes(document, assignment.id)).toBeNull();
-    markDelivered(document, developerNotes.messageIds, "developer", at(10));
-    expect(message.delivery).toEqual({ coordinator: at(7).toISOString(), developer: at(9).toISOString() });
-  });
-
-  it("puts the developer's reply in the conversation it received the message from", () => {
-    const { document, assignment, thread } = asked();
-    postPersonMessage(document, thread.id, "Considera anche i buoni scaduti.", at(6));
-    markDelivered(document, developerThreadNotes(document, assignment.id)!.messageIds, "developer", at(9));
-    expect(recordDeveloperReply(document, assignment, at(9).toISOString(), "Ho coperto i buoni scaduti con un test.", at(12))).toEqual([thread]);
-    expect(thread.messages.at(-1)).toMatchObject({ author: { kind: "specialist", specialistId: ada(document).id }, text: "Ho coperto i buoni scaduti con un test." });
-    expect(recordDeveloperReply(document, assignment, at(13).toISOString(), "Altro", at(14))).toEqual([]);
-  });
-});
-
-describe("the conversations in the sidebar (W07)", () => {
-  it("lists the most recent ones first, up to the sidebar's limit", () => {
-    const threads = Array.from({ length: SIDEBAR_AGENT_THREADS + 2 }, (_, i) => ({
+describe("the conversations of a specialist (W07)", () => {
+  it("lists the most recent ones first", () => {
+    const threads = [1, 3, 2].map((i) => ({
       id: `CH-${i}`,
       kind: "question" as const,
       assignmentId: `A-${i}`,
@@ -238,8 +186,6 @@ describe("the conversations in the sidebar (W07)", () => {
       updatedAt: at(i).toISOString(),
       messages: [],
     }));
-    expect(agentThreadsByRecent(threads)[0]!.id).toBe(`CH-${SIDEBAR_AGENT_THREADS + 1}`);
-    expect(sidebarAgentThreads({ agentThreads: threads })).toHaveLength(SIDEBAR_AGENT_THREADS);
-    expect(sidebarAgentThreads({})).toEqual([]);
+    expect(agentThreadsByRecent(threads).map((t) => t.id)).toEqual(["CH-3", "CH-2", "CH-1"]);
   });
 });

@@ -479,7 +479,7 @@ function SpecialistThreads({ specialistId }: { specialistId: string }) {
   if (!document || !threads.length) return null;
   return (
     <InspectorSection title={`Chat tra agenti (${threads.length})`}>
-      <div className="flex flex-col gap-1">
+      <div className="flex flex-col gap-1" data-testid="specialist-threads">
         {threads.map((thread) => (
           <button
             key={thread.id}

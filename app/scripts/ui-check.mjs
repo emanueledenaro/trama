@@ -1587,12 +1587,14 @@ await shot("19h-developer-question-resumed");
 await setLook("claudeAgent", true);
 await shot("19i-developer-question-resumed-claude-dark");
 await setLook(questionLook.provider, questionLook.dark);
-// W07: the developer's question lives in a conversation between agents, listed in the sidebar and recorded with the
-// author of every message: the developer's question, the Coordinator's Pact card, the person's answer on it. The person
-// writes in it; the Coordinator reads the message at its next turn, and the conversation says who read it.
-const threadRow = page.getByTestId("sidebar-agent-thread").filter({ hasText: "Domanda al Coordinatore, fetta S1" });
-await threadRow.waitFor({ timeout: 10_000 });
-await threadRow.click();
+// W07: the developer's question lives in a conversation between agents, recorded with the author of every message:
+// the developer's question, the Coordinator's Pact card, the person's answer on it. The person reads it from the
+// assignment's card or the specialist's page, never from the sidebar, and cannot write in it: the person talks only
+// with the Coordinator (Q32 of #239).
+if (await page.getByTestId("sidebar-agent-thread").count()) throw new Error("A conversation between agents is in the sidebar");
+const threadLink = questionWork.getByTestId("assignment-threads").getByRole("button", { name: /Domanda al Coordinatore, fetta S1/ });
+await threadLink.waitFor({ timeout: 10_000 });
+await threadLink.click();
 const agentThread = page.locator('[data-testid="agent-thread"][data-kind="question"]');
 await agentThread.waitFor();
 const threadMessages = agentThread.getByTestId("agent-thread-message");
@@ -1603,20 +1605,9 @@ await threadMessages.nth(0).getByText(/buono/).first().waitFor();
 await threadMessages.nth(0).getByTestId("agent-tag").waitFor();
 await threadMessages.nth(1).getByText("Coordinatore", { exact: true }).waitFor();
 await threadMessages.nth(2).getByText(/Dalla scheda del Patto .*Va in revisione come gli altri/).waitFor();
+if (await agentThread.locator("textarea, button[data-variant]").count()) throw new Error("The conversation between agents is not read-only");
+await agentThread.getByText("Per dire qualcosa a un agente scrivi al Coordinatore, che lo inoltra.", { exact: false }).waitFor();
 await shot("19j-agent-thread");
-await agentThread.getByLabel("Messaggio agli agenti").fill("Tieni conto anche dei buoni scaduti.");
-const threadActions = agentThread.locator(".cta-row").last();
-await primaryLast(threadActions, "Agent thread");
-const writeBox = await threadActions.getByRole("button", { name: "Scrivi nella conversazione" }).boundingBox();
-const threadBox = await agentThread.boundingBox();
-if (!writeBox || !threadBox || threadBox.x + threadBox.width - (writeBox.x + writeBox.width) > 24) throw new Error("Scrivi nella conversazione is not on the right");
-await threadActions.getByRole("button", { name: "Scrivi nella conversazione" }).click();
-const written = threadMessages.nth(3);
-await written.getByText("Tieni conto anche dei buoni scaduti.").waitFor();
-if ((await written.getAttribute("data-author")) !== "person") throw new Error("The person's message is not recorded as the person's");
-await written.getByTestId("agent-thread-delivery").getByText("Gli agenti lo ricevono al loro prossimo turno.").waitFor();
-if ((await agentThread.getByLabel("Messaggio agli agenti").inputValue()) !== "") throw new Error("The draft stays after writing in the conversation");
-await shot("19k-agent-thread-written");
 for (const provider of ["codex", "claudeAgent"]) {
   for (const dark of [false, true]) {
     await setLook(provider, dark);
@@ -1624,15 +1615,14 @@ for (const provider of ["codex", "claudeAgent"]) {
   }
 }
 await setLook(questionLook.provider, questionLook.dark);
-await send("Come procede il lavoro?");
-await page.getByText("Ho letto il tuo messaggio nella chat tra agenti.").last().waitFor({ timeout: 20_000 });
-await written.getByTestId("agent-thread-delivery").getByText(/^Letto dal Coordinatore\./).waitFor({ timeout: 10_000 });
-// The history records that the person wrote there, as a row of Trama's activity in the chat.
-const wroteInThread = await page.evaluate(async () =>
-  (await window.trama.getState()).project.document.events.some((e) => e.content.type === "activity" && e.content.title === "Hai scritto nella chat «Domanda al Coordinatore, fetta S1»"),
-);
-if (!wroteInThread) throw new Error("The history does not record the person's message in the conversation between agents");
-await shot("19m-agent-thread-read");
+// The specialist's page lists every conversation the developer takes part in.
+await agentThread.getByRole("button", { name: "Apri lo sviluppatore" }).click();
+const specialistThreads = page.getByTestId("specialist-threads").getByRole("button", { name: /Domanda al Coordinatore, fetta S1/ });
+await specialistThreads.waitFor();
+await specialistThreads.scrollIntoViewIfNeeded();
+await shot("19m-specialist-threads");
+await specialistThreads.click();
+await agentThread.waitFor();
 await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
 // W08: independent movement, after the work of #204 and W06 (two more assignment cards). The person sets the project's
 // parallel limit in the settings; a verified slice unblocks the ones that depended on it, and with continuous work on
