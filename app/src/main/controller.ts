@@ -2158,7 +2158,7 @@ export class TramaController {
       const work = workState(document, request.id);
       sections.push(workStateText(work));
       // Every turn: the buttons the person sees and the current mandate, plan and candidates, from Trama's records (issue #269).
-      sections.push(currentStateText(document, request.id));
+      sections.push(currentStateText(document, request.id, project.snapshot.headSHA));
       if (automatic) sections.push(automaticMoveSection(automatic));
       // Every turn: the task in focus and the queue, so the Coordinator brings a conversation that drifts back to the focus (W02).
       const focus = focusText(document, request.id);

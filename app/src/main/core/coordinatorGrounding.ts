@@ -1,7 +1,7 @@
 import type { Candidate, NextMove, ProjectDocument } from "@shared/domain";
 import { pendingMandateRequest } from "@shared/domain";
 import { inspectCandidate, latestCandidate, worktreeAssessmentCurrent } from "./candidates";
-import { COORDINATOR_MOVES, type CoordinatorMove, type MoveOption, PERSON_MOVE_LABELS, workRequests, workState } from "./workPhase";
+import { COORDINATOR_MOVES, type CoordinatorMove, nextStepViews, PERSON_MOVE_LABELS, workRequests, workState } from "./workPhase";
 
 /**
  * The Coordinator grounded in Trama's records (issue #269): every turn it reads the buttons the person sees now and
@@ -51,20 +51,36 @@ function citation(pattern: string): RegExp {
 
 const CITATIONS = BUTTON_WORDS.map((words) => ({ ...words, regex: citation(words.pattern) }));
 
+/** A button the person sees: its move, who makes it and its words. */
+export interface VisibleButton {
+  move: NextMove;
+  actor: "person" | "coordinator";
+  label: string;
+}
+
 /**
- * The step buttons the person can press now, in any dialog: the moves of the current request's work and of the
- * latest request of every dialog, each once. Pure.
+ * Moves whose card carries its own button while the move is allowed: the question card, the mandate proposal, the team
+ * proposal, the seams and the slices. The other moves have a button only as the declared next step under a reply.
  */
-export function availableButtons(document: ProjectDocument, requestId: string | null): MoveOption[] {
+const CARD_MOVES = new Set<NextMove>(["answerQuestions", "grantMandate", "confirmTeam", "confirmSeams", "confirmSlices"]);
+
+/**
+ * The step buttons the person sees now, in any dialog, each once: the cards' own buttons while the work of the current
+ * request or of the latest request of a dialog allows their move, and the next step declared under the latest reply of
+ * each dialog while the work still allows it. Pure.
+ */
+export function availableButtons(document: ProjectDocument, requestId: string | null): VisibleButton[] {
   const latest = new Map<string | null, string>();
   for (const request of document.requests) latest.set(request.goalId ?? null, request.id);
   const ids = [...new Set([...(requestId ? [requestId] : []), ...latest.values()])];
-  const buttons: MoveOption[] = [];
+  const buttons: VisibleButton[] = [];
+  const add = ({ move, actor, label }: VisibleButton) => {
+    if (!buttons.some((b) => b.move === move)) buttons.push({ move, actor, label });
+  };
   for (const id of ids) {
-    for (const option of workState(document, id).moves) {
-      if (!buttons.some((b) => b.move === option.move)) buttons.push(option);
-    }
+    for (const option of workState(document, id).moves) if (CARD_MOVES.has(option.move)) add(option);
   }
+  for (const step of Object.values(nextStepViews(document))) add(step);
   return buttons;
 }
 
@@ -72,7 +88,7 @@ export function availableButtons(document: ProjectDocument, requestId: string | 
  * The step buttons a reply names that the person does not have now, with the words the reply used, or an empty list.
  * Only Trama's own step buttons are checked, so a reply that names another control is left alone. Pure.
  */
-export function missingButtons(reply: string, available: MoveOption[]): string[] {
+export function missingButtons(reply: string, available: VisibleButton[]): string[] {
   const moves = new Set(available.map((b) => b.move));
   const text = reply.replace(/\s+/g, " ");
   const missing: string[] = [];
@@ -86,7 +102,7 @@ export function missingButtons(reply: string, available: MoveOption[]): string[]
 const quoted = (labels: string[]) => labels.map((l) => `«${l}»`).join(", ");
 
 /** The activity detail for the person: the button named, and the ones there are now. */
-export function missingButtonDetail(missing: string[], available: MoveOption[]): string {
+export function missingButtonDetail(missing: string[], available: VisibleButton[]): string {
   const named = missing.length === 1 ? `il pulsante ${quoted(missing)}, che ora non c'è` : `i pulsanti ${quoted(missing)}, che ora non ci sono`;
   const persons = available.filter((b) => b.actor === "person").map((b) => b.label);
   const now = persons.length ? `Adesso puoi usare: ${quoted(persons)}.` : "Adesso non c'è un pulsante da premere.";
@@ -105,10 +121,11 @@ export function missingButtonFeedback(document: ProjectDocument, requestId: stri
   if (!previous) return null;
   const flagged = document.events.findLast((e) => e.requestId === previous.id && e.content.type === "activity" && e.content.title === MISSING_BUTTON_TITLE);
   if (flagged?.content.type !== "activity") return null;
-  const names = flagged.content.detail?.match(/«[^»]+»/g)?.join(", ") ?? "";
+  // Only the first sentence names the missing buttons; the next one lists the buttons there were.
+  const names = flagged.content.detail?.split(". Adesso")[0]?.match(/«[^»]+»/g)?.join(", ") ?? "";
   return [
     FEEDBACK_HEADING,
-    `La tua risposta precedente diceva alla persona di usare ${names}, ma quel pulsante non c'era: la persona l'ha cercato senza trovarlo. Nomina solo i pulsanti elencati in "Stato attuale di Trama", con le stesse parole, e correggi l'indicazione di prima in una riga.`,
+    `La tua risposta precedente diceva alla persona di usare ${names}, ma quel pulsante non c'era: la persona l'ha cercato senza trovarlo. Nomina solo i pulsanti elencati in "Stato attuale di Trama", o quello che dichiari in questo turno con declare_next_step, con le stesse parole, e correggi l'indicazione di prima in una riga.`,
   ].join("\n");
 }
 
@@ -116,17 +133,17 @@ export function missingButtonFeedback(document: ProjectDocument, requestId: stri
  * The state the Coordinator reads at the start of every turn (issue #269): the buttons the person sees, the mandate,
  * the plan of the work with its slices and the open candidates, computed now from the document. Pure.
  */
-export function currentStateText(document: ProjectDocument, requestId: string): string {
+export function currentStateText(document: ProjectDocument, requestId: string, headSHA: string | null = null): string {
   const buttons = availableButtons(document, requestId);
   const persons = buttons.filter((b) => b.actor === "person").map((b) => b.label);
   const lines = [
     `${CURRENT_STATE_HEADING} (letto ora dai dati, non dalla memoria del thread)`,
     "Vale più di quello che ricordi o hai scritto nei turni precedenti: se non coincide, parti da qui e correggi quello che avevi detto.",
     persons.length ? `Pulsanti che la persona vede ora: ${quoted(persons)}.` : "Pulsanti che la persona vede ora: nessuno.",
-    "Nomina alla persona solo questi pulsanti, con le stesse parole. Un pulsante che non è in questo elenco ora non c'è: non dire alla persona di premerlo.",
+    "Nomina alla persona solo questi pulsanti, o quello che dichiari in questo turno con declare_next_step, con le stesse parole. Un pulsante che non è in questo elenco ora non c'è: non dire alla persona di premerlo.",
     mandateLine(document),
     ...planLines(document, requestId),
-    ...candidateLines(document),
+    ...candidateLines(document, headSHA),
   ];
   return lines.join("\n");
 }
@@ -161,7 +178,7 @@ function planLines(document: ProjectDocument, requestId: string): string[] {
   return [`Piano del lavoro ${plan.id}: stato ${plan.status}, ${slices}.`];
 }
 
-function candidateLines(document: ProjectDocument): string[] {
+function candidateLines(document: ProjectDocument, headSHA: string | null): string[] {
   const assignments = document.team.specialists.flatMap((s) => s.assignments.map((a) => ({ assignment: a, specialist: s })));
   const open = assignments
     .map(({ assignment, specialist }) => ({ candidate: latestCandidate(document, assignment.id), specialist }))
@@ -169,7 +186,7 @@ function candidateLines(document: ProjectDocument): string[] {
     .sort((a, b) => b.candidate.declaredAt.localeCompare(a.candidate.declaredAt))
     .slice(0, CANDIDATES_SHOWN);
   if (!open.length) return ["Candidati aperti: nessuno."];
-  return ["Candidati aperti (l'ultimo di ogni incarico, dal più recente):", ...open.map(({ candidate, specialist }) => `- ${candidate.id} di ${specialist.name} (incarico ${candidate.assignmentId}): ${candidateState(document, candidate)}`)];
+  return ["Candidati aperti (l'ultimo di ogni incarico, dal più recente):", ...open.map(({ candidate, specialist }) => `- ${candidate.id} di ${specialist.name} (incarico ${candidate.assignmentId}): ${candidateState(document, candidate, headSHA)}`)];
 }
 
 const specialistOf = (document: ProjectDocument, candidateId: string) => {
@@ -179,11 +196,17 @@ const specialistOf = (document: ProjectDocument, candidateId: string) => {
 
 const files = (list: string[]) => (list.length > FILES_SHOWN ? `${list.slice(0, FILES_SHOWN).join(", ")} e altri ${list.length - FILES_SHOWN}` : list.join(", "));
 
-/** Where a candidate stands, in plain words: ready for the person only when nothing blocks it and the review approved it. */
-function candidateState(document: ProjectDocument, candidate: Candidate): string {
+/**
+ * Where a candidate stands, in plain words: ready for the person only when nothing blocks it and the review approved it.
+ * `headSHA` is the checkout's current head, as the candidate reports use it: a candidate built on an older base is blocked.
+ */
+function candidateState(document: ProjectDocument, candidate: Candidate, headSHA: string | null): string {
   const problems: string[] = [];
-  for (const blocker of inspectCandidate(document, candidate, null)) {
+  for (const blocker of inspectCandidate(document, candidate, headSHA)) {
     switch (blocker.code) {
+      case "BASE_CHANGED":
+        problems.push("il progetto è cambiato dopo il candidato, va ricostruito e verificato di nuovo");
+        break;
       case "EVIDENCE_MISSING":
         problems.push(`verifica ${blocker.detail} mai eseguita`);
         break;

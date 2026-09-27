@@ -120,12 +120,15 @@ describe("missingButtons: a reply that names a step button the person does not h
     expect(missingButtons("", buttons)).toEqual([]);
   });
 
-  it("allows the review button once the candidate is verified and approved", () => {
+  it("allows a step button only while it is the declared next step under the latest reply", () => {
     const document = shop();
     const assignment = work(document, "Luca", "Sources/Orders", 2);
     candidate(document, assignment.id, "pass", "approved");
+    // The work allows the review, but without a declared next step the chat shows no button for it.
+    expect(missingButtons("Ora usa la scheda Verifica il candidato.", availableButtons(document, "r3"))).toEqual(["Verifica il candidato"]);
+    document.requests.find((r) => r.id === "r3")!.nextStep = { move: "reviewCandidate", reason: "Il candidato è pronto.", declaredAt: at(8).toISOString() };
     const buttons = availableButtons(document, "r3");
-    expect(buttons).toContainEqual(expect.objectContaining({ move: "reviewCandidate", label: "Verifica il candidato" }));
+    expect(buttons).toContainEqual({ move: "reviewCandidate", actor: "person", label: "Verifica il candidato" });
     expect(missingButtons("Ora usa la scheda Verifica il candidato.", buttons)).toEqual([]);
   });
 
@@ -136,7 +139,7 @@ describe("missingButtons: a reply that names a step button the person does not h
     );
     createMandateRequest(document, { requestId: "r3", reason: "Serve unire", objectives: ["Ordini"], priorities: [], scopeModuleIds: ["Sources/Orders"], authorizedActions: ["plan"], limits: [] });
     expect(missingButtonDetail(["Verifica il candidato", "Conferma le fette"], availableButtons(document, "r3"))).toBe(
-      "Il Coordinatore ha nominato i pulsanti «Verifica il candidato», «Conferma le fette», che ora non ci sono. Adesso puoi usare: «Rivedi il piano», «Concedi il mandato».",
+      "Il Coordinatore ha nominato i pulsanti «Verifica il candidato», «Conferma le fette», che ora non ci sono. Adesso puoi usare: «Concedi il mandato».",
     );
   });
 });
@@ -144,12 +147,15 @@ describe("missingButtons: a reply that names a step button the person does not h
 describe("missingButtonFeedback: the next turn reads the button that was not there (issue #269)", () => {
   it("sends back the names from the activity of the previous reply in the same dialog", () => {
     const document = shop();
-    appendEvent(document, "trama", { type: "activity", title: MISSING_BUTTON_TITLE, detail: missingButtonDetail(["Verifica il candidato"], []), tone: "error" }, "r3");
+    const there = [{ move: "grantMandate" as const, actor: "person" as const, label: "Concedi il mandato" }];
+    appendEvent(document, "trama", { type: "activity", title: MISSING_BUTTON_TITLE, detail: missingButtonDetail(["Verifica il candidato"], there), tone: "error" }, "r3");
     request(document, "r4");
     request(document, "g1", "G-1");
     const feedback = missingButtonFeedback(document, "r4");
     expect(feedback).toContain("## Pulsante che non c'è");
     expect(feedback).toContain("«Verifica il candidato»");
+    // The buttons there were are not named as missing.
+    expect(feedback).not.toContain("Concedi il mandato");
     expect(missingButtonFeedback(document, "g1")).toBeNull();
     expect(missingButtonFeedback(document, "r1")).toBeNull();
     expect(missingButtonFeedback(document, "missing")).toBeNull();
@@ -199,8 +205,13 @@ describe("currentStateText: the state the Coordinator reads every turn (issue #2
     const ready = candidate(document, assignment.id, "pass", "approved");
     const text = currentStateText(document, "r3");
     expect(text).toContain(`- ${ready.id} di Luca (incarico ${assignment.id}): verificato e approvato: pronto per la revisione della persona.`);
-    expect(text).toContain("Pulsanti che la persona vede ora: «Verifica il candidato».");
+    expect(text).toContain("Pulsanti che la persona vede ora: nessuno.");
     expect(text).toContain("Nessuna proposta di mandato in attesa.");
+    // After the checkout moved on, the same candidate is blocked, as in the candidate reports.
+    expect(currentStateText(document, "r3", "new-head")).toContain(
+      `- ${ready.id} di Luca (incarico ${assignment.id}): non verificato, non è pronto per la persona (il progetto è cambiato dopo il candidato, va ricostruito e verificato di nuovo).`,
+    );
+    expect(currentStateText(document, "r3", "base")).toContain("pronto per la revisione della persona");
   });
 
   it("says when there is no mandate, plan, candidate or button", () => {
