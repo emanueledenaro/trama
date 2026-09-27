@@ -1603,7 +1603,7 @@ await shot("19e-developer-question");
 await send("[blocca-dubbio]");
 // The card keeps the developer's question after the answer; only the "Blocca il lavoro" badge goes.
 // While it waits, the card sits in Aspetta te, first because it holds the most work.
-const blockingItem = await openWaiting("question");
+const blockingItem = await openWaiting("question", "Domanda di uno sviluppatore");
 if ((await page.getByTestId("inspector").getByTestId("waiting-item").first().getAttribute("data-waiting-key")) !== (await blockingItem.getAttribute("data-waiting-key"))) {
   throw new Error("The card that blocks a developer is not first in Aspetta te");
 }
