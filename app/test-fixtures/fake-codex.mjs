@@ -116,6 +116,11 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
           data: [
             { id: "gpt-5.5", model: "gpt-5.5", displayName: "GPT-5.5", description: "Modello di prova", isDefault: true, hidden: false, supportedReasoningEfforts: ["low", "medium", "high"], defaultReasoningEffort: "medium" },
             { id: "gpt-5.5-fast", model: "gpt-5.5-fast", displayName: "GPT-5.5 Fast", description: "Modello con livello veloce", isDefault: false, hidden: false, supportedReasoningEfforts: ["low"], defaultReasoningEffort: "low", additionalSpeedTiers: ["fast"] },
+            // With FAKE_CODEX_LIGHT_MODEL the catalogue has a light model, so the automatic work runs on a cheaper model
+            // than the Coordinator's and focus mode has a stronger model to confirm serious findings (F02).
+            ...(process.env.FAKE_CODEX_LIGHT_MODEL
+              ? [{ id: process.env.FAKE_CODEX_LIGHT_MODEL, model: process.env.FAKE_CODEX_LIGHT_MODEL, displayName: "Modello leggero", description: "Modello economico di prova", isDefault: false, hidden: false, supportedReasoningEfforts: ["low"], defaultReasoningEffort: "low" }]
+              : []),
           ],
         },
       });
@@ -230,24 +235,40 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
         setTimeout(() => finish(JSON.stringify(answer)), 10);
         return;
       }
+      if (required.includes("confirmed") && required.includes("reason")) {
+        // Focus mode (F02): the stronger model confirms a serious finding Trama could not recheck.
+        const answer = { confirmed: true, reason: "Nel diff non c'è un test per l'ordine non pagato: il criterio resta scoperto." };
+        setTimeout(() => finish(JSON.stringify(answer)), 10);
+        return;
+      }
       if (required.includes("findings") && required.includes("worst")) {
         // Focus mode (F01): one axis of code-review, named by its binding. Without the skill input it has no method.
         const skills = params.input.filter((item) => item.type === "skill").map((item) => item.name);
         if (!skills.includes("code-review")) {
-          setTimeout(() => finish(JSON.stringify({ report: "", findings: 0, worst: "" })), 10);
+          setTimeout(() => finish(JSON.stringify({ report: "", findings: [], worst: "" })), 10);
           return;
         }
         const fixedPoint = text.match(/Punto fisso: ([0-9a-f]+)/)?.[1] ?? "?";
         const file = text.match(/File cambiati: ([^,\n]+?)(?:,|\.\n|\.$)/m)?.[1] ?? "?";
+        // Each finding carries a proof of a different kind (F02): a line of a changed file Trama can reread, a
+        // reproduction only a stronger model can confirm, and a command outside Trama's own checks.
+        const proof = (kind, fields) => ({ kind, file: "", line: 0, quote: "", command: "", steps: "", ...fields });
         const answer = text.includes("You are the Spec sub-agent")
           ? {
-              report: `### Requisiti mancanti o parziali\n\n- Il criterio \"Un ordine non pagato si annulla come prima\" non ha un test nel diff.\n\n### Fuori perimetro\n\nNessuno.\n\nFonte: ${text.match(/Spec, fonte: ([^(]+)/)?.[1]?.trim() ?? "?"}. Skill ricevute: ${skills.join(", ")}.`,
-              findings: 1,
+              report: `### Requisiti mancanti o parziali\n\n- Il criterio \"Un ordine non pagato si annulla come prima\" non ha un test nel diff.\n- Il messaggio di annullamento non cita la revisione.\n\n### Fuori perimetro\n\nNessuno.\n\nFonte: ${text.match(/Spec, fonte: ([^(]+)/)?.[1]?.trim() ?? "?"}. Skill ricevute: ${skills.join(", ")}.`,
+              findings: [
+                {
+                  title: "Il criterio sull'ordine non pagato non ha un test",
+                  severity: "serious",
+                  evidence: proof("reproduction", { steps: "Annullare un ordine non pagato e cercare nel diff un test che lo copra: non ce n'è." }),
+                },
+                { title: "Il messaggio di annullamento non cita la revisione", severity: "minor", evidence: proof("command", { command: "make check" }) },
+              ],
               worst: "Il criterio sull'ordine non pagato non ha un test",
             }
           : {
               report: `### Violazioni documentate\n\nNessuna.\n\n### Smell (giudizio)\n\n- Possibile Mysterious Name in \`${file}\`.\n\nDiff letto con \`git diff ${fixedPoint}\`. Skill ricevute: ${skills.join(", ")}.`,
-              findings: 1,
+              findings: [{ title: `Possibile Mysterious Name in ${file}`, severity: "minor", evidence: proof("fileLine", { file, line: 1 }) }],
               worst: `Possibile Mysterious Name in ${file}`,
             };
         // With FAKE_CODEX_AUDIT_GATE the axis answers only once the test creates that file, so a test can hold both
@@ -810,6 +831,20 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
         const section = text.includes("## Presenza dei colleghi") ? "Sezione presenza ricevuta." : "Sezione presenza assente.";
         await finish(`${who ? `Sta toccando i pagamenti: ${who}.` : "Nessuno visibile nella presenza sta toccando i pagamenti."} ${section}`);
         return;
+      }
+      if (process.env.FAKE_CODEX_STUDY_GATE && text.startsWith("Studio del progetto scritto da Trama")) {
+        // With FAKE_CODEX_STUDY_GATE the study answers only once the test creates that file, so a test can act while
+        // the Coordinator is studying (issue #205). "<gate>.held" says it is waiting.
+        const gate = process.env.FAKE_CODEX_STUDY_GATE;
+        const { existsSync, writeFileSync } = await import("node:fs");
+        writeFileSync(`${gate}.held`, "");
+        await new Promise((resolve) => {
+          const release = setInterval(() => {
+            if (!existsSync(gate)) return;
+            clearInterval(release);
+            resolve();
+          }, 10);
+        });
       }
       if (text.startsWith("Studio del progetto scritto da Trama") && text.includes("propose_goal")) {
         // A project without goals: the study closes with a first goal (UX07).
