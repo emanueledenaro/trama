@@ -99,6 +99,7 @@ import { appendEvent, emptyDocument, handoverTranscript, moveEvent, QUIT_NOTE, r
 import { candidateGoalId, dialogComposer, findGoal, projectGoals, requestGoalId } from "@shared/goals";
 import { focusTask, focusText, focusView, pauseTask, resumeTask } from "./core/focus";
 import { COORDINATOR_MOVES, type CoordinatorMove, nextStepViews, PHASE_LABELS, workState, workStateText } from "./core/workPhase";
+import { availableButtons, currentStateText, MISSING_BUTTON_TITLE, missingButtonDetail, missingButtonFeedback, missingButtons } from "./core/coordinatorGrounding";
 import {
   AUTOMATIC_MOVE_DETAIL,
   automaticMove,
@@ -2270,6 +2271,8 @@ export class TramaController {
       // Every turn: the phase of the work this message belongs to and the moves declare_next_step accepts (W01).
       const work = workState(document, request.id);
       sections.push(workStateText(work));
+      // Every turn: the buttons the person sees and the current mandate, plan and candidates, from Trama's records (issue #269).
+      sections.push(currentStateText(document, request.id, project.snapshot.headSHA));
       if (automatic) sections.push(automaticMoveSection(automatic));
       // Every turn: the task in focus and the queue, so the Coordinator brings a conversation that drifts back to the focus (W02).
       const focus = focusText(document, request.id);
@@ -2280,6 +2283,9 @@ export class TramaController {
       // The previous reply closed with a generic confirmation question: Trama tells the Coordinator, not the model's own memory (W04).
       const feedback = confirmationFeedback(document, request.id);
       if (feedback) sections.push(feedback);
+      // The previous reply named a step button the person did not have: the Coordinator reads it back (issue #269).
+      const missingFeedback = missingButtonFeedback(document, request.id);
+      if (missingFeedback) sections.push(missingFeedback);
       const skills = skillInvocations(trimmed, project.skills);
       // /ask-trama (M07): the thread holds the skill and its binding; the person asks for it now.
       if (/(^|\s)[/$]ask-trama(?=\s|$)/.test(trimmed)) sections.push(ASK_TRAMA_INVOKED);
@@ -2307,6 +2313,7 @@ export class TramaController {
             work.phase ? `fase: ${PHASE_LABELS[work.phase]}` : null,
             automatic ? `mossa automatica: ${COORDINATOR_MOVES[automatic].label}` : null,
             feedback ? "richiamo: domanda di conferma generica" : null,
+            missingFeedback ? "richiamo: pulsante che non c'era" : null,
             skills.length || routeSkills.length ? `skill: ${[...skills.map((s) => s.name), ...routeSkills].join(", ")}` : null,
           ]
             .filter(Boolean)
@@ -2343,6 +2350,12 @@ export class TramaController {
         // Options to pick in the text leave the person without a card: recorded, and the next turn is told (issue #228).
         const choice = choicesWithoutCard(document, request.id, reply);
         if (choice) appendEvent(document, "trama", { type: "activity", title: CHOICES_IN_TEXT_TITLE, detail: choice, tone: "error" }, request.id);
+        // A step button named in the text that the person does not have now: recorded, and the next turn is told (issue #269).
+        const buttons = availableButtons(document, request.id);
+        const missing = missingButtons(reply, buttons);
+        if (missing.length) {
+          appendEvent(document, "trama", { type: "activity", title: MISSING_BUTTON_TITLE, detail: missingButtonDetail(missing, buttons), tone: "error" }, request.id);
+        }
         // A write in this turn already reset its counter: the review it would have started is not due.
         const writes = this.turnLearningWrites.get(request.id) ?? [];
         const reviewSkills = !writes.includes("skill_manage") && finishTurnSkillNudge(this.coordinatorLearning(document), this.turnToolIterations.get(request.id) ?? 0);
