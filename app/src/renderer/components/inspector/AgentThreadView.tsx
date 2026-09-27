@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { AgentThreadMessage, Specialist } from "@shared/domain";
-import { AGENT_THREAD_KIND_LABEL, authorName, findAgentThread, threadParticipants } from "@shared/agentThreads";
+import { authorName, findAgentThread, threadParticipants } from "@shared/agentThreads";
 import { AgentAvatar, AgentTag } from "@/components/AgentIdentity";
 import { TramaMark } from "@/components/brand/TramaMark";
 import { Button } from "@/components/ui/button";
@@ -31,7 +31,7 @@ export function AgentThreadView({ id }: { id: string }) {
   };
   return (
     <div data-testid="agent-thread" data-kind={thread.kind}>
-      <InspectorSection title={AGENT_THREAD_KIND_LABEL[thread.kind]}>
+      <InspectorSection title="Conversazione">
         <p className="text-ui text-foreground">{thread.title}</p>
         <p className="mt-0.5 text-ui-sm text-muted-foreground">
           {threadParticipants(thread, specialists)}

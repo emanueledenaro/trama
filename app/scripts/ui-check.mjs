@@ -1613,7 +1613,11 @@ await setLook(questionLook.provider, questionLook.dark);
 await send("Come procede il lavoro?");
 await page.getByText("Ho letto il tuo messaggio nella chat tra agenti.").last().waitFor({ timeout: 20_000 });
 await written.getByTestId("agent-thread-delivery").getByText(/^Letto dal Coordinatore\./).waitFor({ timeout: 10_000 });
-await page.getByText(/Hai scritto nella chat «Domanda al Coordinatore, fetta S1»/).first().waitFor();
+// The history records that the person wrote there, as a row of Trama's activity in the chat.
+const wroteInThread = await page.evaluate(async () =>
+  (await window.trama.getState()).project.document.events.some((e) => e.content.type === "activity" && e.content.title === "Hai scritto nella chat «Domanda al Coordinatore, fetta S1»"),
+);
+if (!wroteInThread) throw new Error("The history does not record the person's message in the conversation between agents");
 await shot("19m-agent-thread-read");
 await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
 // W08: independent movement, after the work of #204 and W06 (two more assignment cards). The person sets the project's
