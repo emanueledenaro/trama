@@ -1,15 +1,15 @@
 # W10: cancello del candidato con tutti i revisori in parallelo
 
-Data: 27 settembre 2026. Issue #147, specifica #137. Base: `origin/main` 8fb058a.
+Data: 27 settembre 2026. Issue #147, specifica #137. Base: `origin/main` 3c2e689.
 
 ## Cosa è stato verificato
 
 Tutte le prove usano il Codex finto (`app/test-fixtures/fake-codex.mjs`). Nessuna esecuzione reale di Codex.
 
 - `npx tsc --noEmit -p .`: nessun errore.
-- `npx vitest run`: 107 file, 945 test superati, 3 saltati.
+- `npx vitest run`: 108 file, 958 test superati, 3 saltati.
 - `npm run build`: riuscito.
-- `xvfb-run -a node scripts/ui-check.mjs`: una corsa completa, uscita 0. Passi nuovi: `18e1-candidate-gate-passed` e `18e2-candidate-gate-passed-dark` (cancello superato), `23a-candidate-gate-blocked` e `23b-candidate-gate-blocked-dark` (rilievo bloccante), `23c-gate-finding-to-developer` e `23d-gate-finding-to-developer-dark` (il rilievo nel lavoro dello sviluppatore).
+- `xvfb-run -a node scripts/ui-check.mjs`: una corsa completa, uscita 0. Passi nuovi: `18e1-candidate-gate-passed` e `18e2-candidate-gate-passed-dark` (cancello superato), `24a-candidate-gate-blocked` e `24b-candidate-gate-blocked-dark` (rilievo bloccante), `24c-gate-finding-to-developer` e `24d-gate-finding-to-developer-dark` (il rilievo nel lavoro dello sviluppatore).
 
 ## Comportamento
 

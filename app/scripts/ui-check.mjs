@@ -1386,12 +1386,12 @@ await secretCandidate.getByText("In costruzione", { exact: true }).waitFor();
 await page.getByRole("button", { name: "Interrompi" }).waitFor({ state: "hidden", timeout: 20_000 });
 await secretWork.getByText("Concluso", { exact: true }).waitFor({ timeout: 30_000 });
 await blockedGate.evaluate((item) => item.scrollIntoView({ block: "center" }));
-await shot("23a-candidate-gate-blocked");
+await shot("24a-candidate-gate-blocked");
 await app.evaluate(({ nativeTheme }) => {
   nativeTheme.themeSource = "dark";
 });
 await page.evaluate(() => document.documentElement.classList.add("dark"));
-await shot("23b-candidate-gate-blocked-dark");
+await shot("24b-candidate-gate-blocked-dark");
 await app.evaluate(({ nativeTheme }) => {
   nativeTheme.themeSource = "system";
 });
@@ -1403,9 +1403,9 @@ await toDeveloper.waitFor({ timeout: 10_000 });
 await toDeveloper.click();
 await page.getByText(/Segreto nel diff: chiave API in NOTE\.md/).last().waitFor();
 await toDeveloper.evaluate((item) => item.scrollIntoView({ block: "center" }));
-await shot("23c-gate-finding-to-developer");
+await shot("24c-gate-finding-to-developer");
 await page.evaluate(() => document.documentElement.classList.add("dark"));
-await shot("23d-gate-finding-to-developer-dark");
+await shot("24d-gate-finding-to-developer-dark");
 await page.evaluate(() => document.documentElement.classList.remove("dark"));
 
 // Q03: the technical review checks the diff against Trama's Clean Code standard. The card shows Trama's measures as
