@@ -1,6 +1,5 @@
 /**
- * Idle-time maintenance of the skills the review created, ported from Hermes Agent `agent/curator.py`
- * and `agent/curator_backup.py` (revision 58c896e, MIT, Copyright (c) 2025 Nous Research).
+ * Idle-time maintenance of the skills the review created. Derived from third-party MIT code; see THIRD_PARTY_NOTICES.md.
  *
  * The deterministic pass runs at most once a week, after two idle hours and never on the first check:
  * a curator-managed skill unused for 14 days becomes stale and after 30 days is archived (recoverable).
@@ -106,7 +105,7 @@ export function curatedNames(library: SkillLibrary): string[] {
     .filter((name) => isCuratorManaged(Object.hasOwn(records, name) ? records[name]! : null));
 }
 
-/** Hermes' `apply_automatic_transitions`: no model, only the inactivity clock. */
+/** Automatic transitions: no model, only the inactivity clock. */
 export function applyAutomaticTransitions(library: SkillLibrary, config: CuratorConfig, now = new Date()): TransitionCounts {
   const counts: TransitionCounts = { checked: 0, markedStale: 0, archived: 0, reactivated: 0, seeded: 0 };
   const staleCutoff = now.getTime() - config.staleAfterDays * DAY;
@@ -149,8 +148,8 @@ export function autoSummary(counts: TransitionCounts): string {
   return parts.length ? parts.join(", ") : "no changes";
 }
 
-// Hermes' curator prompt, adapted where it names Hermes' own kinds of protected skills, cron jobs
-// and paths, none of which exist in a Trama library.
+// The curator prompt, copied from the third-party source listed in THIRD_PARTY_NOTICES.md and adapted
+// where it names kinds of protected skills, cron jobs and paths that do not exist in a Trama library.
 export const CURATOR_REVIEW_PROMPT = `You are running as Trama's background skill CURATOR. This is an UMBRELLA-BUILDING consolidation pass, not a passive audit and not a duplicate-finder.
 
 The goal of the skill collection is a LIBRARY OF CLASS-LEVEL INSTRUCTIONS AND EXPERIENTIAL KNOWLEDGE. A collection of hundreds of narrow skills where each one captures one session's specific bug is a FAILURE of the library — not a feature. An agent searching skills matches on descriptions, not on exact names (note: long descriptions are truncated to 57 chars in the system prompt skill index — keep the trigger class in that window). One broad umbrella skill with labeled subsections beats five narrow siblings for discoverability, not the other way around.
@@ -259,7 +258,7 @@ export function parseStructuredSummary(text: string): { consolidations: { from: 
 }
 
 /**
- * Hermes' reconciliation of what the pass removed: the `absorbed_into` declared at delete wins, then
+ * Reconciliation of what the pass removed: the `absorbed_into` declared at delete wins, then
  * the model's block; a removal with neither counts as pruned.
  */
 export function classifyRemoved(

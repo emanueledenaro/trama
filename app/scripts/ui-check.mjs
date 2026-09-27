@@ -1199,7 +1199,8 @@ git("remote", "add", "origin", "https://github.com/trama-ui/negozio.git");
 // Reopening (UX01): after a restart the same goal is in the list and opens from the keyboard alone.
 // P10: the fake Codex answers the "[limite-temporaneo]" turns with OpenRouter's upstream 429 twice, then works again;
 // a short first wait keeps the automatic retry within the check.
-({ app, page } = await launch({ PATH: `${ghBin}:${process.env.PATH}`, FAKE_GH_TEAM: "1", TRAMA_PROVIDER_RETRY_MS: "4000", FAKE_CODEX_RATE_LIMITS: "2" }));
+// FAKE_CODEX_LIGHT_MODEL gives the catalogue a light model, so focus mode has a stronger one to confirm serious findings (F02).
+({ app, page } = await launch({ PATH: `${ghBin}:${process.env.PATH}`, FAKE_GH_TEAM: "1", TRAMA_PROVIDER_RETRY_MS: "4000", FAKE_CODEX_RATE_LIMITS: "2", FAKE_CODEX_LIGHT_MODEL: "gpt-5.5-mini" }));
 const goalsRow = page.getByRole("button", { name: /^Obiettivi/ }).first();
 await goalsRow.waitFor({ timeout: 30_000 });
 // B02: after the first launch the welcome never shows by itself again.
@@ -1541,12 +1542,25 @@ await focusAudit.locator('[data-testid="audit-axis"][data-axis="spec"][data-stat
 const auditText = await focusAudit.innerText();
 const [checksAt, standardsAt, specAt] = ["Verifiche reali", "Standards", "Spec"].map((heading) => auditText.indexOf(heading));
 if (!(checksAt >= 0 && checksAt < standardsAt && standardsAt < specAt)) throw new Error("Focus mode: the checks are not first, or Standards and Spec are out of order");
-await focusAudit.getByTestId("focus-audit-summary").getByText(/Standards: 1 rilievo.*Spec: 1 rilievo/).waitFor();
+await focusAudit.getByTestId("focus-audit-summary").getByText(/Standards: 1 rilievo.*Spec: 2 rilievi/).waitFor();
+// F02: each finding shows its proof and its state. Trama reread the Standards line; the stronger model confirmed the
+// serious Spec finding; the minor one, whose command is not one of Trama's checks, stays a hypothesis.
+const auditFinding = (axis, status) => focusAudit.locator(`[data-testid="audit-axis"][data-axis="${axis}"] [data-testid="audit-finding"][data-status="${status}"]`);
+await auditFinding("standards", "verified").getByText("Verificato da Trama").waitFor();
+await auditFinding("spec", "confirmed").getByText(/Confermato da gpt-5\.5:/).waitFor();
+await auditFinding("spec", "hypothesis").getByText("Ipotesi", { exact: true }).waitFor();
+if ((await auditFinding("spec", "hypothesis").getByTestId("audit-finding-evidence").innerText()) !== "Prova: make check") throw new Error("Focus mode: the hypothesis does not show its proof");
+if (await focusAudit.locator('[data-testid="audit-finding"][data-status="verified"]').filter({ hasText: "Prova: Nessuna prova" }).count()) throw new Error("Focus mode: a finding is verified without a proof");
+await focusAudit.getByTestId("focus-audit-tally").getByText("Stato dei rilievi: 1 verificato da Trama, 1 confermato da un secondo modello, 1 ipotesi.").waitFor();
 await shot("20a-focus-audit");
+await auditFinding("spec", "hypothesis").scrollIntoViewIfNeeded();
+await shot("20e-focus-audit-findings");
 await app.evaluate(({ nativeTheme }) => {
   nativeTheme.themeSource = "dark";
 });
 await page.evaluate(() => document.documentElement.classList.add("dark"));
+await shot("20f-focus-audit-findings-dark");
+await focusAudit.getByTestId("focus-audit-status").scrollIntoViewIfNeeded();
 await shot("20b-focus-audit-dark");
 await app.evaluate(({ nativeTheme }) => {
   nativeTheme.themeSource = "system";

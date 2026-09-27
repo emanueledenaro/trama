@@ -1,6 +1,5 @@
 /**
- * SKILL.md format and validation, ported from Hermes Agent `agent/skill_utils.py` and
- * `tools/skill_manager_tool.py` (revision 58c896e, MIT, Copyright (c) 2025 Nous Research).
+ * SKILL.md format and validation. Derived from third-party MIT code; see THIRD_PARTY_NOTICES.md.
  */
 import { parse as parseYaml } from "yaml";
 
@@ -59,7 +58,7 @@ export function validateCategory(category: unknown): string | null {
   return VALID_NAME.test(value) ? null : invalid;
 }
 
-/** Checked in Hermes' order; a new skill must also fit the 60-character description budget. */
+/** Checked in a fixed order; a new skill must also fit the 60-character description budget. */
 export function validateFrontmatter(content: string, newSkill = false): string | null {
   if (!content.trim()) return "Content cannot be empty.";
   const text = content.startsWith("﻿") ? content.slice(1) : content;

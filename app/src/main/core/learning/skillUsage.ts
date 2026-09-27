@@ -1,6 +1,5 @@
 /**
- * Skill usage telemetry and ownership, ported from Hermes Agent `tools/skill_usage.py` (revision
- * 58c896e, MIT, Copyright (c) 2025 Nous Research). The record lives in a sidecar file, never in
+ * Skill usage telemetry and ownership. Derived from third-party MIT code; see THIRD_PARTY_NOTICES.md. The record lives in a sidecar file, never in
  * SKILL.md. `createdBy: "agent"` marks the skills the background review created: only those are
  * curator-managed; a skill the Coordinator wrote in a turn with the person is theirs ("learn").
  */

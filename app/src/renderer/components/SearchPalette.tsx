@@ -1,4 +1,4 @@
-// Layout and classes follow Synara's SidebarSearchPalette (github.com/Emanuele-web04/synara, MIT License).
+// Derived from third-party MIT code; see THIRD_PARTY_NOTICES.md.
 import { Dialog as DialogPrimitive } from "@base-ui/react/dialog";
 import {
   IconBrain,

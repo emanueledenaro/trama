@@ -180,7 +180,8 @@ import {
 } from "./core/team";
 import { answeredWork, ASK_COORDINATOR_TOOL, askCoordinator, asksCoordinator, DEVELOPER_TOOL_SERVER_INSTRUCTIONS, personAnswered, QuestionError } from "./core/developerQuestions";
 import { prepareWorktree, removeWorktree, reviewWorktree, validateWorktree } from "./core/workspace";
-import { AuditError, type AxisName, type AxisTurn, auditSpec, axisThread, axisTurn, beginAxes, closeAudit, failAudit, findAudit, finishAxis, openAudit, readAxisAnswer, recordAuditCheck } from "./core/audit";
+import { confirmationModel, confirmationTurn, confirmFinding, NO_STRONGER_MODEL, readConfirmation, recheckFindings } from "./core/auditFindings";
+import { AuditError, type AxisName, type AxisTurn, auditSpec, axisThread, axisTurn, beginAxes, beginVerification, closeAudit, failAudit, findAudit, finishAxis, openAudit, readAxisAnswer, recordAuditCheck } from "./core/audit";
 import { approveCandidate, candidateReport, findCandidate, latestCandidate, recordEvidence, recordTechnicalReview } from "./core/candidates";
 import { assessConflict } from "./core/conflicts";
 import { pickSlices } from "./core/slicePicking";
@@ -3892,6 +3893,7 @@ export class TramaController {
       this.changedIn(project);
       const input = { projectName: project.name, audit, candidate, assignment, spec };
       await Promise.all(axes.map((axis) => this.runAuditAxis(project, audit, axis, axisTurn(input, axis, skill, runner.provider === "codex"), runner, assignment.workspace!.worktreeRoot)));
+      await this.verifyAuditFindings(project, audit, candidate.id, runner, assignment.workspace.worktreeRoot);
       closeAudit(audit);
     } catch (error) {
       failAudit(audit, (error as Error).message);
@@ -3899,6 +3901,44 @@ export class TramaController {
       this.auditRuns.delete(auditId);
       this.changedIn(project);
       this.releaseParkedProject(project);
+    }
+  }
+
+  /**
+   * Verification of the findings (F02): Trama rechecks the proofs it can run itself, then a stronger model reads the
+   * serious findings Trama could not recheck. What neither confirms stays a hypothesis.
+   */
+  private async verifyAuditFindings(project: ActiveProjectState, audit: FocusAudit, candidateId: string, runner: DutyRunner, cwd: string): Promise<void> {
+    beginVerification(audit);
+    this.changedIn(project);
+    const serious = await recheckFindings(audit, cwd);
+    this.changedIn(project);
+    if (!serious.length) return;
+    const document = project.document;
+    const model = confirmationModel(runner.model, document.coordinator.threadModel ?? this.coordinatorModel(document, runner.provider));
+    if (!model) {
+      for (const { finding } of serious) confirmFinding(finding, { failure: NO_STRONGER_MODEL });
+      return;
+    }
+    const client = createRuntime(runner.provider, { executable: runner.provider === "codex" ? this.host.codexExecutable : null, requestTimeoutMs: 15_000 });
+    const run = this.auditRuns.get(audit.id);
+    run?.clients.add(client);
+    try {
+      for (const { axis, finding } of serious) {
+        try {
+          if (this.quitting) throw new Error("Trama si sta chiudendo.");
+          const turn = confirmationTurn({ projectName: project.name, audit, candidateId }, axis, finding);
+          const opening = await client.openThread({ model, cwd, developerInstructions: turn.instructions, sandbox: "read-only", ephemeral: true, readableRoots: this.readableRoots(project) });
+          const raw = await client.runTurn({ threadId: opening.threadId, prompt: turn.prompt, cwd, model, outputSchema: turn.outputSchema, onEvent: () => undefined });
+          confirmFinding(finding, { model, ...readConfirmation(raw) });
+        } catch (error) {
+          confirmFinding(finding, { failure: `La conferma di ${model} non è riuscita: ${(error as Error).message}` });
+        }
+        this.changedIn(project);
+      }
+    } finally {
+      run?.clients.delete(client);
+      client.stop();
     }
   }
 
@@ -4803,7 +4843,7 @@ export class TramaController {
   }
 
   /**
-   * Hermes' background review: an unattended session of the Coordinator's provider and model reads the
+   * The background review: an unattended session of the Coordinator's provider and model reads the
    * transcript and may only write memory and skills. One pass at a time per project; the conversation
    * never waits for it. `focus` comes from the person, and makes the pass attended.
    */
@@ -4874,7 +4914,7 @@ export class TramaController {
   }
 
   /**
-   * Hermes' curator tick: at most once per interval, after two idle hours, never on the first check.
+   * The curator tick: at most once per interval, after two idle hours, never on the first check.
    * The deterministic pass always runs; the model pass only when the person turned consolidation on.
    */
   async maybeRunCurator(force = false, dryRun = false): Promise<void> {
@@ -4965,7 +5005,7 @@ export class TramaController {
     this.learningChanged();
   }
 
-  /** The person corrects memory directly: their writes apply at once, as in Hermes' journey view. */
+  /** The person corrects memory directly: their writes apply at once, without a review. */
   editLearnedMemory(input: { target: "memory" | "user"; action: "add" | "replace" | "remove"; oldText?: string; content?: string }): { success: boolean; error: string | null } {
     const learning = this.learningFor(this.requireProject());
     const store = learning.memory;
@@ -5028,7 +5068,7 @@ export class TramaController {
     return readFileText(join(dir, "SKILL.md"), "utf8");
   }
 
-  /** The person asks for a review now, optionally with a focus (Hermes' /refine). */
+  /** The person asks for a review now, optionally with a focus. */
   async reviewLearningNow(focus: string): Promise<void> {
     const project = this.requireProject();
     const learning = this.learningFor(project);

@@ -1,7 +1,7 @@
 # V05 — Candidato verificato in chat
 
 Data: 18 settembre 2026. Ticket: [#68](https://github.com/emanueledenaro/trama/issues/68).
-Ramo: `synara/project-team-worktree`, sopra il lavoro V04 (#67) non ancora in `main`.
+Ramo: il branch di lavoro del team, sopra il lavoro V04 (#67) non ancora in `main`.
 
 ## Esito
 

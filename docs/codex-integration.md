@@ -222,7 +222,7 @@ Dopo l'apertura il client verifica il thread come per il piano, ammettendo strum
 
 ## Server degli strumenti di Trama
 
-`CoordinatorToolServer` risponde a `POST /mcp` su `127.0.0.1`, con porta scelta dal sistema (`LoopbackHTTPServer`, Network.framework, una richiesta per connessione). Segue il canale MCP di Synara: JSON, mai SSE, nessun `Mcp-Session-Id`, corpo massimo 1 MiB, batch fino a 50 messaggi, 202 quando non c'è niente da rispondere. Senza token valido risponde 401 con `caller_session_inactive`; `GET` e `DELETE` ricevono 405. I rifiuti degli strumenti sono risultati con `isError: true` e `{"error": {"code", "message"}}`, sempre con l'id della richiesta.
+`CoordinatorToolServer` risponde a `POST /mcp` su `127.0.0.1`, con porta scelta dal sistema (`LoopbackHTTPServer`, Network.framework, una richiesta per connessione). Il canale MCP usa solo JSON, mai SSE, nessun `Mcp-Session-Id`, corpo massimo 1 MiB, batch fino a 50 messaggi, 202 quando non c'è niente da rispondere. Senza token valido risponde 401 con `caller_session_inactive`; `GET` e `DELETE` ricevono 405. I rifiuti degli strumenti sono risultati con `isError: true` e `{"error": {"code", "message"}}`, sempre con l'id della richiesta.
 
 Strumenti: `read_study`, `read_pact`, `read_mandate`, `read_issues`, `read_history` (sola lettura, `readOnlyHint: true`) e `write_memory`. La scrittura vale solo mentre gira un turno del Coordinatore; se la chiamata porta `_meta.x-codex-turn-metadata.turn_id`, deve coincidere con il turno attivo.
 

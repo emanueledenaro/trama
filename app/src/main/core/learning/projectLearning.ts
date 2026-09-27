@@ -104,8 +104,8 @@ export class ProjectLearning {
   /**
    * Moves the Coordinator's old single-text memory (up to 16 KB) into MEMORY.md once. Each paragraph
    * becomes an entry; a paragraph over the limit is split by lines, and a line over it in pieces, so
-   * no entry trips the drift guard. A whole text over the limit stays loaded, as Hermes keeps an
-   * oversized file: additions wait until the Coordinator or the person consolidates.
+   * no entry trips the drift guard. A whole text over the limit stays loaded, as an oversized
+   * file does: additions wait until the Coordinator or the person consolidates.
    */
   migrateLegacyMemory(text: string): boolean {
     const path = this.memory.pathFor("memory");
@@ -124,7 +124,7 @@ export class ProjectLearning {
     return true;
   }
 
-  /** The frozen memory blocks and the skills index for a new thread, with Hermes' guidance. */
+  /** The frozen memory blocks and the skills index for a new thread, with the learning guidance. */
   promptContext(): { memory: string | null; user: string | null; skills: string; guidance: string } {
     this.memory.loadFromDisk();
     return {
