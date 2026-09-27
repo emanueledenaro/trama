@@ -27,12 +27,14 @@ import {
   type QualityItem,
   type SpecialistAssignment,
   type TechnicalReview,
+  type MandateAction,
   type TestedSeam,
   developerQuestionState,
   isOpenQuestion,
 } from "@shared/domain";
 import { CLEAN_CODE_RULES, type CodeMeasure } from "@shared/cleanCode";
 import { isExerciseAssessment } from "@shared/onboarding";
+import { type ListChange, type MandateProposalDiff, mandateProposalDiff, unchangedMandate } from "@shared/mandate";
 import { findGoal } from "@shared/goals";
 import { adrMarkdown, adrPath, findDomainProposal, glossaryEntry } from "@shared/domainDocs";
 import { PROVIDERS } from "@shared/providers";
@@ -141,10 +143,83 @@ export function ContextNoticeCard({ title, detail }: { title: string; detail: st
   );
 }
 
+/** A bulleted list of a card: one item per line, never joined into a sentence. */
+function ItemList({ items, testId }: { items: string[]; testId?: string }) {
+  return (
+    <ul className="list-disc space-y-0.5 pl-4" data-testid={testId}>
+      {items.map((item) => (
+        <li key={item} className="break-words">
+          {item}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/** One list of the mandate the proposal changes: what it adds and what it takes away. */
+function ChangeRow({ label, change, testId }: { label: string; change: ListChange<string>; testId: string }) {
+  if (!change.added.length && !change.removed.length) return null;
+  return (
+    <div className="mt-1.5" data-testid={testId}>
+      <div className="text-ui-xs text-muted-foreground/70">{label}</div>
+      {change.added.length ? (
+        <div className="mt-0.5 text-ui-sm" data-testid="mandate-diff-added">
+          <span className="text-success">Aggiunge</span>
+          <ItemList items={change.added} />
+        </div>
+      ) : null}
+      {change.removed.length ? (
+        <div className="mt-0.5 text-ui-sm" data-testid="mandate-diff-removed">
+          <span className="text-destructive">Toglie</span>
+          <ItemList items={change.removed} />
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/** What granting the proposal would change in the mandate in force, and which running work would stop. */
+function MandateDiffField({ diff, moduleName }: { diff: MandateProposalDiff; moduleName: (id: string) => string }) {
+  const named = (c: ListChange<string>, name: (v: string) => string) => ({ added: c.added.map(name), removed: c.removed.map(name) });
+  return (
+    <Field label={`Cosa cambia rispetto al mandato in vigore, versione ${diff.version}`}>
+      <div data-testid="mandate-diff">
+        {unchangedMandate(diff) ? (
+          <p className="text-ui-sm text-muted-foreground">La proposta non cambia niente del mandato in vigore.</p>
+        ) : (
+          <>
+            <ChangeRow label="Perimetro" change={named(diff.modules, moduleName)} testId="mandate-diff-modules" />
+            <ChangeRow label="Azioni autorizzate" change={named(diff.actions, (a) => ACTION_LABELS[a as MandateAction])} testId="mandate-diff-actions" />
+            <ChangeRow label="Obiettivi" change={diff.objectives} testId="mandate-diff-objectives" />
+            <ChangeRow label="Priorità" change={diff.priorities} testId="mandate-diff-priorities" />
+            <ChangeRow label="Limiti" change={diff.limits} testId="mandate-diff-limits" />
+          </>
+        )}
+        <div className="mt-1.5" data-testid="mandate-diff-stopped" data-count={diff.stoppedWork.length}>
+          <div className="text-ui-xs text-muted-foreground/70">Lavori che si fermerebbero</div>
+          {diff.stoppedWork.length ? (
+            <ul className="list-disc space-y-0.5 pl-4 text-ui-sm">
+              {diff.stoppedWork.map(({ specialist, assignment }) => (
+                <li key={assignment.id} className="break-words">
+                  <AgentName agent={specialist} />
+                  <Sep />
+                  {assignment.objective}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-ui-sm text-muted-foreground">Nessuno: il lavoro in corso resta dentro il mandato.</p>
+          )}
+        </div>
+      </div>
+    </Field>
+  );
+}
+
 export function MandateCard({ requestId }: { requestId: string }) {
   const project = useUi((s) => s.app?.project)!;
   const setInspector = useUi((s) => s.setInspector);
-  const [revoking, setRevoking] = useState(false);
+  const [rejecting, setRejecting] = useState(false);
   const [reason, setReason] = useState("");
   const request = project.document.mandateRequests.find((r) => r.id === requestId);
   if (!request) return null;
@@ -153,22 +228,26 @@ export function MandateCard({ requestId }: { requestId: string }) {
   const hasMandate = project.document.mandate?.status === "granted";
   // A newer request replaced this one before the person answered (W14): grey, kept in the history, not grantable.
   const superseded = resolution?.kind === "superseded";
+  // Only a pending proposal compares with the mandate in force: an answered one describes the past.
+  const diff = resolution ? null : mandateProposalDiff(project.document, request);
 
   return (
     <CardFrame
       icon={<IconShieldCheck stroke={1.8} />}
-      title="Mandato"
+      title={resolution ? "Mandato" : hasMandate ? "Proposta di nuovo mandato" : "Proposta di mandato"}
       className={cn(superseded && "opacity-60")}
       aside={
         resolution ? (
-          <Badge tone={resolution.kind === "revoked" || superseded ? "secondary" : "success"}>
+          <Badge tone={resolution.kind === "granted" || resolution.kind === "corrected" ? "success" : "secondary"}>
             {resolution.kind === "granted"
               ? `Concesso, v${resolution.version}`
               : resolution.kind === "corrected"
                 ? `Corretto, v${resolution.version}`
                 : superseded
                   ? "Superata"
-                  : "Non concesso"}
+                  : resolution.kind === "rejected"
+                    ? "Rifiutata"
+                    : "Non concesso"}
           </Badge>
         ) : (
           <Badge tone="info">In attesa</Badge>
@@ -178,40 +257,63 @@ export function MandateCard({ requestId }: { requestId: string }) {
       <p className="text-ui text-foreground/90">{request.reason}</p>
       {superseded ? (
         <p className="mt-1 text-ui-sm text-muted-foreground" data-testid="superseded-mandate">
-          Superata dalla richiesta {resolution.supersededBy ?? "più recente"}: non si può più concedere.
+          Superata da una richiesta più recente: non si può più concedere.
         </p>
       ) : null}
-      <Field label="Obiettivi">
-        <ul className="list-disc pl-4">
-          {request.objectives.map((o) => (
-            <li key={o}>{o}</li>
-          ))}
-        </ul>
+      {diff ? <MandateDiffField diff={diff} moduleName={moduleName} /> : null}
+      <Field label={diff ? "Obiettivi proposti" : "Obiettivi"}>
+        <ItemList items={request.objectives} />
       </Field>
-      {request.priorities.length ? <Field label="Priorità">{request.priorities.join(", ")}</Field> : null}
-      <Field label="Perimetro">{request.scopeModuleIds.map(moduleName).join(", ")}</Field>
-      <Field label="Azioni autorizzate">{request.authorizedActions.map((a) => ACTION_LABELS[a]).join(", ")}</Field>
-      {request.limits.length ? <Field label="Limiti">{request.limits.join(", ")}</Field> : null}
+      {request.priorities.length ? (
+        <Field label="Priorità">
+          <ItemList items={request.priorities} />
+        </Field>
+      ) : null}
+      <Field label="Perimetro">
+        <ItemList items={request.scopeModuleIds.map(moduleName)} />
+      </Field>
+      <Field label="Azioni autorizzate">
+        <ItemList items={request.authorizedActions.map((a) => ACTION_LABELS[a])} />
+      </Field>
+      {request.limits.length ? (
+        <Field label="Limiti">
+          <ItemList items={request.limits} testId="mandate-limits" />
+        </Field>
+      ) : null}
+      {resolution?.kind === "rejected" ? (
+        <p className="mt-2 text-ui-sm text-muted-foreground">Hai rifiutato la proposta. Il mandato in vigore non è cambiato.</p>
+      ) : null}
       {!resolution ? (
-        revoking ? (
+        rejecting ? (
           <div className="mt-3 space-y-2">
-            <TextArea value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Motivo" aria-label="Motivo della revoca" />
+            <TextArea
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              placeholder="Perché la rifiuti? Il Coordinatore legge il motivo."
+              aria-label="Motivo del rifiuto"
+              className="min-h-12"
+              autoFocus
+            />
+            <p className="text-ui-xs text-muted-foreground">
+              {hasMandate ? "Il mandato in vigore resta com'è e nessun lavoro si ferma." : "Il progetto resta senza mandato."}
+            </p>
             <div className="cta-row">
-              <Button
-                size="sm"
-                variant="destructive"
-                disabled={!reason.trim()}
-                onClick={() => void act("mandate:revoke", { reason: reason.trim(), requestId })}
-              >
-                {hasMandate ? "Revoca il mandato" : "Non concedere"}
-              </Button>
-              <Button size="sm" variant="ghost" onClick={() => setRevoking(false)}>
+              <Button size="sm" variant="ghost" onClick={() => setRejecting(false)}>
                 Annulla
+              </Button>
+              <Button size="sm" disabled={!reason.trim()} onClick={() => void act("mandate:reject", { requestId, reason: reason.trim() })}>
+                Rifiuta la proposta
               </Button>
             </div>
           </div>
         ) : (
           <div className="cta-row mt-3">
+            <Button size="sm" variant="ghost" onClick={() => setRejecting(true)}>
+              Rifiuta la proposta
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => setInspector({ kind: "mandate" })}>
+              Correggi
+            </Button>
             <Button
               size="sm"
               onClick={() =>
@@ -225,13 +327,7 @@ export function MandateCard({ requestId }: { requestId: string }) {
                 })
               }
             >
-              {hasMandate ? "Accetta la proposta" : "Concedi"}
-            </Button>
-            <Button size="sm" variant="outline" onClick={() => setInspector({ kind: "mandate" })}>
-              Correggi
-            </Button>
-            <Button size="sm" variant="ghost" onClick={() => setRevoking(true)}>
-              {hasMandate ? "Revoca" : "Non concedere"}
+              Concedi
             </Button>
           </div>
         )

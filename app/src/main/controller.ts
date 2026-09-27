@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { isUsableAccount, type ProviderAccount, type ProviderId, type ProviderModel, READ_OUTSIDE_SCOPE_TITLE, TOOL_REFUSED_TITLE, type TurnEvent } from "@shared/codex";
 import { PROVIDERS, canCoordinate, catalogModel, catalogOffers, coordinatorUnavailableReason, supportsReadOnly, type CatalogEntry } from "@shared/providers";
 import { shortId } from "@shared/ids";
+import { activeTerms, workStoppedBy } from "@shared/mandate";
 import { mentionContextBlock } from "@shared/mentions";
 import { codexSkillText, type LoadedSkill, skillInvocations } from "@shared/skills";
 import { isUnsupportedModelError } from "@shared/timeline";
@@ -139,7 +140,9 @@ import {
   DomainError,
   grantMandate,
   mandateMessage,
+  mandateRejectionMessage,
   resolveMandateRequest,
+  rejectMandateRequest,
   revokeMandate,
   withdrawalMessage,
   withdrawDecisionRequest,
@@ -2960,20 +2963,21 @@ export class TramaController {
     await this.send(mandateMessage(kind, mandate.version), null, null, null, [], null, null, false);
   }
 
-  async revokeMandate(reason: string, requestId: string | null): Promise<void> {
+  /** Revokes the mandate in force, from the Mandate view only: a proposal card never reaches it. */
+  async revokeMandate(reason: string): Promise<void> {
     const project = this.requireProject();
-    const document = project.document;
-    // A stale card must not revoke the active mandate: only the latest request can be answered (W14).
-    assertMandateRequestAnswerable(document, requestId);
-    if (requestId && !document.mandate) {
-      resolveMandateRequest(document, requestId, "revoked", null);
-    } else {
-      revokeMandate(document, reason);
-      if (requestId) resolveMandateRequest(document, requestId, "revoked", null);
-      this.stopWorkOutsideMandate(`Mandato revocato: ${reason}`);
-    }
+    revokeMandate(project.document, reason);
+    this.stopWorkOutsideMandate(`Mandato revocato: ${reason}`);
     this.changed();
     await this.send(mandateMessage("revoked", null, reason), null, null, null, [], null, null, false);
+  }
+
+  /** Turns down a mandate proposal. The mandate in force, if any, stays as it is and no work stops. */
+  async rejectMandateRequest(requestId: string, reason: string): Promise<void> {
+    const project = this.requireProject();
+    const request = rejectMandateRequest(project.document, requestId, reason);
+    this.changed();
+    await this.send(mandateRejectionMessage(project.document, request, reason), null, null, null, [], null, null, false);
   }
 
   // MARK: Team
@@ -3653,10 +3657,7 @@ export class TramaController {
     const project = this.state.project;
     if (!project) return;
     const document = project.document;
-    for (const specialist of document.team.specialists) {
-      const assignment = specialist.assignments.at(-1);
-      if (!assignment || !isActive(assignment) || assignment.status === "stopRequested") continue;
-      if (withinMandate(document, assignment)) continue;
+    for (const { specialist, assignment } of workStoppedBy(document, activeTerms(document.mandate))) {
       requestStop(document, specialist.id, "Trama", reason);
       void this.stopAssignmentRuntime(assignment.id);
     }
