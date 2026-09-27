@@ -622,7 +622,9 @@ await domainCard.getByText(/Il mandato non permette di lavorare in un worktree s
 for (const expected of ["Ordine in revisione", "Ordine sospeso, Rimborso in attesa", "Gli ordini pagati annullati vanno in revisione", "docs/adr/NNNN-"]) {
   if (!(await domainCard.innerText()).includes(expected)) throw new Error(`The domain proposal does not show "${expected}"`);
 }
-if (await page.getByText("Documentazione e dominio", { exact: true }).count()) throw new Error("The documentation role started writing outside the mandate");
+// The role's name also shows among the candidate's reviewers (W10): only an assignment card of the role is writing.
+const documentationWork = page.locator(".chat-card").filter({ hasText: /^Incarico A-/ }).filter({ hasText: "Documentazione e dominio" });
+if (await documentationWork.count()) throw new Error("The documentation role started writing outside the mandate");
 await domainCard.scrollIntoViewIfNeeded();
 await shot("04j-domain-proposal-waiting");
 await page.getByRole("button", { name: /^Mandato/ }).first().click();
@@ -1344,6 +1346,68 @@ await correctedCard.getByText("Via libera del Coordinatore.").waitFor();
 if ((await failedCard.innerText()).includes("Deciso")) throw new Error("The failed candidate took the correction's state");
 await correctedCard.scrollIntoViewIfNeeded();
 await shot("18d-candidate-corrected");
+// W10: the candidate gate on the card. Trama's checks came first; then every candidate figure of the team reviewed the
+// diff in parallel, each with its outcome: who found nothing signs "Niente da segnalare". Both themes.
+const passedGate = correctedCard.locator('[data-testid="candidate-gate"][data-status="passed"]');
+await passedGate.waitFor({ timeout: 20_000 });
+const passedRoles = await passedGate.getByTestId("gate-review").evaluateAll((rows) => rows.map((row) => row.getAttribute("data-role")));
+if (passedRoles.join() !== "specReviewer,cleanCode,regressionGuardian,security,performance,ux,devops,documentation") throw new Error(`Unexpected gate figures: ${passedRoles}`);
+await passedGate.locator('[data-testid="gate-review"][data-role="security"]').getByText("Niente da segnalare").waitFor();
+await passedGate.locator('[data-testid="gate-review"][data-role="specReviewer"][data-status="skipped"]').getByText("no spec available").waitFor();
+await passedGate.evaluate((item) => item.scrollIntoView({ block: "center" }));
+await shot("18e1-candidate-gate-passed");
+await app.evaluate(({ nativeTheme }) => {
+  nativeTheme.themeSource = "dark";
+});
+await page.evaluate(() => document.documentElement.classList.add("dark"));
+await shot("18e2-candidate-gate-passed-dark");
+await app.evaluate(({ nativeTheme }) => {
+  nativeTheme.themeSource = "system";
+});
+await page.evaluate(() => document.documentElement.classList.remove("dark"));
+// W10: a blocking finding goes back to the developer. Ada's note leaves a key in the diff: Trama's scan finds it for
+// Sicurezza and no model receives the diff, so the other figures do not start. The green light is refused, and the
+// finding reaches Ada in her work, where she resumes it.
+await send("[assegna] [segreto]");
+const secretWork = assignmentCards.nth(4);
+await secretWork.getByText("Concluso", { exact: true }).waitFor({ timeout: 20_000 });
+await send(`[candidato:${await cardAssignment(secretWork)}:${candidateDecision}]`);
+const secretCandidate = candidateCards.nth(2);
+const blockedGate = secretCandidate.locator('[data-testid="candidate-gate"][data-status="blocked"]');
+await blockedGate.waitFor({ timeout: 60_000 });
+if ((await blockedGate.getByTestId("gate-review").count()) !== 8) throw new Error("The gate does not show every candidate figure");
+await blockedGate.locator('[data-testid="gate-review"][data-role="security"]').getByText("1 rilievo bloccante").waitFor();
+await blockedGate.locator('[data-testid="gate-finding"][data-severity="blocking"]').getByText("Segreto nel diff: chiave API in NOTE.md").waitFor();
+await blockedGate.locator('[data-testid="gate-review"][data-role="devops"][data-status="skipped"]').getByText(/il diff contiene un segreto/).waitFor();
+await blockedGate.getByTestId("gate-returned").getByText(/Rimandato a Ada con i rilievi bloccanti/).waitFor();
+await page.getByText(/Via libera rifiutato: .*GATE_BLOCKED/).last().waitFor({ timeout: 20_000 });
+await secretCandidate.getByText("Rilievo bloccante dei revisori").waitFor();
+await secretCandidate.getByText("In costruzione", { exact: true }).waitFor();
+await page.getByRole("button", { name: "Interrompi" }).waitFor({ state: "hidden", timeout: 20_000 });
+await secretWork.getByText("Concluso", { exact: true }).waitFor({ timeout: 30_000 });
+await blockedGate.evaluate((item) => item.scrollIntoView({ block: "center" }));
+await shot("24a-candidate-gate-blocked");
+await app.evaluate(({ nativeTheme }) => {
+  nativeTheme.themeSource = "dark";
+});
+await page.evaluate(() => document.documentElement.classList.add("dark"));
+await shot("24b-candidate-gate-blocked-dark");
+await app.evaluate(({ nativeTheme }) => {
+  nativeTheme.themeSource = "system";
+});
+await page.evaluate(() => document.documentElement.classList.remove("dark"));
+// Security's message is in Ada's work, with the turn she resumed with it: the person reads what the agents said.
+await page.getByRole("button", { name: /ha lavorato per/ }).last().click();
+const toDeveloper = page.getByRole("button", { name: /^Sicurezza a Ada: 1 rilievo bloccante sul candidato C-/ });
+await toDeveloper.waitFor({ timeout: 10_000 });
+await toDeveloper.click();
+await page.getByText(/Segreto nel diff: chiave API in NOTE\.md/).last().waitFor();
+await toDeveloper.evaluate((item) => item.scrollIntoView({ block: "center" }));
+await shot("24c-gate-finding-to-developer");
+await page.evaluate(() => document.documentElement.classList.add("dark"));
+await shot("24d-gate-finding-to-developer-dark");
+await page.evaluate(() => document.documentElement.classList.remove("dark"));
+
 // Q03: the technical review checks the diff against Trama's Clean Code standard. The card shows Trama's measures as
 // evidence and the reviewer's findings, with file and line, as judgement; in the light and the dark theme.
 const review = correctedCard.getByTestId("technical-review");
@@ -1424,9 +1488,9 @@ await sliceSpec.getByText("Restano in Trama").waitFor({ timeout: 20_000 });
 // W05: an assignment without its contract (seams, Pact decisions) is refused with a clear tool failure; no card appears.
 await send("[assegna] [senza-contratto]");
 await page.getByText(/Rifiutato: .*incomplete_contract.*seams.*decisionIDs/).last().waitFor({ timeout: 20_000 });
-if ((await assignmentCards.count()) !== 4) throw new Error("An assignment without its contract reached a developer");
+if ((await assignmentCards.count()) !== 5) throw new Error("An assignment without its contract reached a developer");
 await send("[assegna] [test]");
-const sliceWork = assignmentCards.nth(4);
+const sliceWork = assignmentCards.nth(5);
 await sliceWork.getByText("Concluso", { exact: true }).waitFor({ timeout: 20_000 });
 // W05: the card shows the contract the slice reached the developer with and the developer's structured report,
 // as a statement apart from Trama's evidence.
@@ -1451,8 +1515,9 @@ await app.evaluate(({ nativeTheme }) => {
   nativeTheme.themeSource = "system";
 });
 await page.evaluate(() => document.documentElement.classList.remove("dark"));
-await send(`[candidato:${await cardAssignment(sliceWork)}:${candidateDecision}]`);
-const sliceCandidate = candidateCards.nth(2);
+// The Coordinator asks for the green light without the candidate gate (W10), so Trama's build and tests never ran.
+await send(`[candidato:${await cardAssignment(sliceWork)}:${candidateDecision}] [senza-revisione]`);
+const sliceCandidate = candidateCards.nth(3);
 const testedSeams = sliceCandidate.getByTestId("candidate-tested-seams");
 await testedSeams.waitFor({ timeout: 30_000 });
 await testedSeams.locator('[data-testid="candidate-tested-seam"][data-tested="yes"][data-agreed="yes"]').getByText(/CancelPaidOrder/).waitFor();
@@ -1546,7 +1611,7 @@ await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
 // the report's doubts. The Coordinator puts it on a Pact card that blocks the work; the person's answer resumes the
 // developer in the same session, and the card and the assignment say so.
 await send("[assegna:S1] [test] [domanda]");
-const questionWork = assignmentCards.nth(5);
+const questionWork = assignmentCards.nth(6);
 await questionWork.getByText("In pausa", { exact: true }).waitFor({ timeout: 20_000 });
 await questionWork.locator('[data-testid="assignment-question"][data-state="asked"]').getByText(/buono/).waitFor();
 await questionWork.getByText("Aspetta il Coordinatore").waitFor();
@@ -1612,19 +1677,19 @@ await page.getByRole("button", { name: "Impostazioni" }).click();
 await page.getByTestId("settings").waitFor({ state: "hidden" });
 // The first slice is verified on new work that passes its check and the technical review: S2 and S3 become ready.
 await send("[assegna:S1]");
-const verifiedSliceWork = assignmentCards.nth(6);
+const verifiedSliceWork = assignmentCards.nth(7);
 await verifiedSliceWork.getByText("Concluso", { exact: true }).waitFor({ timeout: 20_000 });
 await send(`[candidato:${await cardAssignment(verifiedSliceWork)}:${candidateDecision}]`);
 const teamSlices = sliceSpec.getByTestId("plan-slices");
 await teamSlices.locator('[data-testid="plan-slice"][data-state="done"]').first().waitFor({ timeout: 30_000 });
 const unblocked = await teamSlices.getByTestId("plan-slice").evaluateAll((items) => items.map((item) => item.getAttribute("data-state")));
 if (unblocked.join() !== "done,ready,ready") throw new Error(`A verified slice did not unblock its dependents: ${unblocked}`);
-if ((await assignmentCards.count()) !== 7) throw new Error("A developer took a slice while continuous work was off");
+if ((await assignmentCards.count()) !== 8) throw new Error("A developer took a slice while continuous work was off");
 // Continuous work on: at the next event of the work (here the end of a Coordinator turn) Ada is free and takes S2 in
 // autonomy; the assignment card says so and the slice shows who took it.
 await page.evaluate(() => window.trama.invoke("settings:update", { continuousWork: true }));
 await send("Come procede il lavoro?");
-const pickedCard = assignmentCards.nth(7);
+const pickedCard = assignmentCards.nth(8);
 await pickedCard.getByTestId("assignment-self-picked").waitFor({ timeout: 20_000 });
 await pickedCard.getByText(/^S2 Il supporto vede gli ordini in revisione$/).waitFor();
 const pickedSlice = teamSlices.locator('[data-testid="plan-slice"][data-self-picked="yes"]').first();
@@ -2305,14 +2370,14 @@ await page.getByTestId("conflict-superseded").scrollIntoViewIfNeeded();
 for (const dark of [false, true]) {
   await page.evaluate((theme) => window.trama.invoke("settings:update", { theme }), dark ? "dark" : "light");
   await page.waitForFunction((wanted) => document.documentElement.classList.contains("dark") === wanted, dark);
-  await shot(`24a-branch-divergence-${dark ? "dark" : "light"}`);
+  await shot(`25a-branch-divergence-${dark ? "dark" : "light"}`);
 }
 await divergenceNotice.getByRole("button", { name: /^Mostra i 18 file/ }).click();
 await divergenceNotice.getByTestId("branch-divergence-files").getByText("vercel.json").waitFor();
 for (const dark of [false, true]) {
   await page.evaluate((theme) => window.trama.invoke("settings:update", { theme }), dark ? "dark" : "light");
   await page.waitForFunction((wanted) => document.documentElement.classList.contains("dark") === wanted, dark);
-  await shot(`24b-branch-divergence-files-${dark ? "dark" : "light"}`);
+  await shot(`25b-branch-divergence-files-${dark ? "dark" : "light"}`);
 }
 await divergenceNotice.getByRole("button", { name: "Chiedi al Coordinatore come riallineare" }).click();
 await expectAsked("Come li riallineiamo?", "Divergence notice, Chiedi al Coordinatore come riallineare");

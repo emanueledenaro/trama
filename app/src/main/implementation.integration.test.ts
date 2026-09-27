@@ -141,15 +141,17 @@ describe("the developer of a slice with implement and tdd (M06)", () => {
     expect(text.includes("## Seam confermati dalla persona\n1. L'interfaccia di CancelPaidOrder: annullare un ordine pagato (esistente).")).toBe(true);
     expect(work.result).toContain("Skill ricevute: implement, tdd");
 
-    // The candidate carries the developer's report; the green light waits for Trama's own checks.
+    // The candidate carries the developer's report; the green light waits for Trama's own checks, which the candidate
+    // gate runs before any reviewer (W10): the build and the tests are Trama's evidence on this snapshot.
     await controller.send(`[candidato:${work.id}:${decision.id}]`, null, null, null);
     const candidate = document.candidates[0]!;
     expect(candidate.testedSeams).toEqual([{ seam: "L'interfaccia di CancelPaidOrder: annullare un ordine pagato", agreed: true, tests: "NOTE.md" }]);
     expect(candidate.evidence.git_status?.result).toBe("pass");
-    expect(candidate.clearance).toBeNull();
-    expect(controller.snapshot.project!.candidateReports[candidate.id]!.blockers.map((b) => `${b.code}:${b.detail}`)).toEqual([
-      "EVIDENCE_MISSING:swift_build",
-      "EVIDENCE_MISSING:swift_test",
-    ]);
-  }, 30_000);
+    for (const check of ["swift_build", "swift_test"]) expect(candidate.evidence[check]?.snapshotId).toBe(candidate.snapshotId);
+    const failed = ["swift_build", "swift_test"].filter((check) => candidate.evidence[check]!.result === "fail");
+    expect(document.gates!.at(-1)).toMatchObject({ candidateId: candidate.id, checksFailed: failed });
+    const blockers = controller.snapshot.project!.candidateReports[candidate.id]!.blockers.map((b) => `${b.code}:${b.detail}`);
+    expect(blockers).toEqual(failed.map((check) => `CHECK_FAILED:${check}`));
+    if (failed.length) expect(candidate.clearance).toBeNull();
+  }, 240_000);
 });
