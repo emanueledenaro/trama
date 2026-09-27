@@ -1,4 +1,4 @@
-// Layout and classes follow Synara (github.com/Emanuele-web04/synara, MIT License, Copyright (c) 2026 T3 Tools Inc. and Emanuele Di Pietro).
+// Derived from third-party MIT code; see THIRD_PARTY_NOTICES.md.
 import {
   IconCircleDot,
   IconFolder,
@@ -40,7 +40,7 @@ import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/cn";
 import { act, type InspectorTarget, useUi } from "@/lib/store";
 
-/** Row styling shared by every sidebar row, as in Synara's sidebarRowStyles. */
+/** Row styling shared by every sidebar row. */
 export const SIDEBAR_ROW =
   "flex w-full min-w-0 cursor-pointer items-center text-left select-none h-7 min-h-7 gap-2 rounded-md px-2 py-0.5 text-ui font-normal outline-hidden transition-colors focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring";
 const ROW_IDLE = "text-foreground/89 hover:bg-[var(--sidebar-accent)] hover:text-[var(--sidebar-accent-foreground)]";

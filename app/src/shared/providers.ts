@@ -1,4 +1,4 @@
-/** The nine providers in Synara's order, each with an adapter in app/src/main/core/providers (ADR 0012). */
+/** The nine providers in display order, each with an adapter in app/src/main/core/providers (ADR 0012). */
 export interface ProviderCapabilities {
   sessionModelSwitch: "inSession" | "restartSession" | "unsupported";
   conversationRollback: "native" | "restartSession" | null;

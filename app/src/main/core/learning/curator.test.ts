@@ -31,7 +31,7 @@ function agentSkill(name: string, createdDaysAgo: number, usedDaysAgo: number | 
   if (usedDaysAgo !== null) library.usage.bumpUse(name, new Date(now.getTime() - usedDaysAgo * DAY));
 }
 
-describe("curator (Hermes agent/curator.py)", () => {
+describe("curator", () => {
   it("never runs on the first check and then waits one interval", () => {
     const store = new CuratorStateStore(join(root, "state.json"));
     const now = new Date(Date.UTC(2026, 8, 1));

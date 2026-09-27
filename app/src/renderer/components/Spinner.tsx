@@ -1,7 +1,7 @@
-// Layout and classes follow Synara (github.com/Emanuele-web04/synara, MIT License, Copyright (c) 2026 T3 Tools Inc. and Emanuele Di Pietro).
+// Derived from third-party MIT code; see THIRD_PARTY_NOTICES.md.
 import { cn } from "@/lib/cn";
 
-/** Synara's stepped status spinner. */
+/** Stepped status spinner. */
 export function Spinner({ className }: { className?: string }) {
   return (
     <svg viewBox="0 0 16 16" className={cn("inline-block size-3 shrink-0 animate-spin-stepped text-muted-foreground/55", className)} aria-hidden>
