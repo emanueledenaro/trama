@@ -3,6 +3,7 @@ import type { ProviderId } from "@shared/codex";
 import type { ConversationEvent, EventContent, EventOrigin, ProjectDocument } from "@shared/domain";
 import { requestGoalId } from "@shared/goals";
 import { interruptAudits } from "./audit";
+import { interruptGates } from "./gate";
 import { completeTeam } from "./team";
 
 function assignmentGoalId(document: ProjectDocument, assignmentId: string): string | null {
@@ -85,6 +86,8 @@ export function normalizeDocument(raw: Partial<ProjectDocument>, projectId: stri
   }
   // Focus mode lost its sessions too (F01): the examination stays, marked as interrupted.
   interruptAudits(document);
+  // So did the candidate gate's reviewers (W10).
+  interruptGates(document);
   return document;
 }
 

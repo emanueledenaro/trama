@@ -157,6 +157,8 @@ function candidateBlockerText(candidate: Candidate, blocker: CandidateBlocker): 
       return `La verifica ${blocker.detail} del candidato ${candidate.id} non è passata.`;
     case "DECISION_CHANGED":
       return `La decisione ${blocker.detail} è cambiata dopo il candidato ${candidate.id}.`;
+    case "GATE_BLOCKED":
+      return `I revisori hanno un rilievo bloccante sul candidato ${candidate.id}: ${blocker.detail}`;
     case "UNRESOLVED_CHOICE":
       return `Il candidato ${candidate.id} lascia aperta una scelta: ${blocker.detail}`;
     case "EXTERNAL_EFFECT_UNSUPPORTED":

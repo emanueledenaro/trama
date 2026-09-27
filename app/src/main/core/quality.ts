@@ -151,6 +151,7 @@ const BLOCKER_WORDS: Record<string, string> = {
   EVIDENCE_MISSING: "una verifica non è stata eseguita",
   EVIDENCE_STALE: "una verifica non vale più",
   CHECK_FAILED: "una verifica non è passata",
+  GATE_BLOCKED: "un revisore ha un rilievo bloccante",
   REMOTE_CONFLICT: "c'è un conflitto con il lavoro di un collega",
 };
 

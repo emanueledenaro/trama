@@ -391,6 +391,32 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
         setTimeout(() => finish(JSON.stringify(spec)), 10);
         return;
       }
+      if (required.includes("report") && required.includes("findings") && !required.includes("worst")) {
+        // The candidate gate (W10): one reviewer per session, named in the turn. Security blocks a secret in the diff;
+        // the others sign nothing to report. The skill inputs the session received go in the report.
+        const role = text.match(/Cancello del candidato C-[0-9A-F]+, revisore: ([^(]+?) \(/)?.[1] ?? "?";
+        const skills = params.input.filter((item) => item.type === "skill").map((item) => item.name);
+        const secret = role === "Sicurezza" && /^\+.*sk-prova-/m.test(text);
+        const answer = secret
+          ? {
+              report: `### Segreti\n\n- \`NOTE.md\` contiene una chiave in chiaro.\n\nSkill ricevute: ${skills.join(", ") || "nessuna"}.`,
+              findings: [{ severity: "blocking", title: "Chiave API in chiaro in NOTE.md", detail: "La riga `chiave: sk-prova-…` espone una credenziale nel repository.", file: "NOTE.md:2" }],
+            }
+          : { report: `Revisore ${role}. Skill ricevute: ${skills.join(", ") || "nessuna"}.`, findings: [] };
+        // With FAKE_CODEX_GATE_HOLD the reviewer answers only once that file exists: a test sees every session open at once.
+        const hold = process.env.FAKE_CODEX_GATE_HOLD;
+        if (hold) {
+          const { existsSync } = await import("node:fs");
+          const release = setInterval(() => {
+            if (!existsSync(hold)) return;
+            clearInterval(release);
+            finish(JSON.stringify(answer));
+          }, 10);
+          return;
+        }
+        setTimeout(() => finish(JSON.stringify(answer)), 10);
+        return;
+      }
       if (params.outputSchema) {
         const verdict = text.includes("RIFIUTA") ? "changesRequested" : "approved";
         // The technical review against Trama's Clean Code standard (Q03) answers with findings, file and line.
@@ -413,7 +439,9 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
           setTimeout(() => finish(`Ho scritto CONTEXT.md nel worktree. Skill ricevute: ${seen.join(", ")}`), 30);
           return;
         }
-        writeFileSync(join(root, "NOTE.md"), "Lavoro dello specialista\n");
+        // "[segreto]" leaves a key in the note, which the security reviewer of the candidate gate blocks (W10); the turn
+        // that resumes with the findings writes the note without it.
+        writeFileSync(join(root, "NOTE.md"), text.includes("[segreto]") && !text.includes("Rilievi bloccanti dei revisori") ? "Lavoro dello specialista\nchiave: sk-prova-123\n" : "Lavoro dello specialista\n");
         send({ method: "item/completed", params: { threadId, turnId, item: { id: "fc", type: "fileChange", status: "completed", changes: [{ path: "NOTE.md" }] } } });
         // "[spazi]" leaves trailing whitespace in a tracked file, so git_diff_check fails on the candidate (V05).
         const tracked = join(root, "Sources/Orders/CancelPaidOrder.swift");
@@ -633,7 +661,8 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
       if (text.includes("[assegna")) {
         // [assegna] or [assegna:<slice>]: without a slice the fake names the first ready one Trama lists (M05).
         const named = text.match(/\[assegna:(\w+)\]/)?.[1];
-        const slice = named ? { slice: named } : readySlice(text);
+        // "[segreto]" is work outside the plan: it never takes the ready slice.
+        const slice = named ? { slice: named } : text.includes("[segreto]") ? {} : readySlice(text);
         callTool(threadId, "assign_task", {
           ...slice,
           // "[senza-contratto]" leaves out the seams and the Pact decisions: Trama refuses the assignment (W05).
@@ -649,9 +678,11 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
             ? ["git_status", "git_diff_check"]
             : text.includes("[test]")
               ? ["git_status", "swift_build", "swift_test"]
-              : ["git_status"],
+              : text.includes("[test-node]")
+                ? ["git_status", "node_test"]
+                : ["git_status"],
           tools: ["edits"],
-          instructions: `${text.includes("[lento]") ? "[lento] " : ""}${text.includes("[lento:sempre]") ? "[lento:sempre] " : ""}${text.includes("[spazi]") ? "[spazi] " : ""}${text.includes("[domanda]") ? "[domanda] " : ""}Scrivi una nota`,
+          instructions: `${text.includes("[segreto]") ? "[segreto] " : ""}${text.includes("[lento]") ? "[lento] " : ""}${text.includes("[lento:sempre]") ? "[lento:sempre] " : ""}${text.includes("[spazi]") ? "[spazi] " : ""}${text.includes("[domanda]") ? "[domanda] " : ""}Scrivi una nota`,
         }).then((result) => {
           toolDone("assign_task", result);
           finish(result.isError ? `Rifiutato: ${result.content[0].text}` : "Ho assegnato il lavoro ad Ada.");
@@ -676,8 +707,11 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
           const { candidateID, requiredChecks } = JSON.parse(declared.content[0].text);
           const checks = candidateMatch[3] === "tutte" ? requiredChecks : [candidateMatch[3] ?? "git_status"];
           for (const check of checks) toolDone("verify_candidate", await callTool(threadId, "verify_candidate", { candidate: candidateID, check }));
-          const reviewed = await callTool(threadId, "review_candidate", { candidate: candidateID });
-          toolDone("review_candidate", reviewed);
+          // "[senza-revisione]" asks for the green light without the candidate gate (W10): Trama refuses it.
+          if (!text.includes("[senza-revisione]")) {
+            const reviewed = await callTool(threadId, "review_candidate", { candidate: candidateID });
+            toolDone("review_candidate", reviewed);
+          }
           const cleared = await callTool(threadId, "clear_candidate", { candidate: candidateID });
           toolDone("clear_candidate", cleared);
           finish(cleared.isError ? `Via libera rifiutato: ${cleared.content[0].text}` : `Candidato ${candidateID} verificato e con via libera.`);

@@ -1,6 +1,8 @@
 import { createHash, randomUUID } from "node:crypto";
 import type { Candidate, CandidateBlocker, CandidateReport, CandidateState, ConflictAssessment, ProjectDocument, TechnicalReview } from "@shared/domain";
+import { blockingFindings, latestGate } from "@shared/gate";
 import { shortId } from "@shared/ids";
+import { roleProfile } from "@shared/roster";
 import { agreedSeams, assignmentSlice, readTestedSeams } from "./implementation";
 import { findAssignment } from "./team";
 import type { WorkspaceReview } from "./workspace";
@@ -139,6 +141,13 @@ export function inspectCandidate(document: ProjectDocument, candidate: Candidate
       continue;
     }
     if (evidence.result === "fail") blockers.push({ code: "CHECK_FAILED", detail: check });
+  }
+  // A blocking finding of the candidate gate on this snapshot (W10) stops the candidate before it reaches the person.
+  // A failed check already says so above.
+  const gate = latestGate(document.gates, candidate.id);
+  if (gate?.status === "blocked" && gate.snapshotId === candidate.snapshotId && !gate.checksFailed.length) {
+    const findings = gate.reviews.flatMap((r) => blockingFindings(r).map((f) => `${roleProfile(r.role).name}: ${f.title}`));
+    blockers.push({ code: "GATE_BLOCKED", detail: findings.join("; ") });
   }
   // A merge conflict reproduced against a colleague's work on this exact snapshot blocks the green light.
   // Against another developer's worktree (W08) it holds while that candidate is still the one compared.
