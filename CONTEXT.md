@@ -122,6 +122,10 @@ Standard di pubblicazione: le condizioni che un candidato rispetta prima che Tra
 
 Miglioramento del team: un cambiamento della composizione o del metodo di lavoro degli specialisti, motivato dai risultati osservati e verificabile rispetto al metodo precedente. Comprende ruoli, istruzioni, modelli disponibili e procedure; conserva le decisioni e i controlli del progetto.
 
+Sessione cloud: il lavoro di un incarico di sviluppo eseguito da un provider sui suoi server invece che in un worktree locale sul Mac. Solo Claude (sessioni cloud di Claude Code) e Codex (Codex Cloud) la offrono. Continua anche con Trama chiusa. Il suo risultato torna come candidato dell'incarico: con Claude la pull request che la sessione apre sul suo branch, con Codex il diff applicato in un worktree locale. Poi segue il flusso di ogni candidato, con le verifiche di Trama sul Mac. Conta nei limiti degli sviluppatori in parallelo come un incarico locale. Da evitare: remoto, sandbox.
+
+Luogo di lavoro dell'incarico: dove gira un incarico di sviluppo, in locale o in una sessione cloud. Lo decide un'impostazione del progetto: Automatico (predefinita, il Coordinatore sceglie per tipo di lavoro e dice perché nella scheda dell'incarico), Sempre in locale, Cloud quando possibile. La persona sposta un singolo incarico tra locale e cloud prima dell'avvio o a una ripresa. Il Coordinatore, i ruoli in sola lettura, le prove dal vivo e la verifica finale del candidato restano sempre in locale. Quando il cloud non si può usare l'incarico gira in locale e la scheda dice perché e come abilitarlo. Il cloud non è mai obbligatorio.
+
 ## Squadre Scrum
 
 Squadra: un gruppo stabile di specialisti che si prende il lavoro di un'area del prodotto, ricavata dalle aree della Mappa (per esempio Catalogo, Checkout, Admin). Ha un capo squadra, da uno a tre sviluppatori e un QA dedicato, e accumula nel tempo la sua memoria e le sue pratiche. Il Coordinatore crea le squadre dopo lo studio e lo notifica; la persona può rinominarle, unirle o dividerle. Un progetto ha al massimo tre squadre attive insieme. Da evitare: team (per la squadra), gruppo.

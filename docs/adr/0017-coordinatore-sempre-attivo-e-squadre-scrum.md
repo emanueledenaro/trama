@@ -1,6 +1,6 @@
 # Il Coordinatore è sempre attivo e dirige squadre Scrum
 
-Stato: accettata il 28 settembre 2026 per la specifica #239 (decisioni Q1-Q23). Cambia il lavoro continuo di W04 e la parte dell'ADR 0003 sull'unione dei candidati. Gli ADR 0005 e 0013 restano validi.
+Stato: accettata il 28 settembre 2026 per la specifica #239 (decisioni Q1-Q31). Cambia il lavoro continuo di W04 e la parte dell'ADR 0003 sull'unione dei candidati. Gli ADR 0005 e 0013 restano validi.
 
 Fino a W04 il Coordinatore faceva una mossa dopo un evento, al massimo cinque di fila, e poi aspettava la persona. La persona confermava comprensione, team e unione di ogni candidato, e i blocchi tecnici restavano fermi finché lei non scriveva. Il team era un insieme piatto di specialisti con al massimo tre sviluppatori in parallelo. La persona vuole un Coordinatore che lavori come il coordinatore umano del progetto: organizza, anticipa e porta avanti il lavoro senza che qualcuno gli dica ogni volta cosa fare.
 
@@ -18,6 +18,9 @@ Decisione:
 - **Le discussioni tra agenti finiscono con una decisione.** Gli agenti si parlano in modo visibile (W07) per stimare, sbloccare, rivedere e risolvere conflitti. Ogni discussione ha un tempo massimo e finisce con una decisione registrata, o con una domanda alla persona se è di prodotto. Discussioni, stand-up e stime usano il modello più leggero del provider; implementazione e decisioni difficili il modello del ruolo.
 - **Una roadmap ricavata dai dati.** Trama mostra una roadmap del progetto da obiettivi, missioni, sprint, issue e pull request, aggiornata a ogni traguardo. Se il repository ha una issue di roadmap, il Coordinatore aggiorna anche quella.
 - **Resta un solo Coordinatore per progetto.** Capi squadra e squadre sono specialisti: non parlano con la persona se non tramite "Aspetta te" e le discussioni visibili, non allargano il mandato e non decidono il prodotto. La sessione del Coordinatore resta una per progetto (ADR 0013) e la persona dialoga solo con lui (ADR 0005).
+- **Sessioni cloud per gli sviluppatori, a scelta della persona.** Solo Claude (sessioni cloud di Claude Code) e Codex (Codex Cloud: `codex cloud exec`, `status`, `diff`, `apply`) hanno il cloud; gli altri provider lavorano in locale. In cloud vanno solo gli incarichi degli sviluppatori che scrivono codice in una fetta; il Coordinatore, i ruoli in sola lettura, le prove dal vivo e la verifica finale del candidato restano sul Mac. Un'impostazione del progetto sceglie il luogo di lavoro: Automatico (predefinita, il Coordinatore sceglie per tipo di lavoro e spiega perché nella scheda), Sempre in locale, Cloud quando possibile. La persona sposta un singolo incarico prima dell'avvio o a una ripresa.
+- **Il lavoro cloud torna come candidato ordinario.** Con Claude la sessione pusha il branch e apre la pull request, che diventa il candidato; con Codex il diff dell'attività si applica con `codex cloud apply` in un worktree locale, che diventa il candidato. Poi CI, verifiche di Trama sul Mac, revisori, "Aspetta te" per le modifiche all'interfaccia e unione. La scheda dell'incarico mostra link e stato della sessione; le istruzioni del Coordinatore alla sessione restano registrate nell'incarico.
+- **Il cloud non è mai obbligatorio.** Se non si può usare (progetto non su GitHub, modifiche non pushate, file necessari solo sul Mac, account al limite o non collegato, ambiente Codex Cloud non configurato) l'incarico gira in locale e la scheda dice perché e come abilitarlo. Le sessioni cloud continuano con Trama chiusa; alla riapertura il Coordinatore raccoglie i risultati, li verifica sul Mac e riprende il giro. Contano nei limiti delle squadre.
 
 Alternative scartate:
 
@@ -26,6 +29,8 @@ Alternative scartate:
 - **Squadre formate per ogni obiettivo.** Non accumulano memoria e pratiche e si ricompongono di continuo. Squadre stabili per area, con missioni per il lavoro trasversale, conservano la conoscenza dell'area.
 - **Chiamare "Gruppo" la missione.** Il nome è già della vista delle persone del repository (G02) e avrebbe confuso agenti e persone.
 - **Unire da solo anche i candidati di interfaccia.** Le verifiche automatiche non giudicano l'aspetto; la persona vuole vedere le schermate prima dell'unione.
+- **Tutto il lavoro in cloud, Coordinatore compreso.** Le verifiche di Trama, le prove dal vivo e le decisioni devono restare sul Mac, dove Trama conserva evidenze e mandato; in cloud va solo la scrittura del codice.
+- **Il cloud come unico luogo per Claude e Codex.** Legherebbe il lavoro a GitHub e all'account del provider; il locale resta sempre disponibile.
 
 Conseguenze:
 
@@ -34,3 +39,4 @@ Conseguenze:
 - L'ADR 0003 prevedeva già il merge delegato; ora il Coordinatore lo esegue davvero dentro il mandato, con l'eccezione dei candidati di interfaccia. Il via libera resta distinto dalla revisione umana.
 - Il consumo del provider cresce con il lavoro in parallelo. La persona lo controlla con la Pausa e con i limiti delle squadre nelle impostazioni.
 - Le fette di questa specifica dipendono da W07 (#144), W10 (#147) e C11 (#43), ancora in corso.
+- Un candidato può venire da una pull request aperta da una sessione cloud o da un diff applicato in locale: le verifiche di Trama sul Mac restano l'unica evidenza, e lo standard di pubblicazione vale anche per loro.
