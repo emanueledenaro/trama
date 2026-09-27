@@ -1147,7 +1147,38 @@ export interface ProjectSettings {
   parallelDevelopers?: number;
 }
 
-export type AuditStatus = "checking" | "reviewing" | "done" | "failed";
+/** "verifying": both axes ended and Trama rechecks the proof of each finding (F02). */
+export type AuditStatus = "checking" | "reviewing" | "verifying" | "done" | "failed";
+
+/** The proof a finding carries (F02, spec #124 step 4): a line of a file, a command that fails, or a reproduction. */
+export type FindingEvidence =
+  | { kind: "fileLine"; file: string; line: number; quote: string }
+  | { kind: "command"; command: string }
+  | { kind: "reproduction"; steps: string };
+
+/**
+ * "verified": Trama rechecked the proof itself and it holds. "confirmed": Trama could not run the proof and a
+ * stronger model confirmed the serious finding. "hypothesis": everything else, shown as such. "pending": not
+ * rechecked yet, never shown as verified.
+ */
+export type FindingStatus = "pending" | "verified" | "confirmed" | "hypothesis";
+
+/** One finding of an axis with its proof and how Trama verified it (F02). */
+export interface AuditFinding {
+  /** The axis and the position, as `standards-1`. */
+  id: string;
+  title: string;
+  severity: "serious" | "minor";
+  /** Null when the axis gave no proof: the finding stays a hypothesis. */
+  evidence: FindingEvidence | null;
+  status: FindingStatus;
+  /** Why the finding has its status, in Italian: what Trama checked, or what the second model said. */
+  basis: string | null;
+  /** What Trama read when it rechecked the proof: the quoted line, or the tail of a failed check. */
+  observed: string | null;
+  /** The stronger model's answer for a serious finding Trama could not recheck. */
+  confirmation: { model: string; confirmed: boolean; reason: string; at: string } | null;
+}
 
 /** One axis of AI Hero's code-review skill, run as a read-only session of its own (F01). */
 export interface AuditAxis {
@@ -1158,6 +1189,8 @@ export interface AuditAxis {
   findings: number | null;
   /** The worst finding within this axis, in one line; null when there is none. */
   worst: string | null;
+  /** Each finding with its proof and verification (F02); absent in reports written before it. */
+  items?: AuditFinding[];
   threadId: string | null;
   model: string | null;
   startedAt: string | null;
@@ -1167,7 +1200,8 @@ export interface AuditAxis {
 
 /**
  * Focus mode on one target (F01, spec #124): Trama runs the real checks in the sandbox, then the two axes of
- * code-review in parallel and read-only. The checks are evidence; the axes' findings are the model's judgement.
+ * code-review in parallel and read-only. The checks are evidence; the axes' findings are the model's judgement,
+ * each with a proof that Trama verifies (F02).
  */
 export interface FocusAudit {
   id: string;
