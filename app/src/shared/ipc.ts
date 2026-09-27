@@ -86,7 +86,8 @@ export interface ActionMap {
     },
     void,
   ];
-  "mandate:revoke": [{ reason: string; requestId: string | null }, void];
+  "mandate:revoke": [{ reason: string }, void];
+  "mandate:reject": [{ requestId: string; reason: string }, void];
   "team:answer": [{ proposalId: string; keeping: string[] | null; note: string | null }, void];
   "assignment:stop": [{ assignmentId: string }, void];
   "assignment:resume": [{ assignmentId: string }, void];
