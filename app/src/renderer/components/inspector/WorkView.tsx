@@ -11,6 +11,7 @@ const PLAN_STATUS: Record<WorkPlan["status"], { label: string; tone: "info" | "w
   ready: { label: "Da rivedere", tone: "info" },
   stale: { label: "Da rivalutare", tone: "warning" },
   failed: { label: "Non riuscito", tone: "destructive" },
+  superseded: { label: "Superato", tone: "secondary" },
 };
 const TITLES: Record<CandidateState, string> = { decided: "Deciso", building: "In costruzione", verified: "Verificato" };
 

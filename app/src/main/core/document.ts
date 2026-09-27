@@ -3,6 +3,7 @@ import type { ProviderId } from "@shared/codex";
 import type { ConversationEvent, EventContent, EventOrigin, ProjectDocument } from "@shared/domain";
 import { requestGoalId } from "@shared/goals";
 import { interruptAudits } from "./audit";
+import { migrateToSingleChat } from "./singleChat";
 import { completeTeam } from "./team";
 
 function assignmentGoalId(document: ProjectDocument, assignmentId: string): string | null {
@@ -46,8 +47,8 @@ export function emptyDocument(projectId: string): ProjectDocument {
 }
 
 /**
- * Fills fields added after a document was written, completes an older team with the fixed roles (W09) and marks
- * turns left running as interrupted.
+ * Fills fields added after a document was written, completes an older team with the fixed roles (W09), marks
+ * turns left running as interrupted and moves goal dialogs into the one chat (U01).
  */
 export function normalizeDocument(raw: Partial<ProjectDocument>, projectId: string): ProjectDocument {
   const base = emptyDocument(projectId);
@@ -85,6 +86,8 @@ export function normalizeDocument(raw: Partial<ProjectDocument>, projectId: stri
   }
   // Focus mode lost its sessions too (F01): the examination stays, marked as interrupted.
   interruptAudits(document);
+  // Goal dialogs written before the single chat become filters of the one chat (U01).
+  migrateToSingleChat(document);
   return document;
 }
 
@@ -98,7 +101,7 @@ export function appendEvent(
   goalId: string | null = null,
 ): ConversationEvent {
   document.lastSequence += 1;
-  // The dialog is fixed by the request or the assignment the event belongs to, never by what the UI shows (UX02).
+  // The goal is fixed by the request or the assignment the event belongs to, never by the chat's filter (UX02, U01).
   const dialog = goalId ?? requestGoalId(document, requestId) ?? (work ? assignmentGoalId(document, work.assignmentId) : null);
   const event: ConversationEvent = {
     id: randomUUID(),
