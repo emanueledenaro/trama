@@ -687,9 +687,12 @@ describe("TramaController", () => {
       await writeFile(quota, "");
       await controller!.send("Primo messaggio", null, null, null);
       expect(project.providerRetry).toMatchObject({ reason: "quotaExhausted" });
+      // The check of the account after the failure ends first, so it cannot mark the provider blocked again later.
+      await until(() => controller!.snapshot.providers.codex.account?.kind === "blocked");
       const { rm } = await import("node:fs/promises");
       await rm(quota);
       await controller!.refreshCodex();
+      await until(() => controller!.snapshot.providers.codex.account?.kind === "chatgpt" && controller!.snapshot.providers.codex.models.length > 0);
       await controller!.send("Lascia stare, parliamo d'altro", null, null, null);
       expect(project.providerRetry ?? null).toBeNull();
       // Waking the computer brings no cancelled wait back.
