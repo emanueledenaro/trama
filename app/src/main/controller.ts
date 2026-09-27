@@ -735,10 +735,12 @@ export class TramaController {
   }
 
   /**
-   * Esci during a Coordinator turn (C11): the turn ends here as interrupted, with its reason, before the runtime stops,
-   * and the messages still queued go back to the draft. The person resumes it explicitly after reopening.
+   * Esci during a Coordinator turn (C11): the Coordinator's runtime and its tools stop first, so nothing the turn does
+   * lands after it is closed; then the turn ends as interrupted, with its reason, and the messages still queued go back
+   * to the draft of their own dialog. The person resumes it explicitly after reopening.
    */
   private closeTurnForQuit(): void {
+    this.stopCoordinatorRuntime();
     const project = this.state.project;
     if (!project) return;
     const running = project.runningRequestId ? project.document.requests.find((r) => r.id === project.runningRequestId) : undefined;
@@ -750,11 +752,11 @@ export class TramaController {
       project.runningRequestId = null;
       project.streaming = null;
     }
-    const queued = this.queue.filter((q) => q.projectId === project.id);
-    if (queued.length) {
-      project.document.composerDraft = [project.document.composerDraft, ...queued.map((q) => q.text)].filter(Boolean).join("\n\n");
-      this.queue = this.queue.filter((q) => q.projectId !== project.id);
+    for (const item of this.queue.filter((q) => q.projectId === project.id)) {
+      const composer = dialogComposer(project.document, item.goalId);
+      composer.composerDraft = [composer.composerDraft, item.text].filter(Boolean).join("\n\n");
     }
+    this.queue = this.queue.filter((q) => q.projectId !== project.id);
   }
 
   // MARK: Publishing

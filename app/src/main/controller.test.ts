@@ -719,11 +719,14 @@ describe("TramaController", () => {
     await until(() =>
       document.events.some((e) => e.requestId === turnId && e.content.type === "activity" && e.content.title === "Messaggio inviato al Coordinatore"),
     );
+    const goalId = await controller!.createGoal({ title: "Annullamenti", outcome: "Gli ordini annullati tornano in revisione.", examples: [] });
     await controller!.send("Poi controlla i test", null, null, null);
+    await controller!.send("Per l'obiettivo: rileggi gli esempi", null, null, null, [], null, goalId);
     await controller!.stop();
     expect(document.requests.find((r) => r.id === turnId)).toMatchObject({ state: "interrupted", failure: QUIT_NOTE });
-    // A message still in the queue goes back to the draft instead of vanishing.
-    expect(document.composerDraft).toContain("Poi controlla i test");
+    // A message still in the queue goes back to the draft of its own dialog instead of vanishing.
+    expect(document.composerDraft).toBe("Poi controlla i test");
+    expect(findGoal(document, goalId)!.dialog.composerDraft).toBe("Per l'obiettivo: rileggi gli esempi");
 
     // After the restart the provider answers: the resumed turn can end.
     process.env.FAKE_CODEX_NO_WAIT = "1";
