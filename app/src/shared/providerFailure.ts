@@ -287,16 +287,44 @@ export function readableFailure(text: string | null, provider?: string | null): 
   return failureSummary(text, provider);
 }
 
-/** An automatic retry of a Coordinator turn after a temporary limit (P10), as the chat shows it. */
+/** The failures after which Trama waits and resumes the Coordinator's turn by itself while it stays open (P10, C11). */
+export type ProviderWaitReason = Extract<ProviderFailureKind, "temporaryLimit" | "quotaExhausted" | "unreachable">;
+
+/** The failure kinds Trama waits out: a temporary limit, a used up quota, a provider or network that does not answer. */
+export function waitReasonOf(kind: ProviderFailureKind): ProviderWaitReason | null {
+  return kind === "temporaryLimit" || kind === "quotaExhausted" || kind === "unreachable" ? kind : null;
+}
+
+/** An automatic retry of a Coordinator turn after a limit or an outage (P10, C11), as the chat shows it. */
 export interface ProviderRetryView {
   /** The failed request the retry repeats. */
   requestId: string;
   provider: string;
+  /** Why Trama waits: it changes the sentence and, for a quota, the account is checked before the turn. */
+  reason: ProviderWaitReason;
   /** 1 for the first retry. */
   attempt: number;
   maxAttempts: number;
-  /** When the retry starts, ISO. */
+  /** When the retry, or the check of the quota, starts, ISO. */
   at: string;
+}
+
+/** The sentence under a failure while Trama waits to resume the turn, from the seconds left. */
+export function providerWaitText(view: Pick<ProviderRetryView, "reason" | "attempt" | "maxAttempts">, seconds: number): string {
+  const wait = seconds >= 90 ? `${Math.round(seconds / 60)} minuti` : seconds === 1 ? "1 secondo" : `${seconds} secondi`;
+  if (view.reason === "quotaExhausted") {
+    return seconds > 0
+      ? `Trama controlla di nuovo la quota tra ${wait} e riprende il turno da sola appena si sblocca.`
+      : "Trama controlla di nuovo la quota ora.";
+  }
+  const attempt = `tentativo ${view.attempt} di ${view.maxAttempts}`;
+  return seconds > 0 ? `Trama riprova da sola tra ${wait}, ${attempt}.` : `Trama riprova ora, ${attempt}.`;
+}
+
+/** How long Trama waits before checking a used up quota again: until the reset when it is sooner than `checkMs`. */
+export function quotaCheckDelayMs(checkMs: number, until: string | null, now = Date.now()): number {
+  const reset = until ? Date.parse(until) - now : Number.NaN;
+  return Number.isFinite(reset) && reset > 0 && reset < checkMs ? reset + 1_000 : checkMs;
 }
 
 /** The wait before retry `attempt` (1-based): it doubles each time, from `baseMs`, and never ends before `until`. */

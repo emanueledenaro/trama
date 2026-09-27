@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // Minimal stand-in for `codex app-server --stdio`, used by tests and local UI checks only.
 import { createInterface } from "node:readline";
+import { existsSync } from "node:fs";
 
 if (process.argv[2] === "sandbox") {
   // No real sandbox here: run what follows "--" so the plumbing can be tested.
@@ -23,6 +24,10 @@ if (process.argv[2] === "mcp" && process.argv[3] === "list") {
 const account = process.env.FAKE_CODEX_ACCOUNT ?? "chatgpt";
 /** Turns answered with a temporary 429 so far; FAKE_CODEX_RATE_LIMITS says how many (default 1). */
 let rateLimitedTurns = 0;
+/** Turns that met a network outage so far; FAKE_CODEX_OUTAGES says how many (default 1). */
+let outageTurns = 0;
+/** While the file FAKE_CODEX_QUOTA_FILE exists, the ChatGPT quota is used up: turns fail and the rate limits say so (C11). */
+const quotaExhausted = () => Boolean(process.env.FAKE_CODEX_QUOTA_FILE && existsSync(process.env.FAKE_CODEX_QUOTA_FILE));
 const send = (message) => process.stdout.write(`${JSON.stringify(message)}\n`);
 let threads = 0;
 const toolServers = new Map();
@@ -105,7 +110,7 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
       return send({
         id,
         result: {
-          ordinaryUsageAllowed: process.env.FAKE_CODEX_LIMITS !== "exhausted",
+          ordinaryUsageAllowed: process.env.FAKE_CODEX_LIMITS !== "exhausted" && !quotaExhausted(),
           rateLimits: { limitId: "codex", primary: { usedPercent: 100, windowDurationMins: 43200, resetsAt: 1792820871 }, planType: process.env.FAKE_CODEX_LIMITS === "exhausted" ? "free" : "plus" },
         },
       });
@@ -147,6 +152,17 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
       const turnId = `turn-${++turns}`;
       const threadId = params.threadId;
       const text = params.input[0].text;
+      if (quotaExhausted() || (text.includes("[rete-assente]") && outageTurns < Number(process.env.FAKE_CODEX_OUTAGES ?? 1))) {
+        // The ChatGPT usage limit, or a network outage on the way to the provider (C11); both end the turn as failed.
+        const quota = quotaExhausted();
+        if (!quota) outageTurns += 1;
+        send({ id, result: { turn: { id: turnId } } });
+        const message = quota
+          ? "You've hit your usage limit. Upgrade to Pro (https://chatgpt.com/explore/pro), or try again later."
+          : "stream disconnected before completion: error sending request for url (https://chatgpt.com/backend-api/codex/responses): getaddrinfo ENOTFOUND chatgpt.com";
+        setTimeout(() => send({ method: "turn/completed", params: { threadId, turn: { id: turnId, status: "failed", error: { message } } } }), 20);
+        return;
+      }
       if (text.includes("[limite-temporaneo]") && rateLimitedTurns < Number(process.env.FAKE_CODEX_RATE_LIMITS ?? 1)) {
         // A provider that answers 429 with a shared upstream limit (P10), then is available again.
         rateLimitedTurns += 1;
@@ -166,8 +182,8 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
         );
         return;
       }
-      if (text.includes("[attesa]")) {
-        // Answers turn/start late and then keeps running until interrupted.
+      if (text.includes("[attesa]") && !process.env.FAKE_CODEX_NO_WAIT) {
+        // Answers turn/start late and then keeps running until interrupted; FAKE_CODEX_NO_WAIT answers it at once.
         setTimeout(() => send({ id, result: { turn: { id: turnId } } }), 150);
         return;
       }
