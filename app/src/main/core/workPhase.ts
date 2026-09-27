@@ -164,7 +164,10 @@ const superseded = (assignment: SpecialistAssignment, others: SpecialistAssignme
 const providerName = (id: string) => PROVIDERS.find((p) => p.id === id)?.name ?? id;
 
 /** Candidate blockers that new work must fix; missing or stale evidence only waits for a check. */
-const hardBlockers = (blockers: CandidateBlocker[]) => blockers.filter((b) => b.code !== "EVIDENCE_MISSING" && b.code !== "EVIDENCE_STALE");
+/** Blockers that wait for Trama or the reviewers, not for new work: a check to run, the candidate gate running or to run again. */
+const WAITING_BLOCKERS = ["EVIDENCE_MISSING", "EVIDENCE_STALE", "GATE_RUNNING", "GATE_FAILED"];
+
+const hardBlockers = (blockers: CandidateBlocker[]) => blockers.filter((b) => !WAITING_BLOCKERS.includes(b.code));
 
 /** Whose work an assignment is, in the person's words and without the article: "lavoro di Luca su S2". */
 function workOf(document: ProjectDocument, assignment: SpecialistAssignment): string {
@@ -199,6 +202,8 @@ function candidateBlockerText(candidate: Candidate, blocker: CandidateBlocker): 
       return `La verifica ${blocker.detail} del candidato ${candidate.id} non è passata.`;
     case "DECISION_CHANGED":
       return `La decisione ${blocker.detail} è cambiata dopo il candidato ${candidate.id}.`;
+    case "GATE_BLOCKED":
+      return `I revisori hanno un rilievo bloccante sul candidato ${candidate.id}: ${blocker.detail}`;
     case "UNRESOLVED_CHOICE":
       return `Il candidato ${candidate.id} lascia aperta una scelta: ${blocker.detail}`;
     case "EXTERNAL_EFFECT_UNSUPPORTED":
@@ -388,12 +393,16 @@ function assignedWork(
       return { phase: "blocked", blocker: `L'incarico ${assignment.id} ${reason}`, why: `Il ${workOf(document, assignment)} ${outcome}.` };
     }
     if (!candidate) continue;
+    // Work that resumed after its candidate, as with the gate's findings (W10), is at work: its old candidate waits.
+    if (isActive(assignment)) continue;
     const blocker = hardBlockers(inspectCandidate(document, candidate, null))[0];
     if (blocker) {
       moves.assignWork();
       return { phase: "blocked", blocker: candidateBlockerText(candidate, blocker), why: candidateBlockerWhy(workOf(document, assignment), blocker) };
     }
-    if (candidate.technicalReview?.verdict === "changesRequested") {
+    // A gate that failed asks for the review again, not for new work.
+    const gateFailed = inspectCandidate(document, candidate, null).some((b) => b.code === "GATE_FAILED");
+    if (candidate.technicalReview?.verdict === "changesRequested" && !gateFailed) {
       moves.assignWork();
       return {
         phase: "blocked",
