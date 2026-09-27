@@ -1,5 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { classifyProviderFailure, containsJson, failureSummary, parseResetTime, readableFailure, retryDelayMs } from "./providerFailure";
+import {
+  classifyProviderFailure,
+  containsJson,
+  failureSummary,
+  parseResetTime,
+  providerWaitText,
+  quotaCheckDelayMs,
+  readableFailure,
+  retryDelayMs,
+  waitReasonOf,
+} from "./providerFailure";
 
 const now = new Date("2026-09-26T10:00:00.000Z");
 
@@ -138,5 +148,31 @@ describe("retries", () => {
     expect(parseResetTime("try again in 2 hours", now)).toBe("2026-09-26T12:00:00.000Z");
     expect(parseResetTime('{"retry_after": 30}', now)).toBe("2026-09-26T10:00:30.000Z");
     expect(parseResetTime("network error", now)).toBeNull();
+  });
+});
+
+describe("waiting to resume a turn (C11)", () => {
+  it("waits out limits, used up quotas and outages, never access or model failures", () => {
+    const kinds = ["temporaryLimit", "quotaExhausted", "unreachable", "signIn", "modelUnavailable", "unknown"] as const;
+    expect(kinds.map(waitReasonOf)).toEqual(["temporaryLimit", "quotaExhausted", "unreachable", null, null, null]);
+    expect(classifyProviderFailure("getaddrinfo ENOTFOUND chatgpt.com").kind).toBe("unreachable");
+    expect(classifyProviderFailure("You've hit your usage limit. Upgrade to Pro, or try again later.").kind).toBe("quotaExhausted");
+  });
+
+  it("checks a used up quota at its reset when sooner, otherwise at the regular check", () => {
+    expect(quotaCheckDelayMs(900_000, null, now.getTime())).toBe(900_000);
+    expect(quotaCheckDelayMs(900_000, "2026-09-26T10:05:00.000Z", now.getTime())).toBe(301_000);
+    expect(quotaCheckDelayMs(900_000, "2026-10-26T10:00:00.000Z", now.getTime())).toBe(900_000);
+    expect(quotaCheckDelayMs(900_000, "2026-09-26T09:00:00.000Z", now.getTime())).toBe(900_000);
+  });
+
+  it("says what Trama waits for", () => {
+    const retry = { attempt: 2, maxAttempts: 5 };
+    expect(providerWaitText({ ...retry, reason: "unreachable" }, 45)).toBe("Trama riprova da sola tra 45 secondi, tentativo 2 di 5.");
+    expect(providerWaitText({ ...retry, reason: "temporaryLimit" }, 0)).toBe("Trama riprova ora, tentativo 2 di 5.");
+    expect(providerWaitText({ ...retry, reason: "quotaExhausted" }, 900)).toBe(
+      "Trama controlla di nuovo la quota tra 15 minuti e riprende il turno da sola appena si sblocca.",
+    );
+    expect(providerWaitText({ ...retry, reason: "quotaExhausted" }, 0)).toBe("Trama controlla di nuovo la quota ora.");
   });
 });
