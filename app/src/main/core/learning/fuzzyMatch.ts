@@ -1,6 +1,5 @@
 /**
- * Fuzzy find-and-replace for edits an agent writes, ported from Hermes Agent `tools/fuzzy_match.py`
- * (revision 58c896e, MIT, Copyright (c) 2025 Nous Research). An ordered chain of increasingly
+ * Fuzzy find-and-replace for edits an agent writes. Derived from third-party MIT code; see THIRD_PARTY_NOTICES.md. An ordered chain of increasingly
  * permissive strategies lets whitespace, indentation, escaping and Unicode drift still land on the
  * intended region; the two similarity strategies never apply to more than one match.
  */
