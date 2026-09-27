@@ -9,7 +9,16 @@ import { shortId } from "@shared/ids";
 import { mentionContextBlock } from "@shared/mentions";
 import { codexSkillText, type LoadedSkill, skillInvocations } from "@shared/skills";
 import { isUnsupportedModelError } from "@shared/timeline";
-import { classifyProviderFailure, containsJson, failureSummary, type ProviderRetryView, retryDelayMs } from "@shared/providerFailure";
+import {
+  classifyProviderFailure,
+  containsJson,
+  failureSummary,
+  type ProviderRetryView,
+  type ProviderWaitReason,
+  quotaCheckDelayMs,
+  retryDelayMs,
+  waitReasonOf,
+} from "@shared/providerFailure";
 import type { ImageAttachmentInput } from "@shared/ipc";
 import type {
   ActiveProjectState,
@@ -89,7 +98,7 @@ import {
 } from "./core/cleanCode";
 import { openingInput, resumeInput, specialistInstructions } from "./core/specialistBriefing";
 import { prepareDemoProject } from "./core/demoProject";
-import { appendEvent, emptyDocument, handoverTranscript, moveEvent, recordReply, referencedPaths } from "./core/document";
+import { appendEvent, emptyDocument, handoverTranscript, moveEvent, QUIT_NOTE, recordReply, referencedPaths } from "./core/document";
 import { candidateGoalId, dialogComposer, findGoal, projectGoals, requestGoalId } from "@shared/goals";
 import { focusTask, focusText, focusView, pauseTask, resumeTask } from "./core/focus";
 import { COORDINATOR_MOVES, type CoordinatorMove, nextStepViews, PHASE_LABELS, workState, workStateText } from "./core/workPhase";
@@ -331,8 +340,22 @@ const providerRetryBaseMs = (): number => {
   const configured = Number(process.env.TRAMA_PROVIDER_RETRY_MS);
   return Number.isFinite(configured) && configured > 0 ? configured : 30_000;
 };
+/**
+ * How often Trama checks a used up quota again while it waits to resume a turn (C11), 15 minutes by default; the reset
+ * time comes first when sooner. TRAMA_PROVIDER_CHECK_MS shortens it for the UI check.
+ */
+const providerCheckMs = (): number => {
+  const configured = Number(process.env.TRAMA_PROVIDER_CHECK_MS);
+  return Number.isFinite(configured) && configured > 0 ? configured : providerRetryBaseMs() * 30;
+};
 /** Why a Coordinator turn ended when the person opened or closed another project during it (C02). */
 const LEFT_PROJECT_NOTE = "Hai lasciato il progetto mentre il Coordinatore rispondeva.";
+/**
+ * What a repeated turn is told (C11): the attempt before may have done part of its work before it ended, so its
+ * outcome is uncertain and is reconciled before any action with effects is repeated.
+ */
+const RESUMED_TURN =
+  "## Resumed turn\nThis message was sent before and its turn ended early. Part of that work may already be done: before repeating any action with effects (proposals, assignments, plans, decisions, cards, file changes), check the conversation and the project state, and do not repeat what is already there.";
 
 /**
  * Coordinator rules added after threads were opened (writing, next step, grilling, domain modeling): a resumed thread
@@ -415,6 +438,24 @@ export function providerUnavailableReason(id: ProviderId, account: ProviderAccou
     }
     default:
       return `Stato di ${name} non ancora verificato.`;
+  }
+}
+
+/** Trama's line in the chat when a turn is repeated (P10, C11): the message is already above it. */
+function retryLine(retry: { of: CoordinatorRequest; attempt: number; reason?: ProviderWaitReason }, provider: string): { title: string; detail: string } {
+  if (retry.attempt === 0) {
+    return retry.of.state === "interrupted"
+      ? { title: "Turno ripreso", detail: "Trama riprende il messaggio del turno interrotto. Il Coordinatore controlla prima cosa era già stato fatto." }
+      : { title: "Nuovo tentativo", detail: "Trama riprova il messaggio del turno non riuscito." };
+  }
+  const title = `Nuovo tentativo automatico (${retry.attempt} di ${PROVIDER_RETRY_ATTEMPTS})`;
+  switch (retry.reason) {
+    case "quotaExhausted":
+      return { title, detail: `La quota di ${provider} è di nuovo disponibile: Trama riprende il messaggio.` };
+    case "unreachable":
+      return { title, detail: `Dopo l'interruzione di ${provider} o della rete, Trama riprova il messaggio.` };
+    default:
+      return { title, detail: `Dopo il limite temporaneo di ${provider}, Trama riprova il messaggio.` };
   }
 }
 
@@ -703,6 +744,7 @@ export class TramaController {
 
   async stop(): Promise<void> {
     this.quitting = true;
+    this.closeTurnForQuit();
     this.cancelProviderRetry(null);
     for (const [, planner] of this.planners) planner.stop();
     this.planners.clear();
@@ -728,6 +770,31 @@ export class TramaController {
     this.discovery.stop();
     for (const [, runtime] of this.providerDiscovery) runtime.stop();
     this.providerDiscovery.clear();
+  }
+
+  /**
+   * Esci during a Coordinator turn (C11): the Coordinator's runtime and its tools stop first, so nothing the turn does
+   * lands after it is closed; then the turn ends as interrupted, with its reason, and the messages still queued go back
+   * to the draft of their own dialog. The person resumes it explicitly after reopening.
+   */
+  private closeTurnForQuit(): void {
+    this.stopCoordinatorRuntime();
+    const project = this.state.project;
+    if (!project) return;
+    const running = project.runningRequestId ? project.document.requests.find((r) => r.id === project.runningRequestId) : undefined;
+    if (running?.state === "running") {
+      running.state = "interrupted";
+      running.completedAt = new Date().toISOString();
+      running.failure = QUIT_NOTE;
+      appendEvent(project.document, "trama", { type: "activity", title: "Turno interrotto", detail: QUIT_NOTE, tone: "info" }, running.id);
+      project.runningRequestId = null;
+      project.streaming = null;
+    }
+    for (const item of this.queue.filter((q) => q.projectId === project.id)) {
+      const composer = dialogComposer(project.document, item.goalId);
+      composer.composerDraft = [composer.composerDraft, item.text].filter(Boolean).join("\n\n");
+    }
+    this.queue = this.queue.filter((q) => q.projectId !== project.id);
   }
 
   // MARK: Publishing
@@ -2049,7 +2116,7 @@ export class TramaController {
     /** The next step the message takes: the person's button, or Trama starting the Coordinator's move (W04). */
     step: RequestStep | null = null,
     /** The failed request this one repeats (P10): the chat does not show the message a second time. */
-    retry: { of: CoordinatorRequest; attempt: number } | null = null,
+    retry: { of: CoordinatorRequest; attempt: number; reason?: ProviderWaitReason } | null = null,
     /** Bundled skills without a Trama flow that a started Ask Trama route runs, delivered with their original text (M07). */
     routeSkills: string[] = [],
   ): Promise<void> {
@@ -2113,17 +2180,7 @@ export class TramaController {
     const automatic = step?.by === "trama" ? (step.move as CoordinatorMove) : null;
     if (retry) {
       // The message is already in the chat, above the failure: the retry is a line of Trama's (P10).
-      appendEvent(
-        document,
-        "trama",
-        {
-          type: "activity",
-          title: retry.attempt > 0 ? `Nuovo tentativo automatico (${retry.attempt} di ${PROVIDER_RETRY_ATTEMPTS})` : "Nuovo tentativo",
-          detail: retry.attempt > 0 ? `Dopo il limite temporaneo di ${providerName(activeProvider)}, Trama riprova il messaggio.` : "Trama riprova il messaggio del turno non riuscito.",
-          tone: "info",
-        },
-        request.id,
-      );
+      appendEvent(document, "trama", { type: "activity", ...retryLine(retry, providerName(activeProvider)), tone: "info" }, request.id);
     } else if (automatic) {
       // A move Trama started by itself is not the person's message: the chat shows it as its own line, with a stop (W04).
       appendEvent(
@@ -2224,6 +2281,7 @@ export class TramaController {
         : null;
       if (routed) sections.push(routed.text);
       sections.push(codexSkillText(trimmed, project.skills));
+      if (retry) sections.push(RESUMED_TURN);
       appendEvent(
         document,
         "trama",
@@ -2311,8 +2369,9 @@ export class TramaController {
         request.id,
       );
       if (selectedModel && isUnsupportedModelError(message)) this.markModelUnsupported(activeProvider, selectedModel);
-      // A temporary limit passes by itself: Trama retries with a growing wait, and the person can stop it (P10).
-      if (failure?.kind === "temporaryLimit") this.scheduleProviderRetry(project, request, failure.until);
+      // A limit, a used up quota or an outage passes: Trama waits and resumes the turn, and the person can stop it (P10, C11).
+      const waitReason = failure ? waitReasonOf(failure.kind) : null;
+      if (failure && waitReason) this.scheduleProviderRetry(project, request, waitReason, failure.until);
       const code = errorCode(error);
       if (code === "rpcError" && /thread|rollout|session/i.test(message)) {
         document.coordinator.threadId = null;
@@ -2332,18 +2391,26 @@ export class TramaController {
     }
   }
 
-  // MARK: Retries after a temporary provider limit (P10)
+  // MARK: Waiting to resume a turn after a limit or an outage (P10, C11)
 
   private providerRetryTimer: { projectId: string; timer: NodeJS.Timeout } | null = null;
 
-  /** Schedules the next automatic retry of `request`, with a doubling wait, up to PROVIDER_RETRY_ATTEMPTS. */
-  private scheduleProviderRetry(project: ActiveProjectState, request: CoordinatorRequest, until: string | null): void {
+  /**
+   * Schedules the next automatic retry of `request` while Trama stays open, one timer at a time so there is never a
+   * burst of retries. A temporary limit or an outage waits longer at each attempt; a used up quota waits for its reset,
+   * checking the account meanwhile, and the turn starts again only once the provider can work.
+   */
+  private scheduleProviderRetry(project: ActiveProjectState, request: CoordinatorRequest, reason: ProviderWaitReason, until: string | null): void {
     const attempt = (request.retry?.attempt ?? 0) + 1;
     this.cancelProviderRetry(project);
     if (this.quitting || attempt > PROVIDER_RETRY_ATTEMPTS) return;
     const provider = request.provider ?? this.coordinatorProvider(project.document);
-    const delay = retryDelayMs(attempt, providerRetryBaseMs(), until);
-    const view: ProviderRetryView = { requestId: request.id, provider: providerName(provider), attempt, maxAttempts: PROVIDER_RETRY_ATTEMPTS, at: new Date(Date.now() + delay).toISOString() };
+    const delay = reason === "quotaExhausted" ? quotaCheckDelayMs(providerCheckMs(), until) : retryDelayMs(attempt, providerRetryBaseMs(), until);
+    this.armProviderRetry(project, { requestId: request.id, provider: providerName(provider), reason, attempt, maxAttempts: PROVIDER_RETRY_ATTEMPTS, at: "" }, delay);
+  }
+
+  private armProviderRetry(project: ActiveProjectState, base: ProviderRetryView, delay: number): void {
+    const view: ProviderRetryView = { ...base, at: new Date(Date.now() + delay).toISOString() };
     project.providerRetry = view;
     const timer = setTimeout(() => {
       if (this.providerRetryTimer?.timer === timer) this.providerRetryTimer = null;
@@ -2363,19 +2430,55 @@ export class TramaController {
 
   private async fireProviderRetry(project: ActiveProjectState, view: ProviderRetryView): Promise<void> {
     if (project.providerRetry !== view) return;
-    project.providerRetry = null;
     // The person left the project, or another turn or message came first: the retry no longer applies.
-    if (this.quitting || this.state.project !== project || project.runningRequestId || this.queue.some((q) => q.projectId === project.id)) {
+    const stale = () =>
+      this.quitting ||
+      this.state.project !== project ||
+      project.runningRequestId !== null ||
+      this.queue.some((q) => q.projectId === project.id) ||
+      project.document.requests.at(-1)?.id !== view.requestId;
+    const failed = project.document.requests.find((r) => r.id === view.requestId);
+    if (stale() || failed?.state !== "failed") {
+      project.providerRetry = null;
       this.changed();
       return;
     }
-    const failed = project.document.requests.find((r) => r.id === view.requestId);
-    if (failed?.state !== "failed") return;
+    if (view.reason === "quotaExhausted") {
+      // The account says whether the quota came back: until then no turn starts, only another check later (C11).
+      const provider = failed.provider ?? this.coordinatorProvider(project.document);
+      await this.refreshProvider(provider);
+      if (project.providerRetry !== view) return;
+      if (stale()) {
+        project.providerRetry = null;
+        this.changed();
+        return;
+      }
+      const account = this.state.providers[provider]?.account ?? null;
+      if (providerUnavailableReason(provider, account) !== null) {
+        this.armProviderRetry(project, view, quotaCheckDelayMs(providerCheckMs(), account?.kind === "blocked" ? account.until : null));
+        this.publish();
+        return;
+      }
+    }
+    project.providerRetry = null;
     // The dialog's model now, so a model the person picked after the failure is the one retried.
     await this.send(failed.text, failed.moduleId, null, failed.effort, [], null, failed.goalId ?? null, false, failed.step ?? null, {
       of: failed,
       attempt: view.attempt,
+      reason: view.reason,
     });
+  }
+
+  /** After the computer wakes up, a turn waiting for the network or a quota is checked soon instead of at its old time (C11). */
+  resumeAfterSleep(): void {
+    const project = this.state.project;
+    const view = project?.providerRetry;
+    if (!project || !view || this.quitting || view.reason === "temporaryLimit") return;
+    const soon = 5_000;
+    if (Date.parse(view.at) - Date.now() <= soon) return;
+    this.cancelProviderRetry(project);
+    this.armProviderRetry(project, view, soon);
+    this.publish();
   }
 
   /** The person repeats a failed turn (Riprova): same message, model and step, without writing it again (P10). */
@@ -2391,9 +2494,13 @@ export class TramaController {
   stopProviderRetry(): void {
     const project = this.state.project;
     if (!project?.providerRetry) return;
-    const { requestId, provider } = project.providerRetry;
+    const { requestId, provider, reason } = project.providerRetry;
     this.cancelProviderRetry(project);
-    appendEvent(project.document, "trama", { type: "activity", title: "Tentativi automatici fermati", detail: `Hai fermato i tentativi con ${provider}.`, tone: "info" }, requestId);
+    const line =
+      reason === "quotaExhausted"
+        ? { title: "Attesa della quota fermata", detail: `Trama non aspetta più la quota di ${provider}: il turno riparte solo su tua richiesta.` }
+        : { title: "Tentativi automatici fermati", detail: `Hai fermato i tentativi con ${provider}.` };
+    appendEvent(project.document, "trama", { type: "activity", ...line, tone: "info" }, requestId);
     this.changed();
   }
 
