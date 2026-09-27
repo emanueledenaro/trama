@@ -3,12 +3,13 @@ import { type MandateAction, pendingMandateRequest } from "@shared/domain";
 import { MandateCard } from "@/components/chat/Cards";
 import { Button } from "@/components/ui/button";
 import { Badge, Label, TextArea } from "@/components/ui/field";
-import { cn } from "@/lib/cn";
 import { formatDate } from "@/lib/format";
 import { ACTION_LABELS, DELEGABLE_ACTIONS } from "@/lib/labels";
 import { act, useUi } from "@/lib/store";
 import { EmptyNote, InspectorSection } from "./Inspector";
 import { Sep } from "@/components/ui/sep";
+import { AgentName } from "@/components/AgentIdentity";
+import { workStoppedBy } from "@shared/mandate";
 
 const lines = (text: string) => text.split("\n").map((l) => l.trim()).filter(Boolean);
 
@@ -24,6 +25,9 @@ export function MandateView() {
   const [actions, setActions] = useState<MandateAction[]>(["plan"]);
   const [revocation, setRevocation] = useState("");
   const [editing, setEditing] = useState(false);
+  // Revoking asks for a reason and shows what stops before it takes effect.
+  const [revoking, setRevoking] = useState(false);
+  const stopping = revoking ? workStoppedBy(project.document, null) : [];
 
   useEffect(() => {
     setObjectives(source?.objectives.join("\n") ?? "");
@@ -64,8 +68,22 @@ export function MandateView() {
         ) : (
           <div className="space-y-1.5 text-ui text-foreground/90">
             <p>Concesso il {formatDate(mandate.grantedAt)}.</p>
-            <p className="text-ui-sm text-muted-foreground">Obiettivi: {mandate.objectives.join(", ")}</p>
-            <p className="text-ui-sm text-muted-foreground">Azioni: {mandate.authorizedActions.map((a) => ACTION_LABELS[a]).join(", ")}</p>
+            <div className="text-ui-sm text-muted-foreground">
+              Obiettivi
+              <ul className="list-disc pl-4 text-foreground/90">
+                {mandate.objectives.map((o) => (
+                  <li key={o}>{o}</li>
+                ))}
+              </ul>
+            </div>
+            <div className="text-ui-sm text-muted-foreground">
+              Azioni
+              <ul className="list-disc pl-4 text-foreground/90">
+                {mandate.authorizedActions.map((a) => (
+                  <li key={a}>{ACTION_LABELS[a]}</li>
+                ))}
+              </ul>
+            </div>
           </div>
         )}
       </InspectorSection>
@@ -141,16 +159,60 @@ export function MandateView() {
       </InspectorSection>
       {mandate?.status === "granted" ? (
         <InspectorSection title="Revoca">
-          <TextArea value={revocation} onChange={(e) => setRevocation(e.target.value)} placeholder="Motivo della revoca" className="min-h-12" />
-          <Button
-            size="sm"
-            variant="destructive"
-            className={cn("mt-2")}
-            disabled={!revocation.trim()}
-            onClick={() => void act("mandate:revoke", { reason: revocation.trim(), requestId: null }).then(() => setRevocation(""))}
-          >
-            Revoca mandato
-          </Button>
+          {revoking ? (
+            <div className="space-y-2" data-testid="mandate-revoke-confirm">
+              <TextArea
+                value={revocation}
+                onChange={(e) => setRevocation(e.target.value)}
+                placeholder="Perché lo revochi? Il Coordinatore legge il motivo."
+                aria-label="Motivo della revoca"
+                className="min-h-12"
+                autoFocus
+              />
+              <p className="text-ui-sm text-muted-foreground">
+                Senza mandato il Coordinatore legge e propone, ma non agisce.
+                {stopping.length ? " Si fermano questi lavori:" : " Nessun lavoro in corso si ferma."}
+              </p>
+              {stopping.length ? (
+                <ul className="list-disc space-y-0.5 pl-4 text-ui-sm text-foreground/90">
+                  {stopping.map(({ specialist, assignment }) => (
+                    <li key={assignment.id} className="break-words">
+                      <AgentName agent={specialist} />
+                      <Sep />
+                      {assignment.objective}
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+              <div className="cta-row">
+                <Button size="sm" variant="ghost" onClick={() => setRevoking(false)}>
+                  Annulla
+                </Button>
+                <Button
+                  size="sm"
+                  variant="destructive"
+                  disabled={!revocation.trim()}
+                  onClick={() =>
+                    void act("mandate:revoke", { reason: revocation.trim() }).then(() => {
+                      setRevocation("");
+                      setRevoking(false);
+                    })
+                  }
+                >
+                  Revoca il mandato
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <EmptyNote>La revoca toglie il mandato in vigore e ferma il lavoro che copre. Una proposta del Coordinatore si rifiuta dalla sua scheda.</EmptyNote>
+              <div className="cta-row">
+                <Button size="sm" variant="outline" onClick={() => setRevoking(true)}>
+                  Revoca il mandato
+                </Button>
+              </div>
+            </div>
+          )}
         </InspectorSection>
       ) : null}
       {mandate && mandate.history.length ? (

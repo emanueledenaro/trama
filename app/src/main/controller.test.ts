@@ -808,9 +808,37 @@ describe("TramaController", () => {
     expect(second!.resolution).toMatchObject({ kind: "granted", version: 1 });
 
     // Declining the superseded card later must not revoke the mandate granted from the newer one.
-    await expect(controller!.revokeMandate("vecchia", first!.id)).rejects.toThrow(/superata/);
+    await expect(controller!.rejectMandateRequest(first!.id, "vecchia")).rejects.toThrow(/superata/);
     expect(document.mandate?.status).toBe("granted");
     expect(first!.resolution?.kind).toBe("superseded");
+  });
+
+  it("rejects a mandate proposal without touching the mandate in force (U03)", async () => {
+    await setup();
+    const document = controller!.snapshot.project!.document;
+    await controller!.grantMandate({
+      requestId: null,
+      objectives: ["o"],
+      priorities: [],
+      scopeModuleIds: ["Sources/Orders"],
+      authorizedActions: ["plan", "executeInWorktree"],
+      limits: [],
+    });
+    await controller!.send("[chiedi-mandato:Solo piani]", null, null, null);
+    const request = document.mandateRequests.at(-1)!;
+    await expect(controller!.rejectMandateRequest(request.id, "  ")).rejects.toThrow(/perché/);
+    expect(request.resolution).toBeNull();
+
+    await controller!.rejectMandateRequest(request.id, "Serve ancora il worktree");
+    expect(document.mandate).toMatchObject({ status: "granted", version: 1, authorizedActions: ["plan", "executeInWorktree"] });
+    expect(request.resolution).toMatchObject({ kind: "rejected", version: null });
+    const told = document.events.filter((e) => e.content.type === "personMessage").at(-1)!.content;
+    expect(told).toMatchObject({ text: expect.stringContaining("resta la versione 1") });
+    await expect(controller!.rejectMandateRequest(request.id, "di nuovo")).rejects.toThrow(/già una risposta/);
+
+    // Revoking is a separate act on the mandate in force.
+    await controller!.revokeMandate("Pausa");
+    expect(document.mandate?.status).toBe("revoked");
   });
 
   it("refuses prepare_plan without a mandate and runs it within one", async () => {
