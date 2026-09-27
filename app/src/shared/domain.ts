@@ -143,6 +143,33 @@ export interface FocusView {
   queue: FocusTask[];
 }
 
+/** A button of the status line: the move that takes the work on, and the request and dialog it acts on. */
+export interface StatusLineAction extends NextStepView {
+  /** The request whose declared step the button takes; null when the move was not declared, so the button opens its card. */
+  requestId: string | null;
+  goalId: string | null;
+}
+
+/**
+ * The Coordinator's status line (Q6): what it does now and what comes next, as in "Sto verificando S2, poi assegno S3".
+ * Trama computes it from the records (the move that runs, the next move, the ready slices), never from a model's text.
+ */
+export interface StatusLineView {
+  /**
+   * working: something runs; next: nothing runs and the next move is the Coordinator's own; waiting: the work waits for
+   * the person; blocked: the work is held; idle: nothing is going on.
+   */
+  state: "working" | "next" | "waiting" | "blocked" | "idle";
+  /** The line itself, in the first person; "Niente in corso." when nothing is going on. */
+  text: string;
+  /** Why the work is held and what unblocks it, in the person's words; null while it goes on. */
+  reason: string | null;
+  /** The person's move, the line's primary button; null when none. */
+  action: StatusLineAction | null;
+  /** The automatic move that runs now, which the line's stop button stops; null when none. */
+  runningMove: { requestId: string; label: string } | null;
+}
+
 /** A move that takes the work on: the first nine are the person's, the last four the Coordinator's (W01, W06). */
 export type NextMove =
   | "answerQuestions"
@@ -1325,6 +1352,8 @@ export interface ActiveProjectState {
   sliceViews?: Record<string, SliceView[]>;
   /** The task in focus and the queue, computed by the main process (W02). */
   focus: FocusView;
+  /** The Coordinator's status line (Q6), computed by the main process; absent before the first computation. */
+  statusLine?: StatusLineView | null;
   /** The AI Hero skills Trama copies are present in the project. */
   aiHeroPrepared?: boolean;
   /** Who works on what (G01), computed by the main process; absent until the first reading and in the example project. */

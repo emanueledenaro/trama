@@ -9,7 +9,6 @@ import {
   IconFileText,
   IconInfoCircle,
   IconPlayerStop,
-  IconPlayerTrackNext,
   IconShieldLock,
   IconTerminal2,
   IconTool,
@@ -23,6 +22,7 @@ import { extractPastes, pasteSizeLabel, pasteTitle } from "@shared/pastedText";
 import { formatDuration, type TimelineRow, turnFailureText } from "@shared/timeline";
 import { cn } from "@/lib/cn";
 import { formatTime } from "@/lib/format";
+import { runNextStep } from "@/lib/nextStep";
 import { act, useUi } from "@/lib/store";
 import { Button } from "@/components/ui/button";
 import { AgentName } from "@/components/AgentIdentity";
@@ -191,73 +191,14 @@ function WorkGroup({ row }: { row: Extract<TimelineRow, { kind: "work" }> }) {
   );
 }
 
-/** Brings the card of a record into view; false when this dialog does not show it. */
-function revealCard(id: string): boolean {
-  const card = document.querySelector(`[data-anchors~="${CSS.escape(id)}"]`);
-  card?.scrollIntoView({ behavior: "smooth", block: "start" });
-  return card !== null;
-}
-
 /** The one next step the Coordinator declared, while the work still allows it (W01): one button on the right. */
 function NextStepRow({ step, requestId }: { step: NextStepView; requestId: string }) {
-  const setInspector = useUi((s) => s.setInspector);
-  const run = () => {
-    if (step.url) return void act("shell:openExternal", { url: step.url });
-    // A step that is a message: Trama sends it and records that the person took it (W04).
-    if (step.message) return void act("coordinator:takeStep", { requestId });
-    if (step.move === "reviewCandidate" && step.targetId) return setInspector({ kind: "candidate", id: step.targetId });
-    if (step.targetId && revealCard(step.targetId)) return;
-    // A card this dialog does not show still has a panel that lists it: the step never does nothing (W12).
-    if (step.move === "grantMandate") setInspector({ kind: "mandate" });
-    else if (step.move === "confirmTeam") setInspector({ kind: "team" });
-    else if (step.move === "answerQuestions") setInspector({ kind: "pact" });
-    // Seams, slices and plan review act on the plan card (M04, M05): the work panel lists the plans.
-    else if (step.move === "reviewPlan" || step.move === "confirmSeams" || step.move === "confirmSlices") setInspector({ kind: "work" });
-  };
   return (
     <div className="cta-row mt-2" data-testid="next-step">
       {step.reason ? <span className="min-w-0 text-ui-xs text-muted-foreground">{step.reason}</span> : null}
-      <Button size="sm" onClick={run}>
+      <Button size="sm" onClick={() => runNextStep(step, requestId)}>
         {step.label}
       </Button>
-    </div>
-  );
-}
-
-/**
- * A move of the Coordinator that Trama started by itself within the mandate (W04): one line, and a stop on the right while
- * it runs. A move the turn did not make says so, with Trama's reason (issue #204); its button sits under the reply, or here
- * when the Coordinator wrote none.
- */
-function AutomaticStepRow({ label, requestId }: { label: string; requestId: string | null }) {
-  const running = useUi((s) => requestId !== null && s.app?.project?.runningRequestId === requestId);
-  const stalled = useUi((s) => (requestId ? (s.app?.project?.document.requests.find((r) => r.id === requestId)?.step?.stalled ?? null) : null));
-  const replied = useUi(
-    (s) => requestId !== null && Boolean(s.app?.project?.document.events.some((e) => e.requestId === requestId && e.content.type === "coordinatorText")),
-  );
-  const nextStep = useUi((s) => (requestId ? s.app?.project?.nextSteps[requestId] : undefined) ?? null);
-  return (
-    <div className="mb-3" data-testid="automatic-step" data-stalled={stalled && !running ? "true" : undefined}>
-      <div className="cta-row text-chat">
-        <span className="mr-auto inline-flex min-w-0 items-center gap-1.5 text-muted-foreground">
-          {stalled && !running ? (
-            <IconAlertTriangle className="size-3.5 shrink-0 text-warning" stroke={1.8} />
-          ) : (
-            <IconPlayerTrackNext className="size-3.5 shrink-0" stroke={1.8} />
-          )}
-          <span className="min-w-0">
-            {running ? "Il Coordinatore va avanti da solo" : stalled ? "Mossa automatica non riuscita" : "Mossa automatica"}
-            <Sep />
-            <span className="text-foreground">{label}</span>
-          </span>
-        </span>
-        {running ? (
-          <Button size="xs" variant="outline" onClick={() => void act("coordinator:interrupt", undefined)}>
-            Ferma
-          </Button>
-        ) : null}
-      </div>
-      {stalled && !running && !replied && nextStep && requestId ? <NextStepRow step={nextStep} requestId={requestId} /> : null}
     </div>
   );
 }
@@ -482,7 +423,6 @@ export function TimelineRowView({ row, streaming = false, latest = false }: { ro
       if (row.cardKind === "route" && content.referenceId) return <RouteCard routeId={content.referenceId} />;
       if (row.cardKind === "overlap" && content.referenceId) return <OverlapCard overlapId={content.referenceId} title={content.title} detail={content.detail} />;
       if (row.cardKind === "presenceConsent" && content.referenceId) return <PresenceConsentCard proposal={content.referenceId} detail={content.detail} />;
-      if (row.cardKind === "automaticStep") return <AutomaticStepRow label={content.title} requestId={content.referenceId} />;
       return <ContextNoticeCard title={content.title} detail={content.detail} />;
     }
   }

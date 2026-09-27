@@ -60,7 +60,11 @@ Lavoro continuo: dentro il mandato il Coordinatore fa da solo le sue mosse e chi
 
 Task in focus: il lavoro su cui il progetto si concentra ora, mostrato in cima alla chat con la sua fase e con quello che lo blocca o che aspetta dalla persona. Un task è il lavoro di un obiettivo aperto o il lavoro del dialogo del progetto; un obiettivo solo proposto dal Coordinatore non è un task finché la persona non lo conferma. Un solo task è in focus per progetto, gli altri stanno nella coda, prima quelli già avviati. Trama ricava dai dati quali task sono aperti e in che fase sono; la persona sceglie il task in focus e mette in pausa gli altri. Quando il task in focus si chiude (lavoro unito, obiettivo raggiunto, abbandonato o archiviato) o va in pausa, il focus passa al task successivo della coda. A ogni turno il Coordinatore legge il task in focus e la coda, e riporta sul task in focus una conversazione che se ne allontana.
 
-Mossa automatica: un turno del Coordinatore avviato da Trama con il lavoro continuo. Nella chat è una riga di Trama con il nome della mossa, non un messaggio della persona, e finché il turno lavora ha il pulsante Ferma. Una mossa fermata resta interrotta e non ne parte un'altra.
+Mossa automatica: un turno del Coordinatore avviato da Trama con il lavoro continuo. Non è un messaggio della persona e non è una riga della chat: sta in Attività con il nome della mossa, l'ora e l'esito, e finché il turno lavora la riga di stato la nomina e ha il pulsante Ferma. In chat restano la risposta del Coordinatore, le schede che la mossa produce e un eventuale errore. Una mossa fermata resta interrotta e non ne parte un'altra.
+
+Riga di stato: una frase sempre visibile in cima a ogni dialogo del progetto che dice cosa fa il Coordinatore ora e cosa farà dopo, per esempio "Sto verificando S2, poi assegno S3". Trama la ricava dai dati (il turno in corso, il piano in scrittura, chi lavora su quale fetta, la mossa successiva del task in focus e le fette pronte), mai dal testo del modello. Quando il lavoro è fermo dice perché e cosa lo sblocca; quando aspetta la persona, la sua mossa è il pulsante primario, anche con il lavoro bloccato. Senza lavoro in corso dice "Niente in corso.".
+
+Attività: il registro delle mosse automatiche del progetto, dalla più recente, con nome, ora, durata, dialogo ed esito (in corso, fatta, non riuscita con il motivo, fermata, errore). Si apre dalla riga di stato e mostra anche le mosse storiche.
 
 Domanda di conferma generica: una risposta del Coordinatore che chiude chiedendo il permesso di andare avanti ("Vuoi che...?", "Procedo?", "Fammi sapere se..."). Trama la riconosce dal testo, senza il modello, e al turno successivo dello stesso dialogo lo dice al Coordinatore. La cronologia registra il richiamo.
 
@@ -74,7 +78,7 @@ Revisione dell'esperienza: la sessione separata e non presidiata che, dopo abbas
 
 Manutenzione delle skill: il controllo settimanale che rende inattive e poi archivia le skill create dalla revisione e non usate. Non tocca le skill fissate né quelle della persona; un'archiviazione si annulla con un ripristino.
 
-Scheda: un atto del metodo mostrato nella conversazione: studio, proposta di team, mandato, incarico, decisione, candidato, conflitto, avviso di contesto, mossa automatica. Una scheda non è un log di strumenti né un messaggio libero.
+Scheda: un atto del metodo mostrato nella conversazione: studio, proposta di team, mandato, incarico, decisione, candidato, conflitto, avviso di contesto. Le mosse automatiche stanno in Attività, non in chat. Una scheda non è un log di strumenti né un messaggio libero.
 
 Ispettore: la superficie che mostra il dettaglio di ciò che la persona tocca nella conversazione o nella sidebar: decisione, candidato, specialista, modulo, issue, gruppo. Non è una sezione da visitare a sé.
 

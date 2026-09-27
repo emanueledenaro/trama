@@ -36,7 +36,8 @@ export function StatusDot({ status }: { status: Specialist["status"] }) {
     <span
       className={cn(
         "size-1.5 shrink-0 rounded-full",
-        status === "available" && "bg-success",
+        // Free reads as an empty ring, so it never looks like "at work" (issue #241).
+        status === "available" && "border border-muted-foreground/60",
         status === "stopped" && "bg-warning",
         status === "removed" && "bg-muted-foreground/40",
       )}

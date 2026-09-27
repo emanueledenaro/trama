@@ -88,6 +88,7 @@ import { prepareDemoProject } from "./core/demoProject";
 import { appendEvent, emptyDocument, handoverTranscript, moveEvent, recordReply, referencedPaths } from "./core/document";
 import { candidateGoalId, dialogComposer, findGoal, projectGoals, requestGoalId } from "@shared/goals";
 import { focusTask, focusText, focusView, pauseTask, resumeTask } from "./core/focus";
+import { statusLine } from "./core/statusLine";
 import { COORDINATOR_MOVES, type CoordinatorMove, nextStepViews, PHASE_LABELS, workState, workStateText } from "./core/workPhase";
 import {
   AUTOMATIC_MOVE_DETAIL,
@@ -614,6 +615,7 @@ export class TramaController {
       project.document.plans.filter((p) => p.slicing?.status === "approved").map((p) => [p.id, sliceViews(project.document, p)]),
     );
     project.focus = focusView(project.document);
+    project.statusLine = statusLine(project.document, project.runningRequestId);
     project.automaticWork = project.isDemo ? [] : automaticWorkStatus(project.document, this.dutyContext(project, project.snapshot.headSHA));
     project.overlaps = projectOverlaps(project, this.presenceProbes);
     project.pactDemoBlockers = project.document.pactDemo ? inspectPactDemo(project.document, project.document.pactDemo) : [];

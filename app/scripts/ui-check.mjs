@@ -837,9 +837,10 @@ await slices.getByText("Restano in Trama").waitFor({ timeout: 20_000 });
 const sliceStates = await slices.getByTestId("plan-slice").evaluateAll((items) => items.map((item) => item.getAttribute("data-state")));
 if (sliceStates[0] === "blocked" || sliceStates.slice(1).some((state) => state !== "blocked")) throw new Error(`The slices do not respect their blockers: ${sliceStates}`);
 await shot("04c4-plan-slices-confirmed");
-// The check stops the automatic assignment, so the queue below starts from an idle Coordinator.
-const assignStep = page.getByTestId("automatic-step").filter({ hasText: "Assegna il lavoro" }).last();
-await assignStep.getByRole("button", { name: "Ferma" }).click({ timeout: 20_000 });
+// The check stops the automatic assignment from the status line, so the queue below starts from an idle Coordinator.
+// The move is not a row of the chat (issue #241): the status line names it and carries its stop.
+const statusLine = page.getByTestId("status-line");
+await statusLine.getByRole("button", { name: "Ferma: Assegna il lavoro" }).click({ timeout: 20_000 });
 await page.getByRole("button", { name: "Interrompi" }).waitFor({ state: "hidden", timeout: 20_000 });
 // A message sent while the Coordinator works waits in the queue and can be deleted after a confirmation.
 await page.getByLabel("Messaggio al Coordinatore").fill("[attesa] Spiegami gli ordini");
@@ -976,24 +977,42 @@ await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
 // The check stops that move, which belongs to the other dialog, before the goal dialog's own work.
 await page.getByRole("button", { name: "Interrompi" }).click({ timeout: 20_000 });
 await page.getByRole("button", { name: "Interrompi" }).waitFor({ state: "hidden", timeout: 20_000 });
-if (await page.getByTestId("automatic-step").count()) throw new Error("Trama went on before the person confirmed the shared understanding");
+if (await statusLine.getByRole("button", { name: /^Ferma/ }).count()) throw new Error("Trama went on before the person confirmed the shared understanding");
 await page.getByLabel("Messaggio al Coordinatore").fill("[passo:confirmUnderstanding] Riassumi quello che abbiamo deciso");
 await page.keyboard.press("Enter");
 const confirmStep = page.getByTestId("next-step").getByRole("button", { name: "Conferma la comprensione" });
 await confirmStep.waitFor({ timeout: 20_000 });
 await confirmStep.click();
-const automaticStep = page.getByTestId("automatic-step").filter({ hasText: "Prepara il piano" });
-const stopMove = automaticStep.getByRole("button", { name: "Ferma" });
+// Issue #241: the automatic move is in the status line, "Sto preparando il piano", with its stop on the right before
+// the person's move; the chat keeps no row for it.
+const stopMove = statusLine.getByRole("button", { name: "Ferma: Prepara il piano" });
 await stopMove.waitFor({ timeout: 20_000 });
+await statusLine.getByTestId("status-line-text").getByText(/^Sto preparando il piano/).waitFor();
+if (await page.getByText(/Il Coordinatore va avanti da solo|^Mossa automatica/).count()) throw new Error("The automatic move is a row of the chat");
 const stopBox = await stopMove.boundingBox();
-const lineBox = await automaticStep.boundingBox();
+const lineBox = await statusLine.boundingBox();
 if (!stopBox || !lineBox || lineBox.x + lineBox.width - (stopBox.x + stopBox.width) > 2) throw new Error("The stop of the automatic move is not on the right");
-await shot("15a-automatic-step");
+// Light and dark, then the theme the check had.
+const themeShots = async (name) => {
+  const wasDark = await page.evaluate(() => document.documentElement.classList.contains("dark"));
+  for (const dark of [false, true]) {
+    await page.evaluate((on) => document.documentElement.classList.toggle("dark", on), dark);
+    await shot(`${name}-${dark ? "dark" : "light"}`);
+  }
+  await page.evaluate((on) => document.documentElement.classList.toggle("dark", on), wasDark);
+};
+await themeShots("15a-status-line-move");
 await stopMove.click();
 await stopMove.waitFor({ state: "detached", timeout: 20_000 });
-await page.getByText("Turno interrotto").last().waitFor({ timeout: 20_000 });
-if ((await page.getByTestId("automatic-step").count()) !== 1) throw new Error("Trama started another move after the stop");
-await shot("15b-automatic-step-stopped");
+await page.waitForTimeout(500);
+if (await statusLine.getByRole("button", { name: /^Ferma/ }).count()) throw new Error("Trama started another move after the stop");
+// Activity opens from the status line and lists the move with its time and outcome.
+await statusLine.getByRole("button", { name: "Attività" }).click();
+const activity = page.getByTestId("activity-log");
+await activity.locator('[data-testid="activity-entry"][data-outcome="stopped"]').filter({ hasText: "Prepara il piano" }).first().waitFor({ timeout: 20_000 });
+await activity.getByText("Fermata").first().waitFor();
+await themeShots("15b-activity");
+await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
 await page.keyboard.press("Control+K");
 await page.getByRole("textbox", { name: "Cerca in Trama" }).fill("cancel");
 await page.getByRole("option").first().waitFor();
@@ -1113,6 +1132,18 @@ await page.waitForTimeout(400);
 if (await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)) throw new Error("Horizontal page scroll with the focus bar at 720x640");
 await actionsOnRight("720x640");
 await shot("17d-focus-narrow");
+// Issue #241: the status line stays in the bar at the minimum window size, its actions on the right, in light and dark.
+const activityButton = statusLine.getByRole("button", { name: "Attività" });
+const statusBox = await statusLine.boundingBox();
+const activityBox = await activityButton.boundingBox();
+if (!statusBox || !activityBox || activityBox.x + activityBox.width > statusBox.x + statusBox.width + 1 || activityBox.x < statusBox.x + statusBox.width / 2) {
+  throw new Error("The status line's actions are not on the right at 720x640");
+}
+for (const dark of [false, true]) {
+  await setLook(look.provider, dark);
+  await shot(`17e-status-line-narrow-${dark ? "dark" : "light"}`);
+}
+await setLook(look.provider, look.dark);
 await queueToggle.click();
 await queue.waitFor({ state: "detached" });
 await page.setViewportSize({ width: 1280, height: 820 });
@@ -1276,16 +1307,16 @@ await send("[assegna] [luna]");
 const lunaCard = assignmentCards.nth(1);
 await lunaCard.getByText("Concluso", { exact: true }).waitFor({ timeout: 20_000 });
 const lunaAssignment = await cardAssignment(lunaCard);
-const stalledStep = page.locator('[data-testid="automatic-step"][data-stalled="true"]').filter({ hasText: "Esegui le verifiche" });
-await stalledStep.getByText("Mossa automatica non riuscita").waitFor({ timeout: 30_000 });
-const retryStep = page.getByTestId("next-step").filter({ hasText: `l'incarico ${lunaAssignment} è concluso ma il suo candidato non è stato dichiarato` });
-await retryStep.waitFor({ timeout: 20_000 });
+// Issue #241: the status line says the move did not work, with Trama's reason and the move as its button on the right.
+const retryStep = page.getByTestId("status-line").filter({
+  has: page.getByTestId("status-line-reason").filter({ hasText: `l'incarico ${lunaAssignment} è concluso ma il suo candidato non è stato dichiarato` }),
+});
+await retryStep.waitFor({ timeout: 30_000 });
 const retryButton = retryStep.getByRole("button", { name: "Esegui le verifiche" });
 const retryBox = await retryButton.boundingBox();
 const retryRowBox = await retryStep.boundingBox();
 if (!retryBox || !retryRowBox || retryRowBox.x + retryRowBox.width - (retryBox.x + retryBox.width) > 2) throw new Error("Esegui le verifiche is not on the right");
 await page.evaluate(() => window.trama.invoke("settings:update", { continuousWork: false }));
-await retryStep.scrollIntoViewIfNeeded();
 await shot("18a2-automatic-move-stalled");
 await app.evaluate(({ nativeTheme }) => {
   nativeTheme.themeSource = "dark";
@@ -1620,7 +1651,7 @@ await teamSlices.getByTestId("plan-slices-parallel").getByText(/Sviluppatori al 
 await page.evaluate(() => window.trama.invoke("settings:update", { continuousWork: false }));
 // A Coordinator move that continuous work started meanwhile keeps running in this check (FAKE_CODEX_AUTOMATIC=wait):
 // the person stops it before the next project opens.
-const runningMoves = page.getByTestId("automatic-step").getByRole("button", { name: "Ferma" });
+const runningMoves = page.getByTestId("status-line").getByRole("button", { name: /^Ferma/ });
 for (let tries = 0; (await runningMoves.count()) && tries < 10; tries += 1) {
   await runningMoves.first().click().catch(() => undefined);
   await page.waitForTimeout(500);
