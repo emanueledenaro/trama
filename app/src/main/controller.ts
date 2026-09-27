@@ -86,7 +86,7 @@ import {
 } from "./core/cleanCode";
 import { openingInput, resumeInput, specialistInstructions } from "./core/specialistBriefing";
 import { findAgentThread } from "@shared/agentThreads";
-import { coordinatorThreadNotes, developerThreadNotes, postPersonMessage, recordDeveloperReply, recordReview, ThreadError } from "./core/agentThreads";
+import { coordinatorThreadNotes, developerThreadNotes, markDelivered, postPersonMessage, recordDeveloperReply, recordReview, ThreadError } from "./core/agentThreads";
 import { prepareDemoProject } from "./core/demoProject";
 import { appendEvent, emptyDocument, handoverTranscript, moveEvent, recordReply, referencedPaths } from "./core/document";
 import { candidateGoalId, dialogComposer, findGoal, projectGoals, requestGoalId } from "@shared/goals";
@@ -2170,7 +2170,7 @@ export class TramaController {
       if (feedback) sections.push(feedback);
       // The person's messages in the conversations between agents, once each (W07).
       const threadNotes = coordinatorThreadNotes(document);
-      if (threadNotes) sections.push(threadNotes);
+      if (threadNotes) sections.push(threadNotes.lines.join("\n"));
       const skills = skillInvocations(trimmed, project.skills);
       // /ask-trama (M07): the thread holds the skill and its binding; the person asks for it now.
       if (/(^|\s)[/$]ask-trama(?=\s|$)/.test(trimmed)) sections.push(ASK_TRAMA_INVOKED);
@@ -2224,6 +2224,7 @@ export class TramaController {
       document.coordinator.injectedStudy = { ...document.coordinator.injectedStudy, ...fingerprints(study) };
       document.coordinator.memorySentToThread = document.coordinator.threadId;
       if (report) markReported(document, report.ids);
+      if (threadNotes) markDelivered(document, threadNotes.messageIds, "coordinator");
       const paths = project.snapshot.modules.flatMap((m) => m.files.map((f) => f.relativePath));
       request.state = "completed";
       request.completedAt = new Date().toISOString();
@@ -3145,10 +3146,8 @@ export class TramaController {
       // A stop requested while the session was opening ends the work here (review #6).
       if ((assignment.status as string) === "stopRequested") throw new Error("L'arresto è stato richiesto prima dell'avvio del turno.");
       if (opening.replaced && assignment.threadId) this.specialistActivity(project, assignmentId, preKey, "Nuovo thread dello specialista", null, "info");
-      const notesAt = new Date();
-      const notes = !duty && resumed ? developerThreadNotes(document, assignmentId, notesAt) : [];
-      if (notes.length) threadNotesAt = notesAt.toISOString();
-      const task = duty?.prompt ?? (resumed ? resumeInput(assignment, document.decisions, notes) : openingInput(assignment, document.decisions));
+      const notes = !duty && resumed ? developerThreadNotes(document, assignmentId) : null;
+      const task = duty?.prompt ?? (resumed ? resumeInput(assignment, document.decisions, notes?.lines) : openingInput(assignment, document.decisions));
       const prompt = [task, briefing, developer && nativeInput ? developer.text : null].filter(Boolean).join("\n\n");
       const text = await client.runTurn({
         threadId: opening.threadId,
@@ -3161,6 +3160,12 @@ export class TramaController {
         onEvent: (event) => {
           if (event.type === "turnStarted") {
             turnId = event.turnId;
+            // The developer received the person's messages only now that its turn has started (W07).
+            if (notes) {
+              const started = new Date();
+              markDelivered(document, notes.messageIds, "developer", started);
+              threadNotesAt = started.toISOString();
+            }
             beginTurn(document, assignmentId, event.turnId, assignment.model, new Date(), provider);
             this.changedIn(project);
             // A stop requested before the turn id was known reaches the provider now.

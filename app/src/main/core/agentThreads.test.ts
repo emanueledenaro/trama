@@ -1,14 +1,14 @@
 import { describe, expect, it } from "vitest";
 import type { ProjectDocument } from "@shared/domain";
 import { agentThreadsByRecent, authorName, sidebarAgentThreads, SIDEBAR_AGENT_THREADS, threadParticipants } from "@shared/agentThreads";
-import { coordinatorThreadNotes, developerThreadNotes, postPersonMessage, recordDeveloperReply, recordReview, ThreadError } from "./agentThreads";
+import { coordinatorThreadNotes, developerThreadNotes, markDelivered, postPersonMessage, recordDeveloperReply, recordReview, ThreadError } from "./agentThreads";
 import { declareCandidate, recordTechnicalReview } from "./candidates";
 import { answerFromFacts, askCoordinator, blockOnPerson, personAnswered } from "./developerQuestions";
 import { emptyDocument } from "./document";
 import { dutyLedger, recordCheckOutcome } from "./duties";
 import { answerDecisionRequest, createDecisionRequest, grantMandate } from "./pact";
 import { resumeInput } from "./specialistBriefing";
-import { assign, beginTurn, confirmTeam, endTurn, findAssignment, proposeTeam } from "./team";
+import { assign, beginTurn, confirmTeam, endTurn, findAssignment, proposeTeam, resumePausedAssignment } from "./team";
 
 const at = (minute: number) => new Date(Date.UTC(2026, 8, 27, 9, minute));
 
@@ -97,8 +97,16 @@ describe("the developer and the Coordinator talk in their own conversation (W07)
     expect(thread!.messages[0]!.text).toBe("Un buono conta come pagamento?\n\nMi serve per: La spec parla solo di carte");
     expect(thread!.messages[1]!.text).toBe("Sì, come una carta.\n\nFonti: spec #7");
     expect(thread!.updatedAt).toBe(at(6).toISOString());
+
     expect(threadParticipants(thread!, document.team.specialists)).toBe("Ada e il Coordinatore");
     expect(thread!.messages.map((m) => authorName(m.author, document.team.specialists))).toEqual(["Ada", "Coordinatore"]);
+
+    // A long answer keeps every source: each part is bounded by itself, never the message as a whole.
+    resumePausedAssignment(document, assignment.id);
+    beginTurn(document, assignment.id, "t2", "gpt-6-luna", at(7));
+    const long = askCoordinator(document, assignment.id, { question: "E un buono parziale?", context: null }, at(7));
+    answerFromFacts(document, long.id, { text: "x".repeat(4_000), sources: ["spec #7", "Sources/Orders/CancelPaidOrder.swift"] }, at(8));
+    expect(thread!.messages.at(-1)!.text.endsWith("Fonti: spec #7; Sources/Orders/CancelPaidOrder.swift")).toBe(true);
   });
 
   it("records the Pact card and the person's answer on it, already delivered to both agents", () => {
@@ -115,7 +123,7 @@ describe("the developer and the Coordinator talk in their own conversation (W07)
     expect(thread.messages[1]!.text).toContain(`scheda del Patto ${request.id}`);
     expect(thread.messages[2]!.text).toMatch(new RegExp(`^Dalla scheda del Patto ${request.id}: Va in revisione`));
     expect(thread.messages[2]!.delivery).toEqual({ coordinator: at(8).toISOString(), developer: at(8).toISOString() });
-    expect(coordinatorThreadNotes(document, at(9))).toBeNull();
+    expect(coordinatorThreadNotes(document)).toBeNull();
   });
 });
 
@@ -187,23 +195,30 @@ describe("the person writes in a conversation between agents (W07)", () => {
     const message = postPersonMessage(document, thread.id, "  Sì, i buoni contano come pagamento.  ", at(6));
     expect(message).toMatchObject({ author: { kind: "person" }, text: "Sì, i buoni contano come pagamento.", delivery: { coordinator: null, developer: null } });
 
-    const notes = coordinatorThreadNotes(document, at(7));
-    expect(notes).toContain("## Messaggi della persona nelle chat tra agenti");
-    expect(notes).toContain(`${thread.id}, «Domanda al Coordinatore, fetta S1», incarico ${assignment.id} di Ada`);
-    expect(notes).toContain("«Sì, i buoni contano come pagamento.»");
-    expect(coordinatorThreadNotes(document, at(8))).toBeNull();
+    const notes = coordinatorThreadNotes(document)!;
+    const text = notes.lines.join("\n");
+    expect(text).toContain("## Messaggi della persona nelle chat tra agenti");
+    expect(text).toContain(`${thread.id}, «Domanda al Coordinatore, fetta S1», incarico ${assignment.id} di Ada`);
+    expect(text).toContain("«Sì, i buoni contano come pagamento.»");
+    expect(notes.messageIds).toEqual([message.id]);
+    // A turn that never started delivers nothing: the next turn gets the message again.
+    expect(coordinatorThreadNotes(document)?.messageIds).toEqual([message.id]);
+    markDelivered(document, notes.messageIds, "coordinator", at(7));
+    expect(coordinatorThreadNotes(document)).toBeNull();
 
-    const lines = developerThreadNotes(document, assignment.id, at(9));
-    expect(lines.join("\n")).toContain("«Sì, i buoni contano come pagamento.» (conversazione «Domanda al Coordinatore, fetta S1»)");
-    expect(resumeInput(assignment, [], lines)).toContain("## Messaggi della persona nelle chat tra agenti");
-    expect(developerThreadNotes(document, assignment.id, at(10))).toEqual([]);
+    const developerNotes = developerThreadNotes(document, assignment.id)!;
+    expect(developerNotes.lines.join("\n")).toContain("«Sì, i buoni contano come pagamento.» (conversazione «Domanda al Coordinatore, fetta S1»)");
+    expect(resumeInput(assignment, [], developerNotes.lines)).toContain("## Messaggi della persona nelle chat tra agenti");
+    markDelivered(document, developerNotes.messageIds, "developer", at(9));
+    expect(developerThreadNotes(document, assignment.id)).toBeNull();
+    markDelivered(document, developerNotes.messageIds, "developer", at(10));
     expect(message.delivery).toEqual({ coordinator: at(7).toISOString(), developer: at(9).toISOString() });
   });
 
   it("puts the developer's reply in the conversation it received the message from", () => {
     const { document, assignment, thread } = asked();
     postPersonMessage(document, thread.id, "Considera anche i buoni scaduti.", at(6));
-    developerThreadNotes(document, assignment.id, at(9));
+    markDelivered(document, developerThreadNotes(document, assignment.id)!.messageIds, "developer", at(9));
     expect(recordDeveloperReply(document, assignment, at(9).toISOString(), "Ho coperto i buoni scaduti con un test.", at(12))).toEqual([thread]);
     expect(thread.messages.at(-1)).toMatchObject({ author: { kind: "specialist", specialistId: ada(document).id }, text: "Ho coperto i buoni scaduti con un test." });
     expect(recordDeveloperReply(document, assignment, at(13).toISOString(), "Altro", at(14))).toEqual([]);

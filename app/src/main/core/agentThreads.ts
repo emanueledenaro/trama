@@ -72,8 +72,15 @@ export function threadFor(document: ProjectDocument, kind: AgentThreadKind, assi
   return thread;
 }
 
-function post(thread: AgentThread, author: AgentThreadAuthor, text: string, now: Date, delivery?: AgentThreadMessage["delivery"]): AgentThreadMessage {
-  const message: AgentThreadMessage = { id: shortId("CM", randomUUID()), author, text: clip(text), at: now.toISOString(), ...(delivery ? { delivery } : {}) };
+function post(
+  thread: AgentThread,
+  author: AgentThreadAuthor,
+  text: string,
+  now: Date,
+  delivery?: AgentThreadMessage["delivery"],
+  limit = 4_000,
+): AgentThreadMessage {
+  const message: AgentThreadMessage = { id: shortId("CM", randomUUID()), author, text: clip(text, limit), at: now.toISOString(), ...(delivery ? { delivery } : {}) };
   thread.messages.push(message);
   thread.updatedAt = message.at;
   return message;
@@ -97,7 +104,8 @@ export function recordAnswer(document: ProjectDocument, assignment: SpecialistAs
     answer.kind === "facts"
       ? `${answer.text}\n\nFonti: ${answer.sources.join("; ")}`
       : `Questa scelta spetta alla persona: l'ho messa sulla scheda del Patto ${answer.decisionRequestId}. Il tuo lavoro resta in pausa finché non risponde.`;
-  post(thread, { kind: "coordinator" }, text, now);
+  // The answer and its sources were already bounded one by one (W06): the sources always stay in the message.
+  post(thread, { kind: "coordinator" }, text, now, undefined, Number.MAX_SAFE_INTEGER);
   return thread;
 }
 
@@ -156,9 +164,26 @@ export function postPersonMessage(document: ProjectDocument, threadId: string, t
   return post(thread, { kind: "person" }, body, now, { coordinator: null, developer: null });
 }
 
-/** The person's messages the Coordinator has not read, as a section of its next turn; marks them delivered. */
-export function coordinatorThreadNotes(document: ProjectDocument, now = new Date()): string | null {
+/** The person's messages an agent is about to receive, to mark as delivered once its turn has started. */
+export interface ThreadNotes {
+  lines: string[];
+  messageIds: string[];
+}
+
+/** Records that the agent received the messages: only once its turn started, so a failed start delivers them again. */
+export function markDelivered(document: ProjectDocument, messageIds: string[], to: "coordinator" | "developer", now = new Date()): void {
+  const wanted = new Set(messageIds);
+  for (const thread of document.agentThreads ?? []) {
+    for (const message of thread.messages) {
+      if (wanted.has(message.id) && message.delivery && message.delivery[to] === null) message.delivery[to] = now.toISOString();
+    }
+  }
+}
+
+/** The person's messages the Coordinator has not read, as a section of its next turn; null without any. */
+export function coordinatorThreadNotes(document: ProjectDocument): ThreadNotes | null {
   const lines: string[] = [];
+  const messageIds: string[] = [];
   for (const thread of document.agentThreads ?? []) {
     const pending = undelivered(thread, "coordinator");
     if (!pending.length) continue;
@@ -166,29 +191,33 @@ export function coordinatorThreadNotes(document: ProjectDocument, now = new Date
     lines.push(`- ${thread.id}, «${thread.title}», incarico ${thread.assignmentId} di ${developerName}:`);
     for (const message of pending) {
       lines.push(`  «${message.text}»`);
-      message.delivery!.coordinator = now.toISOString();
+      messageIds.push(message.id);
     }
   }
   if (!lines.length) return null;
-  return [
-    "## Messaggi della persona nelle chat tra agenti",
-    "La persona ha letto queste conversazioni tra agenti e ci ha scritto. Tienine conto come di un suo messaggio: se cambiano il lavoro, agisci con i tuoi strumenti. Lo sviluppatore li riceve quando il suo lavoro riprende.",
-    ...lines,
-  ].join("\n");
+  return {
+    lines: [
+      "## Messaggi della persona nelle chat tra agenti",
+      "La persona ha letto queste conversazioni tra agenti e ci ha scritto. Tienine conto come di un suo messaggio: se cambiano il lavoro, agisci con i tuoi strumenti. Lo sviluppatore li riceve quando il suo lavoro riprende.",
+      ...lines,
+    ],
+    messageIds,
+  };
 }
 
-/** The person's messages the developer has not read, for the input of its resumed work; marks them delivered. */
-export function developerThreadNotes(document: ProjectDocument, assignmentId: string, now = new Date()): string[] {
+/** The person's messages the developer has not read, for the input of its resumed work; null without any. */
+export function developerThreadNotes(document: ProjectDocument, assignmentId: string): ThreadNotes | null {
   const lines: string[] = [];
+  const messageIds: string[] = [];
   for (const thread of document.agentThreads ?? []) {
     if (thread.assignmentId !== assignmentId) continue;
     for (const message of undelivered(thread, "developer")) {
       lines.push(`- «${message.text}» (conversazione «${thread.title}»)`);
-      message.delivery!.developer = now.toISOString();
+      messageIds.push(message.id);
     }
   }
-  if (!lines.length) return [];
-  return ["## Messaggi della persona nelle chat tra agenti", "La persona ha scritto nelle conversazioni di questo lavoro. Tienine conto.", ...lines];
+  if (!lines.length) return null;
+  return { lines: ["## Messaggi della persona nelle chat tra agenti", "La persona ha scritto nelle conversazioni di questo lavoro. Tienine conto.", ...lines], messageIds };
 }
 
 /**
