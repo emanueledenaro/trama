@@ -1,6 +1,8 @@
 import { createHash, randomUUID } from "node:crypto";
 import type { Candidate, CandidateBlocker, CandidateReport, CandidateState, ConflictAssessment, ProjectDocument, TechnicalReview } from "@shared/domain";
+import { blockingFindings, latestGate } from "@shared/gate";
 import { shortId } from "@shared/ids";
+import { roleProfile } from "@shared/roster";
 import { agreedSeams, assignmentSlice, readTestedSeams } from "./implementation";
 import { findAssignment } from "./team";
 import type { WorkspaceReview } from "./workspace";
@@ -139,6 +141,18 @@ export function inspectCandidate(document: ProjectDocument, candidate: Candidate
       continue;
     }
     if (evidence.result === "fail") blockers.push({ code: "CHECK_FAILED", detail: check });
+  }
+  // Once the candidate gate ran on this snapshot (W10), only a gate that passed lets the candidate reach the person:
+  // every figure signed. A failed check already says so above. A candidate never reviewed has no gate yet.
+  const gate = latestGate(document.gates, candidate.id);
+  const current = gate?.snapshotId === candidate.snapshotId ? gate : null;
+  if (current?.status === "checking" || current?.status === "reviewing") {
+    blockers.push({ code: "GATE_RUNNING", detail: "I revisori del candidato sono al lavoro." });
+  } else if (current?.status === "failed") {
+    blockers.push({ code: "GATE_FAILED", detail: current.failure ?? "Una figura non ha finito la revisione." });
+  } else if (current?.status === "blocked" && !current.checksFailed.length) {
+    const findings = current.reviews.flatMap((r) => blockingFindings(r).map((f) => `${roleProfile(r.role).name}: ${f.title}`));
+    blockers.push({ code: "GATE_BLOCKED", detail: findings.join("; ") });
   }
   // A merge conflict reproduced against a colleague's work on this exact snapshot blocks the green light.
   // Against another developer's worktree (W08) it holds while that candidate is still the one compared.
