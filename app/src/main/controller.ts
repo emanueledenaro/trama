@@ -4026,6 +4026,7 @@ export class TramaController {
     const candidate = findCandidate(document, candidateId);
     if (!candidate) throw new DomainError("Candidato non trovato.");
     const report = candidateReport(document, candidate, await this.headSHA(project.rootPath));
+    if (report.state === "superseded") throw new DomainError("Il candidato è stato sostituito da un lavoro più recente: pubblica quello nuovo.");
     if (report.blockers.length) throw new DomainError(`Il candidato non è verificato: ${report.blockers.map((b) => b.code).join(", ")}.`);
     if (!candidate.humanApproval || report.approvalInvalidated) throw new DomainError("Rivedi e approva il candidato prima di pubblicarlo.");
     if (candidate.pullRequest) throw new DomainError(`Il candidato è già pubblicato: ${candidate.pullRequest.url}`);

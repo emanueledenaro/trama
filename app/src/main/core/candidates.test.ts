@@ -194,6 +194,10 @@ describe("candidates", () => {
     );
     correction.createdAt = "2026-09-27T11:00:00Z";
     expect(candidateReport(document, candidate, "base").state).toBe("superseded");
+    // Nobody approves or clears the replaced candidate: the review goes to the newer work.
+    recordEvidence(document, candidate.id, { check: "git_status", passed: true, command: "git status", output: "", snapshotId: "snap" });
+    expect(() => approveCandidate(document, candidate.id, "Persona", "base")).toThrow(/sostituito/);
+    expect(() => clearCandidate(document, candidate.id, "Coordinatore", "base")).toThrow(/replaced by newer work/);
   });
 
   it("is not blocked by a decision it does not rely on (T09)", () => {

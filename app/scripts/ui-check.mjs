@@ -2283,6 +2283,8 @@ const divergenceCards = page.getByTestId("conflict-in-divergence");
 if ((await divergenceCards.count()) !== 2) throw new Error(`Divergence: ${await divergenceCards.count()} conflicts with main still shown on their own`);
 if ((await page.getByTestId("conflict-superseded").count()) !== 1) throw new Error("Divergence: the conflict with the replaced candidate is not superseded");
 if ((await page.getByTestId("candidate-superseded").count()) !== 1) throw new Error("Divergence: the replaced candidate is not marked superseded");
+const replacedCard = page.locator(".chat-card").filter({ has: page.getByTestId("candidate-superseded") });
+if (await replacedCard.getByRole("button", { name: "Approva questo candidato" }).count()) throw new Error("Divergence: the replaced candidate can still be approved");
 if (await page.getByRole("main").getByText(/colleg[ah]i?\b/).count()) throw new Error("Divergence: a colleague is named with nobody sharing a presence");
 if (await page.getByText("Conflitto con C-AC540E8F").count()) throw new Error("Divergence: the newer candidate still conflicts with the replaced one");
 await page.getByTestId("conflict-superseded").scrollIntoViewIfNeeded();

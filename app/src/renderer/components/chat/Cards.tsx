@@ -1150,12 +1150,12 @@ export function CandidateCard({ candidateId }: { candidateId: string }) {
         >
           <IconFocus2 /> Focus mode
         </Button>
-        {report.blockers.length === 0 && !approved ? (
+        {report.blockers.length === 0 && !approved && report.state !== "superseded" ? (
           <Button size="sm" variant="outline" onClick={() => void act("candidate:approve", { candidateId })}>
             Approva questo candidato
           </Button>
         ) : null}
-        {approved && publishable && !candidate.pullRequest && project.github.repository && !preview ? (
+        {approved && publishable && report.state !== "superseded" && !candidate.pullRequest && project.github.repository && !preview ? (
           <Button size="sm" onClick={() => void act("candidate:previewPullRequest", { candidateId }).then((p) => setPreview(p ?? null))}>
             <IconGitPullRequest /> Prepara la pull request
           </Button>

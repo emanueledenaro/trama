@@ -211,6 +211,9 @@ export function recordTechnicalReview(
 export function clearCandidate(document: ProjectDocument, candidateId: string, actor: string, headSHA: string | null, now = new Date()): Candidate {
   const candidate = findCandidate(document, candidateId);
   if (!candidate) throw new CandidateError("unknown_candidate", `Unknown candidate: ${candidateId}.`);
+  if (candidateSuperseded(document, candidate)) {
+    throw new CandidateError("candidate_superseded", `Candidate ${candidate.id} was replaced by newer work: clear the newer candidate instead.`);
+  }
   const blockers = inspectCandidate(document, candidate, headSHA);
   if (blockers.length) {
     throw new CandidateError("candidate_not_verified", `Candidate ${candidate.id} is not verified: ${blockers.map((b) => b.code).join(", ")}.`);
@@ -227,6 +230,9 @@ export function clearCandidate(document: ProjectDocument, candidateId: string, a
 export function approveCandidate(document: ProjectDocument, candidateId: string, actor: string, headSHA: string | null, now = new Date()): Candidate {
   const candidate = findCandidate(document, candidateId);
   if (!candidate) throw new CandidateError("unknown_candidate", `Candidato sconosciuto: ${candidateId}.`);
+  if (candidateSuperseded(document, candidate)) {
+    throw new CandidateError("candidate_superseded", "Il candidato è stato sostituito da un lavoro più recente: rivedi quello nuovo.");
+  }
   const blockers = inspectCandidate(document, candidate, headSHA);
   if (blockers.length) throw new CandidateError("candidate_not_verified", `Il candidato non è verificato: ${blockers.map((b) => b.code).join(", ")}.`);
   candidate.humanApproval = { actor, fingerprint: contentFingerprint(document, candidate), at: now.toISOString() };
