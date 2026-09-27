@@ -1,21 +1,17 @@
 /**
  * Pi runtime, run in-process through `@earendil-works/pi-coding-agent` (loaded lazily).
  *
- * Ported from Synara (https://github.com/Emanuele-web04/synara, MIT, Copyright (c) 2026 T3 Tools Inc.
- * and Copyright (c) 2026 Emanuele Di Pietro): provider/Layers/PiAdapter.ts, provider/piOpenCodeCatalog.ts,
- * provider/piTurnFailure.ts, the Pi health check of provider/Layers/ProviderHealth.ts and
- * provider/skillPromptInjection.ts. See docs/synara-attribution.md.
+ * Derived from third-party MIT code; see THIRD_PARTY_NOTICES.md.
  *
- * Sandbox. Synara runs Pi with every built-in tool and its own supervised bash. Trama instead passes
- * the SDK a tool allowlist, which also switches off tools registered by Pi extensions:
+ * Sandbox. Pi does not run with every built-in tool and a supervised bash: Trama passes the SDK a
+ * tool allowlist, which also switches off tools registered by Pi extensions:
  * - read-only: read, grep, find, ls;
  * - workspace-write: the same plus edit and write, rebuilt with file operations that refuse any
  *   path outside the turn's writable root (symlinks resolved).
  * Every allowed tool is passed as an SDK custom tool, which wins over a same-named extension tool.
  * bash is never enabled: an in-process shell cannot be kept inside the worktree or off the network.
  *
- * Host tools. pi-coding-agent has no MCP client, so, like Synara's gateway bridge, Trama's MCP tools
- * become Pi custom tools that call `tools/list` and `tools/call` on the loopback server with the
+ * Host tools. pi-coding-agent has no MCP client, so Trama's MCP tools become Pi custom tools that call `tools/list` and `tools/call` on the loopback server with the
  * bearer token.
  */
 import { randomUUID } from "node:crypto";
@@ -536,8 +532,7 @@ export class PiRuntime implements AgentRuntime {
   }
 
   /**
-   * Synara only probes `pi --version` and leaves authentication unknown. Trama needs a yes or no, so
-   * it asks the SDK which models have configured credentials (auth.json, environment keys, models.json).
+   * `pi --version` alone leaves authentication unknown. Trama needs a yes or no, so it asks the SDK which models have configured credentials (auth.json, environment keys, models.json).
    */
   async readAccount(): Promise<ProviderAccount> {
     let sdk: PiSdk;
@@ -989,7 +984,7 @@ function lastAssistantText(session: AgentSession): string {
   return "";
 }
 
-/** Context use from the SDK stats, as Synara's normalizeTokenUsage computes it. */
+/** Context use computed from the SDK stats. */
 export function tokenUsageEvent(session: Pick<AgentSession, "getSessionStats" | "model">): TurnEvent | null {
   const stats = session.getSessionStats();
   const usage = stats.contextUsage;
