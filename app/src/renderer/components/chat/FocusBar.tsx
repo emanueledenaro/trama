@@ -1,4 +1,4 @@
-// Layout and classes follow Synara (github.com/Emanuele-web04/synara, MIT License, Copyright (c) 2026 T3 Tools Inc. and Emanuele Di Pietro).
+// Derived from third-party MIT code; see THIRD_PARTY_NOTICES.md.
 import { IconAlertTriangle, IconChevronDown, IconCircleDashed, IconFocus2, IconHandStop, IconPlayerTrackNext, IconUsers } from "@tabler/icons-react";
 import { useState } from "react";
 import type { FocusTask, StatusLineAction, StatusLineView } from "@shared/domain";

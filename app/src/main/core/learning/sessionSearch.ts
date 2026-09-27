@@ -1,11 +1,10 @@
 /**
- * `session_search`: recall of past conversations, ported from Hermes Agent
- * `tools/session_search_tool.py` (revision 58c896e, MIT, Copyright (c) 2025 Nous Research).
+ * `session_search`: recall of past conversations. Derived from third-party MIT code; see THIRD_PARTY_NOTICES.md.
  *
  * Trama's sessions are the dialogs of a project: the project dialog and one dialog per goal. A message
  * id is the event sequence. The Coordinator's thread already holds every event from `liveFromSequence`
  * on (its start or its last compaction), so discovery skips them and scrolling into them is refused,
- * as Hermes does for the live session. Specialist activity is left out, like Hermes' subagent sessions.
+ * as for any live session. Specialist activity is left out, like subagent sessions.
  * Results are stored messages, never an AI summary.
  */
 import type { ConversationEvent, ProjectDocument } from "@shared/domain";
@@ -107,7 +106,7 @@ function sessionTitle(document: ProjectDocument, sessionId: string): string {
   return document.goals?.find((g) => g.id === sessionId)?.title ?? sessionId;
 }
 
-/** Python `int()` as Hermes' `clamp_int` uses it. */
+/** Python `int()` semantics, clamped to the range. */
 function clampInt(value: unknown, fallback: number, low: number, high: number): number {
   let n: number;
   if (typeof value === "boolean") n = value ? 1 : 0;
@@ -123,7 +122,7 @@ function parseBound(value: unknown, now: Date): number | null {
   if (!text) return null;
   const relative = /^(\d+)\s*(h|d|w)$/i.exec(text);
   if (relative) return Math.floor(now.getTime() / 1000) - Number(relative[1]) * { h: 3600, d: 86400, w: 604800 }[relative[2]!.toLowerCase() as "h" | "d" | "w"];
-  // A value without an offset is UTC, as in Hermes (JavaScript would read it as local time).
+  // A value without an offset is UTC (JavaScript would read it as local time).
   const utc = /^\d{4}-\d{2}-\d{2}$/.test(text) ? `${text}T00:00:00Z` : /([zZ]|[+-]\d{2}:?\d{2})$/.test(text) ? text : `${text}Z`;
   const parsed = Date.parse(utc);
   if (!/^\d{4}-\d{2}-\d{2}/.test(text) || !Number.isFinite(parsed)) {
