@@ -50,7 +50,7 @@ node --test scripts/licenses/lib.test.mjs scripts/release/lib.test.mjs
 
 ## Commits
 
-Commit messages follow [Conventional Commits 1.0.0](https://www.conventionalcommits.org/en/v1.0.0/): `<type>[optional scope][!]: <description>`, for example `feat(app): add the search palette`. The allowed types and the breaking change rules are in [AGENTS.md](AGENTS.md#commit-e-branch). This also applies to merge commits: to bring `main` into your branch, use
+Commit messages follow [Conventional Commits 1.0.0](https://www.conventionalcommits.org/en/v1.0.0/): `<type>[optional scope][!]: <description>`, for example `feat(app): add the search palette`. The allowed types and the breaking change rules are in [AGENTS.md](AGENTS.md#commit-e-branch); the CI check and an optional local hook are described in [docs/agents/conventional-commits.md](docs/agents/conventional-commits.md). This also applies to merge commits: to bring `main` into your branch, use
 
 ```bash
 git fetch origin
@@ -63,7 +63,7 @@ Commit types drive the version number and the changelog (see [Releases](#release
 
 ## Branches
 
-Branch names follow [Conventional Branch](https://conventionalbranch.org/): `<type>/<description>`, lowercase letters, digits and single hyphens, with the issue number when there is one, for example `feature/issue-142-assignment-contract`. The prefixes used in this repository are listed in [AGENTS.md](AGENTS.md#commit-e-branch). Dots appear only in release versions, such as `release/v1.2.0`.
+Branch names follow [Conventional Branch](https://conventionalbranch.org/): `<type>/<description>`, lowercase letters, digits and single hyphens, with the issue number when there is one, for example `feature/issue-142-assignment-contract`. The prefixes used in this repository are listed in [AGENTS.md](AGENTS.md#commit-e-branch), with examples in [docs/agents/branch-naming.md](docs/agents/branch-naming.md). Dots appear only in release versions, such as `release/v1.2.0`.
 
 ## Pull requests
 
@@ -74,7 +74,7 @@ Branch names follow [Conventional Branch](https://conventionalbranch.org/): `<ty
 3. Give the pull request a Conventional Commits title and write the body in Italian. The [template](.github/PULL_REQUEST_TEMPLATE.md) asks what changes, which checks you ran and which issue it closes (`Closes #123`).
 4. A maintainer reviews it ([CODEOWNERS](.github/CODEOWNERS)). The merge into `main` is a merge commit whose subject is the pull request title with its number, for example `feat(app): add the search palette (#123)`.
 
-CI runs the type check, tests, build and `ui-check` ([electron.yml](.github/workflows/electron.yml)), CodeQL ([codeql.yml](.github/workflows/codeql.yml)) and the dependency checks ([dependencies.yml](.github/workflows/dependencies.yml)).
+CI runs the type check, tests, build and `ui-check` ([electron.yml](.github/workflows/electron.yml)), the Conventional Commits check on commits, title and branch ([conventional-commits.yml](.github/workflows/conventional-commits.yml)), CodeQL ([codeql.yml](.github/workflows/codeql.yml)) and the dependency checks ([dependencies.yml](.github/workflows/dependencies.yml)).
 
 ## Dependencies
 
