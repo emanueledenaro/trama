@@ -113,6 +113,26 @@ export function buildReferenceIndex({ document, modules, github }: ReferenceSour
     const slice = assignment?.slice ? `, fetta ${sliceName(assignment.slice.planId, assignment.slice.sliceId)}` : "";
     return `${who}${slice}`.trim() || "senza autore";
   };
+  // Two works of the same agent read the same: the second and later get their number, in the order they began.
+  const numbered = (names: [string, string][]) => {
+    const total = new Map<string, number>();
+    for (const [, name] of names) total.set(name, (total.get(name) ?? 0) + 1);
+    const seen = new Map<string, number>();
+    return new Map(
+      names.map(([key, name]) => {
+        const count = (seen.get(name) ?? 0) + 1;
+        seen.set(name, count);
+        return [key, total.get(name)! > 1 ? `${name}, n. ${count}` : name];
+      }),
+    );
+  };
+  const workNames = numbered(assignments.map(({ assignment, specialist }) => [assignment.id, ofWork(assignment, specialist)]));
+  const candidateNames = numbered(
+    document.candidates.map((candidate) => {
+      const found = assignments.find((a) => a.assignment.id === candidate.assignmentId);
+      return [candidate.id, ofWork(found?.assignment, found?.specialist ?? owner(candidate.specialistId))];
+    }),
+  );
 
   for (const specialist of specialists) {
     const reference = make({ kind: "specialist", id: specialist.id }, specialist.id, "", specialist.name, specialist.competence);
@@ -123,7 +143,7 @@ export function buildReferenceIndex({ document, modules, github }: ReferenceSour
   for (const { assignment, specialist } of assignments) {
     index.ids.set(
       assignment.id,
-      make({ kind: "assignment", id: assignment.id, specialistId: specialist.id }, assignment.id, "incarico", ofWork(assignment, specialist), clip(assignment.objective, 120)),
+      make({ kind: "assignment", id: assignment.id, specialistId: specialist.id }, assignment.id, "incarico", workNames.get(assignment.id)!, clip(assignment.objective, 120)),
     );
     if (assignment.workspace?.branch) {
       index.branches.set(assignment.workspace.branch, make({ kind: "branch", name: assignment.workspace.branch }, assignment.workspace.branch, "", assignment.workspace.branch, `Branch dell'incarico ${assignment.id}`));
@@ -131,7 +151,7 @@ export function buildReferenceIndex({ document, modules, github }: ReferenceSour
   }
   for (const candidate of document.candidates) {
     const found = assignments.find((a) => a.assignment.id === candidate.assignmentId);
-    const name = ofWork(found?.assignment, found?.specialist ?? owner(candidate.specialistId));
+    const name = candidateNames.get(candidate.id)!;
     const reference = make({ kind: "candidate", id: candidate.id }, candidate.id, "candidato", name, found ? clip(found.assignment.objective, 120) : null);
     index.ids.set(candidate.id, reference);
     if (candidate.technicalReview) {
@@ -238,6 +258,26 @@ interface Match {
 const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const isLinkedPrefix = (id: string) => (LINKED_PREFIXES as readonly string[]).includes(id.slice(0, id.indexOf("-")));
 
+const ANCHORED_ID = new RegExp(`^${ID_PATTERN.source}$`);
+const compiled = new WeakMap<ReferenceIndex, { irregular: RegExp | null; names: RegExp | null }>();
+
+/** The patterns an index needs beyond the fixed ones, compiled once per index. */
+function patternsOf(index: ReferenceIndex) {
+  let patterns = compiled.get(index);
+  if (!patterns) {
+    const alternatives = (items: string[]) => items.sort((a, b) => b.length - a.length).map(escape).join("|");
+    // Ids a person chose by hand, as a decision's "D-1", do not follow ids.ts: they are matched as written.
+    const irregular = [...index.ids.keys()].filter((id) => !ANCHORED_ID.test(id));
+    const names = [...index.names.keys()];
+    patterns = {
+      irregular: irregular.length ? new RegExp(`(?<![\\w-])(?:${alternatives(irregular)})(?![\\w-])`, "g") : null,
+      names: names.length ? new RegExp(`(?<![\\p{L}\\p{N}_@-])(?:${alternatives(names)})(?![\\p{L}\\p{N}_-])`, "gu") : null,
+    };
+    compiled.set(index, patterns);
+  }
+  return patterns;
+}
+
 function matches(text: string, index: ReferenceIndex): Match[] {
   const found: Match[] = [];
   for (const m of text.matchAll(MENTION_PATTERN)) {
@@ -253,12 +293,8 @@ function matches(text: string, index: ReferenceIndex): Match[] {
     const reference = whole ?? mentionReference(trimmed, index);
     if (reference) found.push({ start: m.index, end: m.index + 1 + (whole ? body : trimmed).length, reference });
   }
-  // Ids a person chose by hand, as a decision's "D-1", do not follow ids.ts: they are matched as written.
-  const irregular = [...index.ids.keys()].filter((id) => !new RegExp(`^${ID_PATTERN.source}$`).test(id));
-  if (irregular.length) {
-    const pattern = new RegExp(`(?<![\\w-])(?:${irregular.sort((a, b) => b.length - a.length).map(escape).join("|")})(?![\\w-])`, "g");
-    for (const m of text.matchAll(pattern)) found.push({ start: m.index, end: m.index + m[0].length, reference: index.ids.get(m[0])! });
-  }
+  const { irregular, names } = patternsOf(index);
+  if (irregular) for (const m of text.matchAll(irregular)) found.push({ start: m.index, end: m.index + m[0].length, reference: index.ids.get(m[0])! });
   for (const m of text.matchAll(ID_PATTERN)) {
     const reference = index.ids.get(m[0]);
     if (reference) found.push({ start: m.index, end: m.index + m[0].length, reference });
@@ -276,11 +312,7 @@ function matches(text: string, index: ReferenceIndex): Match[] {
       if (reference) found.push({ start: m.index, end: m.index + m[0].length, reference });
     }
   }
-  if (index.names.size) {
-    const names = [...index.names.keys()].sort((a, b) => b.length - a.length).map(escape);
-    const pattern = new RegExp(`(?<![\\p{L}\\p{N}_@-])(?:${names.join("|")})(?![\\p{L}\\p{N}_-])`, "gu");
-    for (const m of text.matchAll(pattern)) found.push({ start: m.index, end: m.index + m[0].length, reference: index.names.get(m[0])! });
-  }
+  if (names) for (const m of text.matchAll(names)) found.push({ start: m.index, end: m.index + m[0].length, reference: index.names.get(m[0])! });
   for (const m of text.matchAll(PATH_PATTERN)) {
     const reference = index.paths.get(m[1]!) ?? index.branches.get(m[1]!);
     if (reference) found.push({ start: m.index, end: m.index + m[0].length, reference });
@@ -413,21 +445,24 @@ export function parseReferenceHref(href: string): ReferenceTarget | null {
 
 /** Trama's records the Coordinator may cite, one line each with the name the person reads; null when there are none. */
 export function referenceListing(index: ReferenceIndex, limit = 80): string | null {
-  const lines: string[] = [];
+  const agents: string[] = [];
+  const records: string[] = [];
   for (const reference of index.ids.values()) {
     const kind = reference.target.kind;
     if (kind === "review" || kind === "audit") continue;
-    lines.push(`- ${reference.id}: ${reference.label}`);
+    (kind === "specialist" ? agents : records).push(`- ${reference.id}: ${reference.label}`);
   }
   for (const reference of index.slices.values()) {
-    if (reference.target.kind === "slice") lines.push(`- ${reference.id} (piano ${reference.target.planId}): ${reference.label}`);
+    if (reference.target.kind === "slice") records.push(`- ${reference.id} (piano ${reference.target.planId}): ${reference.label}`);
   }
-  if (!lines.length) return null;
-  const kept = lines.slice(-limit);
+  if (!agents.length && !records.length) return null;
+  // The agents always; of the other records, the newest.
+  const kept = records.slice(-limit);
   return [
     "## Riferimenti di Trama",
     "Gli id reali che puoi citare; Trama li mostra alla persona come collegamenti con il nome a destra. Un id che non è qui resta testo semplice e Trama lo segnala.",
-    ...(lines.length > kept.length ? [`(${lines.length - kept.length} più vecchi omessi)`] : []),
+    ...agents,
+    ...(records.length > kept.length ? [`(${records.length - kept.length} record più vecchi omessi)`] : []),
     ...kept,
   ].join("\n");
 }

@@ -5,14 +5,15 @@ import { useUi } from "./store";
 let last: { document: unknown; snapshot: unknown; github: unknown; index: ReferenceIndex } | null = null;
 let stable: { key: string; index: ReferenceIndex } | null = null;
 
-const fingerprint = (index: ReferenceIndex) =>
+// The files come from one scan: its time and size stand for thousands of paths.
+const fingerprint = (index: ReferenceIndex, project: ActiveProjectState) =>
   JSON.stringify([
+    [project.snapshot.rootPath, project.snapshot.scannedAt, project.snapshot.totalFileCount],
     index.githubReady,
     [...index.ids.values()].map((r) => [r.id, r.label, r.detail]),
     [...index.issues.values()].map((r) => [r.id, r.target.kind, r.detail, r.url]),
     [...index.slices.values()].map((r) => [r.id, r.label, r.target]),
     [...index.names.keys()],
-    [...index.paths.keys()],
     [...index.branches.keys()],
     index.commits.map((c) => c.sha),
   ]);
@@ -25,7 +26,7 @@ export function referenceIndexOf(project: ActiveProjectState | null | undefined)
   if (!project) return null;
   if (last && last.document === project.document && last.snapshot === project.snapshot && last.github === project.github) return last.index;
   const built = buildReferenceIndex({ document: project.document, modules: project.snapshot.modules, github: project.github });
-  const key = fingerprint(built);
+  const key = fingerprint(built, project);
   const index = stable?.key === key ? stable.index : built;
   stable = { key, index };
   last = { document: project.document, snapshot: project.snapshot, github: project.github, index };

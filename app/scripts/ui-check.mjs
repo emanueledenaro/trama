@@ -745,12 +745,14 @@ const goalTitle = "Ordini annullati in revisione";
 const goalId = (await page.getByText(/^G-[0-9A-F]{8}$/).first().textContent()).trim();
 await page.getByLabel("Messaggio al Coordinatore").fill("Da dove partiamo per questo obiettivo?");
 await page.keyboard.press("Enter");
-await page.getByText(/Dialogo dell'obiettivo G-/).first().waitFor({ timeout: 20_000 });
+// Issue #277: the echoed goal id is a link that shows the goal's title.
+const goalReference = page.locator(`.chat-markdown a[data-reference="goal"][data-reference-id="${goalId}"]`);
+await goalReference.filter({ hasText: goalTitle }).first().waitFor({ timeout: 20_000 });
 await shot("10d-goal-dialog");
 // The project dialog keeps its own conversation.
 await page.getByRole("button", { name: "Dialogo del progetto" }).click();
 await page.getByText("Ho letto lo studio").first().waitFor();
-if (await page.getByText(/Dialogo dell'obiettivo G-/).count()) throw new Error("The goal dialog leaked into the project dialog");
+if (await goalReference.count()) throw new Error("The goal dialog leaked into the project dialog");
 // The overview (UX03) lists the project with its open goals.
 await page.getByRole("button", { name: "Panoramica dei progetti" }).click();
 await page.getByTestId("overview-project").first().getByText("Ordini annullati in revisione").waitFor({ timeout: 10_000 });

@@ -199,9 +199,9 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
         const listed = [...text.split("## Riferimenti di Trama")[1].matchAll(/^- (\S+)(?: \(piano [^)]+\))?: /gm)].map((m) => m[1]);
         referencesByThread.set(threadId, listed);
       }
-      if (text.includes("[cita]")) {
-        // Cites a candidate, its assignment and a decision by id, as the listing gave them, and one id that names nothing.
-        // Without a listing (a Trama before issue #277), the ids written in the message.
+      if (text.includes("[cita]") && toolServers.has(threadId) && !params.outputSchema) {
+        // Issue #277: the Coordinator cites a candidate, its assignment and a decision by id, as the listing gave them, and
+        // one id that names nothing. A planner that reads the conversation still writes its JSON. Without a listing (a Trama before issue #277), the ids written in the message.
         const listed = referencesByThread.get(threadId) ?? [...text.matchAll(/\b[ACD]-[0-9A-F]{8}\b/g)].map((m) => m[0]);
         const pick = (prefix) => listed.findLast((id) => id.startsWith(prefix)) ?? `${prefix}-NESSUNO`;
         setTimeout(() => finish(`Il candidato ${pick("C-")} viene dall'incarico ${pick("A-")} e rispetta la decisione ${pick("D-")}. Il candidato C-00000000 invece non c'è.`), 10);

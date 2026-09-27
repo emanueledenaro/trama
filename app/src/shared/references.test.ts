@@ -109,6 +109,18 @@ describe("references in messages (issue #277)", () => {
     expect(referenceText(lookupReference("Luca", refs)!, "Luca", "")).toBe("Luca");
   });
 
+  it("numbers the works of the same agent that would read the same", () => {
+    const document = emptyDocument("p");
+    const first = { id: "A-00000001", objective: "Prima" } as SpecialistAssignment;
+    const second = { id: "A-00000002", objective: "Seconda" } as SpecialistAssignment;
+    document.team.specialists = [{ ...luca, assignments: [first, second] } as Specialist];
+    document.candidates = [{ ...candidate, id: "C-00000001", assignmentId: "A-00000001" }, { ...candidate, id: "C-00000002", assignmentId: "A-00000002" }];
+    const refs = buildReferenceIndex({ document, modules: [], github });
+    expect(lookupReference("C-00000001", refs)!.label).toBe("candidato di Luca, n. 1");
+    expect(lookupReference("C-00000002", refs)!.label).toBe("candidato di Luca, n. 2");
+    expect(lookupReference("A-00000002", refs)!.label).toBe("incarico di Luca, n. 2");
+  });
+
   it("writes every target as a link and reads it back", () => {
     const refs = index();
     for (const token of ["#13", "#14", "A-11111111", "C-55555555", "D-1", "G-66666666", "P-22222222", "S2", "S-33333333", "Sources/Orders", "Sources/Orders/CancelPaidOrder.swift", "0123456", "feature/support-review-trama-1a2b3c4d"]) {
