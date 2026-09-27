@@ -1,6 +1,5 @@
 /**
- * Bounded curated memory in two files, ported from Hermes Agent `tools/memory_tool_store.py` and
- * `tools/memory_tool.py` (revision 58c896e, MIT, Copyright (c) 2025 Nous Research).
+ * Bounded curated memory in two files. Derived from third-party MIT code; see THIRD_PARTY_NOTICES.md.
  *
  * `USER.md` holds who the person is and is shared by the person's projects; `MEMORY.md` holds notes
  * about one project's environment and stays in that project (ADR 0014). Entries are joined with
@@ -56,7 +55,7 @@ export interface MemoryStoreOptions {
   userCharLimit?: number;
   memoryEnabled?: boolean;
   userProfileEnabled?: boolean;
-  /** Called when a file over its limit is loaded; Hermes logs a warning and keeps every entry. */
+  /** Called when a file over its limit is loaded; the store logs a warning and keeps every entry. */
   warn?: (message: string) => void;
 }
 
@@ -291,7 +290,7 @@ export class MemoryStore {
     if (!operations.length) return error("operations list is empty.");
     const ops = operations.map((op) => (op && typeof op === "object" ? (op as JsonRecord) : {}));
     for (const [i, op] of ops.entries()) {
-      // Hermes scans only `content`; the `new_text` alias is scanned too so it cannot skip the check.
+      // `content` is scanned, and so is the `new_text` alias so it cannot skip the check.
       const text = typeof op.content === "string" && op.content ? op.content : typeof op.new_text === "string" ? op.new_text : "";
       const threat = (op.action === "add" || op.action === "replace") && text ? firstThreatMessage(text) : null;
       if (threat) return error(`Operation ${i + 1}: ${threat}`);
@@ -417,7 +416,7 @@ function backgroundDeleteGate(args: JsonRecord, target: MemoryTarget, context: M
   }
 }
 
-/** Hermes `memory_tool`: validates the call, applies the review gate, then runs the store operation. */
+/** `memory`: validates the call, applies the review gate, then runs the store operation. */
 export function memoryTool(args: JsonRecord, context: MemoryToolContext): JsonRecord {
   const store = context.store;
   if (!store) return { error: "Memory is not available. It may be disabled in config or this environment.", success: false };
@@ -469,7 +468,7 @@ export function applyMemoryProposal(store: MemoryStore, payload: JsonRecord): Js
 export const MEMORY_TOOL_DESCRIPTION =
   "Save durable facts to persistent memory that survive across sessions. Memory is injected into every future turn, so keep entries compact and high-signal.\n\nHOW: make ALL your changes in ONE call via an 'operations' array (each item: {action, content?, old_text?}). The batch applies atomically and the char limit is checked only on the FINAL result — so a single call can remove/replace stale entries to free room AND add new ones, even when an add alone would overflow. The response reports current/limit chars and confirms completion; one batch call finishes the update, so don't repeat it. Use the bare action/content/old_text fields only for a single lone change.\n\nWHEN: only for facts that apply to EVERY session regardless of task: who the user is, stable environment facts, standing conventions with no task home. Anything learned while doing a task (procedures, pitfalls, and the user's preferences and corrections for that kind of work) belongs in the task's skill via skill_manage, where it loads only when relevant; memory is injected into every turn and must stay small.\n\nIF FULL: an add is rejected with the current entries shown. Reissue as ONE batch that removes or shortens enough stale entries and adds the new one together.\n\nTARGETS: 'user' = who the user is (name, role, preferences, style). 'memory' = your notes (environment, conventions, tool quirks, lessons).\n\nSKIP: trivial/obvious info, easily re-discovered facts, raw data dumps, task progress, completed-work logs, temporary TODO state (use session_search for those). Reusable procedures belong in a skill, not memory.";
 
-/** Tool description and target enum for the stores that are enabled (Hermes `_build_memory_schema_overrides`). */
+/** Tool description and target enum for the stores that are enabled. */
 export function memoryToolSurface(memoryEnabled: boolean, userEnabled: boolean): { description: string; targets: MemoryTarget[]; targetDescription: string } {
   const targets = [...(memoryEnabled ? ["memory" as const] : []), ...(userEnabled ? ["user" as const] : [])];
   const targetsLine = "TARGETS: 'user' = who the user is (name, role, preferences, style). 'memory' = your notes (environment, conventions, tool quirks, lessons).";

@@ -1,7 +1,6 @@
-// Provider marks. Claude, Cursor, Devin, Grok, Pi, OpenCode, Droid and Antigravity are copied from Synara
-// (apps/web/src/components/Icons.tsx and AntigravityIcon.tsx at eaa61eded31b6755d4f30ba8eabc5d905cf817cb, MIT,
-// see docs/synara-attribution.md). The OpenAI mark is the Simple Icons path (CC0-1.0), which Synara uses through
-// react-icons. The marks identify each provider and belong to their owners.
+// Provider marks. Claude, Cursor, Devin, Grok, Pi, OpenCode, Droid and Antigravity: derived from third-party MIT
+// code; see THIRD_PARTY_NOTICES.md. The OpenAI mark is the Simple Icons path (CC0-1.0). The marks identify each
+// provider and belong to their owners.
 import { useId, type SVGProps } from "react";
 import type { ProviderId } from "@shared/codex";
 import { cn } from "@/lib/cn";

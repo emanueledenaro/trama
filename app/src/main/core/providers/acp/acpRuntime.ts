@@ -1,13 +1,12 @@
 /**
  * Shared Agent Client Protocol runtime for the ACP providers (Cursor, Grok, Droid, Devin).
  *
- * Ported from Synara (https://github.com/Emanuele-web04/synara, MIT, Copyright (c) 2026 T3 Tools Inc.
- * and Emanuele Di Pietro): acp/AcpSessionRuntime.ts (startup, auth policies, resume/load, MCP
- * servers), AcpRuntimeModel.ts (session/update parsing, tool call state, config options),
- * AcpAdapterSupport.ts (permission option selection, prompt completion), AcpTurnIdleWatchdog.ts,
- * AcpLoadReplayGate.ts, AcpElicitationSupport.ts, skillPromptInjection.ts,
- * providerChildEnvironment.ts and providerBinaryResolution.ts. The Effect machinery is replaced by
- * a plain JSON-RPC client over ndjson stdio; the protocol handling follows Synara.
+ * Covers session startup, auth policies, resume/load and MCP servers, session/update parsing, tool
+ * call state and config options, permission option selection, prompt completion, the turn idle
+ * watchdog, the load replay gate, elicitation, inline skills, the child environment and binary
+ * resolution. It is a plain JSON-RPC client over ndjson stdio.
+ *
+ * Derived from third-party MIT code; see THIRD_PARTY_NOTICES.md.
  */
 import { type ChildProcessWithoutNullStreams, execFile, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
@@ -169,7 +168,7 @@ export function buildChildEnvironment(
   const env: NodeJS.ProcessEnv = {};
   for (const [key, value] of Object.entries({ ...baseEnv, ...overrides })) {
     const upper = key.toUpperCase();
-    if (upper.startsWith("TRAMA_") || upper.startsWith("SYNARA_")) continue;
+    if (upper.startsWith("TRAMA_")) continue;
     if (INHERITED_NATIVE_CAPABILITY_KEYS.has(upper)) continue;
     if (PROVIDER_CREDENTIAL_KEYS.has(upper) && !allowed.has(upper)) continue;
     env[key] = value;
@@ -765,7 +764,7 @@ function requestErrorDetail(error: JsonObject): string {
   return message || detail || "Richiesta ACP non riuscita.";
 }
 
-/** Synara's isAcpAuthRequiredError: -32000 with a recognizable auth-failure phrase. */
+/** An auth-required error is -32000 with a recognizable auth-failure phrase. */
 export function isAuthRequiredError(error: unknown): boolean {
   return (
     error instanceof AcpRequestError &&
@@ -1335,7 +1334,7 @@ export class AcpAgentRuntime implements AgentRuntime {
       const tool = (server && named ? `${server}: ${named}` : null) ?? toolCallCommand(toolCall.rawInput, title) ?? title ?? kind ?? "strumento";
       policy.refuse?.({ itemId, tool, kind });
     }
-    // With no active turn Synara cancels: late or replayed requests must not inherit a turn's authority.
+    // With no active turn the request is cancelled: late or replayed requests must not inherit a turn's authority.
     const optionId = policy.active ? selectPermissionOption(decision, params.options) : null;
     return optionId ? { outcome: { outcome: "selected", optionId } } : { outcome: { outcome: "cancelled" } };
   }
