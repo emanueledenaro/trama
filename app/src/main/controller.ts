@@ -4,7 +4,7 @@ import { mkdir, readFile as readFileText, realpath, stat, writeFile } from "node
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { isUsableAccount, type ProviderAccount, type ProviderId, type ProviderModel, READ_OUTSIDE_SCOPE_TITLE, TOOL_REFUSED_TITLE, type TurnEvent } from "@shared/codex";
-import { PROVIDERS, canCoordinate, catalogModel, catalogOffers, coordinatorUnavailableReason, supportsReadOnly, type CatalogEntry } from "@shared/providers";
+import { PROVIDERS, canCoordinate, catalogModel, catalogOffers, coordinatorDefaultModel, coordinatorUnavailableReason, supportsReadOnly, type CatalogEntry } from "@shared/providers";
 import { shortId } from "@shared/ids";
 import { mentionContextBlock } from "@shared/mentions";
 import { codexSkillText, type LoadedSkill, skillInvocations } from "@shared/skills";
@@ -1677,9 +1677,7 @@ export class TramaController {
     const models = this.state.providers[provider]?.models ?? [];
     const chosen = (document.selectedProvider ?? "codex") === provider ? document.selectedModel : (document.providerPreferences?.[provider]?.model ?? null);
     if (chosen) return models.length === 0 || catalogOffers(provider, models, chosen) ? chosen : null;
-    const preferred = this.state.settings.coordinatorModels?.[provider]?.model;
-    if (preferred && (models.length === 0 || catalogOffers(provider, models, preferred))) return preferred;
-    return models.find((m) => m.isDefault)?.model ?? models[0]?.model ?? null;
+    return coordinatorDefaultModel(provider, models, this.state.settings.coordinatorModels?.[provider]?.model);
   }
 
   private coordinatorModelProblem(document: ProjectDocument, provider: ProviderId): string {
@@ -1698,7 +1696,7 @@ export class TramaController {
       .map((id) => ({ id, models: this.state.providers[id].models.map((m) => m.model), catalog: this.state.providers[id].models }));
   }
 
-  private async ensureRuntime(project: ActiveProjectState): Promise<CoordinatorRuntime> {
+  private async ensureRuntime(project: ActiveProjectState, generation: number | null = null): Promise<CoordinatorRuntime> {
     const provider = this.coordinatorProvider(project.document);
     if (this.runtime && this.runtime.projectId === project.id && this.runtime.provider === provider) return this.runtime;
     this.stopCoordinatorRuntime();
@@ -1768,6 +1766,11 @@ export class TramaController {
       TOOL_SERVER_INSTRUCTIONS,
     );
     await toolServer.start();
+    // A model change replaced the opening that asked for this runtime: the newer opening creates its own.
+    if (generation !== null && generation !== this.coordinatorGeneration) {
+      toolServer.stop();
+      throw new Error("The Coordinator's opening was replaced.");
+    }
     const client = createRuntime(provider, {
       executable: provider === "codex" ? this.host.codexExecutable : null,
       toolServer: { name: TOOL_SERVER_NAME, url: toolServer.url, token: toolServer.token, tools: toolServer.toolNames },
@@ -1780,6 +1783,8 @@ export class TramaController {
   private starting: { project: ActiveProjectState | null; attempt: Promise<void> } | null = null;
   /** The model the Coordinator's latest opening started with, so a different choice during it can restart it. */
   private coordinatorOpening: { project: ActiveProjectState; model: string } | null = null;
+  /** Counts the Coordinator's openings: one that a newer opening replaced stops at its next step. */
+  private coordinatorGeneration = 0;
 
   /**
    * Opens or resumes the Coordinator thread; concurrent callers for the same project share the same attempt. An
@@ -1799,6 +1804,7 @@ export class TramaController {
   private async openCoordinator(): Promise<void> {
     const project = this.state.project;
     if (!project) return;
+    const generation = ++this.coordinatorGeneration;
     const document = project.document;
     const provider = this.coordinatorProvider(document);
     if (!this.state.providers[provider].account) await this.refreshProvider(provider);
@@ -1821,10 +1827,10 @@ export class TramaController {
     this.publish();
     let runtime: CoordinatorRuntime | null = null;
     try {
-      runtime = await this.ensureRuntime(project);
+      runtime = await this.ensureRuntime(project, generation);
       const study = await buildStudy(project.snapshot, document, project.github);
       document.coordinator.study = study;
-      if (this.runtime !== runtime) return;
+      if (this.runtime !== runtime || generation !== this.coordinatorGeneration) return;
       const previous = document.coordinator.threadId;
       const rules = lateRules(await this.coordinatorSkills(), provider);
       // Codex takes the Coordinator's skills as native skill inputs in the thread's first turn, the others in their instructions.
@@ -1841,7 +1847,7 @@ export class TramaController {
         readableRoots: this.readableRoots(project),
       });
       // A provider switch during the opening replaced this runtime: its result must not come back (review #1).
-      if (this.state.project !== project || this.runtime !== runtime) return;
+      if (this.state.project !== project || this.runtime !== runtime || generation !== this.coordinatorGeneration) return;
       const learningState = this.coordinatorLearning(document);
       if (opening.threadId !== previous) {
         // A new thread holds none of the earlier events: session search may return all of them.
@@ -1880,14 +1886,14 @@ export class TramaController {
         if (this.runtime !== runtime) return;
         document.coordinator.pendingHandover = null;
       }
-      if (this.state.project !== project || this.runtime !== runtime) return;
+      if (this.state.project !== project || this.runtime !== runtime || generation !== this.coordinatorGeneration) return;
       project.phase = { kind: "ready" };
       this.changed();
       void this.runDuties();
     } catch (error) {
       if (this.state.project !== project || this.coordinatorProvider(document) !== provider) return;
       // The runtime stopped because the person chose another model: the opening that replaced this one owns the phase.
-      if (runtime && this.runtime !== runtime) return;
+      if (generation !== this.coordinatorGeneration || (runtime && this.runtime !== runtime)) return;
       project.phase = { kind: "unavailable", message: (error as Error).message };
       project.streaming = null;
       this.changed();
@@ -2576,19 +2582,21 @@ export class TramaController {
   }
 
   /**
-   * A Coordinator still opening or studying on another model starts again on the one the person just chose, as a
-   * new session: the study is never recorded on a model the person replaced (issue #205).
+   * A Coordinator still opening or studying on another model starts again on the one the person just chose: the study
+   * is never recorded on a model the person replaced, and a studied project resumes its thread on it (issue #205).
    */
   private restartOpeningOnModelChange(project: ActiveProjectState, provider: ProviderId): void {
     const document = project.document;
     const opening = this.coordinatorOpening;
     if (project.phase.kind !== "opening" && project.phase.kind !== "studying") return;
     if (opening?.project !== project || provider !== this.coordinatorProvider(document)) return;
-    if (Object.keys(document.coordinator.injectedStudy).length > 0) return;
     const model = this.coordinatorModel(document, provider);
     if (!model || model === opening.model) return;
+    // Every step of the replaced opening checks the generation, including a runtime it is still creating.
+    this.coordinatorGeneration += 1;
     this.stopCoordinatorRuntime();
-    forgetCoordinatorThread(document);
+    // A thread without the study starts again; a studied project resumes its thread on the new model.
+    if (Object.keys(document.coordinator.injectedStudy).length === 0) forgetCoordinatorThread(document);
     if (this.starting?.project === project) this.starting = null;
     project.phase = { kind: "idle" };
     project.streaming = null;

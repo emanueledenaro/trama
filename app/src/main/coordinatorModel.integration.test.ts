@@ -12,6 +12,7 @@ afterEach(async () => {
   controller = null;
   delete process.env.FAKE_CODEX_LOG;
   delete process.env.FAKE_CODEX_STUDY_GATE;
+  delete process.env.FAKE_CODEX_INITIALIZE_GATE;
 });
 
 async function until(check: () => boolean, timeout = 10_000): Promise<void> {
@@ -109,6 +110,39 @@ describe("the Coordinator's model (issue #205)", () => {
     const next = await requests(log);
     expect(next.filter((r) => r.method === "thread/start").map((r) => r.params.model)).toEqual(["gpt-5.5-fast"]);
     expect(next.filter(isStudy).map((r) => r.params.model)).toEqual(["gpt-5.5-fast"]);
+  });
+
+  it("reopens a studied project on the model the person chooses while the Coordinator connects", async () => {
+    const log = join(await mkdtemp(join(tmpdir(), "trama-log-")), "codex.log");
+    process.env.FAKE_CODEX_LOG = log;
+    await startController(await mkdtemp(join(tmpdir(), "trama-data-")));
+    const path = await newProject();
+    const other = await newProject();
+    await controller!.openProject(path);
+    await until(() => controller!.snapshot.project?.phase.kind === "ready");
+    await controller!.openProject(other);
+    await until(() => controller!.snapshot.project?.phase.kind === "ready");
+
+    const gate = join(await mkdtemp(join(tmpdir(), "trama-gate-")), "initialize");
+    process.env.FAKE_CODEX_INITIALIZE_GATE = gate;
+    await writeFile(log, "");
+    await controller!.openProject(path);
+    const project = controller!.snapshot.project!;
+    expect(Object.keys(project.document.coordinator.injectedStudy).length).toBeGreaterThan(0);
+    await until(() => existsSync(`${gate}.held`) && project.phase.kind === "opening");
+
+    await controller!.selectModel("gpt-5.5-fast", "low", "codex");
+    await writeFile(gate, "");
+    await until(() => project.phase.kind === "ready");
+
+    // The replaced opening leaves nothing behind: every session and study after the choice runs on the new model.
+    // The fake never keeps a thread, so the resumed opening starts a new one and studies again.
+    expect(project.document.coordinator.threadModel).toBe("gpt-5.5-fast");
+    const sent = await requests(log);
+    expect(sent.filter((r) => r.method !== "turn/start" || isStudy(r)).map((r) => r.params.model)).toEqual(
+      sent.filter((r) => r.method !== "turn/start" || isStudy(r)).map(() => "gpt-5.5-fast"),
+    );
+    expect(sent.some(isStudy)).toBe(true);
   });
 
   it("records the model of a turn as the thread's model", async () => {
