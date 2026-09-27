@@ -12,7 +12,7 @@ beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), "trama-memory-"));
 });
 
-describe("MemoryStore (Hermes memory_tool_store)", () => {
+describe("MemoryStore", () => {
   it("adds entries joined by the section delimiter", () => {
     const store = makeStore();
     expect(store.add("memory", "Project uses pnpm 9")).toMatchObject({ success: true, done: true, message: "Entry added.", entry_count: 1 });

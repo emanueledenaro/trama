@@ -1,4 +1,4 @@
-/** Relative time as Synara shows it: now, 5m, 3h, 2d, 1w, 4mo, 1y. */
+/** Short relative time: now, 5m, 3h, 2d, 1w, 4mo, 1y. */
 export function formatRelativeTime(iso: string, now = Date.now()): string {
   const seconds = Math.max(0, (now - Date.parse(iso)) / 1000);
   if (seconds < 60) return "ora";

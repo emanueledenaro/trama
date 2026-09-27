@@ -13,7 +13,7 @@ import {
   tickMemoryNudge,
 } from "./review";
 
-describe("review triggers (Hermes turn_context / turn_finalizer)", () => {
+describe("review triggers", () => {
   it("fires the memory review on the tenth person turn and resets", () => {
     const counters = { turnsSinceMemory: 0, itersSinceSkill: 0 };
     const fired = Array.from({ length: 20 }, () => tickMemoryNudge(counters, true));
@@ -32,7 +32,7 @@ describe("review triggers (Hermes turn_context / turn_finalizer)", () => {
     expect(counters).toEqual({ turnsSinceMemory: 0, itersSinceSkill: 0 });
   });
 
-  it("picks Hermes' prompt by scope and names the tools the review may call", () => {
+  it("picks the prompt by scope and names the tools the review may call", () => {
     expect(reviewPrompt({ memory: true, skills: true }, true)).toContain(COMBINED_REVIEW_PROMPT);
     expect(reviewPrompt({ memory: true, skills: false }, true)).toContain(MEMORY_REVIEW_PROMPT);
     expect(reviewPrompt({ memory: false, skills: true }, true)).toContain(SKILL_REVIEW_PROMPT);
@@ -58,7 +58,7 @@ describe("summarizeReviewActions", () => {
   });
 });
 
-describe("reviewTranscript (Hermes _digest_history)", () => {
+describe("reviewTranscript", () => {
   it("keeps the last 24 messages verbatim and digests the older ones", () => {
     const messages = Array.from({ length: 30 }, (_, i) => ({ role: i % 2 ? ("assistant" as const) : ("user" as const), text: `message ${i}\nsecond line` }));
     const text = reviewTranscript(messages);
