@@ -1,0 +1,36 @@
+# Il Coordinatore è sempre attivo e dirige squadre Scrum
+
+Stato: accettata il 28 settembre 2026 per la specifica #239 (decisioni Q1-Q23). Cambia il lavoro continuo di W04 e la parte dell'ADR 0003 sull'unione dei candidati. Gli ADR 0005 e 0013 restano validi.
+
+Fino a W04 il Coordinatore faceva una mossa dopo un evento, al massimo cinque di fila, e poi aspettava la persona. La persona confermava comprensione, team e unione di ogni candidato, e i blocchi tecnici restavano fermi finché lei non scriveva. Il team era un insieme piatto di specialisti con al massimo tre sviluppatori in parallelo. La persona vuole un Coordinatore che lavori come il coordinatore umano del progetto: organizza, anticipa e porta avanti il lavoro senza che qualcuno gli dica ogni volta cosa fare.
+
+Decisione:
+
+- **Sempre attivo finché ci sono lavori aperti.** Il Coordinatore reagisce agli eventi (fine di turni, piani e incarichi, verifica rossa, conflitto tra worktree, issue nuova, pull request commentata) e fa un giro periodico su ogni progetto con lavori aperti, anche in secondo piano, finché Trama è aperta. Senza lavori aperti non gira. Alla riapertura riprende da dove era (C11).
+- **Nessun limite di mosse, nessun freno sul consumo.** Il limite di cinque mosse automatiche di fila sparisce. Lo fermano la Pausa della persona, sempre raggiungibile, e i limiti del provider (P10); alla fine del limite riprende (C11).
+- **Un mandato di progetto per tutto il ciclo, con divieti fissi.** All'apertura di un progetto il Coordinatore propone un mandato per tutto il ciclo di lavoro; la persona lo concede una volta e può restringerlo. Nessun mandato concede operazioni distruttive su git (force push, push diretto sul branch principale, cancellazione di branch o tag), rilasci e tag, segreti e credenziali, impostazioni del repository. Questi divieti sono regole di Trama, non istruzioni al modello.
+- **Dentro il mandato fa tutto il ciclo e lo notifica.** Conferma della comprensione, squadre, spec, fette, assegnazione, verifica e unione del candidato verificato con il via libera. Risolve da solo i blocchi tecnici e avvisa a cose fatte. Apre, smista e assegna le issue dei problemi che trova. Propone il lavoro nuovo come obiettivo. Alla persona restano le decisioni di prodotto, il mandato e i casi distruttivi seri.
+- **I candidati che cambiano l'interfaccia aspettano la persona.** Arrivano in "Aspetta te" con le schermate prima e dopo, in chiaro e in scuro, e si uniscono dopo il suo ok. Gli altri si uniscono con il via libera del Coordinatore.
+- **Un posto unico per quello che aspetta la persona.** "Aspetta te" raccoglie domande, schede del Patto, mandato e candidati di interfaccia, ordinati per quanto bloccano, con un riepilogo compatto sopra il composer. Una riga di stato dice cosa fa il Coordinatore ora; un riepilogo a ogni traguardo dice cosa ha fatto, cosa fa e cosa gli serve. Le singole mosse vanno in Attività, non in chat.
+- **Squadre stabili per area del prodotto.** Il Coordinatore forma le squadre dalle aree della Mappa dopo lo studio e lo notifica; la persona può rinominarle, unirle o dividerle. Una squadra ha un capo squadra (Scrum Master), da uno a tre sviluppatori e un QA dedicato; gli altri ruoli fissi sono condivisi tra le squadre. Al massimo tre squadre attive insieme per progetto; entrambi i limiti sono modificabili nelle impostazioni. La vista Team diventa Squadre.
+- **Missioni per il lavoro che attraversa le aree.** Un obiettivo che tocca più aree apre una missione che riunisce le squadre coinvolte; il Coordinatore la dirige e i capi squadra si sincronizzano. Si chiude con l'obiettivo raggiunto. Il nome Gruppo resta alla vista delle persone.
+- **Sprint con eventi registrati.** Uno sprint è un blocco di fette pronte con un obiettivo di sprint e si chiude quando le fette sono fatte o bloccate. Pianificazione, stand-up, revisione e retrospettiva sono registrati; la retrospettiva scrive lezioni nella memoria della squadra e modifiche al metodo come pratiche reversibili. Il backlog lo ordina il Coordinatore, e l'ordine della persona vince.
+- **Le discussioni tra agenti finiscono con una decisione.** Gli agenti si parlano in modo visibile (W07) per stimare, sbloccare, rivedere e risolvere conflitti. Ogni discussione ha un tempo massimo e finisce con una decisione registrata, o con una domanda alla persona se è di prodotto. Discussioni, stand-up e stime usano il modello più leggero del provider; implementazione e decisioni difficili il modello del ruolo.
+- **Una roadmap ricavata dai dati.** Trama mostra una roadmap del progetto da obiettivi, missioni, sprint, issue e pull request, aggiornata a ogni traguardo. Se il repository ha una issue di roadmap, il Coordinatore aggiorna anche quella.
+- **Resta un solo Coordinatore per progetto.** Capi squadra e squadre sono specialisti: non parlano con la persona se non tramite "Aspetta te" e le discussioni visibili, non allargano il mandato e non decidono il prodotto. La sessione del Coordinatore resta una per progetto (ADR 0013) e la persona dialoga solo con lui (ADR 0005).
+
+Alternative scartate:
+
+- **Tenere il limite di cinque mosse o un tetto di consumo.** Fermava il lavoro proprio quando andava avanti bene e costringeva la persona a scrivere "continua". La Pausa e i limiti del provider bastano a fermarlo.
+- **Un mandato per obiettivo.** Chiedeva lo stesso permesso a ogni obiettivo. Un mandato di progetto restringibile, con i divieti fissi fuori da ogni mandato, dà la stessa sicurezza con una sola concessione.
+- **Squadre formate per ogni obiettivo.** Non accumulano memoria e pratiche e si ricompongono di continuo. Squadre stabili per area, con missioni per il lavoro trasversale, conservano la conoscenza dell'area.
+- **Chiamare "Gruppo" la missione.** Il nome è già della vista delle persone del repository (G02) e avrebbe confuso agenti e persone.
+- **Unire da solo anche i candidati di interfaccia.** Le verifiche automatiche non giudicano l'aspetto; la persona vuole vedere le schermate prima dell'unione.
+
+Conseguenze:
+
+- Il lavoro continuo di W04 cambia: via il contatore di mosse di fila, arrivano il giro periodico e la Pausa. Le regole che impediscono una mossa dopo un errore o un'interruzione restano.
+- Il limite di tre sviluppatori in parallelo del progetto diventa un limite per squadra, con fino a tre squadre attive: fino a nove sviluppatori insieme per progetto.
+- L'ADR 0003 prevedeva già il merge delegato; ora il Coordinatore lo esegue davvero dentro il mandato, con l'eccezione dei candidati di interfaccia. Il via libera resta distinto dalla revisione umana.
+- Il consumo del provider cresce con il lavoro in parallelo. La persona lo controlla con la Pausa e con i limiti delle squadre nelle impostazioni.
+- Le fette di questa specifica dipendono da W07 (#144), W10 (#147) e C11 (#43), ancora in corso.
