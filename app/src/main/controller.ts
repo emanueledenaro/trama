@@ -3915,7 +3915,7 @@ export class TramaController {
     this.changedIn(project);
     if (!serious.length) return;
     const document = project.document;
-    const model = confirmationModel(runner.model, document.coordinator.threadModel ?? this.coordinatorModel(document, runner.provider));
+    const model = confirmationModel(runner.model, document.coordinator.threadModel ?? this.coordinatorModel(document, runner.provider), this.state.providers[runner.provider]?.models ?? []);
     if (!model) {
       for (const { finding } of serious) confirmFinding(finding, { failure: NO_STRONGER_MODEL });
       return;

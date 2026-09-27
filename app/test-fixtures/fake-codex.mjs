@@ -252,6 +252,15 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
         const file = text.match(/File cambiati: ([^,\n]+?)(?:,|\.\n|\.$)/m)?.[1] ?? "?";
         // Each finding carries a proof of a different kind (F02): a line of a changed file Trama can reread, a
         // reproduction only a stronger model can confirm, and a command outside Trama's own checks.
+        // The Standards finding quotes the first line of the changed file, as it reads in the worktree.
+        const { readFileSync } = await import("node:fs");
+        const { join } = await import("node:path");
+        let firstLine = "";
+        try {
+          firstLine = readFileSync(join(params.cwd ?? "", file), "utf8").split("\n")[0].trim();
+        } catch {
+          firstLine = "";
+        }
         const proof = (kind, fields) => ({ kind, file: "", line: 0, quote: "", command: "", steps: "", ...fields });
         const answer = text.includes("You are the Spec sub-agent")
           ? {
@@ -268,7 +277,7 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
             }
           : {
               report: `### Violazioni documentate\n\nNessuna.\n\n### Smell (giudizio)\n\n- Possibile Mysterious Name in \`${file}\`.\n\nDiff letto con \`git diff ${fixedPoint}\`. Skill ricevute: ${skills.join(", ")}.`,
-              findings: [{ title: `Possibile Mysterious Name in ${file}`, severity: "minor", evidence: proof("fileLine", { file, line: 1 }) }],
+              findings: [{ title: `Possibile Mysterious Name in ${file}`, severity: "minor", evidence: proof("fileLine", { file, line: 1, quote: firstLine }) }],
               worst: `Possibile Mysterious Name in ${file}`,
             };
         // With FAKE_CODEX_AUDIT_GATE the axis answers only once the test creates that file, so a test can hold both

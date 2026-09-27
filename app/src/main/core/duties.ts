@@ -679,9 +679,15 @@ export function withinMandate(document: ProjectDocument, assignment: SpecialistA
 /** Light models by name, as catalogues do not say what a model costs: a Trama addition. */
 const LIGHT_MODEL = /\b(mini|nano|flash|haiku|lite|luna)\b/i;
 
+/** True when the model, by its id or its catalogue name, is a light one. */
+export function isLightModel(model: string, models: ProviderModel[] = []): boolean {
+  const entry = models.find((m) => m.model === model);
+  return LIGHT_MODEL.test(model) || (entry ? LIGHT_MODEL.test(entry.displayName) : false);
+}
+
 /** The model of the automatic work: the lightest of the catalogue, else the Coordinator's. */
 export function dutyModel(models: ProviderModel[], fallback: string | null): { model: string; reason: string } | null {
-  const light = models.find((m) => LIGHT_MODEL.test(m.model) || LIGHT_MODEL.test(m.displayName));
+  const light = models.find((m) => isLightModel(m.model, [m]));
   if (light) return { model: light.model, reason: "Scelto da Trama: il modello più leggero del catalogo, per il lavoro automatico dei ruoli fissi." };
   if (fallback) return { model: fallback, reason: "Scelto da Trama: il catalogo non ha un modello leggero riconoscibile, quindi usa quello del Coordinatore." };
   return null;

@@ -75,23 +75,28 @@ describe("Trama rechecks the proofs it can run (F02)", () => {
     const root = await worktree();
     const held = await recheckEvidence(line("Sources/Orders/Cancel.swift", 2, "func doIt(o:  Order)"), [], root);
     expect(held).toMatchObject({ outcome: "held", observed: "  func doIt(o: Order) {}" });
-    expect(await recheckEvidence(line("./Sources/Orders/Cancel.swift", 1), [], root)).toMatchObject({ outcome: "held", basis: expect.stringContaining("la riga esiste") });
+    expect(await recheckEvidence(line("./Sources/Orders/Cancel.swift", 1, "struct Cancel"), [], root)).toMatchObject({ outcome: "held", observed: "struct Cancel {" });
+    // A line without the quoted text proves only that the line exists: Trama does not take it as a proof.
+    expect(await recheckEvidence(line("Sources/Orders/Cancel.swift", 1), [], root)).toMatchObject({ outcome: "notCheckable", basis: expect.stringContaining("non cita") });
     expect(await recheckEvidence(line("Sources/Orders/Cancel.swift", 2, "func cancel"), [], root)).toMatchObject({ outcome: "contradicted" });
-    expect(await recheckEvidence(line("Sources/Orders/Cancel.swift", 40), [], root)).toMatchObject({ outcome: "contradicted", basis: expect.stringContaining("4 righe") });
-    expect(await recheckEvidence(line("Sources/Orders/Missing.swift", 1), [], root)).toMatchObject({ outcome: "contradicted", basis: expect.stringContaining("non esiste") });
+    expect(await recheckEvidence(line("Sources/Orders/Cancel.swift", 40, "x"), [], root)).toMatchObject({ outcome: "contradicted", basis: expect.stringContaining("4 righe") });
+    expect(await recheckEvidence(line("Sources/Orders/Missing.swift", 1, "x"), [], root)).toMatchObject({ outcome: "contradicted", basis: expect.stringContaining("non esiste") });
   });
 
   it("never reads secrets, symbolic links or paths outside the worktree", async () => {
     const root = await worktree();
     for (const file of [".env", "Link.swift", "../outside.swift", "/etc/hosts"]) {
-      expect(await recheckEvidence(line(file, 1), [], root)).toMatchObject({ outcome: "notCheckable", observed: null });
+      expect(await recheckEvidence(line(file, 1, "TOKEN"), [], root)).toMatchObject({ outcome: "notCheckable", observed: null });
     }
   });
 
   it("holds a command only when it is one of Trama's checks and it really failed on this candidate", async () => {
     const { checks } = audit();
     expect(checkForCommand("swift test", checks)?.check).toBe("swift_test");
-    expect(checkForCommand("$ swift test --filter CancelTests", checks)?.check).toBe("swift_test");
+    expect(checkForCommand("$ swift  test", checks)?.check).toBe("swift_test");
+    expect(checkForCommand("swift test --package-path /w", checks)?.check).toBe("swift_test");
+    // Arguments the model chose make another command, one Trama never ran.
+    expect(checkForCommand("swift test --filter MissingTest", checks)).toBeNull();
     expect(checkForCommand("swift_build", checks)?.check).toBe("swift_build");
     expect(checkForCommand("rm -rf /", checks)).toBeNull();
     expect(await recheckEvidence({ kind: "command", command: "swift test" }, checks, "/nowhere")).toMatchObject({ outcome: "held", observed: expect.stringContaining("testUnpaid failed") });
@@ -174,6 +179,12 @@ describe("each finding ends verified by Trama, confirmed by a second model, or a
     expect(confirmationModel("gpt-5.5-mini", "gpt-5.5")).toBe("gpt-5.5");
     expect(confirmationModel("gpt-5.5", "gpt-5.5")).toBeNull();
     expect(confirmationModel("gpt-5.5", null)).toBeNull();
+    // Only a light model for the axes and a model that is not light for the Coordinator show a stronger reader.
+    expect(confirmationModel("gpt-5.5-mini", "gpt-5.5-nano")).toBeNull();
+    expect(confirmationModel("gpt-5.5", "gpt-5.5-pro")).toBeNull();
+    const catalogue = [{ id: "x", model: "x-small", displayName: "X Flash", description: "", isDefault: false, supportedReasoningEfforts: [], defaultReasoningEffort: null }];
+    expect(confirmationModel("gpt-5.5", "x-small", catalogue)).toBeNull();
+    expect(confirmationModel("x-small", "gpt-5.5", catalogue)).toBe("gpt-5.5");
   });
 
   it("reads the second model's answer only with an outcome and a reason", () => {
@@ -198,7 +209,7 @@ describe("each finding ends verified by Trama, confirmed by a second model, or a
 
   it("turns a finding still pending when the examination stops into a hypothesis", () => {
     const value = audit();
-    finishAxis(value, "standards", { report: "Un rilievo.", worst: null, findings: [{ title: "Nome", severity: "minor", evidence: line("a.swift", 1) }] }, at(3));
+    finishAxis(value, "standards", { report: "Un rilievo.", worst: null, findings: [{ title: "Nome", severity: "minor", evidence: line("a.swift", 1, "x") }] }, at(3));
     failAudit(value, "Trama si è chiusa.", at(4));
     expect(value.standards.items![0]).toMatchObject({ status: "hypothesis", basis: expect.stringContaining("interrotta") });
   });
@@ -213,6 +224,7 @@ describe("each finding ends verified by Trama, confirmed by a second model, or a
           { title: " Nome ", severity: "serious", evidence: { ...empty, kind: "fileLine", file: "a.swift", line: 3, quote: " x " } },
           { title: "Test", severity: "minor", evidence: { ...empty, kind: "command", command: " swift test " } },
           { title: "Riga zero", severity: "minor", evidence: { ...empty, kind: "fileLine", file: "a.swift" } },
+          { title: "Senza citazione", severity: "minor", evidence: { ...empty, kind: "fileLine", file: "a.swift", line: 2 } },
           { title: "Senza prova", severity: "strano", evidence: { ...empty, kind: "none" } },
           { title: " ", severity: "minor", evidence: { ...empty, kind: "none" } },
         ],
@@ -222,6 +234,7 @@ describe("each finding ends verified by Trama, confirmed by a second model, or a
       { title: "Nome", severity: "serious", evidence: { kind: "fileLine", file: "a.swift", line: 3, quote: "x" } },
       { title: "Test", severity: "minor", evidence: { kind: "command", command: "swift test" } },
       { title: "Riga zero", severity: "minor", evidence: null },
+      { title: "Senza citazione", severity: "minor", evidence: null },
       { title: "Senza prova", severity: "minor", evidence: null },
     ]);
   });
