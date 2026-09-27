@@ -1,0 +1,215 @@
+import { describe, expect, it } from "vitest";
+import type { CoordinatorRequest, ProjectDocument, WorkPlan } from "@shared/domain";
+import { placeGrillingQuestion } from "@shared/grilling";
+import { declareCandidate, recordEvidence, recordTechnicalReview } from "./candidates";
+import {
+  availableButtons,
+  currentStateText,
+  MISSING_BUTTON_TITLE,
+  missingButtonDetail,
+  missingButtonFeedback,
+  missingButtons,
+} from "./coordinatorGrounding";
+import { appendEvent, emptyDocument } from "./document";
+import { answerDecisionRequest, createDecisionRequest, createMandateRequest, grantMandate } from "./pact";
+import { assign, confirmTeam, endTurn, proposeTeam } from "./team";
+
+const at = (minute: number) => new Date(Date.UTC(2026, 8, 27, 12, minute));
+
+function request(document: ProjectDocument, id: string, goalId: string | null = null): CoordinatorRequest {
+  const value: CoordinatorRequest = { id, text: id, moduleId: null, state: "completed", model: null, effort: null, createdAt: "", completedAt: null, failure: null, goalId };
+  document.requests.push(value);
+  return value;
+}
+
+const alternatives = [
+  { behavior: "Solo il supporto", example: "Il supporto vede l'ordine 42", consequence: null },
+  { behavior: "Anche il cliente", example: "Il cliente vede lo stato review", consequence: null },
+];
+
+function grill(document: ProjectDocument, requestId: string) {
+  const grilling = placeGrillingQuestion(document, { runningRequestId: requestId, round: 1, recommendedIndex: 1, alternatives: 2 });
+  return createDecisionRequest(document, { requestId, category: "product", question: `Domanda ${grilling.number}`, concreteCase: "Ordine 42", alternatives, revisesDecisionId: null, grilling });
+}
+
+function plan(document: ProjectDocument, requestId: string): WorkPlan {
+  const value: WorkPlan = {
+    id: `P-${document.plans.length + 1}`,
+    requestId,
+    orderedBy: "coordinator",
+    kind: "agreedTicket",
+    moduleIds: ["Sources/Orders"],
+    summary: "Revisione degli ordini",
+    issueNumber: null,
+    status: "ready",
+    proposal: null,
+    failure: null,
+    decisionRequestIds: [],
+    createdAt: at(1).toISOString(),
+    updatedAt: at(1).toISOString(),
+  };
+  document.plans.push(value);
+  return value;
+}
+
+/** Grilling settled, mandate and team granted, a ready plan and two assignments of Luca and Ada. */
+function shop() {
+  const document = emptyDocument("negozio");
+  request(document, "r1");
+  answerDecisionRequest(document, grill(document, "r1").id, { alternativeIndex: 1, freeText: null });
+  grantMandate(document, { objectives: ["Ordini"], priorities: [], scopeModuleIds: ["Sources/Orders"], authorizedActions: ["plan", "executeInWorktree"], limits: [] });
+  const proposal = proposeTeam(document, {
+    requestId: null,
+    summary: null,
+    members: [
+      { name: "Luca", competence: "Node", reason: "Script", moduleIds: ["Sources/Orders"] },
+      { name: "Ada", competence: "Test", reason: "Test", moduleIds: ["Sources/Payments"] },
+    ],
+  });
+  confirmTeam(document, proposal.id, null, null);
+  request(document, "r2");
+  plan(document, "r2");
+  request(document, "r3");
+  return document;
+}
+
+function work(document: ProjectDocument, specialist: string, moduleId: string, minute: number) {
+  return assign(
+    document,
+    { specialist, kind: "agreedTicket", objective: "Correggere", issueNumber: null, exercise: null, moduleIds: [moduleId], dependencies: [], model: "gpt-6-luna", tools: ["edits"], requiredChecks: ["node_typecheck"], instructions: "Scrivi" },
+    document.mandate!.version,
+    "r3",
+    at(minute),
+  );
+}
+
+function candidate(document: ProjectDocument, assignmentId: string, check: "pass" | null, review: "approved" | null, minute = 5) {
+  endTurn(document, assignmentId, null, { kind: "completed", text: "Fatto" });
+  const value = declareCandidate(
+    document,
+    { assignmentId, decisionIds: [document.decisions[0]!.id], unresolvedChoices: [], externalEffects: [] },
+    { snapshotId: `snap-${assignmentId}`, baseSHA: "base", diff: "+x", changedFiles: ["package.json"], excludedSensitiveFiles: [], whitespaceErrors: [] },
+    at(minute),
+  );
+  if (check) recordEvidence(document, value.id, { check: "node_typecheck", passed: true, command: "npm run typecheck", output: "", snapshotId: value.snapshotId });
+  if (review) recordTechnicalReview(document, value.id, { reviewerThreadId: "reviewer", authorThreadId: "author", verdict: review, summary: "Letto" });
+  return value;
+}
+
+describe("missingButtons: a reply that names a step button the person does not have (issue #269)", () => {
+  it("flags the buttons of the shop audit when the work does not offer them", () => {
+    const document = shop();
+    const buttons = availableButtons(document, "r3");
+    expect(buttons.map((b) => b.move)).not.toContain("reviewCandidate");
+    expect(missingButtons("Ora devi usare la scheda Verifica il candidato.", buttons)).toEqual(["Verifica il candidato"]);
+    expect(missingButtons("Ora devi solo confermare usando il pulsante Conferma la comprensione.", buttons)).toEqual(["Conferma la comprensione"]);
+    expect(missingButtons('Premi **"Conferma le fette"** qui sotto.', buttons)).toEqual(["Conferma le fette"]);
+    expect(missingButtons("Clicca su «Accetta la proposta».", buttons)).toEqual(["Accetta la proposta"]);
+    expect(missingButtons("Usa il pulsante\nRispondi alle 3 domande.", buttons)).toEqual(["Rispondi alle domande"]);
+  });
+
+  it("leaves alone the buttons the person has now, in any dialog, and the same words in a plain sentence", () => {
+    const document = shop();
+    createMandateRequest(document, { requestId: "r1", reason: "Serve unire", objectives: ["Ordini"], priorities: [], scopeModuleIds: ["Sources/Orders"], authorizedActions: ["plan"], limits: [] });
+    request(document, "g1", "G-1");
+    const buttons = availableButtons(document, "g1");
+    expect(buttons.map((b) => b.move)).toContain("grantMandate");
+    expect(missingButtons("Premi «Accetta la proposta» sulla scheda del mandato, oppure il pulsante Concedi il mandato.", buttons)).toEqual([]);
+    expect(missingButtons("Luca verifica il candidato e poi Trama conferma le fette.", buttons)).toEqual([]);
+    expect(missingButtons("Apri il diff dalla scheda del candidato.", buttons)).toEqual([]);
+    expect(missingButtons("", buttons)).toEqual([]);
+  });
+
+  it("allows the review button once the candidate is verified and approved", () => {
+    const document = shop();
+    const assignment = work(document, "Luca", "Sources/Orders", 2);
+    candidate(document, assignment.id, "pass", "approved");
+    const buttons = availableButtons(document, "r3");
+    expect(buttons).toContainEqual(expect.objectContaining({ move: "reviewCandidate", label: "Verifica il candidato" }));
+    expect(missingButtons("Ora usa la scheda Verifica il candidato.", buttons)).toEqual([]);
+  });
+
+  it("tells the person what was named and what there is now", () => {
+    const document = shop();
+    expect(missingButtonDetail(["Verifica il candidato"], [])).toBe(
+      "Il Coordinatore ha nominato il pulsante «Verifica il candidato», che ora non c'è. Adesso non c'è un pulsante da premere.",
+    );
+    createMandateRequest(document, { requestId: "r3", reason: "Serve unire", objectives: ["Ordini"], priorities: [], scopeModuleIds: ["Sources/Orders"], authorizedActions: ["plan"], limits: [] });
+    expect(missingButtonDetail(["Verifica il candidato", "Conferma le fette"], availableButtons(document, "r3"))).toBe(
+      "Il Coordinatore ha nominato i pulsanti «Verifica il candidato», «Conferma le fette», che ora non ci sono. Adesso puoi usare: «Rivedi il piano», «Concedi il mandato».",
+    );
+  });
+});
+
+describe("missingButtonFeedback: the next turn reads the button that was not there (issue #269)", () => {
+  it("sends back the names from the activity of the previous reply in the same dialog", () => {
+    const document = shop();
+    appendEvent(document, "trama", { type: "activity", title: MISSING_BUTTON_TITLE, detail: missingButtonDetail(["Verifica il candidato"], []), tone: "error" }, "r3");
+    request(document, "r4");
+    request(document, "g1", "G-1");
+    const feedback = missingButtonFeedback(document, "r4");
+    expect(feedback).toContain("## Pulsante che non c'è");
+    expect(feedback).toContain("«Verifica il candidato»");
+    expect(missingButtonFeedback(document, "g1")).toBeNull();
+    expect(missingButtonFeedback(document, "r1")).toBeNull();
+    expect(missingButtonFeedback(document, "missing")).toBeNull();
+  });
+});
+
+describe("currentStateText: the state the Coordinator reads every turn (issue #269)", () => {
+  it("names the buttons, the mandate, the confirmed slices and each candidate as Trama records them", () => {
+    const document = shop();
+    document.plans[0]!.slicing = { status: "approved", tickets: [], feedback: null, approvedAt: at(7).toISOString(), failure: null, publishFailure: null };
+    const matrix = work(document, "Luca", "Sources/Orders", 2);
+    const old = candidate(document, matrix.id, null, null, 4);
+    const script = work(document, "Ada", "Sources/Payments", 3);
+    const fixed = candidate(document, script.id, "pass", "approved", 6);
+    document.conflicts = [
+      {
+        id: "K-1",
+        candidateId: fixed.id,
+        snapshotId: fixed.snapshotId,
+        remoteSHA: "abc",
+        references: [old.id],
+        classification: "conflict",
+        conflictingFiles: ["package.json"],
+        otherCandidateId: old.id,
+        otherSnapshotId: old.snapshotId,
+        detail: "",
+        checkedAt: at(4).toISOString(),
+      },
+    ];
+    createMandateRequest(document, { requestId: "r3", reason: "Serve unire", objectives: ["Ordini"], priorities: [], scopeModuleIds: ["Sources/Orders"], authorizedActions: ["plan"], limits: [] });
+
+    const text = currentStateText(document, "r3");
+    expect(text).toContain("## Stato attuale di Trama");
+    expect(text).toContain("Pulsanti che la persona vede ora: «Concedi il mandato».");
+    expect(text).toContain("non dire alla persona di premerlo");
+    expect(text).toContain(`Mandato: versione 1, concesso il ${document.mandate!.grantedAt}. Proposta di mandato ${document.mandateRequests[0]!.id}`);
+    expect(text).toContain(`Piano del lavoro P-1: stato ready, fette confermate dalla persona il ${at(7).toISOString()}.`);
+    expect(text).toContain(`- ${fixed.id} di Ada (incarico ${script.id}): non verificato, non è pronto per la persona (in conflitto con il candidato ${old.id} di Luca su package.json).`);
+    expect(text).toContain(`- ${old.id} di Luca (incarico ${matrix.id}): non verificato, non è pronto per la persona (verifica node_typecheck mai eseguita; revisione tecnica non ancora fatta).`);
+    // The newest candidate comes first.
+    expect(text.indexOf(fixed.id)).toBeLessThan(text.indexOf(`- ${old.id}`));
+  });
+
+  it("says a candidate is ready for the person only when it is verified and approved", () => {
+    const document = shop();
+    const assignment = work(document, "Luca", "Sources/Orders", 2);
+    const ready = candidate(document, assignment.id, "pass", "approved");
+    const text = currentStateText(document, "r3");
+    expect(text).toContain(`- ${ready.id} di Luca (incarico ${assignment.id}): verificato e approvato: pronto per la revisione della persona.`);
+    expect(text).toContain("Pulsanti che la persona vede ora: «Verifica il candidato».");
+    expect(text).toContain("Nessuna proposta di mandato in attesa.");
+  });
+
+  it("says when there is no mandate, plan, candidate or button", () => {
+    const document = emptyDocument("vuoto");
+    request(document, "r1");
+    const text = currentStateText(document, "r1");
+    expect(text).toContain("Pulsanti che la persona vede ora: nessuno.");
+    expect(text).toContain("Mandato: nessuno. Nessuna proposta di mandato in attesa.");
+    expect(text).toContain("Piano del lavoro: nessuno.");
+    expect(text).toContain("Candidati aperti: nessuno.");
+  });
+});

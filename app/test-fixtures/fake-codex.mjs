@@ -197,6 +197,12 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
         setTimeout(() => finish("Posso andare avanti in tre modi:\n\n1. Amplio il mandato a docs/\n2. Scrivo solo il codice\n3. Mi fermo qui\n\nRispondimi con 1, 2 o 3."), 10);
         return;
       }
+      if (text.includes("[pulsante]")) {
+        // Issue #269: the reply names a step button the person does not have; once Trama says so, it names none.
+        const reply = text.includes("## Pulsante che non c'è") ? "Scusa: quel pulsante non c'è." : "Ora devi usare la scheda Verifica il candidato.";
+        setTimeout(() => finish(reply), 10);
+        return;
+      }
       if (text.includes("[issue-gh]")) {
         // Issue #228: Codex tries `gh` in the read-only sandbox, which has no network; once Trama names read_issues, that one.
         if (text.includes("read_issues di Trama") && toolServers.has(threadId)) {
