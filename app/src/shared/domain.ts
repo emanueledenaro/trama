@@ -1399,6 +1399,11 @@ export interface AppSettings {
   continuousWork?: boolean;
   /** What the learning loop may do (ADR 0014); missing keys take the defaults. */
   learning?: Partial<LearningSettings>;
+  /**
+   * The model the person last chose for the Coordinator, per provider (issue #205). A project without a choice of its
+   * own starts from it; without it, the provider's catalogue decides the default.
+   */
+  coordinatorModels?: Partial<Record<ProviderId, { model: string; effort: string | null }>>;
 }
 
 export interface LearningSettings {

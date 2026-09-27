@@ -263,8 +263,17 @@ import {
 } from "./core/duties";
 import { findDomainProposal } from "@shared/domainDocs";
 
-/** The model Trama prefers for the Coordinator when the Codex catalogue offers it. */
-const PREFERRED_COORDINATOR_MODEL = "gpt-5.6-luna";
+/** The person's Coordinator models as read from settings.json: entries without a model name are dropped. */
+function coordinatorModelSettings(saved: unknown): NonNullable<AppSettings["coordinatorModels"]> {
+  if (!saved || typeof saved !== "object") return {};
+  const models: NonNullable<AppSettings["coordinatorModels"]> = {};
+  for (const [provider, value] of Object.entries(saved as Record<string, unknown>)) {
+    const entry = value as { model?: unknown; effort?: unknown } | null;
+    if (!PROVIDERS.some((p) => p.id === provider) || typeof entry?.model !== "string" || !entry.model) continue;
+    models[provider as ProviderId] = { model: entry.model, effort: typeof entry.effort === "string" ? entry.effort : null };
+  }
+  return models;
+}
 /** The line the chat shows when a developer takes a slice by itself (W08). */
 const SELF_PICK_DETAIL = "Era la prossima fetta pronta nei suoi moduli: la prende senza aspettare il Coordinatore, dentro il mandato e il limite di sviluppatori in parallelo del progetto.";
 
@@ -621,6 +630,7 @@ export class TramaController {
       autoPrepareMethod: settings.autoPrepareMethod !== false,
       continuousWork: settings.continuousWork !== false,
       learning: learningSettings(settings.learning),
+      coordinatorModels: coordinatorModelSettings(settings.coordinatorModels),
     };
     this.lastProjectId = settings.lastProjectId ?? null;
     this.practices = await this.practiceStore.load();
@@ -1661,18 +1671,16 @@ export class TramaController {
 
   /**
    * The model the Coordinator runs on. A model the person chose that the catalogue no longer offers is
-   * never replaced silently: the result is null and the reason is `coordinatorModelProblem`.
+   * never replaced silently: the result is null and the reason is `coordinatorModelProblem`. A project without a
+   * choice of its own takes the model the person last chose in Trama, then the catalogue's default (issue #205).
    */
   private coordinatorModel(document: ProjectDocument, provider = this.coordinatorProvider(document)): string | null {
     const models = this.state.providers[provider]?.models ?? [];
     const chosen = (document.selectedProvider ?? "codex") === provider ? document.selectedModel : (document.providerPreferences?.[provider]?.model ?? null);
     if (chosen) return models.length === 0 || catalogOffers(provider, models, chosen) ? chosen : null;
-    return (
-      (provider === "codex" ? models.find((m) => m.model === PREFERRED_COORDINATOR_MODEL)?.model : undefined) ??
-      models.find((m) => m.isDefault)?.model ??
-      models[0]?.model ??
-      null
-    );
+    const preferred = this.state.settings.coordinatorModels?.[provider]?.model;
+    if (preferred && (models.length === 0 || catalogOffers(provider, models, preferred))) return preferred;
+    return models.find((m) => m.isDefault)?.model ?? models[0]?.model ?? null;
   }
 
   private coordinatorModelProblem(document: ProjectDocument, provider: ProviderId): string {
@@ -1771,6 +1779,8 @@ export class TramaController {
   }
 
   private starting: { project: ActiveProjectState | null; attempt: Promise<void> } | null = null;
+  /** The model the Coordinator's latest opening started with, so a different choice during it can restart it. */
+  private coordinatorOpening: { project: ActiveProjectState; model: string } | null = null;
 
   /**
    * Opens or resumes the Coordinator thread; concurrent callers for the same project share the same attempt. An
@@ -1808,9 +1818,11 @@ export class TramaController {
       return;
     }
     project.phase = { kind: "opening" };
+    this.coordinatorOpening = { project, model };
     this.publish();
+    let runtime: CoordinatorRuntime | null = null;
     try {
-      const runtime = await this.ensureRuntime(project);
+      runtime = await this.ensureRuntime(project);
       const study = await buildStudy(project.snapshot, document, project.github);
       document.coordinator.study = study;
       if (this.runtime !== runtime) return;
@@ -1865,6 +1877,8 @@ export class TramaController {
           handover ? (handover.transcript === false ? CLEARED_CONVERSATION : handoverTranscript(document)) : null,
           handover?.transcript === false,
         );
+        // A model change during the study replaced this runtime: the new opening still needs the handover.
+        if (this.runtime !== runtime) return;
         document.coordinator.pendingHandover = null;
       }
       if (this.state.project !== project || this.runtime !== runtime) return;
@@ -1873,6 +1887,8 @@ export class TramaController {
       void this.runDuties();
     } catch (error) {
       if (this.state.project !== project || this.coordinatorProvider(document) !== provider) return;
+      // The runtime stopped because the person chose another model: the opening that replaced this one owns the phase.
+      if (runtime && this.runtime !== runtime) return;
       project.phase = { kind: "unavailable", message: (error as Error).message };
       project.streaming = null;
       this.changed();
@@ -1959,6 +1975,8 @@ export class TramaController {
         }
       },
     });
+    // The person chose another model during the study: the reply of the stopped session is not the study (issue #205).
+    if (this.runtime !== runtime) return;
     if (project.streaming?.requestId === null) project.streaming = null;
     // After a provider switch the chat already shows the switch card: the new session's acknowledgement stays out of it.
     if (!transcript) {
@@ -2089,6 +2107,8 @@ export class TramaController {
     try {
       if (project.phase.kind !== "ready") {
         await this.startCoordinator();
+        // A model change restarted the opening this turn waited for: it waits for the new one.
+        if (this.starting?.project === project) await this.starting.attempt;
         if (closed()) return;
         const phase = project.phase as CoordinatorPhase;
         if (phase.kind !== "ready") {
@@ -2194,6 +2214,8 @@ export class TramaController {
         onEvent: (event) => this.handleTurnEvent(project, request, event),
       });
       if (closed()) return;
+      // The turn ran on the model the person chose: the thread now carries it (issue #205).
+      if (activeProvider === this.coordinatorProvider(document)) document.coordinator.threadModel = selectedModel;
       document.coordinator.injectedStudy = { ...document.coordinator.injectedStudy, ...fingerprints(study) };
       document.coordinator.memorySentToThread = document.coordinator.threadId;
       if (report) markReported(document, report.ids);
@@ -2547,7 +2569,31 @@ export class TramaController {
     selection.selectedModel = model;
     selection.selectedEffort = effort;
     selection.providerPreferences = { ...selection.providerPreferences, [id]: { model, effort } };
+    // The person's choice is Trama's default for the Coordinator of the next new project (issue #205).
+    this.state.settings = { ...this.state.settings, coordinatorModels: { ...this.state.settings.coordinatorModels, [id]: { model, effort } } };
+    if (!goalId) this.restartOpeningOnModelChange(project, id);
     this.changed();
+    await this.saveSettings();
+  }
+
+  /**
+   * A Coordinator still opening or studying on another model starts again on the one the person just chose, as a
+   * new session: the study is never recorded on a model the person replaced (issue #205).
+   */
+  private restartOpeningOnModelChange(project: ActiveProjectState, provider: ProviderId): void {
+    const document = project.document;
+    const opening = this.coordinatorOpening;
+    if (project.phase.kind !== "opening" && project.phase.kind !== "studying") return;
+    if (opening?.project !== project || provider !== this.coordinatorProvider(document)) return;
+    if (Object.keys(document.coordinator.injectedStudy).length > 0) return;
+    const model = this.coordinatorModel(document, provider);
+    if (!model || model === opening.model) return;
+    this.stopCoordinatorRuntime();
+    forgetCoordinatorThread(document);
+    if (this.starting?.project === project) this.starting = null;
+    project.phase = { kind: "idle" };
+    project.streaming = null;
+    void this.startCoordinator();
   }
 
   /** The fast tier to send with a turn: only for a model that offers it, and only once the person chose. */

@@ -798,6 +798,20 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
         await finish(`${who ? `Sta toccando i pagamenti: ${who}.` : "Nessuno visibile nella presenza sta toccando i pagamenti."} ${section}`);
         return;
       }
+      if (process.env.FAKE_CODEX_STUDY_GATE && text.startsWith("Studio del progetto scritto da Trama")) {
+        // With FAKE_CODEX_STUDY_GATE the study answers only once the test creates that file, so a test can act while
+        // the Coordinator is studying (issue #205). "<gate>.held" says it is waiting.
+        const gate = process.env.FAKE_CODEX_STUDY_GATE;
+        const { existsSync, writeFileSync } = await import("node:fs");
+        writeFileSync(`${gate}.held`, "");
+        await new Promise((resolve) => {
+          const release = setInterval(() => {
+            if (!existsSync(gate)) return;
+            clearInterval(release);
+            resolve();
+          }, 10);
+        });
+      }
       if (text.startsWith("Studio del progetto scritto da Trama") && text.includes("propose_goal")) {
         // A project without goals: the study closes with a first goal (UX07).
         const result = await callTool(threadId, "propose_goal", {
