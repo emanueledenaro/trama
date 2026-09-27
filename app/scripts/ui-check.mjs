@@ -1573,6 +1573,49 @@ await shot("19h-developer-question-resumed");
 await setLook("claudeAgent", true);
 await shot("19i-developer-question-resumed-claude-dark");
 await setLook(questionLook.provider, questionLook.dark);
+// W07: the developer's question lives in a conversation between agents, listed in the sidebar and recorded with the
+// author of every message: the developer's question, the Coordinator's Pact card, the person's answer on it. The person
+// writes in it; the Coordinator reads the message at its next turn, and the conversation says who read it.
+const threadRow = page.getByTestId("sidebar-agent-thread").filter({ hasText: "Domanda al Coordinatore, fetta S1" });
+await threadRow.waitFor({ timeout: 10_000 });
+await threadRow.click();
+const agentThread = page.locator('[data-testid="agent-thread"][data-kind="question"]');
+await agentThread.waitFor();
+const threadMessages = agentThread.getByTestId("agent-thread-message");
+await threadMessages.nth(2).waitFor();
+const authors = await threadMessages.evaluateAll((nodes) => nodes.map((node) => node.dataset.author));
+if (authors.join(",") !== "specialist,coordinator,person") throw new Error(`Unexpected authors in the conversation: ${authors}`);
+await threadMessages.nth(0).getByText(/buono/).first().waitFor();
+await threadMessages.nth(0).getByTestId("agent-tag").waitFor();
+await threadMessages.nth(1).getByText("Coordinatore", { exact: true }).waitFor();
+await threadMessages.nth(2).getByText(/Dalla scheda del Patto .*Va in revisione come gli altri/).waitFor();
+await shot("19j-agent-thread");
+await agentThread.getByLabel("Messaggio agli agenti").fill("Tieni conto anche dei buoni scaduti.");
+const threadActions = agentThread.locator(".cta-row").last();
+await primaryLast(threadActions, "Agent thread");
+const writeBox = await threadActions.getByRole("button", { name: "Scrivi nella conversazione" }).boundingBox();
+const threadBox = await agentThread.boundingBox();
+if (!writeBox || !threadBox || threadBox.x + threadBox.width - (writeBox.x + writeBox.width) > 24) throw new Error("Scrivi nella conversazione is not on the right");
+await threadActions.getByRole("button", { name: "Scrivi nella conversazione" }).click();
+const written = threadMessages.nth(3);
+await written.getByText("Tieni conto anche dei buoni scaduti.").waitFor();
+if ((await written.getAttribute("data-author")) !== "person") throw new Error("The person's message is not recorded as the person's");
+await written.getByTestId("agent-thread-delivery").getByText("Gli agenti lo ricevono al loro prossimo turno.").waitFor();
+if ((await agentThread.getByLabel("Messaggio agli agenti").inputValue()) !== "") throw new Error("The draft stays after writing in the conversation");
+await shot("19k-agent-thread-written");
+for (const provider of ["codex", "claudeAgent"]) {
+  for (const dark of [false, true]) {
+    await setLook(provider, dark);
+    await shot(`19l-agent-thread-${provider}-${dark ? "dark" : "light"}`);
+  }
+}
+await setLook(questionLook.provider, questionLook.dark);
+await send("Come procede il lavoro?");
+await page.getByText("Ho letto il tuo messaggio nella chat tra agenti.").last().waitFor({ timeout: 20_000 });
+await written.getByTestId("agent-thread-delivery").getByText(/^Letto dal Coordinatore\./).waitFor({ timeout: 10_000 });
+await page.getByText(/Hai scritto nella chat «Domanda al Coordinatore, fetta S1»/).first().waitFor();
+await shot("19m-agent-thread-read");
+await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
 // W08: independent movement, after the work of #204 and W06 (two more assignment cards). The person sets the project's
 // parallel limit in the settings; a verified slice unblocks the ones that depended on it, and with continuous work on
 // the free developer takes the next ready one in its modules by itself, without a Coordinator turn.

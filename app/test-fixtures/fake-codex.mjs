@@ -798,6 +798,8 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
           : `Ho ricevuto: **${text.slice(0, 200)}**. Questa risposta arriva dal server di prova. Vedi Sources/Orders/CancelPaidOrder.swift.`) +
         // "[chiede-conferma]" closes the reply with a generic confirmation question, the habit W04 corrects.
         (text.includes("[chiede-conferma]") ? "\n\nVuoi che prepari il piano?" : "") +
+        // W07: the person's messages from the conversations between agents reach the Coordinator's turn.
+        (text.includes("## Messaggi della persona nelle chat tra agenti") ? "\n\nHo letto il tuo messaggio nella chat tra agenti." : "") +
         (await declareStep());
       const pieces = reply.match(/.{1,12}/g);
       send({ method: "item/started", params: { threadId, turnId, item: { id: "msg", type: "agentMessage", phase: "final_answer" } } });

@@ -1140,6 +1140,48 @@ export interface ProjectDocument {
   cleanCode?: import("./cleanCode").CleanCodeSettings;
   /** Focus mode examinations (F01); absent until the person first opens focus mode. */
   audits?: FocusAudit[];
+  /** The conversations between agents (W07), oldest first; absent before the first one. */
+  agentThreads?: AgentThread[];
+}
+
+/**
+ * What a conversation between agents is about (W07): a developer's question to the Coordinator, the technical review
+ * of the developer's candidate, or a regression the guardian found on it.
+ */
+export type AgentThreadKind = "question" | "review" | "regression";
+
+/** Who wrote a message in a conversation between agents: a member of the team, the Coordinator or the person. */
+export type AgentThreadAuthor = { kind: "specialist"; specialistId: string } | { kind: "coordinator" } | { kind: "person" };
+
+export interface AgentThreadMessage {
+  id: string;
+  author: AgentThreadAuthor;
+  text: string;
+  at: string;
+  /**
+   * A message of the person, and when each agent of the thread received it: the Coordinator at its next turn, the
+   * developer when its work resumes. Absent on the agents' own messages.
+   */
+  delivery?: { coordinator: string | null; developer: string | null };
+}
+
+/**
+ * A conversation between agents (W07): always visible and recorded, never private. One per kind and assignment; the
+ * person reads it from the sidebar and may write in it.
+ */
+export interface AgentThread {
+  id: string;
+  kind: AgentThreadKind;
+  /** The developer's work the conversation is about. */
+  assignmentId: string;
+  /** The members of the team in the conversation, the developer first; the Coordinator is not a member. */
+  specialistIds: string[];
+  /** Whether the Coordinator takes part, as in a developer's question. */
+  withCoordinator: boolean;
+  title: string;
+  createdAt: string;
+  updatedAt: string;
+  messages: AgentThreadMessage[];
 }
 
 export interface ProjectSettings {

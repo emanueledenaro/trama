@@ -14,6 +14,8 @@ export type InspectorTarget =
   | { kind: "memory" }
   | { kind: "team" }
   | { kind: "specialist"; id: string }
+  /** A conversation between agents (W07). */
+  | { kind: "agentThread"; id: string }
   | { kind: "candidate"; id: string }
   /** Focus mode on a candidate (F01): the report of one examination. */
   | { kind: "audit"; id: string }

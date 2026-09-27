@@ -20,6 +20,7 @@ import type {
   AgentColor,
   AppSettings,
   ProjectSettings,
+  AgentThreadMessage,
   AppState,
   CoordinatorPhase,
   CoordinatorRequest,
@@ -84,6 +85,8 @@ import {
   updateCleanCode,
 } from "./core/cleanCode";
 import { openingInput, resumeInput, specialistInstructions } from "./core/specialistBriefing";
+import { findAgentThread } from "@shared/agentThreads";
+import { coordinatorThreadNotes, developerThreadNotes, postPersonMessage, recordDeveloperReply, recordReview, ThreadError } from "./core/agentThreads";
 import { prepareDemoProject } from "./core/demoProject";
 import { appendEvent, emptyDocument, handoverTranscript, moveEvent, recordReply, referencedPaths } from "./core/document";
 import { candidateGoalId, dialogComposer, findGoal, projectGoals, requestGoalId } from "@shared/goals";
@@ -2145,6 +2148,9 @@ export class TramaController {
       // The previous reply closed with a generic confirmation question: Trama tells the Coordinator, not the model's own memory (W04).
       const feedback = confirmationFeedback(document, request.id);
       if (feedback) sections.push(feedback);
+      // The person's messages in the conversations between agents, once each (W07).
+      const threadNotes = coordinatorThreadNotes(document);
+      if (threadNotes) sections.push(threadNotes);
       const skills = skillInvocations(trimmed, project.skills);
       // /ask-trama (M07): the thread holds the skill and its binding; the person asks for it now.
       if (/(^|\s)[/$]ask-trama(?=\s|$)/.test(trimmed)) sections.push(ASK_TRAMA_INVOKED);
@@ -2429,6 +2435,26 @@ export class TramaController {
       throw new DomainError("Questo messaggio riferisce al Coordinatore una scelta già registrata: parte comunque.");
     }
     this.queue = this.queue.filter((q) => q !== item);
+    this.changed();
+  }
+
+  /**
+   * The person writes in a conversation between agents (W07). The Coordinator reads it at its next turn, the developer
+   * when its work resumes; the chat records that the person wrote there.
+   */
+  postToAgentThread(threadId: string, text: string): void {
+    const project = this.requireProject();
+    const document = project.document;
+    let message: AgentThreadMessage;
+    try {
+      message = postPersonMessage(document, threadId, text);
+    } catch (error) {
+      if (error instanceof ThreadError) throw new DomainError(error.message);
+      throw error;
+    }
+    const thread = findAgentThread(document, threadId)!;
+    const goalId = findAssignment(document, thread.assignmentId)?.goalId ?? null;
+    appendEvent(document, "trama", { type: "activity", title: `Hai scritto nella chat «${thread.title}»`, detail: message.text, tone: "info" }, null, new Date(), null, goalId);
     this.changed();
   }
 
@@ -3007,6 +3033,8 @@ export class TramaController {
     );
     let turnId: string | null = null;
     let outcome: TurnEnd;
+    // When the developer received the person's messages from the conversations between agents (W07).
+    let threadNotesAt: string | null = null;
     try {
       let cwd = project.rootPath;
       // A diagnosis reads a candidate's worktree without writing to it (W11).
@@ -3071,7 +3099,10 @@ export class TramaController {
       // A stop requested while the session was opening ends the work here (review #6).
       if ((assignment.status as string) === "stopRequested") throw new Error("L'arresto è stato richiesto prima dell'avvio del turno.");
       if (opening.replaced && assignment.threadId) this.specialistActivity(project, assignmentId, preKey, "Nuovo thread dello specialista", null, "info");
-      const task = duty?.prompt ?? (resumed ? resumeInput(assignment, document.decisions) : openingInput(assignment, document.decisions));
+      const notesAt = new Date();
+      const notes = !duty && resumed ? developerThreadNotes(document, assignmentId, notesAt) : [];
+      if (notes.length) threadNotesAt = notesAt.toISOString();
+      const task = duty?.prompt ?? (resumed ? resumeInput(assignment, document.decisions, notes) : openingInput(assignment, document.decisions));
       const prompt = [task, briefing, developer && nativeInput ? developer.text : null].filter(Boolean).join("\n\n");
       const text = await client.runTurn({
         threadId: opening.threadId,
@@ -3147,6 +3178,8 @@ export class TramaController {
       confirmStopWithoutTurn(document, assignmentId, outcome.kind === "failed" ? outcome.message : "Il turno non era partito.");
     }
     const final = findAssignment(document, assignmentId)!;
+    // The developer's answer goes back to the conversations whose messages it received this turn (W07).
+    if (threadNotesAt && outcome.kind === "completed") recordDeveloperReply(document, final, threadNotesAt, final.result ?? outcome.text);
     if (final.status === "completed" && final.duty && outcome.kind === "completed") {
       const { decisionRequestId } = concludeDuty(document, assignmentId, outcome.text);
       if (decisionRequestId) appendEvent(document, "trama", { type: "card", kind: "decision", title: "Decisione", detail: null, referenceId: decisionRequestId });
@@ -3771,6 +3804,8 @@ export class TramaController {
         findings: parsed.findings,
         standard,
       });
+      // The reviewer tells the developer in their own conversation (W07).
+      recordReview(document, candidateId, review);
       appendEvent(
         document,
         "trama",

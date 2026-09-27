@@ -13,6 +13,7 @@ import {
   IconLayoutSidebar,
   IconTarget,
   IconMessageCircle,
+  IconMessages,
   IconRosetteDiscountCheck,
   IconSettings,
   IconShieldCheck,
@@ -34,6 +35,7 @@ import { Spinner } from "@/components/Spinner";
 import { TramaMark } from "@/components/brand/TramaMark";
 import { isOpenQuestion, pendingMandateRequest, type ProjectGoal, type Specialist } from "@shared/domain";
 import { goalDialogIsEmpty, workingGoals } from "@shared/goals";
+import { sidebarAgentThreads, threadParticipants } from "@shared/agentThreads";
 import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/cn";
 import { act, type InspectorTarget, useUi } from "@/lib/store";
@@ -152,6 +154,8 @@ export function Sidebar({ isMac }: { isMac: boolean }) {
   const activeWork = document?.team.specialists.filter((s) => s.status === "working" || s.status === "stopping").length ?? 0;
   const verifiedCandidates = project ? Object.values(project.candidateReports).filter((r) => r.state !== "building").length : 0;
   const specialists = sidebarSpecialists(document?.team.specialists ?? []);
+  // The conversations between agents, always visible (W07): the most recent ones under the open project.
+  const agentThreads = document ? sidebarAgentThreads(document) : [];
   const running = Boolean(project?.runningRequestId) || project?.phase.kind === "studying" || project?.phase.kind === "opening";
   const isActive = (kind: InspectorTarget["kind"]) => inspector?.kind === kind;
   const mainView = useUi((s) => s.mainView);
@@ -408,6 +412,22 @@ export function Sidebar({ isMac }: { isMac: boolean }) {
                           </span>
                           <span className="flex w-[15px] shrink-0 items-center justify-center">
                             <StatusDot status={specialist.status} />
+                          </span>
+                        </button>
+                      ))}
+                      {agentThreads.map((thread) => (
+                        <button
+                          key={thread.id}
+                          type="button"
+                          data-testid="sidebar-agent-thread"
+                          onClick={() => setInspector({ kind: "agentThread", id: thread.id })}
+                          title={`${thread.title}: ${threadParticipants(thread, document?.team.specialists ?? [])}`}
+                          className={cn(SIDEBAR_ROW, "pl-8", inspector?.kind === "agentThread" && inspector.id === thread.id ? ROW_ACTIVE : ROW_IDLE)}
+                        >
+                          <IconMessages className="size-3 shrink-0 text-muted-foreground" stroke={1.8} />
+                          <span className="min-w-0 flex-1 truncate text-ui leading-5 text-foreground/95">{thread.title}</span>
+                          <span className="shrink-0 text-ui-xs text-muted-foreground" aria-label={`${thread.messages.length} messaggi`}>
+                            {thread.messages.length}
                           </span>
                         </button>
                       ))}

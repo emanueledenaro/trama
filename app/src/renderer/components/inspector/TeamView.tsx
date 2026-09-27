@@ -5,6 +5,7 @@ import type { Specialist, SpecialistAssignment } from "@shared/domain";
 import { findGoal } from "@shared/goals";
 import { PROVIDERS } from "@shared/providers";
 import { AGENT_PALETTE } from "@shared/identity";
+import { agentThreadsByRecent, threadParticipants } from "@shared/agentThreads";
 import { FIXED_ROLES, isFixedRole, roleDuties, roleProfile, type RosterFigure, TEAM_MOMENTS, teamRoster } from "@shared/roster";
 import { AgentAvatar, AgentName, AgentTag, agentStyle } from "@/components/AgentIdentity";
 import { ASSIGNMENT_STATUS, AssignmentCard, CandidateCard, TeamProposalCard } from "@/components/chat/Cards";
@@ -276,6 +277,7 @@ export function SpecialistView({ id }: { id: string }) {
         ) : null}
       </div>
       {specialist.status !== "removed" ? <AgentColorPicker specialist={specialist} /> : null}
+      <SpecialistThreads specialistId={specialist.id} />
       <InspectorSection title="Perché è nel team">
         <p className="text-ui text-foreground/90">{specialist.reason}</p>
         <p className="mt-1 text-ui-xs text-muted-foreground">
@@ -464,6 +466,31 @@ function AssignmentProvider({ assignment }: { assignment: SpecialistAssignment }
         >
           Cambia
         </Button>
+      </div>
+    </InspectorSection>
+  );
+}
+
+/** Every conversation between agents the specialist takes part in (W07), the most recent first. */
+function SpecialistThreads({ specialistId }: { specialistId: string }) {
+  const document = useUi((s) => s.app?.project?.document);
+  const setInspector = useUi((s) => s.setInspector);
+  const threads = agentThreadsByRecent(document?.agentThreads ?? []).filter((t) => t.specialistIds.includes(specialistId));
+  if (!document || !threads.length) return null;
+  return (
+    <InspectorSection title={`Chat tra agenti (${threads.length})`}>
+      <div className="flex flex-col gap-1">
+        {threads.map((thread) => (
+          <button
+            key={thread.id}
+            type="button"
+            className="flex min-w-0 items-center gap-2 rounded-md px-1 py-0.5 text-left text-ui hover:bg-[var(--sidebar-accent)]"
+            onClick={() => setInspector({ kind: "agentThread", id: thread.id })}
+          >
+            <span className="min-w-0 flex-1 truncate text-foreground/90">{thread.title}</span>
+            <span className="shrink-0 text-ui-xs text-muted-foreground">{threadParticipants(thread, document.team.specialists)}</span>
+          </button>
+        ))}
       </div>
     </InspectorSection>
   );

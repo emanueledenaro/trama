@@ -136,6 +136,10 @@ const handlers: { [K in ActionName]: Handler<K> } = {
   "coordinator:selectProvider": ({ provider, goalId }) => controller.selectProvider(provider, goalId ?? null),
   "coordinator:saveDraft": ({ text, goalId }) => controller.saveDraft(text, goalId ?? null),
   "coordinator:deleteQueued": async ({ id }) => controller.deleteQueuedMessage(id),
+  "agentThread:post": async ({ threadId, text }) => {
+    controller.postToAgentThread(threadId, text);
+    return true;
+  },
   "goal:create": (input) => controller.createGoal(input),
   "goal:update": ({ id, ...change }) => controller.updateGoal(id, change),
   "goal:archive": ({ id, archived }) => controller.archiveGoal(id, archived),

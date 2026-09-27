@@ -22,6 +22,7 @@ import { STRENGTH_ORDER, TRIAGE_CATEGORY_LABEL, TRIAGE_STATE_LABEL, TRIAGE_STATE
 import { shortId } from "@shared/ids";
 import type { LoadedSkill } from "@shared/skills";
 import { roleProfile } from "@shared/roster";
+import { recordRegression } from "./agentThreads";
 import { findCandidate } from "./candidates";
 import { CHECKS, type ReadOnlyCheck } from "./checks";
 import { deliverNativeSkill, type NativeSkill, RULES_ABOVE } from "./nativeSkills";
@@ -148,6 +149,8 @@ export function recordCheckOutcome(document: ProjectDocument, outcome: CheckOutc
     diagnosisId: null,
   };
   ledger.failures.push(failure);
+  // The regression guardian tells the developer in their own conversation (W07).
+  recordRegression(document, failure, now);
   return failure;
 }
 
