@@ -1,0 +1,4 @@
+# Nomi dei progetti di origine che possono comparire solo in THIRD_PARTY_NOTICES.md e in docs/legal/.
+# Li legge app/scripts/check-upstream-names.mjs, che gira in CI.
+Synara
+Hermes
