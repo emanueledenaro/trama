@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { conflictSide, divergenceQuestion, divergenceSummary, explainedByDivergence, replacedBy } from "./conflictScope";
 import type { BranchDivergence, ConflictAssessment, ProjectDocument, SpecialistAssignment } from "./domain";
+import type { PresenceRecord } from "./presence";
 
 const work = (id: string, fields: Partial<SpecialistAssignment>) =>
   ({ id, specialistId: "S-Luca", createdAt: "2026-09-27T10:00:00Z", moduleIds: ["root"], issueNumber: null, slice: null, ...fields }) as SpecialistAssignment;
@@ -43,11 +44,14 @@ describe("conflict scope (U02)", () => {
     expect(replacedBy(slice, work("A-2", { createdAt: "2026-09-27T11:00:00Z", slice: { planId: "P", sliceId: "S1" } }))).toBe(true);
   });
 
-  it("calls a colleague only someone the presence shows", () => {
-    expect(conflictSide(assessment({}), true)).toBe("defaultBranch");
-    expect(conflictSide(assessment({ references: ["#7 feature"] }), false)).toBe("pullRequest");
-    expect(conflictSide(assessment({ references: ["#7 feature"] }), true)).toBe("colleague");
-    expect(conflictSide(assessment({ otherCandidateId: "C-2" }), true)).toBe("worktree");
+  it("calls a colleague only someone the presence shows on the pull request's branch", () => {
+    const bea = { activeBranch: "feature/a", alsoOn: [], localBranches: [], agents: [{ branch: "trama/lia" }] } as unknown as PresenceRecord;
+    expect(conflictSide(assessment({}), [bea])).toBe("defaultBranch");
+    expect(conflictSide(assessment({ references: ["#7 feature/a"] }), [])).toBe("pullRequest");
+    expect(conflictSide(assessment({ references: ["#7 feature/a"] }), [bea])).toBe("colleague");
+    expect(conflictSide(assessment({ references: ["#8 trama/lia"] }), [bea])).toBe("colleague");
+    expect(conflictSide(assessment({ references: ["#9 feature/b"] }), [bea])).toBe("pullRequest");
+    expect(conflictSide(assessment({ otherCandidateId: "C-2" }), [bea])).toBe("worktree");
   });
 
   it("says the divergence once, in plain words, and lets it explain the default branch's conflicts", () => {

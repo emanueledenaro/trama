@@ -302,6 +302,22 @@ describe("workState: the phase and the allowed moves of a request (W01)", () => 
     expect(workState(waiting.document, "r3")).toMatchObject({ phase: "blocked", blocker: expect.stringContaining("aspetta che ChatGPT torni disponibile"), moves: [] });
   });
 
+  it("is not held by a candidate replaced by later work on the same issue, even on other modules (U02)", () => {
+    const { document, assignment } = withAssignment();
+    assignment.issueNumber = 13;
+    const red = candidate(document, assignment.id, "fail", null);
+    expect(workState(document, "r3").blocker).toBe(`La verifica git_status del candidato ${red.id} non è passata.`);
+    const correction = assign(
+      document,
+      { specialist: "Ada", kind: "agreedTicket", objective: "Correggere", issueNumber: 13, exercise: null, moduleIds: ["Sources/Payments"], dependencies: [], model: "gpt-5.5", tools: ["edits"], requiredChecks: ["git_status"], instructions: "Correggi" },
+      document.mandate!.version,
+      "r3",
+      at(3),
+    );
+    candidate(document, correction.id, "pass", "approved");
+    expect(workState(document, "r3")).toMatchObject({ phase: "candidate", blocker: null });
+  });
+
   it("is blocked when the plan failed or went stale: the Coordinator prepares it again within the mandate", () => {
     const document = emptyDocument("p");
     request(document, "r1");

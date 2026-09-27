@@ -1,4 +1,5 @@
 import type { Candidate, ConflictAssessment, ProjectDocument, SpecialistAssignment } from "./domain";
+import type { PresenceRecord } from "./presence";
 
 /**
  * Which conflicts are worth the person's attention (U02). A candidate replaced by newer work is superseded and does not
@@ -82,10 +83,19 @@ export function divergenceQuestion(divergence: NonNullable<ProjectDocument["bran
 /** Who is on the other side of a conflict, as the person reads it: a colleague only when the presence shows one (G01). */
 export type ConflictSide = "worktree" | "defaultBranch" | "pullRequest" | "colleague";
 
-export function conflictSide(assessment: ConflictAssessment, hasColleagues: boolean): ConflictSide {
+/** The branches a colleague's presence names: the active one, the others changed lately, the local ones and their agents'. */
+const presenceBranches = (record: PresenceRecord) => [record.activeBranch, ...record.alsoOn, ...record.localBranches, ...record.agents.map((a) => a.branch)];
+
+/**
+ * A pull request is a colleague's work only when its branch is one a colleague's presence names; any other pull
+ * request stays a pull request, whoever else is around.
+ */
+export function conflictSide(assessment: ConflictAssessment, colleagues: PresenceRecord[]): ConflictSide {
   if (assessment.otherCandidateId) return "worktree";
-  if (!assessment.references.some((r) => r.startsWith("#"))) return "defaultBranch";
-  return hasColleagues ? "colleague" : "pullRequest";
+  const pulls = assessment.references.filter((r) => r.startsWith("#"));
+  if (!pulls.length) return "defaultBranch";
+  const branches = new Set(colleagues.flatMap(presenceBranches).filter((b): b is string => Boolean(b)));
+  return pulls.some((r) => branches.has(r.slice(r.indexOf(" ") + 1))) ? "colleague" : "pullRequest";
 }
 
 export const CONFLICT_SIDE_TITLE: Record<ConflictSide, string> = {

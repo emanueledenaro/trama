@@ -15,6 +15,7 @@ import { readableFailure } from "@shared/providerFailure";
 import { isOpenQuestion, pendingMandateRequest } from "@shared/domain";
 import { grillingSubject } from "@shared/grilling";
 import { PROVIDERS } from "@shared/providers";
+import { candidateSuperseded } from "@shared/conflictScope";
 import { inspectCandidate, latestCandidate } from "./candidates";
 import { pendingQuestion, pendingState, type QuestionView, questionsText, questionViews } from "./developerQuestions";
 import { sliceViews, slicesText } from "./slices";
@@ -319,7 +320,11 @@ function assignedWork(
   for (const assignment of paused) {
     if (pendingState(assignment) === "asked") moves.add(coordinator("answerQuestion", pendingQuestion(assignment)!.id));
   }
-  const items = assignments.filter((a) => a.status !== "paused").map((assignment) => ({ assignment, candidate: latestCandidate(document, assignment.id) }));
+  // A candidate replaced by later work (U02) is neither verified nor blocks the phase: the newer work does.
+  const items = assignments
+    .filter((a) => a.status !== "paused")
+    .map((assignment) => ({ assignment, candidate: latestCandidate(document, assignment.id) }))
+    .filter(({ candidate }) => !candidate || !candidateSuperseded(document, candidate));
   for (const { assignment, candidate } of items) {
     if (isActive(assignment) && assignment.waitingForProvider) {
       return { phase: "blocked", blocker: `L'incarico ${assignment.id} aspetta che ${providerName(assignment.waitingForProvider.provider)} torni disponibile.` };

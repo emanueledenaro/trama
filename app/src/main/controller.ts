@@ -1271,13 +1271,16 @@ export class TramaController {
   private async assessBranchDivergence(project: ActiveProjectState, repository: string, defaultBranch: string, remoteSHA: string): Promise<void> {
     const headSHA = await this.headSHA(project.rootPath);
     if (!headSHA || this.state.project !== project) return;
-    const key = `${project.id}\0${headSHA}\0${remoteSHA.toLowerCase()}`;
+    const branch = (await git(["symbolic-ref", "--quiet", "--short", "HEAD"], project.rootPath).catch(() => "")).trim() || null;
+    if (this.state.project !== project) return;
+    // The names are in the key too: a renamed default branch or a switch to a branch on the same commit changes the notice.
+    const key = [project.id, branch ?? "", headSHA, defaultBranch, remoteSHA.toLowerCase()].join("\0");
     if (this.divergenceChecked === key) return;
     let divergence: BranchDivergence | null;
     try {
       divergence = await assessBranchDivergence({
         sourceRoot: project.rootPath,
-        branch: project.snapshot.branch ?? null,
+        branch,
         defaultBranch,
         headSHA,
         remoteSHA,

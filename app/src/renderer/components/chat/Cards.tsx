@@ -1344,7 +1344,7 @@ export function ConflictCard({ assessmentId }: { assessmentId: string }) {
   if (!assessment) return null;
   const label = CONFLICT_LABEL[assessment.classification];
   const exercise = isExerciseAssessment(assessment);
-  const side = conflictSide(assessment, (project.presence?.others.length ?? 0) > 0);
+  const side = conflictSide(assessment, (project.presence?.others ?? []).map((o) => o.record));
   const title = exercise ? "Esercizio di conflitto" : CONFLICT_SIDE_TITLE[side];
   // The divergence of the project's branch is one notice above the chat (U02): the card only points to it.
   if (!exercise && explainedByDivergence(project.document, assessment)) {
