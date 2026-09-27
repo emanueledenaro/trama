@@ -117,10 +117,10 @@ describe("verified candidate in the chat (V05)", () => {
     await controller.send(`[riverifica:${corrected.id}:git_status]`, null, null, null);
     expect(reports()[corrected.id]).toMatchObject({ state: "verified", clearanceInvalidated: true });
 
-    // The failed candidate is still the old work: checked again, it fails again and stays blocked.
+    // The failed candidate is still the old work: checked again, it fails again, and the correction supersedes it (U02).
     await controller.send(`[riverifica:${failed.id}:git_diff_check]`, null, null, null);
     expect(failed.evidence.git_diff_check?.result).toBe("fail");
-    expect(reports()[failed.id]?.state).toBe("building");
+    expect(reports()[failed.id]).toMatchObject({ state: "superseded", blockers: [{ code: "CHECK_FAILED" }] });
   }, 60_000);
 });
 

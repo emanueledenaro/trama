@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
+import { candidateSuperseded, explainedByDivergence } from "@shared/conflictScope";
 import type { Candidate, CandidateBlocker, CandidateReport, CandidateState, ConflictAssessment, ProjectDocument, TechnicalReview } from "@shared/domain";
 import { shortId } from "@shared/ids";
 import { agreedSeams, assignmentSlice, readTestedSeams } from "./implementation";
@@ -26,13 +27,14 @@ export function latestCandidate(document: ProjectDocument, assignmentId: string)
 
 /**
  * Whether an assessment still describes its other side: always for a remote head; for another developer's worktree
- * (W08), while that candidate is still the latest of its assignment at the snapshot compared.
+ * (W08), while that candidate is still open at the snapshot compared: the latest of its assignment, not replaced by
+ * later work (U02).
  */
 export function worktreeAssessmentCurrent(document: ProjectDocument, assessment: ConflictAssessment): boolean {
   if (!assessment.otherCandidateId) return true;
   const other = document.candidates.find((c) => c.id === assessment.otherCandidateId);
   if (!other || other.snapshotId !== assessment.otherSnapshotId) return false;
-  return latestCandidate(document, other.assignmentId)?.id === other.id;
+  return !candidateSuperseded(document, other);
 }
 
 /** Binds a captured worktree to the assignment's modules and checks and to the decisions named. */
@@ -145,6 +147,8 @@ export function inspectCandidate(document: ProjectDocument, candidate: Candidate
   for (const assessment of document.conflicts ?? []) {
     if (assessment.candidateId !== candidate.id || assessment.snapshotId !== candidate.snapshotId) continue;
     if (!worktreeAssessmentCurrent(document, assessment)) continue;
+    // The project's branch diverged from the default branch (U02): the project notice says it once for every candidate.
+    if (explainedByDivergence(document, assessment)) continue;
     if (assessment.classification === "conflict") {
       blockers.push({
         code: assessment.otherCandidateId ? "WORKTREE_CONFLICT" : "REMOTE_CONFLICT",
@@ -176,7 +180,13 @@ export function candidateReport(document: ProjectDocument, candidate: Candidate,
   const clearanceInvalidated = candidate.clearance !== null && candidate.clearance.fingerprint !== fingerprint;
   const approvalInvalidated = candidate.humanApproval !== null && candidate.humanApproval.fingerprint !== fingerprint;
   const allowed = blockers.length === 0;
-  const state: CandidateState = allowed && candidate.clearance && !clearanceInvalidated ? "decided" : allowed ? "verified" : "building";
+  const state: CandidateState = candidateSuperseded(document, candidate)
+    ? "superseded"
+    : allowed && candidate.clearance && !clearanceInvalidated
+      ? "decided"
+      : allowed
+        ? "verified"
+        : "building";
   return { state, blockers, clearanceInvalidated, approvalInvalidated };
 }
 

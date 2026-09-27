@@ -151,7 +151,8 @@ const BLOCKER_WORDS: Record<string, string> = {
   EVIDENCE_MISSING: "una verifica non è stata eseguita",
   EVIDENCE_STALE: "una verifica non vale più",
   CHECK_FAILED: "una verifica non è passata",
-  REMOTE_CONFLICT: "c'è un conflitto con il lavoro di un collega",
+  REMOTE_CONFLICT: "c'è un conflitto con il lavoro su GitHub",
+  WORKTREE_CONFLICT: "c'è un conflitto con il lavoro di un altro incarico",
 };
 
 /** Each condition of the quality standard, in order, with what is missing and how to fix it. */

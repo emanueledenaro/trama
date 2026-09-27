@@ -14,6 +14,7 @@ import type { ImageAttachmentInput } from "@shared/ipc";
 import type {
   ActiveProjectState,
   AutomaticWorkRequest,
+  BranchDivergence,
   Candidate,
   FocusAudit,
   WorktreeSession,
@@ -182,6 +183,7 @@ import { answeredWork, ASK_COORDINATOR_TOOL, askCoordinator, asksCoordinator, DE
 import { prepareWorktree, removeWorktree, reviewWorktree, validateWorktree } from "./core/workspace";
 import { AuditError, type AxisName, type AxisTurn, auditSpec, axisThread, axisTurn, beginAxes, closeAudit, failAudit, findAudit, finishAxis, openAudit, readAxisAnswer, recordAuditCheck } from "./core/audit";
 import { approveCandidate, candidateReport, findCandidate, latestCandidate, recordEvidence, recordTechnicalReview } from "./core/candidates";
+import { assessBranchDivergence } from "./core/branchDivergence";
 import { assessConflict } from "./core/conflicts";
 import { pickSlices } from "./core/slicePicking";
 import { assessWorktreePair, worktreePairs } from "./core/worktreeConflicts";
@@ -222,6 +224,7 @@ import { cloneRepository, hasAiHero, readGitHubCliStatus, simulateColleagueChang
 import { type AgentWork, type PresenceContext, PresenceService } from "./core/presence";
 import { overlapModules, probeColleagues, projectOverlaps } from "./core/overlap";
 import { compareSides, coordinatorNotice, type PresenceProbe } from "@shared/overlap";
+import { candidateSuperseded, divergenceSummary } from "@shared/conflictScope";
 import { type AgentOverlap, agentOverlapKey, agentOverlaps, occupantName, presenceSection } from "./core/coordinatorPresence";
 import { emptyConsent, type PresenceProposal, type PresenceTask, type PresenceView, shouldProposeConsent, shouldReproposeConsent } from "@shared/presence";
 import { agentTag } from "@shared/identity";
@@ -1189,25 +1192,29 @@ export class TramaController {
   private assessingConflicts = false;
 
   /**
-   * Compares every unpublished candidate with the colleagues' remote heads (open pull requests and
-   * the default branch) through a temporary merge. At most eight new comparisons per run.
+   * Compares every unpublished candidate still open with the remote heads (open pull requests and the default branch)
+   * through a temporary merge. At most eight new comparisons per run. First the project's branch is compared with the
+   * default branch (U02): when they diverged, that is one project notice and the default branch is not compared again
+   * on each candidate built on the branch.
    */
   async assessRemoteConflicts(): Promise<void> {
     const project = this.state.project;
     const snapshot = project?.github.snapshot;
     const repository = project?.github.repository;
     if (!project || !snapshot || !repository || this.assessingConflicts || snapshot.warnings.length) return;
-    const document = project.document;
-    const candidates = document.candidates.filter(
-      (c) => !c.pullRequest && latestCandidate(document, c.assignmentId)?.id === c.id && findAssignment(document, c.assignmentId)?.workspace,
-    );
-    if (!candidates.length) return;
     this.assessingConflicts = true;
     try {
+      const document = project.document;
+      const defaultHead = snapshot.branches.find((b) => b.name === snapshot.defaultBranch);
+      if (defaultHead) await this.assessBranchDivergence(project, repository, snapshot.defaultBranch, defaultHead.sha);
+      if (this.state.project !== project) return;
+      const candidates = document.candidates.filter(
+        (c) => !c.pullRequest && !candidateSuperseded(document, c) && findAssignment(document, c.assignmentId)?.workspace,
+      );
+      if (!candidates.length) return;
       document.conflicts ??= [];
       const heads = new Map<string, string[]>();
-      const defaultHead = snapshot.branches.find((b) => b.name === snapshot.defaultBranch);
-      if (defaultHead) heads.set(defaultHead.sha.toLowerCase(), [snapshot.defaultBranch]);
+      if (defaultHead && !document.branchDivergence) heads.set(defaultHead.sha.toLowerCase(), [snapshot.defaultBranch]);
       for (const pull of snapshot.pullRequests) {
         const sha = pull.headSHA.toLowerCase();
         heads.set(sha, [...(heads.get(sha) ?? []), `#${pull.number} ${pull.headRef}`]);
@@ -1239,7 +1246,7 @@ export class TramaController {
             if (shouldReproposeConsent(document.presence, assessment.classification)) this.proposePresence(project, "conflict", references);
             if (assessment.classification === "conflict") {
               this.host.notify(
-                "Trama: conflitto con il lavoro di un collega",
+                `Trama: conflitto con ${references.join(", ")}`,
                 `Il candidato ${candidate.id} entra in conflitto con ${references.join(", ")}.`,
                 this.state.settings.sounds === true,
               );
@@ -1251,6 +1258,44 @@ export class TramaController {
     } finally {
       this.assessingConflicts = false;
     }
+  }
+
+  /** The last pair of heads compared for the divergence, so an unchanged pair is not fetched and merged again. */
+  private divergenceChecked: string | null = null;
+
+  /**
+   * Compares the project's checkout with the default branch on GitHub (U02) and keeps the divergence on the document:
+   * the chat shows it as one project notice while it holds, and it disappears once the branches are realigned.
+   */
+  private async assessBranchDivergence(project: ActiveProjectState, repository: string, defaultBranch: string, remoteSHA: string): Promise<void> {
+    const headSHA = await this.headSHA(project.rootPath);
+    if (!headSHA || this.state.project !== project) return;
+    const key = `${project.id}\0${headSHA}\0${remoteSHA.toLowerCase()}`;
+    if (this.divergenceChecked === key) return;
+    let divergence: BranchDivergence | null;
+    try {
+      divergence = await assessBranchDivergence({
+        sourceRoot: project.rootPath,
+        branch: project.snapshot.branch ?? null,
+        defaultBranch,
+        headSHA,
+        remoteSHA,
+        source: { kind: "github", repository },
+        cacheRoot: join(this.storage.root, "RemoteCache"),
+      });
+    } catch {
+      // A remote that cannot be read now is compared again at the next refresh; the last known state stays.
+      return;
+    }
+    if (this.state.project !== project) return;
+    this.divergenceChecked = key;
+    const before = project.document.branchDivergence ?? null;
+    if (!divergence && !before) return;
+    project.document.branchDivergence = divergence;
+    if (divergence && !before) {
+      this.host.notify("Trama: il branch del progetto è andato in un'altra direzione", divergenceSummary(divergence), this.state.settings.sounds === true);
+    }
+    this.changedIn(project);
   }
 
   // MARK: Presence (G01)

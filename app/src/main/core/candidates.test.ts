@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { approveCandidate, candidateReport, clearCandidate, declareCandidate, recordEvidence, recordTechnicalReview } from "./candidates";
 import { emptyDocument } from "./document";
 import { decide } from "./pact";
-import { assign, beginTurn, confirmTeam, endTurn, proposeTeam } from "./team";
+import { assign, beginTurn, confirmTeam, endTurn, findAssignment, proposeTeam } from "./team";
 
 function setup() {
   const document = emptyDocument("p");
@@ -112,7 +112,8 @@ describe("candidates", () => {
     recordEvidence(document, fixed.id, { check: "git_status", passed: true, command: "git diff --check HEAD", output: "", snapshotId: "fixed" });
     expect(candidateReport(document, fixed, "base").state).toBe("verified");
     expect(candidate.evidence.git_status?.result).toBe("fail");
-    expect(candidateReport(document, candidate, "base").state).toBe("building");
+    // The failed candidate stays with its evidence, replaced by the correction (U02).
+    expect(candidateReport(document, candidate, "base")).toMatchObject({ state: "superseded", blockers: [{ code: "CHECK_FAILED" }] });
   });
 
   it("blocks failed checks and unresolved choices", () => {
@@ -142,6 +143,57 @@ describe("candidates", () => {
     const report = candidateReport(document, candidate, "base");
     expect(report.state).toBe("building");
     expect(report.blockers.map((b) => b.code)).toEqual(["REMOTE_CONFLICT"]);
+  });
+
+  it("leaves the default branch's conflict to the project notice when the project's branch diverged (U02)", () => {
+    const { document, candidate } = setup();
+    recordEvidence(document, candidate.id, { check: "git_status", passed: true, command: "git status", output: "", snapshotId: "snap" });
+    const conflict = { candidateId: candidate.id, snapshotId: "snap", classification: "conflict" as const, detail: "", checkedAt: "2026-09-23T00:00:00Z" };
+    document.conflicts = [
+      { ...conflict, id: "snap:main", remoteSHA: "main", references: ["main"], conflictingFiles: ["a", "b"] },
+      { ...conflict, id: "snap:pull", remoteSHA: "pull", references: ["#7 feature"], conflictingFiles: ["a"] },
+    ];
+    expect(candidateReport(document, candidate, "base").blockers.map((b) => b.detail)).toEqual(["main: a, b", "#7 feature: a"]);
+    document.branchDivergence = {
+      branch: "chore/pre-apertura",
+      defaultBranch: "main",
+      headSHA: "base",
+      remoteSHA: "main",
+      ahead: 13,
+      behind: 7,
+      conflictingFiles: ["a", "b"],
+      checkedAt: "2026-09-23T00:00:00Z",
+    };
+    // The open pull request is still compared with the candidate itself.
+    expect(candidateReport(document, candidate, "base").blockers.map((b) => b.detail)).toEqual(["#7 feature: a"]);
+  });
+
+  it("marks a candidate superseded when the same developer takes up the same issue again (U02)", () => {
+    const { document, candidate } = setup();
+    const first = findAssignment(document, candidate.assignmentId)!;
+    first.issueNumber = 13;
+    first.createdAt = "2026-09-27T10:00:00Z";
+    expect(candidateReport(document, candidate, "base").state).toBe("building");
+    const correction = assign(
+      document,
+      {
+        specialist: "Ada",
+        kind: "agreedTicket",
+        objective: "correzione",
+        issueNumber: 13,
+        exercise: null,
+        moduleIds: ["altro"],
+        dependencies: [],
+        model: "gpt",
+        tools: ["edits"],
+        requiredChecks: ["git_status"],
+        instructions: "i",
+      },
+      1,
+      null,
+    );
+    correction.createdAt = "2026-09-27T11:00:00Z";
+    expect(candidateReport(document, candidate, "base").state).toBe("superseded");
   });
 
   it("is not blocked by a decision it does not rely on (T09)", () => {

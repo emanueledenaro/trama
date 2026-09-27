@@ -1,7 +1,7 @@
 // Launches the built app with the fake Codex server and saves screenshots of the main screens.
 // Usage: node scripts/ui-check.mjs <output-dir>
 import { execFileSync } from "node:child_process";
-import { cp, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { _electron as electron } from "playwright";
@@ -2129,5 +2129,176 @@ for (const dark of [false, true]) {
   await page.waitForFunction((wanted) => document.documentElement.classList.contains("dark") === wanted, dark);
   await shot(`22b-automatic-work-role-${dark ? "dark" : "light"}`);
 }
+await page.evaluate(() => window.trama.invoke("settings:update", { theme: "system" }));
+await app.close();
+
+// Issue #267: the project's branch and main on GitHub went different ways. The chat says it once, above the dialog,
+// with the files on request and the question for the Coordinator; the conflicts that only repeated it on each candidate
+// point to the notice, and the candidate Luca replaced on the same issue is superseded, not a conflict between
+// developers. No colleague is named: nobody shares a presence here. Both themes.
+const divergenceProject = await mkdtemp(join(tmpdir(), "trama-ui-divergenza-"));
+await cp(resolve("resources/DemoProject"), divergenceProject, { recursive: true });
+const divergenceGit = (...args) => execFileSync("git", ["-C", divergenceProject, ...args], { encoding: "utf8" });
+divergenceGit("init", "-q", "-b", "main");
+divergenceGit("add", ".");
+divergenceGit("-c", "user.name=Trama UI", "-c", "user.email=ui@trama.local", "commit", "-q", "-m", "Negozio");
+divergenceGit("checkout", "-q", "-b", "chore/pre-apertura");
+const divergenceHead = divergenceGit("rev-parse", "HEAD").trim();
+({ app, page } = await launch());
+await page.evaluate(() => window.trama.invoke("settings:update", { continuousWork: false, theme: "light" }));
+await page.evaluate((path) => window.trama.invoke("project:open", { path }), divergenceProject);
+await page.getByText("Ho letto lo studio").first().waitFor({ timeout: 30_000 });
+await app.close();
+let divergencePath = null;
+for (const file of await readdir(join(dataDir, "Projects"))) {
+  if ((await readFile(join(dataDir, "Projects", file), "utf8")).includes("trama-ui-divergenza-")) divergencePath = join(dataDir, "Projects", file);
+}
+if (!divergencePath) throw new Error("Divergence: the project's state was not saved");
+{
+  const document = JSON.parse(await readFile(divergencePath, "utf8"));
+  const at = (hour) => `2026-09-27T${String(hour).padStart(2, "0")}:00:00.000Z`;
+  const mainSHA = "4df3c14a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e";
+  const files = [
+    "package.json",
+    "package-lock.json",
+    "src/app/layout.tsx",
+    "src/app/page.tsx",
+    "src/app/prodotti/page.tsx",
+    "src/app/carrello/page.tsx",
+    "src/lib/commerce.ts",
+    "src/lib/prezzi.ts",
+    "src/lib/ordini.ts",
+    "src/components/Header.tsx",
+    "src/components/Footer.tsx",
+    "src/components/Scheda.tsx",
+    "next.config.js",
+    "tsconfig.json",
+    "README.md",
+    "AGENTS.md",
+    ".env.example",
+    "vercel.json",
+  ];
+  const work = (id, objective, hour, branch) => ({
+    id,
+    specialistId: "S-LUCA",
+    requestId: null,
+    kind: "agreedTicket",
+    objective,
+    issueNumber: 13,
+    exercise: null,
+    moduleIds: [],
+    dependencies: [],
+    model: "gpt-6-luna",
+    tools: ["commands", "edits"],
+    requiredChecks: ["git_status"],
+    instructions: "",
+    mandateVersion: 1,
+    createdAt: at(hour),
+    status: "completed",
+    workspace: { sourceRoot: divergenceProject, worktreeRoot: join(divergenceProject, "..", `wt-${id}`), branch, baseSHA: divergenceHead },
+    threadId: null,
+    turns: [],
+    stops: [],
+    result: "Fatto.",
+    failure: null,
+    updatedAt: at(hour),
+    lastUpdate: "",
+    reportedStatus: "completed",
+  });
+  const first = work("A-48ED83CA", "Primo script typecheck", 10, "chore/issue-13-sbloccare-la-verifica-tecnica-di-s1");
+  const second = work("A-4025CB6B", "Script typecheck corretto", 11, "chore/issue-13-correggere-lo-script-typecheck");
+  document.team.specialists.push({
+    id: "S-LUCA",
+    name: "Luca",
+    competence: "Next.js",
+    reason: "",
+    moduleIds: [],
+    role: "developer",
+    origin: "teamProposal",
+    color: "blue",
+    tag: "Next.js",
+    createdAt: at(9),
+    status: "available",
+    model: "gpt-6-luna",
+    tools: ["commands", "edits"],
+    updatedAt: at(11),
+    lastUpdate: "",
+    removal: null,
+    assignments: [first, second],
+  });
+  const candidate = (id, assignment, snapshotId, hour) => ({
+    id,
+    assignmentId: assignment.id,
+    specialistId: "S-LUCA",
+    snapshotId,
+    baseSHA: divergenceHead,
+    diff: "",
+    changedFiles: ["package.json"],
+    touchedModules: [],
+    requiredDecisionIds: [],
+    decisionVersions: {},
+    requiredChecks: ["git_status"],
+    unresolvedChoices: [],
+    externalEffects: [],
+    declaredAt: at(hour),
+    updatedAt: at(hour),
+    evidence: { git_status: { check: "git_status", result: "pass", command: "git status", output: "", snapshotId, decisionVersions: {}, recordedAt: at(hour) } },
+    technicalReview: null,
+    clearance: null,
+    humanApproval: null,
+    pullRequest: null,
+  });
+  const older = candidate("C-AC540E8F", first, "snap-1", 10);
+  const newer = candidate("C-2AB1376F", second, "snap-2", 11);
+  document.candidates.push(older, newer);
+  const conflict = (id, of, fields) => ({ id, candidateId: of.id, snapshotId: of.snapshotId, classification: "conflict", detail: "La fusione temporanea produce conflitti testuali.", checkedAt: at(12), ...fields });
+  document.conflicts = [
+    conflict(`snap-1:${mainSHA}`, older, { remoteSHA: mainSHA, references: ["main"], conflictingFiles: files }),
+    conflict(`snap-2:${mainSHA}`, newer, { remoteSHA: mainSHA, references: ["main"], conflictingFiles: files }),
+    conflict("snap-2:worktree:snap-1", newer, {
+      remoteSHA: "9a50f20a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e",
+      references: [`C-AC540E8F di Luca (${first.workspace.branch})`],
+      otherCandidateId: older.id,
+      otherSnapshotId: older.snapshotId,
+      conflictingFiles: ["package.json"],
+    }),
+  ];
+  // What Trama finds comparing the checkout with main on GitHub; the example project has no GitHub remote to read.
+  document.branchDivergence = { branch: "chore/pre-apertura", defaultBranch: "main", headSHA: divergenceHead, remoteSHA: mainSHA, ahead: 13, behind: 7, conflictingFiles: files, checkedAt: at(12) };
+  let sequence = Math.max(0, ...document.events.map((e) => e.sequence));
+  const card = (kind, referenceId) => ({ id: `E-div-${++sequence}`, sequence, origin: "trama", requestId: null, createdAt: at(12), content: { type: "card", kind, title: kind, detail: null, referenceId } });
+  document.events.push(card("candidate", older.id), card("candidate", newer.id), ...document.conflicts.map((a) => card("conflict", a.id)));
+  await writeFile(divergencePath, JSON.stringify(document));
+}
+({ app, page } = await launch());
+await page.evaluate((path) => window.trama.invoke("project:open", { path }), divergenceProject);
+const divergenceNotice = page.getByTestId("branch-divergence");
+await divergenceNotice.waitFor({ timeout: 30_000 });
+const divergenceText = await divergenceNotice.getByTestId("branch-divergence-text").innerText();
+if (!divergenceText.includes("chore/pre-apertura") || !divergenceText.includes("18 file in conflitto") || /[A-Z]-[0-9A-F]{6,}|[–—]/.test(divergenceText)) {
+  throw new Error(`Divergence notice: ${divergenceText}`);
+}
+await primaryLast(divergenceNotice.locator(".cta-row"), "Divergence notice");
+const divergenceCards = page.getByTestId("conflict-in-divergence");
+if ((await divergenceCards.count()) !== 2) throw new Error(`Divergence: ${await divergenceCards.count()} conflicts with main still shown on their own`);
+if ((await page.getByTestId("conflict-superseded").count()) !== 1) throw new Error("Divergence: the conflict with the replaced candidate is not superseded");
+if ((await page.getByTestId("candidate-superseded").count()) !== 1) throw new Error("Divergence: the replaced candidate is not marked superseded");
+if (await page.getByRole("main").getByText(/colleg[ah]i?\b/).count()) throw new Error("Divergence: a colleague is named with nobody sharing a presence");
+if (await page.getByText("Conflitto con C-AC540E8F").count()) throw new Error("Divergence: the newer candidate still conflicts with the replaced one");
+await page.getByTestId("conflict-superseded").scrollIntoViewIfNeeded();
+for (const dark of [false, true]) {
+  await page.evaluate((theme) => window.trama.invoke("settings:update", { theme }), dark ? "dark" : "light");
+  await page.waitForFunction((wanted) => document.documentElement.classList.contains("dark") === wanted, dark);
+  await shot(`23a-branch-divergence-${dark ? "dark" : "light"}`);
+}
+await divergenceNotice.getByRole("button", { name: /^Mostra i 18 file/ }).click();
+await divergenceNotice.getByTestId("branch-divergence-files").getByText("vercel.json").waitFor();
+for (const dark of [false, true]) {
+  await page.evaluate((theme) => window.trama.invoke("settings:update", { theme }), dark ? "dark" : "light");
+  await page.waitForFunction((wanted) => document.documentElement.classList.contains("dark") === wanted, dark);
+  await shot(`23b-branch-divergence-files-${dark ? "dark" : "light"}`);
+}
+await divergenceNotice.getByRole("button", { name: "Chiedi al Coordinatore come riallineare" }).click();
+await expectAsked("Come li riallineiamo?", "Divergence notice, Chiedi al Coordinatore come riallineare");
 await page.evaluate(() => window.trama.invoke("settings:update", { theme: "system" }));
 await app.close();

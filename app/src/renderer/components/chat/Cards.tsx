@@ -33,6 +33,7 @@ import {
 } from "@shared/domain";
 import { CLEAN_CODE_RULES, type CodeMeasure } from "@shared/cleanCode";
 import { isExerciseAssessment } from "@shared/onboarding";
+import { candidateSuperseded, CONFLICT_SIDE_TITLE, conflictSide, explainedByDivergence, otherSideSuperseded } from "@shared/conflictScope";
 import { findGoal } from "@shared/goals";
 import { adrMarkdown, adrPath, findDomainProposal, glossaryEntry } from "@shared/domainDocs";
 import { PROVIDERS } from "@shared/providers";
@@ -700,6 +701,7 @@ export const CANDIDATE_STATE: Record<CandidateState, { label: string; tone: "inf
   building: { label: "In costruzione", tone: "secondary" },
   verified: { label: "Verificato", tone: "info" },
   decided: { label: "Deciso", tone: "success" },
+  superseded: { label: "Superato", tone: "secondary" },
 };
 
 const BLOCKER_TEXT: Record<string, string> = {
@@ -710,8 +712,8 @@ const BLOCKER_TEXT: Record<string, string> = {
   EVIDENCE_MISSING: "Verifica da eseguire",
   EVIDENCE_STALE: "Verifica non più valida",
   CHECK_FAILED: "Verifica non superata",
-  REMOTE_CONFLICT: "Conflitto con il lavoro di un collega",
-  WORKTREE_CONFLICT: "Conflitto con il worktree di un altro sviluppatore",
+  REMOTE_CONFLICT: "Conflitto con il lavoro su GitHub",
+  WORKTREE_CONFLICT: "Conflitto con il lavoro di un altro incarico",
 };
 
 const QUALITY_LABEL: Record<QualityItem["code"], string> = {
@@ -1067,6 +1069,11 @@ export function CandidateCard({ candidateId }: { candidateId: string }) {
       <p className="text-ui-sm text-muted-foreground">
         {specialist ? <AgentName agent={specialist} size={32} /> : candidate.specialistId}<Sep />incarico {candidate.assignmentId}<Sep />{candidate.changedFiles.length === 1 ? "1 file" : `${candidate.changedFiles.length} file`}
       </p>
+      {report.state === "superseded" ? (
+        <p className="mt-1 text-ui-sm text-muted-foreground" data-testid="candidate-superseded">
+          Sostituito da un lavoro più recente: non va unito e non entra in conflitto con nessuno.
+        </p>
+      ) : null}
       <Field label="Decisioni pertinenti">
         {candidate.requiredDecisionIds.map((id) => (
           <button key={id} type="button" className="mr-2 font-mono text-[11.5px] text-[var(--color-text-accent)] hover:underline" onClick={() => setInspector({ kind: "decision", id })}>
@@ -1083,7 +1090,7 @@ export function CandidateCard({ candidateId }: { candidateId: string }) {
         </div>
       </Field>
       {candidate.technicalReview ? <TechnicalReviewField review={candidate.technicalReview} /> : null}
-      {report.blockers.length ? (
+      {report.blockers.length && report.state !== "superseded" ? (
         <Field label="Cosa manca">
           <ul className="space-y-0.5 text-ui-sm">
             {report.blockers.map((b) => (
@@ -1096,9 +1103,11 @@ export function CandidateCard({ candidateId }: { candidateId: string }) {
         </Field>
       ) : null}
       {(() => {
-        const conflicts = (project.document.conflicts ?? []).filter((a) => a.candidateId === candidate.id && a.classification !== "clean");
-        return conflicts.length ? (
-          <Field label="Lavoro dei colleghi">
+        const conflicts = (project.document.conflicts ?? []).filter(
+          (a) => a.candidateId === candidate.id && a.classification !== "clean" && !explainedByDivergence(project.document, a) && !otherSideSuperseded(project.document, a),
+        );
+        return conflicts.length && report.state !== "superseded" ? (
+          <Field label="Confronti con altro lavoro">
             {conflicts.map((a) => (
               <div key={a.id} className="text-ui-sm">
                 {CONFLICT_LABEL[a.classification].label} con {a.references.join(", ")}
@@ -1335,6 +1344,19 @@ export function ConflictCard({ assessmentId }: { assessmentId: string }) {
   if (!assessment) return null;
   const label = CONFLICT_LABEL[assessment.classification];
   const exercise = isExerciseAssessment(assessment);
+  const side = conflictSide(assessment, (project.presence?.others.length ?? 0) > 0);
+  const title = exercise ? "Esercizio di conflitto" : CONFLICT_SIDE_TITLE[side];
+  // The divergence of the project's branch is one notice above the chat (U02): the card only points to it.
+  if (!exercise && explainedByDivergence(project.document, assessment)) {
+    return (
+      <CardFrame icon={<IconGitBranch stroke={1.8} />} title={title} aside={<Badge tone="secondary">Nell'avviso del progetto</Badge>}>
+        <p className="text-ui-sm text-muted-foreground" data-testid="conflict-in-divergence">
+          Questo confronto ripeteva la divergenza tra il branch del progetto e {project.document.branchDivergence!.defaultBranch}: non dipende dal
+          candidato. Trama la segnala una volta sola, nell'avviso sopra la chat.
+        </p>
+      </CardFrame>
+    );
+  }
   // A comparison made on an older snapshot of the candidate, or against a head that moved on, is obsolete (T13).
   const candidate = project.document.candidates.find((c) => c.id === assessment.candidateId);
   // Against another developer's worktree (W08) the other side is that candidate, not a remote head.
@@ -1349,11 +1371,22 @@ export function ConflictCard({ assessmentId }: { assessmentId: string }) {
     project.github.snapshot && !exercise && !worktree
       ? new Set([...project.github.snapshot.branches.map((b) => b.sha.toLowerCase()), ...project.github.snapshot.pullRequests.map((p) => p.headSHA.toLowerCase())])
       : null;
+  // A candidate replaced by later work is not merged by anyone (U02): there is nothing to resolve.
+  const superseded = !exercise && ((candidate && candidateSuperseded(project.document, candidate)) || otherSideSuperseded(project.document, assessment));
   const obsolete = (candidate && candidate.snapshotId !== assessment.snapshotId) || otherMoved || (heads !== null && !heads.has(assessment.remoteSHA.toLowerCase()));
+  if (superseded) {
+    return (
+      <CardFrame icon={<IconGitBranch stroke={1.8} />} title={title} aside={<Badge tone="secondary">Superato</Badge>}>
+        <p className="text-ui-sm text-muted-foreground" data-testid="conflict-superseded">
+          {worktree ? "Uno dei due candidati" : "Il candidato"} è stato sostituito da un lavoro più recente: questo conflitto non va risolto.
+        </p>
+      </CardFrame>
+    );
+  }
   return (
     <CardFrame
       icon={<IconGitBranch stroke={1.8} />}
-      title={exercise ? "Esercizio di conflitto" : worktree ? "Worktree del team" : "Lavoro dei colleghi"}
+      title={title}
       aside={
         <>
           {exercise ? <Badge tone="info">Esercizio</Badge> : null}
@@ -1365,7 +1398,7 @@ export function ConflictCard({ assessmentId }: { assessmentId: string }) {
         <p className="mb-1 text-ui-xs text-muted-foreground">
           {worktree
             ? "Uno dei due candidati è cambiato dopo questo confronto: Trama ne farà uno nuovo."
-            : "Il candidato o il lavoro del collega sono cambiati dopo questo confronto: Trama ne farà uno nuovo."}
+            : "Il candidato o il lavoro su GitHub sono cambiati dopo questo confronto: Trama ne farà uno nuovo."}
         </p>
       ) : null}
       {exercise ? (
