@@ -3,8 +3,7 @@
  * specialists, planners and reviewers through this interface; the controller never talks to a
  * provider protocol directly.
  *
- * The adapters port provider logic from Synara (https://github.com/Emanuele-web04/synara, MIT,
- * Copyright (c) 2026 T3 Tools Inc. and Emanuele Di Pietro). See docs/synara-attribution.md.
+ * Derived from third-party MIT code; see THIRD_PARTY_NOTICES.md.
  */
 import type { ProviderAccount, ProviderId, ProviderModel, TurnEvent } from "@shared/codex";
 import type { LoadedSkill } from "@shared/skills";

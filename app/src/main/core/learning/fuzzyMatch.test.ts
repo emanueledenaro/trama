@@ -18,7 +18,7 @@ describe("SequenceMatcher (difflib)", () => {
   });
 });
 
-describe("fuzzyFindAndReplace (Hermes fuzzy_match)", () => {
+describe("fuzzyFindAndReplace", () => {
   it("replaces an exact unique match", () => {
     const result = fuzzyFindAndReplace("alpha\nbeta\ngamma", "beta", "BETA");
     expect(result).toMatchObject({ content: "alpha\nBETA\ngamma", count: 1, strategy: "exact", error: null });

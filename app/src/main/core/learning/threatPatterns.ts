@@ -1,6 +1,5 @@
 /**
- * Prompt-injection, promptware and exfiltration patterns, ported from Hermes Agent
- * `tools/threat_patterns.py` (revision 58c896e, MIT, Copyright (c) 2025 Nous Research). Memory and
+ * Prompt-injection, promptware and exfiltration patterns. Derived from third-party MIT code; see THIRD_PARTY_NOTICES.md. Memory and
  * skills re-enter every future prompt, so a poisoned entry would persist: writes are scanned with the
  * strict scope, which includes every pattern.
  */
@@ -35,7 +34,7 @@ const PATTERNS: [string, string, Scope][] = [
   [`you\\s+must\\s+(?:${W}+\\s+){0,3}(register|connect|report|beacon)(?!${W})`, "forced_action", "context"],
   [`only\\s+use\\s+one[\\s\\-]?liners?(?!${W})`, "anti_forensic_oneliner", "context"],
   [`never\\s+${FILLER}(?:create|write)\\s+${FILLER}(?:script|file)\\s+${FILLER}disk`, "anti_forensic_disk", "context"],
-  [`unset\\s+${W}*(?:CLAUDE|CODEX|HERMES|AGENT|OPENAI|ANTHROPIC)${W}*`, "env_var_unset_agent", "context"],
+  [`unset\\s+${W}*(?:CLAUDE|CODEX|AGENT|OPENAI|ANTHROPIC)${W}*`, "env_var_unset_agent", "context"],
   [`(?<!${W})(?:cobalt\\s*strike|sliver|havoc|mythic|metasploit|brainworm)(?!${W})`, "known_c2_framework", "context"],
   [`(?<!${W})c2\\s+(?:server|channel|infrastructure|beacon)(?!${W})`, "c2_explicit", "context"],
   [`(?<!${W})command\\s+and\\s+control(?!${W})`, "c2_explicit_long", "context"],
@@ -50,13 +49,11 @@ const PATTERNS: [string, string, Scope][] = [
     "ssh_access",
     "strict",
   ],
-  ["\\$HOME/\\.hermes/\\.env|~/\\.hermes/\\.env", "hermes_env", "strict"],
   [`${MODIFY}(?:AGENTS\\.md|CLAUDE\\.md|\\.cursorrules|\\.clinerules)`, "agent_config_mod", "strict"],
-  [`${MODIFY}\\.hermes/(config\\.yaml|SOUL\\.md)`, "hermes_config_mod", "strict"],
 ];
 
 // A value that is itself an environment variable NAME (SHOUTY_SNAKE with an underscore segment) says
-// where a credential lives and is not one; Hermes checks it case-sensitively inside a case-insensitive
+// where a credential lives and is not one; the name check is case-sensitive inside a case-insensitive
 // pattern, which JavaScript expresses here in code.
 const SECRET_ASSIGNMENT = /(?:api[_-]?key|token|secret|password)\s*[=:]\s*["']/giu;
 const SECRET_VALUE = /^[A-Za-z0-9+/=_-]{20,}/;

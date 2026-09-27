@@ -38,7 +38,7 @@ describe("composer mentions", () => {
     expect(mentionContextBlock("nessuna menzione", sources)).toBeNull();
   });
 
-  it("ranks candidates like Synara", () => {
+  it("ranks candidates by match quality", () => {
     expect(fileScore("Sources/Orders/CancelPaidOrder.swift", "cancel")).toBe(2);
     expect(fileScore("Sources/Orders/CancelPaidOrder.swift", "cpo")).toBeGreaterThan(100);
     expect(mentionCandidates("ord", sources)[0]!.title).toBe("Orders");

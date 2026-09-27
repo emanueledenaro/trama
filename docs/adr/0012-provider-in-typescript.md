@@ -1,10 +1,10 @@
-# I provider di Synara entrano in Trama in TypeScript
+# ADR 0012: provider in TypeScript
 
 Stato: richiesta dal Product Owner il 23 settembre 2026. Sostituisce la parte "riscritti in Swift" dell'ADR 0008; il resto dell'ADR 0008 e l'ADR 0009 restano validi.
 
-L'ADR 0008 aveva deciso i nove provider di Synara e li voleva riscritti in Swift, perché includere Node in un'app SwiftUI avrebbe portato un secondo runtime. Con l'ADR 0011 Trama è diventata un'app Electron: il processo principale è già Node e TypeScript, lo stesso linguaggio di Synara. La ragione dell'ADR 0008 non vale più.
+L'ADR 0008 aveva deciso i nove provider e li voleva riscritti in Swift, perché includere Node in un'app SwiftUI avrebbe portato un secondo runtime. Con l'ADR 0011 Trama è diventata un'app Electron: il processo principale è già Node e TypeScript, lo stesso linguaggio degli adattatori originali. La ragione dell'ADR 0008 non vale più.
 
-Decisione: gli adattatori vivono in `app/src/main/core/providers/` e portano la logica di Synara (`apps/server/src/provider`, licenza MIT) senza il livello Effect. Usano gli stessi SDK e le stesse versioni di Synara: `@anthropic-ai/claude-agent-sdk`, `@agentclientprotocol/sdk`, `@opencode-ai/sdk`, `@earendil-works/pi-coding-agent`. Gli SDK restano fuori dal bundle del processo principale e si caricano solo quando servono.
+Decisione: gli adattatori vivono in `app/src/main/core/providers/` e riprendono la logica di un progetto esterno con licenza MIT, senza il livello Effect; attribuzione e licenza in [THIRD_PARTY_NOTICES.md](../../THIRD_PARTY_NOTICES.md). Usano gli stessi SDK e le stesse versioni degli adattatori originali: `@anthropic-ai/claude-agent-sdk`, `@agentclientprotocol/sdk`, `@opencode-ai/sdk`, `@earendil-works/pi-coding-agent`. Gli SDK restano fuori dal bundle del processo principale e si caricano solo quando servono.
 
 Tutti i provider, Codex compreso, passano da una forma comune, `AgentRuntime` in `providers/types.ts` (il ticket V08): conto, modelli, accesso, apertura o ripresa della sessione, turno con eventi normalizzati, interruzione e arresto. Il controller non parla più con un protocollo di provider. Ogni adattatore applica le stesse regole:
 
@@ -13,7 +13,7 @@ Tutti i provider, Codex compreso, passano da una forma comune, `AgentRuntime` in
 - le credenziali restano nei componenti ufficiali: Trama legge lo stato dell'accesso dalla CLI o dall'SDK del provider, non dai file delle credenziali;
 - un blocco per limite d'uso diventa lo stato `blocked`, con la data di sblocco quando il provider la fornisce.
 
-Alternative scartate: tenere il catalogo statico e rimandare gli adattatori (lascia Trama ferma quando Codex si blocca, il problema che ha motivato l'ADR 0009); includere l'intero server di Synara (porta database, WebSocket e funzioni che Trama non usa, come già scartato nell'ADR 0011).
+Alternative scartate: tenere il catalogo statico e rimandare gli adattatori (lascia Trama ferma quando Codex si blocca, il problema che ha motivato l'ADR 0009); includere l'intero server del progetto esterno (porta database, WebSocket e funzioni che Trama non usa, come già scartato nell'ADR 0011).
 
 Conseguenze: il pacchetto dell'app cresce per gli SDK di Claude e Pi. Ogni adattatore ha test unitari sulle parti pure (stato dell'accesso, eventi, permessi) con SDK o CLI finti. Le prove reali richiedono gli account dei provider e restano da fare con V09. Dove un provider non può garantire una delle regole sopra, l'adattatore lo dichiara e si rifiuta di aprire la sessione per quel ruolo invece di aggirare la regola.
 

@@ -1,10 +1,10 @@
-# Trama diventa un'app desktop Electron con l'interfaccia di Synara
+# ADR 0011: app desktop in Electron
 
 Stato: richiesta dal Product Owner il 23 settembre 2026. Sostituisce l'ADR 0001 per l'interfaccia e la piattaforma. Il porting è in corso: la tabella in fondo dice cosa è già passato nell'app Electron.
 
-L'ADR 0001 aveva scelto un'app macOS nativa in SwiftUI. Il Product Owner ha chiesto di convertire Trama in un'app Electron con lo stesso design di [Synara](https://github.com/Emanuele-web04/synara). Synara è un'app Electron con licenza MIT: la sua interfaccia React e i suoi token di design sono il riferimento visivo.
+L'ADR 0001 aveva scelto un'app macOS nativa in SwiftUI. Il Product Owner ha chiesto di convertire Trama in un'app Electron con un'interfaccia React e token di design propri. L'interfaccia riprende la logica di un progetto esterno con licenza MIT; attribuzione e licenza in [THIRD_PARTY_NOTICES.md](../../THIRD_PARTY_NOTICES.md).
 
-Decisione: l'app desktop vive in `app/`. Il processo principale (Node, TypeScript) contiene il dominio di Trama: scansione del repository, client di Codex App Server, Coordinatore, server MCP locale degli strumenti, Patto, mandato, GitHub e persistenza. Il renderer (React, Tailwind CSS 4, primitive `@base-ui/react`) riproduce layout, misure, colori e tipografia di Synara: barra laterale traslucida, bordo del contenuto, intestazione di 46 px, timeline con gruppi di lavoro, composer flottante. Il renderer non ha accesso a Node: parla con il processo principale attraverso un bridge IPC con azioni tipizzate.
+Decisione: l'app desktop vive in `app/`. Il processo principale (Node, TypeScript) contiene il dominio di Trama: scansione del repository, client di Codex App Server, Coordinatore, server MCP locale degli strumenti, Patto, mandato, GitHub e persistenza. Il renderer (React, Tailwind CSS 4, primitive `@base-ui/react`) definisce layout, misure, colori e tipografia di Trama: barra laterale traslucida, bordo del contenuto, intestazione di 46 px, timeline con gruppi di lavoro, composer flottante. Il renderer non ha accesso a Node: parla con il processo principale attraverso un bridge IPC con azioni tipizzate.
 
 Regole che restano invariate:
 
@@ -13,9 +13,9 @@ Regole che restano invariate:
 - Le letture del repository escludono segreti e collegamenti simbolici.
 - Una decisione chiesta dal Coordinatore entra nel Patto solo con la risposta della persona.
 
-Alternative scartate: tenere SwiftUI e imitare Synara a mano (due linguaggi di design e nessun riuso dei componenti); includere l'intero monorepo di Synara (porterebbe server, provider e funzioni che Trama non usa).
+Alternative scartate: tenere SwiftUI e riprodurre il nuovo design a mano (due linguaggi di design e nessun riuso dei componenti); includere l'intero monorepo del progetto esterno (porterebbe server, provider e funzioni che Trama non usa).
 
-Conseguenze: Trama gira anche su Linux e Windows, perché nulla nel processo principale dipende da macOS. Il monitor in background non è più un helper separato registrato con `SMAppService`: gira nel processo principale di Trama, che può partire all'accesso senza finestra. Le verifiche usano la sandbox di Codex (`codex sandbox`) come nella versione SwiftUI. Le icone "Central Icons" di Synara non sono incluse perché il repository non ne dichiara la licenza: Trama usa Tabler Icons (MIT) con le stesse misure. I sorgenti Swift sono stati rimossi dal repository il 23 settembre 2026, su richiesta del Product Owner, e restano nella cronologia git. Le funzioni non ancora portate sono elencate sotto.
+Conseguenze: Trama gira anche su Linux e Windows, perché nulla nel processo principale dipende da macOS. Il monitor in background non è più un helper separato registrato con `SMAppService`: gira nel processo principale di Trama, che può partire all'accesso senza finestra. Le verifiche usano la sandbox di Codex (`codex sandbox`) come nella versione SwiftUI. Le icone "Central Icons" del progetto esterno non sono incluse perché il suo repository non ne dichiara la licenza: Trama usa Tabler Icons (MIT) con le stesse misure. I sorgenti Swift sono stati rimossi dal repository il 23 settembre 2026, su richiesta del Product Owner, e restano nella cronologia git. Le funzioni non ancora portate sono elencate sotto.
 
 ## Stato del porting
 
@@ -23,7 +23,7 @@ Conseguenze: Trama gira anche su Linux e Windows, perché nulla nel processo pri
 |---|---|
 | Progetti recenti, apertura, creazione, progetto di esempio | Portato |
 | Dati della versione SwiftUI | Importati in sola lettura: progetti recenti, conversazione, Patto, mandato, memoria e thread del Coordinatore. Team, candidati e richieste di modifica restano nei file Swift |
-| Menzioni `@` e testi incollati nel composer | Portato, con il punteggio di ricerca di Synara |
+| Menzioni `@` e testi incollati nel composer | Portato, con il punteggio di ricerca del progetto esterno |
 | Scansione del repository e mappa dei moduli | Portato, con gli stessi limiti ed esclusioni |
 | Codex: account ChatGPT, accesso, modelli, sforzo | Portato |
 | Coordinatore: thread persistente, studio, aggiornamenti di contesto, memoria | Portato |

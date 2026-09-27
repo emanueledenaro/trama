@@ -322,7 +322,7 @@ export interface CoordinatorState {
   contextThreshold?: number;
   /** The threshold the last notice was given for; cleared by a compaction or a new thread. */
   contextWarnedAt?: number | null;
-  /** The learning loop ported from Hermes (ADR 0014); absent in documents written before it. */
+  /** The learning loop (ADR 0014); absent in documents written before it. */
   learning?: CoordinatorLearning;
 }
 

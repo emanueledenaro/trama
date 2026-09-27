@@ -47,7 +47,7 @@ Trama puts one **Coordinator** between you and the agents:
 - **A guided first run.** A brief animated intro leads into a Welcome flow for connecting a provider, GitHub and the AI Hero method, each step skippable and resumable later. The project picker then lists your recents with their phase, blockers and active colleagues, next to opening a folder, cloning from GitHub or trying the sample project.
 - **Checks Trama runs itself.** `git_status`, `git_diff_check`, `swift_build`, `swift_test`, `node_test` and `node_typecheck`, with Node checks in a sandbox that allows only local networking.
 - **Goals with examples.** Outcomes with accepted and rejected examples that tasks, candidates and decisions link to explicitly.
-- **Memory and learning.** The Coordinator keeps notes on you and the project, searches past conversations and maintains the skills it learns, ported from Hermes Agent.
+- **Memory and learning.** The Coordinator keeps notes on you and the project, searches past conversations and maintains the skills it learns.
 - **Repository map.** Swift and JavaScript/TypeScript projects are indexed into modules from their real paths, with secrets and symlinks excluded.
 
 <table>
@@ -130,7 +130,7 @@ The vocabulary (Coordinator, Pact, mandate, candidate, moment, presence, focus m
 | Antigravity | yes | No, fake CLI only. Every role: read-only for the Coordinator, planners, reviewers and checks, edits only in a specialist's worktree, never shell or network |
 | Droid | yes | No. Not detected on the test machine |
 
-The adapters are ported from [Synara](https://github.com/Emanuele-web04/synara) ([ADR 0012](docs/adr/0012-provider-di-synara-in-typescript.md)). Credentials stay with each provider's official CLI. Trama does not read `auth.json` or copy tokens.
+The adapters are written in TypeScript in the main process ([ADR 0012](docs/adr/0012-provider-in-typescript.md)). Credentials stay with each provider's official CLI. Trama does not read `auth.json` or copy tokens.
 
 ## Configuration
 
@@ -162,14 +162,14 @@ npm run dist        # package with electron-builder
 | --- | --- |
 | `app/src/main` | Main process: repository scanner, Coordinator, MCP tool server on `127.0.0.1`, Pact, mandate, team, goals, checks, presence, GitHub, persistence |
 | `app/src/main/core/providers` | The nine provider adapters behind `AgentRuntime` |
-| `app/src/main/core/learning` | Memory and learning loop ported from [Hermes Agent](https://github.com/NousResearch/hermes-agent) ([ADR 0014](docs/adr/0014-apprendimento-di-hermes.md)) |
+| `app/src/main/core/learning` | Coordinator memory, past conversation search, learned skills, experience review and weekly skill upkeep ([ADR 0014](docs/adr/0014-apprendimento-del-coordinatore.md)) |
 | `app/src/main/core/nativeSkills.ts` | Delivers a bundled skill unchanged, with a binding to Trama's tools |
 | `app/src/main/core/audit.ts` | Focus mode: real checks first, then the `code-review` skill on two read-only sessions |
 | `app/src/main/core/auditFindings.ts` | Focus mode findings: Trama rechecks each proof, a stronger model confirms serious ones |
 | `app/src/main/core/presence.ts` | Presence over dedicated git refs, and overlap checks against colleagues' branches |
 | `app/src/main/core/conventions.ts`, `app/src/main/core/quality.ts` | Reads a project's own commit and branch conventions, and gates publishing on the standard |
 | `app/src/preload` | Typed IPC bridge. The renderer has no Node access |
-| `app/src/renderer` | React, Tailwind CSS 4 and `@base-ui/react` on Synara's design tokens |
+| `app/src/renderer` | React, Tailwind CSS 4 and `@base-ui/react` on Trama's design tokens |
 | `app/src/renderer/components/brand` | `TramaMark`, the app's woven-ribbon glyph, tinted to each provider's accent |
 | `app/src/shared` | Shared types and logic: timeline, grilling rounds, team roster, presence, overlap |
 | `app/resources/AIHero` | Bundled skills, license and `bundle.json` with every renamed file |
@@ -191,7 +191,7 @@ CI ([`electron.yml`](.github/workflows/electron.yml)) runs type check, tests, bu
 - **Distribution.** No signed or notarized package has been produced yet.
 - **Planning docs.** Some documents in `docs/` still describe the SwiftUI version.
 
-The complete list is in [ADR 0011](docs/adr/0011-app-desktop-electron-con-design-synara.md) and in [GitHub Issues](https://github.com/emanueledenaro/trama/issues). Code or a passing local test alone does not close a ticket; the verification logs are in [`docs/verifiche/`](docs/verifiche/).
+The complete list is in [ADR 0011](docs/adr/0011-app-desktop-electron.md) and in [GitHub Issues](https://github.com/emanueledenaro/trama/issues). Code or a passing local test alone does not close a ticket; the verification logs are in [`docs/verifiche/`](docs/verifiche/).
 
 ## Contributing
 
@@ -205,9 +205,8 @@ Issues and pull requests are welcome. Before you start:
 
 ## Acknowledgements
 
-- [Synara](https://github.com/Emanuele-web04/synara) for the interface and the provider adapters (MIT, [attribution](docs/synara-attribution.md)).
+- Third-party code and licenses are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 - [Matt Pocock's skills](https://github.com/mattpocock/skills) for the bundled skills (MIT, [attribution](docs/aihero-attribution.md)).
-- [Hermes Agent](https://github.com/NousResearch/hermes-agent) for the learning loop (MIT, [attribution](docs/hermes-attribution.md)).
 - [Codex](https://github.com/openai/codex) by OpenAI, installed separately and not bundled with the app.
 
 ## License
