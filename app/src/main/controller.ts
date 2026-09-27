@@ -4856,7 +4856,7 @@ export class TramaController {
   }
 
   /**
-   * Hermes' background review: an unattended session of the Coordinator's provider and model reads the
+   * The background review: an unattended session of the Coordinator's provider and model reads the
    * transcript and may only write memory and skills. One pass at a time per project; the conversation
    * never waits for it. `focus` comes from the person, and makes the pass attended.
    */
@@ -4927,7 +4927,7 @@ export class TramaController {
   }
 
   /**
-   * Hermes' curator tick: at most once per interval, after two idle hours, never on the first check.
+   * The curator tick: at most once per interval, after two idle hours, never on the first check.
    * The deterministic pass always runs; the model pass only when the person turned consolidation on.
    */
   async maybeRunCurator(force = false, dryRun = false): Promise<void> {
@@ -5018,7 +5018,7 @@ export class TramaController {
     this.learningChanged();
   }
 
-  /** The person corrects memory directly: their writes apply at once, as in Hermes' journey view. */
+  /** The person corrects memory directly: their writes apply at once, without a review. */
   editLearnedMemory(input: { target: "memory" | "user"; action: "add" | "replace" | "remove"; oldText?: string; content?: string }): { success: boolean; error: string | null } {
     const learning = this.learningFor(this.requireProject());
     const store = learning.memory;
@@ -5081,7 +5081,7 @@ export class TramaController {
     return readFileText(join(dir, "SKILL.md"), "utf8");
   }
 
-  /** The person asks for a review now, optionally with a focus (Hermes' /refine). */
+  /** The person asks for a review now, optionally with a focus. */
   async reviewLearningNow(focus: string): Promise<void> {
     const project = this.requireProject();
     const learning = this.learningFor(project);

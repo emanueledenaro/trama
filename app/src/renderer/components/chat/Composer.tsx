@@ -1,4 +1,4 @@
-// Layout and classes follow Synara (github.com/Emanuele-web04/synara, MIT License, Copyright (c) 2026 T3 Tools Inc. and Emanuele Di Pietro).
+// Derived from third-party MIT code; see THIRD_PARTY_NOTICES.md.
 import { IconArrowUp, IconPhotoPlus, IconRoute, IconX } from "@tabler/icons-react";
 import type { ProviderId } from "@shared/codex";
 import { catalogOffers } from "@shared/providers";

@@ -1,12 +1,11 @@
 /**
- * The self-improvement review, ported from Hermes Agent `agent/background_review.py`,
- * `agent/turn_context.py`, `agent/turn_finalizer.py` and `agent/prompt_builder.py` (revision 58c896e,
- * MIT, Copyright (c) 2025 Nous Research).
+ * The self-improvement review. Derived from third-party MIT code; see THIRD_PARTY_NOTICES.md.
  *
  * Two counters decide when a review runs: user turns since the Coordinator last wrote memory, and tool
  * iterations since it last wrote a skill. When one reaches its interval after a completed turn, Trama
  * runs a separate, unattended session that sees the conversation and may only use the memory and skill
- * tools; it never blocks the person's conversation. The prompts are Hermes' own, verbatim.
+ * tools; it never blocks the person's conversation. The prompts are copied verbatim from the
+ * third-party source listed in THIRD_PARTY_NOTICES.md; keep them unchanged.
  */
 
 export const MEMORY_NUDGE_INTERVAL = 10;
@@ -49,8 +48,8 @@ const DO_NOT_CAPTURE = `  • Environment-dependent failures: missing binaries, 
 
 If a tool failed because of setup state, capture the FIX (install command, config step, env var to set) under an existing setup or troubleshooting skill — never 'this tool does not work' as a standalone constraint.`;
 
-// Hermes names its own protected kinds (bundled, hub, external dirs); Trama's library has none of
-// them, so only the pinned and person-owned rules stay, and "hermes curator adopt" becomes Trama's
+// The source prompt names protected kinds (bundled, hub, external dirs) that Trama's library does not
+// have, so only the pinned and person-owned rules stay, and its adopt command becomes Trama's
 // adoption in the Memory view.
 export const SKILL_REVIEW_PROMPT = `Review the conversation above and update the skill library. Be ACTIVE — most sessions produce at least one skill update, even if small. A pass that does nothing is a missed learning opportunity, not a neutral outcome.
 
@@ -135,7 +134,7 @@ Act on whichever of the two dimensions has real signal. If genuinely nothing sta
 
 export type ReviewScope = { memory: boolean; skills: boolean };
 
-/** Hermes' `_PROMPT_NAME_BY_SCOPE`, plus the tools line the review is told about. */
+/** The prompt for each scope, plus the tools line the review is told about. */
 export function reviewPrompt(scope: ReviewScope, memoryAvailable: boolean, focus: string | null = null): string {
   let prompt = scope.memory && scope.skills ? COMBINED_REVIEW_PROMPT : scope.memory ? MEMORY_REVIEW_PROMPT : SKILL_REVIEW_PROMPT;
   if (focus?.trim()) prompt += `\n\nThe user explicitly requested this review with the following focus — prioritize it over the general instructions above:\n${focus.trim()}`;
@@ -173,7 +172,7 @@ export function resetOnToolUse(counters: NudgeCounters, tool: string): void {
   else if (tool === "skill_manage") counters.itersSinceSkill = 0;
 }
 
-/** Called at the end of a turn with the tool iterations it ran (Hermes counts `tool_iterations` for Codex App Server). */
+/** Called at the end of a turn with the tool iterations it ran (counted for Codex App Server too). */
 export function finishTurnSkillNudge(counters: NudgeCounters, toolIterations: number, interval = SKILL_NUDGE_INTERVAL): boolean {
   if (interval <= 0) return false;
   counters.itersSinceSkill += toolIterations;
@@ -189,9 +188,9 @@ export interface TranscriptMessage {
 }
 
 /**
- * The conversation the review sees. Hermes forks the live session; a Trama review runs in its own
- * provider session, so it gets the transcript the way Hermes feeds a review routed to another model
- * (`_digest_history`): older turns summarised, the last 24 messages verbatim.
+ * The conversation the review sees. A Trama review runs in its own provider session instead of a
+ * fork of the live one, so it gets a digest of the transcript: older turns summarised, the last 24
+ * messages verbatim.
  */
 export function reviewTranscript(messages: TranscriptMessage[], tail = DIGEST_TAIL): string {
   let keepFrom = Math.max(0, messages.length - tail);
@@ -218,7 +217,7 @@ type JsonRecord = Record<string, unknown>;
 const SKILL_VERBS: Record<string, string> = { create: "created", patch: "patched", edit: "rewritten", write_file: "written", remove_file: "removed", delete: "deleted" };
 
 /**
- * Hermes' `summarize_background_review_actions` in the default ("on") mode: one line per successful
+ * The summary of the review's actions in the default ("on") mode: one line per successful
  * memory or skill write of the review, staged proposals included; failures and reads say nothing.
  */
 export function summarizeReviewActions(calls: { tool: string; args: JsonRecord; result: JsonRecord }[]): string[] {

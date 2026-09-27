@@ -3,7 +3,7 @@ import { orRelaxedQuery, parseQuery, sanitizeQuery, searchMessages, type SearchD
 
 const doc = (id: number, text: string, sessionId = "s1", role = "user", timestamp = id): SearchDocument => ({ id, sessionId, role, columns: [text], timestamp });
 
-describe("sanitizeQuery (Hermes _sanitize_fts5_query)", () => {
+describe("sanitizeQuery", () => {
   it.each([
     ["hello world", "hello world"],
     ["hello AND", "hello"],
