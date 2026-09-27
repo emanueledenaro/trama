@@ -1,6 +1,6 @@
 # Riferimento visivo: la app Codex di OpenAI
 
-Il Product Owner ha scelto il 16 settembre 2026 la app Codex installata sul Mac come riferimento estetico della chat del Coordinatore. Synara resta il riferimento per le funzioni (collegamento provider, finestra di contesto, canale agente-host, timeline delle attività).
+Il Product Owner ha scelto il 16 settembre 2026 la app Codex installata sul Mac come riferimento estetico della chat del Coordinatore. Le funzioni (collegamento provider, finestra di contesto, canale agente-host, timeline delle attività) seguono le regole descritte sotto.
 
 Fonte: foglio di stile del webview Codex dentro `ChatGPT.app` versione 26.908, letto dal bundle locale. I valori sotto sono quelli del tema Electron, non dell'estensione VS Code. Trama li riproduce con controlli SwiftUI e AppKit nativi, senza web view, come richiede l'ADR 0001.
 
@@ -53,6 +53,6 @@ Ombre molto leggere: sm `0 1 2 nero 8 %`, md `0 2 4 nero 8 %`, lg `0 4 8 nero 10
 - Composer: campo flottante in fondo alla colonna, angoli 2xl, bordo sottile, riga inferiore con selettori (modello, sforzo, ambiente) e pulsante di invio circolare.
 - Sidebar: superficie secondaria, righe da 30 px, testo secondario, selezione con sfondo morbido.
 
-## Cosa prendere da Synara
+## Comportamenti da riprendere
 
-Da Synara arrivano i comportamenti, non i colori: bolla persona senza bordo e risposta senza bolla (identici alla app Codex), riga "Ha lavorato per…" che raccoglie le attività di un turno, ispettore dell'attività, misuratore della finestra di contesto ad anello, chip per file, menzioni e comandi nel composer, selettore modello con sforzo, stato vuoto con logo e invito a iniziare.
+Si riprendono i comportamenti, non i colori: bolla persona senza bordo e risposta senza bolla (identici alla app Codex), riga "Ha lavorato per…" che raccoglie le attività di un turno, ispettore dell'attività, misuratore della finestra di contesto ad anello, chip per file, menzioni e comandi nel composer, selettore modello con sforzo, stato vuoto con logo e invito a iniziare.
