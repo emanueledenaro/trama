@@ -1,9 +1,7 @@
 /**
  * Grok Build over ACP (`grok --permission-mode default agent --no-leader stdio`).
  *
- * Ported from Synara (https://github.com/Emanuele-web04/synara, MIT, Copyright (c) 2026 T3 Tools Inc.
- * and Emanuele Di Pietro): acp/GrokAcpSupport.ts, GrokAcpExtension.ts, Layers/GrokAdapter.ts and the
- * Grok part of Layers/ProviderHealth.ts.
+ * Derived from third-party MIT code; see THIRD_PARTY_NOTICES.md.
  */
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -40,8 +38,8 @@ const GROK_SESSION_META: JsonObject = {
 };
 
 /**
- * Synara's GROK_PLAN_READ_ONLY_TOOL_NAMES without web_fetch and web_search: Trama turns never
- * reach the network through the agent's own tools.
+ * Grok's plan-mode read-only tools, without web_fetch and web_search: Trama turns never reach the
+ * network through the agent's own tools.
  */
 const GROK_READ_ONLY_TOOL_NAMES = new Set([
   "ask_user_question",

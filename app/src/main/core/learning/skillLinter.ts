@@ -1,9 +1,8 @@
 /**
- * Advisory SKILL.md linter, ported from Hermes Agent `tools/skill_linter.py` (revision 58c896e, MIT,
- * Copyright (c) 2025 Nous Research). Findings never block a write; they travel with the result so the
- * author fixes them with a patch. Hermes' rules about its own frontmatter conventions (`author`,
- * `license`, `metadata.hermes`, platforms) and its native tool names are left out: Trama skills have
- * neither.
+ * Advisory SKILL.md linter. Derived from third-party MIT code; see THIRD_PARTY_NOTICES.md. Findings never block a write; they travel
+ * with the result so the author fixes them with a patch. The source rules about another agent's
+ * frontmatter conventions (`author`, `license`, a namespaced metadata block, platforms) and its native
+ * tool names are left out: Trama skills have neither.
  */
 import { existsSync, readdirSync, statSync } from "node:fs";
 import { basename, join } from "node:path";

@@ -1,5 +1,5 @@
 /**
- * The subset of Python's `difflib.SequenceMatcher` that Hermes' fuzzy patch relies on: `ratio()` and
+ * The subset of Python's `difflib.SequenceMatcher` that the fuzzy patch relies on: `ratio()` and
  * `getOpcodes()` over strings, with the same junk heuristic (`autojunk`: in sequences of 200 or more
  * items, an item that appears in more than 1% of `b` plus one is ignored when finding matches).
  */

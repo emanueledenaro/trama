@@ -1,11 +1,7 @@
 /**
  * Claude Agent runtime over `@anthropic-ai/claude-agent-sdk`.
  *
- * Ports the protocol logic of Synara's Claude provider (Layers/ClaudeAdapter.ts, claudeAuthStatus.ts,
- * claudeAuthStatusLock.ts, claudeProcessEnv.ts, claudeTokenUsage.ts, providerBinaryResolution.ts,
- * skillPromptInjection.ts and the Claude parts of Layers/ProviderHealth.ts) from
- * https://github.com/Emanuele-web04/synara, MIT, Copyright (c) 2026 T3 Tools Inc. and Emanuele Di Pietro.
- * See docs/synara-attribution.md.
+ * Derived from third-party MIT code; see THIRD_PARTY_NOTICES.md.
  *
  * Each turn runs one SDK query in streaming-input mode: the first turn creates the session with a
  * UUID chosen here (`sessionId`), later turns `resume` it. Credentials stay in the official Claude
@@ -243,7 +239,7 @@ export function parseClaudeAuthStatus(result: CommandResult): ParsedAuth {
 
 /**
  * A clean `{"loggedIn":false}` without login text is the signature of a lost refresh-token rotation
- * race with another `claude auth status`; Synara re-probes once after the rotation settles.
+ * race with another `claude auth status`; the status is probed again once after the rotation settles.
  */
 export function isStructuredAuthFalseNegative(result: CommandResult): boolean {
   return result.code === 0 && extractAuthBoolean(parseJsonOutput(result.stdout).value) === false && !hasLoginRequiredText(result);

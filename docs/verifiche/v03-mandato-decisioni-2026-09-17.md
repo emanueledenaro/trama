@@ -101,18 +101,18 @@ Censimento dal rollout di Codex del thread creato dalla prova (`01a0ac6d-1af2-�
 
 Nessun turno ha usato `gpt-6-astra`: le 34 occorrenze del modello nel rollout sono tutte `gpt-5.6-luna`, e ogni turno riporta `approval_policy: never` e `sandbox_policy: read-only`. Anche le richieste di pianificazione nel documento riportano `gpt-5.6-luna`. Nessuna prova è stata rifatta.
 
-## Deviazioni dal riferimento Synara
+## Deviazioni dall'implementazione di riferimento
 
 - I codici di rifiuto seguono `ProjectMandate.Authorization`: `mandate_missing`, `mandate_revoked`, `person_required`, `outside_scope`. `notInMandate` e `outsideScope` hanno lo stesso codice `outside_scope` e si distinguono con `details.reason` (`action_not_granted`, `module_outside_scope`), così il Coordinatore ha un solo modo di reagire: chiedere un mandato diverso.
-- Ogni rifiuto porta `details.next` (`request_mandate` o `request_decision`), che Synara non ha: dice al modello lo strumento con cui proseguire.
-- Il controllo del mandato avviene in un solo punto, prima del gestore dello strumento, e si ripete all'avvio dell'azione. Synara non ha un controllo di mandato.
-- `run_readonly_check` ha un timeout di 600 secondi. Synara non ha timeout per chiamata. Nella configurazione del thread Trama alza `tool_timeout_sec` del server `trama` a 750 secondi, ricavati dal limite del controllo più le quattro letture Git del checkout e un margine, perché Codex interrompe le chiamate MCP dopo 60 secondi.
-- `prepare_plan` ha `readOnlyHint: false` e `destructiveHint: false`, mentre in Synara gli strumenti di scrittura sono `destructive: true`. Lo strumento mette in coda un piano che la persona rivede prima di ogni esecuzione e non cambia file.
+- Ogni rifiuto porta `details.next` (`request_mandate` o `request_decision`), che il riferimento non ha: dice al modello lo strumento con cui proseguire.
+- Il controllo del mandato avviene in un solo punto, prima del gestore dello strumento, e si ripete all'avvio dell'azione. Il riferimento non ha un controllo di mandato.
+- `run_readonly_check` ha un timeout di 600 secondi. Il riferimento non ha timeout per chiamata. Nella configurazione del thread Trama alza `tool_timeout_sec` del server `trama` a 750 secondi, ricavati dal limite del controllo più le quattro letture Git del checkout e un margine, perché Codex interrompe le chiamate MCP dopo 60 secondi.
+- `prepare_plan` ha `readOnlyHint: false` e `destructiveHint: false`, mentre nel riferimento gli strumenti di scrittura sono `destructive: true`. Lo strumento mette in coda un piano che la persona rivede prima di ogni esecuzione e non cambia file.
 - Senza mandato scrivono ancora `write_memory`, `request_mandate` e `request_decision`, ma solo nello stato del Coordinatore (memoria e schede), mai nel codice, nel Patto o nel mandato. «Nessuno strumento scrive» è letto come nessuno strumento cambia il progetto.
 - Il documento passa dallo schema 4 allo schema 5 per le schede di mandato e di decisione; un documento schema 4 si apre senza perdite con backup `v4-original.json`. V07 aveva aggiunto campi opzionali restando allo schema 4, quindi il numero 5 resta libero; i due test di V07 che davano lo schema 4 come corrente ora verificano la migrazione allo schema corrente.
 - La risposta libera registra come esempio accettato il caso concreto della scheda, perché la persona scrive il comportamento e non un esempio.
 - La revoca richiede un motivo anche dal pannello del mandato, come dalla scheda.
-- Non esiste uno strumento separato alla `synara_context`: `read_mandate` riporta mandato, perimetro ed esito di ogni azione.
+- Non esiste uno strumento separato per il contesto dell'host: `read_mandate` riporta mandato, perimetro ed esito di ogni azione.
 
 ## Revisione Standards e Spec
 

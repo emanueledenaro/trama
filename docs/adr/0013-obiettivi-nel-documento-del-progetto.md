@@ -1,6 +1,6 @@
 # Gli obiettivi vivono nel documento del progetto e i dialoghi sono viste della sua cronologia
 
-Stato: proposta il 24 settembre 2026 per i ticket UX01-UX07 (#99-#105) della specifica #97. Il prototipo UX00 (#98) è superato dall'ADR 0011: il layout segue l'interfaccia di Synara già in uso. Cambia in parte l'ADR 0007 (una sola conversazione per progetto); gli ADR 0005, 0009 e 0010 restano validi.
+Stato: proposta il 24 settembre 2026 per i ticket UX01-UX07 (#99-#105) della specifica #97. Il prototipo UX00 (#98) è superato dall'ADR 0011: il layout segue l'interfaccia di Trama già in uso. Cambia in parte l'ADR 0007 (una sola conversazione per progetto); gli ADR 0005, 0009 e 0010 restano validi.
 
 La specifica #97 chiede obiettivi con identità stabile, esempi verificabili e un dialogo con il Coordinatore per ciascuno, accanto al dialogo del progetto. Restava da decidere dove conservare gli obiettivi e come separare i dialoghi senza moltiplicare i Coordinatori.
 
