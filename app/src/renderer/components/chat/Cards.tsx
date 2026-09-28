@@ -16,6 +16,7 @@ import {
   IconUsersGroup,
   IconUsers,
   IconFocus2,
+  IconLock,
 } from "@tabler/icons-react";
 import { readableFailure } from "@shared/providerFailure";
 import {
@@ -37,6 +38,7 @@ import { isExerciseAssessment } from "@shared/onboarding";
 import { candidateSuperseded, CONFLICT_SIDE_TITLE, conflictSide, explainedByDivergence, otherSideSuperseded } from "@shared/conflictScope";
 import { type ListChange, type MandateProposalDiff, mandateProposalDiff, unchangedMandate } from "@shared/mandate";
 import { findGoal } from "@shared/goals";
+import { FIXED_BANS, fixedBanInfo } from "@shared/fixedBans";
 import { adrMarkdown, adrPath, findDomainProposal, glossaryEntry } from "@shared/domainDocs";
 import { PROVIDERS } from "@shared/providers";
 import { BOUNDARY_LABELS, findRoute, firstRunnableStep, ROUTE_PATH_LABELS, type RouteStatus, STEP_KIND_LABELS, TRAMA_FLOWS } from "@shared/askTrama";
@@ -159,6 +161,28 @@ function ItemList({ items, testId }: { items: string[]; testId?: string }) {
   );
 }
 
+/**
+ * The fixed bans every mandate excludes (issue #244): a plain list with no control to turn them on, because no mandate
+ * grants them.
+ */
+export function FixedBansField() {
+  return (
+    <div className="mt-2" data-testid="fixed-bans">
+      <div className="flex items-center gap-1 text-ui-xs text-muted-foreground/70">
+        <IconLock className="size-3" stroke={1.8} /> Divieti fissi, sempre esclusi
+      </div>
+      <ul className="mt-0.5 list-disc space-y-0.5 pl-4 text-ui text-foreground/90">
+        {FIXED_BANS.map((ban) => (
+          <li key={ban.id} className="break-words">
+            {ban.label}
+          </li>
+        ))}
+      </ul>
+      <p className="mt-1 text-ui-xs text-muted-foreground">Nessun mandato li concede. Se il lavoro ne richiede uno, Trama lo ferma prima che parta e lo mette in Aspetta te.</p>
+    </div>
+  );
+}
+
 /** One list of the mandate the proposal changes: what it adds and what it takes away. */
 function ChangeRow({ label, change, testId }: { label: string; change: ListChange<string>; testId: string }) {
   if (!change.added.length && !change.removed.length) return null;
@@ -237,7 +261,17 @@ export function MandateCard({ requestId }: { requestId: string }) {
   return (
     <CardFrame
       icon={<IconShieldCheck stroke={1.8} />}
-      title={resolution ? "Mandato" : hasMandate ? "Proposta di nuovo mandato" : "Proposta di mandato"}
+      title={
+        resolution
+          ? request.projectCycle
+            ? "Mandato di progetto"
+            : "Mandato"
+          : hasMandate
+            ? "Proposta di nuovo mandato"
+            : request.projectCycle
+              ? "Proposta di mandato di progetto"
+              : "Proposta di mandato"
+      }
       className={cn(superseded && "opacity-60")}
       aside={
         resolution ? (
@@ -283,6 +317,7 @@ export function MandateCard({ requestId }: { requestId: string }) {
           <ItemList items={request.limits} testId="mandate-limits" />
         </Field>
       ) : null}
+      <FixedBansField />
       {resolution?.kind === "rejected" ? (
         <p className="mt-2 text-ui-sm text-muted-foreground">Hai rifiutato la proposta. Il mandato in vigore non è cambiato.</p>
       ) : null}
@@ -335,6 +370,44 @@ export function MandateCard({ requestId }: { requestId: string }) {
           </div>
         )
       ) : null}
+    </CardFrame>
+  );
+}
+
+/**
+ * An action a fixed ban stopped before it started (issue #244): what was tried, by whom and why no mandate grants it.
+ * The person handles it outside Trama if they want it; "Ho visto" takes it out of Aspetta te.
+ */
+export function FixedBanCard({ refusalId }: { refusalId: string }) {
+  const project = useUi((s) => s.app?.project)!;
+  const refusal = project.document.fixedBanRefusals?.find((r) => r.id === refusalId);
+  if (!refusal) return null;
+  const info = fixedBanInfo(refusal.ban);
+  const by = refusal.by;
+  const specialist = by.kind === "specialist" ? project.document.team.specialists.find((sp) => sp.id === by.specialistId) : null;
+  return (
+    <CardFrame
+      icon={<IconLock stroke={1.8} />}
+      title="Azione fermata da un divieto fisso"
+      aside={refusal.acknowledgedAt ? <Badge tone="secondary">Vista</Badge> : <Badge tone="warning">Fermata</Badge>}
+    >
+      <div data-testid="fixed-ban-card">
+        <p className="text-ui text-foreground/90">{info.reason} Nessun mandato la concede: se serve, la fai tu fuori da Trama.</p>
+        <Field label="Divieto">{info.label}</Field>
+        <Field label="Chi l'ha chiesta">
+          {specialist ? <AgentName agent={specialist} /> : by.kind === "coordinator" ? "Il Coordinatore" : "Trama"}
+        </Field>
+        <Field label="Azione">
+          <code className="block font-mono text-ui-sm break-all whitespace-pre-wrap text-foreground/90">{refusal.action}</code>
+        </Field>
+        {!refusal.acknowledgedAt ? (
+          <div className="cta-row mt-3">
+            <Button size="sm" onClick={() => void act("fixedBan:acknowledge", { id: refusal.id })}>
+              Ho visto
+            </Button>
+          </div>
+        ) : null}
+      </div>
     </CardFrame>
   );
 }

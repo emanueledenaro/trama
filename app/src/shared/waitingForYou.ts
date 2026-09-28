@@ -1,4 +1,5 @@
 import { isOpenQuestion, pendingMandateRequest, type ProjectDocument, type SliceView, type WorkPlan } from "./domain";
+import { fixedBanInfo } from "./fixedBans";
 import { workRequests } from "./grilling";
 
 /**
@@ -7,13 +8,13 @@ import { workRequests } from "./grilling";
  * holds, the oldest first on a tie.
  */
 
-export type WaitingKind = "question" | "mandate" | "team" | "seams" | "slices" | "memory";
+export type WaitingKind = "question" | "mandate" | "team" | "seams" | "slices" | "memory" | "fixedBan";
 
 export interface WaitingItem {
   /** Unique among the items: the kind and the record, for example `question:D-1`. */
   key: string;
   kind: WaitingKind;
-  /** The record the item is about: a question, a mandate request, a team proposal, a plan or a memory proposal. */
+  /** The record the item is about: a question, a mandate request, a team proposal, a plan, a memory proposal or a refused action. */
   targetId: string;
   /** What kind of move it is, in the person's words. */
   label: string;
@@ -120,7 +121,7 @@ export function waitingForYou(document: ProjectDocument, sources: WaitingSources
       key: `mandate:${mandate.id}`,
       kind: "mandate",
       targetId: mandate.id,
-      label: granted ? "Proposta di mandato" : "Mandato",
+      label: granted ? "Proposta di mandato" : mandate.projectCycle ? "Mandato di progetto" : "Mandato",
       title: oneLine(mandate.reason) || "Il Coordinatore chiede il mandato per lavorare.",
       goalId: requestGoal(document, mandate.requestId),
       askedAt: mandate.askedAt,
@@ -156,6 +157,20 @@ export function waitingForYou(document: ProjectDocument, sources: WaitingSources
       goalId: requestGoal(document, plan.requestId),
       askedAt: plan.updatedAt,
       blocks: seams ? heldWork(document, sources, plan.requestId) : Math.max(1, heldSlices(plan, undefined)),
+    });
+  }
+
+  // An action a fixed ban stopped (issue #244): no mandate grants it, so it waits for the person until they have seen it.
+  for (const refusal of (document.fixedBanRefusals ?? []).filter((r) => !r.acknowledgedAt)) {
+    items.push({
+      key: `fixedBan:${refusal.id}`,
+      kind: "fixedBan",
+      targetId: refusal.id,
+      label: "Azione vietata",
+      title: `${fixedBanInfo(refusal.ban).label}: ${oneLine(refusal.action)}`,
+      goalId: null,
+      askedAt: refusal.refusedAt,
+      blocks: 1,
     });
   }
 

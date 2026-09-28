@@ -1,5 +1,6 @@
 import type { Candidate, NextMove, ProjectDocument } from "@shared/domain";
 import { pendingMandateRequest } from "@shared/domain";
+import { FIXED_BANS } from "@shared/fixedBans";
 import { inspectCandidate, latestCandidate, worktreeAssessmentCurrent } from "./candidates";
 import { COORDINATOR_MOVES, type CoordinatorMove, nextStepViews, PERSON_MOVE_LABELS, workRequests, workState } from "./workPhase";
 
@@ -142,6 +143,7 @@ export function currentStateText(document: ProjectDocument, requestId: string, h
     persons.length ? `Pulsanti che la persona vede ora: ${quoted(persons)}.` : "Pulsanti che la persona vede ora: nessuno.",
     "Nomina alla persona solo questi pulsanti, o quello che dichiari in questo turno con declare_next_step, con le stesse parole. Un pulsante che non è in questo elenco ora non c'è: non dire alla persona di premerlo.",
     mandateLine(document),
+    fixedBansLine(),
     ...planLines(document, requestId),
     ...candidateLines(document, headSHA),
   ];
@@ -158,6 +160,11 @@ function mandateLine(document: ProjectDocument): string {
         : "Mandato: nessuno.";
   const pending = pendingMandateRequest(document);
   return pending ? `${active} Proposta di mandato ${pending.id} chiesta il ${pending.askedAt}: aspetta la risposta della persona.` : `${active} Nessuna proposta di mandato in attesa.`;
+}
+
+/** The fixed bans (issue #244): Trama refuses them by rule; the line tells the Coordinator not to plan work on them. */
+function fixedBansLine(): string {
+  return `Divieti fissi, esclusi da ogni mandato: ${FIXED_BANS.map((b) => b.label.toLowerCase()).join("; ")}. Trama li rifiuta prima che partano e li mette in "Aspetta te": non pianificarli e non cercare altre strade, restano alla persona.`;
 }
 
 const SLICING_TEXT = {

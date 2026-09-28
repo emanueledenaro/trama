@@ -1473,6 +1473,13 @@ gitIn("-c", "user.name=Trama UI", "-c", "user.email=ui@trama.local", "commit", "
 await page.evaluate((path) => window.trama.invoke("project:open", { path }), candidateProject);
 await page.getByTestId("dialog-title").filter({ hasText: "trama-ui-candidato" }).waitFor({ timeout: 30_000 });
 await page.getByText("Ho letto lo studio").first().waitFor({ timeout: 30_000 });
+// Issue #244: the project mandate waits at the opening. Here the person writes a narrower mandate of their own.
+const declinedMandate = await openWaiting("mandate");
+await declinedMandate.getByRole("button", { name: "Rifiuta la proposta" }).click();
+await declinedMandate.getByLabel("Motivo del rifiuto").fill("Scrivo io un mandato più stretto");
+await declinedMandate.getByRole("button", { name: "Rifiuta la proposta" }).click();
+await declinedMandate.waitFor({ state: "detached", timeout: 20_000 });
+await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
 const send = async (text) => {
   await composer().fill(text);
   await page.keyboard.press("Enter");
@@ -2757,4 +2764,80 @@ await quitRow.getByRole("button", { name: "Riprendi" }).click();
 await waitForReply(repliesSoFar, "Esci");
 if ((await page.getByText("[attesa] Controlla i test degli annullamenti", { exact: true }).count()) !== 1) throw new Error("The resumed turn wrote the message again");
 await shot("23f-coordinator-closed-turn-resumed");
+await app.close();
+
+// Issue #244: a project opened without a mandate gets the project mandate for the whole cycle in Aspetta te. Every
+// mandate lists the fixed bans with no control to turn them on; the person narrows the mandate without revoking it,
+// and an action a fixed ban covers stops before it starts and waits in Aspetta te with its reason.
+const mandateProject = await mkdtemp(join(tmpdir(), "trama-ui-mandato-"));
+await cp(resolve("resources/DemoProject"), mandateProject, { recursive: true });
+execFileSync("git", ["-C", mandateProject, "init", "-q", "-b", "main"]);
+execFileSync("git", ["-C", mandateProject, "add", "."]);
+execFileSync("git", ["-C", mandateProject, "-c", "user.name=Trama UI", "-c", "user.email=ui@trama.local", "commit", "-q", "-m", "Negozio"]);
+({ app, page } = await launch());
+await page.evaluate(() => window.trama.invoke("settings:update", { continuousWork: false, theme: "light" }));
+await page.evaluate((path) => window.trama.invoke("project:open", { path }), mandateProject);
+await page.getByTestId("dialog-title").filter({ hasText: "trama-ui-mandato" }).waitFor({ timeout: 30_000 });
+await page.getByText("Ho letto lo studio").first().waitFor({ timeout: 30_000 });
+const mandateShots = async (name) => {
+  for (const provider of ["codex", "claudeAgent"]) {
+    for (const dark of [false, true]) {
+      await setLook(provider, dark);
+      await shot(`${name}-${provider}-${dark ? "dark" : "light"}`);
+    }
+  }
+  await setLook(null, false);
+};
+await page.getByTestId("waiting-summary").getByText("Mandato di progetto").waitFor();
+const projectMandate = await openWaiting("mandate");
+await projectMandate.getByText("Proposta di mandato di progetto").waitFor();
+const fixedBans = projectMandate.getByTestId("fixed-bans");
+if ((await fixedBans.locator("li").count()) !== 6) throw new Error("The project mandate does not list the six fixed bans");
+if (await fixedBans.locator("input, button, [role='switch']").count()) throw new Error("A fixed ban has a control to turn it on");
+await primaryLast(projectMandate.locator(".cta-row"), "Project mandate");
+await fixedBans.scrollIntoViewIfNeeded();
+await mandateShots("26a-project-mandate");
+await projectMandate.getByRole("button", { name: "Concedi", exact: true }).click();
+await page.getByText("Ho concesso il mandato (versione 1).").first().waitFor({ timeout: 20_000 });
+if (await page.getByTestId("waiting-summary").count()) throw new Error("The granted project mandate still waits in Aspetta te");
+
+// Restricting: the mandate stays in force, one action less, a new version in the history.
+await page.getByRole("button", { name: /^Mandato/ }).first().click();
+await page.getByText(/Mandato v1/).first().waitFor({ timeout: 20_000 });
+await page.getByTestId("inspector").getByTestId("fixed-bans").waitFor();
+await page.getByRole("button", { name: "Restringi", exact: true }).click();
+const restrict = page.getByTestId("mandate-restrict");
+await restrict.getByRole("checkbox", { name: "Integrare candidati verificati" }).uncheck();
+await primaryLast(restrict.locator(".cta-row"), "Mandate restriction");
+await mandateShots("26b-mandate-restrict");
+await restrict.getByRole("button", { name: "Restringi il mandato" }).click();
+await page.getByText(/Mandato v2/).first().waitFor({ timeout: 20_000 });
+const restriction = await page.getByTestId("mandate-restriction").innerText();
+if (!restriction.includes("integrare candidati verificati") || /[–—]/.test(restriction)) throw new Error(`Restriction: ${restriction}`);
+await page.getByText(/Ho ristretto il mandato/).first().waitFor({ timeout: 20_000 });
+await mandateShots("26c-mandate-restricted");
+// The correction form starts from the restricted version: saving it never brings back what the restriction took away.
+await page.getByRole("button", { name: "Correggi", exact: true }).click();
+if (await page.getByTestId("inspector").getByRole("checkbox", { name: "Integrare candidati verificati" }).isChecked()) {
+  throw new Error("The correction form brings back an action the restriction removed");
+}
+await page.getByTestId("inspector").getByRole("button", { name: "Annulla", exact: true }).click();
+await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
+
+// A force push is refused whatever the mandate: the turn stops and the action waits in Aspetta te with its reason.
+await page.getByLabel("Messaggio al Coordinatore").fill("[vietato:git push --force origin main]");
+await page.keyboard.press("Enter");
+// The refusal is not a card of the chat: the summary above the composer opens it in Aspetta te.
+await page.getByTestId("waiting-summary").getByText("Azione vietata").waitFor({ timeout: 20_000 });
+await page.getByTestId("waiting-summary").getByRole("button", { name: /aspetta te$/ }).click();
+const bannedItem = page.getByTestId("inspector").locator('[data-testid="waiting-item"][data-waiting-kind="fixedBan"]');
+await bannedItem.waitFor();
+const bannedCard = bannedItem.getByTestId("fixed-ban-card");
+await bannedCard.getByText("git push --force origin main").waitFor();
+await bannedCard.getByText("Force push", { exact: true }).waitFor();
+await primaryLast(bannedCard.locator(".cta-row"), "Fixed ban");
+await mandateShots("26d-fixed-ban");
+await bannedCard.getByRole("button", { name: "Ho visto" }).click();
+await bannedItem.waitFor({ state: "detached", timeout: 20_000 });
+await page.evaluate(() => window.trama.invoke("settings:update", { theme: "system" }));
 await app.close();
