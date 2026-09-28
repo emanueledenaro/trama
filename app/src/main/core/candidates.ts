@@ -3,6 +3,7 @@ import { plainConflictReference } from "@shared/plainLanguage";
 import { candidateSuperseded, explainedByDivergence } from "@shared/conflictScope";
 import type { Candidate, CandidateBlocker, CandidateReport, CandidateState, ConflictAssessment, ProjectDocument, TechnicalReview } from "@shared/domain";
 import { blockingFindings, latestGate } from "@shared/gate";
+import { workRequests } from "@shared/grilling";
 import { shortId } from "@shared/ids";
 import { roleProfile } from "@shared/roster";
 import { agreedSeams, assignmentSlice, readTestedSeams } from "./implementation";
@@ -27,6 +28,42 @@ export function findCandidate(document: ProjectDocument, id: string): Candidate 
 export function latestCandidate(document: ProjectDocument, assignmentId: string): Candidate | null {
   return document.candidates.filter((c) => c.assignmentId === assignmentId).at(-1) ?? null;
 }
+
+/**
+ * The earlier work that new work in the dialog of `requestId` corrects (issue #389): a completed or failed assignment of
+ * the same work, on the same slice or, outside slices, on one of the same modules, whose latest candidate is still
+ * open and stopped by a check, the reviewers or a conflict. Its candidate is then superseded by the new work's, so the
+ * two versions never collide. Work whose candidate is verified, approved or merged is not corrected: new work on its
+ * modules is other work.
+ */
+export function openCorrections(
+  document: ProjectDocument,
+  requestId: string | null,
+  work: { moduleIds: string[]; slice: { planId: string; sliceId: string } | null },
+): string[] {
+  const scope = requestId ? workRequests(document, requestId) : null;
+  if (!scope) return [];
+  return document.team.specialists
+    .flatMap((s) => s.assignments)
+    .filter((earlier) => {
+      if (earlier.requestId === null || !scope.has(earlier.requestId)) return false;
+      if (earlier.status !== "completed" && earlier.status !== "failed") return false;
+      const same = earlier.slice || work.slice
+        ? earlier.slice?.planId === work.slice?.planId && earlier.slice?.sliceId === work.slice?.sliceId
+        : earlier.moduleIds.some((m) => work.moduleIds.includes(m));
+      if (!same) return false;
+      const candidate = latestCandidate(document, earlier.id);
+      if (!candidate || candidate.pullRequest || candidateSuperseded(document, candidate)) return false;
+      const blockers = inspectCandidate(document, candidate, null);
+      if (blockers.some((b) => !STILL_CHECKING.includes(b.code))) return true;
+      // A gate that failed to finish asks for the review again, not for new work (as workPhase.ts).
+      return candidate.technicalReview?.verdict === "changesRequested" && !blockers.some((b) => b.code === "GATE_FAILED");
+    })
+    .map((a) => a.id);
+}
+
+/** Blockers that only wait for Trama's checks or reviewers: nothing to correct yet. */
+const STILL_CHECKING = ["EVIDENCE_MISSING", "EVIDENCE_STALE", "GATE_RUNNING", "GATE_FAILED"];
 
 /**
  * Whether an assessment still describes its other side: always for a remote head; for another developer's worktree
