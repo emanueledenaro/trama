@@ -129,9 +129,9 @@ export function TitleBar({ isMac }: { isMac: boolean }) {
   const project = useUi((s) => s.app?.project ?? null);
   const mainView = useUi((s) => s.mainView);
   const sidebarOpen = useUi((s) => s.sidebarOpen);
-  const activityOpen = useUi((s) => s.sidebarOpen && s.inspector?.kind === "activity");
+  const activityOpen = useUi((s) => s.panelOpen);
   const toggleSidebar = useUi((s) => s.toggleSidebar);
-  const setInspector = useUi((s) => s.setInspector);
+  const togglePanel = useUi((s) => s.togglePanel);
   const setDialog = useUi((s) => s.setDialog);
   const name = project ? (project.isDemo ? t("workbench.title.demoProject") : project.name) : null;
   return (
@@ -184,14 +184,14 @@ export function TitleBar({ isMac }: { isMac: boolean }) {
           </button>
         </Tooltip>
         {project ? (
-          // Activity opens in the side bar until the bottom panel arrives (B08, issue #337).
+          // The bottom panel with Activity (issue #337).
           <Tooltip label={t("workbench.title.panel")}>
             <button
               type="button"
               className={cn(ICON_BUTTON, activityOpen && HEADER_CHIP_ACTIVE)}
               aria-label={t("workbench.title.panel")}
               aria-pressed={activityOpen}
-              onClick={() => setInspector(activityOpen ? null : { kind: "activity" })}
+              onClick={togglePanel}
             >
               <IconLayoutBottombar className="size-4" stroke={1.7} />
             </button>
