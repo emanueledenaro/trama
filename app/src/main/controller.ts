@@ -220,6 +220,7 @@ import { approvePactDemo, inspectPactDemo, runPactDemo } from "./core/pactDemo";
 import { readRepositoryFile, scanRepository } from "./core/repositoryScanner";
 import { messageStyle } from "./core/messageStyle";
 import { DEFAULT_LANGUAGE, isLanguage, type Language, languageFromSystem } from "@shared/i18n";
+import { setPersonLanguage, t } from "./core/personLanguage";
 import { toolErrorMessage, toolErrorsRule, withoutToolErrors } from "./core/toolErrors";
 import { installedSkillVersion, prepareSkills, rollbackSkills, SELECTED_SKILLS, SKILL_VERSION, type SetupReport, updateSkills } from "./core/skillSetup";
 import {
@@ -6761,7 +6762,10 @@ export class TramaController {
 
   /** The person's language, else the system's first language that Trama has (issue #301). */
   private resolveLanguage(): Language {
-    return this.state.settings.language ?? languageFromSystem(this.host.systemLanguages?.() ?? []);
+    const language = this.state.settings.language ?? languageFromSystem(this.host.systemLanguages?.() ?? []);
+    // The core modules write the person's texts in this language from now on.
+    setPersonLanguage(language);
+    return language;
   }
 
   async updateSettings(update: Partial<AppSettings>): Promise<void> {
