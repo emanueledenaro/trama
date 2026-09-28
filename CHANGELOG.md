@@ -10,9 +10,9 @@ Trama has no release yet. The notes below are the first version, reconstructed f
 
 ### Added
 
-- Electron desktop app with Synara's interface, replacing the SwiftUI prototype ([#109](https://github.com/emanueledenaro/trama/pull/109)).
-- Adapters for nine providers ported from Synara: Codex, Claude, Cursor, Grok, Droid, Devin, OpenCode, Antigravity and Pi ([#110](https://github.com/emanueledenaro/trama/pull/110)).
-- Coordinator memory and learning loop ported from Hermes Agent ([#111](https://github.com/emanueledenaro/trama/pull/111)).
+- Electron desktop app, replacing the SwiftUI prototype ([#109](https://github.com/emanueledenaro/trama/pull/109)).
+- Adapters for nine providers: Codex, Claude, Cursor, Grok, Droid, Devin, OpenCode, Antigravity and Pi ([#110](https://github.com/emanueledenaro/trama/pull/110)).
+- Coordinator memory and learning loop ([#111](https://github.com/emanueledenaro/trama/pull/111)).
 - Grilling in numbered rounds of decision cards before the plan ([#115](https://github.com/emanueledenaro/trama/pull/115)).
 - Goals saved before their outcome, with a reopening test ([#116](https://github.com/emanueledenaro/trama/pull/116)).
 - Layout that adapts to the window size ([#117](https://github.com/emanueledenaro/trama/pull/117)).

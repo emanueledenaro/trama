@@ -25,7 +25,7 @@ npm ci
 npm run dev
 ```
 
-Before changing the domain, read [CONTEXT.md](CONTEXT.md), the [ADRs](docs/adr/) and [docs/agents/domain.md](docs/agents/domain.md). Interface work follows Synara's tokens, sizes and components in `app/src/renderer` ([ADR 0011](docs/adr/0011-app-desktop-electron-con-design-synara.md)).
+Before changing the domain, read [CONTEXT.md](CONTEXT.md), the [ADRs](docs/adr/) and [docs/agents/domain.md](docs/agents/domain.md). Interface work follows the tokens, sizes and components in `app/src/renderer` ([ADR 0011](docs/adr/0011-app-desktop-electron.md)). Code ported from other projects and its licenses are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 ## Testing a change
 
