@@ -5,7 +5,8 @@ import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/cn";
 import { useT } from "@/lib/i18n";
 import { useUi } from "@/lib/store";
-import { type SideBarView, VIEW_LABELS } from "@/lib/workbench";
+import { CONVERSATION_TAB, type SideBarView, VIEW_LABELS } from "@/lib/workbench";
+import { useSplitEditor } from "./EditorArea";
 
 function ActivityButton({
   label,
@@ -62,7 +63,10 @@ export function ActivityBar() {
   const stored = useUi((s) => s.sideBarView);
   const mainView = useUi((s) => s.mainView);
   const openView = useUi((s) => s.openView);
-  const setMainView = useUi((s) => s.setMainView);
+  const focusTab = useUi((s) => s.focusTab);
+  // A detail tab covers the main tab in a narrow window, or never when the details sit beside it.
+  const split = useSplitEditor();
+  const covered = useUi((s) => s.editorFocus === "detail" && s.activeDetail !== null) && !split;
   const openSettings = useUi((s) => s.openSettings);
   const closeSettings = useUi((s) => s.closeSettings);
   const focusComposer = useUi((s) => s.focusComposer);
@@ -102,10 +106,10 @@ export function ActivityBar() {
           <div className="h-1.5" />
           <ActivityButton
             label={t("workbench.view.conversation")}
-            active={mainView === "dialog" && !sidebarOpen}
+            active={mainView === "dialog" && !covered && !sidebarOpen}
             onClick={() => {
-              if (mainView === "settings") closeSettings();
-              if (mainView !== "dialog") setMainView("dialog");
+              // The conversation's tab comes forward; Progetti, Impostazioni and the details keep their tabs (issue #336).
+              focusTab(CONVERSATION_TAB);
               focusComposer();
             }}
           >
@@ -121,8 +125,8 @@ export function ActivityBar() {
       <span className="flex-1" />
       <ActivityButton
         label={t("workbench.view.settings")}
-        active={mainView === "settings"}
-        onClick={() => (mainView === "settings" ? closeSettings() : openSettings("general"))}
+        active={mainView === "settings" && !covered}
+        onClick={() => (mainView === "settings" && !covered ? closeSettings() : openSettings("general"))}
       >
         <IconSettings className="size-5" stroke={1.6} />
       </ActivityButton>

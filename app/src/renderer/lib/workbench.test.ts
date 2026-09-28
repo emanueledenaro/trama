@@ -2,7 +2,15 @@ import { describe, expect, it } from "vitest";
 import { it as italian } from "@shared/messages/it";
 import { en } from "@shared/messages/en";
 import {
+  ACTIVITY_BAR_WIDTH,
   CHAT_MIN_WIDTH,
+  DETAIL_PANE_MIN_WIDTH,
+  SPLIT_EDITOR_MIN_VIEWPORT,
+  detailKey,
+  detailPaneDefaultWidth,
+  detailPaneMaxWidth,
+  opensInEditor,
+  splitsEditor,
   SIDE_BAR_MIN_WIDTH,
   TAB_LABELS,
   VIEW_LABELS,
@@ -92,5 +100,47 @@ describe("window layout (issue #330)", () => {
     // 1066x666 is a 1280x800 window at 120% zoom.
     expect(1066 - 48 - sideBarMaxWidth(1066)).toBeGreaterThanOrEqual(CHAT_MIN_WIDTH);
     expect(sideBarMaxWidth(720)).toBeGreaterThanOrEqual(SIDE_BAR_MIN_WIDTH);
+  });
+});
+
+describe("editor tabs (issue #336)", () => {
+  it("opens the details in editor tabs and keeps lists, tabs and forms in the side bar", () => {
+    for (const target of [
+      { kind: "specialist", id: "S-1" },
+      { kind: "candidate", id: "C-1" },
+      { kind: "audit", id: "F-1" },
+      { kind: "decision", id: "D-1" },
+      { kind: "issue", number: 7 },
+      { kind: "pullRequest", number: 8 },
+      { kind: "module", id: "Orders" },
+      { kind: "goal", id: "G-1" },
+    ] as const) {
+      expect(opensInEditor(target)).toBe(true);
+    }
+    for (const target of [{ kind: "team" }, { kind: "work" }, { kind: "map" }, { kind: "waiting" }, { kind: "goals", create: true }, { kind: "activity", work: "W-1" }] as const) {
+      expect(opensInEditor(target)).toBe(false);
+    }
+  });
+
+  it("gives the same record the same tab, whatever the target brings into view", () => {
+    expect(detailKey({ kind: "candidate", id: "C-1" })).toBe(detailKey({ kind: "candidate", id: "C-1", audit: "F-2", diff: true }));
+    expect(detailKey({ kind: "goal", id: "G-1" })).toBe(detailKey({ kind: "goal", id: "G-1", edit: true }));
+    expect(detailKey({ kind: "candidate", id: "C-1" })).not.toBe(detailKey({ kind: "candidate", id: "C-2" }));
+    expect(detailKey({ kind: "issue", number: 7 })).not.toBe(detailKey({ kind: "pullRequest", number: 7 }));
+  });
+
+  it("splits the editor from about 1500 px, only when the person keeps the switch on", () => {
+    expect(SPLIT_EDITOR_MIN_VIEWPORT).toBe(1500);
+    expect(splitsEditor(1280, true)).toBe(false);
+    expect(splitsEditor(1680, true)).toBe(true);
+    expect(splitsEditor(1680, false)).toBe(false);
+  });
+
+  it("keeps the conversation at least 420 px wide beside the details and the side bar", () => {
+    for (const viewport of [1500, 1680, 1920]) {
+      const detail = Math.min(detailPaneDefaultWidth(viewport), detailPaneMaxWidth(viewport));
+      expect(detail).toBeGreaterThanOrEqual(DETAIL_PANE_MIN_WIDTH);
+      expect(viewport - ACTIVITY_BAR_WIDTH - sideBarDefaultWidth(viewport) - detailPaneMaxWidth(viewport)).toBeGreaterThanOrEqual(CHAT_MIN_WIDTH);
+    }
   });
 });

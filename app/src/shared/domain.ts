@@ -2059,6 +2059,10 @@ export interface ProjectOverview {
   waitingForCapacity: number;
   /** Checks of the open pull requests from the last GitHub reading; null when the repository was not read. */
   ci: { passing: number; failing: number; pending: number } | null;
+  /** What the Coordinator does now, as the project's status line says it (issue #336); null when not read. */
+  coordinator: { text: string; state: StatusLineView["state"]; paused: boolean } | null;
+  /** What waits for the person in the project: the count of Aspetta te and its first item (issue #336). */
+  waiting: { count: number; first: { key: string; label: string; title: string } | null };
 }
 
 export interface SharedCapacity {

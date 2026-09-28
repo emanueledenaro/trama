@@ -3767,6 +3767,9 @@ export class TramaController {
             priority,
             waitingForCapacity: this.capacityQueue.filter((r) => r.projectId === project.id && this.waitsForCapacity(r)).length,
             ci: project.isDemo ? null : ciSummary(project.github.snapshot ?? (await this.savedGitHubSnapshot(recent))),
+            // The same Aspetta te and status line the open project shows (issue #336).
+            waiting: project.waiting,
+            status: project.statusLine,
           }),
         );
         continue;

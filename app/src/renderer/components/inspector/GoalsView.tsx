@@ -71,6 +71,8 @@ export function DeleteGoalDialog({ goal, onClose }: { goal: ProjectGoal | null; 
               if (!goal) return;
               void act("goal:delete", { id: goal.id }).then(() => {
                 if (inspector?.kind === "goal" && inspector.id === goal.id) setInspector({ kind: "goals" });
+                // The goal's editor tab closes with it (issue #336).
+                useUi.getState().closeTab(`detail:goal:${goal.id}`);
                 onClose();
               });
             }}
@@ -213,8 +215,9 @@ export function GoalsView({ create }: { create?: boolean }) {
               onDone={(id) => {
                 setEditing(false);
                 if (id) {
-                  openDialog(id);
+                  // The goal opens in its tab and the conversation filtered on it stays in front (issue #336).
                   setInspector({ kind: "goal", id });
+                  openDialog(id);
                 }
               }}
             />

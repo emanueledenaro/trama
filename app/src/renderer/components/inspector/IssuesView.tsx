@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Badge, Input, Label, TextArea } from "@/components/ui/field";
 import { cn } from "@/lib/cn";
 import { formatRelativeTime } from "@/lib/format";
+import { useT } from "@/lib/i18n";
 import { act, useUi } from "@/lib/store";
 import { issueQuestion } from "@/lib/askCoordinator";
 import { useTriageOnRequest } from "./AutomaticWork";
@@ -15,6 +16,7 @@ import { EmptyNote, InspectorSection } from "./Inspector";
 import { Sep } from "@/components/ui/sep";
 
 export function IssuesView() {
+  const t = useT();
   const github = useUi((s) => s.app?.project?.github)!;
   const setInspector = useUi((s) => s.setInspector);
   const [filter, setFilter] = useState<"open" | "closed">("open");
@@ -38,18 +40,14 @@ export function IssuesView() {
       >
         {github.status === "unavailable" ? <EmptyNote>{github.message}</EmptyNote> : null}
         {github.capabilities ? (
-          <p className="mb-2 text-ui-xs text-muted-foreground">
-            {github.capabilities.status === "ready"
-              ? [
-                  github.capabilities.login ? `Accesso come ${github.capabilities.login}` : "Accesso con gh",
-                  github.capabilities.private ? "repository privato" : "repository pubblico",
-                  github.capabilities.canPush ? "puoi pubblicare branch e pull request" : "sola lettura: niente push",
-                  github.capabilities.rateRemaining !== null ? `${github.capabilities.rateRemaining} richieste API rimaste` : null,
-                ]
-                  .filter(Boolean)
-                  .join(", ")
-              : github.capabilities.message}
-          </p>
+          // The account's data moved to Impostazioni, Collegamenti (issue #336); a link leads there.
+          <button
+            type="button"
+            className="mb-2 text-left text-ui-xs text-[var(--color-text-accent)] hover:underline"
+            onClick={() => useUi.getState().openSettings("connections")}
+          >
+            {t("issues.accountInSettings")}
+          </button>
         ) : null}
         {github.status === "ready" ? (
           <div className="flex items-center gap-2">
