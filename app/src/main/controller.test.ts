@@ -1386,6 +1386,141 @@ describe("TramaController", () => {
     }
   });
 
+  it("updates a ticket only with evidence, without duplicates, and never reports a failed write as done (C10)", async () => {
+    const bin = await mkdtemp(join(tmpdir(), "trama-bin-"));
+    const ticketFile = join(bin, "ticket.json");
+    const { symlink, readFile } = await import("node:fs/promises");
+    const { execFileSync } = await import("node:child_process");
+    const ticket = async () => JSON.parse(await readFile(ticketFile, "utf8")) as { state: string; body: string; comments: string[]; closeCalls?: number };
+    const change = async (update: Record<string, unknown>) => writeFile(ticketFile, JSON.stringify({ ...(await ticket()), ...update }));
+    await writeFile(
+      ticketFile,
+      JSON.stringify({
+        number: 42,
+        title: "Ticket di prova",
+        state: "open",
+        body: "## Criteri\n\n- [ ] Il riepilogo mostra l'annullo\n- [ ] Le verifiche passano",
+        comments: [],
+        pulls: { 12: { state: "OPEN", checks: "PENDING" } },
+      }),
+    );
+    await symlink(join(root, "test-fixtures/fake-gh.mjs"), join(bin, "gh"));
+    const path = process.env.PATH;
+    process.env.PATH = `${bin}:${path}`;
+    process.env.FAKE_GH_TICKET = ticketFile;
+    try {
+      const { project: projectPath } = await setup();
+      const run = (...args: string[]) => execFileSync("git", args, { cwd: projectPath, encoding: "utf8" }).trim();
+      run("init", "-q", "-b", "main");
+      run("-c", "user.name=t", "-c", "user.email=t@t", "add", ".");
+      run("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "init");
+      run("remote", "add", "origin", "https://github.com/trama-fixture/ordini-finti.git");
+      const sha = run("rev-parse", "HEAD");
+      await controller!.refreshGitHub();
+      const document = controller!.snapshot.project!.document;
+      const now = new Date().toISOString();
+      document.candidates.push({
+        id: "C-0000000A",
+        assignmentId: "A-0000000A",
+        specialistId: "unknown",
+        snapshotId: "s",
+        baseSHA: sha,
+        diff: "",
+        changedFiles: [],
+        touchedModules: [],
+        requiredDecisionIds: [],
+        decisionVersions: {},
+        requiredChecks: [],
+        unresolvedChoices: [],
+        externalEffects: [],
+        declaredAt: now,
+        updatedAt: now,
+        evidence: {},
+        technicalReview: null,
+        clearance: null,
+        humanApproval: null,
+        pullRequest: { url: "https://github.com/trama-fixture/ordini-finti/pull/12", number: 12, branch: "trama/annullo", at: now },
+      });
+      const lastActivity = () => {
+        const content = document.events.findLast((e) => e.content.type === "activity" && e.content.title.startsWith("Issue #42"))?.content;
+        return content?.type === "activity" ? content : null;
+      };
+      const partial = {
+        issueNumber: 42,
+        summary: "Il riepilogo mostra l'annullo; le verifiche della PR sono in corso.",
+        criteria: [
+          { index: 0, outcome: "met" as const, evidence: [sha], limits: null },
+          { index: 1, outcome: "partial" as const, evidence: [], limits: "CI ancora in corso" },
+        ],
+        openParts: ["Le verifiche passano"],
+        close: true,
+      };
+
+      // A partial increment ticks what is proven and leaves the issue open with what is missing.
+      const first = await controller!.updateTicket(partial);
+      expect(first).toMatchObject({ commentPosted: true, duplicate: false, checkedCriteria: [0], closed: false });
+      expect(first.closeBlockers).toEqual(["Criterion not met: Le verifiche passano", "No pull request of this work is merged."]);
+      expect((await ticket()).body).toBe("## Criteri\n\n- [x] Il riepilogo mostra l'annullo\n- [ ] Le verifiche passano");
+      expect((await ticket()).state).toBe("open");
+      expect(lastActivity()).toMatchObject({
+        title: "Issue #42 «Ticket di prova»: avanzamento registrato",
+        detail: "Resta aperta: manca «Le verifiche passano»; nessuna pull request di questo lavoro è stata unita.",
+        tone: "tool",
+      });
+
+      // The same report retried after a timeout posts nothing new.
+      expect(await controller!.updateTicket(partial)).toMatchObject({ commentPosted: false, duplicate: true, closed: false });
+      expect((await ticket()).comments).toHaveLength(1);
+      expect(lastActivity()!.title).toBe("Issue #42 «Ticket di prova»: avanzamento già registrato");
+
+      // A SHA that names no commit of the repository is not evidence, and nothing reaches GitHub.
+      await expect(controller!.updateTicket({ ...partial, criteria: [{ index: 1, outcome: "met", evidence: ["deadbeef"], limits: null }] })).rejects.toThrow(
+        "Commit deadbeef is not in the project's repository.",
+      );
+      expect((await ticket()).comments).toHaveLength(1);
+
+      // A GitHub error is recorded as not done, never as an update.
+      const done = {
+        ...partial,
+        summary: "La PR #12 è unita con le verifiche passate.",
+        criteria: [
+          { index: 0, outcome: "met" as const, evidence: [sha], limits: null },
+          { index: 1, outcome: "met" as const, evidence: ["#12"], limits: null },
+        ],
+        openParts: [],
+      };
+      await change({ failComment: true, pulls: { 12: { state: "MERGED", mergedAt: now, checks: "SUCCESS" } } });
+      await expect(controller!.updateTicket(done)).rejects.toThrow("HTTP 502");
+      expect(lastActivity()).toMatchObject({
+        title: "Issue #42 «Ticket di prova»: aggiornamento non riuscito",
+        detail: "GitHub non ha risposto come atteso: il resoconto non è stato pubblicato, i criteri non sono stati spuntati, la issue resta aperta.",
+        tone: "error",
+      });
+      expect(await ticket()).toMatchObject({ state: "open", comments: [expect.any(String)] });
+
+      // Every criterion ticked and a merged pull request with green checks close the issue.
+      await change({ failComment: false });
+      expect(await controller!.updateTicket(done)).toMatchObject({ commentPosted: true, checkedCriteria: [1], closed: true, closeBlockers: [] });
+      expect(await ticket()).toMatchObject({ state: "closed", closeCalls: 1 });
+      expect((await ticket()).comments[1]).toContain("- Le verifiche passano: soddisfatto\n  - Prove: #12");
+      expect(lastActivity()).toMatchObject({ title: "Issue #42 «Ticket di prova»: chiusa con le prove", detail: "Criterio spuntato: «Le verifiche passano»." });
+
+      // A retry closes nothing twice; a reopened ticket keeps the earlier reports and closes again without a new comment.
+      expect(await controller!.updateTicket(done)).toMatchObject({ duplicate: true, closed: true });
+      expect((await ticket()).closeCalls).toBe(1);
+      await change({ state: "open" });
+      expect(await controller!.updateTicket(done)).toMatchObject({ duplicate: true, closed: true });
+      expect(await ticket()).toMatchObject({ state: "closed", closeCalls: 2 });
+      expect((await ticket()).comments).toHaveLength(2);
+    } finally {
+      await controller?.stop();
+      controller = null;
+      await new Promise((r) => setTimeout(r, 1_000));
+      process.env.PATH = path;
+      delete process.env.FAKE_GH_TICKET;
+    }
+  });
+
   it("closes a turn left running in a project the person leaves, and ignores its late end (C02)", async () => {
     const { project: firstPath } = await setup();
     const first = controller!.snapshot.project!;

@@ -90,7 +90,20 @@ import {
   revisePractice,
   rollbackPractice,
 } from "./core/practices";
-import { checkItems, closeBlockers, evidenceProblems, parseChecklist, progressComment, progressKey, progressMarker } from "./core/tickets";
+import {
+  blockerMessage,
+  blockerText,
+  checkItems,
+  citedCommits,
+  closeBlockers,
+  type CloseBlocker,
+  evidenceProblems,
+  isCommitReference,
+  parseChecklist,
+  progressComment,
+  progressKey,
+  progressMarker,
+} from "./core/tickets";
 import { assignmentSlice, developerSkillsDelivery, sliceBriefing } from "./core/implementation";
 import {
   type CleanCodeChange,
@@ -5185,7 +5198,8 @@ export class TramaController {
   /**
    * Reports progress on an issue with evidence Trama can see (C10). Comment and checklist are
    * idempotent, so a retry after a timeout duplicates nothing; the issue closes only when every
-   * criterion is ticked and a merged pull request has green checks.
+   * criterion is ticked and a merged pull request has green checks. A GitHub write that fails is
+   * recorded in the chat as not done, with what did reach GitHub, and the error goes back to the caller.
    */
   async updateTicket(input: TicketUpdate, requestId: string | null = null): Promise<TicketUpdateResult> {
     const project = this.requireProject();
@@ -5204,51 +5218,96 @@ export class TramaController {
       document.candidates.map((c) => [c.id, { report: candidateReport(document, c, head), pullRequestNumber: c.pullRequest?.number ?? null }]),
     );
     const pullRequests = new Set(document.candidates.flatMap((c) => (c.pullRequest ? [c.pullRequest.number] : [])));
-    const problems = input.criteria.flatMap((c) => evidenceProblems(c, { candidates, pullRequests }));
+    const commits = new Set<string>();
+    for (const sha of citedCommits(input.criteria)) {
+      const found = await git(["cat-file", "-e", `${sha}^{commit}`], project.rootPath).then(
+        () => true,
+        () => false,
+      );
+      if (found) commits.add(sha);
+    }
+    const problems = input.criteria.flatMap((c) => evidenceProblems(c, { candidates, pullRequests, commits }));
     if (problems.length) throw new TicketRefusal("evidence_insufficient", problems.join(" "));
 
+    const references = this.referenceIndex(project);
+    const describe = (reference: string) => {
+      const candidate = document.candidates.find((c) => c.id === reference);
+      if (candidate) {
+        const name = references.ids.get(reference)?.label ?? "candidato";
+        return candidate.pullRequest ? `${name} (PR #${candidate.pullRequest.number})` : name;
+      }
+      return isCommitReference(reference) ? reference.slice(0, 12) : reference;
+    };
+    const issueName = issue.title.trim() ? `Issue #${input.issueNumber} «${issue.title.trim()}»` : `Issue #${input.issueNumber}`;
     const key = progressKey(input.issueNumber, input.criteria, input.summary);
     const duplicate = issue.comments.some((c) => c.includes(progressMarker(key)));
-    if (!duplicate) await commentOnIssue(repository, input.issueNumber, progressComment(key, items, input.criteria, input.summary, input.openParts));
     const met = input.criteria.filter((c) => c.outcome === "met" && !items[c.index]!.checked).map((c) => c.index);
-    let body = issue.body;
-    if (met.length) {
-      body = checkItems(issue.body, met);
-      await updateIssueBody(repository, input.issueNumber, body);
-    }
+    let commentPosted = false;
+    let checklistUpdated = false;
     let closed = issue.state === "closed";
-    let blockers: string[] = [];
-    if (input.close && !closed) {
-      const numbers = new Set<number>();
-      for (const criterion of input.criteria.filter((c) => c.outcome === "met")) {
-        for (const reference of criterion.evidence) {
-          const pull = /^#(\d+)$/.exec(reference);
-          if (pull && pullRequests.has(Number(pull[1]))) numbers.add(Number(pull[1]));
-          const number = candidates.get(reference)?.pullRequestNumber;
-          if (number) numbers.add(number);
+    let blockers: CloseBlocker[] = [];
+    try {
+      if (!duplicate) {
+        await commentOnIssue(repository, input.issueNumber, progressComment(key, items, input.criteria, input.summary, input.openParts, describe));
+        commentPosted = true;
+      }
+      let body = issue.body;
+      if (met.length) {
+        body = checkItems(issue.body, met);
+        await updateIssueBody(repository, input.issueNumber, body);
+        checklistUpdated = true;
+      }
+      if (input.close && !closed) {
+        const numbers = new Set<number>();
+        for (const criterion of input.criteria.filter((c) => c.outcome === "met")) {
+          for (const reference of criterion.evidence) {
+            const pull = /^#(\d+)$/.exec(reference);
+            if (pull && pullRequests.has(Number(pull[1]))) numbers.add(Number(pull[1]));
+            const number = candidates.get(reference)?.pullRequestNumber;
+            if (number) numbers.add(number);
+          }
+        }
+        const statuses = await Promise.all([...numbers].map((n) => readPullRequestStatus(repository, n)));
+        blockers = closeBlockers(parseChecklist(body), statuses);
+        if (!blockers.length) {
+          await closeIssue(repository, input.issueNumber);
+          closed = true;
         }
       }
-      const statuses = await Promise.all([...numbers].map((n) => readPullRequestStatus(repository, n)));
-      blockers = closeBlockers(parseChecklist(body), statuses);
-      if (!blockers.length) {
-        await closeIssue(repository, input.issueNumber);
-        closed = true;
-      }
+    } catch (error) {
+      const done = [
+        duplicate ? "il resoconto era già sulla issue" : commentPosted ? "il resoconto è stato pubblicato" : "il resoconto non è stato pubblicato",
+        met.length ? (checklistUpdated ? "i criteri sono stati spuntati" : "i criteri non sono stati spuntati") : null,
+        input.close ? "la issue resta aperta" : null,
+      ].filter(Boolean);
+      appendEvent(
+        document,
+        "trama",
+        { type: "activity", title: `${issueName}: aggiornamento non riuscito`, detail: `GitHub non ha risposto come atteso: ${done.join(", ")}.`, tone: "error" },
+        requestId,
+      );
+      this.changed();
+      throw error;
     }
+    const criterionNames = met.map((i) => `«${items[i]!.text}»`).join(", ");
     appendEvent(
       document,
       "trama",
       {
         type: "activity",
-        title: `Issue #${input.issueNumber}: ${closed && input.close ? "chiusa con le prove" : duplicate ? "avanzamento già registrato" : "avanzamento registrato"}`,
-        detail: blockers.length ? `Resta aperta: ${blockers.join(" ")}` : met.length ? `Criteri spuntati: ${met.map((i) => i + 1).join(", ")}` : null,
+        title: `${issueName}: ${closed && input.close ? "chiusa con le prove" : duplicate ? "avanzamento già registrato" : "avanzamento registrato"}`,
+        detail: blockers.length
+          ? `Resta aperta: ${blockers.map(blockerText).join("; ")}.`
+          : met.length
+            ? `${met.length === 1 ? "Criterio spuntato" : "Criteri spuntati"}: ${criterionNames}.`
+            : null,
         tone: "tool",
       },
       requestId,
     );
     this.changed();
     void this.refreshGitHub();
-    return { commentPosted: !duplicate, duplicate, checkedCriteria: met, closed, closeBlockers: blockers };
+    return { commentPosted, duplicate, checkedCriteria: met, closed, closeBlockers: blockers.map(blockerMessage) };
   }
 
   // MARK: Team monitor
