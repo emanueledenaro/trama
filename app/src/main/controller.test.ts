@@ -621,6 +621,45 @@ describe("TramaController", () => {
     }
   }, 90_000);
 
+  it("writes the recap asked with the command or in the chat from the records, without a provider turn (A03)", async () => {
+    await setup();
+    const document = controller!.snapshot.project!.document;
+    const requests = document.requests.length;
+    await controller!.send("/riepilogo", null, null, null);
+    await controller!.send("A che punto siamo?", null, null, null);
+    expect(document.requests).toHaveLength(requests);
+    const cards = document.events.filter((e) => e.content.type === "card" && e.content.kind === "recap");
+    expect(cards).toHaveLength(2);
+    expect(document.events.filter((e) => e.content.type === "personMessage").map((e) => (e.content as { text: string }).text)).toEqual(["/riepilogo", "A che punto siamo?"]);
+    const recaps = document.recap!.recaps;
+    expect(recaps.map((r) => r.reason)).toEqual(["request", "request"]);
+    expect(recaps[0]).toMatchObject({ milestones: [], doing: controller!.snapshot.project!.statusLine!.text });
+    // A longer message is the Coordinator's, as any other.
+    await controller!.send("Fammi un riepilogo delle scelte sul checkout e poi prepara il piano", null, null, null);
+    expect(document.requests).toHaveLength(requests + 1);
+  }, 60_000);
+
+  it("writes one recap for a milestone, and tells it once (A03)", async () => {
+    await setup();
+    const document = controller!.snapshot.project!.document;
+    const goalId = await controller!.createGoal({ title: "Resi senza telefonate", outcome: "Il cliente apre un reso da solo", examples: [] });
+    await new Promise((r) => setTimeout(r, 100));
+    expect(document.recap?.recaps ?? []).toEqual([]);
+    await controller!.updateGoal(goalId, { status: "achieved" });
+    await until(() => (document.recap?.recaps.length ?? 0) > 0);
+    // More changes after the milestone do not tell it again.
+    await controller!.updateGoal(goalId, { title: "Resi senza telefonate al supporto" });
+    await controller!.send("/riepilogo", null, null, null);
+    await new Promise((r) => setTimeout(r, 100));
+    const recaps = document.recap!.recaps;
+    expect(recaps.map((r) => r.reason)).toEqual(["milestone", "request"]);
+    expect(recaps[0]!.milestones).toEqual(["Obiettivo raggiunto: Resi senza telefonate"]);
+    expect(recaps[1]!.milestones).toEqual([]);
+    const card = document.events.find((e) => e.content.type === "card" && e.content.kind === "recap");
+    expect(card?.content).toMatchObject({ title: "Riepilogo: un traguardo", referenceId: recaps[0]!.id });
+    expect(card?.goalId).toBeUndefined();
+  }, 60_000);
+
   it("runs no round on a project without open work (A05)", async () => {
     await setup();
     const document = controller!.snapshot.project!.document;

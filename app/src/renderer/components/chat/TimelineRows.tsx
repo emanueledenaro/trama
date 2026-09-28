@@ -45,6 +45,7 @@ import {
 } from "./Cards";
 import { ChatMarkdown } from "./ChatMarkdown";
 import { WaitingOr } from "@/components/WaitingView";
+import { RecapCard } from "./RecapCard";
 import { Sep } from "@/components/ui/sep";
 
 function DisclosureChevron({ open }: { open: boolean }) {
@@ -449,6 +450,7 @@ export function TimelineRowView({ row, streaming = false, latest = false }: { ro
       if (row.cardKind === "domainProposal" && content.referenceId) return <DomainProposalCard proposalId={content.referenceId} />;
       if (row.cardKind === "route" && content.referenceId) return <RouteCard routeId={content.referenceId} />;
       if (row.cardKind === "overlap" && content.referenceId) return <OverlapCard overlapId={content.referenceId} title={content.title} detail={content.detail} />;
+      if (row.cardKind === "recap" && content.referenceId) return <RecapCard recapId={content.referenceId} title={content.title} />;
       if (row.cardKind === "presenceConsent" && content.referenceId) return <PresenceConsentCard proposal={content.referenceId} detail={content.detail} />;
       return <ContextNoticeCard title={content.title} detail={content.detail} />;
     }

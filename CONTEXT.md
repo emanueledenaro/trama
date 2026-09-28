@@ -162,7 +162,7 @@ Aspetta te: il posto unico e sempre visibile di un progetto con tutto ciò che a
 
 Riga di stato: la frase sempre visibile che dice cosa fa il Coordinatore ora e cosa farà dopo, per esempio "Sto verificando S2, poi assegno S3". Viene dallo stand-up dell'ultimo giro o dall'ultima mossa. Non è un messaggio della chat.
 
-Riepilogo: il resoconto del Coordinatore a ogni traguardo o su richiesta della persona, in tre parti: cosa ho fatto, cosa faccio, cosa mi serve da te. Cita le issue aperte da solo e le voci di "Aspetta te". Le singole mosse non vanno nel riepilogo né in chat, ma in Attività.
+Riepilogo: il resoconto del Coordinatore a ogni traguardo o su richiesta della persona, in tre parti: cosa ho fatto, cosa faccio, cosa mi serve da te. Cita le issue aperte da solo e le voci di "Aspetta te". Le singole mosse non vanno nel riepilogo né in chat, ma in Attività. Un traguardo è una fetta fatta, un candidato unito o un obiettivo raggiunto; ogni traguardo finisce in un solo riepilogo, anche se arriva insieme ad altri. La persona lo chiede con `/riepilogo`, con una richiesta breve in chat ("A che punto siamo?") o dalla ricerca. Trama lo scrive dai dati del progetto, senza un turno del modello: "Cosa ho fatto" elenca le mosse di Attività dall'ultimo riepilogo e le issue aperte dal Coordinatore con il numero, "Cosa faccio" è la riga di stato, "Cosa mi serve da te" elenca le voci di "Aspetta te" con un rimando a ciascuna, o dice che non serve niente.
 
 Attività: il registro delle singole mosse del Coordinatore e degli agenti di un progetto, consultabile ma non in primo piano. È distinto dalla chat, che resta la conversazione con la persona.
 
