@@ -976,6 +976,113 @@ await page.getByText(/^Bea$/).first().waitFor({ timeout: 20_000 });
 await page.getByText("ha lavorato per").first().waitFor();
 await shot("04e5-team-renamed-in-chat");
 
+// A12 (issue #252): discussions between agents. The Coordinator opens one in the first squad: each participant speaks on
+// the discussion model and the squad lead closes it with a decision. A second one reaches a product choice: it waits in
+// Aspetta te, the person writes in it through the Coordinator and the answer closes it. The Squads view lists both with
+// their state; the discussion shows reason, participants, chair, time box, the model of each turn and the outcome. Narrow
+// and wide, Codex and Claude, light and dark.
+{
+  const look = await lookOf();
+  const squadPanel = page.getByTestId("side-bar");
+  await composer().fill("[discussione]");
+  await page.keyboard.press("Enter");
+  await page.getByText("Ho aperto la discussione nella squadra.").first().waitFor({ timeout: 20_000 });
+  await composer().fill("[discussione-prodotto]");
+  await page.keyboard.press("Enter");
+  await page.getByText("Ho aperto la discussione nella squadra.").nth(1).waitFor({ timeout: 20_000 });
+  await openView("Squadre");
+  const decidedRow = squadPanel.locator('[data-testid="discussion-row"][data-state="decided"]').filter({ hasText: "Stimare e dividere" });
+  const waitingRow = squadPanel.locator('[data-testid="discussion-row"][data-state="waitingPerson"]').filter({ hasText: "carrello" });
+  await decidedRow.waitFor({ timeout: 20_000 });
+  await waitingRow.waitFor({ timeout: 20_000 });
+  if (!(await squadPanel.getByTestId("squad").first().getByTestId("squad-discussions").count())) throw new Error("The discussions are not in their squad");
+  if (await squadPanel.getByTestId("discussions-across").count()) throw new Error("A discussion inside one squad is listed between squads");
+  const thread = squadPanel.getByTestId("agent-thread");
+  const discussionShots = async (name) => {
+    for (const [size, width, height] of [["1280x800", 1280, 800], ["1680x1050", 1680, 1050]]) {
+      await page.setViewportSize({ width, height });
+      await page.waitForTimeout(300);
+      // The discussion's header, or the squads' summary, on top of the side bar.
+      await squadPanel.locator('[data-testid="discussion-header"], [data-testid="squads-summary"]').first().evaluate((el) => el.scrollIntoView({ block: "start" }));
+      await noHorizontalScroll(`${name} ${size}`);
+      for (const provider of ["codex", "claudeAgent"]) {
+        for (const dark of [false, true]) {
+          await setLookTo(provider, dark);
+          await shot(`${name}-${size}-${provider}-${dark ? "dark" : "light"}`);
+        }
+      }
+    }
+    await setLookTo(look.provider, look.dark);
+    await page.setViewportSize({ width: 1280, height: 820 });
+  };
+  await squadPanel.getByTestId("squad-discussions").first().scrollIntoViewIfNeeded();
+  await discussionShots("41a-discussions-squads");
+
+  // The discussion that waits for the person: its lead chairs it, every agent's turn names its model, and the card is in
+  // Aspetta te with the way back to the discussion.
+  await waitingRow.click();
+  await thread.waitFor();
+  const header = thread.getByTestId("discussion-header");
+  if ((await header.getAttribute("data-state")) !== "waitingPerson") throw new Error("The product discussion does not wait for the person");
+  await header.getByText("Conflitto").waitFor();
+  await header.getByText(/^Tempo massimo 20 min, fino alle/).waitFor();
+  if ((await thread.getByTestId("discussion-participants").locator("li").count()) !== 3) throw new Error("The discussion does not list its lead among the participants");
+  await thread.getByTestId("discussion-participants").getByText("chiude", { exact: true }).waitFor();
+  const agentMessages = thread.locator('[data-testid="agent-thread-message"][data-author="specialist"]');
+  if ((await agentMessages.count()) < 3) throw new Error(`The discussion has ${await agentMessages.count()} messages of agents, not one per participant and the chair's`);
+  for (const message of await agentMessages.all()) {
+    if (!/^con \S+/.test((await message.getByTestId("message-model").innerText()).trim())) throw new Error("A turn of the discussion does not say its model");
+  }
+  await thread.locator('[data-testid="agent-thread-message"][data-event="toPerson"]').getByText(/l'ho messa in Aspetta te/).waitFor();
+  // The person writes in the discussion: the Coordinator passes it on and the message is recorded as theirs.
+  const write = thread.getByTestId("discussion-composer");
+  await write.getByRole("textbox", { name: "Scrivi nella discussione" }).fill("Preferisco che il cliente non perda il carrello.");
+  const writeButtons = await write.locator(".cta-row button").allTextContents();
+  if (writeButtons.at(-1)?.trim() !== "Invia") throw new Error(`Invia is not the last call to action: ${writeButtons}`);
+  await write.getByRole("button", { name: "Invia" }).click();
+  await thread.locator('[data-testid="agent-thread-message"][data-event="forwarded"]').getByText("Tu, tramite il Coordinatore").waitFor({ timeout: 20_000 });
+  await expectNoRawIds(thread.getByTestId("discussion-header"), "The discussion's header");
+  await discussionShots("41b-discussion-waiting");
+  await header.getByRole("button", { name: "Apri la domanda" }).click();
+  const question = squadPanel.locator('[data-testid="waiting-item"]').filter({ hasText: "Un ordine annullato torna nel carrello?" });
+  await question.waitFor({ timeout: 20_000 });
+  await question.getByTestId("decision-from-discussion").getByText(/^Dalla discussione tra agenti/).waitFor();
+  await question.getByText("Discussione tra agenti").first().waitFor();
+  await themeShots("41c-discussion-question");
+  await question.getByRole("button", { name: /Il carrello resta vuoto/ }).click();
+  await question.getByRole("button", { name: "Registra la decisione" }).click();
+  await openView("Squadre");
+  await squadPanel.locator('[data-testid="discussion-row"][data-state="decided"]').filter({ hasText: "carrello" }).click();
+  await thread.locator('[data-testid="discussion-outcome"][data-how="person"]').getByText("Il carrello resta vuoto").waitFor({ timeout: 20_000 });
+  await thread.getByTestId("discussion-closed").waitFor();
+  if (await thread.getByTestId("discussion-composer").count()) throw new Error("A closed discussion still takes messages");
+  await themeShots("41d-discussion-person-decided");
+
+  // The discussion the lead closed: the proposals of the participants and the lead's decision.
+  await openView("Squadre");
+  await decidedRow.click();
+  await thread.locator('[data-testid="discussion-outcome"][data-how="agreed"]').getByText(/^Decisa da /).waitFor();
+  if ((await thread.getByTestId("discussion-proposal").count()) < 2) throw new Error("The participants' proposals are not in the discussion");
+  await header.getByText("Stima e divisione del lavoro").waitFor();
+  await discussionShots("41e-discussion-decided");
+  // Q17: the discussions run on the provider's lightest model; the person picks the role's model in the settings.
+  await page.getByRole("button", { name: "Impostazioni" }).click();
+  const discussionSettings = page.getByTestId("settings");
+  await discussionSettings.getByRole("button", { name: /^Metodo di lavoro/ }).first().click();
+  const discussionModel = discussionSettings.getByTestId("discussion-model");
+  await discussionModel.getByRole("radio", { name: "Il più leggero", checked: true }).waitFor();
+  await discussionModel.getByRole("radio", { name: "Del ruolo" }).click();
+  await discussionModel.getByRole("radio", { name: "Del ruolo", checked: true }).waitFor();
+  await discussionSettings.getByText("Il modello scelto per ogni ruolo: costa di più, per discussioni difficili.").waitFor();
+  await discussionModel.scrollIntoViewIfNeeded();
+  await themeShots("41f-discussion-model-setting");
+  await discussionModel.getByRole("radio", { name: "Il più leggero" }).click();
+  await discussionModel.getByRole("radio", { name: "Il più leggero", checked: true }).waitFor();
+  await page.getByRole("button", { name: "Impostazioni" }).click();
+  await page.getByTestId("settings").waitFor({ state: "hidden" });
+  await openView("Squadre");
+}
+
 // W16: each agent is a bot in its own color; no two agents of the team share a body, the chat shows them too, the
 // bots move only without reduced motion, and they read in light and dark.
 const botState = (root) =>

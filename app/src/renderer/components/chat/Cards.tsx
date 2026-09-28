@@ -38,6 +38,7 @@ import {
   type TestedSeam,
   developerQuestionState,
   isOpenQuestion,
+  type DecisionRequest,
 } from "@shared/domain";
 import { CLEAN_CODE_RULES, type CodeMeasure } from "@shared/cleanCode";
 import { isExerciseAssessment } from "@shared/onboarding";
@@ -442,6 +443,24 @@ export function FixedBanCard({ refusalId }: { refusalId: string }) {
   );
 }
 
+/** A product choice a discussion between agents reached (A12): the card names the discussion and opens it. */
+function FromDiscussion({ request }: { request: DecisionRequest }) {
+  const t = useT();
+  const setInspector = useUi((s) => s.setInspector);
+  const threads = useUi((s) => s.app?.project?.document.agentThreads);
+  const threadId = request.fromDiscussion?.threadId;
+  const thread = threadId ? threads?.find((th) => th.id === threadId) : undefined;
+  if (!thread?.discussion) return null;
+  return (
+    <p className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 text-ui-sm text-muted-foreground" data-testid="decision-from-discussion">
+      <span className="min-w-0">{t("decision.fromDiscussion", { motive: thread.discussion.motive })}</span>
+      <button type="button" className="text-foreground underline-offset-2 hover:underline" onClick={() => setInspector({ kind: "agentThread", id: thread.id })}>
+        {t("decision.openDiscussion")}
+      </button>
+    </p>
+  );
+}
+
 export function DecisionCard({ requestId }: { requestId: string }) {
   const project = useUi((s) => s.app?.project)!;
   const setInspector = useUi((s) => s.setInspector);
@@ -482,6 +501,7 @@ export function DecisionCard({ requestId }: { requestId: string }) {
       }
     >
       <p className={cn("text-ui font-medium text-foreground", withdrawal && "text-foreground/70")}>{request.question}</p>
+      <FromDiscussion request={request} />
       {blocked && blockedWork ? (
         <Field label="Domanda dello sviluppatore">
           <div data-testid="blocked-work">

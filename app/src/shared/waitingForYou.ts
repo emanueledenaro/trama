@@ -124,6 +124,7 @@ const oneLine = (text: string) => text.replace(/\s+/g, " ").trim();
 /** Derives what waits for the person and orders it: the items that hold the most work first, then the oldest. Pure. */
 export function waitingForYou(document: ProjectDocument, sources: WaitingSources = {}): WaitingItem[] {
   const items: WaitingItem[] = [];
+  const language = sources.language ?? DEFAULT_LANGUAGE;
 
   for (const question of document.decisionRequests.filter(isOpenQuestion)) {
     items.push({
@@ -132,7 +133,9 @@ export function waitingForYou(document: ProjectDocument, sources: WaitingSources
       targetId: question.id,
       label: question.blocksWork
         ? "Domanda di uno sviluppatore"
-        : question.fromFinding
+        : question.fromDiscussion
+          ? translate(language, "waiting.label.discussion")
+          : question.fromFinding
           ? "Compromesso"
           : question.grilling
             ? "Chiarimento"
@@ -143,9 +146,12 @@ export function waitingForYou(document: ProjectDocument, sources: WaitingSources
       goalId: question.goalId ?? requestGoal(document, question.requestId),
       askedAt: question.askedAt,
       // A trade-off from an examination holds no work: the candidate is already delivered (F04).
+      // A discussion between agents waits for the answer (A12), while the team goes on with the rest of the work.
       blocks: question.blocksWork
         ? heldByDeveloperQuestion(document, sources, question.blocksWork.assignmentId)
-        : question.fromFinding
+        : question.fromDiscussion
+          ? 0
+          : question.fromFinding
           ? 0
           : heldWork(document, sources, question.grilling?.subjectRequestId ?? question.requestId),
     });
@@ -254,7 +260,6 @@ export function waitingForYou(document: ProjectDocument, sources: WaitingSources
     if (candidateHeld(document, candidate)) {
       const held = document.team.specialists.flatMap((s) => s.assignments).find((a) => a.id === candidate.assignmentId)!;
       const reviews = blockedReviews(document, held);
-      const language = sources.language ?? DEFAULT_LANGUAGE;
       items.push({
         key: `candidate:${candidate.id}`,
         kind: "candidate",

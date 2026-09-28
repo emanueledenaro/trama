@@ -9,6 +9,7 @@ export const AGENT_THREAD_KIND_LABEL: Record<AgentThreadKind, string> = {
   question: "Domanda al Coordinatore",
   review: "Revisione tecnica",
   regression: "Regressione",
+  discussion: "Discussione tra agenti",
 };
 
 /** The conversations with the most recent message first. */
