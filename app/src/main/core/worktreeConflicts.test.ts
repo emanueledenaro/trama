@@ -88,12 +88,13 @@ describe("conflicts between the team's worktrees (W08)", () => {
       classification: "conflict",
       conflictingFiles: ["a.txt"],
       conflictingLines: { "a.txt": [{ start: 2, end: 2 }] },
-      references: [`${older.id} di Ada (${ada.branch})`],
+      // The other candidate by its id: the interface names it and who made it (issue #270).
+      references: [older.id],
     });
     expect(assessment.remoteSHA).toMatch(/^[0-9a-f]{40}$/);
     document.conflicts = [assessment];
     // The newer candidate waits for the conflict to be resolved; the older one can still be merged first.
-    expect(inspectCandidate(document, newer, null)).toContainEqual({ code: "WORKTREE_CONFLICT", detail: `${older.id} di Ada (${ada.branch}): a.txt` });
+    expect(inspectCandidate(document, newer, null)).toContainEqual({ code: "WORKTREE_CONFLICT", detail: `${older.id}: a.txt` });
     expect(inspectCandidate(document, older, null).map((b) => b.code)).not.toContain("WORKTREE_CONFLICT");
     // The pair is compared once for these snapshots; a new candidate of Ada's work makes the old comparison obsolete.
     expect(worktreePairs(document)).toEqual([]);
@@ -119,7 +120,8 @@ describe("conflicts between the team's worktrees (W08)", () => {
         candidateId: newer.id,
         snapshotId: newer.snapshotId,
         remoteSHA: "0".repeat(40),
-        references: [`${older.id} di Ada (${ada.branch})`],
+        // The other candidate by its id: the interface names it and who made it (issue #270).
+      references: [older.id],
         otherCandidateId: older.id,
         otherSnapshotId: older.snapshotId,
         classification: "conflict",
@@ -147,7 +149,7 @@ describe("conflicts between the team's worktrees (W08)", () => {
     await developerWork(document, "Bruno", bruno, 2);
     const assessment = await assessWorktreePair(document, worktreePairs(document)[0]!, await mkdtemp(join(tmpdir(), "trama-probe-")));
     expect(assessment).toMatchObject({ classification: "overlap", conflictingFiles: ["a.txt"] });
-    expect(assessment.detail).toMatch(/entrambi cambiano a\.txt/);
+    expect(assessment.detail).toMatch(/entrambe cambiano a\.txt/);
 
     const apart = await repository();
     await writeFile(join(apart.ada.worktreeRoot, "a.txt"), "UNO\ndue\ntre\n");
