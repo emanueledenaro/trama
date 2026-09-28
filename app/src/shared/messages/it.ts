@@ -701,6 +701,11 @@ export const it = {
   "settings.standard.moved": "Lo standard del codice vale per il progetto aperto: le regole e l'adattamento stanno in Regole, nella scheda Standard.",
   "settings.standard.open": "Apri in Regole",
 
+  // Work the review stopped too many times in a row (issue #389)
+  "reviewLoop.label": "Lavoro fermato più volte",
+  "reviewLoop.title": "{objective}: la revisione l'ha fermato {count} volte di seguito. Scrivi al Coordinatore come andare avanti.",
+  "reviewLoop.held": "la revisione l'ha fermato {count} volte di seguito, quindi Trama non lo rimanda più indietro da sola. Decidi tu come andare avanti in Aspetta te.",
+
   ...chatIt,
 } satisfies Record<string, string>;
 
