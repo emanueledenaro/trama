@@ -144,6 +144,42 @@ describe("deriving the commit (Q01)", () => {
     expect(commitDescription("add the search palette to the main window", 20)).toBe("add the search");
   });
 
+  it("never leaves a description cut in the middle (issue #270)", () => {
+    const cut = commitDescription("Aggiorna la tipizzazione in modalità strict rendendo disponibile il tipo dell'ordine", 50);
+    expect(cut).toBe("aggiorna la tipizzazione in modalità strict");
+    expect(validateCommitMessage(`fix: ${cut}`)).toEqual([]);
+    expect(commitDescription("add the palette, then move the old search to the settings", 28)).toBe("add the palette");
+    expect(commitDescription("a ".repeat(80), 60).length).toBeGreaterThan(0);
+  });
+
+  it("refuses a description cut in the middle and a type the project does not use (issue #270)", () => {
+    invalid("fix: aggiorna la tipizzazione rendendo disponibile il", /tagliata a metà: finisce con "il"/);
+    invalid("feat: add the palette to the", /tagliata a metà: finisce con "the"/);
+    invalid("feat: add the palette…", /tagliata a metà/);
+    invalid("strict: aggiorna la tipizzazione", /Il tipo "strict" non è tra quelli ammessi/);
+    valid("feat: let people log in");
+  });
+
+  it("does not take a list of other things for the commit types (issue #270)", () => {
+    const conventions = conventionsFromText({
+      instructions: [{ path: "AGENTS.md", text: "TypeScript types: `strict`, `esnext`, `bundler`.\nI messaggi seguono Conventional Commits." }],
+      commitlint: null,
+      branches: [],
+    });
+    expect(conventions.types).toEqual(DEFAULT_CONVENTIONS.types);
+    expect(validateCommitMessage("strict: aggiorna la tipizzazione", conventions).join(" ")).toMatch(/Il tipo "strict"/);
+  });
+
+  it("keeps a project's own commit types even when none is Conventional Commits' (issue #270)", () => {
+    const conventions = conventionsFromText({
+      instructions: [{ path: "CONTRIBUTING.md", text: "## Commit messages\n\nTypes: `add`, `change`, `remove`.\n\nTypeScript types: `strict`, `esnext`, `bundler`." }],
+      commitlint: null,
+      branches: [],
+    });
+    expect(conventions.types).toEqual(["add", "change", "remove"]);
+    expect(validateCommitMessage("add: the search palette", conventions)).toEqual([]);
+  });
+
   it("formats header, body and footers as the specification lays them out", () => {
     const message = formatCommitMessage({
       type: "feat",

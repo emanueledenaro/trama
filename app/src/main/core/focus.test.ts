@@ -151,7 +151,7 @@ describe("open tasks", () => {
     const { document, orders } = project();
     request(document, "g1", orders.id, 4);
     plan(document, "g1", "seams");
-    expect(focusView(document).focus).toMatchObject({ id: `goal:${orders.id}`, phase: "spec", phaseLabel: "spec", blocker: null, waitingFor: "Conferma i seam" });
+    expect(focusView(document).focus).toMatchObject({ id: `goal:${orders.id}`, phase: "spec", phaseLabel: "spec", blocker: null, waitingFor: "Conferma i punti di prova" });
   });
 
   it("leaves out a goal the Coordinator only proposed", () => {

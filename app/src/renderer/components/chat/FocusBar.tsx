@@ -235,7 +235,7 @@ function QueueRow({ task }: { task: FocusTask }) {
           </Button>
         ) : null}
         <Button size="xs" onClick={() => void change("focus", task.id).then(() => openDialog(task.goalId))}>
-          Metti in focus
+          Metti in primo piano
         </Button>
       </div>
     </li>
@@ -259,7 +259,7 @@ export function FocusBar() {
   const queueLabel = paused ? `In coda ${queued}, ${paused === 1 ? "1 sospeso" : `${paused} sospesi`}` : `In coda ${queued}`;
   const elsewhere = focus !== null && (focus.goalId ?? null) !== dialogGoalId;
   return (
-    <section aria-label="Barra di focus" className="chat-surface-divider shrink-0 px-3 sm:px-5" data-testid="focus-bar">
+    <section aria-label="Lavoro in primo piano" className="chat-surface-divider shrink-0 px-3 sm:px-5" data-testid="focus-bar">
       <div className="mx-auto flex w-full max-w-[var(--app-chat-max-width)] min-w-0 flex-col gap-1.5 px-1 py-2">
         {focus || view.queue.length ? (
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
@@ -268,7 +268,7 @@ export function FocusBar() {
               <IconFocus2 className="mt-0.5 size-4 shrink-0 text-muted-foreground" stroke={1.8} />
               {focus ? (
                 <div className="flex min-w-0 flex-1 items-center gap-2">
-                  <span className="hidden shrink-0 text-ui-xs text-muted-foreground @min-[520px]/chat:inline">In focus</span>
+                  <span className="hidden shrink-0 text-ui-xs text-muted-foreground @min-[520px]/chat:inline">In primo piano</span>
                   <span className="min-w-0 truncate text-ui font-medium text-foreground" data-testid="focus-title">
                     <ReferenceText text={focus.title} />
                   </span>
@@ -292,7 +292,7 @@ export function FocusBar() {
               ) : null}
               {focus && elsewhere ? (
                 <Button size="xs" onClick={() => openDialog(focus.goalId)}>
-                  Vai al task
+                  Vai al lavoro
                 </Button>
               ) : null}
             </div>
@@ -303,7 +303,7 @@ export function FocusBar() {
         {queueOpen && view.queue.length ? (
           <ul
             id="focus-queue"
-            aria-label="Coda dei task"
+            aria-label="Lavori in coda"
             className="max-h-[40vh] divide-y divide-[color:var(--app-surface-divider)] overflow-y-auto pl-6"
             data-testid="focus-queue"
           >

@@ -1,3 +1,4 @@
+import { RecordLabel } from "@/components/chat/ReferenceText";
 import type { CandidateState } from "@shared/domain";
 import { CANDIDATE_STATE, candidateStatus, planStatus } from "@shared/states";
 import { Badge } from "@/components/ui/field";
@@ -33,11 +34,14 @@ export function WorkView() {
                   <button
                     key={candidate.id}
                     type="button"
+                    title={candidate.id}
+                    data-record-id={candidate.id}
                     onClick={() => setInspector({ kind: "candidate", id: candidate.id })}
                     className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-[var(--sidebar-accent)]"
                   >
-                    <span className="font-mono text-[11px] text-muted-foreground">{candidate.id}</span>
-                    <span className="min-w-0 flex-1 truncate text-ui text-foreground/90">{assignment?.objective ?? candidate.assignmentId}</span>
+                    <span className="min-w-0 flex-1 truncate text-ui text-foreground/90">
+                      {assignment?.objective ?? <RecordLabel id={candidate.assignmentId} />}
+                    </span>
                     {candidate.pullRequest ? <Badge tone="success">PR #{candidate.pullRequest.number}</Badge> : <Badge tone={status.tone}>{status.label}</Badge>}
                   </button>
                 );
@@ -49,8 +53,7 @@ export function WorkView() {
       {plans.length ? (
         <InspectorSection title={`Piani (${plans.length})`}>
           {[...plans].reverse().map((plan) => (
-            <div key={plan.id} className="flex items-center gap-2 py-1 text-ui-sm">
-              <span className="font-mono text-[11px] text-muted-foreground">{plan.id}</span>
+            <div key={plan.id} className="flex items-center gap-2 py-1 text-ui-sm" title={plan.id}>
               <span className="min-w-0 flex-1 truncate text-foreground/90">{plan.spec?.sections?.title ?? plan.proposal?.summary ?? plan.summary}</span>
               {plan.spec?.issue ? (
                 <button type="button" className="shrink-0" onClick={() => void act("shell:openExternal", { url: plan.spec!.issue!.url })}>
