@@ -1376,6 +1376,11 @@ const settings = page.getByTestId("settings");
 await settings.waitFor();
 await settings.getByRole("button", { name: /^Collegamenti/ }).first().click();
 await shot("11-connections");
+// Issue #71: every provider, ChatGPT included, shows its capabilities in the same panel.
+const capabilityToggles = settings.getByRole("button", { name: /^Capacità/ });
+await capabilityToggles.first().click();
+await themeShots("11b-connections-capabilities");
+await capabilityToggles.first().click();
 await settings.getByRole("button", { name: /^Generale/ }).first().click();
 // Issue #301: the language sits in Generale and changes the page at once.
 await settings.getByTestId("language-choice").getByRole("radio", { name: "Italiano", checked: true }).waitFor();
