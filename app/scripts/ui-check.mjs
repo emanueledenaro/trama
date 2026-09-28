@@ -1968,7 +1968,7 @@ await settings.getByTestId("learning-open-memory").click();
 const learningFromSettings = page.locator('[data-testid="side-bar"][data-view="memory"] [data-testid="how-it-learns"][data-open="true"]');
 await learningFromSettings.getByTestId("learning-switches").getByRole("switch", { name: "Revisione dell'esperienza dopo il lavoro" }).waitFor();
 await page.getByRole("button", { name: "Chiudi la barra laterale" }).click();
-if (!(await settings.isVisible())) await page.getByRole("button", { name: "Impostazioni" }).click();
+if (!(await settings.isVisible())) await page.getByRole("button", { name: "Impostazioni", exact: true }).click();
 await settings.waitFor();
 await settings.getByRole("button", { name: /^Collegamenti/ }).first().click();
 await shot("11-connections");
