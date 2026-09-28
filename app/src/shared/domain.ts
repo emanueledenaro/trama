@@ -1686,6 +1686,13 @@ export interface AuditFinding {
 }
 
 /**
+ * Trama's own lenses of focus mode (F05, issue #129): security, test quality and agreement between documents and code.
+ * They are not in AI Hero's skills: Trama adds them next to the two axes of code-review, each as a read-only session
+ * whose findings go through the same verification as the axes' (F02).
+ */
+export type LensName = "security" | "tests" | "docs";
+
+/**
  * What the person made of a finding with one click (F04, issue #128). "ticket": a found problem in Trama's ledger, with
  * its GitHub issue when the repository is linked, else kept as Trama's own work. "assignment": the correction given
  * to a developer within the mandate. "pactCard": a trade-off put to the person as a question of the Pact.
@@ -1695,7 +1702,7 @@ export type FindingFollowUp =
   | { kind: "assignment"; assignmentId: string; at: string }
   | { kind: "pactCard"; questionId: string; at: string };
 
-/** One axis of AI Hero's code-review skill, run as a read-only session of its own (F01). */
+/** One axis of AI Hero's code-review skill, or one of Trama's lenses, run as a read-only session of its own (F01, F05). */
 export interface AuditAxis {
   /** "skipped": the skill skips the Spec sub-agent when there is no spec. */
   status: "waiting" | "running" | "done" | "skipped" | "failed";
@@ -1732,6 +1739,8 @@ export interface FocusAudit {
   specSource: string | null;
   standards: AuditAxis;
   spec: AuditAxis;
+  /** Trama's lenses (F05), run next to the axes; absent in reports written before them. */
+  lenses?: Record<LensName, AuditAxis>;
   /** The skill's closing line, per axis: total findings and the worst one within each axis. */
   summary: string | null;
   failure: string | null;

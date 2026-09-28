@@ -333,7 +333,7 @@ import {
   recordFindingTicket,
   recordPublication,
 } from "./core/findingWork";
-import { AuditError, type AxisName, type AxisTurn, auditSpec, axisThread, axisTurn, beginAxes, beginVerification, closeAudit, failAudit, findAudit, finishAxis, openAudit, readAxisAnswer, recordAuditCheck } from "./core/audit";
+import { AuditError, type AxisTurn, auditSpec, axisThread, axisTurn, beginAxes, beginLenses, beginVerification, closeAudit, failAudit, findAudit, finishAxis, lensTurn, openAudit, readAxisAnswer, recordAuditCheck, type ReviewName } from "./core/audit";
 import { approveCandidate, candidateReport, contentFingerprint, findCandidate, latestCandidate, recordEvidence, recordTechnicalReview } from "./core/candidates";
 import { assessBranchDivergence } from "./core/branchDivergence";
 import { assessConflict, combineWorktrees } from "./core/conflicts";
@@ -5770,7 +5770,7 @@ export class TramaController {
 
   /**
    * The person opens focus mode on a candidate (F01): the fixed point is its base. Trama runs the real checks in the
-   * sandbox first, then the two axes of code-review in parallel, read-only. Returns the examination's id at once;
+   * sandbox first, then the two axes of code-review and Trama's three lenses (F05) in parallel, read-only. Returns the examination's id at once;
    * the report fills in as the work goes and stays in the project.
    */
   startFocusAudit(candidateId: string): string {
@@ -5934,9 +5934,15 @@ export class TramaController {
       const skill = await this.nativeSkill("code-review");
       const spec = auditSpec(document, assignment, project.github.issues);
       const axes = beginAxes(audit, spec?.source ?? null, runner.model);
+      // Trama's lenses run next to the axes, on the same light model, with Trama's own brief (F05).
+      const lenses = beginLenses(audit, runner.model);
       this.changedIn(project);
       const input = { projectName: project.name, audit, candidate, assignment, spec, language: this.state.language };
-      await Promise.all(axes.map((axis) => this.runAuditAxis(project, audit, axis, axisTurn(input, axis, skill, runner.provider === "codex"), runner, assignment.workspace!.worktreeRoot)));
+      const cwd = assignment.workspace.worktreeRoot;
+      await Promise.all([
+        ...axes.map((axis) => this.runAuditAxis(project, audit, axis, axisTurn(input, axis, skill, runner.provider === "codex"), runner, cwd)),
+        ...lenses.map((lens) => this.runAuditAxis(project, audit, lens, lensTurn(input, lens), runner, cwd)),
+      ]);
       await this.verifyAuditFindings(project, audit, candidate.id, runner, assignment.workspace.worktreeRoot);
       closeAudit(audit);
     } catch (error) {
@@ -5986,8 +5992,8 @@ export class TramaController {
     }
   }
 
-  /** One axis of code-review: a read-only session of its own, in the candidate's worktree. */
-  private async runAuditAxis(project: ActiveProjectState, audit: FocusAudit, axis: AxisName, turn: AxisTurn, runner: DutyRunner, cwd: string): Promise<void> {
+  /** One axis of code-review or one of Trama's lenses: a read-only session of its own, in the candidate's worktree. */
+  private async runAuditAxis(project: ActiveProjectState, audit: FocusAudit, axis: ReviewName, turn: AxisTurn, runner: DutyRunner, cwd: string): Promise<void> {
     const client = createRuntime(runner.provider, { executable: runner.provider === "codex" ? this.host.codexExecutable : null, requestTimeoutMs: 15_000, language: () => this.state.language });
     const run = this.auditRuns.get(audit.id);
     run?.clients.add(client);
