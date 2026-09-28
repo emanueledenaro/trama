@@ -4012,4 +4012,43 @@ await sharedPicker.getByRole("radio", { name: "4", checked: true }).waitFor();
 await sharedPicker.scrollIntoViewIfNeeded();
 await noHorizontalScroll("shared developers");
 await themeShots("39b-shared-developers");
+
+// Issue #301: the texts the main process writes follow the person's language at once, without a restart: the status
+// line, the Activity rows and the notices of the Coordinator in English, in light and dark, with the actions in their
+// place on the right and no text running out of its line.
+await page.evaluate(() => window.trama.invoke("settings:update", { language: "en" }));
+await page.waitForFunction(() => document.documentElement.lang === "en");
+await page.getByRole("button", { name: /^(Impostazioni|Settings)$/ }).click();
+await page.getByTestId("settings").waitFor({ state: "hidden" });
+const englishLine = page.getByTestId("status-line");
+if (await page.locator('[data-testid="status-line"][data-paused="true"]').count()) {
+  await page.evaluate(() => window.trama.invoke("coordinator:pause", { paused: false }));
+  await page.locator('[data-testid="status-line"][data-paused="false"]').waitFor({ timeout: 20_000 });
+}
+await page.evaluate(() => window.trama.invoke("coordinator:pause", { paused: true }));
+await page.locator('[data-testid="status-line"][data-paused="true"]').waitFor({ timeout: 20_000 });
+await englishLine.getByRole("button", { name: /^(Attività|Activity)$/ }).click();
+const englishActivity = page.getByTestId("activity-log");
+await englishActivity.waitFor();
+await themeShots("41-main-en");
+await englishLine.getByTestId("status-line-text").getByText(/^Coordinator paused: the turns in progress finish/).waitFor({ timeout: 10_000 });
+await englishActivity.getByText("Coordinator paused", { exact: true }).first().waitFor({ timeout: 10_000 });
+await noHorizontalScroll("main texts in English");
+const englishLayout = await englishLine.evaluate((line) => {
+  const box = line.getBoundingClientRect();
+  const text = line.querySelector('[data-testid="status-line-text"]');
+  return {
+    buttonsOutside: [...line.querySelectorAll("button")].filter((button) => {
+      const b = button.getBoundingClientRect();
+      return b.width > 0 && (b.left < box.left - 1 || b.right > box.right + 1 || button.scrollWidth > button.clientWidth + 1);
+    }).length,
+    textOutside: text ? text.getBoundingClientRect().right > box.right + 1 : false,
+  };
+});
+if (englishLayout.buttonsOutside) throw new Error(`${englishLayout.buttonsOutside} status line actions do not fit in English`);
+if (englishLayout.textOutside) throw new Error("The English status line text runs out of the line");
+await primaryLast(englishLine.locator(".cta-row").first(), "Status line in English");
+await page.evaluate(() => window.trama.invoke("coordinator:pause", { paused: false }));
+await page.evaluate(() => window.trama.invoke("settings:update", { language: "it" }));
+await page.waitForFunction(() => document.documentElement.lang === "it");
 await app.close();
