@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ACTIVITY_OUTCOME_LABELS, type ActivityEntry, type ActivityOutcome, activityLog } from "@shared/activity";
 import { projectGoals } from "@shared/goals";
-import { problemBacklog } from "@shared/problems";
 import { compactSteps, workTurns, type WorkRow } from "@shared/technicalSteps";
 import { formatDuration } from "@shared/timeline";
 import { Button } from "@/components/ui/button";
@@ -17,8 +16,8 @@ import { DisclosureChevron, StepList, WorkLabel } from "@/components/chat/WorkSt
  * Activity (Q6): the Coordinator's automatic moves of the project, the rounds that did something (A05), the steps of
  * the problems it found (A08) and the person's steps it took within the mandate (A06), newest first, with name, time,
  * what started the move and outcome. The chat keeps the conversation with the person; the single moves are here, and the
- * one that runs can be stopped. Below, the backlog items the found problems became, and the technical steps of each turn
- * of work, which the chat names in one line (issue #271).
+ * one that runs can be stopped. Below, the technical steps of each turn of work, which the chat names in one line
+ * (issue #271). The backlog items the found problems became are in Lavoro, Issue, "Nel backlog" (issue #332).
  */
 
 const OUTCOME_TONES: Record<ActivityOutcome, "info" | "success" | "warning" | "destructive" | "secondary"> = {
@@ -169,40 +168,6 @@ function ProblemRow({ entry }: { entry: ActivityEntry }) {
         </div>
       ) : null}
     </li>
-  );
-}
-
-/** The backlog items the found problems became (A08): with their issue, or kept in Trama without GitHub. */
-function ProblemBacklog() {
-  const document = useUi((s) => s.app?.project?.document);
-  const items = useMemo(() => (document ? problemBacklog(document) : []), [document]);
-  if (!items.length) return null;
-  return (
-    <InspectorSection title="Backlog dei problemi trovati">
-      <ul className="flex flex-col divide-y divide-[color:var(--app-surface-divider)]" data-testid="problem-backlog">
-        {items.map((problem) => (
-          <li key={problem.id} className="py-2" data-testid="problem-backlog-item">
-            <div className="flex items-center gap-2">
-              <span className="min-w-0 flex-1 truncate text-ui text-foreground">{problem.title}</span>
-              <Badge tone="secondary">{problem.issue ? `#${problem.issue.number}` : "Solo in Trama"}</Badge>
-            </div>
-            <p className="mt-0.5 text-ui-xs text-muted-foreground">{problem.evidence.label}</p>
-            {problem.placement ? (
-              <p className="mt-1 text-ui-sm text-muted-foreground">
-                <ReferenceText text={problem.placement.reason} />
-              </p>
-            ) : null}
-            {problem.issue ? (
-              <div className="cta-row mt-1.5">
-                <Button size="xs" variant="ghost" onClick={() => void act("shell:openExternal", { url: problem.issue!.url })}>
-                  Apri la issue
-                </Button>
-              </div>
-            ) : null}
-          </li>
-        ))}
-      </ul>
-    </InspectorSection>
   );
 }
 
@@ -378,7 +343,6 @@ export function ActivityView({ focusWork }: { focusWork?: string }) {
         )}
       </InspectorSection>
       <TechnicalWork focusWork={focusWork} />
-      <ProblemBacklog />
     </>
   );
 }

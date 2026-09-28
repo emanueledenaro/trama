@@ -51,32 +51,32 @@ export const VIEW_OF: Record<TargetKind, Exclude<SideBarView, "projects">> = {
 /** The panels a view lists as tabs, in order; the first is what the view shows when it opens. */
 export const VIEW_TABS: Record<Exclude<SideBarView, "projects">, TargetKind[]> = {
   waiting: ["waiting"],
-  work: ["goals", "work", "group", "issues", "activity"],
+  // Lavoro is one view with sections (issue #332); Activity opens under it until the bottom panel (B08).
+  work: ["work"],
   teams: ["team"],
   rules: ["mandate", "pact", "map"],
   memory: ["memory"],
 };
 
 export const TAB_LABELS: Partial<Record<TargetKind, MessageKey>> = {
-  goals: "workbench.tab.goals",
-  work: "workbench.tab.candidates",
-  group: "workbench.tab.group",
-  issues: "workbench.tab.issues",
-  activity: "workbench.tab.activity",
   mandate: "workbench.tab.mandate",
   pact: "workbench.tab.pact",
   map: "workbench.tab.map",
 };
 
-/** The tab a detail belongs to: a module under the map, a candidate under the candidates, a goal under the goals. */
+/** The tab a detail belongs to: a module under the map, a person under the team, anything of Lavoro under Lavoro. */
 const TAB_OF: Partial<Record<TargetKind, TargetKind>> = {
-  goal: "goals",
+  goals: "work",
+  goal: "work",
   candidate: "work",
   audit: "work",
-  pullRequest: "group",
-  commit: "group",
-  branch: "group",
-  issue: "issues",
+  group: "work",
+  pullRequest: "work",
+  commit: "work",
+  branch: "work",
+  issues: "work",
+  issue: "work",
+  activity: "work",
   specialist: "team",
   agentThread: "team",
   decision: "pact",
@@ -92,7 +92,8 @@ export const tabOf = (target: InspectorTarget): TargetKind => TAB_OF[target.kind
 export const isDetail = (target: InspectorTarget): boolean => {
   if (target.kind === "waiting") return false;
   if (target.kind === "goals") return Boolean(target.create);
-  if (target.kind === "activity") return Boolean(target.work);
+  // Goals, branches and issues are sections of the Lavoro view, not details (issue #332).
+  if (target.kind === "group" || target.kind === "issues") return false;
   return !VIEW_TABS[viewOf(target)].includes(target.kind);
 };
 

@@ -1417,7 +1417,11 @@ export class TramaController {
     if (generation !== this.scanGeneration || this.state.project !== project) return;
     project.snapshot = snapshot;
     this.publish();
-    if (refreshGitHub && !project.isDemo) void this.refreshGitHub();
+    // Aggiorna in the title bar is the one refresh of the project (issue #332): map, GitHub and the colleagues' presence.
+    if (refreshGitHub && !project.isDemo) {
+      void this.refreshGitHub();
+      void this.refreshPresence().catch(() => undefined);
+    }
   }
 
   /** Watches the project folder and rescans a second after the last change, outside .git and dependencies. */
