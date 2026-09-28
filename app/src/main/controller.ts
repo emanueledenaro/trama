@@ -1171,6 +1171,8 @@ export class TramaController {
 
     try {
       const existing = await this.findRecentProject(root);
+      // The example project reopened by its folder, from the sidebar or the overview, stays the example (issue #39).
+      if (existing?.isDemo) isDemo = true;
       const id = existing?.id ?? randomUUID();
       const snapshot = await scanRepository(root, isDemo);
       const parked = this.parkedProjects.get(id);

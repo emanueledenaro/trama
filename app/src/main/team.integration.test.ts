@@ -466,6 +466,31 @@ describe("switching project with shared capacity (issue #39)", () => {
     expect((await open(second)).document.composerDraft).toBe("Bozza del secondo");
   }, 30_000);
 
+  it("keeps the example project the example when the person comes back to it by its folder", async () => {
+    const data = await mkdtemp(join(tmpdir(), "trama-data-"));
+    controller = new TramaController(data, {
+      publish: () => undefined,
+      openExternal: async () => undefined,
+      applyTheme: () => undefined,
+      notify: () => undefined,
+      setOpenAtLogin: () => undefined,
+      aiHeroResourceDirectory: join(root, "resources/AIHero"),
+      demoResourceDirectory: join(root, "resources/DemoProject"),
+      codexExecutable: join(root, "test-fixtures/fake-codex.mjs"),
+    });
+    await controller.start();
+    await controller.updateSettings({ continuousWork: false });
+    await controller.openDemo();
+    await until(() => controller!.snapshot.project?.phase.kind === "ready");
+    const demo = controller.snapshot.project!;
+    await open(await makeRepo());
+    // The sidebar and the overview reopen a recent project by its folder only.
+    const back = await open(demo.rootPath);
+    expect(back.id).toBe(demo.id);
+    expect(back.isDemo).toBe(true);
+    expect(controller.snapshot.recentProjects.find((p) => p.id === demo.id)).toMatchObject({ isDemo: true, name: "Progetto di esempio" });
+  }, 30_000);
+
   it("keeps two folders with the same remote as two projects", async () => {
     await makeController();
     // One remote for both copies; not on GitHub, so the test opens no connection.
