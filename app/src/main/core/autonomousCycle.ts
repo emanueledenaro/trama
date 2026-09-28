@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { AutonomousStep, DelegableMove, MandateAction, ProjectDocument, WorkPlan } from "@shared/domain";
+import type { AutonomousMove, AutonomousStep, DelegableMove, MandateAction, ProjectDocument, WorkPlan } from "@shared/domain";
 import { AUTONOMOUS_STEP_LABELS } from "@shared/activity";
 import { shortId } from "@shared/ids";
 import type { ContinuationGuards } from "./continuousWork";
@@ -160,11 +160,12 @@ export function planWorkStarted(document: ProjectDocument, plan: WorkPlan): bool
 
 /** What the Coordinator reads when the person corrects one of its steps and the work cannot simply be redrawn. */
 export function correctionMessage(step: AutonomousStep): string {
-  const what: Record<DelegableMove, string> = {
+  const what: Record<AutonomousMove, string> = {
     confirmUnderstanding: "la comprensione condivisa che hai confermato da solo",
     confirmTeam: "il team che hai confermato da solo",
     confirmSeams: "i seam che hai confermato da solo",
     confirmSlices: "le fette che hai confermato da solo",
+    formSquads: "le squadre che hai formato da solo",
   };
   return `Correggo ${what[step.move]}: ${step.correction?.note ?? ""}\nRiparti da quel passo con la mia correzione.`;
 }
