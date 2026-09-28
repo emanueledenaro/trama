@@ -33,7 +33,9 @@ export type CardKind =
   /** The Coordinator points out an overlap with a colleague's work (G03); referenceId is the overlap's id. */
   | "overlap"
   /** The Coordinator's recap at a milestone or on the person's request (A03); referenceId is the recap. */
-  | "recap";
+  | "recap"
+  /** Trama reordered the Coordinator's context (ADR 0018); referenceId is the Activity event with the context summary. */
+  | "contextRollover";
 
 export interface ConflictAssessment {
   id: string;
@@ -475,7 +477,18 @@ export interface CoordinatorState {
   threadProvider?: ProviderId;
   /** Set when the person moved the Coordinator to another provider: the next study hands the conversation over. */
   /** `transcript` false: the new session starts without the conversation (an Ask Trama "/clear", M07). */
-  pendingHandover?: { from: ProviderId; reason: string; transcript?: boolean } | null;
+  /**
+   * `summary`: the context summary Trama wrote at a reorder (ADR 0018), handed over in place of the transcript;
+   * `rollover` keeps the thread it replaces, to go back to when the new session cannot open.
+   */
+  pendingHandover?: { from: ProviderId; reason: string; transcript?: boolean; summary?: string; rollover?: ContextRollover } | null;
+  /**
+   * A reorder of the context Trama owes the Coordinator (ADR 0018): marked when a reading passes the threshold or the
+   * person asks for it, made between turns, never during one. `failedAt`: the last attempt could not open a new session.
+   */
+  pendingRollover?: { reason: "threshold" | "manual"; markedAt: string; failedAt?: string | null } | null;
+  /** The last context window the provider reported for the Coordinator, for the limit of the provider's own compaction. */
+  contextWindow?: number | null;
   injectedStudy: Partial<Record<StudyPart, string>>;
   memory: CoordinatorMemory;
   study: ProjectStudy | null;
@@ -486,12 +499,28 @@ export interface CoordinatorState {
   referencesSent?: string | null;
   /** The late rules (writing, grilling) the thread holds: a thread opened before they changed receives them in a turn. */
   rulesSent?: string | null;
-  /** Percent of the context window above which the chat shows a notice (5-95). */
+  /** Percent of the context window above which Trama reorders the context (5-95, ADR 0018). */
   contextThreshold?: number;
   /** The threshold the last notice was given for; cleared by a compaction or a new thread. */
   contextWarnedAt?: number | null;
   /** The learning loop (ADR 0014); absent in documents written before it. */
   learning?: CoordinatorLearning;
+}
+
+/** The thread a context reorder replaces (ADR 0018), with what it had received, to go back to it on a failure. */
+export interface ContextRollover {
+  reason: "threshold" | "manual";
+  /** The Activity event that holds the context summary. */
+  summaryEventId: string;
+  threadId: string;
+  threadModel: string | null;
+  injectedStudy: Partial<Record<StudyPart, string>>;
+  memorySentToThread: string | null;
+  practicesSent: string | null;
+  referencesSent: string | null;
+  rulesSent: string | null;
+  liveFromSequence: number;
+  skillsIndexSent: string | null;
 }
 
 export interface CoordinatorLearning {
@@ -552,6 +581,8 @@ export interface AssignmentTurn {
   startedAt: string;
   endedAt: string | null;
   outcome: "completed" | "interrupted" | "failed" | null;
+  /** The highest share of the context window the turn used, in percent (ADR 0018); absent when the provider reported none. */
+  contextPercent?: number | null;
 }
 
 export interface AssignmentStop {

@@ -1576,6 +1576,43 @@ const proposedGoalId = (await proposedGoal.getAttribute("data-waiting-key")).rep
 await page.evaluate((id) => window.trama.invoke("goal:update", { id, status: "abandoned" }), proposedGoalId);
 await page.getByTestId("waiting-summary").waitFor({ state: "detached", timeout: 10_000 });
 if (await page.locator('[data-testid="waiting-reference"]').count()) throw new Error("A reference to Aspetta te stays with nothing waiting");
+// ADR 0018: past the threshold Trama reorders the context at the end of the turn. The chat keeps one line that opens
+// Trama's context summary; the meter shows only the percent, the tokens on hover, and "Riordina ora" on the right.
+// Light and dark, and no provider named in the texts.
+await composer().fill("[pieno] Rileggi gli ordini annullati");
+await page.keyboard.press("Enter");
+const rolloverLine = page.getByTestId("context-rollover").last();
+await rolloverLine.waitFor({ timeout: 30_000 });
+await rolloverLine.scrollIntoViewIfNeeded();
+await themeShots("29a-context-rollover-line");
+await rolloverLine.getByRole("button", { name: "Apri: Contesto riordinato" }).click();
+await rolloverLine.getByTestId("context-summary").waitFor();
+await rolloverLine.getByText("Riepilogo di contesto scritto da Trama").first().waitFor();
+await rolloverLine.scrollIntoViewIfNeeded();
+await themeShots("29b-context-rollover-summary");
+await rolloverLine.getByRole("button", { name: "Chiudi: Contesto riordinato" }).click();
+const meter = page.getByTestId("context-meter");
+await meter.waitFor({ timeout: 30_000 });
+if (!/^\d+%$/.test((await meter.innerText()).trim())) throw new Error(`The meter shows more than the percent: ${await meter.innerText()}`);
+if (!/ su [\d.]+ token$/.test((await meter.getAttribute("title")) ?? "")) throw new Error("The meter has no tokens on hover");
+await meter.click();
+const meterPopup = page.getByTestId("context-meter-popup");
+await meterPopup.waitFor();
+const meterText = await meterPopup.innerText();
+for (const name of ["Codex", "Claude", "OpenCode", "Cursor", "Devin", "Droid", "Grok", "Antigravity"]) {
+  if (meterText.includes(name)) throw new Error(`The meter names a provider: ${name}`);
+}
+if (/[–—]/.test(meterText)) throw new Error("Dash in the meter");
+const reorderNow = meterPopup.getByRole("button", { name: "Riordina ora" });
+const reorderRow = await reorderNow.evaluate((button) => {
+  const row = button.closest(".cta-row");
+  return row ? { right: row.getBoundingClientRect().right, button: button.getBoundingClientRect().right } : null;
+});
+if (!reorderRow || Math.abs(reorderRow.right - reorderRow.button) > 1) throw new Error("Riordina ora is not on the right of its row");
+await themeShots("29c-context-meter");
+await reorderNow.click();
+await page.getByTestId("context-rollover").nth(1).waitFor({ timeout: 30_000 });
+await page.keyboard.press("Escape").catch(() => undefined);
 const send = async (text) => {
   await composer().fill(text);
   await page.keyboard.press("Enter");

@@ -75,6 +75,7 @@ export interface ActionMap {
   "candidate:observeExample": [{ candidateId: string; exampleId: string; observed: boolean; snapshotId: string }, void];
   "overview:read": [void, ProjectOverview[]];
   "coordinator:setContextThreshold": [{ percent: number }, void];
+  "coordinator:reorderContext": [void, void];
   "pact:decide": [{ id: string | null; value: string; acceptedExample: string; rationale: string }, void];
   "decision:answer": [{ requestId: string; alternativeIndex: number | null; freeText: string | null }, void];
   /** Withdraws an open question with a reason; the Coordinator reads it as the person's message (W03). */

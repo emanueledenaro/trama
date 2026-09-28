@@ -79,6 +79,16 @@ describe("CodexClient", () => {
     await expect(client.listModels()).rejects.toThrow(/solo un account ChatGPT/);
   });
 
+  it("asks Codex to compact a thread only when Trama requests it, as the fallback of a reorder (ADR 0018)", async () => {
+    const log = join(await mkdtemp(join(tmpdir(), "trama-log-")), "codex.log");
+    process.env.FAKE_CODEX_LOG = log;
+    client = new CodexClient({ executable: fake });
+    const thread = await client.openThread({ model: "gpt-5.5", cwd: process.cwd(), developerInstructions: "test" });
+    await client.compactThread(thread.threadId);
+    const requests = (await readFile(log, "utf8")).trim().split("\n").map((line) => JSON.parse(line) as { method: string; params: Record<string, unknown> });
+    expect(requests.filter((r) => r.method === "thread/compact/start").map((r) => r.params)).toEqual([{ threadId: thread.threadId }]);
+  });
+
   it("asks for a sandbox without network: read-only, or writable only in the given root (V04)", async () => {
     const worktree = await mkdtemp(join(tmpdir(), "trama-worktree-"));
     const log = join(await mkdtemp(join(tmpdir(), "trama-log-")), "codex.log");

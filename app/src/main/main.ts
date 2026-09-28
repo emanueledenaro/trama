@@ -146,6 +146,7 @@ const handlers: { [K in ActionName]: Handler<K> } = {
   "candidate:observeExample": (input) => controller.observeExample(input),
   "overview:read": () => controller.projectsOverview(),
   "coordinator:setContextThreshold": ({ percent }) => controller.setContextThreshold(percent),
+  "coordinator:reorderContext": () => controller.reorderContext(),
   "pact:decide": (input) => controller.recordDecision(input),
   "decision:answer": ({ requestId, alternativeIndex, freeText }) => controller.answerDecision(requestId, alternativeIndex, freeText),
   "decision:withdraw": ({ requestId, reason }) => controller.withdrawDecision(requestId, reason),

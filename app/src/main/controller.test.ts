@@ -339,14 +339,17 @@ describe("TramaController", () => {
     expect(last).toMatchObject({ text: expect.stringContaining("Ho risposto alla domanda") });
   });
 
-  it("warns once when the context passes the threshold", async () => {
+  it("reorders the context once past the threshold instead of warning (ADR 0018)", async () => {
     await setup();
     const project = controller!.snapshot.project!;
+    const thread = project.document.coordinator.threadId;
     await controller!.send("[pieno] uno", null, null, null);
-    await controller!.send("[pieno] due", null, null, null);
-    const notices = project.document.events.filter((e) => e.content.type === "card" && e.content.title === "Contesto oltre la soglia");
-    expect(notices).toHaveLength(1);
-    expect(project.contextUsage).toEqual({ usedTokens: 230_000, contextWindow: 258_000 });
+    await until(() => project.phase.kind === "ready" && project.document.events.some((e) => e.content.type === "card" && e.content.kind === "contextRollover"));
+    expect(project.document.coordinator.threadId).not.toBe(thread);
+    expect(project.document.events.filter((e) => e.content.type === "card" && e.content.title === "Contesto oltre la soglia")).toHaveLength(0);
+    // The study of the new session reads little: nothing more is owed.
+    expect(project.document.coordinator.pendingRollover).toBeNull();
+    expect(project.document.coordinator.contextWindow).toBe(258_000);
     controller!.setContextThreshold(95);
     expect(project.document.coordinator.contextThreshold).toBe(95);
   });
