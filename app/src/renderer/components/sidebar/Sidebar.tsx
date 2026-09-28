@@ -19,7 +19,6 @@ import {
   IconSitemap,
   IconUsersGroup,
   IconX,
-  IconListCheck,
   IconBrain,
   IconPencilPlus,
   IconArchive,
@@ -144,8 +143,6 @@ export function Sidebar({ isMac }: { isMac: boolean }) {
   const project = app.project;
   const document = project?.document;
   const pendingDecisions = document?.decisionRequests.filter(isOpenQuestion) ?? [];
-  // A grilling round is one row with its count, not one row per question.
-  const pendingRows = sidebarDecisionRows(pendingDecisions);
   const pendingMandate = document ? pendingMandateRequest(document) : null;
   const openIssues = project?.github.issues.filter((i) => i.state === "open").length ?? 0;
   const pendingTeam = document?.team.proposals.some((p) => !p.resolution) ?? false;
@@ -326,9 +323,12 @@ export function Sidebar({ isMac }: { isMac: boolean }) {
                     </div>
                   </div>
                   {open && project ? (
-                    <div className="flex flex-col gap-0.5 pt-0.5">
+                    // Under the project only the one chat, its goal filters and the agents' cards (U01). Questions and
+                    // decisions wait in "Aspetta te" and in the Patto, not here.
+                    <div className="flex flex-col gap-0.5 pt-0.5" data-testid="sidebar-project-rows">
                       <button
                         type="button"
+                        data-testid="sidebar-chat"
                         onClick={() => openDialog(null)}
                         className={cn(SIDEBAR_ROW, "relative pl-8", mainView === "dialog" && !dialogGoalId ? ROW_ACTIVE : ROW_IDLE)}
                       >
@@ -398,6 +398,7 @@ export function Sidebar({ isMac }: { isMac: boolean }) {
                         <button
                           key={specialist.id}
                           type="button"
+                          data-testid="sidebar-agent"
                           onClick={() => setInspector({ kind: "specialist", id: specialist.id })}
                           className={cn(SIDEBAR_ROW, "pl-8", inspector?.kind === "specialist" && inspector.id === specialist.id ? ROW_ACTIVE : ROW_IDLE)}
                         >
@@ -408,21 +409,6 @@ export function Sidebar({ isMac }: { isMac: boolean }) {
                           </span>
                           <span className="flex w-[15px] shrink-0 items-center justify-center">
                             <StatusDot status={specialist.status} />
-                          </span>
-                        </button>
-                      ))}
-                      {pendingRows.map((row) => (
-                        <button
-                          key={row.id}
-                          type="button"
-                          onClick={() => setInspector({ kind: "pact" })}
-                          title={row.title}
-                          className={cn(SIDEBAR_ROW, "pl-8", ROW_IDLE)}
-                        >
-                          {row.round ? <IconListCheck className="size-3 shrink-0 text-muted-foreground" stroke={1.8} /> : <span className="size-3 shrink-0" />}
-                          <span className="min-w-0 flex-1 truncate text-ui leading-5 text-foreground/95">{row.title}</span>
-                          <span className="flex w-[15px] shrink-0 items-center justify-center">
-                            <span className="size-[7px] rounded-full bg-[var(--color-text-accent)]" />
                           </span>
                         </button>
                       ))}
@@ -448,34 +434,9 @@ export function Sidebar({ isMac }: { isMac: boolean }) {
 
 /**
  * The team members listed under the open project: the developers, then a fixed role only while it has work to show,
- * so eleven idle figures do not push the dialogs down. The Team panel shows everyone (W09).
+ * so eleven idle figures do not push the goals down. The Team panel shows everyone (W09).
  */
 export function sidebarSpecialists(specialists: Specialist[]): Specialist[] {
   const members = specialists.filter((s) => s.status !== "removed");
   return [...members.filter((s) => s.role === "developer"), ...members.filter((s) => s.role !== "developer" && s.status !== "available")];
-}
-
-/** Pending decisions as sidebar rows: each grilling round becomes one row, other decisions keep their own. */
-export function sidebarDecisionRows(pending: { id: string; question: string; grilling?: { subjectRequestId: string; round: number } | null }[]) {
-  const rows: { id: string; title: string; round: number | null }[] = [];
-  const rounds = new Map<string, { id: string; round: number; count: number }>();
-  for (const request of pending) {
-    if (!request.grilling) {
-      rows.push({ id: request.id, title: request.question, round: null });
-      continue;
-    }
-    const key = `${request.grilling.subjectRequestId}:${request.grilling.round}`;
-    const existing = rounds.get(key);
-    if (existing) existing.count += 1;
-    else {
-      const entry = { id: `round-${key}`, round: request.grilling.round, count: 1 };
-      rounds.set(key, entry);
-      rows.push({ id: entry.id, title: "", round: entry.round });
-    }
-  }
-  return rows.map((row) => {
-    if (row.round === null) return row;
-    const entry = [...rounds.values()].find((r) => r.id === row.id)!;
-    return { ...row, title: `Chiarimento, turno ${entry.round} · ${entry.count} ${entry.count === 1 ? "domanda" : "domande"}` };
-  });
 }

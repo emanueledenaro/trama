@@ -793,6 +793,24 @@ await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
 // the round the W01 steps opened: a second grilling request would open a second "turno 1" and make the round ambiguous.
 const round = page.getByRole("region", { name: "Chiarimento, turno 1" }).first();
 await round.waitFor({ timeout: 20_000 });
+// U01: with open questions, the sidebar under the project still lists only the chat, the goals and the agents.
+const projectRows = await page
+  .getByTestId("sidebar-project-rows")
+  .evaluate((list) => [...list.children].map((row) => row.getAttribute("data-testid")));
+if (projectRows[0] !== "sidebar-chat" || projectRows.some((id) => !["sidebar-chat", "sidebar-goal", "sidebar-agent"].includes(id))) {
+  throw new Error(`The sidebar lists more than the chat, goals and agents under the project: ${projectRows.join(", ")}`);
+}
+if (await page.getByTestId("sidebar-project-rows").getByText(/Chiarimento, turno/).count()) throw new Error("A grilling round is listed in the sidebar");
+await shot("14-sidebar-project-rows-dark");
+await app.evaluate(({ nativeTheme }) => {
+  nativeTheme.themeSource = "light";
+});
+await page.evaluate(() => document.documentElement.classList.remove("dark"));
+await shot("14-sidebar-project-rows-light");
+await app.evaluate(({ nativeTheme }) => {
+  nativeTheme.themeSource = "dark";
+});
+await page.evaluate(() => document.documentElement.classList.add("dark"));
 await round.getByRole("button", { name: "Ritira", exact: true }).first().click();
 await round.getByLabel("Motivo del ritiro").fill("Chi vede la revisione lo decidiamo dopo il primo rilascio");
 await shot("14a-withdraw-reason");
