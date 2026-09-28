@@ -16,6 +16,25 @@ const message = event(1, { type: "personMessage", text: "ciao", moduleId: null, 
 const error = '{"type":"error","status":400,"error":{"type":"invalid_request_error","message":"The \'gpt-6-sol\' model is not supported when using Codex with a ChatGPT account."}}';
 
 describe("deriveTimelineRows", () => {
+  it("leaves the automatic moves out of the chat: their line, work group, pending reply and stop are in Activity (issue #241)", () => {
+    const move = (state: CoordinatorRequest["state"]): CoordinatorRequest => ({ ...request(state), id: "A1", text: "Prepara il piano.", step: { move: "preparePlan", by: "trama" } });
+    const card = event(2, { type: "card", kind: "automaticStep", title: "Prepara il piano", detail: null, referenceId: "A1" }, "A1");
+    const work = event(3, { type: "activity", title: "Strumento di Trama: read_issues", detail: null, tone: "info" }, "A1");
+    const running = deriveTimelineRows([message, card, work], [request("completed"), move("running")], null);
+    expect(running.map((r) => r.kind)).toEqual(["person"]);
+
+    const interrupted = deriveTimelineRows([message, card, work], [request("completed"), move("interrupted")], null);
+    expect(interrupted.map((r) => r.kind)).toEqual(["person"]);
+
+    // The reply stays: it is the Coordinator talking to the person. An error stays too, with its recovery.
+    const reply = event(4, { type: "coordinatorText", text: "Il piano è pronto.", model: "gpt-6-luna", references: [] }, "A1");
+    expect(deriveTimelineRows([message, card, work, reply], [request("completed"), move("completed")], null).map((r) => r.kind)).toEqual(["person", "reply"]);
+    const failure = event(5, { type: "activity", title: "Il turno non è riuscito", detail: error, tone: "error" }, "A1");
+    const failed = deriveTimelineRows([message, card, work, failure], [request("completed"), { ...move("failed"), failure: error }], null);
+    expect(failed.map((r) => r.kind)).toEqual(["person", "failure"]);
+    expect(failed[1]).toMatchObject({ requestId: "A1", message: error });
+  });
+
   it("shows a failed turn in place of the reply, not only in the work group", () => {
     const failed = event(2, { type: "activity", title: "Il turno non è riuscito", detail: error, tone: "error" });
     const rows = deriveTimelineRows([message, failed], [request("failed", error)], null);
