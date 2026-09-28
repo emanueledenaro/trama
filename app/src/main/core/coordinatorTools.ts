@@ -16,13 +16,14 @@ import type {
 } from "@shared/domain";
 import { DEFAULT_CONVENTIONS, validateCommitMessage } from "./conventions";
 import { candidateCommit } from "./quality";
+import { mergeRoute } from "./merge";
 import { messageStyle } from "./messageStyle";
 import type { WorkspaceReview } from "./workspace";
 import { memoryTool, memoryToolSurface } from "./learning/memoryStore";
 import type { ProjectLearning } from "./learning/projectLearning";
 import { SESSION_SEARCH_DESCRIPTION, SESSION_SEARCH_PROPERTIES, SessionSearch } from "./learning/sessionSearch";
 import type { RepositorySnapshot } from "@shared/repository";
-import type { GitHubState } from "@shared/domain";
+import type { GitHubState, MergeRoute } from "@shared/domain";
 import { createDecisionRequest, createMandateRequest, DELEGABLE_ACTIONS, DomainError, MAXIMUM_ALTERNATIVES } from "./pact";
 import { ALL_CHECKS, CHECKS, type CheckResult, type ReadOnlyCheck } from "./checks";
 import { candidateReport, CandidateError, clearCandidate, declareCandidate, findCandidate, latestCandidate } from "./candidates";
@@ -520,7 +521,7 @@ export const COORDINATOR_TOOLS: ToolDefinition[] = [
   {
     name: "clear_candidate",
     description:
-      "Within the mandate (integrateCandidate), give the Coordinator's green light to a candidate that passed every required check and whose technical review approves it. New evidence or a changed relevant decision invalidates a previous green light, and the candidate card shows it.",
+      "Within the mandate (integrateCandidate), give the Coordinator's green light to a candidate that passed every required check and whose technical review approves it. With the green light and the candidate gate passed, Trama publishes the candidate as a pull request and merges it by itself; a candidate that changes the interface waits for the person's ok in Aspetta te instead. New evidence or a changed relevant decision invalidates a previous green light, and the candidate card shows it.",
     properties: { candidate: text },
     required: ["candidate"],
     readOnly: false,
@@ -592,6 +593,13 @@ export const NEXT_STEP_RULES = [
   "Never end a message with a generic confirmation question such as \"Vuoi che...?\", \"Procedo?\" or \"Fammi sapere se...\": within the mandate you go on by yourself, and what belongs to the person is a card or the next step's button, never a question at the end of your text.",
 ].join("\n");
 
+/** What the green light leads to, for the Coordinator (issue #247): the merge is Trama's, never the model's. */
+const MERGE_ROUTE_NOTES: Record<MergeRoute, string> = {
+  coordinator: "Trama publishes the candidate as a pull request and merges it by itself with this green light; Activity and the recap tell the person.",
+  interface: "The candidate changes the interface: it waits for the person in Aspetta te with the screenshots before and after, and Trama merges it after their ok. Do not ask the person in the chat.",
+  person: "The person reviews and publishes the candidate: the mandate does not cover its integration, or the project has no GitHub remote.",
+};
+
 export interface ToolContext {
   document: ProjectDocument;
   /** What the Coordinator learned in this project; null when learning is unavailable. */
@@ -653,6 +661,8 @@ export interface ToolContext {
   verifyCandidate(candidateId: string, check: ReadOnlyCheck): Promise<CheckResult>;
   /** Runs a technical review in a thread distinct from the author's. */
   reviewCandidate(candidateId: string): Promise<TechnicalReview>;
+  /** The Coordinator gave the green light: Trama merges the candidate, or it waits for the person (issue #247). */
+  candidateCleared?(candidateId: string): void;
   headSHA(): Promise<string | null>;
   /** Starts Trama's planner in the background and returns the plan id. */
   orderPlan(order: { kind: WorkKind; moduleIds: string[]; summary: string; issueNumber: number | null }): string;
@@ -1523,7 +1533,9 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
         if (authorization !== "authorized") return refused(authorization, "integrateCandidate");
         clearCandidate(document, candidate.id, "Coordinatore", await context.headSHA());
         context.changed();
-        return toolSuccess({ candidateID: candidate.id, state: "decided", note: "The person still reviews and publishes the candidate." });
+        context.candidateCleared?.(candidate.id);
+        const { route } = mergeRoute(document, candidate, context.github.repository);
+        return toolSuccess({ candidateID: candidate.id, state: "decided", mergeRoute: route, note: MERGE_ROUTE_NOTES[route] });
       }
       case "declare_next_step": {
         const request = document.requests.find((r) => r.id === context.runningRequestId);
