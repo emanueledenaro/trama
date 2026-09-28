@@ -234,8 +234,12 @@ function candidateState(document: ProjectDocument, candidate: Candidate, headSHA
       case "EXTERNAL_EFFECT_UNSUPPORTED":
         problems.push(`effetto esterno non verificato: ${blocker.detail}`);
         break;
+      case "CLOUD_CHECK_FAILED":
+        problems.push(`controlli sul Mac del lavoro cloud non superati: ${blocker.detail}`);
+        break;
       case "REMOTE_CONFLICT":
       case "WORKTREE_CONFLICT":
+      case "SEMANTIC_CONFLICT":
         // Conflicts are spelled out below, with the other side named.
         break;
       default:
@@ -244,11 +248,16 @@ function candidateState(document: ProjectDocument, candidate: Candidate, headSHA
   }
   for (const assessment of document.conflicts ?? []) {
     if (assessment.candidateId !== candidate.id || assessment.snapshotId !== candidate.snapshotId) continue;
-    if (assessment.classification !== "conflict" || !worktreeAssessmentCurrent(document, assessment)) continue;
+    const proved = assessment.classification === "conflict" || assessment.classification === "semantic";
+    if (!proved || !worktreeAssessmentCurrent(document, assessment)) continue;
     const other = assessment.otherCandidateId
       ? `il candidato ${assessment.otherCandidateId}${specialistOf(document, assessment.otherCandidateId) ? ` di ${specialistOf(document, assessment.otherCandidateId)}` : ""}`
       : assessment.references.join(", ");
-    problems.push(`in conflitto con ${other} su ${files(assessment.conflictingFiles)}`);
+    problems.push(
+      assessment.classification === "semantic"
+        ? `incompatibile con ${other}: una verifica fallisce sulle due modifiche unite`
+        : `in conflitto con ${other} su ${files(assessment.conflictingFiles)}`,
+    );
   }
   const review = candidate.technicalReview?.verdict;
   if (review === "changesRequested") problems.push("la revisione tecnica chiede modifiche");

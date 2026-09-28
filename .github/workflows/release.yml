@@ -102,7 +102,7 @@ jobs:
           npx electron-builder ${{ matrix.target }} --publish never "${extra[@]}"
       - name: Pacchetti prodotti
         run: ls -l release/Trama-*.dmg release/Trama-*.zip release/Trama-*.exe release/Trama-*.AppImage 2>/dev/null || true
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: trama-${{ matrix.platform }}
           path: |
@@ -117,7 +117,7 @@ jobs:
     needs: package
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: packages
           pattern: trama-*
@@ -136,7 +136,7 @@ jobs:
               echo "| \`$file\` | $(stat -c %s "$file") | \`$(sha256sum "$file" | cut -d' ' -f1)\` |"
             done
           } >> "$GITHUB_STEP_SUMMARY"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: checksums
           path: packages/SHA256SUMS.txt
@@ -151,7 +151,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: packages
           merge-multiple: true
@@ -173,7 +173,7 @@ jobs:
             echo
             echo "- macOS: \`.dmg\` e \`.zip\` per Apple Silicon (\`arm64\`) e Intel (\`x64\`)."
             echo "- Windows: installer \`.exe\` (\`x64\`)."
-            echo "- Linux: \`.AppImage\` (\`x64\`)."
+            echo "- Linux: \`.AppImage\` (\`x86_64\`)."
             echo "- Checksum SHA-256 di ogni file in \`SHA256SUMS.txt\`."
             echo
             if [ "$MAC_SIGNED" != "true" ] || [ "$MAC_NOTARIZED" != "true" ]; then
