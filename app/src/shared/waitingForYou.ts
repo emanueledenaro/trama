@@ -359,7 +359,7 @@ export interface DecidedItem {
   key: string;
   kind: WaitingKind;
   targetId: string;
-  /** The question or the proposal in one line, as it waited. */
+  /** The question or the proposal in one line, as it waited; empty when the record has no text, for the view to name it. */
   title: string;
   outcome: DecidedOutcome;
   decidedAt: string;
@@ -393,7 +393,7 @@ export function decidedToday(document: ProjectDocument, now: Date): DecidedItem[
       key: `mandate:${request.id}`,
       kind: "mandate",
       targetId: request.id,
-      title: oneLine(request.reason) || "Il Coordinatore chiede il mandato per lavorare.",
+      title: oneLine(request.reason),
       outcome: kind,
       decidedAt: request.resolution!.resolvedAt,
     });
@@ -406,7 +406,7 @@ export function decidedToday(document: ProjectDocument, now: Date): DecidedItem[
   }
   for (const candidate of document.candidates) {
     const assignment = document.team.specialists.flatMap((s) => s.assignments).find((a) => a.id === candidate.assignmentId);
-    const title = oneLine(assignment?.objective ?? "") || `Candidato ${candidate.id}`;
+    const title = oneLine(assignment?.objective ?? "");
     const rejection = candidate.humanRejection;
     if (rejection) push({ key: `candidate:${candidate.id}`, kind: "candidate", targetId: candidate.id, title, outcome: "rejected", decidedAt: rejection.at });
     else if (candidate.humanApproval) push({ key: `candidate:${candidate.id}`, kind: "candidate", targetId: candidate.id, title, outcome: "approved", decidedAt: candidate.humanApproval.at });

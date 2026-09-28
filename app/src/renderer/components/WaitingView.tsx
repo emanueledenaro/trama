@@ -256,6 +256,12 @@ const DECIDED_KIND: Partial<Record<WaitingKind, MessageKey>> = {
   fixedBan: "waiting.decided.kind.fixedBan",
 };
 
+/** What names a decided item whose record has no text of its own. */
+const UNTITLED: Partial<Record<WaitingKind, MessageKey>> = {
+  mandate: "waiting.decided.untitled.mandate",
+  candidate: "waiting.decided.untitled.candidate",
+};
+
 const NO_DECISIONS: DecidedItem[] = [];
 
 /** What the person decided today, closed at the end of the view; it does not show before the first decision of the day. */
@@ -282,7 +288,7 @@ function DecidedToday() {
           {decided.map((item) => (
             <li key={item.key} className="flex min-w-0 flex-col py-1 text-ui-sm" data-testid="waiting-decided-item">
               <span className="line-clamp-2 text-foreground/90">
-                <ReferenceText text={item.title} />
+                {item.title ? <ReferenceText text={item.title} /> : t(UNTITLED[item.kind] ?? "waiting.decided.untitled")}
               </span>
               <span className="text-ui-xs text-muted-foreground">
                 {DECIDED_KIND[item.kind] ? t(DECIDED_KIND[item.kind]!) : null}

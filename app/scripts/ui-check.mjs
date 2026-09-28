@@ -690,6 +690,23 @@ await setTheme("system");
   }
   await page.setViewportSize(viewport);
 }
+// Issue #331: the questions have one home, Aspetta te. Patto keeps one line per question that opens it there, with no
+// button to answer; the open project in Progetti carries the same count as the icon of Aspetta te.
+{
+  const count = Number((await activityBar().getByTestId("activity-badge").innerText()).trim());
+  await openView("Progetti");
+  const projectCount = page.getByTestId("side-bar").getByTestId("project-waiting-count");
+  await projectCount.waitFor();
+  if (Number((await projectCount.innerText()).trim()) !== count) throw new Error("Progetti counts what waits differently from the icon of Aspetta te");
+  await openView("Regole", "Patto");
+  const pactPointer = page.getByTestId("side-bar").getByTestId("waiting-pointer").filter({ hasText: "La domanda aspetta te" }).first();
+  await pactPointer.waitFor();
+  if (await page.getByTestId("side-bar").getByRole("button", { name: "Registra la decisione" }).count()) throw new Error("Patto still answers the question");
+  await themeShots("31c-waiting-pointer-pact");
+  await pactPointer.click();
+  await page.locator('[data-testid="side-bar"][data-view="waiting"] [data-testid="waiting-item"][data-waiting-kind="question"][data-open="true"]').waitFor();
+  await page.getByRole("button", { name: "Chiudi la barra laterale" }).click();
+}
 firstDecision = await openWaiting("question", "Cosa succede a un ordine pagato annullato?");
 await firstDecision.getByRole("button", { name: /Va in revisione/ }).click();
 await firstDecision.getByRole("button", { name: "Registra la decisione" }).click();
@@ -702,6 +719,20 @@ await shot("03c-decision-answered");
 await answeredLine.getByRole("button", { name: /^Apri: / }).click();
 await answeredLine.getByText("Apri nel Patto").waitFor();
 await answeredLine.getByRole("button", { name: /^Chiudi: / }).click();
+// Issue #331: what the person decided today stays closed at the end of Aspetta te; opened, it names the answer.
+{
+  await openView("Aspetta te");
+  const decided = page.getByTestId("side-bar").getByTestId("waiting-decided");
+  await decided.waitFor();
+  const toggle = decided.getByRole("button", { name: /^Decise oggi/ });
+  if ((await toggle.getAttribute("aria-expanded")) !== "false" || (await decided.getByTestId("waiting-decided-item").count())) throw new Error("Decise oggi is open before the person opens it");
+  await toggle.click();
+  await decided.getByTestId("waiting-decided-item").filter({ hasText: "Cosa succede a un ordine pagato annullato?" }).filter({ hasText: "Risposta data" }).waitFor();
+  await decided.scrollIntoViewIfNeeded();
+  await themeShots("31d-waiting-decided-today");
+  await toggle.click();
+  await page.getByRole("button", { name: "Chiudi la barra laterale" }).click();
+}
 // The turn's technical steps are in Activity, grouped; the chat keeps one line that opens them there.
 await page.getByTestId("work-line").getByText("Ha lavorato per").first().click();
 await page.getByTestId("side-bar").locator('[data-testid="work-turn"][data-focused] [data-testid="technical-step"]').first().waitFor();
