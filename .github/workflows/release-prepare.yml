@@ -1,11 +1,11 @@
 name: Preparazione del rilascio
 # Opens the pull request release/vX.Y.Z with the new CHANGELOG.md section and
-# the version in app/package.json. See CONTRIBUTING.md, "Releases".
+# the version in app/package.json. Policy in docs/agents/versioning.md.
 on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Versione esplicita (X.Y.Z). Vuota: calcolata dai Conventional Commits dall'ultimo tag v*"
+        description: "Versione esplicita (X.Y.Z, o X.Y.Z-beta.N per una pre-release). Vuota: calcolata dai Conventional Commits dall'ultimo tag v*"
         required: false
         type: string
 permissions:
@@ -27,8 +27,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Test dello script
-        run: node --test scripts/release/lib.test.mjs
+      - name: Test degli script
+        run: node --test scripts/release/lib.test.mjs scripts/conventional-commits/lib.test.mjs
       - name: Changelog
         id: changelog
         env:
@@ -45,6 +45,8 @@ jobs:
           VERSION: ${{ steps.changelog.outputs.version }}
         run: |
           branch="release/v$VERSION"
+          # The same check the pull request meets in conventional-commits.yml.
+          node scripts/conventional-commits/cli.mjs branch-name "$branch"
           if git ls-remote --exit-code --heads origin "$branch" >/dev/null; then
             echo "Il branch $branch esiste già: chiudere o unire la PR aperta prima di rigenerarla." >&2
             exit 1

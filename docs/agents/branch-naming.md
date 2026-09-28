@@ -27,9 +27,11 @@ In questo repository persone e agenti usano i prefissi di tipo (`feature/`, `bug
 - niente spazi o underscore;
 - il numero della issue è facoltativo ma consigliato dentro la descrizione, per esempio `feature/issue-142-assignment-contract`.
 
+Il branch che apre `release-prepare.yml` si chiama `release/vX.Y.Z`, o `release/vX.Y.Z-beta.N` per una pre-release, e passa lo stesso controllo: il workflow lo verifica prima di aprire la PR. Policy in `docs/agents/versioning.md`.
+
 ## Esempi
 
-Validi: `feature/add-login-page`, `bugfix/fix-header-bug`, `hotfix/security-patch`, `release/v1.2.0`, `chore/update-dependencies`, `claude/security-patch`, `main`.
+Validi: `feature/add-login-page`, `bugfix/fix-header-bug`, `hotfix/security-patch`, `release/v1.2.0`, `release/v0.3.0-beta.1`, `chore/update-dependencies`, `claude/security-patch`, `main`.
 
 Non validi: `Feature/Add-Login` (maiuscole), `feature/new--login` (trattini consecutivi), `feature/-new-login` (trattino iniziale), `release/v1.-2.0` (trattino accanto al punto), `fix/header_bug` (underscore), `docs/old-tickets-audit` (tipo non previsto dalla specifica), `feature/` (descrizione vuota).
 

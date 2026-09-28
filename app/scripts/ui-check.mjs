@@ -1080,7 +1080,7 @@ await shot("14b-grilling-withdrawn");
 // The seams come first and wait for the person, with the confirmation on the right; then the spec with the
 // template's sections, which stays in Trama without GitHub. The mandate allows planning, so the Coordinator would
 // confirm the seams and the slices by itself (A06): the check pauses continuous work, and in pause they stay the person's.
-await page.getByTestId("status-line").getByRole("button", { name: "Pausa", exact: true }).click();
+await page.getByTestId("status-line").getByRole("button", { name: "Pausa del Coordinatore", exact: true }).click();
 await page.locator('[data-testid="status-line"][data-paused="true"]').waitFor({ timeout: 20_000 });
 await page.getByLabel("Messaggio al Coordinatore").fill("[piano]");
 await page.keyboard.press("Enter");
@@ -1137,7 +1137,7 @@ await page.evaluate(() => document.documentElement.classList.add("dark"));
 // The slices held the work for the person while in pause. After Riprendi, the end of the next turn lets the
 // Coordinator confirm them by itself within the mandate (A06): they stay in Trama without GitHub, the first is ready
 // and the others wait for it, and the work goes on by itself (W04). The example project runs no periodic round.
-await page.getByTestId("status-line").getByRole("button", { name: "Riprendi" }).click();
+await page.getByTestId("status-line").getByRole("button", { name: "Riprendi il Coordinatore" }).click();
 await page.locator('[data-testid="status-line"][data-paused="true"]').waitFor({ state: "detached", timeout: 20_000 });
 await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
 await page.getByLabel("Messaggio al Coordinatore").fill("A che punto sono le fette?");
@@ -1250,6 +1250,18 @@ await shot("16c-specialist-ask");
 await composer().fill("");
 // Lavoro: a candidate opens with its diff; the card inside it offers no "Apri il diff" that would do nothing.
 await page.getByRole("button", { name: /^Lavoro/ }).first().click();
+// Issue #272: Lavoro names the plan as its chat card does, and a finished candidate never reads "In costruzione".
+{
+  const workPanel = page.getByTestId("inspector");
+  await workPanel.getByText("Fette confermate dal Coordinatore").first().waitFor({ timeout: 10_000 });
+  if (await workPanel.getByText("In costruzione", { exact: true }).count()) throw new Error("Lavoro calls a candidate under construction");
+  const wasDark = await page.evaluate(() => document.documentElement.classList.contains("dark"));
+  for (const dark of [false, true]) {
+    await page.evaluate((on) => document.documentElement.classList.toggle("dark", on), dark);
+    await shot(`10h-work-states-${dark ? "dark" : "light"}`);
+  }
+  await page.evaluate((on) => document.documentElement.classList.toggle("dark", on), wasDark);
+}
 await page.getByTestId("inspector").locator('button[data-record-id^="C-"]').first().click();
 await page.getByTestId("inspector").getByText(/^Diff catturato da Trama/).waitFor();
 if (await page.getByTestId("inspector").getByRole("button", { name: "Apri il diff" }).count()) throw new Error("The candidate view offers a diff it already shows");
@@ -1324,11 +1336,11 @@ await understandingStep.getByRole("button", { name: "Annulla" }).click();
 await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
 // A05: the Pause of continuous work is always on the status line. In pause the line says so, Riprendi takes the place
 // of Pausa as the primary on the right, and nothing automatic starts; Riprendi brings the line back.
-await statusLine.getByRole("button", { name: "Pausa", exact: true }).click();
+await statusLine.getByRole("button", { name: "Pausa del Coordinatore", exact: true }).click();
 const pausedLine = page.locator('[data-testid="status-line"][data-paused="true"]');
 await pausedLine.waitFor({ timeout: 20_000 });
-await pausedLine.getByTestId("status-line-text").getByText(/In pausa: i turni in corso finiscono/).waitFor();
-const resumeButton = pausedLine.getByRole("button", { name: "Riprendi" });
+await pausedLine.getByTestId("status-line-text").getByText(/Coordinatore in pausa: i turni in corso finiscono/).waitFor();
+const resumeButton = pausedLine.getByRole("button", { name: "Riprendi il Coordinatore" });
 await resumeButton.waitFor();
 // The primary sits last on the right: Riprendi, unless the person has a move of their own, which stays the primary.
 const lastButton = pausedLine.getByRole("button").last();
@@ -1341,7 +1353,7 @@ await page.waitForTimeout(300);
 if (await statusLine.getByRole("button", { name: /^Ferma/ }).count()) throw new Error("Trama started a move in pause");
 await resumeButton.click();
 await page.locator('[data-testid="status-line"][data-paused="false"]').waitFor({ timeout: 20_000 });
-await statusLine.getByRole("button", { name: "Pausa", exact: true }).waitFor();
+await statusLine.getByRole("button", { name: "Pausa del Coordinatore", exact: true }).waitFor();
 // Issue #242: the person asks for the recap with /riepilogo, offered first by the composer's menu. Trama writes it
 // in the chat from the records at once: what I did, what I do, what I need from you, with
 // each item of Aspetta te opening on the right. The chat before the recap, then the recap, in light and dark.
@@ -1394,8 +1406,13 @@ await settings.getByTestId("language-choice").getByRole("radio", { name: "Englis
 await settings.getByRole("button", { name: /^Connections/ }).first().waitFor();
 await settings.getByRole("heading", { name: "General" }).waitFor();
 await shot("12-settings-en");
+// Issue #348: Informazioni shows the version of app/package.json, in each language.
+const appVersion = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8")).version;
+const aboutVersion = settings.getByTestId("about-version");
+if (!(await aboutVersion.textContent())?.startsWith(`Version ${appVersion}.`)) throw new Error(`About does not show Version ${appVersion}`);
 await settings.getByTestId("language-choice").getByRole("radio", { name: "Italiano" }).click();
 await settings.getByRole("button", { name: /^Collegamenti/ }).first().waitFor();
+await settings.getByTestId("about-version").getByText(`Versione ${appVersion}.`, { exact: false }).waitFor();
 // B01: Informazioni shows the mark on its tile with the version, in every provider theme.
 await settings.getByTestId("about-trama").locator('[data-trama-mark="tile"]').waitFor();
 for (const provider of ["codex", "claudeAgent", "grok"]) {
@@ -1530,7 +1547,9 @@ await queueToggle.click();
 const queue = focusBar.getByTestId("focus-queue");
 await queue.waitFor();
 if (!(await queue.getByTestId("focus-queue-item").count())) throw new Error("The task queue is empty");
-const pause = focusBar.getByRole("button", { name: "Metti in pausa" });
+// Issue #272: suspending the task in focus and the Coordinator's Pause never share a name.
+const pause = focusBar.getByRole("button", { name: "Sospendi questo lavoro" });
+if (await focusBar.getByRole("button", { name: /^(Metti in pausa|Pausa)$/ }).count()) throw new Error("A pause in the focus bar has an ambiguous name");
 const actionsOnRight = async (size) => {
   const bar = await focusBar.boundingBox();
   const button = await pause.boundingBox();
@@ -1548,6 +1567,7 @@ const focusIs = (title, equal) =>
 await focusIs(firstFocus, false);
 const pausedItem = queue.locator('[data-testid="focus-queue-item"][data-status="paused"]').filter({ hasText: firstFocus });
 await pausedItem.waitFor({ timeout: 10_000 });
+await pausedItem.getByText(/^Sospeso/).waitFor();
 await shot("17a-focus-paused-next");
 await pausedItem.getByRole("button", { name: "Metti in primo piano" }).click();
 await focusIs(firstFocus, true);
@@ -1839,7 +1859,7 @@ const candidateOf = async (card) => candidateCards.filter({ has: page.locator(`[
 const failedCard = await candidateOf(spacesCard);
 await failedCard.locator('[data-testid="candidate-evidence"][data-check="git_diff_check"][data-result="fail"]').waitFor({ timeout: 30_000 });
 await page.getByText(/Via libera rifiutato: .*candidate_not_verified/).first().waitFor({ timeout: 20_000 });
-await failedCard.getByText("In costruzione", { exact: true }).waitFor();
+await failedCard.getByText("Da sistemare", { exact: true }).waitFor();
 await failedCard.getByText("Verifica non superata").waitFor();
 await failedCard.getByRole("button", { name: "Output originale" }).click();
 const failedOutput = failedCard.getByTestId("evidence-output");
@@ -1910,7 +1930,7 @@ await blockedGate.getByTestId("gate-returned").getByText(/Rimandato a Ada con i 
 // The refusal's technical text stays in the turn's activity (issue #241); the card above says why in Italian.
 await page.getByText(/^Via libera rifiutato: /).last().waitFor({ timeout: 20_000 });
 await secretCandidate.getByText("I revisori hanno trovato un problema da correggere").waitFor();
-await secretCandidate.getByText("In costruzione", { exact: true }).waitFor();
+await secretCandidate.getByText("Da sistemare", { exact: true }).waitFor();
 await page.getByRole("button", { name: "Interrompi" }).waitFor({ state: "hidden", timeout: 20_000 });
 await secretWork.getByText("Concluso", { exact: true }).waitFor({ timeout: 30_000 });
 await blockedGate.evaluate((item) => item.scrollIntoView({ block: "center" }));
@@ -2233,11 +2253,11 @@ await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
 // developer in the same session, and the card and the assignment say so.
 await send("[assegna:S1] [test] [domanda]");
 const questionWork = assignmentCards.nth(6);
-await questionWork.getByText("In pausa", { exact: true }).waitFor({ timeout: 20_000 });
+await questionWork.getByText("Aspetta una risposta", { exact: true }).waitFor({ timeout: 20_000 });
 await questionWork.locator('[data-testid="assignment-question"][data-state="asked"]').getByText(/buono/).waitFor();
 await questionWork.getByText("Aspetta il Coordinatore").waitFor();
 await questionWork.getByTestId("report-doubts").getByText(/Domanda al Coordinatore/).waitFor();
-await sliceSpec.locator('[data-testid="plan-slice"][data-state="paused"]').getByText("In pausa").waitFor({ timeout: 20_000 });
+await sliceSpec.locator('[data-testid="plan-slice"][data-state="paused"]').getByText("Aspetta una risposta").waitFor({ timeout: 20_000 });
 await questionWork.scrollIntoViewIfNeeded();
 await shot("19e-developer-question");
 await send("[blocca-dubbio]");
@@ -2682,6 +2702,14 @@ await page.getByTestId("settings").getByRole("button", { name: "Metti in pausa" 
 await page.getByTestId("settings").getByRole("button", { name: "Riprendi" }).waitFor();
 await shot("16c-presence-settings");
 await page.getByTestId("settings").getByRole("button", { name: "Riprendi" }).click();
+// Issue #272: the Monitor never says "no repository" above the repository it then offers.
+await page.getByTestId("settings").getByRole("button", { name: /^Monitor/ }).first().click();
+await page.getByTestId("settings").getByText("Repository osservati").waitFor();
+{
+  const text = await page.getByTestId("settings").innerText();
+  if (/Nessun repository/.test(text) && /Repository del progetto aperto/.test(text)) throw new Error("The Monitor says no repository above the project's one");
+}
+await shot("16f-monitor-settings");
 
 // P10, GitHub CLI: with gh logged in, Collegamenti says so without the guide, and Controlla di nuovo reads it again.
 await page.getByTestId("settings").getByRole("button", { name: /^Collegamenti/ }).first().click();
@@ -2899,11 +2927,11 @@ await page.keyboard.press("Enter");
 // The card waits for the person in Aspetta te; the chat keeps its reference (issue #240).
 const reviewCard = await waitingItem(page.locator('[data-testid="waiting-reference"][data-waiting-kind="question"]').first(), 90_000);
 await reviewCard.getByText(/Approfondire l'annullamento/).first().waitFor();
-// Issue #270: Clean Code's card reads plain. The skill it received shows by name, not as "skill:<name>:<path>", the
-// proposal says "Approfondire" once, and its work is named, not cited by id. Both themes.
-await reviewCard.getByText(/Skill ricevute: .*improve-codebase-architecture/).first().waitFor();
+// Issues #270 and #272: Clean Code's card reads plain. The fake recommends only when the review received its skill,
+// no path or delivery proof shows, the options are the proposals' titles, and its work is named, not cited by id.
+await reviewCard.getByText(/Partire dall'annullamento/).first().waitFor();
 const reviewText = await reviewCard.innerText();
-if (/skill:|SKILL\.md|Approfondire: Approfondire|incarico A-[0-9A-F]{8}/.test(reviewText)) throw new Error(`Clean Code's card is not plain: ${reviewText}`);
+if (/skill:|SKILL\.md|Skill ricevute|Approfondire: |incarico A-[0-9A-F]{8}/.test(reviewText)) throw new Error(`Clean Code's card is not plain: ${reviewText}`);
 await reviewCard.evaluate((item) => item.scrollIntoView({ block: "start" }));
 for (const dark of [false, true]) {
   await page.evaluate((theme) => window.trama.invoke("settings:update", { theme }), dark ? "dark" : "light");
@@ -2995,6 +3023,25 @@ for (const dark of [false, true]) {
   await page.evaluate((theme) => window.trama.invoke("settings:update", { theme }), dark ? "dark" : "light");
   await page.waitForFunction((wanted) => document.documentElement.classList.contains("dark") === wanted, dark);
   await shot(`22b-automatic-work-role-${dark ? "dark" : "light"}`);
+}
+// Issue #272: the Clean Code card offers the proposals by their own titles and no text of the fake's own checks; once
+// the person answers, the review's work says what was chosen, never "proposte da decidere" again.
+{
+  const reference = page.locator('[data-testid="waiting-reference"][data-waiting-kind="question"]').first();
+  const requestId = (await reference.getAttribute("data-waiting-key")).replace(/^question:/, "");
+  const body = await page.locator("body").innerText();
+  if (/Approfondire: /.test(body)) throw new Error("A Clean Code option repeats the verb of the question");
+  if (/Skill ricevute/.test(body)) throw new Error("The Clean Code card shows the fake's delivery proof");
+  await page.evaluate((id) => window.trama.invoke("decision:answer", { requestId: id, alternativeIndex: 1, freeText: null }), requestId);
+  await dutyPanel.getByText("Revisione dell'architettura: hai scelto «Unire i pagamenti»").first().waitFor({ timeout: 20_000 });
+  if (/proposte da decidere/.test(await page.locator("body").innerText())) throw new Error("The review still asks to decide after the answer");
+  const answeredWork = dutyPanel.getByText("Revisione dell'architettura: hai scelto «Unire i pagamenti»").first();
+  await answeredWork.scrollIntoViewIfNeeded();
+  for (const dark of [false, true]) {
+    await page.evaluate((theme) => window.trama.invoke("settings:update", { theme }), dark ? "dark" : "light");
+    await page.waitForFunction((wanted) => document.documentElement.classList.contains("dark") === wanted, dark);
+    await shot(`22c-clean-code-answered-${dark ? "dark" : "light"}`);
+  }
 }
 await page.evaluate(() => window.trama.invoke("settings:update", { theme: "system" }));
 await app.close();
@@ -3548,12 +3595,15 @@ await page.getByRole("button", { name: "Restringi", exact: true }).click();
 const restrict = page.getByTestId("mandate-restrict");
 await restrict.getByRole("checkbox", { name: "Integrare candidati verificati" }).uncheck();
 await primaryLast(restrict.locator(".cta-row"), "Mandate restriction");
+// Before it takes effect the form says which work stops (C06): here nothing runs, so nothing stops.
+await restrict.getByText(/si ferma subito; il resto continua\. Nessun lavoro in corso si ferma\./).waitFor();
 await mandateShots("26b-mandate-restrict");
 await restrict.getByRole("button", { name: "Restringi il mandato" }).click();
 await page.getByText(/Mandato v2/).first().waitFor({ timeout: 20_000 });
 const restriction = await page.getByTestId("mandate-restriction").innerText();
 if (!restriction.includes("integrare candidati verificati") || /[–—]/.test(restriction)) throw new Error(`Restriction: ${restriction}`);
 await page.getByText(/Ho ristretto il mandato/).first().waitFor({ timeout: 20_000 });
+await page.getByText(/Nessun lavoro in corso era fuori dal mandato ristretto/).first().waitFor({ timeout: 20_000 });
 await mandateShots("26c-mandate-restricted");
 // The correction form starts from the restricted version: saving it never brings back what the restriction took away.
 await page.getByRole("button", { name: "Correggi", exact: true }).click();
@@ -3704,7 +3754,7 @@ const checkWaitingLine = async (where) => {
   await waitingLine.getByTestId("status-line-text").getByText(/^Aspetto che la quota di ChatGPT si sblocchi/).waitFor();
   await waitingLine.getByTestId("status-line-reason").getByText("Fino ad allora non parte nessun turno. Poi riprendo da solo.").waitFor();
   // The Pause stays reachable while the Coordinator waits.
-  await waitingLine.getByRole("button", { name: "Pausa", exact: true }).waitFor();
+  await waitingLine.getByRole("button", { name: "Pausa del Coordinatore", exact: true }).waitFor();
   if (/[–—]/.test(await waitingLine.innerText())) throw new Error(`${where}: dash in the status line`);
 };
 const alwaysReplies = () => page.getByText("Questa risposta arriva dal server di prova").count();
@@ -3767,7 +3817,7 @@ await reopenedRow.scrollIntoViewIfNeeded();
 await waitShots("28d-reopened-turn-resumed");
 
 // A project in Pause stays in Pause after the restart: the turn Esci ended waits for the person.
-await page.locator('[data-testid="status-line"]').getByRole("button", { name: "Pausa", exact: true }).click();
+await page.locator('[data-testid="status-line"]').getByRole("button", { name: "Pausa del Coordinatore", exact: true }).click();
 await page.locator('[data-testid="status-line"][data-paused="true"]').waitFor();
 await app.close();
 ({ app, page } = await launch(alwaysEnv));
@@ -4051,4 +4101,48 @@ await page.getByTestId("activity-log").locator('[data-testid="activity-merge"]')
 await themeShots("30e-merge-activity-person");
 await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
 await page.evaluate(() => window.trama.invoke("settings:update", { theme: "system" }));
+await app.close();
+
+// Issue #39: the projects share the developers. The overview says how many work in all projects and keeps the
+// Product Owner's order of the projects: the arrows move a project, opening another one leaves the order as it is.
+({ app, page } = await launch());
+await page.getByTestId("dialog-title").first().waitFor({ timeout: 30_000 });
+await page.getByRole("button", { name: "Panoramica dei progetti" }).click();
+const priority = page.getByTestId("overview-priority");
+await priority.waitFor({ timeout: 10_000 });
+await priority.getByTestId("shared-capacity").filter({ hasText: /Sviluppatori al lavoro in tutti i progetti: \d+ su 6/ }).waitFor();
+const priorityNames = () => priority.getByTestId("overview-priority-row").locator("span.truncate").allInnerTexts();
+const before39 = await priorityNames();
+if (before39.length < 2) throw new Error("The overview ranks fewer than two projects");
+await priority.getByRole("button", { name: `Sposta ${before39[1]} più in alto` }).click();
+await page.waitForFunction(
+  ([first]) => document.querySelector('[data-testid="overview-priority-row"] span.truncate')?.textContent === first,
+  [before39[1]],
+  { timeout: 10_000 },
+);
+const moved39 = await priorityNames();
+if (moved39[0] !== before39[1] || moved39[1] !== before39[0]) throw new Error(`The project did not move up: ${moved39.join(", ")}`);
+await priority.scrollIntoViewIfNeeded();
+await themeShots("39a-overview-priority");
+// Opening a project from the overview does not rank it.
+await page.getByTestId("overview-project").filter({ hasText: before39[0] }).getByRole("button", { name: before39[0], exact: true }).click();
+await page.getByTestId("overview").waitFor({ state: "detached", timeout: 30_000 });
+await page.waitForTimeout(1_500);
+await page.getByRole("button", { name: "Panoramica dei progetti" }).click();
+await priority.waitFor();
+let reopened39 = await priorityNames();
+for (const end = Date.now() + 10_000; reopened39.join("|") !== moved39.join("|") && Date.now() < end; reopened39 = await priorityNames()) await page.waitForTimeout(250);
+if (reopened39.join("|") !== moved39.join("|")) throw new Error(`Opening a project changed the order of the projects: ${moved39.join(", ")} became ${reopened39.join(", ")}`);
+await page.getByRole("button", { name: "Panoramica dei progetti" }).click();
+// The shared limit sits next to the project's own limit in the settings.
+await page.getByRole("button", { name: "Impostazioni" }).click();
+const sharedSettings = page.getByTestId("settings");
+await sharedSettings.getByRole("button", { name: /^Metodo di lavoro/ }).first().click();
+const sharedPicker = sharedSettings.getByTestId("shared-developers");
+await sharedPicker.getByRole("radio", { name: "6", checked: true }).waitFor();
+await sharedPicker.getByRole("radio", { name: "4" }).click();
+await sharedPicker.getByRole("radio", { name: "4", checked: true }).waitFor();
+await sharedPicker.scrollIntoViewIfNeeded();
+await noHorizontalScroll("shared developers");
+await themeShots("39b-shared-developers");
 await app.close();

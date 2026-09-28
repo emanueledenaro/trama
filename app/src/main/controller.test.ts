@@ -14,7 +14,7 @@ import { waitingForYou } from "@shared/waitingForYou";
 import { TramaController } from "./controller";
 import { QUIT_NOTE } from "./core/document";
 import { AppStorage } from "./core/storage";
-import { developers } from "./core/team";
+import { assign, confirmTeam, developers, proposeTeam } from "./core/team";
 
 const root = join(import.meta.dirname, "../..");
 let controller: TramaController | null = null;
@@ -426,13 +426,13 @@ describe("TramaController", () => {
   it("checks the threshold in the study turn too (issue #305)", async () => {
     await setup();
     const project = controller!.snapshot.project!;
-    // The fake study turn reads 12.000 of 258.000 tokens: 5%, at the lowest threshold.
+    // The fake study turn reads 13.000 of 258.000 tokens: 5,04%, just past the lowest threshold with the exact share.
     controller!.setContextThreshold(5);
     const internal = controller as unknown as { runStudyTurn(p: unknown, r: unknown, m: string, reason: string | null): Promise<void>; runtime: unknown };
     project.document.coordinator.contextWarnedAt = null;
     project.contextUsage = null;
     await internal.runStudyTurn(project, internal.runtime, "gpt-5.5", null);
-    expect(project.contextUsage).toEqual({ usedTokens: 12_000, contextWindow: 258_000 });
+    expect(project.contextUsage).toEqual({ usedTokens: 13_000, contextWindow: 258_000 });
     expect(project.document.events.filter((e) => e.content.type === "card" && e.content.title === "Contesto oltre la soglia").length).toBeGreaterThan(0);
   });
 
@@ -1216,6 +1216,41 @@ describe("TramaController", () => {
     expect(document.mandate!.history.map((h) => h.version)).toEqual([1]);
     const message = document.events.findLast((e) => e.content.type === "personMessage")!.content;
     expect(message).toMatchObject({ text: expect.stringContaining("Ho ristretto il mandato") });
+  });
+
+  it("stops only the work a narrower perimeter leaves out and its dependents, keeping their worktree (C06)", async () => {
+    await setup();
+    const document = controller!.snapshot.project!.document;
+    const [request] = document.mandateRequests;
+    await controller!.grantMandate({ ...request!, requestId: request!.id });
+    const proposal = proposeTeam(document, {
+      requestId: null,
+      summary: null,
+      members: ["Ada", "Bea", "Cy"].map((name) => ({ name, competence: "Swift", reason: "r", moduleIds: [] })),
+    });
+    confirmTeam(document, proposal.id, null, null);
+    const order = { kind: "agreedTicket" as const, objective: "o", issueNumber: null, exercise: null, dependencies: [], model: "m", tools: ["edits" as const], requiredChecks: [], instructions: "i" };
+    const base = assign(document, { ...order, specialist: "Ada", objective: "Base degli ordini", moduleIds: ["Sources/Orders"] }, 1, null);
+    base.status = "completed";
+    const orders = assign(document, { ...order, specialist: "Ada", objective: "Annullamento degli ordini", moduleIds: ["Sources/Orders"] }, 1, null);
+    const workspace = { worktreeRoot: "/tmp/trama-worktree-orders", branch: "trama/orders", baseSHA: "abc" } as never;
+    orders.workspace = workspace;
+    const payments = assign(document, { ...order, specialist: "Bea", objective: "Rimborsi sugli ordini", moduleIds: ["Sources/Payments"], dependencies: [base.id] }, 1, null);
+    const users = assign(document, { ...order, specialist: "Cy", objective: "Profilo utente", moduleIds: ["Sources/Users"] }, 1, null);
+
+    await controller!.restrictMandate({ scopeModuleIds: request!.scopeModuleIds.filter((id) => id !== "Sources/Orders"), authorizedActions: request!.authorizedActions });
+    // The work on Orders and the work that builds on it stop; the work on Users goes on.
+    expect(orders.status).toBe("stopped");
+    expect(orders.stops.at(-1)).toMatchObject({ requestedBy: "Trama", reason: expect.stringContaining("mandato ristretto") });
+    expect(orders.workspace).toBe(workspace);
+    expect(payments.status).toBe("stopped");
+    expect(payments.stops.at(-1)).toMatchObject({ reason: expect.stringContaining(`Dipende da ${base.id}`) });
+    expect(users.status).toBe("preparing");
+    const message = document.events.findLast((e) => e.content.type === "personMessage")!.content;
+    expect(message).toMatchObject({ text: expect.stringContaining(`Ho fermato ${orders.id}, ${payments.id} (dipende da ${base.id})`) });
+    // Neither resumes while the perimeter leaves out the work they rely on.
+    await expect(controller!.resumeSpecialistWork(orders.id)).rejects.toThrow(/mandato/);
+    await expect(controller!.resumeSpecialistWork(payments.id)).rejects.toThrow(/mandato/);
   });
 
   it("stops a command a fixed ban covers, whatever the mandate, and puts it in Aspetta te (issue #244)", async () => {
