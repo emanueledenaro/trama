@@ -1,4 +1,4 @@
-import { specialistLine } from "@shared/duties";
+import { assignmentLine, specialistLine } from "@shared/duties";
 import {
   IconArrowLeft,
   IconCheck,
@@ -719,7 +719,13 @@ function AssignmentRow({ assignment, done = false }: { assignment: SpecialistAss
           <Icon className="size-3.5 shrink-0 text-muted-foreground" stroke={1.8} />
           <span className="min-w-0 flex-1">
             <span className="block truncate text-foreground/90">{assignment.objective}</span>
-            {done ? <span className="block truncate text-ui-xs text-muted-foreground">{formatRelativeTime(assignment.updatedAt)}</span> : null}
+            {done ? (
+              <span className="block truncate text-ui-xs text-muted-foreground" data-testid="assignment-row-outcome">
+                {assignmentLine(project.document, assignment)}
+                <Sep />
+                {formatRelativeTime(assignment.updatedAt)}
+              </span>
+            ) : null}
           </span>
           <span className="shrink-0 text-ui-xs text-muted-foreground">{state.label}</span>
         </button>
