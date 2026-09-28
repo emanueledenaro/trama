@@ -17,6 +17,8 @@ const launch = async (env = {}) => {
       ...process.env,
       TRAMA_DATA_DIR: dataDir,
       TRAMA_CODEX_PATH: resolve("test-fixtures/fake-codex.mjs"),
+      // The check reads Italian texts: the system's language is fixed, whatever the machine's (issue #301).
+      TRAMA_SYSTEM_LANGUAGE: "it",
       // A move Trama starts by itself keeps running until the check stops it (W04).
       FAKE_CODEX_AUTOMATIC: "wait",
       ...env,
@@ -254,6 +256,27 @@ for (const [size, width, height] of sizes) {
 }
 await setTheme("system");
 await page.setViewportSize({ width: 1280, height: 820 });
+// Issue #301: the language comes first, with the system's already chosen; the welcome changes at once, without a restart.
+const languageChoice = welcome.getByTestId("welcome-language");
+await languageChoice.getByRole("radio", { name: "Italiano", checked: true }).waitFor();
+await languageChoice.getByRole("radio", { name: "English" }).click();
+await welcome.getByRole("heading", { name: "Welcome to Trama" }).waitFor();
+await welcome.getByRole("button", { name: "Set up", exact: true }).waitFor();
+if ((await page.evaluate(() => document.documentElement.lang)) !== "en") throw new Error("The page language did not follow the choice");
+await primaryLast(welcome.locator(".cta-row").last(), "Welcome in English");
+for (const [label, theme] of themes) {
+  await setTheme(theme);
+  await noHorizontalScroll(`welcome english ${label}`);
+  await shot(`00a-welcome-en-${label}`);
+}
+await setTheme("system");
+await welcome.getByRole("button", { name: "Set up", exact: true }).click();
+await welcome.getByRole("heading", { name: /Connect GitHub/ }).waitFor();
+await shot("00c-welcome-github-en");
+await welcome.getByRole("button", { name: "Back" }).click();
+await welcome.getByRole("button", { name: "Back" }).click();
+await languageChoice.getByRole("radio", { name: "Italiano" }).click();
+await welcome.getByRole("heading", { name: "Benvenuto in Trama" }).waitFor();
 await welcome.getByRole("button", { name: "Configura", exact: true }).click();
 // The configuration starts at the first step still open: the fake Codex account already completes the provider.
 await welcome.getByRole("heading", { name: /Collega GitHub/ }).waitFor();
@@ -1246,7 +1269,15 @@ await capabilityToggles.first().click();
 await themeShots("11b-connections-capabilities");
 await capabilityToggles.first().click();
 await settings.getByRole("button", { name: /^Generale/ }).first().click();
+// Issue #301: the language sits in Generale and changes the page at once.
+await settings.getByTestId("language-choice").getByRole("radio", { name: "Italiano", checked: true }).waitFor();
 await shot("12-settings");
+await settings.getByTestId("language-choice").getByRole("radio", { name: "English" }).click();
+await settings.getByRole("button", { name: /^Connections/ }).first().waitFor();
+await settings.getByRole("heading", { name: "General" }).waitFor();
+await shot("12-settings-en");
+await settings.getByTestId("language-choice").getByRole("radio", { name: "Italiano" }).click();
+await settings.getByRole("button", { name: /^Collegamenti/ }).first().waitFor();
 // B01: Informazioni shows the mark on its tile with the version, in every provider theme.
 await settings.getByTestId("about-trama").locator('[data-trama-mark="tile"]').waitFor();
 for (const provider of ["codex", "claudeAgent", "grok"]) {
