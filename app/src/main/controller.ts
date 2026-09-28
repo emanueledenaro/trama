@@ -3989,6 +3989,8 @@ export class TramaController {
       "info",
     );
     let turnId: string | null = null;
+    // A reading may arrive before the turn id when the provider's lines come in one chunk: kept until the turn starts.
+    let earlyPercent: number | null = null;
     let outcome: TurnEnd;
     try {
       let cwd = project.rootPath;
@@ -4083,6 +4085,7 @@ export class TramaController {
           if (event.type === "turnStarted") {
             turnId = event.turnId;
             beginTurn(document, assignmentId, event.turnId, assignment.model, new Date(), provider);
+            if (earlyPercent !== null) recordTurnContext(document, assignmentId, event.turnId, earlyPercent);
             this.changedIn(project);
             // A stop requested before the turn id was known reaches the provider now.
             if (assignment.status === "stopRequested") void client.interrupt().catch(() => client.stop());
@@ -4092,7 +4095,9 @@ export class TramaController {
           switch (event.type) {
             case "tokenUsage": {
               const percent = contextPercent(event);
-              if (turnId && percent !== null) recordTurnContext(document, assignmentId, turnId, percent);
+              if (percent === null) return;
+              if (turnId) recordTurnContext(document, assignmentId, turnId, percent);
+              else earlyPercent = Math.max(earlyPercent ?? 0, percent);
               return;
             }
             case "commentary":
