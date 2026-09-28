@@ -1058,8 +1058,25 @@ export interface Candidate {
   technicalReview: TechnicalReview | null;
   clearance: { actor: string; fingerprint: string; at: string } | null;
   humanApproval: { actor: string; fingerprint: string; at: string } | null;
-  /** mergedAt: when Trama saw the pull request merged on GitHub. */
-  pullRequest: { url: string; number: number; branch: string; at: string; mergedAt?: string | null } | null;
+  /**
+   * mergedAt: when Trama saw the pull request merged on GitHub. headSHA: the commit Trama pushed, the only head its merge
+   * accepts (issue #247). mergedBy: who authorized the merge Trama made, absent when someone merged it on GitHub.
+   */
+  pullRequest: {
+    url: string;
+    number: number;
+    branch: string;
+    at: string;
+    mergedAt?: string | null;
+    headSHA?: string | null;
+    mergedBy?: MergeAuthority;
+  } | null;
+  /** The screenshots before and after of a candidate that changes the interface (issue #247); absent otherwise. */
+  interfaceShots?: InterfaceShots;
+  /** The person's refusal of an interface candidate; the reason went back to the developer as a finding (issue #247). */
+  humanRejection?: { actor: string; note: string; fingerprint: string; at: string } | null;
+  /** Trama's last attempt to merge the candidate's pull request (issue #247). */
+  merge?: CandidateMerge | null;
   /** The goal of the assignment, copied when the candidate is declared. */
   goalId?: string | null;
   /** The person's observations of the goal's examples on this exact snapshot (UX06). */
@@ -1073,6 +1090,58 @@ export interface Candidate {
   commit?: CandidateCommit;
   /** What `git diff --check` reported on the candidate's snapshot (Q01); absent in candidates declared before it. */
   whitespaceErrors?: string[];
+}
+
+/**
+ * Who authorized a merge Trama made (issue #247): the Coordinator's green light within the mandate, or the person's ok on
+ * a candidate that changes the interface.
+ */
+export type MergeAuthority = "coordinator" | "person";
+
+/**
+ * How a verified candidate reaches the main branch (issue #247): Trama merges it with the Coordinator's green light;
+ * it changes the interface and waits for the person's ok; or the person handles it, because the mandate does not cover
+ * the merge or the project has no GitHub remote.
+ */
+export type MergeRoute = "coordinator" | "interface" | "person";
+
+/** Trama's attempt to merge a candidate's pull request, bound to the content it merged (issue #247). */
+export interface CandidateMerge {
+  by: MergeAuthority;
+  /** The fingerprint of the candidate the merge was for: a changed candidate is not merged with it. */
+  fingerprint: string;
+  /**
+   * "waiting": the pull request's checks are still running, and Trama tries again. "failed": GitHub refused it, and Trama
+   * tries again later. "stopped": a fixed ban or the mandate stopped it, and it waits for the person.
+   */
+  status: "running" | "waiting" | "merged" | "failed" | "stopped";
+  /** Why it waits, failed or stopped, in the person's words; null otherwise. */
+  detail: string | null;
+  at: string;
+  /** The merge commit on GitHub, when it is known. */
+  mergeSHA?: string | null;
+}
+
+export interface InterfaceShot {
+  side: "before" | "after";
+  theme: "light" | "dark";
+  /** The screen, as the project's screenshot command named the file. */
+  name: string;
+  /** The PNG in Trama's data folder. */
+  path: string;
+}
+
+/**
+ * The screenshots of an interface candidate (issue #247): the project's screenshot command run on the base and on the
+ * candidate, in light and in dark. They belong to one snapshot: a changed candidate needs new ones.
+ */
+export interface InterfaceShots {
+  snapshotId: string;
+  status: "capturing" | "ready" | "unavailable" | "failed";
+  /** Why there are no screenshots, in the person's words; null when they are ready or being captured. */
+  reason: string | null;
+  shots: InterfaceShot[];
+  at: string;
 }
 
 /** A seam as the developer of a slice reported it (M06). */
@@ -1111,6 +1180,12 @@ export interface CandidateReport {
   approvalInvalidated: boolean;
   /** The quality standard before publishing (Q01); absent where the report is computed without the project. */
   quality?: QualityItem[];
+  /** How the candidate reaches the main branch (issue #247); absent where the report is computed without the project. */
+  mergeRoute?: MergeRoute;
+  /** Why the route is "person", in the person's words; null otherwise. */
+  mergeRouteReason?: string | null;
+  /** The files that change the interface (issue #247); empty when none does. */
+  interfaceFiles?: string[];
 }
 
 export interface PlanProposal {

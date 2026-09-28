@@ -1,4 +1,4 @@
-import type { AutonomousStep, ConversationEvent, CoordinatorRequest, DelegableMove, FoundProblem, NextMove, RoundRecord, WorkEvent } from "./domain";
+import type { AutonomousStep, Candidate, ConversationEvent, CoordinatorRequest, DelegableMove, FoundProblem, NextMove, RoundRecord, WorkEvent } from "./domain";
 import { problemActivity } from "./problems";
 
 /**
@@ -17,10 +17,10 @@ export interface ActivityEntry {
   /** The request of the move, or the round's id. */
   id: string;
   /**
-   * An automatic move of the Coordinator, a round of continuous work (A05), a step of a found problem (A08), or a person's
-   * step the Coordinator took within the mandate (A06).
+   * An automatic move of the Coordinator, a round of continuous work (A05), a step of a found problem (A08), a person's
+   * step the Coordinator took within the mandate (A06), or Trama's merge of a candidate (issue #247).
    */
-  kind: "move" | "round" | "problem" | "step";
+  kind: "move" | "round" | "problem" | "step" | "merge";
   /** The request of the move; for a round, the move it started, or null. */
   requestId: string | null;
   /** The move; null for a round. */
@@ -40,6 +40,40 @@ export interface ActivityEntry {
   toolErrors: { title: string; detail: string | null }[];
   /** The issue a problem's step names (A08); absent for moves and rounds. */
   issue?: { number: number; url: string } | null;
+  /** The pull request a merge names (issue #247); absent for the other entries. */
+  pullRequest?: { number: number; url: string } | null;
+}
+
+/**
+ * Trama's merges of candidates (issue #247): merged, or stopped by a fixed ban or by the mandate, or refused by GitHub.
+ * A merge that waits for the checks of its pull request, or that runs, is not in Activity yet. Pure.
+ */
+export function mergeActivityEntries(candidates: Pick<Candidate, "id" | "goalId" | "merge" | "pullRequest">[]): ActivityEntry[] {
+  return candidates.flatMap((candidate): ActivityEntry[] => {
+    const merge = candidate.merge;
+    if (!merge || merge.status === "running" || merge.status === "waiting") return [];
+    const pull = candidate.pullRequest;
+    const authority = merge.by === "coordinator" ? "con il via libera del Coordinatore" : "con il tuo ok";
+    const label =
+      merge.status === "merged" ? `Candidato unito ${authority}` : merge.status === "stopped" ? "Unione del candidato fermata" : "Unione del candidato non riuscita";
+    return [
+      {
+        id: `merge:${candidate.id}`,
+        kind: "merge",
+        requestId: null,
+        move: null,
+        trigger: null,
+        label,
+        goalId: candidate.goalId ?? null,
+        startedAt: merge.at,
+        endedAt: null,
+        outcome: merge.status === "merged" ? "done" : merge.status === "stopped" ? "stopped" : "stalled",
+        detail: merge.status === "merged" ? `Candidato ${candidate.id}${pull ? `, pull request #${pull.number}` : ""}.` : `Candidato ${candidate.id}: ${merge.detail ?? ""}`.trim(),
+        toolErrors: [],
+        pullRequest: pull ? { number: pull.number, url: pull.url } : null,
+      },
+    ];
+  });
 }
 
 export const ACTIVITY_OUTCOME_LABELS: Record<ActivityOutcome, string> = {
@@ -96,9 +130,9 @@ export const TRIGGER_LABELS: Record<WorkEvent, string> = {
 export const ROUND_LABEL = "Giro del Coordinatore";
 
 /**
- * The automatic moves, the rounds with an outcome, the steps of the found problems and the person's steps the Coordinator
- * took of the project, newest first, from the requests, the move lines Trama recorded, the rounds, the problems and the
- * steps. Pure.
+ * The automatic moves, the rounds with an outcome, the steps of the found problems, the person's steps the Coordinator
+ * took and Trama's merges of the project, newest first, from the requests, the move lines Trama recorded, the rounds,
+ * the problems, the steps and the candidates. Pure.
  */
 export function activityLog(
   requests: CoordinatorRequest[],
@@ -106,6 +140,7 @@ export function activityLog(
   rounds: RoundRecord[] = [],
   problems: FoundProblem[] = [],
   steps: AutonomousStep[] = [],
+  candidates: Pick<Candidate, "id" | "goalId" | "merge" | "pullRequest">[] = [],
 ): ActivityEntry[] {
   const labels = new Map<string, string>();
   const toolErrors = new Map<string, ActivityEntry["toolErrors"]>();
@@ -165,7 +200,8 @@ export function activityLog(
     }),
   );
   const found = problemActivity(problems);
-  if (!done.length && !found.length && !taken.length) return moves;
+  const merged = mergeActivityEntries(candidates);
+  if (!done.length && !found.length && !taken.length && !merged.length) return moves;
   // Newest first; a move and the round that started it at the same moment keep the round below its move.
-  return [...moves, ...done, ...found, ...taken].sort((a, b) => b.startedAt.localeCompare(a.startedAt));
+  return [...moves, ...done, ...found, ...taken, ...merged].sort((a, b) => b.startedAt.localeCompare(a.startedAt));
 }
