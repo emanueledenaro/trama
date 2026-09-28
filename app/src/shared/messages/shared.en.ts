@@ -82,7 +82,7 @@ export const sharedEn: Record<keyof typeof sharedIt, string> = {
 
   // Activity (Q6, A05, A06, A08, issue #247)
   "shared.activity.merge.byCoordinator": "with the Coordinator's green light",
-  "shared.activity.merge.byPerson": "with your approval",
+  "shared.activity.merge.byPerson": "with your OK",
   "shared.activity.merge.merged": "Candidate merged {authority}",
   "shared.activity.merge.stopped": "Candidate merge stopped",
   "shared.activity.merge.failed": "Candidate merge failed",

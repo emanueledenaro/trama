@@ -4694,7 +4694,7 @@ await themeShots("30e-merge-activity-person");
 await page.evaluate(() => window.trama.invoke("settings:update", { language: "en" }));
 await page.waitForFunction(() => document.documentElement.lang === "en");
 const sharedActivity = page.getByTestId("activity-log");
-await sharedActivity.locator('[data-testid="activity-merge"][data-outcome="done"]').filter({ hasText: "Candidate merged with your approval" }).first().waitFor({ timeout: 20_000 });
+await sharedActivity.locator('[data-testid="activity-merge"][data-outcome="done"]').filter({ hasText: "Candidate merged with your OK" }).first().waitFor({ timeout: 20_000 });
 await sharedActivity.locator('[data-testid="activity-merge"][data-outcome="done"]').filter({ hasText: "Candidate merged with the Coordinator's green light" }).first().waitFor();
 if (await sharedActivity.getByText(/Candidato unito|Fatta$|Non riuscita$/).count()) throw new Error("Activity keeps Italian texts in English");
 await page.getByTestId("status-line").getByRole("button", { name: /^(Pause the Coordinator|Resume the Coordinator)$/ }).first().waitFor();
