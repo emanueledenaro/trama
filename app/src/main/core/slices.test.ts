@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import type { PlanSlicing, ProjectDocument, SliceTicket, WorkPlan } from "@shared/domain";
 import type { RepositorySnapshot } from "@shared/repository";
 import { declareCandidate, recordEvidence, recordTechnicalReview } from "./candidates";
@@ -23,6 +23,7 @@ import {
 import { assign, confirmTeam, endTurn, MAX_PARALLEL_DEVELOPERS, proposeTeam, TeamError } from "./team";
 import { focusView } from "./focus";
 import { workState } from "./workPhase";
+import { setPersonLanguage } from "./personLanguage";
 
 const skillsDirectory = join(import.meta.dirname, "../../../resources/AIHero/skills");
 const toTickets = () => loadNativeSkill(skillsDirectory, "to-tickets");
@@ -394,5 +395,16 @@ describe("the phase of sliced work (M05)", () => {
     const { document, plan } = project("drafting");
     const reopened = normalizeDocument(JSON.parse(JSON.stringify(document)), "p");
     expect(reopened.plans.find((p) => p.id === plan.id)!.slicing).toMatchObject({ status: "failed", failure: expect.stringMatching(/interrotta/) });
+  });
+});
+
+describe("slicer failures in English (issue #301)", () => {
+  afterEach(() => setPersonLanguage("it"));
+
+  it("explains a bad answer in the person's language", () => {
+    setPersonLanguage("en");
+    expect(() => readSlicerAnswer("not json", "s1")).toThrow("The slicer's answer is not valid JSON.");
+    const ticket = { title: "Cart", whatToBuild: "A cart", acceptanceCriteria: [], blockedBy: [] };
+    expect(() => readSlicerAnswer(JSON.stringify({ sourceSnapshotID: "s1", tickets: [ticket] }), "s1")).toThrow("Slice 1 has no acceptance criteria.");
   });
 });

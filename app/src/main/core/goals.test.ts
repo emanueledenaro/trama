@@ -1,7 +1,7 @@
 import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import type { Candidate, GitHubSnapshot, ProjectDocument, RecentProject } from "@shared/domain";
 import {
   candidateGoalId,
@@ -25,6 +25,7 @@ import { ciSummary, orderByAttention, summarizeProject, unreadableProject } from
 import { createDecisionRequest, decide, DomainError, grantMandate } from "./pact";
 import { assign, confirmTeam, developers, findSpecialist, proposeTeam } from "./team";
 import { AppStorage } from "./storage";
+import { setPersonLanguage } from "./personLanguage";
 
 const input = {
   title: "Revisione degli ordini",
@@ -687,5 +688,17 @@ describe("archiving and deleting goals (W03)", () => {
     }
     expect(projectGoals(document)).toHaveLength(5);
     expect(() => deleteEmptyGoal(document, "G-00000000")).toThrow(/non trovato/);
+  });
+});
+
+describe("goal errors in English (issue #301)", () => {
+  afterEach(() => setPersonLanguage("it"));
+
+  it("refuses in the person's language, with the numbers of the language", () => {
+    setPersonLanguage("en");
+    const document = emptyDocument("p");
+    expect(() => createGoal(document, { title: " ", outcome: "o", examples: [] })).toThrow("A goal needs a title.");
+    expect(() => createGoal(document, { title: "t", outcome: "x".repeat(4_001), examples: [] })).toThrow("The expected outcome is longer than 4,000 characters.");
+    expect(() => archiveGoal(document, "G-00000000")).toThrow("Goal G-00000000 not found.");
   });
 });

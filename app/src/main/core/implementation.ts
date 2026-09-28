@@ -52,6 +52,7 @@ export const IMPLEMENT_BINDING = [
 ].join("\n");
 
 /** Trama's binding for AI Hero's tdd skill, which the developer of a slice runs inside implement. */
+// @model-text: English instructions for the developer.
 export const TDD_BINDING = [
   "Trama gives the developer the tdd skill above, with its own text and its reference files. These lines only map its words to Trama; they do not change its method.",
   "\"Confirm them with the user\" and \"Ask: what's the public interface, and which seams should we test?\": the person already answered on the plan card. The confirmed seams are the numbered list in the message; this session cannot reach the person. Write tests only at those seams. When a behaviour of the slice needs a seam that is not in the list, write no test there: name it in your answer as something left open.",
@@ -90,6 +91,7 @@ export function agreedSeams(plan: WorkPlan) {
 }
 
 /** The slice and its spec, as the developer reads them in the message of the assignment (Italian, data). */
+// @model-text: the developer's turn input.
 export function sliceBriefing(document: ProjectDocument, assignment: SpecialistAssignment): string | null {
   const found = assignmentSlice(document, assignment);
   if (!found) return null;
@@ -141,6 +143,7 @@ export function seamNumber(entry: string): number | null {
 }
 
 /** The contract of the assignment as the developer reads it at the start of the work (Italian, data), with the report it owes. */
+// @model-text: the developer's turn input.
 export function contractBriefing(assignment: SpecialistAssignment): string[] {
   if (!assignment.seams) return [];
   const lines = ["Seam da testare in questo incarico:"];
@@ -192,6 +195,7 @@ export function readDeveloperReport(answer: string | null, seams: ContractSeam[]
   return Object.values(report).every((block) => block === null) ? null : report;
 }
 
+// @model-text: reads the developer's report.
 const NOTHING = /^(none|nessuno|nessuna|niente|n\/a|-)\.?$/i;
 
 /** The `- <item>` lines under the last occurrence of a heading, up to the first other line; null without the heading. */

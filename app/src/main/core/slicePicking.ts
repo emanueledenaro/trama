@@ -6,6 +6,7 @@ import type { PresenceView } from "@shared/presence";
 import type { RepositoryModule } from "@shared/repository";
 import { moduleOverlaps, occupantName } from "./coordinatorPresence";
 import { agreedSeams, contractSeams } from "./implementation";
+import { t } from "./personLanguage";
 import { delivered, sliceViews } from "./slices";
 import { activeAssignments, activeDevelopers, assign, authorize, developers, isActive, isTeamConfirmed, TeamError } from "./team";
 import { workState } from "./workPhase";
@@ -121,31 +122,31 @@ export function pickSlices(document: ProjectDocument, input: PickInput): PickOut
       const moduleIds = sliceModules(ticket, plan, input.modules, earlier);
       const waiting = (reason: string) => outcomes.push({ kind: "waiting", planId: plan.id, sliceId: ticket.id, reason });
       if (!moduleIds.length) {
-        waiting("La fetta non indica moduli: la assegna il Coordinatore.");
+        waiting(t("main.slicePicking.noModules"));
         continue;
       }
       if (authorize(document.mandate, "executeInWorktree", moduleIds, plan.kind) !== "authorized") {
-        waiting("Il mandato non copre il lavoro di questa fetta.");
+        waiting(t("main.slicePicking.notCovered"));
         continue;
       }
       const busy = activeAssignments(document).filter((a) => a.moduleIds.some((id) => moduleIds.includes(id)));
       if (busy.length) {
-        waiting(`Aspetta che finisca ${busy.map((a) => a.id).join(", ")}, che lavora sugli stessi moduli.`);
+        waiting(t("main.slicePicking.busy", { ids: busy.map((a) => a.id).join(", ") }));
         continue;
       }
       const occupied = moduleOverlaps(input.presence, input.modules, moduleIds);
       if (occupied.length) {
-        waiting(`Qualcuno tocca ora questi moduli: ${occupied.map((o) => occupantName(o.occupant)).join(", ")}.`);
+        waiting(t("main.slicePicking.occupied", { names: occupied.map((o) => occupantName(o.occupant)).join(", ") }));
         continue;
       }
       const developer = free.find((s) => coversModules(s, moduleIds));
       if (!developer) {
-        waiting("Nessuno sviluppatore libero copre i moduli di questa fetta.");
+        waiting(t("main.slicePicking.noDeveloper"));
         continue;
       }
       const chosen = providerFor(developer, earlier, input);
       if (!chosen) {
-        waiting("Nessun provider collegato può lavorare ora.");
+        waiting(t("main.slicePicking.noProvider"));
         continue;
       }
       const previous = earlier.at(-1);
@@ -177,10 +178,11 @@ export function pickSlices(document: ProjectDocument, input: PickInput): PickOut
             decisionIds,
             model: chosen.model,
             provider: chosen.provider,
-            modelReason: "Presa autonoma della fetta: lo stesso provider e modello del lavoro precedente.",
+            modelReason: t("main.slicePicking.modelReason"),
             goalId: requestGoalId(document, plan.requestId),
             tools: previous?.tools.includes("edits") ? previous.tools : ["edits"],
             requiredChecks: previous?.requiredChecks.length ? previous.requiredChecks : DEFAULT_SLICE_CHECKS,
+            // @model-text: the developer's instructions.
             instructions: [
               `Hai preso in autonomia la fetta ${ticket.id}: è la prossima pronta della suddivisione ed è nei tuoi moduli.`,
               `Cosa consegna: ${ticket.whatToBuild}`,

@@ -83,8 +83,10 @@ export function progressKey(issueNumber: number, criteria: CriterionReport[], su
 
 export const progressMarker = (key: string) => `<!-- trama-progress:${key} -->`;
 
+// @model-text: a GitHub comment on the issue, project content that follows the project's rules, as progressComment below.
 const OUTCOME_LABEL: Record<CriterionOutcome, string> = { met: "soddisfatto", partial: "parziale", notMet: "non soddisfatto" };
 
+// @model-text: a GitHub comment on the issue, project content that follows the project's rules.
 export function progressComment(key: string, items: ChecklistItem[], criteria: CriterionReport[], summary: string, openParts: string[]): string {
   const lines = [progressMarker(key), "", "**Avanzamento registrato da Trama**", "", summary.trim(), ""];
   for (const criterion of criteria) {
