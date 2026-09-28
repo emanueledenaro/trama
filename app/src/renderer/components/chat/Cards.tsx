@@ -953,13 +953,14 @@ export function EvidenceRow({ check, evidence }: { check: string; evidence: Cand
   const failed = evidence?.result === "fail";
   return (
     <div data-testid="candidate-evidence" data-check={check} data-result={evidence?.result ?? "missing"}>
-      <div className="flex items-center gap-1.5 text-ui-sm">
+      {/* Wraps in a narrow column, such as the progress of the full-screen focus mode (F03). */}
+      <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-ui-sm">
         {evidence?.result === "pass" ? (
-          <IconCircleCheck className="size-3.5 text-success" />
+          <IconCircleCheck className="size-3.5 shrink-0 text-success" />
         ) : failed ? (
-          <IconCircleX className="size-3.5 text-destructive" />
+          <IconCircleX className="size-3.5 shrink-0 text-destructive" />
         ) : (
-          <span className="inline-block size-3.5 rounded-full border border-dashed border-muted-foreground/50" />
+          <span className="inline-block size-3.5 shrink-0 rounded-full border border-dashed border-muted-foreground/50" />
         )}
         <span className="font-mono text-[11.5px]">{check}</span>
         <span className="text-muted-foreground">{evidence ? (evidence.result === "pass" ? "superata" : "non superata") : "non eseguita"}</span>
