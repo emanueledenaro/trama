@@ -14,6 +14,30 @@ export const it = {
   // Coordinator replies
   "toolError.placeholder": "uno strumento di Trama ha rifiutato la richiesta (il dettaglio è in Attività)",
 
+  // Conflicts in the chat (issue #40)
+  "conflict.origin": "Da dove viene",
+  "conflict.project": "Progetto {name}",
+  "conflict.assignments": "incarichi {works}",
+  "conflict.assignments.one": "incarico {works}",
+  "conflict.base": "base",
+  "conflict.copies": "copie",
+  "conflict.copies.one": "copia",
+  "conflict.remote": "GitHub",
+  "conflict.and": "e",
+  "conflict.githubReadAt": "GitHub letto alle {time}",
+  "conflict.probedAt": "prova di fusione alle {time}",
+  "conflict.analyzedAt": "analisi AI alle {time}",
+  "conflict.analyzedAtEarlier": "analisi AI alle {time} su copie precedenti",
+  "conflict.scenarioAt": "scenario alle {time}",
+  "conflict.reading": "Lettura dell'AI",
+  "conflict.reading.hypothesis": "Interpretazione, non ancora una prova: {explanation}",
+  "conflict.reading.semantic": "Interpretazione confermata dallo scenario: {explanation}",
+  "conflict.scenario": "Scenario sul candidato combinato",
+  "conflict.scenario.pass": "passa",
+  "conflict.scenario.fail": "fallisce",
+  "conflict.scenario.notRun": "non è partito",
+  "conflict.scenario.pending": "in attesa: Trama unisce i due candidati in una copia separata e lo prova lì",
+
   // Language
   "language.label": "Lingua",
   "language.description":

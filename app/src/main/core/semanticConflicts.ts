@@ -72,7 +72,8 @@ export function recordSemanticHypothesis(
   if (known?.semantic) {
     // An equivalent report does not repeat the warning; a new reading replaces the old one, the scenario stays.
     if (known.semantic.explanation !== explanation) known.semantic = { ...known.semantic, explanation, analyzedAt: now.toISOString() };
-    if (known.semantic.check !== input.check) {
+    // A scenario that could not start is tried again on a new report; one that ran stays until the code changes.
+    if (known.semantic.check !== input.check || known.semantic.scenario?.result === "notRun") {
       known.semantic = { ...known.semantic, check: input.check, scenario: null };
       known.classification = "hypothesis";
       known.detail = PENDING;

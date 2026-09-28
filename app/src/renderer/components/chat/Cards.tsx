@@ -67,6 +67,7 @@ import { InterfaceShotsField } from "./InterfaceShots";
 import { latestGate } from "@shared/gate";
 import { Sep } from "@/components/ui/sep";
 import { formatTime } from "@/lib/format";
+import { useT, withNodes } from "@/lib/i18n";
 import { AgentName } from "@/components/AgentIdentity";
 import { OverlapRow } from "@/components/OverlapNotice";
 import { compareSides, type LineRange, linesLabel, type OverlapItem } from "@shared/overlap";
@@ -1696,8 +1697,6 @@ const CONFLICT_LABEL = {
   semantic: { label: "Incompatibili", tone: "destructive" as const },
 };
 
-const SCENARIO_RESULT = { pass: "passa", fail: "fallisce", notRun: "non è partito" } as const;
-
 /** Who did each side of a comparison, as the person reads it: "Ada, Sconto nel carrello". */
 function candidateWork(document: ProjectDocument, candidateId: string | undefined): string | null {
   const candidate = document.candidates.find((c) => c.id === candidateId);
@@ -1712,6 +1711,7 @@ function candidateWork(document: ProjectDocument, candidateId: string | undefine
  * source with its own time, so the reading on GitHub, the merge probe and the AI's analysis are never one moment.
  */
 function ConflictProvenance({ assessment, projectName, document }: { assessment: ConflictAssessment; projectName: string; document: ProjectDocument }) {
+  const t = useT();
   const candidate = document.candidates.find((c) => c.id === assessment.candidateId);
   const works = [candidateWork(document, assessment.candidateId), assessment.otherCandidateId ? candidateWork(document, assessment.otherCandidateId) : null].filter(
     (w): w is string => Boolean(w),
@@ -1719,32 +1719,33 @@ function ConflictProvenance({ assessment, projectName, document }: { assessment:
   const copies = [assessment.snapshotId, assessment.otherSnapshotId].filter((id): id is string => Boolean(id)).map((id) => id.slice(0, 7));
   const semantic = assessment.semantic;
   const times = [
-    assessment.remoteReadAt ? `GitHub letto alle ${formatTime(assessment.remoteReadAt)}` : null,
+    assessment.remoteReadAt ? t("conflict.githubReadAt", { time: formatTime(assessment.remoteReadAt) }) : null,
     semantic
-      ? `analisi AI alle ${formatTime(semantic.analyzedAt)}${semantic.carriedFrom ? " su copie precedenti" : ""}`
-      : `prova di fusione alle ${formatTime(assessment.checkedAt)}`,
-    semantic?.scenario ? `scenario alle ${formatTime(semantic.scenario.ranAt)}` : null,
-  ].filter((t): t is string => Boolean(t));
+      ? t(semantic.carriedFrom ? "conflict.analyzedAtEarlier" : "conflict.analyzedAt", { time: formatTime(semantic.analyzedAt) })
+      : t("conflict.probedAt", { time: formatTime(assessment.checkedAt) }),
+    semantic?.scenario ? t("conflict.scenarioAt", { time: formatTime(semantic.scenario.ranAt) }) : null,
+  ].filter((time): time is string => Boolean(time));
+  const mono = (text: string) => <span className="font-mono text-[11px]">{text}</span>;
   return (
-    <Field label="Da dove viene">
+    <Field label={t("conflict.origin")}>
       <div className="space-y-0.5 text-ui-sm text-muted-foreground" data-testid="conflict-provenance">
         <p>
-          Progetto {projectName}
+          {t("conflict.project", { name: projectName })}
           {works.length ? (
             <>
               <Sep />
-              {works.length === 1 ? "incarico" : "incarichi"} {works.join("; ")}
+              {t("conflict.assignments", { count: works.length, works: works.join("; ") })}
             </>
           ) : null}
         </p>
         <p>
-          base <span className="font-mono text-[11px]">{(candidate?.baseSHA ?? assessment.remoteSHA).slice(0, 7)}</span>
+          {t("conflict.base")} {mono((candidate?.baseSHA ?? assessment.remoteSHA).slice(0, 7))}
           <Sep />
-          {copies.length === 1 ? "copia" : "copie"} <span className="font-mono text-[11px]">{copies.join(" e ")}</span>
+          {t("conflict.copies", { count: copies.length })} {mono(copies.join(` ${t("conflict.and")} `))}
           {assessment.otherCandidateId ? null : (
             <>
               <Sep />
-              GitHub <span className="font-mono text-[11px]">{assessment.remoteSHA.slice(0, 7)}</span>
+              {t("conflict.remote")} {mono(assessment.remoteSHA.slice(0, 7))}
             </>
           )}
         </p>
@@ -1763,22 +1764,20 @@ function ConflictProvenance({ assessment, projectName, document }: { assessment:
 
 /** The AI's reading of a semantic risk and the scenario that tests it on the combined candidate (issue #40). */
 function SemanticFields({ assessment }: { assessment: ConflictAssessment }) {
+  const t = useT();
   const semantic = assessment.semantic!;
   const scenario = semantic.scenario;
+  const reading = t(assessment.classification === "semantic" ? "conflict.reading.semantic" : "conflict.reading.hypothesis");
   return (
     <>
-      <Field label="Lettura dell'AI">
+      <Field label={t("conflict.reading")}>
         <p data-testid="semantic-reading">
-          <span className="text-muted-foreground">
-            {assessment.classification === "semantic" ? "Interpretazione confermata dallo scenario: " : "Interpretazione, non ancora una prova: "}
-          </span>
-          {semantic.explanation}
+          <span className="text-muted-foreground">{withNodes(reading, { explanation: <span className="text-foreground/90">{semantic.explanation}</span> })}</span>
         </p>
       </Field>
-      <Field label="Scenario sul candidato combinato">
+      <Field label={t("conflict.scenario")}>
         <p className="text-ui-sm" data-testid="semantic-scenario" data-result={scenario?.result ?? "pending"}>
-          <span className="font-mono text-[11.5px]">{semantic.check}</span>{" "}
-          {scenario ? SCENARIO_RESULT[scenario.result] : "in attesa: Trama unisce i due candidati in una copia separata e lo prova lì"}
+          <span className="font-mono text-[11.5px]">{semantic.check}</span> {t(scenario ? `conflict.scenario.${scenario.result}` : "conflict.scenario.pending")}
         </p>
         {scenario?.result === "fail" && scenario.output ? (
           <pre className="mt-1 max-h-32 overflow-auto rounded-md bg-[var(--color-background-button-secondary)] p-2 font-mono text-[11px] whitespace-pre-wrap text-muted-foreground">

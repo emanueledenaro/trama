@@ -171,6 +171,9 @@ describe("semantic hypotheses between the team's candidates (issue #40)", () => 
     settleScenario(document, assessment, { result: "notRun", command: "", output: "La sandbox non è disponibile." });
     expect(assessment.classification).toBe("hypothesis");
     expect(assessment.detail).toContain("La sandbox non è disponibile.");
+    // A scenario that did not start is tried again when the Coordinator reports the risk again.
+    recordSemanticHypothesis(document, { candidate: newer, other: older, explanation, check: "node_test" });
+    expect(pendingScenarios(document).map((a) => a.id)).toEqual([assessment.id]);
 
     // A failure where one side never passed alone may come from that side: it proves nothing.
     newer.evidence.node_test = { ...newer.evidence.node_test!, result: "fail" };

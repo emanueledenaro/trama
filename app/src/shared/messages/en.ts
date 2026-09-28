@@ -15,6 +15,30 @@ export const en: Record<keyof typeof it, string> = {
   // Coordinator replies
   "toolError.placeholder": "a Trama tool refused the request (the details are in Activity)",
 
+  // Conflicts in the chat (issue #40)
+  "conflict.origin": "Where it comes from",
+  "conflict.project": "Project {name}",
+  "conflict.assignments": "assignments {works}",
+  "conflict.assignments.one": "assignment {works}",
+  "conflict.base": "base",
+  "conflict.copies": "copies",
+  "conflict.copies.one": "copy",
+  "conflict.remote": "GitHub",
+  "conflict.and": "and",
+  "conflict.githubReadAt": "GitHub read at {time}",
+  "conflict.probedAt": "merge probe at {time}",
+  "conflict.analyzedAt": "AI analysis at {time}",
+  "conflict.analyzedAtEarlier": "AI analysis at {time} on earlier copies",
+  "conflict.scenarioAt": "scenario at {time}",
+  "conflict.reading": "The AI's reading",
+  "conflict.reading.hypothesis": "An interpretation, not evidence yet: {explanation}",
+  "conflict.reading.semantic": "An interpretation the scenario confirmed: {explanation}",
+  "conflict.scenario": "Scenario on the combined candidate",
+  "conflict.scenario.pass": "passes",
+  "conflict.scenario.fail": "fails",
+  "conflict.scenario.notRun": "did not start",
+  "conflict.scenario.pending": "waiting: Trama merges the two candidates in a separate copy and tries it there",
+
   // Language
   "language.label": "Language",
   "language.description":
