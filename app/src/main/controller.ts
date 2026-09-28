@@ -393,7 +393,7 @@ import { cloneRepository, hasAiHero, readGitHubCliStatus, simulateColleagueChang
 import { type AgentWork, type PresenceContext, PresenceService } from "./core/presence";
 import { overlapModules, probeColleagues, projectOverlaps } from "./core/overlap";
 import { compareSides, coordinatorNotice, type PresenceProbe } from "@shared/overlap";
-import { candidateSuperseded, divergenceSummary } from "@shared/conflictScope";
+import { candidateSuperseded, divergenceHolds, divergenceSummary } from "@shared/conflictScope";
 import { type AgentOverlap, agentOverlapKey, agentOverlaps, occupantName, presenceSection } from "./core/coordinatorPresence";
 import { emptyConsent, type PresenceProposal, type PresenceTask, type PresenceView, shouldProposeConsent, shouldReproposeConsent } from "@shared/presence";
 import { agentTag } from "@shared/identity";
@@ -1257,6 +1257,7 @@ export class TramaController {
         this.parkedProjects.delete(id);
         parked.snapshot = snapshot;
         parked.aiHeroPrepared = hasAiHero(root);
+        if (parked.document.branchDivergence && !divergenceHolds(parked.document.branchDivergence, snapshot.headSHA)) parked.document.branchDivergence = null;
         this.state.project = parked;
         this.state.loadingProject = null;
         this.lastProjectId = id;
@@ -1300,6 +1301,8 @@ export class TramaController {
       if (overtaken()) return;
       document ??= emptyDocument(id);
       if (idea && !document.events.length) document.createdFromIdea = idea;
+      // A branch realigned while Trama was closed leaves no notice behind (issue #390).
+      if (document.branchDivergence && !divergenceHolds(document.branchDivergence, snapshot.headSHA)) document.branchDivergence = null;
       const orphanNote = ASSIGNMENT_CRASH_NOTE;
       for (const assignmentId of stopOrphanedAssignments(document, orphanNote)) {
         appendEvent(document, "trama", { type: "activity", title: "Arresto confermato", detail: orphanNote, tone: "info" }, null, new Date(), {
@@ -1443,7 +1446,21 @@ export class TramaController {
     if (generation !== this.scanGeneration || this.state.project !== project) return;
     project.snapshot = snapshot;
     this.publish();
+    const stale = this.dropStaleDivergence(project);
     if (refreshGitHub && !project.isDemo) void this.refreshGitHub();
+    else if (stale) void this.assessRemoteConflicts();
+  }
+
+  /**
+   * Drops the divergence notice once the project's branch moved past the head it compared (issue #390), as after a
+   * realignment: the next GitHub reading compares the branches again and brings it back only if they still diverge.
+   */
+  private dropStaleDivergence(project: ActiveProjectState): boolean {
+    const divergence = project.document.branchDivergence;
+    if (!divergence || divergenceHolds(divergence, project.snapshot.headSHA)) return false;
+    project.document.branchDivergence = null;
+    this.changedIn(project);
+    return true;
   }
 
   /** Watches the project folder and rescans a second after the last change, outside .git and dependencies. */
@@ -3927,7 +3944,8 @@ export class TramaController {
       const priority = order.indexOf(recent.id) + 1;
       const project = live.get(recent.id);
       if (project) {
-        const reports = project.document.candidates.map((c) => candidateReport(project.document, c, project.snapshot.headSHA));
+        // The same verdicts and merge routes Aspetta te reads, so the overview counts what the project shows (issue #390).
+        const reports = project.document.candidates.map((c) => ({ ...candidateReport(project.document, c, project.snapshot.headSHA), ...this.mergeView(project, c) }));
         entries.push(
           summarizeProject(recent, project.document, {
             source: "live",
@@ -3949,12 +3967,13 @@ export class TramaController {
         entries.push(unreadableProject(recent, null, priority));
       } else {
         const document = loaded.document;
+        const repository = await this.savedRepository(recent);
         entries.push(
           summarizeProject(recent, document, {
             source: "saved",
             selected: false,
             runningAssignments: 0,
-            candidateReports: document.candidates.map((c) => candidateReport(document, c, null)),
+            candidateReports: document.candidates.map((c) => ({ ...candidateReport(document, c, null), mergeRoute: mergeRoute(document, c, repository).route })),
             colleagues: activeColleagues(this.lastPresence.get(recent.id)),
             priority,
             ci: recent.isDemo ? null : ciSummary(await this.savedGitHubSnapshot(recent)),
@@ -3968,15 +3987,20 @@ export class TramaController {
   /** The GitHub repository of each recent project's folder, read once: the overview refreshes often. */
   private readonly repositoryOfPath = new Map<string, Promise<string | null>>();
 
-  /** The last GitHub reading Trama saved for a project's repository, without a new connection (issue #39). */
-  private async savedGitHubSnapshot(recent: RecentProject): Promise<GitHubSnapshot | null> {
+  /** The GitHub repository of a recent project's folder, read once; null for the example project. */
+  private async savedRepository(recent: RecentProject): Promise<string | null> {
     if (recent.isDemo) return null;
     let repository = this.repositoryOfPath.get(recent.path);
     if (!repository) {
       repository = readGitHubRepository(recent.path);
       this.repositoryOfPath.set(recent.path, repository);
     }
-    const name = await repository;
+    return repository;
+  }
+
+  /** The last GitHub reading Trama saved for a project's repository, without a new connection (issue #39). */
+  private async savedGitHubSnapshot(recent: RecentProject): Promise<GitHubSnapshot | null> {
+    const name = await this.savedRepository(recent);
     return name ? ((await this.monitorStore.load(name).catch(() => null))?.snapshot ?? null) : null;
   }
 
