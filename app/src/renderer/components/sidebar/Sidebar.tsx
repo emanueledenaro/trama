@@ -40,6 +40,7 @@ function SidebarRow({
   active,
   onClick,
   badge,
+  count,
   trailing,
   className,
 }: {
@@ -47,7 +48,10 @@ function SidebarRow({
   label: string;
   active?: boolean;
   onClick: () => void;
+  /** Things that wait for the person: a tinted chip. */
   badge?: number;
+  /** A plain quantity, nothing to do (open issues, work going on): quiet text (issue #272). */
+  count?: number;
   trailing?: React.ReactNode;
   className?: string;
 }) {
@@ -56,8 +60,15 @@ function SidebarRow({
       <LeadingIcon>{icon}</LeadingIcon>
       <span className="min-w-0 flex-1 truncate">{label}</span>
       {badge ? (
-        <span className="ml-auto inline-flex h-4 min-w-4 items-center justify-center rounded-md bg-muted px-1 text-ui-xs font-medium text-muted-foreground">
+        <span
+          className="ml-auto inline-flex h-4 min-w-4 items-center justify-center rounded-md bg-info/12 px-1 text-ui-xs font-medium text-info-foreground dark:bg-info/20"
+          data-testid="sidebar-todo"
+        >
           {badge}
+        </span>
+      ) : count ? (
+        <span className="ml-auto px-1 text-ui-xs tabular-nums text-muted-foreground/70" data-testid="sidebar-count">
+          {count}
         </span>
       ) : null}
       {trailing}

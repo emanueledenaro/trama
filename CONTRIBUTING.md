@@ -45,7 +45,7 @@ The fake Codex server in `app/test-fixtures/` replies with fixed data. Its outpu
 The scripts at the repository root have their own tests, with no dependencies beyond Node:
 
 ```bash
-node --test scripts/licenses/lib.test.mjs scripts/release/lib.test.mjs
+node --test scripts/licenses/lib.test.mjs scripts/release/lib.test.mjs scripts/release/cli.test.mjs
 ```
 
 ## Commits
@@ -93,10 +93,14 @@ Many changes to Trama are made by AI coding agents, and Trama itself runs the sa
 Versions follow [Semantic Versioning](https://semver.org/) and are computed from the Conventional Commits on `main`. Release tags are named `v<major>.<minor>.<patch>` and are **immutable**: a tag is never moved or deleted, and a wrong release gets a new version number.
 
 1. **Prepare.** A maintainer runs the [Preparazione del rilascio](.github/workflows/release-prepare.yml) workflow from the Actions tab. With no input, it reads the first-parent history of `main` since the last `v*` tag, where each merge commit carries a pull request title, and picks the version: a breaking change bumps the major version (the minor version before 1.0.0), `feat` bumps the minor version, `fix` and `perf` bump the patch version. The first release needs an explicit version.
-2. **Review.** The workflow moves the `[Unreleased]` notes of [CHANGELOG.md](CHANGELOG.md), merged with the entries generated from `feat`, `fix`, `perf`, `refactor` and `revert` commits, into a new section, sets the version in `app/package.json`, and opens the pull request `chore(release): vX.Y.Z` from the branch `release/vX.Y.Z`. The changelog can be edited in that pull request.
+2. **Review.** The workflow moves the `[Unreleased]` notes of [CHANGELOG.md](CHANGELOG.md), merged with the entries generated from `feat`, `fix`, `perf`, `refactor` and `revert` commits, into a new section, sets the version in `app/package.json`, and opens the pull request `chore(release): vX.Y.Z` from the branch `release/vX.Y.Z`. The generated entries cover every pull request merged since the last tag (the whole history for the first release) that the changelog does not cite yet. The changelog can be edited in that pull request. When the repository does not let GitHub Actions open pull requests and no `RELEASE_TOKEN` is set, the branch stays pushed and the run summary gives the `gh pr create` command to open it by hand.
 3. **Publish.** When the release pull request is merged, [Pubblicazione del rilascio](.github/workflows/release-publish.yml) sees a version with a changelog section and no tag. It creates a draft GitHub release with the changelog section as notes, builds the macOS, Windows and Linux packages with [release.yml](.github/workflows/release.yml), attaches them and publishes the release, which creates the tag on the merge commit.
 
-The scripts behind these steps are in [scripts/release/](scripts/release/). Packages are signed and notarized only when the signing secrets are set.
+Every release carries the macOS packages (`.dmg` and `.zip`, Apple Silicon and Intel), the Windows installer (`.exe`), the Linux AppImage and a `SHA256SUMS.txt` file. Test versions are published as pre-releases named `X.Y.Z-beta.N`.
+
+To try the packages of a branch or a commit without a release, run the [Rilascio](.github/workflows/release.yml) workflow by hand, for example `gh workflow run release.yml --ref <branch> -f platforms=windows`: the packages stay in the run's artifacts.
+
+The scripts behind these steps are in [scripts/release/](scripts/release/). Packages are signed and notarized only when the signing secrets are set; the release notes say so when they are not. The full policy, in Italian, is in [docs/agents/versioning.md](docs/agents/versioning.md).
 
 ## Questions
 
