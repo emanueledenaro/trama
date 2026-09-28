@@ -40,8 +40,10 @@ export interface MoveOption {
 export interface WorkState {
   /** Null when the request has no work: a greeting, a question for information. */
   phase: WorkPhase | null;
-  /** Why the work cannot go on, in the person's words; set only in the blocked phase. */
+  /** Why the work cannot go on, with the records' ids for the Coordinator; set only in the blocked phase. */
   blocker: string | null;
+  /** The same reason for the person, without ids, branches or file lists (issue #241); set only in the blocked phase. */
+  why?: string | null;
   moves: MoveOption[];
   /** The plan of the work with an approved breakdown and where each slice stands (M05); absent otherwise. */
   slices?: { plan: WorkPlan; views: SliceView[]; developersAtWork: number; limit: number };
@@ -167,6 +169,33 @@ const WAITING_BLOCKERS = ["EVIDENCE_MISSING", "EVIDENCE_STALE", "GATE_RUNNING", 
 
 const hardBlockers = (blockers: CandidateBlocker[]) => blockers.filter((b) => !WAITING_BLOCKERS.includes(b.code));
 
+/** Whose work an assignment is, in the person's words and without the article: "lavoro di Luca su S2". */
+function workOf(document: ProjectDocument, assignment: SpecialistAssignment): string {
+  const name = document.team.specialists.find((s) => s.id === assignment.specialistId)?.name;
+  const who = name ? `lavoro di ${name}` : "lavoro";
+  return assignment.slice ? `${who} su ${assignment.slice.sliceId}` : who;
+}
+
+/** A candidate's blocker for the person: what is wrong with whose work, without ids, branches or files (issue #241). */
+function candidateBlockerWhy(work: string, blocker: CandidateBlocker): string {
+  switch (blocker.code) {
+    case "CHECK_FAILED":
+      return `Una verifica del ${work} non è passata.`;
+    case "DECISION_CHANGED":
+      return `Una decisione del Patto è cambiata dopo il ${work}: va rivisto.`;
+    case "UNRESOLVED_CHOICE":
+      return `Il ${work} lascia aperta una scelta.`;
+    case "EXTERNAL_EFFECT_UNSUPPORTED":
+      return `Il ${work} ha un effetto esterno che Trama non sa verificare.`;
+    case "REMOTE_CONFLICT":
+      return `Il ${work} è in conflitto con il branch principale su GitHub: vanno riallineati.`;
+    case "WORKTREE_CONFLICT":
+      return `Il ${work} tocca gli stessi file di un altro lavoro in corso.`;
+    default:
+      return `Il ${work} non si può ancora unire.`;
+  }
+}
+
 function candidateBlockerText(candidate: Candidate, blocker: CandidateBlocker): string {
   switch (blocker.code) {
     case "CHECK_FAILED":
@@ -229,13 +258,14 @@ export function workState(document: ProjectDocument, requestId: string | null): 
     if (may("plan")) add(coordinator("preparePlan"));
   };
   const questionList = questionViews(document, assignments);
-  const finish = (phase: WorkPhase | null, blocker: string | null = null, verification?: VerificationTargets): WorkState => {
+  const finish = (phase: WorkPhase | null, blocker: string | null = null, verification?: VerificationTargets, why: string | null = null): WorkState => {
     if (phase === null) return { phase, blocker, moves: [] };
     if (open.length) moves.unshift(answerQuestions(open));
     if (pendingMandate) add(person("grantMandate", PERSON_MOVE_LABELS.grantMandate, pendingMandate.id));
     return {
       phase,
       blocker,
+      ...(blocker ? { why: why ?? blocker } : {}),
       moves,
       ...(slices ? { slices } : {}),
       ...(verification ? { verification } : {}),
@@ -247,11 +277,11 @@ export function workState(document: ProjectDocument, requestId: string | null): 
   if (assignments.length) {
     const state = assignedWork(document, assignments, { assignWork, add, otherSliceReady: Boolean(slices) && assignable });
     if (state) {
-      if (!slices || state.phase === "blocked") return finish(state.phase, state.blocker, state.verification);
+      if (!slices || state.phase === "blocked") return finish(state.phase, state.blocker, state.verification, state.why);
       // The next unblocked slices go on beside the work already assigned (M05); the work is merged only with every slice done.
       assignWork();
       const unfinished = views.some((v) => v.state !== "done");
-      return finish(state.phase === "merged" && unfinished ? "execution" : state.phase, state.blocker, state.verification);
+      return finish(state.phase === "merged" && unfinished ? "execution" : state.phase, state.blocker, state.verification, state.why);
     }
   }
   if (plan) {
@@ -264,10 +294,10 @@ export function workState(document: ProjectDocument, requestId: string | null): 
         return finish("spec");
       case "failed":
         preparePlan();
-        return finish("blocked", `Il piano ${plan.id} non è riuscito${plan.failure ? `: ${readableFailure(plan.failure)}` : "."}`);
+        return finish("blocked", `Il piano ${plan.id} non è riuscito${plan.failure ? `: ${readableFailure(plan.failure)}` : "."}`, undefined, "Il piano non è riuscito: va rifatto.");
       case "stale":
         preparePlan();
-        return finish("blocked", `Il repository è cambiato mentre si scriveva il piano ${plan.id}: va rifatto.`);
+        return finish("blocked", `Il repository è cambiato mentre si scriveva il piano ${plan.id}: va rifatto.`, undefined, "Il repository è cambiato mentre si scriveva il piano: va rifatto.");
       default:
         if (open.length) return finish("spec");
         return readyPlan(plan, { assignWork, add, finish });
@@ -288,7 +318,11 @@ export function workState(document: ProjectDocument, requestId: string | null): 
 /** The phase of a ready plan: its spec is split into slices with to-tickets (M05), then the unblocked slices are assigned. */
 function readyPlan(
   plan: WorkPlan,
-  moves: { assignWork(): void; add(option: MoveOption): void; finish(phase: WorkPhase, blocker?: string | null): WorkState },
+  moves: {
+    assignWork(): void;
+    add(option: MoveOption): void;
+    finish(phase: WorkPhase, blocker?: string | null, verification?: VerificationTargets, why?: string | null): WorkState;
+  },
 ): WorkState {
   const slicing = plan.slicing;
   switch (slicing?.status) {
@@ -300,7 +334,12 @@ function readyPlan(
       return moves.finish("slices");
     case "failed":
       moves.add(person("reviewPlan", PERSON_MOVE_LABELS.reviewPlan, plan.id));
-      return moves.finish("blocked", `La divisione in fette del piano ${plan.id} non è riuscita${slicing.failure ? `: ${readableFailure(slicing.failure)}` : "."}`);
+      return moves.finish(
+        "blocked",
+        `La divisione in fette del piano ${plan.id} non è riuscita${slicing.failure ? `: ${readableFailure(slicing.failure)}` : "."}`,
+        undefined,
+        "La divisione del piano in fette non è riuscita: va rivista.",
+      );
     case "approved":
       moves.assignWork();
       return moves.finish("slices");
@@ -331,7 +370,7 @@ function assignedWork(
   document: ProjectDocument,
   assignments: SpecialistAssignment[],
   moves: { assignWork(): void; add(option: MoveOption): void; otherSliceReady: boolean },
-): { phase: WorkPhase; blocker: string | null; verification?: VerificationTargets } | null {
+): { phase: WorkPhase; blocker: string | null; why?: string; verification?: VerificationTargets } | null {
   // A developer's question pauses its work (W06): the Coordinator answers it before its other moves.
   const paused = assignments.filter((a) => a.status === "paused");
   for (const assignment of paused) {
@@ -340,12 +379,18 @@ function assignedWork(
   const items = assignments.filter((a) => a.status !== "paused").map((assignment) => ({ assignment, candidate: latestCandidate(document, assignment.id) }));
   for (const { assignment, candidate } of items) {
     if (isActive(assignment) && assignment.waitingForProvider) {
-      return { phase: "blocked", blocker: `L'incarico ${assignment.id} aspetta che ${providerName(assignment.waitingForProvider.provider)} torni disponibile.` };
+      const provider = providerName(assignment.waitingForProvider.provider);
+      return {
+        phase: "blocked",
+        blocker: `L'incarico ${assignment.id} aspetta che ${provider} torni disponibile.`,
+        why: `Il ${workOf(document, assignment)} aspetta che ${provider} torni disponibile.`,
+      };
     }
     if (!candidate && (assignment.status === "failed" || assignment.status === "stopped")) {
       moves.assignWork();
       const reason = assignment.status === "failed" ? `non è riuscito${assignment.failure ? `: ${assignment.failure}` : "."}` : "è stato fermato.";
-      return { phase: "blocked", blocker: `L'incarico ${assignment.id} ${reason}` };
+      const outcome = assignment.status === "failed" ? "non è riuscito" : "è stato fermato";
+      return { phase: "blocked", blocker: `L'incarico ${assignment.id} ${reason}`, why: `Il ${workOf(document, assignment)} ${outcome}.` };
     }
     if (!candidate) continue;
     // Work that resumed after its candidate, as with the gate's findings (W10), is at work: its old candidate waits.
@@ -353,13 +398,17 @@ function assignedWork(
     const blocker = hardBlockers(inspectCandidate(document, candidate, null))[0];
     if (blocker) {
       moves.assignWork();
-      return { phase: "blocked", blocker: candidateBlockerText(candidate, blocker) };
+      return { phase: "blocked", blocker: candidateBlockerText(candidate, blocker), why: candidateBlockerWhy(workOf(document, assignment), blocker) };
     }
     // A gate that failed asks for the review again, not for new work.
     const gateFailed = inspectCandidate(document, candidate, null).some((b) => b.code === "GATE_FAILED");
     if (candidate.technicalReview?.verdict === "changesRequested" && !gateFailed) {
       moves.assignWork();
-      return { phase: "blocked", blocker: `La revisione tecnica del candidato ${candidate.id} chiede modifiche.` };
+      return {
+        phase: "blocked",
+        blocker: `La revisione tecnica del candidato ${candidate.id} chiede modifiche.`,
+        why: `La revisione tecnica chiede modifiche al ${workOf(document, assignment)}.`,
+      };
     }
   }
   if (items.some((i) => isActive(i.assignment))) return { phase: "execution", blocker: null };
@@ -372,7 +421,11 @@ function assignedWork(
       const held = paused[0]!;
       const card = pendingQuestion(held)?.answer;
       const what = held.slice ? `La fetta ${held.slice.sliceId}` : `L'incarico ${held.id}`;
-      return { phase: "blocked", blocker: `${what} è in pausa: lo sviluppatore aspetta la tua risposta alla domanda ${card?.kind === "person" ? card.decisionRequestId : ""}.` };
+      return {
+        phase: "blocked",
+        blocker: `${what} è in pausa: lo sviluppatore aspetta la tua risposta alla domanda ${card?.kind === "person" ? card.decisionRequestId : ""}.`,
+        why: `Il ${workOf(document, held)} è in pausa: aspetta la tua risposta a una domanda.`,
+      };
     }
   }
   // Only work in a worktree becomes a candidate; read-only work that ended leaves the phase to the plan.

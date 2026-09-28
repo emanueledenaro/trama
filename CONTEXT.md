@@ -64,7 +64,7 @@ Pausa: il comando della persona che ferma il lavoro continuo di un progetto. In 
 
 Task in focus: il lavoro su cui il progetto si concentra ora, mostrato in cima alla chat con la sua fase e con quello che lo blocca o che aspetta dalla persona. Un task è il lavoro di un obiettivo aperto o il lavoro del dialogo del progetto; un obiettivo solo proposto dal Coordinatore non è un task finché la persona non lo conferma. Un solo task è in focus per progetto, gli altri stanno nella coda, prima quelli già avviati. Trama ricava dai dati quali task sono aperti e in che fase sono; la persona sceglie il task in focus e mette in pausa gli altri. Quando il task in focus si chiude (lavoro unito, obiettivo raggiunto, abbandonato o archiviato) o va in pausa, il focus passa al task successivo della coda. A ogni turno il Coordinatore legge il task in focus e la coda, e riporta sul task in focus una conversazione che se ne allontana.
 
-Mossa automatica: un turno del Coordinatore avviato da Trama con il lavoro continuo, dopo un evento o in un giro. Si registra in Attività con il nome della mossa, non in chat e mai come un messaggio della persona. Finché il turno lavora, la riga di stato lo mostra con il pulsante Ferma. Una mossa fermata resta interrotta e non ne parte un'altra.
+Mossa automatica: un turno del Coordinatore avviato da Trama con il lavoro continuo, dopo un evento o in un giro. Si registra in Attività con il nome della mossa, l'ora e l'esito, non in chat e mai come un messaggio della persona. In chat restano la risposta del Coordinatore, le schede che la mossa produce e un eventuale errore. Finché il turno lavora, la riga di stato lo mostra con il pulsante Ferma. Una mossa fermata resta interrotta e non ne parte un'altra.
 
 Domanda di conferma generica: una risposta del Coordinatore che chiude chiedendo il permesso di andare avanti ("Vuoi che...?", "Procedo?", "Fammi sapere se..."). Trama la riconosce dal testo, senza il modello, e al turno successivo dello stesso dialogo lo dice al Coordinatore. La cronologia registra il richiamo.
 
@@ -78,7 +78,7 @@ Revisione dell'esperienza: la sessione separata e non presidiata che, dopo abbas
 
 Manutenzione delle skill: il controllo settimanale che rende inattive e poi archivia le skill create dalla revisione e non usate. Non tocca le skill fissate né quelle della persona; un'archiviazione si annulla con un ripristino.
 
-Scheda: un atto del metodo mostrato nella conversazione: studio, proposta di team, mandato, incarico, decisione, candidato, conflitto, avviso di contesto, mossa automatica. Una scheda non è un log di strumenti né un messaggio libero.
+Scheda: un atto del metodo mostrato nella conversazione: studio, proposta di team, mandato, incarico, decisione, candidato, conflitto, avviso di contesto. Le mosse automatiche stanno in Attività, non in chat. Una scheda non è un log di strumenti né un messaggio libero.
 
 Ispettore: la superficie che mostra il dettaglio di ciò che la persona tocca nella conversazione o nella sidebar: decisione, candidato, specialista, modulo, issue, gruppo. Non è una sezione da visitare a sé.
 
