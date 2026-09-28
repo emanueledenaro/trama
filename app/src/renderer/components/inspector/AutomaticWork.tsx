@@ -64,7 +64,9 @@ function AutomaticWorkRow({ work, withRole }: { work: AutomaticWorkStatus; withR
           </span>
           <Badge tone={state.tone}>{state.label}</Badge>
         </div>
-        <p className="mt-0.5 text-ui-xs text-muted-foreground">{work.detail}</p>
+        <p className="mt-0.5 text-ui-xs text-muted-foreground">
+          <ReferenceText text={work.detail} />
+        </p>
         {blocked && work.kind !== "triage" ? (
           <p className="mt-0.5 text-ui-xs text-muted-foreground">
             {t("automaticWork.notNow")} <ReferenceText text={blocked} />

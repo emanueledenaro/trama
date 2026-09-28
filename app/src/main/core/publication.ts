@@ -4,6 +4,7 @@ import { ghEnvironment } from "./github";
 import { git, runProcess } from "./process";
 import { fixedPushRefusal, pushAuthorization, pushBranch, type PushRecord, pushRefusal, PushRefusedError } from "./push";
 import { candidateTrailer } from "./quality";
+import { redactSensitiveData, repositoryLocator } from "./redaction";
 import { reviewWorktree } from "./workspace";
 
 /**
@@ -97,11 +98,15 @@ export async function publishCandidate(input: {
   if (review.snapshotId !== input.candidate.snapshotId) {
     throw new Error("Il worktree è cambiato dopo la dichiarazione del candidato: serve un nuovo candidato con nuove verifiche.");
   }
+  // The message, its header as the title and the body leave the machine without personal or business data (issue #391).
+  const locate = repositoryLocator(root);
+  const message = await redactSensitiveData(input.message, locate);
+  const body = await redactSensitiveData(input.body, locate);
   // Trama refuses to write a message that breaks Conventional Commits or the project's rules (Q01).
-  requireValidCommitMessage(input.message, input.conventions);
+  requireValidCommitMessage(message, input.conventions);
   const marker = candidateTrailer(input.candidate.id);
-  if (!input.message.split("\n").includes(marker)) throw new Error(`Il messaggio di commit non porta il marcatore del candidato (${marker}).`);
-  const title = commitHeader(input.message);
+  if (!message.split("\n").includes(marker)) throw new Error(`Il messaggio di commit non porta il marcatore del candidato (${marker}).`);
+  const title = commitHeader(message);
   // Commits before Q01 carried the marker as a sentence.
   const legacyMarker = `Candidato ${input.candidate.id} preparato con Trama.`;
   const committed = (
@@ -114,7 +119,7 @@ export async function publishCandidate(input: {
     const staged = (await git(["diff", "--cached", "--name-only", "-z", "--no-renames", "HEAD"], root)).split("\0").filter(Boolean);
     const extra = staged.filter((path) => !input.candidate.changedFiles.includes(path));
     if (extra.length) throw new Error(`L'indice contiene file fuori dal candidato: ${extra.join(", ")}.`);
-    await git(["commit", "--no-verify", "--cleanup=whitespace", "-m", input.message], root, false);
+    await git(["commit", "--no-verify", "--cleanup=whitespace", "-m", message], root, false);
   }
   await pushBranch({ root, branch: workspace.branch, mandate: input.mandate, onRecord: input.onPush, mainBranches: [input.baseBranch] });
   // The commit Trama pushed: the only head a merge of this candidate accepts (issue #247).
@@ -136,7 +141,7 @@ export async function publishCandidate(input: {
       "--raw-field",
       `title=${title}`,
       "--raw-field",
-      `body=${input.body}`,
+      `body=${body}`,
       "--raw-field",
       `head=${workspace.branch}`,
       "--raw-field",

@@ -368,46 +368,53 @@ describe("TramaController", () => {
     expect(last).toMatchObject({ text: expect.stringContaining("Ho risposto alla domanda") });
   });
 
-  it("warns once when the context passes the threshold", async () => {
+  it("reorders the context once past the threshold instead of warning (ADR 0018)", async () => {
     await setup();
     const project = controller!.snapshot.project!;
+    const thread = project.document.coordinator.threadId;
     await controller!.send("[pieno] uno", null, null, null);
-    await controller!.send("[pieno] due", null, null, null);
-    const notices = project.document.events.filter((e) => e.content.type === "card" && e.content.title === "Contesto oltre la soglia");
-    expect(notices).toHaveLength(1);
-    // The meter reads Codex's `last`, the request that fills the window, never the growing `total` (issue #305).
-    expect(project.contextUsage).toEqual({ usedTokens: 230_000, contextWindow: 258_000 });
+    await until(() => project.phase.kind === "ready" && project.document.events.some((e) => e.content.type === "card" && e.content.kind === "contextRollover"));
+    expect(project.document.coordinator.threadId).not.toBe(thread);
+    expect(project.document.events.filter((e) => e.content.type === "card" && e.content.title === "Contesto oltre la soglia")).toHaveLength(0);
+    // The study of the new session reads little: nothing more is owed.
+    expect(project.document.coordinator.pendingRollover).toBeNull();
+    expect(project.document.coordinator.contextWindow).toBe(258_000);
     controller!.setContextThreshold(95);
     expect(project.document.coordinator.contextThreshold).toBe(95);
   });
 
-  it("says the threshold card without a provider name and within the window (issue #305)", async () => {
+  it("reorders on the reading of the request that fills the window, never on the growing total (issues #305, #313)", async () => {
     await setup();
     const project = controller!.snapshot.project!;
-    await controller!.send("[pieno] uno", null, null, null);
-    const card = project.document.events.find((e) => e.content.type === "card" && e.content.title === "Contesto oltre la soglia")!.content as { detail: string };
-    expect(card.detail).toBe(
-      "La finestra di contesto del Coordinatore è piena al 89% (230.000 su 258.000 token), sopra la soglia del 80%. Quando serve, l'agente compatta il contesto da solo, se lo prevede. Puoi cambiare la soglia dal misuratore.",
-    );
-    for (const provider of PROVIDERS) expect(card.detail).not.toContain(provider.name);
+    const thread = project.document.coordinator.threadId;
+    // `total` grows by 120.000 at every turn of the fake; `last` stays at 13.000: 5%, far from the threshold.
+    await controller!.send("uno", null, null, null);
+    await controller!.send("due", null, null, null);
+    expect(project.contextUsage).toEqual({ usedTokens: 13_000, contextWindow: 258_000 });
+    expect(project.document.coordinator.threadId).toBe(thread);
+    expect(project.document.coordinator.pendingRollover ?? null).toBeNull();
+    // `last` at 230.000 of 258.000 (89%): the reorder, with texts that name no provider.
+    await controller!.send("[pieno] tre", null, null, null);
+    await until(() => project.phase.kind === "ready" && project.document.events.some((e) => e.content.type === "card" && e.content.kind === "contextRollover"));
+    const card = project.document.events.find((e) => e.content.type === "card" && e.content.kind === "contextRollover")!.content as { detail: string };
+    for (const provider of PROVIDERS) expect(card.detail).not.toMatch(new RegExp(`\\b${provider.name}\\b`));
   });
 
-  it("does not repeat the threshold card after a compaction that leaves the context full (issue #305)", async () => {
+  it("drops an owed reorder when the provider compacts the thread, and reorders again when it fills (issues #305, #313)", async () => {
     await setup();
     const project = controller!.snapshot.project!;
-    await controller!.send("[pieno] uno", null, null, null);
     const learning = (controller as unknown as { coordinatorLearning(d: unknown): { liveFromSequence: number } }).coordinatorLearning(project.document);
     const before = learning.liveFromSequence;
-    // Codex reports the compaction as an item of the turn: Trama hears it, and the reading is still over the threshold.
-    await controller!.send("[pieno] [compattato] due", null, null, null);
+    // Codex reports the compaction as an item of the turn: Trama hears it, and the reading is well under the threshold.
+    await controller!.send("[compattato] uno", null, null, null);
     expect(learning.liveFromSequence).toBeGreaterThan(before);
-    const notices = () => project.document.events.filter((e) => e.content.type === "card" && e.content.title === "Contesto oltre la soglia");
-    expect(notices()).toHaveLength(1);
-    // A reading well under the threshold arms the card again for the next time the context fills.
-    await controller!.send("[compattato] tre", null, null, null);
     expect(project.contextUsage).toEqual({ usedTokens: 20_000, contextWindow: 258_000 });
-    await controller!.send("[pieno] quattro", null, null, null);
-    expect(notices()).toHaveLength(2);
+    const reorders = () => project.document.events.filter((e) => e.content.type === "card" && e.content.kind === "contextRollover");
+    expect(reorders()).toHaveLength(0);
+    await controller!.send("[pieno] due", null, null, null);
+    await until(() => project.phase.kind === "ready" && reorders().length === 1);
+    await controller!.send("[pieno] tre", null, null, null);
+    await until(() => project.phase.kind === "ready" && reorders().length === 2);
   });
 
   it("keeps a reading past the window as unknown, with no number (issue #305)", async () => {
@@ -418,7 +425,8 @@ describe("TramaController", () => {
     internal.recordContextUsage(project, { type: "tokenUsage", usedTokens: 9_820_158, contextWindow: 828_400 });
     internal.recordContextUsage(project, { type: "tokenUsage", usedTokens: 9_820_158, contextWindow: 828_400 });
     expect(project.contextUsage).toEqual({ usedTokens: null, contextWindow: 828_400 });
-    expect(project.document.events.some((e) => e.content.type === "card" && e.content.title === "Contesto oltre la soglia")).toBe(false);
+    // An unknown reading never starts a reorder.
+    expect(project.document.coordinator.pendingRollover ?? null).toBeNull();
     expect(warn).toHaveBeenCalledTimes(1);
     warn.mockRestore();
   });
@@ -427,13 +435,12 @@ describe("TramaController", () => {
     await setup();
     const project = controller!.snapshot.project!;
     // The fake study turn reads 13.000 of 258.000 tokens: 5,04%, just past the lowest threshold with the exact share.
+    project.contextUsage = null;
     controller!.setContextThreshold(5);
     const internal = controller as unknown as { runStudyTurn(p: unknown, r: unknown, m: string, reason: string | null): Promise<void>; runtime: unknown };
-    project.document.coordinator.contextWarnedAt = null;
-    project.contextUsage = null;
     await internal.runStudyTurn(project, internal.runtime, "gpt-5.5", null);
     expect(project.contextUsage).toEqual({ usedTokens: 13_000, contextWindow: 258_000 });
-    expect(project.document.events.filter((e) => e.content.type === "card" && e.content.title === "Contesto oltre la soglia").length).toBeGreaterThan(0);
+    expect(project.document.coordinator.pendingRollover).toMatchObject({ reason: "threshold" });
   });
 
   it("loads project skills and sends invoked ones", async () => {
@@ -1807,6 +1814,40 @@ describe("TramaController", () => {
     expect(project.document.requests).toHaveLength(1);
     // The fake server forgets threads, so Trama starts a new one and says so.
     expect(project.document.events.some((e) => e.content.type === "card" && e.content.kind === "contextNotice")).toBe(true);
+  });
+});
+
+describe("the branch divergence notice (issue #390)", () => {
+  it("drops the notice once the project's branch moved past the heads it compared", async () => {
+    const { execFileSync } = await import("node:child_process");
+    const { project: projectPath } = await setup();
+    const run = (...args: string[]) => execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", ...args], { cwd: projectPath, encoding: "utf8" }).trim();
+    run("init", "-q", "-b", "main");
+    run("add", ".");
+    run("commit", "-q", "-m", "init");
+    run("checkout", "-q", "-b", "chore/pre-apertura");
+    await controller!.refreshProject(false);
+    const diverged = run("rev-parse", "HEAD");
+    const document = controller!.snapshot.project!.document;
+    document.branchDivergence = {
+      branch: "chore/pre-apertura",
+      defaultBranch: "main",
+      headSHA: diverged,
+      remoteSHA: "4df3c14a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e",
+      ahead: 1,
+      behind: 1,
+      conflictingFiles: ["README.md"],
+      checkedAt: new Date().toISOString(),
+    };
+    // Nothing moved: the notice holds.
+    await controller!.refreshProject(false);
+    expect(controller!.snapshot.project!.document.branchDivergence?.headSHA).toBe(diverged);
+
+    // The branch is realigned: the merge moves the head, and the notice compared heads that no longer exist.
+    await writeFile(join(projectPath, "README.md"), "Riallineato con main\n");
+    run("commit", "-q", "-am", "chore: merge main");
+    await controller!.refreshProject(false);
+    expect(controller!.snapshot.project!.document.branchDivergence ?? null).toBeNull();
   });
 });
 

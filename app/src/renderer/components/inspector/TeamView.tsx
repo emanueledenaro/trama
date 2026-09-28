@@ -41,6 +41,7 @@ import { specialistQuestion } from "@/lib/askCoordinator";
 import { AutomaticWorkSection } from "./AutomaticWork";
 import { EmptyNote, InspectorSection } from "./Inspector";
 import { Sep } from "@/components/ui/sep";
+import { ReferenceText } from "@/components/chat/ReferenceText";
 
 /** The specialist's own status, as the projects view still shows it beside an agent (W16). */
 export function StatusDot({ status }: { status: Specialist["status"] }) {
@@ -198,7 +199,7 @@ function PersonRow({ specialist }: { specialist: Specialist }) {
           <AgentTag agent={specialist} className="shrink-0 text-ui-xs" />
         </span>
         <span className="block truncate text-ui-sm text-muted-foreground" data-testid="member-now">
-          {now}
+          <ReferenceText text={now} links={false} />
         </span>
       </span>
       <SignMark sign={sign} />
@@ -227,7 +228,7 @@ function SquadGroup({ squad }: { squad: Squad }) {
         {slices.total ? t("teams.squad.slices", { done: slices.done, count: slices.total }) : t("teams.squad.noSlices")}
       </p>
       <p className="mt-0.5 px-2 text-ui-xs text-muted-foreground" data-testid="squad-status">
-        {squadStatusLine(document, squad)}
+        <ReferenceText text={squadStatusLine(document, squad)} links={false} />
       </p>
       <div className="mt-1 flex flex-col">
         {byIds(specialists, [squad.leadId, ...squad.developerIds, squad.qaId]).map((s) => (
@@ -365,7 +366,7 @@ export function SquadsView() {
             <p key={s.id} className="text-ui-sm text-muted-foreground" title={s.id}>
               {s.name}
               <Sep />
-              {s.removal?.reason}
+              {s.removal ? <ReferenceText text={s.removal.reason} links={false} /> : null}
             </p>
           ))}
         </Fold>
@@ -466,7 +467,12 @@ export function SpecialistView({ id }: { id: string }) {
           <AgentAvatar agent={specialist} size={48} />
           <div className="min-w-0 flex-1">
             <div className="flex min-w-0 items-center gap-2">
-              <h3 className="min-w-0 max-w-full truncate text-ui-lg font-medium text-foreground" title={specialist.name}>
+              {/* The id is Trama's, not the person's: it stays on hover (issue #392). */}
+              <h3
+                className="min-w-0 max-w-full truncate text-ui-lg font-medium text-foreground"
+                title={`${specialist.name}, ${specialist.id}`}
+                data-record-id={specialist.id}
+              >
                 {specialist.name}
               </h3>
               <AgentTag agent={specialist} className="shrink-0 text-ui-sm" />
@@ -561,7 +567,9 @@ export function SpecialistView({ id }: { id: string }) {
       </InspectorSection>
       <SpecialistThreads specialistId={specialist.id} />
       <Fold open={whyOpen} onToggle={toggleWhy} title={t("teams.person.why")}>
-        <p className="text-ui text-foreground/90">{specialist.reason}</p>
+        <p className="text-ui text-foreground/90">
+          <ReferenceText text={specialist.reason} />
+        </p>
         <p className="mt-1 text-ui-sm text-muted-foreground">{specialist.competence}</p>
         <p className="mt-1 text-ui-xs text-muted-foreground">
           {t(specialist.origin === "fixedRole" ? "teams.origin.fixedRole" : specialist.origin === "teamProposal" ? "teams.origin.teamProposal" : "teams.origin.coordinator")}
@@ -700,10 +708,12 @@ function AssignmentRow({ assignment, done = false }: { assignment: SpecialistAss
         >
           <Icon className="size-3.5 shrink-0 text-muted-foreground" stroke={1.8} />
           <span className="min-w-0 flex-1">
-            <span className="block truncate text-foreground/90">{assignment.objective}</span>
+            <span className="block truncate text-foreground/90">
+              <ReferenceText text={assignment.objective} links={false} />
+            </span>
             {done ? (
               <span className="block truncate text-ui-xs text-muted-foreground" data-testid="assignment-row-outcome">
-                {assignmentLine(project.document, assignment)}
+                <ReferenceText text={assignmentLine(project.document, assignment)} links={false} />
                 <Sep />
                 {formatRelativeTime(assignment.updatedAt)}
               </span>
@@ -760,7 +770,7 @@ function RenameSpecialist({ specialist, onDone }: { specialist: Specialist; onDo
       {taken ? <p className="text-ui-sm text-muted-foreground">{t("teams.rename.taken")}</p> : null}
       {fixedName ? <p className="text-ui-sm text-muted-foreground">{t("teams.rename.fixedName")}</p> : null}
       <p className="text-ui-xs text-muted-foreground" title={specialist.id}>
-        {t("teams.rename.note")}
+        {t("team.rename.followsName")}
       </p>
       <div className="cta-row">
         <Button size="sm" variant="ghost" onClick={onDone}>
@@ -877,7 +887,9 @@ function SpecialistThreads({ specialistId }: { specialistId: string }) {
             onClick={() => setInspector({ kind: "agentThread", id: thread.id })}
           >
             <IconMessageCircle className="size-3.5 shrink-0 text-muted-foreground" stroke={1.8} />
-            <span className="min-w-0 flex-1 truncate text-foreground/90">{thread.title}</span>
+            <span className="min-w-0 flex-1 truncate text-foreground/90">
+              <ReferenceText text={thread.title} links={false} />
+            </span>
             <span className="max-w-[40%] shrink-0 truncate text-ui-xs text-muted-foreground">{threadParticipants(thread, document.team.specialists)}</span>
           </button>
         ))}
