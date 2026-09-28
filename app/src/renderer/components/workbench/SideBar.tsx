@@ -1,5 +1,5 @@
 import { IconArrowNarrowLeft, IconArrowsDiagonal, IconArrowsDiagonalMinimize2, IconX } from "@tabler/icons-react";
-import { InspectorBody, InspectorTitle, TITLES } from "@/components/inspector/Inspector";
+import { InspectorBody, InspectorTitle, targetTitle } from "@/components/inspector/Inspector";
 import { ProjectsView } from "@/components/sidebar/Sidebar";
 import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/cn";
@@ -39,7 +39,7 @@ export function SideBar({ size }: { size: SideBarWidth }) {
   const viewName = t(VIEW_LABELS[view]);
   return (
     <aside
-      aria-label={target ? TITLES[target.kind] : viewName}
+      aria-label={target ? targetTitle(target.kind, t) : viewName}
       data-testid="side-bar"
       data-view={view}
       onKeyDown={(event) => {

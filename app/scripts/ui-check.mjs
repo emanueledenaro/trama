@@ -60,6 +60,12 @@ const openView = async (view, tab) => {
   await page.locator(`[data-testid="side-bar"][data-view="${VIEWS[view]}"]`).waitFor();
   if (tab) await sideBar.getByRole("tab", { name: tab, exact: true }).click();
 };
+// Issue #333: the shared roles of the Squads view wait in a closed section; the checks that read them open it first.
+const openSharedRoles = async () => {
+  const toggle = page.getByTestId("side-bar").getByTestId("shared-roles-toggle");
+  if ((await toggle.getAttribute("aria-expanded")) !== "true") await toggle.click();
+  await page.getByTestId("side-bar").getByTestId("shared-roles").waitFor();
+};
 // The work in focus and the queue open from the status bar (issue #330).
 const openFocusPanel = async (timeout = 20_000) => {
   if (!(await page.getByTestId("focus-bar").count())) await page.getByTestId("status-focus").click({ timeout });
@@ -609,6 +615,64 @@ await firstSquad.getByTestId("squad-status").getByText(/^Libera/).waitFor();
 await firstSquad.getByRole("button", { name: /^Ada/ }).waitFor();
 await firstSquad.locator('[data-testid="team-figure"][data-role="squadLead"]').filter({ hasText: "[Capo]" }).waitFor();
 await firstSquad.locator('[data-testid="team-figure"][data-role="qa"]').waitFor();
+// Issue #333: who works now is on top, in view at 1280x800 without scrolling. Each person is one row with the bot, the
+// name, the role's tag, what it does now and the sign; the ids stay on hover; the shared roles wait closed, with their
+// count. The view and the person of the squad, narrow and wide, Codex and Claude, light and dark.
+{
+  const teamsLook = await lookOf();
+  const summary = teamPanel.getByTestId("squads-summary");
+  await summary.waitFor();
+  await summary.getByText(/squadr[ae] al lavoro|Nessuna squadra al lavoro/).waitFor();
+  if (!(await summary.evaluate((el) => el.parentElement.firstElementChild === el))) throw new Error("The summary of the Squads view is not on top");
+  const rows = teamPanel.locator('[data-testid="team-developer"], [data-testid="team-figure"]');
+  for (const row of await rows.all()) {
+    if (!(await row.getByTestId("agent-bot").count())) throw new Error("A person of the squad has no bot");
+    if (!(await row.getByTestId("member-now").count())) throw new Error("A person of the squad does not say what it does now");
+    const sign = await row.getByTestId("member-sign").getAttribute("data-sign");
+    if (!["working", "waiting", "free", "stopped"].includes(sign)) throw new Error(`A person of the squad has no sign: ${sign}`);
+  }
+  if (await teamPanel.getByText(/^[A-Z]{1,2}-[0-9A-F]{8}$/).count()) throw new Error("The Squads view shows an id outside the hover");
+  const sharedToggle = teamPanel.getByTestId("shared-roles-toggle");
+  if ((await sharedToggle.getAttribute("aria-expanded")) !== "false") throw new Error("The shared roles are not closed at first");
+  if (!/^Ruoli condivisi\s*\d+/.test((await sharedToggle.innerText()).trim())) throw new Error("The shared roles do not show their count");
+  const person = teamPanel.getByTestId("team-developer").first();
+  for (const [size, width, height] of [["1280x800", 1280, 800], ["1680x1050", 1680, 1050]]) {
+    await page.setViewportSize({ width, height });
+    await page.waitForTimeout(300);
+    const top = await summary.evaluate((el) => ({ bottom: el.getBoundingClientRect().bottom, scrolled: el.parentElement.scrollTop, height: innerHeight }));
+    if (top.scrolled !== 0 || top.bottom > top.height) throw new Error(`Who works now is not in view at ${size}: ${JSON.stringify(top)}`);
+    await noHorizontalScroll(`Squads view ${size}`);
+    for (const provider of ["codex", "claudeAgent"]) {
+      for (const dark of [false, true]) {
+        await setLookTo(provider, dark);
+        await shot(`33a-teams-${size}-${provider}-${dark ? "dark" : "light"}`);
+      }
+    }
+    await setLookTo(teamsLook.provider, teamsLook.dark);
+    await person.click();
+    const detail = teamPanel.getByTestId("specialist");
+    await detail.waitFor();
+    if ((await teamPanel.getByTestId("side-bar-title").innerText()).trim() !== "Persona della squadra") throw new Error("The detail is not titled Persona della squadra");
+    await detail.getByTestId("specialist-now").waitFor();
+    const idOnHover = await detail.getByTestId("specialist-header").getAttribute("title");
+    if (!/^S-[0-9A-F]{8}$/.test(idOnHover ?? "") || (await detail.getByText(/^[A-Z]{1,2}-[0-9A-F]{8}$/).count())) throw new Error(`The person's id is not only on hover: ${idOnHover}`);
+    for (const fold of ["Perché è nella squadra", "Quando interviene", "Colore"]) {
+      if ((await detail.getByRole("button", { name: fold }).getAttribute("aria-expanded")) !== "false") throw new Error(`${fold} is not closed at first`);
+    }
+    await noHorizontalScroll(`person of the squad ${size}`);
+    for (const provider of ["codex", "claudeAgent"]) {
+      for (const dark of [false, true]) {
+        await setLookTo(provider, dark);
+        await shot(`33b-person-${size}-${provider}-${dark ? "dark" : "light"}`);
+      }
+    }
+    await setLookTo(teamsLook.provider, teamsLook.dark);
+    await detail.getByRole("button", { name: "Squadre", exact: true }).click();
+    await summary.waitFor();
+  }
+  await page.setViewportSize({ width: 1280, height: 820 });
+}
+await openSharedRoles();
 const sharedRoles = teamPanel.getByTestId("shared-roles");
 await sharedRoles.getByTestId("team-figure").filter({ hasText: "Guardiano delle regressioni" }).waitFor();
 if (await sharedRoles.locator('[data-role="qa"], [data-role="squadLead"]').count()) throw new Error("A member of the squad is among the shared roles");
@@ -630,8 +694,12 @@ await teamPanel.getByTestId("team-developer").getByTestId("agent-tag").filter({ 
 if ((await teamPanel.getByTestId("team-figure").getByTestId("agent-tag").count()) < 5) throw new Error("The fixed roles have no tag");
 // W13: the person renames the developer from the Team view; the id stays and a fixed role's name is refused.
 await teamPanel.getByTestId("team-developer").first().click();
-const developerId = (await teamPanel.getByText(/^S-[0-9A-F]{8}$/).first().textContent()).trim();
-await teamPanel.getByRole("button", { name: "Rinomina", exact: true }).click();
+// Issue #333: the id is on hover over the header, not in the text; Rename and Remove are in the menu of more actions.
+const developerId = await teamPanel.getByTestId("specialist").getAttribute("data-specialist-id");
+if (!/^S-[0-9A-F]{8}$/.test(developerId ?? "") || (await teamPanel.getByTestId("specialist-header").getAttribute("title")) !== developerId) throw new Error(`The developer's id is not on hover: ${developerId}`);
+await teamPanel.getByRole("button", { name: "Altre azioni", exact: true }).click();
+await page.getByRole("menuitem", { name: "Togli dalla squadra" }).waitFor();
+await page.getByRole("menuitem", { name: "Rinomina", exact: true }).click();
 const rename = teamPanel.getByTestId("rename-specialist");
 await rename.getByLabel("Nuovo nome").fill("Clean Code");
 await rename.getByText("È il nome di un ruolo fisso").waitFor();
@@ -642,19 +710,22 @@ if (renameButtons.at(-1)?.trim() !== "Rinomina") throw new Error(`Rename is not 
 await shot("04e3-team-rename");
 await rename.getByRole("button", { name: "Rinomina" }).click();
 await teamPanel.getByRole("heading", { name: "Giulia" }).waitFor({ timeout: 20_000 });
-await teamPanel.getByText(developerId, { exact: true }).waitFor();
-// W15: the person picks another color; only the avatar and the tag take it.
+await teamPanel.locator(`[data-testid="specialist"][data-specialist-id="${developerId}"] [data-testid="specialist-header"][title="${developerId}"]`).waitFor();
+// W15: the person picks another color; only the avatar and the tag take it. The color waits in a closed section (issue #333).
+await teamPanel.getByRole("button", { name: "Colore", exact: true }).click();
 await teamPanel.getByRole("radio", { name: "Rame" }).click();
 await teamPanel.locator('[role="radio"][aria-label="Rame"][aria-checked="true"]').waitFor({ timeout: 20_000 });
 await shot("04e4-team-color");
 await teamPanel.getByTestId("specialist-squad").getByText(/^Squadra .+, sviluppatore\.$/).waitFor();
 await teamPanel.getByRole("button", { name: "Squadre", exact: true }).click();
 await teamPanel.getByTestId("team-developer").filter({ hasText: "Giulia" }).waitFor();
+await openSharedRoles();
 await sharedRoles.scrollIntoViewIfNeeded();
 await themeShots("04e1-squads-shared-roles");
 await teamPanel.getByTestId("team-figure").filter({ hasText: "Guardiano delle regressioni" }).first().click();
 await teamPanel.getByText("Quando interviene").waitFor();
-if (await teamPanel.getByRole("button", { name: "Togli dal team" }).count()) throw new Error("A fixed role offers to leave the team");
+// Rename and Remove are in the menu of more actions (issue #333): a fixed role has no such menu.
+if (await teamPanel.getByRole("button", { name: "Altre azioni", exact: true }).count()) throw new Error("A fixed role offers to leave the team");
 await shot("04e2-team-fixed-role");
 // W16: at the inspector's minimum width, with a long name, the header keeps the name on one line and the status whole.
 await page.setViewportSize({ width: 980, height: 820 });
@@ -679,7 +750,7 @@ await page.evaluate(() => document.documentElement.classList.add("dark"));
 await shot("04e2c-specialist-narrow-dark");
 await page.evaluate(() => document.documentElement.classList.remove("dark"));
 await page.setViewportSize({ width: 1280, height: 820 });
-if (await teamPanel.getByRole("button", { name: "Rinomina", exact: true }).count()) throw new Error("A fixed role offers a rename");
+if ((await teamPanel.getByRole("button", { name: "Altre azioni", exact: true }).count()) || (await page.getByRole("menuitem", { name: "Rinomina" }).count())) throw new Error("A fixed role offers a rename");
 await page.getByRole("button", { name: "Chiudi la barra laterale" }).click();
 // W13: the person asks the Coordinator to rename the developer, without a new mandate; the chat follows the new name.
 await page.getByLabel("Messaggio al Coordinatore").fill("[rinomina:Giulia:Bea]");
@@ -703,7 +774,7 @@ const botState = (root) =>
 const chatBots = await botState(page.locator("main").first());
 if (!chatBots.length) throw new Error("The chat shows no agent bot");
 await openView("Squadre");
-await teamPanel.getByTestId("shared-roles").waitFor();
+await openSharedRoles();
 const teamBots = await botState(teamPanel);
 const bodies = new Map();
 for (const bot of teamBots) {
@@ -1356,7 +1427,13 @@ await openView("Squadre");
 await page.getByTestId("side-bar").getByTestId("team-developer").first().click();
 await page.getByTestId("side-bar").getByRole("button", { name: "Chiedi al Coordinatore", exact: true }).waitFor();
 const developerName = (await page.getByTestId("side-bar").locator("h3.text-ui-lg").first().textContent()).trim();
-const specialistActions = await page.getByTestId("side-bar").locator(".cta-row").first().locator("button").allTextContents();
+// The Ask button reads "Chiedi" and is named in full for screen readers (issue #333).
+const specialistActions = await page
+  .getByTestId("side-bar")
+  .locator(".cta-row")
+  .first()
+  .locator("button")
+  .evaluateAll((buttons) => buttons.map((b) => b.getAttribute("aria-label") ?? b.textContent));
 if (specialistActions.at(-1)?.trim() !== "Chiedi al Coordinatore") throw new Error(`Chiedi al Coordinatore is not the last call to action: ${specialistActions}`);
 await page.getByTestId("side-bar").getByRole("button", { name: "Chiedi al Coordinatore", exact: true }).click();
 await expectAsked(`di ${developerName}`, "Squadre, Chiedi al Coordinatore");
@@ -1467,7 +1544,7 @@ const lastButton = pausedLine.getByRole("button").last();
 const lastBox = await lastButton.boundingBox();
 const pausedBox = await pausedLine.boundingBox();
 if (!lastBox || !pausedBox || pausedBox.x + pausedBox.width - (lastBox.x + lastBox.width) > 2) throw new Error("The last action of the paused line is not on the right");
-if ((await lastButton.getAttribute("aria-label")) !== "Riprendi" && !(await pausedLine.locator("button:not([aria-label])").count())) {
+if ((await lastButton.getAttribute("aria-label")) !== "Riprendi il Coordinatore" && !(await pausedLine.locator("button:not([aria-label])").count())) {
   throw new Error("The last action of the paused line is neither Riprendi nor the person's move");
 }
 await themeShots("15c-status-line-paused");
@@ -3144,6 +3221,7 @@ if (!(await onRequest.isVisible())) {
 // The Pact card waits in Aspetta te: the chat shows its reference (issue #240).
 await page.locator('[data-testid="waiting-reference"][data-waiting-kind="question"]').first().waitFor({ timeout: 60_000 });
 await reviewWork.getByText(/aspetta ancora la tua risposta/).waitFor({ timeout: 20_000 });
+await openSharedRoles();
 await dutyPanel.getByTestId("team-figure").filter({ hasText: "Clean Code" }).first().click();
 const roleWork = dutyPanel.locator('[data-testid="automatic-work"][data-work="architectureReview"]');
 await roleWork.waitFor();
