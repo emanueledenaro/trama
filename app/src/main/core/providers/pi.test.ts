@@ -63,11 +63,16 @@ class FakeSession {
     return { steering: [], followUp: [] };
   }
   abortRetry() {}
+  contextUsage: { tokens: number | null; contextWindow: number; percent: number | null } | undefined = { tokens: 1234, contextWindow: 200_000, percent: 0.6 };
   getSessionStats() {
+    // The statistics add up the whole session: they are the cost, never the context reading.
     return {
-      tokens: { input: 10, output: 5, cacheRead: 0, cacheWrite: 0, total: 15 },
-      contextUsage: { tokens: 1234, contextWindow: 200_000, percent: 0.6 },
+      tokens: { input: 900_000, output: 5, cacheRead: 0, cacheWrite: 0, total: 900_005 },
+      contextUsage: this.contextUsage,
     };
+  }
+  getContextUsage() {
+    return this.contextUsage;
   }
 }
 
@@ -114,7 +119,7 @@ vi.mock("@earendil-works/pi-coding-agent", async (importOriginal) => {
   };
 });
 
-const { PiRuntime, piSupportedThinkingLevels, parsePiOpenCodeCatalog, isPiInterruption } = await import("./pi");
+const { PiRuntime, piSupportedThinkingLevels, parsePiOpenCodeCatalog, isPiInterruption, tokenUsageEvent } = await import("./pi");
 
 const claude = { provider: "anthropic", id: "claude-x", name: "Claude X", reasoning: true, api: "anthropic-messages", baseUrl: "https://a", contextWindow: 200_000 };
 const gpt = { provider: "openai", id: "gpt-x", name: "GPT X", reasoning: false, api: "openai-responses", baseUrl: "https://o" };
@@ -328,7 +333,7 @@ describe("Pi turns", () => {
     ]);
     expect(events).toContainEqual({ type: "toolCallCompleted", itemId: "t1", server: "pi", tool: "read", succeeded: false, error: "nope" });
     expect(events).toContainEqual({ type: "fileChangeCompleted", itemId: "t2", paths: [join(root, "b.ts")], succeeded: true });
-    expect(events).toContainEqual({ type: "tokenUsage", usedTokens: 1234, contextWindow: 200_000 });
+    expect(events).toContainEqual({ type: "tokenUsage", usedTokens: 1234, contextWindow: 200_000, processedTokens: 900_005 });
   });
 
   it("interrupts a running turn", async () => {
@@ -384,6 +389,22 @@ describe("Pi turns", () => {
     await expect(runtime.runTurn({ threadId, prompt: "x", cwd: root, model: "anthropic/claude-x", onEvent: () => undefined })).rejects.toMatchObject({
       code: "blocked",
     });
+  });
+});
+
+describe("Pi context reading (issue #305)", () => {
+  it("reads the session's context, never the cumulative statistics", () => {
+    const session = new FakeSession();
+    session.contextUsage = undefined;
+    expect(tokenUsageEvent(session as never)).toBeNull();
+    session.contextUsage = { tokens: 42_000, contextWindow: 200_000, percent: 21 };
+    expect(tokenUsageEvent(session as never)).toEqual({ type: "tokenUsage", usedTokens: 42_000, contextWindow: 200_000, processedTokens: 900_005 });
+  });
+
+  it("reports an unknown reading after a compaction instead of zero or the total", () => {
+    const session = new FakeSession();
+    session.contextUsage = { tokens: null, contextWindow: 200_000, percent: null };
+    expect(tokenUsageEvent(session as never)).toEqual({ type: "tokenUsage", usedTokens: null, contextWindow: 200_000, processedTokens: 900_005 });
   });
 });
 

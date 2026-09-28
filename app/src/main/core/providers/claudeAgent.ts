@@ -955,16 +955,14 @@ export class ClaudeTurnMapper {
   }
 
   private handleResult(message: Extract<SDKMessage, { type: "result" }>): TurnOutcome {
-    const usage = this.lastUsage ?? (message.usage as unknown as Record<string, unknown>);
-    const output = typeof usage.output_tokens === "number" ? usage.output_tokens : 0;
-    const used = promptTokens(usage) + output;
+    // Only the last assistant message measures the context: the result's usage adds up the whole turn (issue #305).
+    const usage = this.lastUsage;
+    const output = typeof usage?.output_tokens === "number" ? usage.output_tokens : 0;
+    const used = usage ? promptTokens(usage) + output : 0;
     const windows = Object.values(message.modelUsage ?? {})
       .map((entry) => entry.contextWindow)
       .filter((value) => typeof value === "number" && value > 0);
-    if (used > 0) {
-      const contextWindow = windows.length ? Math.max(...windows) : null;
-      this.emit({ type: "tokenUsage", usedTokens: contextWindow ? Math.min(used, contextWindow) : used, contextWindow });
-    }
+    if (used > 0) this.emit({ type: "tokenUsage", usedTokens: used, contextWindow: windows.length ? Math.max(...windows) : null });
     if (message.subtype === "success" && !message.is_error && !this.assistantError) {
       if (this.structuredOutput) {
         const text = message.structured_output !== undefined ? JSON.stringify(message.structured_output) : extractJsonAnswer(message.result);

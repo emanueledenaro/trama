@@ -153,7 +153,7 @@ export function StudyCard({ title, text, streaming }: { title: string; text: str
 
 export function ContextNoticeCard({ title, detail }: { title: string; detail: string | null }) {
   return (
-    <div className="my-3 flex items-start gap-2 rounded-xl bg-[var(--color-background-button-secondary)] px-3.5 py-2.5 text-ui">
+    <div className="my-3 flex items-start gap-2 rounded-xl bg-[var(--color-background-button-secondary)] px-3.5 py-2.5 text-ui" data-testid="context-notice">
       <IconInfoCircle className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
       <div>
         <div className="text-foreground/90">

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { WorkPlan } from "./domain";
-import { candidateStatus, checkName, checkOutcome, contextFill, formatDuration, planStatus, sliceStatus } from "./states";
+import { candidateStatus, checkName, checkOutcome, formatDuration, planStatus, sliceStatus } from "./states";
 
 const plan = (fields: Partial<WorkPlan>) => ({ status: "ready", slicing: null, spec: null, ...fields }) as Pick<WorkPlan, "status" | "slicing" | "spec">;
 const slicing = (status: "drafting" | "proposed" | "approved" | "failed", approvedBy?: "coordinator") =>
@@ -46,11 +46,5 @@ describe("one vocabulary of states (issue #272)", () => {
     expect(formatDuration(757)).toBe("12 ore");
     expect(formatDuration(24 * 60)).toBe("un giorno");
     expect(formatDuration(3 * 24 * 60 + 5)).toBe("3 giorni");
-  });
-
-  it("never fills the context past 100%", () => {
-    expect(contextFill({ usedTokens: 2_917_200, contextWindow: 828_400 })).toEqual({ percent: 100, used: 828_400, window: 828_400, over: true });
-    expect(contextFill({ usedTokens: 12_000, contextWindow: 258_000 })).toEqual({ percent: 5, used: 12_000, window: 258_000, over: false });
-    expect(contextFill({ usedTokens: 1, contextWindow: null })).toBeNull();
   });
 });

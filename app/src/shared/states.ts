@@ -147,14 +147,3 @@ export function formatDuration(minutes: number): string {
   const days = Math.floor(hours / 24);
   return days === 1 ? "un giorno" : `${days} giorni`;
 }
-
-/**
- * How full the context window is. A provider that reports more tokens than the window (a total of the whole thread,
- * not the context) never reads past 100%: the meter shows the window full and says the count is past it.
- */
-export function contextFill(usage: { usedTokens: number; contextWindow: number | null }): { percent: number; used: number; window: number; over: boolean } | null {
-  if (!usage.contextWindow || usage.contextWindow <= 0) return null;
-  const used = Math.max(0, usage.usedTokens);
-  const over = used > usage.contextWindow;
-  return { percent: over ? 100 : Math.round((used / usage.contextWindow) * 100), used: Math.min(used, usage.contextWindow), window: usage.contextWindow, over };
-}
