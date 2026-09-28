@@ -16,6 +16,24 @@ export const en: Record<keyof typeof it, string> = {
   // Coordinator replies
   "toolError.placeholder": "a Trama tool refused the request (the details are in Activity)",
 
+  // Automatic repair of a provider's CLI
+  "providerRepair.title": "Trama repaired {cli}",
+  "providerRepair.failedTitle": "Trama could not repair {cli}",
+  "providerRepair.retry": "Trama runs the turn again, once.",
+  "providerRepair.updateCli.done": "Updated with {command}: it is now version {detail}.",
+  "providerRepair.updateCli.failed": "{command} did not work: {detail}",
+  "providerRepair.updateCli.notNeeded": "Version {detail}: no update needed.",
+  "providerRepair.reinstallPlugin.done": "Trama's plugin reinstalled with {command}.",
+  "providerRepair.reinstallPlugin.failed": "Trama's plugin did not reinstall: {detail}",
+  "providerRepair.checkHook.done": "Trama's hook answers as it should.",
+  "providerRepair.checkHook.failed": "Trama's hook does not answer as it should: {detail}",
+  "providerRepair.problem.notCalled": "{cli} did not call Trama's hook, the check that keeps the turn read-only.",
+  "providerRepair.problem.notReady": "Trama's plugin for {cli} is not ready, and without its hook Trama cannot check what the agent does.",
+  "providerRepair.gaveUp": "{problem} Trama tried to repair it by itself. {steps} Without the hook Trama does not start the turn. One thing is left for you: {action}",
+  "providerRepair.action.update": "update {cli} from a terminal with {command}, then try again.",
+  "providerRepair.action.reinstall": "reinstall {cli}, then try again.",
+  "providerRepair.outdated": "{cli} {version} is too old for Trama, which tried to update it by itself. {steps} One thing is left for you: update it from a terminal with {command} to version {minimum} or later.",
+
   // Language
   "language.label": "Language",
   "language.description":
@@ -158,8 +176,10 @@ export const en: Record<keyof typeof it, string> = {
   "settings.guide": "Getting started guide",
   "settings.guide.description": "Connections, project, AI Hero method and exercises on the example copy. It picks up where you left off.",
   "settings.guide.open": "Open the guide",
+  "menu.about": "About Trama",
   "settings.about": "About",
   "settings.about.version": "Version {version}. Coordinates decisions, work and checks on a local repository.",
+  "settings.about.commit": "Commit {commit}",
 
   "settings.connections.description": "You sign in through the official browser page or in the terminal. Trama does not copy your credentials.",
   "settings.connections.checkAll": "Check all",
