@@ -99,6 +99,8 @@ gh workflow run release.yml -f ref=<sha-del-commit> -f platforms=windows
 
 Il pulsante "Run workflow" nella scheda Actions fa la stessa cosa.
 
+Prima del pacchetto ogni piattaforma fa il controllo dei tipi e la build. La suite di test gira su Linux e su macOS; su Windows non ancora, perché le CLI finte dei provider usate nei test sono script POSIX e molte fixture usano percorsi Unix.
+
 ## La versione nell'app
 
 - **Impostazioni, Generale, Informazioni**: versione e commit della build.

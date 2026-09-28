@@ -71,8 +71,13 @@ jobs:
           cache-dependency-path: app/package-lock.json
       - name: Dipendenze
         run: npm ci
-      - name: Controllo dei tipi e test
-        run: npm run typecheck && npm test
+      - name: Controllo dei tipi
+        run: npm run typecheck
+      # The suite runs on Linux, as electron.yml does for main, and on macOS. On Windows its fake provider
+      # CLIs are POSIX scripts and many fixtures use POSIX paths, so it does not run there yet.
+      - name: Test
+        if: matrix.platform != 'windows'
+        run: npm test
       - name: Build
         run: npm run build
       # Signing and notarization start only when the secrets exist: without them the package stays unsigned.
