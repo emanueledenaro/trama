@@ -4,7 +4,7 @@ import { Badge } from "@/components/ui/field";
 import { act, useUi } from "@/lib/store";
 import { EmptyNote, InspectorSection } from "./Inspector";
 
-const ORDER: CandidateState[] = ["decided", "building", "verified"];
+const ORDER: CandidateState[] = ["decided", "building", "verified", "superseded"];
 const PLAN_STATUS: Record<WorkPlan["status"], { label: string; tone: "info" | "warning" | "destructive" | "secondary" }> = {
   planning: { label: "In preparazione", tone: "secondary" },
   seams: { label: "Seam da rivedere", tone: "warning" },
@@ -12,7 +12,7 @@ const PLAN_STATUS: Record<WorkPlan["status"], { label: string; tone: "info" | "w
   stale: { label: "Da rivalutare", tone: "warning" },
   failed: { label: "Non riuscito", tone: "destructive" },
 };
-const TITLES: Record<CandidateState, string> = { decided: "Deciso", building: "In costruzione", verified: "Verificato" };
+const TITLES: Record<CandidateState, string> = { decided: "Deciso", building: "In costruzione", verified: "Verificato", superseded: "Superato" };
 
 export function WorkView() {
   const project = useUi((s) => s.app?.project)!;

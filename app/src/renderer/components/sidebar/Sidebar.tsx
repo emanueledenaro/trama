@@ -152,7 +152,7 @@ export function Sidebar({ isMac }: { isMac: boolean }) {
   const openIssues = project?.github.issues.filter((i) => i.state === "open").length ?? 0;
   const pendingTeam = document?.team.proposals.some((p) => !p.resolution) ?? false;
   const activeWork = document?.team.specialists.filter((s) => s.status === "working" || s.status === "stopping").length ?? 0;
-  const verifiedCandidates = project ? Object.values(project.candidateReports).filter((r) => r.state !== "building").length : 0;
+  const verifiedCandidates = project ? Object.values(project.candidateReports).filter((r) => r.state === "verified" || r.state === "decided").length : 0;
   const specialists = sidebarSpecialists(document?.team.specialists ?? []);
   const running = Boolean(project?.runningRequestId) || project?.phase.kind === "studying" || project?.phase.kind === "opening";
   const isActive = (kind: InspectorTarget["kind"]) => inspector?.kind === kind;

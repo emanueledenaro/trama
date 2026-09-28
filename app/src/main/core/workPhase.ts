@@ -15,6 +15,7 @@ import { readableFailure } from "@shared/providerFailure";
 import { isOpenQuestion, pendingMandateRequest } from "@shared/domain";
 import { workRequests } from "@shared/grilling";
 import { PROVIDERS } from "@shared/providers";
+import { candidateSuperseded } from "@shared/conflictScope";
 import { inspectCandidate, latestCandidate } from "./candidates";
 import { pendingQuestion, pendingState, type QuestionView, questionsText, questionViews } from "./developerQuestions";
 import { sliceViews, slicesText } from "./slices";
@@ -200,9 +201,9 @@ function candidateBlockerText(candidate: Candidate, blocker: CandidateBlocker): 
     case "EXTERNAL_EFFECT_UNSUPPORTED":
       return `Il candidato ${candidate.id} ha un effetto esterno che Trama non verifica: ${blocker.detail}`;
     case "REMOTE_CONFLICT":
-      return `Il candidato ${candidate.id} è in conflitto con il lavoro dei colleghi: ${blocker.detail}`;
+      return `Il candidato ${candidate.id} è in conflitto con il lavoro su GitHub: ${blocker.detail}`;
     case "WORKTREE_CONFLICT":
-      return `Il candidato ${candidate.id} è in conflitto con il worktree di un altro sviluppatore: ${blocker.detail}`;
+      return `Il candidato ${candidate.id} è in conflitto con il lavoro di un altro incarico: ${blocker.detail}`;
     default:
       return `Il candidato ${candidate.id} è bloccato: ${blocker.code} ${blocker.detail}`.trim();
   }
@@ -367,7 +368,11 @@ function assignedWork(
   for (const assignment of paused) {
     if (pendingState(assignment) === "asked") moves.add(coordinator("answerQuestion", pendingQuestion(assignment)!.id));
   }
-  const items = assignments.filter((a) => a.status !== "paused").map((assignment) => ({ assignment, candidate: latestCandidate(document, assignment.id) }));
+  // A candidate replaced by later work (U02) is neither verified nor blocks the phase: the newer work does.
+  const items = assignments
+    .filter((a) => a.status !== "paused")
+    .map((assignment) => ({ assignment, candidate: latestCandidate(document, assignment.id) }))
+    .filter(({ candidate }) => !candidate || !candidateSuperseded(document, candidate));
   for (const { assignment, candidate } of items) {
     if (isActive(assignment) && assignment.waitingForProvider) {
       const provider = providerName(assignment.waitingForProvider.provider);
