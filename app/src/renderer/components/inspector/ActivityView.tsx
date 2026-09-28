@@ -91,6 +91,35 @@ function StepRow({ entry, dialog }: { entry: ActivityEntry; dialog: string }) {
   );
 }
 
+/** Trama's merge of a candidate (issue #247): merged on whose authority, or why it stopped, with its pull request. */
+function MergeRow({ entry, dialog }: { entry: ActivityEntry; dialog: string }) {
+  return (
+    <li className="py-2" data-testid="activity-merge" data-outcome={entry.outcome}>
+      <div className="flex items-center gap-2">
+        <span className="min-w-0 flex-1 truncate text-ui text-foreground">{entry.label}</span>
+        <Badge tone={OUTCOME_TONES[entry.outcome]}>{ACTIVITY_OUTCOME_LABELS[entry.outcome]}</Badge>
+      </div>
+      <p className="mt-0.5 text-ui-xs text-muted-foreground">
+        {formatDate(entry.startedAt)}
+        <Sep />
+        {dialog}
+      </p>
+      {entry.detail ? (
+        <p className="mt-1 text-ui-sm text-muted-foreground">
+          <ReferenceText text={entry.detail} />
+        </p>
+      ) : null}
+      {entry.pullRequest ? (
+        <div className="cta-row mt-1.5">
+          <Button size="xs" variant="ghost" onClick={() => void act("shell:openExternal", { url: entry.pullRequest!.url })}>
+            Apri la pull request
+          </Button>
+        </div>
+      ) : null}
+    </li>
+  );
+}
+
 function RoundRow({ entry }: { entry: ActivityEntry }) {
   return (
     <li className="py-2" data-testid="activity-round">
@@ -239,7 +268,7 @@ export function ActivityView() {
   const entries = useMemo(
     () =>
       document
-        ? activityLog(document.requests, document.events, document.continuousWork?.rounds ?? [], document.problems?.items ?? [], document.autonomousSteps ?? [])
+        ? activityLog(document.requests, document.events, document.continuousWork?.rounds ?? [], document.problems?.items ?? [], document.autonomousSteps ?? [], document.candidates)
         : [],
     [document],
   );
@@ -254,6 +283,7 @@ export function ActivityView() {
               if (entry.kind === "round") return <RoundRow key={entry.id} entry={entry} />;
               if (entry.kind === "problem") return <ProblemRow key={entry.id} entry={entry} />;
               if (entry.kind === "step") return <StepRow key={entry.id} entry={entry} dialog={dialog} />;
+              if (entry.kind === "merge") return <MergeRow key={entry.id} entry={entry} dialog={dialog} />;
               return <ActivityRow key={entry.id} entry={entry} dialog={dialog} />;
             })}
           </ul>
