@@ -2,7 +2,7 @@
 
 Data: 28 settembre 2026. Issue #317. Base: `origin/main` 8bf9f4a.
 
-Dal 26 settembre sono entrate su `main` 71 pull request, molte con conflitti risolti a mano. Questo registro dice cosa ho controllato, come e con quale esito. Tutte le prove usano il Codex finto (`app/test-fixtures/fake-codex.mjs`): nessuna esecuzione reale di Codex.
+Dal 26 settembre sono entrate su `main` 71 pull request fino a 8bf9f4a, più #312 entrata durante questo lavoro, molte con conflitti risolti a mano. Questo registro dice cosa ho controllato, come e con quale esito. Tutte le prove usano il Codex finto (`app/test-fixtures/fake-codex.mjs`): nessuna esecuzione reale di Codex.
 
 ## 1. Controlli su origin/main
 
@@ -57,6 +57,7 @@ Proposte non implementate: rinumerare i prefissi condivisi insieme ai registri c
 
 | PR | Cosa garantiva | Come l'ho verificato | Esito |
 |---|---|---|---|
+| #312 | Unione dei candidati con il via libera, modifiche all'interfaccia tenute per la persona | Unita dopo 8bf9f4a ed entrata con il riallineamento; i suoi test e i passi di ui-check (per esempio `30a-merge-activity`) sono nell'inventario e verdi nella corsa del punto 7 | regge |
 | #303 | Scelta italiano o inglese al primo avvio, lingua agli agenti | `i18n.test.ts` "has every key in every language", `language.integration.test.ts`, ui-check `12-settings-en`, `translate` e `settings.language` | regge (#301 resta aperta per la seconda parte) |
 | #304 | Cancello fermo solo per veri errori della sandbox, revisori "non partiti" | `gate.test.ts` "ends without an outcome when a check could not run for the sandbox or the machine...", `stopAtEnvironment` in `controller.ts` | regge |
 | #308 | Aggiornamento delle dipendenze di `app/` | `package.json` uguale al merge; suite, build e ui-check verdi sul punto 1 | regge |
