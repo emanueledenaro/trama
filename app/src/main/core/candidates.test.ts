@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { approveCandidate, candidateReport, clearCandidate, declareCandidate, recordEvidence, recordTechnicalReview } from "./candidates";
+import { approveCandidate, candidateAfterTurn, candidateReport, clearCandidate, declareCandidate, latestCandidate, rebindTramaCandidate, recordEvidence, recordTechnicalReview } from "./candidates";
 import { emptyDocument } from "./document";
-import { decide } from "./pact";
+import { decide, grantMandate, revokeMandate } from "./pact";
 import { assign, beginTurn, confirmTeam, endTurn, findAssignment, proposeTeam } from "./team";
 
 function setup() {
@@ -210,5 +210,110 @@ describe("candidates", () => {
     const report = candidateReport(document, candidate, "base");
     expect(report.state).toBe("decided");
     expect(report.approvalInvalidated).toBe(false);
+  });
+
+  describe("the candidate after a developer's turn (issue #388)", () => {
+    const worktree = (snapshotId: string, changedFiles = ["a"]) => ({
+      snapshotId,
+      baseSHA: "base",
+      diff: `diff ${snapshotId}`,
+      changedFiles,
+      excludedSensitiveFiles: [],
+      whitespaceErrors: [],
+    });
+
+    /** A verified and approved candidate, then the developer's new turn in the same worktree. */
+    function corrected() {
+      const context = setup();
+      const { document, candidate } = context;
+      grantMandate(document, { objectives: ["o"], priorities: [], scopeModuleIds: ["m"], authorizedActions: ["executeInWorktree"], limits: [] });
+      recordEvidence(document, candidate.id, { check: "git_status", passed: true, command: "git status", output: "", snapshotId: "snap" });
+      recordTechnicalReview(document, candidate.id, { reviewerThreadId: "r", authorThreadId: "a", verdict: "approved", summary: "ok" });
+      candidate.unresolvedChoices = ["Il colore del bottone"];
+      const assignment = findAssignment(document, candidate.assignmentId)!;
+      assignment.status = "preparing";
+      beginTurn(document, assignment.id, "t2", "gpt");
+      endTurn(document, assignment.id, "t2", { kind: "completed", text: "Corretto" });
+      return { ...context, assignment };
+    }
+
+    it("declares the new candidate from the worktree the turn changed, bound to the same decisions", () => {
+      const { document, decision, candidate, assignment } = corrected();
+      const outcome = candidateAfterTurn(document, assignment.id, worktree("snap-2"), new Date("2026-09-28T16:26:00Z"));
+      expect(outcome.kind).toBe("declared");
+      const fresh = latestCandidate(document, assignment.id)!;
+      expect(fresh).not.toBe(candidate);
+      expect(fresh).toMatchObject({
+        snapshotId: "snap-2",
+        diff: "diff snap-2",
+        requiredDecisionIds: [decision.id],
+        unresolvedChoices: ["Il colore del bottone"],
+        declaredBy: "trama",
+        evidence: {},
+        technicalReview: null,
+      });
+      expect(assignment.worktreeSnapshot).toEqual({ snapshotId: "snap-2", at: "2026-09-28T16:26:00.000Z" });
+      // The old candidate is replaced: the person can no longer approve it.
+      expect(candidateReport(document, candidate, "base").state).toBe("superseded");
+      expect(() => approveCandidate(document, candidate.id, "Persona", "base")).toThrow(/sostituito/);
+    });
+
+    it("keeps the candidate when the turn left the worktree as it was", () => {
+      const { document, candidate, assignment } = corrected();
+      expect(candidateAfterTurn(document, assignment.id, worktree("snap"))).toEqual({ kind: "current", candidate });
+      expect(latestCandidate(document, assignment.id)).toBe(candidate);
+      expect(candidateReport(document, candidate, "base").blockers).toEqual([{ code: "UNRESOLVED_CHOICE", detail: "Il colore del bottone" }]);
+    });
+
+    it("leaves the first candidate to the Coordinator", () => {
+      const { document, candidate, assignment } = corrected();
+      document.candidates = document.candidates.filter((c) => c.id !== candidate.id);
+      expect(candidateAfterTurn(document, assignment.id, worktree("snap-2"))).toEqual({ kind: "none" });
+      expect(document.candidates).toEqual([]);
+    });
+
+    it("says why it cannot declare, and a candidate that lags the worktree is never cleared or approved", () => {
+      const cases = [
+        { reason: "notAuthorized", prepare: (document: ReturnType<typeof setup>["document"]) => revokeMandate(document, "stop") },
+        { reason: "emptyWorktree", files: [] as string[] },
+        { reason: "invalid", prepare: (document: ReturnType<typeof setup>["document"]) => void (document.decisions = []) },
+      ];
+      for (const { reason, prepare, files } of cases) {
+        const { document, candidate, assignment } = corrected();
+        candidate.unresolvedChoices = [];
+        clearCandidate(document, candidate.id, "Coordinatore", "base");
+        prepare?.(document);
+        const outcome = candidateAfterTurn(document, assignment.id, worktree("snap-2", files));
+        expect(outcome).toMatchObject({ kind: "refused", reason, previous: candidate });
+        expect(latestCandidate(document, assignment.id)).toBe(candidate);
+        const report = candidateReport(document, candidate, "base");
+        expect(report.blockers[0]).toMatchObject({ code: "WORKTREE_CHANGED" });
+        expect(report.state).toBe("building");
+        expect(() => approveCandidate(document, candidate.id, "Persona", "base")).toThrow(/WORKTREE_CHANGED/);
+        expect(() => clearCandidate(document, candidate.id, "Coordinatore", "base")).toThrow(/WORKTREE_CHANGED/);
+      }
+    });
+
+    it("never touches a published candidate's pull request", () => {
+      const { document, candidate, assignment } = corrected();
+      candidate.pullRequest = { url: "u", number: 7, branch: "trama/a", at: "" };
+      expect(candidateAfterTurn(document, assignment.id, worktree("snap-2"))).toMatchObject({ kind: "refused", reason: "published" });
+      expect(latestCandidate(document, assignment.id)).toBe(candidate);
+      expect(candidateReport(document, candidate, "base").blockers.map((b) => b.code)).not.toContain("WORKTREE_CHANGED");
+    });
+
+    it("binds Trama's untouched candidate to the Coordinator's decisions instead of declaring a copy", () => {
+      const { document, decision, assignment } = corrected();
+      candidateAfterTurn(document, assignment.id, worktree("snap-2"));
+      const fresh = latestCandidate(document, assignment.id)!;
+      const other = decide(document, { id: null, value: "Rimborso", acceptedExample: "e", rationale: "r" });
+      const input = { assignmentId: assignment.id, decisionIds: [decision.id, other.id], unresolvedChoices: [], externalEffects: [] };
+      expect(rebindTramaCandidate(document, input, worktree("snap-3"))).toBeNull();
+      expect(rebindTramaCandidate(document, input, worktree("snap-2"))).toBe(fresh);
+      expect(fresh).toMatchObject({ requiredDecisionIds: [decision.id, other.id], unresolvedChoices: [] });
+      // Once checked, the same declaration is a new candidate as before.
+      recordEvidence(document, fresh.id, { check: "git_status", passed: true, command: "git status", output: "", snapshotId: "snap-2" });
+      expect(rebindTramaCandidate(document, input, worktree("snap-2"))).toBeNull();
+    });
   });
 });

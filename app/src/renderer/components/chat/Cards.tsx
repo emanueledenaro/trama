@@ -1470,8 +1470,8 @@ export function CandidateCard({ candidateId, layout = "card", children }: { cand
           <ul className="space-y-0.5 text-ui-sm" data-testid="candidate-blockers">
             {report.blockers.map((b) => (
               <li key={`${b.code}-${b.detail}`}>
-                {BLOCKER_TEXT[b.code] ?? b.code}
-                {b.code === "BASE_CHANGED" ? null : (
+                {b.code === "WORKTREE_CHANGED" ? t("candidate.blocker.worktreeChanged") : (BLOCKER_TEXT[b.code] ?? b.code)}
+                {b.code === "BASE_CHANGED" || b.code === "WORKTREE_CHANGED" ? null : (
                   <span className="text-muted-foreground">
                     <Sep />
                     <ReferenceText text={CHECK_BLOCKERS.has(b.code) ? checkName(b.detail) : b.detail} />
