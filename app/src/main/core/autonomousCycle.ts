@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { AutonomousStep, DelegableMove, MandateAction, ProjectDocument, WorkPlan } from "@shared/domain";
+import type { AutonomousMove, AutonomousStep, DelegableMove, MandateAction, ProjectDocument, WorkPlan } from "@shared/domain";
 import { AUTONOMOUS_STEP_LABELS } from "@shared/activity";
 import { shortId } from "@shared/ids";
 import type { ContinuationGuards } from "./continuousWork";
@@ -165,11 +165,12 @@ export function planWorkStarted(document: ProjectDocument, plan: WorkPlan): bool
  * sends it as the person's message, so the chat shows it in the person's language.
  */
 export function correctionMessage(step: AutonomousStep): string {
-  const what: Record<DelegableMove, MessageKey> = {
+  const what: Record<AutonomousMove, MessageKey> = {
     confirmUnderstanding: "main.autonomousCycle.what.confirmUnderstanding",
     confirmTeam: "main.autonomousCycle.what.confirmTeam",
     confirmSeams: "main.autonomousCycle.what.confirmSeams",
     confirmSlices: "main.autonomousCycle.what.confirmSlices",
+    formSquads: "main.autonomousCycle.what.formSquads",
   };
   return t("main.autonomousCycle.correction", { what: t(what[step.move]), note: step.correction?.note ?? "" });
 }

@@ -1,10 +1,13 @@
 import type { ProjectDocument } from "./domain";
 
-/** Developers at work at the same time in a project unless the person changes it (spec #137, Q5). */
+/**
+ * Developers at work at the same time in a project unless the person changes it (spec #137, Q5). With squads the
+ * default grows with them, up to three squads of three (A10, ADR 0017): `squadLimits` in `@shared/squads`.
+ */
 export const DEFAULT_PARALLEL_DEVELOPERS = 3;
-/** The range the project setting accepts (W08); the fixed roles never count. */
+/** The range the project setting accepts (W08), up to three squads of three (A10); the fixed roles never count. */
 export const MIN_PARALLEL_DEVELOPERS = 1;
-export const MAX_PARALLEL_DEVELOPERS_SETTING = 6;
+export const MAX_PARALLEL_DEVELOPERS_SETTING = 9;
 
 /** A requested limit brought into the accepted range, or null when it is not a whole number. */
 export function clampParallelDevelopers(value: unknown): number | null {

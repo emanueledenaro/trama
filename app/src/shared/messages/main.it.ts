@@ -311,6 +311,8 @@ export const mainIt = {
     "Il candidato {candidate} entra in conflitto con {other}: si risolve prima dell'unione.",
   "main.controller.parallelDevelopersNotInteger":
     "Il numero di sviluppatori in parallelo deve essere un numero intero.",
+  "main.controller.developersPerSquadNotInteger": "Il numero di sviluppatori per squadra deve essere un numero intero.",
+  "main.controller.activeSquadsNotInteger": "Il numero di squadre al lavoro insieme deve essere un numero intero.",
   "main.controller.noTurnRunning": "Nessun turno in corso.",
   "main.controller.noSessionToReorder": "Il Coordinatore non ha ancora una sessione da riordinare.",
   "main.controller.cloudStopUntracked":
@@ -1540,6 +1542,7 @@ export const mainIt = {
   "main.autonomousCycle.what.confirmSeams": "i seam che hai confermato da solo",
   "main.autonomousCycle.what.confirmSlices":
     "le fette che hai confermato da solo",
+  "main.autonomousCycle.what.formSquads": "le squadre che hai formato da solo",
 
   // Ask Trama
   "main.askTrama.superseded":
@@ -1729,10 +1732,14 @@ export const mainIt = {
   "main.slicePicking.notCovered":
     "Il mandato non copre il lavoro di questa fetta.",
   "main.slicePicking.busy":
-    "Aspetta che finisca {ids}, che lavora sugli stessi moduli.",
+    "Aspetta che {who}: lavora sugli stessi moduli.",
+  "main.slicePicking.busyWho": "{developer} finisca «{objective}»",
+  "main.slicePicking.busyJoin": " e che ",
+  "main.slicePicking.someDeveloper": "uno sviluppatore",
   "main.slicePicking.occupied": "Qualcuno tocca ora questi moduli: {names}.",
   "main.slicePicking.noDeveloper":
     "Nessuno sviluppatore libero copre i moduli di questa fetta.",
+  "main.slicePicking.noDeveloperInSquad": "Nessuno sviluppatore libero della squadra {squad} copre i moduli di questa fetta.",
   "main.slicePicking.noProvider": "Nessun provider collegato può lavorare ora.",
   "main.slicePicking.modelReason":
     "Presa autonoma della fetta: lo stesso provider e modello del lavoro precedente.",
@@ -2425,4 +2432,17 @@ export const mainIt = {
   "main.redaction.shopDomain": "dominio del negozio rimosso",
   "main.redaction.address": "indirizzo rimosso",
   "main.redaction.placeholderAt": "{what}, vedi {where}",
+  // MARK: Squads by product area (A10)
+  "main.squads.developerName": "Sviluppo {area}",
+  "main.squads.developerCompetence": "Sviluppa l'area {area}.",
+  "main.squads.developerReason": "Il Coordinatore l'ha aggiunto dentro il mandato: la squadra {area} non aveva uno sviluppatore.",
+  "main.squads.leadName": "Capo {area}",
+  "main.squads.leadReason": "Ogni squadra ha un capo squadra: questo è della squadra {area}.",
+  "main.squads.qaReason": "Ogni squadra ha un QA dedicato: questo è della squadra {area}.",
+  "main.squads.summarySquad": "Squadra {squad} con {lead} (capo squadra), {developers} ({role}) e {qa} (QA dedicato).",
+  "main.squads.developers": "sviluppatori",
+  "main.squads.developers.one": "sviluppatore",
+  "main.squads.joins": "{developer} entra nella squadra {squad}.",
+  "main.squads.hired": "Aggiunti dentro il mandato: {names}.",
+  "main.slicePicking.squadsFull": "Le squadre al lavoro sono al loro limite: la fetta parte quando una si libera.",
 } satisfies Record<string, string>;

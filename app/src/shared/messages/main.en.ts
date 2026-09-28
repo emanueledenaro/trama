@@ -303,6 +303,8 @@ export const mainEn: Record<keyof typeof mainIt, string> = {
     "Candidate {candidate} conflicts with {other}: it gets resolved before the merge.",
   "main.controller.parallelDevelopersNotInteger":
     "The number of developers in parallel must be a whole number.",
+  "main.controller.developersPerSquadNotInteger": "The number of developers per squad must be a whole number.",
+  "main.controller.activeSquadsNotInteger": "The number of squads at work together must be a whole number.",
   "main.controller.noTurnRunning": "No turn in progress.",
   "main.controller.noSessionToReorder": "The Coordinator does not have a session to reorder yet.",
   "main.controller.cloudStopUntracked":
@@ -1488,6 +1490,7 @@ export const mainEn: Record<keyof typeof mainIt, string> = {
     "the test points you confirmed on your own",
   "main.autonomousCycle.what.confirmSlices":
     "the slices you confirmed on your own",
+  "main.autonomousCycle.what.formSquads": "the squads you formed on your own",
 
   // Ask Trama
   "main.askTrama.superseded": "The Coordinator proposed a newer route.",
@@ -1669,11 +1672,15 @@ export const mainEn: Record<keyof typeof mainIt, string> = {
   "main.slicePicking.notCovered":
     "The mandate does not cover the work of this slice.",
   "main.slicePicking.busy":
-    "Waiting for {ids} to finish: it works on the same modules.",
+    "Waiting until {who}: they work on the same modules.",
+  "main.slicePicking.busyWho": "{developer} finishes «{objective}»",
+  "main.slicePicking.busyJoin": " and ",
+  "main.slicePicking.someDeveloper": "a developer",
   "main.slicePicking.occupied":
     "Someone is touching these modules now: {names}.",
   "main.slicePicking.noDeveloper":
     "No free developer covers the modules of this slice.",
+  "main.slicePicking.noDeveloperInSquad": "No free developer of squad {squad} covers the modules of this slice.",
   "main.slicePicking.noProvider": "No connected provider can work now.",
   "main.slicePicking.modelReason":
     "Slice taken independently: the same provider and model as the previous work.",
@@ -2349,4 +2356,17 @@ export const mainEn: Record<keyof typeof mainIt, string> = {
   "main.redaction.shopDomain": "shop domain removed",
   "main.redaction.address": "address removed",
   "main.redaction.placeholderAt": "{what}, see {where}",
+  // MARK: Squads by product area (A10)
+  "main.squads.developerName": "{area} developer",
+  "main.squads.developerCompetence": "Develops the {area} area.",
+  "main.squads.developerReason": "The Coordinator added them within the mandate: squad {area} had no developer.",
+  "main.squads.leadName": "{area} lead",
+  "main.squads.leadReason": "Every squad has a squad lead: this one belongs to squad {area}.",
+  "main.squads.qaReason": "Every squad has a dedicated QA: this one belongs to squad {area}.",
+  "main.squads.summarySquad": "Squad {squad} with {lead} (squad lead), {developers} ({role}) and {qa} (dedicated QA).",
+  "main.squads.developers": "developers",
+  "main.squads.developers.one": "developer",
+  "main.squads.joins": "{developer} joins squad {squad}.",
+  "main.squads.hired": "Added within the mandate: {names}.",
+  "main.slicePicking.squadsFull": "The squads at work are at their limit: the slice starts when one frees up.",
 };
