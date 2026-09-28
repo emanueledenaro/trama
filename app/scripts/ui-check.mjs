@@ -56,6 +56,13 @@ const openView = async (view, tab) => {
   await page.locator(`[data-testid="side-bar"][data-view="${VIEWS[view]}"]`).waitFor();
   if (tab) await sideBar.getByRole("tab", { name: tab, exact: true }).click();
 };
+// The application menu (issue #345): an item by its id, clicked as the person would; and the label of an item.
+const clickMenu = (id) => app.evaluate(({ Menu }, itemId) => Menu.getApplicationMenu().getMenuItemById(itemId).click(), id);
+const menuLabel = (id) => app.evaluate(({ Menu }, itemId) => Menu.getApplicationMenu().getMenuItemById(itemId)?.label ?? null, id);
+const menuLabelBecomes = async (id, label, timeout = 5_000) => {
+  for (const end = Date.now() + timeout; Date.now() < end; await page.waitForTimeout(100)) if ((await menuLabel(id)) === label) return;
+  throw new Error(`The menu item ${id} is "${await menuLabel(id)}", not "${label}"`);
+};
 // The work in focus and the queue open from the status bar (issue #330).
 const openFocusPanel = async (timeout = 20_000) => {
   if (!(await page.getByTestId("focus-bar").count())) await page.getByTestId("status-focus").click({ timeout });
@@ -283,6 +290,8 @@ await languageChoice.getByRole("radio", { name: "English" }).click();
 await welcome.getByRole("heading", { name: "Welcome to Trama" }).waitFor();
 await welcome.getByRole("button", { name: "Set up", exact: true }).waitFor();
 if ((await page.evaluate(() => document.documentElement.lang)) !== "en") throw new Error("The page language did not follow the choice");
+// The application menu follows the language too (issue #345).
+await menuLabelBecomes("view:waiting", "Waiting for you");
 await primaryLast(welcome.locator(".cta-row").last(), "Welcome in English");
 for (const [label, theme] of themes) {
   await setTheme(theme);
@@ -297,6 +306,7 @@ await welcome.getByRole("button", { name: "Back" }).click();
 await welcome.getByRole("button", { name: "Back" }).click();
 await languageChoice.getByRole("radio", { name: "Italiano" }).click();
 await welcome.getByRole("heading", { name: "Benvenuto in Trama" }).waitFor();
+await menuLabelBecomes("view:waiting", "Aspetta te");
 await welcome.getByRole("button", { name: "Configura", exact: true }).click();
 // The configuration starts at the first step still open: the fake Codex account already completes the provider.
 await welcome.getByRole("heading", { name: /Collega GitHub/ }).waitFor();
@@ -501,6 +511,31 @@ await shot("02-demo-study");
   await page.waitForFunction(() => document.querySelector('[role="separator"][aria-label^="Larghezza della barra laterale"]')?.getAttribute("aria-valuenow") === "300");
   await page.getByRole("button", { name: "Chiudi la barra laterale" }).click();
   await page.setViewportSize({ width: 1280, height: 820 });
+}
+// Issue #345: each item of the View menu opens its view of the activity bar. The items are found by their command, the
+// same whatever the platform and the language call the menu.
+{
+  const sideBar = page.getByTestId("side-bar");
+  for (const [name, view] of Object.entries(VIEWS)) {
+    await clickMenu(`view:${view}`);
+    await page.locator(`[data-testid="side-bar"][data-view="${view}"]`).waitFor();
+    if ((await activityBar().getByRole("button", { name, exact: true }).getAttribute("aria-pressed")) !== "true") throw new Error(`The View menu's ${name} does not press its icon`);
+  }
+  // The menu opens a view, it does not close it as its icon does.
+  await clickMenu("view:memory");
+  await page.waitForTimeout(300);
+  if ((await sideBar.getAttribute("data-view")) !== "memory") throw new Error("The View menu closed the view it should open");
+  // The Activity panel, the side bar and the composer, as their shortcuts Cmd/Ctrl+J, B and L.
+  await clickMenu("togglePanel");
+  await sideBar.getByRole("tab", { name: "Attività", selected: true }).waitFor();
+  await clickMenu("togglePanel");
+  await sideBar.waitFor({ state: "detached" });
+  await clickMenu("toggleSidebar");
+  await sideBar.waitFor();
+  await clickMenu("toggleSidebar");
+  await sideBar.waitFor({ state: "detached" });
+  await clickMenu("focusComposer");
+  await page.waitForFunction(() => document.activeElement?.getAttribute("aria-label") === "Messaggio al Coordinatore");
 }
 // Issue #292: at the start only the goal the Coordinator proposed waits for the person, in the summary, in the sidebar
 // counter and as a reference in the chat.

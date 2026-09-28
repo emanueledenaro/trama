@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import type { ProviderId } from "@shared/codex";
 import { chatComposer } from "@shared/goals";
+import { translator } from "@shared/i18n";
 import { shouldShowWelcomeOnLaunch } from "@shared/onboarding";
 import { ChatView } from "@/components/chat/ChatView";
 import { Dialogs } from "@/components/Dialogs";
@@ -15,7 +16,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { cn } from "@/lib/cn";
 import { useDocumentLanguage, useT } from "@/lib/i18n";
 import { act, refreshProject, useUi } from "@/lib/store";
-import { SIDE_BAR_MIN_WIDTH, sideBarDefaultWidth, sideBarMaxWidth } from "@/lib/workbench";
+import { SIDE_BAR_MIN_WIDTH, SIDE_BAR_VIEWS, type SideBarView, sideBarDefaultWidth, sideBarMaxWidth } from "@/lib/workbench";
 
 function useThemeClass(theme: "system" | "light" | "dark" | undefined) {
   useEffect(() => {
@@ -41,6 +42,11 @@ function useProviderTheme() {
     if (provider) document.documentElement.dataset.provider = provider;
     else delete document.documentElement.dataset.provider;
   }, [project]);
+}
+
+/** A view from the View menu opens in the side bar as from the activity bar, but stays open when it already shows (issue #345). */
+function openMenuView(ui: ReturnType<typeof useUi.getState>, view: SideBarView) {
+  if (!(ui.sidebarOpen && ui.sideBarView === view)) ui.openView(view);
 }
 
 export function App() {
@@ -69,13 +75,16 @@ export function App() {
         void act("exercise:start", { exercise }).then(() => useUi.getState().setExercise(exercise));
       }
       else if (command === "toggleSidebar") ui.toggleSidebar();
+      else if (command === "view:projects") openMenuView(ui, "projects");
       // The items below act on the open project; without one they say so instead of doing nothing (W12).
-      else if (!ui.app?.project) ui.setToast("Apri o crea un progetto per usare questa voce.", "info");
+      else if (!ui.app?.project) ui.setToast(translator(ui.app?.language)("menu.needsProject"), "info");
       else if (command === "focusComposer") ui.focusComposer();
       else if (command === "refreshProject") void refreshProject();
-      else if (command === "toggleInspector") ui.setInspector(ui.sidebarOpen && ui.mainView === "dialog" ? null : { kind: "map" });
-      else if (command.startsWith("inspector:")) {
-        ui.setInspector({ kind: command.slice("inspector:".length) as "map" | "pact" | "mandate" | "issues" | "team" | "work" | "group" | "memory" });
+      // Activity opens in the side bar until the bottom panel arrives (B08), as the title bar's toggle does.
+      else if (command === "togglePanel") ui.setInspector(ui.sidebarOpen && ui.inspector?.kind === "activity" ? null : { kind: "activity" });
+      else if (command.startsWith("view:")) {
+        const view = command.slice("view:".length) as SideBarView;
+        if (SIDE_BAR_VIEWS.includes(view)) openMenuView(ui, view);
       }
     });
     return () => {

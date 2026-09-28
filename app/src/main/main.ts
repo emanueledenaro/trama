@@ -1,9 +1,11 @@
 import { release } from "node:os";
 import { join } from "node:path";
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, Notification, powerMonitor, shell, type MenuItemConstructorOptions } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, Notification, powerMonitor, shell } from "electron";
 import type { AppSettings } from "@shared/domain";
+import type { Language } from "@shared/i18n";
 import type { ActionMap, ActionName } from "@shared/ipc";
 import { TramaController } from "./controller";
+import { type MenuCommand, menuTemplate } from "./menu";
 
 app.setName("Trama");
 if (!app.requestSingleInstanceLock()) app.exit(0);
@@ -17,6 +19,8 @@ let window: BrowserWindow | null = null;
 // would show Electron's icon in the Dock and Windows and Linux would show none on the window and in the taskbar.
 const iconDirectory = app.isPackaged ? join(process.resourcesPath, "icons") : join(app.getAppPath(), "resources", "icons");
 const windowIcon = process.platform === "win32" ? join(iconDirectory, "icon.ico") : join(iconDirectory, "png", "512x512.png");
+// The third-party notices ship next to the app (electron-builder extraResources); unpackaged they are at the repository's root.
+const noticesPath = app.isPackaged ? join(process.resourcesPath, "THIRD_PARTY_NOTICES.md") : join(app.getAppPath(), "..", "THIRD_PARTY_NOTICES.md");
 
 function surfaceColor(): string {
   return nativeTheme.shouldUseDarkColors ? "#111111" : "#ffffff";
@@ -25,7 +29,10 @@ function surfaceColor(): string {
 // The desktop app keeps its state in Trama/Desktop; the SwiftUI app's files in Trama are only read.
 const legacyRoot = process.env.TRAMA_DATA_DIR ? (process.env.TRAMA_LEGACY_DIR ?? null) : join(app.getPath("appData"), "Trama");
 const controller = new TramaController(process.env.TRAMA_DATA_DIR ?? join(app.getPath("appData"), "Trama", "Desktop"), {
-  publish: (state) => window?.webContents.send("trama:state", state),
+  publish: (state) => {
+    if (menuLanguage !== null && state.language !== menuLanguage) buildMenu(state.language);
+    window?.webContents.send("trama:state", state);
+  },
   openExternal: (url) => shell.openExternal(url),
   applyTheme: (theme: AppSettings["theme"]) => {
     nativeTheme.themeSource = theme;
@@ -233,90 +240,27 @@ ipcMain.handle("trama:action", async (_event, action: ActionName, payload: unkno
   return handler(payload as never);
 });
 
-function sendMenu(command: string): void {
+function sendMenu(command: MenuCommand): void {
   window?.webContents.send("trama:menu", command);
 }
 
-function buildMenu(): void {
-  const template: MenuItemConstructorOptions[] = [
-    ...(isMac
-      ? [
-          {
-            label: "Trama",
-            submenu: [
-              { role: "about" as const, label: "Informazioni su Trama" },
-              { type: "separator" as const },
-              { label: "Impostazioni…", accelerator: "CmdOrCtrl+,", click: () => sendMenu("settings") },
-              { type: "separator" as const },
-              { role: "hide" as const, label: "Nascondi Trama" },
-              { role: "hideOthers" as const, label: "Nascondi altre" },
-              { role: "unhide" as const, label: "Mostra tutte" },
-              { type: "separator" as const },
-              { role: "quit" as const, label: "Esci da Trama" },
-            ],
-          },
-        ]
-      : []),
-    {
-      label: "Archivio",
-      submenu: [
-        { label: "Apri progetto…", accelerator: "CmdOrCtrl+O", click: () => void handlers["project:openDialog"]() },
-        { label: "Apri progetto di esempio", click: () => void controller.openDemo().catch(() => undefined) },
-        { label: "Crea un progetto…", click: () => sendMenu("createProject") },
-        { type: "separator" },
-        // Through the window, so the menu item confirms the rescan like the header button does (W12).
-        { label: "Aggiorna progetto", accelerator: "CmdOrCtrl+R", click: () => sendMenu("refreshProject") },
-        ...(isMac ? [] : [{ type: "separator" as const }, { label: "Impostazioni…", accelerator: "CmdOrCtrl+,", click: () => sendMenu("settings") }]),
-        ...(isMac ? [{ role: "close" as const, label: "Chiudi finestra" }] : [{ role: "quit" as const, label: "Esci" }]),
-      ],
+// The menu speaks the language Trama speaks, and is built again when the person changes it (issue #345).
+let menuLanguage: Language | null = null;
+
+function buildMenu(language: Language): void {
+  menuLanguage = language;
+  const template = menuTemplate({
+    platform: process.platform === "darwin" || process.platform === "win32" ? process.platform : "linux",
+    language,
+    packaged: app.isPackaged,
+    actions: {
+      send: sendMenu,
+      openProject: () => void Promise.resolve(handlers["project:openDialog"]()).catch(() => undefined),
+      openDemo: () => void controller.openDemo().catch(() => undefined),
+      openExternal: (url) => void shell.openExternal(url),
+      openNotices: () => void shell.openPath(noticesPath),
     },
-    {
-      label: "Composizione",
-      submenu: [
-        { role: "undo", label: "Annulla" },
-        { role: "redo", label: "Ripeti" },
-        { type: "separator" },
-        { role: "cut", label: "Taglia" },
-        { role: "copy", label: "Copia" },
-        { role: "paste", label: "Incolla" },
-        { role: "selectAll", label: "Seleziona tutto" },
-      ],
-    },
-    {
-      label: "Vista",
-      submenu: [
-        { label: "Scrivi al Coordinatore", accelerator: "CmdOrCtrl+L", click: () => sendMenu("focusComposer") },
-        { label: "Mostra o nascondi la barra laterale", accelerator: "CmdOrCtrl+B", click: () => sendMenu("toggleSidebar") },
-        { label: "Mostra dettagli", accelerator: "Alt+CmdOrCtrl+I", click: () => sendMenu("toggleInspector") },
-        { type: "separator" },
-        { label: "Mappa", accelerator: "CmdOrCtrl+1", click: () => sendMenu("inspector:map") },
-        { label: "Patto", accelerator: "CmdOrCtrl+2", click: () => sendMenu("inspector:pact") },
-        { label: "Mandato", accelerator: "CmdOrCtrl+3", click: () => sendMenu("inspector:mandate") },
-        { label: "Issue", accelerator: "CmdOrCtrl+4", click: () => sendMenu("inspector:issues") },
-        { label: "Team", accelerator: "CmdOrCtrl+5", click: () => sendMenu("inspector:team") },
-        { label: "Lavoro", accelerator: "CmdOrCtrl+6", click: () => sendMenu("inspector:work") },
-        { label: "Gruppo", accelerator: "CmdOrCtrl+7", click: () => sendMenu("inspector:group") },
-        { label: "Memoria", accelerator: "CmdOrCtrl+8", click: () => sendMenu("inspector:memory") },
-        { type: "separator" },
-        { role: "resetZoom", label: "Dimensione reale" },
-        { role: "zoomIn", label: "Ingrandisci" },
-        { role: "zoomOut", label: "Riduci" },
-        { type: "separator" },
-        { role: "togglefullscreen", label: "Schermo intero" },
-        ...(app.isPackaged ? [] : [{ role: "toggleDevTools" as const, label: "Strumenti per sviluppatori" }]),
-      ],
-    },
-    { role: "windowMenu", label: "Finestra" },
-    {
-      role: "help",
-      label: "Aiuto",
-      submenu: [
-        { label: "Benvenuto in Trama", click: () => sendMenu("welcome") },
-        { label: "Guida introduttiva", click: () => sendMenu("guide") },
-        { label: "Esercizi sul progetto di esempio", click: () => sendMenu("exercises") },
-      ],
-    },
-  ];
+  });
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
@@ -333,7 +277,7 @@ app.on("second-instance", () => {
 app.whenReady().then(async () => {
   // A packaged app takes its Dock icon from the bundle; unpackaged, Electron's own icon would show.
   if (isMac && !app.isPackaged) app.dock?.setIcon(join(iconDirectory, "png", "1024x1024.png"));
-  buildMenu();
+  buildMenu(controller.snapshot.language);
   if (!startedHidden) createWindow();
   await controller.start();
   // After sleep the monitor's timer and the providers' state are stale: check again at once.
