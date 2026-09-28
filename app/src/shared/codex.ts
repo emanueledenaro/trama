@@ -35,6 +35,14 @@ export const READ_OUTSIDE_SCOPE_TITLE = "Lettura fuori dal progetto bloccata";
 /** Title of the activity Trama records when it blocked one of the provider's own tools (issue #228). */
 export const TOOL_REFUSED_TITLE = "Strumento del provider bloccato";
 
+/** One step of a provider repair Trama ran by itself: what it did and how it went. */
+export interface ProviderRepairStep {
+  action: "updateCli" | "reinstallPlugin" | "checkHook";
+  outcome: "done" | "failed" | "notNeeded";
+  /** The version for `updateCli`, the error for a failed step. */
+  detail: string | null;
+}
+
 /** A normalized event from one running turn, forwarded to the renderer. */
 export type TurnEvent =
   | { type: "turnStarted"; turnId: string }
@@ -51,6 +59,8 @@ export type TurnEvent =
   | { type: "toolRefused"; itemId: string; tool: string; reason: string }
   /** Trama stopped an action a fixed ban covers before it started (issue #244): no mandate grants it. */
   | { type: "fixedBanRefused"; itemId: string; ban: import("./fixedBans").FixedBan; action: string }
+  /** Trama repaired the provider's CLI by itself before asking the person; `retrying` when the turn runs again once. */
+  | { type: "providerRepaired"; provider: ProviderId; steps: ProviderRepairStep[]; repaired: boolean; retrying: boolean }
   /**
    * `usedTokens` is what the thread holds in its context window now (null: not known right now, as after a
    * compaction); `processedTokens` is what the thread has processed so far, a cost only, never a context reading.
