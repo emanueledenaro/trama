@@ -363,7 +363,7 @@ export function GoalView({ id, edit = false }: { id: string; edit?: boolean }) {
         {editing ? (
           <GoalEditor goal={goal} onDone={() => setEditing(false)} />
         ) : (
-          <p className="text-ui whitespace-pre-wrap text-foreground/90">{goal.outcome}</p>
+          <p className="content-text whitespace-pre-wrap text-foreground/90">{goal.outcome}</p>
         )}
       </InspectorSection>
       {!editing ? (
