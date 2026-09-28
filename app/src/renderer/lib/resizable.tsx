@@ -2,7 +2,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/cn";
 
 export interface WidthBounds {
-  initial: number;
+  /** The default width in pixels, or a function of the window width. */
+  initial: number | ((viewport: number) => number);
   min: number;
   /** Upper bound in pixels, or a function of the window width. */
   max: number | ((viewport: number) => number);
@@ -10,27 +11,35 @@ export interface WidthBounds {
 
 const upper = (bounds: WidthBounds) => (typeof bounds.max === "number" ? bounds.max : bounds.max(window.innerWidth));
 
+const initialOf = (bounds: WidthBounds) => clampWidth(typeof bounds.initial === "number" ? bounds.initial : bounds.initial(window.innerWidth), bounds.min, upper(bounds));
+
 export const clampWidth = (width: number, min: number, max: number) => Math.round(Math.min(Math.max(width, min), Math.max(min, max)));
 
-function readWidth(key: string, bounds: WidthBounds): number {
+/** The width the person chose on this device, or null while the panel keeps its default. */
+function readWidth(key: string, bounds: WidthBounds): number | null {
   try {
     const saved = Number(localStorage.getItem(key));
     if (Number.isFinite(saved) && saved > 0) return clampWidth(saved, bounds.min, upper(bounds));
   } catch {
     // Storage can be missing or blocked: the default width still works.
   }
-  return bounds.initial;
+  return null;
 }
 
-/** A panel width the person can change, remembered on this device and kept within bounds when the window changes. */
+/**
+ * A panel width the person can change, remembered on this device and kept within bounds when the window changes.
+ * Until the person changes it, the panel keeps its default, which may follow the window's width.
+ */
 export function useResizableWidth(key: string, bounds: WidthBounds) {
-  const [width, setWidthState] = useState(() => readWidth(key, bounds));
+  const [chosen, setChosen] = useState(() => readWidth(key, bounds) !== null);
+  const [width, setWidthState] = useState(() => readWidth(key, bounds) ?? initialOf(bounds));
   // While the person drags, width transitions are off so the panel follows the pointer.
   const [resizing, setResizing] = useState(false);
   const setWidth = useCallback(
     (next: number) => {
       const value = clampWidth(next, bounds.min, upper(bounds));
       setWidthState(value);
+      setChosen(true);
       try {
         localStorage.setItem(key, String(value));
       } catch {
@@ -41,13 +50,26 @@ export function useResizableWidth(key: string, bounds: WidthBounds) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [key],
   );
+  const reset = useCallback(
+    () => {
+      setWidthState(initialOf(bounds));
+      setChosen(false);
+      try {
+        localStorage.removeItem(key);
+      } catch {
+        // Nothing remembered to forget.
+      }
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [key],
+  );
   useEffect(() => {
-    const onResize = () => setWidthState((current) => clampWidth(current, bounds.min, upper(bounds)));
+    const onResize = () => setWidthState((current) => (chosen ? clampWidth(current, bounds.min, upper(bounds)) : initialOf(bounds)));
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-  return { width, setWidth, resizing, setResizing, reset: () => setWidth(bounds.initial), bounds: { min: bounds.min, max: upper(bounds) } };
+  }, [chosen]);
+  return { width, setWidth, resizing, setResizing, reset, bounds: { min: bounds.min, max: upper(bounds) } };
 }
 
 /** Which way a sash moves: a vertical sash splits panels side by side, a horizontal one splits them top and bottom. */

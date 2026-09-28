@@ -334,9 +334,10 @@ function Column({ title, testId, className, children }: { title: string; testId:
 
 /**
  * Full-screen focus mode (F03, spec #124): progress on the left, findings in the middle, the proof on the right. It
- * covers the whole window until the person leaves it; the other projects keep working and their notifications wait.
+ * takes the whole editor area, inside the window's title, activity, side and status bars, until the person leaves it;
+ * the other projects keep working and their notifications wait.
  */
-export function FocusModeView({ isMac }: { isMac: boolean }) {
+export function FocusModeView() {
   const t = useT();
   const project = useUi((s) => s.app?.project)!;
   const focus = useUi((s) => s.app?.focusMode)!;
@@ -360,7 +361,7 @@ export function FocusModeView({ isMac }: { isMac: boolean }) {
   );
   if (!audit) {
     return (
-      <div className="chat-content-card flex h-svh w-full flex-col items-center justify-center gap-3" data-focus-mode="">
+      <div className="flex h-full w-full flex-col items-center justify-center gap-3" data-focus-mode="">
         <p className="text-ui text-muted-foreground">{t("focus.notFound")}</p>
         <div className="cta-row">{exit}</div>
       </div>
@@ -374,13 +375,8 @@ export function FocusModeView({ isMac }: { isMac: boolean }) {
   const checks = candidate?.requiredChecks ?? audit.checks.map((c) => c.check);
 
   return (
-    <div className="chat-content-card relative flex h-svh w-full min-w-0 flex-col" data-testid="focus-audit" data-focus-mode="" data-status={audit.status}>
-      <header
-        className={cn(
-          "chat-surface-divider drag-region flex min-h-[46px] shrink-0 flex-wrap items-center gap-x-3 gap-y-1 px-3 py-1.5 sm:px-5",
-          isMac && "desktop-top-bar-traffic-light-gutter",
-        )}
-      >
+    <div className="@container/focus relative flex h-full w-full min-w-0 flex-col" data-testid="focus-audit" data-focus-mode="" data-status={audit.status}>
+      <header className="chat-surface-divider flex min-h-[46px] shrink-0 flex-wrap items-center gap-x-3 gap-y-1 px-3 py-1.5 sm:px-5">
         <div className="flex min-w-[12rem] flex-1 items-center gap-2">
           <IconFocus2 className="size-4 shrink-0 text-muted-foreground" stroke={1.7} />
           <h1 className="min-w-0 truncate font-system-ui text-ui text-foreground" data-testid="focus-mode-title">
@@ -392,10 +388,10 @@ export function FocusModeView({ isMac }: { isMac: boolean }) {
             {AUDIT_STATUS_TEXT[audit.status]}
           </span>
         </div>
-        <div className="no-drag flex flex-wrap items-center justify-end gap-2">
+        <div className="flex flex-wrap items-center justify-end gap-2">
           <span className="inline-flex items-center gap-1 text-ui-sm text-muted-foreground" data-testid="focus-mode-notifications" title={t("focus.pausedHint")}>
             <IconBellPause className="size-3.5" stroke={1.7} />
-            {focus.pausedNotifications ? t("focus.pausedCount", { count: focus.pausedNotifications }) : t("focus.paused")}
+            {focus.pausedNotifications ? t("focus.pausedCount", { count: focus.pausedNotifications }) : t("focus.notificationsPaused")}
           </span>
           <div className="cta-row">
             {audit.status === "done" && linked && !audit.publication ? (
@@ -413,20 +409,21 @@ export function FocusModeView({ isMac }: { isMac: boolean }) {
         </div>
       </header>
       <div
-        className="grid min-h-0 flex-1 grid-cols-[minmax(13rem,15rem)_minmax(0,1fr)] grid-rows-[minmax(0,1fr)_minmax(0,auto)] lg:grid-cols-[minmax(15rem,18rem)_minmax(0,1fr)_minmax(18rem,24rem)] lg:grid-rows-1"
+        // The editor area, not the window, sets the columns: one below 44rem, two up to 64rem, three beyond.
+        className="grid min-h-0 flex-1 grid-cols-1 overflow-y-auto @min-[44rem]/focus:grid-cols-[minmax(13rem,15rem)_minmax(0,1fr)] @min-[44rem]/focus:grid-rows-[minmax(0,1fr)_minmax(0,auto)] @min-[44rem]/focus:overflow-hidden @min-[64rem]/focus:grid-cols-[minmax(15rem,18rem)_minmax(0,1fr)_minmax(18rem,24rem)] @min-[64rem]/focus:grid-rows-1"
         data-testid="focus-columns"
       >
-        <Column title={t("focus.column.progress")} testId="focus-progress" className="row-span-2 border-r border-[color:var(--app-surface-divider)] lg:row-span-1">
+        <Column title={t("focus.column.progress")} testId="focus-progress" className="border-b border-[color:var(--app-surface-divider)] @min-[44rem]/focus:row-span-2 @min-[44rem]/focus:border-r @min-[44rem]/focus:border-b-0 @min-[64rem]/focus:row-span-1">
           <Progress audit={audit} checks={checks} />
           <p className="mt-3 text-ui-sm text-muted-foreground">{t("focus.readOnly")}</p>
         </Column>
-        <Column title={t("focus.column.findings")} testId="focus-findings">
+        <Column title={t("focus.column.findings")} testId="focus-findings" className="border-b border-[color:var(--app-surface-divider)] @min-[44rem]/focus:border-b-0">
           <Findings audit={audit} selected={shown?.id ?? null} onSelect={setSelected} />
         </Column>
         <Column
           title={t("focus.column.proof")}
           testId="focus-proof-column"
-          className="max-h-[45vh] border-t border-[color:var(--app-surface-divider)] lg:max-h-none lg:border-t-0 lg:border-l"
+          className="border-[color:var(--app-surface-divider)] @min-[44rem]/focus:max-h-[45vh] @min-[44rem]/focus:border-t @min-[64rem]/focus:max-h-none @min-[64rem]/focus:border-t-0 @min-[64rem]/focus:border-l"
         >
           <Proof finding={shown} />
         </Column>

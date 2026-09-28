@@ -3,6 +3,7 @@ import type { ProviderId } from "@shared/codex";
 import type { AppState } from "@shared/domain";
 import type { ActionName, ActionPayload, ActionResult } from "@shared/ipc";
 import type { ExerciseId, GuideStepId } from "@shared/onboarding";
+import { SIDE_BAR_VIEWS, type SideBarView, homeOf, viewOf } from "@/lib/workbench";
 
 export type InspectorTarget =
   | { kind: "map" }
@@ -50,7 +51,11 @@ export type WelcomePage = "hello" | GuideStepId;
 
 interface UiState {
   app: AppState | null;
+  /** Whether the side bar is open next to the activity bar (issue #330). */
   sidebarOpen: boolean;
+  /** The view of the activity bar the side bar shows. */
+  sideBarView: SideBarView;
+  /** What the side bar shows inside its view: one of the view's tabs or a detail; null shows the view's first tab. */
   inspector: InspectorTarget | null;
   dialog: DialogName;
   /** The dialog to reopen when the current one closes, for example the guide after Collegamenti. */
@@ -88,6 +93,9 @@ interface UiState {
   goForward(): void;
   setApp(state: AppState): void;
   toggleSidebar(): void;
+  /** The activity bar: opens a view in the side bar, or closes the side bar when that view is already open. */
+  openView(view: SideBarView): void;
+  /** Opens a panel in the side bar under its view; null closes the side bar. */
   setInspector(target: InspectorTarget | null): void;
   toggleInspector(target: InspectorTarget): void;
   setDialog(dialog: DialogName, returnTo?: DialogName): void;
@@ -114,15 +122,42 @@ interface UiState {
 
 const readSidebar = () => {
   try {
-    return localStorage.getItem("trama.sidebarOpen") !== "false";
+    // Closed by default: the conversation takes the whole editor area (issue #330).
+    return localStorage.getItem("trama.sideBarOpen") === "true";
   } catch {
-    return true;
+    return false;
   }
+};
+
+const readSideBarView = (): SideBarView => {
+  try {
+    const saved = localStorage.getItem("trama.sideBarView") as SideBarView | null;
+    return saved && SIDE_BAR_VIEWS.includes(saved) ? saved : "waiting";
+  } catch {
+    return "waiting";
+  }
+};
+
+const remember = (key: string, value: string) => {
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    // Not remembered; the layout still applies now.
+  }
+};
+
+/** The side bar's state for a target: open on the target's view, or closed for null. */
+const sideBarFor = (target: InspectorTarget | null, view: SideBarView) => {
+  const sideBarView = target ? viewOf(target) : view;
+  remember("trama.sideBarOpen", String(Boolean(target)));
+  remember("trama.sideBarView", sideBarView);
+  return { sidebarOpen: Boolean(target), sideBarView };
 };
 
 export const useUi = create<UiState>((set, get) => ({
   app: null,
   sidebarOpen: readSidebar(),
+  sideBarView: readSideBarView(),
   inspector: null,
   dialog: null,
   dialogReturn: null,
@@ -158,11 +193,17 @@ export const useUi = create<UiState>((set, get) => ({
   historyIndex: 0,
   goBack: () => {
     const { history, historyIndex } = get();
-    if (historyIndex > 0) set({ historyIndex: historyIndex - 1, inspector: history[historyIndex - 1] ?? null });
+    if (historyIndex > 0) {
+      const inspector = history[historyIndex - 1] ?? null;
+      set({ historyIndex: historyIndex - 1, inspector, ...sideBarFor(inspector, get().sideBarView) });
+    }
   },
   goForward: () => {
     const { history, historyIndex } = get();
-    if (historyIndex < history.length - 1) set({ historyIndex: historyIndex + 1, inspector: history[historyIndex + 1] ?? null });
+    if (historyIndex < history.length - 1) {
+      const inspector = history[historyIndex + 1] ?? null;
+      set({ historyIndex: historyIndex + 1, inspector, ...sideBarFor(inspector, get().sideBarView) });
+    }
   },
   setApp: (app) => {
     const previous = get().app;
@@ -180,18 +221,28 @@ export const useUi = create<UiState>((set, get) => ({
     set({ app });
   },
   toggleSidebar: () => {
-    const next = !get().sidebarOpen;
-    try {
-      localStorage.setItem("trama.sidebarOpen", String(next));
-    } catch {
-      // Ignore storage failures.
-    }
-    set({ sidebarOpen: next });
+    const { sidebarOpen, sideBarView } = get();
+    if (sidebarOpen) get().setInspector(null);
+    else get().openView(sideBarView);
+  },
+  openView: (view) => {
+    const { sidebarOpen, sideBarView, app } = get();
+    // As in VS Code, the icon of the open view closes the side bar.
+    if (sidebarOpen && sideBarView === view) return get().setInspector(null);
+    // Without a project only the projects can show.
+    const shown = app?.project ? view : "projects";
+    const home = homeOf(shown);
+    if (home) return get().setInspector(home);
+    remember("trama.sideBarOpen", "true");
+    remember("trama.sideBarView", shown);
+    set({ sidebarOpen: true, sideBarView: shown, inspector: null });
   },
   setInspector: (inspector) => {
-    const { history, historyIndex, inspector: current } = get();
+    const { history, historyIndex, inspector: current, sideBarView } = get();
     // Details belong to a project dialog: opening one leaves the overview.
     if (inspector) set({ mainView: "dialog" });
+    // Every panel of today opens in the side bar, under its view (issue #330); null closes the side bar.
+    set(sideBarFor(inspector, sideBarView));
     if (JSON.stringify(current) === JSON.stringify(inspector)) return;
     const next = [...history.slice(0, historyIndex + 1), inspector].slice(-50);
     set({ inspector, history: next, historyIndex: next.length - 1 });
