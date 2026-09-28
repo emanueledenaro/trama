@@ -4052,15 +4052,6 @@ await app.close();
   await page.evaluate((path) => window.trama.invoke("project:open", { path }), focusProject);
   await page.getByTestId("dialog-title").filter({ hasText: "trama-ui-esame" }).waitFor({ timeout: 30_000 });
   await page.getByText("Ho letto lo studio").first().waitFor({ timeout: 30_000 });
-  const focusThemes = async (name) => {
-    for (const dark of [false, true]) {
-      await page.evaluate((theme) => window.trama.invoke("settings:update", { theme }), dark ? "dark" : "light");
-      await page.waitForFunction((wanted) => document.documentElement.classList.contains("dark") === wanted, dark);
-      await shot(`${name}-${dark ? "dark" : "light"}`);
-    }
-    await page.evaluate(() => window.trama.invoke("settings:update", { theme: "light" }));
-    await page.waitForFunction(() => !document.documentElement.classList.contains("dark"));
-  };
   // The primary action of a row is the last one, on the right.
   const lastAction = async (row, label) => {
     const labels = (await row.locator("button").allTextContents()).map((text) => text.trim());
@@ -4071,11 +4062,11 @@ await app.close();
   await page.getByRole("button", { name: "Mappa del progetto" }).click();
   const inspectorPane = page.getByTestId("inspector");
   await inspectorPane.getByRole("button", { name: "Esame approfondito del progetto" }).waitFor();
-  await focusThemes("31a-focus-map");
+  await themeShots("31a-focus-map");
   await inspectorPane.getByRole("option", { name: /Orders/ }).click();
   const moduleActions = inspectorPane.locator(".cta-row").first();
   await lastAction(moduleActions, "Chiedi al Coordinatore su questo modulo");
-  await focusThemes("31b-focus-module");
+  await themeShots("31b-focus-module");
 
   // The dialog starts on the module. A fixed point that does not exist, then a module with no change, fail there.
   await moduleActions.getByRole("button", { name: "Esame approfondito" }).click();
@@ -4086,12 +4077,12 @@ await app.close();
   await focusStart.getByLabel("Punto fisso").fill("release-9");
   await focusStart.getByRole("button", { name: "Avvia l'esame" }).click();
   await focusStart.getByTestId("focus-start-error").getByText('Il punto fisso "release-9" non esiste in questo repository: scrivi un commit, un branch o un tag che esiste.').waitFor();
-  await focusThemes("31c-focus-start-missing-point");
+  await themeShots("31c-focus-start-missing-point");
   await focusStart.getByRole("radio", { name: /Il modulo Payments/ }).click();
   await focusStart.getByRole("button", { name: "v1", exact: true }).click();
   await focusStart.getByRole("button", { name: "Avvia l'esame" }).click();
   await focusStart.getByTestId("focus-start-error").getByText(/Nessun cambiamento nel modulo Payments tra il punto fisso "v1"/).waitFor();
-  await focusThemes("31d-focus-start-empty-diff");
+  await themeShots("31d-focus-start-empty-diff");
   if (await page.locator("[data-focus-mode]").count()) throw new Error("Focus mode opened on a failed fixed point");
 
   // The module from v1: full screen, three columns, the exit last on the right, notifications paused.
@@ -4130,7 +4121,7 @@ await app.close();
   for (const [width, height] of [[1280, 820], [1600, 1000], [1024, 700], [720, 640]]) {
     await page.setViewportSize({ width, height });
     await columnsFit(`${width}x${height}`);
-    await focusThemes(`31e-focus-module-${width}x${height}`);
+    await themeShots(`31e-focus-module-${width}x${height}`);
   }
   await page.setViewportSize({ width: 1280, height: 820 });
   // Esc leaves too; the module is still where the person left it.
@@ -4146,7 +4137,7 @@ await app.close();
   await focusStart.getByRole("button", { name: "Avvia l'esame" }).click();
   await page.locator('[data-focus-mode][data-status="done"]').waitFor({ timeout: 60_000 });
   await focusView.getByTestId("focus-mode-title").getByText("Esame approfondito dell'intero progetto").waitFor();
-  await focusThemes("31f-focus-project");
+  await themeShots("31f-focus-project");
   await focusView.getByRole("button", { name: "Esci dall'esame" }).click();
   await focusView.waitFor({ state: "detached" });
   await app.close();
