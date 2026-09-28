@@ -30,6 +30,7 @@ import type {
   BranchDivergence,
   Candidate,
   CandidateGate,
+  ConflictAssessment,
   CandidateReport,
   MergeAuthority,
   FocusAudit,
@@ -331,7 +332,8 @@ import {
 import { AuditError, type AxisName, type AxisTurn, auditSpec, axisThread, axisTurn, beginAxes, beginVerification, closeAudit, failAudit, findAudit, finishAxis, openAudit, readAxisAnswer, recordAuditCheck } from "./core/audit";
 import { approveCandidate, candidateReport, contentFingerprint, findCandidate, latestCandidate, recordEvidence, recordTechnicalReview } from "./core/candidates";
 import { assessBranchDivergence } from "./core/branchDivergence";
-import { assessConflict } from "./core/conflicts";
+import { assessConflict, combineWorktrees } from "./core/conflicts";
+import { carryOverHypotheses, pendingScenarios, settleScenario } from "./core/semanticConflicts";
 import { pickSlices } from "./core/slicePicking";
 import { assessWorktreePair, worktreePairs } from "./core/worktreeConflicts";
 import { clampParallelDevelopers, clampSharedDevelopers, sharedDevelopers } from "@shared/parallel";
@@ -1620,6 +1622,7 @@ export class TramaController {
             source: { kind: "github", repository },
             cacheRoot: join(this.storage.root, "RemoteCache"),
             probeRoot: join(this.storage.root, "ConflictProbe"),
+            remoteReadAt: snapshot.fetchedAt,
           });
           if (this.state.project !== project) return;
           document.conflicts.push(assessment);
@@ -2203,6 +2206,7 @@ export class TramaController {
           },
           conventions: () => readProjectConventions(current.rootPath),
           verifyCandidate: (candidateId, check) => this.verifyCandidate(candidateId, check, current.runningRequestId),
+          runSemanticScenarios: () => void this.assessSemanticScenarios(current),
           reviewCandidate: (candidateId) => this.reviewCandidate(candidateId, current.runningRequestId),
           candidateCleared: () => void this.integrateCandidates(current).catch((error) => this.fail(error)),
           headSHA: () => this.headSHA(current.rootPath),
@@ -4875,6 +4879,7 @@ export class TramaController {
     if (project.isDemo) return;
     if (this.state.settings.continuousWork !== false && !paused) this.pickFreeSlices(project);
     await this.assessWorktreeConflicts(project);
+    await this.assessSemanticScenarios(project);
   }
 
   private pickFreeSlices(project: ActiveProjectState): void {
@@ -4934,6 +4939,74 @@ export class TramaController {
       }
     } finally {
       this.comparingWorktrees = false;
+    }
+  }
+
+  private runningScenarios = false;
+
+  /**
+   * The scenarios of the semantic hypotheses (issue #40): a hypothesis whose candidates moved on carries on to the new
+   * pair, then each hypothesis not tried on its current snapshots runs its check on the two candidates merged in a
+   * separate copy, in the sandbox. A failure where each side passed alone is evidence and blocks the newer candidate.
+   */
+  private async assessSemanticScenarios(project: ActiveProjectState): Promise<void> {
+    if (this.runningScenarios || !project.stateWritable) return;
+    this.runningScenarios = true;
+    try {
+      for (const carried of carryOverHypotheses(project.document)) {
+        const assignment = findAssignment(project.document, project.document.candidates.find((c) => c.id === carried.candidateId)?.assignmentId ?? "");
+        appendEvent(project.document, "trama", { type: "card", kind: "conflict", title: "Conflitto", detail: null, referenceId: carried.id }, assignment?.requestId ?? null);
+        this.changedIn(project);
+      }
+      for (let pending = pendingScenarios(project.document)[0]; pending; pending = pendingScenarios(project.document)[0]) {
+        if (this.quitting || this.state.project !== project) return;
+        const run = await this.runScenario(project, pending);
+        if (this.state.project !== project) return;
+        settleScenario(project.document, pending, run);
+        if (pending.classification === "semantic") {
+          const names = [pending.candidateId, pending.otherCandidateId].map((id) => {
+            const candidate = project.document.candidates.find((c) => c.id === id);
+            return project.document.team.specialists.find((s) => s.id === candidate?.specialistId)?.name ?? "un altro incarico";
+          });
+          this.host.notify(
+            "Trama: due lavori non funzionano insieme",
+            `Il lavoro di ${names[0]} e quello di ${names[1]} passano da soli, ma insieme una verifica fallisce.`,
+            this.state.settings.sounds === true,
+          );
+        }
+        this.changedIn(project);
+      }
+    } finally {
+      this.runningScenarios = false;
+    }
+  }
+
+  /** Runs a hypothesis's check on the combined candidate; a machine or sandbox failure is `notRun`, never evidence. */
+  private async runScenario(project: ActiveProjectState, assessment: ConflictAssessment): Promise<{ result: "pass" | "fail" | "notRun"; command: string; output: string }> {
+    const document = project.document;
+    const side = (id: string | undefined) => {
+      const candidate = document.candidates.find((c) => c.id === id);
+      const session = candidate ? findAssignment(document, candidate.assignmentId)?.workspace : undefined;
+      return candidate && session ? { session, snapshotId: candidate.snapshotId } : null;
+    };
+    const mine = side(assessment.candidateId);
+    const other = side(assessment.otherCandidateId);
+    const check = assessment.semantic!.check as ReadOnlyCheck;
+    if (!mine || !other) return { result: "notRun", command: "", output: "Una delle due copie di lavoro non c'è più." };
+    const combined = await combineWorktrees(mine, other, join(this.storage.root, "ConflictProbe"));
+    if (combined.status !== "clean") return { result: "notRun", command: "", output: combined.detail };
+    try {
+      const result = await runReadOnlyCheck(check, combined.path, {
+        codexExecutable: resolveCodexExecutable(this.host.codexExecutable),
+        scratchRoot: join(this.storage.root, "Checks"),
+        dependencyRoot: project.rootPath,
+      });
+      const ran = result.command.length > 0 && !(result.exitCode !== 0 && environmentFailure(result.output));
+      return { result: !ran ? "notRun" : result.exitCode === 0 ? "pass" : "fail", command: result.command.join(" "), output: result.output };
+    } catch (error) {
+      return { result: "notRun", command: "", output: (error as Error).message };
+    } finally {
+      await combined.remove();
     }
   }
 
