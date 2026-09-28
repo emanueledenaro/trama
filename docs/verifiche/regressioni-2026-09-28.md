@@ -135,4 +135,9 @@ Proposte non implementate: rinumerare i prefissi condivisi insieme ai registri c
 
 ## 7. Controlli dopo le correzioni
 
-ESITO_BRANCH
+Eseguiti in `app/` sul branch riallineato a `origin/main` d9d1e04, che comprende #312 e #321.
+
+- `npx tsc --noEmit -p .`: nessun errore.
+- `npx vitest run`: 140 file, 1305 test superati, 3 saltati (gli stessi del punto 1). Compreso l'inventario.
+- `npm run build`: riuscito.
+- `xvfb-run -a node scripts/ui-check.mjs`: una corsa completa con Electron sotto xvfb, uscita 0, 363 screenshot, nessun nome ripetuto.
