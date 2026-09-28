@@ -11,6 +11,7 @@ import { formatDate } from "@/lib/format";
 import { act, useUi } from "@/lib/store";
 import { EmptyNote, InspectorSection } from "./Inspector";
 import { Sep } from "@/components/ui/sep";
+import { WaitingProposalPointer } from "@/components/WaitingPointer";
 import { AgentName } from "@/components/AgentIdentity";
 
 function DecisionEditor({ initial, onDone }: { initial?: { id: string; value: string; acceptedExample: string; rationale: string }; onDone: () => void }) {
@@ -67,9 +68,14 @@ export function PactView() {
       </InspectorSection>
       {pending.length ? (
         <InspectorSection title="Domande in attesa">
-          {pending.map((request) => (
-            <DecisionCard key={request.id} requestId={request.id} />
-          ))}
+          {/* Answered only in Aspetta te (issue #331): one line per question opens it there. */}
+          <div className="space-y-1.5">
+            {pending.map((request) => (
+              <WaitingProposalPointer key={request.id} kind="question" targetId={request.id} textKey="waiting.pointer.question">
+                <DecisionCard requestId={request.id} />
+              </WaitingProposalPointer>
+            ))}
+          </div>
         </InspectorSection>
       ) : null}
       <InspectorSection

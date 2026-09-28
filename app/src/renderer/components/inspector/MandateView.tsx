@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { type MandateAction, type MandateSnapshot, pendingMandateRequest } from "@shared/domain";
 import { FixedBansField, MandateCard } from "@/components/chat/Cards";
+import { useWaitingItem, WaitingPointer } from "@/components/WaitingPointer";
 import { Button } from "@/components/ui/button";
 import { Badge, Label, TextArea } from "@/components/ui/field";
 import { formatDate } from "@/lib/format";
@@ -52,6 +53,7 @@ export function MandateView() {
   const project = useUi((s) => s.app?.project)!;
   const { mandate, mandateRequests } = project.document;
   const pending = pendingMandateRequest({ mandateRequests });
+  const pendingItem = useWaitingItem("mandate", pending?.id);
   const source = pending ?? (mandate?.status === "granted" ? mandate : null);
   const [objectives, setObjectives] = useState("");
   const [priorities, setPriorities] = useState("");
@@ -207,7 +209,8 @@ export function MandateView() {
       ) : null}
       {pending ? (
         <InspectorSection title="Proposta del Coordinatore">
-          <MandateCard requestId={pending.id} />
+          {/* The proposal is answered only in Aspetta te (issue #331); the correction form below stays here. */}
+          {pendingItem ? <WaitingPointer item={pendingItem} text={t("waiting.pointer.proposal")} /> : <MandateCard requestId={pending.id} />}
         </InspectorSection>
       ) : null}
       <InspectorSection

@@ -53,6 +53,7 @@ const targetId = (target: InspectorTarget): string | null => (target.kind === "c
  */
 export function InspectorTitle({ target }: { target: InspectorTarget }) {
   const waitingItem = useUi((s) => (target.kind === "waiting" && target.key ? (s.app?.project?.waiting ?? []).find((i) => i.key === target.key) ?? null : null));
+  const waitingCount = useUi((s) => (target.kind === "waiting" ? (s.app?.project?.waiting?.length ?? 0) : 0));
   const candidateId = waitingItem?.kind === "candidate" ? waitingItem.targetId : null;
   const record = useRecord(targetId(target) ?? candidateId);
   const id = targetId(target) ?? candidateId ?? undefined;
@@ -64,6 +65,14 @@ export function InspectorTitle({ target }: { target: InspectorTarget }) {
           <>
             <Sep />
             <span className="text-muted-foreground">{record ? asTitle(record.label) : waitingItem.label}</span>
+          </>
+        ) : waitingCount ? (
+          // The count in the header, as on the icon of the activity bar (issue #331).
+          <>
+            <Sep />
+            <span className="text-muted-foreground tabular-nums" data-testid="side-bar-count">
+              {waitingCount}
+            </span>
           </>
         ) : null}
       </h3>

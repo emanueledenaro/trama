@@ -6,6 +6,7 @@ import { formatDate } from "@/lib/format";
 import { act, useUi } from "@/lib/store";
 import { EmptyNote, InspectorSection } from "./Inspector";
 import { Sep } from "@/components/ui/sep";
+import { WaitingProposalPointer } from "@/components/WaitingPointer";
 
 /** What the Coordinator learned in this project, visible and correctable by the person (ADR 0014, C15). */
 export function MemoryView() {
@@ -116,9 +117,12 @@ function ProposalsSection({ learning }: { learning: LearningView }) {
   return (
     <InspectorSection title={`Proposte da approvare (${learning.proposals.length})`}>
       <p className="mb-2 text-ui-sm text-muted-foreground">La revisione non cambia né toglie note da sola: lo propone e decidi tu.</p>
-      <div className="space-y-2">
+      {/* Applied or discarded only in Aspetta te (issue #331): here one line per proposal opens it there. */}
+      <div className="space-y-1.5">
         {learning.proposals.map((proposal) => (
-          <MemoryProposalCard key={proposal.id} proposal={proposal} />
+          <WaitingProposalPointer key={proposal.id} kind="memory" targetId={proposal.id} textKey="waiting.pointer.proposal">
+            <MemoryProposalCard proposal={proposal} />
+          </WaitingProposalPointer>
         ))}
       </div>
     </InspectorSection>

@@ -23,6 +23,7 @@ import { specialistQuestion } from "@/lib/askCoordinator";
 import { AutomaticWorkSection } from "./AutomaticWork";
 import { EmptyNote, InspectorSection } from "./Inspector";
 import { Sep } from "@/components/ui/sep";
+import { WaitingProposalPointer } from "@/components/WaitingPointer";
 
 const STATUS_LABEL: Record<Specialist["status"], string> = {
   available: "libero",
@@ -164,7 +165,10 @@ export function TeamView() {
       <AutomaticWorkSection />
       {pending ? (
         <InspectorSection title="Proposta in attesa">
-          <TeamProposalCard proposalId={pending.id} />
+          {/* Confirmed or corrected only in Aspetta te (issue #331). */}
+          <WaitingProposalPointer kind="team" targetId={pending.id} textKey="waiting.pointer.proposal">
+            <TeamProposalCard proposalId={pending.id} />
+          </WaitingProposalPointer>
         </InspectorSection>
       ) : null}
       {teamRoster(team).map((moment) => (
