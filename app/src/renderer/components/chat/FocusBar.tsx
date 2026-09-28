@@ -146,7 +146,7 @@ export function FocusPanel() {
   const focus = view.focus;
   const queued = view.queue.filter((task) => task.status === "queued").length;
   const paused = view.queue.length - queued;
-  const queueLabel = paused ? t("focus.queuedPaused", { queued, paused }) : t("focus.queued", { queued });
+  const queueLabel = paused ? t("focus.queuedPaused", { queued, count: paused }) : t("focus.queued", { queued });
   const elsewhere = focus !== null && (focus.goalId ?? null) !== dialogGoalId;
   return (
     <section aria-label={t("workbench.status.focus")} className="flex min-w-0 flex-col gap-1.5 p-3" data-testid="focus-bar">

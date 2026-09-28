@@ -36,13 +36,27 @@ const launch = async (env = {}) => {
   return { app, page };
 };
 let { app, page } = await launch();
+// Chromium under xvfb now and then fails a capture with this protocol error even on a shown, painted window. For that
+// exact error only the capture is retried up to 3 times, 250ms apart; any other error, or a fourth failure, throws.
+const UNCAPTURED = "Protocol error (Page.captureScreenshot): Unable to capture screenshot";
+const capture = async (options) => {
+  for (let retry = 0; ; retry++) {
+    try {
+      return await page.screenshot(options);
+    } catch (error) {
+      if (retry >= 3 || !String(error?.message).includes(UNCAPTURED)) throw error;
+      console.log(`[capture] ${UNCAPTURED}, retry ${retry + 1} of 3`);
+      await page.waitForTimeout(250);
+    }
+  }
+};
 // Every screenshot has its own name: a second one with the same name would overwrite the first without a word.
 const shotNames = new Set();
 const shot = async (name) => {
   if (shotNames.has(name)) throw new Error(`Two screenshots named ${name}`);
   shotNames.add(name);
   await page.waitForTimeout(400);
-  await page.screenshot({ path: join(out, `${name}.png`) });
+  await capture({ path: join(out, `${name}.png`) });
   console.log("saved", name);
 };
 // Issue #330: the window is laid out as VS Code. The activity bar picks a view, the side bar shows it; until the slices
@@ -219,7 +233,7 @@ const introFrames = async (label, times) => {
       }
     }, time);
     await painted();
-    await page.screenshot({ path: join(out, `00-intro-${label}-${String(time).padStart(4, "0")}ms.png`) });
+    await capture({ path: join(out, `00-intro-${label}-${String(time).padStart(4, "0")}ms.png`) });
   }
   const running = await page.evaluate(() => document.querySelector('[data-testid="launch-intro"]')?.getAnimations({ subtree: true }).length ?? 0);
   await page.evaluate(() => window.dispatchEvent(new Event("trama:end-intro")));
@@ -1047,7 +1061,7 @@ await shot("05-map");
     const [sidebarLine, sidebarPanel, chat] = await Promise.all([pixel(edges.sidebar - 1, y), pixel(edges.sidebar - 12, y), pixel(edges.sidebar + 12, y)]);
     const seen = JSON.stringify({ mode, sidebarLine, sidebarPanel, chat });
     if (apart(sidebarLine, sidebarPanel) < 8 || apart(sidebarLine, chat) < 8) throw new Error(`A panel border does not show at rest: ${seen}`);
-    if (apart(sidebarPanel, chat) < 3) throw new Error(`The side bar does not stand apart from the chat: ${seen}`);
+    if (apart(sidebarPanel, chat) < 3) throw new Error(`The side panels do not stand apart from the chat: ${seen}`);
     await shot(`22-sash-rest-${mode}`);
   }
   await page.evaluate(() => document.documentElement.classList.remove("dark"));
@@ -1537,9 +1551,9 @@ await resumeButton.waitFor();
 const lastButton = pausedLine.getByRole("button").last();
 const lastBox = await lastButton.boundingBox();
 const pausedBox = await pausedLine.boundingBox();
-if (!lastBox || !pausedBox || pausedBox.x + pausedBox.width - (lastBox.x + lastBox.width) > 2) throw new Error("The last action of the paused line is not on the right");
+if (!lastBox || !pausedBox || pausedBox.x + pausedBox.width - (lastBox.x + lastBox.width) > 2) throw new Error("The primary of the paused line is not on the right");
 if ((await lastButton.getAttribute("aria-label")) !== "Riprendi il Coordinatore" && !(await pausedLine.locator("button:not([aria-label])").count())) {
-  throw new Error("The last action of the paused line is neither Riprendi nor the person's move");
+  throw new Error("The last button of the paused line is not the primary");
 }
 await themeShots("15c-status-line-paused");
 await page.waitForTimeout(300);
@@ -2489,7 +2503,22 @@ await auditFinding("spec", "confirmed").getByText(/Confermato da gpt-5\.5:/).wai
 await auditFinding("spec", "hypothesis").getByText("Ipotesi", { exact: true }).waitFor();
 if ((await auditFinding("spec", "hypothesis").getByTestId("audit-finding-evidence").innerText()) !== "Prova: make check") throw new Error("Focus mode: the hypothesis does not show its proof");
 if (await focusAudit.locator('[data-testid="audit-finding"][data-status="verified"]').filter({ hasText: "Prova: Nessuna prova" }).count()) throw new Error("Focus mode: a finding is verified without a proof");
-await focusAudit.getByTestId("focus-audit-tally").getByText("Stato dei rilievi: 1 verificato da Trama, 1 confermato da un secondo modello, 1 ipotesi.").waitFor();
+// F05: Trama's three lenses follow the axes, marked as Trama's additions, and their findings go through the same
+// verification: Trama reread the security line, the stronger model confirmed the test finding, the documents one has no proof.
+const auditLens = (lens) => focusAudit.locator(`[data-testid="audit-lens"][data-lens="${lens}"][data-status="done"]`);
+const lensNote = focusAudit.getByTestId("focus-audit-lenses-note");
+await lensNote.getByText(/controlli in più di Trama: non vengono dal metodo AI Hero/).waitFor();
+if ((await focusAudit.getByText("Aggiunta di Trama", { exact: true }).count()) !== 3) throw new Error("Focus mode: each lens is not marked as Trama's addition");
+await auditLens("security").locator('[data-testid="audit-finding"][data-status="verified"][data-severity="serious"]').getByText("Verificato da Trama").waitFor();
+await auditLens("tests").locator('[data-testid="audit-finding"][data-status="confirmed"]').getByText(/Confermato da gpt-5\.5:/).waitFor();
+if ((await auditLens("docs").locator('[data-testid="audit-finding"][data-status="hypothesis"] [data-testid="audit-finding-evidence"]').innerText()) !== "Prova: Nessuna prova") {
+  throw new Error("Focus mode: the documents lens finding without a proof is not a hypothesis");
+}
+const lensText = await focusAudit.innerText();
+const [specAt2, lensesAt, summaryAt] = ["Spec", "Lenti di Trama", "Sintesi"].map((heading) => lensText.indexOf(heading));
+if (!(specAt2 < lensesAt && lensesAt < summaryAt)) throw new Error("Focus mode: the lenses are not between the axes and the summary");
+await focusAudit.getByTestId("focus-audit-lens-summary").getByText(/^Lenti di Trama: Sicurezza: 1 rilievo.*Qualità dei test: 1 rilievo.*Documenti e codice: 1 rilievo/).waitFor();
+await focusAudit.getByTestId("focus-audit-tally").getByText("Stato dei rilievi: 2 verificati da Trama, 2 confermati da un secondo modello, 2 ipotesi.").waitFor();
 await shot("20a-focus-audit");
 await auditFinding("spec", "hypothesis").scrollIntoViewIfNeeded();
 await shot("20e-focus-audit-findings");
@@ -2500,10 +2529,13 @@ await page.evaluate(() => document.documentElement.classList.add("dark"));
 await shot("20f-focus-audit-findings-dark");
 await focusAudit.getByTestId("focus-audit-status").scrollIntoViewIfNeeded();
 await shot("20b-focus-audit-dark");
+await lensNote.evaluate((node) => node.closest("section").scrollIntoView({ block: "start" }));
+await shot("20h-focus-audit-lenses-dark");
 await app.evaluate(({ nativeTheme }) => {
   nativeTheme.themeSource = "system";
 });
 await page.evaluate(() => document.documentElement.classList.remove("dark"));
+await shot("20g-focus-audit-lenses");
 // F04: from a finding to work, one click each. This candidate's project has no GitHub remote: the verified finding
 // goes to Trama's backlog, and its correction becomes an assignment for Ada, who wrote the candidate, within the
 // mandate. The hypothesis cannot become an assignment; as a trade-off it becomes a Pact card. Without GitHub the report
@@ -2942,7 +2974,7 @@ for (const provider of ["codex", "claudeAgent", "cursor", "antigravity", "grok",
   }
 }
 await setLookTo(typeLook.provider, typeLook.dark);
-// In a narrow window the side bar sits beside the chat: closed, the messages are what the shot shows.
+// In a narrow window the side bar takes room from the chat: closed, the messages are what the shot shows (issue #330).
 if (await page.getByTestId("side-bar").count()) await page.getByRole("button", { name: "Chiudi la barra laterale" }).click();
 await page.setViewportSize({ width: 720, height: 640 });
 await typeMessage.scrollIntoViewIfNeeded();
@@ -4042,11 +4074,15 @@ const placedProblem = problemLog.locator('[data-testid="activity-problem"]').fil
 await placedProblem.waitFor({ timeout: 90_000 });
 await placedProblem.getByText(/Triage: /).waitFor();
 await placedProblem.locator(".cta-row").getByRole("button", { name: "Apri la issue #21" }).waitFor();
-const problemCalls = (await readFile(problemsGhLog, "utf8")).trim().split("\n").map((line) => JSON.parse(line));
+const readProblemCalls = async () => (await readFile(problemsGhLog, "utf8")).trim().split("\n").map((line) => JSON.parse(line));
+const labelled = (calls) => calls.some((call) => call.includes("POST") && call.some((arg) => /\/issues\/21\/labels$/.test(arg)));
+// The triage shows in Activity first; Trama writes its labels at the next look at the problems, a moment later.
+let problemCalls = await readProblemCalls();
+for (const end = Date.now() + 60_000; !labelled(problemCalls) && Date.now() < end; problemCalls = await readProblemCalls()) await page.waitForTimeout(500);
 const openedIssues = problemCalls.filter((call) => call.includes("POST") && call.some((arg) => /\/issues$/.test(arg)));
 if (openedIssues.length !== 1) throw new Error(`Expected one issue for the red check, got ${openedIssues.length}`);
 if (!openedIssues[0].includes("labels[]=needs-triage")) throw new Error("The issue of the problem does not carry the needs-triage label");
-if (!problemCalls.some((call) => call.includes("POST") && call.some((arg) => /\/issues\/21\/labels$/.test(arg)))) throw new Error("Trama did not apply the triage labels");
+if (!labelled(problemCalls)) throw new Error("Trama did not apply the triage labels");
 if (/[–—]/.test(await problemLog.innerText())) throw new Error("A dash in the steps of the found problem");
 await lookShots("27a-found-problem-issue");
 // The recap cites the issue the Coordinator opened, with its number.
@@ -4771,6 +4807,39 @@ await page.getByTestId("status-line").getByRole("button", { name: "Attività" })
 await page.getByTestId("activity-log").locator('[data-testid="activity-merge"]').filter({ hasText: "Candidato unito con il tuo ok" }).waitFor({ timeout: 20_000 });
 await themeShots("30e-merge-activity-person");
 await page.getByRole("button", { name: "Chiudi la barra laterale" }).click();
+
+// Issue #41: a candidate that deletes a file is a serious destructive change. The Coordinator does not merge it on its
+// green light: it waits in Aspetta te with the reasons, the consequences and the alternatives, and "Unisci comunque"
+// merges it as the person's act. The merge on the green light names the mandate version it ran under.
+await send("[assegna] [cancella]");
+const deletingWork = await workDone(correctedWork);
+await send(`[candidato:${deletingWork}:${vetrinaDecision}]`);
+await stateUntil((document) => candidateOfWork(document, deletingWork)?.merge?.stop, "Destructive merge stopped");
+const stoppedItem = await openWaiting("candidate", undefined, 60_000);
+if ((await stoppedItem.getAttribute("data-waiting-key")) !== `merge:${await stateUntil((document) => candidateOfWork(document, deletingWork)?.id, "Stopped candidate")}`) {
+  throw new Error("The stopped merge is not its own item in Aspetta te");
+}
+const stopField = stoppedItem.getByTestId("candidate-merge-stop");
+await stopField.getByText("Il Coordinatore non unisce questo candidato da solo: la scelta è tua.", { exact: false }).waitFor();
+await stopField.getByText("Conseguenze", { exact: true }).waitFor();
+await stopField.getByText("Cosa puoi fare", { exact: true }).waitFor();
+await stopField.getByText(/README\.md/).waitFor();
+if (/[–—]/.test(await stoppedItem.innerText())) throw new Error("A dash in the stopped merge");
+await primaryLast(stoppedItem.locator(".cta-row").filter({ has: page.getByRole("button", { name: "Unisci comunque" }) }), "Stopped merge");
+if ((await readFile(vetrinaGhLog, "utf8")).split("\n").filter((line) => line.includes('"PUT"')).length !== 2) throw new Error("The destructive candidate was merged without the person");
+await stopField.evaluate((node) => node.scrollIntoView({ block: "center" }));
+await themeShots("30f-merge-stopped-destructive");
+await stoppedItem.getByRole("button", { name: "Unisci comunque" }).click();
+await stateUntil((document) => candidateOfWork(document, deletingWork)?.pullRequest?.mergedBy === "person", "Destructive merge on the person's ok");
+await stoppedItem.waitFor({ state: "detached", timeout: 20_000 });
+if (await page.getByRole("button", { name: "Chiudi la barra laterale" }).count()) await page.getByRole("button", { name: "Chiudi la barra laterale" }).click();
+// The first candidate, merged on the green light, names the mandate it ran under: its reference opens it.
+const plainCandidate = await stateUntil((document) => candidateOfWork(document, plainWork)?.id, "Merged candidate");
+await page.locator(`[data-reference="candidate"][data-reference-id="${plainCandidate}"]`).first().click();
+const plainMerged = page.getByTestId("side-bar");
+await plainMerged.getByTestId("candidate-merge-mandate").filter({ hasText: "Mandato versione 1." }).waitFor({ timeout: 20_000 });
+await plainMerged.getByTestId("candidate-merge").evaluate((node) => node.scrollIntoView({ block: "center" }));
+await themeShots("30g-merge-mandate-version");
 await page.evaluate(() => window.trama.invoke("settings:update", { theme: "system" }));
 await app.close();
 
@@ -4778,6 +4847,8 @@ await app.close();
 // Product Owner's order of the projects: the arrows move a project, opening another one leaves the order as it is.
 ({ app, page } = await launch());
 await page.getByTestId("dialog-title").first().waitFor({ timeout: 30_000 });
+// Issue #330: the overview opens from the Projects view.
+await openView("Progetti");
 await page.getByRole("button", { name: "Panoramica dei progetti" }).click();
 const priority = page.getByTestId("overview-priority");
 await priority.waitFor({ timeout: 10_000 });

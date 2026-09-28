@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { AuditFinding, CandidateEvidence, FindingEvidence, FocusAudit } from "@shared/domain";
 import { findingTally } from "@shared/findings";
-import { beginAxes, closeAudit, failAudit, type FindingDraft, finishAxis, readAxisAnswer } from "./audit";
+import { beginAxes, beginLenses, closeAudit, failAudit, type FindingDraft, finishAxis, readAxisAnswer } from "./audit";
 import {
   checkForCommand,
   confirmationModel,
@@ -240,5 +240,37 @@ describe("each finding ends verified by Trama, confirmed by a second model, or a
       { title: "Senza citazione", severity: "minor", evidence: null },
       { title: "Senza prova", severity: "minor", evidence: null },
     ]);
+  });
+});
+
+describe("Trama's lenses go through the same verification as the axes (F05)", () => {
+  it("verifies, sends to the stronger model or leaves as hypotheses the lenses' findings, as it does for the axes", async () => {
+    const root = await worktree();
+    const value = audit();
+    beginLenses(value, "gpt-5.5-mini", at(2));
+    finishAxis(value, "standards", { report: "Ok.", worst: null, findings: [] }, at(3));
+    finishAxis(value, "spec", { report: "Ok.", worst: null, findings: [] }, at(3));
+    finishAxis(value, "security", { report: "R.", worst: null, findings: [{ title: "Parametro senza controllo", severity: "serious", evidence: line("Sources/Orders/Cancel.swift", 2, "func doIt") }] }, at(3));
+    finishAxis(value, "tests", { report: "R.", worst: null, findings: [{ title: "Manca il test", severity: "serious", evidence: { kind: "reproduction", steps: "Annullare due volte" } }] }, at(3));
+    finishAxis(value, "docs", { report: "R.", worst: null, findings: [{ title: "Il README è vecchio", severity: "serious", evidence: null }, { title: "Riga inventata", severity: "minor", evidence: line("Sources/Orders/Cancel.swift", 99) }] }, at(3));
+    const serious = await recheckFindings(value, root);
+    expect(serious.map(({ axis, finding }) => [axis, finding.id])).toEqual([["tests", "tests-1"]]);
+    expect(value.lenses!.security.items![0]).toMatchObject({ status: "verified", observed: "  func doIt(o: Order) {}" });
+    // No proof, or a proof that does not hold, is a hypothesis for a lens too: never verified.
+    expect(value.lenses!.docs.items!.map((f) => f.status)).toEqual(["hypothesis", "hypothesis"]);
+    confirmFinding(serious[0]!.finding, { model: "gpt-5.5", confirmed: true, reason: "Nel diff non c'è il test." }, at(4));
+    closeAudit(value, at(5));
+    expect(findingTally(value)).toBe("1 verificato da Trama, 1 confermato da un secondo modello, 2 ipotesi");
+  });
+
+  it("tells the second model that the serious finding comes from one of Trama's lenses", () => {
+    const value = audit();
+    beginLenses(value, "gpt-5.5-mini", at(2));
+    const turn = confirmationTurn(
+      { projectName: "ordini", audit: value, candidateId: "C-1" },
+      "security",
+      finding({ title: "Token nei log", severity: "serious", evidence: { kind: "reproduction", steps: "Leggere il log" } }),
+    );
+    expect(turn.prompt).toContain("Rilievo grave della lente di Trama Sicurezza");
   });
 });
