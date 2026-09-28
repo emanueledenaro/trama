@@ -10,15 +10,17 @@ import {
   normalizeOnboarding,
   parseGhAuthStatus,
   resumeStep,
-  launchScreen,
-  nextSetupStep,
+  isAllSet,
+  isFirstLaunch,
+  learnRows,
+  needsProvider,
   parseRepositoryInput,
   recentProjectStatus,
-  resumeSetupStep,
-  setupSteps,
   shouldAutoPrepareMethod,
-  shouldShowWelcomeOnLaunch,
   UNKNOWN_GITHUB_CLI,
+  welcomeFocusStep,
+  welcomeLaunchDecision,
+  welcomeSteps,
 } from "./onboarding";
 import { PROVIDERS } from "./providers";
 
@@ -40,6 +42,7 @@ function appState(overrides: Partial<AppState> = {}): AppState {
     platform: "linux",
     onboarding: { ...EMPTY_ONBOARDING, skippedSteps: [], completedExercises: {} },
     gitHubCli: { ...UNKNOWN_GITHUB_CLI },
+    started: true,
     ...overrides,
   };
 }
@@ -140,67 +143,111 @@ const workspace = { sourceRoot: "/tmp/negozio", worktreeRoot: "/tmp/wt", branch:
 const recent = { id: "1", name: "A", path: "/a", isDemo: false, lastOpenedAt: "" };
 
 describe("welcome on the first launch", () => {
-  it("shows by itself only on a clean first launch", () => {
-    expect(shouldShowWelcomeOnLaunch(appState())).toBe(true);
-    expect(shouldShowWelcomeOnLaunch(appState({ onboarding: { ...EMPTY_ONBOARDING, firstRunShownAt: "t" } }))).toBe(false);
-    expect(shouldShowWelcomeOnLaunch(appState({ onboarding: { ...EMPTY_ONBOARDING, welcomeClosedAt: "t" } }))).toBe(false);
-    expect(shouldShowWelcomeOnLaunch(appState({ onboarding: { ...EMPTY_ONBOARDING, dismissedAt: "t" } }))).toBe(false);
-    expect(shouldShowWelcomeOnLaunch(appState({ recentProjects: [recent] }))).toBe(false);
+  it("knows the first launch only on a clean state that Trama has read", () => {
+    expect(isFirstLaunch(appState())).toBe(true);
+    expect(isFirstLaunch(appState({ onboarding: { ...EMPTY_ONBOARDING, firstRunShownAt: "t" } }))).toBe(false);
+    expect(isFirstLaunch(appState({ onboarding: { ...EMPTY_ONBOARDING, welcomeClosedAt: "t" } }))).toBe(false);
+    expect(isFirstLaunch(appState({ onboarding: { ...EMPTY_ONBOARDING, dismissedAt: "t" } }))).toBe(false);
+    expect(isFirstLaunch(appState({ recentProjects: [recent] }))).toBe(false);
+    expect(isFirstLaunch(appState({ recentProjects: [recent], project: project(emptyDocument("real"), { isDemo: false }) }))).toBe(false);
   });
 
-  it("chooses the first screen from the state: welcome, project picker or the open project", () => {
-    expect(launchScreen(appState())).toBe("welcome");
-    expect(launchScreen(appState({ onboarding: { ...EMPTY_ONBOARDING, firstRunShownAt: "t" } }))).toBe("picker");
-    expect(launchScreen(appState({ recentProjects: [recent] }))).toBe("picker");
-    expect(launchScreen(appState({ recentProjects: [recent], project: project(emptyDocument("real"), { isDemo: false }) }))).toBe("project");
+  // Issue #354: the window gets a first state before Trama reads settings and recent projects. That state is empty,
+  // and deciding on it showed the welcome again, with every step done, after a restart of the Mac.
+  it("decides nothing on the state sent before Trama read its settings (issue #354)", () => {
+    const beforeStart = appState({ started: false });
+    expect(isFirstLaunch(beforeStart)).toBe(false);
+    expect(welcomeLaunchDecision(beforeStart)).toBe("wait");
+    const ready = withAccount(appState({ started: false, project: project(emptyDocument("real"), { isDemo: false }) }), "codex", {
+      kind: "chatgpt",
+      email: "ada@example.com",
+      plan: "plus",
+    } as never);
+    expect(welcomeLaunchDecision(ready)).toBe("wait");
+    ready.started = true;
+    expect(welcomeLaunchDecision(ready)).toBe("stay");
   });
 
-  it("walks provider, GitHub and AI Hero with the guide's own states", () => {
+  it("opens beside a project only when no provider is connected, once the providers are checked", () => {
+    const app = appState({ project: project(emptyDocument("real"), { isDemo: false }) });
+    expect(welcomeLaunchDecision(app)).toBe("open");
+    expect(needsProvider(app)).toBe(true);
+    app.providers.codex = { account: null, models: [], checking: true };
+    expect(welcomeLaunchDecision(app)).toBe("wait");
+    expect(needsProvider(app)).toBe(false);
+    withAccount(app, "codex", { kind: "chatgpt", email: "ada@example.com", plan: "plus" } as never);
+    expect(welcomeLaunchDecision(app)).toBe("stay");
+    expect(needsProvider(app)).toBe(false);
+    // The optional steps never open it: GitHub and the method still to do change nothing.
+    expect(statusOf(welcomeSteps(app)).github).toBe("pending");
+    expect(welcomeLaunchDecision(app)).toBe("stay");
+    // A provider the person skipped is still missing: the Benvenuto opens on it.
+    const skipped = appState({ project: project(emptyDocument("real"), { isDemo: false }) });
+    skipped.onboarding.skippedSteps = ["provider"];
+    expect(welcomeLaunchDecision(skipped)).toBe("open");
+  });
+
+  it("lists the language first, then provider, GitHub and AI Hero with the guide's own states", () => {
     const app = appState();
-    expect(setupSteps(app).map((s) => s.id)).toEqual(["provider", "github", "aiHero"]);
+    expect(welcomeSteps(app).map((s) => s.id)).toEqual(["language", "provider", "github", "aiHero"]);
+    expect(welcomeSteps(app)[0]!.status).toBe("done");
     const guide = Object.fromEntries(guideSteps(app).map((s) => [s.id, s]));
-    for (const step of setupSteps(app)) expect(step).toEqual(guide[step.id]);
-    expect(nextSetupStep("provider")).toBe("github");
-    expect(nextSetupStep("github")).toBe("aiHero");
-    expect(nextSetupStep("aiHero")).toBeNull();
+    for (const step of welcomeSteps(app).slice(1)) expect(step).toEqual(guide[step.id]);
   });
 
   it("writes the steps in the language Trama speaks (issue #301)", () => {
-    expect(setupSteps(appState()).map((s) => s.title)).toEqual(["Collega un provider", "Collega GitHub CLI", "Prepara il metodo AI Hero"]);
-    const english = setupSteps(appState({ language: "en" }));
-    expect(english.map((s) => s.title)).toEqual(["Connect a provider", "Connect GitHub CLI", "Prepare the AI Hero method"]);
-    expect(english[1]!.detail).toBe("gh has not been checked yet.");
+    expect(welcomeSteps(appState()).map((s) => s.title)).toEqual(["Lingua", "Collega un provider", "Collega GitHub CLI", "Prepara il metodo AI Hero"]);
+    const english = welcomeSteps(appState({ language: "en" }));
+    expect(english.map((s) => s.title)).toEqual(["Language", "Connect a provider", "Connect GitHub CLI", "Prepare the AI Hero method"]);
+    expect(english[2]!.detail).toBe("gh has not been checked yet.");
   });
 
-  it("resumes at the first open step, then at the first skipped one, else at the start", () => {
+  it("points at the first open step, and at none when everything is done", () => {
     const app = appState();
-    expect(resumeSetupStep(app)).toBe("provider");
+    expect(welcomeFocusStep(app)).toBe("provider");
     app.onboarding.skippedSteps = ["provider"];
-    expect(resumeSetupStep(app)).toBe("github");
+    expect(welcomeFocusStep(app)).toBe("github");
     app.gitHubCli = { status: "ready", account: "ada", detail: null, checkedAt: "t" };
-    expect(resumeSetupStep(app)).toBe("aiHero");
+    expect(welcomeFocusStep(app)).toBe("aiHero");
     app.onboarding.methodChoice = { prepare: true, at: "t" };
-    expect(resumeSetupStep(app)).toBe("provider");
+    expect(welcomeFocusStep(app)).toBeNull();
+    expect(isAllSet(app)).toBe(false);
     withAccount(app, "codex", { kind: "chatgpt", email: "ada@example.com", plan: "plus" } as never);
     app.onboarding.skippedSteps = [];
-    expect(resumeSetupStep(app)).toBe("provider");
+    expect(welcomeFocusStep(app)).toBeNull();
+    expect(isAllSet(app)).toBe(true);
+  });
+
+  it("marks the exercises done, started on the example project, or still to do", () => {
+    const document = emptyDocument("demo");
+    document.exercises = { startedAt: { change: "t" }, observed: {} };
+    const app = appState({ project: project(document), onboarding: { ...EMPTY_ONBOARDING, completedExercises: { first: "t" } } });
+    expect(learnRows(app)).toEqual([
+      { id: "first", status: "done" },
+      { id: "change", status: "started" },
+      { id: "revision", status: "todo" },
+      { id: "conflict", status: "todo" },
+    ]);
+    // Outside the example project nothing is in progress.
+    app.project = project(document, { isDemo: false });
+    expect(learnRows(app).map((row) => row.status)).toEqual(["done", "todo", "todo", "todo"]);
   });
 
   it("takes the AI Hero answer as the step while no project is open", () => {
     const app = appState();
-    expect(statusOf(setupSteps(app)).aiHero).toBe("pending");
+    expect(statusOf(welcomeSteps(app)).aiHero).toBe("pending");
     app.onboarding.methodChoice = { prepare: true, at: "t" };
-    const prepared = setupSteps(app).find((s) => s.id === "aiHero")!;
+    const prepared = welcomeSteps(app).find((s) => s.id === "aiHero")!;
     expect(prepared.status).toBe("done");
     expect(prepared.detail).toContain("primo tuo progetto");
     // The welcome's "Non preparare" also turns the setting off, as the controller does.
     app.onboarding.methodChoice = { prepare: false, at: "t" };
     app.settings = { ...app.settings, autoPrepareMethod: false };
-    expect(setupSteps(app).find((s) => s.id === "aiHero")!.detail).toContain("non preparare");
+    expect(welcomeSteps(app).find((s) => s.id === "aiHero")!.detail).toContain("non preparare");
     // A project without the skills still asks for them: the answer does not claim a copy that did not happen.
     app.onboarding.methodChoice = { prepare: true, at: "t" };
     app.project = project(emptyDocument("real"), { isDemo: false, name: "Mio" });
-    expect(statusOf(setupSteps(app)).aiHero).toBe("pending");
+    expect(statusOf(welcomeSteps(app)).aiHero).toBe("pending");
   });
 
   it("prepares the method on opening only when the setting says so and the step was not postponed", () => {
@@ -214,9 +261,9 @@ describe("welcome on the first launch", () => {
     const app = appState();
     app.onboarding.methodChoice = { prepare: false, at: "t" };
     app.settings = { ...app.settings, autoPrepareMethod: true };
-    expect(setupSteps(app).find((s) => s.id === "aiHero")!.detail).toContain("primo tuo progetto");
+    expect(welcomeSteps(app).find((s) => s.id === "aiHero")!.detail).toContain("primo tuo progetto");
     app.settings = { ...app.settings, autoPrepareMethod: false };
-    expect(setupSteps(app).find((s) => s.id === "aiHero")!.detail).toContain("non preparare");
+    expect(welcomeSteps(app).find((s) => s.id === "aiHero")!.detail).toContain("non preparare");
   });
 
   it("reads old settings without the welcome fields", () => {
@@ -464,6 +511,12 @@ describe("project picker", () => {
     expect(recentProjectStatus(entry({ colleagues: 0 })).colleagues).toBe("Nessun collega attivo");
     expect(recentProjectStatus(entry({ source: "unreadable" })).work).toEqual(["Stato non leggibile"]);
     expect(recentProjectStatus(entry({ source: "notSaved" })).work).toEqual(["Ancora da studiare"]);
+    // In the language Trama speaks (issue #354): the rows moved into the Benvenuto, which speaks both.
+    expect(recentProjectStatus(entry({ source: "live", runningWork: 1, pendingDecisions: 2, colleagues: 2 }), "en")).toEqual({
+      work: ["1 agent at work", "2 decisions waiting"],
+      colleagues: "2 active colleagues",
+    });
+    expect(recentProjectStatus(entry(), "en").work).toEqual(["Nothing waiting"]);
   });
 
   it("reads a GitHub repository typed as owner/name or as a URL", () => {

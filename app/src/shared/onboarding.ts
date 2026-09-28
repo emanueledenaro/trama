@@ -1,7 +1,7 @@
 // The first-run guide (C12) and the exercises on the example project (C13, C14).
 // Every step state is derived from AppState or from the project document: nothing is marked done
 // by a timer, by the renderer or by a model's claim.
-import { translator } from "./i18n";
+import { type Language, translator } from "./i18n";
 import { readableFailure } from "./providerFailure";
 import { isUsableAccount, type ProviderId } from "./codex";
 import type { AppState, Candidate, ConflictAssessment, ProjectDocument, ProjectOverview, SpecialistAssignment } from "./domain";
@@ -232,9 +232,16 @@ export function shouldAutoPrepareMethod(settings: AppState["settings"], onboardi
   return settings.autoPrepareMethod !== false && !onboarding.skippedSteps.includes("aiHero");
 }
 
-/** The welcome (B02) shows by itself once, on a clean first launch; afterwards the guide reopens it. */
-export function shouldShowWelcomeOnLaunch(app: AppState): boolean {
+// MARK: Benvenuto (B02, issue #354)
+
+/**
+ * The first launch: the state is read (settings, onboarding and recent projects) and Trama never showed the
+ * Benvenuto. Before `started` the state is the empty one the window gets while Trama starts, so it says nothing
+ * about the person: deciding on it showed the Benvenuto again with every step done (issue #354).
+ */
+export function isFirstLaunch(app: AppState): boolean {
   return (
+    app.started &&
     !app.onboarding.firstRunShownAt &&
     !app.onboarding.welcomeClosedAt &&
     !app.onboarding.dismissedAt &&
@@ -243,37 +250,53 @@ export function shouldShowWelcomeOnLaunch(app: AppState): boolean {
   );
 }
 
-// MARK: Welcome (B02)
+/** The rows of the Configura block, in order: the language first, then the steps that make Trama ready. */
+export type WelcomeStepId = "language" | "provider" | "github" | "aiHero";
+export const WELCOME_STEP_IDS: WelcomeStepId[] = ["language", "provider", "github", "aiHero"];
 
-/** The configuration the welcome walks through, in order: the same steps as the guide, not a second guide. */
-export const SETUP_STEP_IDS: GuideStepId[] = ["provider", "github", "aiHero"];
+/** The language is always chosen: the system's until the person picks one. */
+function languageStep(app: AppState): StepState {
+  const t = translator(app.language);
+  return { id: "language", title: t("welcome.step.language"), status: "done", detail: t("welcome.step.languageDetail"), optional: true };
+}
 
-/** The welcome's configuration steps with the guide's real state. */
-export function setupSteps(app: AppState): StepState[] {
+/** The Configura block's steps with the guide's real state: the same states, not a second guide. */
+export function welcomeSteps(app: AppState): StepState[] {
   const steps = guideSteps(app);
-  return SETUP_STEP_IDS.map((id) => steps.find((s) => s.id === id)!);
+  return [languageStep(app), ...WELCOME_STEP_IDS.slice(1).map((id) => steps.find((s) => s.id === id)!)];
+}
+
+/** Every step of Configura is done: the Benvenuto says "Tutto pronto" and never opens by itself. */
+export const isAllSet = (app: AppState): boolean => welcomeSteps(app).every((s) => s.status === "done");
+
+/** The step the Benvenuto points at when it opens: the first one neither done nor skipped, else none. */
+export function welcomeFocusStep(app: AppState): WelcomeStepId | null {
+  return resumeStep(welcomeSteps(app)) as WelcomeStepId | null;
 }
 
 /**
- * Where the welcome's configuration resumes: the first step neither done nor skipped, then the first one
- * skipped (resuming is taking it back), else the first step.
+ * Whether the Benvenuto opens by itself next to an open project (issue #354): only when no provider is connected,
+ * and only once the state is read and the providers checked. "wait" until then; the optional steps never open it.
  */
-export function resumeSetupStep(app: AppState): GuideStepId {
-  const steps = setupSteps(app);
-  const id = resumeStep(steps) ?? steps.find((s) => s.status === "skipped")?.id ?? SETUP_STEP_IDS[0]!;
-  return id as GuideStepId;
+export function welcomeLaunchDecision(app: AppState): "wait" | "open" | "stay" {
+  if (!app.started || !app.project) return "wait";
+  const provider = providerStep(app).status;
+  if (provider === "checking") return "wait";
+  return provider === "done" ? "stay" : "open";
 }
 
-/** The step after `id` in the welcome, or null at the end, where the project picker follows. */
-export function nextSetupStep(id: GuideStepId): GuideStepId | null {
-  const index = SETUP_STEP_IDS.indexOf(id);
-  return index >= 0 ? (SETUP_STEP_IDS[index + 1] ?? null) : null;
+/** Whether the composer offers "Collega un provider" instead of sending: the providers are checked and none is usable. */
+export const needsProvider = (app: AppState): boolean => providerStep(app).status === "pending";
+
+/** One exercise in the Impara block: done, started on the example project, or still to do. */
+export interface LearnRow {
+  id: ExerciseId;
+  status: "done" | "started" | "todo";
 }
 
-/** What fills the window once the state is read: the welcome, the project picker, or the open project. */
-export function launchScreen(app: AppState): "welcome" | "picker" | "project" {
-  if (app.project) return "project";
-  return shouldShowWelcomeOnLaunch(app) ? "welcome" : "picker";
+export function learnRows(app: AppState): LearnRow[] {
+  const started = app.project?.isDemo ? (app.project.document.exercises?.startedAt ?? {}) : {};
+  return EXERCISE_IDS.map((id) => ({ id, status: app.onboarding.completedExercises[id] ? "done" : started[id] ? "started" : "todo" }));
 }
 
 // MARK: Exercises
@@ -470,23 +493,21 @@ export function parseRepositoryInput(input: string): string | null {
   return `${owner}/${name}`;
 }
 
-const count = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
-
 /**
- * What a recent project's row says about it in the picker, from the overview's records only: the work and the
+ * What a recent project's row says about it in the Benvenuto, from the overview's records only: the work and the
  * colleagues. Nothing is inferred when a record is missing.
  */
-export function recentProjectStatus(entry: ProjectOverview | null): { work: string[]; colleagues: string | null } {
+export function recentProjectStatus(entry: ProjectOverview | null, language: Language = "it"): { work: string[]; colleagues: string | null } {
   if (!entry) return { work: [], colleagues: null };
-  if (entry.source === "unreadable") return { work: ["Stato non leggibile"], colleagues: null };
-  if (entry.source === "notSaved") return { work: ["Ancora da studiare"], colleagues: null };
+  const t = translator(language);
+  if (entry.source === "unreadable") return { work: [t("recent.unreadable")], colleagues: null };
+  if (entry.source === "notSaved") return { work: [t("recent.notStudied")], colleagues: null };
   const work: string[] = [];
-  if (entry.runningWork) work.push(count(entry.runningWork, "agente al lavoro", "agenti al lavoro"));
-  if (entry.pendingDecisions) work.push(count(entry.pendingDecisions, "decisione in attesa", "decisioni in attesa"));
-  if (entry.blockedWork) work.push(count(entry.blockedWork, "lavoro fermo", "lavori fermi"));
-  if (entry.toApprove) work.push(count(entry.toApprove, "risultato da approvare", "risultati da approvare"));
-  if (!work.length) work.push("Niente in attesa");
-  const colleagues =
-    entry.colleagues === null ? null : entry.colleagues === 0 ? "Nessun collega attivo" : count(entry.colleagues, "collega attivo", "colleghi attivi");
+  if (entry.runningWork) work.push(t("recent.running", { count: entry.runningWork }));
+  if (entry.pendingDecisions) work.push(t("recent.decisions", { count: entry.pendingDecisions }));
+  if (entry.blockedWork) work.push(t("recent.blocked", { count: entry.blockedWork }));
+  if (entry.toApprove) work.push(t("recent.toApprove", { count: entry.toApprove }));
+  if (!work.length) work.push(t("recent.nothingWaiting"));
+  const colleagues = entry.colleagues === null ? null : entry.colleagues === 0 ? t("recent.noColleagues") : t("recent.colleagues", { count: entry.colleagues });
   return { work, colleagues };
 }

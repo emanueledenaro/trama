@@ -5,6 +5,7 @@ import {
   IconChevronDown,
   IconFolderPlus,
   IconGitBranch,
+  IconHome,
   IconLayoutBottombar,
   IconLayoutList,
   IconLayoutSidebar,
@@ -14,7 +15,7 @@ import {
 } from "@tabler/icons-react";
 import { findGoal } from "@shared/goals";
 import { TramaMark } from "@/components/brand/TramaMark";
-import { ExercisesChip, GoalFilterMenu, HEADER_CHIP, HEADER_CHIP_ACTIVE } from "@/components/chat/ChatView";
+import { GoalFilterMenu, HEADER_CHIP, HEADER_CHIP_ACTIVE } from "@/components/chat/ChatView";
 import { Menu, MenuItem, MenuPopup, MenuSeparator, MenuTrigger } from "@/components/ui/menu";
 import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/cn";
@@ -32,6 +33,7 @@ function ProjectMenu() {
   const setMainView = useUi((s) => s.setMainView);
   const setDialog = useUi((s) => s.setDialog);
   const openDialog = useUi((s) => s.openDialog);
+  const openWelcome = useUi((s) => s.openWelcome);
   const goal = useUi((s) => (project ? findGoal(project.document, s.dialogGoalId) : null));
   const name = project ? (project.isDemo ? t("workbench.title.demoProject") : project.name) : t("workbench.title.noProject");
   return (
@@ -71,6 +73,12 @@ function ProjectMenu() {
           <MenuItem onClick={() => setDialog("createProject")}>
             <IconPencilPlus stroke={1.8} />
             {t("workbench.title.createProject")}
+          </MenuItem>
+          <MenuSeparator />
+          {/* The Benvenuto reopens from here and from the Help menu (issue #354). */}
+          <MenuItem onClick={() => openWelcome()}>
+            <IconHome stroke={1.8} />
+            {t("welcome.tab")}
           </MenuItem>
         </MenuPopup>
       </Menu>
@@ -168,7 +176,6 @@ export function TitleBar({ isMac }: { isMac: boolean }) {
         {project && mainView === "dialog" ? (
           <div className="no-drag flex min-w-0 items-center gap-1">
             <GoalFilterMenu />
-            {project.isDemo ? <ExercisesChip /> : null}
           </div>
         ) : null}
         {project ? (

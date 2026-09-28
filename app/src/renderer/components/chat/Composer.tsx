@@ -9,6 +9,7 @@ import { AIHERO_ATTRIBUTION, skillCandidates } from "@shared/skills";
 import { RECAP_COMMAND } from "@shared/recap";
 import { ASK_TRAMA_SKILL } from "@shared/askTrama";
 import { chatComposer, findGoal } from "@shared/goals";
+import { needsProvider } from "@shared/onboarding";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ContextMeter } from "./ContextMeter";
 import { ContextPicker } from "./ContextPicker";
@@ -17,6 +18,7 @@ import { useSeam } from "@/components/Seam";
 import { Button } from "@/components/ui/button";
 import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/cn";
+import { useT } from "@/lib/i18n";
 import { act, useUi } from "@/lib/store";
 import { withQuestion } from "@/lib/askCoordinator";
 import { Sep } from "@/components/ui/sep";
@@ -56,6 +58,10 @@ const unsentByProject = new Map<string, { images: DraftImage[]; pastes: { id: st
 export function Composer() {
   const project = useUi((s) => s.app?.project)!;
   const providers = useUi((s) => s.app!.providers);
+  // Without a usable provider the project opens and can be explored; sending waits for a provider (issue #354).
+  const noProvider = useUi((s) => needsProvider(s.app!));
+  const openWelcome = useUi((s) => s.openWelcome);
+  const t = useT();
   const preferredModels = useUi((s) => s.app!.settings.coordinatorModels);
   const goalId = useUi((s) => s.dialogGoalId);
   const goal = findGoal(project.document, goalId);
@@ -216,6 +222,8 @@ export function Composer() {
   const submit = () => {
     const prompt = text.trim();
     if (!prompt && !pastes.length) return;
+    // The draft stays: it leaves once a provider is connected.
+    if (noProvider) return openWelcome("provider");
     const message = serializePastes(prompt || "Leggi il testo incollato.", pastes.map((p) => p.text));
     // A draft save still pending would write the sent text back as the dialog's draft.
     if (saveTimer.current) clearTimeout(saveTimer.current);
@@ -423,7 +431,13 @@ export function Composer() {
               <ContextMeter />
             </div>
             <div className="flex shrink-0 items-center gap-2">
-              {busy && !text.trim() && !pastes.length ? (
+              {noProvider ? (
+                <Tooltip label={t("welcome.connectProviderHint")}>
+                  <Button size="xs" onClick={() => openWelcome("provider")} data-testid="composer-connect-provider">
+                    {t("welcome.connectProvider")}
+                  </Button>
+                </Tooltip>
+              ) : busy && !text.trim() && !pastes.length ? (
                 <Tooltip label="Interrompi">
                   <Button
                     variant="prominent"

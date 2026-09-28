@@ -1,7 +1,7 @@
 // Launches the built app with the fake Codex server and saves screenshots of the main screens.
 // Usage: node scripts/ui-check.mjs <output-dir>
 import { execFileSync } from "node:child_process";
-import { cp, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { _electron as electron } from "playwright";
@@ -49,6 +49,12 @@ const shot = async (name) => {
 // B02-B08 build the new views, the panels of today are the view's tabs. Opening a view from the activity bar shows
 // its first tab, as a click on the panel's row in the old sidebar showed that panel.
 const activityBar = () => page.getByRole("navigation", { name: "Viste" });
+// Issue #354: the Benvenuto reopens from the menu of the project's name (and from the Help menu).
+const openWelcomeFromProjectMenu = async () => {
+  await page.getByTestId("title-bar").getByRole("button", { name: /^Progetto .*: cambia progetto$/ }).click();
+  await page.getByRole("menuitem", { name: "Benvenuto", exact: true }).click();
+  await page.getByTestId("welcome").waitFor();
+};
 const VIEWS = { Progetti: "projects", "Aspetta te": "waiting", Lavoro: "work", Squadre: "teams", Regole: "rules", Memoria: "memory" };
 const openView = async (view, tab) => {
   const sideBar = page.getByTestId("side-bar");
@@ -161,10 +167,13 @@ const dragFiles = (type) =>
     document.querySelector("form.chat-composer-surface").dispatchEvent(new DragEvent(eventType, { dataTransfer: files, bubbles: true, cancelable: true }));
   }, type);
 
-// B02, first launch. The intro plays over the app while the state loads and leaves by itself; the welcome follows.
+// B02, first launch (issue #354): the Benvenuto fills the editor area, and at its head the mark weaves in once, then
+// stays still. Nothing covers the window while it plays.
 const welcome = page.getByTestId("welcome");
 await welcome.waitFor();
+await welcome.getByTestId("launch-intro").waitFor({ timeout: 10_000 });
 await page.getByTestId("launch-intro").waitFor({ state: "detached", timeout: 1_500 });
+await welcome.getByTestId("welcome-mark").waitFor();
 const lookOf = () => page.evaluate(() => ({ provider: document.documentElement.dataset.provider ?? null, dark: document.documentElement.classList.contains("dark") }));
 const setLookTo = (provider, dark) =>
   page.evaluate(
@@ -202,7 +211,7 @@ const introFrames = async (label, times) => {
   await page.evaluate(() => window.dispatchEvent(new Event("trama:replay-intro")));
   await page.getByTestId("launch-intro").waitFor();
   for (const time of times) {
-    // Only the intro's own animations: pausing the others would freeze the welcome's buttons mid-transition.
+    // Only the intro's own animations: pausing the others would freeze the Benvenuto's buttons mid-transition.
     await page.evaluate((t) => {
       for (const animation of document.querySelector('[data-testid="launch-intro"]').getAnimations({ subtree: true })) {
         animation.pause();
@@ -257,33 +266,43 @@ const setTheme = async (theme) => {
   await page.waitForFunction((dark) => document.documentElement.classList.contains("dark") === dark, theme === "dark");
 };
 
-// The welcome: logo, what Trama does, then the configuration in three steps that reuse the guide's states.
+// Issue #354: the Benvenuto is a page of the editor area, as the Welcome page of VS Code, not a screen in front of the
+// app. Without a project it is the only thing in the window: nothing closes it, and the activity bar shows only
+// Progetti and Impostazioni. It has four blocks: Inizia, Recenti, Configura and Impara.
 await welcome.getByRole("heading", { name: "Benvenuto in Trama" }).waitFor();
-// Behind the welcome the window is inert: its controls cannot take the focus, whatever the timing of the dialog.
-const behind = await page.evaluate(() => {
+for (const block of ["Inizia", "Recenti", "Configura", "Impara"]) await welcome.getByRole("heading", { name: block, exact: true }).waitFor();
+if (await page.getByRole("button", { name: "Torna alla conversazione" }).count()) throw new Error("The Benvenuto can be closed without a project");
+const barViews = await activityBar().getByRole("button").evaluateAll((nodes) => nodes.map((node) => node.getAttribute("aria-label")));
+if (barViews.join("|") !== "Progetti|Impostazioni") throw new Error(`Without a project the activity bar shows more than Progetti and Impostazioni: ${barViews}`);
+// Nothing covers the window any more: its controls take the focus while the Benvenuto is open.
+const around = await page.evaluate(() => {
   const toggle = document.querySelector('button[aria-label="Mostra o nascondi la barra laterale"]');
   toggle?.focus();
   return { found: Boolean(toggle), focused: document.activeElement === toggle };
 });
-if (!behind.found || behind.focused) throw new Error(`The window behind the welcome is not inert: ${JSON.stringify(behind)}`);
-// The welcome is modal: Tab cycles inside it (through the dialog's focus guards) and never reaches the window behind.
-// The dialog takes the focus once it has opened, which a slow machine shows after the heading: wait for it first.
-await page.waitForFunction(() => Boolean(document.activeElement?.closest('[data-testid="welcome"]')), null, { timeout: 10_000 });
-for (let press = 0; press < 8; press++) {
-  await page.keyboard.press("Tab");
-  // A Tab that lands on a focus guard is sent back inside on the next frame; a person never types faster than that,
-  // but Playwright does, and a second Tab before the redirect reached the window behind on a loaded runner.
-  await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
-  const focus = await page.evaluate(() => {
-    const active = document.activeElement;
-    return {
-      inside: Boolean(active?.closest('[data-testid="welcome"]') || active?.hasAttribute("data-base-ui-focus-guard")),
-      element: active?.outerHTML.slice(0, 160) ?? "none",
-    };
-  });
-  if (!focus.inside) throw new Error(`Tab left the welcome for ${focus.element}`);
+if (!around.found || !around.focused) throw new Error(`The window around the Benvenuto is not usable: ${JSON.stringify(around)}`);
+await page.evaluate(() => document.activeElement?.blur());
+// Configura: the language first with its selector in the row, then provider, GitHub and the method. Each step has its
+// state and one action on the right; "facoltativo" only beside the optional steps not done yet.
+const welcomeStep = (id) => welcome.locator(`[data-testid="welcome-step"][data-step="${id}"]`);
+await welcome.locator('[data-step="provider"]:not([data-status="checking"])').waitFor({ timeout: 20_000 });
+const stepRows = await welcome.getByTestId("welcome-step").evaluateAll((nodes) =>
+  nodes.map((node) => ({
+    id: node.dataset.step,
+    status: node.dataset.status,
+    optional: node.firstElementChild.textContent.includes("facoltativo"),
+    actions: node.firstElementChild.querySelectorAll(":scope > button").length,
+  })),
+);
+if (stepRows.map((row) => row.id).join(",") !== "language,provider,github,aiHero") throw new Error(`Configura is not language, provider, GitHub, method: ${JSON.stringify(stepRows)}`);
+for (const row of stepRows.slice(1)) {
+  if (row.actions !== 1) throw new Error(`The step ${row.id} has ${row.actions} actions on its row instead of one`);
+  if (row.status === "done" && row.optional) throw new Error(`The step ${row.id} says "facoltativo" beside Fatto`);
 }
-await primaryLast(welcome.locator(".cta-row").last(), "Welcome");
+if (!stepRows.find((row) => row.id === "github").optional) throw new Error("GitHub, optional and to do, does not say so");
+await welcomeStep("language").getByTestId("language-choice").waitFor();
+// One filled button at most: the provider's, while it is to do.
+if ((await welcome.locator('button[data-variant="default"]').count()) > 1) throw new Error("The Benvenuto has more than one primary action");
 for (const [size, width, height] of sizes) {
   await page.setViewportSize({ width, height });
   for (const [label, theme] of themes) {
@@ -293,38 +312,50 @@ for (const [size, width, height] of sizes) {
   }
 }
 await setTheme("system");
+// The window sizes of the prototype, in the themes of Codex and Claude, light and dark.
+const welcomeLook = await lookOf();
+for (const [width, height] of [
+  [1280, 800],
+  [1680, 1050],
+]) {
+  await page.setViewportSize({ width, height });
+  for (const provider of ["codex", "claudeAgent"]) {
+    for (const dark of [false, true]) {
+      await setLookTo(provider, dark);
+      await noHorizontalScroll(`welcome ${width} ${provider} ${dark ? "dark" : "light"}`);
+      await shot(`00a-welcome-${width}-${provider}-${dark ? "dark" : "light"}`);
+    }
+  }
+}
+await setLookTo(welcomeLook.provider, welcomeLook.dark);
 await page.setViewportSize({ width: 1280, height: 820 });
-// Issue #301: the language comes first, with the system's already chosen; the welcome changes at once, without a restart.
-const languageChoice = welcome.getByTestId("welcome-language");
+// Issue #301: the language comes first, with the system's already chosen; the Benvenuto changes at once, without a restart.
+const languageChoice = welcomeStep("language").getByTestId("language-choice");
 await languageChoice.getByRole("radio", { name: "Italiano", checked: true }).waitFor();
 await languageChoice.getByRole("radio", { name: "English" }).click();
 await welcome.getByRole("heading", { name: "Welcome to Trama" }).waitFor();
-await welcome.getByRole("button", { name: "Set up", exact: true }).waitFor();
+await welcome.getByRole("heading", { name: "Set up", exact: true }).waitFor();
 if ((await page.evaluate(() => document.documentElement.lang)) !== "en") throw new Error("The page language did not follow the choice");
-await primaryLast(welcome.locator(".cta-row").last(), "Welcome in English");
 for (const [label, theme] of themes) {
   await setTheme(theme);
   await noHorizontalScroll(`welcome english ${label}`);
   await shot(`00a-welcome-en-${label}`);
 }
 await setTheme("system");
-await welcome.getByRole("button", { name: "Set up", exact: true }).click();
-await welcome.getByRole("heading", { name: /Connect GitHub/ }).waitFor();
+await welcomeStep("github").getByRole("button", { name: "Connect", exact: true }).click();
+await welcomeStep("github").getByText(/With GitHub CLI/).waitFor();
 await shot("00c-welcome-github-en");
-await welcome.getByRole("button", { name: "Back" }).click();
-await welcome.getByRole("button", { name: "Back" }).click();
+await welcomeStep("github").getByRole("button", { name: "Connect", exact: true }).click();
 await languageChoice.getByRole("radio", { name: "Italiano" }).click();
 await welcome.getByRole("heading", { name: "Benvenuto in Trama" }).waitFor();
-await welcome.getByRole("button", { name: "Configura", exact: true }).click();
-// The configuration starts at the first step still open: the fake Codex account already completes the provider.
-await welcome.getByRole("heading", { name: /Collega GitHub/ }).waitFor();
-await welcome.getByRole("button", { name: "Indietro" }).click();
-// 1. Provider: Codex and Claude with their state, the others behind a toggle, the actions to restore.
-await welcome.getByRole("heading", { name: /Collega un provider/ }).waitFor();
+// 1. Provider: the fake Codex account already completes it. Cambia unfolds Codex and Claude with their state, the
+// others behind a toggle, and the actions to restore.
+await welcome.locator('[data-step="provider"][data-status="done"]').waitFor();
+await welcomeStep("provider").getByRole("button", { name: "Cambia", exact: true }).click();
 await welcome.locator('[data-provider-row="codex"]').waitFor();
 await welcome.locator('[data-provider-row="claudeAgent"]').waitFor();
 if (await welcome.locator('[data-provider-row="cursor"]').count()) throw new Error("The other providers are not behind their toggle");
-await welcome.getByRole("button", { name: "Controlla di nuovo" }).waitFor();
+await welcomeStep("provider").getByRole("button", { name: "Controlla di nuovo" }).waitFor();
 await shot("00b-welcome-provider");
 await welcome.getByRole("button", { name: /^Altri provider/ }).click();
 await welcome.locator('[data-provider-row="cursor"]').waitFor();
@@ -336,15 +367,17 @@ await noHorizontalScroll("welcome provider narrow");
 await shot("00b-welcome-provider-narrow-dark");
 await setTheme("system");
 await page.setViewportSize({ width: 1280, height: 820 });
-await welcome.getByRole("button", { name: "Continua" }).click();
-// 2. GitHub, optional: postponed, it stays "Saltato" and the guide can take it back.
-await welcome.getByRole("heading", { name: /Collega GitHub/ }).waitFor();
-await welcome.locator('[data-testid="welcome-step-state"]:not([data-status="checking"])').waitFor();
+// 2. GitHub, optional: postponed, it stays "Saltato" and Riprendi questo passo takes it back.
+await welcomeStep("github").getByRole("button", { name: "Collega", exact: true }).click();
+if (await welcome.locator('[data-provider-row="codex"]').count()) throw new Error("Two steps of Configura are unfolded at once");
+await welcome.locator('[data-step="github"]:not([data-status="checking"])').waitFor();
 await shot("00c-welcome-github");
-await welcome.getByRole("button", { name: "Rimanda" }).click();
-// 3. AI Hero: the answer is the step while no project is open.
-await welcome.getByRole("heading", { name: /Il metodo AI Hero/ }).waitFor();
-await primaryLast(welcome.locator(".cta-row").nth(0), "Welcome, AI Hero");
+await welcomeStep("github").getByRole("button", { name: "Rimanda" }).click();
+await welcome.locator('[data-step="github"][data-status="skipped"]').waitFor();
+// 3. AI Hero: the answer is the step while no project is open, the primary last on the right.
+await welcomeStep("aiHero").getByRole("button", { name: "Apri", exact: true }).click();
+await welcomeStep("aiHero").getByText(/Le skill di Matt Pocock/).waitFor();
+await primaryLast(welcomeStep("aiHero").locator(".cta-row").first(), "Welcome, AI Hero");
 await shot("00d-welcome-aihero");
 await page.setViewportSize({ width: 720, height: 640 });
 await shot("00d-welcome-aihero-narrow");
@@ -352,18 +385,21 @@ await setTheme("dark");
 await shot("00d-welcome-aihero-narrow-dark");
 await setTheme("system");
 await page.setViewportSize({ width: 1280, height: 820 });
-await welcome.getByRole("button", { name: "Prepara il metodo" }).click();
-await welcome.locator('[data-testid="welcome-step-state"][data-status="done"]').waitFor();
+await welcomeStep("aiHero").getByRole("button", { name: "Prepara il metodo" }).click();
+await welcome.locator('[data-step="aiHero"][data-status="done"]').waitFor();
 await shot("00e-welcome-aihero-chosen");
-await welcome.getByRole("button", { name: "Scegli un progetto" }).click();
-await welcome.waitFor({ state: "detached" });
+await welcomeStep("aiHero").getByRole("button", { name: "Cambia", exact: true }).click();
 
-// The project picker: open, clone, create and the example, with the primary action last, at every size and theme.
-const picker = page.getByTestId("project-picker");
-await picker.getByText("Su cosa vuoi lavorare?").waitFor();
+// Inizia, where the project picker of B02 went: open, create, clone and the example, as links at every size and theme.
+// The Benvenuto's one filled button stays the provider's: none here.
+const picker = welcome.getByTestId("welcome-start");
+const startLinks = await picker.getByTestId("welcome-start-actions").getByRole("button").allInnerTexts();
+for (const name of ["Apri un progetto", "Crea un progetto", "Clona da GitHub", "Progetto di esempio"]) {
+  if (!startLinks.some((text) => text.startsWith(name))) throw new Error(`Inizia has no ${name}: ${startLinks}`);
+}
+if (await picker.locator('button[data-variant="default"]').count()) throw new Error("Inizia has a primary button");
 for (const [size, width, height] of sizes) {
   await page.setViewportSize({ width, height });
-  await primaryLast(picker.getByTestId("picker-actions"), `Project picker ${size}`);
   for (const [label, theme] of themes) {
     await setTheme(theme);
     await noHorizontalScroll(`picker ${size} ${label}`);
@@ -372,7 +408,7 @@ for (const [size, width, height] of sizes) {
 }
 await setTheme("system");
 await page.setViewportSize({ width: 1280, height: 820 });
-// B01: Trama's mark sits in the sidebar's brand slot and on the project picker, in the colors of the provider theme,
+// B01: Trama's mark sits in the sidebar's brand slot and at the head of the Benvenuto, in the colors of the provider theme,
 // light and dark. The brand slot's gradient must change with the provider and with the theme.
 const startLook = await page.evaluate(() => ({ provider: document.documentElement.dataset.provider ?? null, dark: document.documentElement.classList.contains("dark") }));
 if ((await page.locator('[data-testid="brand-slot"] [data-trama-mark="glyph"]').count()) !== 1) throw new Error("No Trama mark in the sidebar's brand slot");
@@ -394,8 +430,15 @@ if (markColors.size !== 6) throw new Error(`The mark does not follow the provide
 await setLookTo(startLook.provider, startLook.dark);
 await seamShots("logo", "logo");
 await expectContrastFallback();
-await picker.getByRole("button", { name: "Clona da GitHub" }).click();
+// Clona da GitHub goes through GitHub CLI (issue #354): without it the GitHub row of Configura unfolds, and says the
+// clone starts again by itself once gh is ready; a public repository can still be cloned from there.
+await picker.getByRole("button", { name: /^Clona da GitHub/ }).click();
 const cloneDialog = page.getByRole("dialog", { name: "Clona da GitHub" });
+if ((await welcomeStep("github").getAttribute("data-status")) !== "done") {
+  await welcome.getByTestId("welcome-clone-waiting").waitFor();
+  await shot("01a-welcome-clone-waiting");
+  await welcome.getByTestId("welcome-clone-waiting").getByRole("button", { name: "Clona un repository pubblico" }).click();
+}
 await cloneDialog.getByRole("textbox").fill("non è un repository");
 if (await cloneDialog.getByRole("button", { name: "Scegli la cartella" }).isEnabled()) throw new Error("Clone accepts an invalid repository");
 await cloneDialog.getByRole("textbox").fill("https://github.com/emanueledenaro/trama");
@@ -405,23 +448,28 @@ await shot("01a-picker-clone");
 await cloneDialog.getByRole("button", { name: "Annulla" }).click();
 await cloneDialog.waitFor({ state: "hidden" });
 
-// The guide keeps the steps' state and reopens the welcome; the welcome does not reopen by itself.
-await picker.getByRole("button", { name: "Guida introduttiva" }).click();
-const guide = page.getByRole("dialog", { name: "Guida introduttiva" });
-await guide.waitFor();
-await guide.locator('[data-step="github"][data-status="skipped"]').waitFor();
-await guide.locator('[data-step="aiHero"][data-status="done"]').waitFor();
+// Configura keeps the steps' state, as the guide of C12 did: GitHub skipped, the method chosen. Riprendi questo passo
+// takes a skipped step back; the Benvenuto never opens a second copy of itself.
+await welcome.locator('[data-step="github"][data-status="skipped"]').waitFor();
+await welcome.locator('[data-step="aiHero"][data-status="done"]').waitFor();
 await shot("01b-guide-after-welcome");
-await guide.getByRole("button", { name: "Rivedi il benvenuto" }).click();
-await welcome.getByRole("button", { name: "Riprendi la configurazione" }).click();
-await welcome.getByRole("heading", { name: /Collega GitHub/ }).waitFor();
+if ((await welcomeStep("github").getByRole("button", { name: "Collega", exact: true }).getAttribute("aria-expanded")) !== "true") {
+  await welcomeStep("github").getByRole("button", { name: "Collega", exact: true }).click();
+}
+await welcomeStep("github").getByRole("button", { name: "Riprendi questo passo" }).click();
+await welcome.locator('[data-step="github"]:is([data-status="pending"], [data-status="checking"])').waitFor();
 await shot("01c-welcome-resumed");
-await welcome.getByRole("button", { name: "Chiudi il benvenuto" }).click();
-await welcome.waitFor({ state: "detached" });
+await welcomeStep("github").getByRole("button", { name: "Rimanda" }).click();
+await welcome.locator('[data-step="github"][data-status="skipped"]').waitFor();
+if ((await page.getByTestId("welcome").count()) !== 1) throw new Error("More than one Benvenuto");
 
-// The example project, as the exercise.
-await picker.getByRole("button", { name: "Prova l'esempio" }).click();
+// Impara: the four exercises on the example project. The first one opens the example with its panel beside the chat,
+// and the Benvenuto gives way to the conversation (issue #354, decisions 5 and 9).
+const learn = welcome.getByTestId("welcome-learn");
+if ((await learn.getByTestId("welcome-exercise").count()) !== 4) throw new Error("Impara does not list the four exercises");
+await learn.getByRole("button", { name: "Inizia: Conosci il progetto" }).click();
 await page.getByRole("complementary", { name: "Esercizio" }).waitFor({ timeout: 20_000 });
+await welcome.waitFor({ state: "detached" });
 await shot("01d-picker-example-exercise");
 await page.getByRole("complementary", { name: "Esercizio" }).getByRole("button", { name: "Chiudi l'esercizio" }).click();
 await page.getByText("Ho letto lo studio").first().waitFor({ timeout: 20_000 });
@@ -1058,7 +1106,12 @@ await shot("06-module");
 await page.getByRole("button", { name: /CancelPaidOrder.swift/ }).first().click();
 await shot("07-file");
 // C13: the first exercise's steps come from the document and from observed navigation.
-await page.getByRole("button", { name: "Esercizi", exact: true }).click();
+// Issue #354: the exercises start from Impara in the Benvenuto, which replaced the Esercizi button of the title bar. The
+// Benvenuto opens beside the example project, with its way back to the conversation.
+await openWelcomeFromProjectMenu();
+await page.getByTestId("editor-header").getByRole("button", { name: "Torna alla conversazione" }).waitFor();
+await page.getByTestId("welcome").getByRole("button", { name: /^(Riprendi|Inizia|Rifai): Conosci il progetto$/ }).click();
+await page.getByTestId("welcome").waitFor({ state: "detached" });
 const exercise = page.getByRole("complementary", { name: "Esercizio" });
 await exercise.getByRole("button", { name: "Mostra la scheda di studio" }).click();
 await exercise.getByRole("button", { name: "Scegli un modulo nella mappa" }).click();
@@ -1569,11 +1622,14 @@ await page.getByRole("radio", { name: "Scuro", checked: true }).waitFor();
 if (!(await page.evaluate(() => document.documentElement.classList.contains("dark")))) throw new Error("Tema Scuro did not darken the window");
 await page.getByRole("radio", { name: "Sistema" }).click();
 await page.getByRole("radio", { name: "Sistema", checked: true }).waitFor();
-await page.getByRole("button", { name: "Apri la guida" }).click();
-await guide.waitFor();
+// Impostazioni opens the Benvenuto in the editor area, in place of the settings; its way back is the conversation.
+await page.getByRole("button", { name: "Apri il Benvenuto" }).click();
+await page.getByTestId("welcome").locator('[data-step="github"]').waitFor();
 await shot("12a-guide-resume-dark");
-await guide.getByRole("button", { name: "Continua più tardi" }).click();
-await guide.waitFor({ state: "hidden" });
+await page.getByTestId("editor-header").getByRole("button", { name: "Torna alla conversazione" }).click();
+await page.getByTestId("welcome").waitFor({ state: "hidden" });
+await page.getByRole("button", { name: "Impostazioni" }).click();
+await page.getByTestId("settings").waitFor();
 // Impostazioni again closes the settings page and returns to the dialog.
 await page.getByRole("button", { name: "Impostazioni" }).click();
 await page.getByTestId("settings").waitFor({ state: "hidden" });
@@ -1800,8 +1856,49 @@ git("remote", "add", "origin", "https://github.com/trama-ui/negozio.git");
 // Issue #330: the goals are the first tab of Lavoro, opened from its icon in the activity bar.
 const goalsRow = page.getByRole("navigation", { name: "Viste" }).getByRole("button", { name: "Lavoro", exact: true });
 await goalsRow.waitFor({ timeout: 30_000 });
-// B02: after the first launch the welcome never shows by itself again.
+// B02, issue #354: after the first launch, with a provider connected, the Benvenuto never opens by itself, whatever the
+// optional steps say. Trama decides once the state is read and the providers are checked, so the check waits for that.
+for (let tries = 0; ; tries++) {
+  const read = await page.evaluate(async () => {
+    const state = await window.trama.getState();
+    return state.started && state.providers.codex.account?.kind === "chatgpt" && !state.providers.codex.checking;
+  });
+  if (read) break;
+  if (tries > 120) throw new Error("The providers were not checked after the restart");
+  await page.waitForTimeout(250);
+}
+await page.waitForTimeout(500);
 if (await page.getByTestId("welcome").count()) throw new Error("The welcome showed again after the first launch");
+// Reopened from the project's menu, it opens beside the conversation with its way back. With a project of the person
+// open, Inizia offers the first goal too; with every step done it says "Tutto pronto".
+{
+  await openWelcomeFromProjectMenu();
+  const reopened = page.getByTestId("welcome");
+  const openDemo = await page.evaluate(async () => (await window.trama.getState()).project?.isDemo ?? null);
+  if ((await reopened.getByRole("button", { name: /^Formula il primo obiettivo/ }).count()) !== (openDemo === false ? 1 : 0)) {
+    throw new Error("Inizia offers the first goal only with a project of the person open");
+  }
+  await reopened.locator('[data-step="github"][data-status="done"]').waitFor({ timeout: 20_000 });
+  if ((await reopened.getAttribute("data-all-set")) === "true") await reopened.getByTestId("welcome-all-set").getByText("Tutto pronto.").waitFor();
+  const reopenedLook = await lookOf();
+  for (const [width, height] of [
+    [1280, 800],
+    [1680, 1050],
+  ]) {
+    await page.setViewportSize({ width, height });
+    for (const provider of ["codex", "claudeAgent"]) {
+      for (const dark of [false, true]) {
+        await setLookTo(provider, dark);
+        await noHorizontalScroll(`welcome with a project ${width} ${provider} ${dark ? "dark" : "light"}`);
+        await shot(`00f-welcome-project-${width}-${provider}-${dark ? "dark" : "light"}`);
+      }
+    }
+  }
+  await setLookTo(reopenedLook.provider, reopenedLook.dark);
+  await page.setViewportSize({ width: 1280, height: 820 });
+  await page.getByTestId("editor-header").getByRole("button", { name: "Torna alla conversazione" }).click();
+  await reopened.waitFor({ state: "detached" });
+}
 // M04: the spec is still there to read after the restart.
 await page.locator('[data-testid="plan-spec"][data-status="ready"]').first().getByText("Ordini pagati annullati in revisione").waitFor({ timeout: 30_000 });
 await goalsRow.focus();
@@ -3050,16 +3147,22 @@ for (const dark of [false, true]) {
 }
 await setLookTo(null, false);
 
-// B02: with no project open the picker lists the recent projects with their path, last work, state and colleagues.
-// Switching projects never replays the launch intro.
+// B02, issue #354: with no project open the Benvenuto's Recenti lists the last five projects with their path, last work,
+// state and colleagues, and "Tutti i progetti" opens the Progetti view. Switching projects never replays the intro.
 if (await page.getByTestId("launch-intro").count()) throw new Error("The launch intro played on a project switch");
 await page.evaluate(() => window.trama.invoke("project:close", undefined));
-const recentPicker = page.getByTestId("project-picker");
+const recentPicker = page.getByTestId("welcome").getByTestId("welcome-recent");
 await recentPicker.waitFor();
 await recentPicker.getByTestId("recent-project").filter({ hasText: /collega attivo|colleghi attivi/ }).first().waitFor({ timeout: 20_000 });
+if (await page.getByTestId("launch-intro").count()) throw new Error("The launch intro played again without a first launch");
+if ((await recentPicker.getByTestId("recent-project").count()) > 5) throw new Error("Recenti lists more than five projects");
+await recentPicker.getByRole("button", { name: "Tutti i progetti" }).click();
+await page.locator('[data-testid="side-bar"][data-view="projects"]').waitFor();
+await activityBar().getByRole("button", { name: "Progetti", exact: true }).click();
+await page.getByTestId("side-bar").waitFor({ state: "detached" });
 for (const [size, width, height] of sizes) {
   await page.setViewportSize({ width, height });
-  await primaryLast(recentPicker.getByTestId("picker-actions"), `Project picker with recents ${size}`);
+  if ((await page.getByTestId("welcome").locator('button[data-variant="default"]').count()) > 1) throw new Error(`The Benvenuto with recents has more than one primary action ${size}`);
   for (const [label, theme] of themes) {
     await setTheme(theme);
     await noHorizontalScroll(`picker with recents ${size} ${label}`);
@@ -3069,6 +3172,51 @@ for (const [size, width, height] of sizes) {
 await setTheme("system");
 await page.setViewportSize({ width: 1280, height: 820 });
 await app.close();
+
+// Issue #354, decisions 4 and 7: with a project open and no provider connected, the Benvenuto opens by itself beside
+// the conversation, on the provider step. Closed, the project can be explored: the composer offers "Collega un
+// provider" instead of sending, and the status bar keeps the warning with its action. Only node on the PATH, so no
+// provider CLI of the machine counts, and the fake Codex has no account.
+{
+  const nodeOnly = await mkdtemp(join(tmpdir(), "trama-ui-node-"));
+  await symlink(process.execPath, join(nodeOnly, "node"));
+  ({ app, page } = await launch({ PATH: `${nodeOnly}:/usr/bin:/bin`, FAKE_CODEX_ACCOUNT: "none" }));
+  await page.getByTestId("welcome").waitFor();
+  await page.evaluate(() => window.trama.invoke("project:openDemo", undefined));
+  const beside = page.getByTestId("welcome");
+  await page.getByTestId("editor-header").getByRole("button", { name: "Torna alla conversazione" }).waitFor({ timeout: 30_000 });
+  await beside.locator('[data-step="provider"]:is([data-status="pending"], [data-status="skipped"])').waitFor();
+  if ((await beside.locator('[data-step="provider"]').getByRole("button", { name: "Collega", exact: true }).getAttribute("aria-expanded")) !== "true") {
+    throw new Error("The Benvenuto did not open on the provider step");
+  }
+  await beside.locator('[data-provider-row="codex"]').waitFor();
+  for (const provider of ["codex", "claudeAgent"]) {
+    for (const dark of [false, true]) {
+      await setLookTo(provider, dark);
+      await shot(`00g-welcome-no-provider-${provider}-${dark ? "dark" : "light"}`);
+    }
+  }
+  await setLookTo(null, false);
+  await page.getByTestId("editor-header").getByRole("button", { name: "Torna alla conversazione" }).click();
+  await beside.waitFor({ state: "detached" });
+  const connect = page.getByTestId("composer-connect-provider");
+  await connect.waitFor();
+  if (await page.getByRole("button", { name: "Invia al Coordinatore" }).count()) throw new Error("The composer sends without a provider");
+  const warning = page.getByTestId("status-setup");
+  await warning.waitFor();
+  if ((await warning.getAttribute("data-step")) !== "provider") throw new Error("The status bar does not warn about the provider");
+  await shot("00g-composer-no-provider");
+  // The Benvenuto does not reopen by itself on the same project; the warning and the composer reopen it on the step.
+  await page.waitForTimeout(500);
+  if (await page.getByTestId("welcome").count()) throw new Error("The Benvenuto reopened by itself");
+  await warning.click();
+  await page.getByTestId("welcome").locator('[data-provider-row="codex"]').waitFor();
+  await page.getByTestId("editor-header").getByRole("button", { name: "Torna alla conversazione" }).click();
+  await connect.click();
+  await page.getByTestId("welcome").locator('[data-provider-row="codex"]').waitFor();
+  await page.evaluate(() => window.trama.invoke("project:close", undefined));
+  await app.close();
+}
 
 // P11: Antigravity works in every role. A fake agy first on the PATH and a separate HOME for its capture plugin:
 // the picker offers it like the other providers, and the Coordinator runs on it in the read-only profile.

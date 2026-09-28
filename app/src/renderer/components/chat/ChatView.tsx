@@ -1,7 +1,8 @@
 // Derived from third-party MIT code; see THIRD_PARTY_NOTICES.md.
-import { IconSchool, IconTarget, IconTrash, IconChevronDown, IconCheck, IconX } from "@tabler/icons-react";
+import { IconTarget, IconTrash, IconChevronDown, IconCheck, IconX } from "@tabler/icons-react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { QueuedMessage } from "@shared/domain";
+import type { MessageKey } from "@shared/i18n";
 import { deriveTimelineRows, rowAnchors } from "@shared/timeline";
 import { chatEvents, chatRequests, findGoal, timelineRowGoalId, workingGoals } from "@shared/goals";
 import { GoalDialogHeader } from "@/components/inspector/GoalsView";
@@ -16,7 +17,7 @@ import { Menu, MenuItem, MenuPopup, MenuTrigger } from "@/components/ui/menu";
 import { useT } from "@/lib/i18n";
 import { act, useUi } from "@/lib/store";
 import { ExercisePanel } from "@/components/onboarding/ExercisePanel";
-import { ProjectPicker } from "@/components/launch/ProjectPicker";
+import { WelcomeView } from "@/components/launch/WelcomeView";
 import { Composer } from "./Composer";
 import { useWaiting, WaitingSummary } from "@/components/WaitingView";
 import { TimelineRowView } from "./TimelineRows";
@@ -26,43 +27,36 @@ export const HEADER_CHIP =
 export const HEADER_CHIP_ACTIVE = "bg-[var(--color-background-button-secondary)] text-[var(--color-text-foreground)]";
 
 /** Recalls the exercise guide on the example project. */
-export function ExercisesChip() {
-  const exercise = useUi((s) => s.exercise);
-  const setExercise = useUi((s) => s.setExercise);
-  return (
-    <button
-      type="button"
-      aria-label="Esercizi"
-      aria-pressed={Boolean(exercise)}
-      className={cn(HEADER_CHIP, exercise && HEADER_CHIP_ACTIVE)}
-      onClick={() => (exercise ? setExercise(null) : void act("exercise:start", { exercise: "first" }).then(() => setExercise("first")))}
-    >
-      <IconSchool className="size-3.5 opacity-70" stroke={1.8} />
-      <span className="hidden @min-[640px]/chat:inline">Esercizi</span>
-    </button>
-  );
-}
+/** What the editor area shows: the conversation, or a page in its place until the editor has tabs (B07). */
+type EditorPage = "dialog" | "overview" | "settings" | "welcome";
 
-/** The editor's header over the overview and the settings, which open in place of the conversation (issue #330). */
-function EditorHeader() {
+const PAGE_TITLES: Record<Exclude<EditorPage, "dialog">, MessageKey> = {
+  overview: "workbench.title.overview",
+  settings: "workbench.view.settings",
+  welcome: "welcome.tab",
+};
+
+/**
+ * The editor's header over the overview, the settings and the Benvenuto, which open in place of the conversation
+ * (issue #330, #354). It is the tab each of them becomes with B07. Without a project nothing closes the Benvenuto.
+ */
+function EditorHeader({ page }: { page: EditorPage }) {
   const t = useT();
-  const mainView = useUi((s) => s.mainView);
   const hasProject = useUi((s) => Boolean(s.app?.project));
   const closeSettings = useUi((s) => s.closeSettings);
+  const closeWelcome = useUi((s) => s.closeWelcome);
   const setMainView = useUi((s) => s.setMainView);
-  if (mainView === "dialog") return null;
+  if (page === "dialog") return null;
   return (
-    <div className="chat-surface-divider flex h-[35px] shrink-0 items-center gap-2 px-4">
-      <h2 className="min-w-0 flex-1 truncate font-system-ui text-ui font-normal text-foreground">
-        {mainView === "overview" ? t("workbench.title.overview") : t("workbench.view.settings")}
-      </h2>
+    <div className="chat-surface-divider flex h-[35px] shrink-0 items-center gap-2 px-4" data-testid="editor-header" data-page={page}>
+      <h2 className="min-w-0 flex-1 truncate font-system-ui text-ui font-normal text-foreground">{t(PAGE_TITLES[page])}</h2>
       {hasProject ? (
         <Tooltip label={t("workbench.editor.close")}>
           <button
             type="button"
             aria-label={t("workbench.editor.close")}
             className="sidebar-icon-button size-6 rounded-md"
-            onClick={() => (mainView === "settings" ? closeSettings() : setMainView("dialog"))}
+            onClick={() => (page === "settings" ? closeSettings() : page === "welcome" ? closeWelcome() : setMainView("dialog"))}
           >
             <IconX className="size-3.5" />
           </button>
@@ -325,19 +319,25 @@ function Timeline() {
   );
 }
 
-/** The editor area (issue #330): the conversation with the Coordinator, or the overview or the settings in its place. */
+/**
+ * The editor area (issue #330): the conversation with the Coordinator, or the overview, the settings or the Benvenuto
+ * in its place. Without a project the Benvenuto is the only thing in the window (issue #354).
+ */
 export function ChatView() {
   const project = useUi((s) => s.app?.project);
   const mainView = useUi((s) => s.mainView);
   const goalId = useUi((s) => s.dialogGoalId);
+  const page: EditorPage = mainView === "dialog" && !project ? "welcome" : mainView;
   return (
     <div className="@container/chat relative flex min-w-0 flex-1 flex-col">
-      <EditorHeader />
-      {mainView === "overview" ? (
+      <EditorHeader page={page} />
+      {page === "overview" ? (
         <OverviewView />
-      ) : mainView === "settings" ? (
+      ) : page === "settings" ? (
         <SettingsView />
-      ) : project ? (
+      ) : page === "welcome" || !project ? (
+        <WelcomeView />
+      ) : (
         <>
           <div key={`pane-${project.id}`} className="chat-pane-enter relative flex min-h-0 flex-1 flex-col">
             {/* The composer stays mounted across filters: one chat, one draft (U01). */}
@@ -352,8 +352,6 @@ export function ChatView() {
             </div>
           </div>
         </>
-      ) : (
-        <ProjectPicker />
       )}
     </div>
   );

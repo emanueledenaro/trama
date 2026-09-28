@@ -326,8 +326,7 @@ function buildMenu(language: Language): void {
       role: "help",
       label: "Aiuto",
       submenu: [
-        { label: "Benvenuto in Trama", click: () => sendMenu("welcome") },
-        { label: "Guida introduttiva", click: () => sendMenu("guide") },
+        { label: translate(language, "welcome.tab"), click: () => sendMenu("welcome") },
         { label: "Esercizi sul progetto di esempio", click: () => sendMenu("exercises") },
         // Windows and Linux have no application menu: Informazioni su Trama opens the section of Impostazioni.
         ...(isMac ? [] : [{ type: "separator" as const }, { label: about, click: () => sendMenu("about") }]),

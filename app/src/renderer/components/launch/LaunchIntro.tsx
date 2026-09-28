@@ -6,20 +6,18 @@ import { introPhase, nextIntroChange } from "@/lib/launchIntro";
 const reducedMotionQuery = () => window.matchMedia("(prefers-reduced-motion: reduce)");
 
 /**
- * The launch intro (B02), once per window: the mark weaves itself while the state loads, then the app shows
- * through a short fade. It sits over the app, never in front of its loading: the app renders underneath from
- * the first frame. Switching projects does not replay it.
+ * The mark at the head of the Benvenuto (B02, issue #354). On the first launch its two ribbons weave into the "T",
+ * once, in place: nothing covers the window and nothing waits for it. Afterwards, and on every other launch, the mark
+ * is still. With reduced motion it is always still.
  *
- * `trama:replay-intro` replays it and holds it until `trama:end-intro` removes it, so the UI check can photograph frames.
+ * `trama:replay-intro` replays the weave and holds it until `trama:end-intro`, so the UI check can photograph frames.
  */
-export function LaunchIntro({ ready }: { ready: boolean }) {
+export function LaunchIntro({ play, size = 64 }: { play: boolean; size?: number }) {
   const start = useRef(performance.now());
-  const [readyAt, setReadyAt] = useState<number | null>(null);
   const [elapsed, setElapsed] = useState(0);
   const [held, setHeld] = useState(false);
   const [run, setRun] = useState(0);
-  // Set by the end of the fade or by `trama:end-intro`: the layer leaves even if a throttled timer is late.
-  const [removed, setRemoved] = useState(false);
+  const [playing, setPlaying] = useState(play);
   const [reducedMotion, setReducedMotion] = useState(() => reducedMotionQuery().matches);
 
   useEffect(() => {
@@ -29,22 +27,26 @@ export function LaunchIntro({ ready }: { ready: boolean }) {
     return () => media.removeEventListener("change", update);
   }, []);
 
+  // The first launch is known only once the state is read: the weave starts from then.
   useEffect(() => {
-    if (ready && readyAt === null) setReadyAt(performance.now() - start.current);
-  }, [ready, readyAt]);
+    if (!play) return;
+    start.current = performance.now();
+    setElapsed(0);
+    setPlaying(true);
+    setRun((n) => n + 1);
+  }, [play]);
 
   useEffect(() => {
     const replay = () => {
       start.current = performance.now();
       setElapsed(0);
-      setRemoved(false);
       setHeld(true);
+      setPlaying(true);
       setRun((n) => n + 1);
     };
     const end = () => {
       setHeld(false);
-      setReadyAt(0);
-      setRemoved(true);
+      setPlaying(false);
     };
     window.addEventListener("trama:replay-intro", replay);
     window.addEventListener("trama:end-intro", end);
@@ -54,38 +56,46 @@ export function LaunchIntro({ ready }: { ready: boolean }) {
     };
   }, []);
 
-  const phase = held ? "playing" : introPhase({ elapsedMs: elapsed, readyAtMs: readyAt, reducedMotion });
+  // The weave has all its time: the Benvenuto is already usable around it.
+  const phase = held ? "playing" : playing ? introPhase({ elapsedMs: elapsed, readyAtMs: null, reducedMotion }) : "gone";
 
-  // Each change is scheduled from the current instant, not from the last rendered one: the state can arrive
-  // long after the last tick.
   useEffect(() => {
-    if (held || removed || phase === "gone") return;
+    if (held || !playing || phase === "gone") return;
     const now = performance.now() - start.current;
-    const wait = nextIntroChange({ elapsedMs: now, readyAtMs: readyAt, reducedMotion });
-    if (wait === null) {
-      setElapsed(now);
-      return;
-    }
+    const wait = nextIntroChange({ elapsedMs: now, readyAtMs: null, reducedMotion });
+    if (wait === null) return;
     const timer = setTimeout(() => setElapsed(performance.now() - start.current), Math.max(0, wait));
     return () => clearTimeout(timer);
-  }, [held, removed, phase, readyAt, reducedMotion, elapsed]);
+  }, [held, playing, phase, reducedMotion, elapsed]);
 
-  if (phase === "gone" || removed) return null;
+  useEffect(() => {
+    if (phase === "gone" && playing && !held) setPlaying(false);
+  }, [phase, playing, held]);
+
+  if (phase === "gone") {
+    return (
+      <div className="flex shrink-0 items-center justify-center" style={{ width: size, height: size }} data-testid="welcome-mark">
+        <TramaMark size={size} />
+      </div>
+    );
+  }
   return (
     <div
       aria-hidden
       data-testid="launch-intro"
       data-phase={phase}
-      onTransitionEnd={(event) => {
-        if (phase === "leaving" && event.target === event.currentTarget && event.propertyName === "opacity") setRemoved(true);
-      }}
-      className={cn(
-        "launch-intro fixed inset-0 z-[80] flex items-center justify-center bg-[var(--color-background-surface)] transition-opacity duration-200 ease-out",
-        phase === "leaving" && "pointer-events-none opacity-0",
-      )}
+      className="launch-intro flex shrink-0 items-center justify-center"
+      style={{ width: size, height: size }}
     >
-      <div key={run} className={cn("launch-intro-mark", reducedMotion && "launch-intro-still")}>
-        <TramaMark size={96} />
+      <div
+        key={run}
+        className={cn("launch-intro-mark", reducedMotion && "launch-intro-still")}
+        // The weave ends the intro even when a timer runs late in a window in the background.
+        onAnimationEnd={(event) => {
+          if (!held && event.target === event.currentTarget && event.animationName === "launch-settle") setPlaying(false);
+        }}
+      >
+        <TramaMark size={size} />
       </div>
     </div>
   );
