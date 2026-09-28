@@ -4952,6 +4952,17 @@ await app.close();
     await themeShots(`31e-focus-module-${width}x${height}`);
   }
   await page.setViewportSize({ width: 1280, height: 820 });
+  // The bottom panel (issue #383) opens under the examination: both stay in the editor area and the columns still fit.
+  const focusPanel = page.getByTestId("bottom-panel");
+  if (!(await focusPanel.count())) await page.getByRole("button", { name: "Pannello Attività" }).click();
+  await focusPanel.waitFor();
+  if (!(await focusView.isVisible())) throw new Error("The bottom panel hides focus mode");
+  const [focusBox, panelBox] = [await focusView.boundingBox(), await focusPanel.boundingBox()];
+  if (!focusBox || !panelBox || focusBox.y + focusBox.height > panelBox.y + 1) throw new Error("Focus mode runs under the bottom panel");
+  await columnsFit("1280x820 with the bottom panel");
+  await themeShots("31g-focus-module-activity-panel");
+  await page.getByRole("button", { name: "Chiudi il pannello" }).click();
+  await focusPanel.waitFor({ state: "detached" });
   // Esc leaves too; the module is still where the person left it.
   await page.keyboard.press("Escape");
   await focusView.waitFor({ state: "detached" });
