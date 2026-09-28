@@ -1,6 +1,9 @@
 import { createHash, randomUUID } from "node:crypto";
+import { candidateSuperseded, explainedByDivergence } from "@shared/conflictScope";
 import type { Candidate, CandidateBlocker, CandidateReport, CandidateState, ConflictAssessment, ProjectDocument, TechnicalReview } from "@shared/domain";
+import { blockingFindings, latestGate } from "@shared/gate";
 import { shortId } from "@shared/ids";
+import { roleProfile } from "@shared/roster";
 import { agreedSeams, assignmentSlice, readTestedSeams } from "./implementation";
 import { findAssignment } from "./team";
 import type { WorkspaceReview } from "./workspace";
@@ -26,13 +29,14 @@ export function latestCandidate(document: ProjectDocument, assignmentId: string)
 
 /**
  * Whether an assessment still describes its other side: always for a remote head; for another developer's worktree
- * (W08), while that candidate is still the latest of its assignment at the snapshot compared.
+ * (W08), while that candidate is still open at the snapshot compared: the latest of its assignment, not replaced by
+ * later work (U02).
  */
 export function worktreeAssessmentCurrent(document: ProjectDocument, assessment: ConflictAssessment): boolean {
   if (!assessment.otherCandidateId) return true;
   const other = document.candidates.find((c) => c.id === assessment.otherCandidateId);
   if (!other || other.snapshotId !== assessment.otherSnapshotId) return false;
-  return latestCandidate(document, other.assignmentId)?.id === other.id;
+  return !candidateSuperseded(document, other);
 }
 
 /** Binds a captured worktree to the assignment's modules and checks and to the decisions named. */
@@ -140,11 +144,25 @@ export function inspectCandidate(document: ProjectDocument, candidate: Candidate
     }
     if (evidence.result === "fail") blockers.push({ code: "CHECK_FAILED", detail: check });
   }
+  // Once the candidate gate ran on this snapshot (W10), only a gate that passed lets the candidate reach the person:
+  // every figure signed. A failed check already says so above. A candidate never reviewed has no gate yet.
+  const gate = latestGate(document.gates, candidate.id);
+  const current = gate?.snapshotId === candidate.snapshotId ? gate : null;
+  if (current?.status === "checking" || current?.status === "reviewing") {
+    blockers.push({ code: "GATE_RUNNING", detail: "I revisori del candidato sono al lavoro." });
+  } else if (current?.status === "failed") {
+    blockers.push({ code: "GATE_FAILED", detail: current.failure ?? "Una figura non ha finito la revisione." });
+  } else if (current?.status === "blocked" && !current.checksFailed.length) {
+    const findings = current.reviews.flatMap((r) => blockingFindings(r).map((f) => `${roleProfile(r.role).name}: ${f.title}`));
+    blockers.push({ code: "GATE_BLOCKED", detail: findings.join("; ") });
+  }
   // A merge conflict reproduced against a colleague's work on this exact snapshot blocks the green light.
   // Against another developer's worktree (W08) it holds while that candidate is still the one compared.
   for (const assessment of document.conflicts ?? []) {
     if (assessment.candidateId !== candidate.id || assessment.snapshotId !== candidate.snapshotId) continue;
     if (!worktreeAssessmentCurrent(document, assessment)) continue;
+    // The project's branch diverged from the default branch (U02): the project notice says it once for every candidate.
+    if (explainedByDivergence(document, assessment)) continue;
     if (assessment.classification === "conflict") {
       blockers.push({
         code: assessment.otherCandidateId ? "WORKTREE_CONFLICT" : "REMOTE_CONFLICT",
@@ -176,7 +194,13 @@ export function candidateReport(document: ProjectDocument, candidate: Candidate,
   const clearanceInvalidated = candidate.clearance !== null && candidate.clearance.fingerprint !== fingerprint;
   const approvalInvalidated = candidate.humanApproval !== null && candidate.humanApproval.fingerprint !== fingerprint;
   const allowed = blockers.length === 0;
-  const state: CandidateState = allowed && candidate.clearance && !clearanceInvalidated ? "decided" : allowed ? "verified" : "building";
+  const state: CandidateState = candidateSuperseded(document, candidate)
+    ? "superseded"
+    : allowed && candidate.clearance && !clearanceInvalidated
+      ? "decided"
+      : allowed
+        ? "verified"
+        : "building";
   return { state, blockers, clearanceInvalidated, approvalInvalidated };
 }
 
@@ -201,6 +225,9 @@ export function recordTechnicalReview(
 export function clearCandidate(document: ProjectDocument, candidateId: string, actor: string, headSHA: string | null, now = new Date()): Candidate {
   const candidate = findCandidate(document, candidateId);
   if (!candidate) throw new CandidateError("unknown_candidate", `Unknown candidate: ${candidateId}.`);
+  if (candidateSuperseded(document, candidate)) {
+    throw new CandidateError("candidate_superseded", `Candidate ${candidate.id} was replaced by newer work: clear the newer candidate instead.`);
+  }
   const blockers = inspectCandidate(document, candidate, headSHA);
   if (blockers.length) {
     throw new CandidateError("candidate_not_verified", `Candidate ${candidate.id} is not verified: ${blockers.map((b) => b.code).join(", ")}.`);
@@ -217,6 +244,9 @@ export function clearCandidate(document: ProjectDocument, candidateId: string, a
 export function approveCandidate(document: ProjectDocument, candidateId: string, actor: string, headSHA: string | null, now = new Date()): Candidate {
   const candidate = findCandidate(document, candidateId);
   if (!candidate) throw new CandidateError("unknown_candidate", `Candidato sconosciuto: ${candidateId}.`);
+  if (candidateSuperseded(document, candidate)) {
+    throw new CandidateError("candidate_superseded", "Il candidato è stato sostituito da un lavoro più recente: rivedi quello nuovo.");
+  }
   const blockers = inspectCandidate(document, candidate, headSHA);
   if (blockers.length) throw new CandidateError("candidate_not_verified", `Il candidato non è verificato: ${blockers.map((b) => b.code).join(", ")}.`);
   candidate.humanApproval = { actor, fingerprint: contentFingerprint(document, candidate), at: now.toISOString() };

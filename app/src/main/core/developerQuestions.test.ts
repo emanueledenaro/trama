@@ -32,7 +32,7 @@ import {
 import { workState, workStateText } from "./workPhase";
 
 const at = (minute: number) => new Date(Date.UTC(2026, 8, 26, 10, minute));
-const guards = { enabled: true, busy: false, unavailable: null };
+const guards = { enabled: true, paused: false, busy: false, unavailable: null };
 
 const ticket = (number: number, blockedBy: number[] = []): SliceTicket => ({
   id: `S${number}`,

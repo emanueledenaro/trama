@@ -4,23 +4,25 @@ import type {
   AgentThreadAuthor,
   AgentThreadKind,
   AgentThreadMessage,
-  CheckFailure,
+  CandidateGate,
   DecisionRequest,
   DeveloperQuestion,
   ProjectDocument,
   Specialist,
   SpecialistAssignment,
-  TechnicalReview,
+  GateFinding,
   TeamRole,
 } from "@shared/domain";
 import { AGENT_THREAD_KIND_LABEL } from "@shared/agentThreads";
+import { isRegression } from "@shared/gate";
 import { shortId } from "@shared/ids";
+import { CHECKS, type ReadOnlyCheck } from "./checks";
 import { findAssignment, teamMembers } from "./team";
 
 /**
  * The conversations between agents (W07, issue #144). The agents of a piece of work talk in threads of their own:
- * the developer and the Coordinator about a question, the reviewer and the developer about a technical review, the
- * regression guardian and the developer about a check that passed before and fails now. Every message is recorded
+ * the developer and the Coordinator about a question, the reviewers of the candidate gate and the developer about
+ * their findings, the regression guardian and the developer about a test that passed on the base and fails now. Every message is recorded
  * in the project, with its author; no conversation is private. The person reads them, read-only, from the
  * specialist's page: to tell an agent something, the person tells the Coordinator (Q32 of #239).
  */
@@ -30,8 +32,8 @@ const clip = (text: string, length = 4_000) => text.trim().slice(0, length);
 /** The fixed role that speaks for Trama in a conversation of this kind; a question is with the Coordinator. */
 const COUNTERPART: Record<AgentThreadKind, TeamRole | null> = {
   question: null,
-  // The technical review checks the diff against the repository's standards: Clean Code's moment on a candidate.
-  review: "cleanCode",
+  // The reviewers join the conversation as they write: each figure of the gate with findings (W10).
+  review: null,
   regression: "regressionGuardian",
 };
 
@@ -104,33 +106,46 @@ export function recordPersonAnswer(document: ProjectDocument, request: DecisionR
   return thread;
 }
 
-/** The reviewer's verdict on the developer's candidate, with its findings. */
-export function recordReview(document: ProjectDocument, candidateId: string, review: TechnicalReview, now = new Date()): AgentThread | null {
-  const candidate = document.candidates.find((c) => c.id === candidateId);
-  const assignment = candidate ? findAssignment(document, candidate.assignmentId) : null;
-  if (!assignment) return null;
-  const thread = threadFor(document, "review", assignment, now);
-  const reviewer = thread.specialistIds[1];
-  const verdict = review.verdict === "approved" ? `Approvo il candidato ${candidateId}.` : `Chiedo modifiche al candidato ${candidateId}.`;
-  const findings = (review.findings ?? []).slice(0, 12).map((f) => `- ${f.file}${f.line ? `:${f.line}` : ""}: ${f.message}`);
-  const text = [verdict, ...(review.summary.trim() ? [review.summary.trim()] : []), ...(findings.length ? ["", "Rilievi:", ...findings] : [])].join("\n");
-  post(thread, reviewer ? { kind: "specialist", specialistId: reviewer } : { kind: "coordinator" }, text, now);
-  return thread;
+/** The author joins the conversation's members the first time it writes. */
+function join(thread: AgentThread, specialistId: string): void {
+  if (!thread.specialistIds.includes(specialistId)) thread.specialistIds.push(specialistId);
 }
 
-/** A check that passed before fails on the developer's candidate: the guardian tells the developer (W07). */
-export function recordRegression(document: ProjectDocument, failure: CheckFailure, now = new Date()): AgentThread | null {
-  if (!failure.regression || failure.target !== "candidate" || !failure.assignmentId) return null;
-  const assignment = findAssignment(document, failure.assignmentId);
-  if (!assignment) return null;
-  const thread = threadFor(document, "regression", assignment, now);
-  const guardian = thread.specialistIds[1];
-  const output = failure.output.trim().split("\n").slice(-12).join("\n");
-  const text = [
-    `La verifica ${failure.title} passava e ora fallisce sul candidato ${failure.candidateId}: il candidato è bloccato finché non torna verde.`,
-    `Comando: ${failure.command}`,
-    ...(output ? ["", output] : []),
-  ].join("\n");
-  post(thread, guardian ? { kind: "specialist", specialistId: guardian } : { kind: "coordinator" }, text, now);
-  return thread;
+const findingLine = (f: GateFinding) => `- ${f.severity === "blocking" ? "Bloccante" : "Suggerimento"}: ${f.title}${f.file ? ` (${f.file})` : ""}${f.detail && f.detail !== f.title ? `. ${f.detail}` : ""}`;
+
+/**
+ * The candidate gate ended (W10): each reviewer with findings tells the developer in the review conversation, and the
+ * guardian tells it about a test that passed on the base and fails on the candidate, in the regression conversation.
+ * A reviewer with nothing to report writes nothing.
+ */
+export function recordGate(document: ProjectDocument, gate: CandidateGate, now = new Date()): AgentThread[] {
+  const assignment = findAssignment(document, gate.assignmentId);
+  if (!assignment) return [];
+  const touched = new Set<AgentThread>();
+  for (const review of gate.reviews) {
+    if (review.status !== "done" || !review.findings.length) continue;
+    const author = member(document, review.role);
+    if (review.role === "regressionGuardian") {
+      const regressions = gate.suite.filter(isRegression);
+      if (!regressions.length) continue;
+      const thread = threadFor(document, "regression", assignment, now);
+      const lines = [
+        `Sul candidato ${gate.candidateId} ${regressions.length === 1 ? "una verifica passa" : `${regressions.length} verifiche passano`} sulla base e ${regressions.length === 1 ? "fallisce" : "falliscono"} sul candidato: il candidato è bloccato finché non torna verde.`,
+        ...regressions.map((c) => `- ${CHECKS[c.check as ReadOnlyCheck]?.title ?? c.check}`),
+      ];
+      post(thread, author ? { kind: "specialist", specialistId: author.id } : { kind: "coordinator" }, lines.join("\n"), now);
+      touched.add(thread);
+      continue;
+    }
+    const thread = threadFor(document, "review", assignment, now);
+    if (author) join(thread, author.id);
+    const blocking = review.findings.some((f) => f.severity === "blocking");
+    const lines = [
+      blocking ? `Chiedo modifiche al candidato ${gate.candidateId}.` : `Ho dei suggerimenti sul candidato ${gate.candidateId}.`,
+      ...review.findings.slice(0, 12).map(findingLine),
+    ];
+    post(thread, author ? { kind: "specialist", specialistId: author.id } : { kind: "coordinator" }, lines.join("\n"), now);
+    touched.add(thread);
+  }
+  return [...touched];
 }

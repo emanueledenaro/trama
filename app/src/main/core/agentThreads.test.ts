@@ -1,11 +1,10 @@
 import { describe, expect, it } from "vitest";
-import type { ProjectDocument } from "@shared/domain";
+import type { CandidateGate, GateReview, ProjectDocument } from "@shared/domain";
 import { agentThreadsByRecent, authorName, threadParticipants } from "@shared/agentThreads";
-import { recordReview } from "./agentThreads";
-import { declareCandidate, recordTechnicalReview } from "./candidates";
+import { recordGate } from "./agentThreads";
+import { declareCandidate } from "./candidates";
 import { answerFromFacts, askCoordinator, blockOnPerson, personAnswered } from "./developerQuestions";
 import { emptyDocument } from "./document";
-import { dutyLedger, recordCheckOutcome } from "./duties";
 import { answerDecisionRequest, createDecisionRequest, grantMandate } from "./pact";
 import { assign, beginTurn, confirmTeam, endTurn, findAssignment, proposeTeam, resumePausedAssignment } from "./team";
 
@@ -124,51 +123,79 @@ describe("the developer and the Coordinator talk in their own conversation (W07)
   });
 });
 
-describe("the reviewer and the guardian talk to the developer (W07)", () => {
-  it("opens a review conversation between the developer and Clean Code with the verdict and the findings", () => {
-    const { document, assignment } = project();
-    const candidate = candidateOf(document, assignment.id);
-    const review = recordTechnicalReview(document, candidate.id, {
-      reviewerThreadId: "reviewer",
-      authorThreadId: "author",
-      verdict: "changesRequested",
-      summary: "Il nome della funzione non dice cosa fa.",
-      findings: [{ severity: "blocking", rule: "names", file: "Orders.swift", line: 12, message: "doIt non dice cosa annulla" }],
+describe("the reviewers and the guardian talk to the developer (W07)", () => {
+  function gate(document: ProjectDocument, assignmentId: string, candidateId: string): CandidateGate {
+    const review = (role: GateReview["role"], findings: GateReview["findings"]): GateReview => ({
+      role,
+      status: "done",
+      findings,
+      report: findings.length ? "Rilievi" : "Niente da segnalare.",
+      threadId: null,
+      model: null,
+      startedAt: at(6).toISOString(),
+      finishedAt: at(7).toISOString(),
+      failure: null,
     });
-    recordReview(document, candidate.id, review, at(7));
+    return {
+      id: "GATE-1",
+      candidateId,
+      assignmentId,
+      snapshotId: "snap-1",
+      baseSHA: "base",
+      status: "blocked",
+      checksFailed: [],
+      suite: [
+        { check: "node_test", base: "pass", candidate: "fail", baseOutput: null },
+        { check: "node_typecheck", base: "pass", candidate: "pass", baseOutput: null },
+      ],
+      reviews: [
+        review("cleanCode", [{ severity: "blocking", title: "doIt non dice cosa annulla", detail: "Rinomina in cancelPaidOrder", file: "Orders.swift:12" }]),
+        review("security", [{ severity: "advisory", title: "Log del token", detail: "Il token finisce nel log", file: null }]),
+        review("performance", []),
+        review("regressionGuardian", [{ severity: "blocking", title: "Regressione: test Node", detail: "passa sulla base e fallisce sul candidato", file: null }]),
+      ],
+      returned: null,
+      failure: null,
+      startedAt: at(6).toISOString(),
+      updatedAt: at(7).toISOString(),
+      finishedAt: at(7).toISOString(),
+    };
+  }
 
-    const thread = document.agentThreads!.find((t) => t.kind === "review")!;
-    expect(thread.specialistIds).toEqual([ada(document).id, role(document, "cleanCode").id]);
-    expect(thread.withCoordinator).toBe(false);
-    expect(threadParticipants(thread, document.team.specialists)).toBe("Ada e Clean Code");
-    expect(thread.messages).toHaveLength(1);
-    expect(thread.messages[0]!.author).toEqual({ kind: "specialist", specialistId: role(document, "cleanCode").id });
-    expect(thread.messages[0]!.text).toBe(
-      `Chiedo modifiche al candidato ${candidate.id}.\nIl nome della funzione non dice cosa fa.\n\nRilievi:\n- Orders.swift:12: doIt non dice cosa annulla`,
-    );
-  });
-
-  it("lets the guardian tell the developer about a check that passed on the base and fails on the candidate", () => {
+  it("lets each reviewer with findings write to the developer, and the guardian write about the regression", () => {
     const { document, assignment } = project();
     const candidate = candidateOf(document, assignment.id);
-    dutyLedger(document).checkoutChecks.node_test = { headSHA: "base", passed: true };
-    recordCheckOutcome(
-      document,
-      { check: "node_test", passed: false, ran: true, output: "ok 1\nnot ok 2 annulla ordine", command: "npm test", target: { kind: "candidate", candidateId: candidate.id } },
-      at(8),
-    );
+    const threads = recordGate(document, gate(document, assignment.id, candidate.id), at(8));
+    expect(threads.map((t) => t.kind)).toEqual(["review", "regression"]);
 
-    const thread = document.agentThreads!.find((t) => t.kind === "regression")!;
-    expect(thread.specialistIds).toEqual([ada(document).id, role(document, "regressionGuardian").id]);
-    expect(thread.messages[0]!.author).toEqual({ kind: "specialist", specialistId: role(document, "regressionGuardian").id });
-    expect(thread.messages[0]!.text).toContain(`passava e ora fallisce sul candidato ${candidate.id}`);
-    expect(thread.messages[0]!.text).toContain("not ok 2 annulla ordine");
+    const review = document.agentThreads!.find((t) => t.kind === "review")!;
+    expect(review.specialistIds).toEqual([ada(document).id, role(document, "cleanCode").id, role(document, "security").id]);
+    expect(review.withCoordinator).toBe(false);
+    expect(threadParticipants(review, document.team.specialists)).toBe("Ada, Clean Code e Sicurezza");
+    // A reviewer with nothing to report writes nothing.
+    expect(review.messages.map((m) => m.author)).toEqual([
+      { kind: "specialist", specialistId: role(document, "cleanCode").id },
+      { kind: "specialist", specialistId: role(document, "security").id },
+    ]);
+    expect(review.messages[0]!.text).toBe(`Chiedo modifiche al candidato ${candidate.id}.\n- Bloccante: doIt non dice cosa annulla (Orders.swift:12). Rinomina in cancelPaidOrder`);
+    expect(review.messages[1]!.text).toBe(`Ho dei suggerimenti sul candidato ${candidate.id}.\n- Suggerimento: Log del token. Il token finisce nel log`);
+
+    const regression = document.agentThreads!.find((t) => t.kind === "regression")!;
+    expect(regression.specialistIds).toEqual([ada(document).id, role(document, "regressionGuardian").id]);
+    expect(regression.messages).toHaveLength(1);
+    expect(regression.messages[0]!.author).toEqual({ kind: "specialist", specialistId: role(document, "regressionGuardian").id });
+    expect(regression.messages[0]!.text).toContain(`Sul candidato ${candidate.id} una verifica passa sulla base e fallisce sul candidato`);
+    expect(regression.messages[0]!.text).toContain("- test Node");
+    expect(regression.messages[0]!.text).not.toContain("typecheck");
   });
 
-  it("opens no conversation for a failure that is not a regression", () => {
+  it("opens no conversation when no reviewer has findings and nothing regressed", () => {
     const { document, assignment } = project();
     const candidate = candidateOf(document, assignment.id);
-    recordCheckOutcome(document, { check: "node_test", passed: false, ran: true, output: "not ok", command: "npm test", target: { kind: "candidate", candidateId: candidate.id } });
+    const clean = gate(document, assignment.id, candidate.id);
+    clean.suite = clean.suite.map((c) => ({ ...c, candidate: "pass" }));
+    for (const review of clean.reviews) review.findings = [];
+    expect(recordGate(document, clean, at(8))).toEqual([]);
     expect(document.agentThreads ?? []).toEqual([]);
   });
 });

@@ -3,6 +3,7 @@ import { DEFAULT_CONVENTIONS, deriveCommitScope, deriveCommitType, formatCommitM
 import { assignmentSlice } from "./implementation";
 import { containsExcludedComponent } from "./repositoryScanner";
 import { findAssignment } from "./team";
+import { pushAuthorization, pushRefusal } from "./push";
 import { workRequests } from "./workPhase";
 
 /**
@@ -151,7 +152,11 @@ const BLOCKER_WORDS: Record<string, string> = {
   EVIDENCE_MISSING: "una verifica non è stata eseguita",
   EVIDENCE_STALE: "una verifica non vale più",
   CHECK_FAILED: "una verifica non è passata",
-  REMOTE_CONFLICT: "c'è un conflitto con il lavoro di un collega",
+  GATE_BLOCKED: "un revisore ha un rilievo bloccante",
+  GATE_RUNNING: "i revisori sono ancora al lavoro",
+  GATE_FAILED: "una figura non ha finito la revisione",
+  REMOTE_CONFLICT: "c'è un conflitto con il lavoro su GitHub",
+  WORKTREE_CONFLICT: "c'è un conflitto con il lavoro di un altro incarico",
 };
 
 /** Each condition of the quality standard, in order, with what is missing and how to fix it. */
@@ -209,6 +214,13 @@ export function qualityGate(document: ProjectDocument, candidate: Candidate, rep
     open.length
       ? { code: "PACT_SETTLED", passed: false, detail: `Domande del Patto ancora aperte: ${open.join(", ")}.`, fix: "Rispondi alle domande aperte o ritirale con un motivo." }
       : { code: "PACT_SETTLED", passed: true, detail: "Nessuna decisione del Patto è rimasta aperta.", fix: null },
+  );
+  // Publishing pushes a branch: only a mandate that grants pull requests allows it, whoever asks (issue #273).
+  const refusal = pushRefusal(pushAuthorization(document.mandate));
+  items.push(
+    refusal
+      ? { code: "MANDATE", passed: false, detail: refusal, fix: "Concedi o correggi il mandato con l'azione Aprire pull request, poi prepara la pull request." }
+      : { code: "MANDATE", passed: true, detail: "Il mandato permette di aprire pull request.", fix: null },
   );
   return items;
 }

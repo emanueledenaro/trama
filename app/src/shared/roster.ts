@@ -76,6 +76,11 @@ export function isFixedRole(role: TeamRole): boolean {
   return role !== "developer";
 }
 
+/** The roles that work at a moment, in the order of the spec's table. */
+export function momentRoles(moment: TeamMoment): TeamRole[] {
+  return DUTIES.filter((d) => d.moment === moment).map((d) => d.role);
+}
+
 /** The moments a role works at, in the order of the flow. */
 export function roleDuties(role: TeamRole): RoleDuty[] {
   return TEAM_MOMENTS.flatMap(({ moment }) =>

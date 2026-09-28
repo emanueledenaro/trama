@@ -118,29 +118,36 @@ function ProposalsSection({ learning }: { learning: LearningView }) {
       <p className="mb-2 text-ui-sm text-muted-foreground">La revisione non cambia né toglie note da sola: lo propone e decidi tu.</p>
       <div className="space-y-2">
         {learning.proposals.map((proposal) => (
-          <div key={proposal.id} className="rounded-xl border border-[color:var(--color-border)] p-2.5 text-ui-sm">
-            <p className="text-ui-xs text-muted-foreground">
-              {proposal.target === "user" ? "Profilo" : "Note sul progetto"}<Sep />{formatDate(proposal.createdAt)}
-            </p>
-            <ul className="mt-1 space-y-0.5 text-foreground/90">
-              {proposal.operations.map((line, index) => (
-                <li key={index} className="whitespace-pre-wrap">
-                  {line.replace(/^- /, "")}
-                </li>
-              ))}
-            </ul>
-            <div className="cta-row mt-2">
-              <Button size="sm" variant="outline" onClick={() => void act("learning:proposal", { id: proposal.id, approve: true })}>
-                Applica
-              </Button>
-              <Button size="sm" variant="ghost" onClick={() => void act("learning:proposal", { id: proposal.id, approve: false })}>
-                Scarta
-              </Button>
-            </div>
-          </div>
+          <MemoryProposalCard key={proposal.id} proposal={proposal} />
         ))}
       </div>
     </InspectorSection>
+  );
+}
+
+/** A memory change a review proposed, with the person's two answers; the same card in Memoria and in Aspetta te (issue #240). */
+export function MemoryProposalCard({ proposal }: { proposal: LearningView["proposals"][number] }) {
+  return (
+    <div className="rounded-xl border border-[color:var(--color-border)] p-2.5 text-ui-sm" data-testid="memory-proposal">
+      <p className="text-ui-xs text-muted-foreground">
+        {proposal.target === "user" ? "Profilo" : "Note sul progetto"}<Sep />{formatDate(proposal.createdAt)}
+      </p>
+      <ul className="mt-1 space-y-0.5 text-foreground/90">
+        {proposal.operations.map((line, index) => (
+          <li key={index} className="whitespace-pre-wrap">
+            {line.replace(/^- /, "")}
+          </li>
+        ))}
+      </ul>
+      <div className="cta-row mt-2">
+        <Button size="sm" variant="ghost" onClick={() => void act("learning:proposal", { id: proposal.id, approve: false })}>
+          Scarta
+        </Button>
+        <Button size="sm" onClick={() => void act("learning:proposal", { id: proposal.id, approve: true })}>
+          Applica
+        </Button>
+      </div>
+    </div>
   );
 }
 

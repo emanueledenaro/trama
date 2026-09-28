@@ -1,5 +1,5 @@
 import type { FocusTask, FocusView, ProjectDocument, TaskFocus } from "@shared/domain";
-import { workingGoals } from "@shared/goals";
+import { projectGoals, workingGoals } from "@shared/goals";
 import { DomainError } from "./pact";
 import { PHASE_LABELS, workRequests, workState } from "./workPhase";
 
@@ -21,8 +21,22 @@ export const NOT_STARTED_LABEL = "da avviare";
 
 const shortTitle = (text: string) => {
   const line = text.replace(/\s+/g, " ").trim();
-  return line.length > TASK_TITLE_LIMIT ? `${line.slice(0, TASK_TITLE_LIMIT - 1).trimEnd()}…` : line || "Lavoro nel dialogo del progetto";
+  return line.length > TASK_TITLE_LIMIT ? `${line.slice(0, TASK_TITLE_LIMIT - 1).trimEnd()}…` : line || "Lavoro del progetto";
 };
+
+/**
+ * The goal the project dialog's work serves, when its assignments name one: the work is named after the goal, not after
+ * the first message of the dialog, which may be a request already met.
+ */
+function servedGoalTitle(document: ProjectDocument, requestId: string): string | null {
+  const scope = workRequests(document, requestId);
+  if (!scope) return null;
+  const goalId = document.team.specialists
+    .flatMap((s) => s.assignments)
+    .filter((a) => a.requestId !== null && scope.has(a.requestId) && a.goalId)
+    .at(-1)?.goalId;
+  return goalId ? (projectGoals(document).find((g) => g.id === goalId)?.title ?? null) : null;
+}
 
 /** The task the request `requestId` belongs to, or null when it is a message outside any work (a greeting, a question). */
 export function taskIdOf(document: ProjectDocument, requestId: string): string | null {
@@ -47,7 +61,8 @@ function describe(document: ProjectDocument, requestId: string | null) {
     phase,
     phaseLabel: phase ? PHASE_LABELS[phase] : NOT_STARTED_LABEL,
     blocker: state?.blocker ?? null,
-    waitingFor: phase === "blocked" ? null : (waiting?.label ?? null),
+    // The person's move shows even when the work is blocked: it is often what unblocks it, as a pending mandate.
+    waitingFor: waiting?.label ?? null,
   };
 }
 
@@ -75,7 +90,7 @@ export function openTasks(document: ProjectDocument): OpenTask[] {
       tasks.push({
         id,
         goalId: null,
-        title: shortTitle(first.text),
+        title: servedGoalTitle(document, latest.id) ?? shortTitle(first.text),
         createdAt: first.createdAt,
         ...described,
       });
@@ -169,7 +184,7 @@ export function resumeTask(document: ProjectDocument, taskId: string): void {
  * How the Coordinator reads a task's name: a goal's title, or the project dialog's work named as such. The first
  * message the bar shows as its title is the person's text, and the Coordinator reads it in its own dialog already.
  */
-const promptName = (task: FocusTask) => (task.goalId ? `l'obiettivo "${task.title}"` : "il lavoro del dialogo del progetto");
+const promptName = (task: FocusTask) => (task.goalId ? `l'obiettivo "${task.title}"` : "il lavoro del progetto fuori dagli obiettivi");
 
 const taskLine = (task: FocusTask) =>
   `${promptName(task)} (${task.id}), fase ${task.phaseLabel}${task.blocker ? `, bloccato: ${task.blocker}` : ""}${task.waitingFor ? `, aspetta la persona: ${task.waitingFor}` : ""}`;

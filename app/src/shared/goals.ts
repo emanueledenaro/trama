@@ -14,6 +14,7 @@ import {
   type Specialist,
   type SpecialistAssignment,
 } from "./domain";
+import type { TimelineRow } from "./timeline";
 
 export const GOAL_STATUS_LABELS: Record<GoalStatus, string> = {
   proposed: "Proposto dal Coordinatore",
@@ -34,9 +35,9 @@ export function workingGoals(document: ProjectDocument): ProjectGoal[] {
 }
 
 /**
- * Whether a goal's dialog has no history, so deleting the goal loses nothing but the goal itself (W03): no
+ * Whether a goal has no history in the chat, so deleting the goal loses nothing but the goal itself (W03): no
  * message, question, decision, work or candidate, and no event about it except the card the person created
- * it with in its own dialog. A goal the Coordinator proposed has its card in another dialog, which is history.
+ * it with. A goal the Coordinator proposed has its card in the Coordinator's turn, which is history.
  */
 export function goalDialogIsEmpty(document: ProjectDocument, goalId: string): boolean {
   const goal = findGoal(document, goalId);
@@ -59,12 +60,12 @@ export function findGoal(document: ProjectDocument, id: string | null | undefine
   return projectGoals(document).find((g) => g.id === id.trim()) ?? null;
 }
 
-/** The composer of a dialog: the project dialog keeps its selection on the document (ADR 0010). */
-export function dialogComposer(document: ProjectDocument, goalId: string | null): DialogComposer {
-  return findGoal(document, goalId)?.dialog ?? document;
+/** The composer of the project's one chat (ADR 0010, U01): whatever goal the chat is filtered on, it is the same. */
+export function chatComposer(document: ProjectDocument): DialogComposer {
+  return document;
 }
 
-/** Events of one dialog: a goal's, or the project dialog's when goalId is null. */
+/** Events that carry exactly `goalId`; null gives the events of the whole project, outside every goal. */
 export function dialogEvents(events: ConversationEvent[], goalId: string | null): ConversationEvent[] {
   return events.filter((e) => (e.goalId ?? null) === goalId);
 }
@@ -73,7 +74,39 @@ export function dialogRequests(requests: CoordinatorRequest[], goalId: string | 
   return requests.filter((r) => (r.goalId ?? null) === goalId);
 }
 
-/** The goal of the Coordinator turn that is running, if it was sent from a goal dialog. */
+/**
+ * What the chat shows under a filter (U01): every event with no filter; with a goal, the events of that goal and the
+ * cards about it posted elsewhere, such as the Coordinator's proposal of the goal.
+ */
+export function chatEvents(events: ConversationEvent[], filter: string | null): ConversationEvent[] {
+  if (!filter) return events;
+  return events.filter((e) => e.goalId === filter || (e.content.type === "card" && e.content.kind === "goal" && e.content.referenceId === filter));
+}
+
+/** The requests the chat shows under a filter (U01): all of them with no filter, the goal's otherwise. */
+export function chatRequests(requests: CoordinatorRequest[], filter: string | null): CoordinatorRequest[] {
+  return filter ? requests.filter((r) => r.goalId === filter) : requests;
+}
+
+/** The goal a row of the chat belongs to (U01), from its event or its request; null for the whole project. */
+export function timelineRowGoalId(row: TimelineRow, requests: CoordinatorRequest[]): string | null {
+  const requestGoal = (id: string | null) => (id ? (requests.find((r) => r.id === id)?.goalId ?? null) : null);
+  switch (row.kind) {
+    case "person":
+    case "card":
+      return row.event.goalId ?? null;
+    case "work":
+      return row.activities[0]?.goalId ?? requestGoal(row.requestId);
+    case "reply":
+      return row.request?.goalId ?? requestGoal(row.requestId);
+    case "failure":
+      return row.goalId;
+    case "grillingRound":
+      return requestGoal(row.subjectRequestId);
+  }
+}
+
+/** The goal of the Coordinator turn that is running, if it was sent while the chat was filtered on a goal. */
 export function requestGoalId(document: ProjectDocument, requestId: string | null): string | null {
   if (!requestId) return null;
   return document.requests.find((r) => r.id === requestId)?.goalId ?? null;

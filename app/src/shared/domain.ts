@@ -31,7 +31,9 @@ export type CardKind =
   /** The route Ask Trama chose for the person's situation (M07); referenceId is the route. */
   | "route"
   /** The Coordinator points out an overlap with a colleague's work (G03); referenceId is the overlap's id. */
-  | "overlap";
+  | "overlap"
+  /** The Coordinator's recap at a milestone or on the person's request (A03); referenceId is the recap. */
+  | "recap";
 
 export interface ConflictAssessment {
   id: string;
@@ -53,6 +55,21 @@ export interface ConflictAssessment {
   checkedAt: string;
 }
 
+/** A divergence between the project's branch and the default branch on GitHub, with the files the merge leaves in conflict. */
+export interface BranchDivergence {
+  /** The branch checked out in the project; null on a detached head. */
+  branch: string | null;
+  defaultBranch: string;
+  headSHA: string;
+  remoteSHA: string;
+  /** Commits only in the project's branch. */
+  ahead: number;
+  /** Commits only in the default branch on GitHub. */
+  behind: number;
+  conflictingFiles: string[];
+  checkedAt: string;
+}
+
 export type EventContent =
   | { type: "personMessage"; text: string; moduleId: string | null; moduleName: string | null; imageCount?: number }
   | { type: "coordinatorText"; text: string; model: string | null; references: string[]; provider?: ProviderId | null }
@@ -67,7 +84,7 @@ export interface ConversationEvent {
   /** Specialist work: the assignment and turn the activity belongs to. */
   assignmentId?: string | null;
   workKey?: string | null;
-  /** The goal dialog the event belongs to; absent or null means the project dialog (UX02). */
+  /** The goal the event belongs to, which the chat filter shows it under (U01); absent or null means the whole project. */
   goalId?: string | null;
   createdAt: string;
   content: EventContent;
@@ -89,7 +106,7 @@ export interface CoordinatorRequest {
   completedAt: string | null;
   failure: string | null;
   attachments?: string[];
-  /** The goal dialog the message was sent from, fixed when the request is created (UX02). */
+  /** The goal the chat was filtered on when the message was sent, fixed when the request is created (UX02, U01). */
   goalId?: string | null;
   /** The one next step the Coordinator declared at the end of the turn (W01). */
   nextStep?: NextStep | null;
@@ -105,6 +122,90 @@ export interface RequestStep {
   by: "person" | "trama";
   /** Set when Trama's automatic turn ended without making the move: why, in the person's words (issue #204). */
   stalled?: string | null;
+  /** What started Trama's automatic move (A05): the event of the work, or the periodic round; absent on older records. */
+  trigger?: WorkEvent;
+}
+
+/**
+ * What makes Trama weigh the Coordinator's next move (A05): a Coordinator turn, a plan or an assignment that ended, a red
+ * check, a conflict between worktrees, a new issue, a commented pull request, or the periodic round.
+ */
+export type WorkEvent =
+  | "turnEnded"
+  | "planEnded"
+  | "assignmentEnded"
+  | "checkFailed"
+  | "worktreeConflict"
+  | "issueOpened"
+  | "pullRequestCommented"
+  | "round";
+
+/** A round of the Coordinator that did something (A05): what it started or unblocked, for Activity. */
+export interface RoundRecord {
+  id: string;
+  at: string;
+  /** What the round did, in the person's words: "Avviata la mossa Assegna le fette", "Luca prende la fetta S3". */
+  detail: string;
+  /** The automatic move the round started, when it started one. */
+  requestId: string | null;
+}
+
+/**
+ * Continuous work of the project (A05): the person's Pause and the rounds that did something. Absent until the person
+ * first pauses or a round first acts; absent means not paused.
+ */
+export interface ContinuousWorkRecord {
+  paused: boolean;
+  /** When the person last paused or resumed; null before the first time. */
+  changedAt: string | null;
+  /** The latest rounds with an outcome, oldest first, capped. */
+  rounds: RoundRecord[];
+}
+
+/** What made the Coordinator write a recap (A03): one or more milestones, or the person's request. */
+export type RecapReason = "milestone" | "request";
+
+/** A milestone of the work (A03): a slice done, a candidate merged, a goal achieved. */
+export type MilestoneKind = "sliceDone" | "candidateMerged" | "goalAchieved";
+
+/** One line of "Cosa ho fatto": a fact from the records, with the issue or pull request it names, if any. */
+export interface RecapFact {
+  text: string;
+  /** The number of the issue or pull request the line names, so the card can link it. */
+  number: number | null;
+  url: string | null;
+}
+
+/** One line of "Cosa mi serve da te": an item of "Aspetta te" as it was when the recap was written. */
+export interface RecapNeed {
+  /** The item's key in "Aspetta te", so the card opens it there while it still waits. */
+  key: string;
+  label: string;
+  title: string;
+}
+
+/**
+ * The Coordinator's recap (A03): what it did, what it does, what it needs from the person. Trama writes it from the
+ * records (Activity, the state of the work, "Aspetta te"), never from a model's text, and keeps it as written.
+ */
+export interface RecapRecord {
+  id: string;
+  at: string;
+  reason: RecapReason;
+  /** The milestones the recap is about, in the person's words; empty for a recap the person asked for. */
+  milestones: string[];
+  done: RecapFact[];
+  /** The status line when the recap was written. */
+  doing: string;
+  needs: RecapNeed[];
+}
+
+/** The recaps of a project and the milestones already told (A03). Absent until Trama first reads the milestones. */
+export interface RecapLedger {
+  /** The milestone keys already told in a recap, or already reached when Trama first read them. */
+  told: string[];
+  /** The recaps, oldest first, capped. */
+  recaps: RecapRecord[];
 }
 
 /** The phase of a request's work, computed by Trama from the records, never by the model (W01). */
@@ -141,6 +242,35 @@ export interface FocusTask {
 export interface FocusView {
   focus: FocusTask | null;
   queue: FocusTask[];
+}
+
+/** A button of the status line: the move that takes the work on, and the request and dialog it acts on. */
+export interface StatusLineAction extends NextStepView {
+  /** The request whose declared step the button takes; null when the move was not declared, so the button opens its card. */
+  requestId: string | null;
+  goalId: string | null;
+}
+
+/**
+ * The Coordinator's status line (Q6): what it does now and what comes next, as in "Sto verificando S2, poi assegno S3".
+ * Trama computes it from the records (the move that runs, the next move, the ready slices), never from a model's text.
+ */
+export interface StatusLineView {
+  /**
+   * working: something runs; next: nothing runs and the next move is the Coordinator's own; waiting: the work waits for
+   * the person; blocked: the work is held; idle: nothing is going on.
+   */
+  state: "working" | "next" | "waiting" | "blocked" | "idle";
+  /** The line itself, in the first person; "Niente in corso." when nothing is going on. */
+  text: string;
+  /** Why the work is held and what unblocks it, in the person's words; null while it goes on. */
+  reason: string | null;
+  /** The person's move, the line's primary button; null when none. */
+  action: StatusLineAction | null;
+  /** The automatic move that runs now, which the line's stop button stops; null when none. */
+  runningMove: { requestId: string; label: string } | null;
+  /** The person paused continuous work (A05): no automatic move, round or automatic work starts until Riprendi. */
+  paused: boolean;
 }
 
 /** A move that takes the work on: the first nine are the person's, the last four the Coordinator's (W01, W06). */
@@ -197,6 +327,8 @@ export interface MandateSnapshot {
   authorizedActions: MandateAction[];
   limits: string[];
   grantedAt: string;
+  /** Set when the person narrowed the mandate before this version without revoking it (issue #244). */
+  restriction?: { removedModuleIds: string[]; removedActions: MandateAction[] } | null;
 }
 
 export type MandateAction = "plan" | "executeInWorktree" | "openPullRequest" | "integrateCandidate" | "composeTeam";
@@ -218,15 +350,36 @@ export interface MandateRequest {
   limits: string[];
   askedAt: string;
   /**
+   * The project mandate for the whole cycle (issue #244): Trama asks for it on the Coordinator's behalf when a project
+   * opens without a mandate. Absent on the requests the Coordinator asks with request_mandate.
+   */
+  projectCycle?: boolean;
+  /**
    * Null while the request waits for the person. "superseded" means a newer request replaced it before the
-   * person answered (W14): it can no longer be granted and names the newer one in `supersededBy`.
+   * person answered (W14): it can no longer be granted and names the newer one in `supersededBy`. "rejected" means
+   * the person turned the proposal down and the mandate in force stayed as it was; "revoked" is kept for requests
+   * answered before that, when declining a proposal also revoked the mandate.
    */
   resolution: {
-    kind: "granted" | "corrected" | "revoked" | "superseded";
+    kind: "granted" | "corrected" | "rejected" | "revoked" | "superseded";
     version: number | null;
     resolvedAt: string;
     supersededBy?: string | null;
   } | null;
+}
+
+/**
+ * An action a fixed ban stopped before it started (issue #244): who tried it, the command or the file, and whether the
+ * person has seen it. It waits in "Aspetta te" until the person acknowledges it.
+ */
+export interface FixedBanRefusal {
+  id: string;
+  ban: import("./fixedBans").FixedBan;
+  /** The command, the file or the branch the action named. */
+  action: string;
+  by: { kind: "coordinator" } | { kind: "specialist"; specialistId: string; assignmentId: string } | { kind: "trama" };
+  refusedAt: string;
+  acknowledgedAt: string | null;
 }
 
 /** The one mandate request waiting for the person: the latest unresolved one (W14). */
@@ -447,6 +600,8 @@ export interface SpecialistAssignment {
   selfPicked?: boolean;
   /** The questions the developer asked the Coordinator during the work (W06), oldest first. */
   questions?: DeveloperQuestion[];
+  /** The candidate gate sent the work back with blocking findings (W10); the latest return, absent before any. */
+  gateReturn?: { gateId: string; candidateId: string; findings: string[]; at: string } | null;
 }
 
 /**
@@ -520,7 +675,7 @@ export interface CandidateCommit {
 
 /** One condition of the quality standard a candidate meets before Trama publishes it (Q01). */
 export interface QualityItem {
-  code: "VERIFIED" | "COMMIT_MESSAGE" | "NO_SECRETS" | "DIFF_CHECK" | "ISSUE_LINKED" | "PACT_SETTLED";
+  code: "VERIFIED" | "COMMIT_MESSAGE" | "NO_SECRETS" | "DIFF_CHECK" | "ISSUE_LINKED" | "PACT_SETTLED" | "MANDATE";
   passed: boolean;
   /** What Trama found, in the person's words. */
   detail: string;
@@ -820,6 +975,8 @@ export interface TechnicalReview {
   findings?: import("./cleanCode").ReviewFinding[];
   /** Trama's own measures of the candidate against the standard (Q03): the only evidence of the review. */
   standard?: StandardCheck | null;
+  /** The candidate gate this review closes (W10): the verdict is the gate's; absent in reviews before it. */
+  gateId?: string;
 }
 
 /** The deterministic part of a technical review (Q03): the standard's version, the rules on and what Trama measured. */
@@ -891,7 +1048,8 @@ export interface ExampleObservation {
   at: string;
 }
 
-export type CandidateState = "building" | "verified" | "decided";
+/** "superseded": newer work replaced the candidate (U02); it is not merged and does not collide with anyone. */
+export type CandidateState = "building" | "verified" | "decided" | "superseded";
 
 export interface CandidateBlocker {
   code: string;
@@ -936,8 +1094,11 @@ export interface WorkPlan {
   /**
    * seams: the planner proposed the seams to test and waits for the person's answer before it writes the spec (M04).
    * stale: the repository changed while the planner read it; the plan must be re-evaluated (T06).
+   * superseded: a newer plan of the same goal replaced it; one goal has one active plan (U01).
    */
-  status: "planning" | "seams" | "ready" | "failed" | "stale";
+  status: "planning" | "seams" | "ready" | "failed" | "stale" | "superseded";
+  /** The plan that replaced this one; set only when the status is superseded. */
+  supersededBy?: string | null;
   /** The plan of a request written before M04; a plan written with to-spec keeps `spec` instead. */
   proposal: PlanProposal | null;
   /** The plan as a spec, written with AI Hero's to-spec skill (M04); absent in plans written before it. */
@@ -1054,7 +1215,7 @@ export interface GoalExample {
 /** Proposed by the Coordinator and not yet confirmed, open, achieved or abandoned by the person. */
 export type GoalStatus = "proposed" | "open" | "achieved" | "abandoned";
 
-/** The composer's selection and draft of one dialog (ADR 0010). */
+/** The composer's selection and draft of the chat (ADR 0010). */
 export interface DialogComposer {
   selectedProvider?: ProviderId;
   selectedModel: string | null;
@@ -1078,10 +1239,13 @@ export interface ProjectGoal {
   origin: "person" | "coordinator";
   createdAt: string;
   updatedAt: string;
-  /** Pact decisions the person or the goal dialog linked to this goal. */
+  /** Pact decisions the person or a turn about the goal linked to this goal. */
   decisionIds: string[];
-  /** The goal dialog's composer. */
-  dialog: DialogComposer;
+  /**
+   * The composer of the goal dialog, written before the single chat (U01). Loading a document folds its draft
+   * into the chat's composer and removes it; new goals never have it.
+   */
+  dialog?: DialogComposer;
   /**
    * When the person put the goal away (W03). Archiving hides it from the working view and keeps its status,
    * links and history; restoring clears it. Absent or null means not archived.
@@ -1099,9 +1263,11 @@ export interface ProjectDocument {
   decisionHistory: PactDecision[];
   mandate: ProjectMandate | null;
   mandateRequests: MandateRequest[];
+  /** Actions the fixed bans stopped (issue #244); absent in documents written before. */
+  fixedBanRefusals?: FixedBanRefusal[];
   decisionRequests: DecisionRequest[];
   coordinator: CoordinatorState;
-  /** The composer's selection for the project dialog (ADR 0010). Absent provider means Codex. */
+  /** The composer's selection for the project's one chat (ADR 0010, U01). Absent provider means Codex. */
   selectedProvider?: ProviderId;
   selectedModel: string | null;
   selectedEffort: string | null;
@@ -1114,6 +1280,11 @@ export interface ProjectDocument {
   candidates: Candidate[];
   plans: WorkPlan[];
   conflicts?: ConflictAssessment[];
+  /**
+   * The project's branch and the default branch on GitHub went different ways with files in conflict (U02): one notice
+   * for the project, instead of the same conflict on every candidate. Null or absent while they are aligned.
+   */
+  branchDivergence?: BranchDivergence | null;
   /** The idea the person started this project from (T10); the Coordinator proposes purpose and structure first. */
   createdFromIdea?: string | null;
   /** Goals of the project (UX01); absent in documents written before goals. */
@@ -1140,6 +1311,14 @@ export interface ProjectDocument {
   cleanCode?: import("./cleanCode").CleanCodeSettings;
   /** Focus mode examinations (F01); absent until the person first opens focus mode. */
   audits?: FocusAudit[];
+  /** The candidate gates (W10); absent until the first candidate is reviewed. */
+  gates?: CandidateGate[];
+  /** The Pause and the rounds of continuous work (A05); absent until the first pause or round with an outcome. */
+  continuousWork?: ContinuousWorkRecord;
+  /** The Coordinator's recaps and the milestones already told (A03); absent until Trama first reads the milestones. */
+  recap?: RecapLedger;
+  /** The problems found outside the work in progress and their issues (A08); absent until Trama first looks for them. */
+  problems?: ProblemLedger;
   /** The conversations between agents (W07), oldest first; absent before the first one. */
   agentThreads?: AgentThread[];
 }
@@ -1177,6 +1356,53 @@ export interface AgentThread {
   createdAt: string;
   updatedAt: string;
   messages: AgentThreadMessage[];
+}
+
+/** The proof a found problem refers to (A08): a red check or a reviewer's finding. */
+export interface ProblemEvidence {
+  kind: "check" | "finding";
+  /** The record it names: the check failure or the gate. */
+  reference: string;
+  /** The proof in the person's words, for the issue and for Activity. */
+  label: string;
+}
+
+/**
+ * A problem Trama found outside the work in progress (A08, Q10): a check red on the checkout or on a candidate's base
+ * too, or a reviewer's finding on a file the candidate did not change. The Coordinator opens one issue for it, or links
+ * the open one about the same problem, has it triaged and assigns it or puts it in the backlog. Without GitHub it stays
+ * in Trama as a backlog item.
+ */
+export interface FoundProblem {
+  id: string;
+  /** The same problem has the same key, whatever found it: `check:<check>`, `finding:<role>:<file>:<title>`. */
+  key: string;
+  title: string;
+  /** What Trama saw, in Markdown, for the issue body. */
+  detail: string;
+  evidence: ProblemEvidence;
+  foundAt: string;
+  /** The issue of the problem; `opened` false when an open issue about the same problem was already there. */
+  issue: { number: number; url: string; at: string; opened: boolean } | null;
+  /** Why the issue could not be opened the last time Trama tried; null otherwise. */
+  issueFailure: { message: string; at: string } | null;
+  /** The triage labels Trama applied to the issue after the triage, once. */
+  labelsApplied: string[] | null;
+  /** Where the problem went after the triage: an assignment that works on it, or the backlog. */
+  placement: ProblemPlacement | null;
+}
+
+export type ProblemPlacement =
+  | { kind: "assignment"; assignmentId: string; at: string; reason: string }
+  | { kind: "backlog"; at: string; reason: string };
+
+/** Trama's bookkeeping of found problems (A08). */
+export interface ProblemLedger {
+  /** When Trama started looking: records older than this are not new problems. */
+  since: string;
+  /** The records already read, as `failure:<id>` or `gate:<id>:<check or finding>`, so each is read once. */
+  seen: string[];
+  items: FoundProblem[];
 }
 
 export interface ProjectSettings {
@@ -1256,6 +1482,66 @@ export interface FocusAudit {
   spec: AuditAxis;
   /** The skill's closing line, per axis: total findings and the worst one within each axis. */
   summary: string | null;
+  failure: string | null;
+  startedAt: string;
+  updatedAt: string;
+  finishedAt: string | null;
+}
+
+/** The figures of the team that review a candidate at its moment (W10, spec #137 Q10). */
+export type GateRole = "specReviewer" | "cleanCode" | "regressionGuardian" | "security" | "performance" | "ux" | "devops" | "documentation";
+
+/** A reviewer's finding on the diff: its judgement, never evidence. A blocking one sends the work back to the developer. */
+export interface GateFinding {
+  severity: "blocking" | "advisory";
+  title: string;
+  detail: string;
+  /** The file it is about, with the line when known; null when it is about the whole diff. */
+  file: string | null;
+}
+
+/** One figure of the gate, reviewing the diff in a session of its own. */
+export interface GateReview {
+  role: GateRole;
+  /** "skipped": the spec reviewer has no spec, as code-review says. */
+  status: "waiting" | "running" | "done" | "skipped" | "failed";
+  findings: GateFinding[];
+  /** The report in Markdown; "Niente da segnalare." when the figure found nothing. */
+  report: string | null;
+  threadId: string | null;
+  model: string | null;
+  startedAt: string | null;
+  finishedAt: string | null;
+  failure: string | null;
+}
+
+/** One check of the suite, run by Trama on the candidate's base and on the candidate (W10). */
+export interface SuiteComparison {
+  check: string;
+  base: "pass" | "fail" | "notRun";
+  candidate: "pass" | "fail" | "notRun";
+  /** The base's output, kept when the check failed or did not run there. */
+  baseOutput: string | null;
+}
+
+/**
+ * The candidate gate (W10): before a candidate reaches the person, Trama's real checks, then every candidate reviewer
+ * of the team in parallel on the diff. A regression or a blocking finding stops the candidate and sends the work back
+ * to its developer.
+ */
+export interface CandidateGate {
+  id: string;
+  candidateId: string;
+  assignmentId: string;
+  snapshotId: string;
+  baseSHA: string;
+  status: "checking" | "reviewing" | "passed" | "blocked" | "failed";
+  /** Required checks that did not pass: the reviewers do not start and the debugger takes the failure (W11). */
+  checksFailed: string[];
+  suite: SuiteComparison[];
+  reviews: GateReview[];
+  /** The work went back to its developer with the blocking findings; `waiting` says why it has not resumed yet. */
+  returned: { assignmentId: string; at: string; waiting: string | null } | null;
   failure: string | null;
   startedAt: string;
   updatedAt: string;
@@ -1396,6 +1682,13 @@ export interface ActiveProjectState {
   sliceViews?: Record<string, SliceView[]>;
   /** The task in focus and the queue, computed by the main process (W02). */
   focus: FocusView;
+  /**
+   * What waits for the person, ordered (issue #292): the one list the summary, the sidebar counter and the next step
+   * read, computed by the main process; absent before the first computation.
+   */
+  waiting?: import("./waitingForYou").WaitingItem[];
+  /** The Coordinator's status line (Q6), computed by the main process; absent before the first computation. */
+  statusLine?: StatusLineView | null;
   /** The AI Hero skills Trama copies are present in the project. */
   aiHeroPrepared?: boolean;
   /** Who works on what (G01), computed by the main process; absent until the first reading and in the example project. */

@@ -6,6 +6,8 @@ import type { ExerciseId, GuideStepId } from "@shared/onboarding";
 
 export type InspectorTarget =
   | { kind: "map" }
+  /** Everything that waits for the person (issue #240); `key` brings one item into view. */
+  | { kind: "waiting"; key?: string }
   | { kind: "module"; id: string }
   | { kind: "file"; path: string }
   | { kind: "pact" }
@@ -21,6 +23,7 @@ export type InspectorTarget =
   | { kind: "audit"; id: string }
   | { kind: "group" }
   | { kind: "work" }
+  | { kind: "activity" }
   | { kind: "issues" }
   | { kind: "issue"; number: number }
   | { kind: "goals"; create?: boolean }
@@ -57,7 +60,7 @@ interface UiState {
   /** A question another view prepared for the composer; the composer takes it once and clears it (W12). */
   composerPrefill: string | null;
   mainView: MainView;
-  /** The goal whose dialog is shown; null is the project dialog (UX02). */
+  /** The goal the one chat is filtered on; null shows the whole chat (UX02, U01). */
   dialogGoalId: string | null;
   /** A goal to open once its project is the selected one, after a switch from the overview. */
   pendingGoal: { projectId: string; goalId: string } | null;
@@ -67,6 +70,7 @@ interface UiState {
   settingsReturn: Exclude<MainView, "settings">;
   openSettings(section?: SettingsSection): void;
   closeSettings(): void;
+  /** Shows the chat filtered on a goal, or the whole chat with null (U01). */
   openDialog(goalId: string | null): void;
   openGoalOf(projectId: string, goalId: string): void;
   /** Inspector history for the back and forward buttons. */
@@ -83,7 +87,7 @@ interface UiState {
   setToast(message: string | null, tone?: "warning" | "info"): void;
   focusComposer(moduleId?: string | null): void;
   /**
-   * "Chiedi al Coordinatore" from a panel: shows the dialog (a goal's when `goalId` is given), puts `text` in the
+   * "Chiedi al Coordinatore" from a panel: shows the chat (filtered on the goal when `goalId` is given), puts `text` in the
    * composer ready to edit or send, and focuses it. Nothing is sent (W12).
    */
   askCoordinator(text: string, options?: { goalId?: string | null; moduleId?: string | null }): void;
