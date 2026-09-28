@@ -51,7 +51,11 @@ export type TurnEvent =
   | { type: "toolRefused"; itemId: string; tool: string; reason: string }
   /** Trama stopped an action a fixed ban covers before it started (issue #244): no mandate grants it. */
   | { type: "fixedBanRefused"; itemId: string; ban: import("./fixedBans").FixedBan; action: string }
-  | { type: "tokenUsage"; usedTokens: number; contextWindow: number | null }
+  /**
+   * `usedTokens` is what the thread holds in its context window now (null: not known right now, as after a
+   * compaction); `processedTokens` is what the thread has processed so far, a cost only, never a context reading.
+   */
+  | { type: "tokenUsage"; usedTokens: number | null; contextWindow: number | null; processedTokens?: number | null }
   | { type: "compacted" }
   | { type: "completed"; text: string }
   | { type: "failed"; message: string }

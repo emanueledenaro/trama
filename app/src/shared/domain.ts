@@ -1796,7 +1796,7 @@ export interface ActiveProjectState {
   runningRequestId: string | null;
   /** Messages sent while a turn was running, in the order they will leave (W03). */
   queuedMessages: QueuedMessage[];
-  contextUsage: { usedTokens: number; contextWindow: number | null } | null;
+  contextUsage: import("./contextReading").ContextUsage | null;
   github: GitHubState;
   stateWritable: boolean;
   /** Work keys of specialist turns that are running now. */
@@ -1898,6 +1898,7 @@ export interface LearningReviewRun {
   /** Writes the review made, one line each; empty when it saved nothing. */
   actions: string[];
   toolCalls: number;
+  /** Tokens the review processed, its cost, when the provider reports it (issue #305); never a context reading. */
   usedTokens: number | null;
   error: string | null;
 }

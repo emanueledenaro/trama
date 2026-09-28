@@ -21,6 +21,22 @@ const MAX_TOOL_ERROR_CHARS = 2048;
 export type MemoryTarget = "memory" | "user";
 export type JsonRecord = Record<string, unknown>;
 
+/**
+ * A stable code beside every refused write (issue #305). The model reads the original `error` text; Trama's own
+ * paths read the code and tell the person in Italian, never with the model's text.
+ */
+export type MemoryErrorCode =
+  | "memory_full"
+  | "no_match"
+  | "ambiguous"
+  | "drift"
+  | "unreadable"
+  | "threat"
+  | "too_many_failures"
+  | "disabled"
+  | "invalid"
+  | "unavailable";
+
 export const MEMORY_BLOCK_HEADERS: Record<MemoryTarget, string> = {
   memory: "MEMORY (your personal notes)",
   user: "USER PROFILE (who the user is)",
@@ -29,7 +45,7 @@ export const MEMORY_BLOCK_HEADERS: Record<MemoryTarget, string> = {
 /** Python `len`: code points, not UTF-16 units. */
 export const charLength = (text: string) => [...text].length;
 const thousands = (n: number) => n.toLocaleString("en-US");
-const error = (message: string, extra: JsonRecord = {}): JsonRecord => ({ success: false, error: message, ...extra });
+const error = (code: MemoryErrorCode, message: string, extra: JsonRecord = {}): JsonRecord => ({ success: false, error: message, code, ...extra });
 const truncateError = (message: string) => (message.length > MAX_TOOL_ERROR_CHARS ? `${message.slice(0, MAX_TOOL_ERROR_CHARS)}… [truncated]` : message);
 
 export function findUniqueMatch(entries: string[], oldText: string): { index: number | null; ambiguous: boolean } {
@@ -68,7 +84,14 @@ export class MemoryStore {
   readonly userProfileEnabled: boolean;
   private readonly limits: Record<MemoryTarget, number>;
   private snapshot: Record<MemoryTarget, string> = { memory: "", user: "" };
-  private consolidationFailures = 0;
+  /**
+   * Refused writes of each caller in its turn: the Coordinator ("foreground") and the review ("backgroundReview")
+   * count apart, and the person (no caller) never counts (issue #305).
+   */
+  private consolidationFailures = new Map<string, number>();
+  /** The first "memory full" answer of each caller: every later write of that turn gets it again, unapplied. */
+  private fullAnswers = new Map<string, JsonRecord>();
+  private caller: string | null = null;
 
   constructor(private readonly options: MemoryStoreOptions) {
     this.limits = { memory: options.memoryCharLimit ?? MEMORY_CHAR_LIMIT, user: options.userCharLimit ?? USER_CHAR_LIMIT };
@@ -97,9 +120,27 @@ export class MemoryStore {
     else this.memoryEntries = entries;
   }
 
-  /** Called at the start of each turn. */
-  resetConsolidationFailures(): void {
-    this.consolidationFailures = 0;
+  /** Called at the start of each turn of the caller. */
+  resetConsolidationFailures(caller: string): void {
+    this.consolidationFailures.delete(caller);
+    this.fullAnswers.delete(caller);
+  }
+
+  /** Runs the writes of `caller`; the store is synchronous, so the caller holds for exactly those writes. */
+  withCaller<T>(caller: string | null, run: () => T): T {
+    const previous = this.caller;
+    this.caller = caller;
+    try {
+      return run();
+    } finally {
+      this.caller = previous;
+    }
+  }
+
+  /** After a "memory full" in this turn the caller writes nothing more: the same answer comes back, unapplied. */
+  private blockedAfterFull(): JsonRecord | null {
+    const answer = this.caller === null ? undefined : this.fullAnswers.get(this.caller);
+    return answer ? { ...answer, repeated: true } : null;
   }
 
   charCount(target: MemoryTarget): number {
@@ -152,25 +193,30 @@ export class MemoryStore {
   }
 
   private consolidationFailure(response: JsonRecord): JsonRecord {
-    this.consolidationFailures += 1;
-    if (this.consolidationFailures <= MAX_CONSOLIDATION_FAILURES_PER_TURN) return response;
+    const caller = this.caller;
+    if (caller === null) return response;
+    if (response.code === "memory_full" && !this.fullAnswers.has(caller)) this.fullAnswers.set(caller, response);
+    const failures = (this.consolidationFailures.get(caller) ?? 0) + 1;
+    this.consolidationFailures.set(caller, failures);
+    if (failures <= MAX_CONSOLIDATION_FAILURES_PER_TURN) return response;
     return {
       success: false,
       done: true,
-      error: `Memory consolidation failed ${this.consolidationFailures} times this turn. Stop retrying memory calls — leave memory unchanged for now and continue with your reply to the user. The fact can be saved in a later turn.`,
+      code: "too_many_failures",
+      error: `Memory consolidation failed ${failures} times this turn. Stop retrying memory calls — leave memory unchanged for now and continue with your reply to the user. The fact can be saved in a later turn.`,
     };
   }
 
   private failureWithEntries(target: MemoryTarget, message: string): JsonRecord {
-    return this.consolidationFailure(error(message, { current_entries: this.entriesFor(target), usage: this.usage(target) }));
+    return this.consolidationFailure(error("memory_full", message, { current_entries: this.entriesFor(target), usage: this.usage(target) }));
   }
 
-  private batchFailure(target: MemoryTarget, message: string): JsonRecord {
-    return this.consolidationFailure(error(`${message} No operations were applied (batch is all-or-nothing).`, { usage: this.usage(target) }));
+  private batchFailure(target: MemoryTarget, code: MemoryErrorCode, message: string): JsonRecord {
+    return this.consolidationFailure(error(code, `${message} No operations were applied (batch is all-or-nothing).`, { usage: this.usage(target) }));
   }
 
   successResponse(target: MemoryTarget, message: string | null = null, extra: JsonRecord = {}): JsonRecord {
-    this.consolidationFailures = 0;
+    if (this.caller !== null) this.consolidationFailures.delete(this.caller);
     return {
       success: true,
       done: true,
@@ -188,6 +234,7 @@ export class MemoryStore {
     const { raw, ok } = readRaw(path);
     if (!ok) {
       return error(
+        "unreadable",
         `Refusing to write ${basename(path)}: the file exists on disk but could not be read right now (temporarily locked by another program, a permission change, invalid/corrupt text encoding, or a filesystem error). Treating an unreadable file as empty and saving would wipe existing memory, so the write is refused. Nothing was changed — retry in a moment.`,
       );
     }
@@ -195,6 +242,7 @@ export class MemoryStore {
     this.setEntries(target, dedupe(parseEntries(raw)));
     if (backup) {
       return error(
+        "drift",
         `Refusing to write ${basename(path)}: file on disk has content that wouldn't round-trip through the memory tool (likely added by the patch tool, a shell append, a manual edit, or a concurrent session). A snapshot was saved to ${backup}. Resolve the drift first — either rewrite the file as a clean §-delimited list of entries, or move the extra content out — then retry. This guard exists to prevent silent data loss (issue #26045).`,
         {
           drift_backup: backup,
@@ -224,10 +272,12 @@ export class MemoryStore {
   }
 
   add(target: MemoryTarget, content: string): JsonRecord {
+    const blocked = this.blockedAfterFull();
+    if (blocked) return blocked;
     const text = content.trim();
-    if (!text) return error("Content cannot be empty.");
+    if (!text) return error("invalid", "Content cannot be empty.");
     const threat = firstThreatMessage(text);
-    if (threat) return error(threat);
+    if (threat) return error("threat", threat);
     return this.mutate(
       target,
       (entries, limit) => {
@@ -245,16 +295,20 @@ export class MemoryStore {
   }
 
   replace(target: MemoryTarget, oldText: string, newContent: string): JsonRecord {
+    const blocked = this.blockedAfterFull();
+    if (blocked) return blocked;
     const text = newContent.trim();
-    if (!oldText.trim()) return error("old_text cannot be empty.");
-    if (!text) return error("new_content cannot be empty. Use 'remove' to delete entries.");
+    if (!oldText.trim()) return error("invalid", "old_text cannot be empty.");
+    if (!text) return error("invalid", "new_content cannot be empty. Use 'remove' to delete entries.");
     const threat = firstThreatMessage(text);
-    if (threat) return error(threat);
+    if (threat) return error("threat", threat);
     return this.edit(target, oldText.trim(), text);
   }
 
   remove(target: MemoryTarget, oldText: string): JsonRecord {
-    if (!oldText.trim()) return error("old_text cannot be empty.");
+    const blocked = this.blockedAfterFull();
+    if (blocked) return blocked;
+    if (!oldText.trim()) return error("invalid", "old_text cannot be empty.");
     return this.edit(target, oldText.trim(), null);
   }
 
@@ -262,13 +316,13 @@ export class MemoryStore {
     return this.mutate(target, (entries, limit) => {
       const { index, ambiguous } = findUniqueMatch(entries, oldText);
       if (ambiguous) {
-        return error(`Multiple entries matched '${oldText}'. Be more specific.`, {
+        return error("ambiguous", `Multiple entries matched '${oldText}'. Be more specific.`, {
           matches: entries.filter((e) => e.includes(oldText)).map((e) => e.slice(0, 80) + (e.length > 80 ? "..." : "")),
         });
       }
       if (index === null) {
         return this.consolidationFailure(
-          error(`No entry matched '${oldText}'. Check current_entries below and retry with the exact text of the entry you want to ${newContent ? "replace" : "remove"}.`, {
+          error("no_match", `No entry matched '${oldText}'. Check current_entries below and retry with the exact text of the entry you want to ${newContent ? "replace" : "remove"}.`, {
             current_entries: entries,
           }),
         );
@@ -287,13 +341,15 @@ export class MemoryStore {
   }
 
   applyBatch(target: MemoryTarget, operations: unknown[]): JsonRecord {
-    if (!operations.length) return error("operations list is empty.");
+    const blocked = this.blockedAfterFull();
+    if (blocked) return blocked;
+    if (!operations.length) return error("invalid", "operations list is empty.");
     const ops = operations.map((op) => (op && typeof op === "object" ? (op as JsonRecord) : {}));
     for (const [i, op] of ops.entries()) {
       // `content` is scanned, and so is the `new_text` alias so it cannot skip the check.
       const text = typeof op.content === "string" && op.content ? op.content : typeof op.new_text === "string" ? op.new_text : "";
       const threat = (op.action === "add" || op.action === "replace") && text ? firstThreatMessage(text) : null;
-      if (threat) return error(`Operation ${i + 1}: ${threat}`);
+      if (threat) return error("threat", `Operation ${i + 1}: ${threat}`);
     }
     return this.mutate(target, (entries, limit) => {
       const working = [...entries];
@@ -305,22 +361,23 @@ export class MemoryStore {
         const oldText = (typeof op.old_text === "string" ? op.old_text : "").trim();
         const position = `Operation ${i + 1} (${action || "unknown"})`;
         if (action === "add") {
-          if (!content) return this.batchFailure(target, `${position}: content is required.`);
+          if (!content) return this.batchFailure(target, "invalid", `${position}: content is required.`);
           if (!working.includes(content)) working.push(content);
           continue;
         }
-        if (action !== "replace" && action !== "remove") return this.batchFailure(target, `${position}: unknown action. Use add, replace, or remove.`);
-        if (!oldText) return this.batchFailure(target, `${position}: old_text is required.`);
-        if (action === "replace" && !content) return this.batchFailure(target, `${position}: content is required (use action='remove' to delete).`);
+        if (action !== "replace" && action !== "remove") return this.batchFailure(target, "invalid", `${position}: unknown action. Use add, replace, or remove.`);
+        if (!oldText) return this.batchFailure(target, "invalid", `${position}: old_text is required.`);
+        if (action === "replace" && !content) return this.batchFailure(target, "invalid", `${position}: content is required (use action='remove' to delete).`);
         const { index, ambiguous } = findUniqueMatch(working, oldText);
-        if (ambiguous) return this.batchFailure(target, `${position}: '${oldText}' matched multiple distinct entries -- be more specific.`);
-        if (index === null) return this.batchFailure(target, `${position}: no entry matched '${oldText}'.`);
+        if (ambiguous) return this.batchFailure(target, "ambiguous", `${position}: '${oldText}' matched multiple distinct entries -- be more specific.`);
+        if (index === null) return this.batchFailure(target, "no_match", `${position}: no entry matched '${oldText}'.`);
         (action === "replace" ? replaced : removed)[String(i + 1)] = working[index]!;
         working.splice(index, 1, ...(action === "replace" ? [content] : []));
       }
       if (entries.length && !working.length) {
         return this.batchFailure(
           target,
+          "invalid",
           `Refusing to empty ${basename(this.pathFor(target))}: this batch would remove every entry from a previously non-empty store. Keep at least one entry — merge overlapping entries into a shorter one instead of removing the last one. To delete the final entry deliberately, use single remove() calls.`,
         );
       }
@@ -328,6 +385,7 @@ export class MemoryStore {
       if (total > limit) {
         return this.batchFailure(
           target,
+          "memory_full",
           `After applying all ${operations.length} operations, memory would be at ${thousands(total)}/${thousands(limit)} chars -- over the limit. Remove or shorten more entries in the same batch, then retry.`,
         );
       }
@@ -376,6 +434,9 @@ export interface MemoryToolContext {
   stage?: (proposal: { target: MemoryTarget; summary: string; payload: JsonRecord }) => string;
 }
 
+/** The caller whose refused writes count together in one turn (issue #305): the Coordinator or the review. */
+export const memoryCaller = (origin: WriteOrigin) => origin;
+
 export const batchOpLine = (op: JsonRecord) => {
   const action = String(op.action ?? "");
   const old = String(op.old_text ?? "");
@@ -386,8 +447,8 @@ export const batchOpLine = (op: JsonRecord) => {
 };
 
 export function memoryTargetError(store: MemoryStore, target: string): JsonRecord | null {
-  if (target !== "memory" && target !== "user") return { success: false, error: truncateError(`Invalid memory target '${target}'. Use 'memory' or 'user'.`) };
-  if (!store.targetEnabled(target)) return { success: false, error: `Built-in ${target === "user" ? "USER.md" : "MEMORY.md"} writes are disabled in memory config.`, target };
+  if (target !== "memory" && target !== "user") return { success: false, code: "invalid", error: truncateError(`Invalid memory target '${target}'. Use 'memory' or 'user'.`) };
+  if (!store.targetEnabled(target)) return { success: false, code: "disabled", error: `Built-in ${target === "user" ? "USER.md" : "MEMORY.md"} writes are disabled in memory config.`, target };
   return null;
 }
 
@@ -412,14 +473,18 @@ function backgroundDeleteGate(args: JsonRecord, target: MemoryTarget, context: M
       message: `Background review may not delete memory entries unattended. The proposed ${operations ? "batch" : action} was staged for your approval — review it with /memory pending (approve to apply, discard to drop).`,
     };
   } catch {
-    return { error: "Background review may not delete memory entries ('replace'/'remove', including in a batch); 'add' is still available.", success: false };
+    return { error: "Background review may not delete memory entries ('replace'/'remove', including in a batch); 'add' is still available.", success: false, code: "invalid" };
   }
 }
 
-/** `memory`: validates the call, applies the review gate, then runs the store operation. */
+/** `memory`: validates the call, applies the review gate, then runs the store operation as the caller of `context`. */
 export function memoryTool(args: JsonRecord, context: MemoryToolContext): JsonRecord {
   const store = context.store;
-  if (!store) return { error: "Memory is not available. It may be disabled in config or this environment.", success: false };
+  if (!store) return { error: "Memory is not available. It may be disabled in config or this environment.", success: false, code: "unavailable" };
+  return store.withCaller(memoryCaller(context.origin), () => runMemoryTool(store, args, context));
+}
+
+function runMemoryTool(store: MemoryStore, args: JsonRecord, context: MemoryToolContext): JsonRecord {
   const content = typeof args.content === "string" ? args.content : typeof args.new_text === "string" ? args.new_text : null;
   const target = (args.target ?? "memory") as string;
   const targetError = memoryTargetError(store, target);
@@ -427,23 +492,24 @@ export function memoryTool(args: JsonRecord, context: MemoryToolContext): JsonRe
   const typedTarget = target as MemoryTarget;
   const call = { ...args, content };
   if (args.operations !== undefined && args.operations !== null && !(Array.isArray(args.operations) && args.operations.length === 0)) {
-    if (!Array.isArray(args.operations)) return { error: "operations must be a list of {action, content?, old_text?} objects.", success: false };
+    if (!Array.isArray(args.operations)) return { error: "operations must be a list of {action, content?, old_text?} objects.", success: false, code: "invalid" };
     return backgroundDeleteGate(call, typedTarget, context) ?? store.applyBatch(typedTarget, args.operations);
   }
   const action = String(args.action ?? "");
-  if (action !== "add" && action !== "replace" && action !== "remove") return { error: `Unknown action '${action}'. Use: add, replace, remove`, success: false };
+  if (action !== "add" && action !== "replace" && action !== "remove") return { error: `Unknown action '${action}'. Use: add, replace, remove`, success: false, code: "invalid" };
   const oldText = typeof args.old_text === "string" ? args.old_text : null;
-  if (action === "add" && !content) return { error: "Content is required for 'add' action.", success: false };
+  if (action === "add" && !content) return { error: "Content is required for 'add' action.", success: false, code: "invalid" };
   if ((action === "replace" || action === "remove") && !oldText) {
     const hint = action === "replace" ? " For 'replace', content is the COMPLETE new entry -- the whole matched entry is overwritten, not just the old_text span." : "";
     return {
       success: false,
+      code: "invalid",
       error: `'${action}' needs old_text -- a short unique substring of the entry to ${action}. None was provided. Reissue the ${action} with old_text set to part of one of the current_entries below.${hint}`,
       current_entries: store.entriesFor(typedTarget),
       usage: store.usage(typedTarget),
     };
   }
-  if (action === "replace" && !content) return { error: "content is required for 'replace' action.", success: false };
+  if (action === "replace" && !content) return { error: "content is required for 'replace' action.", success: false, code: "invalid" };
   const gate = backgroundDeleteGate(call, typedTarget, context);
   if (gate) return gate;
   if (action === "add") return store.add(typedTarget, content!);
@@ -462,7 +528,7 @@ export function applyMemoryProposal(store: MemoryStore, payload: JsonRecord): Js
   if (action === "add") return store.add(typed, String(payload.content ?? ""));
   if (action === "replace") return store.replace(typed, String(payload.old_text ?? ""), String(payload.content ?? ""));
   if (action === "remove") return store.remove(typed, String(payload.old_text ?? ""));
-  return { success: false, error: `Unknown staged action '${action}'.` };
+  return { success: false, code: "invalid", error: `Unknown staged action '${action}'.` };
 }
 
 export const MEMORY_TOOL_DESCRIPTION =

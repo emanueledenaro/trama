@@ -330,7 +330,7 @@ function QueuedMessageRow({ message }: { message: QueuedMessage }) {
           In coda: parte quando il Coordinatore finisce
           {message.imageCount ? `, ${message.imageCount === 1 ? "1 immagine" : `${message.imageCount} immagini`}` : ""}
         </div>
-        <div className="w-max max-w-full min-w-0 rounded-[var(--radius-user-message)] border border-dashed border-[color:var(--color-border)] px-3.5 py-2.5 text-chat whitespace-pre-wrap text-foreground/75">
+        <div className="w-max max-w-full min-w-0 rounded-[var(--radius-user-message)] border border-dashed border-[color:var(--color-border)] px-3.5 py-2.5 content-text whitespace-pre-wrap text-foreground/75">
           <span className="line-clamp-6">{message.text}</span>
         </div>
         {message.removable ? (

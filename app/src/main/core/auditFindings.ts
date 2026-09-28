@@ -3,7 +3,9 @@ import { lstat } from "node:fs/promises";
 import { isAbsolute, join } from "node:path";
 import type { AuditFinding, CandidateEvidence, FindingEvidence, FocusAudit } from "@shared/domain";
 import { evidenceLabel } from "@shared/findings";
+import type { ProviderModel } from "@shared/codex";
 import { auditSections, isLens, type ReviewName, reviewTitle } from "./audit";
+import { isLightModel } from "./duties";
 import { extractJsonAnswer } from "./providers/types";
 import { containsExcludedComponent, readRepositoryFile, RepositoryScannerError } from "./repositoryScanner";
 
@@ -25,25 +27,30 @@ export interface Recheck {
 /** Longest text of a line or of a check's output kept as what Trama observed. */
 export const OBSERVED_LIMIT = 1_500;
 
-/** How the axes usually write Trama's own checks as commands. Trama runs no other command a model chose. */
+/** The bare commands of Trama's own checks, as the axes usually write them. Arguments a model adds never match. */
 const CHECK_COMMANDS: Record<string, RegExp> = {
-  git_status: /^git\s+status\b/,
-  git_diff_check: /^git\s+diff\s+--check\b/,
-  swift_build: /^swift\s+build\b/,
-  swift_test: /^swift\s+test\b/,
-  node_test: /^npm\s+(?:run\s+)?test\b/,
-  node_typecheck: /^npm\s+run\s+typecheck\b/,
+  git_status: /^git status$/,
+  git_diff_check: /^git diff --check$/,
+  swift_build: /^swift build$/,
+  swift_test: /^swift test$/,
+  node_test: /^npm (?:run )?test$/,
+  node_typecheck: /^npm run typecheck$/,
 };
 
 const squash = (text: string) => text.replace(/\s+/g, " ").trim();
 
-/** The check of this examination a command names: by its name, its exact command or the usual way to write it. */
+/**
+ * The check of this examination a command names: its name, its exact command, or its bare usual form. A command with
+ * other arguments is not the one Trama ran, so it matches nothing.
+ */
 export function checkForCommand(command: string, checks: CandidateEvidence[]): CandidateEvidence | null {
   const wanted = squash(command.replace(/^\$\s*/, ""));
   return checks.find((e) => wanted === e.check || wanted === squash(e.command) || (CHECK_COMMANDS[e.check]?.test(wanted) ?? false)) ?? null;
 }
 
 async function recheckLine(evidence: Extract<FindingEvidence, { kind: "fileLine" }>, worktreeRoot: string): Promise<Recheck> {
+  // A line without the text that supports the finding proves only that the line exists: it is no proof.
+  if (!squash(evidence.quote)) return { outcome: "notCheckable", basis: "La prova non cita il testo della riga.", observed: null };
   const file = evidence.file.replace(/^\.\//, "");
   const components = file.split("/");
   const unread = (reason: string): Recheck => ({ outcome: "notCheckable", basis: `Trama non legge questo percorso: ${reason}`, observed: null });
@@ -66,14 +73,10 @@ async function recheckLine(evidence: Extract<FindingEvidence, { kind: "fileLine"
   }
   const line = lines[evidence.line - 1]!.replace(/\r$/, "");
   const observed = line.slice(0, OBSERVED_LIMIT);
-  if (evidence.quote && !squash(line).includes(squash(evidence.quote))) {
+  if (!squash(line).includes(squash(evidence.quote))) {
     return { outcome: "contradicted", basis: `La riga ${evidence.line} di ${file} non contiene il testo citato dall'asse.`, observed };
   }
-  return {
-    outcome: "held",
-    basis: evidence.quote ? `Trama ha letto ${file}:${evidence.line} e la riga contiene il testo citato.` : `Trama ha letto ${file}:${evidence.line}: la riga esiste.`,
-    observed,
-  };
+  return { outcome: "held", basis: `Trama ha letto ${file}:${evidence.line} e la riga contiene il testo citato.`, observed };
 }
 
 /** Trama's own recheck of a proof, on the candidate's worktree and on the checks it ran for this examination. */
@@ -140,11 +143,13 @@ export async function recheckFindings(audit: FocusAudit, worktreeRoot: string): 
 }
 
 /**
- * The stronger model that confirms serious findings (spec #124, Q3): the Coordinator's model, when it is not the one
- * the axes ran on. Null when the catalogue has nothing stronger than the axes' model.
+ * The stronger model that confirms serious findings (spec #124, Q3): the Coordinator's model, only when the axes ran
+ * on a light model and the Coordinator's is not a light one. Two light models, or one model for both, prove nothing
+ * stronger: null, and the finding stays a hypothesis.
  */
-export function confirmationModel(axisModel: string | null, coordinatorModel: string | null): string | null {
-  return coordinatorModel && coordinatorModel !== axisModel ? coordinatorModel : null;
+export function confirmationModel(axisModel: string | null, coordinatorModel: string | null, models: ProviderModel[] = []): string | null {
+  if (!axisModel || !coordinatorModel || coordinatorModel === axisModel) return null;
+  return isLightModel(axisModel, models) && !isLightModel(coordinatorModel, models) ? coordinatorModel : null;
 }
 
 export const CONFIRMATION_SCHEMA = {

@@ -56,7 +56,7 @@ export const NO_SPEC = "no spec available";
 
 /** How every session of focus mode gives the proof of a finding, so Trama can verify it (F02). */
 const PROOF_RULES =
-  "Proof of each finding (a Trama addition, spec #124): give the `evidence` Trama can recheck. `fileLine` names a file of the worktree relative to its root, the line number and the text of that line in `quote`; `command` names a command whose failure shows the finding; `reproduction` gives the steps in `steps`; `none` when you have no proof, and the finding then stays a hypothesis. `severity` is `serious` when the finding breaks behaviour, a hard documented standard or a requirement of the spec, `minor` otherwise. Leave the fields a kind does not use empty, with `line` 0.";
+  "Proof of each finding (a Trama addition, spec #124): give the `evidence` Trama can recheck. `fileLine` names a file of the worktree relative to its root, the line number and, in `quote`, the text of that line that shows the finding (required); `command` names a command whose failure shows the finding, and Trama rechecks it only when it is one of Trama's checks in this turn, written as its name or its command with no other arguments; `reproduction` gives the steps in `steps`; `none` when you have no proof, and the finding then stays a hypothesis. `severity` is `serious` when the finding breaks behaviour, a hard documented standard or a requirement of the spec, `minor` otherwise. Leave the fields a kind does not use empty, with `line` 0.";
 
 /** Trama's binding for AI Hero's code-review skill, shared by both axes. It maps the skill's words and never restates its method. */
 export const CODE_REVIEW_BINDING = [
@@ -225,7 +225,8 @@ function readEvidence(raw: unknown): FindingEvidence | null {
   const text = (key: string) => (typeof value[key] === "string" ? (value[key] as string).trim() : "");
   if (value.kind === "fileLine") {
     const line = typeof value.line === "number" && Number.isInteger(value.line) ? value.line : 0;
-    return text("file") && line > 0 ? { kind: "fileLine", file: text("file"), line, quote: text("quote") } : null;
+    // The quoted text is what supports the finding: without it the line proves nothing.
+    return text("file") && line > 0 && text("quote") ? { kind: "fileLine", file: text("file"), line, quote: text("quote") } : null;
   }
   if (value.kind === "command") return text("command") ? { kind: "command", command: text("command") } : null;
   if (value.kind === "reproduction") return text("steps") ? { kind: "reproduction", steps: text("steps") } : null;
