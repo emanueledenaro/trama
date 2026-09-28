@@ -198,7 +198,11 @@ function WorkGroup({ row }: { row: Extract<TimelineRow, { kind: "work" }> }) {
 function NextStepRow({ step, requestId }: { step: NextStepView; requestId: string }) {
   return (
     <div className="cta-row mt-2" data-testid="next-step">
-      {step.reason ? <span className="min-w-0 text-ui-xs text-muted-foreground">{step.reason}</span> : null}
+      {step.reason ? (
+        <span className="min-w-0 text-ui-xs text-muted-foreground">
+          <ReferenceText text={step.reason} />
+        </span>
+      ) : null}
       <Button size="sm" onClick={() => runNextStep(step, requestId)}>
         {step.label}
       </Button>

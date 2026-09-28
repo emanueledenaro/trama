@@ -1439,7 +1439,8 @@ if (!reached) throw new Error("The goal is not reachable with Tab after reopenin
 await shot("13-goals-reopened");
 await page.keyboard.press("Enter");
 await page.getByText(goalId, { exact: true }).waitFor();
-await page.getByRole("heading", { name: goalTitle }).waitFor();
+// Issue #277: the chat's echoed headings also name the goal by its title, so the check stays in the inspector.
+await page.getByTestId("inspector").getByRole("heading", { name: goalTitle }).waitFor();
 await shot("13a-goal-reopened");
 console.log("reopened goal", goalId);
 
@@ -1559,8 +1560,12 @@ const lunaCard = assignmentCards.nth(1);
 await lunaCard.getByText("Concluso", { exact: true }).waitFor({ timeout: 20_000 });
 const lunaAssignment = await cardAssignment(lunaCard);
 // Issue #241: the status line says the move did not work, with Trama's reason and the move as its button on the right.
+// Issue #277: the reason names the assignment by its link, with the id on hover.
 const retryStep = page.getByTestId("status-line").filter({
-  has: page.getByTestId("status-line-reason").filter({ hasText: `l'incarico ${lunaAssignment} è concluso ma il suo candidato non è stato dichiarato` }),
+  has: page
+    .getByTestId("status-line-reason")
+    .filter({ hasText: "è concluso ma il suo candidato non è stato dichiarato" })
+    .filter({ has: page.locator(`[data-reference="assignment"][data-reference-id="${lunaAssignment}"]`) }),
 });
 await retryStep.waitFor({ timeout: 30_000 });
 const retryButton = retryStep.getByRole("button", { name: "Esegui le verifiche" });

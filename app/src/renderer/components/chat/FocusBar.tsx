@@ -20,6 +20,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/cn";
 import { runNextStep } from "@/lib/nextStep";
 import { act, useUi } from "@/lib/store";
+import { ReferenceText } from "./ReferenceText";
 
 /**
  * The focus bar and the task queue at the top of the chat (W02): the task in focus and its phase, the Coordinator's
@@ -86,11 +87,11 @@ function StatusLine({ line }: { line: StatusLineView }) {
         </span>
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
           <span className={cn("min-w-0 text-ui", line.state === "idle" ? "text-muted-foreground" : "text-foreground")} data-testid="status-line-text">
-            {line.text}
+            <ReferenceText text={line.text} />
           </span>
           {line.reason ? (
             <span className="min-w-0 text-ui-xs text-muted-foreground" data-testid="status-line-reason">
-              {line.reason}
+              <ReferenceText text={line.reason} />
             </span>
           ) : null}
         </div>
@@ -183,7 +184,9 @@ function QueueRow({ task }: { task: FocusTask }) {
       <div className="flex min-w-[12rem] flex-1 flex-col gap-0.5">
         <div className="flex min-w-0 items-center gap-2">
           <PhaseChip task={task} />
-          <span className="min-w-0 truncate text-ui text-foreground">{task.title}</span>
+          <span className="min-w-0 truncate text-ui text-foreground">
+            <ReferenceText text={task.title} />
+          </span>
         </div>
         {task.status === "paused" || hold ? (
           <span className="min-w-0 text-ui-xs text-muted-foreground">
@@ -243,7 +246,7 @@ export function FocusBar() {
                 <div className="flex min-w-0 flex-1 items-center gap-2">
                   <span className="hidden shrink-0 text-ui-xs text-muted-foreground @min-[520px]/chat:inline">In focus</span>
                   <span className="min-w-0 truncate text-ui font-medium text-foreground" data-testid="focus-title">
-                    {focus.title}
+                    <ReferenceText text={focus.title} />
                   </span>
                   <PhaseChip task={focus} />
                 </div>
