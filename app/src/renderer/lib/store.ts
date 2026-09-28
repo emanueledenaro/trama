@@ -13,8 +13,12 @@ export type InspectorTarget =
   | { kind: "file"; path: string }
   | { kind: "pact" }
   | { kind: "decision"; id: string }
-  | { kind: "mandate" }
-  | { kind: "memory" }
+  /** `change` opens "Cambia il mandato" on the correction form, as the proposal's Correggi does (issue #334). */
+  | { kind: "mandate"; change?: "correct" }
+  /** The code standard of the open project, in Regole (issue #334). */
+  | { kind: "standard" }
+  /** `howItLearns` opens "Come impara", as the way from Impostazioni does (issue #335). */
+  | { kind: "memory"; howItLearns?: boolean }
   | { kind: "team" }
   | { kind: "specialist"; id: string }
   /** A conversation between agents (W07). */
@@ -39,7 +43,7 @@ export type InspectorTarget =
 export type MainView = "dialog" | "overview" | "settings";
 
 /** The sections of the settings page; "connections" holds ChatGPT, GitHub and the providers. */
-export type SettingsSection = "general" | "connections" | "method" | "standard" | "monitor" | "presence";
+export type SettingsSection = "general" | "connections" | "method" | "standard" | "learning" | "monitor" | "presence";
 
 export type DialogName = "createProject" | "cloneProject" | "search" | "guide" | null;
 

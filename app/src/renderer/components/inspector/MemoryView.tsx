@@ -14,7 +14,7 @@ import {
   IconTool,
   IconTrash,
 } from "@tabler/icons-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { curatorRunLine } from "@shared/curatorReport";
 import { DEFAULT_LEARNING_SETTINGS, type LearnedSkillView, type LearningReviewRun, type LearningSettings, type LearningView, type MemoryStoreView, type PracticeView } from "@shared/domain";
 import type { MessageKey } from "@shared/i18n";
@@ -437,7 +437,15 @@ const STATUS: Record<LearningReviewRun["status"], MessageKey> = {
  * and the history closed, the upkeep of the skills, and the learning switches that were in Impostazioni.
  */
 function HowItLearns({ learning }: { learning: LearningView }) {
-  const [open, setOpen] = useState(false);
+  // Impostazioni, Apprendimento opens the view on Come impara (issue #335).
+  const asked = useUi((s) => s.inspector?.kind === "memory" && s.inspector.howItLearns === true);
+  const [open, setOpen] = useState(asked);
+  const section = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (!asked) return;
+    setOpen(true);
+    requestAnimationFrame(() => section.current?.scrollIntoView({ block: "start" }));
+  }, [asked]);
   const [focus, setFocus] = useState("");
   const saved = useUi((s) => s.app?.settings.learning);
   const settings = { ...DEFAULT_LEARNING_SETTINGS, ...(saved ?? {}) };
@@ -451,7 +459,7 @@ function HowItLearns({ learning }: { learning: LearningView }) {
       : t("memory.how.noReview");
   const review = () => void act("learning:review", { focus }).then(() => setFocus(""));
   return (
-    <section className="border-t border-[color:var(--app-surface-divider)]" data-testid="how-it-learns" data-open={open ? "true" : "false"}>
+    <section ref={section} className="border-t border-[color:var(--app-surface-divider)]" data-testid="how-it-learns" data-open={open ? "true" : "false"}>
       <div className="flex items-center gap-1 px-2 py-2">
         <button
           type="button"

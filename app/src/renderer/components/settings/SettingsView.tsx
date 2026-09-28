@@ -1,4 +1,5 @@
 import {
+  IconBrain,
   IconBrandGithub,
   IconChecklist,
   IconChevronDown,
@@ -26,10 +27,9 @@ import { TramaMark } from "@/components/brand/TramaMark";
 import { ProviderIcon } from "@/components/ProviderIcon";
 import { Spinner } from "@/components/Spinner";
 import { Button } from "@/components/ui/button";
-import { Badge, TextArea } from "@/components/ui/field";
+import { Badge } from "@/components/ui/field";
 import { Toggle } from "@/components/ui/toggle";
-import { RuleLabel } from "@/components/chat/RuleLabel";
-import { activeRules, CLEAN_CODE_RULES, CLEAN_CODE_SOURCE, CLEAN_CODE_VERSION } from "@shared/cleanCode";
+import { CLEAN_CODE_VERSION } from "@shared/cleanCode";
 import { cn } from "@/lib/cn";
 import { useLanguage, useT } from "@/lib/i18n";
 import { act, type SettingsSection, useUi } from "@/lib/store";
@@ -42,6 +42,7 @@ const SECTIONS: { id: SettingsSection; label: MessageKey; icon: React.ReactNode 
   { id: "connections", label: "settings.section.connections", icon: <IconPlugConnected stroke={1.7} /> },
   { id: "method", label: "settings.section.method", icon: <IconTools stroke={1.7} /> },
   { id: "standard", label: "settings.section.standard", icon: <IconChecklist stroke={1.7} /> },
+  { id: "learning", label: "settings.section.learning", icon: <IconBrain stroke={1.7} /> },
   { id: "monitor", label: "settings.section.monitor", icon: <IconEye stroke={1.7} /> },
   { id: "presence", label: "settings.section.presence", icon: <IconUsers stroke={1.7} /> },
 ];
@@ -88,6 +89,7 @@ export function SettingsView() {
           {section === "connections" ? <ConnectionsSection /> : null}
           {section === "method" ? <MethodSection /> : null}
           {section === "standard" ? <StandardSection /> : null}
+          {section === "learning" ? <LearningSection /> : null}
           {section === "monitor" ? <MonitorSection /> : null}
           {section === "presence" ? <PresenceSection /> : null}
         </div>
@@ -634,69 +636,60 @@ function WorkPlaceGroup() {
   );
 }
 
-/** Trama's Clean Code standard for the open project (Q03, ADR 0016): each rule on or off, and the person's note. */
+/**
+ * The code standard moved to Regole (issue #334): it applies to the open project, so the rules and the note live with
+ * the mandate and the Pact. Settings keeps this way there.
+ */
 function StandardSection() {
   const project = useUi((s) => s.app?.project ?? null);
-  const settings = project?.document.cleanCode;
-  const [note, setNote] = useState<string | null>(null);
-  const saved = settings?.note ?? "";
-  const draft = note ?? saved;
-  const on = new Set(activeRules(settings).map((rule) => rule.id));
+  const setInspector = useUi((s) => s.setInspector);
   const t = useT();
   return (
     <>
       <PageHeader title={t("settings.section.standard")} description={t("settings.standard.description", { version: CLEAN_CODE_VERSION })} />
-      {!project ? (
-        <Group>
+      <Group>
+        {!project ? (
           <Row label={<span className="text-muted-foreground">{t("settings.standard.openProject")}</span>} />
-        </Group>
-      ) : (
-        <div data-testid="clean-code-settings">
-          <Group
-            title={t("settings.standard.rulesFor", { name: project.name })}
-            note={t("settings.standard.note", { source: CLEAN_CODE_SOURCE })}
-          >
-            {CLEAN_CODE_RULES.map((rule) => (
-              <Row
-                key={rule.id}
-                label={
-                  <span className="flex items-center gap-2">
-                    <RuleLabel rule={rule} />
-                    {rule.severity === "blocking" ? <Badge tone="warning">{t("settings.standard.blocking")}</Badge> : null}
-                  </span>
-                }
-                description={rule.summary}
-                control={
-                  <Toggle checked={on.has(rule.id)} label={rule.label} onChange={(enabled) => void act("project:cleanCode", { rule: rule.id, enabled })} />
-                }
-              />
-            ))}
-          </Group>
-          <Group title={t("settings.standard.adaptation")} note={t("settings.standard.adaptationNote")}>
-            <div className="px-4 py-3">
-              <TextArea
-                aria-label={t("settings.standard.noteLabel")}
-                rows={3}
-                value={draft}
-                placeholder={t("settings.standard.notePlaceholder")}
-                onChange={(event) => setNote(event.target.value)}
-              />
-              <div className="cta-row mt-2">
-                <Button size="sm" variant="ghost" disabled={draft === saved} onClick={() => setNote(null)}>
-                  {t("settings.cancel")}
-                </Button>
-                <Button
-                  size="sm"
-                  disabled={draft === saved}
-                  onClick={() => void act("project:cleanCode", { note: draft }).then(() => setNote(null))}
-                >
-                  {t("settings.save")}
-                </Button>
-              </div>
-            </div>
-          </Group>
-        </div>
-      )}
+        ) : (
+          <Row
+            label={<span className="text-muted-foreground">{t("settings.standard.moved")}</span>}
+            control={
+              <Button size="sm" variant="outline" data-testid="standard-open-rules" onClick={() => setInspector({ kind: "standard" })}>
+                {t("settings.standard.open")}
+              </Button>
+            }
+          />
+        )}
+      </Group>
+    </>
+  );
+}
+
+/**
+ * The learning switches moved to Memoria, in Come impara (issue #335): they live next to the reviews and the upkeep
+ * they turn on and off. Settings keeps this way there.
+ */
+function LearningSection() {
+  const project = useUi((s) => s.app?.project ?? null);
+  const setInspector = useUi((s) => s.setInspector);
+  const t = useT();
+  return (
+    <>
+      <PageHeader title={t("settings.section.learning")} description={t("settings.learning.description")} />
+      <Group>
+        {!project ? (
+          <Row label={<span className="text-muted-foreground">{t("settings.learning.openProject")}</span>} />
+        ) : (
+          <Row
+            label={<span className="text-muted-foreground">{t("settings.learning.moved")}</span>}
+            control={
+              <Button size="sm" variant="outline" data-testid="learning-open-memory" onClick={() => setInspector({ kind: "memory", howItLearns: true })}>
+                {t("settings.learning.open")}
+              </Button>
+            }
+          />
+        )}
+      </Group>
     </>
   );
 }
