@@ -16,10 +16,11 @@ export function summarizeProject(
   document: ProjectDocument,
   input: { source: "live" | "saved"; selected: boolean; runningAssignments: number; candidateReports: CandidateReport[]; colleagues?: number | null },
 ): ProjectOverview {
-  const pendingDecisions =
-    document.decisionRequests.filter(isOpenQuestion).length +
-    document.mandateRequests.filter((r) => !r.resolution).length +
-    document.team.proposals.filter((p) => !p.resolution).length;
+  // What waits for the person, each by its own name (issue #272): a mandate request is not a product decision.
+  const openDecisions = document.decisionRequests.filter(isOpenQuestion).length;
+  const openMandates = document.mandateRequests.filter((r) => !r.resolution).length;
+  const openTeams = document.team.proposals.filter((p) => !p.resolution).length;
+  const pendingDecisions = openDecisions + openMandates + openTeams;
   let blockedWork = 0;
   for (const specialist of document.team.specialists) {
     if (specialist.status === "removed") continue;
@@ -34,7 +35,9 @@ export function summarizeProject(
   }).length;
   const runningWork = input.runningAssignments;
   const reasons: string[] = [];
-  if (pendingDecisions) reasons.push(`${pendingDecisions} ${pendingDecisions === 1 ? "decisione richiesta" : "decisioni richieste"}`);
+  if (openDecisions) reasons.push(`${openDecisions} ${openDecisions === 1 ? "decisione richiesta" : "decisioni richieste"}`);
+  if (openMandates) reasons.push(`${openMandates} ${openMandates === 1 ? "richiesta di mandato" : "richieste di mandato"}`);
+  if (openTeams) reasons.push(`${openTeams} ${openTeams === 1 ? "proposta di team" : "proposte di team"}`);
   if (blockedWork) reasons.push(`${blockedWork} ${blockedWork === 1 ? "lavoro fermo o fallito" : "lavori fermi o falliti"}`);
   if (toApprove) reasons.push(`${toApprove} ${toApprove === 1 ? "risultato da approvare" : "risultati da approvare"}`);
   if (runningWork) reasons.push(`${runningWork} ${runningWork === 1 ? "incarico in corso" : "incarichi in corso"}`);

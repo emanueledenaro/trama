@@ -191,7 +191,7 @@ export const en: Record<keyof typeof it, string> = {
   "settings.continuous.title": "Continuous work",
   "settings.continuous.label": "The Coordinator keeps going on its own within the mandate",
   "settings.continuous.description":
-    "It prepares the plan, assigns the work and runs the checks without asking. It asks you only for product decisions, the mandate, the team and merging the candidate. You can stop any move from the status line, and stop all automatic work in the project with Pause.",
+    "It prepares the plan, assigns the work and runs the checks without asking. It asks you only for product decisions, the mandate, the team and merging the candidate. You can stop any move from the status line, and stop all automatic work in the project with «Pause the Coordinator».",
   "settings.parallel.title": "Developers in parallel",
   "settings.parallel.note":
     "Each free developer picks up the next ready slice in its modules on its own, within the mandate and with continuous work on. Fixed roles do not count toward the limit.",
@@ -231,10 +231,10 @@ export const en: Record<keyof typeof it, string> = {
   "settings.monitor.enabled": "Monitor on",
   "settings.monitor.openAtLogin": "Start Trama at login, in the background",
   "settings.monitor.repositories": "Watched repositories",
-  "settings.monitor.none": "No repositories.",
+  "settings.monitor.none": "No watched repositories.",
   "settings.monitor.updated": "Up to date",
   "settings.monitor.remove": "Remove",
-  "settings.monitor.openRepository": "Repository of the open project.",
+  "settings.monitor.openRepository": "Repository of the open project, not watched yet.",
   "settings.monitor.watch": "Watch",
 
   "settings.presence.title": "Presence",
