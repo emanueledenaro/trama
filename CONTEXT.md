@@ -179,3 +179,14 @@ Riepilogo: il resoconto del Coordinatore a ogni traguardo o su richiesta della p
 Attività: il registro delle singole mosse del Coordinatore e degli agenti di un progetto, consultabile ma non in primo piano. È distinto dalla chat, che resta la conversazione con la persona.
 
 Roadmap del progetto: la vista del progetto in Trama che mette in ordine obiettivi, missioni, sprint, issue e pull request, ricavata dai dati e aggiornata a ogni traguardo. Non è un documento scritto dal modello. Se il repository ha una issue di roadmap, il Coordinatore la aggiorna con gli stessi dati.
+
+## Primo avvio
+
+Benvenuto: la scheda da cui la persona inizia a usare Trama. Ha quattro blocchi: Inizia (aprire, creare o clonare un progetto, provare il progetto di esempio), Recenti, Configura e Impara. Si apre da sola finché nessun provider è collegato, poi solo quando la persona la chiede. Senza un progetto aperto è l'unica cosa nella finestra.
+_Da evitare_: guida introduttiva, configurazione iniziale, schermata di benvenuto.
+
+Passo di configurazione: una delle cose che rendono Trama pronta, nel blocco Configura del Benvenuto: lingua, provider, GitHub e metodo. Solo il provider è necessario, gli altri sono facoltativi. Un passo fatto può tornare da fare, per esempio quando scade un accesso: lo segnala la barra di stato, e il Benvenuto non si riapre da solo.
+
+Esercizio: un percorso guidato sul progetto di esempio che mostra un pezzo del ciclo di lavoro: conoscere il progetto, una modifica verificata, rivedere una decisione, un confronto controllato. Si avvia dal blocco Impara del Benvenuto e resta accanto alla chat del progetto di esempio finché non è finito.
+
+Progetto di esempio: il progetto che Trama include per provare il ciclo di lavoro senza toccare un progetto della persona. I suoi risultati verificano solo i suoi casi locali.
