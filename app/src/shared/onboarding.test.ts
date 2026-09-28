@@ -32,6 +32,7 @@ function appState(overrides: Partial<AppState> = {}): AppState {
     codex: providers.codex,
     providers,
     settings: { theme: "system", sidebarWidth: 256 },
+    language: "it",
     error: null,
     backgroundProjects: [],
     practices: [],
@@ -161,6 +162,13 @@ describe("welcome on the first launch", () => {
     expect(nextSetupStep("provider")).toBe("github");
     expect(nextSetupStep("github")).toBe("aiHero");
     expect(nextSetupStep("aiHero")).toBeNull();
+  });
+
+  it("writes the steps in the language Trama speaks (issue #301)", () => {
+    expect(setupSteps(appState()).map((s) => s.title)).toEqual(["Collega un provider", "Collega GitHub CLI", "Prepara il metodo AI Hero"]);
+    const english = setupSteps(appState({ language: "en" }));
+    expect(english.map((s) => s.title)).toEqual(["Connect a provider", "Connect GitHub CLI", "Prepare the AI Hero method"]);
+    expect(english[1]!.detail).toBe("gh has not been checked yet.");
   });
 
   it("resumes at the first open step, then at the first skipped one, else at the start", () => {

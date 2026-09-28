@@ -1,32 +1,26 @@
 import type { GitHubCliState } from "@shared/onboarding";
+import { useT, withNodes } from "@/lib/i18n";
+
+const command = <code className="font-mono text-foreground/90">gh auth login</code>;
 
 /**
  * GitHub CLI's state in plain words (P10). "Not checked yet" and "checking" never read as "not connected": only a
  * check that found gh signed out or missing asks for gh auth login.
  */
 export function GitHubCliDescription({ state }: { state: GitHubCliState }) {
+  const t = useT();
   switch (state.status) {
     case "ready":
-      return <>{state.account ? `Collegato come ${state.account}.` : "gh è autenticato."}</>;
+      return <>{state.account ? t("github.detail.readyAs", { account: state.account }) : t("github.detail.ready")}</>;
     case "unknown":
-      return <>Trama legge lo stato di GitHub CLI all'avvio e quando apri questa pagina.</>;
+      return <>{t("github.detail.unknown")}</>;
     case "checking":
-      return <>Trama sta leggendo gh auth status.</>;
+      return <>{t("guide.github.checking")}</>;
     case "error":
-      return <>{state.detail ? `gh auth status non è riuscito: ${state.detail}` : "gh auth status non è riuscito."} Premi Controlla di nuovo.</>;
+      return <>{state.detail ? t("github.detail.errorDetail", { detail: state.detail }) : t("github.detail.error")}</>;
     case "missing":
-      return (
-        <>
-          Trama non trova GitHub CLI, neanche nelle cartelle di Homebrew. Installala, poi esegui{" "}
-          <code className="font-mono text-foreground/90">gh auth login</code> nel terminale e premi Controlla di nuovo.
-        </>
-      );
+      return <>{withNodes(t("github.detail.missing"), { command })}</>;
     case "signedOut":
-      return (
-        <>
-          gh non ha un accesso valido{state.detail ? `: ${state.detail}` : ""}. Esegui <code className="font-mono text-foreground/90">gh auth login</code> nel
-          terminale, poi premi Controlla di nuovo.
-        </>
-      );
+      return <>{withNodes(state.detail ? t("github.detail.signedOutDetail", { detail: state.detail }) : t("github.detail.signedOut"), { command })}</>;
   }
 }
