@@ -17,7 +17,8 @@ export type InspectorTarget =
   | { kind: "mandate"; change?: "correct" }
   /** The code standard of the open project, in Regole (issue #334). */
   | { kind: "standard" }
-  | { kind: "memory" }
+  /** `howItLearns` opens "Come impara", as the way from Impostazioni does (issue #335). */
+  | { kind: "memory"; howItLearns?: boolean }
   | { kind: "team" }
   | { kind: "specialist"; id: string }
   /** A conversation between agents (W07). */
