@@ -161,9 +161,10 @@ function placeRemaining(document: ProjectDocument, left: Specialist[]): SquadFor
 /** What the formation did, in the person's words, for Activity and the recap. */
 export function formationSummary(document: ProjectDocument, formation: SquadFormation): string {
   const name = (id: string) => document.team.specialists.find((s) => s.id === id)?.name ?? id;
-  const squads = formation.created.map(
-    (s) => `${s.name}: ${name(s.leadId)} capo squadra, ${s.developerIds.map(name).join(", ")}, ${name(s.qaId)} QA.`,
-  );
+  const squads = formation.created.map((s) => {
+    const developers = s.developerIds.map(name);
+    return `Squadra ${s.name} con ${name(s.leadId)} (capo squadra), ${developers.join(", ")} (${developers.length === 1 ? "sviluppatore" : "sviluppatori"}) e ${name(s.qaId)} (QA dedicato).`;
+  });
   const placed = formation.placed
     .filter((p) => !formation.created.includes(p.squad))
     .map((p) => `${p.developer.name} entra nella squadra ${p.squad.name}.`);

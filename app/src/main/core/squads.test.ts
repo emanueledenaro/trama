@@ -95,10 +95,10 @@ describe("squads by product area (A10)", () => {
     const document = project([["Ada", "Sources/Catalog"]]);
     const formation = formSquads(document, MODULES, at(1))!;
     const step = recordSquadFormation(document, formation, at(1));
-    expect(step).toMatchObject({ move: "formSquads", summary: "Catalogo: Capo Catalogo capo squadra, Ada, QA QA." });
+    expect(step).toMatchObject({ move: "formSquads", summary: "Squadra Catalogo con Capo Catalogo (capo squadra), Ada (sviluppatore) e QA (QA dedicato)." });
     const entry = activityLog([], [], [], [], document.autonomousSteps).find((e) => e.id === step.id)!;
     expect(entry).toMatchObject({ kind: "step", label: "Squadre formate dal Coordinatore", outcome: "done", move: null });
-    expect(doneSince(document, null).map((f) => f.text)).toContain("Squadre formate dal Coordinatore: Catalogo: Capo Catalogo capo squadra, Ada, QA QA.");
+    expect(doneSince(document, null).map((f) => f.text)).toContain("Squadre formate dal Coordinatore: Squadra Catalogo con Capo Catalogo (capo squadra), Ada (sviluppatore) e QA (QA dedicato).");
     expect(formSquads(document, MODULES, at(2))).toBeNull();
   });
 
