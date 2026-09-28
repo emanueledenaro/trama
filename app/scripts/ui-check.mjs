@@ -2730,7 +2730,14 @@ for (const dark of [false, true]) {
 }
 await startReview.click();
 // The review runs on request and ends with its Pact card; the card waits for the person, so the button says why it waits.
-await page.getByRole("main").getByText("Su richiesta tua: revisione al commit", { exact: false }).first().waitFor({ timeout: 30_000 });
+// The finished review may already be one settled line (issue #271): the line opens the card that says why it ran.
+const onRequest = page.getByRole("main").getByText("Su richiesta tua: revisione al commit", { exact: false }).first();
+const reviewLine = page.getByRole("main").getByTestId("settled-card").filter({ hasText: "Clean Code" }).filter({ hasText: "Concluso" }).last();
+await onRequest.or(reviewLine).first().waitFor({ timeout: 30_000 });
+if (!(await onRequest.isVisible())) {
+  await reviewLine.getByRole("button", { name: /^Apri: / }).click();
+  await onRequest.waitFor();
+}
 // The Pact card waits in Aspetta te: the chat shows its reference (issue #240).
 await page.locator('[data-testid="waiting-reference"][data-waiting-kind="question"]').first().waitFor({ timeout: 60_000 });
 await reviewWork.getByText(/aspetta ancora la tua risposta/).waitFor({ timeout: 20_000 });
