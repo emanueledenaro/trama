@@ -2789,7 +2789,11 @@ await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
 // A force push is refused whatever the mandate: the turn stops and the action waits in Aspetta te with its reason.
 await page.getByLabel("Messaggio al Coordinatore").fill("[vietato:git push --force origin main]");
 await page.keyboard.press("Enter");
-const bannedItem = await openWaiting("fixedBan");
+// The refusal is not a card of the chat: the summary above the composer opens it in Aspetta te.
+await page.getByTestId("waiting-summary").getByText("Azione vietata").waitFor({ timeout: 20_000 });
+await page.getByTestId("waiting-summary").getByRole("button", { name: /aspetta te$/ }).click();
+const bannedItem = page.getByTestId("inspector").locator('[data-testid="waiting-item"][data-waiting-kind="fixedBan"]');
+await bannedItem.waitFor();
 const bannedCard = bannedItem.getByTestId("fixed-ban-card");
 await bannedCard.getByText("git push --force origin main").waitFor();
 await bannedCard.getByText("Force push", { exact: true }).waitFor();
