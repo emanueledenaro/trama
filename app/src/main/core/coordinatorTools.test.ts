@@ -4,6 +4,10 @@ import { describe, expect, it } from "vitest";
 import type { MandateAction, ProjectDocument } from "@shared/domain";
 import { placeGrillingQuestion } from "@shared/grilling";
 import { FIXED_ROLES } from "@shared/roster";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { DEFAULT_LEARNING_SETTINGS } from "@shared/domain";
+import { ProjectLearning } from "./learning/projectLearning";
 import { COORDINATOR_TOOLS, developerInstructions, GRILLING_BINDING, NEXT_STEP_RULES, runCoordinatorTool, type ToolContext } from "./coordinatorTools";
 import { emptyDocument } from "./document";
 import { proposeGoal, updateGoal } from "./goals";
@@ -796,5 +800,24 @@ describe("report_semantic_risk (issue #40)", () => {
     expect(parse(await runCoordinatorTool("report_semantic_risk", { ...report, check: "swift_test" }, context)).error.code).toBe("check_unavailable");
     expect(cards).toEqual([]);
     expect(COORDINATOR_TOOLS.find((t) => t.name === "report_semantic_risk")?.required).toEqual(["candidate", "otherCandidate", "explanation", "check"]);
+  });
+});
+
+describe("learning tools (issue #305)", () => {
+  it("answers a refused memory write as a tool error, with the store's whole answer for the model", async () => {
+    const learning = new ProjectLearning(mkdtempSync(join(tmpdir(), "trama-learning-")), "project-1", DEFAULT_LEARNING_SETTINGS);
+    const used: string[] = [];
+    const context = { ...teamContext(emptyDocument("p")), learning, learningToolUsed: (tool: string) => used.push(tool) } as ToolContext;
+    const refused = await runCoordinatorTool("memory", { target: "memory", action: "add", content: "x".repeat(2_300) }, context);
+    expect(refused.isError).toBe(true);
+    expect(parse(refused)).toMatchObject({ success: false, code: "memory_full", error: expect.stringContaining("would exceed the limit") });
+    // After the first full memory the turn writes nothing more, even a note that would fit.
+    const again = await runCoordinatorTool("memory", { target: "memory", action: "add", content: "breve" }, context);
+    expect(parse(again)).toMatchObject({ code: "memory_full", repeated: true });
+    expect(learning.memory.entriesFor("memory")).toEqual([]);
+    learning.memory.resetConsolidationFailures("foreground");
+    const saved = await runCoordinatorTool("memory", { target: "memory", action: "add", content: "breve" }, context);
+    expect(saved.isError).toBeUndefined();
+    expect(used).toEqual(["memory"]);
   });
 });

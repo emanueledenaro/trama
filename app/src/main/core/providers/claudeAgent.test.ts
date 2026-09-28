@@ -420,6 +420,14 @@ describe("ClaudeTurnMapper", () => {
     ]);
   });
 
+  it("never reads the context from the turn's aggregate usage (issue #305)", () => {
+    const { events } = run([
+      { type: "assistant", parent_tool_use_id: null, session_id: "s-1", message: { id: "msg-1", content: [{ type: "text", text: "Ciao" }] } },
+      result({ usage: { input_tokens: 900_000, output_tokens: 5, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 } }),
+    ]);
+    expect(events.some((event) => event.type === "tokenUsage")).toBe(false);
+  });
+
   it("forwards whole text blocks that did not stream", () => {
     const { events } = run([assistant([{ type: "text", text: "Intero" }]), result()]);
     expect(events).toContainEqual({ type: "textDelta", itemId: "msg-1:0", delta: "Intero" });
