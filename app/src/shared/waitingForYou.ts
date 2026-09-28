@@ -119,18 +119,23 @@ export function waitingForYou(t: Translate, document: ProjectDocument, sources: 
       label: t(
         question.blocksWork
           ? "shared.waiting.developerQuestion"
-          : question.grilling
-            ? "shared.waiting.clarification"
-            : question.category === "destructive"
-              ? "shared.waiting.destructive"
-              : "shared.waiting.decision",
+          : question.fromFinding
+            ? "shared.waiting.tradeOff"
+            : question.grilling
+              ? "shared.waiting.clarification"
+              : question.category === "destructive"
+                ? "shared.waiting.destructive"
+                : "shared.waiting.decision",
       ),
       title: oneLine(question.question),
       goalId: question.goalId ?? requestGoal(document, question.requestId),
       askedAt: question.askedAt,
+      // A trade-off from an examination holds no work: the candidate is already delivered (F04).
       blocks: question.blocksWork
         ? heldByDeveloperQuestion(document, sources, question.blocksWork.assignmentId)
-        : heldWork(document, sources, question.grilling?.subjectRequestId ?? question.requestId),
+        : question.fromFinding
+          ? 0
+          : heldWork(document, sources, question.grilling?.subjectRequestId ?? question.requestId),
     });
   }
 

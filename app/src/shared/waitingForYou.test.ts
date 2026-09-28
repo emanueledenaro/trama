@@ -120,6 +120,21 @@ describe("Aspetta te (issue #240)", () => {
     expect(item).toMatchObject({ label: "Domanda di uno sviluppatore", blocks: 3 });
   });
 
+  it("counts no held work for a trade-off from an examination, so it waits after older questions that hold work", () => {
+    const document = withRequests(["R1", null]);
+    document.plans.push(plan("P1", "R1", { slicing: approved([ticket("S1"), ticket("S2"), ticket("S3")]) }));
+    document.decisionRequests.push(
+      question("D1", "R1", "2026-09-01T10:00:00Z", { fromFinding: { auditId: "F1", findingId: "standards-1" } }),
+      question("D2", "R1", "2026-09-01T11:00:00Z"),
+    );
+
+    const items = waitingForYou(t, document);
+    expect(items.map((i) => [i.targetId, i.label, i.blocks])).toEqual([
+      ["D2", "Decisione", 1],
+      ["D1", "Compromesso", 0],
+    ]);
+  });
+
   it("orders by the work each item holds, then from the oldest", () => {
     // Three dialogs, so each question belongs to its own work.
     const document = withRequests(["R1", null], ["R2", "G2"], ["R3", "G3"]);

@@ -298,7 +298,7 @@ export function shouldProposeConsent(consent: PresenceConsent | null | undefined
 }
 
 /** Decision 6: after a "Non ora", one more proposal only, at the first conflict sharing would have avoided. */
-export function shouldReproposeConsent(consent: PresenceConsent | null | undefined, classification: "conflict" | "overlap" | "clean" | "unknown"): boolean {
+export function shouldReproposeConsent(consent: PresenceConsent | null | undefined, classification: import("./domain").ConflictAssessment["classification"]): boolean {
   if (classification !== "conflict" && classification !== "overlap") return false;
   return consent?.choice === "declined" && !consent.reproposedAt && !consent.pending;
 }

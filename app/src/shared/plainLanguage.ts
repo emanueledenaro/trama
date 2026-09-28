@@ -62,6 +62,7 @@ export const BLOCKER_CODES = [
   "REMOTE_CONFLICT",
   "CLOUD_CHECK_FAILED",
   "WORKTREE_CONFLICT",
+  "SEMANTIC_CONFLICT",
 ] as const;
 type BlockerCode = (typeof BLOCKER_CODES)[number];
 const isBlockerCode = (code: string): code is BlockerCode => (BLOCKER_CODES as readonly string[]).includes(code);

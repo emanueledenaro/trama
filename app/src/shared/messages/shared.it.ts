@@ -711,4 +711,8 @@ export const sharedIt = {
 
   // Cloud sessions (A19)
   "shared.blocker.CLOUD_CHECK_FAILED": "Il lavoro della sessione cloud non ha superato i controlli sul Mac",
+
+  // Findings turned into work (issue #128) and semantic conflicts (issue #40)
+  "shared.blocker.SEMANTIC_CONFLICT": "Incompatibile con un altro lavoro",
+  "shared.waiting.tradeOff": "Compromesso",
 } satisfies Record<string, string>;

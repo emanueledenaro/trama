@@ -712,4 +712,8 @@ export const sharedEn: Record<keyof typeof sharedIt, string> = {
 
   // Cloud sessions (A19)
   "shared.blocker.CLOUD_CHECK_FAILED": "The cloud session's work did not pass the checks on the Mac",
+
+  // Findings turned into work (issue #128) and semantic conflicts (issue #40)
+  "shared.blocker.SEMANTIC_CONFLICT": "Incompatible with other work",
+  "shared.waiting.tradeOff": "Trade-off",
 };
