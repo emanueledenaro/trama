@@ -59,6 +59,22 @@ Con l'interfaccia in inglese (issue #301) Trama usa queste parole, in un inglese
 | Divergenza del branch | Branch divergence |
 | Collegamenti | Connections |
 | Impostazioni | Settings |
+| Panoramica | Overview |
+| Turno | Turn |
+| Rilievo, rilievo bloccante | Finding, blocking finding |
+| Suggerimento | Suggestion |
+| Divieto fisso | Fixed ban |
+| Pratica | Practice |
+| Presenza | Presence |
+| Percorso (Chiedi a Trama) | Route |
+| Pianificatore, divisore | Planner, slicer |
+| Suddivisione, divisione in fette | Breakdown, splitting into slices |
+| Triage, diagnosi, correzione | Triage, diagnosis, fix |
+| Revisione dell'architettura | Architecture review |
+| Test di regressione | Regression test |
+| Proposta | Proposal |
+| Lavoro del progetto | Project work |
+| Progetto di esempio | Example project |
 
 ## Ruoli e coordinamento
 
