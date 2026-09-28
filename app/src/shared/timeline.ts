@@ -1,3 +1,4 @@
+import { isAutomaticMove } from "./activity";
 import type { ProviderId } from "./codex";
 import type { CardKind, ConversationEvent, CoordinatorRequest, DecisionRequest } from "./domain";
 import { classifyProviderFailure, type ProviderFailure } from "./providerFailure";
@@ -34,7 +35,8 @@ export type TimelineRow =
 /**
  * Groups the conversation into rows: the person's message, one collapsed work group per turn,
  * the reply, and cards. A running request without a reply gets a pending reply row. The decision cards of a
- * grilling round become one row.
+ * grilling round become one row. The Coordinator's automatic moves are not rows (Q6): their line, their work group
+ * and their stop are in Activity and in the status line; their reply, their cards and an error stay in the chat.
  */
 export function deriveTimelineRows(
   events: ConversationEvent[],
@@ -49,6 +51,7 @@ export function deriveTimelineRows(
   const requestsById = new Map(requests.map((r) => [r.id, r]));
   const workByRequest = new Map<string, Extract<TimelineRow, { kind: "work" }>>();
   const replied = new Set<string>();
+  const automatic = (requestId: string | null | undefined) => Boolean(requestId) && isAutomaticMove(requestsById.get(requestId!));
 
   for (const event of events) {
     const content = event.content;
@@ -57,6 +60,11 @@ export function deriveTimelineRows(
         rows.push({ kind: "person", id: event.id, event, text: content.text, moduleName: content.moduleName, imageCount: content.imageCount ?? 0 });
         break;
       case "activity": {
+        if (!event.workKey && automatic(event.requestId)) {
+          const failed = requestsById.get(event.requestId!);
+          if (content.tone === "error" && failed?.state === "failed") rows.push(failureRow(event.id, failed, content.detail));
+          break;
+        }
         const key = event.workKey ? `specialist-${event.workKey}` : (event.requestId ?? `free-${event.id}`);
         let group = workByRequest.get(key);
         if (!group) {
@@ -74,18 +82,7 @@ export function deriveTimelineRows(
         }
         group.activities.push(event);
         const failed = event.requestId ? requestsById.get(event.requestId) : undefined;
-        if (content.tone === "error" && failed?.state === "failed" && !event.workKey) {
-          rows.push({
-            kind: "failure",
-            id: `failure-${event.id}`,
-            requestId: failed.id,
-            message: failed.failure ?? content.detail ?? "",
-            text: failed.text,
-            goalId: failed.goalId ?? null,
-            interrupted: false,
-            provider: failed.provider ?? null,
-          });
-        }
+        if (content.tone === "error" && failed?.state === "failed" && !event.workKey) rows.push(failureRow(event.id, failed, content.detail));
         break;
       }
       case "coordinatorText":
@@ -102,6 +99,7 @@ export function deriveTimelineRows(
         });
         break;
       case "card": {
+        if (content.kind === "automaticStep") break;
         const grilling = content.kind === "decision" && content.referenceId ? questionsById.get(content.referenceId)?.grilling : null;
         if (!grilling || !content.referenceId) {
           rows.push({ kind: "card", id: event.id, cardKind: content.kind, event });
@@ -140,7 +138,8 @@ export function deriveTimelineRows(
   }
 
   for (const request of requests) {
-    if (request.state !== "interrupted" || replied.has(request.id)) continue;
+    // A stopped automatic move is in Activity: the person stopped it, and nothing in the chat waits for them.
+    if (request.state !== "interrupted" || replied.has(request.id) || isAutomaticMove(request)) continue;
     // After the last row of the turn: its work group, or the person's message when Trama closed before any event.
     const index = rows.findLastIndex(
       (row) => (row.kind === "work" && row.requestId === request.id) || ((row.kind === "person" || row.kind === "card") && row.event.requestId === request.id),
@@ -163,9 +162,24 @@ export function deriveTimelineRows(
     const text = streaming && streaming.requestId === request.id ? streaming.text : null;
     // The running work group already says the Coordinator is working: one indicator, until the reply has text.
     if (!text && rows.some((row) => row.kind === "work" && row.running && row.requestId === request.id)) continue;
+    // A running automatic move is in the status line until its reply has text.
+    if (!text && isAutomaticMove(request)) continue;
     rows.push({ kind: "reply", id: request.id, requestId: request.id, text, model: request.model, references: [], request, streaming: true });
   }
   return rows;
+}
+
+function failureRow(eventId: string, failed: CoordinatorRequest, detail: string | null = null): Extract<TimelineRow, { kind: "failure" }> {
+  return {
+    kind: "failure",
+    id: `failure-${eventId}`,
+    requestId: failed.id,
+    message: failed.failure ?? detail ?? "",
+    text: failed.text,
+    goalId: failed.goalId ?? null,
+    interrupted: false,
+    provider: failed.provider ?? null,
+  };
 }
 
 /** The records whose card a row shows (questions, mandate, team, plan, candidate), so a next step can bring it into view (W01). */

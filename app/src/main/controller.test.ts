@@ -7,6 +7,7 @@ import { existsSync } from "node:fs";
 import { afterEach, describe, expect, it } from "vitest";
 import type { AppState, ProjectDocument } from "@shared/domain";
 import { decisionDependents, dialogEvents, findGoal, projectGoals } from "@shared/goals";
+import { activityLog } from "@shared/activity";
 import { deriveTimelineRows } from "@shared/timeline";
 import { TramaController } from "./controller";
 import { QUIT_NOTE } from "./core/document";
@@ -503,17 +504,19 @@ describe("TramaController", () => {
       await until(() => automaticRequests(document).length === 1, 20_000);
       const move = automaticRequests(document)[0]!;
       expect(move).toMatchObject({ state: "running", step: { move: "preparePlan", by: "trama" }, text: "Prepara il piano." });
+      // The status line names the move that runs and carries its stop (issue #241).
+      await until(() => controller!.snapshot.project!.statusLine?.runningMove?.requestId === move.id, 20_000);
+      expect(controller!.snapshot.project!.statusLine).toMatchObject({ state: "working", text: expect.stringContaining("Sto preparando il piano") });
       await interruptOnceSent(document, move.id);
       await until(() => move.state === "interrupted" && project.runningRequestId === null, 20_000);
       await new Promise((r) => setTimeout(r, 300));
       expect(automaticRequests(document)).toHaveLength(1);
       expect(document.plans).toEqual([]);
-      // The chat shows the move as Trama's line, then the interruption in its place.
+      // The move is not a row of the chat (issue #241): Activity lists it as stopped, and the status line has no stop left.
       const rows = deriveTimelineRows(document.events, document.requests, null, new Set(), document.decisionRequests);
-      const index = rows.findIndex((r) => r.kind === "card" && r.cardKind === "automaticStep");
-      expect(rows[index]).toMatchObject({ event: { requestId: move.id, content: { title: "Prepara il piano" } } });
-      expect(rows.slice(index).some((r) => r.kind === "failure" && r.interrupted && r.requestId === move.id)).toBe(true);
-      expect(rows.some((r) => r.kind === "person" && r.event.requestId === move.id)).toBe(false);
+      expect(rows.some((r) => ("requestId" in r && r.requestId === move.id) || ("event" in r && r.event.requestId === move.id))).toBe(false);
+      expect(activityLog(document.requests, document.events)).toEqual([expect.objectContaining({ requestId: move.id, label: "Prepara il piano", outcome: "stopped" })]);
+      expect(controller!.snapshot.project!.statusLine?.runningMove).toBeNull();
     } finally {
       delete process.env.FAKE_CODEX_AUTOMATIC;
     }

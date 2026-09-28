@@ -21,6 +21,7 @@ export type InspectorTarget =
   | { kind: "audit"; id: string }
   | { kind: "group" }
   | { kind: "work" }
+  | { kind: "activity" }
   | { kind: "issues" }
   | { kind: "issue"; number: number }
   | { kind: "goals"; create?: boolean }

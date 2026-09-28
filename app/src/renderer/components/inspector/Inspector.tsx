@@ -3,6 +3,7 @@ import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/cn";
 import { Sash, useResizableWidth } from "@/lib/resizable";
 import { useUi } from "@/lib/store";
+import { ActivityView } from "./ActivityView";
 import { AuditView } from "./AuditView";
 import { CandidateView } from "./CandidateView";
 import { GoalView, GoalsView } from "./GoalsView";
@@ -34,6 +35,7 @@ const TITLES = {
   audit: "Focus mode",
   group: "Il lavoro del gruppo",
   work: "Lavoro",
+  activity: "Attività",
   issues: "Issue del progetto",
   issue: "Issue",
   goals: "Obiettivi",
@@ -106,6 +108,7 @@ export function Inspector() {
         {target.kind === "audit" ? <AuditView id={target.id} /> : null}
         {target.kind === "group" ? <GroupView /> : null}
         {target.kind === "work" ? <WorkView /> : null}
+        {target.kind === "activity" ? <ActivityView /> : null}
         {target.kind === "issues" ? <IssuesView /> : null}
         {target.kind === "issue" ? <IssueDetail number={target.number} /> : null}
         {target.kind === "goals" ? <GoalsView key={String(target.create)} create={target.create} /> : null}
