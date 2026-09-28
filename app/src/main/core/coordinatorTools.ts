@@ -32,6 +32,8 @@ import { studyText } from "./study";
 import { findGoal, requestGoalId } from "@shared/goals";
 import { isFixedRole, roleDuties } from "@shared/roster";
 import { squadLimits, squadStatusLine, teamSquads } from "@shared/squads";
+import { recordCoordinatorOrder } from "@shared/backlog";
+import { backlogForTool, squadBacklogs } from "./backlog";
 import { GrillingError, grillingSettled, openGrillingQuestions, placeGrillingQuestion } from "@shared/grilling";
 import { goalsForTool, proposeGoal } from "./goals";
 import { DomainProposalError, proposeDomainDocs } from "./domainDocs";
@@ -393,6 +395,17 @@ export const COORDINATOR_TOOLS: ToolDefinition[] = [
       "Rename a developer, named by id or current name, only when the person asks you to; it needs no mandate (without a mandate is fine). The id stays, so assignments, chat and history show the new name. Fixed roles keep their names. Say it in the conversation.",
     properties: { specialist: text, name: text },
     required: ["specialist", "name"],
+    readOnly: false,
+  },
+  {
+    name: "order_backlog",
+    description:
+      "Order a squad's backlog (A13): the slices and the found problems of its area not taken yet, as read_team lists them under each squad's backlog. Give the item keys from the top, each with a reason in one line in the person's language; the items you leave out follow Trama's rule after yours. The person's order wins: the items they placed keep their place, and your order fills the others. Take work from the top of the backlog, skipping blocked and paused slices. Leave squadID out for the backlog of the work no squad owns (unownedBacklog).",
+    properties: {
+      squadID: text,
+      items: { type: "array", items: { type: "object", properties: { key: text, reason: text }, required: ["key", "reason"] } },
+    },
+    required: ["items"],
     readOnly: false,
   },
   {
@@ -1019,6 +1032,7 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
         const pages = Math.max(1, Math.ceil(team.specialists.length / TEAM_PAGE));
         const page = typeof args.page === "number" ? Math.min(pages, Math.max(1, Math.floor(args.page))) : 1;
         const pending = team.proposals.find((p) => !p.resolution);
+        const backlogs = squadBacklogs(document, context.snapshot?.modules ?? []);
         return toolSuccess({
           confirmed: isTeamConfirmed(document),
           pendingProposal: pending
@@ -1037,7 +1051,10 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
             qaID: squad.qaId,
             developerIDs: squad.developerIds,
             status: squadStatusLine(document, squad),
+            // The squad's backlog (A13), from the top: take work from there, skipping blocked and paused slices.
+            backlog: backlogForTool(backlogs.find((b) => b.squadId === squad.id) ?? { squadId: squad.id, items: [] }) as unknown as Json,
           })),
+          unownedBacklog: backlogForTool(backlogs.find((b) => b.squadId === null) ?? { squadId: null, items: [] }) as unknown as Json,
           squadLimits: squadLimits(document) as unknown as Json,
           automaticWork: (context.automaticWork?.() ?? []).map((w) => ({
             work: w.kind,
@@ -1118,6 +1135,25 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
         const { specialist, previousName } = renameSpecialist(document, found.id, typeof args.name === "string" ? args.name : "");
         context.changed();
         return toolSuccess({ specialistID: specialist.id, previousName, name: specialist.name });
+      }
+      case "order_backlog": {
+        const squadId = typeof args.squadID === "string" && args.squadID.trim() ? args.squadID.trim() : null;
+        const backlog = squadBacklogs(document, context.snapshot.modules).find((b) => b.squadId === squadId);
+        if (!backlog) {
+          const squads = teamSquads(document).map((s) => `${s.name} (${s.id})`);
+          return toolFailure("unknown_squad", `Unknown squad: ${String(args.squadID)}. ${squads.length ? `The squads are ${squads.join(", ")}.` : "The squads are not formed yet: leave squadID out."}`);
+        }
+        const known = new Set(backlog.items.map((item) => item.key));
+        const entries = (Array.isArray(args.items) ? args.items : []).flatMap((entry) => {
+          const item = (entry && typeof entry === "object" && !Array.isArray(entry) ? entry : {}) as JsonObject;
+          return typeof item.key === "string" ? [{ key: item.key, reason: typeof item.reason === "string" ? clip(item.reason, 200) : "" }] : [];
+        });
+        const unknown = entries.filter((e) => !known.has(e.key)).map((e) => e.key);
+        if (unknown.length) return toolFailure("unknown_items", `Not in this backlog: ${unknown.join(", ")}. read_team lists each squad's backlog with its keys.`);
+        recordCoordinatorOrder(document, squadId, entries);
+        context.changed();
+        const ordered = squadBacklogs(document, context.snapshot.modules).find((b) => b.squadId === squadId)!;
+        return toolSuccess({ squadID: squadId, backlog: backlogForTool(ordered) as unknown as Json });
       }
       case "assign_task": {
         const kind = WORK_KINDS.includes(args.kind as WorkKind) ? (args.kind as WorkKind) : null;
@@ -1718,7 +1754,7 @@ export function developerInstructions(
     "New features, trade-offs, product behavior and serious destructive cases belong to the person: put them to the person with request_decision, on a concrete case with real alternatives. Never record a decision for the person and never treat a question as answered until Trama tells you the answer. Resolve technical choices yourself and do not ask about them, nor ask for generic confirmations.",
     ...(skills ? [skills] : []),
     "Every project has the full team: the fixed roles (QA, UX, research, documentation and domain, bug triage and debugger, spec reviewer, Clean Code, regression guardian, security, performance, DevOps), always present and never removed, and the developers chosen for the project. Each figure has a competence, the AI Hero skills it relies on and its moments in the flow (clarification and spec, slices, candidate, background); read_team lists them.",
-    "The team works in squads by product area, which Trama forms after the study from the areas of the Map with planned work and tells in Activity: each squad has a squad lead, one to three developers and a dedicated QA; the other fixed roles are shared and serve every squad. read_team lists the squads with their status line. When the person wants a squad renamed, merged or split, tell them what changes and do it only when Trama offers a tool for it; never invent squads in the chat.",
+    "The team works in squads by product area, which Trama forms after the study from the areas of the Map with planned work and tells in Activity: each squad has a squad lead, one to three developers and a dedicated QA; the other fixed roles are shared and serve every squad. read_team lists the squads with their status line and their backlog: the slices and the found problems of the area not taken yet, in order. Take work from the top of a squad's backlog, skipping blocked and paused slices; reorder it with order_backlog, a one-line reason for each item, and never move the items the person placed, whose order wins. When the person wants a squad renamed, merged or split, tell them what changes and do it only when Trama offers a tool for it; never invent squads in the chat.",
     "Under a granted mandate Trama starts some fixed-role work by itself, on its own rules: bug triage and debugger triages each new GitHub issue with the triage skill, diagnoses a failed test or a regression with diagnosing-bugs and fixes a reproduced bug in an assignment within the mandate; Clean Code reviews the architecture with improve-codebase-architecture when the team is free, and its proposals reach the person as a Pact decision card. Their results reach you in the team report: build on them and do not start the same work again.",
     "read_team shows that automatic work in automaticWork: whether each one is running, when it starts and why it has not started yet. When the person asks about it, answer from there, with the reason and what starts it. When the person asks for a triage or a Clean Code review now, start it with start_automatic_work within the mandate; never simulate it with assign_task, and never say it cannot be asked for.",
     `At the end of your study propose the project's developers with propose_team: one developer per real need, each with a competence and the reason this project needs it, never one to fill a role. The person confirms or corrects it once, and only that answer creates the developers. From then on you change them yourself within the mandate, with create_specialist and stop_specialist, and you say it in the conversation. Give each developer a tag: its role in one or two words in ${LANGUAGE_NAMES_IN_ENGLISH[language]} (Interfaccia, Provider in Italian; Interface, Provider in English), shown colored beside its name. When the person asks to rename a developer, do it with rename_specialist, without a mandate; fixed roles keep their names.`,

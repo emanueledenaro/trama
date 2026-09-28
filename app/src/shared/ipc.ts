@@ -108,6 +108,8 @@ export interface ActionMap {
   "assignment:removeWorktree": [{ assignmentId: string }, void];
   "assignment:changeProvider": [{ assignmentId: string; provider: ProviderId; model: string }, void];
   "specialist:remove": [{ specialistId: string; reason: string }, void];
+  "backlog:move": [{ squadId: string | null; key: string; to: "up" | "down" }, void];
+  "backlog:release": [{ squadId: string | null; key: string }, void];
   "specialist:rename": [{ specialistId: string; name: string }, void];
   "specialist:setColor": [{ specialistId: string; color: AgentColor }, void];
   /** The person starts a fixed role's automatic work now (issue #231). */
