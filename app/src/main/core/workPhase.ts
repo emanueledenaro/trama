@@ -18,6 +18,7 @@ import { isOpenQuestion, pendingMandateRequest } from "@shared/domain";
 import { workRequests } from "@shared/grilling";
 import { PROVIDERS } from "@shared/providers";
 import { candidateSuperseded } from "@shared/conflictScope";
+import { PERSON_BLOCKERS } from "@shared/waitingForYou";
 import { blockedReviews, candidateHeld } from "@shared/reviewLoop";
 import { inspectCandidate, latestCandidate } from "./candidates";
 import { pendingQuestion, pendingState, type QuestionView, questionsText, questionViews } from "./developerQuestions";
@@ -182,8 +183,8 @@ const hardBlockers = (blockers: CandidateBlocker[]) => blockers.filter((b) => !W
 
 /**
  * Candidate blockers that are technical (A06, Q3): a red check, the reviewers' blocking finding, a conflict between
- * worktrees or with the main branch. The Coordinator resolves them by itself within the mandate; the others (a Pact
- * decision that changed, a choice left open, an external effect) wait for the person.
+ * worktrees or with the main branch. The Coordinator resolves them by itself within the mandate; the ones in
+ * PERSON_BLOCKERS (a Pact decision that changed, a choice left open, an external effect) wait for the person.
  */
 const TECHNICAL_BLOCKS: Partial<Record<string, TechnicalBlock>> = {
   CHECK_FAILED: "checkFailed",
@@ -467,7 +468,9 @@ function assignedWork(
       };
     }
     if (blocker) {
-      moves.assignWork();
+      // A blocker only the person settles waits for them (issue #390): new work would not settle it.
+      if (PERSON_BLOCKERS.includes(blocker.code)) moves.add(person("reviewCandidate", PERSON_MOVE_LABELS.reviewCandidate, candidate.id));
+      else moves.assignWork();
       return {
         phase: "blocked",
         blocker: candidateBlockerText(candidate, blocker),

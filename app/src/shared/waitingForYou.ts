@@ -63,6 +63,13 @@ export interface WaitingSources {
   language?: Language;
 }
 
+/**
+ * Candidate blockers only the person settles (issue #390): a Pact decision that changed after the candidate, a choice it
+ * leaves open, an external effect Trama does not verify. A red check, the reviewers' finding or a conflict is the
+ * Coordinator's to resolve by itself (A06), and a missing check waits for Trama. The work phase reads the same list.
+ */
+export const PERSON_BLOCKERS: readonly string[] = ["DECISION_CHANGED", "UNRESOLVED_CHOICE", "EXTERNAL_EFFECT_UNSUPPORTED"];
+
 /** Slice states that mean the slice does not move: nobody works on it and it is not done. */
 const HELD_STATES = new Set<SliceView["state"]>(["blocked", "ready", "paused"]);
 
@@ -75,9 +82,13 @@ function heldSlices(plan: WorkPlan, views: SliceView[] | undefined): number {
   return 0;
 }
 
-/** The work `requestId` belongs to, held by one item: its latest plan's held slices, or the work itself as one. */
+/**
+ * The work `requestId` belongs to, held by one item: its latest plan's held slices, or the work itself as one. An item
+ * asked outside any work, as Clean Code's review of the whole project, holds none (issue #390).
+ */
 function heldWork(document: ProjectDocument, sources: WaitingSources, requestId: string | null): number {
-  const scope = requestId ? workRequests(document, requestId) : null;
+  if (!requestId) return 0;
+  const scope = workRequests(document, requestId);
   const plan = scope ? document.plans.filter((p) => p.requestId !== null && scope.has(p.requestId)).at(-1) : undefined;
   if (!plan) return 1;
   return Math.max(1, heldSlices(plan, sources.sliceViews?.[plan.id]));
@@ -232,13 +243,37 @@ export function waitingForYou(document: ProjectDocument, sources: WaitingSources
   // A verified candidate the person has not approved yet, or whose approval no longer holds: they look at it first.
   // With the Coordinator's green light Trama merges the others by itself (issue #247): only a candidate that changes
   // the interface, or one the mandate or the project leaves to the person, waits here. A refused one waits for its
-  // developer, not for the person.
+  // developer, not for the person. A candidate stopped where only the person can move it waits here too, whatever its
+  // route (issue #390): a blocker only they settle, or a merge the mandate or a fixed ban stopped.
   for (const candidate of document.candidates.filter((c) => !c.pullRequest)) {
     const report = sources.candidateReports?.[candidate.id];
-    if (!report || (report.state !== "verified" && report.state !== "decided")) continue;
-    if (report.mergeRoute === "coordinator") continue;
-    if (candidate.humanApproval && !report.approvalInvalidated) continue;
-    if (candidate.humanRejection) continue;
+    if (!report || report.state === "superseded") continue;
+    // A merge the Coordinator stopped on a destructive change waits below as its own item, with its consequences (issue #41).
+    if (candidate.merge?.status === "stopped" && candidate.merge.stop) continue;
+    // Work the review stopped too many times in a row (issue #389): Trama no longer sends it back, the person decides.
+    if (candidateHeld(document, candidate)) {
+      const held = document.team.specialists.flatMap((s) => s.assignments).find((a) => a.id === candidate.assignmentId)!;
+      const reviews = blockedReviews(document, held);
+      const language = sources.language ?? DEFAULT_LANGUAGE;
+      items.push({
+        key: `candidate:${candidate.id}`,
+        kind: "candidate",
+        targetId: candidate.id,
+        label: translate(language, "reviewLoop.label"),
+        title: translate(language, "reviewLoop.title", { objective: oneLine(held.objective), count: reviews.length }),
+        goalId: candidate.goalId ?? null,
+        askedAt: reviews.at(-1)!.finishedAt!,
+        blocks: heldWork(document, sources, held.requestId),
+      });
+      continue;
+    }
+    const settled = report.state === "verified" || report.state === "decided";
+    const stopped = settled ? candidate.merge?.status === "stopped" : report.blockers.some((b) => PERSON_BLOCKERS.includes(b.code));
+    if (!stopped) {
+      if (!settled || report.mergeRoute === "coordinator") continue;
+      if (candidate.humanApproval && !report.approvalInvalidated) continue;
+      if (candidate.humanRejection) continue;
+    }
     const assignment = document.team.specialists.flatMap((s) => s.assignments).find((a) => a.id === candidate.assignmentId);
     items.push({
       key: `candidate:${candidate.id}`,
@@ -252,21 +287,20 @@ export function waitingForYou(document: ProjectDocument, sources: WaitingSources
     });
   }
 
-  // Work the review stopped too many times in a row (issue #389): Trama no longer sends it back, the person decides.
-  for (const candidate of document.candidates.filter((c) => !c.pullRequest && candidateHeld(document, c))) {
+  // A merge the Coordinator stopped because it destroys something (issue #41): the choice is the person's.
+  for (const candidate of document.candidates) {
+    const merge = candidate.merge;
+    if (merge?.status !== "stopped" || !merge.stop || merge.stop.acknowledgedAt || candidate.pullRequest?.mergedAt) continue;
     if (sources.candidateReports?.[candidate.id]?.state === "superseded") continue;
-    const assignment = document.team.specialists.flatMap((s) => s.assignments).find((a) => a.id === candidate.assignmentId)!;
-    const reviews = blockedReviews(document, assignment);
-    const language = sources.language ?? DEFAULT_LANGUAGE;
     items.push({
-      key: `candidate:${candidate.id}`,
+      key: `merge:${candidate.id}`,
       kind: "candidate",
       targetId: candidate.id,
-      label: translate(language, "reviewLoop.label"),
-      title: translate(language, "reviewLoop.title", { objective: oneLine(assignment.objective), count: reviews.length }),
+      label: "Unione fermata",
+      title: merge.stop.reasons.join(" "),
       goalId: candidate.goalId ?? null,
-      askedAt: reviews.at(-1)!.finishedAt!,
-      blocks: heldWork(document, sources, assignment.requestId),
+      askedAt: merge.at,
+      blocks: 1,
     });
   }
 
