@@ -4,9 +4,10 @@ window.PROTO_ERRORS = [];
 window.addEventListener("error", (e) => window.PROTO_ERRORS.push(e.message));
 
 const params = new URLSearchParams(location.search);
-const STATE = params.get("vista") ?? "principale";
-const THEME = params.get("tema") ?? "chiaro";
 const STATES = ["principale", "aspetta", "squadre", "specialista", "lavoro", "regole", "memoria", "panoramica", "impostazioni"];
+// Only known values from the address reach the page: anything else falls back to the default.
+const STATE = STATES.find((s) => s === params.get("vista")) ?? "principale";
+const THEME = params.get("tema") === "scuro" ? "scuro" : "chiaro";
 const STATE_LABELS = {
   principale: "Finestra principale",
   aspetta: "Aspetta te",
@@ -488,12 +489,11 @@ function boot(render) {
   document.getElementById("app").innerHTML = render(STATE, { width: innerWidth, height: innerHeight });
   // The chat opens on its latest messages, as in the app.
   for (const el of document.querySelectorAll("[data-misura='conversazione']")) el.scrollTop = el.scrollHeight;
-  const file = location.pathname.split("/").pop();
   const nav = document.createElement("nav");
   nav.className = "proto-nav";
   nav.innerHTML =
-    STATES.map((s) => `<a href="${file}?vista=${s}&tema=${THEME}" class="${s === STATE ? "on" : ""}">${STATE_LABELS[s]}</a>`).join("") +
-    `<a href="${file}?vista=${STATE}&tema=${THEME === "scuro" ? "chiaro" : "scuro"}">${THEME === "scuro" ? "Chiaro" : "Scuro"}</a>`;
+    STATES.map((s) => `<a href="?vista=${s}&tema=${THEME}" class="${s === STATE ? "on" : ""}">${STATE_LABELS[s]}</a>`).join("") +
+    `<a href="?vista=${STATE}&tema=${THEME === "scuro" ? "chiaro" : "scuro"}">${THEME === "scuro" ? "Chiaro" : "Scuro"}</a>`;
   document.body.appendChild(nav);
   root.dataset.pronto = "1";
 }
