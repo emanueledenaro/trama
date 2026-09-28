@@ -2539,6 +2539,88 @@ const presenceReply = await presenceAnswer.innerText();
 if (!presenceReply.includes("src/payments.js") || !presenceReply.includes("Sezione presenza ricevuta")) throw new Error(`Presence answer: ${presenceReply}`);
 await presenceAnswer.scrollIntoViewIfNeeded();
 await shot("16d-presence-coordinator");
+// Issue #328: editorial typography. A message and its titles read in Newsreader, the controls in Inter and the code in
+// JetBrains Mono, all bundled with the app: the computed families use the tokens and each font is really loaded.
+// Every provider theme, light and dark, and the narrow window keep the 18px body inside the chat.
+await composer().fill("## Annullare un ordine\n\nUn ordine pagato e annullato va in revisione, come in `CancelPaidOrder.swift`.\n\n```swift\nlet stato = ordine.annulla()\n```");
+await page.keyboard.press("Enter");
+const typeMessage = page.locator(".chat-markdown--user").filter({ hasText: "Annullare un ordine" }).last();
+await typeMessage.locator("pre code").waitFor({ timeout: 20_000 });
+await page.getByText("Questa risposta arriva dal server di prova").last().waitFor({ timeout: 30_000 });
+const typography = () =>
+  page.evaluate(async () => {
+    await document.fonts.ready;
+    const user = [...document.querySelectorAll(".chat-markdown--user")].filter((node) => node.textContent.includes("Annullare un ordine")).pop();
+    const reply = [...document.querySelectorAll(".chat-markdown:not(.chat-markdown--user)")].filter((node) => node.textContent.includes("server di prova")).pop();
+    const style = (node) => {
+      if (!node) return null;
+      const s = getComputedStyle(node);
+      return { family: s.fontFamily, size: s.fontSize, weight: s.fontWeight, lineHeight: s.lineHeight, optical: s.fontOpticalSizing };
+    };
+    const loaded = (family) => [...document.fonts].some((face) => face.family.replace(/["']/g, "") === family && face.status === "loaded");
+    return {
+      message: style(reply?.querySelector("p") ?? reply),
+      title: style(user?.querySelector("h2")),
+      button: style(document.querySelector("form.chat-composer-surface button")),
+      code: style(user?.querySelector("pre code")),
+      inline: style(user?.querySelector("p code")),
+      fonts: Object.fromEntries(
+        [
+          ["Newsreader Variable", '400 18px "Newsreader Variable"'],
+          ["Newsreader Variable 500", '500 24px "Newsreader Variable"'],
+          ["Inter Variable", '500 13px "Inter Variable"'],
+          ["JetBrains Mono Variable", '400 14px "JetBrains Mono Variable"'],
+        ].map(([name, font]) => [name, document.fonts.check(font, "Aa") && loaded(name.replace(/ 500$/, ""))]),
+      ),
+    };
+  });
+const types = await typography();
+const firstFamily = (style) => style?.family.split(",")[0].replace(/["']/g, "").trim();
+if (firstFamily(types.message) !== "Newsreader Variable" || types.message.size !== "18px" || types.message.optical !== "auto") throw new Error(`Message typography: ${JSON.stringify(types.message)}`);
+if (Math.abs(parseFloat(types.message.lineHeight) / 18 - 1.68) > 0.01) throw new Error(`Message line height: ${JSON.stringify(types.message)}`);
+if (firstFamily(types.title) !== "Newsreader Variable" || types.title.weight !== "500") throw new Error(`Title typography: ${JSON.stringify(types.title)}`);
+const titleLeading = parseFloat(types.title.lineHeight) / parseFloat(types.title.size);
+if (titleLeading < 1.3 || titleLeading > 1.35) throw new Error(`Title line height: ${JSON.stringify(types.title)}`);
+if (firstFamily(types.button) !== "Inter Variable") throw new Error(`Button typography: ${JSON.stringify(types.button)}`);
+if (firstFamily(types.code) !== "JetBrains Mono Variable" || firstFamily(types.inline) !== "JetBrains Mono Variable") throw new Error(`Code typography: ${JSON.stringify([types.code, types.inline])}`);
+const missingFonts = Object.entries(types.fonts).filter(([, ok]) => !ok).map(([name]) => name);
+if (missingFonts.length) throw new Error(`Fonts not loaded: ${missingFonts.join(", ")}`);
+// Nothing leaves the chat: no horizontal page scroll, every message inside the timeline, no text wider than its box.
+const typographyOverflow = () =>
+  page.evaluate(() => {
+    const timeline = document.querySelector(".chat-timeline-scroll")?.getBoundingClientRect();
+    const problems = [];
+    if (document.documentElement.scrollWidth > innerWidth) problems.push("page scroll");
+    for (const node of document.querySelectorAll(".chat-timeline-scroll .chat-markdown")) {
+      const box = node.getBoundingClientRect();
+      if (!box.width) continue;
+      if (timeline && (box.left < timeline.left - 1 || box.right > timeline.right + 1)) problems.push(`message outside the timeline: ${node.textContent.slice(0, 40)}`);
+      for (const child of node.querySelectorAll(":scope > :not(pre, table, .chat-compare)")) {
+        if (child.scrollWidth > child.clientWidth + 1) problems.push(`text wider than its box: ${child.textContent.slice(0, 40)}`);
+      }
+    }
+    return problems;
+  });
+const typeLook = await lookOf();
+await typeMessage.scrollIntoViewIfNeeded();
+for (const provider of ["codex", "claudeAgent", "cursor", "antigravity", "grok", "droid", "devin", "opencode", "pi"]) {
+  for (const dark of [false, true]) {
+    await setLookTo(provider, dark);
+    const problems = await typographyOverflow();
+    if (problems.length) throw new Error(`Typography with ${provider} ${dark ? "dark" : "light"}: ${problems.join("; ")}`);
+    if (provider === "codex" || provider === "claudeAgent") await shot(`16d1-typography-${provider}-${dark ? "dark" : "light"}`);
+  }
+}
+await setLookTo(typeLook.provider, typeLook.dark);
+// In a narrow window the inspector floats over the chat: closed, the messages are what the shot shows.
+if (await page.getByTestId("inspector").count()) await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
+await page.setViewportSize({ width: 720, height: 640 });
+await typeMessage.scrollIntoViewIfNeeded();
+await page.waitForTimeout(400);
+const narrowProblems = await typographyOverflow();
+if (narrowProblems.length) throw new Error(`Typography at 720x640: ${narrowProblems.join("; ")}`);
+await shot("16d2-typography-narrow");
+await page.setViewportSize({ width: 1280, height: 820 });
 // G02: Gruppo is the picture of who works on what. One row per person and per agent, with identity, active branch,
 // "anche su", the request, the files and the freshness; the person's own switch is in the view, on the right.
 await page.getByRole("button", { name: /^Gruppo/ }).first().click();
