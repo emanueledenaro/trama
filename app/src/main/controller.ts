@@ -104,6 +104,7 @@ import {
   updateCleanCode,
 } from "./core/cleanCode";
 import { openingInput, resumeInput, specialistInstructions } from "./core/specialistBriefing";
+import { recordGate } from "./core/agentThreads";
 import { prepareDemoProject } from "./core/demoProject";
 import {
   appendEvent,
@@ -4696,6 +4697,8 @@ export class TramaController {
       ...(cleanCode ? { findings: cleanCode.answer.findings, standard: cleanCode.standard } : {}),
       gateId: gate.id,
     });
+    // The reviewers and the guardian tell the developer in their own conversations (W07).
+    recordGate(document, gate);
     appendEvent(
       document,
       "trama",

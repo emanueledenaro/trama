@@ -27,11 +27,12 @@ interface StoredIssue {
 }
 
 const FAKE_GH = `#!/usr/bin/env node
-const { readFileSync, writeFileSync } = require("node:fs");
+const { readFileSync, renameSync, writeFileSync } = require("node:fs");
 const args = process.argv.slice(2);
 const store = process.env.PROBLEMS_GH_STORE;
 const issues = JSON.parse(readFileSync(store, "utf8"));
-const save = () => writeFileSync(store, JSON.stringify(issues));
+// Atomic, so the test polling the store never reads a half-written file.
+const save = () => { writeFileSync(store + ".tmp", JSON.stringify(issues)); renameSync(store + ".tmp", store); };
 const out = (value) => { process.stdout.write(JSON.stringify(value)); process.exit(0); };
 const method = args.includes("--method") ? args[args.indexOf("--method") + 1] : "GET";
 const endpoint = args.slice(1).find((a, i, l) => !a.startsWith("-") && !["--method", "--raw-field", "--field", "--jq"].includes(l[i - 1]));

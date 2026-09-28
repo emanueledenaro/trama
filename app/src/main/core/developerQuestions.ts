@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { DecisionRequest, DeveloperQuestion, DeveloperQuestionState, ProjectDocument, Specialist, SpecialistAssignment } from "@shared/domain";
 import { developerQuestionState } from "@shared/domain";
 import { shortId } from "@shared/ids";
+import { recordAnswer, recordPersonAnswer, recordQuestion } from "./agentThreads";
 import { REPORT_HEADINGS } from "./implementation";
 import type { ToolDefinition } from "./toolServer";
 
@@ -94,6 +95,8 @@ export function askCoordinator(
   };
   assignment.questions = [...(assignment.questions ?? []), asked];
   assignment.lastUpdate = `Domanda ${asked.id} al Coordinatore`;
+  // The question opens, or continues, the developer's conversation with the Coordinator (W07).
+  recordQuestion(document, assignment, asked, now);
   return asked;
 }
 
@@ -123,6 +126,7 @@ export function answerFromFacts(document: ProjectDocument, id: string, input: { 
   }
   question.answer = { kind: "facts", text, sources, answeredAt: now.toISOString() };
   assignment.lastUpdate = `Il Coordinatore ha risposto alla domanda ${question.id}`;
+  recordAnswer(document, assignment, question, now);
   return assignment;
 }
 
@@ -132,6 +136,7 @@ export function blockOnPerson(document: ProjectDocument, id: string, request: De
   question.answer = { kind: "person", decisionRequestId: request.id, since: now.toISOString(), text: null, answeredAt: null };
   request.blocksWork = { assignmentId: assignment.id, questionId: question.id };
   assignment.lastUpdate = `La domanda ${question.id} aspetta la risposta della persona`;
+  recordAnswer(document, assignment, question, now);
   return assignment;
 }
 
@@ -153,6 +158,7 @@ export function personAnswered(document: ProjectDocument, request: DecisionReque
   }
   answer.answeredAt = now.toISOString();
   found.assignment.lastUpdate = `La persona ha risposto alla domanda ${found.question.id}`;
+  recordPersonAnswer(document, request, now);
   return found.assignment;
 }
 
