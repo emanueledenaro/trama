@@ -1923,7 +1923,16 @@ git("remote", "add", "origin", "https://github.com/trama-ui/negozio.git");
 // P10: the fake Codex answers the "[limite-temporaneo]" turns with OpenRouter's upstream 429 twice, then works again;
 // a short first wait keeps the automatic retry within the check.
 // FAKE_CODEX_LIGHT_MODEL gives the catalogue a light model, so focus mode has a stronger one to confirm serious findings (F02).
-({ app, page } = await launch({ PATH: `${ghBin}:${process.env.PATH}`, FAKE_GH_TEAM: "1", TRAMA_PROVIDER_RETRY_MS: "4000", FAKE_CODEX_RATE_LIMITS: "2", FAKE_CODEX_LIGHT_MODEL: "gpt-5.5-mini" }));
+// FAKE_CODEX_SECRET_FIX_HOLD keeps the developer's fix of the secret at work until the check has read the blocked candidate (issue #388).
+const secretFixHold = join(await mkdtemp(join(tmpdir(), "trama-ui-hold-")), "secret-fix");
+({ app, page } = await launch({
+  PATH: `${ghBin}:${process.env.PATH}`,
+  FAKE_GH_TEAM: "1",
+  TRAMA_PROVIDER_RETRY_MS: "4000",
+  FAKE_CODEX_RATE_LIMITS: "2",
+  FAKE_CODEX_LIGHT_MODEL: "gpt-5.5-mini",
+  FAKE_CODEX_SECRET_FIX_HOLD: secretFixHold,
+}));
 // Issue #330: the goals are the first tab of Lavoro, opened from its icon in the activity bar.
 const goalsRow = page.getByRole("navigation", { name: "Viste" }).getByRole("button", { name: "Lavoro", exact: true });
 await goalsRow.waitFor({ timeout: 30_000 });
@@ -2259,7 +2268,7 @@ await page.getByText(/^Via libera rifiutato: /).last().waitFor({ timeout: 20_000
 await secretCandidate.getByText("I revisori hanno trovato un problema da correggere").waitFor();
 await secretCandidate.getByText("Da sistemare", { exact: true }).waitFor();
 await page.getByRole("button", { name: "Interrompi" }).waitFor({ state: "hidden", timeout: 20_000 });
-await secretWork.getByText("Concluso", { exact: true }).waitFor({ timeout: 30_000 });
+// Ada is fixing the secret: the blocked candidate is still the work of now.
 await blockedGate.evaluate((item) => item.scrollIntoView({ block: "center" }));
 await shot("24a-candidate-gate-blocked");
 await app.evaluate(({ nativeTheme }) => {
@@ -2271,8 +2280,28 @@ await app.evaluate(({ nativeTheme }) => {
   nativeTheme.themeSource = "system";
 });
 await page.evaluate(() => document.documentElement.classList.remove("dark"));
+// Issue #388: once Ada's fix ends, Trama declares the new candidate from her worktree. The blocked one is replaced and
+// keeps its gate; the new one has no key in its diff and waits for its own checks.
+const blockedId = await secretCandidate.locator("[data-record-id]").first().getAttribute("data-record-id");
+if (!blockedId) throw new Error("The blocked candidate's card does not name the candidate");
+await writeFile(secretFixHold, "");
+await secretWork.getByText("Concluso", { exact: true }).waitFor({ timeout: 30_000 });
+const secretCards = candidateCards.filter({ has: page.locator(`[data-reference-id="${await cardAssignment(secretWork)}"]`) });
+const fixedCandidate = secretCards.filter({ hasNot: page.getByTestId("candidate-gate") }).last();
+await fixedCandidate.waitFor({ timeout: 20_000 });
+if ((await fixedCandidate.locator("[data-record-id]").first().getAttribute("data-record-id")) === blockedId) throw new Error("Trama did not declare the candidate of Ada's fix");
+const secretReplacedLine = page.getByTestId("settled-card").filter({ has: page.getByRole("button", { name: `Apri: Candidato ${blockedId}` }) });
+await secretReplacedLine.waitFor({ timeout: 20_000 });
+await openSettled(secretReplacedLine);
+const replacedCard = page.locator(".chat-card").filter({ has: page.locator(`[data-record-id="${blockedId}"]`) });
+await replacedCard.getByTestId("candidate-superseded").waitFor();
+await replacedCard.locator('[data-testid="candidate-gate"][data-status="blocked"]').waitFor();
+await page.getByRole("button", { name: `Chiudi: Candidato ${blockedId}` }).click();
+await fixedCandidate.scrollIntoViewIfNeeded();
+await shot("24a1-candidate-after-the-fix");
 // Security's message is in Ada's work, with the turn she resumed with it: the person reads what the agents said.
 await page.getByRole("button", { name: /ha lavorato per/ }).last().click();
+await page.getByText("Candidato nuovo sulla copia di lavoro").last().waitFor({ timeout: 10_000 });
 // The step names the candidate, not its id (issue #392).
 const toDeveloper = page.getByRole("button", { name: /^Sicurezza a Ada: 1 rilievo bloccante sul candidato di Ada/ });
 await toDeveloper.waitFor({ timeout: 10_000 });

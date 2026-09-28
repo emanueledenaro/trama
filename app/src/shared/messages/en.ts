@@ -419,6 +419,17 @@ export const en: Record<keyof typeof it, string> = {
   "context.specialist.newThreadTitle": "New specialist thread",
   "context.specialist.newThread": "Context used in the previous turn: {percent}%, past the project's threshold ({threshold}%). The specialist goes on in a new thread with a summary of its worktree.",
 
+  // The candidate after a developer's turn (issue #388)
+  "candidate.afterTurn.declared.title": "New candidate from the working copy",
+  "candidate.afterTurn.declared.detail": "The developer changed the working copy after the latest candidate. Trama declared a new candidate with what it holds now: the checks and the reviewers work on this one.",
+  "candidate.afterTurn.refused.title": "Candidate not updated",
+  "candidate.afterTurn.refused.emptyWorktree": "The working copy has no changes left: the earlier candidate does not match the work and cannot be approved.",
+  "candidate.afterTurn.refused.published": "The earlier candidate is already a pull request: the new changes stay in the working copy and are not part of that pull request.",
+  "candidate.afterTurn.refused.notAuthorized": "The mandate no longer covers work in this copy: the earlier candidate does not match the work and cannot be approved until the Coordinator declares the new one.",
+  "candidate.afterTurn.refused.invalid": "Trama could not declare the new candidate: the earlier candidate does not match the work and cannot be approved until the Coordinator declares the new one.",
+  "candidate.afterTurn.refused.unreadable": "Trama could not read the working copy: the earlier candidate cannot be approved until the copy can be read again.",
+  "candidate.blocker.worktreeChanged": "The working copy changed after the candidate",
+
   // Ticket updates in Activity (C10)
   "ticket.issue": "Issue #{number} “{title}”",
   "ticket.issueUntitled": "Issue #{number}",

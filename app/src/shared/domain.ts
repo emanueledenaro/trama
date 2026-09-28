@@ -675,6 +675,11 @@ export interface SpecialistAssignment {
   selfPicked?: boolean;
   /** The questions the developer asked the Coordinator during the work (W06), oldest first. */
   questions?: DeveloperQuestion[];
+  /**
+   * The worktree as Trama read it at the end of the developer's latest local turn (issue #388): a candidate with another
+   * snapshot no longer describes the work. Absent before the first reading and while a turn runs.
+   */
+  worktreeSnapshot?: { snapshotId: string; at: string } | null;
   /** The candidate gate sent the work back with blocking findings (W10); the latest return, absent before any. */
   gateReturn?: { gateId: string; candidateId: string; findings: string[]; at: string } | null;
   /** Where the work runs and why (A19, issue #260); absent for work that never had a choice, which runs locally. */
@@ -1155,6 +1160,8 @@ export interface Candidate {
   unresolvedChoices: string[];
   externalEffects: string[];
   declaredAt: string;
+  /** "trama" when Trama declared it by itself after a turn that changed the worktree (issue #388); absent for the Coordinator. */
+  declaredBy?: "trama";
   updatedAt: string;
   evidence: Record<string, CandidateEvidence>;
   technicalReview: TechnicalReview | null;
