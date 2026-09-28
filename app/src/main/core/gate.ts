@@ -112,6 +112,22 @@ export function stopAtChecks(gate: CandidateGate, failed: string[], now = new Da
 
 export const CHECKS_FAILED_NOTE = "Non è partito: una verifica richiesta non è passata.";
 
+export const ENVIRONMENT_NOTE = "Non è partito: una verifica richiesta non è riuscita per la sandbox o la macchina.";
+
+/**
+ * A required check failed because of the sandbox or the machine (issue #271): it left no evidence, so no reviewer
+ * starts. The gate ends without an outcome on the diff; the reviewers are skipped, never failed, and the review runs
+ * again once the check can run.
+ */
+export function stopAtEnvironment(gate: CandidateGate, checks: string[], now = new Date()): void {
+  const at = now.toISOString();
+  for (const review of gate.reviews) Object.assign(review, idleReview(review.role), { status: "skipped", report: ENVIRONMENT_NOTE, finishedAt: at });
+  gate.status = "failed";
+  gate.failure = `Le verifiche ${checks.join(", ")} non sono riuscite per la sandbox o la macchina: rilancia la revisione quando girano.`;
+  gate.finishedAt = at;
+  gate.updatedAt = at;
+}
+
 export const SECRET_NOTE = "Non è partito: il diff contiene un segreto, e Trama non lo manda ai modelli.";
 
 /**
@@ -312,7 +328,7 @@ export function returnWaiting(code: string, message: string): string {
     case "work_not_independent":
       return "Qualcuno lavora sugli stessi moduli: il lavoro riprende quando finisce.";
     case "no_worktree":
-      return "Il worktree dell'incarico non c'è più: serve un nuovo incarico.";
+      return "La copia di lavoro dell'incarico non c'è più: serve un nuovo incarico.";
     case "specialist_removed":
       return "Lo sviluppatore non è più nel team: serve un nuovo incarico.";
     default:

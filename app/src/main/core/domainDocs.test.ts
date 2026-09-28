@@ -90,7 +90,7 @@ describe("glossary and ADR proposals from the grilling decisions (M03)", () => {
     expect(proposal.waiting).toMatch(/su root/);
     mandate(document, ["root"], ["plan"]);
     expect(startDomainWriting(document, proposal, runner)).toBeNull();
-    expect(proposal.waiting).toMatch(/worktree/);
+    expect(proposal.waiting).toMatch(/copia di lavoro/);
     expect(document.team.specialists.flatMap((s) => s.assignments)).toEqual([]);
 
     mandate(document, ["root"]);

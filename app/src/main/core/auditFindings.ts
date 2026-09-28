@@ -51,7 +51,7 @@ async function recheckLine(evidence: Extract<FindingEvidence, { kind: "fileLine"
     return unread(`\`${file}\` è fuori dai file che Trama legge.`);
   }
   if (!(await lstat(join(worktreeRoot, file)).then(() => true, () => false))) {
-    return { outcome: "contradicted", basis: `Il file ${file} non esiste nel worktree del candidato.`, observed: null };
+    return { outcome: "contradicted", basis: `Il file ${file} non esiste nella copia di lavoro del candidato.`, observed: null };
   }
   let text: string;
   try {

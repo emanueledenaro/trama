@@ -135,7 +135,7 @@ describe("fixed roles' automatic work (W11)", () => {
       `skill:improve-codebase-architecture:${join(skills, "improve-codebase-architecture/SKILL.md")}`,
     );
     const card = document.decisionRequests.find((r) => architecture?.kind === "architecture" && r.id === architecture.decisionRequestId)!;
-    expect(card.alternatives.map((a) => a.behavior)).toEqual(["Approfondire: Approfondire l'annullamento", "Approfondire: Unire i pagamenti", "Nessuno per ora"]);
+    expect(card.alternatives.map((a) => a.behavior)).toEqual(["Approfondire l'annullamento", "Approfondire: Unire i pagamenti", "Nessuno per ora"]);
     expect(document.events.some((e) => e.content.type === "card" && e.content.kind === "decision" && e.content.referenceId === card.id)).toBe(true);
     expect(document.decisions).toHaveLength(0);
   }, 90_000);

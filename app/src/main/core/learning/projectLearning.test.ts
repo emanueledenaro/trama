@@ -22,6 +22,16 @@ describe("ProjectLearning", () => {
     expect(project.migrateLegacyMemory("altro")).toBe(false);
   });
 
+  it("says a single change in one line (issue #270)", () => {
+    const project = learning();
+    project.memory.add("memory", "Usa pnpm");
+    const review = { store: project.memory, origin: "backgroundReview" as const, stage: (p: Parameters<typeof project.stageProposal>[0]) => project.stageProposal(p) };
+    memoryTool({ target: "memory", action: "remove", old_text: "pnpm" }, review);
+    const [proposal] = project.view({ turnsSinceMemory: 0, itersSinceSkill: 0 }).proposals;
+    expect(proposal!.summary).toBe("Togliere la nota «pnpm»");
+    expect(proposal!.summary).not.toMatch(/background review|remove/);
+  });
+
   it("shows every staged operation and refuses a proposal whose entries changed", () => {
     const project = learning();
     project.memory.add("user", "Prefers Italian");
@@ -29,7 +39,10 @@ describe("ProjectLearning", () => {
     const review = { store: project.memory, origin: "backgroundReview" as const, stage: (p: Parameters<typeof project.stageProposal>[0]) => project.stageProposal(p) };
     memoryTool({ target: "user", operations: [{ action: "replace", old_text: "Italian", content: "Prefers Italian, short answers" }, { action: "remove", old_text: "macOS" }] }, review);
     const [proposal] = project.view({ turnsSinceMemory: 0, itersSinceSkill: 0 }).proposals;
-    expect(proposal!.operations).toEqual(["- replace entry matching 'Italian' -> whole entry becomes: Prefers Italian, short answers", "- remove: macOS"]);
+    // The person reads the changes in Italian; the review's own lines stay in the stored proposal (issue #270).
+    expect(proposal!.operations).toEqual(["Sostituire la nota «Italian» con «Prefers Italian, short answers»", "Togliere la nota «macOS»"]);
+    expect(proposal!.summary).toBe("Riordinare 2 note: 2 cambiano o spariscono");
+    expect(project.proposals()[0]!.operations).toEqual(["- replace entry matching 'Italian' -> whole entry becomes: Prefers Italian, short answers", "- remove: macOS"]);
     project.memory.replace("user", "macOS", "Works on macOS and Linux");
     expect(project.resolveProposal(proposal!.id, true)).toMatchObject({ success: false });
     expect(project.memory.entriesFor("user")).toEqual(["Prefers Italian", "Works on macOS and Linux"]);

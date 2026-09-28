@@ -29,6 +29,7 @@ import {
   SECRET_NOTE,
   SESSION_ROLES,
   stopAtChecks,
+  stopAtEnvironment,
   stopAtSecrets,
   suiteChecks,
   usesCodeReview,
@@ -99,6 +100,16 @@ describe("the candidate gate (W10)", () => {
     expect(gate).toMatchObject({ status: "checking", baseSHA: "0a1b2c3d", snapshotId: "snap-1", returned: null });
     expect(() => openGate(document, candidate)).toThrow(GateError);
     expect(latestGate(document.gates, candidate.id)).toBe(gate);
+  });
+
+  it("ends without an outcome when a check could not run for the sandbox or the machine: no reviewer fails (issue #271)", () => {
+    const document = project();
+    const { candidate } = candidateOf(document);
+    const gate = openGate(document, candidate, at(3));
+    stopAtEnvironment(gate, ["test Swift"], at(4));
+    expect(gate).toMatchObject({ status: "failed", finishedAt: at(4).toISOString() });
+    expect(gate.failure).toMatch(/test Swift non sono riuscite per la sandbox o la macchina/);
+    expect(gate.reviews.every((r) => r.status === "skipped" && !r.failure && r.startedAt === null)).toBe(true);
   });
 
   it("runs the missing checks first, and a failed one stops the gate before any reviewer", () => {

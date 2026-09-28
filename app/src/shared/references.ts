@@ -19,6 +19,7 @@ export type ReferenceTarget =
   | { kind: "plan"; id: string }
   | { kind: "slice"; planId: string; sliceId: string }
   | { kind: "goal"; id: string }
+  | { kind: "route"; id: string }
   | { kind: "specialist"; id: string }
   | { kind: "module"; id: string }
   | { kind: "file"; path: string }
@@ -63,7 +64,7 @@ export interface ReferenceIndex {
 export type ReferencePart = { text: string } | { text: string; reference: Reference } | { text: string; unknown: string };
 
 /** The id prefixes Trama links, with the kind each one names (ids.ts). */
-const LINKED_PREFIXES = ["A", "C", "D", "F", "G", "M", "P", "Q", "R", "S"] as const;
+const LINKED_PREFIXES = ["A", "AT", "C", "D", "F", "G", "M", "P", "Q", "R", "S"] as const;
 const ID_PATTERN = /(?<![\w-])(?:DQ|DM|AT|PR|[ACDEFGMPQRST])-[0-9A-F]{8}(?![\w-])/g;
 const ISSUE_PATTERN = /(?<![\w&/#])#(\d{1,6})(?!\w)/g;
 const SLICE_PATTERN = /(?<![\w-])S(\d{1,2})(?![\w-])/g;
@@ -71,7 +72,7 @@ const MENTION_PATTERN = /(?<![\w@])@(?:"((?:\\.|[^"\\])*)"|([^\s@]+))/g;
 const PATH_PATTERN = /(?<![\w./@-])((?:[\w.-]+\/)+[\w.-]*[\w]|[\w-][\w.-]*\.[A-Za-z][A-Za-z0-9]{0,7})(?::\d+(?::\d+)?)?(?![\w/])/g;
 const SHA_PATTERN = /(?<![\w-])[0-9a-f]{7,40}(?![\w-])/g;
 /** Nouns a text may write before a reference; the reference then shows its short name. */
-const NOUN_BEFORE = /(?:^|[^\p{L}])(incarico|candidato|decisione|domanda|mandato|piano|fetta|obiettivo|issue|ticket|pr|pull request|modulo|file|commit|branch|revisione|esame)\s*$/iu;
+const NOUN_BEFORE = /(?:^|[^\p{L}])(incarico|candidato|decisione|domanda|mandato|piano|fetta|obiettivo|issue|ticket|pr|pull request|modulo|file|commit|branch|revisione|esame|percorso)\s*$/iu;
 
 const clip = (text: string, limit = 60) => {
   const clean = text.replace(/\s+/g, " ").trim();
@@ -191,6 +192,10 @@ export function buildReferenceIndex({ document, modules, github }: ReferenceSour
   }
   for (const goal of document.goals ?? []) {
     index.ids.set(goal.id, make({ kind: "goal", id: goal.id }, goal.id, "obiettivo", `«${clip(goal.title, 48)}»`, clip(goal.outcome, 160)));
+  }
+  // A route of Ask Trama by the situation it answers (issue #270): "Avvia il percorso AT-..." names it.
+  for (const route of document.routes ?? []) {
+    index.ids.set(route.id, make({ kind: "route", id: route.id }, route.id, "percorso di Ask Trama", `«${clip(route.situation, 48)}»`, clip(route.reason, 160)));
   }
   for (const module of modules) {
     const reference = make({ kind: "module", id: module.id }, module.relativePath, "modulo", module.name, clip(module.summary, 160));
@@ -435,6 +440,7 @@ export function parseReferenceHref(href: string): ReferenceTarget | null {
     case "mandate":
     case "plan":
     case "goal":
+    case "route":
     case "specialist":
     case "module":
       return { kind: match[1], id: key };

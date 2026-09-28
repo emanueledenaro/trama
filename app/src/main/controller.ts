@@ -254,6 +254,7 @@ import {
   compareSuite,
   failedChecks,
   failGate,
+  stopAtEnvironment,
   finishReview,
   gateReview,
   gateSummary,
@@ -4685,14 +4686,16 @@ export class TramaController {
     let cleanCode = null as CleanCodeReview | null;
     try {
       // The facts first: every required check without current evidence runs now, in the sandbox.
-      for (const check of checksToRun(document, candidate)) await this.verifyCandidate(candidate.id, check, requestId);
-      // A check the sandbox or the machine kept from running left no evidence: no reviewer starts without it (issue #271).
-      const unverified = checksToRun(document, candidate);
-      if (unverified.length) {
-        throw new Error(`Le verifiche ${unverified.map((c) => CHECKS[c].title).join(", ")} non sono riuscite per la sandbox o la macchina: rilancia la revisione quando girano.`);
+      // A check the sandbox or the machine kept from running leaves no evidence: no reviewer starts without it (issue #271).
+      const blocked: ReadOnlyCheck[] = [];
+      for (const check of checksToRun(document, candidate)) {
+        const result = await this.verifyCandidate(candidate.id, check, requestId);
+        if (result.exitCode !== 0 && environmentFailure(result.output)) blocked.push(check);
       }
       const failed = failedChecks(candidate);
-      if (failed.length) {
+      if (blocked.length) {
+        stopAtEnvironment(gate, blocked.map((check) => CHECKS[check].title));
+      } else if (failed.length) {
         stopAtChecks(gate, failed);
         this.changedIn(project);
         await this.guardSuite(project, gate, candidate);
@@ -4723,7 +4726,7 @@ export class TramaController {
         );
         await Promise.all([cleanCodeRun, this.guardSuite(project, gate, candidate), ...sessions]);
       }
-      closeGate(gate);
+      if (!blocked.length) closeGate(gate);
     } catch (error) {
       failGate(gate, (error as Error).message);
     } finally {

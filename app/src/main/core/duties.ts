@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { withoutRepeatedLead } from "@shared/plainLanguage";
 import type { ProviderId, ProviderModel } from "@shared/codex";
 import type {
   ArchitectureOutcome,
@@ -336,7 +337,7 @@ function fixInstructions(failure: CheckFailure, diagnosis: SpecialistAssignment,
     ...(outcome.loopOutput ? [`Uscita del ciclo:\n\`\`\`\n${outcome.loopOutput}\n\`\`\``] : []),
     ...(outcome.hypotheses.length ? [`Ipotesi della diagnosi, dalla più probabile:\n${outcome.hypotheses.map((h, i) => `${i + 1}. ${h}`).join("\n")}`] : []),
     ...(outcome.cause ? [`Causa: ${outcome.cause}`] : []),
-    outcome.regressionTest ? `Test di regressione: ${outcome.regressionTest}` : `Nessun seam corretto per un test di regressione: ${outcome.seamNote ?? "da documentare"}`,
+    outcome.regressionTest ? `Test di regressione: ${outcome.regressionTest}` : `Nessun punto di prova adatto per un test di regressione: ${outcome.seamNote ?? "da documentare"}`,
     `Correzione: ${outcome.fix}`,
   ].join("\n\n");
 }
@@ -355,7 +356,7 @@ function startFix(document: ProjectDocument, runner: DutyRunner, knownModules: s
       continue;
     }
     if (work && (!work.workspace || work.workspaceRemovedAt)) {
-      outcome.fixWaiting = "Il worktree del candidato non c'è più: la correzione la assegna il Coordinatore.";
+      outcome.fixWaiting = "La copia di lavoro del candidato non c'è più: la correzione la assegna il Coordinatore.";
       continue;
     }
     const authorization = authorize(document.mandate, "executeInWorktree", moduleIds, "decidedBehaviorCorrection");
@@ -638,7 +639,7 @@ export function startDomainWriting(
     proposal.waiting =
       authorization === "mandate_missing" || authorization === "mandate_revoked"
         ? "Senza un mandato valido nessuno scrive i file: la proposta aspetta il mandato."
-        : `Il mandato non permette di lavorare in un worktree${proposal.scopeModuleIds.length ? ` su ${proposal.scopeModuleIds.join(", ")}` : ""}: la proposta aspetta una correzione del mandato.`;
+        : `Il mandato non permette di lavorare in una copia di lavoro${proposal.scopeModuleIds.length ? ` su ${proposal.scopeModuleIds.join(", ")}` : ""}: la proposta aspetta una correzione del mandato.`;
     return null;
   }
   if (!runner) {
@@ -1076,7 +1077,8 @@ function architectureCard(document: ProjectDocument, assignment: SpecialistAssig
         .join(" "),
       alternatives: [
         ...proposals.slice(0, CARD_PROPOSALS).map((p) => ({
-          behavior: `Approfondire: ${p.title}`,
+          // A title that already says "Approfondire" keeps it once (issue #270).
+          behavior: withoutRepeatedLead("Approfondire", p.title),
           example: `${p.files.join(", ") || "File non indicati"}: ${p.solution}`,
           consequence: `${p.benefits}${p.adrConflict ? ` Attenzione: ${p.adrConflict}` : ""}`,
         })),
