@@ -1495,8 +1495,8 @@ export interface ProjectDocument {
 }
 
 /**
- * What a conversation between agents is about (W07): a developer's question to the Coordinator, the technical review
- * of the developer's candidate, or a regression the guardian found on it.
+ * What a conversation between agents is about (W07): a developer's question to the Coordinator, the findings of the
+ * candidate gate's reviewers on the developer's candidate (W10), or a regression the guardian found on it.
  */
 export type AgentThreadKind = "question" | "review" | "regression";
 
