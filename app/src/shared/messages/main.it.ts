@@ -761,6 +761,8 @@ export const mainIt = {
     "Il {work} è in conflitto con il branch principale su GitHub: vanno riallineati.",
   "main.workPhase.whyWorktreeConflict":
     "Il {work} tocca gli stessi file di un altro lavoro in corso.",
+  "main.workPhase.whySemanticConflict":
+    "Il {work} non funziona insieme a un altro lavoro in corso: una verifica fallisce sulle due modifiche unite.",
   "main.workPhase.whyCloudCheckFailed":
     "Il {work} viene dal cloud e non ha superato i controlli sul Mac.",
   "main.workPhase.whyNotMergeable": "Il {work} non si può ancora unire.",
@@ -792,6 +794,8 @@ export const mainIt = {
     "Il candidato {id} è in conflitto con il lavoro su GitHub: {detail}",
   "main.workPhase.blockerWorktreeConflict":
     "Il candidato {id} è in conflitto con il lavoro di un altro incarico: {detail}",
+  "main.workPhase.blockerSemanticConflict":
+    "Il candidato {id} non funziona insieme al lavoro di un altro incarico: {detail}",
   "main.workPhase.blockerCloudCheckFailed":
     "Il candidato {id} viene da una sessione cloud e non ha superato i controlli sul Mac: {detail}",
   "main.workPhase.blockerOther":
@@ -1210,6 +1214,8 @@ export const mainIt = {
     "il lavoro della sessione cloud non ha superato i controlli sul Mac",
   "main.quality.blocker.WORKTREE_CONFLICT":
     "c'è un conflitto con il lavoro di un altro incarico",
+  "main.quality.blocker.SEMANTIC_CONFLICT":
+    "insieme al lavoro di un altro incarico una verifica non passa",
   "main.quality.verified.missing": "Non è verificato: {blockers}.",
   "main.quality.verified.fix":
     "Chiedi al Coordinatore di correggere il lavoro e di verificare un nuovo candidato.",
@@ -2257,4 +2263,131 @@ export const mainIt = {
     "git fetch del branch {branch} non riuscito: {error}",
   "main.workspace.noCommonBase":
     "Il branch {branch} non ha una base in comune con il progetto.",
+  // MARK: Findings to work and semantic conflicts
+  "main.findingWork.followUp.ticket": "una issue o una voce del backlog",
+  "main.findingWork.followUp.assignment": "un incarico",
+  "main.findingWork.followUp.pactCard": "una scheda del Patto",
+  "main.findingWork.notDone":
+    "L'esame non è concluso: aspetta il rapporto prima di agire sui rilievi.",
+  "main.findingWork.notFound": "Rilievo non trovato in questo esame.",
+  "main.findingWork.alreadyCreated": "Da questo rilievo hai già creato {what}.",
+  "main.findingWork.noProof": "nessuna prova",
+  "main.findingWork.quotedLine": "{label}, riga citata: {quote}",
+  "main.findingWork.command": "il comando {command}",
+  "main.findingWork.reproduction": "riproduzione:\n{steps}",
+  "main.findingWork.candidateOf": "candidato di {author}",
+  "main.findingWork.candidateReviewed": "candidato esaminato",
+  "main.findingWork.markdown.title": "**Rilievo dell'asse {axis}:** {title}",
+  "main.findingWork.markdown.titleSerious":
+    "**Rilievo dell'asse {axis}, grave:** {title}",
+  "main.findingWork.markdown.status": "**Stato:** {status}.",
+  "main.findingWork.markdown.proof": "**Prova:** {proof}",
+  "main.findingWork.markdown.observed": "Cosa ha letto Trama:",
+  "main.findingWork.markdown.origin":
+    "Viene dall'esame approfondito sul {candidate}, punto fisso {point}.",
+  "main.findingWork.issueOpenedFrom":
+    "La persona ha aperto questa issue da un rilievo dell'esame approfondito di Trama.",
+  "main.findingWork.localTicket":
+    "GitHub non è collegato: il rilievo resta nel backlog di Trama, senza issue.",
+  "main.findingWork.evidenceLabel":
+    "Rilievo dell'esame approfondito sul {candidate}, prova {proof}",
+  "main.findingWork.hypothesis":
+    "Il rilievo è un'ipotesi: la sua prova non ha retto. Aprine una issue o una scheda del Patto, non un incarico.",
+  "main.findingWork.teamNotConfirmed":
+    "La squadra non è ancora confermata: nessuno può ricevere l'incarico.",
+  "main.findingWork.noModule":
+    "Trama non sa a quale modulo appartiene il rilievo: chiedi la correzione al Coordinatore.",
+  "main.findingWork.mandateMissing":
+    "Non c'è un mandato: nessun incarico parte fuori dal mandato. Apri una issue, oppure concedi il mandato.",
+  "main.findingWork.mandateRevoked":
+    "Il mandato è revocato: nessun incarico parte fuori dal mandato. Apri una issue, oppure concedi un nuovo mandato.",
+  "main.findingWork.outsideScope":
+    "Il mandato non copre {modules}: nessun incarico parte fuori dal mandato. Apri una issue.",
+  "main.findingWork.noWorktreeAction":
+    "Il mandato non concede di lavorare nelle copie di lavoro: nessun incarico parte fuori dal mandato. Apri una issue.",
+  "main.findingWork.busy":
+    "Un altro incarico lavora ora su {modules}: riprova quando finisce.",
+  "main.findingWork.occupied":
+    "Qualcuno tocca ora questi moduli: {names}. Riprova più tardi.",
+  "main.findingWork.noDeveloper":
+    "Nessuno sviluppatore libero copre i moduli del rilievo: riprova quando uno finisce il suo lavoro.",
+  "main.findingWork.noProvider": "Nessun provider collegato può lavorare ora.",
+  "main.findingWork.objective": "Correggere il rilievo: {title}",
+  "main.findingWork.modelReason":
+    "Correzione di un rilievo dell'esame approfondito: lo stesso provider e modello del lavoro esaminato.",
+  "main.findingWork.seam": "Il rilievo non si ripresenta: {proof}",
+  "main.findingWork.notStarted": "L'incarico non è partito: {error}",
+  "main.findingWork.pact.question":
+    "Il rilievo «{title}» è un compromesso da accettare o va corretto?",
+  "main.findingWork.pact.case":
+    "Esame approfondito sul {candidate}, asse {axis}.",
+  "main.findingWork.pact.proof": "Prova: {proof}.",
+  "main.findingWork.pact.acceptBehavior":
+    "Accettare il compromesso: il codice resta com'è e il rilievo «{title}» non si corregge.",
+  "main.findingWork.pact.acceptExample": "{proof} resta come nel candidato.",
+  "main.findingWork.pact.acceptConsequence":
+    "Il Patto registra il compromesso e nessun incarico parte.",
+  "main.findingWork.pact.fixBehavior": "Correggere il rilievo «{title}».",
+  "main.findingWork.pact.fixExample":
+    "{proof} cambia finché il rilievo non si ripresenta.",
+  "main.findingWork.pact.fixConsequence":
+    "La correzione diventa un incarico nel mandato.",
+  "main.findingWork.report.passed": "superata",
+  "main.findingWork.report.failed": "non superata",
+  "main.findingWork.report.serious": "**Grave.** ",
+  "main.findingWork.report.item": "{serious}{title} ({status}; prova: {proof})",
+  "main.findingWork.report.noSpec":
+    "Nessuna spec disponibile: l'asse non è partito.",
+  "main.findingWork.report.noFindings": "Nessun rilievo.",
+  "main.findingWork.report.title": "## Esame approfondito sul {candidate}",
+  "main.findingWork.report.scope":
+    "Punto fisso {point}, {files} file. Esame in sola lettura.",
+  "main.findingWork.report.scope.one":
+    "Punto fisso {point}, 1 file. Esame in sola lettura.",
+  "main.findingWork.report.checks": "### Verifiche reali",
+  "main.findingWork.report.noChecks": "Nessuna verifica eseguita.",
+  "main.findingWork.report.summary": "**Sintesi:** {summary}",
+  "main.findingWork.report.note":
+    "Un rilievo è verificato solo quando Trama ha ricontrollato la sua prova; gli altri restano ipotesi.",
+  "main.findingWork.publishNotDone":
+    "L'esame non è concluso: si pubblica solo un rapporto finito.",
+  "main.findingWork.alreadyPublished":
+    "Hai già pubblicato questo rapporto su GitHub.",
+  "main.semanticConflicts.pending":
+    "Trama prova lo scenario sul candidato combinato: finché non dà un risultato, è solo un'ipotesi.",
+  "main.semanticConflicts.passes":
+    "Sul candidato combinato {check} passa: l'incompatibilità resta un'ipotesi.",
+  "main.semanticConflicts.notRun":
+    "Lo scenario non è partito ({reason}): l'incompatibilità resta un'ipotesi.",
+  "main.semanticConflicts.unknownReason": "motivo sconosciuto",
+  "main.semanticConflicts.incompatible":
+    "Ognuno passa {check} da solo, ma sul candidato combinato fallisce: le due modifiche sono incompatibili.",
+  "main.semanticConflicts.notProven":
+    "Sul candidato combinato {check} fallisce, ma non è passato su entrambi da soli: il fallimento non prova l'incompatibilità.",
+  "main.conflicts.textConflicts":
+    "La fusione temporanea delle due copie di lavoro produce conflitti testuali.",
+  "main.conflicts.combineFailed":
+    "git merge-tree non ha completato la fusione: {error}",
+  "main.controller.semanticOtherAssignment": "un altro incarico",
+  "main.controller.semanticNotificationTitle":
+    "Trama: due lavori non funzionano insieme",
+  "main.controller.semanticNotificationBody":
+    "Il lavoro di {first} e quello di {second} passano da soli, ma insieme una verifica fallisce.",
+  "main.controller.semanticWorkingCopyGone":
+    "Una delle due copie di lavoro non c'è più.",
+  "main.controller.auditNotFound": "Esame non trovato.",
+  "main.controller.findingIssueFailed": "La issue non è stata aperta: {error}",
+  "main.controller.findingIssueOpenedTitle":
+    "Issue #{number} aperta da un rilievo dell'esame approfondito",
+  "main.controller.findingBacklogTitle":
+    "Un rilievo dell'esame approfondito va nel backlog di Trama",
+  "main.controller.findingAssignedTitle":
+    "{name} riceve la correzione di un rilievo dell'esame approfondito",
+  "main.controller.findingAssignedOrigin": "Viene dal {candidate}.",
+  "main.controller.auditNoRepository":
+    "Nessun repository GitHub collegato: il rapporto resta in Trama.",
+  "main.controller.auditReportIssueTitle":
+    "Rapporto dell'esame approfondito sul {candidate}",
+  "main.controller.auditReportNotPublished":
+    "Il rapporto non è stato pubblicato: {error}",
 } satisfies Record<string, string>;

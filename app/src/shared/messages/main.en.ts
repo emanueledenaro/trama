@@ -730,6 +730,8 @@ export const mainEn: Record<keyof typeof mainIt, string> = {
     "{work} conflicts with the main branch on GitHub: they need to be realigned.",
   "main.workPhase.whyWorktreeConflict":
     "{work} touches the same files as other work in progress.",
+  "main.workPhase.whySemanticConflict":
+    "{work} does not work together with other work in progress: a check fails on the two changes merged.",
   "main.workPhase.whyCloudCheckFailed":
     "{work} comes from the cloud and did not pass the checks on the Mac.",
   "main.workPhase.whyNotMergeable": "{work} cannot be merged yet.",
@@ -761,6 +763,8 @@ export const mainEn: Record<keyof typeof mainIt, string> = {
     "Candidate {id} conflicts with the work on GitHub: {detail}",
   "main.workPhase.blockerWorktreeConflict":
     "Candidate {id} conflicts with the work of another assignment: {detail}",
+  "main.workPhase.blockerSemanticConflict":
+    "Candidate {id} does not work together with the work of another assignment: {detail}",
   "main.workPhase.blockerCloudCheckFailed":
     "Candidate {id} comes from a cloud session and did not pass the checks on the Mac: {detail}",
   "main.workPhase.blockerOther":
@@ -1162,6 +1166,8 @@ export const mainEn: Record<keyof typeof mainIt, string> = {
     "the work of the cloud session did not pass the checks on the Mac",
   "main.quality.blocker.WORKTREE_CONFLICT":
     "there is a conflict with the work of another assignment",
+  "main.quality.blocker.SEMANTIC_CONFLICT":
+    "a check fails together with the work of another assignment",
   "main.quality.verified.missing": "Not verified: {blockers}.",
   "main.quality.verified.fix":
     "Ask the Coordinator to fix the work and verify a new candidate.",
@@ -2181,4 +2187,131 @@ export const mainEn: Record<keyof typeof mainIt, string> = {
   "main.workspace.fetchFailed": "git fetch of branch {branch} failed: {error}",
   "main.workspace.noCommonBase":
     "Branch {branch} has no common base with the project.",
+  // MARK: Findings to work and semantic conflicts
+  "main.findingWork.followUp.ticket": "an issue or a backlog item",
+  "main.findingWork.followUp.assignment": "an assignment",
+  "main.findingWork.followUp.pactCard": "a Pact card",
+  "main.findingWork.notDone":
+    "The review is not finished: wait for the report before acting on the findings.",
+  "main.findingWork.notFound": "Finding not found in this review.",
+  "main.findingWork.alreadyCreated":
+    "You already created {what} from this finding.",
+  "main.findingWork.noProof": "no proof",
+  "main.findingWork.quotedLine": "{label}, quoted line: {quote}",
+  "main.findingWork.command": "the command {command}",
+  "main.findingWork.reproduction": "reproduction:\n{steps}",
+  "main.findingWork.candidateOf": "{author}'s candidate",
+  "main.findingWork.candidateReviewed": "the reviewed candidate",
+  "main.findingWork.markdown.title": "**Finding of the {axis} axis:** {title}",
+  "main.findingWork.markdown.titleSerious":
+    "**Finding of the {axis} axis, serious:** {title}",
+  "main.findingWork.markdown.status": "**Status:** {status}.",
+  "main.findingWork.markdown.proof": "**Proof:** {proof}",
+  "main.findingWork.markdown.observed": "What Trama read:",
+  "main.findingWork.markdown.origin":
+    "It comes from the deep review of {candidate}, fixed point {point}.",
+  "main.findingWork.issueOpenedFrom":
+    "The person opened this issue from a finding of Trama's deep review.",
+  "main.findingWork.localTicket":
+    "GitHub is not connected: the finding stays in Trama's backlog, without an issue.",
+  "main.findingWork.evidenceLabel":
+    "Finding of the deep review of {candidate}, proof {proof}",
+  "main.findingWork.hypothesis":
+    "The finding is a hypothesis: its proof did not hold. Open an issue or a Pact card for it, not an assignment.",
+  "main.findingWork.teamNotConfirmed":
+    "The squad is not confirmed yet: nobody can take the assignment.",
+  "main.findingWork.noModule":
+    "Trama does not know which module the finding belongs to: ask the Coordinator for the fix.",
+  "main.findingWork.mandateMissing":
+    "There is no mandate: no assignment starts outside the mandate. Open an issue, or grant the mandate.",
+  "main.findingWork.mandateRevoked":
+    "The mandate is revoked: no assignment starts outside the mandate. Open an issue, or grant a new mandate.",
+  "main.findingWork.outsideScope":
+    "The mandate does not cover {modules}: no assignment starts outside the mandate. Open an issue.",
+  "main.findingWork.noWorktreeAction":
+    "The mandate does not allow work in working copies: no assignment starts outside the mandate. Open an issue.",
+  "main.findingWork.busy":
+    "Another assignment is working on {modules} now: try again when it finishes.",
+  "main.findingWork.occupied":
+    "Someone is touching these modules now: {names}. Try again later.",
+  "main.findingWork.noDeveloper":
+    "No free developer covers the modules of the finding: try again when one finishes their work.",
+  "main.findingWork.noProvider": "No connected provider can work now.",
+  "main.findingWork.objective": "Fix the finding: {title}",
+  "main.findingWork.modelReason":
+    "Fix of a deep review finding: the same provider and model as the reviewed work.",
+  "main.findingWork.seam": "The finding does not come back: {proof}",
+  "main.findingWork.notStarted": "The assignment did not start: {error}",
+  "main.findingWork.pact.question":
+    "Is the finding «{title}» a trade-off to accept, or should it be fixed?",
+  "main.findingWork.pact.case": "Deep review of {candidate}, {axis} axis.",
+  "main.findingWork.pact.proof": "Proof: {proof}.",
+  "main.findingWork.pact.acceptBehavior":
+    "Accept the trade-off: the code stays as it is and the finding «{title}» is not fixed.",
+  "main.findingWork.pact.acceptExample": "{proof} stays as in the candidate.",
+  "main.findingWork.pact.acceptConsequence":
+    "The Pact records the trade-off and no assignment starts.",
+  "main.findingWork.pact.fixBehavior": "Fix the finding «{title}».",
+  "main.findingWork.pact.fixExample":
+    "{proof} changes until the finding no longer comes back.",
+  "main.findingWork.pact.fixConsequence":
+    "The fix becomes an assignment within the mandate.",
+  "main.findingWork.report.passed": "passed",
+  "main.findingWork.report.failed": "not passed",
+  "main.findingWork.report.serious": "**Serious.** ",
+  "main.findingWork.report.item": "{serious}{title} ({status}; proof: {proof})",
+  "main.findingWork.report.noSpec":
+    "No spec available: the axis did not start.",
+  "main.findingWork.report.noFindings": "No findings.",
+  "main.findingWork.report.title": "## Deep review of {candidate}",
+  "main.findingWork.report.scope":
+    "Fixed point {point}, {files} files. Read-only review.",
+  "main.findingWork.report.scope.one":
+    "Fixed point {point}, 1 file. Read-only review.",
+  "main.findingWork.report.checks": "### Real checks",
+  "main.findingWork.report.noChecks": "No check was run.",
+  "main.findingWork.report.summary": "**Summary:** {summary}",
+  "main.findingWork.report.note":
+    "A finding is verified only when Trama checked its proof again; the others stay hypotheses.",
+  "main.findingWork.publishNotDone":
+    "The review is not finished: only a finished report is published.",
+  "main.findingWork.alreadyPublished":
+    "You already published this report on GitHub.",
+  "main.semanticConflicts.pending":
+    "Trama tries the scenario on the combined candidate: until it gives a result, it is only a hypothesis.",
+  "main.semanticConflicts.passes":
+    "On the combined candidate {check} passes: the incompatibility stays a hypothesis.",
+  "main.semanticConflicts.notRun":
+    "The scenario did not start ({reason}): the incompatibility stays a hypothesis.",
+  "main.semanticConflicts.unknownReason": "unknown reason",
+  "main.semanticConflicts.incompatible":
+    "Each passes {check} alone, but it fails on the combined candidate: the two changes are incompatible.",
+  "main.semanticConflicts.notProven":
+    "On the combined candidate {check} fails, but it did not pass on both alone: the failure does not prove the incompatibility.",
+  "main.conflicts.textConflicts":
+    "The temporary merge of the two working copies produces text conflicts.",
+  "main.conflicts.combineFailed":
+    "git merge-tree did not complete the merge: {error}",
+  "main.controller.semanticOtherAssignment": "another assignment",
+  "main.controller.semanticNotificationTitle":
+    "Trama: two pieces of work do not work together",
+  "main.controller.semanticNotificationBody":
+    "The work of {first} and the work of {second} pass alone, but together a check fails.",
+  "main.controller.semanticWorkingCopyGone":
+    "One of the two working copies is gone.",
+  "main.controller.auditNotFound": "Review not found.",
+  "main.controller.findingIssueFailed": "The issue was not opened: {error}",
+  "main.controller.findingIssueOpenedTitle":
+    "Issue #{number} opened from a deep review finding",
+  "main.controller.findingBacklogTitle":
+    "A deep review finding goes to Trama's backlog",
+  "main.controller.findingAssignedTitle":
+    "{name} gets the fix of a deep review finding",
+  "main.controller.findingAssignedOrigin": "It comes from {candidate}.",
+  "main.controller.auditNoRepository":
+    "No GitHub repository connected: the report stays in Trama.",
+  "main.controller.auditReportIssueTitle":
+    "Deep review report of {candidate}",
+  "main.controller.auditReportNotPublished":
+    "The report was not published: {error}",
 };

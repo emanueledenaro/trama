@@ -251,6 +251,7 @@ const TECHNICAL_BLOCKS: Partial<Record<string, TechnicalBlock>> = {
   GATE_BLOCKED: "checkFailed",
   WORKTREE_CONFLICT: "worktreeConflict",
   REMOTE_CONFLICT: "worktreeConflict",
+  SEMANTIC_CONFLICT: "worktreeConflict",
   CLOUD_CHECK_FAILED: "checkFailed",
 };
 
@@ -280,6 +281,8 @@ function candidateBlockerWhy(work: string, blocker: CandidateBlocker): string {
       return sentence(t("main.workPhase.whyRemoteConflict", { work }));
     case "WORKTREE_CONFLICT":
       return sentence(t("main.workPhase.whyWorktreeConflict", { work }));
+    case "SEMANTIC_CONFLICT":
+      return sentence(t("main.workPhase.whySemanticConflict", { work }));
     case "CLOUD_CHECK_FAILED":
       return sentence(t("main.workPhase.whyCloudCheckFailed", { work }));
     default:
@@ -305,6 +308,8 @@ function candidateBlockerText(candidate: Candidate, blocker: CandidateBlocker): 
       return t("main.workPhase.blockerRemoteConflict", { id, detail });
     case "WORKTREE_CONFLICT":
       return t("main.workPhase.blockerWorktreeConflict", { id, detail });
+    case "SEMANTIC_CONFLICT":
+      return t("main.workPhase.blockerSemanticConflict", { id, detail });
     case "CLOUD_CHECK_FAILED":
       return t("main.workPhase.blockerCloudCheckFailed", { id, detail });
     default:

@@ -161,6 +161,7 @@ const BLOCKER_WORDS: Record<string, MessageKey> = {
   REMOTE_CONFLICT: "main.quality.blocker.REMOTE_CONFLICT",
   CLOUD_CHECK_FAILED: "main.quality.blocker.CLOUD_CHECK_FAILED",
   WORKTREE_CONFLICT: "main.quality.blocker.WORKTREE_CONFLICT",
+  SEMANTIC_CONFLICT: "main.quality.blocker.SEMANTIC_CONFLICT",
 };
 
 const blockerWords = (code: string) => (Object.hasOwn(BLOCKER_WORDS, code) ? t(BLOCKER_WORDS[code]!) : code);
