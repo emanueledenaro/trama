@@ -2704,7 +2704,7 @@ await setLookTo(questionLook.provider, questionLook.dark);
 await agentThread.getByRole("button", { name: "Apri lo sviluppatore" }).click();
 const specialistThreads = page.getByTestId("specialist-threads").getByRole("button", { name: /Domanda al Coordinatore, fetta 1, / });
 await specialistThreads.waitFor();
-await expectNoRawIds(page.getByTestId("inspector"), "The specialist's page");
+await expectNoRawIds(page.getByTestId("side-bar"), "The specialist's page");
 await specialistThreads.scrollIntoViewIfNeeded();
 await shot("19m-specialist-threads");
 await specialistThreads.click();
