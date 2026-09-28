@@ -3,6 +3,8 @@ import { it as italian } from "@shared/messages/it";
 import { en } from "@shared/messages/en";
 import {
   CHAT_MIN_WIDTH,
+  EDITOR_MIN_HEIGHT,
+  PANEL_MIN_HEIGHT,
   SIDE_BAR_MIN_WIDTH,
   TAB_LABELS,
   VIEW_LABELS,
@@ -10,6 +12,8 @@ import {
   VIEW_TABS,
   homeOf,
   isDetail,
+  panelDefaultHeight,
+  panelMaxHeight,
   sideBarDefaultWidth,
   sideBarMaxWidth,
   tabOf,
@@ -22,7 +26,6 @@ describe("window layout (issue #330)", () => {
     // The kinds of InspectorTarget in lib/store.ts; the Record type keeps this list complete at compile time.
     expect(kinds.sort()).toEqual(
       [
-        "activity",
         "agentThread",
         "audit",
         "branch",
@@ -62,11 +65,9 @@ describe("window layout (issue #330)", () => {
     expect(tabOf({ kind: "mandate" })).toBe("mandate");
     expect(isDetail({ kind: "module", id: "Orders" })).toBe(true);
     expect(isDetail({ kind: "specialist", id: "S-1" })).toBe(true);
-    expect(isDetail({ kind: "activity", work: "W-1" })).toBe(true);
     expect(isDetail({ kind: "goals", create: true })).toBe(true);
     expect(isDetail({ kind: "waiting", key: "question:1" })).toBe(false);
     expect(isDetail({ kind: "map" })).toBe(false);
-    expect(isDetail({ kind: "activity" })).toBe(false);
   });
 
   it("lists every tab inside its own view and opens a view on its first tab", () => {
@@ -92,5 +93,18 @@ describe("window layout (issue #330)", () => {
     // 1066x666 is a 1280x800 window at 120% zoom.
     expect(1066 - 48 - sideBarMaxWidth(1066)).toBeGreaterThanOrEqual(CHAT_MIN_WIDTH);
     expect(sideBarMaxWidth(720)).toBeGreaterThanOrEqual(SIDE_BAR_MIN_WIDTH);
+  });
+
+  it("keeps Activity out of the side bar: it opens in the bottom panel (issue #337)", () => {
+    expect(Object.keys(VIEW_OF)).not.toContain("activity");
+    expect(Object.values(VIEW_TABS).flat()).not.toContain("activity");
+  });
+
+  it("sizes the bottom panel as the issue asks and keeps the editor above it (issue #337)", () => {
+    expect(panelDefaultHeight(1280)).toBe(200);
+    expect(panelDefaultHeight(1680)).toBe(260);
+    expect(800 - 70 - panelMaxHeight(800)).toBeGreaterThanOrEqual(EDITOR_MIN_HEIGHT);
+    expect(panelMaxHeight(1050)).toBeGreaterThanOrEqual(panelDefaultHeight(1680));
+    expect(panelMaxHeight(500)).toBe(PANEL_MIN_HEIGHT);
   });
 });

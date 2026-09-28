@@ -24,8 +24,6 @@ export type InspectorTarget =
   | { kind: "audit"; id: string }
   | { kind: "group" }
   | { kind: "work" }
-  /** `work` opens one turn of work with its technical steps (issue #271). */
-  | { kind: "activity"; work?: string }
   | { kind: "issues" }
   | { kind: "issue"; number: number }
   /** A pull request, a commit or a branch a message cites (issue #277). */
@@ -54,6 +52,18 @@ interface UiState {
   sideBarView: SideBarView;
   /** What the side bar shows inside its view: one of the view's tabs or a detail; null shows the view's first tab. */
   inspector: InspectorTarget | null;
+  /** Whether the bottom panel with Activity is open under the editor (issue #337). */
+  panelOpen: boolean;
+  /**
+   * The row Activity brings into view and opens: a turn of work (issue #271) or another entry. `nonce` changes at each
+   * request, so the same line asked twice scrolls again.
+   */
+  panelFocus: { id: string; nonce: number } | null;
+  /** Opens Activity in the bottom panel, on the row `focus` when given. */
+  openActivity(focus?: string): void;
+  /** Opens or closes the bottom panel. */
+  togglePanel(): void;
+  closePanel(): void;
   dialog: DialogName;
   /** The dialog to reopen when the current one closes, for example the guide after Collegamenti. */
   dialogReturn: DialogName;
@@ -132,6 +142,14 @@ const readSideBarView = (): SideBarView => {
   }
 };
 
+const readPanel = () => {
+  try {
+    return localStorage.getItem("trama.panelOpen") === "true";
+  } catch {
+    return false;
+  }
+};
+
 const remember = (key: string, value: string) => {
   try {
     localStorage.setItem(key, value);
@@ -153,6 +171,20 @@ export const useUi = create<UiState>((set, get) => ({
   sidebarOpen: readSidebar(),
   sideBarView: readSideBarView(),
   inspector: null,
+  panelOpen: readPanel(),
+  panelFocus: null,
+  openActivity: (focus) => {
+    remember("trama.panelOpen", "true");
+    set((state) => ({
+      panelOpen: true,
+      panelFocus: focus ? { id: focus, nonce: (state.panelFocus?.nonce ?? 0) + 1 } : state.panelFocus,
+    }));
+  },
+  togglePanel: () => (get().panelOpen ? get().closePanel() : get().openActivity()),
+  closePanel: () => {
+    remember("trama.panelOpen", "false");
+    set({ panelOpen: false, panelFocus: null });
+  },
   dialog: null,
   dialogReturn: null,
   exercise: null,
@@ -205,7 +237,7 @@ export const useUi = create<UiState>((set, get) => ({
     if (previous?.project?.id !== app.project?.id) {
       const pending = get().pendingGoal;
       const goal = pending && pending.projectId === app.project?.id ? pending.goalId : null;
-      set({ inspector: null, composerModuleId: null, composerPrefill: null, history: [null], historyIndex: 0, dialogGoalId: goal, pendingGoal: goal ? null : pending });
+      set({ inspector: null, panelFocus: null, composerModuleId: null, composerPrefill: null, history: [null], historyIndex: 0, dialogGoalId: goal, pendingGoal: goal ? null : pending });
       // A project opened from the settings, the overview or the menu shows its dialog, not the page left behind (W12).
       if (app.project && previous) set({ mainView: "dialog" });
     }

@@ -86,7 +86,7 @@ function FocusItem({ open, onToggle }: { open: boolean; onToggle: () => void }) 
  */
 function StatusLine({ line, focus }: { line: StatusLineView | null; focus: React.ReactNode }) {
   const t = useT();
-  const setInspector = useUi((s) => s.setInspector);
+  const openActivity = useUi((s) => s.openActivity);
   const openDialog = useUi((s) => s.openDialog);
   const dialogGoalId = useUi((s) => s.dialogGoalId);
   const take = (action: StatusLineAction) => {
@@ -132,7 +132,7 @@ function StatusLine({ line, focus }: { line: StatusLineView | null; focus: React
       </div>
       {focus}
       <Tooltip label={t("workbench.status.activity")}>
-        <button type="button" className={ITEM} aria-label={t("workbench.status.activity")} onClick={() => setInspector({ kind: "activity" })}>
+        <button type="button" className={ITEM} aria-label={t("workbench.status.activity")} onClick={() => openActivity()}>
           <IconListDetails className="size-3.5" stroke={1.8} />
         </button>
       </Tooltip>
