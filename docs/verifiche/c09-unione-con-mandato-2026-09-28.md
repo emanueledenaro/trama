@@ -26,7 +26,7 @@ Tutte le prove usano il Codex finto e il GitHub finto (`app/test-fixtures/fake-g
 - `npx tsc --noEmit -p .`: nessun errore.
 - `npx vitest run`: 139 file, 1305 test superati, 3 saltati.
 - `npm run build`: riuscito.
-- `xvfb-run -a node scripts/ui-check.mjs`: vedi la pull request. Passi nuovi nel flusso di A07: `30f-merge-stopped-destructive` e `30g-merge-mandate-version`, in chiaro e in scuro.
+- `xvfb-run -a node scripts/ui-check.mjs`: una corsa completa, uscita 0, 367 schermate. Passi nuovi nel flusso di A07: `30f-merge-stopped-destructive` e `30g-merge-mandate-version`, in chiaro e in scuro.
 
 ## Test
 
