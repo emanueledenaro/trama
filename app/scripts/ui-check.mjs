@@ -2516,7 +2516,6 @@ const lensesAt = lensHeadings.findIndex((text) => text.startsWith("Lenti di Tram
 if (!(specAt2 >= 0 && specAt2 < lensesAt && lensesAt < lensHeadings.length - 1)) throw new Error("Focus mode: the lenses do not follow the axes");
 await focusAudit.getByTestId("focus-audit-lens-summary").getByText(/^Lenti di Trama: Sicurezza: 1 rilievo.*Qualità dei test: 1 rilievo.*Documenti e codice: 1 rilievo/).waitFor();
 await focusAudit.getByTestId("focus-audit-tally").getByText("Stato dei rilievi: 2 verificati da Trama, 2 confermati da un secondo modello, 2 ipotesi.").waitFor();
-await focusAudit.getByTestId("focus-audit-tally").getByText("Stato dei rilievi: 1 verificato da Trama, 1 confermato da un secondo modello, 1 ipotesi.").waitFor();
 // The shots show the examination as the person finds it, with the technical side closed.
 await focusAudit.evaluate((el) => el.querySelectorAll("details").forEach((d) => (d.open = false)));
 await focusAudit.scrollIntoViewIfNeeded();
