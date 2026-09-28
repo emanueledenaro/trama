@@ -205,7 +205,7 @@ export function StatusBar() {
       ref={bar}
       aria-label={t("workbench.status.label")}
       data-testid="status-bar"
-      className="relative flex h-6 shrink-0 items-center gap-0.5 border-t border-[color:var(--app-panel-border,var(--app-surface-divider))] bg-[var(--app-sidebar-surface)] px-1.5 font-system-ui"
+      className="relative flex h-6 shrink-0 items-center gap-0.5 border-t border-[color:var(--app-panel-border)] bg-[var(--app-sidebar-surface)] px-1.5 font-system-ui"
     >
       {project ? (
         <>

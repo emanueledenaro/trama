@@ -127,8 +127,17 @@
 
   /* Opaque shell off macOS; the macOS window draws vibrancy under a translucent sidebar. */
   --app-shell-background: var(--surface);
-  --app-sidebar-surface: var(--card);
   --app-sidebar-backdrop-filter: none;
+
+  /* Panels laid out as in VS Code (Light Modern / Dark Modern): the sidebar and the inspector are a shade darker
+     than the central area, and 1px borders separate them edge to edge. The values follow VS Code's on the neutral
+     Codex surface (sideBar.background #F8F8F8, sideBar.border and panel.border #E5E5E5 over editor #FFFFFF) and
+     derive from each provider's own surface, so every provider theme keeps its colors. */
+  --app-sidebar-surface: color-mix(in srgb, var(--surface) 97%, black);
+  --app-inspector-surface: var(--app-sidebar-surface);
+  --app-panel-border: color-mix(in srgb, var(--surface) 90%, black);
+  /* VS Code focusBorder: the lit sash. */
+  --app-focus-border: #005fb8;
 }
 
 :root.dark {
@@ -150,6 +159,10 @@
   --input: rgb(252 252 252 / 0.1);
   --ring: #737373;
   --destructive: color-mix(in srgb, #ef4444 90%, white);
+  /* Dark Modern on the neutral surface: sideBar.background #181818, borders #2B2B2B, editor #1F1F1F. */
+  --app-sidebar-surface: color-mix(in srgb, var(--surface) 78%, black);
+  --app-panel-border: color-mix(in srgb, var(--surface) 95%, white);
+  --app-focus-border: #0078d4;
 }
 
 :root[data-platform="darwin"],
@@ -161,6 +174,8 @@
   --app-content-glass: color-mix(in srgb, var(--surface) 80%, transparent);
   --card: color-mix(in srgb, var(--surface) 78%, transparent);
   --app-sidebar-surface: color-mix(in srgb, var(--surface) 55%, transparent);
+  /* The inspector can float over the chat: it keeps an opaque surface. */
+  --app-inspector-surface: var(--color-background-surface);
   --app-sidebar-backdrop-filter: none;
 }
 
@@ -788,20 +803,7 @@ button {
   }
 
   .chat-content-card {
-    --seam-line: rgb(0 0 0 / 5%);
     background: var(--color-background-surface);
-  }
-  .dark .chat-content-card {
-    --seam-line: rgb(255 255 255 / 5%);
-  }
-  .chat-content-card::before {
-    content: "";
-    position: absolute;
-    inset: 0;
-    z-index: 1;
-    pointer-events: none;
-    box-shadow: inset 0.5px 0 0 var(--seam-line);
-    transition: opacity 300ms cubic-bezier(0.32, 0.72, 0, 1);
   }
   /* The content adds no surface of its own: the same steady veil colors the whole window evenly. */
   /* The dialog is glass in the provider's own surface color with a touch of its light, like the sidebar and
@@ -825,18 +827,6 @@ button {
   :root[data-platform="win32"] .chat-composer-surface {
     background: color-mix(in srgb, var(--popover) 88%, transparent);
   }
-  /* On glass the change of material already separates sidebar and content: no seam line. */
-  :root[data-platform="darwin"] .chat-content-card::before,
-  :root[data-platform="win32"] .chat-content-card::before {
-    display: none;
-  }
-  [data-sidebar-state="collapsed"] .chat-content-card::before {
-    opacity: 0;
-  }
-  [data-sidebar-state="expanded"]:has([data-placement="content-seam"]:hover) .chat-content-card {
-    --seam-line: color-mix(in srgb, var(--foreground) 30%, transparent);
-  }
-
   .chat-surface-divider {
     background-image: linear-gradient(var(--app-surface-divider), var(--app-surface-divider));
     background-repeat: no-repeat;
@@ -1447,58 +1437,97 @@ button {
   background: color-mix(in srgb, var(--background) 30%, transparent);
 }
 
-/* The sash between two panels (Sash in lib/resizable.tsx). At rest it draws nothing: the panels' own 1px border is
-   the only line. The grip is a wider invisible band centered on that border. After a short hover it fills with the
-   provider's accent; the keyboard focus and a drag fill it at once, and it stays filled until the drag ends. */
+/* The sash between two panels (Sash in lib/resizable.tsx), modeled on VS Code (base/browser/ui/sash/sash.css).
+   It draws nothing at rest: the 1px line is the panel's own border. It is an absolute 4px grip centered on that
+   border, above the content. The `hover` class, added after 300ms (Sash), the `active` class of a drag and the
+   keyboard focus paint its 4px ::before in VS Code's focusBorder (--app-focus-border). */
 .sash {
   --sash-size: 4px;
-  --sash-hover-delay: 300ms;
-  --sash-hover-border: var(--color-text-accent);
+  --sash-hover-border: var(--app-focus-border);
   position: absolute;
-  z-index: 20;
+  z-index: 35;
   touch-action: none;
   outline: none;
-  background-color: transparent;
-  transition: background-color 0.1s ease-out;
 }
 .sash--vertical {
   inset-block: 0;
   left: calc(var(--sash-size) / -2);
   width: var(--sash-size);
-  cursor: col-resize;
+  cursor: ew-resize;
 }
 .sash--horizontal {
   inset-inline: 0;
   top: calc(var(--sash-size) / -2);
   height: var(--sash-size);
-  cursor: row-resize;
+  cursor: ns-resize;
 }
-.sash:hover {
-  background-color: var(--sash-hover-border);
-  transition-delay: var(--sash-hover-delay);
-}
-.sash:focus-visible,
-.sash[data-active] {
-  background-color: var(--sash-hover-border);
-  transition-delay: 0s;
-}
-body:has(.sash[data-active]) {
-  user-select: none;
-}
-body:has(.sash--vertical[data-active]) {
+:root[data-platform="darwin"] .sash--vertical {
   cursor: col-resize;
 }
-body:has(.sash--horizontal[data-active]) {
+:root[data-platform="darwin"] .sash--horizontal {
+  cursor: row-resize;
+}
+.sash--vertical.sash--minimum {
+  cursor: e-resize;
+}
+.sash--vertical.sash--maximum {
+  cursor: w-resize;
+}
+.sash--horizontal.sash--minimum {
+  cursor: s-resize;
+}
+.sash--horizontal.sash--maximum {
+  cursor: n-resize;
+}
+.sash::before {
+  content: "";
+  position: absolute;
+  pointer-events: none;
+  background: transparent;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .sash::before {
+    transition: background-color 0.1s ease-out;
+  }
+}
+.sash--vertical::before {
+  inset-block: 0;
+  left: calc(50% - (var(--sash-size) / 2));
+  width: var(--sash-size);
+}
+.sash--horizontal::before {
+  inset-inline: 0;
+  top: calc(50% - (var(--sash-size) / 2));
+  height: var(--sash-size);
+}
+.sash.hover::before,
+.sash.active::before,
+.sash:focus-visible::before {
+  background: var(--sash-hover-border);
+}
+body:has(.sash.active) {
+  user-select: none;
+}
+body:has(.sash--vertical.active) {
+  cursor: ew-resize;
+}
+body:has(.sash--horizontal.active) {
+  cursor: ns-resize;
+}
+:root[data-platform="darwin"] body:has(.sash--vertical.active) {
+  cursor: col-resize;
+}
+:root[data-platform="darwin"] body:has(.sash--horizontal.active) {
   cursor: row-resize;
 }
 @media (forced-colors: active) {
   .sash {
     forced-color-adjust: none;
   }
-  .sash:hover,
-  .sash:focus-visible,
-  .sash[data-active] {
-    background-color: Highlight;
+  .sash.hover::before,
+  .sash.active::before,
+  .sash:focus-visible::before {
+    background: Highlight;
   }
 }
 

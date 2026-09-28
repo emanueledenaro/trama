@@ -93,10 +93,14 @@ export function sashKeyDelta(side: SashSide, key: string, shift: boolean): numbe
   return null;
 }
 
+/** How long the pointer rests on a sash before it lights up, as in VS Code. */
+export const SASH_HOVER_DELAY = 300;
+
 /**
- * The separator between two panels, the same for every resizable panel. At rest it adds nothing to the panel's own
- * 1px border: it is a wider invisible grip centered on that border. After a short hover, while focused from the
- * keyboard and while dragged, it fills with the provider's accent (index.css, `.sash`).
+ * The separator between two panels, the same for every resizable panel, modeled on VS Code's sash
+ * (src/vs/base/browser/ui/sash/sash.ts). It draws nothing at rest: the line is the panel's own 1px border, and the
+ * sash is a 4px invisible grip centered on it. After 300ms of hover (`hover` class), while dragged (`active`) and
+ * while focused from the keyboard it shows a 4px strip in VS Code's focusBorder color (index.css, `.sash`).
  * Drag to resize, double-click or Home to return to the default size, arrow keys to step.
  * The sash sits on the start edge (left or top) of its positioned parent.
  * A click without dragging calls `onClick`, so an edge that used to toggle the panel keeps doing it.
@@ -126,11 +130,19 @@ export function Sash({
 }) {
   const drag = useRef<{ at: number; size: number; moved: boolean } | null>(null);
   const [active, setActive] = useState(false);
+  const [hover, setHover] = useState(false);
+  const hoverDelay = useRef<number | null>(null);
   // A single click waits for a possible second one, so a double-click resets without also toggling.
   const pendingClick = useRef<number | null>(null);
   // Pointer events carry no click count, so the click itself decides; a drag that just ended is not a click.
   const lastDragMoved = useRef(false);
-  useEffect(() => () => window.clearTimeout(pendingClick.current ?? undefined), []);
+  useEffect(
+    () => () => {
+      window.clearTimeout(pendingClick.current ?? undefined);
+      window.clearTimeout(hoverDelay.current ?? undefined);
+    },
+    [],
+  );
   const orientation = sashOrientation(side);
   const direction = side === "left" || side === "top" ? -1 : 1;
   const pointerAt = (event: React.PointerEvent) => (orientation === "vertical" ? event.clientX : event.clientY);
@@ -148,12 +160,29 @@ export function Sash({
       aria-valuemin={min}
       aria-valuemax={max}
       tabIndex={0}
-      data-active={active || undefined}
-      className={cn("sash no-drag", `sash--${orientation}`, className)}
+      className={cn(
+        "sash no-drag",
+        `sash--${orientation}`,
+        hover && "hover",
+        active && "active",
+        size <= min && "sash--minimum",
+        size >= max && "sash--maximum",
+        className,
+      )}
+      onPointerEnter={() => {
+        window.clearTimeout(hoverDelay.current ?? undefined);
+        hoverDelay.current = window.setTimeout(() => setHover(true), SASH_HOVER_DELAY);
+      }}
+      onPointerLeave={() => {
+        window.clearTimeout(hoverDelay.current ?? undefined);
+        setHover(false);
+      }}
       onPointerDown={(event) => {
         if (event.button !== 0) return;
         event.currentTarget.setPointerCapture(event.pointerId);
         drag.current = { at: pointerAt(event), size, moved: false };
+        window.clearTimeout(hoverDelay.current ?? undefined);
+        setHover(true);
         setActive(true);
         onDragChange?.(true);
       }}

@@ -46,7 +46,7 @@ export function SideBar({ size }: { size: SideBarWidth }) {
         if (event.key === "Escape" && !event.defaultPrevented) setInspector(null);
       }}
       className={cn(
-        "app-sidebar-surface @container/inspector relative flex h-full shrink-0 flex-col border-r border-[color:var(--app-panel-border,var(--app-surface-divider))]",
+        "app-sidebar-surface @container/inspector relative flex h-full shrink-0 flex-col border-r border-[color:var(--app-panel-border)]",
         !size.resizing && "transition-[width] duration-200 ease-out",
       )}
       style={{ width: size.width }}
