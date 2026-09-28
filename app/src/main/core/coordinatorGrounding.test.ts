@@ -5,13 +5,14 @@ import { declareCandidate, recordEvidence, recordTechnicalReview } from "./candi
 import {
   availableButtons,
   currentStateText,
-  MISSING_BUTTON_TITLE,
+  missingButtonTitle,
   missingButtonDetail,
   missingButtonFeedback,
   missingButtons,
 } from "./coordinatorGrounding";
 import { appendEvent, emptyDocument } from "./document";
 import { answerDecisionRequest, createDecisionRequest, createMandateRequest, grantMandate } from "./pact";
+import { setPersonLanguage } from "./personLanguage";
 import { assign, confirmTeam, endTurn, proposeTeam } from "./team";
 
 const at = (minute: number) => new Date(Date.UTC(2026, 8, 27, 12, minute));
@@ -148,7 +149,7 @@ describe("missingButtonFeedback: the next turn reads the button that was not the
   it("sends back the names from the activity of the previous reply in the same dialog", () => {
     const document = shop();
     const there = [{ move: "grantMandate" as const, actor: "person" as const, label: "Concedi il mandato" }];
-    appendEvent(document, "trama", { type: "activity", title: MISSING_BUTTON_TITLE, detail: missingButtonDetail(["Verifica il candidato"], there), tone: "error" }, "r3");
+    appendEvent(document, "trama", { type: "activity", title: missingButtonTitle(), detail: missingButtonDetail(["Verifica il candidato"], there), tone: "error" }, "r3");
     request(document, "r4");
     request(document, "g1", "G-1");
     const feedback = missingButtonFeedback(document, "r4");
@@ -159,6 +160,25 @@ describe("missingButtonFeedback: the next turn reads the button that was not the
     expect(missingButtonFeedback(document, "g1")).toBeNull();
     expect(missingButtonFeedback(document, "r1")).toBeNull();
     expect(missingButtonFeedback(document, "missing")).toBeNull();
+  });
+
+  it("writes the activity in English and still reads it back for the Coordinator (issue #301)", () => {
+    setPersonLanguage("en");
+    try {
+      const document = shop();
+      const there = [{ move: "grantMandate" as const, actor: "person" as const, label: "Concedi il mandato" }];
+      const detail = missingButtonDetail(["Verifica il candidato"], there);
+      expect(missingButtonTitle()).toBe("Cited button that is not there now");
+      expect(detail).toBe("The Coordinator named the button “Verifica il candidato”, which is not there now. Now you can use: “Concedi il mandato”.");
+      appendEvent(document, "trama", { type: "activity", title: missingButtonTitle(), detail, tone: "error" }, "r3");
+      request(document, "r4");
+      setPersonLanguage("it");
+      const feedback = missingButtonFeedback(document, "r4");
+      expect(feedback).toContain("«Verifica il candidato»");
+      expect(feedback).not.toContain("Concedi il mandato");
+    } finally {
+      setPersonLanguage("it");
+    }
   });
 });
 

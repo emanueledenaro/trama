@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import type { CandidateEvidence, ProjectDocument } from "@shared/domain";
 import { GATE_ROLES, NO_SPEC, NOTHING_TO_REPORT, latestGate, reviewOutcome } from "@shared/gate";
 import { declareCandidate, recordEvidence } from "./candidates";
@@ -24,9 +24,10 @@ import {
   pendingReturns,
   readReviewerAnswer,
   returnFindings,
+  returnWaiting,
   ROLE_BRIEFS,
   reviewerTurn,
-  SECRET_NOTE,
+  secretNote,
   SESSION_ROLES,
   stopAtChecks,
   stopAtEnvironment,
@@ -36,6 +37,7 @@ import {
 } from "./gate";
 import { loadNativeSkill } from "./nativeSkills";
 import { answerDecisionRequest, createDecisionRequest, grantMandate } from "./pact";
+import { setPersonLanguage } from "./personLanguage";
 import { resumeInput } from "./specialistBriefing";
 import { assign, beginTurn, confirmTeam, endTurn, proposeTeam, recordThread, recordWorkspace, reopenForFindings } from "./team";
 
@@ -286,7 +288,7 @@ describe("the candidate gate (W10)", () => {
     stopAtSecrets(gate, ["chiave API in NOTE.md"], at(4));
     expect(gateReview(gate, "security")).toMatchObject({ status: "done", threadId: null, findings: [expect.objectContaining({ severity: "blocking", title: "Segreto nel diff: chiave API in NOTE.md" })] });
     expect(gateReview(gate, "regressionGuardian").status).toBe("running");
-    for (const role of ["specReviewer", "cleanCode", "performance", "ux", "devops", "documentation"] as const) expect(gateReview(gate, role)).toMatchObject({ status: "skipped", report: SECRET_NOTE });
+    for (const role of ["specReviewer", "cleanCode", "performance", "ux", "devops", "documentation"] as const) expect(gateReview(gate, role)).toMatchObject({ status: "skipped", report: secretNote() });
     finishReview(gate, "regressionGuardian", guardianOutcome([]), at(5));
     closeGate(gate, at(6));
     expect(gate.status).toBe("blocked");
@@ -320,5 +322,34 @@ describe("the candidate gate (W10)", () => {
     expect(gate.status).toBe("failed");
     expect(gate.reviews.every((r) => r.status === "failed")).toBe(true);
     expect(gate.failure).toContain("rilanciala");
+  });
+});
+
+describe("the gate in the person's language (issue #301)", () => {
+  afterEach(() => setPersonLanguage("it"));
+
+  it("writes the notes, the findings and the summary in English", () => {
+    setPersonLanguage("en");
+    const document = project();
+    const { candidate } = candidateOf(document);
+    const gate = openGate(document, candidate, at(3));
+    stopAtSecrets(gate, ["API key in NOTE.md"], at(4));
+    expect(gateReview(gate, "security").findings[0]!.title).toBe("Secret in the diff: API key in NOTE.md");
+    expect(gateReview(gate, "ux").report).toBe("Did not start: the diff contains a secret, and Trama does not send it to the models.");
+    finishReview(gate, "regressionGuardian", guardianOutcome([]), at(5));
+    closeGate(gate, at(6));
+    expect(gateSummary(document, gate)).toContain(": 1 blocking finding, the first: Secret in the diff: API key in NOTE.md.");
+    expect(gateSummary(document, gate)).toContain("The other reviewers did not start: the diff contains a secret");
+    expect(returnWaiting("no_worktree", "")).toBe("The assignment's working copy is gone: a new assignment is needed.");
+  });
+
+  it("recognizes a note written in the other language", () => {
+    const document = project();
+    const { candidate } = candidateOf(document);
+    const gate = openGate(document, candidate, at(3));
+    stopAtSecrets(gate, ["chiave API in NOTE.md"], at(4));
+    setPersonLanguage("en");
+    expect(gateSummary(document, gate)).toContain("The other reviewers did not start");
+    expect(gateSummary(document, gate)).not.toContain("Non è partito");
   });
 });

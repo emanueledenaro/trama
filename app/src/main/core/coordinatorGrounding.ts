@@ -1,8 +1,10 @@
 import type { Candidate, NextMove, ProjectDocument } from "@shared/domain";
 import { pendingMandateRequest } from "@shared/domain";
 import { FIXED_BANS } from "@shared/fixedBans";
+import { LANGUAGES, translate } from "@shared/i18n";
 import { autonomyLine } from "./autonomousCycle";
 import { inspectCandidate, latestCandidate, worktreeAssessmentCurrent } from "./candidates";
+import { t } from "./personLanguage";
 import { COORDINATOR_MOVES, type CoordinatorMove, nextStepViews, PERSON_MOVE_LABELS, workRequests, workState } from "./workPhase";
 
 /**
@@ -11,10 +13,13 @@ import { COORDINATOR_MOVES, type CoordinatorMove, nextStepViews, PERSON_MOVE_LAB
  * never from its memory of the thread. Trama checks each reply and flags a step button it names that is not there.
  */
 
-/** The heading of the per-turn section, also named in the Coordinator's instructions. */
+/** The heading of the per-turn section, also named in the Coordinator's instructions. @model-text */
 export const CURRENT_STATE_HEADING = "## Stato attuale di Trama";
 /** The activity Trama records when a reply names a step button the person does not have. */
-export const MISSING_BUTTON_TITLE = "Pulsante citato che ora non c'è";
+export const missingButtonTitle = () => t("main.coordinatorGrounding.missingTitle");
+/** Whether an activity title is this one, in any language: the event keeps the words of the language it was recorded in. */
+const isMissingButtonTitle = (title: string) => LANGUAGES.some((language) => title === translate(language, "main.coordinatorGrounding.missingTitle"));
+/** @model-text */
 const FEEDBACK_HEADING = "## Pulsante che non c'è";
 
 /** How many unmerged candidates the section lists, newest first. */
@@ -25,6 +30,7 @@ const FILES_SHOWN = 5;
 /**
  * Every step button Trama can show, with the words that name it: the person's moves, with the mandate card's own
  * button, and the Coordinator's moves, shown as a button when it declares them as the next step.
+ * @model-text: the words and patterns that read the Coordinator's replies.
  */
 const BUTTON_WORDS: Array<{ move: NextMove; label: string; pattern: string }> = [
   ...Object.entries(PERSON_MOVE_LABELS).map(([move, label]) => ({ move: move as NextMove, label, pattern: escape(label) })),
@@ -44,6 +50,7 @@ const CLOSE = "[\"”»'`*_]";
 /**
  * A button named as a button: after "pulsante", "bottone", "tasto", "scheda" or a verb that presses it ("premi",
  * "clicca", "usa"), or wrapped in quotes or emphasis. The same words in a plain sentence are not a citation.
+ * @model-text: a pattern that reads the Coordinator's replies.
  */
 function citation(pattern: string): RegExp {
   const lead = `(?:\\b(?:pulsante|bottone|tasto|scheda|premi|premere|clicca|cliccare|tocca|toccare|usa|usare|usando|seleziona)\\s+(?:su\\s+|il\\s+|la\\s+|sul\\s+|sulla\\s+)?${OPEN}*\\s*${pattern}\\b)`;
@@ -101,19 +108,22 @@ export function missingButtons(reply: string, available: VisibleButton[]): strin
   return missing;
 }
 
+/** Button labels as the Coordinator reads them. */
 const quoted = (labels: string[]) => labels.map((l) => `«${l}»`).join(", ");
+/** Button labels as the person reads them, with the quote marks of the person's language. */
+const shown = (labels: string[]) => labels.map((label) => t("main.coordinatorGrounding.quoted", { label })).join(", ");
 
 /** The activity detail for the person: the button named, and the ones there are now. */
 export function missingButtonDetail(missing: string[], available: VisibleButton[]): string {
-  const named = missing.length === 1 ? `il pulsante ${quoted(missing)}, che ora non c'è` : `i pulsanti ${quoted(missing)}, che ora non ci sono`;
+  const named = t("main.coordinatorGrounding.named", { buttons: shown(missing), count: missing.length });
   const persons = available.filter((b) => b.actor === "person").map((b) => b.label);
-  const now = persons.length ? `Adesso puoi usare: ${quoted(persons)}.` : "Adesso non c'è un pulsante da premere.";
-  return `Il Coordinatore ha nominato ${named}. ${now}`;
+  const now = persons.length ? t("main.coordinatorGrounding.canUse", { buttons: shown(persons) }) : t("main.coordinatorGrounding.noButton");
+  return t("main.coordinatorGrounding.detail", { named, now });
 }
 
 /**
  * What the Coordinator reads when its previous reply in the dialog of `requestId` named a button that was not there,
- * from the activity Trama recorded then. Null otherwise.
+ * from the activity Trama recorded then. Null otherwise. @model-text
  */
 export function missingButtonFeedback(document: ProjectDocument, requestId: string): string | null {
   const index = document.requests.findIndex((r) => r.id === requestId);
@@ -121,10 +131,12 @@ export function missingButtonFeedback(document: ProjectDocument, requestId: stri
   const goalId = document.requests[index]!.goalId ?? null;
   const previous = document.requests.slice(0, index).findLast((r) => (r.goalId ?? null) === goalId);
   if (!previous) return null;
-  const flagged = document.events.findLast((e) => e.requestId === previous.id && e.content.type === "activity" && e.content.title === MISSING_BUTTON_TITLE);
+  const flagged = document.events.findLast((e) => e.requestId === previous.id && e.content.type === "activity" && isMissingButtonTitle(e.content.title));
   if (flagged?.content.type !== "activity") return null;
-  // Only the first sentence names the missing buttons; the next one lists the buttons there were.
-  const names = flagged.content.detail?.split(". Adesso")[0]?.match(/«[^»]+»/g)?.join(", ") ?? "";
+  // Only the first sentence names the missing buttons; the next one lists the buttons there were. The detail is in the
+  // language the person read when Trama recorded it: Italian quotes the labels with «», English with “”.
+  const labels = flagged.content.detail?.split(/\. (?:Adesso|Now) /)[0]?.match(/«[^»]+»|“[^”]+”/g) ?? [];
+  const names = quoted(labels.map((label) => label.slice(1, -1)));
   return [
     FEEDBACK_HEADING,
     `La tua risposta precedente diceva alla persona di usare ${names}, ma quel pulsante non c'era: la persona l'ha cercato senza trovarlo. Nomina solo i pulsanti elencati in "Stato attuale di Trama", o quello che dichiari in questo turno con declare_next_step, con le stesse parole, e correggi l'indicazione di prima in una riga.`,
@@ -133,7 +145,7 @@ export function missingButtonFeedback(document: ProjectDocument, requestId: stri
 
 /**
  * The state the Coordinator reads at the start of every turn (issue #269): the buttons the person sees, the mandate,
- * the plan of the work with its slices and the open candidates, computed now from the document. Pure.
+ * the plan of the work with its slices and the open candidates, computed now from the document. Pure. @model-text
  */
 export function currentStateText(document: ProjectDocument, requestId: string, headSHA: string | null = null): string {
   const buttons = availableButtons(document, requestId);
@@ -152,6 +164,7 @@ export function currentStateText(document: ProjectDocument, requestId: string, h
   return lines.join("\n");
 }
 
+/** @model-text */
 function mandateLine(document: ProjectDocument): string {
   const mandate = document.mandate;
   const active =
@@ -164,11 +177,12 @@ function mandateLine(document: ProjectDocument): string {
   return pending ? `${active} Proposta di mandato ${pending.id} chiesta il ${pending.askedAt}: aspetta la risposta della persona.` : `${active} Nessuna proposta di mandato in attesa.`;
 }
 
-/** The fixed bans (issue #244): Trama refuses them by rule; the line tells the Coordinator not to plan work on them. */
+/** The fixed bans (issue #244): Trama refuses them by rule; the line tells the Coordinator not to plan work on them. @model-text */
 function fixedBansLine(): string {
   return `Divieti fissi, esclusi da ogni mandato: ${FIXED_BANS.map((b) => b.label.toLowerCase()).join("; ")}. Trama li rifiuta prima che partano e li mette in "Aspetta te": non pianificarli e non cercare altre strade, restano alla persona.`;
 }
 
+/** @model-text */
 const SLICING_TEXT = {
   drafting: "fette in preparazione",
   proposed: "fette proposte, aspettano la conferma della persona",
@@ -176,6 +190,7 @@ const SLICING_TEXT = {
   failed: "divisione in fette non riuscita",
 } as const;
 
+/** @model-text */
 function planLines(document: ProjectDocument, requestId: string): string[] {
   const scope = workRequests(document, requestId);
   const plan = scope ? document.plans.filter((p) => p.requestId !== null && scope.has(p.requestId)).at(-1) : null;
@@ -187,6 +202,7 @@ function planLines(document: ProjectDocument, requestId: string): string[] {
   return [`Piano del lavoro ${plan.id}: stato ${plan.status}, ${slices}.`];
 }
 
+/** @model-text */
 function candidateLines(document: ProjectDocument, headSHA: string | null): string[] {
   const assignments = document.team.specialists.flatMap((s) => s.assignments.map((a) => ({ assignment: a, specialist: s })));
   const open = assignments
@@ -203,11 +219,13 @@ const specialistOf = (document: ProjectDocument, candidateId: string) => {
   return document.team.specialists.find((s) => s.id === candidate?.specialistId)?.name ?? null;
 };
 
+/** @model-text */
 const files = (list: string[]) => (list.length > FILES_SHOWN ? `${list.slice(0, FILES_SHOWN).join(", ")} e altri ${list.length - FILES_SHOWN}` : list.join(", "));
 
 /**
  * Where a candidate stands, in plain words: ready for the person only when nothing blocks it and the review approved it.
  * `headSHA` is the checkout's current head, as the candidate reports use it: a candidate built on an older base is blocked.
+ * @model-text
  */
 function candidateState(document: ProjectDocument, candidate: Candidate, headSHA: string | null): string {
   const problems: string[] = [];

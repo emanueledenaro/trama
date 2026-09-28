@@ -128,7 +128,7 @@ import { candidateGoalId, findGoal, projectGoals, requestGoalId } from "@shared/
 import { focusTask, focusText, focusView, pauseTask, resumeTask } from "./core/focus";
 import { statusLine } from "./core/statusLine";
 import { COORDINATOR_MOVES, type CoordinatorMove, nextStepViews, PHASE_LABELS, workState, workStateText } from "./core/workPhase";
-import { availableButtons, currentStateText, MISSING_BUTTON_TITLE, missingButtonDetail, missingButtonFeedback, missingButtons } from "./core/coordinatorGrounding";
+import { availableButtons, currentStateText, missingButtonDetail, missingButtonFeedback, missingButtons, missingButtonTitle } from "./core/coordinatorGrounding";
 import {
   AUTOMATIC_MOVE_DETAIL,
   automaticMove,
@@ -285,7 +285,7 @@ import { blockingFindings, GATE_STATUS, latestGate } from "@shared/gate";
 import { fixedBanInfo } from "@shared/fixedBans";
 import { interfaceFiles } from "@shared/interfaceChange";
 import { roleProfile } from "@shared/roster";
-import { confirmationModel, confirmationTurn, confirmFinding, NO_STRONGER_MODEL, readConfirmation, recheckFindings } from "./core/auditFindings";
+import { confirmationModel, confirmationTurn, confirmFinding, noStrongerModel, readConfirmation, recheckFindings } from "./core/auditFindings";
 import { AuditError, type AxisName, type AxisTurn, auditSpec, axisThread, axisTurn, beginAxes, beginVerification, closeAudit, failAudit, findAudit, finishAxis, openAudit, readAxisAnswer, recordAuditCheck } from "./core/audit";
 import { approveCandidate, candidateReport, contentFingerprint, findCandidate, latestCandidate, recordEvidence, recordTechnicalReview } from "./core/candidates";
 import { assessBranchDivergence } from "./core/branchDivergence";
@@ -2671,7 +2671,7 @@ export class TramaController {
         const buttons = availableButtons(document, request.id);
         const missing = missingButtons(reply, buttons);
         if (missing.length) {
-          appendEvent(document, "trama", { type: "activity", title: MISSING_BUTTON_TITLE, detail: missingButtonDetail(missing, buttons), tone: "error" }, request.id);
+          appendEvent(document, "trama", { type: "activity", title: missingButtonTitle(), detail: missingButtonDetail(missing, buttons), tone: "error" }, request.id);
         }
         // A write in this turn already reset its counter: the review it would have started is not due.
         const writes = this.turnLearningWrites.get(request.id) ?? [];
@@ -5281,7 +5281,7 @@ export class TramaController {
     const document = project.document;
     const model = confirmationModel(runner.model, document.coordinator.threadModel ?? this.coordinatorModel(document, runner.provider), this.state.providers[runner.provider]?.models ?? []);
     if (!model) {
-      for (const { finding } of serious) confirmFinding(finding, { failure: NO_STRONGER_MODEL });
+      for (const { finding } of serious) confirmFinding(finding, { failure: noStrongerModel() });
       return;
     }
     const client = createRuntime(runner.provider, { executable: runner.provider === "codex" ? this.host.codexExecutable : null, requestTimeoutMs: 15_000 });
