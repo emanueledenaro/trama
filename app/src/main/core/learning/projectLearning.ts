@@ -45,6 +45,8 @@ export interface MemoryProposal {
   operations?: string[];
   /** The entry each old_text matched when the review proposed it: approval needs the same match. */
   expected?: { oldText: string; entry: string | null }[];
+  /** Trama's own proposal for a memory over its limit (issue #305); absent for a review's proposal. */
+  kind?: "consolidation";
 }
 
 const payloadOperations = (payload: JsonRecord): JsonRecord[] =>
@@ -181,7 +183,7 @@ export class ProjectLearning {
       });
   }
 
-  stageProposal(proposal: { target: MemoryTarget; summary: string; payload: JsonRecord }): string {
+  stageProposal(proposal: Pick<MemoryProposal, "target" | "summary" | "payload" | "kind">): string {
     const id = randomUUID().slice(0, 8);
     const operations = payloadOperations(proposal.payload).map(batchOpLine);
     const expected = this.matches(proposal.target, proposal.payload);
@@ -189,15 +191,39 @@ export class ProjectLearning {
     return id;
   }
 
+  /**
+   * A store over its limit (after the move from the old single text, or a file edited by hand) becomes a proposal
+   * for the person instead of a loop of refused writes (issue #305): the oldest notes leave until the rest fits.
+   * Nothing changes before the person applies it; one proposal per store at a time.
+   */
+  proposeConsolidation(target: MemoryTarget): string | null {
+    if (!this.memory.targetEnabled(target)) return null;
+    if (this.proposals().some((p) => p.kind === "consolidation" && p.target === target)) return null;
+    const entries = this.currentEntries(target);
+    const limit = this.memory.limitFor(target);
+    const size = (list: string[]) => [...list.join(ENTRY_DELIMITER)].length;
+    const chars = size(entries);
+    if (chars <= limit) return null;
+    const kept = [...entries];
+    const removed: string[] = [];
+    while (kept.length > 1 && size(kept) > limit) removed.push(kept.shift()!);
+    if (!removed.length || size(kept) > limit) return null;
+    const format = (n: number) => n.toLocaleString("it-IT");
+    const summary =
+      `${target === "user" ? "Il profilo" : "La memoria del progetto"} supera il limite (${format(chars)} su ${format(limit)} caratteri). ` +
+      "Trama propone di togliere le note più vecchie; puoi anche accorciarle a mano.";
+    return this.stageProposal({ target, summary, kind: "consolidation", payload: { target, operations: removed.map((entry) => ({ action: "remove", old_text: entry })) } });
+  }
+
   /** The person approves or discards a proposal; an approved one is applied as they wrote it. */
   resolveProposal(id: string, approve: boolean): JsonRecord {
     const all = this.proposals();
     const proposal = all.find((p) => p.id === id);
-    if (!proposal) return { success: false, error: `Unknown proposal ${id}.` };
+    if (!proposal) return { success: false, code: "unknown_proposal", error: `Unknown proposal ${id}.` };
     if (approve && proposal.expected) {
       const now = this.matches(proposal.target, proposal.payload);
       const changed = proposal.expected.some((e, i) => now[i]?.entry !== e.entry);
-      if (changed) return { success: false, error: "La memoria è cambiata dopo la proposta: le voci che toccava non sono più le stesse. Scartala." };
+      if (changed) return { success: false, code: "stale_proposal", error: "La memoria è cambiata dopo la proposta: le voci che toccava non sono più le stesse. Scartala." };
     }
     const result = approve ? applyMemoryProposal(this.memory, proposal.payload) : { success: true, message: "Discarded." };
     if (result.success === true) writeJson(join(this.projectDir, "proposals.json"), all.filter((p) => p.id !== id));
@@ -245,10 +271,11 @@ export class ProjectLearning {
       skills: this.skillViews(),
       archivedSkills: this.skills.archivedNames(),
       // The review's own words stay in proposals.json; the person reads the changes in Italian (issue #270).
-      proposals: this.proposals().map(({ id, target, createdAt, payload }) => ({
+      // Trama's own consolidation proposal is already written for the person (issue #305).
+      proposals: this.proposals().map(({ id, target, createdAt, payload, kind, summary }) => ({
         id,
         target,
-        summary: memoryProposalSummary(payload),
+        summary: kind === "consolidation" ? summary : memoryProposalSummary(payload),
         createdAt,
         operations: payloadOperations(payload).map(memoryChangeLine),
       })),
