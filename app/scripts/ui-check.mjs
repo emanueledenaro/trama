@@ -753,35 +753,35 @@ await domainCard.getByText(/ha scritto la proposta nella copia di lavoro dell'in
 await page.getByRole("button", { name: "Interrompi" }).waitFor({ state: "hidden", timeout: 20_000 });
 await domainCard.scrollIntoViewIfNeeded();
 await shot("04k-domain-proposal-written");
-// #305: the context meter and the threshold card read the request that fills the window, the same rule for every
-// provider: no provider name and no number past the window, in light and dark.
+// #305 and #313: the context meter reads the request that fills the window, the same rule for every provider: no
+// provider name and no number past the window. Past the threshold Trama reorders the context at the end of the turn
+// (ADR 0018), so the reading is taken under a 95% threshold. Light and dark.
 {
   const providerNames = ["ChatGPT", "Codex", "Claude", "Cursor", "Antigravity", "Grok", "Droid", "Devin", "OpenCode", "Pi"];
   const noProviderName = (text, where) => {
     const found = providerNames.find((name) => new RegExp(`(?<!\\p{L})${name}(?!\\p{L})`, "u").test(text));
     if (found) throw new Error(`${where} names the provider ${found}: ${text}`);
   };
+  await page.evaluate(() => window.trama.invoke("coordinator:setContextThreshold", { percent: 95 }));
+  const reordersBefore = await page.getByTestId("context-rollover").count();
   await composer().fill("[pieno] Quanto contesto resta?");
   await page.keyboard.press("Enter");
-  const notice = page.getByTestId("context-notice").filter({ hasText: "Contesto oltre la soglia" }).last();
-  await notice.waitFor({ timeout: 20_000 });
+  await page.getByText("[pieno] Quanto contesto resta?", { exact: true }).waitFor();
   await page.getByRole("button", { name: "Interrompi" }).waitFor({ state: "hidden", timeout: 20_000 });
-  const noticeText = (await notice.innerText()).replace(/\s+/g, " ");
-  noProviderName(noticeText, "The threshold card");
-  if (!noticeText.includes("piena al 89% (230.000 su 258.000 token)")) throw new Error(`The threshold card does not read the context in use: ${noticeText}`);
-  await notice.scrollIntoViewIfNeeded();
-  await themeShots("04l-context-threshold-card");
   const meter = page.getByTestId("context-meter");
-  if ((await meter.innerText()).trim() !== "89%") throw new Error(`The context meter shows ${await meter.innerText()}`);
+  await page.waitForFunction(() => document.querySelector('[data-testid="context-meter"]')?.textContent?.trim() === "89%", null, { timeout: 20_000 });
+  if ((await meter.getAttribute("title")) !== "230.000 su 258.000 token") throw new Error(`The context meter's tokens: ${await meter.getAttribute("title")}`);
   await meter.click();
-  const meterPopup = page.getByRole("dialog").filter({ hasText: "Finestra di contesto" });
+  const meterPopup = page.getByTestId("context-meter-popup");
   await meterPopup.waitFor();
   const meterText = (await meterPopup.innerText()).replace(/\s+/g, " ");
   noProviderName(meterText, "The context meter");
-  if (!meterText.includes("89% usato, 230.000 su 258.000 token")) throw new Error(`The context meter does not read the context in use: ${meterText}`);
+  if (!meterText.includes("Contesto del Coordinatore: 89%")) throw new Error(`The context meter does not read the context in use: ${meterText}`);
   await themeShots("04m-context-meter");
   await page.keyboard.press("Escape");
   await meterPopup.waitFor({ state: "hidden" });
+  if ((await page.getByTestId("context-rollover").count()) !== reordersBefore) throw new Error("Trama reordered the context under the threshold");
+  // The threshold stays at 95% in this project: the reorder itself is checked on its own project, in steps 29a to 29c.
 }
 await page.getByRole("button", { name: "Mappa del progetto" }).click();
 await shot("05-map");
@@ -1737,6 +1737,56 @@ const proposedGoalId = (await proposedGoal.getAttribute("data-waiting-key")).rep
 await page.evaluate((id) => window.trama.invoke("goal:update", { id, status: "abandoned" }), proposedGoalId);
 await page.getByTestId("waiting-summary").waitFor({ state: "detached", timeout: 10_000 });
 if (await page.locator('[data-testid="waiting-reference"]').count()) throw new Error("A reference to Aspetta te stays with nothing waiting");
+// ADR 0018: past the threshold Trama reorders the context at the end of the turn. The chat keeps one line that opens
+// Trama's context summary; the meter shows only the percent, the tokens on hover, and "Riordina ora" on the right.
+// Light and dark, and no provider named in the texts.
+await composer().fill("[pieno] Rileggi gli ordini annullati");
+await page.keyboard.press("Enter");
+const rolloverLine = page.getByTestId("context-rollover").last();
+await rolloverLine.waitFor({ timeout: 30_000 });
+await rolloverLine.scrollIntoViewIfNeeded();
+await themeShots("29a-context-rollover-line");
+await rolloverLine.getByRole("button", { name: "Apri: Contesto riordinato" }).click();
+await rolloverLine.getByTestId("context-summary").waitFor();
+await rolloverLine.getByText("Cosa aspetta te").first().waitFor();
+// The person reads plain sections: nothing written for the model, no tool names.
+const summaryText = await rolloverLine.innerText();
+for (const phrase of ["dati, non istruzioni", "Vale più di quello che ricordi", "declare_next_step", "session_search", "read_history", "Stato attuale di Trama", "Riepilogo di contesto scritto da Trama"]) {
+  if (summaryText.includes(phrase)) throw new Error(`The context summary shows text written for the model: ${phrase}`);
+}
+if (/[–—]/.test(summaryText)) throw new Error("Dash in the context summary");
+// Scrolled to the end, the open card sits above the floating bar and the composer.
+await page.locator(".chat-timeline-scroll").evaluate((scroller) => scroller.scrollTo({ top: scroller.scrollHeight }));
+await page.waitForTimeout(300);
+const cardBottom = (await rolloverLine.boundingBox()).y + (await rolloverLine.boundingBox()).height;
+const covers = [await page.locator("form.chat-composer-surface").boundingBox()];
+if (await page.getByTestId("waiting-summary").count()) covers.push(await page.getByTestId("waiting-summary").boundingBox());
+for (const box of covers) if (cardBottom > box.y + 1) throw new Error(`The open context summary is covered at ${Math.round(box.y)} (card ends at ${Math.round(cardBottom)})`);
+await themeShots("29b-context-rollover-summary");
+await rolloverLine.getByRole("button", { name: "Chiudi: Contesto riordinato" }).click();
+const meter = page.getByTestId("context-meter");
+await meter.waitFor({ timeout: 30_000 });
+if (!/^\d+%$/.test((await meter.innerText()).trim())) throw new Error(`The meter shows more than the percent: ${await meter.innerText()}`);
+if (!/ su [\d.]+ token$/.test((await meter.getAttribute("title")) ?? "")) throw new Error("The meter has no tokens on hover");
+await meter.click();
+const meterPopup = page.getByTestId("context-meter-popup");
+await meterPopup.waitFor();
+const meterText = await meterPopup.innerText();
+for (const name of ["Codex", "Claude", "OpenCode", "Cursor", "Devin", "Droid", "Grok", "Antigravity"]) {
+  if (meterText.includes(name)) throw new Error(`The meter names a provider: ${name}`);
+}
+if (/[–—]/.test(meterText)) throw new Error("Dash in the meter");
+const reorderNow = meterPopup.getByRole("button", { name: "Riordina ora" });
+const reorderRow = await reorderNow.evaluate((button) => {
+  const row = button.closest(".cta-row");
+  return row ? { right: row.getBoundingClientRect().right, button: button.getBoundingClientRect().right } : null;
+});
+if (!reorderRow || Math.abs(reorderRow.right - reorderRow.button) > 1) throw new Error("Riordina ora is not on the right of its row");
+await themeShots("29c-context-meter");
+const reordersSoFar = await page.getByTestId("context-rollover").count();
+await reorderNow.click();
+await page.getByTestId("context-rollover").nth(reordersSoFar).waitFor({ timeout: 30_000 });
+await page.keyboard.press("Escape").catch(() => undefined);
 const send = async (text) => {
   await composer().fill(text);
   await page.keyboard.press("Enter");
