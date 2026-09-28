@@ -240,6 +240,7 @@ import { approvePactDemo, inspectPactDemo, runPactDemo } from "./core/pactDemo";
 import { readRepositoryFile, scanRepository } from "./core/repositoryScanner";
 import { messageStyle } from "./core/messageStyle";
 import { DEFAULT_LANGUAGE, isLanguage, type Language, languageFromSystem, type MessageKey, translate, translator } from "@shared/i18n";
+import { curatorRunLine, curatorRunView } from "@shared/curatorReport";
 import { toolErrorMessage, toolErrorsRule, withoutToolErrors } from "./core/toolErrors";
 import { installedSkillVersion, prepareSkills, rollbackSkills, SELECTED_SKILLS, SKILL_VERSION, type SetupReport, updateSkills } from "./core/skillSetup";
 import {
@@ -341,6 +342,7 @@ import { assessConflict, combineWorktrees } from "./core/conflicts";
 import { carryOverHypotheses, pendingScenarios, settleScenario } from "./core/semanticConflicts";
 import { pickSlices } from "./core/slicePicking";
 import { assessWorktreePair, worktreePairs } from "./core/worktreeConflicts";
+import { clampActiveSquads, clampDevelopersPerSquad } from "@shared/squads";
 import { clampParallelDevelopers, clampSharedDevelopers, sharedDevelopers } from "@shared/parallel";
 import { pullRequestBody, publishCandidate } from "./core/publication";
 import { agentPushActivity, checkedOutBranch, isGitPushCommand, pushActivity, pushAuthorization, pushRefusal, PushRefusedError } from "./core/push";
@@ -417,6 +419,7 @@ import {
   UNKNOWN_GITHUB_CLI,
 } from "@shared/onboarding";
 import { buildStudy, fingerprints, partsToInject, studyText } from "./core/study";
+import { formSquads, recordSquadFormation } from "./core/squads";
 import { CoordinatorToolServer, TOOL_SERVER_NAME, type ToolResult, toolFailure, toolSuccess } from "./core/toolServer";
 import { deliverNativeSkill, deliverNativeSkills, loadNativeSkill, type NativeSkill } from "./core/nativeSkills";
 import { answerRoute, askTramaComposerSkill, boundarySession, RouteError, routeReferences, skillInRouteBinding } from "./core/askTrama";
@@ -2324,6 +2327,7 @@ export class TramaController {
       const study = await buildStudy(project.snapshot, document, project.github);
       document.coordinator.study = study;
       if (this.runtime !== runtime || generation !== this.coordinatorGeneration) return;
+      this.formSquads(project);
       const previous = document.coordinator.threadId;
       const skills = await this.coordinatorSkills();
       // A model change while the skills loaded replaced this opening: its stopped runtime must not open a thread.
@@ -2676,6 +2680,7 @@ export class TramaController {
       const study = await buildStudy(project.snapshot, document, project.github);
       if (closed()) return;
       document.coordinator.study = study;
+      this.formSquads(project);
       const parts = partsToInject(study, document.coordinator.injectedStudy);
       const includeMemory = document.coordinator.memorySentToThread !== document.coordinator.threadId;
       const report = teamReport(document);
@@ -3158,10 +3163,24 @@ export class TramaController {
         // Told in Activity and in the recap from the record, not in the chat: the single moves stay out of it (Q6).
         const record = recordAutonomousStep(document, step, summary);
         taken.push(STEP_LABELS[record.move]);
+        // The squads follow the team, recorded as a step of their own (A10).
+        if (record.move === "confirmTeam" && this.formSquads(project)) taken.push(STEP_LABELS.formSquads);
       }
     }
     if (taken.length) this.changedIn(project);
     return taken;
+  }
+
+  /**
+   * After the study, and once the team exists, the Coordinator forms the squads from the areas of the Map and places the
+   * developers without one (A10). Told in Activity and in the recap, not in the chat. Returns whether anything changed.
+   */
+  private formSquads(project: ActiveProjectState): boolean {
+    const formation = formSquads(project.document, project.snapshot.modules);
+    if (!formation) return false;
+    recordSquadFormation(project.document, formation);
+    this.changedIn(project);
+    return true;
   }
 
   /** Makes one delegated step on the records, as the person's button would; returns what was confirmed, or null. */
@@ -5193,7 +5212,21 @@ export class TramaController {
       fallback: model ? { provider, model } : null,
     });
     const picked = outcomes.filter((o) => o.kind === "picked");
-    if (!picked.length) return;
+    // Why each ready slice waits (A10), for the plan's list of slices: a taken or free slice loses its old reason.
+    let reasonsChanged = false;
+    for (const plan of document.plans) {
+      for (const ticket of plan.slicing?.tickets ?? []) {
+        const waiting = outcomes.find((o) => o.kind === "waiting" && o.planId === plan.id && o.sliceId === ticket.id);
+        const reason = waiting?.kind === "waiting" ? waiting.reason : null;
+        if ((ticket.waiting ?? null) === reason) continue;
+        ticket.waiting = reason;
+        reasonsChanged = true;
+      }
+    }
+    if (!picked.length) {
+      if (reasonsChanged) this.changedIn(project);
+      return;
+    }
     for (const { assignment, sliceId } of picked) {
       const name = document.team.specialists.find((s) => s.id === assignment.specialistId)?.name ?? assignment.specialistId;
       // The chat shows the pick at the end of the work's dialog, where the person is reading now.
@@ -5310,16 +5343,20 @@ export class TramaController {
     }
   }
 
-  /** The person changes a setting of the open project (W08: the developers in parallel). */
+  /** The person changes a setting of the open project: developers in parallel (W08), the squads' limits (A10, Q22), the place of work (A19). */
   updateProjectSettings(update: ProjectSettings): void {
     const project = this.requireProject();
     if (!project.stateWritable) throw new DomainError("Lo stato di questo progetto è in sola lettura.");
     const settings = { ...(project.document.settings ?? {}) };
-    if (update.parallelDevelopers !== undefined) {
-      const limit = clampParallelDevelopers(update.parallelDevelopers);
-      if (limit === null) throw new DomainError("Il numero di sviluppatori in parallelo deve essere un numero intero.");
-      settings.parallelDevelopers = limit;
-    }
+    const limitOf = (value: unknown, clamp: (value: unknown) => number | null, what: string) => {
+      const limit = clamp(value);
+      if (limit === null) throw new DomainError(`Il numero di ${what} deve essere un numero intero.`);
+      return limit;
+    };
+    // The project's limit (W08) and, within it, the squads' own (A10, Q22).
+    if (update.parallelDevelopers !== undefined) settings.parallelDevelopers = limitOf(update.parallelDevelopers, clampParallelDevelopers, "sviluppatori in parallelo");
+    if (update.developersPerSquad !== undefined) settings.developersPerSquad = limitOf(update.developersPerSquad, clampDevelopersPerSquad, "sviluppatori per squadra");
+    if (update.activeSquads !== undefined) settings.activeSquads = limitOf(update.activeSquads, clampActiveSquads, "squadre al lavoro insieme");
     if (update.workPlace !== undefined) {
       if (!isWorkPlaceSetting(update.workPlace)) throw new DomainError("Il luogo di lavoro deve essere Automatico, Sempre in locale o Cloud quando possibile.");
       settings.workPlace = update.workPlace;
@@ -5469,6 +5506,7 @@ export class TramaController {
     const project = this.requireProject();
     confirmTeam(project.document, proposalId, keeping, note);
     const proposal = project.document.team.proposals.find((p) => p.id === proposalId)!;
+    this.formSquads(project);
     this.changed();
     await this.send(teamMessage(project.document, proposal), null, null, null, [], null, null, false);
   }
@@ -7606,11 +7644,22 @@ export class TramaController {
     });
     const owner = this.projectById(project.id);
     if (owner && (counts.markedStale || counts.archived || report.consolidated.length || report.pruned.length)) {
-      const archived = [...report.consolidated.map((c) => `${c.name} → ${c.into}`), ...report.pruned.map((p) => `${p.name} (ritirata)`)];
+      const t = translator(this.state.language);
+      const archived = [
+        ...report.consolidated.map((c) => `${c.name} → ${c.into}`),
+        ...report.pruned.map((p) => t("memory.curator.retiredSkill", { name: p.name })),
+      ];
       appendEvent(owner.document, "trama", {
         type: "activity",
-        title: "Manutenzione delle skill apprese",
-        detail: [summary, archived.length ? `Archiviate: ${archived.join(", ")}` : null, "Le skill archiviate si ripristinano da Memoria."].filter(Boolean).join("\n"),
+        title: t("memory.curator.activityTitle"),
+        // The person reads the counts in their language, not the upkeep's technical summary (issue #335).
+        detail: [
+          curatorRunLine(t, curatorRunView({ dryRun, autoTransitions: counts, ...report, llmError })!),
+          archived.length ? t("memory.curator.activityArchived", { names: archived.join(", ") }) : null,
+          t("memory.curator.activityRestore"),
+        ]
+          .filter(Boolean)
+          .join("\n"),
         tone: "info",
       });
       this.changedIn(owner);

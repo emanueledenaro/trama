@@ -172,7 +172,8 @@ function EntryRow({ item, focused, open, onToggle }: { item: Extract<ActivityIte
     duration !== null ? formatDuration(duration) : null,
     entry.kind === "round" || entry.kind === "problem" ? null : dialogName(entry.goalId),
     entry.kind === "move" || entry.kind === "problem" ? entry.trigger : null,
-    entry.kind === "step" ? t("activity.withinMandate") : null,
+    // The squads come after the study (A10); the other steps the Coordinator takes within the mandate (A06).
+    entry.kind === "step" ? t(entry.move === null ? "activity.afterStudy" : "activity.withinMandate") : null,
   ].filter((part): part is string => Boolean(part));
   return (
     <li className="py-0.5" data-testid={TEST_IDS[entry.kind]} data-outcome={entry.outcome} data-row={item.id} data-focused={focused || undefined}>

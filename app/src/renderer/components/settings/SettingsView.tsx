@@ -16,11 +16,12 @@ import {
 import { useEffect, useState } from "react";
 import type { ProviderAccount } from "@shared/codex";
 import type { GitHubCliState } from "@shared/onboarding";
-import { DEFAULT_LEARNING_SETTINGS, type LearningSettings, type ThemePreference } from "@shared/domain";
+import type { ThemePreference } from "@shared/domain";
 import { classifyProviderFailure } from "@shared/providerFailure";
 import { capabilityLines, coordinatorUnavailableReason, PROVIDERS, type ProviderDescriptor } from "@shared/providers";
 import { AIHERO_ATTRIBUTION } from "@shared/skills";
-import { MAX_PARALLEL_DEVELOPERS_SETTING, MIN_PARALLEL_DEVELOPERS, parallelDevelopers, sharedDevelopers } from "@shared/parallel";
+import { MAX_ACTIVE_SQUADS, MAX_DEVELOPERS_PER_SQUAD, MIN_SQUAD_LIMIT, squadLimits } from "@shared/squads";
+import { MAX_PARALLEL_DEVELOPERS_SETTING, MIN_PARALLEL_DEVELOPERS, sharedDevelopers } from "@shared/parallel";
 import { offersCloud, WORK_PLACE_SETTINGS, workPlaceSetting } from "@shared/workPlace";
 import { GitHubCliDescription } from "@/components/GitHubCliStatus";
 import { TramaMark } from "@/components/brand/TramaMark";
@@ -28,6 +29,7 @@ import { ProviderIcon } from "@/components/ProviderIcon";
 import { Spinner } from "@/components/Spinner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/field";
+import { Toggle } from "@/components/ui/toggle";
 import { CLEAN_CODE_VERSION } from "@shared/cleanCode";
 import { cn } from "@/lib/cn";
 import { useLanguage, useT } from "@/lib/i18n";
@@ -136,24 +138,6 @@ function Row({ label, description, control, children }: { label: React.ReactNode
       </div>
       {children}
     </div>
-  );
-}
-
-export function Toggle({ checked, onChange, label }: { checked: boolean; onChange: (value: boolean) => void; label: string }) {
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={checked}
-      aria-label={label}
-      onClick={() => onChange(!checked)}
-      className={cn(
-        "relative inline-flex h-[18px] w-[30px] shrink-0 cursor-pointer items-center rounded-full transition-colors",
-        checked ? "bg-[var(--color-text-accent)]" : "bg-[var(--color-border-heavy)]",
-      )}
-    >
-      <span className={cn("inline-block size-[14px] rounded-full bg-white shadow-sm transition-transform", checked ? "translate-x-[14px]" : "translate-x-[2px]")} />
-    </button>
   );
 }
 
@@ -528,7 +512,7 @@ function MethodSection() {
           onChange={(value) => void act("settings:update", { continuousWork: value })}
         />
       </Group>
-      <ParallelDevelopersGroup />
+      <DevelopersAtWorkGroup />
       <WorkPlaceGroup />
     </>
   );
@@ -537,63 +521,86 @@ function MethodSection() {
 /** The shared limit's choices (issue #39): the small numbers one by one, then the larger steps. */
 const SHARED_OPTIONS = [1, 2, 3, 4, 5, 6, 8, 10, 12];
 
-const PARALLEL_OPTIONS = Array.from({ length: MAX_PARALLEL_DEVELOPERS_SETTING - MIN_PARALLEL_DEVELOPERS + 1 }, (_, index) => MIN_PARALLEL_DEVELOPERS + index);
+const range = (min: number, max: number) => Array.from({ length: max - min + 1 }, (_, index) => min + index);
+const PARALLEL_OPTIONS = range(MIN_PARALLEL_DEVELOPERS, MAX_PARALLEL_DEVELOPERS_SETTING);
+const PER_SQUAD_OPTIONS = range(MIN_SQUAD_LIMIT, MAX_DEVELOPERS_PER_SQUAD);
+const ACTIVE_SQUAD_OPTIONS = range(MIN_SQUAD_LIMIT, MAX_ACTIVE_SQUADS);
 
-/** W08: how many developers work at the same time in the open project; three unless the person changes it. */
-function ParallelDevelopersGroup() {
-  const project = useUi((s) => s.app?.project ?? null);
-  const usable = project && !project.isDemo && project.stateWritable;
-  const limit = project ? parallelDevelopers(project.document) : null;
-  const t = useT();
-  const shared = useUi((s) => (s.app ? sharedDevelopers(s.app.settings) : null));
+/** One limit as a row of numbers to pick from. */
+function LimitPicker({ label, testId, options, value, onPick }: { label: string; testId: string; options: number[]; value: number | null; onPick: (value: number) => void }) {
   return (
-    <Group title={t("settings.parallel.title")} note={t("settings.parallel.note")}>
-      <Row
-        label={project ? t("settings.parallel.inProject", { name: project.name }) : t("settings.parallel.inOpenProject")}
-        description={!project ? t("settings.parallel.openProject") : project.isDemo ? t("settings.parallel.demo") : t("settings.parallel.default")}
-        control={
-          usable ? (
-            <div role="radiogroup" aria-label={t("settings.parallel.title")} className="flex rounded-lg bg-[var(--color-background-button-secondary)] p-0.5" data-testid="parallel-developers">
-              {PARALLEL_OPTIONS.map((value) => (
-                <button
-                  key={value}
-                  type="button"
-                  role="radio"
-                  aria-checked={limit === value}
-                  onClick={() => void act("project:settings", { parallelDevelopers: value })}
-                  className={cn(
-                    "flex h-6 min-w-7 items-center justify-center rounded-md px-2 text-ui-sm tabular-nums transition-colors",
-                    limit === value ? "bg-[var(--color-background-surface)] text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
-                  )}
-                >
-                  {value}
-                </button>
-              ))}
-            </div>
-          ) : null
-        }
-      />
+    <div role="radiogroup" aria-label={label} className="flex rounded-lg bg-[var(--color-background-button-secondary)] p-0.5" data-testid={testId}>
+      {options.map((option) => (
+        <button
+          key={option}
+          type="button"
+          role="radio"
+          aria-checked={value === option}
+          onClick={() => onPick(option)}
+          className={cn(
+            "flex h-6 min-w-7 items-center justify-center rounded-md px-2 text-ui-sm tabular-nums transition-colors",
+            value === option ? "bg-[var(--color-background-surface)] text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
+          )}
+        >
+          {option}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * The limits of developers at work, from the widest (W08, #346, A10 Q22): in all projects, in the open project, per
+ * squad and squads together. A developer starts only when every one of them allows it; each has one control.
+ */
+function DevelopersAtWorkGroup() {
+  const project = useUi((s) => s.app?.project ?? null);
+  const usable = Boolean(project && !project.isDemo && project.stateWritable);
+  const limits = project ? squadLimits(project.document) : null;
+  const shared = useUi((s) => (s.app ? sharedDevelopers(s.app.settings) : null));
+  const t = useT();
+  const unavailable = !project ? t("settings.squads.openProject") : project.isDemo ? t("settings.squads.demo") : null;
+  const setProject = (setting: "parallelDevelopers" | "developersPerSquad" | "activeSquads") => (value: number) => void act("project:settings", { [setting]: value });
+  return (
+    <Group title={t("settings.parallel.title")} note={t("settings.squads.note")}>
       <Row
         label={t("settings.parallel.shared")}
         description={t("settings.parallel.sharedDescription")}
         control={
-          <div role="radiogroup" aria-label={t("settings.parallel.sharedLabel")} className="flex rounded-lg bg-[var(--color-background-button-secondary)] p-0.5" data-testid="shared-developers">
-            {SHARED_OPTIONS.map((value) => (
-              <button
-                key={value}
-                type="button"
-                role="radio"
-                aria-checked={shared === value}
-                onClick={() => void act("settings:update", { sharedDevelopers: value })}
-                className={cn(
-                  "flex h-6 min-w-7 items-center justify-center rounded-md px-2 text-ui-sm tabular-nums transition-colors",
-                  shared === value ? "bg-[var(--color-background-surface)] text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
-                )}
-              >
-                {value}
-              </button>
-            ))}
-          </div>
+          <LimitPicker
+            label={t("settings.parallel.sharedLabel")}
+            testId="shared-developers"
+            options={SHARED_OPTIONS}
+            value={shared}
+            onPick={(value) => void act("settings:update", { sharedDevelopers: value })}
+          />
+        }
+      />
+      <Row
+        label={project ? t("settings.parallel.inProject", { name: project.name }) : t("settings.parallel.inOpenProject")}
+        description={unavailable ?? t("settings.parallel.default")}
+        control={
+          usable && limits ? (
+            <LimitPicker label={t("settings.parallel.projectLabel")} testId="parallel-developers" options={PARALLEL_OPTIONS} value={limits.project} onPick={setProject("parallelDevelopers")} />
+          ) : null
+        }
+      />
+      <Row
+        label={t("settings.squads.developers")}
+        description={unavailable ?? t("settings.squads.default")}
+        control={
+          usable && limits ? (
+            <LimitPicker label={t("settings.squads.developers")} testId="squad-limit-developersPerSquad" options={PER_SQUAD_OPTIONS} value={limits.developersPerSquad} onPick={setProject("developersPerSquad")} />
+          ) : null
+        }
+      />
+      <Row
+        label={t("settings.squads.active")}
+        description={unavailable ?? t("settings.squads.default")}
+        control={
+          usable && limits ? (
+            <LimitPicker label={t("settings.squads.active")} testId="squad-limit-activeSquads" options={ACTIVE_SQUAD_OPTIONS} value={limits.activeSquads} onPick={setProject("activeSquads")} />
+          ) : null
         }
       />
     </Group>
@@ -682,26 +689,30 @@ function StandardSection() {
   );
 }
 
-/** What the Coordinator's learning may do (ADR 0014). */
+/**
+ * The learning switches moved to Memoria, in Come impara (issue #335): they live next to the reviews and the upkeep
+ * they turn on and off. Settings keeps this way there.
+ */
 function LearningSection() {
-  const saved = useUi((s) => s.app?.settings.learning);
-  const learning = { ...DEFAULT_LEARNING_SETTINGS, ...(saved ?? {}) };
-  const set = (change: Partial<LearningSettings>) => void act("settings:update", { learning: change });
+  const project = useUi((s) => s.app?.project ?? null);
+  const setInspector = useUi((s) => s.setInspector);
   const t = useT();
   return (
     <>
-      <PageHeader title={t("settings.learning.title")} description={t("settings.learning.description")} />
-      <Group note={t("settings.learning.note")}>
-        <ToggleRow label={t("settings.learning.memory")} checked={learning.memory} onChange={(value) => set({ memory: value })} />
-        <ToggleRow
-          label={t("settings.learning.userProfile")}
-          description={t("settings.learning.userProfileDescription")}
-          checked={learning.userProfile}
-          onChange={(value) => set({ userProfile: value })}
-        />
-        <ToggleRow label={t("settings.learning.backgroundReview")} checked={learning.backgroundReview} onChange={(value) => set({ backgroundReview: value })} />
-        <ToggleRow label={t("settings.learning.curator")} checked={learning.curator} onChange={(value) => set({ curator: value })} />
-        <ToggleRow label={t("settings.learning.consolidate")} checked={learning.consolidate} onChange={(value) => set({ consolidate: value })} />
+      <PageHeader title={t("settings.section.learning")} description={t("settings.learning.description")} />
+      <Group>
+        {!project ? (
+          <Row label={<span className="text-muted-foreground">{t("settings.learning.openProject")}</span>} />
+        ) : (
+          <Row
+            label={<span className="text-muted-foreground">{t("settings.learning.moved")}</span>}
+            control={
+              <Button size="sm" variant="outline" data-testid="learning-open-memory" onClick={() => setInspector({ kind: "memory", howItLearns: true })}>
+                {t("settings.learning.open")}
+              </Button>
+            }
+          />
+        )}
       </Group>
     </>
   );
