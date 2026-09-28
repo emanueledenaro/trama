@@ -132,6 +132,20 @@ export const COORDINATOR_MOVES: Record<CoordinatorMove, { label: string; message
   answerQuestion: { label: "Rispondi allo sviluppatore", message: "Rispondi alla domanda dello sviluppatore." },
 };
 
+/** The name of the move that resolves a technical block (A06), as the status line, Activity and the recap show it. */
+export const BLOCK_LABELS: Record<TechnicalBlock, string> = {
+  checkFailed: "Risolvi la verifica rossa",
+  worktreeConflict: "Risolvi il conflitto",
+  stalledAssignment: "Riprendi l'incarico fermo",
+};
+
+/** The same move while it runs, in the first person, for the status line. */
+export const BLOCK_PHRASES: Record<TechnicalBlock, string> = {
+  checkFailed: "Sto risolvendo la verifica rossa",
+  worktreeConflict: "Sto risolvendo il conflitto",
+  stalledAssignment: "Sto riprendendo l'incarico fermo",
+};
+
 const coordinator = (move: CoordinatorMove, targetId: string | null = null): MoveOption => ({
   move,
   actor: "coordinator",

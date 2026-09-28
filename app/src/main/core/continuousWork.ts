@@ -1,7 +1,9 @@
 import type { NextMove, ProjectDocument, RequestStep, TechnicalBlock, WorkEvent } from "@shared/domain";
 import { focusView } from "./focus";
 import { isActive } from "./team";
-import { COORDINATOR_MOVES, type CoordinatorMove, type WorkState, workRequests, workState } from "./workPhase";
+import { BLOCK_LABELS, COORDINATOR_MOVES, type CoordinatorMove, type WorkState, workRequests, workState } from "./workPhase";
+
+export { BLOCK_LABELS } from "./workPhase";
 
 export type { WorkEvent } from "@shared/domain";
 
@@ -107,12 +109,7 @@ export function automaticMove(document: ProjectDocument, requestId: string, even
   };
 }
 
-/** The name of the move that resolves a technical block (A06), as Activity and the recap show it. */
-export const BLOCK_LABELS: Record<TechnicalBlock, string> = {
-  checkFailed: "Risolvi la verifica rossa",
-  worktreeConflict: "Risolvi il conflitto",
-  stalledAssignment: "Riprendi l'incarico fermo",
-};
+
 
 /**
  * The latest request of each dialog with an open task, the task in focus first, then the queue; paused tasks stay out.

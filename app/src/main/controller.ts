@@ -2816,7 +2816,8 @@ export class TramaController {
       }
       case "confirmUnderstanding": {
         const request = document.requests.find((r) => r.id === step.requestId);
-        return `Comprensione della richiesta "${(request?.text ?? "").replace(/\s+/g, " ").slice(0, 120)}".`;
+        const text = (request?.text ?? "").replace(/\s+/g, " ").trim();
+        return `Comprensione della richiesta "${text.length > 120 ? `${text.slice(0, 119).trimEnd()}…` : text}".`;
       }
       case "confirmSeams": {
         if (!plan?.spec || plan.status !== "seams") return null;

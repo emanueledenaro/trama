@@ -1,6 +1,6 @@
 import type { CoordinatorRequest, NextMove, ProjectDocument, SpecialistAssignment, StatusLineAction, StatusLineView } from "@shared/domain";
 import { focusView } from "./focus";
-import { COORDINATOR_MOVES, type CoordinatorMove, type WorkState, nextStepViews, workRequests, workState } from "./workPhase";
+import { BLOCK_LABELS, BLOCK_PHRASES, COORDINATOR_MOVES, type CoordinatorMove, type WorkState, nextStepViews, workRequests, workState } from "./workPhase";
 import { isActive } from "./team";
 
 /**
@@ -88,6 +88,8 @@ const latestOf = (document: ProjectDocument, goalId: string | null) => document.
 /** The Coordinator's own turn that runs now, in words, and the move it makes when it is one. */
 function runningTurn(document: ProjectDocument, request: CoordinatorRequest): { phrase: string; move: CoordinatorMove | null } {
   const move = request.step?.move;
+  // A move that resolves a technical block says so (A06): "Sto risolvendo il conflitto".
+  if (isCoordinatorMove(move) && request.step?.block) return { phrase: BLOCK_PHRASES[request.step.block.kind], move };
   if (isCoordinatorMove(move)) return { phrase: runningPhrase(move, moveTarget(document, move, workState(document, request.id))), move };
   return { phrase: "Sto rispondendo al tuo messaggio", move: null };
 }
@@ -168,7 +170,7 @@ export function statusLine(document: ProjectDocument, runningRequestId: string |
   const reason = blocked ? (state!.why ?? state!.blocker) : (stalled ?? held);
 
   const runningMove = running?.step?.by === "trama" && isCoordinatorMove(running.step.move)
-    ? { requestId: running.id, label: COORDINATOR_MOVES[running.step.move].label }
+    ? { requestId: running.id, label: running.step.block ? BLOCK_LABELS[running.step.block.kind] : COORDINATOR_MOVES[running.step.move].label }
     : null;
 
   // In pause nothing automatic starts (A05): the line says what still ends and how the work goes on again.
