@@ -101,6 +101,14 @@ describe("team flow", () => {
     await controller.approveCandidateByPerson(candidate.id);
     expect(candidate.humanApproval?.actor).toBe("Persona");
     await expect(controller.publishCandidateByPerson(candidate.id)).rejects.toThrow(/remoto GitHub/);
+    // With a GitHub remote, the mandate without openPullRequest still stops the push, visibly (issue #273).
+    project.github.repository = "o/r";
+    await expect(controller.publishCandidateByPerson(candidate.id)).rejects.toThrow(/mandato non permette di aprire pull request/);
+    expect(document.events.at(-1)!.content).toMatchObject({ type: "activity", title: "Pubblicazione fermata dal mandato", tone: "error" });
+    expect((document.events.at(-1)!.content as { detail: string }).detail).toContain(assignment.workspace!.branch);
+    expect((await git(["rev-list", `${assignment.workspace!.baseSHA}..HEAD`], assignment.workspace!.worktreeRoot)).trim()).toBe("");
+    expect(controller.snapshot.project!.candidateReports[candidate.id]?.quality?.find((i) => i.code === "MANDATE")?.passed).toBe(false);
+    project.github.repository = null;
 
     // The next message carries the team report once.
     expect(assignment.reportedStatus).toBe("completed");
