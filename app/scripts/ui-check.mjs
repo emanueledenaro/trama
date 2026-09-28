@@ -36,7 +36,11 @@ const launch = async (env = {}) => {
   return { app, page };
 };
 let { app, page } = await launch();
+// Every screenshot has its own name: a second one with the same name would overwrite the first without a word.
+const shotNames = new Set();
 const shot = async (name) => {
+  if (shotNames.has(name)) throw new Error(`Two screenshots named ${name}`);
+  shotNames.add(name);
   await page.waitForTimeout(400);
   await page.screenshot({ path: join(out, `${name}.png`) });
   console.log("saved", name);
@@ -336,22 +340,13 @@ await setTheme("system");
 await page.setViewportSize({ width: 1280, height: 820 });
 // B01: Trama's mark sits in the sidebar's brand slot and on the project picker, in the colors of the provider theme,
 // light and dark. The brand slot's gradient must change with the provider and with the theme.
-const brandLook = (provider, dark) =>
-  page.evaluate(
-    ([name, isDark]) => {
-      if (name) document.documentElement.dataset.provider = name;
-      else delete document.documentElement.dataset.provider;
-      document.documentElement.classList.toggle("dark", isDark);
-    },
-    [provider, dark],
-  );
 const startLook = await page.evaluate(() => ({ provider: document.documentElement.dataset.provider ?? null, dark: document.documentElement.classList.contains("dark") }));
 if ((await page.locator('[data-testid="brand-slot"] [data-trama-mark="glyph"]').count()) !== 1) throw new Error("No Trama mark in the sidebar's brand slot");
 if ((await page.locator("[data-trama-mark]").count()) < 2) throw new Error("No Trama mark on the project picker");
 const markColors = new Set();
 for (const provider of ["codex", "claudeAgent", "grok"]) {
   for (const dark of [false, true]) {
-    await brandLook(provider, dark);
+    await setLookTo(provider, dark);
     const color = await page.evaluate(() => {
       const stop = document.querySelector('[data-testid="brand-slot"] [data-trama-mark] stop');
       return stop ? getComputedStyle(stop).stopColor : null;
@@ -362,7 +357,7 @@ for (const provider of ["codex", "claudeAgent", "grok"]) {
   }
 }
 if (markColors.size !== 6) throw new Error(`The mark does not follow the provider theme: ${[...markColors].join(", ")}`);
-await brandLook(startLook.provider, startLook.dark);
+await setLookTo(startLook.provider, startLook.dark);
 await seamShots("logo", "logo");
 await expectContrastFallback();
 await picker.getByRole("button", { name: "Clona da GitHub" }).click();
@@ -889,9 +884,10 @@ await shot("05-map");
   await page.mouse.move(sidebarBox.x + sidebarBox.width / 2, 300);
   await page.waitForTimeout(100);
   if (!transparent((await look(sidebarSash)).strip)) throw new Error("The sash lights up before the hover delay");
-  await page.waitForTimeout(250);
-  const hovered = await look(sidebarSash);
-  if (hovered.strip !== hovered.accent || hovered.stripWidth !== "4px") throw new Error(`After 350ms of hover the sash is not a 4px focusBorder strip: ${JSON.stringify(hovered)}`);
+  // The hover class comes at 300ms and the color then fades in over 100ms: read it once the fade can have ended.
+  let hovered = await look(sidebarSash);
+  for (const end = Date.now() + 1_000; Date.now() < end && hovered.strip !== hovered.accent; hovered = await look(sidebarSash)) await page.waitForTimeout(50);
+  if (hovered.strip !== hovered.accent || hovered.stripWidth !== "4px") throw new Error(`After the hover delay the sash is not a 4px focusBorder strip: ${JSON.stringify(hovered)}`);
   // VS Code's focusBorder: #005FB8 in Light Modern, #0078D4 in Dark Modern.
   for (const [mode, focusBorder] of [["light", "rgb(0, 95, 184)"], ["dark", "rgb(0, 120, 212)"]]) {
     await page.evaluate((dark) => document.documentElement.classList.toggle("dark", dark), mode === "dark");
@@ -1417,12 +1413,12 @@ await settings.getByTestId("about-version").getByText(`Versione ${appVersion}.`,
 await settings.getByTestId("about-trama").locator('[data-trama-mark="tile"]').waitFor();
 for (const provider of ["codex", "claudeAgent", "grok"]) {
   for (const dark of [false, true]) {
-    await brandLook(provider, dark);
+    await setLookTo(provider, dark);
     await settings.getByTestId("about-trama").scrollIntoViewIfNeeded();
     await shot(`12b-about-${provider}-${dark ? "dark" : "light"}`);
   }
 }
-await brandLook(startLook.provider, startLook.dark);
+await setLookTo(startLook.provider, startLook.dark);
 // W12, Impostazioni: the theme follows the choice at once.
 await page.getByRole("radio", { name: "Scuro" }).click();
 await page.getByRole("radio", { name: "Scuro", checked: true }).waitFor();
@@ -1577,22 +1573,13 @@ await shot("17b-focus-back");
 await seamShots("focus", "focus");
 // Light and dark on two providers' themes, then a narrow window where the bar wraps without a horizontal scroll.
 const look = await page.evaluate(() => ({ provider: document.documentElement.dataset.provider ?? null, dark: document.documentElement.classList.contains("dark") }));
-const setLook = (provider, dark) =>
-  page.evaluate(
-    ([name, isDark]) => {
-      if (name) document.documentElement.dataset.provider = name;
-      else delete document.documentElement.dataset.provider;
-      document.documentElement.classList.toggle("dark", isDark);
-    },
-    [provider, dark],
-  );
 for (const provider of ["codex", "claudeAgent"]) {
   for (const dark of [false, true]) {
-    await setLook(provider, dark);
+    await setLookTo(provider, dark);
     await shot(`17c-focus-${provider}-${dark ? "dark" : "light"}`);
   }
 }
-await setLook(look.provider, look.dark);
+await setLookTo(look.provider, look.dark);
 await page.setViewportSize({ width: 720, height: 640 });
 await page.waitForTimeout(400);
 if (await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)) throw new Error("Horizontal page scroll with the focus bar at 720x640");
@@ -1615,10 +1602,10 @@ if (
   throw new Error("The status line's actions are not on the right at 720x640");
 }
 for (const dark of [false, true]) {
-  await setLook(look.provider, dark);
+  await setLookTo(look.provider, dark);
   await shot(`17e-status-line-narrow-${dark ? "dark" : "light"}`);
 }
-await setLook(look.provider, look.dark);
+await setLookTo(look.provider, look.dark);
 await queueToggle.click();
 await queue.waitFor({ state: "detached" });
 await page.setViewportSize({ width: 1280, height: 820 });
@@ -1977,12 +1964,12 @@ await mandateItem.getByText(/^Come sistemarlo: Concedi o correggi il mandato/).w
 if ((await stoppedQuality.locator('[data-testid="quality-item"][data-passed="no"]').count()) !== 1) throw new Error("Only the mandate should stop the corrected candidate");
 if (await correctedCard.getByRole("button", { name: /Prepara la pull request/ }).count()) throw new Error("A pull request can be prepared outside the mandate");
 await mandateItem.evaluate((item) => item.scrollIntoView({ block: "center" }));
-await shot("18e1-publication-outside-mandate");
+await shot("18e3-publication-outside-mandate");
 await app.evaluate(({ nativeTheme }) => {
   nativeTheme.themeSource = "dark";
 });
 await page.evaluate(() => document.documentElement.classList.add("dark"));
-await shot("18e2-publication-outside-mandate-dark");
+await shot("18e4-publication-outside-mandate-dark");
 await app.evaluate(({ nativeTheme }) => {
   nativeTheme.themeSource = "system";
 });
@@ -2273,10 +2260,10 @@ await blockingCard.scrollIntoViewIfNeeded();
 await shot("19f-blocking-card");
 const questionLook = await page.evaluate(() => ({ provider: document.documentElement.dataset.provider ?? null, dark: document.documentElement.classList.contains("dark") }));
 for (const provider of ["codex", "claudeAgent"]) {
-  await setLook(provider, true);
+  await setLookTo(provider, true);
   await shot(`19g-blocking-card-${provider}-dark`);
 }
-await setLook(questionLook.provider, questionLook.dark);
+await setLookTo(questionLook.provider, questionLook.dark);
 await blockingCard.getByRole("button", { name: "Registra la decisione" }).click();
 await questionWork.getByText("Concluso", { exact: true }).waitFor({ timeout: 30_000 });
 await openSettled(questionWork);
@@ -2290,9 +2277,9 @@ await answeredBlocking.getByText("Il lavoro è ripreso con la tua risposta.").wa
 if (await answeredBlocking.getByTestId("blocks-work").count()) throw new Error("An answered card still says it blocks the work");
 await questionWork.scrollIntoViewIfNeeded();
 await shot("19h-developer-question-resumed");
-await setLook("claudeAgent", true);
+await setLookTo("claudeAgent", true);
 await shot("19i-developer-question-resumed-claude-dark");
-await setLook(questionLook.provider, questionLook.dark);
+await setLookTo(questionLook.provider, questionLook.dark);
 // W07: the developer's question lives in a conversation between agents, recorded with the author of every message:
 // the developer's question, the Coordinator's Pact card, the person's answer on it. The person reads it from the
 // assignment's card or the specialist's page, never from the sidebar, and cannot write in it: the person talks only
@@ -2316,11 +2303,11 @@ await agentThread.getByText("Per dire qualcosa a un agente scrivi al Coordinator
 await shot("19j-agent-thread");
 for (const provider of ["codex", "claudeAgent"]) {
   for (const dark of [false, true]) {
-    await setLook(provider, dark);
+    await setLookTo(provider, dark);
     await shot(`19l-agent-thread-${provider}-${dark ? "dark" : "light"}`);
   }
 }
-await setLook(questionLook.provider, questionLook.dark);
+await setLookTo(questionLook.provider, questionLook.dark);
 // The specialist's page lists every conversation the developer takes part in.
 await agentThread.getByRole("button", { name: "Apri lo sviluppatore" }).click();
 const specialistThreads = page.getByTestId("specialist-threads").getByRole("button", { name: /Domanda al Coordinatore, fetta S1/ });
@@ -2433,11 +2420,11 @@ await shot("21a-ask-trama-route");
 const routeLook = await page.evaluate(() => ({ provider: document.documentElement.dataset.provider ?? null, dark: document.documentElement.classList.contains("dark") }));
 for (const provider of ["codex", "claudeAgent"]) {
   for (const dark of [false, true]) {
-    await setLook(provider, dark);
+    await setLookTo(provider, dark);
     await shot(`21b-ask-trama-route-${provider}-${dark ? "dark" : "light"}`);
   }
 }
-await setLook(routeLook.provider, routeLook.dark);
+await setLookTo(routeLook.provider, routeLook.dark);
 await routeCard.getByRole("button", { name: "Avvia il percorso" }).click();
 // Started, the route leaves Aspetta te and the chat shows its card again in full.
 const startedRoute = page.getByRole("main").locator('[data-anchor="route"]').last();
@@ -2669,11 +2656,11 @@ await shot("16a-presence-group");
 const groupLook = await page.evaluate(() => ({ provider: document.documentElement.dataset.provider ?? null, dark: document.documentElement.classList.contains("dark") }));
 for (const provider of ["codex", "claudeAgent"]) {
   for (const dark of [false, true]) {
-    await setLook(provider, dark);
+    await setLookTo(provider, dark);
     await shot(`16b-presence-group-${provider}-${dark ? "dark" : "light"}`);
   }
 }
-await setLook(groupLook.provider, groupLook.dark);
+await setLookTo(groupLook.provider, groupLook.dark);
 // A wide inspector puts the details beside each name; a narrow window floats it over the chat without a horizontal scroll.
 await page.getByTestId("inspector").getByRole("button", { name: "Allarga l'ispettore" }).click();
 await page.waitForTimeout(400);
@@ -2772,11 +2759,11 @@ const noJson = async (where) => {
 await noJson("waiting");
 for (const provider of ["codex", "pi"]) {
   for (const dark of [false, true]) {
-    await setLook(provider, dark);
+    await setLookTo(provider, dark);
     await shot(`20b-provider-limit-waiting-${provider}-${dark ? "dark" : "light"}`);
   }
 }
-await setLook(null, false);
+await setLookTo(null, false);
 await limitCard.getByRole("button", { name: "Ferma i tentativi" }).click();
 await limitCard.getByTestId("provider-retry").waitFor({ state: "detached", timeout: 10_000 });
 const limitActions = ["Aggiungi la tua chiave", "Cambia modello", "Riprova"];
@@ -2792,10 +2779,10 @@ await noJson("stopped");
 await limitCard.getByRole("button", { name: "Dettagli tecnici" }).click();
 await limitCard.getByText(/upstream_provider_shared_pool/).waitFor();
 for (const dark of [false, true]) {
-  await setLook(null, dark);
+  await setLookTo(null, dark);
   await shot(`20c-provider-limit-actions-${dark ? "dark" : "light"}`);
 }
-await setLook(null, false);
+await setLookTo(null, false);
 // Cambia modello opens the picker on the provider's models.
 await limitCard.getByRole("button", { name: "Cambia modello", exact: true }).click();
 await page.getByRole("listbox", { name: "Modelli" }).waitFor({ timeout: 5_000 });
@@ -2819,10 +2806,10 @@ for (let tries = 0; (await fakeReplies()) <= repliesBefore; tries++) {
 if ((await page.locator('[role="alert"][data-failure-kind="temporaryLimit"]').count()) !== 2) throw new Error("Expected the two 429 failures in the chat");
 if ((await personMessage()) !== messagesBefore) throw new Error("A retry wrote the person's message again");
 for (const dark of [false, true]) {
-  await setLook(null, dark);
+  await setLookTo(null, dark);
   await shot(`20f-provider-recovered-${dark ? "dark" : "light"}`);
 }
-await setLook(null, false);
+await setLookTo(null, false);
 
 // B02: with no project open the picker lists the recent projects with their path, last work, state and colleagues.
 // Switching projects never replays the launch intro.
@@ -3479,11 +3466,11 @@ const waitForReply = async (before, what) => {
 const lookShots = async (name) => {
   for (const provider of ["codex", "claudeAgent"]) {
     for (const dark of [false, true]) {
-      await setLook(provider, dark);
+      await setLookTo(provider, dark);
       await shot(`${name}-${provider}-${dark ? "dark" : "light"}`);
     }
   }
-  await setLook(null, false);
+  await setLookTo(null, false);
 };
 
 // Network outage: the failure says so, Trama retries by itself once, and the turn ends with the provider's reply.
@@ -3554,15 +3541,6 @@ await page.evaluate(() => window.trama.invoke("settings:update", { continuousWor
 await page.evaluate((path) => window.trama.invoke("project:open", { path }), mandateProject);
 await page.getByTestId("dialog-title").filter({ hasText: "trama-ui-mandato" }).waitFor({ timeout: 30_000 });
 await page.getByText("Ho letto lo studio").first().waitFor({ timeout: 30_000 });
-const mandateShots = async (name) => {
-  for (const provider of ["codex", "claudeAgent"]) {
-    for (const dark of [false, true]) {
-      await setLook(provider, dark);
-      await shot(`${name}-${provider}-${dark ? "dark" : "light"}`);
-    }
-  }
-  await setLook(null, false);
-};
 await page.getByTestId("waiting-summary").getByText("Mandato di progetto").waitFor();
 const projectMandate = await openWaiting("mandate");
 await projectMandate.getByText("Proposta di mandato di progetto").waitFor();
@@ -3571,7 +3549,7 @@ if ((await fixedBans.locator("li").count()) !== 6) throw new Error("The project 
 if (await fixedBans.locator("input, button, [role='switch']").count()) throw new Error("A fixed ban has a control to turn it on");
 await primaryLast(projectMandate.locator(".cta-row"), "Project mandate");
 await fixedBans.scrollIntoViewIfNeeded();
-await mandateShots("26a-project-mandate");
+await lookShots("26a-project-mandate");
 await projectMandate.getByRole("button", { name: "Concedi", exact: true }).click();
 await page.getByText("Ho concesso il mandato (versione 1).").first().waitFor({ timeout: 20_000 });
 // The goal the study proposed may still wait (issue #292): only the mandate must have left Aspetta te.
@@ -3587,14 +3565,14 @@ await restrict.getByRole("checkbox", { name: "Integrare candidati verificati" })
 await primaryLast(restrict.locator(".cta-row"), "Mandate restriction");
 // Before it takes effect the form says which work stops (C06): here nothing runs, so nothing stops.
 await restrict.getByText(/si ferma subito; il resto continua\. Nessun lavoro in corso si ferma\./).waitFor();
-await mandateShots("26b-mandate-restrict");
+await lookShots("26b-mandate-restrict");
 await restrict.getByRole("button", { name: "Restringi il mandato" }).click();
 await page.getByText(/Mandato v2/).first().waitFor({ timeout: 20_000 });
 const restriction = await page.getByTestId("mandate-restriction").innerText();
 if (!restriction.includes("integrare candidati verificati") || /[–—]/.test(restriction)) throw new Error(`Restriction: ${restriction}`);
 await page.getByText(/Ho ristretto il mandato/).first().waitFor({ timeout: 20_000 });
 await page.getByText(/Nessun lavoro in corso era fuori dal mandato ristretto/).first().waitFor({ timeout: 20_000 });
-await mandateShots("26c-mandate-restricted");
+await lookShots("26c-mandate-restricted");
 // The correction form starts from the restricted version: saving it never brings back what the restriction took away.
 await page.getByRole("button", { name: "Correggi", exact: true }).click();
 if (await page.getByTestId("inspector").getByRole("checkbox", { name: "Integrare candidati verificati" }).isChecked()) {
@@ -3615,7 +3593,7 @@ const bannedCard = bannedItem.getByTestId("fixed-ban-card");
 await bannedCard.getByText("git push --force origin main").waitFor();
 await bannedCard.getByText("Force push", { exact: true }).waitFor();
 await primaryLast(bannedCard.locator(".cta-row"), "Fixed ban");
-await mandateShots("26d-fixed-ban");
+await lookShots("26d-fixed-ban");
 await bannedCard.getByRole("button", { name: "Ho visto" }).click();
 await bannedItem.waitFor({ state: "detached", timeout: 20_000 });
 await page.evaluate(() => window.trama.invoke("settings:update", { theme: "system" }));
@@ -3634,15 +3612,6 @@ const problemProject = async (name, remote) => {
   execFileSync("git", ["-C", path, "add", "."]);
   execFileSync("git", ["-C", path, "-c", "user.name=Trama UI", "-c", "user.email=ui@trama.local", "commit", "-q", "-m", "Negozio"]);
   return path;
-};
-const problemShots = async (name) => {
-  for (const provider of ["codex", "claudeAgent"]) {
-    for (const dark of [false, true]) {
-      await setLook(provider, dark);
-      await shot(`${name}-${provider}-${dark ? "dark" : "light"}`);
-    }
-  }
-  await setLook(null, false);
 };
 const redCheckWithMandate = async (path, title) => {
   await page.evaluate(() => window.trama.invoke("settings:update", { continuousWork: false, theme: "light" }));
@@ -3684,7 +3653,7 @@ if (openedIssues.length !== 1) throw new Error(`Expected one issue for the red c
 if (!openedIssues[0].includes("labels[]=needs-triage")) throw new Error("The issue of the problem does not carry the needs-triage label");
 if (!problemCalls.some((call) => call.includes("POST") && call.some((arg) => /\/issues\/21\/labels$/.test(arg)))) throw new Error("Trama did not apply the triage labels");
 if (/[–—]/.test(await problemLog.innerText())) throw new Error("A dash in the steps of the found problem");
-await problemShots("27a-found-problem-issue");
+await lookShots("27a-found-problem-issue");
 // The recap cites the issue the Coordinator opened, with its number.
 await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
 await composer().fill("/riep");
@@ -3695,7 +3664,7 @@ await page.keyboard.press("Enter");
 const problemRecap = page.getByTestId("recap-card").last();
 await problemRecap.getByText(/Aperta la issue #21 per un problema trovato/).waitFor({ timeout: 20_000 });
 await problemRecap.scrollIntoViewIfNeeded();
-await problemShots("27b-found-problem-recap");
+await lookShots("27b-found-problem-recap");
 await app.close();
 
 ({ app, page } = await launch());
@@ -3704,7 +3673,7 @@ const localBacklog = page.getByTestId("problem-backlog");
 await localBacklog.getByTestId("problem-backlog-item").filter({ hasText: "Solo in Trama" }).waitFor({ timeout: 90_000 });
 await page.getByTestId("activity-log").locator('[data-testid="activity-problem"]').filter({ hasText: "Nel backlog di Trama" }).waitFor();
 await localBacklog.scrollIntoViewIfNeeded();
-await problemShots("27c-found-problem-local-backlog");
+await lookShots("27c-found-problem-local-backlog");
 await app.close();
 
 
@@ -3753,7 +3722,7 @@ if (/Criterion|pull request of this work|[–—]/.test(await partialStep.innerT
 let ticketState = JSON.parse(await readFile(ticketFile, "utf8"));
 if (ticketState.state !== "open" || ticketState.comments.length !== 1 || ticketState.body !== ticketIssue.body) throw new Error("The partial report closed the issue or ticked a criterion");
 await partialStep.scrollIntoViewIfNeeded();
-await problemShots("30a-ticket-partial");
+await lookShots("30a-ticket-partial");
 await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
 await writeFile(ticketFile, JSON.stringify({ ...ticketState, failComment: true }));
 await askTicket("[ticket:errore] Aggiorna ancora la issue 42", /Non sono riuscito ad aggiornare la issue #42/);
@@ -3762,7 +3731,7 @@ await failedStep.getByText("GitHub non ha risposto come atteso: il resoconto non
 ticketState = JSON.parse(await readFile(ticketFile, "utf8"));
 if (ticketState.state !== "open" || ticketState.comments.length !== 1) throw new Error("The failed report changed the issue");
 await failedStep.scrollIntoViewIfNeeded();
-await problemShots("30b-ticket-failed");
+await lookShots("30b-ticket-failed");
 await app.close();
 
 // Issue #249: the always active Coordinator of a project with a mandate. A provider limit holds moves, rounds and new
@@ -3785,15 +3754,6 @@ const alwaysMandate = await openWaiting("mandate");
 await alwaysMandate.getByRole("button", { name: "Concedi", exact: true }).click();
 await page.getByText("Ho concesso il mandato (versione 1).").first().waitFor({ timeout: 20_000 });
 await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
-const waitShots = async (name) => {
-  for (const provider of ["codex", "claudeAgent"]) {
-    for (const dark of [false, true]) {
-      await setLook(provider, dark);
-      await shot(`${name}-${provider}-${dark ? "dark" : "light"}`);
-    }
-  }
-  await setLook(null, false);
-};
 // The page changes at each launch: the line is looked up again every time.
 const checkWaitingLine = async (where) => {
   const waitingLine = page.locator('[data-testid="status-line"][data-provider-wait="true"]');
@@ -3819,7 +3779,7 @@ await page.keyboard.press("Enter");
 await page.locator('[role="alert"][data-failure-kind="quotaExhausted"]').last().waitFor({ timeout: 30_000 });
 await checkWaitingLine("Limit");
 await page.getByTestId("status-line").scrollIntoViewIfNeeded();
-await waitShots("28a-status-line-provider-wait");
+await lookShots("28a-status-line-provider-wait");
 
 // Esci while the quota is still used up: after reopening, the turn waits again, and no new turn starts meanwhile.
 await app.close();
@@ -3828,7 +3788,7 @@ await page.getByTestId("dialog-title").filter({ hasText: "trama-ui-sempre-attivo
 await checkWaitingLine("Reopened limit");
 await page.waitForTimeout(7_000);
 if ((await page.locator('[role="alert"][data-failure-kind="quotaExhausted"]').count()) !== 1) throw new Error("Trama started a turn while the quota was used up");
-await waitShots("28b-reopened-provider-wait");
+await lookShots("28b-reopened-provider-wait");
 let alwaysSoFar = await alwaysReplies();
 await rm(alwaysQuota);
 await waitForAlwaysReply(alwaysSoFar, "Reopened limit");
@@ -3861,7 +3821,7 @@ for (let index = (await turnLines.count()) - 1; index >= 0 && !(await reopenedRo
 await reopenedRow.waitFor({ timeout: 10_000 });
 await page.waitForTimeout(1_000);
 await reopenedRow.scrollIntoViewIfNeeded();
-await waitShots("28d-reopened-turn-resumed");
+await lookShots("28d-reopened-turn-resumed");
 
 // A project in Pause stays in Pause after the restart: the turn Esci ended waits for the person.
 await page.locator('[data-testid="status-line"]').getByRole("button", { name: "Pausa del Coordinatore", exact: true }).click();
@@ -3883,7 +3843,7 @@ const pausedQuit = page.getByRole("status").filter({ hasText: "Trama è stato ch
 await pausedQuit.waitFor({ timeout: 30_000 });
 await page.waitForTimeout(2_000);
 if ((await alwaysReplies()) !== alwaysSoFar) throw new Error("A turn resumed in Pause");
-await waitShots("28e-reopened-paused");
+await lookShots("28e-reopened-paused");
 await page.evaluate(() => window.trama.invoke("settings:update", { theme: "system" }));
 await app.close();
 
