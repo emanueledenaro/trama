@@ -14,9 +14,10 @@ export function moduleQuestion(name: string): string {
   return `Cosa fa il modulo ${name}, da cosa dipende e dove bisogna fare attenzione?`;
 }
 
-export function specialistQuestion(specialist: Pick<Specialist, "name">, assignment: Pick<SpecialistAssignment, "id" | "objective"> | null): string {
+/** The person's own words name the work by who does it and what it is for, never by its id (issue #270). */
+export function specialistQuestion(specialist: Pick<Specialist, "name">, assignment: Pick<SpecialistAssignment, "objective"> | null): string {
   return assignment
-    ? `Aggiornami sull'incarico ${assignment.id} di ${specialist.name}: «${assignment.objective}».`
+    ? `Aggiornami sul lavoro di ${specialist.name}: «${assignment.objective}».`
     : `Cosa fa ${specialist.name} in questo progetto e quando interviene?`;
 }
 

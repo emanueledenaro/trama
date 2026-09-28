@@ -51,8 +51,8 @@ const TITLES = {
   goal: "Obiettivo",
 } as const;
 
-const targetId = (target: InspectorTarget): string | null =>
-  target.kind === "candidate" || target.kind === "audit" || target.kind === "decision" || target.kind === "goal" || target.kind === "specialist" ? target.id : null;
+// Panels that already open with the record's name (an agent, a goal) keep their generic title, not the name twice.
+const targetId = (target: InspectorTarget): string | null => (target.kind === "candidate" || target.kind === "audit" || target.kind === "decision" ? target.id : null);
 
 /**
  * The title follows what the panel shows (issue #270): a record by its name, with the id on hover; Aspetta te opened
@@ -81,9 +81,7 @@ function InspectorTitle({ target }: { target: InspectorTarget }) {
       ? `Issue #${target.number}`
       : target.kind === "pullRequest"
         ? `Pull request #${target.number}`
-        : target.kind === "specialist"
-          ? (record?.short ?? TITLES.specialist)
-          : record
+        : record
             ? asTitle(record.label)
             : TITLES[target.kind];
   return (
