@@ -3,6 +3,7 @@ import {
   IconAlertTriangle,
   IconChevronDown,
   IconCircleDashed,
+  IconClockPause,
   IconFocus2,
   IconHandStop,
   IconPlayerPause,
@@ -62,7 +63,7 @@ const STATUS_ICONS: Record<StatusLineView["state"], React.ReactNode> = {
 
 /**
  * The Coordinator's status line (Q6): what it does now and next, why the work is held and what unblocks it, computed by
- * Trama from the records. On the right: Activity, the Pause of continuous work or its Riprendi (A05), the stop of the
+ * Trama from the records, and the provider limit it waits for (issue #249). On the right: Activity, the Pause of continuous work or its Riprendi (A05), the stop of the
  * automatic move that runs, and the person's move last. The Pause is always there, so the person can always reach it.
  */
 function StatusLine({ line }: { line: StatusLineView }) {
@@ -76,11 +77,19 @@ function StatusLine({ line }: { line: StatusLineView }) {
     window.setTimeout(() => runNextStep(action, action.requestId), 120);
   };
   return (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5" data-testid="status-line" data-state={line.state} data-paused={line.paused ? "true" : "false"}>
+    <div
+      className="flex flex-wrap items-center gap-x-3 gap-y-1.5"
+      data-testid="status-line"
+      data-state={line.state}
+      data-paused={line.paused ? "true" : "false"}
+      data-provider-wait={line.providerWait ? "true" : "false"}
+    >
       <div className="flex min-w-[12rem] flex-1 items-start gap-2">
         <span className="mt-0.5 flex size-4 shrink-0 items-center justify-center">
           {line.paused && line.state !== "working" ? (
             <IconPlayerPause className="size-3.5 shrink-0 text-[var(--color-text-foreground-secondary)]" stroke={1.8} />
+          ) : line.providerWait && line.state !== "working" ? (
+            <IconClockPause className="size-3.5 shrink-0 text-warning" stroke={1.8} />
           ) : (
             STATUS_ICONS[line.state]
           )}
