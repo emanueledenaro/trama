@@ -1512,6 +1512,11 @@ describe("TramaController", () => {
       expect(await controller!.updateTicket(done)).toMatchObject({ duplicate: true, closed: true });
       expect(await ticket()).toMatchObject({ state: "closed", closeCalls: 2 });
       expect((await ticket()).comments).toHaveLength(2);
+
+      // Activity speaks the person's language (issue #301).
+      await controller!.updateSettings({ language: "en" });
+      await controller!.updateTicket(done);
+      expect(lastActivity()!.title).toBe("Issue #42 “Ticket di prova”: closed with the evidence");
     } finally {
       await controller?.stop();
       controller = null;

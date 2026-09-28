@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { CandidateReport } from "@shared/domain";
+import { translator } from "@shared/i18n";
 import {
   blockerMessage,
   blockerText,
@@ -21,6 +22,9 @@ const report = (state: CandidateReport["state"]): CandidateReport => ({
   clearanceInvalidated: false,
   approvalInvalidated: false,
 });
+
+const italian = translator("it");
+const english = translator("en");
 
 describe("tickets", () => {
   it("reads and ticks the checklist without touching the rest", () => {
@@ -81,12 +85,15 @@ describe("tickets", () => {
     expect(closeBlockers(all, [{ number: 1, state: "MERGED", mergedAt: "t", checks: "success" }])).toEqual([]);
     const open = closeBlockers(all, [{ number: 1, state: "OPEN", mergedAt: null, checks: "success" }]);
     expect(open.map(blockerMessage)).toEqual(["No pull request of this work is merged."]);
-    expect(open.map(blockerText)).toEqual(["nessuna pull request di questo lavoro è stata unita"]);
+    expect(open.map((b) => blockerText(b, italian))).toEqual(["nessuna pull request di questo lavoro è stata unita"]);
+    expect(open.map((b) => blockerText(b, english))).toEqual(["no pull request of this work is merged"]);
     const red = closeBlockers(all, [{ number: 1, state: "MERGED", mergedAt: "t", checks: "failure" }]);
     expect(red.map(blockerMessage)).toEqual(["CI of #1 is failure, not green."]);
-    expect(red.map(blockerText)).toEqual(["le verifiche della PR #1 non sono passate"]);
+    expect(red.map((b) => blockerText(b, italian))).toEqual(["le verifiche della PR #1 non sono passate"]);
     const partial = closeBlockers(parseChecklist(body), [{ number: 1, state: "MERGED", mergedAt: "t", checks: "success" }]);
-    expect(partial.map(blockerText)).toEqual(["manca «Primo criterio»", "manca «Terzo criterio»"]);
-    expect(closeBlockers([], []).map(blockerText)).toEqual(["la issue non ha criteri da spuntare", "nessuna pull request di questo lavoro è stata unita"]);
+    expect(partial.map((b) => blockerText(b, italian))).toEqual(["manca «Primo criterio»", "manca «Terzo criterio»"]);
+    expect(closeBlockers([], []).map((b) => blockerText(b, italian))).toEqual(["la issue non ha criteri da spuntare", "nessuna pull request di questo lavoro è stata unita"]);
+    const pending = closeBlockers(all, [{ number: 1234, state: "MERGED", mergedAt: "t", checks: "pending" }]);
+    expect(pending.map((b) => blockerText(b, english))).toEqual(["the checks of PR #1234 are still running"]);
   });
 });

@@ -226,7 +226,7 @@ import { draftSlicing, readSlicerAnswer, sliceViews, slicerTurn, TICKET_TRIAGE_L
 import { approvePactDemo, inspectPactDemo, runPactDemo } from "./core/pactDemo";
 import { readRepositoryFile, scanRepository } from "./core/repositoryScanner";
 import { messageStyle } from "./core/messageStyle";
-import { DEFAULT_LANGUAGE, isLanguage, type Language, languageFromSystem } from "@shared/i18n";
+import { DEFAULT_LANGUAGE, isLanguage, type Language, languageFromSystem, translator } from "@shared/i18n";
 import { toolErrorMessage, toolErrorsRule, withoutToolErrors } from "./core/toolErrors";
 import { installedSkillVersion, prepareSkills, rollbackSkills, SELECTED_SKILLS, SKILL_VERSION, type SetupReport, updateSkills } from "./core/skillSetup";
 import {
@@ -5246,7 +5246,9 @@ export class TramaController {
       }
       return isCommitReference(reference) ? reference.slice(0, 12) : reference;
     };
-    const issueName = issue.title.trim() ? `Issue #${input.issueNumber} «${issue.title.trim()}»` : `Issue #${input.issueNumber}`;
+    const t = translator(this.state.language);
+    const number = String(input.issueNumber);
+    const issueName = issue.title.trim() ? t("ticket.issue", { number, title: issue.title.trim() }) : t("ticket.issueUntitled", { number });
     const key = progressKey(input.issueNumber, input.criteria, input.summary);
     const duplicate = issue.comments.some((c) => c.includes(progressMarker(key)));
     const met = input.criteria.filter((c) => c.outcome === "met" && !items[c.index]!.checked).map((c) => c.index);
@@ -5284,30 +5286,30 @@ export class TramaController {
       }
     } catch (error) {
       const done = [
-        duplicate ? "il resoconto era già sulla issue" : commentPosted ? "il resoconto è stato pubblicato" : "il resoconto non è stato pubblicato",
-        met.length ? (checklistUpdated ? "i criteri sono stati spuntati" : "i criteri non sono stati spuntati") : null,
-        input.close ? "la issue resta aperta" : null,
+        t(duplicate ? "ticket.failed.reportAlreadyThere" : commentPosted ? "ticket.failed.reportPosted" : "ticket.failed.reportNotPosted"),
+        met.length ? t(checklistUpdated ? "ticket.failed.criteriaChecked" : "ticket.failed.criteriaNotChecked") : null,
+        input.close ? t("ticket.failed.stillOpen") : null,
       ].filter(Boolean);
       appendEvent(
         document,
         "trama",
-        { type: "activity", title: `${issueName}: aggiornamento non riuscito`, detail: `GitHub non ha risposto come atteso: ${done.join(", ")}.`, tone: "error" },
+        { type: "activity", title: t("ticket.failed", { issue: issueName }), detail: t("ticket.failedDetail", { done: done.join(", ") }), tone: "error" },
         requestId,
       );
       this.changed();
       throw error;
     }
-    const criterionNames = met.map((i) => `«${items[i]!.text}»`).join(", ");
+    const criterionNames = met.map((i) => t("ticket.criterion", { text: items[i]!.text })).join(", ");
     appendEvent(
       document,
       "trama",
       {
         type: "activity",
-        title: `${issueName}: ${closed && input.close ? "chiusa con le prove" : duplicate ? "avanzamento già registrato" : "avanzamento registrato"}`,
+        title: t(closed && input.close ? "ticket.closed" : duplicate ? "ticket.duplicate" : "ticket.registered", { issue: issueName }),
         detail: blockers.length
-          ? `Resta aperta: ${blockers.map(blockerText).join("; ")}.`
+          ? t("ticket.stillOpen", { blockers: blockers.map((b) => blockerText(b, t)).join("; ") })
           : met.length
-            ? `${met.length === 1 ? "Criterio spuntato" : "Criteri spuntati"}: ${criterionNames}.`
+            ? t("ticket.checked", { criteria: criterionNames, count: met.length })
             : null,
         tone: "tool",
       },

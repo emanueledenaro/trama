@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import type { CandidateReport } from "@shared/domain";
+import type { Translate } from "@shared/i18n";
 
 /** One `- [ ]` or `- [x]` line of an issue body. */
 export interface ChecklistItem {
@@ -164,23 +165,16 @@ export function blockerMessage(blocker: CloseBlocker): string {
   }
 }
 
-const CHECKS_TEXT: Record<PullRequestStatus["checks"], string> = {
-  failure: "non sono passate",
-  pending: "sono ancora in corso",
-  none: "non sono state eseguite",
-  success: "sono passate",
-};
-
-/** A blocker for the person, in plain Italian. */
-export function blockerText(blocker: CloseBlocker): string {
+/** A blocker for the person, in the person's language. */
+export function blockerText(blocker: CloseBlocker, t: Translate): string {
   switch (blocker.kind) {
     case "noChecklist":
-      return "la issue non ha criteri da spuntare";
+      return t("ticket.blocker.noChecklist");
     case "criterionOpen":
-      return `manca «${blocker.text}»`;
+      return t("ticket.blocker.criterionOpen", { text: blocker.text });
     case "notMerged":
-      return "nessuna pull request di questo lavoro è stata unita";
+      return t("ticket.blocker.notMerged");
     case "checksNotGreen":
-      return `le verifiche della PR #${blocker.number} ${CHECKS_TEXT[blocker.checks]}`;
+      return t(`ticket.blocker.checks.${blocker.checks}`, { number: String(blocker.number) });
   }
 }
