@@ -104,16 +104,16 @@ function PersonMessage({ row }: { row: Extract<TimelineRow, { kind: "person" }> 
  * Activity, where the line opens them; a turn with only empty notes has no line.
  */
 function WorkGroup({ row }: { row: Extract<TimelineRow, { kind: "work" }> }) {
-  const setInspector = useUi((s) => s.setInspector);
+  const openActivity = useUi((s) => s.openActivity);
   const steps = compactSteps(row.activities);
   if (!steps.length && !row.running) return null;
   const tools = row.activities.filter((e) => e.content.type === "activity" && e.content.tone !== "info").length;
   const failed = failedSteps(row.activities);
   return (
-    <div className="mb-3 text-chat" data-testid="work-line">
+    <div className="chat-work-line mb-3 text-chat" data-testid="work-line" data-work={row.id}>
       <button
         type="button"
-        onClick={() => setInspector({ kind: "activity", work: row.id })}
+        onClick={() => openActivity(row.id)}
         title="Apri i passi in Attività"
         className="-ml-0.5 inline-flex max-w-full items-center gap-1 pb-2 text-left text-muted-foreground transition-colors duration-200 hover:text-foreground"
       >

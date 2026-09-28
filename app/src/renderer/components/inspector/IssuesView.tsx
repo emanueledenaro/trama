@@ -1,7 +1,11 @@
 import { IconArrowLeft, IconCircleCheck, IconCircleDot, IconExternalLink, IconMessageCircle, IconPlayerPlay, IconPlus, IconRefresh } from "@tabler/icons-react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { issueTriage } from "@shared/duties";
+import { problemBacklog } from "@shared/problems";
 import { assignmentStatus } from "@shared/states";
+import { ReferenceText } from "@/components/chat/ReferenceText";
+import { Tooltip } from "@/components/ui/tooltip";
+import { useT } from "@/lib/i18n";
 import { ChatMarkdown } from "@/components/chat/ChatMarkdown";
 import { Spinner } from "@/components/Spinner";
 import { Button } from "@/components/ui/button";
@@ -13,12 +17,59 @@ import { issueQuestion } from "@/lib/askCoordinator";
 import { useTriageOnRequest } from "./AutomaticWork";
 import { EmptyNote, InspectorSection } from "./Inspector";
 import { Sep } from "@/components/ui/sep";
-import { useT } from "@/lib/i18n";
 
-export function IssuesView() {
+/**
+ * The backlog items the found problems became (A08): with their issue, or kept in Trama without GitHub. It was a
+ * section of Activity; it is the "Nel backlog" filter of the issues since Activity moved to the bottom panel (issue #337).
+ */
+function ProblemBacklog() {
+  const t = useT();
+  const document = useUi((s) => s.app?.project?.document);
+  const items = useMemo(() => (document ? problemBacklog(document) : []), [document]);
+  return (
+    <ul aria-label={t("issues.backlog.label")} className="flex flex-col divide-y divide-[color:var(--app-surface-divider)] px-4 py-1" data-testid="problem-backlog">
+      {items.map((problem) => (
+        <li key={problem.id} className="py-2" data-testid="problem-backlog-item">
+          <div className="flex items-center gap-2">
+            <span className="min-w-0 flex-1 truncate text-ui text-foreground" title={problem.id}>
+              <ReferenceText text={problem.title} links={false} />
+            </span>
+            {problem.issue ? (
+              <Tooltip label={t("issues.backlog.openIssue", { number: problem.issue.number })}>
+                <button
+                  type="button"
+                  aria-label={t("issues.backlog.openIssue", { number: problem.issue.number })}
+                  className="sidebar-icon-button h-6 shrink-0 gap-1 rounded-md px-1.5 text-ui-xs"
+                  onClick={() => void act("shell:openExternal", { url: problem.issue!.url })}
+                >
+                  <IconCircleDot className="size-3.5" stroke={1.8} />#{problem.issue.number}
+                </button>
+              </Tooltip>
+            ) : (
+              <Badge tone="secondary">{t("issues.backlog.onlyTrama")}</Badge>
+            )}
+          </div>
+          <p className="mt-0.5 text-ui-xs text-muted-foreground">{problem.evidence.label}</p>
+          {problem.placement ? (
+            <p className="mt-1 text-ui-sm text-muted-foreground">
+              <ReferenceText text={problem.placement.reason} />
+            </p>
+          ) : null}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+export function IssuesView({ backlog: onBacklog = false }: { backlog?: boolean }) {
+  const t = useT();
   const github = useUi((s) => s.app?.project?.github)!;
   const setInspector = useUi((s) => s.setInspector);
-  const [filter, setFilter] = useState<"open" | "closed">("open");
+  const backlog = useUi((s) => (s.app?.project ? problemBacklog(s.app.project.document).length : 0));
+  const [chosen, setFilter] = useState<"open" | "closed" | "backlog">(onBacklog ? "backlog" : "open");
+  // Without GitHub the backlog is the only list; an empty backlog falls back to the open issues.
+  const filter = github.status !== "ready" && backlog ? "backlog" : chosen === "backlog" && !backlog ? "open" : chosen;
+  const filters = [...(github.status === "ready" ? (["open", "closed"] as const) : []), ...(backlog ? (["backlog"] as const) : [])];
   const [creating, setCreating] = useState(false);
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
@@ -52,10 +103,10 @@ export function IssuesView() {
               : github.capabilities.message}
           </p>
         ) : null}
-        {github.status === "ready" ? (
+        {filters.length ? (
           <div className="flex items-center gap-2">
             <div className="inline-flex rounded-lg bg-[var(--color-background-button-secondary)] p-0.5">
-              {(["open", "closed"] as const).map((state) => (
+              {filters.map((state) => (
                 <button
                   key={state}
                   type="button"
@@ -65,13 +116,17 @@ export function IssuesView() {
                     filter === state ? "bg-[var(--color-background-surface)] text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
                   )}
                 >
-                  {state === "open" ? "Aperte" : "Chiuse"} ({github.issues.filter((i) => i.state === state).length})
+                  {state === "backlog"
+                    ? t("issues.filter.backlog", { count: backlog })
+                    : `${state === "open" ? "Aperte" : "Chiuse"} (${github.issues.filter((i) => i.state === state).length})`}
                 </button>
               ))}
             </div>
-            <Button size="xs" variant="ghost" className="ml-auto" onClick={() => setCreating(!creating)}>
-              <IconPlus /> Nuova issue
-            </Button>
+            {github.status === "ready" ? (
+              <Button size="xs" variant="ghost" className="ml-auto" onClick={() => setCreating(!creating)}>
+                <IconPlus /> Nuova issue
+              </Button>
+            ) : null}
           </div>
         ) : null}
       </InspectorSection>
@@ -108,7 +163,8 @@ export function IssuesView() {
           </div>
         </InspectorSection>
       ) : null}
-      {github.status === "ready" ? (
+      {filter === "backlog" ? <ProblemBacklog /> : null}
+      {github.status === "ready" && filter !== "backlog" ? (
         <div className="px-2 py-2">
           {issues.length === 0 ? <div className="px-2"><EmptyNote>Nessuna issue.</EmptyNote></div> : null}
           {issues.map((issue) => (
