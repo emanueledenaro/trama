@@ -1,15 +1,19 @@
 # U10: "Aspetta te" conta tutto ciò che aspetta la persona
 
-Data: 28 settembre 2026. Issue #292, dopo #283 (issue #240). Base: `origin/main` f22ca3f.
+Data: 28 settembre 2026. Issue #292, dopo #283 (issue #240). Base finale: `origin/main` e1ca179, con #291.
 
 ## Cosa è stato verificato
 
 Tutte le prove usano il Codex finto (`app/test-fixtures/fake-codex.mjs`). Nessuna esecuzione reale di Codex.
 
+Sul branch unito a `origin/main` e1ca179:
+
 - `npx tsc --noEmit -p .`: nessun errore.
-- `npx vitest run`: 118 file, 1076 test superati, 3 saltati.
+- `npx vitest run`: 120 file, 1172 test superati, 3 saltati.
 - `npm run build`: riuscito.
-- `xvfb-run -a node scripts/ui-check.mjs`: uscita 0, 288 schermate, sia sulla base (con le sole schermate nuove aggiunte, per il confronto) sia sul branch.
+- `xvfb-run -a node scripts/ui-check.mjs`: uscita 0, 304 schermate.
+
+Le schermate prima e dopo vengono da due corse complete del ui-check (uscita 0, 288 schermate ciascuna) sulla base f22ca3f e sul branch prima dell'unione con #291, con le stesse schermate nuove aggiunte in entrambe per il confronto.
 
 ## Comportamento
 
@@ -25,7 +29,8 @@ Tutte le prove usano il Codex finto (`app/test-fixtures/fake-codex.mjs`). Nessun
 ## Test
 
 - `app/src/shared/waitingForYou.test.ts`: obiettivi proposti (non quelli aperti o archiviati), proposta di presenza, percorsi proposti (non quelli rifiutati), candidati da guardare (non quelli in costruzione, già approvati o pubblicati; sì quelli con approvazione non più valida); un solo ordinamento per tutti i tipi; ogni voce esce quando la persona risponde.
-- `ui-check`: all'apertura del progetto di esempio l'obiettivo proposto è la sola voce, nel riepilogo, nel contatore e come riferimento in chat. Nel progetto dei candidati, scartato l'obiettivo proposto, il riepilogo sparisce. Candidato, obiettivo, percorso e presenza si aprono e si usano da "Aspetta te"; dopo la risposta la scheda torna in chat. Schermate nuove: `04f2-waiting-candidate`, `10b-waiting-proposed-goal`, `16a-waiting-presence`, in chiaro e scuro.
+- `app/src/main/controller.test.ts`: il test dei divieti fissi di #291 conta solo le voci delle azioni vietate, perché ora aspetta anche l'obiettivo proposto dallo studio.
+- `ui-check`: all'apertura del progetto di esempio l'obiettivo proposto è la sola voce, nel riepilogo, nel contatore e come riferimento in chat. Nel progetto dei candidati, scartato l'obiettivo proposto, il riepilogo sparisce. Candidato, obiettivo, percorso e presenza si aprono e si usano da "Aspetta te"; dopo la risposta la scheda torna in chat. Nei passi A04 di #291 il controllo guarda la voce del mandato e quella del divieto, non il riepilogo intero. Schermate nuove: `04f2-waiting-candidate`, `10b-waiting-proposed-goal`, `16a-waiting-presence`, in chiaro e scuro.
 
 ## Schermate
 
