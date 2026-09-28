@@ -29,6 +29,7 @@ afterEach(async () => {
   delete process.env.FAKE_GH_LOG;
   delete process.env.FAKE_GH_PULLS;
   delete process.env.FAKE_CODEX_LOG;
+  delete process.env.TRAMA_MERGE_CHECKS_MS;
 });
 
 async function until(check: () => boolean, timeout = 20_000): Promise<void> {
@@ -49,6 +50,8 @@ describe("merge with the green light, interface candidates held for the person (
     process.env.FAKE_GH_LOG = ghLog;
     process.env.FAKE_GH_PULLS = "1";
     process.env.FAKE_CODEX_LOG = join(bin, "codex.log");
+    // A pull request just opened waits this long for its checks before Trama merges it.
+    process.env.TRAMA_MERGE_CHECKS_MS = "200";
     const repo = await mkdtemp(join(tmpdir(), "trama-repo-"));
     await cp(join(root, "resources/DemoProject"), repo, { recursive: true });
     await mkdir(join(repo, "web"));
@@ -166,5 +169,19 @@ describe("merge with the green light, interface candidates held for the person (
     expect(third.clearance).toMatchObject({ actor: "Coordinatore" });
     expect(third.humanApproval).toMatchObject({ actor: "Persona" });
     expect(document.events.some((e) => e.content.type === "activity" && e.content.title === `Candidato ${third.id} unito con il tuo ok`)).toBe(true);
+
+    // 4. A merge that would change the repository's settings runs into a fixed ban: it stops and waits for the person.
+    await controller.send("[assegna] [impostazioni]", null, null, null);
+    const settings = ada.assignments.at(-1)!;
+    await until(() => settings.id !== again.id && settings.status === "completed");
+    await controller.send(`[candidato:${settings.id}:${decision.id}]`, null, null, null);
+    const fourth = document.candidates.at(-1)!;
+    expect(fourth.changedFiles).toContain("CODEOWNERS");
+    await until(() => fourth.merge?.status === "stopped");
+    expect(fourth.pullRequest).toBeNull();
+    const refusal = (document.fixedBanRefusals ?? []).at(-1)!;
+    expect(refusal).toMatchObject({ ban: "repositorySettings", action: `Unione della pull request del candidato ${fourth.id} (${settings.workspace!.branch})`, by: { kind: "trama" } });
+    expect(waitingKeys()).toContain(`fixedBan:${refusal.id}`);
+    expect(ghCalls().filter((c) => c.includes("PUT"))).toHaveLength(2);
   }, 120_000);
 });

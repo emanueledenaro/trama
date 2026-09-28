@@ -858,6 +858,8 @@ export class TramaController {
     await this.stopSpecialistsForQuit();
     if (this.monitorTimer) clearTimeout(this.monitorTimer);
     this.monitorTimer = null;
+    if (this.integrationTimer) clearTimeout(this.integrationTimer);
+    this.integrationTimer = null;
     if (this.curatorTimer) clearInterval(this.curatorTimer);
     this.curatorTimer = null;
     if (this.roundTimer) clearInterval(this.roundTimer);
@@ -5195,6 +5197,8 @@ export class TramaController {
   /** The candidates whose screenshots Trama is capturing now (issue #247). */
   private readonly capturingShots = new Set<string>();
   private integrationTimer: NodeJS.Timeout | null = null;
+  /** How long a merge waits for the checks of its pull request; shorter in the tests. */
+  private readonly checksDelay = Number(process.env.TRAMA_MERGE_CHECKS_MS) || CHECKS_RETRY_MS;
 
   /** What a candidate's report says about its way to the main branch (issue #247). */
   private mergeView(project: ActiveProjectState, candidate: Candidate): Pick<CandidateReport, "mergeRoute" | "mergeRouteReason" | "interfaceFiles"> {
@@ -5225,6 +5229,8 @@ export class TramaController {
     for (const candidate of document.candidates) {
       if (candidate.pullRequest?.mergedAt || this.integrating.has(candidate.id)) continue;
       if (latestCandidate(document, candidate.assignmentId)?.id !== candidate.id) continue;
+      // A merge cut short by a restart is tried again: Trama reads the pull request before it merges anything.
+      if (candidate.merge?.status === "running") candidate.merge = { ...candidate.merge, status: "waiting", detail: "L'unione è stata interrotta: Trama riprova." };
       const report = candidateReport(document, candidate, head);
       if (report.state === "superseded" || report.blockers.length) continue;
       const { route } = mergeRoute(document, candidate, project.github.repository);
@@ -5266,16 +5272,18 @@ export class TramaController {
       const covered = contentFingerprint(document, candidate) === fingerprint && !now.blockers.length && !now.clearanceInvalidated && (by === "coordinator" || !now.approvalInvalidated);
       if (!covered) throw new DomainError("Il candidato è cambiato dopo il via libera: serve un nuovo via libera sul candidato com'è ora.");
       const checks = await readPullRequestStatus(repository, pull.number).catch(() => null);
+      // A pull request just opened has no checks yet: GitHub starts them in a moment, so Trama waits before it reads them.
+      const young = Date.now() - Date.parse(pull.at) < this.checksDelay;
+      if (checks?.state !== "MERGED" && (checks?.checks === "pending" || (checks?.checks === "none" && young))) {
+        recordMerge(document, candidate, by, "waiting", `Aspetto le verifiche della pull request #${pull.number}.`);
+        this.changedIn(project);
+        this.integrateLater(project, this.checksDelay);
+        return;
+      }
       if (checks?.state === "MERGED") {
         pull.mergedAt = checks.mergedAt ?? new Date().toISOString();
         recordMerge(document, candidate, by, "merged");
         this.changedIn(project);
-        return;
-      }
-      if (checks?.checks === "pending") {
-        recordMerge(document, candidate, by, "waiting", `Aspetto le verifiche della pull request #${pull.number}.`);
-        this.changedIn(project);
-        this.integrateLater(project, CHECKS_RETRY_MS);
         return;
       }
       if (checks?.checks === "failure") throw new DomainError(`Le verifiche della pull request #${pull.number} su GitHub sono rosse: il Coordinatore le sistema prima dell'unione.`);

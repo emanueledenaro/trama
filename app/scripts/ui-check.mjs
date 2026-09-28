@@ -3525,7 +3525,7 @@ inVetrina("add", ".");
 inVetrina("commit", "-q", "-m", "Vetrina");
 inVetrina("remote", "add", "origin", "https://github.com/trama-ui/vetrina.git");
 inVetrina("config", "remote.origin.pushurl", vetrinaRemote);
-({ app, page } = await launch({ PATH: `${ghBin}:${process.env.PATH}`, FAKE_GH_PULLS: "1", FAKE_GH_LOG: vetrinaGhLog }));
+({ app, page } = await launch({ PATH: `${ghBin}:${process.env.PATH}`, FAKE_GH_PULLS: "1", FAKE_GH_LOG: vetrinaGhLog, TRAMA_MERGE_CHECKS_MS: "500" }));
 await page.evaluate(() => window.trama.invoke("settings:update", { continuousWork: false, theme: "light" }));
 await page.evaluate((path) => window.trama.invoke("project:open", { path }), vetrina);
 await page.getByTestId("dialog-title").filter({ hasText: "trama-ui-vetrina" }).waitFor({ timeout: 30_000 });
