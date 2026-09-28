@@ -32,6 +32,7 @@ import {
   type TechnicalReview,
   type MandateAction,
   type MergeRoute,
+  type MergeStop,
   type TestedSeam,
   developerQuestionState,
   isOpenQuestion,
@@ -52,6 +53,7 @@ import type * as React from "react";
 import { Button } from "@/components/ui/button";
 import { Badge, TextArea } from "@/components/ui/field";
 import { cn } from "@/lib/cn";
+import { useT } from "@/lib/i18n";
 import { act, useUi } from "@/lib/store";
 import { useT } from "@/lib/i18n";
 import { ACTION_LABELS } from "@/lib/labels";
@@ -1284,7 +1286,8 @@ function MergeLine({ candidate, route, routeReason, open, approved }: { candidat
   if (pull?.mergedAt) {
     text = pull.mergedBy === "coordinator" ? "Unito da Trama con il via libera del Coordinatore." : pull.mergedBy === "person" ? "Unito da Trama con il tuo ok sulle schermate." : "Unito su GitHub.";
   } else if (merge && open && merge.status !== "merged") {
-    text = merge.status === "running" ? "Trama sta unendo il candidato." : merge.detail;
+    // A destructive stop says it in its own field, with consequences and alternatives (issue #41).
+    text = merge.status === "running" ? "Trama sta unendo il candidato." : merge.stop ? null : merge.detail;
     if (merge.status === "failed" || merge.status === "stopped") tone = "text-destructive";
   } else if (open && candidate.humanRejection) {
     text = `Hai rifiutato il candidato: ${candidate.humanRejection.note}`;
@@ -1303,8 +1306,60 @@ function MergeLine({ candidate, route, routeReason, open, approved }: { candidat
   return (
     <p className={cn("mt-2 text-ui-sm", tone)} data-testid="candidate-merge" data-route={route} data-status={pull?.mergedAt ? "merged" : (merge?.status ?? "none")}>
       {text}
+      {pull?.mergedAt && pull.mergedBy === "coordinator" && merge?.mandateVersion ? <MergeMandate version={merge.mandateVersion} /> : null}
     </p>
   );
+}
+
+/**
+ * A merge the Coordinator stopped because it destroys something (issue #41): the reasons, what happens and what the
+ * person can do. The texts of the stop are Trama's records, in Italian.
+ */
+function MergeStopField({ stop }: { stop: MergeStop }) {
+  const t = useT();
+  return (
+    <div className="mt-2 space-y-1 text-ui-sm" data-testid="candidate-merge-stop">
+      <p className="text-foreground/90">
+        {t("mergeStop.title")} {stop.reasons.join(" ")}
+      </p>
+      <p className="font-medium text-foreground">{t("mergeStop.consequences")}</p>
+      <ul className="list-disc space-y-0.5 pl-4">
+        {stop.consequences.map((c) => (
+          <li key={c}>{c}</li>
+        ))}
+      </ul>
+      <p className="font-medium text-foreground">{t("mergeStop.alternatives")}</p>
+      <ul className="list-disc space-y-0.5 pl-4">
+        {stop.alternatives.map((a) => (
+          <li key={a}>{a}</li>
+        ))}
+      </ul>
+      {stop.acknowledgedAt ? <p className="text-muted-foreground">{t("mergeStop.declined")}</p> : null}
+    </div>
+  );
+}
+
+/** The person's choice on a stopped merge: leave it, or merge it with their ok (issue #41). Primary last. */
+function MergeStopActions({ candidateId, declined }: { candidateId: string; declined: boolean }) {
+  const t = useT();
+  return (
+    <>
+      {declined ? null : (
+        <Button size="sm" variant="outline" onClick={() => void act("candidate:declineMerge", { candidateId })}>
+          {t("mergeStop.decline")}
+        </Button>
+      )}
+      <Button size="sm" onClick={() => void act("candidate:approve", { candidateId })}>
+        <IconGitMerge /> {t("mergeStop.merge")}
+      </Button>
+    </>
+  );
+}
+
+/** The mandate a merge on the Coordinator's green light ran under (issue #41). */
+function MergeMandate({ version }: { version: number }) {
+  const t = useT();
+  return <span data-testid="candidate-merge-mandate"> {t("merge.mandateVersion", { version })}</span>;
 }
 
 /**
@@ -1350,6 +1405,8 @@ export function CandidateCard({ candidateId }: { candidateId: string }) {
   const merged = Boolean(candidate.pullRequest?.mergedAt);
   const open = report.blockers.length === 0 && report.state !== "superseded" && !merged;
   const decidable = route === "interface" && open && !approved && !candidate.humanRejection;
+  // Issue #41: a destructive change the Coordinator stopped waits for the person's choice.
+  const stop = candidate.merge?.status === "stopped" ? (candidate.merge.stop ?? null) : null;
   return (
     <CardFrame icon={<IconFileDiff stroke={1.8} />} title={record ? asTitle(record.label) : "Candidato"} hint={candidate.id} aside={<Badge tone={state.tone}>{state.label}</Badge>}>
       <p className="text-ui-sm text-muted-foreground">
@@ -1436,6 +1493,7 @@ export function CandidateCard({ candidateId }: { candidateId: string }) {
         </p>
       ) : null}
       <MergeLine candidate={candidate} route={route} routeReason={report.mergeRouteReason ?? null} open={open} approved={Boolean(approved)} />
+      {stop && open ? <MergeStopField stop={stop} /> : null}
       {candidate.pullRequest ? (
         <button
           type="button"
@@ -1478,6 +1536,7 @@ export function CandidateCard({ candidateId }: { candidateId: string }) {
             </Button>
           </>
         ) : null}
+        {stop && open && !approved ? <MergeStopActions candidateId={candidateId} declined={Boolean(stop.acknowledgedAt)} /> : null}
         {route === "person" && approved && publishable && report.state !== "superseded" && !candidate.pullRequest && project.github.repository && !preview ? (
           <Button size="sm" onClick={() => void act("candidate:previewPullRequest", { candidateId }).then((p) => setPreview(p ?? null))}>
             <IconGitPullRequest /> Prepara la pull request
