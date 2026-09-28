@@ -213,6 +213,7 @@ import { draftSlicing, readSlicerAnswer, sliceViews, slicerTurn, TICKET_TRIAGE_L
 import { approvePactDemo, inspectPactDemo, runPactDemo } from "./core/pactDemo";
 import { readRepositoryFile, scanRepository } from "./core/repositoryScanner";
 import { messageStyle } from "./core/messageStyle";
+import { DEFAULT_LANGUAGE, isLanguage, type Language, languageFromSystem } from "@shared/i18n";
 import { TOOL_ERRORS_RULE, toolErrorMessage, withoutToolErrors } from "./core/toolErrors";
 import { installedSkillVersion, prepareSkills, rollbackSkills, SELECTED_SKILLS, SKILL_VERSION, type SetupReport, updateSkills } from "./core/skillSetup";
 import {
@@ -463,8 +464,8 @@ const coordinatorSkillParts = (skills: NativeSkill[]) => skills.map((skill, inde
 /** Clean Code's part of the candidate gate (W10): the technical review's session, answer and Trama's measures. */
 type CleanCodeReview = { threadId: string; answer: ReviewAnswer; standard: StandardCheck | null };
 
-function lateRules(skills: NativeSkill[], provider: ProviderId): LateRules {
-  const style = [messageStyle("the person"), TOOL_ERRORS_RULE].join("\n");
+function lateRules(skills: NativeSkill[], provider: ProviderId, language: Language): LateRules {
+  const style = [messageStyle("the person", language), TOOL_ERRORS_RULE].join("\n");
   const full = [style, NEXT_STEP_RULES, deliverNativeSkills(coordinatorSkillParts(skills), false).text].join("\n\n");
   const delivery = deliverNativeSkills(coordinatorSkillParts(skills), provider === "codex");
   return {
@@ -606,6 +607,8 @@ export interface ControllerHost {
   applyTheme(theme: AppSettings["theme"]): void;
   notify(title: string, body: string, sound?: boolean): void;
   setOpenAtLogin(enabled: boolean): void;
+  /** The system's preferred languages, most preferred first (issue #301). Without it Trama speaks Italian. */
+  systemLanguages?(): readonly string[];
   demoResourceDirectory: string;
   aiHeroResourceDirectory: string;
   codexExecutable: string | null;
@@ -673,6 +676,7 @@ export class TramaController {
         ProviderState
       >,
       settings: { theme: "system", sidebarWidth: 256 },
+      language: DEFAULT_LANGUAGE,
       error: null,
       backgroundProjects: [],
       practices: [],
@@ -797,6 +801,7 @@ export class TramaController {
     const settings = await this.storage.loadSettings();
     this.state.settings = {
       theme: settings.theme ?? "system",
+      ...(isLanguage(settings.language) ? { language: settings.language } : {}),
       sidebarWidth: typeof settings.sidebarWidth === "number" ? settings.sidebarWidth : 256,
       sounds: settings.sounds === true,
       autoPrepareMethod: settings.autoPrepareMethod !== false,
@@ -804,6 +809,7 @@ export class TramaController {
       learning: learningSettings(settings.learning),
       coordinatorModels: coordinatorModelSettings(settings.coordinatorModels),
     };
+    this.state.language = this.resolveLanguage();
     this.lastProjectId = settings.lastProjectId ?? null;
     this.practices = await this.practiceStore.load();
     this.state.onboarding = normalizeOnboarding(settings.onboarding);
@@ -2175,7 +2181,7 @@ export class TramaController {
       const skills = await this.coordinatorSkills();
       // A model change while the skills loaded replaced this opening: its stopped runtime must not open a thread.
       if (this.state.project !== project || this.runtime !== runtime || generation !== this.coordinatorGeneration) return;
-      const rules = lateRules(skills, provider);
+      const rules = lateRules(skills, provider, this.state.language);
       // Codex takes the Coordinator's skills as native skill inputs in the thread's first turn, the others in their instructions.
       const inInstructions = rules.skills.length === 0;
       const opening = await runtime.client.openThread({
@@ -2185,6 +2191,7 @@ export class TramaController {
           project.name,
           this.learningFor(project).promptContext().guidance,
           inInstructions ? deliverNativeSkills(coordinatorSkillParts(skills), false).text : null,
+          this.state.language,
         ),
         resumeThreadId: previous,
         readableRoots: this.readableRoots(project),
@@ -2251,7 +2258,7 @@ export class TramaController {
 
   /** The late rules the Coordinator thread has not received yet, marked as sent: a section and skill inputs. */
   private async pendingRules(document: ProjectDocument, provider: ProviderId): Promise<{ section: string; skills: LoadedSkill[] } | null> {
-    const rules = lateRules(await this.coordinatorSkills(), provider);
+    const rules = lateRules(await this.coordinatorSkills(), provider, this.state.language);
     if (document.coordinator.rulesSent === rules.key) return null;
     document.coordinator.rulesSent = rules.key;
     return { section: `## Regole aggiornate da Trama\nThese rules replace the earlier ones on the same subjects:\n${rules.text}`, skills: rules.skills };
@@ -3862,6 +3869,7 @@ export class TramaController {
             resumed,
             skill: await this.nativeSkill(assignment.duty.skill),
             nativeInput: provider === "codex",
+            language: this.state.language,
           })
         : null;
       // The developer of a slice runs AI Hero's implement and tdd with their original text (M06). As for the planner,
@@ -3871,7 +3879,7 @@ export class TramaController {
       const developer = briefing
         ? developerSkillsDelivery({ implement: await this.nativeSkill("implement"), tdd: await this.nativeSkill("tdd") }, nativeInput)
         : null;
-      const baseInstructions = duty?.instructions ?? specialistInstructions(project.name, specialist, assignment);
+      const baseInstructions = duty?.instructions ?? specialistInstructions(project.name, specialist, assignment, this.state.language);
       const opening = await client.openThread({
         model: assignment.model,
         cwd,
@@ -6223,9 +6231,17 @@ export class TramaController {
 
   // MARK: Settings
 
+  /** The person's language, else the system's first language that Trama has (issue #301). */
+  private resolveLanguage(): Language {
+    return this.state.settings.language ?? languageFromSystem(this.host.systemLanguages?.() ?? []);
+  }
+
   async updateSettings(update: Partial<AppSettings>): Promise<void> {
+    if ("language" in update && update.language !== undefined && !isLanguage(update.language)) throw new DomainError("Lingua non disponibile.");
     const learning = update.learning ? learningSettings({ ...this.state.settings.learning, ...update.learning }) : this.state.settings.learning;
     this.state.settings = { ...this.state.settings, ...update, learning };
+    // The new language holds at once: the window re-renders with the state, and the agents' next turn gets the updated rules.
+    if ("language" in update) this.state.language = this.resolveLanguage();
     if (update.learning) {
       // A pass that started under the old settings stops and saves nothing more.
       for (const [, review] of this.learningReviews) review.abort();
