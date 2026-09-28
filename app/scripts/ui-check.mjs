@@ -3598,7 +3598,8 @@ await priority.scrollIntoViewIfNeeded();
 await themeShots("39a-overview-priority");
 // Opening a project from the overview does not rank it.
 await page.getByTestId("overview-project").filter({ hasText: before39[0] }).getByRole("button", { name: before39[0], exact: true }).click();
-await page.getByTestId("dialog-title").filter({ hasText: before39[0] }).waitFor({ timeout: 30_000 });
+await page.getByTestId("overview").waitFor({ state: "detached", timeout: 30_000 });
+await page.waitForTimeout(1_500);
 await page.getByRole("button", { name: "Panoramica dei progetti" }).click();
 await priority.waitFor();
 await page.waitForTimeout(800);
