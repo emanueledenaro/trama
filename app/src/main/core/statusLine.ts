@@ -12,6 +12,9 @@ import { isActive } from "./team";
 /** The line when nothing is going on: no turn runs, nobody works, and the task in focus has no next move. */
 export const NOTHING_GOING_ON = "Niente in corso.";
 
+/** The sentence of a paused project (A05): what runs ends, and nothing new starts until the person resumes. */
+export const PAUSED_SENTENCE = "In pausa: i turni in corso finiscono, poi non parte niente finché non riprendi.";
+
 const isCoordinatorMove = (move: NextMove | undefined): move is CoordinatorMove => move !== undefined && move in COORDINATOR_MOVES;
 
 const allAssignments = (document: ProjectDocument) => document.team.specialists.flatMap((s) => s.assignments);
@@ -164,15 +167,22 @@ export function statusLine(document: ProjectDocument, runningRequestId: string |
   const held = state && !workers && !now && !coordinatorMove ? slicesHeld(state) : null;
   const reason = blocked ? (state!.why ?? state!.blocker) : (stalled ?? held);
 
+  const runningMove = running?.step?.by === "trama" && isCoordinatorMove(running.step.move)
+    ? { requestId: running.id, label: COORDINATOR_MOVES[running.step.move].label }
+    : null;
+
+  // In pause nothing automatic starts (A05): the line says what still ends and how the work goes on again.
+  if (document.continuousWork?.paused === true) {
+    const paused = [now ? `${now}.` : null, workers ? `${workers}.` : null, PAUSED_SENTENCE].filter((s): s is string => s !== null);
+    return { state: now || workers ? "working" : "waiting", text: paused.join(" "), reason, action, runningMove, paused: true };
+  }
+
   const sentences: string[] = [];
   if (now) sentences.push(`${now}${next ? `, poi ${next}` : ""}.`);
   if (workers) sentences.push(`${workers}.`);
   if (!now && next) sentences.push(personMove ? "Aspetto te per andare avanti." : `Il prossimo passo è mio: ${next}.`);
   if (!sentences.length && blocked) sentences.push("Il lavoro è fermo.");
 
-  const runningMove = running?.step?.by === "trama" && isCoordinatorMove(running.step.move)
-    ? { requestId: running.id, label: COORDINATOR_MOVES[running.step.move].label }
-    : null;
   const lineState: StatusLineView["state"] =
     now || workers ? "working" : blocked || held ? "blocked" : personMove || stalled ? "waiting" : next ? "next" : action ? "waiting" : "idle";
   return {
@@ -181,5 +191,6 @@ export function statusLine(document: ProjectDocument, runningRequestId: string |
     reason,
     action,
     runningMove,
+    paused: false,
   };
 }

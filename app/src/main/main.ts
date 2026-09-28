@@ -128,6 +128,7 @@ const handlers: { [K in ActionName]: Handler<K> } = {
     controller.send(text, moduleId, model, effort, images ?? [], provider ?? null, goalId ?? null),
   "coordinator:takeStep": ({ requestId }) => controller.takeStep(requestId),
   "coordinator:interrupt": () => controller.interrupt(),
+  "coordinator:pause": ({ paused }) => controller.pauseContinuousWork(paused),
   "coordinator:retry": () => controller.startCoordinator(),
   "coordinator:retryRequest": ({ requestId }) => controller.retryRequest(requestId),
   "coordinator:stopRetry": () => controller.stopProviderRetry(),

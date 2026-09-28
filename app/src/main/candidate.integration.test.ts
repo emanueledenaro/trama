@@ -196,7 +196,7 @@ describe("the checks after an ended assignment (issue #204)", () => {
 
     // The work waits for the person, who sees why and the move to take again.
     const reason = `La mossa automatica non è riuscita: l'incarico ${work.id} è concluso ma il suo candidato non è stato dichiarato.`;
-    expect(move.step).toEqual({ move: "verifyCandidate", by: "trama", stalled: reason });
+    expect(move.step).toEqual({ move: "verifyCandidate", by: "trama", trigger: "assignmentEnded", stalled: reason });
     await until(() => Boolean(project.nextSteps[move.id]));
     expect(project.nextSteps[move.id]).toMatchObject({ move: "verifyCandidate", actor: "coordinator", label: "Esegui le verifiche", reason });
     await new Promise((r) => setTimeout(r, 300));
@@ -219,7 +219,7 @@ describe("the checks after an ended assignment (issue #204)", () => {
     expect(candidate.assignmentId).toBe(work.id);
     expect(candidate.evidence.git_status?.result).toBe("pass");
     expect(candidate.technicalReview?.verdict).toBe("approved");
-    expect(move.step).toEqual({ move: "verifyCandidate", by: "trama" });
+    expect(move.step).toEqual({ move: "verifyCandidate", by: "trama", trigger: "assignmentEnded" });
     expect(move.nextStep).toBeUndefined();
     expect(workState(document, document.requests.at(-1)!.id)).toMatchObject({ phase: "candidate", moves: [{ move: "reviewCandidate", actor: "person" }] });
   }, 60_000);

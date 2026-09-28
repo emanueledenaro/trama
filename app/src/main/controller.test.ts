@@ -546,6 +546,73 @@ describe("TramaController", () => {
     }
   }, 60_000);
 
+  it("holds every automatic move in pause, keeps the pause after a restart, and Riprendi starts the move with a round (A05)", async () => {
+    process.env.FAKE_CODEX_AUTOMATIC = "idle";
+    try {
+      const { data } = await setup();
+      const project = controller!.snapshot.project!;
+      const document = project.document;
+      await controller!.pauseContinuousWork(true);
+      expect(controller!.snapshot.project!.statusLine).toMatchObject({ paused: true });
+      await confirmUnderstanding(document);
+      await new Promise((r) => setTimeout(r, 300));
+      // In pause the Coordinator's move stays a move: nothing automatic starts, the round included.
+      expect(automaticRequests(document)).toEqual([]);
+      await controller!.runRound();
+      expect(automaticRequests(document)).toEqual([]);
+      await controller!.stop();
+
+      let state: AppState | null = null;
+      controller = new TramaController(data, {
+        publish: (s) => {
+          state = s;
+        },
+        openExternal: async () => undefined,
+        applyTheme: () => undefined,
+        notify: () => undefined,
+        setOpenAtLogin: () => undefined,
+        aiHeroResourceDirectory: join(root, "resources/AIHero"),
+        demoResourceDirectory: join(root, "resources/DemoProject"),
+        codexExecutable: join(root, "test-fixtures/fake-codex.mjs"),
+      });
+      await controller.start();
+      await until(() => state?.project?.phase.kind === "ready");
+      const reopened = controller.snapshot.project!;
+      expect(reopened.document.continuousWork?.paused).toBe(true);
+      expect(reopened.statusLine).toMatchObject({ paused: true });
+      await new Promise((r) => setTimeout(r, 300));
+      expect(automaticRequests(reopened.document)).toEqual([]);
+
+      // Riprendi runs a round at once: the Coordinator's move starts, and Activity says the round started it.
+      await controller.pauseContinuousWork(false);
+      await until(() => automaticRequests(reopened.document)[0]?.state === "completed" && reopened.runningRequestId === null, 20_000);
+      expect(automaticRequests(reopened.document)[0]!.step).toMatchObject({ move: "preparePlan", by: "trama", trigger: "round" });
+      const rounds = reopened.document.continuousWork!.rounds;
+      expect(rounds.at(-1)!.detail).toBe('Avviata la mossa "Prepara il piano".');
+      expect(activityLog(reopened.document.requests, reopened.document.events, rounds).map((e) => e.kind)).toEqual(["move", "round"]);
+
+      // The move was not made: the next round does not repeat it and opens no provider turn.
+      const requests = reopened.document.requests.length;
+      await controller.runRound();
+      await new Promise((r) => setTimeout(r, 300));
+      expect(reopened.document.requests).toHaveLength(requests);
+      expect(reopened.document.continuousWork!.rounds).toHaveLength(rounds.length);
+    } finally {
+      delete process.env.FAKE_CODEX_AUTOMATIC;
+    }
+  }, 90_000);
+
+  it("runs no round on a project without open work (A05)", async () => {
+    await setup();
+    const document = controller!.snapshot.project!.document;
+    await controller!.send("Ciao", null, null, null);
+    const requests = document.requests.length;
+    await controller!.runRound();
+    await new Promise((r) => setTimeout(r, 200));
+    expect(document.requests).toHaveLength(requests);
+    expect(document.continuousWork?.rounds ?? []).toEqual([]);
+  }, 60_000);
+
   it("retries a turn after a temporary 429 with a growing wait, without writing the message again (P10)", async () => {
     process.env.TRAMA_PROVIDER_RETRY_MS = "40";
     process.env.FAKE_CODEX_RATE_LIMITS = "2";

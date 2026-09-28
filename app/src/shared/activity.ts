@@ -1,16 +1,25 @@
-import type { ConversationEvent, CoordinatorRequest, NextMove } from "./domain";
+import type { ConversationEvent, CoordinatorRequest, NextMove, RoundRecord, WorkEvent } from "./domain";
 
 /**
- * Activity (Q6): the project's log of the Coordinator's automatic moves. The moves Trama starts by itself within the
- * mandate leave the chat, where the conversation with the person stays, and are listed here with name, time and outcome.
+ * Activity (Q6): the project's log of the Coordinator's automatic moves and of the rounds that did something (A05). The
+ * moves Trama starts by itself within the mandate leave the chat, where the conversation with the person stays, and are
+ * listed here with name, time, what started them and outcome.
  */
 
 /** How an automatic move ended: still running, made, not made (Trama's reason in `detail`), stopped, or failed on an error. */
 export type ActivityOutcome = "running" | "done" | "stalled" | "stopped" | "failed";
 
 export interface ActivityEntry {
-  requestId: string;
-  move: NextMove;
+  /** The request of the move, or the round's id. */
+  id: string;
+  /** An automatic move of the Coordinator, or a round of continuous work (A05). */
+  kind: "move" | "round";
+  /** The request of the move; for a round, the move it started, or null. */
+  requestId: string | null;
+  /** The move; null for a round. */
+  move: NextMove | null;
+  /** What started the move, in the person's words ("dopo una verifica rossa"); null for a round or an older record. */
+  trigger: string | null;
   /** The move's name, as the button of the same move says it. */
   label: string;
   /** The dialog the move ran in; null is the project dialog. */
@@ -46,18 +55,39 @@ function outcomeOf(request: CoordinatorRequest): { outcome: ActivityOutcome; det
   }
 }
 
-/** The automatic moves of the project, newest first, from the requests and the move lines Trama recorded. Pure. */
-export function activityLog(requests: CoordinatorRequest[], events: ConversationEvent[]): ActivityEntry[] {
+/** What started an automatic move, in the person's words, for Activity (A05). */
+export const TRIGGER_LABELS: Record<WorkEvent, string> = {
+  turnEnded: "Dopo un turno del Coordinatore",
+  planEnded: "Dopo la fine di un piano",
+  assignmentEnded: "Dopo la fine di un incarico",
+  checkFailed: "Dopo una verifica rossa",
+  worktreeConflict: "Dopo un conflitto tra worktree",
+  issueOpened: "Dopo una issue nuova",
+  pullRequestCommented: "Dopo un commento su una pull request",
+  round: "Nel giro periodico",
+};
+
+/** The name a round has in Activity. */
+export const ROUND_LABEL = "Giro del Coordinatore";
+
+/**
+ * The automatic moves and the rounds with an outcome of the project, newest first, from the requests, the move lines
+ * Trama recorded and the rounds. Pure.
+ */
+export function activityLog(requests: CoordinatorRequest[], events: ConversationEvent[], rounds: RoundRecord[] = []): ActivityEntry[] {
   const labels = new Map<string, string>();
   for (const event of events) {
     const content = event.content;
     if (content.type === "card" && content.kind === "automaticStep" && content.referenceId) labels.set(content.referenceId, content.title);
   }
-  return requests
+  const moves = requests
     .filter(isAutomaticMove)
-    .map((request) => ({
+    .map((request): ActivityEntry => ({
+      id: request.id,
+      kind: "move",
       requestId: request.id,
       move: request.step!.move,
+      trigger: request.step!.trigger ? TRIGGER_LABELS[request.step!.trigger] : null,
       label: labels.get(request.id) ?? request.text,
       goalId: request.goalId ?? null,
       startedAt: request.createdAt,
@@ -65,4 +95,22 @@ export function activityLog(requests: CoordinatorRequest[], events: Conversation
       ...outcomeOf(request),
     }))
     .reverse();
+  const done = [...rounds].reverse().map(
+    (round): ActivityEntry => ({
+      id: round.id,
+      kind: "round",
+      requestId: round.requestId,
+      move: null,
+      trigger: null,
+      label: ROUND_LABEL,
+      goalId: null,
+      startedAt: round.at,
+      endedAt: null,
+      outcome: "done",
+      detail: round.detail,
+    }),
+  );
+  if (!done.length) return moves;
+  // Newest first; a move and the round that started it at the same moment keep the round below its move.
+  return [...moves, ...done].sort((a, b) => b.startedAt.localeCompare(a.startedAt));
 }

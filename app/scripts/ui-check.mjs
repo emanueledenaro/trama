@@ -1015,6 +1015,26 @@ await activity.locator('[data-testid="activity-entry"][data-outcome="stopped"]')
 await activity.getByText("Fermata").first().waitFor();
 await themeShots("15b-activity");
 await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
+// A05: the Pause of continuous work is always on the status line. In pause the line says so, Riprendi takes the place
+// of Pausa as the primary on the right, and nothing automatic starts; Riprendi brings the line back.
+await statusLine.getByRole("button", { name: "Pausa", exact: true }).click();
+const pausedLine = page.locator('[data-testid="status-line"][data-paused="true"]');
+await pausedLine.waitFor({ timeout: 20_000 });
+await pausedLine.getByTestId("status-line-text").getByText(/In pausa: i turni in corso finiscono/).waitFor();
+const resumeButton = pausedLine.getByRole("button", { name: "Riprendi" });
+await resumeButton.waitFor();
+// The primary sits last on the right: Riprendi, unless the person has a move of their own, which stays the primary.
+const lastButton = pausedLine.getByRole("button").last();
+const lastBox = await lastButton.boundingBox();
+const pausedBox = await pausedLine.boundingBox();
+if (!lastBox || !pausedBox || pausedBox.x + pausedBox.width - (lastBox.x + lastBox.width) > 2) throw new Error("The primary of the paused line is not on the right");
+if ((await lastButton.getAttribute("data-variant")) !== "default") throw new Error("The last button of the paused line is not the primary");
+await themeShots("15c-status-line-paused");
+await page.waitForTimeout(300);
+if (await statusLine.getByRole("button", { name: /^Ferma/ }).count()) throw new Error("Trama started a move in pause");
+await resumeButton.click();
+await page.locator('[data-testid="status-line"][data-paused="false"]').waitFor({ timeout: 20_000 });
+await statusLine.getByRole("button", { name: "Pausa", exact: true }).waitFor();
 await page.keyboard.press("Control+K");
 await page.getByRole("textbox", { name: "Cerca in Trama" }).fill("cancel");
 await page.getByRole("option").first().waitFor();
@@ -1200,10 +1220,19 @@ if (await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)
 await actionsOnRight("720x640");
 await shot("17d-focus-narrow");
 // Issue #241: the status line stays in the bar at the minimum window size, its actions on the right, in light and dark.
+// With Pausa (A05) the actions take more room: they share one row, and the last one touches the right edge.
 const activityButton = statusLine.getByRole("button", { name: "Attività" });
 const statusBox = await statusLine.boundingBox();
 const activityBox = await activityButton.boundingBox();
-if (!statusBox || !activityBox || activityBox.x + activityBox.width > statusBox.x + statusBox.width + 1 || activityBox.x < statusBox.x + statusBox.width / 2) {
+const lastActionBox = await statusLine.getByRole("button").last().boundingBox();
+if (
+  !statusBox ||
+  !activityBox ||
+  !lastActionBox ||
+  Math.abs(lastActionBox.x + lastActionBox.width - (statusBox.x + statusBox.width)) > 2 ||
+  Math.abs(activityBox.y + activityBox.height / 2 - (lastActionBox.y + lastActionBox.height / 2)) > 2 ||
+  activityBox.x < statusBox.x + statusBox.width / 3
+) {
   throw new Error("The status line's actions are not on the right at 720x640");
 }
 for (const dark of [false, true]) {

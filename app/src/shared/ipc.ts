@@ -45,6 +45,8 @@ export interface ActionMap {
   /** Takes the next step shown under a reply when it is a message to the Coordinator; Trama records the step (W04). */
   "coordinator:takeStep": [{ requestId: string }, void];
   "coordinator:interrupt": [void, void];
+  /** Pauses or resumes the project's continuous work (A05): the Pause stops automatic moves, rounds and automatic work. */
+  "coordinator:pause": [{ paused: boolean }, void];
   "coordinator:retry": [void, void];
   /** Repeats a failed turn without writing the message again (P10). */
   "coordinator:retryRequest": [{ requestId: string }, void];
