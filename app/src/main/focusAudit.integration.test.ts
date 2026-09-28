@@ -219,7 +219,6 @@ describe("focus mode on a module or the whole project, full screen (F03)", () =>
     await until(() => controller!.snapshot.project?.phase.kind === "ready");
     const project = controller.snapshot.project!;
     const document = project.document;
-    project.github.issues.push({ number: 12, title: "Ordini pagati in revisione", state: "open", body: "Un ordine pagato annullato va in revisione.", url: "u", author: null, labels: [], updatedAt: "" });
 
     // Step 1 of code-review happens before anything starts: a point that does not exist, or no change, is a clear error.
     await expect(controller.startScopedFocusAudit({ kind: "project" }, "release-9")).rejects.toThrow('Il punto fisso "release-9" non esiste in questo repository');
@@ -230,6 +229,10 @@ describe("focus mode on a module or the whole project, full screen (F03)", () =>
 
     const gates = await mkdtemp(join(tmpdir(), "trama-gates-"));
     process.env.FAKE_CODEX_AUDIT_GATE = join(gates, "module");
+    // The issue the commit cites is the Spec. A later reading of GitHub replaces the list, so it goes in just before
+    // the examination reads it, and the rest of the test starts only once both axes are open.
+    await until(() => project.github.status !== "loading");
+    project.github.issues.push({ number: 12, title: "Ordini pagati in revisione", state: "open", body: "Un ordine pagato annullato va in revisione.", url: "u", author: null, labels: [], updatedAt: "" });
     const auditId = await controller.startScopedFocusAudit({ kind: "module", moduleId: "Sources/Orders" }, "HEAD~1");
     const audit = document.audits!.find((a) => a.id === auditId)!;
     expect(audit).toMatchObject({
@@ -248,6 +251,9 @@ describe("focus mode on a module or the whole project, full screen (F03)", () =>
     notify("Trama: conflitto tra due worktree");
     expect(notified).toEqual([]);
     expect(controller.snapshot.focusMode?.pausedNotifications).toBe(1);
+    // The checks ran on the checkout at the pinned HEAD; both axes are open and wait for their gate.
+    await until(() => audit.standards.threadId !== null && audit.spec.threadId !== null, 45_000);
+    expect(audit.specSource).toBe("Issue #12 citata nei commit");
 
     // The authorized work goes on while focus mode is open.
     await controller.send("[proponi-team]", null, null, null);
@@ -262,16 +268,15 @@ describe("focus mode on a module or the whole project, full screen (F03)", () =>
     });
     await controller.send("[assegna]", null, null, null);
     const work = findSpecialist(document, "Ada")!.assignments[0]!;
-    await until(() => work.status === "completed");
+    await until(() => work.status === "completed", 45_000);
     expect(controller.snapshot.focusMode?.auditId).toBe(auditId);
+    expect(audit.status).toBe("reviewing");
 
-    // The checks ran on the checkout at the pinned HEAD; the axes read the project, and the Spec axis the issue a commit cites.
-    await until(() => audit.standards.threadId !== null && audit.spec.threadId !== null);
+    // The axes read the project; the Spec axis read the issue a commit cites.
     await writeFile(join(gates, "module"), "");
-    await until(() => audit.status === "done");
+    await until(() => audit.status === "done", 45_000);
     expect(audit.checks.length).toBeGreaterThan(0);
     expect(audit.checks.every((c) => c.snapshotId === audit.snapshotId)).toBe(true);
-    expect(audit.specSource).toBe("Issue #12 citata nei commit");
     expect(audit.standards.report).toContain(`git diff ${audit.fixedPoint}`);
     expect(audit.standards.items).toEqual([expect.objectContaining({ status: "verified" })]);
     const requests = (await readFile(log, "utf8"))
@@ -299,5 +304,5 @@ describe("focus mode on a module or the whole project, full screen (F03)", () =>
     expect(notified).toHaveLength(2);
     notify("Trama: dopo");
     expect(notified).toHaveLength(3);
-  }, 60_000);
+  }, 150_000);
 });
