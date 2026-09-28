@@ -1,7 +1,7 @@
 import { plainText } from "@shared/plainLanguage";
 import { RecordLabel } from "@/components/chat/ReferenceText";
 import type { AuditAxis, AuditFinding, FindingStatus, FocusAudit } from "@shared/domain";
-import { auditLenses, evidenceLabel, FINDING_STATUS_TEXT, findingTally, LENS_TITLES, lensSummary } from "@shared/findings";
+import { auditLenses, evidenceLabel, FINDING_STATUS_TEXT, findingTally, LENS_TITLE_KEYS, lensSummary } from "@shared/findings";
 import { ChatMarkdown } from "@/components/chat/ChatMarkdown";
 import { EvidenceRow } from "@/components/chat/Cards";
 import { Spinner } from "@/components/Spinner";
@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/field";
 import { Sep } from "@/components/ui/sep";
 import { formatRelativeTime } from "@/lib/format";
+import { useT } from "@/lib/i18n";
 import { act, useUi } from "@/lib/store";
 import { EmptyNote, InspectorSection } from "./Inspector";
 
@@ -102,13 +103,14 @@ function AxisBody({ axis, name }: { axis: AuditAxis; name: string }) {
 export function AuditView({ id }: { id: string }) {
   const project = useUi((s) => s.app?.project)!;
   const setInspector = useUi((s) => s.setInspector);
+  const t = useT();
   const audit = (project.document.audits ?? []).find((a) => a.id === id);
   if (!audit) return <div className="p-4"><EmptyNote>Esame non trovato.</EmptyNote></div>;
   const candidate = project.document.candidates.find((c) => c.id === audit.target.candidateId);
   const running = audit.status === "checking" || audit.status === "reviewing" || audit.status === "verifying";
   const tally = findingTally(audit);
   const lenses = auditLenses(audit);
-  const lensLine = lensSummary(audit);
+  const lensLine = lensSummary(audit, t);
   const checks = candidate?.requiredChecks ?? audit.checks.map((c) => c.check);
   return (
     <div data-testid="focus-audit" data-status={audit.status}>
@@ -150,14 +152,14 @@ export function AuditView({ id }: { id: string }) {
         </div>
       </InspectorSection>
       {lenses.length ? (
-        <InspectorSection title="Lenti di Trama" aside={<Badge tone="outline">Aggiunte di Trama</Badge>}>
+        <InspectorSection title={t("audit.lenses.title")} aside={<Badge tone="outline">{t("audit.lenses.addedBy")}</Badge>}>
           <p className="text-ui-sm text-muted-foreground" data-testid="focus-audit-lenses-note">
-            Sicurezza, qualità dei test e allineamento tra documenti e codice sono controlli in più di Trama: non vengono dal metodo AI Hero, che dà gli assi Standards e Spec. Ogni lente legge il candidato in sola lettura e i suoi rilievi passano la stessa verifica degli assi.
+            {t("audit.lenses.note")}
           </p>
         </InspectorSection>
       ) : null}
       {lenses.map(({ name, lens }) => (
-        <InspectorSection key={name} title={LENS_TITLES[name]} aside={<Badge tone="outline">Aggiunta di Trama</Badge>}>
+        <InspectorSection key={name} title={t(LENS_TITLE_KEYS[name])} aside={<Badge tone="outline">{t("audit.lens.addedBy")}</Badge>}>
           <div data-testid="audit-lens" data-lens={name} data-status={lens.status}>
             <AxisBody axis={lens} name={name} />
           </div>
@@ -166,7 +168,7 @@ export function AuditView({ id }: { id: string }) {
       {audit.summary ? (
         <InspectorSection title="Sintesi">
           <p className="text-ui-sm text-foreground" data-testid="focus-audit-summary">{plainText(audit.summary)}</p>
-          {lensLine ? <p className="mt-1 text-ui-sm text-foreground" data-testid="focus-audit-lens-summary">Lenti di Trama: {lensLine}</p> : null}
+          {lensLine ? <p className="mt-1 text-ui-sm text-foreground" data-testid="focus-audit-lens-summary">{t("audit.lenses.summary", { summary: lensLine })}</p> : null}
           {tally ? <p className="mt-1 text-ui-sm text-muted-foreground" data-testid="focus-audit-tally">Stato dei rilievi: {tally}.</p> : null}
         </InspectorSection>
       ) : null}

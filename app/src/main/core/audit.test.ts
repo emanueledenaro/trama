@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { CandidateEvidence, GitHubIssue, ProjectDocument, WorkPlan } from "@shared/domain";
 import { auditFindings, findingTally, lensSummary } from "@shared/findings";
+import { translator } from "@shared/i18n";
 import {
   AuditError,
   AXIS_BINDINGS,
@@ -158,7 +159,10 @@ describe("focus mode runs code-review with its original text (F01)", () => {
       expect(turn.skills).toEqual([]);
       expect(turn.outputSchema.required).toEqual(["report", "findings", "worst"]);
       expect(turn.instructions).toContain("read-only");
+      expect(turn.instructions).toContain("Write the report in Italian");
     }
+    const english = axisTurn({ projectName: "ordini", audit, candidate, assignment, spec: null, language: "en" }, "spec", skill, false);
+    expect(english.instructions).toContain("Write the report in English");
     // Codex receives SKILL.md as a skill input: the text keeps only the binding.
     const native = axisTurn({ projectName: "ordini", audit, candidate, assignment, spec: null }, "standards", skill, true);
     expect(native.skills).toEqual([{ name: "code-review", path: join(skillsDirectory, "code-review/SKILL.md"), enabled: true, description: null }]);
@@ -351,6 +355,20 @@ describe("Trama's lenses next to the axes (F05)", () => {
     finishAxis(audit, "security", { report: "Un rilievo.", findings: [draft("Segreto nei log")], worst: null }, at(7));
     failAudit(audit, "Trama si è chiusa.", at(8));
     expect(audit.lenses).toMatchObject({ security: { status: "done", items: [{ status: "hypothesis" }] }, tests: { status: "failed", failure: "Trama si è chiusa." }, docs: { status: "failed" } });
+  });
+
+  it("speaks the person's language in the lens report and in the lens summary (issue #301)", () => {
+    const document = project();
+    const { assignment, candidate } = candidateOf(document, true);
+    const audit = openAudit(document, candidate, at(5));
+    const turn = lensTurn({ projectName: "ordini", audit, candidate, assignment, language: "en" }, "docs");
+    expect(turn.instructions).toContain("You are the Documents and code lens of focus mode");
+    expect(turn.instructions).toContain("Write the report in English");
+    expect(lensTurn({ projectName: "ordini", audit, candidate, assignment }, "docs").instructions).toContain("Write the report in Italian");
+    beginLenses(audit, "m", at(6));
+    finishAxis(audit, "security", { report: "R.", findings: [draft("Token in the log"), draft("Path leaves its root")], worst: "Token in the log." }, at(7));
+    finishAxis(audit, "tests", { report: "R.", findings: [draft("No test for the second cancel")], worst: null }, at(7));
+    expect(lensSummary(audit, translator("en"))).toBe("Security: 2 findings, the worst: Token in the log. Test quality: 1 finding. Documents and code: running.");
   });
 
   it("reads a report written before the lenses without inventing them", () => {

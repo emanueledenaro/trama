@@ -1,4 +1,5 @@
 import type { AuditAxis, AuditFinding, FindingEvidence, FindingStatus, FocusAudit, LensName } from "./domain";
+import { DEFAULT_LANGUAGE, type Language, type MessageKey, type Translate, translate, translator } from "./i18n";
 
 /** The status of a finding as the report names it (F02). */
 export const FINDING_STATUS_TEXT: Record<FindingStatus, string> = {
@@ -19,12 +20,15 @@ export function evidenceLabel(evidence: FindingEvidence | null): string {
 /** Trama's lenses (F05) in the report's order. */
 export const LENS_NAMES: readonly LensName[] = ["security", "tests", "docs"];
 
-/** The name of each lens as the person reads it. */
-export const LENS_TITLES: Record<LensName, string> = {
-  security: "Sicurezza",
-  tests: "Qualità dei test",
-  docs: "Documenti e codice",
+/** The catalog key of each lens's name (issue #301). */
+export const LENS_TITLE_KEYS: Record<LensName, MessageKey> = {
+  security: "audit.lens.security",
+  tests: "audit.lens.tests",
+  docs: "audit.lens.docs",
 };
+
+/** The name of a lens in a language; the prompts use Italian for data and English for instructions. */
+export const lensTitle = (name: LensName, language: Language = DEFAULT_LANGUAGE): string => translate(language, LENS_TITLE_KEYS[name]);
 
 /** The lenses of an examination that ran them, in order; empty for a report written before them. */
 export const auditLenses = (audit: FocusAudit): { name: LensName; lens: AuditAxis }[] =>
@@ -36,19 +40,18 @@ export const auditFindings = (audit: FocusAudit): AuditFinding[] => [
   ...auditLenses(audit).flatMap(({ lens }) => lens.items ?? []),
 ];
 
-const findingCount = (n: number) => (n === 0 ? "nessun rilievo" : n === 1 ? "1 rilievo" : `${n} rilievi`);
-
 /** The lenses' closing line, in the same shape as the skill's summary of the axes. Null when no lens ran. */
-export function lensSummary(audit: FocusAudit): string | null {
+export function lensSummary(audit: FocusAudit, t: Translate = translator(DEFAULT_LANGUAGE)): string | null {
   const lenses = auditLenses(audit);
   if (!lenses.length) return null;
   return lenses
-    .map(({ name, lens }) => {
-      const title = LENS_TITLES[name];
-      if (lens.status === "failed") return `${title}: non riuscita.`;
-      if (lens.status !== "done") return `${title}: in corso.`;
-      const findings = lens.findings ?? 0;
-      return `${title}: ${findingCount(findings)}${lens.worst && findings ? `, il più grave: ${lens.worst.replace(/\.$/, "")}` : ""}.`;
+    .map(({ name, lens: value }) => {
+      const lens = t(LENS_TITLE_KEYS[name]);
+      if (value.status === "failed") return t("audit.lens.failed", { lens });
+      if (value.status !== "done") return t("audit.lens.running", { lens });
+      const count = value.findings ?? 0;
+      if (!count) return t("audit.lens.noFindings", { lens });
+      return value.worst ? t("audit.lens.findingsWorst", { lens, count, worst: value.worst.replace(/\.$/, "") }) : t("audit.lens.findings", { lens, count });
     })
     .join(" ");
 }
