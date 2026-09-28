@@ -159,6 +159,7 @@ const BLOCKER_WORDS: Record<string, MessageKey> = {
   GATE_RUNNING: "main.quality.blocker.GATE_RUNNING",
   GATE_FAILED: "main.quality.blocker.GATE_FAILED",
   REMOTE_CONFLICT: "main.quality.blocker.REMOTE_CONFLICT",
+  CLOUD_CHECK_FAILED: "main.quality.blocker.CLOUD_CHECK_FAILED",
   WORKTREE_CONFLICT: "main.quality.blocker.WORKTREE_CONFLICT",
 };
 

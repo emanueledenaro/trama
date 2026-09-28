@@ -2,6 +2,8 @@ import { randomUUID } from "node:crypto";
 import type {
   AgentColor,
   AssignmentCommit,
+  AssignmentPlace,
+  CloudSession,
   AssignmentStatus,
   ContractSeam,
   MandateAction,
@@ -24,6 +26,7 @@ import { shortId } from "@shared/ids";
 import { DEFAULT_PARALLEL_DEVELOPERS, parallelDevelopers } from "@shared/parallel";
 import { freeAgentColor, isAgentColor, tagFromCompetence } from "@shared/identity";
 import { FIXED_ROLES, isFixedRole, roleProfile } from "@shared/roster";
+import { cloudWorking } from "@shared/workPlace";
 import { readDeveloperReport } from "./implementation";
 import { pendingQuestion, pendingState } from "./developerQuestions";
 import { t } from "./personLanguage";
@@ -595,6 +598,60 @@ export function recordWorkspace(document: ProjectDocument, id: string, workspace
   });
 }
 
+/** Records where this start of the work runs and why (A19). */
+export function recordPlace(document: ProjectDocument, id: string, place: AssignmentPlace, now = new Date()): void {
+  updateAssignment(document, id, now, (assignment) => {
+    assignment.place = place;
+  });
+}
+
+/**
+ * The work starts in a cloud session (A19): it runs, as a turn of the provider that stays open until the session's
+ * draft pull request comes back to the Mac, and it counts in the developers in parallel like local work (Q29).
+ */
+export function beginCloudWork(document: ProjectDocument, id: string, session: CloudSession, now = new Date()): void {
+  updateAssignment(document, id, now, (assignment) => {
+    if (assignment.status !== "preparing") throw new TeamError("not_running", `Assignment ${id} is not starting.`);
+    assignment.status = "running";
+    assignment.cloud = session;
+    assignment.turns.push({
+      id: `cloud-${randomUUID()}`,
+      number: assignment.turns.length + 1,
+      model: assignment.model,
+      provider: session.provider,
+      startedAt: now.toISOString(),
+      endedAt: null,
+      outcome: null,
+    });
+    assignment.lastUpdate = t("main.team.cloudWorking", { branch: session.branch });
+  });
+}
+
+/** Updates the cloud session of the work as Trama read it (A19). */
+export function updateCloudSession(document: ProjectDocument, id: string, change: (session: CloudSession) => void, now = new Date()): SpecialistAssignment {
+  return updateAssignment(document, id, now, (assignment) => {
+    if (!assignment.cloud) throw new TeamError("no_cloud_session", `Assignment ${id} has no cloud session.`);
+    change(assignment.cloud);
+    assignment.cloud.checkedAt = now.toISOString();
+  });
+}
+
+/**
+ * The person stops work that runs in a cloud session (A19): Trama stops following it and the work waits for a resume.
+ * The session itself is the provider's: it stops from its own page.
+ */
+export function stopCloudWork(document: ProjectDocument, id: string, note: string, now = new Date()): void {
+  updateAssignment(document, id, now, (assignment) => {
+    const turn = assignment.turns.at(-1);
+    if (turn && !turn.endedAt) {
+      turn.endedAt = now.toISOString();
+      turn.outcome = "interrupted";
+    }
+    if (assignment.cloud) assignment.cloud.status = "stopped";
+    if (isActive(assignment)) confirmStop(assignment, note, now);
+  });
+}
+
 export function recordThread(document: ProjectDocument, id: string, threadId: string, now = new Date()): void {
   updateAssignment(document, id, now, (assignment) => {
     assignment.threadId = threadId;
@@ -699,7 +756,10 @@ export function confirmStopWithoutTurn(document: ProjectDocument, id: string, no
 
 /** Active work left from a previous launch has no runtime: it is stopped and can be resumed. */
 export function stopOrphanedAssignments(document: ProjectDocument, note: string, now = new Date()): string[] {
-  const ids = activeAssignments(document).map((a) => a.id);
+  // A cloud session goes on with Trama closed (A19, Q28): its work is not orphaned.
+  const ids = activeAssignments(document)
+    .filter((a) => !cloudWorking(a))
+    .map((a) => a.id);
   for (const id of ids) {
     updateAssignment(document, id, now, (assignment) => {
       const turn = assignment.turns.at(-1);

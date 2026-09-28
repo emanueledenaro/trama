@@ -133,6 +133,11 @@ export function inspectCandidate(document: ProjectDocument, candidate: Candidate
   }
   for (const choice of candidate.unresolvedChoices) blockers.push({ code: "UNRESOLVED_CHOICE", detail: choice });
   for (const effect of candidate.externalEffects) blockers.push({ code: "EXTERNAL_EFFECT_UNSUPPORTED", detail: effect });
+  // Work from a cloud session (A19): Trama's run on the Mac of the publication checks on this snapshot stops it.
+  const cloudChecks = findAssignment(document, candidate.assignmentId)?.cloud?.macChecks;
+  if (cloudChecks?.snapshotId === candidate.snapshotId && cloudChecks.problems.length) {
+    blockers.push({ code: "CLOUD_CHECK_FAILED", detail: cloudChecks.problems.join(" ") });
+  }
   for (const check of candidate.requiredChecks) {
     const evidence = candidate.evidence[check];
     if (!evidence) {

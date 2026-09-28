@@ -313,6 +313,8 @@ export const mainIt = {
   "main.controller.parallelDevelopersNotInteger":
     "Il numero di sviluppatori in parallelo deve essere un numero intero.",
   "main.controller.noTurnRunning": "Nessun turno in corso.",
+  "main.controller.cloudStopUntracked":
+    "Trama non segue più la sessione cloud. La sessione si ferma dalla sua pagina di Claude Code.",
   "main.controller.personActor": "Persona",
   "main.controller.stoppedByPerson": "Fermato dalla persona",
   "main.controller.noWorktreeToRemove":
@@ -759,6 +761,8 @@ export const mainIt = {
     "Il {work} è in conflitto con il branch principale su GitHub: vanno riallineati.",
   "main.workPhase.whyWorktreeConflict":
     "Il {work} tocca gli stessi file di un altro lavoro in corso.",
+  "main.workPhase.whyCloudCheckFailed":
+    "Il {work} viene dal cloud e non ha superato i controlli sul Mac.",
   "main.workPhase.whyNotMergeable": "Il {work} non si può ancora unire.",
   "main.workPhase.whyPlanFailed": "Il piano non è riuscito: va rifatto.",
   "main.workPhase.whyPlanStale":
@@ -788,6 +792,8 @@ export const mainIt = {
     "Il candidato {id} è in conflitto con il lavoro su GitHub: {detail}",
   "main.workPhase.blockerWorktreeConflict":
     "Il candidato {id} è in conflitto con il lavoro di un altro incarico: {detail}",
+  "main.workPhase.blockerCloudCheckFailed":
+    "Il candidato {id} viene da una sessione cloud e non ha superato i controlli sul Mac: {detail}",
   "main.workPhase.blockerOther":
     "Il candidato {id} è bloccato: {reason}. {detail}",
   "main.workPhase.blockerPlanFailed": "Il piano {id} non è riuscito.",
@@ -1200,6 +1206,8 @@ export const mainIt = {
   "main.quality.blocker.GATE_FAILED": "una figura non ha finito la revisione",
   "main.quality.blocker.REMOTE_CONFLICT":
     "c'è un conflitto con il lavoro su GitHub",
+  "main.quality.blocker.CLOUD_CHECK_FAILED":
+    "il lavoro della sessione cloud non ha superato i controlli sul Mac",
   "main.quality.blocker.WORKTREE_CONFLICT":
     "c'è un conflitto con il lavoro di un altro incarico",
   "main.quality.verified.missing": "Non è verificato: {blockers}.",
@@ -2172,4 +2180,81 @@ export const mainIt = {
     "Proposta di modifica della memoria: la trovi in Memoria",
   "main.review.profileUpdated": "Profilo aggiornato",
   "main.review.memoryUpdated": "Memoria aggiornata",
+  // MARK: Cloud sessions (A19)
+  "main.controller.cloudNotStarted": "La sessione cloud non è partita: {error}",
+  "main.controller.cloudNotStartedTitle": "Sessione cloud non avviata",
+  "main.controller.cloudStartingTitle": "Avvio della sessione cloud",
+  "main.controller.cloudStartedTitle": "Sessione cloud avviata",
+  "main.controller.cloudNoLink":
+    "Claude Code non ha dato il link della sessione.",
+  "main.controller.cloudStoppedWhileStarting":
+    "Fermato dalla persona mentre la sessione cloud partiva.",
+  "main.controller.cloudPullClosed":
+    "La pull request #{number} è stata chiusa prima delle verifiche di Trama.",
+  "main.controller.cloudPullClosedTurn":
+    "La pull request #{number} della sessione cloud è stata chiusa prima delle verifiche di Trama.",
+  "main.controller.cloudFailedTitle": "Sessione cloud non riuscita",
+  "main.controller.cloudOpenedDraft":
+    "La sessione cloud ha aperto la pull request in bozza #{number}.",
+  "main.controller.cloudReturnedTitle": "Sessione cloud tornata sul Mac",
+  "main.controller.cloudReturnedDetail":
+    "Pull request in bozza #{number}, branch {branch}: {url}",
+  "main.controller.macChecksFailedTitle": "Controlli sul Mac non superati",
+  "main.controller.macChecksPassedTitle": "Controlli sul Mac superati",
+  "main.controller.macChecksFailedDetail":
+    "{problems} Il candidato resta fermo finché il lavoro non li supera.",
+  "main.controller.macChecksPassedDetail":
+    "Niente segreti né file sensibili, git diff --check pulito, messaggi di commit validi.",
+  "main.controller.cloudNotReturned":
+    "Il lavoro della sessione cloud non è tornato sul Mac: {error}",
+  "main.controller.cloudNotReturnedTitle": "Sessione cloud non tornata sul Mac",
+  "main.controller.notCloudAssignment":
+    "L'incarico non lavora in una sessione cloud.",
+  "main.controller.cloudNoGitHubRemote":
+    "Il progetto non ha un remoto GitHub: Trama non può leggere la sessione.",
+  "main.controller.assignmentNotFound": "Incarico non trovato.",
+  "main.controller.cannotMovePlace":
+    "Puoi spostare l'incarico prima dell'avvio o quando aspetta una ripresa.",
+  "main.controller.movedToCloudTitle": "Spostato in cloud",
+  "main.controller.movedToLocalTitle": "Spostato in locale",
+  "main.controller.movedToCloudDetail":
+    "Alla prossima ripresa lavora in una sessione cloud, se il cloud si può usare.",
+  "main.controller.movedToLocalDetail": "Alla prossima ripresa lavora sul Mac.",
+  "main.controller.invalidWorkPlace":
+    "Il luogo di lavoro deve essere Automatico, Sempre in locale o Cloud quando possibile.",
+  "main.controller.cloudNoWorkingCopy":
+    "Il lavoro della sessione cloud non ha una copia di lavoro sul Mac.",
+  "main.controller.cloudWorkingCopyChanged":
+    "La copia di lavoro è cambiata dopo il candidato: serve un nuovo candidato con nuove verifiche.",
+  "main.controller.macChecksFailedDraft":
+    "{problems} La pull request #{number} resta in bozza.",
+  "main.controller.macChecksRepeatedFailed":
+    "Trama ha ripetuto sul Mac i controlli di pubblicazione e non sono superati: {problems}",
+  "main.controller.pullReadyTitle":
+    "Pull request #{number} pronta per la revisione",
+  "main.controller.pullReadyDetail":
+    "Controlli sul Mac superati, bozza tolta: {url}",
+  "main.cloud.startTimeout":
+    "Claude Code non ha aperto la sessione cloud entro cinque minuti.",
+  "main.cloud.exited": "claude --cloud è uscito con {code}.",
+  "main.cloud.invalidBranch": "Nome di branch non valido: {problems}",
+  "main.cloud.pullsNotListed":
+    "GitHub non ha elencato le pull request: {error}",
+  "main.cloud.pullNotUpdated":
+    "GitHub non ha aggiornato la pull request: {error}",
+  "main.cloud.draftNotRemoved": "GitHub non ha tolto la bozza: {error}",
+  "main.cloud.secrets": "Segreti o file sensibili: {items}.",
+  "main.cloud.sensitiveFiles": "File sensibili nel branch: {files}.",
+  "main.cloud.diffCheck": "git diff --check non è pulito: {errors}.",
+  "main.cloud.noCommits": "Il branch non ha commit oltre la base.",
+  "main.cloud.invalidCommit":
+    'Messaggio di commit non valido "{subject}": {problems}',
+  "main.team.cloudWorking":
+    "Al lavoro in una sessione cloud sul branch {branch}",
+  "main.workspace.notTramaBranch":
+    "Il branch {branch} non è un branch di Trama.",
+  "main.workspace.fetchFailed":
+    "git fetch del branch {branch} non riuscito: {error}",
+  "main.workspace.noCommonBase":
+    "Il branch {branch} non ha una base in comune con il progetto.",
 } satisfies Record<string, string>;

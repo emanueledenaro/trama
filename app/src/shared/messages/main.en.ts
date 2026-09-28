@@ -305,6 +305,8 @@ export const mainEn: Record<keyof typeof mainIt, string> = {
   "main.controller.parallelDevelopersNotInteger":
     "The number of developers in parallel must be a whole number.",
   "main.controller.noTurnRunning": "No turn in progress.",
+  "main.controller.cloudStopUntracked":
+    "Trama no longer follows the cloud session. Stop the session from its Claude Code page.",
   "main.controller.personActor": "Person",
   "main.controller.stoppedByPerson": "Stopped by the person",
   "main.controller.noWorktreeToRemove":
@@ -728,6 +730,8 @@ export const mainEn: Record<keyof typeof mainIt, string> = {
     "{work} conflicts with the main branch on GitHub: they need to be realigned.",
   "main.workPhase.whyWorktreeConflict":
     "{work} touches the same files as other work in progress.",
+  "main.workPhase.whyCloudCheckFailed":
+    "{work} comes from the cloud and did not pass the checks on the Mac.",
   "main.workPhase.whyNotMergeable": "{work} cannot be merged yet.",
   "main.workPhase.whyPlanFailed":
     "The plan did not succeed: it needs to be redone.",
@@ -757,6 +761,8 @@ export const mainEn: Record<keyof typeof mainIt, string> = {
     "Candidate {id} conflicts with the work on GitHub: {detail}",
   "main.workPhase.blockerWorktreeConflict":
     "Candidate {id} conflicts with the work of another assignment: {detail}",
+  "main.workPhase.blockerCloudCheckFailed":
+    "Candidate {id} comes from a cloud session and did not pass the checks on the Mac: {detail}",
   "main.workPhase.blockerOther":
     "Candidate {id} is blocked: {reason}. {detail}",
   "main.workPhase.blockerPlanFailed": "Plan {id} did not succeed.",
@@ -1152,6 +1158,8 @@ export const mainEn: Record<keyof typeof mainIt, string> = {
   "main.quality.blocker.GATE_FAILED": "a reviewer did not finish the review",
   "main.quality.blocker.REMOTE_CONFLICT":
     "there is a conflict with the work on GitHub",
+  "main.quality.blocker.CLOUD_CHECK_FAILED":
+    "the work of the cloud session did not pass the checks on the Mac",
   "main.quality.blocker.WORKTREE_CONFLICT":
     "there is a conflict with the work of another assignment",
   "main.quality.verified.missing": "Not verified: {blockers}.",
@@ -2099,4 +2107,78 @@ export const mainEn: Record<keyof typeof mainIt, string> = {
   "main.review.staged": "Proposed Memory change: you find it in Memory",
   "main.review.profileUpdated": "Profile updated",
   "main.review.memoryUpdated": "Memory updated",
+  // MARK: Cloud sessions (A19)
+  "main.controller.cloudNotStarted": "The cloud session did not start: {error}",
+  "main.controller.cloudNotStartedTitle": "Cloud session not started",
+  "main.controller.cloudStartingTitle": "Starting the cloud session",
+  "main.controller.cloudStartedTitle": "Cloud session started",
+  "main.controller.cloudNoLink":
+    "Claude Code did not give the link of the session.",
+  "main.controller.cloudStoppedWhileStarting":
+    "Stopped by the person while the cloud session was starting.",
+  "main.controller.cloudPullClosed":
+    "Pull request #{number} was closed before Trama's checks.",
+  "main.controller.cloudPullClosedTurn":
+    "Pull request #{number} of the cloud session was closed before Trama's checks.",
+  "main.controller.cloudFailedTitle": "Cloud session failed",
+  "main.controller.cloudOpenedDraft":
+    "The cloud session opened draft pull request #{number}.",
+  "main.controller.cloudReturnedTitle": "Cloud session back on the Mac",
+  "main.controller.cloudReturnedDetail":
+    "Draft pull request #{number}, branch {branch}: {url}",
+  "main.controller.macChecksFailedTitle": "Checks on the Mac not passed",
+  "main.controller.macChecksPassedTitle": "Checks on the Mac passed",
+  "main.controller.macChecksFailedDetail":
+    "{problems} The candidate stays on hold until the work passes them.",
+  "main.controller.macChecksPassedDetail":
+    "No secrets or sensitive files, git diff --check clean, valid commit messages.",
+  "main.controller.cloudNotReturned":
+    "The work of the cloud session did not come back to the Mac: {error}",
+  "main.controller.cloudNotReturnedTitle": "Cloud session not back on the Mac",
+  "main.controller.notCloudAssignment":
+    "The assignment does not work in a cloud session.",
+  "main.controller.cloudNoGitHubRemote":
+    "The project has no GitHub remote: Trama cannot read the session.",
+  "main.controller.assignmentNotFound": "Assignment not found.",
+  "main.controller.cannotMovePlace":
+    "You can move the assignment before it starts or while it waits to resume.",
+  "main.controller.movedToCloudTitle": "Moved to the cloud",
+  "main.controller.movedToLocalTitle": "Moved to the Mac",
+  "main.controller.movedToCloudDetail":
+    "At the next resume it works in a cloud session, if the cloud can be used.",
+  "main.controller.movedToLocalDetail":
+    "At the next resume it works on the Mac.",
+  "main.controller.invalidWorkPlace":
+    "The place of work must be Automatic, Always local or Cloud when possible.",
+  "main.controller.cloudNoWorkingCopy":
+    "The work of the cloud session has no working copy on the Mac.",
+  "main.controller.cloudWorkingCopyChanged":
+    "The working copy changed after the candidate: a new candidate with new checks is needed.",
+  "main.controller.macChecksFailedDraft":
+    "{problems} Pull request #{number} stays a draft.",
+  "main.controller.macChecksRepeatedFailed":
+    "Trama ran the publication checks again on the Mac and they did not pass: {problems}",
+  "main.controller.pullReadyTitle": "Pull request #{number} ready for review",
+  "main.controller.pullReadyDetail":
+    "Checks on the Mac passed, draft removed: {url}",
+  "main.cloud.startTimeout":
+    "Claude Code did not open the cloud session within five minutes.",
+  "main.cloud.exited": "claude --cloud exited with {code}.",
+  "main.cloud.invalidBranch": "Branch name not valid: {problems}",
+  "main.cloud.pullsNotListed": "GitHub did not list the pull requests: {error}",
+  "main.cloud.pullNotUpdated":
+    "GitHub did not update the pull request: {error}",
+  "main.cloud.draftNotRemoved":
+    "GitHub did not take the pull request out of draft: {error}",
+  "main.cloud.secrets": "Secrets or sensitive files: {items}.",
+  "main.cloud.sensitiveFiles": "Sensitive files in the branch: {files}.",
+  "main.cloud.diffCheck": "git diff --check is not clean: {errors}.",
+  "main.cloud.noCommits": "The branch has no commits beyond the base.",
+  "main.cloud.invalidCommit":
+    'Commit message not valid "{subject}": {problems}',
+  "main.team.cloudWorking": "Working in a cloud session on branch {branch}",
+  "main.workspace.notTramaBranch": "Branch {branch} is not a Trama branch.",
+  "main.workspace.fetchFailed": "git fetch of branch {branch} failed: {error}",
+  "main.workspace.noCommonBase":
+    "Branch {branch} has no common base with the project.",
 };
