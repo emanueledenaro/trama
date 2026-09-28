@@ -97,6 +97,7 @@ function FindingButton({ finding, auditId, actionable, selected, onSelect }: { f
       <button
         type="button"
         aria-pressed={selected}
+        data-testid="audit-finding-select"
         onClick={onSelect}
         className={cn(
           "w-full space-y-1 rounded-lg px-2.5 py-2 text-left transition-colors hover:bg-[var(--sidebar-accent)]",

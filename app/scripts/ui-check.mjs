@@ -2190,7 +2190,7 @@ await focusAudit.getByTestId("focus-audit-summary").getByText(/Standards: 1 rili
 const auditFinding = (axis, status) => focusAudit.locator(`[data-testid="audit-axis"][data-axis="${axis}"] [data-testid="audit-finding"][data-status="${status}"]`);
 await auditFinding("standards", "verified").getByText("Verificato da Trama").waitFor();
 // The proof column shows how Trama verified the finding the person picks.
-await auditFinding("spec", "confirmed").getByRole("button").click();
+await auditFinding("spec", "confirmed").getByTestId("audit-finding-select").click();
 await focusAudit.getByTestId("focus-proof").getByText(/Confermato da gpt-5\.5:/).waitFor();
 await auditFinding("spec", "hypothesis").getByText("Ipotesi", { exact: true }).waitFor();
 if ((await auditFinding("spec", "hypothesis").getByTestId("audit-finding-evidence").innerText()) !== "Prova: make check") throw new Error("Focus mode: the hypothesis does not show its proof");
