@@ -9,12 +9,12 @@ jobs:
   licenses:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
       - name: Test dello script
-        run: node --test scripts/licenses/lib.test.mjs scripts/release/lib.test.mjs
+        run: node --test scripts/licenses/lib.test.mjs scripts/release/lib.test.mjs scripts/release/cli.test.mjs
       - name: Licenze delle dipendenze
         run: node scripts/licenses/cli.mjs app/package-lock.json
   review:
@@ -24,7 +24,7 @@ jobs:
       contents: read
       pull-requests: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       # Dependency review needs the repository's dependency graph. Until it is
       # enabled the step is skipped with a warning; the licenses job above
       # still enforces the license policy on the whole lockfile.
@@ -42,7 +42,7 @@ jobs:
       # Blocks new dependencies with known high or critical vulnerabilities
       # or with a strong copyleft license. The full license policy is in
       # scripts/licenses/lib.mjs.
-      - uses: actions/dependency-review-action@v4
+      - uses: actions/dependency-review-action@v5
         if: steps.graph.outputs.enabled == 'true'
         with:
           fail-on-severity: high

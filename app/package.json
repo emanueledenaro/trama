@@ -14,6 +14,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "check:names": "node scripts/check-file-names.mjs",
     "check:upstream-names": "node scripts/check-upstream-names.mjs",
+    "check:inventory": "node scripts/check-inventory.mjs",
     "test": "vitest run",
     "dist": "npm run build && electron-builder",
     "ui-check": "npm run build && node scripts/ui-check.mjs ui-check"

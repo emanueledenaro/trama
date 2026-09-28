@@ -21,6 +21,7 @@ import { classifyProviderFailure } from "@shared/providerFailure";
 import { capabilityLines, coordinatorUnavailableReason, PROVIDERS, type ProviderDescriptor } from "@shared/providers";
 import { AIHERO_ATTRIBUTION } from "@shared/skills";
 import { MAX_PARALLEL_DEVELOPERS_SETTING, MIN_PARALLEL_DEVELOPERS, parallelDevelopers, sharedDevelopers } from "@shared/parallel";
+import { offersCloud, WORK_PLACE_SETTINGS, workPlaceSetting } from "@shared/workPlace";
 import { GitHubCliDescription } from "@/components/GitHubCliStatus";
 import { TramaMark } from "@/components/brand/TramaMark";
 import { ProviderIcon } from "@/components/ProviderIcon";
@@ -529,6 +530,7 @@ function MethodSection() {
         />
       </Group>
       <ParallelDevelopersGroup />
+      <WorkPlaceGroup />
     </>
   );
 }
@@ -593,6 +595,59 @@ function ParallelDevelopersGroup() {
               </button>
             ))}
           </div>
+        }
+      />
+    </Group>
+  );
+}
+
+/**
+ * A19 (issue #260): where the developers' work runs in the open project. Automatic unless the person changes it; the
+ * cloud is offered only when the project's provider has one (Claude or Codex).
+ */
+function WorkPlaceGroup() {
+  const t = useT();
+  const project = useUi((s) => s.app?.project ?? null);
+  const usable = project && !project.isDemo && project.stateWritable;
+  const provider = project ? (project.document.coordinator.threadProvider ?? project.document.selectedProvider ?? "codex") : null;
+  const cloud = offersCloud(provider);
+  const setting = project ? workPlaceSetting(project.document) : null;
+  const options = cloud ? WORK_PLACE_SETTINGS : WORK_PLACE_SETTINGS.filter((value) => value === "local");
+  const selected = cloud ? setting : "local";
+  return (
+    <Group title={t("settings.workPlace.title")} note={t("settings.workPlace.note")}>
+      <Row
+        label={project ? t("settings.workPlace.inProject", { name: project.name }) : t("settings.workPlace.inOpenProject")}
+        description={
+          !project
+            ? t("settings.workPlace.openProject")
+            : project.isDemo
+              ? t("settings.workPlace.demo")
+              : !cloud
+                ? t("settings.workPlace.localOnly", { provider: PROVIDERS.find((p) => p.id === provider)?.name ?? String(provider) })
+                : t(`workPlace.setting.${setting!}.description`)
+        }
+        control={
+          usable ? (
+            <div role="radiogroup" aria-label={t("settings.workPlace.title")} className="flex rounded-lg bg-[var(--color-background-button-secondary)] p-0.5" data-testid="work-place">
+              {options.map((value) => (
+                <button
+                  key={value}
+                  type="button"
+                  role="radio"
+                  aria-checked={selected === value}
+                  disabled={!cloud}
+                  onClick={() => void act("project:settings", { workPlace: value })}
+                  className={cn(
+                    "flex h-6 items-center justify-center whitespace-nowrap rounded-md px-2 text-ui-sm transition-colors",
+                    selected === value ? "bg-[var(--color-background-surface)] text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  {t(`workPlace.setting.${value}`)}
+                </button>
+              ))}
+            </div>
+          ) : null
         }
       />
     </Group>
