@@ -2841,3 +2841,89 @@ await bannedCard.getByRole("button", { name: "Ho visto" }).click();
 await bannedItem.waitFor({ state: "detached", timeout: 20_000 });
 await page.evaluate(() => window.trama.invoke("settings:update", { theme: "system" }));
 await app.close();
+
+// Issue #248: a check red on the project's branch is a problem outside the work in progress. With GitHub the
+// Coordinator opens one issue for it, the bug triage takes it and Trama puts it in the backlog or with the assignment
+// that works on it; Activity lists each choice with the issue on the right. Without GitHub the problem is a backlog
+// item in Trama. Codex and Claude, light and dark.
+const problemProject = async (name, remote) => {
+  const path = await mkdtemp(join(tmpdir(), `trama-ui-${name}-`));
+  await cp(resolve("resources/DemoProject"), path, { recursive: true });
+  await writeFile(join(path, "package.json"), JSON.stringify({ name: "negozio", private: true, scripts: { test: 'node -e "process.exit(1)"' } }));
+  execFileSync("git", ["-C", path, "init", "-q", "-b", "main"]);
+  if (remote) execFileSync("git", ["-C", path, "remote", "add", "origin", remote]);
+  execFileSync("git", ["-C", path, "add", "."]);
+  execFileSync("git", ["-C", path, "-c", "user.name=Trama UI", "-c", "user.email=ui@trama.local", "commit", "-q", "-m", "Negozio"]);
+  return path;
+};
+const problemShots = async (name) => {
+  for (const provider of ["codex", "claudeAgent"]) {
+    for (const dark of [false, true]) {
+      await setLook(provider, dark);
+      await shot(`${name}-${provider}-${dark ? "dark" : "light"}`);
+    }
+  }
+  await setLook(null, false);
+};
+const redCheckWithMandate = async (path, title) => {
+  await page.evaluate(() => window.trama.invoke("settings:update", { continuousWork: false, theme: "light" }));
+  await page.evaluate((project) => window.trama.invoke("project:open", { path: project }), path);
+  await page.getByTestId("dialog-title").filter({ hasText: title }).waitFor({ timeout: 30_000 });
+  await page.getByText("Ho letto lo studio").first().waitFor({ timeout: 30_000 });
+  await page.evaluate(() =>
+    window.trama.invoke("mandate:grant", {
+      requestId: null,
+      objectives: ["Correggere i bug"],
+      priorities: [],
+      scopeModuleIds: ["Sources/Orders"],
+      authorizedActions: ["executeInWorktree"],
+      limits: [],
+    }),
+  );
+  // The grant is a turn of the Coordinator: the red check is asked once it ends.
+  await page.getByText("Ho concesso il mandato (versione 1).").first().waitFor({ timeout: 20_000 });
+  await page.getByRole("button", { name: "Interrompi" }).waitFor({ state: "hidden", timeout: 20_000 });
+  // Typed, not filled: a draft filled right after the grant does not reach the composer's state and is not sent.
+  await composer().click({ timeout: 60_000 });
+  await composer().pressSequentially("[verifica:node_test]");
+  await page.keyboard.press("Enter");
+  await page.getByText("[verifica:node_test]", { exact: true }).first().waitFor({ timeout: 20_000 });
+  await page.getByTestId("status-line").getByRole("button", { name: "Attività" }).click();
+};
+const problemsGhLog = join(await mkdtemp(join(tmpdir(), "trama-ui-problemi-gh-")), "gh.log");
+({ app, page } = await launch({ PATH: `${ghBin}:${process.env.PATH}`, FAKE_GH_LOG: problemsGhLog, FAKE_GH_ISSUE_BASE: "20" }));
+await redCheckWithMandate(await problemProject("problemi", "https://github.com/trama-ui/problemi.git"), "trama-ui-problemi");
+const problemLog = page.getByTestId("activity-log");
+await problemLog.locator('[data-testid="activity-problem"]').filter({ hasText: "Aperta la issue #21" }).waitFor({ timeout: 90_000 });
+const placedProblem = problemLog.locator('[data-testid="activity-problem"]').filter({ hasText: /La issue #21 (va nel backlog|è assegnata all'incarico)/ });
+await placedProblem.waitFor({ timeout: 90_000 });
+await placedProblem.getByText(/Triage: /).waitFor();
+await placedProblem.locator(".cta-row").getByRole("button", { name: "Apri la issue #21" }).waitFor();
+const problemCalls = (await readFile(problemsGhLog, "utf8")).trim().split("\n").map((line) => JSON.parse(line));
+const openedIssues = problemCalls.filter((call) => call.includes("POST") && call.some((arg) => /\/issues$/.test(arg)));
+if (openedIssues.length !== 1) throw new Error(`Expected one issue for the red check, got ${openedIssues.length}`);
+if (!openedIssues[0].includes("labels[]=needs-triage")) throw new Error("The issue of the problem does not carry the needs-triage label");
+if (!problemCalls.some((call) => call.includes("POST") && call.some((arg) => /\/issues\/21\/labels$/.test(arg)))) throw new Error("Trama did not apply the triage labels");
+if (/[–—]/.test(await problemLog.innerText())) throw new Error("A dash in the steps of the found problem");
+await problemShots("27a-found-problem-issue");
+// The recap cites the issue the Coordinator opened, with its number.
+await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
+await composer().fill("/riep");
+await page.getByRole("option", { name: /^\/riepilogo/ }).first().waitFor();
+await page.keyboard.press("Enter");
+await page.waitForFunction(() => document.querySelector('textarea[aria-label="Messaggio al Coordinatore"]')?.value.startsWith("/riepilogo"));
+await page.keyboard.press("Enter");
+const problemRecap = page.getByTestId("recap-card").last();
+await problemRecap.getByText(/Aperta la issue #21 per un problema trovato/).waitFor({ timeout: 20_000 });
+await problemRecap.scrollIntoViewIfNeeded();
+await problemShots("27b-found-problem-recap");
+await app.close();
+
+({ app, page } = await launch());
+await redCheckWithMandate(await problemProject("problemi-locali", null), "trama-ui-problemi-locali");
+const localBacklog = page.getByTestId("problem-backlog");
+await localBacklog.getByTestId("problem-backlog-item").filter({ hasText: "Solo in Trama" }).waitFor({ timeout: 90_000 });
+await page.getByTestId("activity-log").locator('[data-testid="activity-problem"]').filter({ hasText: "Nel backlog di Trama" }).waitFor();
+await localBacklog.scrollIntoViewIfNeeded();
+await problemShots("27c-found-problem-local-backlog");
+await app.close();

@@ -1317,6 +1317,55 @@ export interface ProjectDocument {
   continuousWork?: ContinuousWorkRecord;
   /** The Coordinator's recaps and the milestones already told (A03); absent until Trama first reads the milestones. */
   recap?: RecapLedger;
+  /** The problems found outside the work in progress and their issues (A08); absent until Trama first looks for them. */
+  problems?: ProblemLedger;
+}
+
+/** The proof a found problem refers to (A08): a red check or a reviewer's finding. */
+export interface ProblemEvidence {
+  kind: "check" | "finding";
+  /** The record it names: the check failure or the gate. */
+  reference: string;
+  /** The proof in the person's words, for the issue and for Activity. */
+  label: string;
+}
+
+/**
+ * A problem Trama found outside the work in progress (A08, Q10): a check red on the checkout or on a candidate's base
+ * too, or a reviewer's finding on a file the candidate did not change. The Coordinator opens one issue for it, or links
+ * the open one about the same problem, has it triaged and assigns it or puts it in the backlog. Without GitHub it stays
+ * in Trama as a backlog item.
+ */
+export interface FoundProblem {
+  id: string;
+  /** The same problem has the same key, whatever found it: `check:<check>`, `finding:<role>:<file>:<title>`. */
+  key: string;
+  title: string;
+  /** What Trama saw, in Markdown, for the issue body. */
+  detail: string;
+  evidence: ProblemEvidence;
+  foundAt: string;
+  /** The issue of the problem; `opened` false when an open issue about the same problem was already there. */
+  issue: { number: number; url: string; at: string; opened: boolean } | null;
+  /** Why the issue could not be opened the last time Trama tried; null otherwise. */
+  issueFailure: { message: string; at: string } | null;
+  /** The triage labels Trama applied to the issue after the triage, once. */
+  labelsApplied: string[] | null;
+  /** Where the problem went after the triage: an assignment that works on it, or the backlog. */
+  placement: ProblemPlacement | null;
+}
+
+export type ProblemPlacement =
+  | { kind: "assignment"; assignmentId: string; at: string; reason: string }
+  | { kind: "backlog"; at: string; reason: string };
+
+/** Trama's bookkeeping of found problems (A08). */
+export interface ProblemLedger {
+  /** When Trama started looking: records older than this are not new problems. */
+  since: string;
+  /** The records already read, as `failure:<id>` or `gate:<id>:<check or finding>`, so each is read once. */
+  seen: string[];
+  items: FoundProblem[];
 }
 
 export interface ProjectSettings {
