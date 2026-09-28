@@ -1490,8 +1490,14 @@ gitIn("-c", "user.name=Trama UI", "-c", "user.email=ui@trama.local", "commit", "
 await page.evaluate((path) => window.trama.invoke("project:open", { path }), candidateProject);
 await page.getByTestId("dialog-title").filter({ hasText: "trama-ui-candidato" }).waitFor({ timeout: 30_000 });
 await page.getByText("Ho letto lo studio").first().waitFor({ timeout: 30_000 });
-// Issue #240: with nothing waiting for the person, the summary above the composer does not show.
-if (await page.getByTestId("waiting-summary").count()) throw new Error("The Aspetta te summary shows with nothing waiting");
+// Issue #292: after the study only the goal the Coordinator proposed waits. Discarded, it leaves Aspetta te, and with
+// nothing waiting for the person the summary above the composer does not show (issue #240).
+const proposedGoal = page.locator('[data-testid="waiting-reference"][data-waiting-kind="goal"]').first();
+await proposedGoal.waitFor({ timeout: 30_000 });
+const proposedGoalId = (await proposedGoal.getAttribute("data-waiting-key")).replace(/^goal:/, "");
+await page.evaluate((id) => window.trama.invoke("goal:update", { id, status: "abandoned" }), proposedGoalId);
+await page.getByTestId("waiting-summary").waitFor({ state: "detached", timeout: 10_000 });
+if (await page.locator('[data-testid="waiting-reference"]').count()) throw new Error("A reference to Aspetta te stays with nothing waiting");
 const send = async (text) => {
   await composer().fill(text);
   await page.keyboard.press("Enter");
