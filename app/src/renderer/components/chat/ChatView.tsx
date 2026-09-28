@@ -470,9 +470,10 @@ export function ChatView({ isMac }: { isMac: boolean }) {
       ) : project ? (
         <>
           {/* Outside the chat's pane: the bar and its open queue stay while the person changes the filter (W02). */}
-          <FocusBar key={project.id} />
+          {/* Siblings need distinct keys: a key shared with the pane left a stale focus bar mounted on a project change. */}
+          <FocusBar key={`focus-${project.id}`} />
           <BranchDivergenceNotice />
-          <div key={project.id} className="chat-pane-enter relative flex min-h-0 flex-1 flex-col">
+          <div key={`pane-${project.id}`} className="chat-pane-enter relative flex min-h-0 flex-1 flex-col">
             {/* The composer stays mounted across filters: one chat, one draft (U01). */}
             <Timeline key={goalId ?? "all"} />
             <ExercisePanel />
