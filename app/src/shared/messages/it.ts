@@ -193,7 +193,7 @@ export const it = {
   "settings.continuous.title": "Lavoro continuo",
   "settings.continuous.label": "Il Coordinatore va avanti da solo dentro il mandato",
   "settings.continuous.description":
-    "Prepara il piano, assegna il lavoro ed esegue le verifiche senza chiedere. Ti chiede solo decisioni di prodotto, il mandato, il team e l'unione del candidato. Puoi fermare ogni mossa dalla riga di stato, e fermare tutto il lavoro automatico del progetto con Pausa.",
+    "Prepara il piano, assegna il lavoro ed esegue le verifiche senza chiedere. Ti chiede solo decisioni di prodotto, il mandato, il team e l'unione del candidato. Puoi fermare ogni mossa dalla riga di stato, e fermare tutto il lavoro automatico del progetto con «Pausa del Coordinatore».",
   "settings.parallel.title": "Sviluppatori in parallelo",
   "settings.parallel.note":
     "Ogni sviluppatore libero prende in autonomia la prossima fetta pronta nei suoi moduli, dentro il mandato e con il lavoro continuo attivo. I ruoli fissi non contano nel limite.",
@@ -233,10 +233,10 @@ export const it = {
   "settings.monitor.enabled": "Monitor attivo",
   "settings.monitor.openAtLogin": "Avvia Trama all'accesso, in background",
   "settings.monitor.repositories": "Repository osservati",
-  "settings.monitor.none": "Nessun repository.",
+  "settings.monitor.none": "Nessun repository osservato.",
   "settings.monitor.updated": "Aggiornato",
   "settings.monitor.remove": "Togli",
-  "settings.monitor.openRepository": "Repository del progetto aperto.",
+  "settings.monitor.openRepository": "Repository del progetto aperto, non ancora osservato.",
   "settings.monitor.watch": "Osserva",
 
   "settings.presence.title": "Presenza",

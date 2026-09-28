@@ -382,7 +382,7 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
           strength,
           adrConflict: "",
         });
-        const answer = { candidates: [candidate("Approfondire l'annullamento", "Strong"), candidate("Unire i pagamenti", "Speculative")], topRecommendation: `Skill ricevute: ${seen.join(", ")}${memory}` };
+        const answer = { candidates: [candidate("Approfondire l'annullamento", "Strong"), candidate("Unire i pagamenti", "Speculative")], topRecommendation: `${seen.some((item) => item.startsWith("skill:improve-codebase-architecture:") && item.endsWith("/improve-codebase-architecture/SKILL.md")) ? "Partire dall'annullamento: tocca un solo modulo." : `Skill mancante: ${seen.join(", ") || "nessuna"}.`}${memory}` };
         setTimeout(() => finish(JSON.stringify(answer)), 10);
         return;
       }
@@ -940,7 +940,8 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
       }
       // Like Codex: `total` adds up every request of the thread and keeps growing, `last` is the request that fills the window (issue #305).
       processedTokens += text.includes("[pieno]") ? 2_300_000 : 120_000;
-      const lastRequest = text.includes("[pieno]") ? 230_000 : text.includes("[compattato]") ? 20_000 : 12_000;
+      // 13.000 of 258.000 is 5,04%: just past the lowest threshold with the exact share (issue #272).
+      const lastRequest = text.includes("[pieno]") ? 230_000 : text.includes("[compattato]") ? 20_000 : 13_000;
       if (text.includes("[compattato]")) {
         send({ method: "item/completed", params: { threadId, turnId, item: { id: "compaction", type: "contextCompaction" } } });
       }

@@ -27,6 +27,7 @@ import { ProviderIcon } from "@/components/ProviderIcon";
 import { Spinner } from "@/components/Spinner";
 import { Button } from "@/components/ui/button";
 import { Badge, TextArea } from "@/components/ui/field";
+import { RuleLabel } from "@/components/chat/RuleLabel";
 import { activeRules, CLEAN_CODE_RULES, CLEAN_CODE_SOURCE, CLEAN_CODE_VERSION } from "@shared/cleanCode";
 import { cn } from "@/lib/cn";
 import { useLanguage, useT } from "@/lib/i18n";
@@ -595,7 +596,7 @@ function StandardSection() {
                 key={rule.id}
                 label={
                   <span className="flex items-center gap-2">
-                    {rule.label}
+                    <RuleLabel rule={rule} />
                     {rule.severity === "blocking" ? <Badge tone="warning">{t("settings.standard.blocking")}</Badge> : null}
                   </span>
                 }
@@ -680,7 +681,10 @@ function MonitorSection() {
         ) : null}
       </Group>
       <Group title={t("settings.monitor.repositories")}>
-        {monitor.repositories.length === 0 ? <Row label={<span className="text-muted-foreground">{t("settings.monitor.none")}</span>} /> : null}
+        {/* The empty note never sits above the open project's repository: that row says it is not observed yet (issue #272). */}
+        {monitor.repositories.length === 0 && !(repository && !monitored) ? (
+          <Row label={<span className="text-muted-foreground">{t("settings.monitor.none")}</span>} />
+        ) : null}
         {monitor.repositories.map((repo) => {
           const status = monitor.status[repo];
           return (

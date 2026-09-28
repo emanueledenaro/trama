@@ -9,7 +9,7 @@ import { act, useUi } from "@/lib/store";
 import { Sep } from "@/components/ui/sep";
 
 const ATTENTION: Record<AttentionReason, { label: string; tone: "warning" | "destructive" | "success" | "info" }> = {
-  decision: { label: "Decisione richiesta", tone: "warning" },
+  decision: { label: "Aspetta te", tone: "warning" },
   blocked: { label: "Lavoro fermo", tone: "destructive" },
   approval: { label: "Risultato da approvare", tone: "success" },
   running: { label: "Al lavoro", tone: "info" },
@@ -68,7 +68,7 @@ export function OverviewView() {
       <div className="mx-auto w-full max-w-[var(--app-chat-max-width)] px-4 py-5 sm:px-6">
         <div className="flex items-center gap-2">
           <p className="min-w-0 flex-1 text-ui text-muted-foreground">
-            Prima i progetti che chiedono una decisione, poi il lavoro fermo, i risultati da approvare e il lavoro in corso.
+            Prima i progetti che aspettano te, poi il lavoro fermo, i risultati da approvare e il lavoro in corso.
           </p>
           <Button size="sm" variant="ghost" onClick={load} disabled={loading} aria-label="Aggiorna la panoramica">
             {loading ? <Spinner /> : <IconRefresh />} Aggiorna
