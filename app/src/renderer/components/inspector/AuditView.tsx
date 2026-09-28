@@ -43,7 +43,7 @@ function FollowUpLine({ followUp }: { followUp: FindingFollowUp }) {
     const issue = followUp.issue;
     return issue
       ? withNodes(t("audit.finding.issueLink"), { number: link(`#${issue.number}`, () => setInspector({ kind: "issue", number: issue.number })) })
-      : withNodes(t("audit.finding.backlogLink"), { backlog: link(t("audit.finding.backlogName"), () => setInspector({ kind: "activity" })) });
+      : withNodes(t("audit.finding.backlogLink"), { backlog: link(t("audit.finding.backlogName"), () => setInspector({ kind: "issues", backlog: true })) });
   }
   if (followUp.kind === "assignment") return withNodes(t("audit.finding.assignmentLink"), { name: <RecordName id={followUp.assignmentId} /> });
   return withNodes(t("audit.finding.pactLink"), { name: <RecordName id={followUp.questionId} /> });

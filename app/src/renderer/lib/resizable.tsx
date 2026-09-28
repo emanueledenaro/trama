@@ -9,17 +9,23 @@ export interface WidthBounds {
   max: number | ((viewport: number) => number);
 }
 
-const upper = (bounds: WidthBounds) => (typeof bounds.max === "number" ? bounds.max : bounds.max(window.innerWidth));
+/** The window's size along the panel's axis: its width for a panel beside the editor, its height for one below. */
+export type PanelAxis = "width" | "height";
 
-const initialOf = (bounds: WidthBounds) => clampWidth(typeof bounds.initial === "number" ? bounds.initial : bounds.initial(window.innerWidth), bounds.min, upper(bounds));
+const viewportOf = (axis: PanelAxis) => (axis === "width" ? window.innerWidth : window.innerHeight);
+
+const upper = (bounds: WidthBounds, axis: PanelAxis) => (typeof bounds.max === "number" ? bounds.max : bounds.max(viewportOf(axis)));
+
+const initialOf = (bounds: WidthBounds, axis: PanelAxis) =>
+  clampWidth(typeof bounds.initial === "number" ? bounds.initial : bounds.initial(viewportOf(axis)), bounds.min, upper(bounds, axis));
 
 export const clampWidth = (width: number, min: number, max: number) => Math.round(Math.min(Math.max(width, min), Math.max(min, max)));
 
 /** The width the person chose on this device, or null while the panel keeps its default. */
-function readWidth(key: string, bounds: WidthBounds): number | null {
+function readWidth(key: string, bounds: WidthBounds, axis: PanelAxis): number | null {
   try {
     const saved = Number(localStorage.getItem(key));
-    if (Number.isFinite(saved) && saved > 0) return clampWidth(saved, bounds.min, upper(bounds));
+    if (Number.isFinite(saved) && saved > 0) return clampWidth(saved, bounds.min, upper(bounds, axis));
   } catch {
     // Storage can be missing or blocked: the default width still works.
   }
@@ -30,14 +36,14 @@ function readWidth(key: string, bounds: WidthBounds): number | null {
  * A panel width the person can change, remembered on this device and kept within bounds when the window changes.
  * Until the person changes it, the panel keeps its default, which may follow the window's width.
  */
-export function useResizableWidth(key: string, bounds: WidthBounds) {
-  const [chosen, setChosen] = useState(() => readWidth(key, bounds) !== null);
-  const [width, setWidthState] = useState(() => readWidth(key, bounds) ?? initialOf(bounds));
+export function useResizableWidth(key: string, bounds: WidthBounds, axis: PanelAxis = "width") {
+  const [chosen, setChosen] = useState(() => readWidth(key, bounds, axis) !== null);
+  const [width, setWidthState] = useState(() => readWidth(key, bounds, axis) ?? initialOf(bounds, axis));
   // While the person drags, width transitions are off so the panel follows the pointer.
   const [resizing, setResizing] = useState(false);
   const setWidth = useCallback(
     (next: number) => {
-      const value = clampWidth(next, bounds.min, upper(bounds));
+      const value = clampWidth(next, bounds.min, upper(bounds, axis));
       setWidthState(value);
       setChosen(true);
       try {
@@ -52,7 +58,7 @@ export function useResizableWidth(key: string, bounds: WidthBounds) {
   );
   const reset = useCallback(
     () => {
-      setWidthState(initialOf(bounds));
+      setWidthState(initialOf(bounds, axis));
       setChosen(false);
       try {
         localStorage.removeItem(key);
@@ -64,12 +70,21 @@ export function useResizableWidth(key: string, bounds: WidthBounds) {
     [key],
   );
   useEffect(() => {
-    const onResize = () => setWidthState((current) => (chosen ? clampWidth(current, bounds.min, upper(bounds)) : initialOf(bounds)));
+    const onResize = () => setWidthState((current) => (chosen ? clampWidth(current, bounds.min, upper(bounds, axis)) : initialOf(bounds, axis)));
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chosen]);
-  return { width, setWidth, resizing, setResizing, reset, bounds: { min: bounds.min, max: upper(bounds) } };
+  return { width, setWidth, resizing, setResizing, reset, bounds: { min: bounds.min, max: upper(bounds, axis) } };
+}
+
+/**
+ * A panel height the person can change, remembered on this device: the bottom panel under the editor (issue #337).
+ * The bounds' functions take the window's height.
+ */
+export function useResizableHeight(key: string, bounds: WidthBounds) {
+  const { width: height, setWidth: setHeight, ...rest } = useResizableWidth(key, bounds, "height");
+  return { height, setHeight, ...rest };
 }
 
 /** Which way a sash moves: a vertical sash splits panels side by side, a horizontal one splits them top and bottom. */
