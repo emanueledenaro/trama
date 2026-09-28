@@ -779,7 +779,9 @@ export function AssignmentCard({ assignmentId }: { assignmentId: string }) {
       {assignment.seams ? (
         <ContractFields assignment={assignment} decisions={project.document.decisions} />
       ) : assignment.dependencies.length ? (
-        <Field label="Dipendenze">{assignment.dependencies.join(", ")}</Field>
+        <Field label="Dipendenze">
+          <ReferenceText text={assignment.dependencies.join(", ")} />
+        </Field>
       ) : null}
       {goal ? (
         <Field label="Obiettivo del progetto">
@@ -814,7 +816,9 @@ export function AssignmentCard({ assignmentId }: { assignmentId: string }) {
           <IconGitBranch className="size-3" /> {assignment.workspace.branch}
         </div>
       ) : null}
-      <p className="mt-2 text-ui-sm text-muted-foreground">{assignmentLine(project.document, assignment)}</p>
+      <p className="mt-2 text-ui-sm text-muted-foreground">
+        <ReferenceText text={assignmentLine(project.document, assignment)} />
+      </p>
       {assignment.failure ? <Field label="Errore">{readableFailure(assignment.failure)}</Field> : null}
       {assignment.report !== undefined ? <ReportField report={assignment.report} /> : null}
       {assignment.questions?.length ? <QuestionsField questions={assignment.questions} /> : null}

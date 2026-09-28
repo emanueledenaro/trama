@@ -98,6 +98,13 @@ const expectAsked = async (fragment, control) => {
   if (!asked) throw new Error(`${control}: no "${fragment}" in the focused composer, it holds: ${await composer().inputValue().catch(() => "no composer")}`);
 };
 
+// Issue #392: Trama's ids stay on hover; the text the person reads names the records.
+const rawIds = async (locator) => (await locator.innerText()).match(/(?<![\w-])(?:DQ|DM|AT|PR|[ACDFGMPQRS])-[0-9A-F]{8}(?![\w-])/g) ?? [];
+const expectNoRawIds = async (locator, where) => {
+  const ids = await rawIds(locator);
+  if (ids.length) throw new Error(`${where} shows raw ids: ${[...new Set(ids)].join(", ")}`);
+};
+
 // W17: the seam, the bots' stitch used as an accent. At most one shows on a screen, and only on the approved uses;
 // each use is saved in light and dark. With high contrast the stitch becomes a continuous edge.
 const visibleSeams = () =>
@@ -466,6 +473,9 @@ const waitingButtonBox = await waitingButton.boundingBox();
 if (!waitingBarBox || !waitingButtonBox || waitingBarBox.x + waitingBarBox.width - (waitingButtonBox.x + waitingButtonBox.width) > 12) {
   throw new Error("The Aspetta te summary button is not on the right");
 }
+// Issue #392: the strip floats over the chat; its blur stays behind it, so the timeline does not read through it.
+const waitingGlass = await waitingBar.evaluate((el) => ({ isolation: getComputedStyle(el).isolation, blur: getComputedStyle(el, "::before").backdropFilter }));
+if (waitingGlass.isolation !== "isolate" || !waitingGlass.blur.includes("blur")) throw new Error(`The Aspetta te strip lets the chat through: ${JSON.stringify(waitingGlass)}`);
 for (const [label, theme] of themes) {
   await setTheme(theme);
   await shot(`03b3-waiting-${label}`);
@@ -1281,6 +1291,7 @@ await page.getByRole("button", { name: /^Lavoro/ }).first().click();
   const workPanel = page.getByTestId("inspector");
   await workPanel.getByText("Fette confermate dal Coordinatore").first().waitFor({ timeout: 10_000 });
   if (await workPanel.getByText("In costruzione", { exact: true }).count()) throw new Error("Lavoro calls a candidate under construction");
+  await expectNoRawIds(workPanel, "Lavoro");
   const wasDark = await page.evaluate(() => document.documentElement.classList.contains("dark"));
   for (const dark of [false, true]) {
     await page.evaluate((on) => document.documentElement.classList.toggle("dark", on), dark);
@@ -1903,6 +1914,13 @@ await page.getByTestId("status-line").getByRole("button", { name: "Attività" })
 const toolErrors = page.getByTestId("activity-log").locator('[data-testid="activity-entry"][data-outcome="stalled"]').first().getByTestId("activity-tool-errors");
 await toolErrors.locator("summary").click();
 await toolErrors.getByText(/is an assignment, not a candidate/).first().waitFor();
+// The activity's labels, details and steps name the records (issue #392); the tool's own error text stays as written.
+{
+  const activityLog = page.getByTestId("activity-log");
+  const toolErrorIds = await rawIds(activityLog.getByTestId("activity-tool-errors").first());
+  const shown = (await rawIds(activityLog)).filter((id) => !toolErrorIds.includes(id));
+  if (shown.length) throw new Error(`Attività shows raw ids: ${[...new Set(shown)].join(", ")}`);
+}
 for (const dark of [false, true]) {
   await page.evaluate((on) => document.documentElement.classList.toggle("dark", on), dark);
   await shot(`18a4-activity-tool-errors-${dark ? "dark" : "light"}`);
@@ -2030,6 +2048,10 @@ const review = correctedCard.getByTestId("technical-review");
 await review.getByTestId("review-measures").getByText(/Misure di Trama, standard v1/).waitFor();
 const suggestion = review.locator('[data-testid="review-finding"][data-severity="suggestion"]');
 await suggestion.getByText("NOTE.md:1").waitFor();
+// Issue #392: Clean Code's finding is listed once on the card, in the technical review, not again in its gate row.
+if (await correctedCard.locator('[data-testid="gate-review"][data-role="cleanCode"] [data-testid="gate-finding"]').filter({ hasText: "NOTE.md:1" }).count()) {
+  throw new Error("A Clean Code finding shows twice on the candidate card");
+}
 await suggestion.getByText("Suggerimento").waitFor();
 await review.getByText(/non un'evidenza/).waitFor();
 await review.scrollIntoViewIfNeeded();
@@ -2420,6 +2442,7 @@ await setLookTo(questionLook.provider, questionLook.dark);
 await agentThread.getByRole("button", { name: "Apri lo sviluppatore" }).click();
 const specialistThreads = page.getByTestId("specialist-threads").getByRole("button", { name: /Domanda al Coordinatore, fetta S1/ });
 await specialistThreads.waitFor();
+await expectNoRawIds(page.getByTestId("inspector"), "The specialist's page");
 await specialistThreads.scrollIntoViewIfNeeded();
 await shot("19m-specialist-threads");
 await specialistThreads.click();
