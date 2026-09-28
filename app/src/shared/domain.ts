@@ -1139,7 +1139,11 @@ export interface Candidate {
   updatedAt: string;
   evidence: Record<string, CandidateEvidence>;
   technicalReview: TechnicalReview | null;
-  clearance: { actor: string; fingerprint: string; at: string } | null;
+  /**
+   * The Coordinator's green light. `mandateVersion` is the mandate it was given under (issue #41): Trama merges on it only
+   * while that mandate is in force, so a green light without it, or from an earlier mandate, needs a new one.
+   */
+  clearance: { actor: string; fingerprint: string; at: string; mandateVersion?: number } | null;
   humanApproval: { actor: string; fingerprint: string; at: string } | null;
   /**
    * mergedAt: when Trama saw the pull request merged on GitHub. headSHA: the commit Trama pushed, the only head its merge
@@ -1203,6 +1207,19 @@ export interface CandidateMerge {
   at: string;
   /** The merge commit on GitHub, when it is known. */
   mergeSHA?: string | null;
+  /** The mandate version a merge on the Coordinator's green light ran under (issue #41); null on the person's ok. */
+  mandateVersion?: number | null;
+  /** A serious destructive change the Coordinator does not merge (issue #41): it waits for the person. */
+  stop?: MergeStop | null;
+}
+
+/** Why the Coordinator stopped a merge that destroys something (issue #41): what happens, and what the person can do. */
+export interface MergeStop {
+  reasons: string[];
+  consequences: string[];
+  alternatives: string[];
+  /** When the person chose not to merge it: it leaves Aspetta te and stays on the candidate. */
+  acknowledgedAt: string | null;
 }
 
 export interface InterfaceShot {
@@ -1686,6 +1703,13 @@ export interface AuditFinding {
 }
 
 /**
+ * Trama's own lenses of focus mode (F05, issue #129): security, test quality and agreement between documents and code.
+ * They are not in AI Hero's skills: Trama adds them next to the two axes of code-review, each as a read-only session
+ * whose findings go through the same verification as the axes' (F02).
+ */
+export type LensName = "security" | "tests" | "docs";
+
+/**
  * What the person made of a finding with one click (F04, issue #128). "ticket": a found problem in Trama's ledger, with
  * its GitHub issue when the repository is linked, else kept as Trama's own work. "assignment": the correction given
  * to a developer within the mandate. "pactCard": a trade-off put to the person as a question of the Pact.
@@ -1695,7 +1719,7 @@ export type FindingFollowUp =
   | { kind: "assignment"; assignmentId: string; at: string }
   | { kind: "pactCard"; questionId: string; at: string };
 
-/** One axis of AI Hero's code-review skill, run as a read-only session of its own (F01). */
+/** One axis of AI Hero's code-review skill, or one of Trama's lenses, run as a read-only session of its own (F01, F05). */
 export interface AuditAxis {
   /** "skipped": the skill skips the Spec sub-agent when there is no spec. */
   status: "waiting" | "running" | "done" | "skipped" | "failed";
@@ -1746,6 +1770,8 @@ export interface FocusAudit {
   specSource: string | null;
   standards: AuditAxis;
   spec: AuditAxis;
+  /** Trama's lenses (F05), run next to the axes; absent in reports written before them. */
+  lenses?: Record<LensName, AuditAxis>;
   /** The skill's closing line, per axis: total findings and the worst one within each axis. */
   summary: string | null;
   failure: string | null;

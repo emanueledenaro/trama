@@ -40,6 +40,8 @@ export interface Reference {
   detail: string | null;
   /** The page on GitHub, for issues, pull requests and commits. */
   url: string | null;
+  /** The agent the name says a work is of ("di Luca"): a text that writes it again after the id says it once (issue #392). */
+  owner?: string;
 }
 
 export interface ReferenceSources {
@@ -73,6 +75,25 @@ const PATH_PATTERN = /(?<![\w./@-])((?:[\w.-]+\/)+[\w.-]*[\w]|[\w-][\w.-]*\.[A-Z
 const SHA_PATTERN = /(?<![\w-])[0-9a-f]{7,40}(?![\w-])/g;
 /** Nouns a text may write before a reference; the reference then shows its short name. */
 const NOUN_BEFORE = /(?:^|[^\p{L}])(incarico|candidato|decisione|domanda|mandato|piano|fetta|obiettivo|issue|ticket|pr|pull request|modulo|file|commit|branch|revisione|esame|percorso)\s*$/iu;
+/**
+ * The words that may stand right before a slice id or an issue number that names Trama's record (issue #392): the
+ * nouns of slices and issues, articles, prepositions, conjunctions and GitHub's closing keywords. After any other word
+ * the short code belongs to that word ("le tariffe S1", "l'ordine #2") and stays text.
+ */
+const SHORT_CODE_LEADS = new Set(
+  [
+    "fetta fette slice slices issue issues ticket tickets pr prs pull request requests",
+    "il lo la i gli le un uno una di a da in con su per tra fra",
+    "del dello della dei degli delle al allo alla ai agli alle dal dallo dalla dai dagli dalle",
+    "nel nello nella nei negli nelle sul sullo sulla sui sugli sulle col coi",
+    "e ed o od ma né oppure poi anche come dopo prima vedi cioè",
+    "the an of to on for and or with from by at see after before via",
+    "close closes closed fix fixes fixed resolve resolves resolved chiude chiudi risolve",
+  ].flatMap((words) => words.split(" ")),
+);
+const WORD_BEFORE = /(\p{L}+)\s+$/u;
+/** A list of short codes of the same kind: "S1 e S2", "#13, #14". */
+const LIST_BEFORE = /^(?:\s*,\s*|\s+(?:e|ed|o|and|or)\s+)$/iu;
 
 const clip = (text: string, limit = 60) => {
   const clean = text.replace(/\s+/g, " ").trim();
@@ -141,10 +162,11 @@ export function buildReferenceIndex({ document, modules, github }: ReferenceSour
     // Developers carry a person's name; a fixed role's name ("Sicurezza") is a common word and is linked by id only.
     if (specialist.origin !== "fixedRole" && specialist.name.trim().length >= 3) index.names.set(specialist.name.trim(), reference);
   }
+  const ownedBy = (reference: Reference, specialist: Specialist | undefined): Reference => (specialist ? { ...reference, owner: specialist.name } : reference);
   for (const { assignment, specialist } of assignments) {
     index.ids.set(
       assignment.id,
-      make({ kind: "assignment", id: assignment.id, specialistId: specialist.id }, assignment.id, "incarico", workNames.get(assignment.id)!, clip(assignment.objective, 120)),
+      ownedBy(make({ kind: "assignment", id: assignment.id, specialistId: specialist.id }, assignment.id, "incarico", workNames.get(assignment.id)!, clip(assignment.objective, 120)), specialist),
     );
     if (assignment.workspace?.branch) {
       index.branches.set(assignment.workspace.branch, make({ kind: "branch", name: assignment.workspace.branch }, assignment.workspace.branch, "", assignment.workspace.branch, `Branch dell'incarico ${assignment.id}`));
@@ -153,12 +175,16 @@ export function buildReferenceIndex({ document, modules, github }: ReferenceSour
   for (const candidate of document.candidates) {
     const found = assignments.find((a) => a.assignment.id === candidate.assignmentId);
     const name = candidateNames.get(candidate.id)!;
-    const reference = make({ kind: "candidate", id: candidate.id }, candidate.id, "candidato", name, found ? clip(found.assignment.objective, 120) : null);
+    const author = found?.specialist ?? owner(candidate.specialistId);
+    const reference = ownedBy(make({ kind: "candidate", id: candidate.id }, candidate.id, "candidato", name, found ? clip(found.assignment.objective, 120) : null), author);
     index.ids.set(candidate.id, reference);
     if (candidate.technicalReview) {
       index.ids.set(
         candidate.technicalReview.id,
-        make({ kind: "review", id: candidate.technicalReview.id, candidateId: candidate.id }, candidate.technicalReview.id, "revisione del candidato", name, clip(candidate.technicalReview.summary, 120)),
+        ownedBy(
+          make({ kind: "review", id: candidate.technicalReview.id, candidateId: candidate.id }, candidate.technicalReview.id, "revisione del candidato", name, clip(candidate.technicalReview.summary, 120)),
+          author,
+        ),
       );
     }
     index.commits.push({ sha: candidate.baseSHA, reference: make({ kind: "commit", sha: candidate.baseSHA }, candidate.baseSHA, "", candidate.baseSHA.slice(0, 7), `Base del candidato ${candidate.id}`, repository ? `https://github.com/${repository}/commit/${candidate.baseSHA}` : null) });
@@ -171,7 +197,8 @@ export function buildReferenceIndex({ document, modules, github }: ReferenceSour
     const target = audit.target;
     if (target.kind === "candidate") {
       const candidate = index.ids.get(target.candidateId);
-      index.ids.set(audit.id, make({ kind: "audit", id: audit.id }, audit.id, "esame del candidato", candidate?.short ?? target.candidateId));
+      const reference = make({ kind: "audit", id: audit.id }, audit.id, "esame del candidato", candidate?.short ?? target.candidateId);
+      index.ids.set(audit.id, candidate?.owner ? { ...reference, owner: candidate.owner } : reference);
     } else {
       // A module or the project (F03): the reference names what was examined, never the examination's id.
       const reference = target.kind === "module" ? make({ kind: "audit", id: audit.id }, audit.id, "esame del modulo", target.moduleName) : make({ kind: "audit", id: audit.id }, audit.id, "", "esame del progetto");
@@ -290,6 +317,28 @@ function patternsOf(index: ReferenceIndex) {
   return patterns;
 }
 
+/**
+ * Whether each short code of one kind (a slice id, an issue number) read in order names Trama's record: it does after
+ * a word of SHORT_CODE_LEADS or no word at all, and a code that continues a list takes the answer of the one before it.
+ */
+function shortCodeReader() {
+  let last: { end: number; names: boolean } | null = null;
+  return (text: string, start: number, length: number) => {
+    const between = last ? text.slice(last.end, start) : null;
+    const word = WORD_BEFORE.exec(text.slice(Math.max(0, start - 40), start))?.[1];
+    const names = last && between !== null && LIST_BEFORE.test(between) ? last.names : !word || SHORT_CODE_LEADS.has(word.toLowerCase());
+    last = { end: start + length, names };
+    return names;
+  };
+}
+
+/** How much of the text after a work's id repeats the agent its name already says (" di Luca"), or 0. */
+function ownerAfter(text: string, end: number, reference: Reference): number {
+  if (!reference.owner) return 0;
+  const repeated = new RegExp(`^\\s+di\\s+${escape(reference.owner)}(?![\\p{L}\\p{N}_-])`, "u").exec(text.slice(end));
+  return repeated ? repeated[0].length : 0;
+}
+
 function matches(text: string, index: ReferenceIndex): Match[] {
   const found: Match[] = [];
   for (const m of text.matchAll(MENTION_PATTERN)) {
@@ -309,17 +358,21 @@ function matches(text: string, index: ReferenceIndex): Match[] {
   if (irregular) for (const m of text.matchAll(irregular)) found.push({ start: m.index, end: m.index + m[0].length, reference: index.ids.get(m[0])! });
   for (const m of text.matchAll(ID_PATTERN)) {
     const reference = index.ids.get(m[0]);
-    if (reference) found.push({ start: m.index, end: m.index + m[0].length, reference });
+    if (reference) found.push({ start: m.index, end: m.index + m[0].length + ownerAfter(text, m.index + m[0].length, reference), reference });
     else if (isLinkedPrefix(m[0])) found.push({ start: m.index, end: m.index + m[0].length, unknown: m[0] });
   }
+  const issueCode = shortCodeReader();
   for (const m of text.matchAll(ISSUE_PATTERN)) {
+    if (!issueCode(text, m.index, m[0].length)) continue;
     const reference = index.issues.get(Number(m[1]));
     if (reference) found.push({ start: m.index, end: m.index + m[0].length, reference });
     else if (index.githubReady) found.push({ start: m.index, end: m.index + m[0].length, unknown: m[0] });
   }
   // A slice number that names no slice is not reported: "S3" is also a common name outside Trama.
   if (index.slices.size) {
+    const sliceCode = shortCodeReader();
     for (const m of text.matchAll(SLICE_PATTERN)) {
+      if (!sliceCode(text, m.index, m[0].length)) continue;
       const reference = index.slices.get(m[0]);
       if (reference) found.push({ start: m.index, end: m.index + m[0].length, reference });
     }

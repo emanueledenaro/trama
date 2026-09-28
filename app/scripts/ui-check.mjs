@@ -36,13 +36,27 @@ const launch = async (env = {}) => {
   return { app, page };
 };
 let { app, page } = await launch();
+// Chromium under xvfb now and then fails a capture with this protocol error even on a shown, painted window. For that
+// exact error only the capture is retried up to 3 times, 250ms apart; any other error, or a fourth failure, throws.
+const UNCAPTURED = "Protocol error (Page.captureScreenshot): Unable to capture screenshot";
+const capture = async (options) => {
+  for (let retry = 0; ; retry++) {
+    try {
+      return await page.screenshot(options);
+    } catch (error) {
+      if (retry >= 3 || !String(error?.message).includes(UNCAPTURED)) throw error;
+      console.log(`[capture] ${UNCAPTURED}, retry ${retry + 1} of 3`);
+      await page.waitForTimeout(250);
+    }
+  }
+};
 // Every screenshot has its own name: a second one with the same name would overwrite the first without a word.
 const shotNames = new Set();
 const shot = async (name) => {
   if (shotNames.has(name)) throw new Error(`Two screenshots named ${name}`);
   shotNames.add(name);
   await page.waitForTimeout(400);
-  await page.screenshot({ path: join(out, `${name}.png`) });
+  await capture({ path: join(out, `${name}.png`) });
   console.log("saved", name);
 };
 // Issue #271: a card that asks nothing more is one line; this opens the line when it is closed.
@@ -96,6 +110,14 @@ const expectAsked = async (fragment, control) => {
       () => false,
     );
   if (!asked) throw new Error(`${control}: no "${fragment}" in the focused composer, it holds: ${await composer().inputValue().catch(() => "no composer")}`);
+};
+
+// Issue #392: Trama's ids stay on hover; the text the person reads names the records.
+const rawIds = async (locator) => (await locator.innerText()).match(/(?<![\w-])(?:DQ|DM|AT|PR|[ACDFGMPQRS])-[0-9A-F]{8}(?![\w-])/g) ?? [];
+const expectNoRawIds = async (locator, where) => {
+  const text = await locator.innerText();
+  const ids = [...text.matchAll(/(?<![\w-])(?:DQ|DM|AT|PR|[ACDFGMPQRS])-[0-9A-F]{8}(?![\w-])/g)];
+  if (ids.length) throw new Error(`${where} shows raw ids: ${ids.map((m) => `…${text.slice(Math.max(0, m.index - 50), m.index + 12)}`).join(" | ")}`);
 };
 
 // W17: the seam, the bots' stitch used as an accent. At most one shows on a screen, and only on the approved uses;
@@ -190,7 +212,7 @@ const introFrames = async (label, times) => {
       }
     }, time);
     await painted();
-    await page.screenshot({ path: join(out, `00-intro-${label}-${String(time).padStart(4, "0")}ms.png`) });
+    await capture({ path: join(out, `00-intro-${label}-${String(time).padStart(4, "0")}ms.png`) });
   }
   const running = await page.evaluate(() => document.querySelector('[data-testid="launch-intro"]')?.getAnimations({ subtree: true }).length ?? 0);
   await page.evaluate(() => window.dispatchEvent(new Event("trama:end-intro")));
@@ -466,6 +488,9 @@ const waitingButtonBox = await waitingButton.boundingBox();
 if (!waitingBarBox || !waitingButtonBox || waitingBarBox.x + waitingBarBox.width - (waitingButtonBox.x + waitingButtonBox.width) > 12) {
   throw new Error("The Aspetta te summary button is not on the right");
 }
+// Issue #392: the strip floats over the chat; its blur stays behind it, so the timeline does not read through it.
+const waitingGlass = await waitingBar.evaluate((el) => ({ isolation: getComputedStyle(el).isolation, blur: getComputedStyle(el, "::before").backdropFilter }));
+if (waitingGlass.isolation !== "isolate" || !waitingGlass.blur.includes("blur")) throw new Error(`The Aspetta te strip lets the chat through: ${JSON.stringify(waitingGlass)}`);
 for (const [label, theme] of themes) {
   await setTheme(theme);
   await shot(`03b3-waiting-${label}`);
@@ -530,7 +555,10 @@ await teamPanel.getByTestId("team-developer").getByTestId("agent-tag").filter({ 
 if ((await teamPanel.getByTestId("team-figure").getByTestId("agent-tag").count()) < 5) throw new Error("The fixed roles have no tag");
 // W13: the person renames the developer from the Team view; the id stays and a fixed role's name is refused.
 await teamPanel.getByTestId("team-developer").first().click();
-const developerId = (await teamPanel.getByText(/^S-[0-9A-F]{8}$/).first().textContent()).trim();
+// Issue #392: the id is Trama's, so the header keeps it on hover and in the DOM, not as a visible badge.
+const developerId = await teamPanel.getByTestId("specialist-header").locator("h3[data-record-id]").getAttribute("data-record-id");
+if (!/^S-[0-9A-F]{8}$/.test(developerId ?? "")) throw new Error(`The specialist's header lost its id: ${developerId}`);
+await expectNoRawIds(teamPanel.getByTestId("specialist-header"), "The specialist's header");
 await teamPanel.getByRole("button", { name: "Rinomina", exact: true }).click();
 const rename = teamPanel.getByTestId("rename-specialist");
 await rename.getByLabel("Nuovo nome").fill("Clean Code");
@@ -542,7 +570,8 @@ if (renameButtons.at(-1)?.trim() !== "Rinomina") throw new Error(`Rename is not 
 await shot("04e3-team-rename");
 await rename.getByRole("button", { name: "Rinomina" }).click();
 await teamPanel.getByRole("heading", { name: "Giulia" }).waitFor({ timeout: 20_000 });
-await teamPanel.getByText(developerId, { exact: true }).waitFor();
+// The id stays the same after the rename.
+await teamPanel.getByTestId("specialist-header").locator(`h3[data-record-id="${developerId}"]`).waitFor();
 // W15: the person picks another color; only the avatar and the tag take it.
 await teamPanel.getByRole("radio", { name: "Rame" }).click();
 await teamPanel.locator('[role="radio"][aria-label="Rame"][aria-checked="true"]').waitFor({ timeout: 20_000 });
@@ -1281,6 +1310,7 @@ await page.getByRole("button", { name: /^Lavoro/ }).first().click();
   const workPanel = page.getByTestId("inspector");
   await workPanel.getByText("Fette confermate dal Coordinatore").first().waitFor({ timeout: 10_000 });
   if (await workPanel.getByText("In costruzione", { exact: true }).count()) throw new Error("Lavoro calls a candidate under construction");
+  await expectNoRawIds(workPanel, "Lavoro");
   const wasDark = await page.evaluate(() => document.documentElement.classList.contains("dark"));
   for (const dark of [false, true]) {
     await page.evaluate((on) => document.documentElement.classList.toggle("dark", on), dark);
@@ -1903,6 +1933,13 @@ await page.getByTestId("status-line").getByRole("button", { name: "Attività" })
 const toolErrors = page.getByTestId("activity-log").locator('[data-testid="activity-entry"][data-outcome="stalled"]').first().getByTestId("activity-tool-errors");
 await toolErrors.locator("summary").click();
 await toolErrors.getByText(/is an assignment, not a candidate/).first().waitFor();
+// The activity's labels, details and steps name the records (issue #392); the tool's own error text stays as written.
+{
+  const activityLog = page.getByTestId("activity-log");
+  const toolErrorIds = await rawIds(activityLog.getByTestId("activity-tool-errors").first());
+  const shown = (await rawIds(activityLog)).filter((id) => !toolErrorIds.includes(id));
+  if (shown.length) throw new Error(`Attività shows raw ids: ${[...new Set(shown)].join(", ")}`);
+}
 for (const dark of [false, true]) {
   await page.evaluate((on) => document.documentElement.classList.toggle("dark", on), dark);
   await shot(`18a4-activity-tool-errors-${dark ? "dark" : "light"}`);
@@ -2013,7 +2050,8 @@ await app.evaluate(({ nativeTheme }) => {
 await page.evaluate(() => document.documentElement.classList.remove("dark"));
 // Security's message is in Ada's work, with the turn she resumed with it: the person reads what the agents said.
 await page.getByRole("button", { name: /ha lavorato per/ }).last().click();
-const toDeveloper = page.getByRole("button", { name: /^Sicurezza a Ada: 1 rilievo bloccante sul candidato C-/ });
+// The step names the candidate, not its id (issue #392).
+const toDeveloper = page.getByRole("button", { name: /^Sicurezza a Ada: 1 rilievo bloccante sul candidato di Ada/ });
 await toDeveloper.waitFor({ timeout: 10_000 });
 await toDeveloper.click();
 await page.getByText(/Segreto nel diff: chiave API in NOTE\.md/).last().waitFor();
@@ -2030,6 +2068,10 @@ const review = correctedCard.getByTestId("technical-review");
 await review.getByTestId("review-measures").getByText(/Misure di Trama, standard v1/).waitFor();
 const suggestion = review.locator('[data-testid="review-finding"][data-severity="suggestion"]');
 await suggestion.getByText("NOTE.md:1").waitFor();
+// Issue #392: Clean Code's finding is listed once on the card, in the technical review, not again in its gate row.
+if (await correctedCard.locator('[data-testid="gate-review"][data-role="cleanCode"] [data-testid="gate-finding"]').filter({ hasText: "NOTE.md:1" }).count()) {
+  throw new Error("A Clean Code finding shows twice on the candidate card");
+}
 await suggestion.getByText("Suggerimento").waitFor();
 await review.getByText(/non un'evidenza/).waitFor();
 await review.scrollIntoViewIfNeeded();
@@ -2275,7 +2317,24 @@ await focusAudit.getByTestId("focus-proof").getByText(/Confermato da gpt-5\.5:/)
 await auditFinding("spec", "hypothesis").getByText("Ipotesi", { exact: true }).waitFor();
 if ((await auditFinding("spec", "hypothesis").getByTestId("audit-finding-evidence").innerText()) !== "Prova: make check") throw new Error("Focus mode: the hypothesis does not show its proof");
 if (await focusAudit.locator('[data-testid="audit-finding"][data-status="verified"]').filter({ hasText: "Prova: Nessuna prova" }).count()) throw new Error("Focus mode: a finding is verified without a proof");
-await focusAudit.getByTestId("focus-audit-tally").getByText("Stato dei rilievi: 1 verificato da Trama, 1 confermato da un secondo modello, 1 ipotesi.").waitFor();
+// F05: Trama's three lenses follow the axes, marked as Trama's additions, and their findings go through the same
+// verification: Trama reread the security line, the stronger model confirmed the test finding, the documents one has no proof.
+const auditLens = (lens) => focusAudit.locator(`[data-testid="audit-lens"][data-lens="${lens}"][data-status="done"]`);
+const lensNote = focusAudit.getByTestId("focus-audit-lenses-note");
+await lensNote.getByText(/controlli in più di Trama: non vengono dal metodo AI Hero/).waitFor();
+if ((await focusAudit.getByText("Aggiunta di Trama", { exact: true }).count()) !== 3) throw new Error("Focus mode: each lens is not marked as Trama's addition");
+await auditLens("security").locator('[data-testid="audit-finding"][data-status="verified"][data-severity="serious"]').getByText("Verificato da Trama").waitFor();
+// Full screen, how Trama verified a finding shows in the proof column once the person picks it (F03).
+await auditLens("tests").locator('[data-testid="audit-finding"][data-status="confirmed"]').getByTestId("audit-finding-select").click();
+await focusAudit.getByTestId("focus-proof").getByText(/Confermato da gpt-5\.5:/).waitFor();
+if ((await auditLens("docs").locator('[data-testid="audit-finding"][data-status="hypothesis"] [data-testid="audit-finding-evidence"]').innerText()) !== "Prova: Nessuna prova") {
+  throw new Error("Focus mode: the documents lens finding without a proof is not a hypothesis");
+}
+const lensText = await focusAudit.innerText();
+const [specAt2, lensesAt, summaryAt] = ["Spec", "Lenti di Trama", "Sintesi"].map((heading) => lensText.indexOf(heading));
+if (!(specAt2 < lensesAt && lensesAt < summaryAt)) throw new Error("Focus mode: the lenses are not between the axes and the summary");
+await focusAudit.getByTestId("focus-audit-lens-summary").getByText(/^Lenti di Trama: Sicurezza: 1 rilievo.*Qualità dei test: 1 rilievo.*Documenti e codice: 1 rilievo/).waitFor();
+await focusAudit.getByTestId("focus-audit-tally").getByText("Stato dei rilievi: 2 verificati da Trama, 2 confermati da un secondo modello, 2 ipotesi.").waitFor();
 await shot("20a-focus-audit");
 await auditFinding("spec", "hypothesis").scrollIntoViewIfNeeded();
 await shot("20e-focus-audit-findings");
@@ -2286,10 +2345,13 @@ await page.evaluate(() => document.documentElement.classList.add("dark"));
 await shot("20f-focus-audit-findings-dark");
 await focusAudit.getByTestId("focus-audit-status").scrollIntoViewIfNeeded();
 await shot("20b-focus-audit-dark");
+await lensNote.evaluate((node) => node.closest("section").scrollIntoView({ block: "start" }));
+await shot("20h-focus-audit-lenses-dark");
 await app.evaluate(({ nativeTheme }) => {
   nativeTheme.themeSource = "system";
 });
 await page.evaluate(() => document.documentElement.classList.remove("dark"));
+await shot("20g-focus-audit-lenses");
 // F04: from a finding to work, one click each. This candidate's project has no GitHub remote: the verified finding
 // goes to Trama's backlog, and its correction becomes an assignment for Ada, who wrote the candidate, within the
 // mandate. The hypothesis cannot become an assignment; as a trade-off it becomes a Pact card. Without GitHub the report
@@ -2404,7 +2466,8 @@ await setLookTo(questionLook.provider, questionLook.dark);
 // assignment's card or the specialist's page, never from the sidebar, and cannot write in it: the person talks only
 // with the Coordinator (Q32 of #239).
 if (await page.getByTestId("sidebar-agent-thread").count()) throw new Error("A conversation between agents is in the sidebar");
-const threadLink = questionWork.getByTestId("assignment-threads").getByRole("button", { name: /Domanda al Coordinatore, fetta S1/ });
+// The title names the slice as the other cards do (issue #392): "fetta S1" reads "fetta 1, <its title>".
+const threadLink = questionWork.getByTestId("assignment-threads").getByRole("button", { name: /Domanda al Coordinatore, fetta 1, / });
 await threadLink.waitFor({ timeout: 10_000 });
 await threadLink.click();
 const agentThread = page.locator('[data-testid="agent-thread"][data-kind="question"]');
@@ -2429,8 +2492,9 @@ for (const provider of ["codex", "claudeAgent"]) {
 await setLookTo(questionLook.provider, questionLook.dark);
 // The specialist's page lists every conversation the developer takes part in.
 await agentThread.getByRole("button", { name: "Apri lo sviluppatore" }).click();
-const specialistThreads = page.getByTestId("specialist-threads").getByRole("button", { name: /Domanda al Coordinatore, fetta S1/ });
+const specialistThreads = page.getByTestId("specialist-threads").getByRole("button", { name: /Domanda al Coordinatore, fetta 1, / });
 await specialistThreads.waitFor();
+await expectNoRawIds(page.getByTestId("inspector"), "The specialist's page");
 await specialistThreads.scrollIntoViewIfNeeded();
 await shot("19m-specialist-threads");
 await specialistThreads.click();
@@ -3766,11 +3830,15 @@ const placedProblem = problemLog.locator('[data-testid="activity-problem"]').fil
 await placedProblem.waitFor({ timeout: 90_000 });
 await placedProblem.getByText(/Triage: /).waitFor();
 await placedProblem.locator(".cta-row").getByRole("button", { name: "Apri la issue #21" }).waitFor();
-const problemCalls = (await readFile(problemsGhLog, "utf8")).trim().split("\n").map((line) => JSON.parse(line));
+const readProblemCalls = async () => (await readFile(problemsGhLog, "utf8")).trim().split("\n").map((line) => JSON.parse(line));
+const labelled = (calls) => calls.some((call) => call.includes("POST") && call.some((arg) => /\/issues\/21\/labels$/.test(arg)));
+// The triage shows in Activity first; Trama writes its labels at the next look at the problems, a moment later.
+let problemCalls = await readProblemCalls();
+for (const end = Date.now() + 60_000; !labelled(problemCalls) && Date.now() < end; problemCalls = await readProblemCalls()) await page.waitForTimeout(500);
 const openedIssues = problemCalls.filter((call) => call.includes("POST") && call.some((arg) => /\/issues$/.test(arg)));
 if (openedIssues.length !== 1) throw new Error(`Expected one issue for the red check, got ${openedIssues.length}`);
 if (!openedIssues[0].includes("labels[]=needs-triage")) throw new Error("The issue of the problem does not carry the needs-triage label");
-if (!problemCalls.some((call) => call.includes("POST") && call.some((arg) => /\/issues\/21\/labels$/.test(arg)))) throw new Error("Trama did not apply the triage labels");
+if (!labelled(problemCalls)) throw new Error("Trama did not apply the triage labels");
 if (/[–—]/.test(await problemLog.innerText())) throw new Error("A dash in the steps of the found problem");
 await lookShots("27a-found-problem-issue");
 // The recap cites the issue the Coordinator opened, with its number.
@@ -4609,6 +4677,39 @@ await page.getByTestId("status-line").getByRole("button", { name: "Attività" })
 await page.getByTestId("activity-log").locator('[data-testid="activity-merge"]').filter({ hasText: "Candidato unito con il tuo ok" }).waitFor({ timeout: 20_000 });
 await themeShots("30e-merge-activity-person");
 await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
+
+// Issue #41: a candidate that deletes a file is a serious destructive change. The Coordinator does not merge it on its
+// green light: it waits in Aspetta te with the reasons, the consequences and the alternatives, and "Unisci comunque"
+// merges it as the person's act. The merge on the green light names the mandate version it ran under.
+await send("[assegna] [cancella]");
+const deletingWork = await workDone(correctedWork);
+await send(`[candidato:${deletingWork}:${vetrinaDecision}]`);
+await stateUntil((document) => candidateOfWork(document, deletingWork)?.merge?.stop, "Destructive merge stopped");
+const stoppedItem = await openWaiting("candidate", undefined, 60_000);
+if ((await stoppedItem.getAttribute("data-waiting-key")) !== `merge:${await stateUntil((document) => candidateOfWork(document, deletingWork)?.id, "Stopped candidate")}`) {
+  throw new Error("The stopped merge is not its own item in Aspetta te");
+}
+const stopField = stoppedItem.getByTestId("candidate-merge-stop");
+await stopField.getByText("Il Coordinatore non unisce questo candidato da solo: la scelta è tua.", { exact: false }).waitFor();
+await stopField.getByText("Conseguenze", { exact: true }).waitFor();
+await stopField.getByText("Cosa puoi fare", { exact: true }).waitFor();
+await stopField.getByText(/README\.md/).waitFor();
+if (/[–—]/.test(await stoppedItem.innerText())) throw new Error("A dash in the stopped merge");
+await primaryLast(stoppedItem.locator(".cta-row").filter({ has: page.getByRole("button", { name: "Unisci comunque" }) }), "Stopped merge");
+if ((await readFile(vetrinaGhLog, "utf8")).split("\n").filter((line) => line.includes('"PUT"')).length !== 2) throw new Error("The destructive candidate was merged without the person");
+await stopField.evaluate((node) => node.scrollIntoView({ block: "center" }));
+await themeShots("30f-merge-stopped-destructive");
+await stoppedItem.getByRole("button", { name: "Unisci comunque" }).click();
+await stateUntil((document) => candidateOfWork(document, deletingWork)?.pullRequest?.mergedBy === "person", "Destructive merge on the person's ok");
+await stoppedItem.waitFor({ state: "detached", timeout: 20_000 });
+if (await page.getByRole("button", { name: "Chiudi l'ispettore" }).count()) await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
+// The first candidate, merged on the green light, names the mandate it ran under: its reference opens it.
+const plainCandidate = await stateUntil((document) => candidateOfWork(document, plainWork)?.id, "Merged candidate");
+await page.locator(`[data-reference="candidate"][data-reference-id="${plainCandidate}"]`).first().click();
+const plainMerged = page.getByTestId("inspector");
+await plainMerged.getByTestId("candidate-merge-mandate").filter({ hasText: "Mandato versione 1." }).waitFor({ timeout: 20_000 });
+await plainMerged.getByTestId("candidate-merge").evaluate((node) => node.scrollIntoView({ block: "center" }));
+await themeShots("30g-merge-mandate-version");
 await page.evaluate(() => window.trama.invoke("settings:update", { theme: "system" }));
 await app.close();
 

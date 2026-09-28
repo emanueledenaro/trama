@@ -2,7 +2,7 @@ import { IconBellPause, IconCircleCheck, IconCircleDashed, IconCircleX, IconFocu
 import { useEffect, useState } from "react";
 import type { AuditAxis, AuditFinding, FocusAudit } from "@shared/domain";
 import type { Translate } from "@shared/i18n";
-import { evidenceLabel, FINDING_STATUS_TEXT, findingTally, fixedPointText, focusTargetOf } from "@shared/findings";
+import { auditFindings, auditLenses, evidenceLabel, FINDING_STATUS_TEXT, findingTally, fixedPointText, focusTargetOf, LENS_TITLE_KEYS, lensSummary } from "@shared/findings";
 import { plainText } from "@shared/plainLanguage";
 import { EvidenceRow } from "@/components/chat/Cards";
 import { ChatMarkdown } from "@/components/chat/ChatMarkdown";
@@ -39,6 +39,14 @@ function Step({ state, title, children }: { state: StepState; title: string; chi
   );
 }
 
+/** Trama's lenses as one step (F05): running while one runs, failed when all failed, done when all ended. */
+function lensesState(lenses: AuditAxis[]): StepState {
+  const states = lenses.map(axisState);
+  if (states.includes("running")) return "running";
+  if (states.includes("waiting")) return "waiting";
+  return states.every((state) => state === "failed") ? "failed" : "done";
+}
+
 const axisState = (axis: AuditAxis): StepState =>
   axis.status === "done" ? "done" : axis.status === "running" ? "running" : axis.status === "failed" ? "failed" : axis.status === "skipped" ? "skipped" : "waiting";
 
@@ -57,6 +65,7 @@ function Progress({ audit, checks }: { audit: FocusAudit; checks: string[] }) {
   // An examination that failed before the axes started failed in its checks.
   const checksState: StepState = audit.status === "checking" ? "running" : audit.status === "failed" && !audit.standards.startedAt ? "failed" : "done";
   const verifying: StepState = audit.status === "verifying" ? "running" : audit.status === "done" ? "done" : audit.status === "failed" ? "failed" : "waiting";
+  const lenses = auditLenses(audit);
   return (
     <ol className="divide-y divide-[color:var(--app-surface-divider)]" aria-label={t("focus.column.progress")}>
       <Step state="done" title={t("focus.step.fixedPoint")}>
@@ -82,6 +91,17 @@ function Progress({ audit, checks }: { audit: FocusAudit; checks: string[] }) {
           {name === "spec" && audit.specSource ? <p className="mt-0.5 text-ui-sm text-muted-foreground">{t("focus.specSource", { source: audit.specSource })}</p> : null}
         </Step>
       ))}
+      {lenses.length ? (
+        <Step state={lensesState(lenses.map((l) => l.lens))} title={t("audit.lenses.title")}>
+          <ul className="space-y-0.5">
+            {lenses.map(({ name, lens }) => (
+              <li key={name} className={cn("text-ui-sm", lens.status === "failed" ? "text-destructive" : "text-muted-foreground")}>
+                {t(LENS_TITLE_KEYS[name])}: {axisNote(lens, t)}
+              </li>
+            ))}
+          </ul>
+        </Step>
+      ) : null}
       <Step state={verifying} title={t("focus.step.verify")}>
         <p className="text-ui-sm text-muted-foreground">{t("focus.step.verifyNote")}</p>
       </Step>
@@ -168,54 +188,87 @@ function Publication({ audit }: { audit: FocusAudit }) {
   );
 }
 
+/** The findings of one axis or one lens, then its own report, or where it stands while it runs. */
+function ReviewBody({ audit, review, reportLabel, selected, onSelect }: { audit: FocusAudit; review: AuditAxis; reportLabel: string; selected: string | null; onSelect(id: string): void }) {
+  const t = useT();
+  if (review.status !== "done") {
+    return (
+      <p className={cn("flex items-center gap-1.5 text-ui-sm", review.status === "failed" ? "text-destructive" : "text-muted-foreground")}>
+        {review.status === "running" ? <Spinner /> : null}
+        {axisNote(review, t)}
+      </p>
+    );
+  }
+  return (
+    <>
+      {review.items?.length ? (
+        <ul className="space-y-0.5" data-testid="audit-findings">
+          {review.items.map((finding) => (
+            <FindingButton key={finding.id} finding={finding} auditId={audit.id} actionable={audit.status === "done"} selected={selected === finding.id} onSelect={() => onSelect(finding.id)} />
+          ))}
+        </ul>
+      ) : (
+        <p className="text-ui-sm text-muted-foreground">{t("focus.axis.none")}</p>
+      )}
+      <details className="mt-2 rounded-lg border border-[color:var(--app-surface-divider)] px-3 py-2">
+        <summary className="cursor-pointer text-ui-sm text-muted-foreground">{reportLabel}</summary>
+        <div className="mt-2 text-ui">
+          <ChatMarkdown text={review.report ?? ""} plain />
+        </div>
+      </details>
+    </>
+  );
+}
+
 /** Center: the findings of each axis, kept apart as the skill presents them, then each axis's own report. */
 function Findings({ audit, selected, onSelect }: { audit: FocusAudit; selected: string | null; onSelect(id: string): void }) {
   const t = useT();
   const tally = findingTally(audit);
+  const lenses = auditLenses(audit);
+  const lensLine = lensSummary(audit, t);
   return (
     <div className="space-y-4">
       {audit.summary ? (
-        <div className="chat-card px-3.5 py-2.5">
-          <p className="text-ui text-foreground" data-testid="focus-audit-summary">{plainText(audit.summary)}</p>
-          {tally ? <p className="mt-1 text-ui-sm text-muted-foreground" data-testid="focus-audit-tally">Stato dei rilievi: {tally}.</p> : null}
-        </div>
+        <section aria-label={t("focus.summary")}>
+          <h3 className="mb-1.5 text-ui-sm font-medium text-muted-foreground">{t("focus.summary")}</h3>
+          <div className="chat-card px-3.5 py-2.5">
+            <p className="text-ui text-foreground" data-testid="focus-audit-summary">{plainText(audit.summary)}</p>
+            {lensLine ? <p className="mt-1 text-ui text-foreground" data-testid="focus-audit-lens-summary">{t("audit.lenses.summary", { summary: lensLine })}</p> : null}
+            {tally ? <p className="mt-1 text-ui-sm text-muted-foreground" data-testid="focus-audit-tally">Stato dei rilievi: {tally}.</p> : null}
+          </div>
+        </section>
       ) : null}
       {audit.status === "failed" && audit.failure ? <p className="text-ui-sm text-destructive">{audit.failure}</p> : null}
-      {(["standards", "spec"] as const).map((name) => {
-        const axis = audit[name];
-        return (
-          <section key={name} data-testid="audit-axis" data-axis={name} data-status={axis.status} aria-label={t("focus.step.axis", { axis: AXIS_TITLE[name] })}>
-            <div className="mb-1.5 flex items-center gap-2">
-              <h3 className="min-w-0 flex-1 text-ui-sm font-medium text-muted-foreground">{AXIS_TITLE[name]}</h3>
-              {name === "spec" && audit.specSource ? <Badge tone="outline">{audit.specSource}</Badge> : null}
-            </div>
-            {axis.status === "done" ? (
-              <>
-                {axis.items?.length ? (
-                  <ul className="space-y-0.5" data-testid="audit-findings">
-                    {axis.items.map((finding) => (
-                      <FindingButton key={finding.id} finding={finding} auditId={audit.id} actionable={audit.status === "done"} selected={selected === finding.id} onSelect={() => onSelect(finding.id)} />
-                    ))}
-                  </ul>
-                ) : (
-                  <p className="text-ui-sm text-muted-foreground">{t("focus.axis.none")}</p>
-                )}
-                <details className="mt-2 rounded-lg border border-[color:var(--app-surface-divider)] px-3 py-2">
-                  <summary className="cursor-pointer text-ui-sm text-muted-foreground">{t("focus.axis.report", { axis: AXIS_TITLE[name] })}</summary>
-                  <div className="mt-2 text-ui">
-                    <ChatMarkdown text={axis.report ?? ""} plain />
-                  </div>
-                </details>
-              </>
-            ) : (
-              <p className={cn("flex items-center gap-1.5 text-ui-sm", axis.status === "failed" ? "text-destructive" : "text-muted-foreground")}>
-                {axis.status === "running" ? <Spinner /> : null}
-                {axisNote(axis, t)}
-              </p>
-            )}
-          </section>
-        );
-      })}
+      {(["standards", "spec"] as const).map((name) => (
+        <section key={name} data-testid="audit-axis" data-axis={name} data-status={audit[name].status} aria-label={t("focus.step.axis", { axis: AXIS_TITLE[name] })}>
+          <div className="mb-1.5 flex items-center gap-2">
+            <h3 className="min-w-0 flex-1 text-ui-sm font-medium text-muted-foreground">{AXIS_TITLE[name]}</h3>
+            {name === "spec" && audit.specSource ? <Badge tone="outline">{audit.specSource}</Badge> : null}
+          </div>
+          <ReviewBody audit={audit} review={audit[name]} reportLabel={t("focus.axis.report", { axis: AXIS_TITLE[name] })} selected={selected} onSelect={onSelect} />
+        </section>
+      ))}
+      {lenses.length ? (
+        <section aria-label={t("audit.lenses.title")}>
+          <div className="mb-1.5 flex items-center gap-2">
+            <h3 className="min-w-0 flex-1 text-ui-sm font-medium text-muted-foreground">{t("audit.lenses.title")}</h3>
+            <Badge tone="outline">{t("audit.lenses.addedBy")}</Badge>
+          </div>
+          <p className="text-ui-sm text-muted-foreground" data-testid="focus-audit-lenses-note">
+            {t("audit.lenses.note")}
+          </p>
+        </section>
+      ) : null}
+      {/* Trama's lenses (F05) follow the axes, each marked as Trama's addition, with the same findings and proofs. */}
+      {lenses.map(({ name, lens }) => (
+        <section key={name} data-testid="audit-lens" data-lens={name} data-status={lens.status} aria-label={t(LENS_TITLE_KEYS[name])}>
+          <div className="mb-1.5 flex items-center gap-2">
+            <h3 className="min-w-0 flex-1 text-ui-sm font-medium text-muted-foreground">{t(LENS_TITLE_KEYS[name])}</h3>
+            <Badge tone="outline">{t("audit.lens.addedBy")}</Badge>
+          </div>
+          <ReviewBody audit={audit} review={lens} reportLabel={t("focus.lens.report", { lens: t(LENS_TITLE_KEYS[name]) })} selected={selected} onSelect={onSelect} />
+        </section>
+      ))}
       {audit.status === "done" ? <Publication audit={audit} /> : null}
     </div>
   );
@@ -288,7 +341,7 @@ export function FocusModeView({ isMac }: { isMac: boolean }) {
   const project = useUi((s) => s.app?.project)!;
   const focus = useUi((s) => s.app?.focusMode)!;
   const audit = (project.document.audits ?? []).find((a) => a.id === focus.auditId) ?? null;
-  const findings = audit ? [...(audit.standards.items ?? []), ...(audit.spec.items ?? [])] : [];
+  const findings = audit ? auditFindings(audit) : [];
   const [selected, setSelected] = useState<string | null>(null);
   const shown = findings.find((f) => f.id === selected) ?? findings[0] ?? null;
 

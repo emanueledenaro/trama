@@ -97,5 +97,7 @@ describe("Codex runtime and the provider's own tools (issue #228)", () => {
     const config = started.find((entry) => entry.method === "thread/start")!.params.config!;
     expect(config).toMatchObject({ web_search: "disabled", features: expect.objectContaining({ apps: false, plugins: false }) });
     expect(config["mcp_servers.trama"]).toMatchObject({ url: server.url });
+    // The profile hides the home folder: git in the shell reads no global file there (issue #391).
+    expect(config["shell_environment_policy.set"]).toMatchObject({ GIT_CONFIG_GLOBAL: "/dev/null" });
   });
 });
