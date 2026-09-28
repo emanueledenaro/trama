@@ -2415,7 +2415,9 @@ if (await page.getByText("Chi vede gli ordini in revisione?").count()) throw new
 const skipRoute = await routeCard.getByRole("button", { name: "Non avviare" }).boundingBox();
 const startRoute = await routeCard.getByRole("button", { name: "Avvia il percorso" }).boundingBox();
 const routeBox = await routeCard.boundingBox();
-if (!skipRoute || !startRoute || !routeBox || skipRoute.x >= startRoute.x || routeBox.x + routeBox.width - (startRoute.x + startRoute.width) > 20) {
+// Issue #330: in the 300 px side bar the row may wrap; the primary then sits on the row below, still on the right.
+const routeBefore = skipRoute && startRoute && (startRoute.y > skipRoute.y + skipRoute.height / 2 || (Math.abs(startRoute.y - skipRoute.y) < 2 && skipRoute.x < startRoute.x));
+if (!skipRoute || !startRoute || !routeBox || !routeBefore || routeBox.x + routeBox.width - (startRoute.x + startRoute.width) > 20) {
   throw new Error("Ask Trama route: Non avviare and Avvia il percorso are not on the right, primary last");
 }
 await routeCard.scrollIntoViewIfNeeded();
