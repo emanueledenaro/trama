@@ -498,4 +498,9 @@ export const en: Record<keyof typeof it, string> = {
   "settings.workPlace.openProject": "Open a project to choose the place of work.",
   "settings.workPlace.demo": "The example project works locally.",
   "settings.workPlace.localOnly": "{provider} works only locally: the cloud is available with Claude and Codex.",
+
+  // Work the review stopped too many times in a row (issue #389)
+  "reviewLoop.label": "Work stopped several times",
+  "reviewLoop.title": "{objective}: the review stopped it {count} times in a row. Tell the Coordinator how to go on.",
+  "reviewLoop.held": "the review stopped it {count} times in a row, so Trama no longer sends it back by itself. Decide how to go on in What waits for you.",
 };

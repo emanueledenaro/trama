@@ -18,6 +18,7 @@ import { isOpenQuestion, pendingMandateRequest } from "@shared/domain";
 import { workRequests } from "@shared/grilling";
 import { PROVIDERS } from "@shared/providers";
 import { candidateSuperseded } from "@shared/conflictScope";
+import { blockedReviews, candidateHeld } from "@shared/reviewLoop";
 import { inspectCandidate, latestCandidate } from "./candidates";
 import { pendingQuestion, pendingState, type QuestionView, questionsText, questionViews } from "./developerQuestions";
 import { sliceViews, slicesText } from "./slices";
@@ -421,10 +422,13 @@ function assignedWork(
     if (pendingState(assignment) === "asked") moves.add(coordinator("answerQuestion", pendingQuestion(assignment)!.id));
   }
   // A candidate replaced by later work (U02) is neither verified nor blocks the phase: the newer work does.
+  // A candidate whose findings went back to its developer, who has finished since (W10), describes a worktree that no
+  // longer exists: the work needs a new candidate, not a correction of the old one (issue #389).
   const items = assignments
     .filter((a) => a.status !== "paused")
     .map((assignment) => ({ assignment, candidate: latestCandidate(document, assignment.id) }))
-    .filter(({ candidate }) => !candidate || !candidateSuperseded(document, candidate));
+    .filter(({ candidate }) => !candidate || !candidateSuperseded(document, candidate))
+    .map(({ assignment, candidate }) => ({ assignment, candidate: candidate && correctedSince(assignment, candidate) ? null : candidate }));
   for (const { assignment, candidate } of items) {
     if (isActive(assignment) && assignment.waitingForProvider) {
       const provider = providerName(assignment.waitingForProvider.provider);
@@ -450,6 +454,18 @@ function assignedWork(
     // Work that resumed after its candidate, as with the gate's findings (W10), is at work: its old candidate waits.
     if (isActive(assignment)) continue;
     const blocker = hardBlockers(inspectCandidate(document, candidate, null))[0];
+    // The review stopped this work too many times in a row (issue #389): it waits for the person in Aspetta te, with no
+    // move of the Coordinator, so neither Trama nor the Coordinator starts another round.
+    if (candidateHeld(document, candidate)) {
+      const rounds = blockedReviews(document, assignment).length;
+      return {
+        phase: "blocked",
+        blocker:
+          `La revisione ha fermato il lavoro dell'incarico ${assignment.id} ${rounds} volte di seguito, l'ultima sul candidato ${candidate.id}. ` +
+          "Trama non lo rimanda più allo sviluppatore e la persona lo trova in Aspetta te: non assegnare altre correzioni e non rilanciare i revisori finché la persona non ti scrive come andare avanti.",
+        why: candidateBlockerWhy(workOf(document, assignment), blocker ?? { code: "GATE_BLOCKED", detail: "" }),
+      };
+    }
     if (blocker) {
       moves.assignWork();
       return {
@@ -493,12 +509,15 @@ function assignedWork(
   if (!edits.length) return null;
   const pending = edits.filter((i) => !i.candidate || inspectCandidate(document, i.candidate, null).length || i.candidate.technicalReview?.verdict !== "approved");
   if (pending.length) {
+    // A candidate whose reviewers are at work is being verified already: there is nothing to start on it (issue #389).
+    const reviewing = (candidate: Candidate) => inspectCandidate(document, candidate, null).some((b) => b.code === "GATE_RUNNING");
+    const actionable = pending.filter((i) => !i.candidate || !reviewing(i.candidate));
     const verification: VerificationTargets = {
-      undeclared: pending.filter((i) => !i.candidate).map((i) => i.assignment.id),
-      unverified: pending.flatMap((i) => (i.candidate ? [i.candidate.id] : [])),
+      undeclared: actionable.filter((i) => !i.candidate).map((i) => i.assignment.id),
+      unverified: actionable.flatMap((i) => (i.candidate ? [i.candidate.id] : [])),
     };
-    if (!verification.undeclared.length || authorize(document.mandate, "executeInWorktree") === "authorized") {
-      moves.add(coordinator("verifyCandidate", pending[0]!.candidate?.id ?? null));
+    if (actionable.length && (!verification.undeclared.length || authorize(document.mandate, "executeInWorktree") === "authorized")) {
+      moves.add(coordinator("verifyCandidate", actionable[0]!.candidate?.id ?? null));
     }
     return { phase: "verification", blocker: null, verification };
   }
@@ -515,6 +534,12 @@ function assignedWork(
   }
   return { phase: "merged", blocker: null };
 }
+
+/**
+ * Whether the gate sent `candidate` back to the developer of `assignment` and the developer has finished since (W10):
+ * the worktree moved on, so the candidate no longer describes the work.
+ */
+const correctedSince = (assignment: SpecialistAssignment, candidate: Candidate) => assignment.gateReturn?.candidateId === candidate.id && !isActive(assignment);
 
 /** The one next step to show under the latest reply of each dialog: the declared move, while the work still allows it. */
 export function nextStepViews(document: ProjectDocument): Record<string, NextStepView> {

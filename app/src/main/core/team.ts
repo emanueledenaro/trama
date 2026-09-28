@@ -392,6 +392,8 @@ export interface AssignmentOrder {
   seams?: ContractSeam[];
   /** The developer took the slice by itself (W08). */
   selfPicked?: boolean;
+  /** The earlier assignments this work corrects (issue #389); the caller finds them with openCorrections. */
+  replaces?: string[];
 }
 
 function requireIndependent(document: ProjectDocument, moduleIds: string[], specialistId: string): void {
@@ -472,6 +474,7 @@ export function assign(
       ...(order.commit ? { commit: order.commit } : {}),
       ...(order.seams ? { seams: order.seams } : {}),
       ...(order.selfPicked ? { selfPicked: true } : {}),
+      ...(order.replaces?.length ? { replaces: cleaned(order.replaces) } : {}),
     },
     now,
   );
@@ -501,6 +504,7 @@ type AssignmentFields = Pick<
   | "commit"
   | "seams"
   | "selfPicked"
+  | "replaces"
 >;
 
 /** New work of a specialist: the assignment starts in preparation and the specialist is at work. */

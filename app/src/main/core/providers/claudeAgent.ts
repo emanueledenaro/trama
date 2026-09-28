@@ -35,6 +35,7 @@ import {
   type RunTurnOptions,
   type RuntimeOptions,
   type TurnEvent,
+  HOST_TOOL_TIMEOUT_MS,
   ProviderError,
   extractJsonAnswer,
 } from "./types";
@@ -541,7 +542,7 @@ export function buildQueryOptions(input: QueryOptionsInput): ClaudeQueryOptions 
             type: "sdk",
             name: input.toolServer.name,
             instance: createHostToolBridge(input.toolServer) as unknown as McpSdkServerConfigWithInstance["instance"],
-            timeout: 120_000,
+            timeout: HOST_TOOL_TIMEOUT_MS,
           },
         }
       : {},

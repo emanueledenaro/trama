@@ -500,6 +500,11 @@ export const it = {
   "settings.workPlace.openProject": "Apri un progetto per scegliere il luogo di lavoro.",
   "settings.workPlace.demo": "Il progetto di esempio lavora in locale.",
   "settings.workPlace.localOnly": "{provider} lavora solo in locale: il cloud c'è con Claude e Codex.",
+
+  // Work the review stopped too many times in a row (issue #389)
+  "reviewLoop.label": "Lavoro fermato più volte",
+  "reviewLoop.title": "{objective}: la revisione l'ha fermato {count} volte di seguito. Scrivi al Coordinatore come andare avanti.",
+  "reviewLoop.held": "la revisione l'ha fermato {count} volte di seguito, quindi Trama non lo rimanda più indietro da sola. Decidi tu come andare avanti in Aspetta te.",
 } satisfies Record<string, string>;
 
 export type MessageKey = Exclude<keyof typeof it, `${string}.one`>;

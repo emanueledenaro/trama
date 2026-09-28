@@ -2,6 +2,7 @@ import { cp, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import type { TechnicalReview } from "@shared/domain";
 import { NO_SPEC, NOTHING_TO_REPORT } from "@shared/gate";
 import { SECRET_NOTE } from "./core/gate";
 import { TramaController } from "./controller";
@@ -183,6 +184,27 @@ describe("the candidate gate (W10)", () => {
     await controller!.send(`[candidato:${work.id}:${decision.id}]`, null, null, null);
     expect(document.gates![2]!.reviews.find((r) => r.role === "specReviewer")).toMatchObject({ status: "skipped", report: NO_SPEC, threadId: null });
   }, 120_000);
+
+  it("lets a second review of the same candidate wait for the running gate instead of failing (issue #389)", async () => {
+    const { document, decision } = await openTeam(await repository(false));
+    const ada = findSpecialist(document, "Ada")!;
+    await controller!.send("[assegna]", null, null, null);
+    const work = ada.assignments[0]!;
+    await until(() => work.status === "completed");
+    // The reviewers answer only once the test lets them, as a gate that outlasts the provider's tool call.
+    const hold = join(await mkdtemp(join(tmpdir(), "trama-hold-")), "go");
+    process.env.FAKE_CODEX_GATE_HOLD = hold;
+    const sent = controller!.send(`[candidato:${work.id}:${decision.id}]`, null, null, null);
+    await until(() => (document.gates ?? []).length === 1 && document.gates![0]!.status === "reviewing");
+    const candidate = document.candidates[0]!;
+    // The Coordinator calls review_candidate again, as after its first call was cut off by the provider's timeout.
+    const again = (controller as unknown as { reviewCandidate(id: string, requestId: string | null): Promise<TechnicalReview> }).reviewCandidate(candidate.id, null);
+    await writeFile(hold, "");
+    await sent;
+    const review = await again;
+    expect(document.gates).toHaveLength(1);
+    expect(review).toMatchObject({ id: candidate.technicalReview!.id, gateId: document.gates![0]!.id, verdict: "approved" });
+  });
 
   it("never sends a secret in the diff to a model: Trama's scan blocks the candidate and the developer gets it back", async () => {
     const log = join(await mkdtemp(join(tmpdir(), "trama-log-")), "codex.log");

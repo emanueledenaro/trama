@@ -1,6 +1,7 @@
 import { DEFAULT_LANGUAGE, type Language, LANGUAGE_NAMES_IN_ENGLISH } from "@shared/i18n";
 import { randomUUID } from "node:crypto";
 import type { Candidate, CandidateGate, GateFinding, GateReview, GateRole, ProjectDocument, SpecialistAssignment, SuiteComparison } from "@shared/domain";
+import { candidateSuperseded } from "@shared/conflictScope";
 import { GATE_ROLES, NO_SPEC, NOTHING_TO_REPORT, blockingFindings, isGateRunning, isRegression, latestGate, suiteLine } from "@shared/gate";
 import { shortId } from "@shared/ids";
 import { roleDuties, roleProfile } from "@shared/roster";
@@ -307,13 +308,16 @@ export function returnFindings(document: ProjectDocument, gate: CandidateGate): 
 
 /**
  * The gates whose findings still wait for their developer (W10): blocked, not resumed yet, the latest gate of the latest
- * candidate of work that is still completed. Trama tries each again when an event of the work may have freed it.
+ * candidate of work that is still completed. Trama tries each again when an event of the work may have freed it. Work
+ * that later work replaced, or that Trama held for the person after too many blocks in a row (issue #389), does not
+ * resume by itself.
  */
 export function pendingReturns(document: ProjectDocument): CandidateGate[] {
   return (document.gates ?? []).filter((gate) => {
-    if (gate.status !== "blocked" || !gate.returned?.waiting) return false;
+    if (gate.status !== "blocked" || !gate.returned?.waiting || gate.returned.held) return false;
     if (latestGate(document.gates, gate.candidateId)?.id !== gate.id) return false;
-    if (latestCandidate(document, gate.assignmentId)?.id !== gate.candidateId) return false;
+    const candidate = latestCandidate(document, gate.assignmentId);
+    if (candidate?.id !== gate.candidateId || candidateSuperseded(document, candidate)) return false;
     return findAssignment(document, gate.assignmentId)?.status === "completed";
   });
 }
