@@ -14,7 +14,7 @@ import {
   IconUsers,
 } from "@tabler/icons-react";
 import { useEffect, useState } from "react";
-import type { ProviderAccount, ProviderId } from "@shared/codex";
+import type { ProviderAccount } from "@shared/codex";
 import { DEFAULT_LEARNING_SETTINGS, type LearningSettings, type ThemePreference } from "@shared/domain";
 import { classifyProviderFailure } from "@shared/providerFailure";
 import { capabilityLines, coordinatorUnavailableReason, PROVIDERS, type ProviderDescriptor } from "@shared/providers";
@@ -256,7 +256,32 @@ const GITHUB_STATUS = {
   error: "Errore",
 } as const;
 
+/** The Capacità button of a provider row, the same for every provider (issue #71). */
+function CapabilityToggle({ open, onToggle }: { open: boolean; onToggle: () => void }) {
+  return (
+    <Button variant="ghost" size="xs" aria-expanded={open} onClick={onToggle}>
+      Capacità <IconChevronDown className={cn("transition-transform", open && "rotate-180")} />
+    </Button>
+  );
+}
+
+function CapabilityList({ provider }: { provider: ProviderDescriptor }) {
+  return (
+    <div className="mt-3 grid grid-cols-1 gap-x-6 gap-y-1 rounded-lg bg-[var(--color-background-button-secondary)] px-3 py-2 text-ui-xs @xl/chat:grid-cols-2">
+      {capabilityLines(provider.capabilities).map((line) => (
+        <div key={line.label} className="flex justify-between gap-2">
+          <span className="text-muted-foreground">{line.label}</span>
+          <span className="text-foreground/90">{line.value}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+const CODEX = PROVIDERS.find((provider) => provider.id === "codex")!;
+
 function ConnectionsSection() {
+  const [codexOpen, setCodexOpen] = useState(false);
   const codex = useUi((s) => s.app!.codex);
   const gitHubCli = useUi((s) => s.app!.gitHubCli);
   // The state is read each time the page opens, so a login made in the terminal meanwhile shows up (P10).
@@ -304,6 +329,7 @@ function ConnectionsSection() {
           control={
             <>
               <Badge tone={status.tone}>{status.label}</Badge>
+              <CapabilityToggle open={codexOpen} onToggle={() => setCodexOpen(!codexOpen)} />
               {account?.kind === "signedOut" ? (
                 <Button size="sm" onClick={() => void act("codex:login", undefined)}>
                   Accedi con ChatGPT
@@ -311,7 +337,9 @@ function ConnectionsSection() {
               ) : null}
             </>
           }
-        />
+        >
+          {codexOpen ? <CapabilityList provider={CODEX} /> : null}
+        </Row>
         <Row
           label={
             <span className="flex items-center gap-2">
@@ -348,7 +376,7 @@ function ConnectionsSection() {
 function ProviderRow({ provider }: { provider: ProviderDescriptor }) {
   const [open, setOpen] = useState(false);
   const [hint, setHint] = useState<string | null>(null);
-  const id = provider.id as ProviderId;
+  const id = provider.id;
   const state = useUi((s) => s.app!.providers[id]);
   const status = providerStatus(state?.account ?? null, state?.checking ?? false);
   const connected = status.tone === "success";
@@ -375,9 +403,7 @@ function ProviderRow({ provider }: { provider: ProviderDescriptor }) {
       control={
         <>
           <Badge tone={status.tone}>{status.label}</Badge>
-          <Button variant="ghost" size="xs" aria-expanded={open} onClick={() => setOpen(!open)}>
-            Capacità <IconChevronDown className={cn("transition-transform", open && "rotate-180")} />
-          </Button>
+          <CapabilityToggle open={open} onToggle={() => setOpen(!open)} />
           <Button variant="ghost" size="xs" onClick={() => void act("providers:refresh", { provider: id })}>
             Verifica
           </Button>
@@ -397,16 +423,7 @@ function ProviderRow({ provider }: { provider: ProviderDescriptor }) {
         </>
       }
     >
-      {open ? (
-        <div className="mt-3 grid grid-cols-1 gap-x-6 gap-y-1 rounded-lg bg-[var(--color-background-button-secondary)] px-3 py-2 text-ui-xs @xl/chat:grid-cols-2">
-          {capabilityLines(provider.capabilities).map((line) => (
-            <div key={line.label} className="flex justify-between gap-2">
-              <span className="text-muted-foreground">{line.label}</span>
-              <span className="text-foreground/90">{line.value}</span>
-            </div>
-          ))}
-        </div>
-      ) : null}
+      {open ? <CapabilityList provider={provider} /> : null}
     </Row>
   );
 }

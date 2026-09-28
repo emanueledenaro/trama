@@ -1240,6 +1240,11 @@ const settings = page.getByTestId("settings");
 await settings.waitFor();
 await settings.getByRole("button", { name: /^Collegamenti/ }).first().click();
 await shot("11-connections");
+// Issue #71: every provider, ChatGPT included, shows its capabilities in the same panel.
+const capabilityToggles = settings.getByRole("button", { name: /^Capacità/ });
+await capabilityToggles.first().click();
+await themeShots("11b-connections-capabilities");
+await capabilityToggles.first().click();
 await settings.getByRole("button", { name: /^Generale/ }).first().click();
 await shot("12-settings");
 // B01: Informazioni shows the mark on its tile with the version, in every provider theme.
