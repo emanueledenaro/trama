@@ -72,7 +72,25 @@ const openView = async (view, tab) => {
   }
   await activityBar().getByRole("button", { name: view, exact: true }).click();
   await page.locator(`[data-testid="side-bar"][data-view="${VIEWS[view]}"]`).waitFor();
-  if (tab) await sideBar.getByRole("tab", { name: tab, exact: true }).click();
+  // A tab may carry its count after the name, as Patto (issue #334).
+  if (tab) await sideBar.getByRole("tab", { name: new RegExp(`^${tab}(\\s|$)`) }).click();
+};
+// Issue #334: Regole opens on Mandato, whose modules, changes and earlier versions are closed sections.
+const openSection = async (name) => {
+  const button = page.getByTestId("side-bar").getByRole("button", { name: new RegExp(`^(${name})`) }).first();
+  if ((await button.getAttribute("aria-expanded")) !== "true") await button.click();
+};
+// The map of today is the Moduli section of Mandato.
+const openModules = async () => {
+  await openView("Regole", "Mandato");
+  await openSection("Moduli");
+  await page.getByRole("listbox", { name: "Moduli" }).waitFor();
+};
+// Restringi, Correggi, Revoca (or Scrivi without a mandate) sit in "Cambia il mandato", closed by default.
+const changeMandate = async (action) => {
+  await openView("Regole", "Mandato");
+  await openSection("Cambia il mandato|Concedi un mandato");
+  await page.getByTestId("mandate-change").getByRole("button", { name: action, exact: true }).click();
 };
 // The work in focus and the queue open from the status bar (issue #330).
 const openFocusPanel = async (timeout = 20_000) => {
@@ -624,8 +642,7 @@ await teamItem.getByRole("button", { name: "Conferma il team" }).waitFor({ timeo
 await shot("04b-team-proposal");
 await teamItem.getByRole("button", { name: "Conferma il team" }).click();
 await page.getByText("Team confermato").first().waitFor({ timeout: 20_000 });
-await openView("Regole", "Mandato");
-await page.getByRole("button", { name: "Scrivi", exact: true }).click();
+await changeMandate("Scrivi");
 await page.getByRole("textbox", { name: "Obiettivi" }).fill("Documentare l'annullamento degli ordini");
 await page.getByRole("checkbox", { name: /Orders/ }).check();
 await page.getByRole("checkbox", { name: /worktree/ }).check();
@@ -842,8 +859,7 @@ await shot("04i-memory");
 await page.getByRole("button", { name: "Chiudi la barra laterale" }).click();
 
 // Candidate: correct the mandate to allow integration, then declare, verify, review and clear.
-await openView("Regole", "Mandato");
-await page.getByRole("button", { name: "Correggi", exact: true }).click();
+await changeMandate("Correggi");
 await page.getByRole("checkbox", { name: /Integrare candidati/ }).check();
 await page.getByRole("button", { name: "Salva correzione" }).click();
 await page.getByText(/Mandato v2/).first().waitFor({ timeout: 20_000 });
@@ -890,8 +906,7 @@ const documentationWork = page.locator('.chat-card:not([data-testid="settled-car
 if (await documentationWork.count()) throw new Error("The documentation role started writing outside the mandate");
 await domainCard.scrollIntoViewIfNeeded();
 await shot("04j-domain-proposal-waiting");
-await openView("Regole", "Mandato");
-await page.getByRole("button", { name: "Correggi", exact: true }).click();
+await changeMandate("Correggi");
 await page.getByRole("checkbox", { name: /^Root/ }).check();
 await page.getByRole("button", { name: "Salva correzione" }).click();
 await page.getByText(/Mandato v3/).first().waitFor({ timeout: 20_000 });
@@ -931,7 +946,7 @@ await shot("04k-domain-proposal-written");
   if ((await page.getByTestId("context-rollover").count()) !== reordersBefore) throw new Error("Trama reordered the context under the threshold");
   // The threshold stays at 95% in this project: the reorder itself is checked on its own project, in steps 29a to 29c.
 }
-await openView("Regole", "Mappa");
+await openModules();
 await shot("05-map");
 // #229: every panel separator is the same sash, as in VS Code (base/browser/ui/sash). At rest the sash draws nothing and
 // the 1px line is the panel's own border; no grip dots anywhere. After 300ms of hover its 4px ::before takes VS Code's
@@ -1108,6 +1123,69 @@ await openView("Regole", "Patto");
 await shot("08-pact");
 await openView("Regole", "Mandato");
 await shot("09-mandate");
+// Issue #334: Regole has three tabs, Mandato, Patto with its count and Standard. Mandato says in rows where the
+// Coordinator acts, what it can do and what never; the proposal, the modules, the changes and the earlier versions are
+// one line each. Every tab in light and dark, at 1280x800 and 1680x1050, with the Codex and Claude themes.
+{
+  const rulesLook = await lookOf();
+  const rulesBar = page.getByTestId("side-bar");
+  for (const id of ["mandate-where", "mandate-can", "fixed-bans"]) await rulesBar.getByTestId(id).waitFor();
+  if (!/Orders/.test(await rulesBar.getByTestId("mandate-where").innerText())) throw new Error("Dove does not name the modules of the mandate");
+  for (const section of ["mandate-modules", "mandate-change", "mandate-history"]) {
+    if ((await rulesBar.getByTestId(section).getAttribute("data-open")) !== "false") throw new Error(`${section} is not closed by default`);
+  }
+  const tabNames = (await rulesBar.getByRole("tab").allInnerTexts()).map((name) => name.replace(/\s+/g, " ").trim());
+  if (tabNames.length !== 3 || tabNames[0] !== "Mandato" || !/^Patto\s*\d+$/.test(tabNames[1]) || tabNames[2] !== "Standard") {
+    throw new Error(`Regole tabs: ${tabNames.join(", ")}`);
+  }
+  for (const [width, height] of [
+    [1280, 800],
+    [1680, 1050],
+  ]) {
+    await page.setViewportSize({ width, height });
+    for (const tab of ["Mandato", "Patto", "Standard"]) {
+      await openView("Regole", tab);
+      if (tab === "Patto") {
+        // Nuova decisione is an icon with its name; each decision shows its version small on the right.
+        await rulesBar.getByRole("button", { name: "Nuova decisione" }).waitFor();
+        if (!/^v\d+$/.test((await rulesBar.getByTestId("pact-decisions").locator("button").first().locator("span").last().innerText()).trim())) {
+          throw new Error("A decision of the Pact does not show its version");
+        }
+      }
+      if (tab === "Standard") await rulesBar.getByTestId("standard-summary").getByText(/regole attive su \d+/).waitFor();
+      if (await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)) throw new Error(`Horizontal page scroll in Regole ${tab} at ${width}x${height}`);
+      for (const provider of ["codex", "claudeAgent"]) {
+        for (const dark of [false, true]) {
+          await setLookTo(provider, dark);
+          await shot(`34-rules-${tab.toLowerCase()}-${width}x${height}-${provider}-${dark ? "dark" : "light"}`);
+        }
+      }
+    }
+  }
+  await page.setViewportSize({ width: 1280, height: 820 });
+  // Cambia il mandato open: each button opens its form, nothing changes until the form is confirmed.
+  await openView("Regole", "Mandato");
+  await openSection("Cambia il mandato");
+  const changeButtons = await rulesBar.getByTestId("mandate-change").locator(".cta-row button").allInnerTexts();
+  if (changeButtons.map((b) => b.trim()).join("|") !== "Revoca|Restringi|Correggi") throw new Error(`Cambia il mandato: ${changeButtons.join(", ")}`);
+  for (const provider of ["codex", "claudeAgent"]) {
+    for (const dark of [false, true]) {
+      await setLookTo(provider, dark);
+      await shot(`34-rules-mandate-change-${provider}-${dark ? "dark" : "light"}`);
+    }
+  }
+  // Moduli: the map of today, with the modules of the mandate marked.
+  await openSection("Moduli");
+  await rulesBar.getByTestId("module-in-mandate").first().waitFor();
+  await rulesBar.getByTestId("mandate-modules").scrollIntoViewIfNeeded();
+  await themeShots("34-rules-mandate-modules");
+  // A module shows its files first and keeps the dependencies closed.
+  await page.getByRole("listbox", { name: "Moduli" }).getByRole("option", { name: /Orders/ }).click();
+  await rulesBar.getByTestId("module-files").waitFor();
+  if ((await rulesBar.getByTestId("module-dependencies").getAttribute("data-open")) !== "false") throw new Error("The module's dependencies are not closed");
+  await themeShots("34-rules-module");
+  await setLookTo(rulesLook.provider, rulesLook.dark);
+}
 await app.evaluate(({ nativeTheme }) => {
   nativeTheme.themeSource = "dark";
 });
@@ -1384,7 +1462,7 @@ await shot("16a-goal-proposal-edit");
 await editor.getByRole("button", { name: "Annulla" }).click();
 await editor.waitFor({ state: "detached" });
 // Mappa: asking about a module puts the question in the composer with the module as the message's context.
-await openView("Regole", "Mappa");
+await openModules();
 await page.getByRole("listbox", { name: "Moduli" }).getByRole("option", { name: /Orders/ }).click();
 await page.getByTestId("side-bar").getByRole("button", { name: "Chiedi al Coordinatore su questo modulo" }).click();
 await expectAsked("Cosa fa il modulo Orders", "Mappa, Chiedi al Coordinatore su questo modulo");
@@ -1654,15 +1732,20 @@ for (const theme of ["light", "dark"]) {
 }
 await openView("Regole", "Mandato");
 const mandateInspector = page.getByTestId("side-bar");
-await mandateInspector.getByTestId("mandate-diff").waitFor();
+// Issue #334: the proposal is not twice. Mandato shows one line that leads to its card in Aspetta te.
+const proposalReference = mandateInspector.getByTestId("mandate-proposal-reference");
+await proposalReference.waitFor();
+if (await mandateInspector.getByTestId("mandate-diff").count()) throw new Error("Mandato shows the proposal's card a second time");
 const mandateState = async () => (await mandateInspector.getByText(/^Mandato (v\d+|revocato)/).first().textContent()).trim();
 const stateBefore = await mandateState();
 for (const theme of ["light", "dark"]) {
   await setTheme(theme);
-  await mandateInspector.getByTestId("mandate-diff").scrollIntoViewIfNeeded();
+  await proposalReference.scrollIntoViewIfNeeded();
   await shot(`15m2-mandate-proposal-view-${theme}`);
 }
-await mandateInspector.getByRole("button", { name: "Revoca il mandato" }).click();
+await proposalReference.click();
+await page.locator('[data-testid="side-bar"][data-view="waiting"]').getByTestId("mandate-diff").waitFor();
+await changeMandate("Revoca");
 const revokeConfirm = mandateInspector.getByTestId("mandate-revoke-confirm");
 await revokeConfirm.waitFor();
 if (!(await revokeConfirm.getByRole("button", { name: "Revoca il mandato" }).isDisabled())) throw new Error("The mandate can be revoked without a reason");
@@ -1794,7 +1877,7 @@ for (const [width, height] of [[720, 640], [1040, 700], [1280, 800], [1440, 900]
   const composer = await page.getByLabel("Messaggio al Coordinatore").boundingBox();
   if (!composer || composer.width < 300) throw new Error(`Composer squeezed at ${width}x${height}: ${JSON.stringify(composer)}`);
   if (await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)) throw new Error(`Horizontal page scroll at ${width}x${height}`);
-  await openView("Regole", "Mappa");
+  await openModules();
   await page.getByRole("listbox", { name: "Moduli" }).getByRole("option", { name: /Orders/ }).click();
   const chatWidth = await page.getByRole("main").evaluate((main) => main.getBoundingClientRect().width);
   if (chatWidth < 419.5) throw new Error(`The chat is ${chatWidth}px wide next to the side bar at ${width}x${height}`);
@@ -1997,8 +2080,7 @@ await page.getByTestId("settled-answer").or(page.getByText("Apri nel Patto")).fi
 const candidateDecision = await page.evaluate(
   async () => (await window.trama.getState()).project.document.decisionRequests.find((r) => r.outcome && r.question.includes("Cosa succede a un ordine pagato annullato?"))?.outcome.decisionId,
 );
-await openView("Regole", "Mandato");
-await page.getByRole("button", { name: "Scrivi", exact: true }).click();
+await changeMandate("Scrivi");
 await page.getByRole("textbox", { name: "Obiettivi" }).fill("Documentare l'annullamento degli ordini");
 await page.getByRole("checkbox", { name: /Orders/ }).check();
 await page.getByRole("checkbox", { name: /worktree/ }).check();
@@ -2251,8 +2333,7 @@ await app.evaluate(({ nativeTheme }) => {
   nativeTheme.themeSource = "system";
 });
 await page.evaluate(() => document.documentElement.classList.remove("dark"));
-await openView("Regole", "Mandato");
-await page.getByRole("button", { name: "Correggi", exact: true }).click();
+await changeMandate("Correggi");
 await page.getByRole("checkbox", { name: /Aprire pull request/ }).check();
 await page.getByRole("button", { name: "Salva correzione" }).click();
 await page.getByText(/Mandato v2/).first().waitFor({ timeout: 20_000 });
@@ -2282,11 +2363,16 @@ await correctedQuality.scrollIntoViewIfNeeded();
 await shot("18i-publication-standard-dark");
 await review.scrollIntoViewIfNeeded();
 await shot("18d2-review-findings-dark");
-// The project's switches: Impostazioni, Standard del codice lists the rules; one turns off for this project.
+// The project's switches: Standard del codice lists the rules; one turns off for this project. Issue #334: the rules
+// live in Regole, in the Standard tab; Impostazioni keeps a way there.
 await page.getByRole("button", { name: "Impostazioni" }).click();
 const standardSettings = page.getByTestId("settings");
 await standardSettings.getByRole("button", { name: /^Standard del codice/ }).first().click();
-const rules = standardSettings.getByTestId("clean-code-settings");
+await standardSettings.getByText(/ora sta in Regole|stanno in Regole/).waitFor();
+await themeShots("18d5-standard-settings-link");
+await standardSettings.getByTestId("standard-open-rules").click();
+await page.locator('[data-testid="side-bar"][data-view="rules"]').getByRole("tab", { name: "Standard", selected: true }).waitFor();
+const rules = page.getByTestId("side-bar").getByTestId("clean-code-settings");
 await rules.getByText(/Robert C\. Martin/).waitFor();
 const solid = rules.getByRole("switch", { name: "SOLID" });
 await solid.click();
@@ -2301,8 +2387,9 @@ await page.evaluate(() => document.documentElement.classList.remove("dark"));
 await shot("18d4-standard-settings");
 await solid.click();
 await rules.locator('[role="switch"][aria-label="SOLID"][aria-checked="true"]').waitFor({ timeout: 10_000 });
-await page.getByRole("button", { name: "Impostazioni" }).click();
+// "Apri in Regole" leaves Impostazioni for the conversation, with the Standard tab beside it.
 await standardSettings.waitFor({ state: "hidden" });
+await page.getByRole("button", { name: "Chiudi la barra laterale" }).click();
 await showWaiting();
 const correctedId = await recordId(correctedCard, "C");
 await send(`[riverifica:${correctedId}:git_status]`);
@@ -2355,8 +2442,7 @@ await page.getByRole("button", { name: "Chiudi la barra laterale" }).click();
 
 // M06: the developer of a slice runs implement and tdd with their original text and reports the seams it tested.
 // The candidate shows that report apart from Trama's evidence; the build and the tests wait for Trama's own run.
-await openView("Regole", "Mandato");
-await page.getByRole("button", { name: "Correggi", exact: true }).click();
+await changeMandate("Correggi");
 await page.getByRole("checkbox", { name: /Preparare piani/ }).check();
 await page.getByRole("button", { name: "Salva correzione" }).click();
 await page.getByText(/Mandato v3/).first().waitFor({ timeout: 20_000 });
@@ -3061,7 +3147,7 @@ await shot("16f-overlap-focus-dark");
 await page.evaluate(() => window.trama.invoke("settings:update", { theme: "system" }));
 await colleagueMessage.getByRole("button", { name: "Copia il messaggio" }).click();
 await colleagueMessage.getByTestId("colleague-message-done").waitFor();
-await openView("Regole", "Mappa");
+await openModules();
 const markedModule = page.getByRole("listbox", { name: "Moduli" }).getByRole("option").filter({ has: page.locator('[data-overlap="conflict"]') });
 await markedModule.first().waitFor({ timeout: 10_000 });
 await page.getByTestId("map-overlap-legend").waitFor();
@@ -3897,7 +3983,7 @@ if (await page.locator('[data-waiting-kind="mandate"]').count()) throw new Error
 await openView("Regole", "Mandato");
 await page.getByText(/Mandato v1/).first().waitFor({ timeout: 20_000 });
 await page.getByTestId("side-bar").getByTestId("fixed-bans").waitFor();
-await page.getByRole("button", { name: "Restringi", exact: true }).click();
+await changeMandate("Restringi");
 const restrict = page.getByTestId("mandate-restrict");
 await restrict.getByRole("checkbox", { name: "Integrare candidati verificati" }).uncheck();
 await primaryLast(restrict.locator(".cta-row"), "Mandate restriction");
@@ -3912,7 +3998,8 @@ await page.getByText(/Ho ristretto il mandato/).first().waitFor({ timeout: 20_00
 await page.getByText(/Nessun lavoro in corso era fuori dal mandato ristretto/).first().waitFor({ timeout: 20_000 });
 await lookShots("26c-mandate-restricted");
 // The correction form starts from the restricted version: saving it never brings back what the restriction took away.
-await page.getByRole("button", { name: "Correggi", exact: true }).click();
+await openSection("Cambia il mandato");
+await page.getByTestId("mandate-change").getByRole("button", { name: "Correggi", exact: true }).click();
 if (await page.getByTestId("side-bar").getByRole("checkbox", { name: "Integrare candidati verificati" }).isChecked()) {
   throw new Error("The correction form brings back an action the restriction removed");
 }
@@ -4781,6 +4868,7 @@ await themeShots("39a-overview-priority");
 await page.getByTestId("overview-project").filter({ hasText: before39[0] }).getByRole("button", { name: before39[0], exact: true }).click();
 await page.getByTestId("overview").waitFor({ state: "detached", timeout: 30_000 });
 await page.waitForTimeout(1_500);
+await openView("Progetti");
 await page.getByRole("button", { name: "Panoramica dei progetti" }).click();
 await priority.waitFor();
 let reopened39 = await priorityNames();
