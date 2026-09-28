@@ -3964,3 +3964,47 @@ await themeShots("30e-merge-activity-person");
 await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
 await page.evaluate(() => window.trama.invoke("settings:update", { theme: "system" }));
 await app.close();
+
+// Issue #39: the projects share the developers. The overview says how many work in all projects and keeps the
+// Product Owner's order of the projects: the arrows move a project, opening another one leaves the order as it is.
+({ app, page } = await launch());
+await page.getByTestId("dialog-title").first().waitFor({ timeout: 30_000 });
+await page.getByRole("button", { name: "Panoramica dei progetti" }).click();
+const priority = page.getByTestId("overview-priority");
+await priority.waitFor({ timeout: 10_000 });
+await priority.getByTestId("shared-capacity").filter({ hasText: /Sviluppatori al lavoro in tutti i progetti: \d+ su 6/ }).waitFor();
+const priorityNames = () => priority.getByTestId("overview-priority-row").locator("span.truncate").allInnerTexts();
+const before39 = await priorityNames();
+if (before39.length < 2) throw new Error("The overview ranks fewer than two projects");
+await priority.getByRole("button", { name: `Sposta ${before39[1]} più in alto` }).click();
+await page.waitForFunction(
+  ([first]) => document.querySelector('[data-testid="overview-priority-row"] span.truncate')?.textContent === first,
+  [before39[1]],
+  { timeout: 10_000 },
+);
+const moved39 = await priorityNames();
+if (moved39[0] !== before39[1] || moved39[1] !== before39[0]) throw new Error(`The project did not move up: ${moved39.join(", ")}`);
+await priority.scrollIntoViewIfNeeded();
+await themeShots("39a-overview-priority");
+// Opening a project from the overview does not rank it.
+await page.getByTestId("overview-project").filter({ hasText: before39[0] }).getByRole("button", { name: before39[0], exact: true }).click();
+await page.getByTestId("overview").waitFor({ state: "detached", timeout: 30_000 });
+await page.waitForTimeout(1_500);
+await page.getByRole("button", { name: "Panoramica dei progetti" }).click();
+await priority.waitFor();
+let reopened39 = await priorityNames();
+for (const end = Date.now() + 10_000; reopened39.join("|") !== moved39.join("|") && Date.now() < end; reopened39 = await priorityNames()) await page.waitForTimeout(250);
+if (reopened39.join("|") !== moved39.join("|")) throw new Error(`Opening a project changed the order of the projects: ${moved39.join(", ")} became ${reopened39.join(", ")}`);
+await page.getByRole("button", { name: "Panoramica dei progetti" }).click();
+// The shared limit sits next to the project's own limit in the settings.
+await page.getByRole("button", { name: "Impostazioni" }).click();
+const sharedSettings = page.getByTestId("settings");
+await sharedSettings.getByRole("button", { name: /^Metodo di lavoro/ }).first().click();
+const sharedPicker = sharedSettings.getByTestId("shared-developers");
+await sharedPicker.getByRole("radio", { name: "6", checked: true }).waitFor();
+await sharedPicker.getByRole("radio", { name: "4" }).click();
+await sharedPicker.getByRole("radio", { name: "4", checked: true }).waitFor();
+await sharedPicker.scrollIntoViewIfNeeded();
+await noHorizontalScroll("shared developers");
+await themeShots("39b-shared-developers");
+await app.close();
