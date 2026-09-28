@@ -1,5 +1,4 @@
 import type { NextStepView } from "@shared/domain";
-import { waitingForYou } from "@shared/waitingForYou";
 import { act, useUi } from "./store";
 
 /** Scrolls the card of a record into view; false when this dialog does not show it. */
@@ -24,8 +23,7 @@ export function runNextStep(step: NextStepView, requestId: string | null): void 
   const { app } = useUi.getState();
   const project = app?.project;
   if (project && step.actor === "person" && step.targetId) {
-    const items = waitingForYou(project.document, { sliceViews: project.sliceViews, memoryProposals: app.learning?.proposals });
-    const item = items.find((i) => i.targetId === step.targetId);
+    const item = (project.waiting ?? []).find((i) => i.targetId === step.targetId);
     if (item) return setInspector({ kind: "waiting", key: item.key });
   }
   if (step.targetId && revealCard(step.targetId)) return;

@@ -58,7 +58,7 @@ import type {
   SpecialistAssignment,
 } from "@shared/domain";
 import { isOpenQuestion, pendingMandateRequest } from "@shared/domain";
-import type { WaitingSources } from "@shared/waitingForYou";
+import { waitingForYou, type WaitingSources } from "@shared/waitingForYou";
 import { resolveCodexExecutable } from "./core/codexClient";
 import { CodexRuntime } from "./core/providers/codex";
 import { createRuntime, hasAdapter } from "./core/providers/registry";
@@ -745,6 +745,7 @@ export class TramaController {
     );
     project.focus = focusView(project.document);
     project.statusLine = statusLine(project.document, project.runningRequestId);
+    project.waiting = waitingForYou(project.document, this.waitingSources(project, { sliceViews: project.sliceViews, candidateReports: project.candidateReports }));
     project.automaticWork = project.isDemo ? [] : automaticWorkStatus(project.document, this.dutyContext(project, project.snapshot.headSHA));
     project.overlaps = projectOverlaps(project, this.presenceProbes);
     project.pactDemoBlockers = project.document.pactDemo ? inspectPactDemo(project.document, project.document.pactDemo) : [];
@@ -894,10 +895,19 @@ export class TramaController {
     this.publish();
   }
 
-  /** What "Aspetta te" reads besides the document: the slices of each approved breakdown and the memory proposals. */
-  private waitingSources(project: ActiveProjectState): WaitingSources {
-    const views = Object.fromEntries(project.document.plans.filter((p) => p.slicing?.status === "approved").map((p) => [p.id, sliceViews(project.document, p)]));
-    return { sliceViews: views, memoryProposals: project === this.state.project ? this.state.learning?.proposals : undefined };
+  /**
+   * What "Aspetta te" reads besides the document: the slices of each approved breakdown, the verdict of each candidate
+   * not yet published and the memory proposals. `derived` passes the slices and verdicts the published state has just
+   * computed, so they are not computed twice.
+   */
+  private waitingSources(project: ActiveProjectState, derived?: Pick<WaitingSources, "sliceViews" | "candidateReports">): WaitingSources {
+    const document = project.document;
+    const views =
+      derived?.sliceViews ?? Object.fromEntries(document.plans.filter((p) => p.slicing?.status === "approved").map((p) => [p.id, sliceViews(document, p)]));
+    const reports =
+      derived?.candidateReports ??
+      Object.fromEntries(document.candidates.filter((c) => !c.pullRequest).map((c) => [c.id, candidateReport(document, c, project.snapshot.headSHA)]));
+    return { sliceViews: views, candidateReports: reports, memoryProposals: project === this.state.project ? this.state.learning?.proposals : undefined };
   }
 
   /**
