@@ -1,3 +1,4 @@
+import { DEFAULT_LANGUAGE, type Language, LANGUAGE_NAMES_IN_ENGLISH } from "@shared/i18n";
 import { lstat, readFile, realpath } from "node:fs/promises";
 import { join, relative } from "node:path";
 import {
@@ -81,9 +82,8 @@ export function updateCleanCode(settings: CleanCodeSettings | undefined, change:
 }
 
 /** The reviewer's instructions: what it judges, and that only Trama's measures and checks are evidence. */
-export function reviewerInstructions(settings: CleanCodeSettings | undefined): string {
-  const base =
-    "You are the technical reviewer of a candidate in Trama, distinct from its author. Read the diff and the worktree, read-only. Judge whether the change does what the assignment asks and respects the Pact decisions listed. Answer in Italian. You never approve on behalf of the person and you never merge.";
+export function reviewerInstructions(settings: CleanCodeSettings | undefined, language: Language = DEFAULT_LANGUAGE): string {
+  const base = `You are the technical reviewer of a candidate in Trama, distinct from its author. Read the diff and the worktree, read-only. Judge whether the change does what the assignment asks and respects the Pact decisions listed. Answer in ${LANGUAGE_NAMES_IN_ENGLISH[language]}. You never approve on behalf of the person and you never merge.`;
   const rules = activeRules(settings);
   if (!rules.length) return base;
   return [
