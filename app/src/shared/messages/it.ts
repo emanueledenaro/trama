@@ -135,6 +135,18 @@ export const it = {
   "github.detail.signedOut": "gh non ha un accesso valido. Esegui {command} nel terminale, poi premi Controlla di nuovo.",
   "github.detail.signedOutDetail": "gh non ha un accesso valido: {detail}. Esegui {command} nel terminale, poi premi Controlla di nuovo.",
 
+  // Merge by mandate (issue #41)
+  "integration.label": "Unione con il mandato",
+  "integration.merged": "Pull request {pull} unita dal Coordinatore con il mandato versione {version}",
+  "integration.mergedNote": "È il suo via libera, non una tua revisione. La tua copia locale e l'app in uso non cambiano, e non parte nessuna distribuzione.",
+  "integration.merging": "Unione di {pull} in corso. Se GitHub non risponde, Trama rilegge la pull request prima di riprovare.",
+  "integration.failed": "Unione di {pull} non riuscita: {failure}",
+  "integration.failedNote": "Il prossimo tentativo va alla stessa pull request.",
+  "integration.stopped": "Il Coordinatore non unisce {pull}, la scelta è tua.",
+  "integration.consequences": "Conseguenze",
+  "integration.alternatives": "Cosa puoi fare",
+  "integration.seen": "Ho visto",
+
   // Settings
   "settings.sections": "Sezioni delle impostazioni",
   "settings.section.general": "Generale",

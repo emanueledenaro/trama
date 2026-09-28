@@ -50,6 +50,7 @@ import type * as React from "react";
 import { Button } from "@/components/ui/button";
 import { Badge, TextArea } from "@/components/ui/field";
 import { cn } from "@/lib/cn";
+import { useT } from "@/lib/i18n";
 import { act, useUi } from "@/lib/store";
 import { ACTION_LABELS } from "@/lib/labels";
 import { ChatMarkdown } from "./ChatMarkdown";
@@ -1289,35 +1290,36 @@ function DecisionLink({ id, version }: { id: string; version: number | undefined
 
 /** The Coordinator's merge within the mandate (issue #41): its outcome, never a review of the person. */
 function IntegrationField({ integration }: { integration: CandidateIntegration }) {
+  const t = useT();
   const pull = `#${integration.destination.pullRequestNumber}`;
   const stop = integration.status === "stopped" ? integration.stop : null;
   return (
-    <Field label="Unione con il mandato">
+    <Field label={t("integration.label")}>
       <div className="space-y-1 text-ui-sm" data-testid="candidate-integration" data-status={integration.status}>
         {integration.status === "merged" ? (
           <p>
-            Pull request {pull} unita dal Coordinatore con il mandato versione {integration.mandateVersion}
+            {t("integration.merged", { pull, version: integration.mandateVersion })}
             {integration.mergeSHA ? <span className="font-mono text-muted-foreground"> ({integration.mergeSHA.slice(0, 7)})</span> : null}.{" "}
-            <span className="text-muted-foreground">È il suo via libera, non una tua revisione. La tua copia locale e l'app in uso non cambiano, e non parte nessuna distribuzione.</span>
+            <span className="text-muted-foreground">{t("integration.mergedNote")}</span>
           </p>
         ) : integration.status === "merging" ? (
-          <p>Unione di {pull} in corso. Se GitHub non risponde, Trama rilegge la pull request prima di riprovare.</p>
+          <p>{t("integration.merging", { pull })}</p>
         ) : integration.status === "failed" ? (
           <p>
-            Unione di {pull} non riuscita: {integration.failure} <span className="text-muted-foreground">Il prossimo tentativo va alla stessa pull request.</span>
+            {t("integration.failed", { pull, failure: integration.failure ?? "" })} <span className="text-muted-foreground">{t("integration.failedNote")}</span>
           </p>
         ) : stop ? (
           <>
             <p className="text-foreground/90">
-              Il Coordinatore non unisce {pull}, la scelta è tua. {stop.reasons.join(" ")}
+              {t("integration.stopped", { pull })} {stop.reasons.join(" ")}
             </p>
-            <p className="font-medium text-foreground">Conseguenze</p>
+            <p className="font-medium text-foreground">{t("integration.consequences")}</p>
             <ul className="list-disc space-y-0.5 pl-4">
               {stop.consequences.map((c) => (
                 <li key={c}>{c}</li>
               ))}
             </ul>
-            <p className="font-medium text-foreground">Cosa puoi fare</p>
+            <p className="font-medium text-foreground">{t("integration.alternatives")}</p>
             <ul className="list-disc space-y-0.5 pl-4">
               {stop.alternatives.map((a) => (
                 <li key={a}>{a}</li>
@@ -1327,6 +1329,16 @@ function IntegrationField({ integration }: { integration: CandidateIntegration }
         ) : null}
       </div>
     </Field>
+  );
+}
+
+/** The person has seen a merge the Coordinator stopped (issue #41). */
+function AcknowledgeIntegrationStop({ candidateId }: { candidateId: string }) {
+  const t = useT();
+  return (
+    <Button size="sm" onClick={() => void act("candidate:acknowledgeIntegrationStop", { candidateId })}>
+      {t("integration.seen")}
+    </Button>
   );
 }
 
@@ -1452,9 +1464,7 @@ export function CandidateCard({ candidateId }: { candidateId: string }) {
           </Button>
         ) : null}
         {candidate.integration?.status === "stopped" && candidate.integration.stop && !candidate.integration.stop.acknowledgedAt && !candidate.pullRequest?.mergedAt ? (
-          <Button size="sm" onClick={() => void act("candidate:acknowledgeIntegrationStop", { candidateId })}>
-            Ho visto
-          </Button>
+          <AcknowledgeIntegrationStop candidateId={candidateId} />
         ) : null}
       </div>
       {preview && !candidate.pullRequest ? (
