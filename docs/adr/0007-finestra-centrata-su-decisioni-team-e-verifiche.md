@@ -1,6 +1,6 @@
 # La finestra è centrata su decisioni, team e verifiche, non su thread e diff
 
-Stato: accettata il 16 settembre 2026, intervista sull'incremento verticale (Q16).
+Stato: accettata il 16 settembre 2026, intervista sull'incremento verticale (Q16). La disposizione della sidebar e dell'ispettore è sostituita dall'[ADR 0018](0018-finestra-a-barra-delle-attivita.md) del 28 settembre 2026.
 
 Gli strumenti AI per il codice condividono un impianto: lista di thread a sinistra, chat al centro, diff a destra. Il Product Owner ha rifiutato di copiarlo, anche dalla app Codex scelta come riferimento visivo, perché quell'impianto esprime il modello "un task, una chat, un diff da approvare" che Trama vuole superare.
 

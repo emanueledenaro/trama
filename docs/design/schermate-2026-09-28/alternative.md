@@ -1,5 +1,9 @@
 # Tre alternative di disposizione
 
+## Decisione
+
+Il 28 settembre 2026 la persona ha scelto l'alternativa **B, barra delle attività** (commento sulla issue #314). La decisione è registrata nell'[ADR 0018](../../adr/0018-finestra-a-barra-delle-attivita.md) e i termini nuovi sono in `CONTEXT.md`, sezione "Finestra". Le parti comuni alle tre alternative valgono anche per B. Il resto di questo documento resta come proposta, per memoria delle alternative scartate.
+
 Proposta per la issue #314. Le tre alternative applicano gli stessi [principi](principi.md) e mettono le zone in punti diversi. I prototipi sono in `prototipi/` (`a.html`, `b.html`, `c.html`), le schermate in `schermate/`, le misure in `misure.json`. Come rigenerarli è scritto nel [README](README.md).
 
 Dati dei prototipi: progetto negozio, branch `chore/pre-apertura`, obiettivo "Apertura controllata di MondoPet". Un lavoro in corso (S2 Spese di spedizione per zona, di Elena), due cose che aspettano la persona (proposta di mandato v3, proposta di memoria), una squadra al lavoro (Checkout) e una ferma (Catalogo), un conflitto (18 file tra `chore/pre-apertura` e main, che il Coordinatore sta riallineando). Sono dati di esempio scritti a mano, non letti dall'app.
