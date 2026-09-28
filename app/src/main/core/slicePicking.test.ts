@@ -183,7 +183,8 @@ describe("independent movement (W08)", () => {
     const { document } = project(tickets);
     document.settings = { parallelDevelopers: 2 };
     expect(picked(pickSlices(document, input())).map((p) => p.sliceId)).toEqual(["S1", "S2"]);
-    expect(pickSlices(document, input())).toEqual([]);
+    // Nothing more starts, and the ready slice says why (A10).
+    expect(waiting(pickSlices(document, input()))).toEqual(["S3: Le squadre al lavoro sono al loro limite: la fetta parte quando una si libera."]);
     document.settings = { parallelDevelopers: 3 };
     expect(picked(pickSlices(document, input())).map((p) => p.sliceId)).toEqual(["S3"]);
   });

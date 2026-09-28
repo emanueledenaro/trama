@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { PlanSlicing, ProjectDocument, SliceTicket, WorkPlan } from "@shared/domain";
 import type { RepositoryModule } from "@shared/repository";
 import { activityLog } from "@shared/activity";
-import { projectCapacity, roomForWork, sharedRoleMembers, squadLimits, squadOf, squadStatusLine, teamSquads } from "@shared/squads";
+import { projectCapacity, roomForWork, SQUAD_SIZE, sharedRoleMembers, squadLimits, squadOf, squadStatusLine, teamSquads } from "@shared/squads";
 import { emptyDocument } from "./document";
 import { grantMandate } from "./pact";
 import { doneSince } from "./recap";
@@ -165,6 +165,49 @@ describe("squads by product area (A10)", () => {
     const formation = formSquads(document, MODULES, at(2))!;
     expect(formation.created).toEqual([]);
     expect(formation.placed.map((p) => [p.developer.name, p.squad.name])).toEqual([["Bruno", "Catalogo"]]);
+  });
+});
+
+describe("squad size and ownership (A10, review of #306)", () => {
+  it("fills each squad up to its size whatever the setting of developers at work", () => {
+    const document = project([
+      ["Ada", "Sources/Catalog"],
+      ["Bruno", "Sources/Catalog"],
+      ["Carla", "Sources/Catalog"],
+    ]);
+    document.settings = { parallelDevelopers: 1 };
+    formSquads(document, MODULES, at(1));
+    expect(SQUAD_SIZE).toBe(3);
+    expect(teamSquads(document).map((s) => [s.name, names(document, s.developerIds)])).toEqual([["Catalogo", ["Ada", "Bruno", "Carla"]]]);
+    // The setting still limits the work: one developer of the squad at a time.
+    work(document, "Ada", "Sources/Catalog");
+    expect(() => work(document, "Bruno", "Sources/Search")).toThrow(/1 developer is already at work in the squad Catalogo/);
+  });
+
+  it("refuses to give a squad's work to a developer of another squad", () => {
+    const document = project([
+      ["Ada", "Sources/Catalog"],
+      ["Bruno", "Sources/Checkout"],
+    ]);
+    formSquads(document, MODULES, at(1));
+    expect(() => work(document, "Bruno", "Sources/Catalog")).toThrow("The work on Sources/Catalog belongs to squad Catalogo: assign it to one of its developers.");
+    // Work outside every squad's area stays free to assign.
+    expect(() => work(document, "Bruno", "Sources/Search")).not.toThrow();
+  });
+
+  it("counts the developers outside squads as one more squad in the project's capacity", () => {
+    const document = project([
+      ["Ada", "Sources/Catalog"],
+      ["Bruno", "Sources/Catalog"],
+    ]);
+    formSquads(document, MODULES, at(1));
+    const [catalog] = teamSquads(document);
+    const bruno = findSpecialist(document, "Bruno")!;
+    catalog!.developerIds = catalog!.developerIds.filter((id) => id !== bruno.id);
+    document.settings = { developersPerSquad: 1, activeSquads: 2 };
+    expect(projectCapacity(document)).toBe(2);
+    work(document, "Ada", "Sources/Catalog");
+    work(document, "Bruno", "Sources/Search");
   });
 });
 

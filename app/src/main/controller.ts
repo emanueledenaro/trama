@@ -4347,7 +4347,21 @@ export class TramaController {
       fallback: model ? { provider, model } : null,
     });
     const picked = outcomes.filter((o) => o.kind === "picked");
-    if (!picked.length) return;
+    // Why each ready slice waits (A10), for the plan's list of slices: a taken or free slice loses its old reason.
+    let reasonsChanged = false;
+    for (const plan of document.plans) {
+      for (const ticket of plan.slicing?.tickets ?? []) {
+        const waiting = outcomes.find((o) => o.kind === "waiting" && o.planId === plan.id && o.sliceId === ticket.id);
+        const reason = waiting?.kind === "waiting" ? waiting.reason : null;
+        if ((ticket.waiting ?? null) === reason) continue;
+        ticket.waiting = reason;
+        reasonsChanged = true;
+      }
+    }
+    if (!picked.length) {
+      if (reasonsChanged) this.changedIn(project);
+      return;
+    }
     for (const { assignment, sliceId } of picked) {
       const name = document.team.specialists.find((s) => s.id === assignment.specialistId)?.name ?? assignment.specialistId;
       // The chat shows the pick at the end of the work's dialog, where the person is reading now.

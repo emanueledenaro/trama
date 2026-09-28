@@ -10,6 +10,8 @@ import { SHARED_ROLES } from "./roster";
 /** Developers of one squad and squads of a project at work at the same time unless the person changes it (Q22). */
 export const DEFAULT_DEVELOPERS_PER_SQUAD = 3;
 export const DEFAULT_ACTIVE_SQUADS = 3;
+/** How many developers a squad has at most (Q15): the limit of developers at work is a setting, the squad's size is not. */
+export const SQUAD_SIZE = 3;
 /** The range the project settings accept for both limits. */
 export const MIN_SQUAD_LIMIT = 1;
 export const MAX_SQUAD_LIMIT_SETTING = 6;
@@ -115,8 +117,9 @@ export function roomForWork(document: Pick<ProjectDocument, "team" | "settings">
 /** How many developers may work at once in the whole project: the limit per squad, times the squads that may work together. */
 export function projectCapacity(document: Pick<ProjectDocument, "team" | "settings">): number {
   const limits = squadLimits(document);
-  const squads = teamSquads(document).length;
-  return limits.developersPerSquad * (squads ? Math.min(limits.activeSquads, squads) : 1);
+  // Developers outside squads work as one more squad, as the limits count them.
+  const groups = teamSquads(document).length + (developersOutsideSquads(document).length || !teamSquads(document).length ? 1 : 0);
+  return limits.developersPerSquad * Math.min(limits.activeSquads, groups);
 }
 
 /**
@@ -134,6 +137,18 @@ export function squadForModules(document: Pick<ProjectDocument, "team">, moduleI
     }
   }
   return best ?? teamSquads(document).find((s) => !s.moduleIds.length) ?? null;
+}
+
+/**
+ * The squad that owns work on these modules and that the developer does not belong to (A10), or null when the developer
+ * may take it: a slice belongs to the squad of its area while that squad has developers.
+ */
+export function foreignSquad(document: Pick<ProjectDocument, "team">, specialist: Specialist, moduleIds: string[]): Squad | null {
+  if (specialist.role !== "developer") return null;
+  const owner = squadForModules(document, moduleIds);
+  if (!owner || owner.developerIds.includes(specialist.id)) return null;
+  const staffed = members(document).some((s) => owner.developerIds.includes(s.id));
+  return staffed ? owner : null;
 }
 
 /** The fixed roles that belong to no squad and serve all of them (Q15), in the order of the roster. */

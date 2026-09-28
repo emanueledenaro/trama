@@ -115,11 +115,15 @@ export function pickSlices(document: ProjectDocument, input: PickInput): PickOut
     const tickets = plan.slicing!.tickets;
     for (const view of sliceViews(document, plan)) {
       if (view.state !== "ready") continue;
-      if (!free.length || !roomForWork(document)) return outcomes;
       const ticket = tickets.find((t) => t.id === view.id)!;
+      const waiting = (reason: string) => outcomes.push({ kind: "waiting", planId: plan.id, sliceId: ticket.id, reason });
+      if (!free.length) return outcomes;
+      if (!roomForWork(document)) {
+        waiting("Le squadre al lavoro sono al loro limite: la fetta parte quando una si libera.");
+        continue;
+      }
       const earlier = planAssignments(document, plan.id);
       const moduleIds = sliceModules(ticket, plan, input.modules, earlier);
-      const waiting = (reason: string) => outcomes.push({ kind: "waiting", planId: plan.id, sliceId: ticket.id, reason });
       if (!moduleIds.length) {
         waiting("La fetta non indica moduli: la assegna il Coordinatore.");
         continue;

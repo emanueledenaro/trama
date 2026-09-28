@@ -3,7 +3,7 @@ import type { AssignmentStatus, AutonomousStep, ProjectDocument, Specialist, Squ
 import { shortId } from "@shared/ids";
 import type { RepositoryModule } from "@shared/repository";
 import { roleProfile } from "@shared/roster";
-import { squadLimits, squadOf, teamSquads } from "@shared/squads";
+import { SQUAD_SIZE, squadOf, teamSquads } from "@shared/squads";
 import { authorize, developers, isTeamConfirmed, newSpecialist, teamMembers } from "./team";
 
 /**
@@ -145,7 +145,8 @@ export function formSquads(document: ProjectDocument, modules: RepositoryModule[
  * fewest developers and room. A developer no squad has room for stays in the team, outside squads, and loses nothing.
  */
 function placeRemaining(document: ProjectDocument, left: Specialist[]): SquadFormation["placed"] {
-  const limit = squadLimits(document).developersPerSquad;
+  // The squad's size, not the setting of developers at work: a lower setting keeps nobody out of a squad.
+  const limit = SQUAD_SIZE;
   const size = (squad: Squad) => squad.developerIds.filter((id) => teamMembers(document).some((s) => s.id === id)).length;
   const placed: SquadFormation["placed"] = [];
   for (const developer of left) {

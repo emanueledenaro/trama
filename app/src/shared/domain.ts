@@ -1219,6 +1219,11 @@ export interface SliceTicket {
    * nobody picks it until the pause is cleared. Absent or null means not paused.
    */
   pause?: { reason: string; since: string } | null;
+  /**
+   * Why a ready slice is not taken yet, as the last independent pick found it (A10): a squad at its limit, no free
+   * developer of its squad. Absent or null once the slice is taken or nothing holds it.
+   */
+  waiting?: string | null;
 }
 
 /**

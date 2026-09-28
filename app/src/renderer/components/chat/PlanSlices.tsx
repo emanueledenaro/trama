@@ -76,6 +76,11 @@ function Ticket({
         </div>
       ) : null}
       {state === "paused" && ticket.pause ? <div className="mt-0.5 text-ui-sm text-warning">In pausa: {ticket.pause.reason}</div> : null}
+      {state === "ready" && ticket.waiting ? (
+        <div className="mt-0.5 text-ui-sm text-muted-foreground" data-testid="plan-slice-waiting">
+          In attesa: {ticket.waiting}
+        </div>
+      ) : null}
       <div className="mt-0.5 text-ui-sm text-foreground/90">{ticket.whatToBuild}</div>
       {showCriteria ? (
         <ul className="mt-1 list-disc space-y-0.5 pl-4 text-ui-sm text-foreground/80">

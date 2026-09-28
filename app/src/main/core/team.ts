@@ -21,7 +21,7 @@ import type {
 import { isOpenQuestion } from "@shared/domain";
 import type { ProviderId } from "@shared/codex";
 import { shortId } from "@shared/ids";
-import { DEFAULT_DEVELOPERS_PER_SQUAD, squadLimitError, squadLimitProblem } from "@shared/squads";
+import { DEFAULT_DEVELOPERS_PER_SQUAD, foreignSquad, squadLimitError, squadLimitProblem } from "@shared/squads";
 import { freeAgentColor, isAgentColor, tagFromCompetence } from "@shared/identity";
 import { FIXED_ROLES, isFixedRole, roleProfile } from "@shared/roster";
 import { readDeveloperReport } from "./implementation";
@@ -438,6 +438,10 @@ export function assign(
   }
   if (pending.length) throw new TeamError("dependencies_pending", `These assignments are not completed yet: ${pending.join(", ")}.`);
   requireIndependent(document, moduleIds, specialist.id);
+  const owner = foreignSquad(document, specialist, moduleIds);
+  if (owner) {
+    throw new TeamError("squad_owner", `The work on ${moduleIds.join(", ")} belongs to squad ${owner.name}: assign it to one of its developers.`);
+  }
   requireSquadRoom(document, specialist);
   const decisionVersions: Record<string, number> = {};
   for (const id of cleaned(order.decisionIds ?? [])) {
