@@ -63,6 +63,8 @@ import { BLOCKER_TEXT, plainConflictReference, plainText } from "@shared/plainLa
 import { asTitle, useRecord } from "@/lib/references";
 import { PlanSpecBody } from "./PlanSpec";
 import { DutyFields } from "./DutyFields";
+import { PlaceActions, PlaceField } from "./PlaceField";
+import { cloudWorking } from "@shared/workPlace";
 import { GateField } from "./GateField";
 import { RuleLabel } from "./RuleLabel";
 import { InterfaceShotsField } from "./InterfaceShots";
@@ -801,8 +803,10 @@ export function AssignmentCard({ assignmentId }: { assignmentId: string }) {
           <div className="mt-0.5 text-ui-sm text-warning">Ultimo turno eseguito con {lastTurn.model}</div>
         ) : null}
       </Field>
+      <PlaceField assignment={assignment} />
       <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-ui-sm text-muted-foreground">
-        <span>{assignment.tools.includes("edits") ? "Copia di lavoro propria" : "Sola lettura"}</span>
+        {/* Work in a cloud session has no copy on the Mac until its branch comes back (A19). */}
+        {cloudWorking(assignment) ? null : <span>{assignment.tools.includes("edits") ? "Copia di lavoro propria" : "Sola lettura"}</span>}
         {assignment.requiredChecks.length ? <span>Verifiche: {assignment.requiredChecks.map(checkName).join(", ")}</span> : null}
       </div>
       {assignment.workspace ? (
@@ -829,6 +833,7 @@ export function AssignmentCard({ assignmentId }: { assignmentId: string }) {
       ) : null}
       {isCurrent && (active || assignment.status === "stopped" || assignment.status === "failed" || answeredPause) ? (
         <div className="cta-row mt-3">
+          <PlaceActions specialist={specialist} assignment={assignment} />
           {active ? (
             <Button size="sm" variant="outline" disabled={assignment.status === "stopRequested"} onClick={() => void act("assignment:stop", { assignmentId })}>
               Ferma

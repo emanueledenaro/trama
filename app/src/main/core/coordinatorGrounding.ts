@@ -234,6 +234,9 @@ function candidateState(document: ProjectDocument, candidate: Candidate, headSHA
       case "EXTERNAL_EFFECT_UNSUPPORTED":
         problems.push(`effetto esterno non verificato: ${blocker.detail}`);
         break;
+      case "CLOUD_CHECK_FAILED":
+        problems.push(`controlli sul Mac del lavoro cloud non superati: ${blocker.detail}`);
+        break;
       case "REMOTE_CONFLICT":
       case "WORKTREE_CONFLICT":
       case "SEMANTIC_CONFLICT":

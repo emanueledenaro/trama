@@ -173,7 +173,7 @@ jobs:
             echo
             echo "- macOS: \`.dmg\` e \`.zip\` per Apple Silicon (\`arm64\`) e Intel (\`x64\`)."
             echo "- Windows: installer \`.exe\` (\`x64\`)."
-            echo "- Linux: \`.AppImage\` (\`x64\`)."
+            echo "- Linux: \`.AppImage\` (\`x86_64\`)."
             echo "- Checksum SHA-256 di ogni file in \`SHA256SUMS.txt\`."
             echo
             if [ "$MAC_SIGNED" != "true" ] || [ "$MAC_NOTARIZED" != "true" ]; then

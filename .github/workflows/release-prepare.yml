@@ -28,7 +28,7 @@ jobs:
         with:
           node-version: 22
       - name: Test degli script
-        run: node --test scripts/release/lib.test.mjs scripts/conventional-commits/lib.test.mjs
+        run: node --test scripts/release/lib.test.mjs scripts/release/cli.test.mjs scripts/conventional-commits/lib.test.mjs
       - name: Changelog
         id: changelog
         env:
@@ -45,23 +45,44 @@ jobs:
           VERSION: ${{ steps.changelog.outputs.version }}
         run: |
           branch="release/v$VERSION"
+          title="chore(release): v$VERSION"
           # The same check the pull request meets in conventional-commits.yml.
           node scripts/conventional-commits/cli.mjs branch-name "$branch"
           if git ls-remote --exit-code --heads origin "$branch" >/dev/null; then
-            echo "Il branch $branch esiste già: chiudere o unire la PR aperta prima di rigenerarla." >&2
-            exit 1
+            open=$(gh pr list --head "$branch" --state open --json number --jq '.[0].number // empty')
+            if [ -n "$open" ]; then
+              echo "Il branch $branch ha già la PR #$open aperta: chiuderla o unirla prima di rigenerarla." >&2
+              exit 1
+            fi
+            # Left by an earlier run whose pull request was never opened: rebuilt from main.
+            echo "Il branch $branch esiste senza PR aperta: lo rigenero da main."
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git switch -c "$branch"
           git add CHANGELOG.md app/package.json app/package-lock.json
-          git commit -m "chore(release): v$VERSION"
-          git push origin "$branch"
+          git commit -m "$title"
+          git push --force origin "$branch"
+          body="Rilascio \`v$VERSION\` preparato dal workflow \`release-prepare.yml\`. Rivedere la sezione di \`CHANGELOG.md\`: si può correggere in questa PR. All'unione su \`main\`, \`release-publish.yml\` crea il tag \`v$VERSION\` e la release con queste note. Il commit di unione su \`main\` usa l'oggetto \`$title (#<numero>)\`."
+          if gh pr create --base main --head "$branch" --title "$title" --body "$body"; then
+            exit 0
+          fi
+          # GitHub refuses the pull request when the repository does not let Actions create pull requests
+          # and RELEASE_TOKEN is not set. The branch stays pushed: the pull request is opened by hand.
+          echo "::warning::La PR di rilascio non è stata aperta. Il branch $branch è pronto: vedere il riepilogo della run."
           {
-            echo "Rilascio \`v$VERSION\` preparato dal workflow \`release-prepare.yml\`."
+            echo "## PR di rilascio da aprire a mano"
             echo
-            echo "Rivedere la sezione di \`CHANGELOG.md\`: si può correggere in questa PR. All'unione su \`main\`, \`release-publish.yml\` crea il tag \`v$VERSION\` e la release con queste note."
+            echo "Il branch \`$branch\` è stato pubblicato con la sezione \`v$VERSION\` di \`CHANGELOG.md\` e la versione in \`app/package.json\`, ma GitHub non ha permesso al workflow di aprire la pull request."
             echo
-            echo "Il commit di unione su \`main\` usa l'oggetto \`chore(release): v$VERSION (#<numero>)\`."
-          } > body.md
-          gh pr create --base main --head "$branch" --title "chore(release): v$VERSION" --body-file body.md
+            echo "Per aprirla ora:"
+            echo
+            echo '```'
+            echo "gh pr create --repo $GITHUB_REPOSITORY --base main --head $branch --title \"$title\" --body \"Rilascio v$VERSION preparato da release-prepare.yml. Rivedere la sezione di CHANGELOG.md prima di unire la PR.\""
+            echo '```'
+            echo
+            echo "Perché le prossime run la aprano da sole, la persona sceglie una delle due strade:"
+            echo
+            echo "- Settings, Actions, General, Workflow permissions: attivare \"Allow GitHub Actions to create and approve pull requests\";"
+            echo "- oppure aggiungere il segreto \`RELEASE_TOKEN\` (token personale con accesso al repository), che fa partire anche i controlli sulla PR."
+          } >> "$GITHUB_STEP_SUMMARY"
