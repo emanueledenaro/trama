@@ -7,6 +7,7 @@ import { useWaiting } from "@/components/WaitingView";
 import { formatTime } from "@/lib/format";
 import { useUi } from "@/lib/store";
 import { CardFrame, Field } from "./Cards";
+import { ReferenceText } from "./ReferenceText";
 
 /**
  * The Coordinator's recap in the chat (A03): the milestones, what it did, what it does, what it needs from the person.
@@ -18,11 +19,17 @@ import { CardFrame, Field } from "./Cards";
 function FactLine({ fact }: { fact: RecapFact }) {
   const setInspector = useUi((s) => s.setInspector);
   const marker = fact.number === null ? -1 : fact.text.indexOf(`#${fact.number}`);
-  if (marker < 0) return <li className="break-words">{fact.text}</li>;
+  if (marker < 0) {
+    return (
+      <li className="break-words">
+        <ReferenceText text={fact.text} />
+      </li>
+    );
+  }
   const token = `#${fact.number}`;
   return (
     <li className="break-words">
-      {fact.text.slice(0, marker)}
+      <ReferenceText text={fact.text.slice(0, marker)} />
       <button
         type="button"
         className="text-[var(--color-text-accent)] underline-offset-2 hover:underline"
@@ -30,7 +37,7 @@ function FactLine({ fact }: { fact: RecapFact }) {
       >
         {token}
       </button>
-      {fact.text.slice(marker + token.length)}
+      <ReferenceText text={fact.text.slice(marker + token.length)} />
     </li>
   );
 }
@@ -44,7 +51,9 @@ function NeedRow({ need, waiting }: { need: RecapNeed; waiting: boolean }) {
         <span className="min-w-0 break-words">
           <span className="text-foreground">{need.label}</span>
           <Sep />
-          <span className="text-muted-foreground">{need.title}</span>
+          <span className="text-muted-foreground">
+            <ReferenceText text={need.title} />
+          </span>
         </span>
       </span>
       {waiting ? (

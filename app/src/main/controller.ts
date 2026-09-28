@@ -8,6 +8,7 @@ import { PROVIDERS, canCoordinate, catalogModel, catalogOffers, coordinatorDefau
 import { shortId } from "@shared/ids";
 import { activeTerms, workStoppedBy } from "@shared/mandate";
 import { mentionContextBlock } from "@shared/mentions";
+import { buildReferenceIndex, referenceListing, type ReferenceIndex } from "@shared/references";
 import { codexSkillText, type LoadedSkill, skillInvocations } from "@shared/skills";
 import { isUnsupportedModelError } from "@shared/timeline";
 import {
@@ -118,6 +119,7 @@ import {
   referencedPaths,
 } from "./core/document";
 import { type ProviderWait, providerWaitLine, reopeningResume } from "./core/resumeWork";
+import { recordUnknownReferences, unknownReferencesFeedback } from "./core/referenceCheck";
 import { candidateGoalId, findGoal, projectGoals, requestGoalId } from "@shared/goals";
 import { focusTask, focusText, focusView, pauseTask, resumeTask } from "./core/focus";
 import { statusLine } from "./core/statusLine";
@@ -467,6 +469,7 @@ function forgetCoordinatorThread(document: ProjectDocument): void {
   document.coordinator.injectedStudy = {};
   document.coordinator.memorySentToThread = null;
   document.coordinator.practicesSent = null;
+  document.coordinator.referencesSent = null;
   document.coordinator.contextWarnedAt = null;
 }
 
@@ -2191,6 +2194,7 @@ export class TramaController {
         document.coordinator.injectedStudy = {};
         document.coordinator.memorySentToThread = null;
         document.coordinator.practicesSent = null;
+        document.coordinator.referencesSent = null;
         document.coordinator.contextWarnedAt = null;
         appendEvent(document, "trama", {
           type: "card",
@@ -2480,6 +2484,12 @@ export class TramaController {
         sections.push(practices ?? "## Pratiche adottate\nLa persona ha ritirato tutte le pratiche di questo progetto.");
         document.coordinator.practicesSent = practices;
       }
+      // The real ids the Coordinator may cite, when they changed since the thread last received them (issue #277).
+      const listing = referenceListing(this.referenceIndex(project));
+      if ((listing ?? null) !== (document.coordinator.referencesSent ?? null)) {
+        if (listing) sections.push(listing);
+        document.coordinator.referencesSent = listing;
+      }
       // Every turn: the phase of the work this message belongs to and the moves declare_next_step accepts (W01).
       const work = workState(document, request.id);
       sections.push(workStateText(work));
@@ -2495,6 +2505,9 @@ export class TramaController {
       // The previous reply closed with a generic confirmation question: Trama tells the Coordinator, not the model's own memory (W04).
       const feedback = confirmationFeedback(document, request.id);
       if (feedback) sections.push(feedback);
+      // The previous reply cited ids that name nothing: Trama tells the Coordinator which ones (issue #277).
+      const unknownFeedback = unknownReferencesFeedback(document, request.id);
+      if (unknownFeedback) sections.push(unknownFeedback);
       // The previous reply named a step button the person did not have: the Coordinator reads it back (issue #269).
       const missingFeedback = missingButtonFeedback(document, request.id);
       if (missingFeedback) sections.push(missingFeedback);
@@ -2562,6 +2575,8 @@ export class TramaController {
         // Options to pick in the text leave the person without a card: recorded, and the next turn is told (issue #228).
         const choice = choicesWithoutCard(document, request.id, reply);
         if (choice) appendEvent(document, "trama", { type: "activity", title: CHOICES_IN_TEXT_TITLE, detail: choice, tone: "error" }, request.id);
+        // Ids that name nothing stay plain text in the chat: recorded, and the next turn is told (issue #277).
+        recordUnknownReferences(document, request.id, reply, this.referenceIndex(project));
         // A step button named in the text that the person does not have now: recorded, and the next turn is told (issue #269).
         const buttons = availableButtons(document, request.id);
         const missing = missingButtons(reply, buttons);
@@ -5772,6 +5787,11 @@ export class TramaController {
    * The learning counters of a project. A project from before learning keeps its thread: the live part
    * starts at the last study card, which opens each thread, so earlier threads are searchable.
    */
+  /** The records, repository and GitHub reading of the project the Coordinator's ids are checked against (issue #277). */
+  private referenceIndex(project: ActiveProjectState): ReferenceIndex {
+    return buildReferenceIndex({ document: project.document, modules: project.snapshot.modules, github: project.github });
+  }
+
   private coordinatorLearning(document: ProjectDocument) {
     if (!document.coordinator.learning) {
       const studyIndex = document.events.findLastIndex((e) => e.content.type === "card" && e.content.kind === "study");

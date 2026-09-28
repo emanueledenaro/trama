@@ -11,6 +11,7 @@ import { CandidateCard, DecisionCard, FixedBanCard, MandateCard, PlanCard, Prese
 import { GoalCard } from "@/components/inspector/GoalsView";
 import { EmptyNote, InspectorSection } from "@/components/inspector/Inspector";
 import { MemoryProposalCard } from "@/components/inspector/MemoryView";
+import { ReferenceText } from "@/components/chat/ReferenceText";
 
 /**
  * "Aspetta te" (issue #240): one place for everything that waits for the person, derived from the project's records.
@@ -40,7 +41,7 @@ export function WaitingSummary() {
         <span className="mr-auto min-w-0 flex-1 truncate text-ui-sm text-muted-foreground">
           <span className="text-foreground">{first.label}</span>
           <Sep />
-          {first.title}
+          <ReferenceText text={first.title} />
         </span>
         <Button size="sm" variant="outline" onClick={() => setInspector({ kind: "waiting" })}>
           <IconHourglass stroke={1.8} /> {summary}
@@ -155,7 +156,9 @@ export function WaitingReference({ item }: { item: WaitingItem }) {
           <Sep />
           <span className="text-foreground">{item.label}</span>
           <Sep />
-          <span className="text-muted-foreground">{item.title}</span>
+          <span className="text-muted-foreground">
+            <ReferenceText text={item.title} />
+          </span>
         </span>
       </span>
       <Button size="xs" variant="outline" onClick={() => setInspector({ kind: "waiting", key: item.key })}>
