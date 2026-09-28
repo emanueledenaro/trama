@@ -212,18 +212,22 @@ export const en: Record<keyof typeof it, string> = {
   "settings.continuous.label": "The Coordinator keeps going on its own within the mandate",
   "settings.continuous.description":
     "It prepares the plan, assigns the work and runs the checks without asking. It asks you only for product decisions, the mandate, the team and merging the candidate. You can stop any move from the status line, and stop all automatic work in the project with «Pause the Coordinator».",
-  "settings.parallel.title": "Developers in parallel",
-  "settings.parallel.note":
-    "Each free developer picks up the next ready slice in its modules on its own, within the mandate and with continuous work on. Fixed roles do not count toward the limit.",
+  "settings.parallel.title": "Developers at work",
   "settings.parallel.inProject": "At most in {name}",
   "settings.parallel.inOpenProject": "At most in the open project",
-  "settings.parallel.openProject": "Open a project to choose the limit.",
-  "settings.parallel.demo": "The example project has no limit to choose.",
-  "settings.parallel.default": "Three, unless you change it.",
+  "settings.parallel.projectLabel": "Developers in the project",
+  "settings.parallel.default": "Unless you change it, as many as the squads formed allow: three per squad, up to nine. The squads work within this limit.",
   "settings.parallel.shared": "At most in all projects",
   "settings.parallel.sharedLabel": "Developers in all projects",
   "settings.parallel.sharedDescription":
     "It also covers the projects you leave while their team works. Work without a free slot waits and starts in the project order of the Overview. Six, unless you change it.",
+  "settings.squads.note":
+    "A developer starts only when every limit allows it: in all projects, in the project and in its squad. Each free developer picks up the next ready slice of its squad on its own, within the mandate and with continuous work on. Fixed roles do not count toward the limits; assignments in a cloud session count like those on the Mac.",
+  "settings.squads.developers": "Developers at work per squad",
+  "settings.squads.active": "Squads at work together",
+  "settings.squads.openProject": "Open a project to choose the limits.",
+  "settings.squads.demo": "The example project has no limits to choose.",
+  "settings.squads.default": "Three, unless you change it.",
 
   // Projects overview (issue #39)
   "overview.ci.summary": "CI of the open pull requests: {parts}",

@@ -214,18 +214,22 @@ export const it = {
   "settings.continuous.label": "Il Coordinatore va avanti da solo dentro il mandato",
   "settings.continuous.description":
     "Prepara il piano, assegna il lavoro ed esegue le verifiche senza chiedere. Ti chiede solo decisioni di prodotto, il mandato, il team e l'unione del candidato. Puoi fermare ogni mossa dalla riga di stato, e fermare tutto il lavoro automatico del progetto con «Pausa del Coordinatore».",
-  "settings.parallel.title": "Sviluppatori in parallelo",
-  "settings.parallel.note":
-    "Ogni sviluppatore libero prende in autonomia la prossima fetta pronta nei suoi moduli, dentro il mandato e con il lavoro continuo attivo. I ruoli fissi non contano nel limite.",
+  "settings.parallel.title": "Sviluppatori al lavoro",
   "settings.parallel.inProject": "Al massimo in {name}",
   "settings.parallel.inOpenProject": "Al massimo nel progetto aperto",
-  "settings.parallel.openProject": "Apri un progetto per scegliere il limite.",
-  "settings.parallel.demo": "Il progetto di esempio non ha un limite da scegliere.",
-  "settings.parallel.default": "Tre, se non lo cambi.",
+  "settings.parallel.projectLabel": "Sviluppatori nel progetto",
+  "settings.parallel.default": "Se non lo cambi, quanti ne permettono le squadre formate: tre per squadra, fino a nove. Le squadre lavorano dentro questo limite.",
   "settings.parallel.shared": "Al massimo in tutti i progetti",
   "settings.parallel.sharedLabel": "Sviluppatori in tutti i progetti",
   "settings.parallel.sharedDescription":
     "Vale anche per i progetti che lasci mentre il loro team lavora. Chi resta senza posto aspetta e parte secondo l'ordine dei progetti della Panoramica. Sei, se non lo cambi.",
+  "settings.squads.note":
+    "Uno sviluppatore parte solo se lo permettono tutti i limiti: in tutti i progetti, nel progetto e nella sua squadra. Ogni sviluppatore libero prende in autonomia la prossima fetta pronta della sua squadra, dentro il mandato e con il lavoro continuo attivo. I ruoli fissi non contano nei limiti; gli incarichi in una sessione cloud contano come quelli sul Mac.",
+  "settings.squads.developers": "Sviluppatori al lavoro per squadra",
+  "settings.squads.active": "Squadre al lavoro insieme",
+  "settings.squads.openProject": "Apri un progetto per scegliere i limiti.",
+  "settings.squads.demo": "Il progetto di esempio non ha limiti da scegliere.",
+  "settings.squads.default": "Tre, se non lo cambi.",
 
   // Projects overview (issue #39)
   "overview.ci.summary": "CI delle pull request aperte: {parts}",

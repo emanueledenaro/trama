@@ -56,7 +56,8 @@ function StepRow({ entry, dialog }: { entry: ActivityEntry; dialog: string }) {
         <Sep />
         {dialog}
         <Sep />
-        Dentro il mandato
+        {/* The squads come after the study (A10); the other steps the Coordinator takes within the mandate (A06). */}
+        {entry.move === null ? "Dopo lo studio" : "Dentro il mandato"}
       </p>
       {entry.detail ? <p className="mt-1 text-ui-sm text-muted-foreground">{entry.detail}</p> : null}
       {correcting ? (

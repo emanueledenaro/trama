@@ -2,12 +2,13 @@ import { specialistLine } from "@shared/duties";
 import { IconArrowLeft, IconMessageCircle } from "@tabler/icons-react";
 import { useState } from "react";
 import { isUsableAccount, type ProviderId } from "@shared/codex";
-import type { Specialist, SpecialistAssignment } from "@shared/domain";
+import type { Specialist, SpecialistAssignment, Squad } from "@shared/domain";
 import { findGoal } from "@shared/goals";
 import { PROVIDERS } from "@shared/providers";
 import { AGENT_PALETTE } from "@shared/identity";
 import { agentThreadsByRecent, threadParticipants } from "@shared/agentThreads";
-import { FIXED_ROLES, isFixedRole, roleDuties, roleProfile, type RosterFigure, TEAM_MOMENTS, teamRoster } from "@shared/roster";
+import { FIXED_ROLES, isFixedRole, roleDuties, roleProfile, TEAM_MOMENTS } from "@shared/roster";
+import { developersOutsideSquads, sharedRoleMembers, squadLimits, squadOf, squadStatusLine, teamSquads } from "@shared/squads";
 import { AgentAvatar, AgentName, AgentTag, agentStyle } from "@/components/AgentIdentity";
 import { ASSIGNMENT_STATUS, AssignmentCard, CandidateCard, TeamProposalCard } from "@/components/chat/Cards";
 import { Spinner } from "@/components/Spinner";
@@ -90,75 +91,103 @@ function DeveloperRow({ specialist }: { specialist: Specialist }) {
   );
 }
 
-/** A fixed role at one moment: what it does there and with which skills; it opens the specialist. */
-function FigureRow({ figure }: { figure: RosterFigure }) {
+/** What a member does in the flow and with which skills, from its role's moments. */
+function roleSummary(specialist: Specialist): { task: string; skills: string[] } {
+  const duties = roleDuties(specialist.role);
+  return { task: duties.map((d) => d.task).join(" "), skills: [...new Set(duties.flatMap((d) => d.skills))] };
+}
+
+/** A squad lead, a squad's QA or a shared role: what it does and with which skills; it opens the specialist. */
+function MemberRow({ specialist }: { specialist: Specialist }) {
   const setInspector = useUi((s) => s.setInspector);
   const document = useUi((s) => s.app?.project?.document ?? null);
-  const specialist = figure.specialists[0];
-  const body = (
-    <>
-      <span className="flex w-8 justify-center">{specialist ? <AgentAvatar agent={specialist} size={32} /> : null}</span>
+  const { task, skills } = roleSummary(specialist);
+  return (
+    <button
+      type="button"
+      data-testid="team-figure"
+      data-role={specialist.role}
+      onClick={() => setInspector({ kind: "specialist", id: specialist.id })}
+      className={ROW}
+    >
+      <span className="flex w-8 justify-center">
+        <AgentAvatar agent={specialist} size={32} />
+      </span>
       <span className="min-w-0 flex-1">
         <span className="flex items-center gap-1.5 text-ui text-foreground">
-          {specialist ? <AgentName agent={specialist} avatar={false} /> : figure.profile.name}
-          {specialist && specialist.status !== "available" ? <StatusDot status={specialist.status} /> : null}
+          <AgentName agent={specialist} avatar={false} />
+          {specialist.status !== "available" ? <StatusDot status={specialist.status} /> : null}
         </span>
-        <span className="block text-ui-sm text-muted-foreground">{figure.duty.task}</span>
-        {specialist && specialist.status !== "available" ? (
+        <span className="block text-ui-sm text-muted-foreground">{task}</span>
+        {specialist.status !== "available" ? (
           <span className="block truncate text-ui-sm text-muted-foreground">
             {STATUS_LABEL[specialist.status]}<Sep />{specialistLine(document, specialist)}
           </span>
         ) : null}
-        <SkillList skills={figure.duty.skills} />
+        <SkillList skills={skills} />
       </span>
-    </>
-  );
-  if (!specialist) return <div className="flex items-start gap-2 px-2 py-1.5">{body}</div>;
-  return (
-    <button type="button" data-testid="team-figure" onClick={() => setInspector({ kind: "specialist", id: specialist.id })} className={ROW}>
-      {body}
     </button>
   );
 }
 
-/** The developers' place in the flow, with each developer chosen for the project below it. */
-function DevelopersFigure({ figure, confirmed }: { figure: RosterFigure; confirmed: boolean }) {
+const byIds = (specialists: Specialist[], ids: string[]) =>
+  ids.flatMap((id) => specialists.filter((s) => s.id === id && s.status !== "removed"));
+
+/** One squad (A10): its area, its status line, then the squad lead, the developers and the dedicated QA. */
+function SquadSection({ squad }: { squad: Squad }) {
+  const project = useUi((s) => s.app?.project)!;
+  const document = project.document;
+  const specialists = document.team.specialists;
+  const modules = squad.moduleIds.map((id) => project.snapshot.modules.find((m) => m.id === id)?.name ?? id);
+  const developers = byIds(specialists, squad.developerIds);
+  const working = developers.some((s) => s.status === "working" || s.status === "stopping");
   return (
-    <div className="px-2 py-1.5">
-      <span className="block text-ui text-foreground">{figure.profile.name}</span>
-      <span className="block text-ui-sm text-muted-foreground">{figure.duty.task}</span>
-      <SkillList skills={figure.duty.skills} />
-      <div className="-mx-2 mt-1 flex flex-col gap-0.5 pl-3">
-        {figure.specialists.length === 0 ? (
-          <p className="px-2 text-ui-sm text-muted-foreground/70">
-            {confirmed ? "Nessuno sviluppatore attivo." : "Il Coordinatore li propone alla fine dello studio."}
-          </p>
-        ) : null}
-        {figure.specialists.map((specialist) => (
-          <DeveloperRow key={specialist.id} specialist={specialist} />
-        ))}
+    <InspectorSection title={`Squadra ${squad.name}`}>
+      <div data-testid="squad" data-squad={squad.name}>
+        <p className="text-ui-sm text-muted-foreground">{modules.length ? `Area: ${modules.join(", ")}` : "Area: tutto il progetto"}</p>
+        <p className="mt-1 flex items-center gap-1.5 text-ui-sm text-foreground/90" data-testid="squad-status">
+          <StatusDot status={working ? "working" : "available"} />
+          <span className="min-w-0">{squadStatusLine(document, squad)}</span>
+        </p>
+        <div className="-mx-2 mt-1 flex flex-col gap-0.5">
+          {byIds(specialists, [squad.leadId]).map((s) => (
+            <MemberRow key={s.id} specialist={s} />
+          ))}
+          {developers.map((s) => (
+            <DeveloperRow key={s.id} specialist={s} />
+          ))}
+          {byIds(specialists, [squad.qaId]).map((s) => (
+            <MemberRow key={s.id} specialist={s} />
+          ))}
+        </div>
       </div>
-    </div>
+    </InspectorSection>
   );
 }
 
-export function TeamView() {
+/** Squads (A10, Q23): each squad with its agents and status line, the shared roles apart. It replaces the Team view. */
+export function SquadsView() {
   const project = useUi((s) => s.app?.project)!;
-  const team = project.document.team;
+  const document = project.document;
+  const team = document.team;
   const pending = team.proposals.find((p) => !p.resolution);
   const former = team.specialists.filter((s) => s.status === "removed");
+  const squads = teamSquads(document);
+  const outside = developersOutsideSquads(document);
+  const limits = squadLimits(document);
   return (
     <>
-      <InspectorSection title="Il team del progetto">
+      <InspectorSection title="Le squadre del progetto">
         <p className="text-ui-sm text-muted-foreground">
-          Ogni progetto ha tutte le figure di un team di sviluppo, ognuna nel suo momento del lavoro. Tu decidi il prodotto e il Coordinatore guida il
-          team. Gli sviluppatori li propone il Coordinatore alla fine dello studio e li crea solo la tua risposta; le altre figure ci sono sempre.
+          Ogni squadra si prende il lavoro di un'area del prodotto: ha un capo squadra, da uno a {limits.developersPerSquad} sviluppatori al lavoro e un QA
+          dedicato. Il Coordinatore forma le squadre dopo lo studio, dalle aree della Mappa, e dirige tutte le squadre; tu decidi il prodotto. Lavorano
+          insieme al massimo {limits.activeSquads === 1 ? "una squadra" : `${limits.activeSquads} squadre`}: i limiti si cambiano nelle impostazioni.
         </p>
         <p className="mt-2 text-ui-sm text-muted-foreground">
-          Alcune figure si attivano da sole, con regole di Trama e sul modello più leggero: il bug triage smista le issue nuove, diagnostica i test
-          che falliscono e corregge il bug riprodotto; Clean Code rivede l'architettura quando il team è libero e ti propone i miglioramenti in una
+          Alcuni ruoli condivisi si attivano da soli, con regole di Trama e sul modello più leggero: il bug triage smista le issue nuove, diagnostica i test
+          che falliscono e corregge il bug riprodotto; Clean Code rivede l'architettura quando le squadre sono libere e ti propone i miglioramenti in una
           scheda del Patto.
-          {project.isDemo ? " Nel progetto di esempio restano ferme." : project.document.mandate?.status === "granted" ? "" : " Si attivano quando concedi un mandato."}
+          {project.isDemo ? " Nel progetto di esempio restano ferme." : document.mandate?.status === "granted" ? "" : " Si attivano quando concedi un mandato."}
         </p>
       </InspectorSection>
       <AutomaticWorkSection />
@@ -167,20 +196,33 @@ export function TeamView() {
           <TeamProposalCard proposalId={pending.id} />
         </InspectorSection>
       ) : null}
-      {teamRoster(team).map((moment) => (
-        <InspectorSection key={moment.moment} title={moment.label}>
-          <p className="text-ui-sm text-muted-foreground">{moment.when}</p>
+      {squads.map((squad) => (
+        <SquadSection key={squad.id} squad={squad} />
+      ))}
+      {!squads.length || outside.length ? (
+        <InspectorSection title={squads.length ? "Sviluppatori fuori dalle squadre" : "Sviluppatori"}>
+          <p className="text-ui-sm text-muted-foreground">
+            {squads.length
+              ? "Le squadre sono al completo: entrano in una squadra quando si libera un posto o quando alzi il limite."
+              : team.confirmedAt !== null
+                ? "Il Coordinatore forma le squadre dopo lo studio, dalle aree della Mappa con lavoro previsto."
+                : "Il Coordinatore li propone alla fine dello studio, poi forma le squadre dalle aree della Mappa."}
+          </p>
           <div className="-mx-2 mt-1 flex flex-col gap-0.5">
-            {moment.figures.map((figure) =>
-              figure.profile.role === "developer" ? (
-                <DevelopersFigure key={figure.profile.role} figure={figure} confirmed={team.confirmedAt !== null} />
-              ) : (
-                <FigureRow key={figure.profile.role} figure={figure} />
-              ),
-            )}
+            {outside.map((specialist) => (
+              <DeveloperRow key={specialist.id} specialist={specialist} />
+            ))}
           </div>
         </InspectorSection>
-      ))}
+      ) : null}
+      <InspectorSection title="Ruoli condivisi">
+        <p className="text-ui-sm text-muted-foreground">Servono tutte le squadre, ognuno nel suo momento del lavoro. Ci sono sempre e non si tolgono.</p>
+        <div className="-mx-2 mt-1 flex flex-col gap-0.5" data-testid="shared-roles">
+          {sharedRoleMembers(document).map((specialist) => (
+            <MemberRow key={specialist.id} specialist={specialist} />
+          ))}
+        </div>
+      </InspectorSection>
       {former.length ? (
         <InspectorSection title="Usciti dal team">
           {former.map((s) => (
@@ -215,7 +257,7 @@ export function SpecialistView({ id }: { id: string }) {
     <>
       <div className="px-4 pt-3">
         <button type="button" className="inline-flex items-center gap-1 text-ui-sm text-muted-foreground hover:text-foreground" onClick={() => setInspector({ kind: "team" })}>
-          <IconArrowLeft className="size-3.5" /> Team
+          <IconArrowLeft className="size-3.5" /> Squadre
         </button>
         {/* The bot sits beside the header, so it takes no room from the name and the status; the row wraps before
             anything is cut, and the status never shrinks. */}
@@ -283,6 +325,7 @@ export function SpecialistView({ id }: { id: string }) {
       <SpecialistThreads specialistId={specialist.id} />
       <InspectorSection title="Perché è nel team">
         <p className="text-ui text-foreground/90">{specialist.reason}</p>
+        <p className="mt-1 text-ui-sm text-muted-foreground" data-testid="specialist-squad">{squadLine(project.document, specialist)}</p>
         <p className="mt-1 text-ui-xs text-muted-foreground">
           {specialist.origin === "fixedRole" ? "Ruolo fisso, non si toglie dal team" : specialist.origin === "teamProposal" ? "Dalla proposta confermata" : "Aggiunto dal Coordinatore"}
           <Sep />
@@ -347,6 +390,17 @@ export function SpecialistView({ id }: { id: string }) {
       </InspectorSection>
     </>
   );
+}
+
+/** Where the agent sits among the squads (A10): its squad and its part in it, or the shared roles. */
+function squadLine(document: Parameters<typeof squadOf>[0], specialist: Specialist): string {
+  const squad = squadOf(document, specialist.id);
+  if (squad) {
+    const part = squad.leadId === specialist.id ? "capo squadra" : squad.qaId === specialist.id ? "QA dedicato" : "sviluppatore";
+    return `Squadra ${squad.name}, ${part}.`;
+  }
+  if (specialist.role === "developer") return teamSquads(document).length ? "Fuori dalle squadre, finché non si libera un posto." : "Le squadre non sono ancora formate.";
+  return "Ruolo condiviso: serve tutte le squadre.";
 }
 
 const providerLabel = (id: ProviderId) => PROVIDERS.find((p) => p.id === id)?.name ?? id;
