@@ -4,7 +4,9 @@ import {
   compareVersions,
   extractSection,
   groupCommits,
+  isPrerelease,
   nextVersion,
+  parseVersion,
   parseSubject,
   releaseChangelog,
 } from './lib.mjs';
@@ -49,6 +51,34 @@ test('no release without feat, fix, perf or breaking change', () => {
 test('compares versions numerically', () => {
   assert.ok(compareVersions('0.10.0', '0.9.9') > 0);
   assert.equal(compareVersions('1.0.0', '1.0.0'), 0);
+});
+
+test('reads a beta pre-release', () => {
+  assert.deepEqual(parseVersion('0.2.0-beta.3'), [0, 2, 0, 3]);
+  assert.deepEqual(parseVersion('0.2.0'), [0, 2, 0, null]);
+  assert.equal(isPrerelease('0.2.0-beta.1'), true);
+  assert.equal(isPrerelease('0.2.0'), false);
+});
+
+test('refuses versions outside the policy', () => {
+  for (const version of ['v0.2.0', '0.2', '0.2.0-rc.1', '0.2.0-beta', '0.2.0-beta.01', '0.2.0+build.1', '01.2.0']) {
+    assert.throws(() => parseVersion(version), /is not a MAJOR/, version);
+  }
+});
+
+test('orders pre-releases before their release', () => {
+  assert.ok(compareVersions('0.2.0-beta.1', '0.2.0-beta.2') < 0);
+  assert.ok(compareVersions('0.2.0-beta.10', '0.2.0-beta.9') > 0);
+  assert.ok(compareVersions('0.2.0-beta.2', '0.2.0') < 0);
+  assert.ok(compareVersions('0.2.0', '0.2.0-beta.2') > 0);
+  assert.ok(compareVersions('0.2.0-beta.1', '0.1.9') > 0);
+  assert.equal(compareVersions('0.2.0-beta.1', '0.2.0-beta.1'), 0);
+});
+
+test('after a pre-release the next version is the release it previewed', () => {
+  assert.equal(nextVersion('0.2.0-beta.2', [commit('fix: a')]), '0.2.0');
+  assert.equal(nextVersion('0.2.0-beta.2', [commit('feat!: a')]), '0.2.0');
+  assert.equal(nextVersion('0.2.0-beta.2', [commit('docs: a')]), null);
 });
 
 test('groups commits into Keep a Changelog sections', () => {

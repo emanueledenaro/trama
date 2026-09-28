@@ -181,8 +181,10 @@ export const en: Record<keyof typeof it, string> = {
   "settings.guide": "Getting started guide",
   "settings.guide.description": "Connections, project, AI Hero method and exercises on the example copy. It picks up where you left off.",
   "settings.guide.open": "Open the guide",
+  "menu.about": "About Trama",
   "settings.about": "About",
   "settings.about.version": "Version {version}. Coordinates decisions, work and checks on a local repository.",
+  "settings.about.commit": "Commit {commit}",
 
   "settings.connections.description": "You sign in through the official browser page or in the terminal. Trama does not copy your credentials.",
   "settings.connections.checkAll": "Check all",
