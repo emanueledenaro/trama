@@ -1,8 +1,9 @@
 import { createHash, randomUUID } from "node:crypto";
 import { existsSync, type FSWatcher, watch } from "node:fs";
-import { mkdir, readFile as readFileText, realpath, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile as readFileBinary, readFile as readFileText, realpath, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { type ContextUsage, contextNoticeDetail, contextReading, invalidContextUsage } from "@shared/contextReading";
 import { isUsableAccount, type ProviderAccount, type ProviderId, type ProviderModel, READ_OUTSIDE_SCOPE_TITLE, TOOL_REFUSED_TITLE, type TurnEvent } from "@shared/codex";
 import { PROVIDERS, canCoordinate, catalogModel, catalogOffers, coordinatorDefaultModel, coordinatorUnavailableReason, supportsReadOnly, type CatalogEntry } from "@shared/providers";
 import { shortId } from "@shared/ids";
@@ -28,6 +29,8 @@ import type {
   BranchDivergence,
   Candidate,
   CandidateGate,
+  CandidateReport,
+  MergeAuthority,
   FocusAudit,
   GateRole,
   StandardCheck,
@@ -184,6 +187,7 @@ import {
   classifyGitHubError,
   readGitHubCapabilities,
   readIssue,
+  mergePullRequest,
   readPullRequestStatus,
   updateIssueBody,
   updateIssueText,
@@ -274,18 +278,22 @@ import {
   suiteChecks,
   usesCodeReview,
 } from "./core/gate";
-import { blockingFindings, GATE_STATUS } from "@shared/gate";
+import { blockingFindings, GATE_STATUS, latestGate } from "@shared/gate";
+import { fixedBanInfo } from "@shared/fixedBans";
+import { interfaceFiles } from "@shared/interfaceChange";
 import { roleProfile } from "@shared/roster";
 import { confirmationModel, confirmationTurn, confirmFinding, NO_STRONGER_MODEL, readConfirmation, recheckFindings } from "./core/auditFindings";
 import { AuditError, type AxisName, type AxisTurn, auditSpec, axisThread, axisTurn, beginAxes, beginVerification, closeAudit, failAudit, findAudit, finishAxis, openAudit, readAxisAnswer, recordAuditCheck } from "./core/audit";
-import { approveCandidate, candidateReport, findCandidate, latestCandidate, recordEvidence, recordTechnicalReview } from "./core/candidates";
+import { approveCandidate, candidateReport, contentFingerprint, findCandidate, latestCandidate, recordEvidence, recordTechnicalReview } from "./core/candidates";
 import { assessBranchDivergence } from "./core/branchDivergence";
 import { assessConflict } from "./core/conflicts";
 import { pickSlices } from "./core/slicePicking";
 import { assessWorktreePair, worktreePairs } from "./core/worktreeConflicts";
 import { clampParallelDevelopers } from "@shared/parallel";
 import { pullRequestBody, publishCandidate } from "./core/publication";
-import { agentPushActivity, isGitPushCommand, pushActivity, pushAuthorization, pushRefusal } from "./core/push";
+import { agentPushActivity, isGitPushCommand, pushActivity, pushAuthorization, pushRefusal, PushRefusedError } from "./core/push";
+import { CHECKS_RETRY_MS, MERGE_RETRY_MS, mergeAction, mergeActivity, mergeCommitTitle, mergeReadiness, mergeRoute, recordMerge, rejectCandidate } from "./core/merge";
+import { captureInterfaceShots } from "./core/interfaceShots";
 import {
   acknowledgeFixedBanRefusal,
   fixedBanActivity,
@@ -309,11 +317,13 @@ import {
   shouldRunNow,
   snapshotLibrary,
 } from "./core/learning/curator";
+import { memoryActivityLine, memoryErrorCode, memoryFailureLine } from "./core/learning/memoryErrors";
 import { learningSettings, ProjectLearning } from "./core/learning/projectLearning";
 import {
   finishTurnSkillNudge,
   resetOnToolUse,
   REVIEW_MAX_TOOL_CALLS,
+  reviewErrorLine,
   reviewPrompt,
   reviewToolNames,
   reviewTranscript,
@@ -351,7 +361,7 @@ import {
   UNKNOWN_GITHUB_CLI,
 } from "@shared/onboarding";
 import { buildStudy, fingerprints, partsToInject, studyText } from "./core/study";
-import { CoordinatorToolServer, TOOL_SERVER_NAME, toolFailure, toolSuccess } from "./core/toolServer";
+import { CoordinatorToolServer, TOOL_SERVER_NAME, type ToolResult, toolFailure, toolSuccess } from "./core/toolServer";
 import { deliverNativeSkill, deliverNativeSkills, loadNativeSkill, type NativeSkill } from "./core/nativeSkills";
 import { answerRoute, askTramaComposerSkill, boundarySession, RouteError, routeReferences, skillInRouteBinding } from "./core/askTrama";
 import { ASK_TRAMA_SKILL, BOUNDARY_LABELS, findRoute } from "@shared/askTrama";
@@ -783,7 +793,7 @@ export class TramaController {
     project.candidateReports = Object.fromEntries(
       project.document.candidates.map((c) => {
         const report = candidateReport(project.document, c, project.snapshot.headSHA);
-        return [c.id, { ...report, quality: qualityGate(project.document, c, report, project.github.repository) }];
+        return [c.id, { ...report, quality: qualityGate(project.document, c, report, project.github.repository), ...this.mergeView(project, c) }];
       }),
     );
     project.nextSteps = nextStepViews(project.document);
@@ -858,6 +868,8 @@ export class TramaController {
     await this.stopSpecialistsForQuit();
     if (this.monitorTimer) clearTimeout(this.monitorTimer);
     this.monitorTimer = null;
+    if (this.integrationTimer) clearTimeout(this.integrationTimer);
+    this.integrationTimer = null;
     if (this.curatorTimer) clearInterval(this.curatorTimer);
     this.curatorTimer = null;
     if (this.roundTimer) clearInterval(this.roundTimer);
@@ -955,7 +967,9 @@ export class TramaController {
       derived?.sliceViews ?? Object.fromEntries(document.plans.filter((p) => p.slicing?.status === "approved").map((p) => [p.id, sliceViews(document, p)]));
     const reports =
       derived?.candidateReports ??
-      Object.fromEntries(document.candidates.filter((c) => !c.pullRequest).map((c) => [c.id, candidateReport(document, c, project.snapshot.headSHA)]));
+      Object.fromEntries(
+        document.candidates.filter((c) => !c.pullRequest).map((c) => [c.id, { ...candidateReport(document, c, project.snapshot.headSHA), ...this.mergeView(project, c) }]),
+      );
     return { sliceViews: views, candidateReports: reports, memoryProposals: project === this.state.project ? this.state.learning?.proposals : undefined };
   }
 
@@ -1446,6 +1460,7 @@ export class TramaController {
     void this.presence?.tick();
     void this.assessRemoteConflicts();
     void this.recordMergedPullRequests(project, repository);
+    void this.integrateCandidates(project).catch((error) => this.fail(error));
     void this.runDuties();
   }
 
@@ -2102,6 +2117,7 @@ export class TramaController {
           conventions: () => readProjectConventions(current.rootPath),
           verifyCandidate: (candidateId, check) => this.verifyCandidate(candidateId, check, current.runningRequestId),
           reviewCandidate: (candidateId) => this.reviewCandidate(candidateId, current.runningRequestId),
+          candidateCleared: () => void this.integrateCandidates(current).catch((error) => this.fail(error)),
           headSHA: () => this.headSHA(current.rootPath),
           orderPlan: (order) => this.orderPlan({ ...order, requestId: current.runningRequestId, orderedBy: "coordinator" }).id,
           askTramaCatalog: async () => ({ references: routeReferences(await this.nativeSkill(ASK_TRAMA_SKILL)), bundled: [...SELECTED_SKILLS] }),
@@ -2109,6 +2125,7 @@ export class TramaController {
         // The error stays in Activity; the reply of the turn never pastes it into the chat (issue #241).
         const error = toolErrorMessage(result);
         if (error && runningRequestId) this.turnToolErrors.set(runningRequestId, [...(this.turnToolErrors.get(runningRequestId) ?? []), error]);
+        if (name === "memory" && result.isError) this.memoryRefused(current, runningRequestId, result);
         return result;
       },
       TOOL_SERVER_INSTRUCTIONS,
@@ -2221,7 +2238,7 @@ export class TramaController {
           type: "card",
           kind: "contextNotice",
           title: "Nuovo thread del Coordinatore",
-          detail: `${providerName(provider)} non ha più il thread precedente. Il Coordinatore riparte dallo studio e dalla memoria.`,
+          detail: "La sessione precedente del Coordinatore non è più disponibile. Il Coordinatore riparte dallo studio e dalla memoria.",
           referenceId: null,
         });
       }
@@ -2313,6 +2330,9 @@ export class TramaController {
     }
     if (!transcript && projectGoals(document).length === 0) request += `\n\n${FIRST_GOAL_REQUEST}`;
     const rules = await this.pendingRules(document, document.coordinator.threadProvider ?? this.coordinatorProvider(document));
+    let compacted = false;
+    // The study is a turn of the Coordinator: memory writes count from zero, as in any other turn (issue #305).
+    this.learningFor(project).memory.resetConsolidationFailures("foreground");
     const reply = await runtime.client.runTurn({
       threadId: document.coordinator.threadId!,
       prompt: [context, ...(rules ? [rules.section] : []), request].join("\n\n"),
@@ -2325,7 +2345,12 @@ export class TramaController {
           project.streaming.text += event.delta;
           this.publish();
         } else if (event.type === "tokenUsage") {
-          project.contextUsage = { usedTokens: event.usedTokens, contextWindow: event.contextWindow };
+          // The study is a turn of the Coordinator's thread: its reading counts against the threshold too (issue #305).
+          this.recordContextUsage(project, event);
+          this.publish();
+        } else if (event.type === "compacted") {
+          compacted = true;
+          this.coordinatorCompacted(project);
         } else if (event.type === "fixedBanRefused") {
           this.recordFixedBan(project, event, { kind: "coordinator" });
         } else if (event.type === "toolRefused") {
@@ -2344,7 +2369,8 @@ export class TramaController {
       moveEvent(document, card.id, studyPosition);
     }
     document.coordinator.injectedStudy = fingerprints(study);
-    document.coordinator.memorySentToThread = document.coordinator.threadId;
+    // A compaction during the study may have dropped the memory it carried: the next turn sends it again.
+    document.coordinator.memorySentToThread = compacted ? null : document.coordinator.threadId;
     this.coordinatorLearning(document).skillsIndexSent = learned.skills;
     this.changed();
   }
@@ -2455,7 +2481,7 @@ export class TramaController {
     // The running request now keeps the Coordinator busy in place of the starting move.
     if (this.automaticStarting?.projectId === project.id) this.automaticStarting = null;
     const learning = this.learningFor(project);
-    learning.memory.resetConsolidationFailures();
+    learning.memory.resetConsolidationFailures("foreground");
     const reviewMemory = tickMemoryNudge(this.coordinatorLearning(document), learning.memoryAvailable);
     this.turnToolIterations.set(request.id, 0);
     this.changed();
@@ -2665,6 +2691,7 @@ export class TramaController {
     } finally {
       this.turnToolIterations.delete(request.id);
       this.turnToolErrors.delete(request.id);
+      this.turnMemoryRefusals.delete(request.id);
       this.turnLearningWrites.delete(request.id);
       if (project.runningRequestId === request.id) project.runningRequestId = null;
       if (project.streaming?.requestId === request.id) project.streaming = null;
@@ -3092,6 +3119,8 @@ export class TramaController {
         new Set(document.team.specialists.flatMap((s) => s.assignments.filter(isActive).map((a) => a.id)));
       const before = working(project.document);
       this.resumeAnsweredWork(project);
+      // The verified candidates with the green light go towards the main branch (issue #247); the merge tells itself in Activity.
+      await this.integrateCandidates(project);
       await this.runDuties();
       if (this.state.project !== project || this.quitting || isPaused(project.document)) return;
       const started = [...working(project.document)].filter((id) => !before.has(id));
@@ -3204,17 +3233,12 @@ export class TramaController {
         }
         return;
       case "tokenUsage":
-        project.contextUsage = { usedTokens: event.usedTokens, contextWindow: event.contextWindow };
-        this.checkContextThreshold(project);
+        this.recordContextUsage(project, event);
         this.publish();
         return;
-      case "compacted": {
-        project.document.coordinator.contextWarnedAt = null;
-        // Earlier events left the thread: session search may return them, and the next turn gets the memory again.
-        this.coordinatorLearning(project.document).liveFromSequence = project.document.lastSequence + 1;
-        project.document.coordinator.memorySentToThread = null;
+      case "compacted":
+        this.coordinatorCompacted(project);
         return;
-      }
       case "commandCompleted":
         activity(event.command || "Comando", event.succeeded ? null : `Uscita ${event.exitCode ?? "?"}`, event.succeeded ? "tool" : "error");
         if (isGitPushCommand(event.command)) {
@@ -3225,13 +3249,20 @@ export class TramaController {
       case "fileChangeCompleted":
         activity(`Modifica di ${event.paths.length} file`, event.paths.join(", "), event.succeeded ? "tool" : "error");
         return;
-      case "toolCallCompleted":
+      case "toolCallCompleted": {
+        // A refused memory write: one Italian line with the error tone; the retries the store refused unapplied add none (issue #305).
+        const refusal = event.server === TOOL_SERVER_NAME && event.tool === "memory" ? this.turnMemoryRefusals.get(request.id)?.shift() : undefined;
+        if (refusal) {
+          if (!refusal.repeated) activity(`Strumento di Trama: ${event.tool}`, refusal.line, "error");
+          return;
+        }
         activity(
           event.server === TOOL_SERVER_NAME ? `Strumento di Trama: ${event.tool}` : `${event.server}: ${event.tool}`,
           event.error,
           event.succeeded ? "tool" : "error",
         );
         return;
+      }
       case "readOutsideScope":
         activity(READ_OUTSIDE_SCOPE_TITLE, readOutsideScopeDetail(event), "error");
         return;
@@ -3252,21 +3283,51 @@ export class TramaController {
     }
   }
 
-  /** Adds the notice once when the Coordinator's context passes the person's threshold. */
+  /**
+   * Keeps the latest context reading of the Coordinator's thread and checks the threshold. A reading that cannot be
+   * the context in use (past the window, negative) is kept as unknown, with one technical line in the log (issue #305).
+   */
+  private recordContextUsage(project: ActiveProjectState, event: Extract<TurnEvent, { type: "tokenUsage" }>): void {
+    const usage: ContextUsage = { usedTokens: event.usedTokens, contextWindow: event.contextWindow };
+    if (invalidContextUsage(usage)) {
+      if (!this.invalidContextLogged.has(project.id)) {
+        this.invalidContextLogged.add(project.id);
+        console.warn(`[trama] context reading ignored: ${event.usedTokens} tokens against a window of ${event.contextWindow}`);
+      }
+      project.contextUsage = { usedTokens: null, contextWindow: event.contextWindow };
+      return;
+    }
+    project.contextUsage = usage;
+    this.checkContextThreshold(project);
+  }
+
+  /** The provider compacted the Coordinator's thread: earlier events left it, so session search may return them and the next turn gets the memory again. */
+  private coordinatorCompacted(project: ActiveProjectState): void {
+    this.coordinatorLearning(project.document).liveFromSequence = project.document.lastSequence + 1;
+    project.document.coordinator.memorySentToThread = null;
+  }
+
+  /**
+   * Adds the notice once when the Coordinator's context passes the person's threshold. The notice comes back only
+   * after a reading well under the threshold, not after each compaction (issue #305). No provider name and no number
+   * past the window: the reading is the one the meter shows.
+   */
   private checkContextThreshold(project: ActiveProjectState): void {
-    const usage = project.contextUsage;
     const coordinator = project.document.coordinator;
-    if (!usage?.contextWindow) return;
     const threshold = coordinator.contextThreshold ?? 80;
-    const percent = (usage.usedTokens / usage.contextWindow) * 100;
-    if (percent < threshold || coordinator.contextWarnedAt === threshold) return;
+    const reading = contextReading(project.contextUsage, threshold);
+    if (reading.state === "unknown") return;
+    if (reading.state === "ok") {
+      coordinator.contextWarnedAt = null;
+      return;
+    }
+    if (reading.state !== "over" || coordinator.contextWarnedAt === threshold) return;
     coordinator.contextWarnedAt = threshold;
-    const format = (n: number) => n.toLocaleString("it-IT");
     appendEvent(project.document, "trama", {
       type: "card",
       kind: "contextNotice",
       title: "Contesto oltre la soglia",
-      detail: `La finestra di contesto del Coordinatore è piena al ${Math.round(percent)}% (${format(usage.usedTokens)} su ${format(usage.contextWindow)} token), sopra la soglia impostata del ${threshold}%. ${providerName(this.coordinatorProvider(project.document))} la compatta da solo quando serve, se lo supporta; puoi cambiare la soglia dal misuratore.`,
+      detail: contextNoticeDetail(reading, threshold),
       referenceId: coordinator.threadId,
     });
     this.changed();
@@ -5099,12 +5160,6 @@ export class TramaController {
     }
   }
 
-  async approveCandidateByPerson(candidateId: string): Promise<void> {
-    const project = this.requireProject();
-    approveCandidate(project.document, candidateId, "Persona", await this.headSHA(project.rootPath));
-    this.changed();
-  }
-
   /** What publishing will send: shown to the person before the push (T11). */
   async previewPullRequest(
     candidateId: string,
@@ -5146,6 +5201,16 @@ export class TramaController {
     if (report.blockers.length) throw new DomainError(`Il candidato non è verificato: ${report.blockers.map((b) => b.code).join(", ")}.`);
     if (!candidate.humanApproval || report.approvalInvalidated) throw new DomainError("Rivedi e approva il candidato prima di pubblicarlo.");
     if (candidate.pullRequest) throw new DomainError(`Il candidato è già pubblicato: ${candidate.pullRequest.url}`);
+    const published = await this.publishCandidateNow(project, candidate, report);
+    await this.send(`Ho pubblicato il candidato ${candidate.id} come pull request #${published.number}: ${published.url}`, null, null, null, [], null, null, false);
+  }
+
+  /**
+   * Publishes a verified candidate as a pull request: the mandate and the fixed bans first, then the publication
+   * standard, then GitHub (Q01, issue #273). Every push, refused, failed or done, stays in the conversation.
+   */
+  private async publishCandidateNow(project: ActiveProjectState, candidate: Candidate, report: CandidateReport): Promise<NonNullable<Candidate["pullRequest"]>> {
+    const document = project.document;
     const repository = project.github.repository;
     if (!repository) throw new DomainError("Il progetto non ha un remoto GitHub.");
     // The mandate decides before anything is committed or pushed, even when the person asks (issue #273).
@@ -5153,8 +5218,8 @@ export class TramaController {
     if (refusal) {
       const branch = findAssignment(document, candidate.assignmentId)?.workspace?.branch ?? "branch del candidato";
       appendEvent(document, "trama", pushActivity({ outcome: "refused", branch, remote: "origin", reason: refusal }));
-      this.changed();
-      throw new DomainError(refusal);
+      this.changedIn(project);
+      throw new PushRefusedError(refusal);
     }
     // The quality standard comes before anything leaves the machine (Q01).
     const message = await this.candidateMessage(project, candidate);
@@ -5165,7 +5230,6 @@ export class TramaController {
     if (!capabilities.canPush) throw new DomainError(`Il tuo account GitHub non ha il permesso di push su ${repository}.`);
     const assignment = findAssignment(document, candidate.assignmentId)!;
     const baseBranch = project.snapshot.branch ?? "main";
-    // Every push, refused, failed or done, stays in the conversation (issue #273).
     const published = await publishCandidate({
       candidate,
       assignment,
@@ -5179,13 +5243,228 @@ export class TramaController {
         appendEvent(document, "trama", pushActivity(record));
         // A push a fixed ban stopped waits for the person in Aspetta te (issue #244).
         if (record.outcome === "refused" && record.ban) recordFixedBanRefusal(document, { ban: record.ban, action: `git push ${record.remote} ${record.branch}`, by: { kind: "trama" } });
-        this.changed();
+        this.changedIn(project);
       },
     });
     candidate.pullRequest = { ...published, at: new Date().toISOString() };
     appendEvent(document, "trama", { type: "activity", title: `Pull request #${published.number} pubblicata`, detail: published.url, tone: "tool" });
+    this.changedIn(project);
+    return candidate.pullRequest;
+  }
+
+  // MARK: Merge
+
+  /** The candidates Trama is merging now, so two readings of the project never merge one twice (issue #247). */
+  private readonly integrating = new Set<string>();
+  /** The candidates whose screenshots Trama is capturing now (issue #247). */
+  private readonly capturingShots = new Set<string>();
+  private integrationTimer: NodeJS.Timeout | null = null;
+  /** How long a merge waits for the checks of its pull request; shorter in the tests. */
+  private readonly checksDelay = Number(process.env.TRAMA_MERGE_CHECKS_MS) || CHECKS_RETRY_MS;
+
+  /** What a candidate's report says about its way to the main branch (issue #247). */
+  private mergeView(project: ActiveProjectState, candidate: Candidate): Pick<CandidateReport, "mergeRoute" | "mergeRouteReason" | "interfaceFiles"> {
+    const { route, reason } = mergeRoute(project.document, candidate, project.github.repository);
+    return { mergeRoute: route, mergeRouteReason: reason, interfaceFiles: interfaceFiles(candidate.changedFiles) };
+  }
+
+  /** Reads the project again soon: a merge waits for the checks of its pull request, or for GitHub to accept it. */
+  private integrateLater(project: ActiveProjectState, delayMs: number): void {
+    if (this.integrationTimer) clearTimeout(this.integrationTimer);
+    this.integrationTimer = setTimeout(() => {
+      this.integrationTimer = null;
+      if (this.state.project === project) void this.integrateCandidates(project).catch((error) => this.fail(error));
+    }, delayMs);
+    this.integrationTimer.unref?.();
+  }
+
+  /**
+   * Moves each verified candidate towards the main branch (issue #247): with the Coordinator's green light and the gate
+   * passed Trama publishes and merges it; a candidate that changes the interface gets its screenshots and waits for the
+   * person, then merges after their ok; a merge that would need a fixed ban stops and waits for the person. Only the
+   * latest candidate of each assignment. In pause the Coordinator merges nothing; the person's ok is their own command.
+   */
+  private async integrateCandidates(project: ActiveProjectState): Promise<void> {
+    if (this.quitting || !project.stateWritable || project.isDemo) return;
+    const document = project.document;
+    const head = await this.headSHA(project.rootPath);
+    for (const candidate of document.candidates) {
+      if (candidate.pullRequest?.mergedAt || this.integrating.has(candidate.id)) continue;
+      if (latestCandidate(document, candidate.assignmentId)?.id !== candidate.id) continue;
+      // A merge cut short by a restart is tried again: Trama reads the pull request before it merges anything.
+      if (candidate.merge?.status === "running") candidate.merge = { ...candidate.merge, status: "waiting", detail: "L'unione è stata interrotta: Trama riprova." };
+      const report = candidateReport(document, candidate, head);
+      if (report.state === "superseded" || report.blockers.length) continue;
+      const { route } = mergeRoute(document, candidate, project.github.repository);
+      if (route === "interface") this.ensureInterfaceShots(project, candidate);
+      const branch = findAssignment(document, candidate.assignmentId)?.workspace?.branch ?? null;
+      const readiness = mergeReadiness(document, candidate, report, route, { head: branch, base: project.snapshot.branch ?? "main" });
+      if (readiness.kind === "banned") {
+        const by: MergeAuthority = route === "coordinator" ? "coordinator" : "person";
+        recordMerge(document, candidate, by, "stopped", fixedBanInfo(readiness.ban).reason);
+        recordFixedBanRefusal(document, { ban: readiness.ban, action: mergeAction(candidate, branch), by: { kind: "trama" } });
+        appendEvent(document, "trama", mergeActivity(candidate, { kind: "banned", ban: readiness.ban }, by));
+        this.changedIn(project);
+        continue;
+      }
+      if (readiness.kind !== "merge" || (readiness.by === "coordinator" && isPaused(document))) continue;
+      this.integrating.add(candidate.id);
+      try {
+        await this.mergeCandidate(project, candidate, report, readiness.by);
+      } finally {
+        this.integrating.delete(candidate.id);
+      }
+    }
+  }
+
+  /**
+   * Publishes the candidate when it has no pull request yet, then merges the pull request at the head Trama pushed.
+   * The green light, or the person's ok, must still cover the candidate's content at that moment.
+   */
+  private async mergeCandidate(project: ActiveProjectState, candidate: Candidate, report: CandidateReport, by: MergeAuthority): Promise<void> {
+    const document = project.document;
+    const repository = project.github.repository!;
+    const fingerprint = contentFingerprint(document, candidate);
+    recordMerge(document, candidate, by, "running");
+    this.changedIn(project);
+    try {
+      const pull = candidate.pullRequest ?? (await this.publishCandidateNow(project, candidate, report));
+      if (!pull.headSHA) throw new DomainError(`Trama non conosce il commit pubblicato nella pull request #${pull.number}: uniscila su GitHub dopo averla guardata.`);
+      const now = candidateReport(document, candidate, await this.headSHA(project.rootPath));
+      const covered = contentFingerprint(document, candidate) === fingerprint && !now.blockers.length && !now.clearanceInvalidated && (by === "coordinator" || !now.approvalInvalidated);
+      if (!covered) throw new DomainError("Il candidato è cambiato dopo il via libera: serve un nuovo via libera sul candidato com'è ora.");
+      const checks = await readPullRequestStatus(repository, pull.number).catch(() => null);
+      // A pull request just opened has no checks yet: GitHub starts them in a moment, so Trama waits before it reads them.
+      const young = Date.now() - Date.parse(pull.at) < this.checksDelay;
+      if (checks?.state !== "MERGED" && (checks?.checks === "pending" || (checks?.checks === "none" && young))) {
+        recordMerge(document, candidate, by, "waiting", `Aspetto le verifiche della pull request #${pull.number}.`);
+        this.changedIn(project);
+        this.integrateLater(project, this.checksDelay);
+        return;
+      }
+      if (checks?.state === "MERGED") {
+        pull.mergedAt = checks.mergedAt ?? new Date().toISOString();
+        recordMerge(document, candidate, by, "merged");
+        this.changedIn(project);
+        return;
+      }
+      if (checks?.checks === "failure") throw new DomainError(`Le verifiche della pull request #${pull.number} su GitHub sono rosse: il Coordinatore le sistema prima dell'unione.`);
+      const message = await this.candidateMessage(project, candidate);
+      const authority = by === "coordinator" ? "Via libera del Coordinatore" : "Ok della persona sulle schermate";
+      const merged = await mergePullRequest(repository, pull.number, {
+        sha: pull.headSHA,
+        title: mergeCommitTitle(commitHeader(message), pull.number),
+        message: `${authority} sul candidato ${candidate.id}, unito da Trama.`,
+      });
+      pull.mergedAt = new Date().toISOString();
+      pull.mergedBy = by;
+      recordMerge(document, candidate, by, "merged");
+      candidate.merge!.mergeSHA = merged.sha;
+      appendEvent(document, "trama", mergeActivity(candidate, { kind: "merged", number: pull.number, url: pull.url }, by));
+    } catch (error) {
+      const reason = (error as Error).message;
+      // The mandate or a fixed ban stopped the push: nothing to try again until the person changes something.
+      recordMerge(document, candidate, by, error instanceof PushRefusedError ? "stopped" : "failed", reason);
+      appendEvent(document, "trama", mergeActivity(candidate, { kind: "failed", reason }, by));
+      if (!(error instanceof PushRefusedError)) this.integrateLater(project, MERGE_RETRY_MS);
+    }
+    this.changedIn(project);
+  }
+
+  /**
+   * Captures the screenshots of an interface candidate once per snapshot (issue #247): the project's screenshot script
+   * on the base and on the candidate, in light and in dark. A capture cut short by a restart starts again.
+   */
+  private ensureInterfaceShots(project: ActiveProjectState, candidate: Candidate): void {
+    const shots = candidate.interfaceShots;
+    if (this.capturingShots.has(candidate.id)) return;
+    if (shots?.snapshotId === candidate.snapshotId && shots.status !== "capturing") return;
+    const workspace = findAssignment(project.document, candidate.assignmentId)?.workspace;
+    if (!workspace) return;
+    const snapshotId = candidate.snapshotId;
+    this.capturingShots.add(candidate.id);
+    candidate.interfaceShots = { snapshotId, status: "capturing", reason: null, shots: [], at: new Date().toISOString() };
+    this.changedIn(project);
+    const outputDir = join(this.storage.root, "Shots", project.id, candidate.id, snapshotId.slice(0, 16));
+    void captureInterfaceShots({
+      projectRoot: project.rootPath,
+      candidateRoot: workspace.worktreeRoot,
+      baseSHA: candidate.baseSHA,
+      outputDir,
+      scratchRoot: join(this.storage.root, "Checks"),
+      codexExecutable: resolveCodexExecutable(this.host.codexExecutable),
+    })
+      .catch((error: Error) => ({ status: "failed" as const, reason: error.message, shots: [] }))
+      .then((result) => {
+        if (candidate.snapshotId !== snapshotId) return;
+        candidate.interfaceShots = { snapshotId, ...result, at: new Date().toISOString() };
+      })
+      .finally(() => {
+        this.capturingShots.delete(candidate.id);
+        this.changedIn(project);
+      });
+  }
+
+  /** One screenshot of an interface candidate, as a data URL for the card (issue #247). */
+  async interfaceShot(candidateId: string, index: number): Promise<string> {
+    const project = this.requireProject();
+    const shot = findCandidate(project.document, candidateId)?.interfaceShots?.shots[index];
+    if (!shot) throw new DomainError("Schermata non trovata.");
+    const root = join(this.storage.root, "Shots", project.id, candidateId);
+    const path = await realpath(shot.path);
+    if (!path.startsWith(`${await realpath(root)}/`)) throw new DomainError("Schermata fuori dalla cartella di Trama.");
+    return `data:image/png;base64,${(await readFileBinary(path)).toString("base64")}`;
+  }
+
+  /** The person's ok on an interface candidate: the approval, then Trama merges it when the green light holds (issue #247). */
+  async approveCandidateByPerson(candidateId: string): Promise<void> {
+    const project = this.requireProject();
+    approveCandidate(project.document, candidateId, "Persona", await this.headSHA(project.rootPath));
     this.changed();
-    await this.send(`Ho pubblicato il candidato ${candidate.id} come pull request #${published.number}: ${published.url}`, null, null, null, [], null, null, false);
+    await this.integrateCandidates(project);
+  }
+
+  /**
+   * The person refuses an interface candidate with a reason (issue #247): the refusal is recorded on that content and the
+   * reason goes back to the developer as a finding, in the same session and worktree. When the work cannot resume, the
+   * Coordinator receives it.
+   */
+  async rejectCandidateByPerson(candidateId: string, note: string): Promise<void> {
+    const project = this.requireProject();
+    const document = project.document;
+    const candidate = rejectCandidate(document, candidateId, note, "Persona");
+    const reason = candidate.humanRejection!.note;
+    const assignment = findAssignment(document, candidate.assignmentId);
+    const developer = document.team.specialists.find((s) => s.id === candidate.specialistId);
+    appendEvent(
+      document,
+      "person",
+      { type: "activity", title: `Candidato ${candidate.id} rifiutato`, detail: reason, tone: "error" },
+      null,
+      new Date(),
+      assignment ? { assignmentId: assignment.id, workKey: `${assignment.id}:${assignment.turns.length + 1}` } : undefined,
+    );
+    let waiting: string | null = assignment ? null : "L'incarico non c'è più.";
+    if (assignment) {
+      if (!withinMandate(document, assignment)) waiting = "Il mandato attuale non copre più questo incarico.";
+      else {
+        try {
+          const gateId = latestGate(document.gates, candidate.id)?.id ?? candidate.id;
+          reopenForFindings(document, assignment.id, { gateId, candidateId: candidate.id, findings: [`La persona ha rifiutato il candidato guardando le schermate: ${reason}`] });
+        } catch (error) {
+          waiting = error instanceof TeamError ? returnWaiting(error.code, error.message) : (error as Error).message;
+        }
+      }
+    }
+    this.changed();
+    if (!waiting && assignment) {
+      void this.startAssignment(assignment.id);
+      return;
+    }
+    await this.send(
+      `Ho rifiutato il candidato ${candidate.id}${developer ? ` di ${developer.name}` : ""}: ${reason}\nIl lavoro non riprende da solo (${waiting}): fallo correggere con un nuovo incarico.`,
+      null, null, null, [], null, candidate.goalId ?? null, false,
+    );
   }
 
   // MARK: Tickets
@@ -5937,6 +6216,10 @@ export class TramaController {
   private readonly turnToolIterations = new Map<string, number>();
   /** The messages of the tools that failed in each running Coordinator turn, kept out of its reply (issue #241). */
   private readonly turnToolErrors = new Map<string, string[]>();
+  /** The Activity line of each refused memory write of a turn, in order, until its tool call is reported (issue #305). */
+  private readonly turnMemoryRefusals = new Map<string, { line: string; repeated: boolean }[]>();
+  /** Projects whose log already has the line about a context reading Trama ignored (issue #305). */
+  private readonly invalidContextLogged = new Set<string>();
   /** Learning tools the Coordinator wrote with in each running turn. */
   private readonly turnLearningWrites = new Map<string, string[]>();
   private curatorTimer: NodeJS.Timeout | null = null;
@@ -5955,7 +6238,8 @@ export class TramaController {
     }
     const state = this.coordinatorLearning(project.document);
     if (!state.memoryMigrated) {
-      learning.migrateLegacyMemory(project.document.coordinator.memory.text);
+      // An old text over the limit becomes a proposal for the person, not a loop of refused writes (issue #305).
+      if (learning.migrateLegacyMemory(project.document.coordinator.memory.text)) learning.proposeConsolidation("memory");
       state.memoryMigrated = true;
     }
     return learning;
@@ -6063,7 +6347,7 @@ export class TramaController {
       run.status = controller.signal.aborted ? "cancelled" : "completed";
     } catch (error) {
       run.status = controller.signal.aborted ? "cancelled" : "failed";
-      run.error = (error as Error).message;
+      run.error = reviewErrorLine((error as Error).message);
     } finally {
       this.learningReviews.delete(project.id);
       run.endedAt = new Date().toISOString();
@@ -6176,25 +6460,61 @@ export class TramaController {
     this.learningChanged();
   }
 
-  /** The person corrects memory directly: their writes apply at once, without a review. */
+  /**
+   * The person corrects memory directly: their writes apply at once, without a review. Their writes never count as
+   * the Coordinator's failures, and a refusal reaches them as one Italian line, never the model's text (issue #305).
+   */
   editLearnedMemory(input: { target: "memory" | "user"; action: "add" | "replace" | "remove"; oldText?: string; content?: string }): { success: boolean; error: string | null } {
     const learning = this.learningFor(this.requireProject());
     const store = learning.memory;
-    const result =
+    const result = store.withCaller(null, () =>
       input.action === "add"
         ? store.add(input.target, input.content ?? "")
         : input.action === "replace"
           ? store.replace(input.target, input.oldText ?? "", input.content ?? "")
-          : store.remove(input.target, input.oldText ?? "");
-    store.resetConsolidationFailures();
+          : store.remove(input.target, input.oldText ?? ""),
+    );
     this.learningChanged();
-    return { success: result.success === true, error: result.success === true ? null : String(result.error ?? "") };
+    if (result.success === true) return { success: true, error: null };
+    return { success: false, error: this.memoryRefusalLine(learning, input.target, result) };
   }
 
   resolveLearningProposal(id: string, approve: boolean): void {
-    const result = this.learningFor(this.requireProject()).resolveProposal(id, approve);
+    const learning = this.learningFor(this.requireProject());
+    const target = learning.proposals().find((p) => p.id === id)?.target ?? "memory";
+    const result = learning.resolveProposal(id, approve);
     this.learningChanged();
-    if (result.success !== true) throw new DomainError(String(result.error ?? "La proposta non si può applicare."));
+    if (result.success !== true) throw new DomainError(this.memoryRefusalLine(learning, target, result));
+  }
+
+  /**
+   * The Coordinator's memory write was refused: its Activity row gets one Italian line, and a memory already over
+   * its limit becomes a proposal for the person instead of more attempts (issue #305).
+   */
+  private memoryRefused(project: ActiveProjectState, requestId: string | null, result: ToolResult): void {
+    let answer: Record<string, unknown>;
+    try {
+      answer = JSON.parse(result.content.map((c) => c.text).join("\n")) as Record<string, unknown>;
+    } catch {
+      return;
+    }
+    if (requestId) {
+      const refusals = this.turnMemoryRefusals.get(requestId) ?? [];
+      refusals.push({ line: memoryActivityLine(answer), repeated: answer.repeated === true });
+      this.turnMemoryRefusals.set(requestId, refusals);
+    }
+    if (memoryErrorCode(answer) !== "memory_full" || answer.repeated === true) return;
+    // Only a store already over its limit gets a proposal: one merely too full for this note does not.
+    const learning = this.learningFor(project);
+    const proposed = (["memory", "user"] as const).map((target) => learning.proposeConsolidation(target)).some(Boolean);
+    if (proposed) this.learningChanged();
+  }
+
+  /** The person's line for a refused memory write; a store over its limit also gets a proposal to shorten it. */
+  private memoryRefusalLine(learning: ProjectLearning, target: "memory" | "user", result: Record<string, unknown>): string {
+    if (memoryErrorCode(result) === "memory_full" && learning.proposeConsolidation(target)) this.learningChanged();
+    const view = learning.view({ turnsSinceMemory: 0, itersSinceSkill: 0 })[target];
+    return memoryFailureLine(result, target, { chars: view.chars, limit: view.limit });
   }
 
   changeLearnedSkill(input: { name: string; action: "pin" | "unpin" | "adopt" | "archive" | "restore" | "delete" | "edit"; content?: string }): void {

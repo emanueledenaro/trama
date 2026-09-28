@@ -675,10 +675,12 @@ export class CodexClient {
       case "thread/tokenUsage/updated": {
         const turn = this.matchingTurn(params);
         const usage = asObject(params.tokenUsage);
-        const total = asObject(usage?.total) ?? asObject(usage?.last);
-        const used = typeof total?.totalTokens === "number" ? total.totalTokens : null;
+        // `last` is the latest request to the model, the one that fills the window; `total` adds up every request
+        // of the thread and only measures cost (issue #305). Without `last` there is no context reading.
+        const used = breakdownTokens(asObject(usage?.last));
+        const processed = breakdownTokens(asObject(usage?.total));
         const window = typeof usage?.modelContextWindow === "number" ? usage.modelContextWindow : null;
-        if (turn && used !== null) turn.onEvent({ type: "tokenUsage", usedTokens: used, contextWindow: window });
+        if (turn && used !== null) turn.onEvent({ type: "tokenUsage", usedTokens: used, contextWindow: window, processedTokens: processed });
         return;
       }
       case "thread/compacted": {
@@ -752,6 +754,10 @@ export class CodexClient {
     const itemId = asString(item?.id) ?? "";
     if (!turn || !item || !type) return;
     switch (type) {
+      case "contextCompaction":
+        // Codex can report its compaction only as an item of the turn (issue #305).
+        turn.onEvent({ type: "compacted" });
+        return;
       case "commandExecution": {
         const exitCode = typeof item.exitCode === "number" ? item.exitCode : null;
         turn.onEvent({
@@ -803,6 +809,13 @@ export class CodexClient {
       }
     }
   }
+}
+
+/** Tokens of one Codex usage breakdown: `totalTokens`, or input plus output (cached input is already inside input). */
+function breakdownTokens(breakdown: JsonObject | null | undefined): number | null {
+  if (typeof breakdown?.totalTokens === "number") return breakdown.totalTokens;
+  if (typeof breakdown?.inputTokens === "number" && typeof breakdown.outputTokens === "number") return breakdown.inputTokens + breakdown.outputTokens;
+  return null;
 }
 
 /** The error a tool put in the text of a refused result, as Trama's tools do. */

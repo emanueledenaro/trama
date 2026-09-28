@@ -607,12 +607,11 @@ const botSizes = await page.evaluate(() => [...document.querySelectorAll('[data-
 if (Math.min(...botSizes) < 20) throw new Error(`A bot is smaller than 20 px: ${botSizes}`);
 const rowBot = await teamPanel.getByTestId("team-figure").first().getByTestId("agent-bot").boundingBox();
 if (!rowBot || rowBot.width < 32) throw new Error(`The Team rows' bots are under 32 px: ${rowBot?.width}`);
-// W16, cost: CSS runs the steady moves; the frame loop runs only while the cursor moves or a bot morphs, at most
-// 24 times per second, and not at all at rest. Reduced motion stops everything and keeps the still pose.
+// W16, cost: CSS runs the steady moves; the frame loop runs only while a bot morphs, at most 24 times per second,
+// and not at all at rest. The eyes do not follow the cursor. Reduced motion stops everything and keeps the still pose.
 await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.focus());
 await page.waitForFunction(() => !document.documentElement.classList.contains("bots-paused"), null, { timeout: 5_000 });
 const botFrames = () => page.evaluate(() => ({ frames: window.__tramaBots.frames, at: performance.now() }));
-const perSecond = (from, to) => ((to.frames - from.frames) * 1000) / (to.at - from.at);
 // CPU of the renderer and GPU processes over a few seconds, from Electron's own metrics.
 const cpuOver = async (ms) => {
   await app.evaluate(({ app: electronApp }) => electronApp.getAppMetrics());
@@ -634,18 +633,30 @@ const smooth = await page.evaluate(() =>
     .filter((a) => !a.effect.getKeyframes().slice(0, -1).every((k) => String(k.easing).startsWith("steps"))).length,
 );
 if (smooth) throw new Error(`${smooth} bot animations run at every frame instead of in steps`);
-const eyeOf = (bot) => bot.locator('[data-part="eye-0"]').getAttribute("transform");
-const follower = teamPanel.locator('[data-testid="agent-bot"][data-live]:is([data-activity="idle"], [data-activity="done"], [data-activity="waiting"])').first();
-const followerBox = await follower.boundingBox();
-const eyesBefore = await eyeOf(follower);
+// The eyes stay where they are while the cursor moves, and the loop draws no frame for it. The cursor moves over the
+// composer, away from every bot, so no hover wink starts a morph; blinks and winks change the eyes' size, not where
+// they sit, so only the position is compared.
+const eyePositions = () =>
+  page.evaluate(() =>
+    [...document.querySelectorAll('[data-testid="agent-bot"] [data-part^="eye-"]')].map((eye) => /translate\([^)]*\)/.exec(eye.getAttribute("transform") ?? "")?.[0]),
+  );
+const composerBox = await page.getByLabel("Messaggio al Coordinatore").boundingBox();
+// First let any morph under way finish: the loop is idle once a whole second passes without a frame.
+for (let quiet = 0, last = (await botFrames()).frames, tries = 0; quiet < 4 && tries < 40; tries++) {
+  await page.waitForTimeout(250);
+  const now = (await botFrames()).frames;
+  quiet = now === last ? quiet + 1 : 0;
+  last = now;
+}
+const eyesBefore = await eyePositions();
 const movingFrom = await botFrames();
 for (let i = 0; i < 40; i++) {
-  await page.mouse.move(followerBox.x + followerBox.width / 2 + 200 * Math.cos(i / 6), followerBox.y + followerBox.height / 2 + 120 * Math.sin(i / 6));
+  await page.mouse.move(composerBox.x + composerBox.width / 2 + (composerBox.width / 3) * Math.cos(i / 6), composerBox.y + composerBox.height / 2 + 10 * Math.sin(i / 6));
   await page.waitForTimeout(50);
 }
-const movingRate = perSecond(movingFrom, await botFrames());
-if (movingRate > 24 * 1.1) throw new Error(`The bot loop ran ${movingRate.toFixed(1)} frames per second while the cursor moved, over 24`);
-if ((await eyeOf(follower)) === eyesBefore) throw new Error("The eyes do not follow the cursor");
+const movingFrames = (await botFrames()).frames - movingFrom.frames;
+if (movingFrames > 0) throw new Error(`The bot loop ran ${movingFrames} frames while only the cursor moved`);
+if (JSON.stringify(await eyePositions()) !== JSON.stringify(eyesBefore)) throw new Error("The eyes moved with the cursor");
 await page.waitForTimeout(800);
 const restFrom = await botFrames();
 await page.waitForTimeout(3_000);
@@ -657,7 +668,7 @@ const cpuStill = await cpuOver(3_000);
 await page.emulateMedia({ reducedMotion: "no-preference" });
 if (cpuMoving - cpuStill > 5) throw new Error(`The bots at rest cost ${(cpuMoving - cpuStill).toFixed(1)}% of CPU, over 5%`);
 console.log(
-  `bots: ${botSizes.length} on screen, ${movingRate.toFixed(1)} frames/s with the cursor moving, ${restFrames} frames in 3 s at rest, ` +
+  `bots: ${botSizes.length} on screen, ${movingFrames} frames with the cursor moving, ${restFrames} frames in 3 s at rest, ` +
     `renderer+GPU CPU at rest ${cpuMoving.toFixed(1)}% animated, ${cpuStill.toFixed(1)}% with reduced motion`,
 );
 const firstBot = teamPanel.getByTestId("agent-bot").first();
@@ -683,7 +694,7 @@ await page.keyboard.press("Enter");
 await page.getByText(/^Salvato\./).first().waitFor({ timeout: 20_000 });
 await page.getByRole("button", { name: /^Memoria/ }).first().click();
 await page.getByRole("button", { name: "Rivedi ora" }).click();
-await page.getByText("Skill 'release-flow' created").first().waitFor({ timeout: 30_000 });
+await page.getByText("Skill 'release-flow' creata").first().waitFor({ timeout: 30_000 });
 await shot("04i-memory");
 await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
 
@@ -747,39 +758,146 @@ await domainCard.getByText(/ha scritto la proposta nella copia di lavoro dell'in
 await page.getByRole("button", { name: "Interrompi" }).waitFor({ state: "hidden", timeout: 20_000 });
 await domainCard.scrollIntoViewIfNeeded();
 await shot("04k-domain-proposal-written");
+// #305: the context meter and the threshold card read the request that fills the window, the same rule for every
+// provider: no provider name and no number past the window, in light and dark.
+{
+  const providerNames = ["ChatGPT", "Codex", "Claude", "Cursor", "Antigravity", "Grok", "Droid", "Devin", "OpenCode", "Pi"];
+  const noProviderName = (text, where) => {
+    const found = providerNames.find((name) => new RegExp(`(?<!\\p{L})${name}(?!\\p{L})`, "u").test(text));
+    if (found) throw new Error(`${where} names the provider ${found}: ${text}`);
+  };
+  await composer().fill("[pieno] Quanto contesto resta?");
+  await page.keyboard.press("Enter");
+  const notice = page.getByTestId("context-notice").filter({ hasText: "Contesto oltre la soglia" }).last();
+  await notice.waitFor({ timeout: 20_000 });
+  await page.getByRole("button", { name: "Interrompi" }).waitFor({ state: "hidden", timeout: 20_000 });
+  const noticeText = (await notice.innerText()).replace(/\s+/g, " ");
+  noProviderName(noticeText, "The threshold card");
+  if (!noticeText.includes("piena al 89% (230.000 su 258.000 token)")) throw new Error(`The threshold card does not read the context in use: ${noticeText}`);
+  await notice.scrollIntoViewIfNeeded();
+  await themeShots("04l-context-threshold-card");
+  const meter = page.getByTestId("context-meter");
+  if ((await meter.innerText()).trim() !== "89%") throw new Error(`The context meter shows ${await meter.innerText()}`);
+  await meter.click();
+  const meterPopup = page.getByRole("dialog").filter({ hasText: "Finestra di contesto" });
+  await meterPopup.waitFor();
+  const meterText = (await meterPopup.innerText()).replace(/\s+/g, " ");
+  noProviderName(meterText, "The context meter");
+  if (!meterText.includes("89% usato, 230.000 su 258.000 token")) throw new Error(`The context meter does not read the context in use: ${meterText}`);
+  await themeShots("04m-context-meter");
+  await page.keyboard.press("Escape");
+  await meterPopup.waitFor({ state: "hidden" });
+}
 await page.getByRole("button", { name: "Mappa del progetto" }).click();
 await shot("05-map");
-// #229: every panel separator is the same sash. At rest it draws nothing over the panel border; after a short hover
-// it takes the provider's accent, and while dragged it stays lit. Double-click and the arrow keys change the width.
+// #229: every panel separator is the same sash, as in VS Code (base/browser/ui/sash). At rest the sash draws nothing and
+// the 1px line is the panel's own border; no grip dots anywhere. After 300ms of hover its 4px ::before takes VS Code's
+// focusBorder, and while dragged it stays lit. Double-click and the arrow keys change the width. The panels meet edge
+// to edge as in VS Code: sidebar and inspector a shade darker than the chat, a 1px border that shows in light and dark.
 {
   const sidebarSash = page.getByRole("separator", { name: /Larghezza della barra laterale/ });
   const inspectorSash = page.getByRole("separator", { name: "Larghezza dell'ispettore" });
   const look = (sash) =>
     sash.evaluate((element) => {
       const style = getComputedStyle(element);
-      const probe = document.createElement("span");
-      probe.style.color = "var(--color-text-accent)";
-      element.append(probe);
-      const accent = getComputedStyle(probe).color;
-      probe.remove();
-      const drawn = ["::before", "::after"].filter((pseudo) => getComputedStyle(element, pseudo).content !== "none");
-      return { background: style.backgroundColor, accent, width: element.getBoundingClientRect().width, cursor: style.cursor, drawn, children: element.childElementCount };
+      const color = (value) => {
+        const probe = document.createElement("span");
+        probe.style.color = value;
+        element.append(probe);
+        const resolved = getComputedStyle(probe).color;
+        probe.remove();
+        return resolved;
+      };
+      const strip = getComputedStyle(element, "::before");
+      return {
+        background: style.backgroundColor,
+        strip: strip.backgroundColor,
+        stripWidth: strip.width,
+        after: getComputedStyle(element, "::after").content,
+        accent: color("var(--app-focus-border)"),
+        width: element.getBoundingClientRect().width,
+        cursor: style.cursor,
+        zIndex: style.zIndex,
+        children: element.childElementCount,
+        text: element.textContent,
+      };
     });
   const transparent = (color) => color === "rgba(0, 0, 0, 0)" || color === "transparent";
   for (const sash of [sidebarSash, inspectorSash]) {
     const rest = await look(sash);
-    if (!transparent(rest.background) || rest.drawn.length || rest.children) throw new Error(`A sash shows at rest: ${JSON.stringify(rest)}`);
-    if (rest.width !== 4 || rest.cursor !== "col-resize") throw new Error(`A sash is not a 4px col-resize grip: ${JSON.stringify(rest)}`);
+    if (!transparent(rest.background) || !transparent(rest.strip) || rest.children || rest.text || (rest.after !== "none" && rest.after !== "normal"))
+      throw new Error(`A sash shows something at rest: ${JSON.stringify(rest)}`);
+    if (rest.width !== 4 || !["col-resize", "ew-resize"].includes(rest.cursor) || rest.zIndex !== "35") throw new Error(`A sash is not a 4px resize grip at z-index 35: ${JSON.stringify(rest)}`);
+  }
+  // The line at rest is the panels' border: the sidebar's right edge and the inspector's left edge.
+  const borders = await page.evaluate(() => {
+    const probe = document.createElement("span");
+    probe.style.color = "var(--app-panel-border)";
+    document.body.append(probe);
+    const border = getComputedStyle(probe).color;
+    probe.remove();
+    const sidebar = getComputedStyle(document.querySelector(".app-sidebar-surface"));
+    const inspector = getComputedStyle(document.querySelector('[data-testid="inspector"]'));
+    return { border, sidebar: [sidebar.borderRightWidth, sidebar.borderRightColor], inspector: [inspector.borderLeftWidth, inspector.borderLeftColor] };
+  });
+  for (const [width, color] of [borders.sidebar, borders.inspector])
+    if (width !== "1px" || color !== borders.border) throw new Error(`A panel has no 1px border line: ${JSON.stringify(borders)}`);
+  // On screen, in light and dark: the border differs from the panels on both sides, and the sidebar and the inspector
+  // differ from the chat between them. Pixels come from the window capture, [r, g, b].
+  const pixel = (x, y) =>
+    app.evaluate(
+      async ({ BrowserWindow }, point) => {
+        const [b, g, r] = (await BrowserWindow.getAllWindows()[0].webContents.capturePage({ ...point, width: 1, height: 1 })).toBitmap();
+        return [r, g, b];
+      },
+      { x: Math.round(x), y: Math.round(y) },
+    );
+  const apart = (one, other) => Math.max(...one.map((channel, index) => Math.abs(channel - other[index])));
+  await page.mouse.move(640, 500);
+  for (const mode of ["light", "dark"]) {
+    await page.evaluate((dark) => document.documentElement.classList.toggle("dark", dark), mode === "dark");
+    await page.waitForTimeout(400);
+    const edges = await page.evaluate(() => ({
+      sidebar: document.querySelector(".app-sidebar-surface").getBoundingClientRect().right,
+      inspector: document.querySelector('[data-testid="inspector"]').getBoundingClientRect().left,
+    }));
+    const y = 620;
+    const [sidebarLine, sidebarPanel, chat, inspectorLine, inspectorPanel] = await Promise.all([
+      pixel(edges.sidebar - 1, y),
+      pixel(edges.sidebar - 12, y),
+      pixel(edges.sidebar + 12, y),
+      pixel(edges.inspector, y),
+      pixel(edges.inspector + 12, y),
+    ]);
+    const seen = JSON.stringify({ mode, sidebarLine, sidebarPanel, chat, inspectorLine, inspectorPanel });
+    if (apart(sidebarLine, sidebarPanel) < 8 || apart(sidebarLine, chat) < 8 || apart(inspectorLine, inspectorPanel) < 8 || apart(inspectorLine, chat) < 8)
+      throw new Error(`A panel border does not show at rest: ${seen}`);
+    if (apart(sidebarPanel, chat) < 3 || apart(inspectorPanel, chat) < 3) throw new Error(`The side panels do not stand apart from the chat: ${seen}`);
+    await shot(`22-sash-rest-${mode}`);
+  }
+  await page.evaluate(() => document.documentElement.classList.remove("dark"));
+  // Nothing covers the grip: it sits over the content on both sides of each edge.
+  for (const sash of [sidebarSash, inspectorSash]) {
+    const box = await sash.boundingBox();
+    const onTop = await sash.evaluate((element, points) => points.every(([x, y]) => document.elementFromPoint(x, y) === element), [
+      [box.x + 0.5, 620],
+      [box.x + box.width - 0.5, 620],
+    ]);
+    if (!onTop) throw new Error(`Something covers the sash ${await sash.getAttribute("aria-label")}`);
   }
   const sidebarBox = await sidebarSash.boundingBox();
   await page.mouse.move(sidebarBox.x + sidebarBox.width / 2, 300);
   await page.waitForTimeout(100);
-  if (!transparent((await look(sidebarSash)).background)) throw new Error("The sash lights up before the hover delay");
-  await page.waitForTimeout(500);
+  if (!transparent((await look(sidebarSash)).strip)) throw new Error("The sash lights up before the hover delay");
+  await page.waitForTimeout(250);
   const hovered = await look(sidebarSash);
-  if (hovered.background !== hovered.accent) throw new Error(`The hovered sash is not the provider's accent: ${JSON.stringify(hovered)}`);
-  for (const mode of ["light", "dark"]) {
+  if (hovered.strip !== hovered.accent || hovered.stripWidth !== "4px") throw new Error(`After 350ms of hover the sash is not a 4px focusBorder strip: ${JSON.stringify(hovered)}`);
+  // VS Code's focusBorder: #005FB8 in Light Modern, #0078D4 in Dark Modern.
+  for (const [mode, focusBorder] of [["light", "rgb(0, 95, 184)"], ["dark", "rgb(0, 120, 212)"]]) {
     await page.evaluate((dark) => document.documentElement.classList.toggle("dark", dark), mode === "dark");
+    await page.waitForTimeout(200);
+    const lit = (await look(sidebarSash)).strip;
+    if (lit !== focusBorder) throw new Error(`The ${mode} hovered sash is ${lit}, not VS Code's focusBorder ${focusBorder}`);
     await shot(`22-sash-hover-${mode}`);
   }
   await page.evaluate(() => document.documentElement.classList.remove("dark"));
@@ -790,12 +908,12 @@ await shot("05-map");
   await page.mouse.move(inspectorBox.x + inspectorBox.width / 2 - 60, 300, { steps: 6 });
   await page.waitForTimeout(200);
   const dragged = await look(inspectorSash);
-  if (dragged.background !== dragged.accent) throw new Error(`The dragged sash is not lit: ${JSON.stringify(dragged)}`);
+  if (dragged.strip !== dragged.accent) throw new Error(`The dragged sash is not lit: ${JSON.stringify(dragged)}`);
   await shot("22-sash-drag-light");
   await page.mouse.up();
   await page.mouse.move(640, 500);
   if (Number(await inspectorSash.getAttribute("aria-valuenow")) !== startWidth + 60) throw new Error("Dragging the sash does not widen the inspector");
-  await page.waitForFunction(() => getComputedStyle(document.querySelector('[aria-label="Larghezza dell\'ispettore"]')).backgroundColor === "rgba(0, 0, 0, 0)");
+  await page.waitForFunction(() => getComputedStyle(document.querySelector('[aria-label="Larghezza dell\'ispettore"]'), "::before").backgroundColor === "rgba(0, 0, 0, 0)");
   await inspectorSash.dblclick();
   await page.waitForFunction(() => document.querySelector('[aria-label="Larghezza dell\'ispettore"]')?.getAttribute("aria-valuenow") === "420");
   await inspectorSash.focus();
@@ -3577,5 +3695,145 @@ await pausedQuit.waitFor({ timeout: 30_000 });
 await page.waitForTimeout(2_000);
 if ((await alwaysReplies()) !== alwaysSoFar) throw new Error("A turn resumed in Pause");
 await waitShots("28e-reopened-paused");
+await page.evaluate(() => window.trama.invoke("settings:update", { theme: "system" }));
+await app.close();
+
+// Issue #247: with the Coordinator's green light and the gate passed, Trama publishes and merges a candidate by itself,
+// and Activity says so. A candidate that changes the interface waits in Aspetta te with the screenshots before and
+// after, in light and dark, from the project's screenshots script; a refusal with a reason goes back to the developer,
+// and the person's ok merges the corrected one. The fake gh opens and merges the pull requests; pushes reach a local
+// bare repository.
+const vetrinaGhLog = join(await mkdtemp(join(tmpdir(), "trama-ui-vetrina-gh-")), "gh.log");
+const vetrina = await mkdtemp(join(tmpdir(), "trama-ui-vetrina-"));
+await cp(resolve("resources/DemoProject"), vetrina, { recursive: true });
+await mkdir(join(vetrina, "web"));
+await writeFile(join(vetrina, "web/index.css"), ":root { --accent: #336699; }\n");
+await writeFile(join(vetrina, "package.json"), JSON.stringify({ name: "vetrina", private: true, scripts: { screenshots: `node ${resolve("test-fixtures/fake-screenshots.mjs")}` } }));
+const vetrinaRemote = await mkdtemp(join(tmpdir(), "trama-ui-vetrina-remote-"));
+execFileSync("git", ["init", "-q", "--bare", "-b", "main", vetrinaRemote]);
+const inVetrina = (...args) => execFileSync("git", ["-C", vetrina, ...args], { stdio: "ignore" });
+inVetrina("init", "-q", "-b", "main");
+inVetrina("config", "user.name", "Trama UI");
+inVetrina("config", "user.email", "ui@trama.local");
+inVetrina("add", ".");
+inVetrina("commit", "-q", "-m", "Vetrina");
+inVetrina("remote", "add", "origin", "https://github.com/trama-ui/vetrina.git");
+inVetrina("config", "remote.origin.pushurl", vetrinaRemote);
+({ app, page } = await launch({ PATH: `${ghBin}:${process.env.PATH}`, FAKE_GH_PULLS: "1", FAKE_GH_LOG: vetrinaGhLog, TRAMA_MERGE_CHECKS_MS: "500" }));
+await page.evaluate(() => window.trama.invoke("settings:update", { continuousWork: false, theme: "light" }));
+await page.evaluate((path) => window.trama.invoke("project:open", { path }), vetrina);
+await page.getByTestId("dialog-title").filter({ hasText: "trama-ui-vetrina" }).waitFor({ timeout: 30_000 });
+await page.getByText("Ho letto lo studio").first().waitFor({ timeout: 30_000 });
+const stateUntil = async (check, what, timeout = 60_000) => {
+  const start = Date.now();
+  for (;;) {
+    const state = await page.evaluate(() => window.trama.getState());
+    const value = state.project ? check(state.project.document, state.project) : null;
+    if (value) return value;
+    if (Date.now() - start > timeout) throw new Error(`${what}: timeout`);
+    await page.waitForTimeout(250);
+  }
+};
+await stateUntil((_, project) => project.github.repository === "trama-ui/vetrina", "GitHub remote");
+await page.evaluate(() => window.trama.invoke("pact:decide", { id: null, value: "Un ordine pagato va in revisione", acceptedExample: "Ordine 42", rationale: "Evita rimborsi errati" }));
+const vetrinaDecision = await stateUntil((document) => document.decisions[0]?.id, "Decision");
+await page.evaluate(() =>
+  window.trama.invoke("mandate:grant", {
+    requestId: null,
+    objectives: ["Rinnovare la vetrina"],
+    priorities: [],
+    scopeModuleIds: ["Sources/Orders"],
+    authorizedActions: ["executeInWorktree", "openPullRequest", "integrateCandidate"],
+    limits: [],
+  }),
+);
+await page.getByText("Ho concesso il mandato (versione 1).").first().waitFor({ timeout: 20_000 });
+await page.getByRole("button", { name: "Interrompi" }).waitFor({ state: "hidden", timeout: 20_000 });
+// Typed, not filled: a draft filled right after the grant does not reach the composer's state and is not sent.
+await composer().click({ timeout: 60_000 });
+await composer().pressSequentially("[proponi-team]");
+await page.keyboard.press("Enter");
+await page.getByText("[proponi-team]", { exact: true }).first().waitFor({ timeout: 20_000 });
+await (await openWaiting("team")).getByRole("button", { name: "Conferma il team" }).click({ timeout: 20_000 });
+await page.getByText("Team confermato").first().waitFor({ timeout: 20_000 });
+if (await page.getByRole("button", { name: "Chiudi l'ispettore" }).count()) await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
+const adaWork = (document) => document.team.specialists.find((s) => s.name === "Ada")?.assignments.at(-1);
+const workDone = async (before) => {
+  await page.getByRole("button", { name: "Interrompi" }).waitFor({ state: "hidden", timeout: 20_000 });
+  return stateUntil((document) => {
+    const work = adaWork(document);
+    return work && work.id !== before && work.status === "completed" ? work.id : null;
+  }, "Ada's work");
+};
+const candidateOfWork = (document, assignmentId) => document.candidates.filter((c) => c.assignmentId === assignmentId).at(-1);
+
+// No interface change: merged by Trama on the green light, told in Activity.
+await send("[assegna]");
+const plainWork = await workDone(null);
+await send(`[candidato:${plainWork}:${vetrinaDecision}]`);
+await stateUntil((document) => candidateOfWork(document, plainWork)?.pullRequest?.mergedAt, "Merge with the green light");
+const mergeCalls = (await readFile(vetrinaGhLog, "utf8")).trim().split("\n").map((line) => JSON.parse(line));
+if (!mergeCalls.some((call) => call.includes("PUT") && call.some((arg) => /\/pulls\/21\/merge$/.test(arg)))) throw new Error("Trama did not merge the pull request");
+await page.getByRole("button", { name: "Interrompi" }).waitFor({ state: "hidden", timeout: 20_000 });
+await page.getByTestId("status-line").getByRole("button", { name: "Attività" }).click();
+const mergedEntry = page.getByTestId("activity-log").locator('[data-testid="activity-merge"][data-outcome="done"]').filter({ hasText: "Candidato unito con il via libera del Coordinatore" });
+await mergedEntry.waitFor({ timeout: 20_000 });
+await mergedEntry.getByRole("button", { name: "Apri la pull request" }).waitFor();
+if (/[–—]/.test(await mergedEntry.innerText())) throw new Error("A dash in the merge entry");
+await themeShots("30a-merge-activity");
+await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
+
+// An interface change waits for the person with the screenshots before and after, in light and dark.
+await send("[assegna] [interfaccia]");
+const styledWork = await workDone(plainWork);
+await send(`[candidato:${styledWork}:${vetrinaDecision}]`);
+const styledItem = await openWaiting("candidate", undefined, 60_000);
+if (!(await styledItem.innerText()).includes("Interfaccia da guardare")) throw new Error("The interface candidate does not say it changes the interface");
+await styledItem.locator('[data-testid="interface-shots"][data-status="ready"]').waitFor({ timeout: 60_000 });
+const styledShots = styledItem.locator('[data-testid="interface-shot"] img');
+await styledShots.nth(3).waitFor({ timeout: 20_000 });
+if ((await styledShots.count()) !== 4) throw new Error(`Expected four screenshots, found ${await styledShots.count()}`);
+await styledItem.getByText("web/index.css").first().waitFor();
+const styledActions = styledItem.locator(".cta-row").filter({ has: page.getByRole("button", { name: "Approva e unisci" }) });
+await primaryLast(styledActions, "Interface candidate");
+if (await styledItem.getByRole("button", { name: "Approva questo candidato" }).count()) throw new Error("The interface candidate offers the plain approval");
+if (/[–—]/.test(await styledItem.innerText())) throw new Error("A dash in the interface candidate");
+await styledItem.locator('[data-testid="interface-shots"]').evaluate((node) => node.scrollIntoView({ block: "center" }));
+await themeShots("30b-interface-candidate-waiting");
+await page.setViewportSize({ width: 900, height: 820 });
+await styledItem.locator('[data-testid="interface-shots"]').evaluate((node) => node.scrollIntoView({ block: "center" }));
+await themeShots("30b2-interface-candidate-narrow");
+await page.setViewportSize({ width: 1280, height: 820 });
+
+// The person refuses it with a reason: it leaves Aspetta te and the reason reaches the developer.
+await styledItem.getByRole("button", { name: "Rifiuta", exact: true }).click();
+await styledItem.getByLabel("Motivo del rifiuto del candidato").fill("Il rosso del pulsante Paga è troppo acceso in scuro");
+await primaryLast(styledItem.locator(".cta-row").filter({ has: page.getByRole("button", { name: "Rifiuta il candidato" }) }), "Refusal");
+await themeShots("30c-interface-candidate-refusing");
+await styledItem.getByRole("button", { name: "Rifiuta il candidato" }).click();
+await styledItem.waitFor({ state: "detached", timeout: 20_000 });
+await stateUntil((document) => (adaWork(document)?.gateReturn?.findings ?? []).some((f) => f.includes("troppo acceso in scuro")), "Refusal back to the developer");
+await workDone(null);
+if (await page.getByRole("button", { name: "Chiudi l'ispettore" }).count()) await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
+// The refused candidate is one line of the chat with the reason; the line opens the whole card.
+const refusedLine = page.getByTestId("settled-card").filter({ hasText: "Rifiutato da te" }).filter({ hasText: "troppo acceso in scuro" }).last();
+await refusedLine.waitFor({ timeout: 20_000 });
+await refusedLine.evaluate((node) => node.scrollIntoView({ block: "center" }));
+await themeShots("30d-interface-candidate-refused");
+
+// The corrected candidate: the person's ok merges it.
+await send("[assegna] [interfaccia]");
+const correctedWork = await workDone(styledWork);
+await send(`[candidato:${correctedWork}:${vetrinaDecision}]`);
+const correctedItem = await openWaiting("candidate", undefined, 60_000);
+await correctedItem.locator('[data-testid="interface-shots"][data-status="ready"]').waitFor({ timeout: 60_000 });
+await correctedItem.getByRole("button", { name: "Approva e unisci" }).click();
+await stateUntil((document) => candidateOfWork(document, correctedWork)?.pullRequest?.mergedBy === "person", "Merge on the person's ok");
+await correctedItem.waitFor({ state: "detached", timeout: 20_000 });
+if (await page.getByRole("button", { name: "Chiudi l'ispettore" }).count()) await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
+await page.getByTestId("status-line").getByRole("button", { name: "Attività" }).click();
+await page.getByTestId("activity-log").locator('[data-testid="activity-merge"]').filter({ hasText: "Candidato unito con il tuo ok" }).waitFor({ timeout: 20_000 });
+await themeShots("30e-merge-activity-person");
+await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
 await page.evaluate(() => window.trama.invoke("settings:update", { theme: "system" }));
 await app.close();

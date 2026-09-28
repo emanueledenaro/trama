@@ -984,21 +984,22 @@ function lastAssistantText(session: AgentSession): string {
   return "";
 }
 
-/** Context use computed from the SDK stats. */
-export function tokenUsageEvent(session: Pick<AgentSession, "getSessionStats" | "model">): TurnEvent | null {
-  const stats = session.getSessionStats();
-  const usage = stats.contextUsage;
+/**
+ * Context use from the session's own context reading (issue #305). The session statistics add up every request,
+ * compacted history included: they are the cost, never the context. `tokens: null` after a compaction means the
+ * reading is not known until the next response.
+ */
+export function tokenUsageEvent(session: Pick<AgentSession, "getContextUsage" | "getSessionStats" | "model">): TurnEvent | null {
+  const usage = session.getContextUsage();
+  if (!usage) return null;
   const window =
-    usage && usage.contextWindow > 0
+    usage.contextWindow > 0
       ? Math.floor(usage.contextWindow)
       : session.model?.contextWindow && session.model.contextWindow > 0
         ? Math.floor(session.model.contextWindow)
         : null;
-  let used: number;
-  if (usage && typeof usage.tokens === "number" && usage.tokens >= 0) used = Math.round(usage.tokens);
-  else if (usage && typeof usage.percent === "number" && window !== null) used = Math.round((usage.percent / 100) * window);
-  else if (usage) used = 0;
-  else used = window !== null ? Math.min(stats.tokens.total, window) : stats.tokens.total;
-  if (used <= 0 && window === null) return null;
-  return { type: "tokenUsage", usedTokens: used, contextWindow: window };
+  const total = session.getSessionStats().tokens.total;
+  const processedTokens = typeof total === "number" && total >= 0 ? total : null;
+  const usedTokens = typeof usage.tokens === "number" && usage.tokens >= 0 ? Math.round(usage.tokens) : null;
+  return { type: "tokenUsage", usedTokens, contextWindow: window, processedTokens };
 }

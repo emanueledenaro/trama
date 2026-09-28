@@ -225,6 +225,45 @@ export async function closeIssue(repository: string, number: number): Promise<vo
   );
 }
 
+/**
+ * Merges a pull request with a merge commit (issue #247). `sha` is the head Trama pushed: GitHub refuses the merge when
+ * the branch moved since, so a changed candidate never merges with an old green light. Branch protection stays in force:
+ * Trama never asks for an administrator's bypass. A repository that allows only squash or rebase gets that method.
+ */
+export async function mergePullRequest(repository: string, number: number, input: { sha: string; title: string; message: string }): Promise<{ sha: string | null; method: string }> {
+  let refusal: Error | null = null;
+  for (const method of ["merge", "squash", "rebase"]) {
+    try {
+      const output = await run(
+        "gh",
+        [
+          "api",
+          "--method",
+          "PUT",
+          `repos/${repository}/pulls/${number}/merge`,
+          "--raw-field",
+          `merge_method=${method}`,
+          "--raw-field",
+          `sha=${input.sha}`,
+          "--raw-field",
+          `commit_title=${input.title}`,
+          "--raw-field",
+          `commit_message=${input.message}`,
+        ],
+        { env: ghEnvironment(), timeout: 30_000 },
+      );
+      const merged = JSON.parse(output) as { merged?: boolean; sha?: string; message?: string };
+      if (merged.merged === false) throw new Error(merged.message ?? "GitHub non ha unito la pull request.");
+      return { sha: typeof merged.sha === "string" ? merged.sha : null, method };
+    } catch (error) {
+      refusal = error as Error;
+      // Only a method the repository does not allow is tried again with the next one.
+      if (!/not allowed|merge_method/i.test(refusal.message)) break;
+    }
+  }
+  throw new Error(`GitHub non ha unito la pull request #${number}: ${refusal?.message.split("\n")[0] ?? "errore sconosciuto"}`);
+}
+
 /** State of a pull request and the rollup of its checks, from gh. */
 export async function readPullRequestStatus(repository: string, number: number): Promise<import("./tickets").PullRequestStatus> {
   const raw = JSON.parse(
