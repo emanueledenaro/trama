@@ -1096,6 +1096,23 @@ export interface ProjectTeam {
   confirmedAt: string | null;
   /** The squads by product area (A10, Q14); absent until the Coordinator forms them after the study. */
   squads?: Squad[];
+  /**
+   * A merge the person asked the Coordinator for that leaves more than three developers (A11): Trama's proposal of who
+   * stays, waiting for the person's confirmation in the Squads view. Absent or null when none waits.
+   */
+  squadMerge?: SquadMergeProposal | null;
+}
+
+/** Two squads to merge and the developers Trama proposes to keep, for the person to confirm or change (A11). */
+export interface SquadMergeProposal {
+  id: string;
+  /** The squad that stays, with its id, name, lead and QA. */
+  intoId: string;
+  /** The squad that joins it and ends. */
+  fromId: string;
+  /** The developers Trama proposes to keep; the others leave the squads and keep their work. */
+  keepIds: string[];
+  proposedAt: string;
 }
 
 /**
@@ -1112,6 +1129,38 @@ export interface Squad {
   qaId: string;
   developerIds: string[];
   createdAt: string;
+  /**
+   * When the person last renamed, merged or split the squad (A11): the Coordinator's formation then leaves it as the
+   * person made it and places no developer in it by itself. Absent for a squad only the Coordinator shaped.
+   */
+  touchedAt?: string;
+}
+
+/** What the person changed in the squads (A11). */
+export type SquadChangeKind = "rename" | "merge" | "split";
+
+/**
+ * A change the person made to the squads, from the Squads view or through the Coordinator (A11). It keeps what it
+ * changed, so Activity tells it and the person can undo it: the squads as they were, the squads it created, the
+ * specialists whose status it changed as they were, and the specialists it added.
+ */
+export interface SquadChange {
+  id: string;
+  kind: SquadChangeKind;
+  /** `person` from the Squads view, `coordinator` when the person asked the Coordinator in the chat. */
+  by: "person" | "coordinator";
+  at: string;
+  /** The squads the change touched as they were before, with their place in the list. */
+  before: { index: number; squad: Squad }[];
+  /** The squads as the change left them: their ids, the created one included. */
+  afterIds: string[];
+  /** The specialists whose status the change set (the lead and the QA of a squad that joined another), as they were. */
+  specialists: { id: string; status: SpecialistStatus; removal: Specialist["removal"] }[];
+  /** The specialists the change added (the lead and the QA of a new squad). */
+  addedIds: string[];
+  /** The names the change is told with: the squads' names before and after, and who left the squads. */
+  names: { from: string; to: string; other: string | null; leftIds: string[] };
+  undoneAt: string | null;
 }
 
 export interface CandidateEvidence {
@@ -1582,6 +1631,8 @@ export interface ProjectDocument {
   recap?: RecapLedger;
   /** The person's steps the Coordinator took by itself within the mandate (A06); absent until the first one. */
   autonomousSteps?: AutonomousStep[];
+  /** What the person changed in the squads (A11), oldest first; absent until the first change. */
+  squadChanges?: SquadChange[];
   /** The problems found outside the work in progress and their issues (A08); absent until Trama first looks for them. */
   problems?: ProblemLedger;
   /** The conversations between agents (W07), oldest first; absent before the first one. */

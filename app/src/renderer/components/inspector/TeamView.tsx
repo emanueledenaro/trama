@@ -39,6 +39,7 @@ import { useT } from "@/lib/i18n";
 import { act, useUi } from "@/lib/store";
 import { specialistQuestion } from "@/lib/askCoordinator";
 import { AutomaticWorkSection } from "./AutomaticWork";
+import { MergeProposalCard, MergeSquad, RenameSquad, type SquadEdit, SplitSquad, SquadMenu } from "./SquadChanges";
 import { EmptyNote, InspectorSection } from "./Inspector";
 import { Sep } from "@/components/ui/sep";
 import { ReferenceText } from "@/components/chat/ReferenceText";
@@ -218,15 +219,25 @@ function SquadGroup({ squad }: { squad: Squad }) {
   const modules = squad.moduleIds.map((id) => project.snapshot.modules.find((m) => m.id === id)?.name ?? id);
   const area = modules.length ? modules.join(", ") : t("teams.squad.wholeProject");
   const slices = squadSlices(document, project.sliceViews, squad);
+  const [edit, setEdit] = useState<SquadEdit | null>(null);
+  const done = () => setEdit(null);
+  // The id stays on hover; a squad the person changed says the Coordinator leaves it as it is (A11).
+  const hover = squad.touchedAt ? `${squad.id}\n${t("teams.squad.changed")}` : squad.id;
   return (
-    <section className="border-b border-[color:var(--app-surface-divider)] px-2 py-2.5" data-testid="squad" data-squad={squad.name}>
-      <p className="min-w-0 truncate px-2 text-ui-sm text-muted-foreground" title={squad.id}>
-        <span className="font-medium text-foreground">{squad.name}</span>
-        <Sep />
-        {area}
-        <Sep />
-        {slices.total ? t("teams.squad.slices", { done: slices.done, count: slices.total }) : t("teams.squad.noSlices")}
-      </p>
+    <section className="border-b border-[color:var(--app-surface-divider)] px-2 py-2.5" data-testid="squad" data-squad={squad.name} data-squad-id={squad.id}>
+      <div className="flex min-w-0 items-center gap-1">
+        <p className="min-w-0 flex-1 truncate px-2 text-ui-sm text-muted-foreground" title={hover} data-testid="squad-header">
+          <span className="font-medium text-foreground">{squad.name}</span>
+          <Sep />
+          {area}
+          <Sep />
+          {slices.total ? t("teams.squad.slices", { done: slices.done, count: slices.total }) : t("teams.squad.noSlices")}
+        </p>
+        <SquadMenu squad={squad} onEdit={setEdit} />
+      </div>
+      {edit === "rename" ? <RenameSquad squad={squad} onDone={done} /> : null}
+      {edit === "merge" ? <MergeSquad squad={squad} onDone={done} /> : null}
+      {edit === "split" ? <SplitSquad squad={squad} onDone={done} /> : null}
       <p className="mt-0.5 px-2 text-ui-xs text-muted-foreground" data-testid="squad-status">
         <ReferenceText text={squadStatusLine(document, squad)} links={false} />
       </p>
@@ -309,6 +320,7 @@ export function SquadsView() {
   return (
     <>
       <SquadsSummary />
+      {team.squadMerge ? <MergeProposalCard key={team.squadMerge.id} proposal={team.squadMerge} /> : null}
       {pending ? (
         <InspectorSection title={t("teams.pendingProposal")}>
           <TeamProposalCard proposalId={pending.id} />

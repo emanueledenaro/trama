@@ -146,6 +146,7 @@ const FACT_OUTCOMES: Record<ActivityOutcome, string> = {
   stopped: "fermata",
   failed: "finita con un errore",
   corrected: "corretta da te",
+  undone: "annullata",
 };
 
 /** A move in "Cosa ho fatto": "Verifica del lavoro non riuscita. L'incarico A-1 è concluso ma ...". */
