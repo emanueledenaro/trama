@@ -64,18 +64,19 @@ export function InspectorTitle({ target }: { target: InspectorTarget }) {
     return (
       <h3 className="min-w-0 flex-1 truncate font-system-ui text-ui text-foreground" title={id} data-testid="side-bar-title">
         {TITLES.waiting}
-        {waitingItem ? (
-          <>
-            <Sep />
-            <span className="text-muted-foreground">{record ? asTitle(record.label) : waitingItem.label}</span>
-          </>
-        ) : waitingCount ? (
+        {waitingCount ? (
           // The count in the header, as on the icon of the activity bar (issue #331).
           <>
             <Sep />
             <span className="text-muted-foreground tabular-nums" data-testid="side-bar-count">
               {waitingCount}
             </span>
+          </>
+        ) : null}
+        {waitingItem ? (
+          <>
+            <Sep />
+            <span className="text-muted-foreground">{record ? asTitle(record.label) : waitingItem.label}</span>
           </>
         ) : null}
       </h3>
