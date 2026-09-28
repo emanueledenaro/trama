@@ -5,8 +5,8 @@ import { describe, expect, it } from "vitest";
 import type { Candidate, ProjectDocument, RecentProject } from "@shared/domain";
 import {
   candidateGoalId,
+  chatComposer,
   decisionDependents,
-  dialogComposer,
   dialogEvents,
   dialogRequests,
   exampleChecks,
@@ -129,12 +129,12 @@ describe("goals (UX01)", () => {
     const loaded = normalizeDocument(JSON.parse(JSON.stringify(legacy)), "p");
     expect(loaded.goals).toBeUndefined();
     expect(projectGoals(loaded)).toEqual([]);
-    expect(dialogComposer(loaded, null)).toBe(loaded);
+    expect(chatComposer(loaded)).toBe(loaded);
 
     const storage = new AppStorage(await mkdtemp(join(tmpdir(), "trama-goals-")));
     const document = emptyDocument("p");
     const goal = createGoal(document, input);
-    goal.dialog.composerDraft = "bozza";
+    goal.examples[0]!.text = "Ordine 42: stato review confermato";
     await storage.saveDocument(document);
     const reopened = (await storage.loadDocument("p")).document!;
     expect(reopened.goals).toEqual(document.goals);
@@ -203,7 +203,7 @@ describe("goals (UX01)", () => {
     const document = emptyDocument("p");
     const goal = createGoal(document, input);
     const text = goalContext(goal);
-    expect(text).toContain(`Dialogo dell'obiettivo ${goal.id}`);
+    expect(text).toContain(`Messaggio sull'obiettivo ${goal.id}`);
     expect(text).toContain("Risultato atteso: Un ordine pagato annullato va in revisione");
     expect(text).toContain("Ordine 42: rimborso immediato");
   });
@@ -663,7 +663,7 @@ describe("archiving and deleting goals (W03)", () => {
     appendEvent(document, "coordinator", { type: "card", kind: "goal", title: "Obiettivo proposto", detail: null, referenceId: proposed.id });
     for (const goal of [talked, asked, linked, worked, proposed]) {
       expect(goalDialogIsEmpty(document, goal.id)).toBe(false);
-      expect(() => deleteEmptyGoal(document, goal.id)).toThrow(/non è vuoto/);
+      expect(() => deleteEmptyGoal(document, goal.id)).toThrow(/ha già una cronologia/);
     }
     expect(projectGoals(document)).toHaveLength(5);
     expect(() => deleteEmptyGoal(document, "G-00000000")).toThrow(/non trovato/);

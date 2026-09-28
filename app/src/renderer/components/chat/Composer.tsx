@@ -6,8 +6,9 @@ import type { ImageAttachmentInput } from "@shared/ipc";
 import { type MentionCandidate, mentionCandidates, mentionToken } from "@shared/mentions";
 import { normalizePaste, pasteSizeLabel, pasteTitle, serializePastes, shouldCollapsePaste } from "@shared/pastedText";
 import { AIHERO_ATTRIBUTION, skillCandidates } from "@shared/skills";
+import { RECAP_COMMAND } from "@shared/recap";
 import { ASK_TRAMA_SKILL } from "@shared/askTrama";
-import { dialogComposer, findGoal } from "@shared/goals";
+import { chatComposer, findGoal } from "@shared/goals";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ContextMeter } from "./ContextMeter";
 import { ContextPicker } from "./ContextPicker";
@@ -49,8 +50,8 @@ function readImage(file: File): Promise<DraftImage> {
 const PILL =
   "inline-flex h-7 min-w-0 shrink cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-lg px-2 text-ui-sm font-normal text-[var(--color-text-foreground-secondary)] transition-colors hover:bg-[var(--color-background-elevated-secondary)] hover:text-[var(--color-text-foreground)] data-[popup-open]:bg-[var(--color-background-elevated-secondary)] data-[popup-open]:text-[var(--color-text-foreground)] sm:px-2.5";
 
-/** Images and pasted texts not yet sent, kept per dialog while the app runs (UX02). */
-const unsentByDialog = new Map<string, { images: DraftImage[]; pastes: { id: string; text: string }[] }>();
+/** Images and pasted texts not yet sent, kept per project while the app runs (UX02). */
+const unsentByProject = new Map<string, { images: DraftImage[]; pastes: { id: string; text: string }[] }>();
 
 export function Composer() {
   const project = useUi((s) => s.app?.project)!;
@@ -58,8 +59,8 @@ export function Composer() {
   const preferredModels = useUi((s) => s.app!.settings.coordinatorModels);
   const goalId = useUi((s) => s.dialogGoalId);
   const goal = findGoal(project.document, goalId);
-  // Each dialog has its own draft and selection (ADR 0010).
-  const selection = dialogComposer(project.document, goal?.id ?? null);
+  // One chat, one composer (U01): the goal filter only says what the next message is about.
+  const selection = chatComposer(project.document);
   const selectedProvider: ProviderId = selection.selectedProvider ?? project.document.coordinator.threadProvider ?? "codex";
   const models = providers[selectedProvider]?.models ?? [];
   const focusRequest = useUi((s) => s.composerFocusRequest);
@@ -96,22 +97,22 @@ export function Composer() {
   // A chosen model the catalogue no longer offers stays visible as unavailable: never replaced silently (ADR 0010).
   const modelMissing = Boolean(selectedModel && models.length && !modelInfo);
   const effort = selection.selectedEffort ?? modelInfo?.defaultReasoningEffort ?? null;
-  const dialogKey = `${project.id}:${goal?.id ?? ""}`;
+  const projectKey = project.id;
   const unsent = useRef({ images, pastes });
   unsent.current = { images, pastes };
 
   useEffect(() => {
-    const restored = unsentByDialog.get(dialogKey);
+    const restored = unsentByProject.get(projectKey);
     setImages(restored?.images ?? []);
     setPastes(restored?.pastes ?? []);
     setText(selection.composerDraft);
-    // Keep what was not sent when the person moves to another dialog.
+    // Keep what was not sent when the person moves to another project.
     return () => {
-      unsentByDialog.set(dialogKey, unsent.current);
+      unsentByProject.set(projectKey, unsent.current);
     };
-    // Only when switching dialog: the draft on disk follows local edits, not the other way round.
+    // Only when switching project: the draft on disk follows local edits, not the other way round.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dialogKey]);
+  }, [projectKey]);
 
   useEffect(() => {
     if (focusRequest) textarea.current?.focus();
@@ -148,15 +149,22 @@ export function Composer() {
     ? []
     : mention.sigil === "@"
       ? mentionCandidates(mention.query, mentionSources).slice(0, 12)
-      : skillCandidates(mention.query, project.skills)
-          .slice(0, 12)
-          .map((skill) => ({ mention: { kind: "file" as const, key: `/${skill.name}` }, title: `/${skill.name}`, subtitle: skill.description ?? "Skill" }));
+      : [
+          // Trama's own command (A03) comes first, while the query can still become it.
+          ...(mention.sigil === "/" && RECAP_COMMAND.slice(1).startsWith(mention.query.toLowerCase())
+            ? [{ mention: { kind: "file" as const, key: RECAP_COMMAND }, title: RECAP_COMMAND, subtitle: "Riepilogo del Coordinatore: cosa ho fatto, cosa faccio, cosa mi serve da te" }]
+            : []),
+          ...skillCandidates(mention.query, project.skills)
+            .slice(0, 12)
+            .map((skill) => ({ mention: { kind: "file" as const, key: `/${skill.name}` }, title: `/${skill.name}`, subtitle: skill.description ?? "Skill" })),
+        ].slice(0, 12);
 
   /** Opens the mention menu while the word before the cursor starts with @. */
   const trackMention = (value: string, cursor: number) => {
     const before = value.slice(0, cursor);
     const match = before.match(/(^|\s)([@$/])([^\s@"$/]*)$/);
-    if (match && (match[2] === "@" || project.skills.length)) {
+    const recap = match?.[2] === "/" && RECAP_COMMAND.slice(1).startsWith(match[3]!.toLowerCase());
+    if (match && (match[2] === "@" || project.skills.length || recap)) {
       setMention({ start: cursor - match[3]!.length - 1, query: match[3]!, index: 0, sigil: match[2] as "@" | "$" | "/" });
     } else setMention(null);
   };
@@ -165,7 +173,8 @@ export function Composer() {
     if (!mention) return;
     const element = textarea.current;
     const cursor = element?.selectionStart ?? text.length;
-    const token = `${candidate.mention.key.startsWith("$") ? candidate.mention.key : mentionToken(candidate.mention)} `;
+    const bare = candidate.mention.key.startsWith("$") || candidate.mention.key === RECAP_COMMAND;
+    const token = `${bare ? candidate.mention.key : mentionToken(candidate.mention)} `;
     const next = text.slice(0, mention.start) + token + text.slice(cursor);
     updateText(next);
     setMention(null);
@@ -179,7 +188,7 @@ export function Composer() {
   const updateText = (value: string) => {
     setText(value);
     if (saveTimer.current) clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(() => void act("coordinator:saveDraft", { text: value, goalId: goal?.id ?? null }), 400);
+    saveTimer.current = setTimeout(() => void act("coordinator:saveDraft", { text: value }), 400);
   };
 
   /** Ask Trama from its button (M07): the draft starts with /ask-trama and the person describes the situation after it. */
@@ -399,7 +408,6 @@ export function Composer() {
                 effort={effort}
                 modelMissing={modelMissing}
                 busy={busy}
-                goalId={goal?.id ?? null}
                 fastMode={selection.selectedFastMode === true}
               />
               <ContextMeter />

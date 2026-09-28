@@ -3,6 +3,7 @@ import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/cn";
 import { Sash, useResizableWidth } from "@/lib/resizable";
 import { useUi } from "@/lib/store";
+import { ActivityView } from "./ActivityView";
 import { AuditView } from "./AuditView";
 import { CandidateView } from "./CandidateView";
 import { GoalView, GoalsView } from "./GoalsView";
@@ -15,11 +16,13 @@ import { SpecialistView, TeamView } from "./TeamView";
 import { FilePreview, MapView, ModuleView } from "./MapView";
 import { DecisionView, PactView } from "./PactView";
 import { BranchView, CommitView, PullRequestView } from "./GitView";
+import { WaitingList } from "@/components/WaitingView";
 
 /** The narrowest the dialog gets next to a docked inspector. */
 const CHAT_MIN_WIDTH = 420;
 
 const TITLES = {
+  waiting: "Aspetta te",
   map: "Mappa del progetto",
   module: "Modulo",
   file: "File",
@@ -33,6 +36,7 @@ const TITLES = {
   audit: "Focus mode",
   group: "Il lavoro del gruppo",
   work: "Lavoro",
+  activity: "Attività",
   issues: "Issue del progetto",
   issue: "Issue",
   pullRequest: "Pull request",
@@ -94,6 +98,7 @@ export function Inspector() {
         </Tooltip>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto">
+        {target.kind === "waiting" ? <WaitingList focusKey={target.key} /> : null}
         {target.kind === "map" ? <MapView /> : null}
         {target.kind === "module" ? <ModuleView id={target.id} /> : null}
         {target.kind === "file" ? <FilePreview path={target.path} /> : null}
@@ -107,6 +112,7 @@ export function Inspector() {
         {target.kind === "audit" ? <AuditView id={target.id} /> : null}
         {target.kind === "group" ? <GroupView /> : null}
         {target.kind === "work" ? <WorkView /> : null}
+        {target.kind === "activity" ? <ActivityView /> : null}
         {target.kind === "issues" ? <IssuesView /> : null}
         {target.kind === "issue" ? <IssueDetail number={target.number} /> : null}
         {target.kind === "pullRequest" ? <PullRequestView number={target.number} /> : null}

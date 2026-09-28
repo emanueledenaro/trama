@@ -20,6 +20,8 @@ import type {
 import { isOpenQuestion } from "@shared/domain";
 import { STRENGTH_ORDER, TRIAGE_CATEGORY_LABEL, TRIAGE_STATE_LABEL, TRIAGE_STATES } from "@shared/duties";
 import { shortId } from "@shared/ids";
+import { openedForProblem } from "@shared/problems";
+import { activeTerms, coversAssignment } from "@shared/mandate";
 import type { LoadedSkill } from "@shared/skills";
 import { roleProfile } from "@shared/roster";
 import { findCandidate } from "./candidates";
@@ -666,14 +668,7 @@ export function startWaitingDomainWriting(document: ProjectDocument, runner: Dut
 
 /** Read-only automatic work runs under any granted mandate; work that writes needs executeInWorktree on its modules. */
 export function withinMandate(document: ProjectDocument, assignment: SpecialistAssignment): boolean {
-  if (assignment.duty && !assignment.tools.includes("edits")) return document.mandate?.status === "granted";
-  const trigger = assignment.duty?.trigger;
-  if (trigger?.kind === "domainProposal") {
-    // Glossary and ADR files may sit outside the project's modules: the mandate covers those that are modules.
-    const proposal = document.domainProposals?.find((p) => p.id === trigger.proposalId);
-    return authorize(document.mandate, "executeInWorktree", proposal?.scopeModuleIds ?? assignment.moduleIds) === "authorized";
-  }
-  return authorize(document.mandate, "executeInWorktree", assignment.moduleIds) === "authorized";
+  return coversAssignment(document, activeTerms(document.mandate), assignment);
 }
 
 /** Light models by name, as catalogues do not say what a model costs: a Trama addition. */
@@ -976,14 +971,16 @@ function parseArchitecture(answer: Json): ArchitectureOutcome | null {
   return { kind: "architecture", proposals, topRecommendation: optional(answer.topRecommendation), decisionRequestId: null };
 }
 
-function triageResult(issueNumber: number | null, outcome: TriageOutcome): string {
+function triageResult(issueNumber: number | null, outcome: TriageOutcome, openedByCoordinator: boolean): string {
   return [
     `**Triage della issue #${issueNumber}: ${TRIAGE_CATEGORY_LABEL[outcome.category]}, \`${outcome.state}\` (${TRIAGE_STATE_LABEL[outcome.state]}).**`,
     outcome.reasoning,
     ...(outcome.verification ? [`### Verifica\n${outcome.verification}`] : []),
     ...(outcome.alreadyImplemented ? [`### Già presente nel codice\n${outcome.alreadyImplemented}`] : []),
     ...(outcome.comment ? [`### Commento proposto per la issue\n${outcome.comment}`] : []),
-    "Trama non pubblica niente su GitHub: etichette e commento restano una tua scelta.",
+    openedByCoordinator
+      ? "Il Coordinatore ha aperto questa issue per un problema trovato: Trama le applica le etichette di triage. Il commento resta una tua scelta."
+      : "Trama non pubblica niente su GitHub: etichette e commento restano una tua scelta.",
   ]
     .filter(Boolean)
     .join("\n\n");
@@ -1095,7 +1092,7 @@ export function concludeDuty(document: ProjectDocument, assignmentId: string, an
   duty.outcome = outcome;
   duty.unreadable = false;
   let decisionRequestId: string | null = null;
-  if (outcome.kind === "triage") assignment.result = triageResult(assignment.issueNumber, outcome);
+  if (outcome.kind === "triage") assignment.result = triageResult(assignment.issueNumber, outcome, openedForProblem(document, assignment.issueNumber));
   if (outcome.kind === "diagnosis") assignment.result = diagnosisResult(outcome);
   if (outcome.kind === "architecture") {
     assignment.result = architectureResult(outcome);

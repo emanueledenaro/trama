@@ -1,5 +1,6 @@
 import type { ActiveProjectState } from "@shared/domain";
 import { buildReferenceIndex, type ReferenceIndex, type ReferenceTarget } from "@shared/references";
+import { revealCard } from "./nextStep";
 import { useUi } from "./store";
 
 let last: { document: unknown; snapshot: unknown; github: unknown; index: ReferenceIndex } | null = null;
@@ -34,13 +35,6 @@ export function referenceIndexOf(project: ActiveProjectState | null | undefined)
 }
 
 export const useReferenceIndex = () => useUi((s) => referenceIndexOf(s.app?.project));
-
-/** Brings the card of a record into view; false when this dialog does not show it. */
-export function revealCard(id: string): boolean {
-  const card = document.querySelector(`[data-anchors~="${CSS.escape(id)}"]`);
-  card?.scrollIntoView({ behavior: "smooth", block: "start" });
-  return card !== null;
-}
 
 /** Opens what a reference names inside Trama: its panel in the inspector, or its card in the dialog (issue #277). */
 export function openReference(target: ReferenceTarget): void {

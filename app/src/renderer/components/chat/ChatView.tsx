@@ -3,6 +3,7 @@ import {
   IconBrain,
   IconCircleDot,
   IconFolderOpen,
+  IconHourglass,
   IconLayoutSidebarRight,
   IconRefresh,
   IconRosetteDiscountCheck,
@@ -14,11 +15,13 @@ import {
   IconFileDiff,
   IconGitPullRequest,
   IconTrash,
+  IconChevronDown,
+  IconCheck,
 } from "@tabler/icons-react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { isOpenQuestion, type QueuedMessage } from "@shared/domain";
 import { deriveTimelineRows, rowAnchors } from "@shared/timeline";
-import { dialogEvents, dialogRequests, findGoal, workingGoals } from "@shared/goals";
+import { chatEvents, chatRequests, findGoal, timelineRowGoalId, workingGoals } from "@shared/goals";
 import { GoalDialogHeader } from "@/components/inspector/GoalsView";
 import { OverviewView } from "@/components/OverviewView";
 import { SettingsView } from "@/components/settings/SettingsView";
@@ -33,7 +36,9 @@ import { act, type InspectorTarget, refreshProject, useUi } from "@/lib/store";
 import { ExercisePanel } from "@/components/onboarding/ExercisePanel";
 import { ProjectPicker } from "@/components/launch/ProjectPicker";
 import { Composer } from "./Composer";
+import { BranchDivergenceNotice } from "./BranchDivergenceNotice";
 import { FocusBar } from "./FocusBar";
+import { useWaiting, WaitingSummary } from "@/components/WaitingView";
 import { TimelineRowView } from "./TimelineRows";
 
 const HEADER_CHIP =
@@ -51,7 +56,8 @@ interface HeaderPanel {
 function PanelsMenu({ panels }: { panels: HeaderPanel[] }) {
   const inspector = useUi((s) => s.inspector);
   const toggle = useUi((s) => s.toggleInspector);
-  const waiting = panels.reduce((sum, panel) => sum + (panel.count ?? 0), 0);
+  // Everything that waits for the person is in Aspetta te (issue #240): the button shows its count, never a sum of the panels.
+  const waiting = panels.find((panel) => panel.target.kind === "waiting")?.count ?? 0;
   return (
     <Menu>
       <MenuTrigger aria-label="Pannelli" className={cn(HEADER_CHIP, inspector && HEADER_CHIP_ACTIVE)}>
@@ -104,7 +110,10 @@ function ChatHeader({ isMac }: { isMac: boolean }) {
   const openDialog = useUi((s) => s.openDialog);
   const goal = useUi((s) => (project ? findGoal(project.document, s.dialogGoalId) : null));
   const proposedGoals = project ? workingGoals(project.document).filter((g) => g.status === "proposed").length : 0;
+  const waiting = useWaiting().length;
+  const memoryProposals = app.learning?.proposals.length ?? 0;
   const panels: HeaderPanel[] = [
+    { target: { kind: "waiting" }, label: "Aspetta te", icon: <IconHourglass stroke={1.8} />, count: waiting },
     { target: { kind: "goals" }, label: "Obiettivi", icon: <IconTarget stroke={1.8} />, count: proposedGoals },
     { target: { kind: "map" }, label: "Mappa", icon: <IconSitemap stroke={1.8} /> },
     { target: { kind: "pact" }, label: "Patto", icon: <IconRosetteDiscountCheck stroke={1.8} />, count: pendingDecisions },
@@ -113,7 +122,7 @@ function ChatHeader({ isMac }: { isMac: boolean }) {
     { target: { kind: "work" }, label: "Lavoro", icon: <IconFileDiff stroke={1.8} /> },
     { target: { kind: "group" }, label: "Gruppo", icon: <IconGitPullRequest stroke={1.8} /> },
     { target: { kind: "issues" }, label: "Issue", icon: <IconCircleDot stroke={1.8} />, count: openIssues },
-    { target: { kind: "memory" }, label: "Memoria", icon: <IconBrain stroke={1.8} /> },
+    { target: { kind: "memory" }, label: "Memoria", icon: <IconBrain stroke={1.8} />, count: memoryProposals },
   ];
 
   return (
@@ -139,13 +148,13 @@ function ChatHeader({ isMac }: { isMac: boolean }) {
             <span className="inline-flex size-3.5 shrink-0 items-center justify-center text-muted-foreground">
               <IconFolderOpen className="size-3.5" stroke={1.7} />
             </span>
-            {/* Where the next message goes: the project, and the goal when a goal dialog is open (UX02). */}
+            {/* One chat per project (U01): with a goal filter the title names the goal the next message is about. */}
             {goal ? (
               <button
                 type="button"
                 className="no-drag max-w-[14rem] truncate font-system-ui text-ui font-normal text-muted-foreground hover:text-foreground"
                 onClick={() => openDialog(null)}
-                title="Torna al dialogo del progetto"
+                title="Mostra tutta la chat"
               >
                 {project.isDemo ? "Progetto di esempio" : project.name}
               </button>
@@ -165,6 +174,7 @@ function ChatHeader({ isMac }: { isMac: boolean }) {
       {project && mainView === "dialog" ? (
         // The panels live in the sidebar; only while the sidebar is hidden does the header offer them, in one menu.
         <div className="no-drag flex items-center gap-1">
+          <GoalFilterMenu />
           {project.isDemo ? <ExercisesChip /> : null}
           {sidebarOpen ? null : <PanelsMenu panels={panels} />}
         </div>
@@ -189,6 +199,63 @@ function ChatHeader({ isMac }: { isMac: boolean }) {
           </Tooltip>
         </div>
       ) : null}
+    </div>
+  );
+}
+
+/**
+ * The goal filter of the chat (U01): the whole chat or the messages and events of one goal. It only changes what the
+ * chat shows and what the next message is about; the Coordinator, the composer and the draft stay the same.
+ */
+function GoalFilterMenu() {
+  const project = useUi((s) => s.app?.project)!;
+  const filter = useUi((s) => s.dialogGoalId);
+  const openDialog = useUi((s) => s.openDialog);
+  const goals = workingGoals(project.document);
+  const current = findGoal(project.document, filter);
+  // An archived or closed goal stays in the menu while the chat is filtered on it.
+  const options = current && !goals.some((g) => g.id === current.id) ? [...goals, current] : goals;
+  if (!options.length) return null;
+  return (
+    <Menu>
+      <MenuTrigger aria-label="Filtra la chat per obiettivo" data-testid="chat-filter" className={cn(HEADER_CHIP, current && HEADER_CHIP_ACTIVE)}>
+        <IconTarget className="size-3.5 opacity-70" stroke={1.8} />
+        <span className="hidden max-w-[12rem] truncate @min-[520px]/chat:inline">{current ? current.title : "Tutta la chat"}</span>
+        <IconChevronDown className="size-3 opacity-60" stroke={1.8} />
+      </MenuTrigger>
+      <MenuPopup align="end">
+        <MenuItem onClick={() => openDialog(null)}>
+          <span className="flex size-4 items-center justify-center">{current ? null : <IconCheck className="size-3.5" stroke={1.8} />}</span>
+          <span className="flex-1">Tutta la chat</span>
+        </MenuItem>
+        {options.map((goal) => (
+          <MenuItem key={goal.id} onClick={() => openDialog(goal.id)}>
+            <span className="flex size-4 items-center justify-center">{current?.id === goal.id ? <IconCheck className="size-3.5" stroke={1.8} /> : null}</span>
+            <span className="max-w-[18rem] flex-1 truncate">{goal.title}</span>
+          </MenuItem>
+        ))}
+      </MenuPopup>
+    </Menu>
+  );
+}
+
+/** Marks where the whole chat moves to a goal's messages; a click filters the chat on that goal (U01). */
+function GoalTag({ goalId }: { goalId: string }) {
+  const project = useUi((s) => s.app?.project)!;
+  const openDialog = useUi((s) => s.openDialog);
+  const goal = findGoal(project.document, goalId);
+  return (
+    <div className="flex justify-center pt-3 pb-1">
+      <button
+        type="button"
+        data-testid="chat-goal-tag"
+        onClick={() => openDialog(goalId)}
+        title="Mostra solo questo obiettivo"
+        className="inline-flex max-w-full items-center gap-1.5 rounded-full px-2 py-0.5 text-ui-xs text-muted-foreground hover:bg-[var(--color-background-button-secondary)] hover:text-foreground"
+      >
+        <IconTarget className="size-3 shrink-0" stroke={1.8} />
+        <span className="truncate">Obiettivo: {goal?.title ?? goalId}</span>
+      </button>
     </div>
   );
 }
@@ -223,7 +290,7 @@ function ProjectIntro() {
   );
 }
 
-/** Offered in the project dialog while the project has no goal the person confirmed (UX07). */
+/** Offered in the chat while the project has no goal the person confirmed (UX07). */
 function FirstGoalPrompt() {
   const setInspector = useUi((s) => s.setInspector);
   // A place to fill (W17): the seam when no other use on the screen holds it, the dashed border otherwise.
@@ -239,7 +306,7 @@ function FirstGoalPrompt() {
       {seam.stitch}
       <IconTarget className="size-4 shrink-0 text-muted-foreground" stroke={1.8} />
       <p className="min-w-[14rem] flex-1 text-ui text-muted-foreground">
-        Descrivi un risultato e qualche esempio verificabile: il Coordinatore lo discute con te nel suo dialogo. Non concede un mandato.
+        Descrivi un risultato e qualche esempio verificabile: il Coordinatore lo discute con te in questa chat, filtrata sull'obiettivo. Non concede un mandato.
       </p>
       <Button size="sm" variant="outline" onClick={() => setInspector({ kind: "goals", create: true })}>
         Formula il primo obiettivo
@@ -292,12 +359,13 @@ function QueuedMessageRow({ message }: { message: QueuedMessage }) {
 
 function Timeline() {
   const project = useUi((s) => s.app?.project)!;
+  // The goal filter of the one chat (U01); null shows everything.
   const goalId = useUi((s) => s.dialogGoalId);
   const { requests: allRequests, events: allEvents } = project.document;
-  const events = useMemo(() => dialogEvents(allEvents, goalId), [allEvents, goalId]);
-  const requests = useMemo(() => dialogRequests(allRequests, goalId), [allRequests, goalId]);
+  const events = useMemo(() => chatEvents(allEvents, goalId), [allEvents, goalId]);
+  const requests = useMemo(() => chatRequests(allRequests, goalId), [allRequests, goalId]);
   const runningWork = project.runningWork;
-  // A reply streams only in the dialog of its request; the study belongs to the project dialog.
+  // A filtered chat streams only the replies of its goal; the study belongs to the whole project.
   const streaming =
     project.streaming && (project.streaming.requestId === null ? goalId === null : requests.some((r) => r.id === project.streaming!.requestId))
       ? project.streaming
@@ -307,7 +375,18 @@ function Timeline() {
     () => deriveTimelineRows(events, requests, streaming, new Set(runningWork), decisionRequests),
     [events, requests, streaming, runningWork, decisionRequests],
   );
-  const queued = project.queuedMessages.filter((q) => q.goalId === goalId);
+  const queued = goalId ? project.queuedMessages.filter((q) => q.goalId === goalId) : project.queuedMessages;
+  // Without a filter each run of rows about one goal starts with its tag.
+  const tags = useMemo(() => {
+    if (goalId) return rows.map(() => null);
+    let previous: string | null = null;
+    return rows.map((row) => {
+      const current = timelineRowGoalId(row, allRequests);
+      const tag = current && current !== previous ? current : null;
+      previous = current;
+      return tag;
+    });
+  }, [rows, goalId, allRequests]);
   const scroller = useRef<HTMLDivElement>(null);
   const pinned = useRef(true);
   const studying = project.phase.kind === "studying" && goalId === null;
@@ -320,6 +399,8 @@ function Timeline() {
     pinned.current = true;
   }, [project.id, goalId]);
 
+  // The summary of Aspetta te sits above the composer: the timeline leaves room for it at the bottom (issue #240).
+  const waiting = useWaiting().length > 0;
   const empty = rows.length === 0 && !studying && goalId === null;
   const offerFirstGoal = goalId === null && !empty && !studying && !hasConfirmedGoal(project.document.goals);
   return (
@@ -331,11 +412,12 @@ function Timeline() {
       }}
       className="chat-timeline-scroll min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-y-contain py-3 [scrollbar-gutter:stable] sm:py-4"
     >
-      <div className="mx-auto w-full max-w-[var(--app-chat-max-width)] min-w-0 px-3 pb-40 sm:px-5">
+      <div className={cn("mx-auto w-full max-w-[var(--app-chat-max-width)] min-w-0 px-3 sm:px-5", waiting ? "pb-52" : "pb-40")}>
         {empty ? <ProjectIntro /> : null}
         {goalId ? <GoalDialogHeader goalId={goalId} /> : null}
         {rows.map((row, index) => (
           <div key={row.id} className="px-1" data-anchors={rowAnchors(row).join(" ") || undefined}>
+            {tags[index] ? <GoalTag goalId={tags[index]} /> : null}
             <TimelineRowView row={row} latest={row.kind === "reply" && !rows.slice(index + 1).some((r) => r.kind === "reply")} />
           </div>
         ))}
@@ -387,13 +469,16 @@ export function ChatView({ isMac }: { isMac: boolean }) {
         <SettingsView />
       ) : project ? (
         <>
-          {/* Outside the dialog's pane: the bar and its open queue stay while the person moves between dialogs (W02). */}
+          {/* Outside the chat's pane: the bar and its open queue stay while the person changes the filter (W02). */}
           <FocusBar key={project.id} />
-          <div key={`${project.id}:${goalId ?? "project"}`} className="chat-pane-enter relative flex min-h-0 flex-1 flex-col">
-            <Timeline />
+          <BranchDivergenceNotice />
+          <div key={project.id} className="chat-pane-enter relative flex min-h-0 flex-1 flex-col">
+            {/* The composer stays mounted across filters: one chat, one draft (U01). */}
+            <Timeline key={goalId ?? "all"} />
             <ExercisePanel />
             <div className="chat-composer-dock pointer-events-none absolute inset-x-0 bottom-0 px-3 pb-3 sm:px-5 sm:pb-4">
               <div className="pointer-events-auto">
+                <WaitingSummary />
                 <Composer />
               </div>
             </div>

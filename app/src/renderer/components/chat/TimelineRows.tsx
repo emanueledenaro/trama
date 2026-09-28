@@ -9,7 +9,6 @@ import {
   IconFileText,
   IconInfoCircle,
   IconPlayerStop,
-  IconPlayerTrackNext,
   IconShieldLock,
   IconTerminal2,
   IconTool,
@@ -17,13 +16,13 @@ import {
 import { useEffect, useState } from "react";
 import { isUsableAccount, type ProviderId, READ_OUTSIDE_SCOPE_TITLE } from "@shared/codex";
 import type { ConversationEvent, NextStepView } from "@shared/domain";
-import { RECOVERY_LABELS, type RecoveryAction, readableFailure } from "@shared/providerFailure";
+import { providerWaitText, RECOVERY_LABELS, type RecoveryAction, readableFailure } from "@shared/providerFailure";
 import { PROVIDERS, canCoordinate } from "@shared/providers";
 import { extractPastes, pasteSizeLabel, pasteTitle } from "@shared/pastedText";
 import { formatDuration, type TimelineRow, turnFailureText } from "@shared/timeline";
 import { cn } from "@/lib/cn";
 import { formatTime } from "@/lib/format";
-import { revealCard } from "@/lib/references";
+import { runNextStep } from "@/lib/nextStep";
 import { act, useUi } from "@/lib/store";
 import { Button } from "@/components/ui/button";
 import { AgentName } from "@/components/AgentIdentity";
@@ -46,6 +45,8 @@ import {
 } from "./Cards";
 import { ChatMarkdown } from "./ChatMarkdown";
 import { ReferenceText } from "./ReferenceText";
+import { WaitingOr } from "@/components/WaitingView";
+import { RecapCard } from "./RecapCard";
 import { Sep } from "@/components/ui/sep";
 
 function DisclosureChevron({ open }: { open: boolean }) {
@@ -195,64 +196,12 @@ function WorkGroup({ row }: { row: Extract<TimelineRow, { kind: "work" }> }) {
 
 /** The one next step the Coordinator declared, while the work still allows it (W01): one button on the right. */
 function NextStepRow({ step, requestId }: { step: NextStepView; requestId: string }) {
-  const setInspector = useUi((s) => s.setInspector);
-  const run = () => {
-    if (step.url) return void act("shell:openExternal", { url: step.url });
-    // A step that is a message: Trama sends it and records that the person took it (W04).
-    if (step.message) return void act("coordinator:takeStep", { requestId });
-    if (step.move === "reviewCandidate" && step.targetId) return setInspector({ kind: "candidate", id: step.targetId });
-    if (step.targetId && revealCard(step.targetId)) return;
-    // A card this dialog does not show still has a panel that lists it: the step never does nothing (W12).
-    if (step.move === "grantMandate") setInspector({ kind: "mandate" });
-    else if (step.move === "confirmTeam") setInspector({ kind: "team" });
-    else if (step.move === "answerQuestions") setInspector({ kind: "pact" });
-    // Seams, slices and plan review act on the plan card (M04, M05): the work panel lists the plans.
-    else if (step.move === "reviewPlan" || step.move === "confirmSeams" || step.move === "confirmSlices") setInspector({ kind: "work" });
-  };
   return (
     <div className="cta-row mt-2" data-testid="next-step">
       {step.reason ? <span className="min-w-0 text-ui-xs text-muted-foreground">{step.reason}</span> : null}
-      <Button size="sm" onClick={run}>
+      <Button size="sm" onClick={() => runNextStep(step, requestId)}>
         {step.label}
       </Button>
-    </div>
-  );
-}
-
-/**
- * A move of the Coordinator that Trama started by itself within the mandate (W04): one line, and a stop on the right while
- * it runs. A move the turn did not make says so, with Trama's reason (issue #204); its button sits under the reply, or here
- * when the Coordinator wrote none.
- */
-function AutomaticStepRow({ label, requestId }: { label: string; requestId: string | null }) {
-  const running = useUi((s) => requestId !== null && s.app?.project?.runningRequestId === requestId);
-  const stalled = useUi((s) => (requestId ? (s.app?.project?.document.requests.find((r) => r.id === requestId)?.step?.stalled ?? null) : null));
-  const replied = useUi(
-    (s) => requestId !== null && Boolean(s.app?.project?.document.events.some((e) => e.requestId === requestId && e.content.type === "coordinatorText")),
-  );
-  const nextStep = useUi((s) => (requestId ? s.app?.project?.nextSteps[requestId] : undefined) ?? null);
-  return (
-    <div className="mb-3" data-testid="automatic-step" data-stalled={stalled && !running ? "true" : undefined}>
-      <div className="cta-row text-chat">
-        <span className="mr-auto inline-flex min-w-0 items-center gap-1.5 text-muted-foreground">
-          {stalled && !running ? (
-            <IconAlertTriangle className="size-3.5 shrink-0 text-warning" stroke={1.8} />
-          ) : (
-            <IconPlayerTrackNext className="size-3.5 shrink-0" stroke={1.8} />
-          )}
-          <span className="min-w-0">
-            {running ? "Il Coordinatore va avanti da solo" : stalled ? "Mossa automatica non riuscita" : "Mossa automatica"}
-            <Sep />
-            <span className="text-foreground">{label}</span>
-          </span>
-        </span>
-        {running ? (
-          <Button size="xs" variant="outline" onClick={() => void act("coordinator:interrupt", undefined)}>
-            Ferma
-          </Button>
-        ) : null}
-      </div>
-      {stalled && !running && !replied && nextStep && requestId ? <NextStepRow step={nextStep} requestId={requestId} /> : null}
     </div>
   );
 }
@@ -322,8 +271,6 @@ function useSecondsUntil(at: string | null): number | null {
   return at ? Math.max(0, Math.ceil((Date.parse(at) - now) / 1_000)) : null;
 }
 
-const retryWait = (seconds: number) => (seconds >= 90 ? `${Math.round(seconds / 60)} minuti` : seconds === 1 ? "1 secondo" : `${seconds} secondi`);
-
 function TurnFailure({ row }: { row: Extract<TimelineRow, { kind: "failure" }> }) {
   const providers = useUi((s) => s.app!.providers);
   const waiting = useUi((s) => (s.app?.project?.providerRetry?.requestId === row.requestId ? s.app.project.providerRetry : null));
@@ -335,7 +282,7 @@ function TurnFailure({ row }: { row: Extract<TimelineRow, { kind: "failure" }> }
   const retry = () => void act("coordinator:retryRequest", { requestId: row.requestId });
 
   if (row.interrupted) {
-    // An interrupted turn is not an error: same place and Riprova, neutral colors, and the reason when there is one.
+    // An interrupted turn is not an error: same place, neutral colors, the reason when there is one, and Riprendi (C11).
     const detail = /^turno interrotto\.?$/i.test(row.message.trim()) ? null : row.message || null;
     return (
       <div role="status" className="mb-4 flex items-start gap-2.5 rounded-xl border border-[color:var(--color-border)] bg-[var(--color-background-button-secondary)] px-3.5 py-3">
@@ -345,7 +292,7 @@ function TurnFailure({ row }: { row: Extract<TimelineRow, { kind: "failure" }> }
           {detail ? <p className="mt-0.5 text-ui-sm break-words text-muted-foreground">{detail}</p> : null}
         </div>
         <Button size="xs" variant="outline" className="shrink-0" onClick={retry}>
-          Riprova
+          Riprendi
         </Button>
       </div>
     );
@@ -404,9 +351,7 @@ function TurnFailure({ row }: { row: Extract<TimelineRow, { kind: "failure" }> }
           ) : null}
           {waiting && seconds !== null ? (
             <p className="mt-1.5 text-ui-sm text-foreground/90" data-testid="provider-retry">
-              {seconds > 0
-                ? `Trama riprova da sola tra ${retryWait(seconds)}, tentativo ${waiting.attempt} di ${waiting.maxAttempts}.`
-                : `Trama riprova ora, tentativo ${waiting.attempt} di ${waiting.maxAttempts}.`}
+              {providerWaitText(waiting, seconds)}
             </p>
           ) : null}
           {hint ? <p className="mt-1 text-ui-sm text-foreground/80">{hint}</p> : null}
@@ -431,7 +376,7 @@ function TurnFailure({ row }: { row: Extract<TimelineRow, { kind: "failure" }> }
         {waiting ? (
           <>
             <Button size="xs" variant="outline" onClick={() => void act("coordinator:stopRetry", undefined)}>
-              Ferma i tentativi
+              {waiting.reason === "quotaExhausted" ? "Smetti di aspettare" : "Ferma i tentativi"}
             </Button>
             <Button size="xs" onClick={retry}>
               Riprova ora
@@ -460,24 +405,74 @@ export function TimelineRowView({ row, streaming = false, latest = false }: { ro
     case "failure":
       return <TurnFailure row={row} />;
     case "grillingRound":
-      return <GrillingRoundCard round={row.round} questionIds={row.questionIds} />;
+      return (
+        <GrillingRoundCard
+          round={row.round}
+          questionIds={row.questionIds}
+          renderQuestion={(id) => (
+            <WaitingOr key={id} kind="question" targetId={id}>
+              <DecisionCard requestId={id} />
+            </WaitingOr>
+          )}
+        />
+      );
     case "card": {
       const content = row.event.content;
       if (content.type !== "card") return null;
       if (row.cardKind === "study") return <StudyCard title={content.title} text={content.detail ?? ""} streaming={streaming} />;
-      if (row.cardKind === "mandate" && content.referenceId) return <MandateCard requestId={content.referenceId} />;
-      if (row.cardKind === "decision" && content.referenceId) return <DecisionCard requestId={content.referenceId} />;
-      if (row.cardKind === "teamProposal" && content.referenceId) return <TeamProposalCard proposalId={content.referenceId} />;
+      if (row.cardKind === "mandate" && content.referenceId)
+        return (
+          <WaitingOr kind="mandate" targetId={content.referenceId}>
+            <MandateCard requestId={content.referenceId} />
+          </WaitingOr>
+        );
+      if (row.cardKind === "decision" && content.referenceId)
+        return (
+          <WaitingOr kind="question" targetId={content.referenceId}>
+            <DecisionCard requestId={content.referenceId} />
+          </WaitingOr>
+        );
+      if (row.cardKind === "teamProposal" && content.referenceId)
+        return (
+          <WaitingOr kind="team" targetId={content.referenceId}>
+            <TeamProposalCard proposalId={content.referenceId} />
+          </WaitingOr>
+        );
       if (row.cardKind === "assignment" && content.referenceId) return <AssignmentCard assignmentId={content.referenceId} />;
-      if (row.cardKind === "candidate" && content.referenceId) return <CandidateCard candidateId={content.referenceId} />;
-      if (row.cardKind === "plan" && content.referenceId) return <PlanCard planId={content.referenceId} />;
+      if (row.cardKind === "candidate" && content.referenceId)
+        return (
+          <WaitingOr kind="candidate" targetId={content.referenceId}>
+            <CandidateCard candidateId={content.referenceId} />
+          </WaitingOr>
+        );
+      if (row.cardKind === "plan" && content.referenceId)
+        return (
+          <WaitingOr kind="plan" targetId={content.referenceId}>
+            <PlanCard planId={content.referenceId} />
+          </WaitingOr>
+        );
       if (row.cardKind === "conflict" && content.referenceId) return <ConflictCard assessmentId={content.referenceId} />;
-      if (row.cardKind === "goal" && content.referenceId) return <GoalCard goalId={content.referenceId} />;
+      if (row.cardKind === "goal" && content.referenceId)
+        return (
+          <WaitingOr kind="goal" targetId={content.referenceId}>
+            <GoalCard goalId={content.referenceId} />
+          </WaitingOr>
+        );
       if (row.cardKind === "domainProposal" && content.referenceId) return <DomainProposalCard proposalId={content.referenceId} />;
-      if (row.cardKind === "route" && content.referenceId) return <RouteCard routeId={content.referenceId} />;
+      if (row.cardKind === "route" && content.referenceId)
+        return (
+          <WaitingOr kind="route" targetId={content.referenceId}>
+            <RouteCard routeId={content.referenceId} />
+          </WaitingOr>
+        );
       if (row.cardKind === "overlap" && content.referenceId) return <OverlapCard overlapId={content.referenceId} title={content.title} detail={content.detail} />;
-      if (row.cardKind === "presenceConsent" && content.referenceId) return <PresenceConsentCard proposal={content.referenceId} detail={content.detail} />;
-      if (row.cardKind === "automaticStep") return <AutomaticStepRow label={content.title} requestId={content.referenceId} />;
+      if (row.cardKind === "recap" && content.referenceId) return <RecapCard recapId={content.referenceId} title={content.title} />;
+      if (row.cardKind === "presenceConsent" && content.referenceId)
+        return (
+          <WaitingOr kind="presence" targetId={content.referenceId}>
+            <PresenceConsentCard proposal={content.referenceId} detail={content.detail} />
+          </WaitingOr>
+        );
       return <ContextNoticeCard title={content.title} detail={content.detail} />;
     }
   }
