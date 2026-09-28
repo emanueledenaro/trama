@@ -41,7 +41,7 @@ export function problemEvidence(document: ProjectDocument, reference: string): P
     }
   }
   const conflict = document.conflicts?.find((c) => c.id === reference && c.classification === "conflict");
-  if (conflict) return { kind: "conflict", reference, summary: "Conflitto riprodotto con il lavoro di un collega" };
+  if (conflict) return { kind: "conflict", reference, summary: "Conflitto riprodotto con altro lavoro" };
   return null;
 }
 

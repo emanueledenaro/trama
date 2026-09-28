@@ -33,6 +33,7 @@ import { act, type InspectorTarget, refreshProject, useUi } from "@/lib/store";
 import { ExercisePanel } from "@/components/onboarding/ExercisePanel";
 import { ProjectPicker } from "@/components/launch/ProjectPicker";
 import { Composer } from "./Composer";
+import { BranchDivergenceNotice } from "./BranchDivergenceNotice";
 import { FocusBar } from "./FocusBar";
 import { TimelineRowView } from "./TimelineRows";
 
@@ -389,6 +390,7 @@ export function ChatView({ isMac }: { isMac: boolean }) {
         <>
           {/* Outside the dialog's pane: the bar and its open queue stay while the person moves between dialogs (W02). */}
           <FocusBar key={project.id} />
+          <BranchDivergenceNotice />
           <div key={`${project.id}:${goalId ?? "project"}`} className="chat-pane-enter relative flex min-h-0 flex-1 flex-col">
             <Timeline />
             <ExercisePanel />

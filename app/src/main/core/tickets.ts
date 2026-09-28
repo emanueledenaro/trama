@@ -59,7 +59,8 @@ export function evidenceProblems(criterion: CriterionReport, context: EvidenceCo
   for (const reference of criterion.evidence) {
     const candidate = context.candidates.get(reference);
     if (candidate) {
-      if (candidate.report.state === "building") {
+      if (candidate.report.state === "superseded") problems.push(`Candidate ${reference} was replaced by newer work.`);
+      else if (candidate.report.state === "building") {
         problems.push(`Candidate ${reference} is not verified: ${candidate.report.blockers.map((b) => b.code).join(", ") || "building"}.`);
       }
       continue;

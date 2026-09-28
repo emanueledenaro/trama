@@ -155,7 +155,8 @@ const BLOCKER_WORDS: Record<string, string> = {
   GATE_BLOCKED: "un revisore ha un rilievo bloccante",
   GATE_RUNNING: "i revisori sono ancora al lavoro",
   GATE_FAILED: "una figura non ha finito la revisione",
-  REMOTE_CONFLICT: "c'è un conflitto con il lavoro di un collega",
+  REMOTE_CONFLICT: "c'è un conflitto con il lavoro su GitHub",
+  WORKTREE_CONFLICT: "c'è un conflitto con il lavoro di un altro incarico",
 };
 
 /** Each condition of the quality standard, in order, with what is missing and how to fix it. */
