@@ -1,5 +1,5 @@
 import { RecordLabel } from "@/components/chat/ReferenceText";
-import { IconArrowLeft, IconPlus, IconTarget } from "@tabler/icons-react";
+import { IconArrowLeft, IconPencil, IconPlus, IconRosetteDiscountCheck, IconTarget } from "@tabler/icons-react";
 import { useState } from "react";
 import { checkOutcome } from "@shared/states";
 import { isOpenQuestion } from "@shared/domain";
@@ -12,6 +12,9 @@ import { act, useUi } from "@/lib/store";
 import { EmptyNote, InspectorSection } from "./Inspector";
 import { Sep } from "@/components/ui/sep";
 import { AgentName } from "@/components/AgentIdentity";
+import { WaitingOr } from "@/components/WaitingView";
+import { Tooltip } from "@/components/ui/tooltip";
+import { useT } from "@/lib/i18n";
 
 function DecisionEditor({ initial, onDone }: { initial?: { id: string; value: string; acceptedExample: string; rationale: string }; onDone: () => void }) {
   const [value, setValue] = useState(initial?.value ?? "");
@@ -51,7 +54,12 @@ function DecisionEditor({ initial, onDone }: { initial?: { id: string; value: st
   );
 }
 
+/**
+ * Patto in Regole (issue #334): the decisions in force, each with its version small on the right, and Nuova decisione
+ * as an icon. A question that waits for the person is one line to Aspetta te, never its card twice.
+ */
 export function PactView() {
+  const t = useT();
   const project = useUi((s) => s.app?.project)!;
   const setInspector = useUi((s) => s.setInspector);
   const [editing, setEditing] = useState(false);
@@ -60,44 +68,43 @@ export function PactView() {
   return (
     <>
       {project.isDemo ? <PactDemoBox /> : null}
-      <InspectorSection title="Il legame tra decisioni, deleghe e verifiche">
-        <p className="text-ui-sm text-muted-foreground">
-          Ogni decisione registra un comportamento, un esempio e una motivazione. Ogni modifica incrementa la sua versione.
-        </p>
-      </InspectorSection>
       {pending.length ? (
-        <InspectorSection title="Domande in attesa">
+        <InspectorSection title={t("rules.pact.pending")}>
           {pending.map((request) => (
-            <DecisionCard key={request.id} requestId={request.id} />
+            <WaitingOr key={request.id} kind="question" targetId={request.id}>
+              <DecisionCard requestId={request.id} />
+            </WaitingOr>
           ))}
         </InspectorSection>
       ) : null}
       <InspectorSection
-        title={`Decisioni in vigore (${decisions.length})`}
+        title={`${t("rules.pact.inForce")} (${decisions.length})`}
         aside={
           !editing ? (
-            <Button size="xs" variant="ghost" onClick={() => setEditing(true)}>
-              <IconPlus /> Nuova decisione
-            </Button>
+            <Tooltip label={t("rules.pact.new")}>
+              <button type="button" aria-label={t("rules.pact.new")} className="sidebar-icon-button size-6 rounded-md" onClick={() => setEditing(true)}>
+                <IconPlus className="size-3.5" stroke={1.8} />
+              </button>
+            </Tooltip>
           ) : null
         }
       >
+        <p className="mb-2 text-ui-xs text-muted-foreground">{t("rules.pact.lead")}</p>
         {editing ? <DecisionEditor onDone={() => setEditing(false)} /> : null}
-        {decisions.length === 0 && !editing ? <EmptyNote>Nessuna decisione registrata.</EmptyNote> : null}
-        <div className="mt-1 flex flex-col gap-1">
+        {decisions.length === 0 && !editing ? <EmptyNote>{t("rules.pact.none")}</EmptyNote> : null}
+        <div className="-mx-2 mt-1 flex flex-col gap-0.5" data-testid="pact-decisions">
           {[...decisions].reverse().map((decision) => (
             <button
               key={decision.id}
               type="button"
+              title={decision.value}
+              data-record-id={decision.id}
               onClick={() => setInspector({ kind: "decision", id: decision.id })}
-              className="rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-[var(--sidebar-accent)] -mx-2"
+              className="flex w-full min-w-0 items-center gap-2 rounded-md px-2 py-1 text-left text-ui text-foreground/90 transition-colors hover:bg-[var(--sidebar-accent)]"
             >
-              <div className="flex items-center gap-2">
-                <Badge>
-                  <span title={decision.id}>Versione {decision.version}</span>
-                </Badge>
-              </div>
-              <div className="mt-0.5 line-clamp-2 text-ui text-foreground/90">{decision.value}</div>
+              <IconRosetteDiscountCheck className="size-3.5 shrink-0 text-muted-foreground" stroke={1.8} />
+              <span className="min-w-0 flex-1 truncate">{decision.value}</span>
+              <span className="shrink-0 text-ui-xs tabular-nums text-muted-foreground/70">{t("rules.pact.version", { version: decision.version })}</span>
             </button>
           ))}
         </div>
@@ -214,6 +221,7 @@ function DecisionDependentsSection({ id }: { id: string }) {
 }
 
 export function DecisionView({ id }: { id: string }) {
+  const t = useT();
   const project = useUi((s) => s.app?.project)!;
   const setInspector = useUi((s) => s.setInspector);
   const [editing, setEditing] = useState(false);
@@ -224,7 +232,7 @@ export function DecisionView({ id }: { id: string }) {
     <>
       <div className="px-4 pt-3">
         <button type="button" className="inline-flex items-center gap-1 text-ui-sm text-muted-foreground hover:text-foreground" onClick={() => setInspector({ kind: "pact" })}>
-          <IconArrowLeft className="size-3.5" /> Apri il Patto completo
+          <IconArrowLeft className="size-3.5" /> {t("rules.pact.back")}
         </button>
         <div className="mt-2 flex items-center gap-2">
           <Badge>
@@ -232,7 +240,18 @@ export function DecisionView({ id }: { id: string }) {
           </Badge>
         </div>
       </div>
-      <InspectorSection title="Comportamento" aside={!editing ? <Button size="xs" variant="ghost" onClick={() => setEditing(true)}>Modifica</Button> : null}>
+      <InspectorSection
+        title="Comportamento"
+        aside={
+          !editing ? (
+            <Tooltip label={t("rules.pact.edit")}>
+              <button type="button" aria-label={t("rules.pact.edit")} className="sidebar-icon-button size-6 rounded-md" onClick={() => setEditing(true)}>
+                <IconPencil className="size-3.5" stroke={1.8} />
+              </button>
+            </Tooltip>
+          ) : null
+        }
+      >
         {editing ? (
           <DecisionEditor initial={decision} onDone={() => setEditing(false)} />
         ) : (

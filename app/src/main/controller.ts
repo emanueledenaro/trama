@@ -238,7 +238,7 @@ import { draftSlicing, readSlicerAnswer, sliceViews, slicerTurn, TICKET_TRIAGE_L
 import { approvePactDemo, inspectPactDemo, runPactDemo } from "./core/pactDemo";
 import { readRepositoryFile, scanRepository } from "./core/repositoryScanner";
 import { messageStyle } from "./core/messageStyle";
-import { DEFAULT_LANGUAGE, isLanguage, type Language, languageFromSystem, translate, translator } from "@shared/i18n";
+import { DEFAULT_LANGUAGE, isLanguage, type Language, languageFromSystem, type MessageKey, translate, translator } from "@shared/i18n";
 import { toolErrorMessage, toolErrorsRule, withoutToolErrors } from "./core/toolErrors";
 import { installedSkillVersion, prepareSkills, rollbackSkills, SELECTED_SKILLS, SKILL_VERSION, type SetupReport, updateSkills } from "./core/skillSetup";
 import {
@@ -334,7 +334,7 @@ import {
   recordPublication,
 } from "./core/findingWork";
 import { AuditError, type AxisTurn, auditSpec, axisThread, axisTurn, beginAxes, beginLenses, beginVerification, closeAudit, failAudit, findAudit, finishAxis, lensTurn, openAudit, readAxisAnswer, recordAuditCheck, type ReviewName } from "./core/audit";
-import { approveCandidate, candidateReport, contentFingerprint, findCandidate, latestCandidate, recordEvidence, recordTechnicalReview } from "./core/candidates";
+import { approveCandidate, candidateAfterTurn, candidateReport, contentFingerprint, findCandidate, latestCandidate, recordEvidence, recordTechnicalReview } from "./core/candidates";
 import { assessBranchDivergence } from "./core/branchDivergence";
 import { assessConflict, combineWorktrees } from "./core/conflicts";
 import { carryOverHypotheses, pendingScenarios, settleScenario } from "./core/semanticConflicts";
@@ -4740,6 +4740,7 @@ export class TramaController {
             ? ["In pausa per una domanda", final.lastUpdate]
             : ["Incarico non riuscito", final.failure];
     this.specialistActivity(project, assignmentId, turnId ? `${final.turns.length}` : preKey, title, detail, final.status === "failed" ? "error" : "info");
+    if (turnId && final.status === "completed") await this.keepCandidateInStep(project, assignmentId, `${final.turns.length}`);
     const stop = final.stops.at(-1);
     if (final.status === "stopped" && stop?.thenRemove) {
       try {
@@ -4791,6 +4792,36 @@ export class TramaController {
     this.continueWork(project, final.requestId, "assignmentEnded");
     this.releaseParkedProject(project);
     void this.runDuties();
+  }
+
+  /**
+   * After a developer's turn Trama reads the worktree and keeps the candidate in step with it (issue #388): it declares
+   * the new candidate when the turn changed the worktree, or says in Activity why it could not.
+   */
+  private async keepCandidateInStep(project: ActiveProjectState, assignmentId: string, key: string): Promise<void> {
+    const document = project.document;
+    const assignment = findAssignment(document, assignmentId);
+    if (!assignment?.workspace || assignment.workspaceRemovedAt) return;
+    const text = (key: MessageKey) => translate(this.state.language, key);
+    let outcome: ReturnType<typeof candidateAfterTurn>;
+    try {
+      await validateWorktree(assignment.workspace, this.worktreesRoot);
+      outcome = candidateAfterTurn(document, assignmentId, await reviewWorktree(assignment.workspace));
+    } catch (error) {
+      if (!latestCandidate(document, assignmentId)) return;
+      // Trama cannot tell what the worktree holds: the earlier candidate no longer counts as the work.
+      assignment.worktreeSnapshot = { snapshotId: "", at: new Date().toISOString() };
+      this.specialistActivity(project, assignmentId, key, text("candidate.afterTurn.refused.title"), text("candidate.afterTurn.refused.unreadable"), "error");
+      console.warn(`[trama] worktree not read after the turn of ${assignmentId}: ${(error as Error).message}`);
+      return;
+    }
+    if (outcome.kind === "declared") {
+      outcome.candidate.commit = candidateCommit(document, outcome.candidate, await readProjectConventions(project.rootPath));
+      appendEvent(document, "trama", { type: "card", kind: "candidate", title: "Candidato", detail: null, referenceId: outcome.candidate.id }, assignment.requestId);
+      this.specialistActivity(project, assignmentId, key, text("candidate.afterTurn.declared.title"), text("candidate.afterTurn.declared.detail"), "info");
+    } else if (outcome.kind === "refused") {
+      this.specialistActivity(project, assignmentId, key, text("candidate.afterTurn.refused.title"), text(`candidate.afterTurn.refused.${outcome.reason}`), "error");
+    }
   }
 
   /** Frees the assignment's shared slot, if it held one, and hands it to the next work in line (issue #39). */
