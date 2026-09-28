@@ -154,6 +154,7 @@ const handlers: { [K in ActionName]: Handler<K> } = {
   "mandate:restrict": (input) => controller.restrictMandate(input),
   "fixedBan:acknowledge": ({ id }) => controller.acknowledgeFixedBan(id),
   "mandate:reject": ({ requestId, reason }) => controller.rejectMandateRequest(requestId, reason),
+  "autonomousStep:correct": ({ stepId, note }) => controller.correctAutonomousStep(stepId, note),
   "team:answer": ({ proposalId, keeping, note }) => controller.answerTeamProposal(proposalId, keeping, note),
   "assignment:stop": ({ assignmentId }) => controller.stopSpecialistWork(assignmentId),
   "assignment:resume": ({ assignmentId }) => controller.resumeSpecialistWork(assignmentId),
