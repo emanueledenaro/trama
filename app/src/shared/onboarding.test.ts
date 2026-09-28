@@ -181,6 +181,11 @@ describe("welcome on the first launch", () => {
     // The optional steps never open it: GitHub and the method still to do change nothing.
     expect(statusOf(welcomeSteps(app)).github).toBe("pending");
     expect(welcomeLaunchDecision(app)).toBe("stay");
+    // A provider at its usage limit is connected and waits for its quota: nothing opens, sending stays.
+    const waiting = appState({ project: project(emptyDocument("real"), { isDemo: false }) });
+    withAccount(waiting, "codex", { kind: "blocked", message: "Limite di utilizzo raggiunto.", until: null });
+    expect(welcomeLaunchDecision(waiting)).toBe("stay");
+    expect(needsProvider(waiting)).toBe(false);
     // A provider the person skipped is still missing: the Benvenuto opens on it.
     const skipped = appState({ project: project(emptyDocument("real"), { isDemo: false }) });
     skipped.onboarding.skippedSteps = ["provider"];

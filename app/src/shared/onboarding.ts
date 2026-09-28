@@ -282,11 +282,17 @@ export function welcomeLaunchDecision(app: AppState): "wait" | "open" | "stay" {
   if (!app.started || !app.project) return "wait";
   const provider = providerStep(app).status;
   if (provider === "checking") return "wait";
-  return provider === "done" ? "stay" : "open";
+  return provider === "done" || hasWaitingProvider(app) ? "stay" : "open";
 }
 
-/** Whether the composer offers "Collega un provider" instead of sending: the providers are checked and none is usable. */
-export const needsProvider = (app: AppState): boolean => providerStep(app).status === "pending";
+/**
+ * A provider at its usage limit is connected: it waits for its quota, and the status line says so. It is not a
+ * missing provider, so it never opens the Benvenuto or takes the composer's send away.
+ */
+const hasWaitingProvider = (app: AppState): boolean => Object.values(app.providers).some((state) => state?.account?.kind === "blocked");
+
+/** Whether the composer offers "Collega un provider" instead of sending: the providers are checked and none is connected. */
+export const needsProvider = (app: AppState): boolean => providerStep(app).status === "pending" && !hasWaitingProvider(app);
 
 /** One exercise in the Impara block: done, started on the example project, or still to do. */
 export interface LearnRow {
