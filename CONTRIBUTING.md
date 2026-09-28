@@ -96,7 +96,11 @@ Versions follow [Semantic Versioning](https://semver.org/) and are computed from
 2. **Review.** The workflow moves the `[Unreleased]` notes of [CHANGELOG.md](CHANGELOG.md), merged with the entries generated from `feat`, `fix`, `perf`, `refactor` and `revert` commits, into a new section, sets the version in `app/package.json`, and opens the pull request `chore(release): vX.Y.Z` from the branch `release/vX.Y.Z`. The changelog can be edited in that pull request.
 3. **Publish.** When the release pull request is merged, [Pubblicazione del rilascio](.github/workflows/release-publish.yml) sees a version with a changelog section and no tag. It creates a draft GitHub release with the changelog section as notes, builds the macOS, Windows and Linux packages with [release.yml](.github/workflows/release.yml), attaches them and publishes the release, which creates the tag on the merge commit.
 
-The scripts behind these steps are in [scripts/release/](scripts/release/). Packages are signed and notarized only when the signing secrets are set.
+Every release carries the macOS packages (`.dmg` and `.zip`, Apple Silicon and Intel), the Windows installer (`.exe`), the Linux AppImage and a `SHA256SUMS.txt` file. Test versions are published as pre-releases named `X.Y.Z-beta.N`.
+
+To try the packages of a branch or a commit without a release, run the [Rilascio](.github/workflows/release.yml) workflow by hand, for example `gh workflow run release.yml --ref <branch> -f platforms=windows`: the packages stay in the run's artifacts.
+
+The scripts behind these steps are in [scripts/release/](scripts/release/). Packages are signed and notarized only when the signing secrets are set; the release notes say so when they are not. The full policy, in Italian, is in [docs/agents/versioning.md](docs/agents/versioning.md).
 
 ## Questions
 

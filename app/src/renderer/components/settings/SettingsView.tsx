@@ -220,7 +220,10 @@ function GeneralSection() {
           <TramaMark size={40} variant="tile" />
           <div className="min-w-0 flex-1">
             <div className="text-ui text-foreground">Trama</div>
-            <div className="mt-0.5 text-ui-sm text-muted-foreground">{t("settings.about.version", { version: __TRAMA_VERSION__ })}</div>
+            <div className="mt-0.5 text-ui-sm text-muted-foreground" data-testid="about-version">
+              {t("settings.about.version", { version: __TRAMA_VERSION__ })}
+            </div>
+            {__TRAMA_COMMIT__ && <div className="mt-0.5 font-mono text-ui-sm text-muted-foreground">{t("settings.about.commit", { commit: __TRAMA_COMMIT__ })}</div>}
           </div>
         </div>
       </Group>
