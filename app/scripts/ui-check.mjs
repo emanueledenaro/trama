@@ -785,37 +785,114 @@ await shot("04k-domain-proposal-written");
 }
 await page.getByRole("button", { name: "Mappa del progetto" }).click();
 await shot("05-map");
-// #229: every panel separator is the same sash. At rest it draws nothing over the panel border; after a short hover
-// it takes the provider's accent, and while dragged it stays lit. Double-click and the arrow keys change the width.
+// #229: every panel separator is the same sash, as in VS Code (base/browser/ui/sash). At rest the sash draws nothing and
+// the 1px line is the panel's own border; no grip dots anywhere. After 300ms of hover its 4px ::before takes VS Code's
+// focusBorder, and while dragged it stays lit. Double-click and the arrow keys change the width. The panels meet edge
+// to edge as in VS Code: sidebar and inspector a shade darker than the chat, a 1px border that shows in light and dark.
 {
   const sidebarSash = page.getByRole("separator", { name: /Larghezza della barra laterale/ });
   const inspectorSash = page.getByRole("separator", { name: "Larghezza dell'ispettore" });
   const look = (sash) =>
     sash.evaluate((element) => {
       const style = getComputedStyle(element);
-      const probe = document.createElement("span");
-      probe.style.color = "var(--color-text-accent)";
-      element.append(probe);
-      const accent = getComputedStyle(probe).color;
-      probe.remove();
-      const drawn = ["::before", "::after"].filter((pseudo) => getComputedStyle(element, pseudo).content !== "none");
-      return { background: style.backgroundColor, accent, width: element.getBoundingClientRect().width, cursor: style.cursor, drawn, children: element.childElementCount };
+      const color = (value) => {
+        const probe = document.createElement("span");
+        probe.style.color = value;
+        element.append(probe);
+        const resolved = getComputedStyle(probe).color;
+        probe.remove();
+        return resolved;
+      };
+      const strip = getComputedStyle(element, "::before");
+      return {
+        background: style.backgroundColor,
+        strip: strip.backgroundColor,
+        stripWidth: strip.width,
+        after: getComputedStyle(element, "::after").content,
+        accent: color("var(--app-focus-border)"),
+        width: element.getBoundingClientRect().width,
+        cursor: style.cursor,
+        zIndex: style.zIndex,
+        children: element.childElementCount,
+        text: element.textContent,
+      };
     });
   const transparent = (color) => color === "rgba(0, 0, 0, 0)" || color === "transparent";
   for (const sash of [sidebarSash, inspectorSash]) {
     const rest = await look(sash);
-    if (!transparent(rest.background) || rest.drawn.length || rest.children) throw new Error(`A sash shows at rest: ${JSON.stringify(rest)}`);
-    if (rest.width !== 4 || rest.cursor !== "col-resize") throw new Error(`A sash is not a 4px col-resize grip: ${JSON.stringify(rest)}`);
+    if (!transparent(rest.background) || !transparent(rest.strip) || rest.children || rest.text || (rest.after !== "none" && rest.after !== "normal"))
+      throw new Error(`A sash shows something at rest: ${JSON.stringify(rest)}`);
+    if (rest.width !== 4 || !["col-resize", "ew-resize"].includes(rest.cursor) || rest.zIndex !== "35") throw new Error(`A sash is not a 4px resize grip at z-index 35: ${JSON.stringify(rest)}`);
+  }
+  // The line at rest is the panels' border: the sidebar's right edge and the inspector's left edge.
+  const borders = await page.evaluate(() => {
+    const probe = document.createElement("span");
+    probe.style.color = "var(--app-panel-border)";
+    document.body.append(probe);
+    const border = getComputedStyle(probe).color;
+    probe.remove();
+    const sidebar = getComputedStyle(document.querySelector(".app-sidebar-surface"));
+    const inspector = getComputedStyle(document.querySelector('[data-testid="inspector"]'));
+    return { border, sidebar: [sidebar.borderRightWidth, sidebar.borderRightColor], inspector: [inspector.borderLeftWidth, inspector.borderLeftColor] };
+  });
+  for (const [width, color] of [borders.sidebar, borders.inspector])
+    if (width !== "1px" || color !== borders.border) throw new Error(`A panel has no 1px border line: ${JSON.stringify(borders)}`);
+  // On screen, in light and dark: the border differs from the panels on both sides, and the sidebar and the inspector
+  // differ from the chat between them. Pixels come from the window capture, [r, g, b].
+  const pixel = (x, y) =>
+    app.evaluate(
+      async ({ BrowserWindow }, point) => {
+        const [b, g, r] = (await BrowserWindow.getAllWindows()[0].webContents.capturePage({ ...point, width: 1, height: 1 })).toBitmap();
+        return [r, g, b];
+      },
+      { x: Math.round(x), y: Math.round(y) },
+    );
+  const apart = (one, other) => Math.max(...one.map((channel, index) => Math.abs(channel - other[index])));
+  await page.mouse.move(640, 500);
+  for (const mode of ["light", "dark"]) {
+    await page.evaluate((dark) => document.documentElement.classList.toggle("dark", dark), mode === "dark");
+    await page.waitForTimeout(400);
+    const edges = await page.evaluate(() => ({
+      sidebar: document.querySelector(".app-sidebar-surface").getBoundingClientRect().right,
+      inspector: document.querySelector('[data-testid="inspector"]').getBoundingClientRect().left,
+    }));
+    const y = 620;
+    const [sidebarLine, sidebarPanel, chat, inspectorLine, inspectorPanel] = await Promise.all([
+      pixel(edges.sidebar - 1, y),
+      pixel(edges.sidebar - 12, y),
+      pixel(edges.sidebar + 12, y),
+      pixel(edges.inspector, y),
+      pixel(edges.inspector + 12, y),
+    ]);
+    const seen = JSON.stringify({ mode, sidebarLine, sidebarPanel, chat, inspectorLine, inspectorPanel });
+    if (apart(sidebarLine, sidebarPanel) < 8 || apart(sidebarLine, chat) < 8 || apart(inspectorLine, inspectorPanel) < 8 || apart(inspectorLine, chat) < 8)
+      throw new Error(`A panel border does not show at rest: ${seen}`);
+    if (apart(sidebarPanel, chat) < 3 || apart(inspectorPanel, chat) < 3) throw new Error(`The side panels do not stand apart from the chat: ${seen}`);
+    await shot(`22-sash-rest-${mode}`);
+  }
+  await page.evaluate(() => document.documentElement.classList.remove("dark"));
+  // Nothing covers the grip: it sits over the content on both sides of each edge.
+  for (const sash of [sidebarSash, inspectorSash]) {
+    const box = await sash.boundingBox();
+    const onTop = await sash.evaluate((element, points) => points.every(([x, y]) => document.elementFromPoint(x, y) === element), [
+      [box.x + 0.5, 620],
+      [box.x + box.width - 0.5, 620],
+    ]);
+    if (!onTop) throw new Error(`Something covers the sash ${await sash.getAttribute("aria-label")}`);
   }
   const sidebarBox = await sidebarSash.boundingBox();
   await page.mouse.move(sidebarBox.x + sidebarBox.width / 2, 300);
   await page.waitForTimeout(100);
-  if (!transparent((await look(sidebarSash)).background)) throw new Error("The sash lights up before the hover delay");
-  await page.waitForTimeout(500);
+  if (!transparent((await look(sidebarSash)).strip)) throw new Error("The sash lights up before the hover delay");
+  await page.waitForTimeout(250);
   const hovered = await look(sidebarSash);
-  if (hovered.background !== hovered.accent) throw new Error(`The hovered sash is not the provider's accent: ${JSON.stringify(hovered)}`);
-  for (const mode of ["light", "dark"]) {
+  if (hovered.strip !== hovered.accent || hovered.stripWidth !== "4px") throw new Error(`After 350ms of hover the sash is not a 4px focusBorder strip: ${JSON.stringify(hovered)}`);
+  // VS Code's focusBorder: #005FB8 in Light Modern, #0078D4 in Dark Modern.
+  for (const [mode, focusBorder] of [["light", "rgb(0, 95, 184)"], ["dark", "rgb(0, 120, 212)"]]) {
     await page.evaluate((dark) => document.documentElement.classList.toggle("dark", dark), mode === "dark");
+    await page.waitForTimeout(200);
+    const lit = (await look(sidebarSash)).strip;
+    if (lit !== focusBorder) throw new Error(`The ${mode} hovered sash is ${lit}, not VS Code's focusBorder ${focusBorder}`);
     await shot(`22-sash-hover-${mode}`);
   }
   await page.evaluate(() => document.documentElement.classList.remove("dark"));
@@ -826,12 +903,12 @@ await shot("05-map");
   await page.mouse.move(inspectorBox.x + inspectorBox.width / 2 - 60, 300, { steps: 6 });
   await page.waitForTimeout(200);
   const dragged = await look(inspectorSash);
-  if (dragged.background !== dragged.accent) throw new Error(`The dragged sash is not lit: ${JSON.stringify(dragged)}`);
+  if (dragged.strip !== dragged.accent) throw new Error(`The dragged sash is not lit: ${JSON.stringify(dragged)}`);
   await shot("22-sash-drag-light");
   await page.mouse.up();
   await page.mouse.move(640, 500);
   if (Number(await inspectorSash.getAttribute("aria-valuenow")) !== startWidth + 60) throw new Error("Dragging the sash does not widen the inspector");
-  await page.waitForFunction(() => getComputedStyle(document.querySelector('[aria-label="Larghezza dell\'ispettore"]')).backgroundColor === "rgba(0, 0, 0, 0)");
+  await page.waitForFunction(() => getComputedStyle(document.querySelector('[aria-label="Larghezza dell\'ispettore"]'), "::before").backgroundColor === "rgba(0, 0, 0, 0)");
   await inspectorSash.dblclick();
   await page.waitForFunction(() => document.querySelector('[aria-label="Larghezza dell\'ispettore"]')?.getAttribute("aria-valuenow") === "420");
   await inspectorSash.focus();
@@ -2433,6 +2510,88 @@ const presenceReply = await presenceAnswer.innerText();
 if (!presenceReply.includes("src/payments.js") || !presenceReply.includes("Sezione presenza ricevuta")) throw new Error(`Presence answer: ${presenceReply}`);
 await presenceAnswer.scrollIntoViewIfNeeded();
 await shot("16d-presence-coordinator");
+// Issue #328: editorial typography. A message and its titles read in Newsreader, the controls in Inter and the code in
+// JetBrains Mono, all bundled with the app: the computed families use the tokens and each font is really loaded.
+// Every provider theme, light and dark, and the narrow window keep the 18px body inside the chat.
+await composer().fill("## Annullare un ordine\n\nUn ordine pagato e annullato va in revisione, come in `CancelPaidOrder.swift`.\n\n```swift\nlet stato = ordine.annulla()\n```");
+await page.keyboard.press("Enter");
+const typeMessage = page.locator(".chat-markdown--user").filter({ hasText: "Annullare un ordine" }).last();
+await typeMessage.locator("pre code").waitFor({ timeout: 20_000 });
+await page.getByText("Questa risposta arriva dal server di prova").last().waitFor({ timeout: 30_000 });
+const typography = () =>
+  page.evaluate(async () => {
+    await document.fonts.ready;
+    const user = [...document.querySelectorAll(".chat-markdown--user")].filter((node) => node.textContent.includes("Annullare un ordine")).pop();
+    const reply = [...document.querySelectorAll(".chat-markdown:not(.chat-markdown--user)")].filter((node) => node.textContent.includes("server di prova")).pop();
+    const style = (node) => {
+      if (!node) return null;
+      const s = getComputedStyle(node);
+      return { family: s.fontFamily, size: s.fontSize, weight: s.fontWeight, lineHeight: s.lineHeight, optical: s.fontOpticalSizing };
+    };
+    const loaded = (family) => [...document.fonts].some((face) => face.family.replace(/["']/g, "") === family && face.status === "loaded");
+    return {
+      message: style(reply?.querySelector("p") ?? reply),
+      title: style(user?.querySelector("h2")),
+      button: style(document.querySelector("form.chat-composer-surface button")),
+      code: style(user?.querySelector("pre code")),
+      inline: style(user?.querySelector("p code")),
+      fonts: Object.fromEntries(
+        [
+          ["Newsreader Variable", '400 18px "Newsreader Variable"'],
+          ["Newsreader Variable 500", '500 24px "Newsreader Variable"'],
+          ["Inter Variable", '500 13px "Inter Variable"'],
+          ["JetBrains Mono Variable", '400 14px "JetBrains Mono Variable"'],
+        ].map(([name, font]) => [name, document.fonts.check(font, "Aa") && loaded(name.replace(/ 500$/, ""))]),
+      ),
+    };
+  });
+const types = await typography();
+const firstFamily = (style) => style?.family.split(",")[0].replace(/["']/g, "").trim();
+if (firstFamily(types.message) !== "Newsreader Variable" || types.message.size !== "18px" || types.message.optical !== "auto") throw new Error(`Message typography: ${JSON.stringify(types.message)}`);
+if (Math.abs(parseFloat(types.message.lineHeight) / 18 - 1.68) > 0.01) throw new Error(`Message line height: ${JSON.stringify(types.message)}`);
+if (firstFamily(types.title) !== "Newsreader Variable" || types.title.weight !== "500") throw new Error(`Title typography: ${JSON.stringify(types.title)}`);
+const titleLeading = parseFloat(types.title.lineHeight) / parseFloat(types.title.size);
+if (titleLeading < 1.3 || titleLeading > 1.35) throw new Error(`Title line height: ${JSON.stringify(types.title)}`);
+if (firstFamily(types.button) !== "Inter Variable") throw new Error(`Button typography: ${JSON.stringify(types.button)}`);
+if (firstFamily(types.code) !== "JetBrains Mono Variable" || firstFamily(types.inline) !== "JetBrains Mono Variable") throw new Error(`Code typography: ${JSON.stringify([types.code, types.inline])}`);
+const missingFonts = Object.entries(types.fonts).filter(([, ok]) => !ok).map(([name]) => name);
+if (missingFonts.length) throw new Error(`Fonts not loaded: ${missingFonts.join(", ")}`);
+// Nothing leaves the chat: no horizontal page scroll, every message inside the timeline, no text wider than its box.
+const typographyOverflow = () =>
+  page.evaluate(() => {
+    const timeline = document.querySelector(".chat-timeline-scroll")?.getBoundingClientRect();
+    const problems = [];
+    if (document.documentElement.scrollWidth > innerWidth) problems.push("page scroll");
+    for (const node of document.querySelectorAll(".chat-timeline-scroll .chat-markdown")) {
+      const box = node.getBoundingClientRect();
+      if (!box.width) continue;
+      if (timeline && (box.left < timeline.left - 1 || box.right > timeline.right + 1)) problems.push(`message outside the timeline: ${node.textContent.slice(0, 40)}`);
+      for (const child of node.querySelectorAll(":scope > :not(pre, table, .chat-compare)")) {
+        if (child.scrollWidth > child.clientWidth + 1) problems.push(`text wider than its box: ${child.textContent.slice(0, 40)}`);
+      }
+    }
+    return problems;
+  });
+const typeLook = await lookOf();
+await typeMessage.scrollIntoViewIfNeeded();
+for (const provider of ["codex", "claudeAgent", "cursor", "antigravity", "grok", "droid", "devin", "opencode", "pi"]) {
+  for (const dark of [false, true]) {
+    await setLookTo(provider, dark);
+    const problems = await typographyOverflow();
+    if (problems.length) throw new Error(`Typography with ${provider} ${dark ? "dark" : "light"}: ${problems.join("; ")}`);
+    if (provider === "codex" || provider === "claudeAgent") await shot(`16d1-typography-${provider}-${dark ? "dark" : "light"}`);
+  }
+}
+await setLookTo(typeLook.provider, typeLook.dark);
+// In a narrow window the inspector floats over the chat: closed, the messages are what the shot shows.
+if (await page.getByTestId("inspector").count()) await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
+await page.setViewportSize({ width: 720, height: 640 });
+await typeMessage.scrollIntoViewIfNeeded();
+await page.waitForTimeout(400);
+const narrowProblems = await typographyOverflow();
+if (narrowProblems.length) throw new Error(`Typography at 720x640: ${narrowProblems.join("; ")}`);
+await shot("16d2-typography-narrow");
+await page.setViewportSize({ width: 1280, height: 820 });
 // G02: Gruppo is the picture of who works on what. One row per person and per agent, with identity, active branch,
 // "anche su", the request, the files and the freshness; the person's own switch is in the view, on the right.
 await page.getByRole("button", { name: /^Gruppo/ }).first().click();
