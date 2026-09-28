@@ -1839,7 +1839,9 @@ await shot("23b-references-dark");
 await candidateLink.click();
 const referenceInspector = page.getByTestId("inspector");
 await referenceInspector.and(page.locator('[aria-label="Candidato"]')).waitFor({ timeout: 10_000 });
-await referenceInspector.getByText(citedCandidate).first().waitFor();
+// Issue #270: the panel names the candidate; its id is on the title's hover and on the card's title.
+await referenceInspector.locator(`[data-testid="inspector-title"][title="${citedCandidate}"]`).waitFor();
+await referenceInspector.locator(`[data-record-id="${citedCandidate}"]`).first().waitFor();
 await shot("23c-reference-opened-dark");
 await app.evaluate(({ nativeTheme }) => {
   nativeTheme.themeSource = "system";
@@ -1849,7 +1851,7 @@ await shot("23d-reference-opened-light");
 const citedDecision = await decisionLink.getAttribute("data-reference-id");
 await decisionLink.click();
 await referenceInspector.and(page.locator('[aria-label="Decisione"]')).waitFor({ timeout: 10_000 });
-await referenceInspector.getByText(citedDecision).first().waitFor();
+await referenceInspector.locator(`[data-testid="inspector-title"][title="${citedDecision}"]`).waitFor();
 await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
 
 // M06: the developer of a slice runs implement and tdd with their original text and reports the seams it tested.
