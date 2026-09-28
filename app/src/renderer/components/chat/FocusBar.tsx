@@ -60,6 +60,16 @@ const STATUS_ICONS: Record<StatusLineView["state"], React.ReactNode> = {
   idle: <IconCircleDashed className="size-3.5 shrink-0 text-muted-foreground" stroke={1.8} />,
 };
 
+/** The full name where the chat is wide; the short one in a narrow window, where the button keeps the full name for screen readers. */
+function ShortName({ full, short }: { full: string; short: string }) {
+  return (
+    <>
+      <span className="@min-[640px]/chat:hidden">{short}</span>
+      <span className="hidden @min-[640px]/chat:inline">{full}</span>
+    </>
+  );
+}
+
 /**
  * The Coordinator's status line (Q6): what it does now and next, why the work is held and what unblocks it, computed by
  * Trama from the records, and the provider limit it waits for (issue #249). On the right: Activity, the Pause of continuous work or its Riprendi (A05), the stop of the
@@ -109,19 +119,25 @@ function StatusLine({ line }: { line: StatusLineView }) {
           Attività
         </Button>
         {line.paused ? (
-          <Button size="xs" variant={line.action || line.runningMove ? "outline" : "default"} onClick={() => void act("coordinator:pause", { paused: false })}>
+          <Button
+            size="xs"
+            variant={line.action || line.runningMove ? "outline" : "default"}
+            aria-label={COORDINATOR_PAUSE.resume}
+            onClick={() => void act("coordinator:pause", { paused: false })}
+          >
             <IconPlayerPlay className="size-3.5" stroke={1.8} />
-            {COORDINATOR_PAUSE.resume}
+            <ShortName full={COORDINATOR_PAUSE.resume} short="Riprendi" />
           </Button>
         ) : (
           <Button
             size="xs"
             variant="ghost"
             title="Ferma mosse automatiche, giri e lavoro automatico del progetto"
+            aria-label={COORDINATOR_PAUSE.pause}
             onClick={() => void act("coordinator:pause", { paused: true })}
           >
             <IconPlayerPause className="size-3.5" stroke={1.8} />
-            {COORDINATOR_PAUSE.pause}
+            <ShortName full={COORDINATOR_PAUSE.pause} short="Pausa" />
           </Button>
         )}
         {line.runningMove ? (
