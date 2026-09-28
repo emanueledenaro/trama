@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
-import { existsSync } from "node:fs";
-import { chmod, lstat, mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { constants, existsSync } from "node:fs";
+import { chmod, lstat, mkdir, open, rename, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import type { AppSettings, MonitorState, ProjectDocument, RecentProject } from "@shared/domain";
 import type { ImageAttachmentInput } from "@shared/ipc";
@@ -46,9 +46,23 @@ async function writeNow(path: string, contents: string): Promise<void> {
 /** Reads after the writes already asked for on the same path: a save still in flight is the latest state, not the file. */
 async function readJson<T>(path: string): Promise<T | null> {
   await pendingWrites.get(path);
-  if (!existsSync(path)) return null;
-  if ((await lstat(path)).isSymbolicLink()) throw new Error(t("main.storage.symlink", { path }));
-  return JSON.parse(await readFile(path, "utf8")) as T;
+  // One open, refusing a symbolic link, and the read from the same handle: nothing can swap the file in between.
+  // Windows has no O_NOFOLLOW: there the link is refused just before the open.
+  if (constants.O_NOFOLLOW === undefined && existsSync(path) && (await lstat(path)).isSymbolicLink()) throw new Error(t("main.storage.symlink", { path }));
+  let handle;
+  try {
+    handle = await open(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === "ENOENT") return null;
+    if (code === "ELOOP") throw new Error(t("main.storage.symlink", { path }));
+    throw error;
+  }
+  try {
+    return JSON.parse(await handle.readFile("utf8")) as T;
+  } finally {
+    await handle.close();
+  }
 }
 
 export class AppStorage {
