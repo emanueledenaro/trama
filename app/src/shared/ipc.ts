@@ -126,8 +126,12 @@ export interface ActionMap {
   "plan:publish": [{ planId: string }, void];
   "pactDemo:run": [void, void];
   "pactDemo:approve": [void, void];
+  /** The person's ok on a candidate; on an interface candidate with the green light Trama then merges it (issue #247). */
   "candidate:approve": [{ candidateId: string }, void];
-  "candidate:acknowledgeIntegrationStop": [{ candidateId: string }, void];
+  /** The person refuses an interface candidate with a reason, which goes back to the developer (issue #247). */
+  "candidate:reject": [{ candidateId: string; note: string }, void];
+  /** One screenshot of an interface candidate, as a data URL (issue #247). */
+  "candidate:shot": [{ candidateId: string; index: number }, string];
   /** Opens focus mode on a candidate (F01): real checks, then code-review's two axes. Returns the examination's id. */
   "candidate:focusAudit": [{ candidateId: string }, string];
   "candidate:publish": [{ candidateId: string }, void];

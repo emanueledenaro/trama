@@ -13,8 +13,8 @@ import { workRequests, workState } from "./workPhase";
  * shared understanding, the team, the seams of the spec and the slices) are taken by the Coordinator when the mandate
  * covers them. Trama takes them from the records, never from what a model says, records them as the Coordinator's and
  * tells them in Activity and in the recap. The person corrects any of them in their own words and the work starts again
- * from that step. Product decisions and the mandate stay with the person; the merge of a published pull request
- * follows its own conditions (integration.ts, issue #41).
+ * from that step. Product decisions and the mandate stay with the person; the merge follows the green light (issue #247),
+ * and a candidate that changes the interface waits for the person's ok.
  */
 
 /** The action of the mandate each step needs: the understanding, the seams and the slices are planning; the team is composing it. */
@@ -175,5 +175,10 @@ export function autonomyLine(document: ProjectDocument): string {
   const steps = covered.length
     ? `Dentro il mandato Trama conferma per te ${covered.map((m) => STEP_LABELS[m].replace(/ dal Coordinatore$/, "").toLowerCase()).join(", ")}, e risolvi da solo verifiche rosse, conflitti e incarichi fermi: non chiedere questi passi alla persona.`
     : "Senza un mandato che li copra, comprensione, team, seam e fette restano della persona.";
-  return `${steps} Il lavoro nuovo, fuori dagli obiettivi aperti, lo proponi con propose_goal e non lo assegni: un obiettivo proposto non riceve incarichi finché la persona non lo conferma.`;
+  // Issue #247: the merge follows the green light by Trama's rule; the Coordinator never asks for it in the chat.
+  const merge =
+    authorize(document.mandate, "integrateCandidate") === "authorized"
+      ? " Con il tuo via libera (clear_candidate) e il cancello dei revisori superato Trama pubblica e unisce il candidato da solo; un candidato che cambia l'interfaccia aspetta l'ok della persona in Aspetta te, con le schermate: non chiedere l'unione in chat."
+      : "";
+  return `${steps}${merge} Il lavoro nuovo, fuori dagli obiettivi aperti, lo proponi con propose_goal e non lo assegni: un obiettivo proposto non riceve incarichi finché la persona non lo conferma.`;
 }

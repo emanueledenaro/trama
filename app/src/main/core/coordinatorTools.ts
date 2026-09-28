@@ -16,17 +16,17 @@ import type {
 } from "@shared/domain";
 import { DEFAULT_CONVENTIONS, validateCommitMessage } from "./conventions";
 import { candidateCommit } from "./quality";
+import { mergeRoute } from "./merge";
 import { messageStyle } from "./messageStyle";
 import type { WorkspaceReview } from "./workspace";
 import { memoryTool, memoryToolSurface } from "./learning/memoryStore";
 import type { ProjectLearning } from "./learning/projectLearning";
 import { SESSION_SEARCH_DESCRIPTION, SESSION_SEARCH_PROPERTIES, SessionSearch } from "./learning/sessionSearch";
 import type { RepositorySnapshot } from "@shared/repository";
-import type { GitHubState } from "@shared/domain";
+import type { GitHubState, MergeRoute } from "@shared/domain";
 import { createDecisionRequest, createMandateRequest, DELEGABLE_ACTIONS, DomainError, MAXIMUM_ALTERNATIVES } from "./pact";
 import { ALL_CHECKS, CHECKS, type CheckResult, type ReadOnlyCheck } from "./checks";
 import { candidateReport, CandidateError, clearCandidate, declareCandidate, findCandidate, latestCandidate } from "./candidates";
-import type { IntegrationOutcome } from "./integration";
 import { studyText } from "./study";
 import { findGoal, requestGoalId } from "@shared/goals";
 import { isFixedRole, roleDuties } from "@shared/roster";
@@ -520,15 +520,7 @@ export const COORDINATOR_TOOLS: ToolDefinition[] = [
   {
     name: "clear_candidate",
     description:
-      "Within the mandate (integrateCandidate), give the Coordinator's green light to a candidate that passed every required check and whose technical review approves it. New evidence or a changed relevant decision invalidates a previous green light, and the candidate card shows it.",
-    properties: { candidate: text },
-    required: ["candidate"],
-    readOnly: false,
-  },
-  {
-    name: "integrate_candidate",
-    description:
-      "Within the mandate (integrateCandidate), merge on GitHub the pull request the person published for a candidate. Trama merges only when every condition holds on that exact candidate: your green light given under the mandate in force, a technical review distinct from the author, the required checks and the gate on its snapshot, no conflict, the base on GitHub unchanged since the candidate was built, the pull request's head still the commit Trama pushed, and green CI. Trama reads the pull request again right before merging: a concurrent change stops it. An incompatible change, deleted files or SQL that deletes data are never merged by you: Trama stops the merge and shows the person the consequences and the alternatives. The merge is your act under the mandate, never the person's review; it deploys nothing and does not update the app. A retry after a failure or a timeout goes to the same pull request and never merges twice.",
+      "Within the mandate (integrateCandidate), give the Coordinator's green light to a candidate that passed every required check and whose technical review approves it. With the green light and the candidate gate passed, Trama publishes the candidate as a pull request and merges it by itself; a candidate that changes the interface waits for the person's ok in Aspetta te instead. New evidence or a changed relevant decision invalidates a previous green light, and the candidate card shows it.",
     properties: { candidate: text },
     required: ["candidate"],
     readOnly: false,
@@ -600,6 +592,13 @@ export const NEXT_STEP_RULES = [
   "Never end a message with a generic confirmation question such as \"Vuoi che...?\", \"Procedo?\" or \"Fammi sapere se...\": within the mandate you go on by yourself, and what belongs to the person is a card or the next step's button, never a question at the end of your text.",
 ].join("\n");
 
+/** What the green light leads to, for the Coordinator (issue #247): the merge is Trama's, never the model's. */
+const MERGE_ROUTE_NOTES: Record<MergeRoute, string> = {
+  coordinator: "Trama publishes the candidate as a pull request and merges it by itself with this green light; Activity and the recap tell the person.",
+  interface: "The candidate changes the interface: it waits for the person in Aspetta te with the screenshots before and after, and Trama merges it after their ok. Do not ask the person in the chat.",
+  person: "The person reviews and publishes the candidate: the mandate does not cover its integration, or the project has no GitHub remote.",
+};
+
 export interface ToolContext {
   document: ProjectDocument;
   /** What the Coordinator learned in this project; null when learning is unavailable. */
@@ -661,9 +660,9 @@ export interface ToolContext {
   verifyCandidate(candidateId: string, check: ReadOnlyCheck): Promise<CheckResult>;
   /** Runs a technical review in a thread distinct from the author's. */
   reviewCandidate(candidateId: string): Promise<TechnicalReview>;
+  /** The Coordinator gave the green light: Trama merges the candidate, or it waits for the person (issue #247). */
+  candidateCleared?(candidateId: string): void;
   headSHA(): Promise<string | null>;
-  /** Merges a published candidate within the mandate (issue #41); absent where Trama cannot reach GitHub. */
-  integrateCandidate?(candidateId: string): Promise<IntegrationOutcome>;
   /** Starts Trama's planner in the background and returns the plan id. */
   orderPlan(order: { kind: WorkKind; moduleIds: string[]; summary: string; issueNumber: number | null }): string;
 }
@@ -1524,29 +1523,9 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
         if (authorization !== "authorized") return refused(authorization, "integrateCandidate");
         clearCandidate(document, candidate.id, "Coordinatore", await context.headSHA());
         context.changed();
-        return toolSuccess({ candidateID: candidate.id, state: "decided", note: "The person still reviews and publishes the candidate." });
-      }
-      case "integrate_candidate": {
-        const found = candidateArgument(document, args.candidate);
-        if ("failure" in found) return found.failure;
-        const candidate = found.candidate;
-        const authorization = authorize(document.mandate, "integrateCandidate", candidate.touchedModules);
-        if (authorization !== "authorized") return refused(authorization, "integrateCandidate");
-        if (!context.integrateCandidate) return toolFailure("unavailable", "Trama cannot merge pull requests here.");
-        const outcome = await context.integrateCandidate(candidate.id);
-        switch (outcome.status) {
-          case "merged":
-            return toolSuccess({ candidateID: candidate.id, status: "merged", pullRequest: outcome.integration.destination.pullRequestNumber, duplicate: outcome.duplicate, mergeSHA: outcome.integration.mergeSHA });
-          case "blocked":
-            return toolFailure("integration_blocked", `Candidate ${candidate.id} cannot be merged now: ${outcome.blockers.map((b) => `${b.code} (${b.detail})`).join("; ")}.`);
-          case "stopped":
-            return toolFailure("person_required", `The merge of candidate ${candidate.id} is a serious destructive change (${outcome.integration.stop?.reasons.join(" ")}). It waits for the person in Aspetta te with consequences and alternatives: do not retry it.`);
-          case "failed":
-            return toolFailure("integration_failed", `The merge of candidate ${candidate.id} did not happen: ${outcome.integration.failure}`);
-          case "unknown":
-            return toolFailure("integration_unknown", `GitHub did not say whether pull request #${outcome.integration.destination.pullRequestNumber} merged. Trama reads it before any new attempt; call integrate_candidate again later.`);
-        }
-        return toolFailure("integration_failed", "Unknown outcome.");
+        context.candidateCleared?.(candidate.id);
+        const { route } = mergeRoute(document, candidate, context.github.repository);
+        return toolSuccess({ candidateID: candidate.id, state: "decided", mergeRoute: route, note: MERGE_ROUTE_NOTES[route] });
       }
       case "declare_next_step": {
         const request = document.requests.find((r) => r.id === context.runningRequestId);
@@ -1675,7 +1654,7 @@ export function developerInstructions(
     "run_readonly_check runs a check on the project checkout without writing to it; you may use it without a mandate.",
     "The presence tells who works on what in the team: colleagues who share it in Trama, with their branch, task and the paths they touch, and their agents. read_presence reads it. When you assign work avoid the files colleagues are touching; when one of your developers overlaps a colleague, move or postpone its task; when you propose a goal someone already works on, say so; answer \"who is touching X\" only from read_presence. Never block a person or ask a colleague to stop.",
     "The person works by goals: a goal has a desired outcome and accepted and refused examples. The person talks with you in one chat per project; goals are filters of that chat, not separate dialogs, and you stay one Coordinator with one mandate and one Pact for all of them. When the person writes with the chat filtered on a goal Trama says so and gives you the goal; answer about that goal, and the work you assign in that turn is linked to it. A goal has one active plan: a new plan for it replaces the earlier one. read_goals lists the goals; propose_goal proposes a new one that the person confirms.",
-    "When a specialist's work is done, declare_candidate captures its worktree and binds it to the Pact decisions it must respect; verify_candidate runs its required checks and review_candidate passes it through the gate of every candidate reviewer, which sends the work back to its developer on a blocking finding: when that happens, wait for the developer and declare the new candidate. Within the mandate, clear_candidate gives your green light to a verified and approved candidate. The person always reviews and publishes it: never claim that work is published. Once the person published it, within the mandate integrateCandidate, integrate_candidate merges its pull request when CI is green and nothing changed; claim a merge only when integrate_candidate says merged.",
+    "When a specialist's work is done, declare_candidate captures its worktree and binds it to the Pact decisions it must respect; verify_candidate runs its required checks and review_candidate passes it through the gate of every candidate reviewer, which sends the work back to its developer on a blocking finding: when that happens, wait for the developer and declare the new candidate. Within the mandate, clear_candidate gives your green light to a verified and approved candidate. The person always reviews and publishes it: never claim that work is merged or published.",
     "Trama writes commits in Conventional Commits 1.0.0, or in the rules the project declares, and names branches feature/, bugfix/ or hotfix/. It derives the type and scope from the kind of work, the files and the modules: when they are wrong, correct them with set_commit_message before the person publishes. Trama publishes only a candidate that meets its quality standard: verified, a valid message, no secrets or sensitive files, a clean git diff --check, its issue linked when one exists and no Pact question left open.",
     "When the person answers a card, withdraws a question or changes the mandate, Trama writes it to you as the person's message.",
     NEXT_STEP_RULES,

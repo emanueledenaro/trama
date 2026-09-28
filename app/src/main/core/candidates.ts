@@ -236,9 +236,7 @@ export function clearCandidate(document: ProjectDocument, candidateId: string, a
   if (candidate.technicalReview?.verdict !== "approved") {
     throw new CandidateError("review_required", `Candidate ${candidate.id} needs a technical review that approves it before the green light.`);
   }
-  // The mandate version travels with the green light: a later mandate needs a new one before a merge (issue #41).
-  const mandateVersion = document.mandate?.status === "granted" ? { mandateVersion: document.mandate.version } : {};
-  candidate.clearance = { actor, fingerprint: contentFingerprint(document, candidate), at: now.toISOString(), ...mandateVersion };
+  candidate.clearance = { actor, fingerprint: contentFingerprint(document, candidate), at: now.toISOString() };
   candidate.updatedAt = now.toISOString();
   return candidate;
 }
@@ -253,6 +251,8 @@ export function approveCandidate(document: ProjectDocument, candidateId: string,
   const blockers = inspectCandidate(document, candidate, headSHA);
   if (blockers.length) throw new CandidateError("candidate_not_verified", `Il candidato non è verificato: ${blockers.map((b) => b.code).join(", ")}.`);
   candidate.humanApproval = { actor, fingerprint: contentFingerprint(document, candidate), at: now.toISOString() };
+  // An ok on the same content takes back an earlier refusal (issue #247).
+  if (candidate.humanRejection) candidate.humanRejection = null;
   candidate.updatedAt = now.toISOString();
   return candidate;
 }

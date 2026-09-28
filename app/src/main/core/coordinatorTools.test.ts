@@ -5,7 +5,6 @@ import type { MandateAction, ProjectDocument } from "@shared/domain";
 import { placeGrillingQuestion } from "@shared/grilling";
 import { FIXED_ROLES } from "@shared/roster";
 import { COORDINATOR_TOOLS, developerInstructions, GRILLING_BINDING, NEXT_STEP_RULES, runCoordinatorTool, type ToolContext } from "./coordinatorTools";
-import type { IntegrationOutcome } from "./integration";
 import { emptyDocument } from "./document";
 import { proposeGoal, updateGoal } from "./goals";
 import { DutyRequestError } from "./duties";
@@ -662,52 +661,6 @@ describe("team and candidate tools under the mandate (V04, V05)", () => {
     grant(document, ["executeInWorktree", "integrateCandidate"]);
     expect(await refusal("clear_candidate", { candidate: candidate.id }, context)).toContain("candidate_not_verified");
     expect(candidate.clearance).toBeNull();
-  });
-
-  it("integrate_candidate needs integrateCandidate and reports each outcome of the merge by mandate (issue #41)", async () => {
-    const document = emptyDocument("p");
-    const outcomes: IntegrationOutcome[] = [];
-    const asked: string[] = [];
-    const context = {
-      ...mandateContext(document).context,
-      integrateCandidate: async (id: string) => {
-        asked.push(id);
-        return outcomes.shift()!;
-      },
-    } as unknown as ToolContext;
-    const decision = decide(document, { id: null, value: "Un ordine pagato va in revisione", acceptedExample: "Ordine 42", rationale: "r" });
-    confirmTeam(document, proposeTeam(document, { requestId: null, summary: null, members: [{ name: "Ada", competence: "Swift", reason: "r", moduleIds: [] }] }).id, null, null);
-    grant(document, ["executeInWorktree"]);
-    const assignment = assign(document, { ...order, moduleIds: ["Sources/Orders"], model: "gpt-5.5" } as never, 1, null);
-    recordWorkspace(document, assignment.id, WORKTREE as never);
-    beginTurn(document, assignment.id, "t1", "gpt-5.5");
-    endTurn(document, assignment.id, "t1", { kind: "completed", text: "fatto" });
-    parse(await runCoordinatorTool("declare_candidate", { assignment: assignment.id, decisionIDs: [decision.id] }, context));
-    const candidate = document.candidates[0]!;
-    expect(await refusal("integrate_candidate", { candidate: candidate.id }, context)).toContain("not_in_mandate");
-    expect(asked).toEqual([]);
-
-    grant(document, ["executeInWorktree", "integrateCandidate"]);
-    const integration = {
-      actor: "Coordinatore",
-      mandateVersion: 1,
-      destination: { repository: "o/r", pullRequestNumber: 7, baseBranch: "main", headSHA: "h" },
-      status: "merged",
-      startedAt: "t",
-      updatedAt: "t",
-      mergeSHA: "m",
-      failure: null,
-      stop: null,
-    } as const;
-    outcomes.push(
-      { status: "blocked", blockers: [{ code: "CI_PENDING", detail: "La CI della pull request è ancora in corso." }] },
-      { status: "stopped", integration: { ...integration, status: "stopped", stop: { reasons: ["Cancella un file."], consequences: [], alternatives: [], acknowledgedAt: null } } },
-      { status: "merged", integration, duplicate: false },
-    );
-    expect(await refusal("integrate_candidate", { candidate: candidate.id }, context)).toContain("CI_PENDING");
-    expect(await refusal("integrate_candidate", { candidate: candidate.id }, context)).toContain("person_required");
-    expect(parse(await runCoordinatorTool("integrate_candidate", { candidate: candidate.id }, context))).toMatchObject({ status: "merged", pullRequest: 7 });
-    expect(asked).toEqual([candidate.id, candidate.id, candidate.id]);
   });
 
   it("verify_candidate on an ended assignment says to declare the candidate first, then resolves to it (issue #204)", async () => {

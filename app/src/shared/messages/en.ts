@@ -135,18 +135,6 @@ export const en: Record<keyof typeof it, string> = {
   "github.detail.signedOut": "gh is not signed in. Run {command} in the terminal, then press Check again.",
   "github.detail.signedOutDetail": "gh is not signed in: {detail}. Run {command} in the terminal, then press Check again.",
 
-  // Merge by mandate (issue #41)
-  "integration.label": "Merge under the mandate",
-  "integration.merged": "Pull request {pull} merged by the Coordinator under mandate version {version}",
-  "integration.mergedNote": "It is the Coordinator's green light, not your review. Your local copy and the app in use do not change, and nothing is deployed.",
-  "integration.merging": "Merging {pull}. If GitHub does not answer, Trama reads the pull request again before retrying.",
-  "integration.failed": "Merging {pull} did not succeed: {failure}",
-  "integration.failedNote": "The next attempt goes to the same pull request.",
-  "integration.stopped": "The Coordinator does not merge {pull}: the choice is yours.",
-  "integration.consequences": "Consequences",
-  "integration.alternatives": "What you can do",
-  "integration.seen": "Seen",
-
   // Settings
   "settings.sections": "Settings sections",
   "settings.section.general": "General",

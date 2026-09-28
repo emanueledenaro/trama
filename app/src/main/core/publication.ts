@@ -116,9 +116,9 @@ export async function publishCandidate(input: {
     if (extra.length) throw new Error(`L'indice contiene file fuori dal candidato: ${extra.join(", ")}.`);
     await git(["commit", "--no-verify", "--cleanup=whitespace", "-m", input.message], root, false);
   }
-  // The commit pushed: a later merge by mandate merges exactly this head, or nothing (issue #41).
-  const headSHA = (await git(["rev-parse", "--verify", "HEAD"], root)).trim();
   await pushBranch({ root, branch: workspace.branch, mandate: input.mandate, onRecord: input.onPush, mainBranches: [input.baseBranch] });
+  // The commit Trama pushed: the only head a merge of this candidate accepts (issue #247).
+  const headSHA = (await git(["rev-parse", "HEAD"], root)).trim();
   // An open pull request of this branch now carries the candidate; a closed or merged one belongs to earlier work.
   // GitHub refuses a second pull request for the same branch, so an unreadable list is safe to skip.
   const afterPush = await findPullRequest(input.repository, workspace.branch).catch(() => null);
