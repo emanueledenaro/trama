@@ -101,8 +101,9 @@ const expectAsked = async (fragment, control) => {
 // Issue #392: Trama's ids stay on hover; the text the person reads names the records.
 const rawIds = async (locator) => (await locator.innerText()).match(/(?<![\w-])(?:DQ|DM|AT|PR|[ACDFGMPQRS])-[0-9A-F]{8}(?![\w-])/g) ?? [];
 const expectNoRawIds = async (locator, where) => {
-  const ids = await rawIds(locator);
-  if (ids.length) throw new Error(`${where} shows raw ids: ${[...new Set(ids)].join(", ")}`);
+  const text = await locator.innerText();
+  const ids = [...text.matchAll(/(?<![\w-])(?:DQ|DM|AT|PR|[ACDFGMPQRS])-[0-9A-F]{8}(?![\w-])/g)];
+  if (ids.length) throw new Error(`${where} shows raw ids: ${ids.map((m) => `…${text.slice(Math.max(0, m.index - 50), m.index + 12)}`).join(" | ")}`);
 };
 
 // W17: the seam, the bots' stitch used as an accent. At most one shows on a screen, and only on the approved uses;
@@ -540,7 +541,10 @@ await teamPanel.getByTestId("team-developer").getByTestId("agent-tag").filter({ 
 if ((await teamPanel.getByTestId("team-figure").getByTestId("agent-tag").count()) < 5) throw new Error("The fixed roles have no tag");
 // W13: the person renames the developer from the Team view; the id stays and a fixed role's name is refused.
 await teamPanel.getByTestId("team-developer").first().click();
-const developerId = (await teamPanel.getByText(/^S-[0-9A-F]{8}$/).first().textContent()).trim();
+// Issue #392: the id is Trama's, so the header keeps it on hover and in the DOM, not as a visible badge.
+const developerId = await teamPanel.getByTestId("specialist-header").locator("h3[data-record-id]").getAttribute("data-record-id");
+if (!/^S-[0-9A-F]{8}$/.test(developerId ?? "")) throw new Error(`The specialist's header lost its id: ${developerId}`);
+await expectNoRawIds(teamPanel.getByTestId("specialist-header"), "The specialist's header");
 await teamPanel.getByRole("button", { name: "Rinomina", exact: true }).click();
 const rename = teamPanel.getByTestId("rename-specialist");
 await rename.getByLabel("Nuovo nome").fill("Clean Code");
@@ -552,7 +556,8 @@ if (renameButtons.at(-1)?.trim() !== "Rinomina") throw new Error(`Rename is not 
 await shot("04e3-team-rename");
 await rename.getByRole("button", { name: "Rinomina" }).click();
 await teamPanel.getByRole("heading", { name: "Giulia" }).waitFor({ timeout: 20_000 });
-await teamPanel.getByText(developerId, { exact: true }).waitFor();
+// The id stays the same after the rename.
+await teamPanel.getByTestId("specialist-header").locator(`h3[data-record-id="${developerId}"]`).waitFor();
 // W15: the person picks another color; only the avatar and the tag take it.
 await teamPanel.getByRole("radio", { name: "Rame" }).click();
 await teamPanel.locator('[role="radio"][aria-label="Rame"][aria-checked="true"]').waitFor({ timeout: 20_000 });
@@ -2031,7 +2036,8 @@ await app.evaluate(({ nativeTheme }) => {
 await page.evaluate(() => document.documentElement.classList.remove("dark"));
 // Security's message is in Ada's work, with the turn she resumed with it: the person reads what the agents said.
 await page.getByRole("button", { name: /ha lavorato per/ }).last().click();
-const toDeveloper = page.getByRole("button", { name: /^Sicurezza a Ada: 1 rilievo bloccante sul candidato C-/ });
+// The step names the candidate, not its id (issue #392).
+const toDeveloper = page.getByRole("button", { name: /^Sicurezza a Ada: 1 rilievo bloccante sul candidato di Ada/ });
 await toDeveloper.waitFor({ timeout: 10_000 });
 await toDeveloper.click();
 await page.getByText(/Segreto nel diff: chiave API in NOTE\.md/).last().waitFor();
@@ -2415,7 +2421,8 @@ await setLookTo(questionLook.provider, questionLook.dark);
 // assignment's card or the specialist's page, never from the sidebar, and cannot write in it: the person talks only
 // with the Coordinator (Q32 of #239).
 if (await page.getByTestId("sidebar-agent-thread").count()) throw new Error("A conversation between agents is in the sidebar");
-const threadLink = questionWork.getByTestId("assignment-threads").getByRole("button", { name: /Domanda al Coordinatore, fetta S1/ });
+// The title names the slice as the other cards do (issue #392): "fetta S1" reads "fetta 1, <its title>".
+const threadLink = questionWork.getByTestId("assignment-threads").getByRole("button", { name: /Domanda al Coordinatore, fetta 1, / });
 await threadLink.waitFor({ timeout: 10_000 });
 await threadLink.click();
 const agentThread = page.locator('[data-testid="agent-thread"][data-kind="question"]');
@@ -2440,7 +2447,7 @@ for (const provider of ["codex", "claudeAgent"]) {
 await setLookTo(questionLook.provider, questionLook.dark);
 // The specialist's page lists every conversation the developer takes part in.
 await agentThread.getByRole("button", { name: "Apri lo sviluppatore" }).click();
-const specialistThreads = page.getByTestId("specialist-threads").getByRole("button", { name: /Domanda al Coordinatore, fetta S1/ });
+const specialistThreads = page.getByTestId("specialist-threads").getByRole("button", { name: /Domanda al Coordinatore, fetta 1, / });
 await specialistThreads.waitFor();
 await expectNoRawIds(page.getByTestId("inspector"), "The specialist's page");
 await specialistThreads.scrollIntoViewIfNeeded();

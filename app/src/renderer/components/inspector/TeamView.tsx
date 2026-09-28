@@ -498,7 +498,9 @@ function SpecialistThreads({ specialistId }: { specialistId: string }) {
             className="flex min-w-0 items-center gap-2 rounded-md px-1 py-0.5 text-left text-ui hover:bg-[var(--sidebar-accent)]"
             onClick={() => setInspector({ kind: "agentThread", id: thread.id })}
           >
-            <span className="min-w-0 flex-1 truncate text-foreground/90">{thread.title}</span>
+            <span className="min-w-0 flex-1 truncate text-foreground/90">
+              <ReferenceText text={thread.title} links={false} />
+            </span>
             <span className="shrink-0 text-ui-xs text-muted-foreground">{threadParticipants(thread, document.team.specialists)}</span>
           </button>
         ))}
