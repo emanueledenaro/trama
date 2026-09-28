@@ -36,6 +36,8 @@ export interface ActivityEntry {
   outcome: ActivityOutcome;
   /** Why the move was not made or failed, in the person's words; null otherwise. */
   detail: string | null;
+  /** The tools of the move that failed, with their technical error: they stay here, never in the chat (issue #241). */
+  toolErrors: { title: string; detail: string | null }[];
   /** The issue a problem's step names (A08); absent for moves and rounds. */
   issue?: { number: number; url: string } | null;
 }
@@ -106,9 +108,13 @@ export function activityLog(
   steps: AutonomousStep[] = [],
 ): ActivityEntry[] {
   const labels = new Map<string, string>();
+  const toolErrors = new Map<string, ActivityEntry["toolErrors"]>();
   for (const event of events) {
     const content = event.content;
     if (content.type === "card" && content.kind === "automaticStep" && content.referenceId) labels.set(content.referenceId, content.title);
+    if (content.type === "activity" && content.tone === "error" && event.requestId && !event.workKey) {
+      toolErrors.set(event.requestId, [...(toolErrors.get(event.requestId) ?? []), { title: content.title, detail: content.detail ?? null }]);
+    }
   }
   const moves = requests
     .filter(isAutomaticMove)
@@ -123,6 +129,7 @@ export function activityLog(
       startedAt: request.createdAt,
       endedAt: request.completedAt,
       ...outcomeOf(request),
+      toolErrors: toolErrors.get(request.id) ?? [],
     }))
     .reverse();
   const done = [...rounds].reverse().map(
@@ -138,6 +145,7 @@ export function activityLog(
       endedAt: null,
       outcome: "done",
       detail: round.detail,
+      toolErrors: [],
     }),
   );
   const taken = [...steps].reverse().map(
