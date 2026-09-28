@@ -189,8 +189,6 @@ export interface PoseInput {
   t: number;
   /** A number from the agent's id, so bots of the same state do not move in step. */
   seed: number;
-  /** Where the cursor is, as a vector of length up to 1 from the bot; null keeps the default glance. */
-  look: Point | null;
   detail: BotDetail;
   /** False for reduced motion: the pose of the expression, with no breathing, blinking or wobble. */
   moving: boolean;
@@ -200,8 +198,8 @@ function eyePair(input: PoseInput, expression: BotExpression, wink: boolean): [E
   const place = EYES[input.shape];
   const preset = EXPRESSIONS[expression];
   const grow = input.detail === "low" ? 1.45 : 1;
-  // By default the stitches glance up and to the right; the cursor takes over when it is near.
-  const glance = input.look ? { x: input.look.x * 0.12, y: input.look.y * 0.1 } : { x: 0.07, y: -0.06 };
+  // The stitches glance up and to the right; they do not follow the cursor.
+  const glance = { x: 0.07, y: -0.06 };
   let drift = { x: 0, y: 0 };
   let blink = 1;
   let tremble = 0;
