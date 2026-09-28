@@ -489,6 +489,43 @@ await shot("02-demo-study");
   // One badge in the activity bar, the count of Aspetta te.
   const badges = await activityBar().getByTestId("activity-badge").allInnerTexts();
   if (badges.join() !== "1") throw new Error(`The activity bar's badges: ${badges.join(", ")}`);
+  // The Projects icon is stacked folders and the Coordinator's conversation is Trama's mark in one tint, both drawn in
+  // the button's own color (currentColor) at the size of the other icons: grey when off, the active color when open.
+  {
+    const iconOf = (name) =>
+      activityBar()
+        .getByRole("button", { name, exact: true })
+        .evaluate((button) => {
+          const svg = button.querySelector("svg");
+          const box = svg.getBoundingClientRect();
+          const painted = svg.querySelector("path");
+          const style = getComputedStyle(painted);
+          return {
+            tabler: svg.classList.contains("tabler-icon-folders"),
+            mark: svg.dataset.tramaMark ?? null,
+            size: [Math.round(box.width), Math.round(box.height)],
+            paint: painted.getAttribute("fill") === "currentColor" ? style.fill : style.stroke,
+            color: getComputedStyle(button).color,
+          };
+        });
+    const projects = await iconOf("Progetti");
+    const coordinator = await iconOf("Coordinatore");
+    const other = await iconOf("Memoria");
+    if (!projects.tabler || projects.size.join() !== other.size.join()) throw new Error(`The Projects icon is not the stacked folders at the icons' size: ${JSON.stringify(projects)}`);
+    if (coordinator.mark !== "mono" || coordinator.size.join() !== other.size.join() || coordinator.paint !== coordinator.color) {
+      throw new Error(`The Coordinator's icon is not Trama's mark in the button's color: ${JSON.stringify(coordinator)}`);
+    }
+    if ((await activityBar().getByRole("button", { name: "Coordinatore", exact: true }).getAttribute("aria-pressed")) !== "true") throw new Error("The Coordinator's icon is not on with the conversation open");
+    for (const provider of ["codex", "claudeAgent"]) {
+      for (const dark of [false, true]) {
+        await setLookTo(provider, dark);
+        await page.waitForTimeout(200);
+        await capture({ path: join(out, `30-activity-bar-${provider}-${dark ? "dark" : "light"}.png`), clip: { x: 0, y: 0, width: 240, height: 440 } });
+        console.log("saved", `30-activity-bar-${provider}-${dark ? "dark" : "light"}`);
+      }
+    }
+    await setLookTo(windowLook.provider, windowLook.dark);
+  }
   for (const [size, width, height] of [["1280x800", 1280, 800], ["1680x1050", 1680, 1050]]) {
     await page.setViewportSize({ width, height });
     await page.waitForTimeout(300);

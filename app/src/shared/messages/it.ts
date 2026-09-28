@@ -545,7 +545,7 @@ export const it = {
   // Window (issue #330)
   "workbench.views": "Viste",
   "workbench.view.projects": "Progetti",
-  "workbench.view.conversation": "Conversazione",
+  "workbench.view.conversation": "Coordinatore",
   "workbench.view.waiting": "Aspetta te",
   "workbench.view.waitingCount": "Aspetta te: {count} cose",
   "workbench.view.waitingCount.one": "Aspetta te: 1 cosa",

@@ -1,5 +1,6 @@
-import { IconBrain, IconFileDiff, IconHourglass, IconMessageCircle, IconSettings, IconShieldCheck, IconUsersGroup } from "@tabler/icons-react";
+import { IconBrain, IconFileDiff, IconFolders, IconHourglass, IconSettings, IconShieldCheck, IconUsersGroup } from "@tabler/icons-react";
 import type * as React from "react";
+import { TramaMark } from "@/components/brand/TramaMark";
 import { useWaiting } from "@/components/WaitingView";
 import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/cn";
@@ -52,7 +53,7 @@ function ActivityButton({
 
 /**
  * The activity bar (issue #330, ADR 0018): a column of icons on the left that chooses what the window shows.
- * Projects on top, then the conversation and the five views of the project, Settings at the bottom. The one badge
+ * Projects on top, then the Coordinator's conversation and the five views of the project, Settings at the bottom. The one badge
  * counts what waits for the person. The icon of the open view closes the side bar, as in VS Code.
  */
 export function ActivityBar() {
@@ -79,7 +80,6 @@ export function ActivityBar() {
       {icon}
     </ActivityButton>
   );
-  const initial = (project?.isDemo ? t("workbench.title.demoProject") : (project?.name ?? "T")).trim().charAt(0).toLowerCase() || "t";
   return (
     <nav
       aria-label={t("workbench.views")}
@@ -87,15 +87,7 @@ export function ActivityBar() {
       className="app-sidebar-surface flex h-full w-12 shrink-0 flex-col items-center border-r border-[color:var(--app-panel-border)]"
     >
       <ActivityButton label={t("workbench.view.projects")} active={shown === "projects"} onClick={() => openView("projects")}>
-        <span
-          className={cn(
-            "flex size-7 items-center justify-center rounded-md text-ui-sm font-semibold",
-            project ? "bg-[var(--sidebar-selected)] text-[var(--color-text-accent)]" : "bg-[var(--color-background-button-secondary)] text-muted-foreground",
-          )}
-          aria-hidden
-        >
-          {initial}
-        </span>
+        <IconFolders className="size-5" stroke={1.6} />
       </ActivityButton>
       {project ? (
         <>
@@ -109,7 +101,8 @@ export function ActivityBar() {
               focusComposer();
             }}
           >
-            <IconMessageCircle className="size-5" stroke={1.6} />
+            {/* Trama's mark in one tint, like the other icons: the conversation is with the Coordinator. */}
+            <TramaMark variant="mono" size={20} />
           </ActivityButton>
           {view("waiting", <IconHourglass className="size-5" stroke={1.6} />, waiting)}
           {view("work", <IconFileDiff className="size-5" stroke={1.6} />)}
