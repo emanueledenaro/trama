@@ -26,7 +26,7 @@ import type { RepositorySnapshot } from "@shared/repository";
 import type { GitHubState, MergeRoute } from "@shared/domain";
 import { createDecisionRequest, createMandateRequest, DELEGABLE_ACTIONS, DomainError, MAXIMUM_ALTERNATIVES } from "./pact";
 import { ALL_CHECKS, CHECKS, type CheckResult, type ReadOnlyCheck } from "./checks";
-import { candidateReport, CandidateError, clearCandidate, declareCandidate, findCandidate, latestCandidate, rebindTramaCandidate } from "./candidates";
+import { candidateReport, CandidateError, clearCandidate, declareCandidate, findCandidate, latestCandidate, openCorrections, rebindTramaCandidate } from "./candidates";
 import { recordSemanticHypothesis, SemanticRiskError } from "./semanticConflicts";
 import { studyText } from "./study";
 import { findGoal, requestGoalId } from "@shared/goals";
@@ -523,7 +523,7 @@ export const COORDINATOR_TOOLS: ToolDefinition[] = [
   {
     name: "review_candidate",
     description:
-      "Ask Trama to pass the candidate through the gate before it reaches the person: Trama runs the required checks still missing, then every candidate reviewer of the team in parallel on the diff (spec reviewer, Clean Code with the technical review from a thread distinct from the author's, regression guardian with the suite on the base and on the candidate, security, performance, UX, DevOps, documentation). Each figure answers with its findings or signs nothing to report. A regression or a blocking finding stops the candidate and Trama sends the work back to its developer with the findings; the verdict is then changesRequested. The review refers to the candidate; it is neither a human review of the Pact nor a merge, and it never replaces the person's approval.",
+      "Ask Trama to pass the candidate through the gate before it reaches the person: Trama runs the required checks still missing, then every candidate reviewer of the team in parallel on the diff (spec reviewer, Clean Code with the technical review from a thread distinct from the author's, regression guardian with the suite on the base and on the candidate, security, performance, UX, DevOps, documentation). Each figure answers with its findings or signs nothing to report. A regression or a blocking finding stops the candidate and Trama sends the work back to its developer with the findings; the verdict is then changesRequested. The review refers to the candidate; it is neither a human review of the Pact nor a merge, and it never replaces the person's approval. The gate takes minutes; if the call is cut off, call review_candidate again on the same candidate: it waits for the gate already at work instead of opening a new one.",
     properties: { candidate: text },
     required: ["candidate"],
     readOnly: true,
@@ -1266,6 +1266,8 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
             slice,
             commit,
             seams,
+            // Work with edits that corrects blocked work of the same dialog supersedes its candidate (issue #389).
+            replaces: withEdits ? openCorrections(document, context.runningRequestId, { moduleIds, slice }) : [],
           },
           document.mandate!.version,
           context.runningRequestId,
@@ -1282,6 +1284,7 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
           goalID: assignment.goalId ?? null,
           slice: assignment.slice?.sliceId ?? null,
           requiredChecks: assignment.requiredChecks,
+          ...(assignment.replaces?.length ? { replacesAssignmentIDs: assignment.replaces } : {}),
           ...(presenceWarning ? { presence: presenceWarning } : {}),
         });
       }

@@ -682,6 +682,11 @@ export interface SpecialistAssignment {
   worktreeSnapshot?: { snapshotId: string; at: string } | null;
   /** The candidate gate sent the work back with blocking findings (W10); the latest return, absent before any. */
   gateReturn?: { gateId: string; candidateId: string; findings: string[]; at: string } | null;
+  /**
+   * The earlier assignments this work corrects (issue #389): later work in the same dialog on their modules while
+   * their candidate was still blocked. Their candidates are superseded by this work's; absent when it corrects nothing.
+   */
+  replaces?: string[];
   /** Where the work runs and why (A19, issue #260); absent for work that never had a choice, which runs locally. */
   place?: AssignmentPlace | null;
   /** The person's move of this work between local and cloud (A19); it holds for the next start or resume. */
@@ -1861,8 +1866,12 @@ export interface CandidateGate {
   checksFailed: string[];
   suite: SuiteComparison[];
   reviews: GateReview[];
-  /** The work went back to its developer with the blocking findings; `waiting` says why it has not resumed yet. */
-  returned: { assignmentId: string; at: string; waiting: string | null } | null;
+  /**
+   * The work went back to its developer with the blocking findings; `waiting` says why it has not resumed yet. `held`
+   * is set when the work was blocked too many times in a row (issue #389): Trama does not resume it by itself, the
+   * person decides how to go on.
+   */
+  returned: { assignmentId: string; at: string; waiting: string | null; held?: boolean } | null;
   failure: string | null;
   startedAt: string;
   updatedAt: string;
