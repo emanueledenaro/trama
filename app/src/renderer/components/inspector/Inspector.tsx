@@ -1,7 +1,3 @@
-import { IconArrowsDiagonal, IconArrowsDiagonalMinimize2, IconX } from "@tabler/icons-react";
-import { Tooltip } from "@/components/ui/tooltip";
-import { cn } from "@/lib/cn";
-import { Sash, useResizableWidth } from "@/lib/resizable";
 import { useUi } from "@/lib/store";
 import { ActivityView } from "./ActivityView";
 import { AgentThreadView } from "./AgentThreadView";
@@ -22,10 +18,7 @@ import { Sep } from "@/components/ui/sep";
 import { asTitle, useRecord } from "@/lib/references";
 import type { InspectorTarget } from "@/lib/store";
 
-/** The narrowest the dialog gets next to a docked inspector. */
-const CHAT_MIN_WIDTH = 420;
-
-const TITLES = {
+export const TITLES = {
   waiting: "Aspetta te",
   map: "Mappa del progetto",
   module: "Modulo",
@@ -58,14 +51,14 @@ const targetId = (target: InspectorTarget): string | null => (target.kind === "c
  * The title follows what the panel shows (issue #270): a record by its name, with the id on hover; Aspetta te opened
  * on one item says which one, since the card on screen is that item's.
  */
-function InspectorTitle({ target }: { target: InspectorTarget }) {
+export function InspectorTitle({ target }: { target: InspectorTarget }) {
   const waitingItem = useUi((s) => (target.kind === "waiting" && target.key ? (s.app?.project?.waiting ?? []).find((i) => i.key === target.key) ?? null : null));
   const candidateId = waitingItem?.kind === "candidate" ? waitingItem.targetId : null;
   const record = useRecord(targetId(target) ?? candidateId);
   const id = targetId(target) ?? candidateId ?? undefined;
   if (target.kind === "waiting") {
     return (
-      <h3 className="min-w-0 flex-1 truncate font-system-ui text-ui text-foreground" title={id} data-testid="inspector-title">
+      <h3 className="min-w-0 flex-1 truncate font-system-ui text-ui text-foreground" title={id} data-testid="side-bar-title">
         {TITLES.waiting}
         {waitingItem ? (
           <>
@@ -85,89 +78,40 @@ function InspectorTitle({ target }: { target: InspectorTarget }) {
             ? asTitle(record.label)
             : TITLES[target.kind];
   return (
-    <h3 className="min-w-0 flex-1 truncate font-system-ui text-ui text-foreground" title={id} data-testid="inspector-title">
+    <h3 className="min-w-0 flex-1 truncate font-system-ui text-ui text-foreground" title={id} data-testid="side-bar-title">
       {title}
     </h3>
   );
 }
 
-export function Inspector() {
-  const target = useUi((s) => s.inspector)!;
-  const setInspector = useUi((s) => s.setInspector);
-  const panel = useResizableWidth("trama.inspectorWidth", { initial: 420, min: 340, max: (viewport) => Math.min(1100, viewport * 0.7) });
-  const wide = Math.round(Math.min(panel.bounds.max, window.innerWidth * 0.6));
-  const isWide = panel.width >= wide - 8;
+/** The panel of a target, shown in the side bar under its view (issue #330). */
+export function InspectorBody({ target }: { target: InspectorTarget }) {
   return (
-    <aside
-      aria-label={TITLES[target.kind]}
-      data-testid="inspector"
-      onKeyDown={(event) => {
-        if (event.key === "Escape" && !event.defaultPrevented) setInspector(null);
-      }}
-      className={cn(
-        "@container/inspector relative flex max-w-full shrink-0 flex-col border-l border-[color:var(--app-surface-divider)] bg-[var(--color-background-surface)]",
-        !panel.resizing && "transition-[width] duration-200 ease-out",
-        // Below this width a docked inspector would squeeze the dialog, so it floats over the chat instead.
-        "@max-[859px]/main:absolute @max-[859px]/main:inset-y-0 @max-[859px]/main:right-0 @max-[859px]/main:z-30 @max-[859px]/main:max-w-full @max-[859px]/main:shadow-2xl",
-      )}
-      // The dialog keeps at least CHAT_MIN_WIDTH; below that the inspector floats over it (see the container query above).
-      style={{ width: `min(${panel.width}px, max(${panel.bounds.min}px, calc(100% - ${CHAT_MIN_WIDTH}px)))` }}
-    >
-      <Sash
-        side="left"
-        label="Larghezza dell'ispettore"
-        size={panel.width}
-        min={panel.bounds.min}
-        max={panel.bounds.max}
-        onResize={panel.setWidth}
-        onReset={panel.reset}
-        onDragChange={panel.setResizing}
-      />
-      <div className="chat-surface-divider drag-region flex h-[46px] shrink-0 items-center gap-2 px-4">
-        <InspectorTitle target={target} />
-        <Tooltip label={isWide ? "Larghezza normale" : "Allarga l'ispettore"}>
-          <button
-            type="button"
-            aria-label={isWide ? "Larghezza normale" : "Allarga l'ispettore"}
-            aria-pressed={isWide}
-            className="sidebar-icon-button no-drag size-6 rounded-md"
-            onClick={() => (isWide ? panel.reset() : panel.setWidth(wide))}
-          >
-            {isWide ? <IconArrowsDiagonalMinimize2 className="size-3.5" /> : <IconArrowsDiagonal className="size-3.5" />}
-          </button>
-        </Tooltip>
-        <Tooltip label="Chiudi l'ispettore">
-          <button type="button" aria-label="Chiudi l'ispettore" className="sidebar-icon-button no-drag size-6 rounded-md" onClick={() => setInspector(null)}>
-            <IconX className="size-3.5" />
-          </button>
-        </Tooltip>
-      </div>
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        {target.kind === "waiting" ? <WaitingList focusKey={target.key} /> : null}
-        {target.kind === "map" ? <MapView /> : null}
-        {target.kind === "module" ? <ModuleView id={target.id} /> : null}
-        {target.kind === "file" ? <FilePreview path={target.path} /> : null}
-        {target.kind === "pact" ? <PactView /> : null}
-        {target.kind === "decision" ? <DecisionView id={target.id} /> : null}
-        {target.kind === "mandate" ? <MandateView /> : null}
-        {target.kind === "memory" ? <MemoryView /> : null}
-        {target.kind === "team" ? <TeamView /> : null}
-        {target.kind === "specialist" ? <SpecialistView id={target.id} /> : null}
-        {target.kind === "agentThread" ? <AgentThreadView id={target.id} /> : null}
-        {target.kind === "candidate" ? <CandidateView id={target.id} /> : null}
-        {target.kind === "audit" ? <AuditView id={target.id} /> : null}
-        {target.kind === "group" ? <GroupView /> : null}
-        {target.kind === "work" ? <WorkView /> : null}
-        {target.kind === "activity" ? <ActivityView focusWork={target.work} /> : null}
-        {target.kind === "issues" ? <IssuesView /> : null}
-        {target.kind === "issue" ? <IssueDetail number={target.number} /> : null}
-        {target.kind === "pullRequest" ? <PullRequestView number={target.number} /> : null}
-        {target.kind === "commit" ? <CommitView sha={target.sha} /> : null}
-        {target.kind === "branch" ? <BranchView name={target.name} /> : null}
-        {target.kind === "goals" ? <GoalsView key={String(target.create)} create={target.create} /> : null}
-        {target.kind === "goal" ? <GoalView key={`${target.id}:${String(target.edit)}`} id={target.id} edit={target.edit} /> : null}
-      </div>
-    </aside>
+    <>
+      {target.kind === "waiting" ? <WaitingList focusKey={target.key} /> : null}
+      {target.kind === "map" ? <MapView /> : null}
+      {target.kind === "module" ? <ModuleView id={target.id} /> : null}
+      {target.kind === "file" ? <FilePreview path={target.path} /> : null}
+      {target.kind === "pact" ? <PactView /> : null}
+      {target.kind === "decision" ? <DecisionView id={target.id} /> : null}
+      {target.kind === "mandate" ? <MandateView /> : null}
+      {target.kind === "memory" ? <MemoryView /> : null}
+      {target.kind === "team" ? <TeamView /> : null}
+      {target.kind === "specialist" ? <SpecialistView id={target.id} /> : null}
+      {target.kind === "agentThread" ? <AgentThreadView id={target.id} /> : null}
+      {target.kind === "candidate" ? <CandidateView id={target.id} /> : null}
+      {target.kind === "audit" ? <AuditView id={target.id} /> : null}
+      {target.kind === "group" ? <GroupView /> : null}
+      {target.kind === "work" ? <WorkView /> : null}
+      {target.kind === "activity" ? <ActivityView focusWork={target.work} /> : null}
+      {target.kind === "issues" ? <IssuesView /> : null}
+      {target.kind === "issue" ? <IssueDetail number={target.number} /> : null}
+      {target.kind === "pullRequest" ? <PullRequestView number={target.number} /> : null}
+      {target.kind === "commit" ? <CommitView sha={target.sha} /> : null}
+      {target.kind === "branch" ? <BranchView name={target.name} /> : null}
+      {target.kind === "goals" ? <GoalsView key={String(target.create)} create={target.create} /> : null}
+      {target.kind === "goal" ? <GoalView key={`${target.id}:${String(target.edit)}`} id={target.id} edit={target.edit} /> : null}
+    </>
   );
 }
 

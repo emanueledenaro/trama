@@ -319,7 +319,7 @@ export function Composer() {
               ))}
             </div>
           ) : null}
-          <div className="relative pt-3 pr-3.5 pb-2 pl-3">
+          <div className="relative pt-2.5 pr-3.5 pb-2 pl-3">
             <textarea
               ref={textarea}
               value={text}
@@ -377,7 +377,7 @@ export function Composer() {
               className="block max-h-60 min-h-[2lh] w-full resize-none bg-transparent font-system-ui text-chat leading-relaxed text-foreground outline-none placeholder:text-muted-foreground/40"
             />
           </div>
-          <div className="flex flex-wrap items-center justify-between gap-1.5 pr-2 pb-1.5 pl-1.5 sm:flex-nowrap sm:gap-0">
+          <div className="flex flex-wrap items-center justify-between gap-1.5 pr-2 pb-1 pl-1.5 sm:flex-nowrap sm:gap-0">
             <div className="flex min-w-0 flex-1 items-center gap-1">
               <Tooltip label="Allega immagini">
                 <Button variant="chrome" size="icon-sm" className="shrink-0 rounded-md" aria-label="Allega immagini" onClick={() => fileInput.current?.click()}>
