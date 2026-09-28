@@ -412,6 +412,7 @@ export const chatEn: Record<keyof typeof chatIt, string> = {
   "chat.slices.canStart": "Can start now",
   "chat.slices.selfPicked": ", picked up on their own",
   "chat.slices.paused": "Paused: {reason}",
+  "chat.slices.waiting": "Waiting: {reason}",
   "chat.slices.confirmedByCoordinator": "Confirmed by the Coordinator within the mandate",
   "chat.slices.confirmedByYou": "Confirmed by you",
   "chat.slices.title": "Vertical slices",

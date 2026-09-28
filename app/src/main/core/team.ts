@@ -23,7 +23,7 @@ import type {
 import { isOpenQuestion } from "@shared/domain";
 import type { ProviderId } from "@shared/codex";
 import { shortId } from "@shared/ids";
-import { DEFAULT_PARALLEL_DEVELOPERS, parallelDevelopers } from "@shared/parallel";
+import { DEFAULT_DEVELOPERS_PER_SQUAD, foreignSquad, squadLimitError, squadLimitProblem } from "@shared/squads";
 import { freeAgentColor, isAgentColor, tagFromCompetence } from "@shared/identity";
 import { FIXED_ROLES, isFixedRole, roleProfile } from "@shared/roster";
 import { cloudWorking } from "@shared/workPlace";
@@ -133,10 +133,16 @@ export function findSpecialist(document: ProjectDocument, reference: string): Sp
 }
 
 /**
- * At most this many developers work at the same time in a project unless the person changes it in the project's
- * settings (spec #137, Q5; W08); the fixed roles do not count.
+ * At most this many developers of a squad work at the same time unless the person changes it in the project's settings
+ * (A10, Q22); the fixed roles do not count.
  */
-export const MAX_PARALLEL_DEVELOPERS = DEFAULT_PARALLEL_DEVELOPERS;
+export const MAX_PARALLEL_DEVELOPERS = DEFAULT_DEVELOPERS_PER_SQUAD;
+
+/** Refuses a developer's work beyond the squads' limits (A10, Q22); work in a cloud session counts too (Q29). */
+function requireSquadRoom(document: ProjectDocument, specialist: Specialist): void {
+  const problem = squadLimitProblem(document, specialist);
+  if (problem) throw new TeamError("parallel_limit", squadLimitError(problem));
+}
 
 /** Developers at work now: developers with an active assignment. */
 export function activeDevelopers(document: ProjectDocument): number {
@@ -225,7 +231,7 @@ export function proposeTeam(
 }
 
 /** A new agent: a free color of the palette and its tag, the given one or the start of its competence (W15). */
-function newSpecialist(member: ProposedSpecialist, origin: Specialist["origin"], team: ProjectTeam, now: Date): Specialist {
+export function newSpecialist(member: ProposedSpecialist, origin: Specialist["origin"], team: ProjectTeam, now: Date): Specialist {
   return {
     id: shortId("S", randomUUID()),
     name: member.name,
@@ -437,13 +443,11 @@ export function assign(
   }
   if (pending.length) throw new TeamError("dependencies_pending", `These assignments are not completed yet: ${pending.join(", ")}.`);
   requireIndependent(document, moduleIds, specialist.id);
-  const limit = parallelDevelopers(document);
-  if (specialist.role === "developer" && activeDevelopers(document) >= limit) {
-    throw new TeamError(
-      "parallel_limit",
-      `${limit} ${limit === 1 ? "developer is" : "developers are"} already at work, the project's limit: assign more when one of them ends (spec #137).`,
-    );
+  const owner = foreignSquad(document, specialist, moduleIds);
+  if (owner) {
+    throw new TeamError("squad_owner", `The work on ${moduleIds.join(", ")} belongs to squad ${owner.name}: assign it to one of its developers.`);
   }
+  requireSquadRoom(document, specialist);
   const decisionVersions: Record<string, number> = {};
   for (const id of cleaned(order.decisionIds ?? [])) {
     const decision = document.decisions.find((d) => d.id === id);
@@ -807,7 +811,7 @@ export function resumeAssignment(document: ProjectDocument, id: string, now = ne
 
 /**
  * Resumes paused work whose question has its answer (W06), in the same session and worktree. It waits while the
- * developer works on something else, while three developers are at work or while someone works on its modules.
+ * developer works on something else, while its squad or the project is at its limit (A10) or while someone works on its modules.
  */
 export function resumePausedAssignment(document: ProjectDocument, id: string, now = new Date()): SpecialistAssignment {
   const assignment = findAssignment(document, id);
@@ -819,9 +823,7 @@ export function resumePausedAssignment(document: ProjectDocument, id: string, no
   if (specialist.status === "removed") throw new TeamError("specialist_removed", `Specialist ${specialist.id} was removed from the team.`);
   const current = currentAssignment(specialist);
   if (current && isActive(current)) throw new TeamError("specialist_busy", `Specialist ${specialist.id} is working on ${current.id}.`);
-  if (specialist.role === "developer" && activeDevelopers(document) >= MAX_PARALLEL_DEVELOPERS) {
-    throw new TeamError("parallel_limit", `${MAX_PARALLEL_DEVELOPERS} developers are already at work.`);
-  }
+  requireSquadRoom(document, specialist);
   requireIndependent(document, assignment.moduleIds, specialist.id);
   // The resumed work is the specialist's current work again, after what it did while this one waited.
   specialist.assignments = [...specialist.assignments.filter((a) => a.id !== id), assignment];
@@ -851,8 +853,7 @@ export function reopenForFindings(
   if (specialist.status === "removed") throw new TeamError("specialist_removed", `Specialist ${specialist.id} was removed from the team.`);
   const current = currentAssignment(specialist);
   if (current && current.id !== id && isActive(current)) throw new TeamError("specialist_busy", `Specialist ${specialist.id} is working on ${current.id}.`);
-  const limit = parallelDevelopers(document);
-  if (specialist.role === "developer" && activeDevelopers(document) >= limit) throw new TeamError("parallel_limit", `${limit} developers are already at work.`);
+  requireSquadRoom(document, specialist);
   requireIndependent(document, assignment.moduleIds, specialist.id);
   specialist.assignments = [...specialist.assignments.filter((a) => a.id !== id), assignment];
   return updateAssignment(document, id, now, (a) => {

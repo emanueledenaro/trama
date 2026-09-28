@@ -412,6 +412,7 @@ export const chatIt = {
   "chat.slices.canStart": "Può iniziare subito",
   "chat.slices.selfPicked": ", presa in autonomia",
   "chat.slices.paused": "Sospesa: {reason}",
+  "chat.slices.waiting": "In attesa: {reason}",
   "chat.slices.confirmedByCoordinator": "Confermate dal Coordinatore dentro il mandato",
   "chat.slices.confirmedByYou": "Confermate da te",
   "chat.slices.title": "Fette verticali",
