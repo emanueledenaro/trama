@@ -251,6 +251,25 @@ describe("Aspetta te (issue #240)", () => {
       expect(items.find((i) => i.kind === "route")).toMatchObject({ label: "Percorso di Ask Trama", title: "Situazione AT-1", blocks: 1 });
     });
 
+    it("leaves to Trama the candidates it merges with the green light and waits for the person on the interface ones (issue #247)", () => {
+      const document = withRequests(["R1", null]);
+      document.team.specialists.push({ id: "SP1", assignments: [{ id: "A1", objective: "Colore del pulsante Paga" }] } as unknown as Specialist);
+      document.candidates.push(
+        candidate("C1"),
+        candidate("C2"),
+        candidate("C3"),
+        candidate("C4", { humanRejection: { actor: "Persona", note: "Illeggibile in scuro", fingerprint: "x", at: "" } }),
+      );
+      const routed = (route: CandidateReport["mergeRoute"]): CandidateReport => ({ ...report("decided"), mergeRoute: route });
+      const items = waitingForYou(document, {
+        candidateReports: { C1: routed("coordinator"), C2: routed("interface"), C3: routed("person"), C4: routed("interface") },
+      });
+      expect(items.map((i) => [i.key, i.label])).toEqual([
+        ["candidate:C2", "Interfaccia da guardare"],
+        ["candidate:C3", "Candidato da guardare"],
+      ]);
+    });
+
     it("keeps one order for every kind: the work held first, then the oldest", () => {
       const document = withRequests(["R1", null]);
       document.goals = [goal("G1", "proposed", "2026-09-01T05:00:00Z")];
