@@ -161,6 +161,7 @@ export function activityLog(
       endedAt: null,
       outcome: step.correction ? "corrected" : "done",
       detail: step.correction ? `${step.summary} Correzione: ${step.correction.note}` : step.summary,
+      toolErrors: [],
     }),
   );
   const found = problemActivity(problems);
