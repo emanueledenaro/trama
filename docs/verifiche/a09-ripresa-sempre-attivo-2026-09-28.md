@@ -33,7 +33,7 @@ Base: `origin/main` 082fc93.
 - `app/src/main/core/resumeWork.test.ts`: cosa riprende alla riapertura (turno chiuso da Esci o da crash, solo l'ultimo; turno fermato dalla persona o lasciato; turno fallito per un limite con l'orario del provider; incarichi fermati dalla chiusura e non quelli fermati apposta; niente in Pausa, senza mandato o con il lavoro continuo spento); riga di riconciliazione per lo sviluppatore solo nel turno dopo la chiusura; frasi della riga di stato con e senza orario, orario passato, altro giorno; riga di stato in attesa con gli sviluppatori al lavoro e in Pausa.
 - `app/src/main/controller.test.ts`: con la quota esaurita la mossa automatica fallisce, la riga di stato dice l'attesa, il giro non apre turni, e a quota tornata la mossa riparte da sola; Esci durante un turno con mandato e ripresa da sola alla riapertura con la sezione di riconciliazione nel prompt; lo stesso in Pausa non riparte; turno fallito per quota prima di Esci che alla riapertura aspetta e poi riparte.
 - `app/src/main/team.integration.test.ts`: incarico fermato da Esci che riprende da solo alla riapertura; lo stesso in Pausa resta fermo.
-- `app/scripts/ui-check.mjs`, schermate `27a`-`27e` nei temi chiaro e scuro di due provider: riga di stato in attesa della quota, attesa dopo la riapertura senza turni nuovi, ripresa a fine quota, turno chiuso da Esci ripreso da solo, progetto in Pausa dopo il riavvio.
+- `app/scripts/ui-check.mjs`, schermate `28a`-`28e` nei temi chiaro e scuro di due provider: riga di stato in attesa della quota, attesa dopo la riapertura senza turni nuovi, ripresa a fine quota, turno chiuso da Esci ripreso da solo, progetto in Pausa dopo il riavvio.
 
 ## Schermate prima e dopo
 

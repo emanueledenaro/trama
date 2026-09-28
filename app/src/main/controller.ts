@@ -2732,6 +2732,7 @@ export class TramaController {
     if (this.quitting || this.state.project !== project || project.isDemo || !project.stateWritable) return;
     const document = project.document;
     const plan = reopeningResume(document, this.state.settings.continuousWork !== false);
+    if (!plan.turn && !plan.assignments.length) return;
     for (const id of plan.assignments) {
       const assignment = findAssignment(document, id);
       if (!assignment) continue;
