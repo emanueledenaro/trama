@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { AutonomousStep, DelegableMove, MandateAction, ProjectDocument, WorkPlan } from "@shared/domain";
+import type { AutonomousMove, AutonomousStep, DelegableMove, MandateAction, ProjectDocument, WorkPlan } from "@shared/domain";
 import { autonomousStepLabel } from "@shared/activity";
 import { ITALIAN } from "@shared/i18n";
 import { shortId } from "@shared/ids";
@@ -28,8 +28,8 @@ export const STEP_ACTIONS: Record<DelegableMove, MandateAction> = {
 
 /** The steps as the Coordinator's instructions and Trama's Italian records name them. */
 export const STEP_LABELS = Object.fromEntries(
-  (Object.keys(STEP_ACTIONS) as DelegableMove[]).map((move) => [move, autonomousStepLabel(ITALIAN, move)]),
-) as Record<DelegableMove, string>;
+  ([...Object.keys(STEP_ACTIONS), "formSquads"] as AutonomousMove[]).map((move) => [move, autonomousStepLabel(ITALIAN, move)]),
+) as Record<AutonomousMove, string>;
 
 /** A step the Coordinator can take now: which, in which dialog, on which record, and the modules it touches. */
 export interface DelegatedStep {
@@ -163,11 +163,12 @@ export function planWorkStarted(document: ProjectDocument, plan: WorkPlan): bool
 
 /** What the Coordinator reads when the person corrects one of its steps and the work cannot simply be redrawn. */
 export function correctionMessage(step: AutonomousStep): string {
-  const what: Record<DelegableMove, string> = {
+  const what: Record<AutonomousMove, string> = {
     confirmUnderstanding: "la comprensione condivisa che hai confermato da solo",
     confirmTeam: "il team che hai confermato da solo",
     confirmSeams: "i seam che hai confermato da solo",
     confirmSlices: "le fette che hai confermato da solo",
+    formSquads: "le squadre che hai formato da solo",
   };
   return `Correggo ${what[step.move]}: ${step.correction?.note ?? ""}\nRiparti da quel passo con la mia correzione.`;
 }

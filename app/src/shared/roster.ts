@@ -36,6 +36,7 @@ const ROLES: TeamRole[] = [
   "research",
   "documentation",
   "developer",
+  "squadLead",
   "bugTriage",
   "specReviewer",
   "cleanCode",
@@ -51,6 +52,7 @@ const DUTIES: { moment: TeamMoment; role: TeamRole; task: MessageKey; skills: st
   { moment: "spec", role: "ux", task: "shared.duty.spec.ux", skills: ["prototype"] },
   { moment: "spec", role: "research", task: "shared.duty.spec.research", skills: ["research"] },
   { moment: "spec", role: "documentation", task: "shared.duty.spec.documentation", skills: ["domain-modeling"] },
+  { moment: "slices", role: "squadLead", task: "shared.duty.slices.squadLead", skills: [] },
   { moment: "slices", role: "developer", task: "shared.duty.slices.developer", skills: ["implement", "tdd"] },
   { moment: "slices", role: "bugTriage", task: "shared.duty.slices.bugTriage", skills: ["diagnosing-bugs"] },
   { moment: "candidate", role: "specReviewer", task: "shared.duty.candidate.specReviewer", skills: ["code-review"] },
@@ -65,8 +67,11 @@ const DUTIES: { moment: TeamMoment; role: TeamRole; task: MessageKey; skills: st
   { moment: "background", role: "cleanCode", task: "shared.duty.background.cleanCode", skills: ["improve-codebase-architecture"] },
 ];
 
-/** The roles every team always has, beside the developers chosen for the project. */
-export const FIXED_ROLES: TeamRole[] = ROLES.filter((role) => role !== "developer");
+/** The roles every team always has, beside the developers chosen for the project; squad leads come with the squads (A10). */
+export const FIXED_ROLES: TeamRole[] = ROLES.filter((role) => role !== "developer" && role !== "squadLead");
+
+/** The fixed roles that serve every squad (A10, Q15): all but QA, which each squad has of its own. */
+export const SHARED_ROLES: TeamRole[] = FIXED_ROLES.filter((role) => role !== "qa");
 
 export function roleProfile(t: Translate, role: TeamRole): RoleProfile {
   return { role, name: t(`shared.role.${role}`), tag: t(`shared.role.${role}.tag`), competence: t(`shared.role.${role}.competence`) };

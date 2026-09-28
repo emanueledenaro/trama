@@ -720,4 +720,25 @@ export const sharedEn: Record<keyof typeof sharedIt, string> = {
 
   // Merges stopped by the Coordinator (issue #41)
   "shared.waiting.mergeStopped": "Merge stopped",
+
+  // Squads (A10, issue #306)
+  "shared.activity.step.formSquads": "Squads formed by the Coordinator",
+  "shared.role.squadLead": "Squad lead",
+  "shared.role.squadLead.tag": "Lead",
+  "shared.role.squadLead.competence": "Acts as the squad's Scrum Master: splits the area's work and runs stand-ups, estimates and retrospectives.",
+  "shared.duty.slices.squadLead": "Splits the work of its squad's area and keeps the squad's status line.",
+
+  // Squads' limits and status line (A10, issue #306)
+  "shared.squad.limit.project.one": "One developer is already at work, the project's limit.",
+  "shared.squad.limit.project": "{count} developers are already at work, the project's limit.",
+  "shared.squad.limit.squads.one": "One squad is already at work, the project's limit.",
+  "shared.squad.limit.squads": "{count} squads are already at work, the project's limit.",
+  "shared.squad.limit.developers.one": "One developer is already at work in the squad {squad}, the limit per squad.",
+  "shared.squad.limit.developers": "{count} developers are already at work in the squad {squad}, the limit per squad.",
+  "shared.squad.status.works": "{name} works on {objective}",
+  "shared.squad.status.worksInCloud": "{name} works on {objective} in a cloud session",
+  "shared.squad.status.waiting.one": "{names} is waiting for an answer",
+  "shared.squad.status.waiting": "{names} are waiting for an answer",
+  "shared.squad.status.noDevelopers": "No developer in the squad.",
+  "shared.squad.status.free": "Free: it takes the next ready slice of its area.",
 };

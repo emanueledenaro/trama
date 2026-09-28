@@ -25,7 +25,7 @@ import { inspectCandidate, latestCandidate, worktreeChanged } from "./candidates
 import { pendingQuestion, pendingState, type QuestionView, questionsText, questionViews } from "./developerQuestions";
 import { sliceViews, slicesText } from "./slices";
 import { activeDevelopers, authorize, isActive, isTeamConfirmed, needsWorktree } from "./team";
-import { parallelDevelopers } from "@shared/parallel";
+import { projectCapacity, roomForWork } from "@shared/squads";
 
 /**
  * The phase of a request's work and the moves that take it on (W01). Trama computes both from the records
@@ -278,10 +278,10 @@ export function workState(document: ProjectDocument, requestId: string | null): 
   };
   const views = plan ? sliceViews(document, plan) : [];
   const developersAtWork = activeDevelopers(document);
-  const limit = parallelDevelopers(document);
+  const limit = projectCapacity(document);
   const slices = plan && plan.slicing?.status === "approved" ? { plan, views, developersAtWork, limit } : undefined;
-  // With an approved breakdown only a slice whose blockers are done can be assigned, and only while a developer is free (M05).
-  const assignable = !slices || (developersAtWork < limit && views.some((v) => v.state === "ready" || v.state === "verifying"));
+  // With an approved breakdown only a slice whose blockers are done can be assigned, and only while a squad has room (M05, A10).
+  const assignable = !slices || (roomForWork(document) && views.some((v) => v.state === "ready" || v.state === "verifying"));
   const assignWork = () => {
     if (!assignable) return;
     if (!isTeamConfirmed(document)) {

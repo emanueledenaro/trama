@@ -87,7 +87,7 @@ export function SearchPalette() {
             { id: "map", label: "Mappa del progetto", icon: <IconSitemap className={ICON} />, run: inspect({ kind: "map" }) },
             { id: "pact", label: "Patto", icon: <IconRosetteDiscountCheck className={ICON} />, run: inspect({ kind: "pact" }) },
             { id: "mandate", label: "Mandato", icon: <IconShieldCheck className={ICON} />, run: inspect({ kind: "mandate" }) },
-            { id: "team", label: "Team", icon: <IconUsersGroup className={ICON} />, run: inspect({ kind: "team" }) },
+            { id: "team", label: "Squadre", icon: <IconUsersGroup className={ICON} />, run: inspect({ kind: "team" }) },
             { id: "work", label: "Lavoro", icon: <IconFileDiff className={ICON} />, run: inspect({ kind: "work" }) },
             { id: "group", label: "Il lavoro del gruppo", icon: <IconGitPullRequest className={ICON} />, run: inspect({ kind: "group" }) },
             { id: "issues", label: "Issue", icon: <IconCircleDot className={ICON} />, run: inspect({ kind: "issues" }) },

@@ -70,7 +70,7 @@ describe("team roster (W09)", () => {
     expect(roster.map((m) => m.moment)).toEqual(teamMoments(t).map((m) => m.moment));
     expect(roster.map((m) => [m.moment, m.figures.map((f) => f.profile.role)])).toEqual([
       ["spec", ["qa", "ux", "research", "documentation"]],
-      ["slices", ["developer", "bugTriage"]],
+      ["slices", ["squadLead", "developer", "bugTriage"]],
       ["candidate", ["specReviewer", "cleanCode", "regressionGuardian", "security", "performance", "ux", "devops", "documentation"]],
       ["background", ["bugTriage", "cleanCode"]],
     ]);

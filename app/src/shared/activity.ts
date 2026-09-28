@@ -1,4 +1,4 @@
-import type { AutonomousStep, Candidate, ConversationEvent, CoordinatorRequest, DelegableMove, FoundProblem, NextMove, RoundRecord, WorkEvent } from "./domain";
+import type { AutonomousMove, AutonomousStep, Candidate, ConversationEvent, CoordinatorRequest, FoundProblem, NextMove, RoundRecord, WorkEvent } from "./domain";
 import type { Translate } from "./i18n";
 import { problemActivity } from "./problems";
 
@@ -24,7 +24,7 @@ export interface ActivityEntry {
   kind: "move" | "round" | "problem" | "step" | "merge";
   /** The request of the move; for a round, the move it started, or null. */
   requestId: string | null;
-  /** The move; null for a round. */
+  /** The move; null for a round and for the squads the Coordinator formed (A10). */
   move: NextMove | null;
   /** What started the move, in the person's words ("dopo una verifica rossa"); null for a round or an older record. */
   trigger: string | null;
@@ -86,8 +86,11 @@ export function mergeActivityEntries(t: Translate, candidates: Pick<Candidate, "
 
 export const activityOutcomeLabel = (t: Translate, outcome: ActivityOutcome): string => t(`shared.activity.outcome.${outcome}`);
 
-/** The steps the Coordinator takes for the person within the mandate (A06), as Activity and the recap name them. */
-export const autonomousStepLabel = (t: Translate, move: DelegableMove): string => t(`shared.activity.step.${move}`);
+/**
+ * The steps the Coordinator takes for the person within the mandate (A06), and the squads it forms after the study
+ * (A10), as Activity and the recap name them.
+ */
+export const autonomousStepLabel = (t: Translate, move: AutonomousMove): string => t(`shared.activity.step.${move}`);
 
 /** Whether a request is a turn Trama started by itself with continuous work (W04), not a message of the person. */
 export const isAutomaticMove = (request: Pick<CoordinatorRequest, "step"> | undefined | null): boolean => request?.step?.by === "trama";
@@ -173,7 +176,7 @@ export function activityLog(
       id: step.id,
       kind: "step",
       requestId: step.requestId,
-      move: step.move,
+      move: step.move === "formSquads" ? null : step.move,
       trigger: null,
       label: autonomousStepLabel(t, step.move),
       goalId: step.goalId,

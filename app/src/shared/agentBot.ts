@@ -20,6 +20,7 @@ export type BotShape =
   | "arch"
   | "diamond"
   | "flower"
+  | "octagon"
   | "circle"
   | "egg"
   | "bean"
@@ -42,6 +43,7 @@ export const ROLE_SHAPES: Record<FixedRole, BotShape> = {
   security: "shield",
   performance: "diamond",
   devops: "flower",
+  squadLead: "octagon",
 };
 
 /** The bodies kept for developers, apart from the fixed roles'. */
