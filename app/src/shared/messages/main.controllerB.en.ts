@@ -35,7 +35,7 @@ export const mainControllerBEn: Record<keyof typeof mainControllerBIt, string> =
   "main.controller.stopBeforeStart": "The stop was requested before the start.",
   "main.controller.stopBeforeTurn": "The stop was requested before the turn started.",
   "main.controller.newSpecialistThreadTitle": "New specialist thread",
-  "main.controller.specialistNoteTitle": "Specialist note",
+  "main.controller.specialistNoteTitle": "Developer note",
   "main.controller.specialistReasoningTitle": "Reasoning",
   "main.controller.specialistCommandTitle": "Command",
   "main.controller.specialistCommandExit": "Exit {code}",
