@@ -2106,7 +2106,16 @@ export interface LearningView {
   /** Replacements and removals an unattended review proposed; only the person applies them. */
   proposals: { id: string; target: "memory" | "user"; summary: string; createdAt: string; operations: string[] }[];
   reviews: LearningReviewRun[];
-  curator: { lastRunAt: string | null; lastRunSummary: string | null; paused: boolean; runCount: number; backups: string[] };
+  /** The upkeep of learned skills: its last check as counts, never its technical summary (issue #335). */
+  curator: {
+    lastRunAt: string | null;
+    lastRun: import("./curatorReport").CuratorRunView | null;
+    /** The first check only records a start and waits one interval. */
+    firstRunPending: boolean;
+    paused: boolean;
+    runCount: number;
+    backups: string[];
+  };
   counters: { turnsSinceMemory: number; itersSinceSkill: number; memoryInterval: number; skillInterval: number };
 }
 
