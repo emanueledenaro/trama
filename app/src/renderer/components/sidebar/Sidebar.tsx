@@ -4,6 +4,7 @@ import {
   IconFolder,
   IconFolderOpen,
   IconFolderPlus,
+  IconHourglass,
   IconArrowNarrowLeft,
   IconArrowNarrowRight,
   IconFileDiff,
@@ -31,6 +32,7 @@ import { AgentAvatar, AgentTag } from "@/components/AgentIdentity";
 import { useState } from "react";
 import type * as React from "react";
 import { Spinner } from "@/components/Spinner";
+import { useWaiting } from "@/components/WaitingView";
 import { TramaMark } from "@/components/brand/TramaMark";
 import { isOpenQuestion, pendingMandateRequest, type ProjectGoal, type Specialist } from "@shared/domain";
 import { goalDialogIsEmpty, workingGoals } from "@shared/goals";
@@ -165,6 +167,7 @@ export function Sidebar({ isMac }: { isMac: boolean }) {
   const [deleting, setDeleting] = useState<ProjectGoal | null>(null);
   const runningGoalId = project?.runningRequestId ? (document?.requests.find((r) => r.id === project.runningRequestId)?.goalId ?? null) : null;
   const proposedGoals = goals.filter((g) => g.status === "proposed").length;
+  const waiting = useWaiting().length;
 
   return (
     <div className="flex h-full min-h-0 flex-col text-foreground">
@@ -206,6 +209,14 @@ export function Sidebar({ isMac }: { isMac: boolean }) {
         </div>
         {project ? (
           <div className="flex flex-col gap-0.5 px-2 pt-0.5 pb-1.5">
+            {/* Everything that waits for the person, in one place always in view (issue #240). */}
+            <SidebarRow
+              icon={<IconHourglass className="size-3.5" stroke={1.8} />}
+              label="Aspetta te"
+              active={isActive("waiting")}
+              badge={waiting}
+              onClick={() => setInspector({ kind: "waiting" })}
+            />
             <SidebarRow
               icon={<IconTarget className="size-3.5" stroke={1.8} />}
               label="Obiettivi"
@@ -264,6 +275,7 @@ export function Sidebar({ isMac }: { isMac: boolean }) {
               icon={<IconBrain className="size-3.5" stroke={1.8} />}
               label="Memoria"
               active={isActive("memory")}
+              badge={app.learning?.proposals.length ?? 0}
               onClick={() => setInspector({ kind: "memory" })}
             />
           </div>
@@ -333,9 +345,9 @@ export function Sidebar({ isMac }: { isMac: boolean }) {
                         className={cn(SIDEBAR_ROW, "relative pl-8", mainView === "dialog" && !dialogGoalId ? ROW_ACTIVE : ROW_IDLE)}
                       >
                         <IconMessageCircle className="size-3 shrink-0 text-muted-foreground" stroke={1.8} />
-                        <span className="min-w-0 flex-1 truncate text-ui leading-5">Dialogo del progetto</span>
+                        <span className="min-w-0 flex-1 truncate text-ui leading-5">Chat del Coordinatore</span>
                         <span className="flex w-[15px] shrink-0 items-center justify-center">
-                          {running && !runningGoalId ? <Spinner /> : null}
+                          {running ? <Spinner /> : null}
                         </span>
                       </button>
                       {goals.map((goal) => {
@@ -365,13 +377,13 @@ export function Sidebar({ isMac }: { isMac: boolean }) {
                               </span>
                             </button>
                             {busy ? null : (
-                              // Archive always; delete only while the dialog has no history.
+                              // Archive always; delete only while the goal has no history in the chat.
                               <div className="absolute top-1/2 right-1.5 flex -translate-y-1/2 items-center gap-0.5 opacity-0 transition-opacity group-hover/goal-row:opacity-100 focus-within:opacity-100">
                                 {empty ? (
-                                  <Tooltip label="Elimina il dialogo vuoto">
+                                  <Tooltip label="Elimina l'obiettivo vuoto">
                                     <button
                                       type="button"
-                                      aria-label={`Elimina il dialogo vuoto ${goal.title}`}
+                                      aria-label={`Elimina l'obiettivo vuoto ${goal.title}`}
                                       className="sidebar-icon-button size-5"
                                       onClick={() => setDeleting(goal)}
                                     >

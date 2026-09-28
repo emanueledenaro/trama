@@ -15,11 +15,13 @@ import { MemoryView } from "./MemoryView";
 import { SpecialistView, TeamView } from "./TeamView";
 import { FilePreview, MapView, ModuleView } from "./MapView";
 import { DecisionView, PactView } from "./PactView";
+import { WaitingList } from "@/components/WaitingView";
 
 /** The narrowest the dialog gets next to a docked inspector. */
 const CHAT_MIN_WIDTH = 420;
 
 const TITLES = {
+  waiting: "Aspetta te",
   map: "Mappa del progetto",
   module: "Modulo",
   file: "File",
@@ -92,6 +94,7 @@ export function Inspector() {
         </Tooltip>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto">
+        {target.kind === "waiting" ? <WaitingList focusKey={target.key} /> : null}
         {target.kind === "map" ? <MapView /> : null}
         {target.kind === "module" ? <ModuleView id={target.id} /> : null}
         {target.kind === "file" ? <FilePreview path={target.path} /> : null}

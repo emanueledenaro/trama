@@ -35,7 +35,6 @@ export function ModelPicker({
   effort,
   modelMissing,
   busy,
-  goalId,
   fastMode,
 }: {
   className: string;
@@ -44,7 +43,6 @@ export function ModelPicker({
   effort: string | null;
   modelMissing: boolean;
   busy: boolean;
-  goalId: string | null;
   fastMode: boolean;
 }) {
   const providers = useUi((s) => s.app!.providers);
@@ -77,7 +75,7 @@ export function ModelPicker({
 
   const choose = (model: string) => {
     const next = models.find((m) => m.model === model);
-    void act("coordinator:selectModel", { model, effort: next?.defaultReasoningEffort ?? null, provider: browsing, goalId });
+    void act("coordinator:selectModel", { model, effort: next?.defaultReasoningEffort ?? null, provider: browsing });
     setOpen(false);
   };
 
@@ -185,8 +183,8 @@ export function ModelPicker({
             defaultValue={current.defaultReasoningEffort ?? null}
             modelName={current.displayName}
             accent={PROVIDER_GLOW[selectedProvider]}
-            fast={current.supportsFastMode ? { enabled: fastMode, onToggle: () => void act("coordinator:setFastMode", { enabled: !fastMode, goalId }) } : null}
-            onChange={(level) => void act("coordinator:selectModel", { model: current.model, effort: level, provider: selectedProvider, goalId })}
+            fast={current.supportsFastMode ? { enabled: fastMode, onToggle: () => void act("coordinator:setFastMode", { enabled: !fastMode }) } : null}
+            onChange={(level) => void act("coordinator:selectModel", { model: current.model, effort: level, provider: selectedProvider })}
           />
         ) : null}
       </PickerPopup>

@@ -21,7 +21,7 @@ export const NOT_STARTED_LABEL = "da avviare";
 
 const shortTitle = (text: string) => {
   const line = text.replace(/\s+/g, " ").trim();
-  return line.length > TASK_TITLE_LIMIT ? `${line.slice(0, TASK_TITLE_LIMIT - 1).trimEnd()}…` : line || "Lavoro nel dialogo del progetto";
+  return line.length > TASK_TITLE_LIMIT ? `${line.slice(0, TASK_TITLE_LIMIT - 1).trimEnd()}…` : line || "Lavoro del progetto";
 };
 
 /**
@@ -184,7 +184,7 @@ export function resumeTask(document: ProjectDocument, taskId: string): void {
  * How the Coordinator reads a task's name: a goal's title, or the project dialog's work named as such. The first
  * message the bar shows as its title is the person's text, and the Coordinator reads it in its own dialog already.
  */
-const promptName = (task: FocusTask) => (task.goalId ? `l'obiettivo "${task.title}"` : "il lavoro del dialogo del progetto");
+const promptName = (task: FocusTask) => (task.goalId ? `l'obiettivo "${task.title}"` : "il lavoro del progetto fuori dagli obiettivi");
 
 const taskLine = (task: FocusTask) =>
   `${promptName(task)} (${task.id}), fase ${task.phaseLabel}${task.blocker ? `, bloccato: ${task.blocker}` : ""}${task.waitingFor ? `, aspetta la persona: ${task.waitingFor}` : ""}`;

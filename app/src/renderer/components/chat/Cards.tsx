@@ -505,7 +505,16 @@ export function DecisionCard({ requestId }: { requestId: string }) {
 }
 
 /** The questions of one grilling round (M01), together under the round they belong to. */
-export function GrillingRoundCard({ round, questionIds }: { round: number; questionIds: string[] }) {
+export function GrillingRoundCard({
+  round,
+  questionIds,
+  renderQuestion = (id) => <DecisionCard key={id} requestId={id} />,
+}: {
+  round: number;
+  questionIds: string[];
+  /** How each question shows; the chat puts a reference in place of a question that still waits (issue #240). */
+  renderQuestion?: (id: string) => React.ReactNode;
+}) {
   const project = useUi((s) => s.app?.project)!;
   const questions = questionIds.map((id) => project.document.decisionRequests.find((r) => r.id === id)).filter((r) => r !== undefined);
   // A withdrawn question is closed without an answer: it no longer counts among the answers the round waits for.
@@ -523,9 +532,7 @@ export function GrillingRoundCard({ round, questionIds }: { round: number; quest
           {complete ? "Turno completo" : `${answered} di ${asked.length} risposte`}
         </Badge>
       </div>
-      {questions.map((q) => (
-        <DecisionCard key={q.id} requestId={q.id} />
-      ))}
+      {questions.map((q) => renderQuestion(q.id))}
     </section>
   );
 }
@@ -1301,6 +1308,17 @@ export function PlanCard({ planId }: { planId: string }) {
   const proposal = plan.proposal;
   const moduleName = (id: string) => project.snapshot.modules.find((m) => m.id === id)?.name ?? id;
   const pendingQuestions = project.document.decisionRequests.filter((r) => plan.decisionRequestIds.includes(r.id) && isOpenQuestion(r)).length;
+  if (plan.status === "superseded") {
+    // One goal, one active plan (U01): a replaced plan stays in the history, without its actions.
+    return (
+      <CardFrame icon={<IconListCheck stroke={1.8} />} title={`Piano ${plan.id}`} aside={<Badge tone="secondary">Superato</Badge>}>
+        <p className="text-ui-sm text-muted-foreground" data-testid="plan-superseded">
+          {plan.summary}<Sep />
+          {plan.supersededBy ? `Sostituito dal piano ${plan.supersededBy}: l'obiettivo ha un solo piano attivo.` : "Sostituito da un piano più recente dell'obiettivo."}
+        </p>
+      </CardFrame>
+    );
+  }
   return (
     <CardFrame
       icon={<IconListCheck stroke={1.8} />}
@@ -1423,7 +1441,7 @@ export function PlanCard({ planId }: { planId: string }) {
                   moduleId: null,
                   model: null,
                   effort: null,
-                  // The approval belongs to the dialog of the plan, not always to the project's (W12).
+                  // The approval belongs to the goal of the plan, whatever the filter of the chat (W12, U01).
                   goalId: project.document.requests.find((r) => r.id === plan.requestId)?.goalId ?? null,
                 })
               }

@@ -37,7 +37,7 @@ export interface ActionMap {
       images?: ImageAttachmentInput[];
       /** The composer's provider; a different one moves the Coordinator (ADR 0009). */
       provider?: ProviderId | null;
-      /** The goal dialog the message is sent from; absent or null is the project dialog (UX02). */
+      /** The goal the chat was filtered on when the message was sent (U01); absent or null is the whole project. */
       goalId?: string | null;
     },
     void,
@@ -52,10 +52,10 @@ export interface ActionMap {
   "coordinator:retryRequest": [{ requestId: string }, void];
   /** Stops the automatic retries after a temporary provider limit (P10). */
   "coordinator:stopRetry": [void, void];
-  "coordinator:selectModel": [{ model: string; effort: string | null; provider?: ProviderId | null; goalId?: string | null }, void];
-  "coordinator:setFastMode": [{ enabled: boolean; goalId?: string | null }, void];
-  "coordinator:selectProvider": [{ provider: ProviderId; goalId?: string | null }, void];
-  "coordinator:saveDraft": [{ text: string; goalId?: string | null }, void];
+  "coordinator:selectModel": [{ model: string; effort: string | null; provider?: ProviderId | null }, void];
+  "coordinator:setFastMode": [{ enabled: boolean }, void];
+  "coordinator:selectProvider": [{ provider: ProviderId }, void];
+  "coordinator:saveDraft": [{ text: string }, void];
   /** Deletes a message still waiting in the queue (W03); a message that reports a recorded choice stays. */
   "coordinator:deleteQueued": [{ id: string }, void];
   "goal:create": [GoalInputPayload, string];
