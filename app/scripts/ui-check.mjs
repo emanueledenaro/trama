@@ -760,7 +760,7 @@ await domainCard.scrollIntoViewIfNeeded();
 await shot("04k-domain-proposal-written");
 // #305 and #313: the context meter reads the request that fills the window, the same rule for every provider: no
 // provider name and no number past the window. Past the threshold Trama reorders the context at the end of the turn
-// (ADR 0018), so the reading is first taken under a 95% threshold, then the threshold goes back to 80%. Light and dark.
+// (ADR 0018), so the reading is taken under a 95% threshold. Light and dark.
 {
   const providerNames = ["ChatGPT", "Codex", "Claude", "Cursor", "Antigravity", "Grok", "Droid", "Devin", "OpenCode", "Pi"];
   const noProviderName = (text, where) => {
@@ -786,13 +786,7 @@ await shot("04k-domain-proposal-written");
   await page.keyboard.press("Escape");
   await meterPopup.waitFor({ state: "hidden" });
   if ((await page.getByTestId("context-rollover").count()) !== reordersBefore) throw new Error("Trama reordered the context under the threshold");
-  // Back to 80%: the reading is past it, and with no turn running Trama reorders now.
-  await page.evaluate(() => window.trama.invoke("coordinator:setContextThreshold", { percent: 80 }));
-  const reorderLine = page.getByTestId("context-rollover").nth(reordersBefore);
-  await reorderLine.waitFor({ timeout: 30_000 });
-  noProviderName((await reorderLine.innerText()).replace(/\s+/g, " "), "The reorder line");
-  await reorderLine.scrollIntoViewIfNeeded();
-  await themeShots("04l-context-reorder-line");
+  // The threshold stays at 95% in this project: the reorder itself is checked on its own project, in steps 29a to 29c.
 }
 await page.getByRole("button", { name: "Mappa del progetto" }).click();
 await shot("05-map");
