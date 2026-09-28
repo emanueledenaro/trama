@@ -823,10 +823,10 @@ button {
     background: color-mix(in srgb, var(--glow-1) 7%, var(--app-content-glass));
   }
   /* On glass the composer is nearly opaque. Instead of a scrim, which drew a band of shade, the timeline
-     fades out toward the composer; the composer keeps 12px from the bottom of the window. */
+     fades out toward the composer; the composer keeps 8px from the status bar below it (issue #330). */
   :root[data-platform="darwin"] .chat-composer-dock,
   :root[data-platform="win32"] .chat-composer-dock {
-    padding-bottom: 12px !important;
+    padding-bottom: 8px !important;
   }
   :root[data-platform="darwin"] .chat-timeline-scroll,
   :root[data-platform="win32"] .chat-timeline-scroll {
@@ -1566,4 +1566,15 @@ body:has(.sash--horizontal.active) {
   .sash:focus-visible::before {
     background: Highlight;
   }
+}
+
+/* The activity bar (issue #330): as in VS Code, the open view's icon has a 2px bar on its left edge. */
+.activity-bar-item[data-active]::before {
+  content: "";
+  position: absolute;
+  inset-block: 10px;
+  left: 0;
+  width: 2px;
+  border-radius: 0 1px 1px 0;
+  background: var(--app-focus-border, var(--color-text-accent));
 }

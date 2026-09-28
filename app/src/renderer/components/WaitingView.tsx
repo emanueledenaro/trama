@@ -36,8 +36,8 @@ export function WaitingSummary() {
   if (!summary) return null;
   const first = items[0]!;
   return (
-    <div className="mx-auto mb-2 w-full max-w-[var(--app-chat-max-width)] min-w-0">
-      <div className="translucent-popup cta-row rounded-[0.875rem] py-1.5 pr-1.5 pl-3" data-testid="waiting-summary">
+    <div className="mx-auto mb-1.5 w-full max-w-[var(--app-chat-max-width)] min-w-0">
+      <div className="translucent-popup cta-row rounded-[0.875rem] py-1 pr-1 pl-3" data-testid="waiting-summary">
         <span className="mr-auto min-w-0 flex-1 truncate text-ui-sm text-muted-foreground">
           <span className="text-foreground">{first.label}</span>
           <Sep />
