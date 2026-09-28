@@ -7,6 +7,7 @@ import {
   codexPermissionProfiles,
   privatePathsInCommand,
   readableRoots,
+  sandboxGitEnvironment,
   toolchainRoots,
 } from "../readScope";
 import { type AgentRuntime, type OpenThreadOptions, ProviderError, type RunTurnOptions, type RuntimeOptions } from "./types";
@@ -96,6 +97,8 @@ export class CodexRuntime implements AgentRuntime {
           ...(options.hostToolsOnly ? { shell_tool: false, unified_exec: false, apply_patch_freeform: false } : {}),
         },
         ...codexPermissionProfiles(shellRoots, writableRoot),
+        // The profiles hide the home folder, ~/.gitconfig included: git in the shell reads no global file (issue #391).
+        "shell_environment_policy.set": sandboxGitEnvironment(),
         ...(toolServer
           ? {
               [`mcp_servers.${toolServer.name}`]: {
