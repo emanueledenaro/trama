@@ -165,6 +165,10 @@ export const mainRepositoryEn: Record<keyof typeof mainRepositoryIt, string> = {
   "main.problems.placedInBacklog": "{note} No assignment is working on this problem: it stays in the backlog.",
   "main.problems.localBacklog": "GitHub is not connected: the problem stays in Trama's backlog, without an issue.",
   // Document, storage and onboarding (document.ts, storage.ts, onboarding.ts)
+  "main.document.quitNote": "Trama was closed while the Coordinator was working.",
+  "main.document.crashNote": "Trama closed without stopping the turn while the Coordinator was working.",
+  "main.document.assignmentQuitNote": "Quit: Trama is closing. The assignment resumes when Trama reopens, if the mandate allows it.",
+  "main.document.assignmentCrashNote": "Trama stopped without a controlled shutdown (a crash or a forced quit) while the developer was working.",
   "main.document.specInterrupted": "Writing the spec stopped before the end: answer again on the test points.",
   "main.document.planInterrupted": "The preparation stopped before the end: ask for the plan again.",
   "main.document.slicingInterrupted": "The split into slices stopped before the end: ask for it again.",

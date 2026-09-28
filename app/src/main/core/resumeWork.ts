@@ -1,7 +1,7 @@
 import type { ProjectDocument, SpecialistAssignment } from "@shared/domain";
 import { classifyProviderFailure, type ProviderWaitReason, waitReasonOf } from "@shared/providerFailure";
 import { isPaused } from "./continuousWork";
-import { ASSIGNMENT_CRASH_NOTE, ASSIGNMENT_QUIT_NOTE, CRASH_NOTE, QUIT_NOTE } from "./document";
+import { closingNoteTexts } from "./document";
 import { localeOf } from "@shared/i18n";
 import { personLanguage, t } from "./personLanguage";
 
@@ -36,7 +36,8 @@ const NOTHING: ReopeningResume = { turn: null, assignments: [] };
 
 /** Older documents wrote this sentence when Esci stopped a specialist (C11). @model-text: matched against persisted records, never shown. */
 const OLD_ASSIGNMENT_QUIT_NOTE = "Esci: Trama si sta chiudendo. Riprendi l'incarico quando vuoi.";
-const QUIT_STOPS = [ASSIGNMENT_QUIT_NOTE, OLD_ASSIGNMENT_QUIT_NOTE, ASSIGNMENT_CRASH_NOTE];
+const QUIT_STOPS = [...closingNoteTexts("assignmentQuit"), OLD_ASSIGNMENT_QUIT_NOTE, ...closingNoteTexts("assignmentCrash")];
+const CLOSED_TURNS = [...closingNoteTexts("quit"), ...closingNoteTexts("crash")];
 
 /** Whether a specialist's latest stop came from Trama closing, by Esci or by a crash, rather than from someone's request. */
 export const stoppedByClosing = (assignment: SpecialistAssignment): boolean => {
@@ -56,7 +57,7 @@ export function reopeningResume(document: ProjectDocument, continuousWork: boole
   if (!continuousWork || isPaused(document) || document.mandate?.status !== "granted") return NOTHING;
   const latest = document.requests.at(-1);
   let turn: ReopeningResume["turn"] = null;
-  if (latest?.state === "interrupted" && (latest.failure === QUIT_NOTE || latest.failure === CRASH_NOTE)) {
+  if (latest?.state === "interrupted" && CLOSED_TURNS.includes(latest.failure ?? "")) {
     turn = { requestId: latest.id, kind: "resume" };
   } else if (latest?.state === "failed" && latest.failure) {
     const failure = classifyProviderFailure(latest.failure, { now });

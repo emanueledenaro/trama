@@ -404,9 +404,6 @@ export function confirmationFeedback(document: ProjectDocument, requestId: strin
 /** The line the chat shows for an automatic move, also read back in the history, in the person's language. */
 export const automaticMoveDetail = (): string => t("main.continuousWork.automaticMoveDetail");
 
-/** The Italian text of `automaticMoveDetail`, for the callers that still read a constant. */
-export const AUTOMATIC_MOVE_DETAIL = translate("it", "main.continuousWork.automaticMoveDetail");
-
 /** What Trama read on GitHub at one moment: the open issues and the open pull requests. */
 export interface GitHubReading {
   issues: { number: number; state: "open" | "closed" }[];

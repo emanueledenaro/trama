@@ -113,12 +113,10 @@ import { recordGate } from "./core/agentThreads";
 import { prepareDemoProject } from "./core/demoProject";
 import {
   appendEvent,
-  ASSIGNMENT_CRASH_NOTE,
-  ASSIGNMENT_QUIT_NOTE,
+  closingNote,
   emptyDocument,
   handoverTranscript,
   moveEvent,
-  QUIT_NOTE,
   recordReply,
   referencedPaths,
 } from "./core/document";
@@ -130,7 +128,7 @@ import { statusLine } from "./core/statusLine";
 import { COORDINATOR_MOVES, type CoordinatorMove, nextStepViews, PHASE_LABELS, workState, workStateText } from "./core/workPhase";
 import { availableButtons, currentStateText, missingButtonDetail, missingButtonFeedback, missingButtons, missingButtonTitle } from "./core/coordinatorGrounding";
 import {
-  AUTOMATIC_MOVE_DETAIL,
+  automaticMoveDetail,
   automaticMove,
   automaticMoveSection,
   BLOCK_LABELS,
@@ -920,8 +918,8 @@ export class TramaController {
     if (running?.state === "running") {
       running.state = "interrupted";
       running.completedAt = new Date().toISOString();
-      running.failure = QUIT_NOTE;
-      appendEvent(project.document, "trama", { type: "activity", title: t("main.controller.turnInterruptedTitle"), detail: QUIT_NOTE, tone: "info" }, running.id);
+      running.failure = closingNote("quit");
+      appendEvent(project.document, "trama", { type: "activity", title: t("main.controller.turnInterruptedTitle"), detail: running.failure, tone: "info" }, running.id);
       project.runningRequestId = null;
       project.streaming = null;
     }
@@ -1242,7 +1240,7 @@ export class TramaController {
       if (overtaken()) return;
       document ??= emptyDocument(id);
       if (idea && !document.events.length) document.createdFromIdea = idea;
-      const orphanNote = ASSIGNMENT_CRASH_NOTE;
+      const orphanNote = closingNote("assignmentCrash");
       for (const assignmentId of stopOrphanedAssignments(document, orphanNote)) {
         appendEvent(document, "trama", { type: "activity", title: t("main.controller.orphanStopConfirmedTitle"), detail: orphanNote, tone: "info" }, null, new Date(), {
           assignmentId,
@@ -1929,7 +1927,7 @@ export class TramaController {
       const project = this.projectById(runtime.projectId);
       const assignment = project ? findAssignment(project.document, assignmentId) : null;
       if (project && assignment && isActive(assignment) && assignment.status !== "stopRequested") {
-        requestStop(project.document, assignment.specialistId, "Trama", ASSIGNMENT_QUIT_NOTE);
+        requestStop(project.document, assignment.specialistId, "Trama", closingNote("assignmentQuit"));
       }
     }
     await Promise.all(entries.map(([, r]) => withTimeout(r.client.interrupt(), 5_000, "timeout").catch(() => r.client.stop())));
@@ -2508,7 +2506,7 @@ export class TramaController {
           type: "card",
           kind: "automaticStep",
           title: step?.block ? BLOCK_LABELS[step.block.kind] : COORDINATOR_MOVES[automatic].label,
-          detail: step?.block ? `${step.block.why} ${AUTOMATIC_MOVE_DETAIL}` : AUTOMATIC_MOVE_DETAIL,
+          detail: step?.block ? `${step.block.why} ${automaticMoveDetail()}` : automaticMoveDetail(),
           referenceId: request.id,
         },
         request.id,

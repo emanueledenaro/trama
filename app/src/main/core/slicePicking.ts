@@ -4,7 +4,7 @@ import { requestGoalId } from "@shared/goals";
 import { parallelDevelopers } from "@shared/parallel";
 import type { PresenceView } from "@shared/presence";
 import type { RepositoryModule } from "@shared/repository";
-import { moduleOverlaps, occupantName } from "./coordinatorPresence";
+import { moduleOverlaps, occupantLabel } from "./coordinatorPresence";
 import { agreedSeams, contractSeams } from "./implementation";
 import { t } from "./personLanguage";
 import { delivered, sliceViews } from "./slices";
@@ -136,7 +136,7 @@ export function pickSlices(document: ProjectDocument, input: PickInput): PickOut
       }
       const occupied = moduleOverlaps(input.presence, input.modules, moduleIds);
       if (occupied.length) {
-        waiting(t("main.slicePicking.occupied", { names: occupied.map((o) => occupantName(o.occupant)).join(", ") }));
+        waiting(t("main.slicePicking.occupied", { names: occupied.map((o) => occupantLabel(o.occupant)).join(", ") }));
         continue;
       }
       const developer = free.find((s) => coversModules(s, moduleIds));

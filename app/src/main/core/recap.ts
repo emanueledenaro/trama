@@ -10,7 +10,6 @@ import type {
 import { ACTIVITY_OUTCOME_LABELS, type ActivityOutcome, activityLog } from "@shared/activity";
 import { waitingForYou, type WaitingSources } from "@shared/waitingForYou";
 import { statusLine } from "./statusLine";
-import { COORDINATOR_MOVES, PERSON_MOVE_LABELS } from "./workPhase";
 import { LANGUAGES, type MessageKey, translate } from "@shared/i18n";
 import { t } from "./personLanguage";
 
@@ -128,22 +127,28 @@ function openedIssues(document: ProjectDocument, since: string | null): (RecapFa
 /**
  * What a move did, as a fact and not as the button that asks for it (issue #270): "Esegui le verifiche" is the
  * button, "Verifica del lavoro" what the recap tells. Each name is feminine and singular, like the outcomes below.
+ * Each move's label key comes with the key of its fact.
  */
-const MOVE_FACTS: Record<string, MessageKey> = {
-  [COORDINATOR_MOVES.preparePlan.label]: "main.recap.fact.preparePlan",
-  [COORDINATOR_MOVES.assignWork.label]: "main.recap.fact.assignWork",
-  [COORDINATOR_MOVES.verifyCandidate.label]: "main.recap.fact.verifyCandidate",
-  [COORDINATOR_MOVES.answerQuestion.label]: "main.recap.fact.answerQuestion",
-  [PERSON_MOVE_LABELS.answerQuestions]: "main.recap.fact.answerQuestions",
-  [PERSON_MOVE_LABELS.confirmUnderstanding]: "main.recap.fact.confirmUnderstanding",
-  [PERSON_MOVE_LABELS.grantMandate]: "main.recap.fact.grantMandate",
-  [PERSON_MOVE_LABELS.confirmTeam]: "main.recap.fact.confirmTeam",
-  [PERSON_MOVE_LABELS.confirmSeams]: "main.recap.fact.confirmSeams",
-  [PERSON_MOVE_LABELS.confirmSlices]: "main.recap.fact.confirmSlices",
-  [PERSON_MOVE_LABELS.reviewPlan]: "main.recap.fact.reviewPlan",
-  [PERSON_MOVE_LABELS.reviewCandidate]: "main.recap.fact.reviewCandidate",
-  [PERSON_MOVE_LABELS.mergePullRequest]: "main.recap.fact.mergePullRequest",
-};
+const MOVE_FACT_KEYS: [MessageKey, MessageKey][] = [
+  ["main.workPhase.preparePlan", "main.recap.fact.preparePlan"],
+  ["main.workPhase.assignWork", "main.recap.fact.assignWork"],
+  ["main.workPhase.verifyCandidate", "main.recap.fact.verifyCandidate"],
+  ["main.workPhase.answerQuestion", "main.recap.fact.answerQuestion"],
+  ["main.workPhase.answerQuestions", "main.recap.fact.answerQuestions"],
+  ["main.workPhase.confirmUnderstanding", "main.recap.fact.confirmUnderstanding"],
+  ["main.workPhase.grantMandate", "main.recap.fact.grantMandate"],
+  ["main.workPhase.confirmTeam", "main.recap.fact.confirmTeam"],
+  ["main.workPhase.confirmSeams", "main.recap.fact.confirmSeams"],
+  ["main.workPhase.confirmSlices", "main.recap.fact.confirmSlices"],
+  ["main.workPhase.reviewPlan", "main.recap.fact.reviewPlan"],
+  ["main.workPhase.reviewCandidate", "main.recap.fact.reviewCandidate"],
+  ["main.workPhase.mergePullRequest", "main.recap.fact.mergePullRequest"],
+];
+
+/** The fact of a move by its label, in every language: a record keeps the language it was written in. */
+const MOVE_FACTS: Record<string, MessageKey> = Object.fromEntries(
+  LANGUAGES.flatMap((language) => MOVE_FACT_KEYS.map(([label, fact]) => [translate(language, label), fact])),
+);
 
 const FACT_OUTCOMES: Record<ActivityOutcome, MessageKey> = {
   running: "main.recap.outcome.running",

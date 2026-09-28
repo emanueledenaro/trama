@@ -4,6 +4,7 @@ import type { ConversationEvent, EventContent, EventOrigin, ProjectDocument } fr
 import { requestGoalId } from "@shared/goals";
 import { interruptAudits } from "./audit";
 import { interruptGates } from "./gate";
+import { LANGUAGES, type MessageKey, translate } from "@shared/i18n";
 import { t } from "./personLanguage";
 import { migrateToSingleChat } from "./singleChat";
 import { completeTeam } from "./team";
@@ -48,17 +49,34 @@ export function emptyDocument(projectId: string): ProjectDocument {
   return document;
 }
 
-// @model-text: not model text, but stable markers. The four notes below are stored in the document and resumeWork.ts
-// recognizes a stop by Esci or by a crash by comparing the stored text with them, so they cannot change with the
-// interface language until that match stops depending on the words (issue #301).
-/** Why a Coordinator turn ended when the person quit Trama during it (C11): Esci closes the turn itself. */
-export const QUIT_NOTE = "Trama è stato chiuso mentre il Coordinatore lavorava.";
-/** Why a turn left running on disk ended: Trama stopped without Esci, a crash or a forced stop (C11). @model-text: stable marker. */
-export const CRASH_NOTE = "Trama si è chiuso senza fermare il turno mentre il Coordinatore lavorava.";
-/** Why a specialist's work stopped when the person quit Trama (C11); with a mandate it resumes on reopening (issue #249). @model-text: stable marker. */
-export const ASSIGNMENT_QUIT_NOTE = "Esci: Trama si sta chiudendo. L'incarico riprende alla riapertura se il mandato lo consente.";
-/** Why a specialist's work left running on disk stopped: Trama stopped without Esci (C11). @model-text: stable marker. */
-export const ASSIGNMENT_CRASH_NOTE = "Trama si è interrotto senza un arresto controllato (crash o chiusura forzata) mentre lo specialista lavorava.";
+/**
+ * The notes Trama stores when it closes with work in progress (C11). They are written in the person's language, and a
+ * stored record keeps the language it was written in: `resumeWork.ts` recognizes a stop by Esci or by a crash by
+ * comparing the stored text with the note in every language (issue #301).
+ */
+const CLOSING_NOTES = {
+  /** Why a Coordinator turn ended when the person quit Trama during it: Esci closes the turn itself. */
+  quit: "main.document.quitNote",
+  /** Why a turn left running on disk ended: Trama stopped without Esci, a crash or a forced stop. */
+  crash: "main.document.crashNote",
+  /** Why a specialist's work stopped when the person quit Trama; with a mandate it resumes on reopening (issue #249). */
+  assignmentQuit: "main.document.assignmentQuitNote",
+  /** Why a specialist's work left running on disk stopped: Trama stopped without Esci. */
+  assignmentCrash: "main.document.assignmentCrashNote",
+} as const satisfies Record<string, MessageKey>;
+export type ClosingNote = keyof typeof CLOSING_NOTES;
+
+/** A closing note in the person's language, to store now. */
+export const closingNote = (note: ClosingNote): string => t(CLOSING_NOTES[note]);
+
+/** A closing note in every language, to recognize a stored one. */
+export const closingNoteTexts = (note: ClosingNote): string[] => LANGUAGES.map((language) => translate(language, CLOSING_NOTES[note]));
+
+/** The Italian notes, as the older documents and the tests read them. */
+export const QUIT_NOTE = translate("it", CLOSING_NOTES.quit);
+export const CRASH_NOTE = translate("it", CLOSING_NOTES.crash);
+export const ASSIGNMENT_QUIT_NOTE = translate("it", CLOSING_NOTES.assignmentQuit);
+export const ASSIGNMENT_CRASH_NOTE = translate("it", CLOSING_NOTES.assignmentCrash);
 
 /**
  * Fills fields added after a document was written, completes an older team with the fixed roles (W09), marks
@@ -79,7 +97,7 @@ export function normalizeDocument(raw: Partial<ProjectDocument>, projectId: stri
   for (const request of document.requests) {
     if (request.state === "running") {
       request.state = "interrupted";
-      request.failure = CRASH_NOTE;
+      request.failure = closingNote("crash");
     }
   }
   // A plan still "planning" on disk lost its planner: it would block a new plan for the same request.

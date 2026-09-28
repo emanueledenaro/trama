@@ -163,6 +163,10 @@ export const mainRepositoryIt = {
   "main.problems.placedInBacklog": "{note} Nessun incarico lavora su questo problema: resta nel backlog.",
   "main.problems.localBacklog": "GitHub non è collegato: il problema resta nel backlog di Trama, senza issue.",
   // Document, storage and onboarding (document.ts, storage.ts, onboarding.ts)
+  "main.document.quitNote": "Trama è stato chiuso mentre il Coordinatore lavorava.",
+  "main.document.crashNote": "Trama si è chiuso senza fermare il turno mentre il Coordinatore lavorava.",
+  "main.document.assignmentQuitNote": "Esci: Trama si sta chiudendo. L'incarico riprende alla riapertura se il mandato lo consente.",
+  "main.document.assignmentCrashNote": "Trama si è interrotto senza un arresto controllato (crash o chiusura forzata) mentre lo specialista lavorava.",
   "main.document.specInterrupted": "La scrittura della spec si è interrotta prima della fine: rispondi di nuovo sui punti di prova.",
   "main.document.planInterrupted": "La preparazione si è interrotta prima della fine: chiedi di nuovo il piano.",
   "main.document.slicingInterrupted": "La divisione in fette si è interrotta prima della fine: chiedila di nuovo.",
