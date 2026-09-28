@@ -23,7 +23,8 @@ export type InspectorTarget =
   | { kind: "audit"; id: string }
   | { kind: "group" }
   | { kind: "work" }
-  | { kind: "activity" }
+  /** `work` opens one turn of work with its technical steps (issue #271). */
+  | { kind: "activity"; work?: string }
   | { kind: "issues" }
   | { kind: "issue"; number: number }
   /** A pull request, a commit or a branch a message cites (issue #277). */

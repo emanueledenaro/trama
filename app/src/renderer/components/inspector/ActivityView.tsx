@@ -1,7 +1,8 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ACTIVITY_OUTCOME_LABELS, type ActivityEntry, type ActivityOutcome, activityLog } from "@shared/activity";
 import { projectGoals } from "@shared/goals";
 import { problemBacklog } from "@shared/problems";
+import { compactSteps, workTurns, type WorkRow } from "@shared/technicalSteps";
 import { formatDuration } from "@shared/timeline";
 import { Button } from "@/components/ui/button";
 import { Badge, TextArea } from "@/components/ui/field";
@@ -10,12 +11,14 @@ import { formatDate } from "@/lib/format";
 import { act, useUi } from "@/lib/store";
 import { InspectorSection } from "./Inspector";
 import { ReferenceText } from "@/components/chat/ReferenceText";
+import { DisclosureChevron, StepList, WorkLabel } from "@/components/chat/WorkSteps";
 
 /**
  * Activity (Q6): the Coordinator's automatic moves of the project, the rounds that did something (A05), the steps of
  * the problems it found (A08) and the person's steps it took within the mandate (A06), newest first, with name, time,
  * what started the move and outcome. The chat keeps the conversation with the person; the single moves are here, and the
- * one that runs can be stopped. Below, the backlog items the found problems became.
+ * one that runs can be stopped. Below, the backlog items the found problems became, and the technical steps of each turn
+ * of work, which the chat names in one line (issue #271).
  */
 
 const OUTCOME_TONES: Record<ActivityOutcome, "info" | "success" | "warning" | "destructive" | "secondary"> = {
@@ -235,7 +238,88 @@ function ActivityRow({ entry, dialog }: { entry: ActivityEntry; dialog: string }
   );
 }
 
-export function ActivityView() {
+/** How many turns of work Activity lists before "Mostra i precedenti". */
+const TURNS_SHOWN = 20;
+
+/** One turn of work: the same line as the chat, with its steps grouped below on request. */
+function WorkTurn({ row, focused, dialog }: { row: WorkRow; focused: boolean; dialog: string }) {
+  const [open, setOpen] = useState(focused);
+  const ref = useRef<HTMLLIElement>(null);
+  const request = useUi((s) => (row.requestId ? s.app?.project?.document.requests.find((r) => r.id === row.requestId) : undefined));
+  const steps = useMemo(() => compactSteps(row.activities), [row.activities]);
+  useEffect(() => {
+    if (!focused) return;
+    setOpen(true);
+    ref.current?.scrollIntoView({ block: "start" });
+  }, [focused]);
+  if (!steps.length && !row.running) return null;
+  const started = row.activities[0]?.createdAt;
+  return (
+    <li ref={ref} className="py-2" data-testid="work-turn" data-work={row.id} data-focused={focused || undefined}>
+      <button type="button" aria-expanded={open} onClick={() => setOpen(!open)} className="flex w-full min-w-0 items-center gap-1 text-left text-ui text-foreground">
+        <span className="min-w-0 flex-1 truncate">
+          <WorkLabel row={row} />
+        </span>
+        <span className="shrink-0 text-ui-xs text-muted-foreground tabular-nums">{steps.length === 1 ? "1 passo" : `${steps.length} passi`}</span>
+        <DisclosureChevron open={open} />
+      </button>
+      <p className="mt-0.5 truncate text-ui-xs text-muted-foreground">
+        {started ? formatDate(started) : null}
+        <Sep />
+        {dialog}
+        {request ? (
+          <>
+            <Sep />«{request.text}»
+          </>
+        ) : null}
+      </p>
+      {open ? (
+        <div className="mt-2">
+          <StepList steps={steps} />
+        </div>
+      ) : null}
+    </li>
+  );
+}
+
+/** The technical steps of the work, one entry per turn, newest first (issue #271). */
+function TechnicalWork({ focusWork }: { focusWork?: string }) {
+  const project = useUi((s) => s.app?.project);
+  const document = project?.document;
+  const running = project?.runningWork;
+  // A turn with only empty notes has no entry: it is left out before the page is counted.
+  const turns = useMemo(
+    () => (document ? workTurns(document.events, document.requests, running ?? []).filter((t) => t.running || compactSteps(t.activities).length) : []),
+    [document, running],
+  );
+  const titles = useMemo(() => new Map((document ? projectGoals(document) : []).map((g) => [g.id, g.title])), [document]);
+  const focusIndex = focusWork ? turns.findIndex((t) => t.id === focusWork) : -1;
+  const [shown, setShown] = useState(TURNS_SHOWN);
+  const limit = Math.max(shown, focusIndex + 1);
+  if (!turns.length) return null;
+  const dialogOf = (row: WorkRow) => {
+    const goalId = row.requestId ? document?.requests.find((r) => r.id === row.requestId)?.goalId : null;
+    return goalId ? (titles.get(goalId) ?? "Dialogo di un obiettivo") : "Dialogo del progetto";
+  };
+  return (
+    <InspectorSection title="Passi tecnici del lavoro">
+      <ul className="flex flex-col divide-y divide-[color:var(--app-surface-divider)]" data-testid="technical-work">
+        {turns.slice(0, limit).map((row) => (
+          <WorkTurn key={row.id} row={row} focused={row.id === focusWork} dialog={dialogOf(row)} />
+        ))}
+      </ul>
+      {turns.length > limit ? (
+        <div className="cta-row mt-1.5">
+          <Button size="xs" variant="ghost" onClick={() => setShown(limit + TURNS_SHOWN)}>
+            Mostra i precedenti
+          </Button>
+        </div>
+      ) : null}
+    </InspectorSection>
+  );
+}
+
+export function ActivityView({ focusWork }: { focusWork?: string }) {
   const document = useUi((s) => s.app?.project?.document);
   const entries = useMemo(
     () =>
@@ -265,6 +349,7 @@ export function ActivityView() {
           </p>
         )}
       </InspectorSection>
+      <TechnicalWork focusWork={focusWork} />
       <ProblemBacklog />
     </>
   );

@@ -1,9 +1,13 @@
 import type { NextStepView } from "@shared/domain";
 import { act, useUi } from "./store";
 
+/** Sent to a card's row when something brings it into view: a settled card opens (issue #271). */
+export const REVEAL_EVENT = "trama:reveal-card";
+
 /** Scrolls the card of a record into view; false when this dialog does not show it. */
 export function revealCard(id: string): boolean {
   const card = document.querySelector(`[data-anchors~="${CSS.escape(id)}"]`);
+  card?.dispatchEvent(new Event(REVEAL_EVENT));
   card?.scrollIntoView({ behavior: "smooth", block: "start" });
   return card !== null;
 }
