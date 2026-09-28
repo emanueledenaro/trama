@@ -1,5 +1,4 @@
 import { randomUUID } from "node:crypto";
-import { withoutRepeatedLead } from "@shared/plainLanguage";
 import type { ProviderId, ProviderModel } from "@shared/codex";
 import type {
   ArchitectureOutcome,
@@ -23,7 +22,7 @@ import { DEFAULT_LANGUAGE, type Language, LANGUAGE_NAMES_IN_ENGLISH } from "@sha
 import { STRENGTH_ORDER, TRIAGE_CATEGORY_LABEL, TRIAGE_STATE_LABEL, TRIAGE_STATES } from "@shared/duties";
 import { shortId } from "@shared/ids";
 import { openedForProblem } from "@shared/problems";
-import { activeTerms, coversAssignment } from "@shared/mandate";
+import { activeTerms, coversAssignment, workLeftOut } from "@shared/mandate";
 import type { LoadedSkill } from "@shared/skills";
 import { roleProfile } from "@shared/roster";
 import { findCandidate } from "./candidates";
@@ -697,7 +696,11 @@ export function startWaitingDomainWriting(document: ProjectDocument, runner: Dut
 
 /** Read-only automatic work runs under any granted mandate; work that writes needs executeInWorktree on its modules. */
 export function withinMandate(document: ProjectDocument, assignment: SpecialistAssignment): boolean {
-  return coversAssignment(document, activeTerms(document.mandate), assignment);
+  const terms = activeTerms(document.mandate);
+  if (!coversAssignment(document, terms, assignment)) return false;
+  // Work that depends on work the mandate leaves out does not resume either (C06).
+  const leftOut = workLeftOut(document, terms);
+  return !(assignment.dependencies ?? []).some((id) => leftOut.has(id));
 }
 
 /** Light models by name, as catalogues do not say what a model costs: a Trama addition. */
@@ -1083,8 +1086,8 @@ function architectureCard(document: ProjectDocument, assignment: SpecialistAssig
         .join(" "),
       alternatives: [
         ...proposals.slice(0, CARD_PROPOSALS).map((p) => ({
-          // A title that already says "Approfondire" keeps it once (issue #270).
-          behavior: withoutRepeatedLead("Approfondire", p.title),
+          // The question already asks what to deepen: each option is the proposal's own title (issues #270, #272).
+          behavior: p.title,
           example: `${p.files.join(", ") || "File non indicati"}: ${p.solution}`,
           consequence: `${p.benefits}${p.adrConflict ? ` Attenzione: ${p.adrConflict}` : ""}`,
         })),

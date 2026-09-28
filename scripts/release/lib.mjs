@@ -17,7 +17,9 @@ const GROUPS = {
 
 const GROUP_ORDER = ['Added', 'Changed', 'Deprecated', 'Removed', 'Fixed', 'Security'];
 
-const SEMVER_RE = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
+// MAJOR.MINOR.PATCH, with an optional -beta.N pre-release for test builds
+// (docs/agents/versioning.md). Other SemVer pre-release labels are not used.
+const SEMVER_RE = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-beta\.(0|[1-9]\d*))?$/;
 
 export function parseSubject(subject) {
   const match = HEADER_RE.exec((subject ?? '').trim());
@@ -26,29 +28,40 @@ export function parseSubject(subject) {
   return { type, scope: scope ?? null, breaking: bang === '!', description };
 }
 
+/** Returns [major, minor, patch, beta], where beta is null for a stable version. */
 export function parseVersion(version) {
   const match = SEMVER_RE.exec(version ?? '');
-  if (!match) throw new Error(`"${version}" is not a MAJOR.MINOR.PATCH version`);
-  return match.slice(1, 4).map(Number);
+  if (!match) throw new Error(`"${version}" is not a MAJOR.MINOR.PATCH or MAJOR.MINOR.PATCH-beta.N version`);
+  const [major, minor, patch] = match.slice(1, 4).map(Number);
+  return [major, minor, patch, match[4] === undefined ? null : Number(match[4])];
 }
 
+export function isPrerelease(version) {
+  return parseVersion(version)[3] !== null;
+}
+
+/** SemVer precedence: 0.2.0-beta.1 < 0.2.0-beta.2 < 0.2.0 < 0.2.1. */
 export function compareVersions(a, b) {
   const [x, y] = [parseVersion(a), parseVersion(b)];
   for (let i = 0; i < 3; i += 1) {
     if (x[i] !== y[i]) return x[i] - y[i];
   }
-  return 0;
+  if (x[3] === y[3]) return 0;
+  if (x[3] === null) return 1;
+  if (y[3] === null) return -1;
+  return x[3] - y[3];
 }
 
 /**
  * Computes the next version from Conventional Commits. Commits carry a
  * `subject` and an optional `body`, where a `BREAKING CHANGE:` footer also
  * marks a breaking change. Before 1.0.0 a breaking change bumps the minor
- * version, as SemVer allows for initial development. Returns null when no
- * commit calls for a release.
+ * version, as SemVer allows for initial development. After a pre-release
+ * X.Y.Z-beta.N the next version is X.Y.Z, the release the beta previewed.
+ * Returns null when no commit calls for a release.
  */
 export function nextVersion(current, commits) {
-  const [major, minor, patch] = parseVersion(current);
+  const [major, minor, patch, beta] = parseVersion(current);
   let level = 0; // 0 none, 1 patch, 2 minor, 3 major
   for (const commit of commits) {
     const parsed = parseSubject(commit.subject);
@@ -59,6 +72,7 @@ export function nextVersion(current, commits) {
     else if (parsed.type === 'fix' || parsed.type === 'perf') level = Math.max(level, 1);
   }
   if (level === 0) return null;
+  if (beta !== null) return `${major}.${minor}.${patch}`;
   if (major === 0 && level === 3) level = 2;
   if (level === 3) return `${major + 1}.0.0`;
   if (level === 2) return `${major}.${minor + 1}.0`;
