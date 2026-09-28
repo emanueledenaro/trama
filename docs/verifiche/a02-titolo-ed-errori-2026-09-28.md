@@ -13,7 +13,7 @@ Tutte le prove usano il Codex finto (`app/test-fixtures/fake-codex.mjs`). Nessun
 
 ## Comportamento
 
-- La barra di focus prende il titolo dall'obiettivo. Il lavoro del dialogo del progetto che non serve un obiettivo si chiama "Lavoro nel dialogo del progetto", mai con il primo messaggio.
+- La barra di focus prende il titolo dall'obiettivo. Il lavoro del progetto fuori dagli obiettivi, se non serve un obiettivo, si chiama "Lavoro del progetto", mai con il primo messaggio.
 - Nella barra e nella coda il motivo di un lavoro fermo è quello per la persona, senza id. La coda mostra prima la mossa della persona, poi il motivo.
 - Il Coordinatore legge che non deve incollare l'errore di uno strumento e deve spiegare in italiano semplice cosa non è andato.
 - Se la risposta incolla comunque il testo esatto di un errore arrivato nello stesso turno, Trama lo sostituisce in chat con "uno strumento di Trama ha rifiutato la richiesta (il dettaglio è in Attività)".

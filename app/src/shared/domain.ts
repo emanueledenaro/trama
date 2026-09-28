@@ -82,7 +82,7 @@ export interface ConversationEvent {
   /** Specialist work: the assignment and turn the activity belongs to. */
   assignmentId?: string | null;
   workKey?: string | null;
-  /** The goal dialog the event belongs to; absent or null means the project dialog (UX02). */
+  /** The goal the event belongs to, which the chat filter shows it under (U01); absent or null means the whole project. */
   goalId?: string | null;
   createdAt: string;
   content: EventContent;
@@ -104,7 +104,7 @@ export interface CoordinatorRequest {
   completedAt: string | null;
   failure: string | null;
   attachments?: string[];
-  /** The goal dialog the message was sent from, fixed when the request is created (UX02). */
+  /** The goal the chat was filtered on when the message was sent, fixed when the request is created (UX02, U01). */
   goalId?: string | null;
   /** The one next step the Coordinator declared at the end of the turn (W01). */
   nextStep?: NextStep | null;
@@ -985,8 +985,11 @@ export interface WorkPlan {
   /**
    * seams: the planner proposed the seams to test and waits for the person's answer before it writes the spec (M04).
    * stale: the repository changed while the planner read it; the plan must be re-evaluated (T06).
+   * superseded: a newer plan of the same goal replaced it; one goal has one active plan (U01).
    */
-  status: "planning" | "seams" | "ready" | "failed" | "stale";
+  status: "planning" | "seams" | "ready" | "failed" | "stale" | "superseded";
+  /** The plan that replaced this one; set only when the status is superseded. */
+  supersededBy?: string | null;
   /** The plan of a request written before M04; a plan written with to-spec keeps `spec` instead. */
   proposal: PlanProposal | null;
   /** The plan as a spec, written with AI Hero's to-spec skill (M04); absent in plans written before it. */
@@ -1103,7 +1106,7 @@ export interface GoalExample {
 /** Proposed by the Coordinator and not yet confirmed, open, achieved or abandoned by the person. */
 export type GoalStatus = "proposed" | "open" | "achieved" | "abandoned";
 
-/** The composer's selection and draft of one dialog (ADR 0010). */
+/** The composer's selection and draft of the chat (ADR 0010). */
 export interface DialogComposer {
   selectedProvider?: ProviderId;
   selectedModel: string | null;
@@ -1127,10 +1130,13 @@ export interface ProjectGoal {
   origin: "person" | "coordinator";
   createdAt: string;
   updatedAt: string;
-  /** Pact decisions the person or the goal dialog linked to this goal. */
+  /** Pact decisions the person or a turn about the goal linked to this goal. */
   decisionIds: string[];
-  /** The goal dialog's composer. */
-  dialog: DialogComposer;
+  /**
+   * The composer of the goal dialog, written before the single chat (U01). Loading a document folds its draft
+   * into the chat's composer and removes it; new goals never have it.
+   */
+  dialog?: DialogComposer;
   /**
    * When the person put the goal away (W03). Archiving hides it from the working view and keeps its status,
    * links and history; restoring clears it. Absent or null means not archived.
@@ -1150,7 +1156,7 @@ export interface ProjectDocument {
   mandateRequests: MandateRequest[];
   decisionRequests: DecisionRequest[];
   coordinator: CoordinatorState;
-  /** The composer's selection for the project dialog (ADR 0010). Absent provider means Codex. */
+  /** The composer's selection for the project's one chat (ADR 0010, U01). Absent provider means Codex. */
   selectedProvider?: ProviderId;
   selectedModel: string | null;
   selectedEffort: string | null;

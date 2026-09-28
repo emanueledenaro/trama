@@ -46,7 +46,7 @@ export function setArchived(goal: ProjectGoal, archived: boolean) {
 }
 
 /**
- * Confirms the deletion of an empty goal dialog (W03). Only a dialog without history can be deleted: the
+ * Confirms the deletion of a goal with no history in the chat (W03). Only such a goal can be deleted: the
  * main process checks it again, so a message sent meanwhile keeps the goal.
  */
 export function DeleteGoalDialog({ goal, onClose }: { goal: ProjectGoal | null; onClose: () => void }) {
@@ -56,8 +56,8 @@ export function DeleteGoalDialog({ goal, onClose }: { goal: ProjectGoal | null; 
     <Dialog
       open={goal !== null}
       onOpenChange={(open) => (open ? null : onClose())}
-      title="Eliminare il dialogo vuoto?"
-      description="Il dialogo non ha messaggi, domande, decisioni né lavoro. Eliminarlo toglie anche l'obiettivo e non si può annullare."
+      title="Eliminare l'obiettivo vuoto?"
+      description="L'obiettivo non ha messaggi, domande, decisioni né lavoro nella chat. Eliminarlo non si può annullare."
       footer={
         <>
           <Button size="sm" variant="ghost" onClick={onClose}>
@@ -74,7 +74,7 @@ export function DeleteGoalDialog({ goal, onClose }: { goal: ProjectGoal | null; 
               });
             }}
           >
-            Elimina il dialogo
+            Elimina l'obiettivo
           </Button>
         </>
       }
@@ -204,7 +204,7 @@ export function GoalsView({ create }: { create?: boolean }) {
         }
       >
         <p className="text-ui-sm text-muted-foreground">
-          Un obiettivo descrive un risultato ed esempi verificabili. Ha un dialogo proprio con il Coordinatore; mandato e decisioni restano quelli del progetto.
+          Un obiettivo descrive un risultato ed esempi verificabili. Nella chat del Coordinatore è un filtro: mostra i suoi messaggi ed eventi. Mandato e decisioni restano quelli del progetto.
         </p>
         {editing ? (
           <div className="mt-2">
@@ -219,7 +219,7 @@ export function GoalsView({ create }: { create?: boolean }) {
             />
           </div>
         ) : null}
-        {goals.length === 0 && !editing ? <p className="mt-2 text-ui text-muted-foreground/70">Nessun obiettivo. La conversazione precedente resta nel dialogo del progetto.</p> : null}
+        {goals.length === 0 && !editing ? <p className="mt-2 text-ui text-muted-foreground/70">Nessun obiettivo. La conversazione resta nella chat del Coordinatore.</p> : null}
       </InspectorSection>
       {groups.map(({ title, items }) => {
         if (!items.length) return null;
@@ -315,7 +315,7 @@ export function GoalView({ id, edit = false }: { id: string; edit?: boolean }) {
         ) : null}
         <div className="cta-row mt-3">
           <Button size="sm" variant={dialogGoalId === goal.id ? "ghost" : "outline"} disabled={dialogGoalId === goal.id} onClick={() => openDialog(goal.id)}>
-            <IconMessageCircle /> {dialogGoalId === goal.id ? "Dialogo aperto" : "Apri il dialogo"}
+            <IconMessageCircle /> {dialogGoalId === goal.id ? "Chat filtrata" : "Mostra nella chat"}
           </Button>
           {empty ? (
             <Button size="sm" variant="ghost" onClick={() => setDeleting(goal)}>
@@ -429,7 +429,7 @@ export function GoalView({ id, edit = false }: { id: string; edit?: boolean }) {
       </InspectorSection>
       <InspectorSection title={`Lavori (${links.assignments.length})`}>
         {links.assignments.length === 0 ? (
-          <EmptyNote>Nessun incarico collegato. Il Coordinatore assegna il lavoro dal dialogo dell'obiettivo, entro il mandato.</EmptyNote>
+          <EmptyNote>Nessun incarico collegato. Il Coordinatore assegna il lavoro dell'obiettivo dalla chat, entro il mandato.</EmptyNote>
         ) : null}
         {links.assignments.map(({ assignment, specialist }) => (
           <button
@@ -506,7 +506,7 @@ export function GoalCard({ goalId }: { goalId: string }) {
           </Button>
           {dialogGoalId !== goal.id && goal.status !== "proposed" ? (
             <Button size="sm" variant="ghost" onClick={() => openDialog(goal.id)}>
-              <IconMessageCircle /> Apri il dialogo
+              <IconMessageCircle /> Mostra nella chat
             </Button>
           ) : null}
         </div>
@@ -515,7 +515,7 @@ export function GoalCard({ goalId }: { goalId: string }) {
   );
 }
 
-/** Shown at the top of a goal dialog: where the messages go. */
+/** Shown at the top of the chat filtered on a goal: what the filter shows and what the next message is about. */
 export function GoalDialogHeader({ goalId }: { goalId: string }) {
   const project = useUi((s) => s.app?.project)!;
   const setInspector = useUi((s) => s.setInspector);
@@ -544,8 +544,8 @@ export function GoalDialogHeader({ goalId }: { goalId: string }) {
         <div className="mt-2 flex flex-wrap items-center gap-2 border-t border-[color:var(--color-border)] pt-2">
           <p className="min-w-[12rem] flex-1 text-ui-sm text-muted-foreground">
             {archived
-              ? "Obiettivo archiviato: il dialogo resta consultabile. Ripristinalo per riportarlo tra gli obiettivi di lavoro."
-              : "Il dialogo è vuoto. Se l'hai creato per sbaglio puoi eliminarlo."}
+              ? "Obiettivo archiviato: la sua cronologia resta consultabile. Ripristinalo per riportarlo tra gli obiettivi di lavoro."
+              : "L'obiettivo non ha ancora messaggi. Se l'hai creato per sbaglio puoi eliminarlo."}
           </p>
           <div className="cta-row">
             {archived ? (
@@ -554,7 +554,7 @@ export function GoalDialogHeader({ goalId }: { goalId: string }) {
               </Button>
             ) : (
               <Button size="xs" variant="ghost" onClick={() => setDeleting(goal)}>
-                <IconTrash /> Elimina il dialogo
+                <IconTrash /> Elimina l'obiettivo
               </Button>
             )}
           </div>

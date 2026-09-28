@@ -11,10 +11,10 @@ import { PHASE_LABELS, workRequests, workState } from "./workPhase";
  */
 
 /**
- * Title of the project dialog's work when it serves no goal. The first message of the dialog is never the title
+ * Title of the project's work outside the goals when it serves no goal. The first message is never the title
  * (issue #241): it is often a request already met, or words for the Coordinator rather than a name for the work.
  */
-export const PROJECT_WORK_TITLE = "Lavoro nel dialogo del progetto";
+export const PROJECT_WORK_TITLE = "Lavoro del progetto";
 
 /** How many queued tasks the Coordinator reads by name. */
 const QUEUE_IN_PROMPT = 5;
@@ -179,8 +179,8 @@ export function resumeTask(document: ProjectDocument, taskId: string): void {
   };
 }
 
-/** How the Coordinator reads a task's name: a goal's title, or the project dialog's work named as such. */
-const promptName = (task: FocusTask) => (task.goalId ? `l'obiettivo "${task.title}"` : "il lavoro del dialogo del progetto");
+/** How the Coordinator reads a task's name: a goal's title, or the project's work outside the goals named as such. */
+const promptName = (task: FocusTask) => (task.goalId ? `l'obiettivo "${task.title}"` : "il lavoro del progetto fuori dagli obiettivi");
 
 const taskLine = (task: FocusTask) =>
   `${promptName(task)} (${task.id}), fase ${task.phaseLabel}${task.blocker ? `, bloccato: ${task.blocker}` : ""}${task.waitingFor ? `, aspetta la persona: ${task.waitingFor}` : ""}`;
