@@ -61,7 +61,6 @@ export const en: Record<keyof typeof it, string> = {
   "language.label": "Language",
   "language.description":
     "The language of the interface and of the messages from the Coordinator and the agents. Code, commits and project documents follow the project's own rules.",
-  "language.welcomeHint": "Choose the language for Trama. You can change it at any time in Settings.",
 
   // Welcome (B02, issue #354)
   "welcome.tab": "Welcome",
@@ -159,14 +158,9 @@ export const en: Record<keyof typeof it, string> = {
   "step.signInChatGpt": "Sign in with ChatGPT",
   "step.github.missing": "Install GitHub CLI, then run this in the terminal: {command}. You can do this later: the example and local projects stay available.",
   "step.github.signIn": "In the terminal: {command}. You can do this later: the example and local projects stay available.",
-  "step.createProject": "Create a project",
-  "step.openProject": "Open a project",
   "step.dontPrepare": "Don't prepare",
   "step.prepareMethod": "Prepare the method",
   "step.prepareMethodIn": "Prepare the method in {name}",
-  "step.moreExercises": "More exercises",
-  "step.resumeExercise": "Resume the exercise",
-  "step.startExercise": "Start the first exercise",
   "method.report": "AI Hero {version}: {created} paths created, {preserved} kept as they were.",
 
   "guide.provider.title": "Connect a provider",

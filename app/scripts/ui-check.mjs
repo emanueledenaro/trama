@@ -3207,13 +3207,20 @@ await app.close();
 
 // Issue #354, decisions 4 and 7: with a project open and no provider connected, the Benvenuto opens by itself beside
 // the conversation, on the provider step. Closed, the project can be explored: the composer offers "Collega un
-// provider" instead of sending, and the status bar keeps the warning with its action. Only node on the PATH, so no
-// provider CLI of the machine counts, and the fake Codex has no account.
+// provider" instead of sending, and the status bar keeps the warning with its action. Only node on the PATH and an
+// empty HOME, so no provider of the machine counts, and the fake Codex has no account.
 {
   const nodeOnly = await mkdtemp(join(tmpdir(), "trama-ui-node-"));
   await symlink(process.execPath, join(nodeOnly, "node"));
-  ({ app, page } = await launch({ PATH: `${nodeOnly}:/usr/bin:/bin`, FAKE_CODEX_ACCOUNT: "none" }));
-  await page.getByTestId("welcome").waitFor();
+  ({ app, page } = await launch({
+    PATH: `${nodeOnly}:/usr/bin:/bin`,
+    HOME: await mkdtemp(join(tmpdir(), "trama-ui-home-")),
+    // Pi counts cloud keys in the environment as a login: none here.
+    AWS_ACCESS_KEY_ID: "",
+    AWS_SECRET_ACCESS_KEY: "",
+    FAKE_CODEX_ACCOUNT: "none",
+  }));
+  await page.getByTestId("welcome").waitFor({ timeout: 30_000 });
   await page.evaluate(() => window.trama.invoke("project:openDemo", undefined));
   const beside = page.getByTestId("welcome");
   await page.getByTestId("editor-header").getByRole("button", { name: "Torna alla conversazione" }).waitFor({ timeout: 30_000 });

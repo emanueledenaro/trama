@@ -60,7 +60,6 @@ export const it = {
   "language.label": "Lingua",
   "language.description":
     "La lingua dell'interfaccia e dei messaggi del Coordinatore e degli agenti. Codice, commit e documenti del progetto seguono le regole del progetto.",
-  "language.welcomeHint": "Scegli la lingua di Trama. Puoi cambiarla quando vuoi in Impostazioni.",
 
   // Benvenuto (B02, issue #354)
   "welcome.tab": "Benvenuto",
@@ -158,14 +157,9 @@ export const it = {
   "step.signInChatGpt": "Accedi con ChatGPT",
   "step.github.missing": "Installa GitHub CLI, poi nel terminale: {command}. Puoi rimandare: l'esempio e i progetti locali restano disponibili.",
   "step.github.signIn": "Nel terminale: {command}. Puoi rimandare: l'esempio e i progetti locali restano disponibili.",
-  "step.createProject": "Crea un progetto",
-  "step.openProject": "Apri un progetto",
   "step.dontPrepare": "Non preparare",
   "step.prepareMethod": "Prepara il metodo",
   "step.prepareMethodIn": "Prepara il metodo in {name}",
-  "step.moreExercises": "Altri esercizi",
-  "step.resumeExercise": "Riprendi l'esercizio",
-  "step.startExercise": "Inizia il primo esercizio",
   "method.report": "AI Hero {version}: {created} percorsi creati, {preserved} preservati.",
 
   "guide.provider.title": "Collega un provider",
