@@ -100,12 +100,9 @@ export function settledCard(document: ProjectDocument, row: TimelineRow, context
     case "plan": {
       const plan = document.plans.find((p) => p.id === id);
       if (!plan) return null;
-      if (plan.status === "superseded") return { title: `Piano ${plan.id}`, subject: plan.summary, answer: null, outcome: { label: "Superato", tone: "secondary" } };
-      // Slices the person confirmed: the plan asks nothing more and runs as its slices.
-      if (plan.status === "ready" && plan.slicing?.status === "approved") {
-        return { title: `Piano ${plan.id}`, subject: plan.summary, answer: null, outcome: { label: "Fette confermate", tone: "success" } };
-      }
-      return null;
+      // A plan with confirmed slices stays whole: it shows how its slices go while the work runs.
+      if (plan.status !== "superseded") return null;
+      return { title: `Piano ${plan.id}`, subject: plan.summary, answer: null, outcome: { label: "Superato", tone: "secondary" } };
     }
     case "conflict": {
       const assessment = document.conflicts?.find((a) => a.id === id);

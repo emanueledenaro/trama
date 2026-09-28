@@ -88,12 +88,12 @@ describe("settledCard (issue #271)", () => {
     expect(settledCard(document, card("teamProposal", "T-1"), context())).toMatchObject({ subject: "Luca, Marco", outcome: { label: "Team confermato" } });
   });
 
-  it("settles a plan replaced by another or with its slices confirmed, and keeps one still to review", () => {
+  it("settles a plan replaced by another, and keeps one to review or with its slices at work", () => {
     const document = emptyDocument("p");
     const plan = (id: string, extra: Partial<WorkPlan>) => ({ id, summary: `Piano ${id}`, status: "ready", ...extra }) as WorkPlan;
     document.plans.push(plan("P-1", { status: "superseded" }), plan("P-2", { slicing: { status: "approved" } as WorkPlan["slicing"] }), plan("P-3", { slicing: { status: "proposed" } as WorkPlan["slicing"] }));
     expect(settledCard(document, card("plan", "P-1"), context())?.outcome.label).toBe("Superato");
-    expect(settledCard(document, card("plan", "P-2"), context())?.outcome.label).toBe("Fette confermate");
+    expect(settledCard(document, card("plan", "P-2"), context())).toBeNull();
     expect(settledCard(document, card("plan", "P-3"), context())).toBeNull();
   });
 

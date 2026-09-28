@@ -39,6 +39,20 @@ const shot = async (name) => {
   await page.screenshot({ path: join(out, `${name}.png`) });
   console.log("saved", name);
 };
+// Issue #271: a card that asks nothing more is one line; this opens the line when it is closed.
+const openSettled = async (line) => {
+  if ((await line.getAttribute("data-testid")) !== "settled-card") return;
+  const toggle = line.getByRole("button", { name: /^Apri: / }).first();
+  if (await toggle.count()) await toggle.click();
+};
+// A card that may settle while the check reads it: opens its line until `find` shows what the check looks for.
+const waitInCard = async (card, find, what, timeout = 20_000) => {
+  for (const end = Date.now() + timeout; Date.now() < end; await page.waitForTimeout(250)) {
+    await openSettled(card).catch(() => undefined);
+    if (await find(card).first().isVisible().catch(() => false)) return;
+  }
+  throw new Error(`Not found in the card: ${what}`);
+};
 // Issue #240: a card that waits for the person sits in Aspetta te; the chat keeps a reference that opens it there.
 const waitingItem = async (reference, timeout = 20_000) => {
   await reference.waitFor({ timeout });
@@ -689,7 +703,7 @@ for (const expected of ["Ordine in revisione", "Ordine sospeso, Rimborso in atte
   if (!(await domainCard.innerText()).includes(expected)) throw new Error(`The domain proposal does not show "${expected}"`);
 }
 // The role's name also shows among the candidate's reviewers (W10): only an assignment card of the role is writing.
-const documentationWork = page.locator('.chat-card, [data-testid="settled-card"]').filter({ hasText: /^Incarico A-/ }).filter({ hasText: "Documentazione e dominio" });
+const documentationWork = page.locator('.chat-card:not([data-testid="settled-card"] .chat-card), [data-testid="settled-card"]').filter({ hasText: /^Incarico A-/ }).filter({ hasText: "Documentazione e dominio" });
 if (await documentationWork.count()) throw new Error("The documentation role started writing outside the mandate");
 await domainCard.scrollIntoViewIfNeeded();
 await shot("04j-domain-proposal-waiting");
@@ -894,9 +908,13 @@ await page.getByText(/Ho ritirato la domanda 1 del chiarimento, turno 1/).first(
 const otherItem = await waitingItem(round.getByTestId("waiting-reference").first());
 await otherItem.getByRole("button", { name: /Anche il cliente/ }).click();
 await otherItem.getByRole("button", { name: "Registra la decisione" }).click();
-await round.getByText("Turno completo").waitFor({ timeout: 20_000 });
+// Issue #271: the complete round is one line; the line opens it with the withdrawn question.
+const roundLine = page.getByTestId("settled-card").filter({ hasText: "Chiarimento prima del piano, turno 1" }).filter({ hasText: "Turno completo" }).first();
+await roundLine.waitFor({ timeout: 20_000 });
 await page.waitForTimeout(500);
 await page.getByRole("button", { name: "Interrompi" }).waitFor({ state: "hidden", timeout: 20_000 });
+await roundLine.getByRole("button", { name: /^Apri: / }).click();
+await round.getByTestId("withdrawn-question").waitFor();
 await round.scrollIntoViewIfNeeded();
 await shot("14b-grilling-withdrawn");
 // M04: the plan follows to-spec, once the grilling round above is complete (a plan waits for open questions).
@@ -1095,7 +1113,7 @@ await goalRound.getByText("1 di 2 risposte").waitFor({ timeout: 20_000 });
 const goalSecond = await waitingItem(goalRound.getByTestId("waiting-reference").first());
 await goalSecond.getByRole("button", { name: /Anche il cliente/ }).click();
 await goalSecond.getByRole("button", { name: "Registra la decisione" }).click();
-await goalRound.getByText("Turno completo").waitFor({ timeout: 20_000 });
+await page.getByTestId("settled-card").filter({ hasText: "Chiarimento prima del piano, turno 1" }).filter({ hasText: "Turno completo" }).first().waitFor({ timeout: 20_000 });
 await page.getByRole("button", { name: "Interrompi" }).waitFor({ state: "hidden", timeout: 20_000 });
 await page.getByRole("button", { name: /^Mandato/ }).first().click();
 await page.getByRole("button", { name: "Correggi", exact: true }).click();
@@ -1227,6 +1245,10 @@ await page.keyboard.press("Enter");
 await page.getByText("Prima proposta di mandato").first().waitFor({ timeout: 20_000 });
 await page.getByLabel("Messaggio al Coordinatore").fill("[chiedi-mandato:Seconda proposta di mandato]");
 await page.keyboard.press("Enter");
+// Issue #271: the superseded request is one line; the line opens its card.
+const supersededLine = page.getByTestId("settled-card").filter({ hasText: "Superata" }).filter({ hasText: "Prima proposta di mandato" });
+await supersededLine.waitFor({ timeout: 20_000 });
+await openSettled(supersededLine);
 const supersededNote = page.getByTestId("superseded-mandate");
 await supersededNote.waitFor({ timeout: 20_000 });
 if ((await supersededNote.count()) !== 1) throw new Error("Expected exactly one superseded mandate card");
@@ -1289,13 +1311,14 @@ const rejectCard = await openWaiting("mandate", "Seconda proposta di mandato");
 await rejectCard.getByRole("button", { name: "Rifiuta la proposta" }).click();
 await rejectCard.getByLabel("Motivo del rifiuto").fill("Serve ancora il worktree");
 await rejectCard.getByRole("button", { name: "Rifiuta la proposta" }).click();
-// Answered, the proposal leaves Aspetta te and the chat shows its card again in full.
-const rejectedCard = page.locator(".chat-card", { hasText: "Seconda proposta di mandato" }).last();
+// Answered, the proposal leaves Aspetta te and the chat shows it as one line with its outcome (issue #271).
+const rejectedCard = page.getByTestId("settled-card").filter({ hasText: "Seconda proposta di mandato" }).last();
 await rejectedCard.getByText("Rifiutata", { exact: true }).waitFor({ timeout: 20_000 });
 await page.getByRole("button", { name: /^Mandato/ }).first().click();
 await mandateInspector.getByText(/^Mandato (v\d+|revocato)/).first().waitFor();
 if ((await mandateState()) !== stateBefore) throw new Error(`Rejecting a proposal changed the mandate in force: ${await mandateState()}`);
 await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
+await openSettled(rejectedCard);
 for (const theme of ["light", "dark"]) {
   await setTheme(theme);
   await rejectedCard.getByText("Hai rifiutato la proposta", { exact: false }).evaluate((el) => el.scrollIntoView({ block: "center" }));
@@ -1548,7 +1571,7 @@ await page.getByRole("button", { name: "Concedi mandato" }).click();
 await page.getByText(/Mandato v1/).first().waitFor({ timeout: 20_000 });
 await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
 // Issue #271: finished work is one settled line, with the same title, developer and outcome as its card.
-const assignmentCards = page.locator('.chat-card, [data-testid="settled-card"]').filter({ hasText: /^Incarico A-/ }).filter({ hasText: "Ada" });
+const assignmentCards = page.locator('.chat-card:not([data-testid="settled-card"] .chat-card), [data-testid="settled-card"]').filter({ hasText: /^Incarico A-/ }).filter({ hasText: "Ada" });
 const cardAssignment = async (card) => (await card.innerText()).match(/Incarico (A-[0-9A-F]{8})/)[1];
 
 // V04: the stop is first requested, then confirmed; the work and its turn stay, and it resumes in the same worktree.
@@ -1567,6 +1590,7 @@ await stoppedTurn.click();
 await page.getByText("Arresto confermato").first().waitFor({ timeout: 20_000 });
 await stoppedTurn.scrollIntoViewIfNeeded();
 await shot("18a-specialist-stopped");
+await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
 await slowCard.getByRole("button", { name: "Riprendi" }).click();
 await slowCard.getByText("Concluso", { exact: true }).waitFor({ timeout: 20_000 });
 
@@ -1886,6 +1910,7 @@ if ((await assignmentCards.count()) !== 5) throw new Error("An assignment withou
 await send("[assegna] [test]");
 const sliceWork = assignmentCards.nth(5);
 await sliceWork.getByText("Concluso", { exact: true }).waitFor({ timeout: 20_000 });
+await openSettled(sliceWork);
 // W05: the card shows the contract the slice reached the developer with and the developer's structured report,
 // as a statement apart from Trama's evidence.
 const contract = sliceWork.getByTestId("assignment-contract");
@@ -2047,10 +2072,13 @@ for (const provider of ["codex", "claudeAgent"]) {
 await setLook(questionLook.provider, questionLook.dark);
 await blockingCard.getByRole("button", { name: "Registra la decisione" }).click();
 await questionWork.getByText("Concluso", { exact: true }).waitFor({ timeout: 30_000 });
+await openSettled(questionWork);
 await questionWork.locator('[data-testid="assignment-question"][data-state="resumed"]').getByText("Lavoro ripreso").waitFor();
 await questionWork.getByTestId("question-answer").getByText(/Va in revisione come gli altri/).waitFor();
 // Answered, the card leaves Aspetta te and the chat shows it again in full.
-const answeredBlocking = page.locator(".chat-card", { has: page.getByTestId("blocked-work") }).last();
+const answeredBlockingLine = page.getByTestId("settled-card").filter({ has: page.getByTestId("settled-answer") }).last();
+await openSettled(answeredBlockingLine);
+const answeredBlocking = answeredBlockingLine.locator(".chat-card", { has: page.getByTestId("blocked-work") });
 await answeredBlocking.getByText("Il lavoro è ripreso con la tua risposta.").waitFor();
 if (await answeredBlocking.getByTestId("blocks-work").count()) throw new Error("An answered card still says it blocks the work");
 await questionWork.scrollIntoViewIfNeeded();
@@ -2140,8 +2168,8 @@ await page.evaluate(() => window.trama.invoke("settings:update", { continuousWor
 // "Come procede il lavoro?" would ask for a recap, which opens no turn (issue #242): the check writes to the Coordinator.
 await send("Vai avanti con il lavoro");
 const pickedCard = assignmentCards.nth(8);
-await pickedCard.getByTestId("assignment-self-picked").waitFor({ timeout: 20_000 });
-await pickedCard.getByText(/^S2 Il supporto vede gli ordini in revisione$/).waitFor();
+await waitInCard(pickedCard, (card) => card.getByTestId("assignment-self-picked"), "self-picked");
+await waitInCard(pickedCard, (card) => card.getByText(/^S2 Il supporto vede gli ordini in revisione$/), "slice S2");
 const pickedSlice = teamSlices.locator('[data-testid="plan-slice"][data-self-picked="yes"]').first();
 await pickedSlice.getByTestId("plan-slice-worker").getByText("Ada, presa in autonomia").waitFor({ timeout: 20_000 });
 if ((await pickedSlice.locator("span").first().textContent())?.trim() !== "2. Il supporto vede gli ordini in revisione") throw new Error("The free developer did not take the next ready slice");
@@ -2824,7 +2852,7 @@ const divergenceCards = settledLines.filter({ hasText: "Nell'avviso del progetto
 if ((await divergenceCards.count()) !== 2) throw new Error(`Divergence: ${await divergenceCards.count()} conflicts with main still shown on their own`);
 const supersededConflict = settledLines.filter({ hasText: "Due incarichi del team" }).filter({ hasText: "Superato" });
 if ((await supersededConflict.count()) !== 1) throw new Error("Divergence: the conflict with the replaced candidate is not superseded");
-const replacedLine = settledLines.filter({ hasText: "Candidato" }).filter({ hasText: "Superato" });
+const replacedLine = settledLines.filter({ hasText: /^Candidato C-/ }).filter({ hasText: "Superato" });
 if ((await replacedLine.count()) !== 1) throw new Error("Divergence: the replaced candidate is not marked superseded");
 await replacedLine.getByRole("button", { name: /^Apri: / }).click();
 await replacedLine.getByTestId("candidate-superseded").waitFor();
@@ -3037,7 +3065,7 @@ await timelineScroller.getByTestId("work-line").filter({ hasText: "Luca" }).eval
 for (const dark of [false, true]) {
   await page.evaluate((theme) => window.trama.invoke("settings:update", { theme }), dark ? "dark" : "light");
   await page.waitForFunction((wanted) => document.documentElement.classList.contains("dark") === wanted, dark);
-  await shot(`28a-compact-timeline-${dark ? "dark" : "light"}`);
+  await shot(`29a-compact-timeline-${dark ? "dark" : "light"}`);
 }
 const chatPane = page.locator(".chat-timeline-scroll");
 // One line for each turn of work, none of its steps.
@@ -3079,7 +3107,7 @@ await command.getByText("tsc --noEmit").waitFor();
 for (const dark of [false, true]) {
   await page.evaluate((theme) => window.trama.invoke("settings:update", { theme }), dark ? "dark" : "light");
   await page.waitForFunction((wanted) => document.documentElement.classList.contains("dark") === wanted, dark);
-  await shot(`28b-activity-steps-${dark ? "dark" : "light"}`);
+  await shot(`29b-activity-steps-${dark ? "dark" : "light"}`);
 }
 // The Coordinator's seven read_issues in a row are one entry.
 await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
