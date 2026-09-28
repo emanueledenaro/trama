@@ -1,0 +1,32 @@
+name: Richiesta di funzione
+description: Proporre una nuova funzione o un cambiamento.
+labels: [enhancement, needs-triage]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Descrivere il problema prima della soluzione. Il vocabolario di Trama (Coordinatore, Patto, mandato, candidato) è in [CONTEXT.md](https://github.com/emanueledenaro/trama/blob/main/CONTEXT.md).
+  - type: textarea
+    id: problema
+    attributes:
+      label: Problema
+      description: Cosa non si riesce a fare oggi, e in quale situazione.
+    validations:
+      required: true
+  - type: textarea
+    id: proposta
+    attributes:
+      label: Proposta
+      description: Cosa dovrebbe fare Trama. Esempi concreti di casi accettati e rifiutati aiutano.
+    validations:
+      required: true
+  - type: textarea
+    id: alternative
+    attributes:
+      label: Alternative considerate
+  - type: textarea
+    id: criteri
+    attributes:
+      label: Criteri di accettazione
+      placeholder: |
+        - [ ] ...
