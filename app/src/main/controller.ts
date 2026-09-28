@@ -113,6 +113,15 @@ import {
   choicesWithoutCard,
   confirmationFeedback,
   type ContinuationGuards,
+  type GitHubReading,
+  gitHubWorkEvents,
+  hasOpenWork,
+  isPaused,
+  PROJECT_EVENTS,
+  projectMove,
+  recordRound,
+  ROUND_INTERVAL_MS,
+  setPaused,
   stalledMove,
   type WorkEvent,
 } from "./core/continuousWork";
@@ -728,6 +737,7 @@ export class TramaController {
     this.scheduleMonitor();
     this.curatorTimer = setInterval(() => void this.maybeRunCurator(), 3_600_000);
     this.curatorTimer.unref?.();
+    this.scheduleRounds();
     this.host.applyTheme(this.state.settings.theme);
     this.state.recentProjects = await this.storage.loadRecentProjects();
     if (this.legacyRoot && !(await this.storage.hasRecentProjects())) {
@@ -768,6 +778,8 @@ export class TramaController {
     this.monitorTimer = null;
     if (this.curatorTimer) clearInterval(this.curatorTimer);
     this.curatorTimer = null;
+    if (this.roundTimer) clearInterval(this.roundTimer);
+    this.roundTimer = null;
     for (const [, review] of this.learningReviews) review.abort();
     this.learningReviews.clear();
     this.unwatchProject();
@@ -1013,7 +1025,8 @@ export class TramaController {
         this.watchProject(root);
         if (!isDemo) this.startPresence(parked);
         void this.loadSkills();
-        void this.startCoordinator();
+        // Continuous work picks up where it was with a round once the Coordinator is open (A05).
+        void this.startCoordinator().then(() => this.runRound(), () => undefined).catch((error) => this.fail(error));
         // Work that waited for a provider while the project was parked is checked again now.
         const waiting = new Set(parked.document.team.specialists.flatMap((sp) => sp.assignments.flatMap((a) => (a.waitingForProvider ? [a.waitingForProvider.provider] : []))));
         for (const provider of waiting) void this.resumeWaitingWork(provider);
@@ -1100,7 +1113,8 @@ export class TramaController {
         void this.prepareSkills().catch((error) => this.fail(error));
       }
       void this.loadSkills();
-      void this.startCoordinator();
+      // After a restart continuous work picks up where it was with a round once the Coordinator is open (A05).
+      void this.startCoordinator().then(() => this.runRound(), () => undefined).catch((error) => this.fail(error));
       const waiting = new Set(document.team.specialists.flatMap((sp) => sp.assignments.flatMap((a) => (a.waitingForProvider ? [a.waitingForProvider.provider] : []))));
       for (const provider of waiting) void this.resumeWaitingWork(provider);
     } catch (error) {
@@ -1238,6 +1252,7 @@ export class TramaController {
   async refreshGitHub(): Promise<void> {
     const project = this.state.project;
     if (!project || project.isDemo) return;
+    const before = this.gitHubReading(project);
     project.github = { ...project.github, status: "loading" };
     this.publish();
     const repository = await readGitHubRepository(project.rootPath);
@@ -1269,6 +1284,7 @@ export class TramaController {
     };
     this.updateMonitorStatus(repository, checkpoint);
     this.publish();
+    this.noticeGitHubWork(project, before);
     void this.presence?.tick();
     void this.assessRemoteConflicts();
     void this.recordMergedPullRequests(project, repository);
@@ -1279,10 +1295,12 @@ export class TramaController {
   private async refreshIssues(project: ActiveProjectState): Promise<void> {
     const repository = project.github.repository;
     if (!repository || project.github.status !== "ready") return;
+    const before = this.gitHubReading(project);
     const read = await listIssuesAndPullLinks(repository).catch(() => null);
     if (!read || this.state.project !== project) return;
     project.github = { ...project.github, ...read };
     this.publish();
+    this.noticeGitHubWork(project, before);
     void this.runDuties();
   }
 
@@ -1359,6 +1377,7 @@ export class TramaController {
             appendEvent(document, "trama", { type: "card", kind: "conflict", title: "Conflitto", detail: null, referenceId: assessment.id });
             if (shouldReproposeConsent(document.presence, assessment.classification)) this.proposePresence(project, "conflict", references);
             if (assessment.classification === "conflict") {
+              this.continueWork(project, null, "worktreeConflict");
               this.host.notify(
                 `Trama: conflitto con ${references.join(", ")}`,
                 `Il candidato ${candidate.id} entra in conflitto con ${references.join(", ")}.`,
@@ -1746,6 +1765,8 @@ export class TramaController {
     // Only the selected project starts work; parked projects keep waiting until the person comes back (review #8).
     const projects = this.state.project ? [this.state.project] : [];
     for (const project of projects) {
+      // In pause the work stays waiting: the next resume after Riprendi picks it up (A05).
+      if (isPaused(project.document)) continue;
       for (const specialist of project.document.team.specialists) {
         const assignment = specialist.assignments.at(-1);
         if (!assignment?.waitingForProvider || assignment.waitingForProvider.provider !== provider) continue;
@@ -2598,12 +2619,16 @@ export class TramaController {
     return true;
   }
 
-  // MARK: Continuous work (W04)
+  // MARK: Continuous work (W04, A05)
 
-  /** Plans and assignments that ended while the Coordinator was busy: weighed when its turn ends. */
-  private deferredWork: { projectId: string; requestId: string; event: WorkEvent }[] = [];
+  /** Work that ended or events that arrived while the Coordinator was busy: weighed when its turn ends. */
+  private deferredWork: { projectId: string; requestId: string | null; event: WorkEvent }[] = [];
   /** The automatic move that is starting and has no running request yet: no second move meanwhile. */
   private automaticStarting: { projectId: string } | null = null;
+  /** The periodic round of continuous work (A05), on while Trama is open. */
+  private roundTimer: NodeJS.Timeout | null = null;
+  /** The round that runs now: a tick meanwhile waits for the next one. */
+  private roundRunning = false;
 
   private continuationGuards(project: ActiveProjectState): ContinuationGuards {
     const provider = this.coordinatorProvider(project.document);
@@ -2613,16 +2638,24 @@ export class TramaController {
       (this.coordinatorModel(project.document, provider) ? null : this.coordinatorModelProblem(project.document, provider));
     return {
       enabled: this.state.settings.continuousWork !== false,
+      paused: isPaused(project.document),
       busy: project.runningRequestId !== null || this.automaticStarting?.projectId === project.id || this.queue.some((q) => q.projectId === project.id),
       unavailable,
     };
   }
 
-  /** A plan or an assignment of the selected project ended: the work may go on by itself now, or after the running turn. */
+  /**
+   * A plan or an assignment of the selected project ended, or an event of the whole project arrived (a red check, a
+   * conflict between worktrees, a new issue, a commented pull request): the work may go on by itself now, or after the
+   * running turn. `requestId` is null for an event of the whole project.
+   */
   private continueWork(project: ActiveProjectState, requestId: string | null, event: WorkEvent): void {
-    if (!requestId || this.quitting || this.state.project !== project) return;
+    if (this.quitting || this.state.project !== project) return;
+    if (!requestId && !PROJECT_EVENTS.includes(event)) return;
     if (this.continuationGuards(project).busy) {
-      this.deferredWork.push({ projectId: project.id, requestId, event });
+      if (!this.deferredWork.some((d) => d.projectId === project.id && d.requestId === requestId && d.event === event)) {
+        this.deferredWork.push({ projectId: project.id, requestId, event });
+      }
       return;
     }
     this.startAutomaticMove(project, [{ requestId, event }]);
@@ -2640,17 +2673,19 @@ export class TramaController {
     this.startAutomaticMove(project, [{ requestId, event: "turnEnded" }, ...deferred]);
   }
 
-  /** Starts the first automatic move the events allow, as a Coordinator turn: at most one (W04). */
-  private startAutomaticMove(project: ActiveProjectState, events: { requestId: string; event: WorkEvent }[]): void {
+  /** Starts the first automatic move the events allow, as a Coordinator turn: at most one (W04). Returns its name, or null. */
+  private startAutomaticMove(project: ActiveProjectState, events: { requestId: string | null; event: WorkEvent }[]): string | null {
     const guards = this.continuationGuards(project);
     for (const { requestId, event } of events) {
-      const move = automaticMove(project.document, requestId, event, guards);
+      const move = requestId && !PROJECT_EVENTS.includes(event)
+        ? automaticMove(project.document, requestId, event, guards)
+        : (projectMove(project.document, event, guards)?.move ?? null);
       if (!move) continue;
       // The model of the dialog's latest turn, while the Coordinator's provider still offers it.
       const provider = this.coordinatorProvider(project.document);
       const models = this.state.providers[provider]?.models ?? [];
       const model = move.model && (models.length === 0 || catalogOffers(provider, models, move.model)) ? move.model : null;
-      const step: RequestStep = { move: move.move, by: "trama" };
+      const step: RequestStep = { move: move.move, by: "trama", trigger: event };
       const starting = { projectId: project.id };
       this.automaticStarting = starting;
       void this.send(move.message, null, model, model ? move.effort : null, [], null, move.goalId, false, step)
@@ -2658,8 +2693,93 @@ export class TramaController {
         .finally(() => {
           if (this.automaticStarting === starting) this.automaticStarting = null;
         });
-      return;
+      return move.label;
     }
+    return null;
+  }
+
+  /** Starts the periodic round (A05): it runs while Trama is open, on the project with open work. */
+  private scheduleRounds(): void {
+    if (this.roundTimer) clearInterval(this.roundTimer);
+    this.roundTimer = setInterval(() => void this.runRound().catch((error) => this.fail(error)), ROUND_INTERVAL_MS);
+    this.roundTimer.unref?.();
+  }
+
+  /**
+   * The round of continuous work (A05): Trama reads the state of the selected project again, resumes the work whose
+   * question has its answer, lets free developers take ready slices, starts the fixed roles' automatic work the rules
+   * call for, and starts the Coordinator's next move when it is its own. Nothing runs in pause, without open work or in
+   * the example project; a round that finds nothing to do opens no provider turn and leaves no record.
+   */
+  async runRound(): Promise<void> {
+    const project = this.state.project;
+    if (!project || this.quitting || this.roundRunning || !project.stateWritable || project.isDemo) return;
+    if (this.state.settings.continuousWork === false || isPaused(project.document) || !hasOpenWork(project.document)) return;
+    this.roundRunning = true;
+    try {
+      const working = (document: ProjectDocument) =>
+        new Set(document.team.specialists.flatMap((s) => s.assignments.filter(isActive).map((a) => a.id)));
+      const before = working(project.document);
+      this.resumeAnsweredWork(project);
+      await this.runDuties();
+      if (this.state.project !== project || this.quitting || isPaused(project.document)) return;
+      const started = [...working(project.document)].filter((id) => !before.has(id));
+      const details = started.map((id) => {
+        const assignment = findAssignment(project.document, id);
+        const name = project.document.team.specialists.find((s) => s.id === assignment?.specialistId)?.name ?? "Uno specialista";
+        return assignment?.slice ? `${name} lavora sulla fetta ${assignment.slice.sliceId}` : `${name} lavora sull'incarico ${id}`;
+      });
+      const busy = this.continuationGuards(project).busy;
+      const move = busy ? null : this.startAutomaticMove(project, [{ requestId: null, event: "round" }]);
+      if (move) details.push(`Avviata la mossa "${move}"`);
+      if (!details.length) return;
+      recordRound(project.document, { id: randomUUID(), at: new Date().toISOString(), detail: `${details.join(". ")}.`, requestId: null });
+      this.changedIn(project);
+    } finally {
+      this.roundRunning = false;
+    }
+  }
+
+  /**
+   * The person pauses or resumes the continuous work of the open project (A05). In pause no automatic move, round or
+   * automatic work starts; the turns that run end, and a waiting retry of an automatic move is cancelled. Resuming
+   * runs a round at once. The state is saved with the project and holds after a restart.
+   */
+  async pauseContinuousWork(paused: boolean): Promise<void> {
+    const project = this.requireProject();
+    if (!project.stateWritable) throw new DomainError("Lo stato di questo progetto è in sola lettura.");
+    if (!setPaused(project.document, paused, new Date().toISOString())) return;
+    this.deferredWork = this.deferredWork.filter((d) => d.projectId !== project.id);
+    if (paused) {
+      const retried = project.providerRetry ? project.document.requests.find((r) => r.id === project.providerRetry!.requestId) : null;
+      if (retried?.step?.by === "trama") this.cancelProviderRetry(project);
+    }
+    appendEvent(
+      project.document,
+      "trama",
+      {
+        type: "activity",
+        title: paused ? "Lavoro continuo in pausa" : "Lavoro continuo ripreso",
+        detail: paused ? "Nessuna mossa automatica, nessun giro e nessun lavoro automatico partono finché non riprendi." : null,
+        tone: "info",
+      },
+      null,
+    );
+    this.changedIn(project);
+    if (!paused) await this.runRound();
+  }
+
+  /** What GitHub said about the project at the last reading, to compare with the next one (A05); null before one. */
+  private gitHubReading(project: ActiveProjectState): GitHubReading | null {
+    if (project.github.status !== "ready" || !project.github.snapshot) return null;
+    return { issues: project.github.issues, pullRequests: project.github.snapshot.pullRequests };
+  }
+
+  /** A new issue, a commented pull request or a red check on GitHub since `before` may start the Coordinator's move (A05). */
+  private noticeGitHubWork(project: ActiveProjectState, before: GitHubReading | null): void {
+    const after = this.gitHubReading(project);
+    if (!after) return;
+    for (const event of gitHubWorkEvents(before, after)) this.continueWork(project, null, event);
   }
 
   /** The person takes the next step shown under a reply when it is a message (W01): Trama sends it and records the step (W04). */
@@ -3524,7 +3644,8 @@ export class TramaController {
    * the rest waits for the next end of work.
    */
   private resumeAnsweredWork(project: ActiveProjectState): void {
-    if (this.quitting || project !== this.state.project) return;
+    // In pause the answer waits with its work: Riprendi resumes it (A05).
+    if (this.quitting || project !== this.state.project || isPaused(project.document)) return;
     for (const assignment of answeredWork(project.document)) {
       if (!withinMandate(project.document, assignment)) continue;
       try {
@@ -3642,6 +3763,8 @@ export class TramaController {
   private async startNextDuty(): Promise<void> {
     const project = this.state.project;
     if (!project || !project.stateWritable || this.quitting) return;
+    // In pause no automatic work of the fixed roles starts (A05).
+    if (isPaused(project.document)) return;
     if (project.isDemo) {
       // The example project runs no automatic work of its own, but a glossary and ADR proposal drawn from the
       // person's decisions waits only for the mandate there too (M03).
@@ -3670,9 +3793,11 @@ export class TramaController {
   private async moveTeam(): Promise<void> {
     const project = this.state.project;
     if (!project || !project.stateWritable || this.quitting) return;
-    this.retryGateReturns(project);
+    // In pause nobody takes new work by itself (A05); the worktrees are still compared, which starts no agent.
+    const paused = isPaused(project.document);
+    if (!paused) this.retryGateReturns(project);
     if (project.isDemo) return;
-    if (this.state.settings.continuousWork !== false) this.pickFreeSlices(project);
+    if (this.state.settings.continuousWork !== false && !paused) this.pickFreeSlices(project);
     await this.assessWorktreeConflicts(project);
   }
 
@@ -3977,6 +4102,8 @@ export class TramaController {
       target: { kind: "candidate", candidateId },
     });
     if (failure) void this.runDuties();
+    // A red check may make the next move the Coordinator's own: it resolves the block by itself (A05).
+    if (result.exitCode !== 0) this.continueWork(project, null, "checkFailed");
     appendEvent(
       document,
       "trama",
@@ -4603,7 +4730,9 @@ export class TramaController {
         this.updateMonitorStatus(repository, checkpoint);
         const project = this.state.project;
         if (project && project.github.repository?.toLowerCase() === repository.toLowerCase()) {
+          const before = this.gitHubReading(project);
           project.github = { ...project.github, snapshot: checkpoint.snapshot, events: checkpoint.events };
+          this.noticeGitHubWork(project, before);
           void this.assessRemoteConflicts();
           void this.refreshIssues(project);
         }

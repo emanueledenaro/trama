@@ -1,13 +1,29 @@
 import { describe, expect, it } from "vitest";
 import type { CoordinatorRequest, MandateAction, ProjectDocument, RequestStep, WorkPlan } from "@shared/domain";
 import { placeGrillingQuestion } from "@shared/grilling";
-import { AUTOMATIC_MOVES_IN_A_ROW, automaticMove, automaticMoveSection, choicesInText, choicesWithoutCard, closingConfirmation, confirmationFeedback, type ContinuationGuards, stalledMove } from "./continuousWork";
+import {
+  automaticMove,
+  automaticMoveSection,
+  choicesInText,
+  choicesWithoutCard,
+  closingConfirmation,
+  confirmationFeedback,
+  type ContinuationGuards,
+  gitHubWorkEvents,
+  hasOpenWork,
+  isPaused,
+  KEPT_ROUNDS,
+  projectMove,
+  recordRound,
+  setPaused,
+  stalledMove,
+} from "./continuousWork";
 import { declareCandidate, recordEvidence, recordTechnicalReview } from "./candidates";
 import { appendEvent, emptyDocument, recordReply } from "./document";
 import { answerDecisionRequest, createDecisionRequest, createMandateRequest, grantMandate } from "./pact";
 import { assign, confirmTeam, endTurn, proposeTeam } from "./team";
 
-const free: ContinuationGuards = { enabled: true, busy: false, unavailable: null };
+const free: ContinuationGuards = { enabled: true, paused: false, busy: false, unavailable: null };
 
 function request(
   document: ProjectDocument,
@@ -228,17 +244,149 @@ describe("automaticMove: the Coordinator's move Trama starts by itself (W04)", (
     expect(automaticMove(document, "g1", "turnEnded", free)).toBeNull();
   });
 
-  it("stops after a run of automatic moves and waits for the person", () => {
+  it("has no limit of automatic moves in a row: more than five moves go on within the mandate (A05)", () => {
     const document = confirmed();
     request(document, "r3");
     plan(document, "r3");
     team(document);
-    for (let i = 0; i < AUTOMATIC_MOVES_IN_A_ROW - 1; i++) request(document, `auto${i}`, { step: { move: "assignWork", by: "trama" } });
+    for (let i = 0; i < 8; i++) request(document, `auto${i}`, { step: { move: "assignWork", by: "trama" } });
     expect(moveOf(document, "r3", "planEnded")).toBe("assignWork");
-    request(document, "last", { step: { move: "assignWork", by: "trama" } });
-    expect(moveOf(document, "r3", "planEnded")).toBeNull();
-    request(document, "person");
-    expect(moveOf(document, "person")).toBe("assignWork");
+    expect(moveOf(document, "auto7", "assignmentEnded")).toBe("assignWork");
+  });
+
+  it("starts nothing in pause, nor without a granted mandate (A05)", () => {
+    const document = confirmed();
+    expect(moveOf(document, "r2", "turnEnded", { ...free, paused: true })).toBeNull();
+    const revoked = confirmed();
+    revoked.mandate!.status = "revoked";
+    expect(moveOf(revoked, "r2")).toBeNull();
+    const none = confirmed();
+    none.mandate = null;
+    expect(moveOf(none, "r2")).toBeNull();
+  });
+});
+
+describe("projectMove: events of the whole project and the round (A05)", () => {
+  /** A ready plan whose developer ended its work: the next move is the Coordinator's checks. */
+  function verifying() {
+    const document = confirmed();
+    request(document, "r3");
+    plan(document, "r3");
+    team(document);
+    request(document, "r4", { step: { move: "assignWork", by: "trama" } });
+    const assignment = work(document, "r4");
+    endTurn(document, assignment.id, null, { kind: "completed", text: "Fatto" });
+    return document;
+  }
+
+  it("starts the Coordinator's move on a red check, a conflict, a new issue, a commented pull request and in the round", () => {
+    for (const event of ["checkFailed", "worktreeConflict", "issueOpened", "pullRequestCommented", "round"] as const) {
+      expect(projectMove(verifying(), event, free)).toMatchObject({ requestId: "r4", move: { move: "verifyCandidate" } });
+    }
+  });
+
+  it("starts nothing when the next move is the person's, in pause, or while the Coordinator is busy", () => {
+    const open = emptyDocument("p");
+    request(open, "r1");
+    grill(open, "r1");
+    mandate(open, ["plan"]);
+    expect(projectMove(open, "round", free)).toBeNull();
+    expect(projectMove(verifying(), "round", { ...free, paused: true })).toBeNull();
+    expect(projectMove(verifying(), "issueOpened", { ...free, busy: true })).toBeNull();
+    expect(projectMove(verifying(), "round", { ...free, enabled: false })).toBeNull();
+  });
+
+  it("resolves a block by itself only after a red check, a conflict or in the round", () => {
+    const failed = confirmed();
+    request(failed, "r3");
+    plan(failed, "r3", "failed");
+    expect(projectMove(failed, "issueOpened", free)).toBeNull();
+    expect(projectMove(failed, "checkFailed", free)?.move.move).toBe("preparePlan");
+    expect(projectMove(failed, "round", free)?.move.move).toBe("preparePlan");
+  });
+
+  it("does not repeat in the round the move the latest automatic turn already made or tried", () => {
+    const document = confirmed();
+    request(document, "r3", { step: { move: "preparePlan", by: "trama" } });
+    expect(projectMove(document, "round", free)).toBeNull();
+    // A new event of the work is not the round: it weighs the move again.
+    expect(projectMove(document, "issueOpened", free)?.move.move).toBe("preparePlan");
+  });
+
+  it("weighs the task in focus first and leaves paused tasks alone", () => {
+    const document = verifying();
+    document.focus = { taskId: null, pausedTaskIds: ["work:r1"] };
+    expect(projectMove(document, "round", free)).toBeNull();
+  });
+});
+
+describe("hasOpenWork: the round runs only on a project with open work (A05)", () => {
+  it("is false for an empty project and a greeting, true for started work and for an agent at work", () => {
+    const empty = emptyDocument("p");
+    expect(hasOpenWork(empty)).toBe(false);
+    request(empty, "hello");
+    expect(hasOpenWork(empty)).toBe(false);
+
+    const started = confirmed();
+    expect(hasOpenWork(started)).toBe(true);
+
+    const working = confirmed();
+    request(working, "r3");
+    plan(working, "r3");
+    team(working);
+    work(working, "r3");
+    working.focus = { taskId: null, pausedTaskIds: ["work:r1"] };
+    expect(hasOpenWork(working)).toBe(true);
+  });
+});
+
+describe("Pause and rounds: the record of continuous work (A05)", () => {
+  it("pauses and resumes, saved in the document, and a document without the record is not paused", () => {
+    const document = emptyDocument("p");
+    expect(isPaused(document)).toBe(false);
+    expect(setPaused(document, true, "2026-09-28T10:00:00.000Z")).toBe(true);
+    expect(setPaused(document, true, "2026-09-28T10:01:00.000Z")).toBe(false);
+    expect(document.continuousWork).toMatchObject({ paused: true, changedAt: "2026-09-28T10:00:00.000Z" });
+    // The record survives a save and a reload as JSON.
+    expect(isPaused(JSON.parse(JSON.stringify(document)))).toBe(true);
+    expect(setPaused(document, false, "2026-09-28T10:02:00.000Z")).toBe(true);
+    expect(isPaused(document)).toBe(false);
+  });
+
+  it("keeps the latest rounds with an outcome", () => {
+    const document = emptyDocument("p");
+    for (let i = 0; i < KEPT_ROUNDS + 3; i++) recordRound(document, { id: `R${i}`, at: `${i}`, detail: "Avviata la mossa", requestId: null });
+    expect(document.continuousWork!.rounds).toHaveLength(KEPT_ROUNDS);
+    expect(document.continuousWork!.rounds[0]!.id).toBe("R3");
+  });
+});
+
+describe("gitHubWorkEvents: what changed on GitHub between two readings (A05)", () => {
+  const pull = (overrides: Partial<{ number: number; headSHA: string; updatedAt: string; checks: string; reviewState: string }> = {}) => ({
+    number: 7,
+    headSHA: "a",
+    updatedAt: "2026-09-28T10:00:00Z",
+    checks: "pending",
+    reviewState: "none",
+    ...overrides,
+  });
+
+  it("finds a new issue, a red check and a comment or a review without a push", () => {
+    const before = { issues: [{ number: 1, state: "open" as const }], pullRequests: [pull()] };
+    expect(gitHubWorkEvents(before, { issues: [...before.issues, { number: 2, state: "open" }], pullRequests: [pull()] })).toEqual(["issueOpened"]);
+    expect(gitHubWorkEvents(before, { issues: before.issues, pullRequests: [pull({ checks: "failure" })] })).toEqual(["checkFailed"]);
+    expect(gitHubWorkEvents(before, { issues: before.issues, pullRequests: [pull({ updatedAt: "2026-09-28T10:05:00Z" })] })).toEqual(["pullRequestCommented"]);
+    expect(gitHubWorkEvents(before, { issues: before.issues, pullRequests: [pull({ reviewState: "changesRequested", headSHA: "b", updatedAt: "2026-09-28T10:05:00Z" })] })).toEqual([
+      "pullRequestCommented",
+    ]);
+  });
+
+  it("finds nothing on the first reading, on a push alone, or on a new pull request", () => {
+    const after = { issues: [{ number: 1, state: "open" as const }], pullRequests: [pull()] };
+    expect(gitHubWorkEvents(null, after)).toEqual([]);
+    const before = { issues: after.issues, pullRequests: [pull()] };
+    expect(gitHubWorkEvents(before, { issues: after.issues, pullRequests: [pull({ headSHA: "b", updatedAt: "2026-09-28T10:05:00Z" })] })).toEqual([]);
+    expect(gitHubWorkEvents(before, { issues: after.issues, pullRequests: [pull(), pull({ number: 8 })] })).toEqual([]);
   });
 });
 

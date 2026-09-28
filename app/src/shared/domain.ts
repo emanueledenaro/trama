@@ -120,6 +120,44 @@ export interface RequestStep {
   by: "person" | "trama";
   /** Set when Trama's automatic turn ended without making the move: why, in the person's words (issue #204). */
   stalled?: string | null;
+  /** What started Trama's automatic move (A05): the event of the work, or the periodic round; absent on older records. */
+  trigger?: WorkEvent;
+}
+
+/**
+ * What makes Trama weigh the Coordinator's next move (A05): a Coordinator turn, a plan or an assignment that ended, a red
+ * check, a conflict between worktrees, a new issue, a commented pull request, or the periodic round.
+ */
+export type WorkEvent =
+  | "turnEnded"
+  | "planEnded"
+  | "assignmentEnded"
+  | "checkFailed"
+  | "worktreeConflict"
+  | "issueOpened"
+  | "pullRequestCommented"
+  | "round";
+
+/** A round of the Coordinator that did something (A05): what it started or unblocked, for Activity. */
+export interface RoundRecord {
+  id: string;
+  at: string;
+  /** What the round did, in the person's words: "Avviata la mossa Assegna le fette", "Luca prende la fetta S3". */
+  detail: string;
+  /** The automatic move the round started, when it started one. */
+  requestId: string | null;
+}
+
+/**
+ * Continuous work of the project (A05): the person's Pause and the rounds that did something. Absent until the person
+ * first pauses or a round first acts; absent means not paused.
+ */
+export interface ContinuousWorkRecord {
+  paused: boolean;
+  /** When the person last paused or resumed; null before the first time. */
+  changedAt: string | null;
+  /** The latest rounds with an outcome, oldest first, capped. */
+  rounds: RoundRecord[];
 }
 
 /** The phase of a request's work, computed by Trama from the records, never by the model (W01). */
@@ -183,6 +221,8 @@ export interface StatusLineView {
   action: StatusLineAction | null;
   /** The automatic move that runs now, which the line's stop button stops; null when none. */
   runningMove: { requestId: string; label: string } | null;
+  /** The person paused continuous work (A05): no automatic move, round or automatic work starts until Riprendi. */
+  paused: boolean;
 }
 
 /** A move that takes the work on: the first nine are the person's, the last four the Coordinator's (W01, W06). */
@@ -1202,6 +1242,8 @@ export interface ProjectDocument {
   audits?: FocusAudit[];
   /** The candidate gates (W10); absent until the first candidate is reviewed. */
   gates?: CandidateGate[];
+  /** The Pause and the rounds of continuous work (A05); absent until the first pause or round with an outcome. */
+  continuousWork?: ContinuousWorkRecord;
 }
 
 export interface ProjectSettings {

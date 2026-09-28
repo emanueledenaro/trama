@@ -13,7 +13,7 @@ import type {
 } from "@shared/domain";
 import { readableFailure } from "@shared/providerFailure";
 import { isOpenQuestion, pendingMandateRequest } from "@shared/domain";
-import { grillingSubject } from "@shared/grilling";
+import { workRequests } from "@shared/grilling";
 import { PROVIDERS } from "@shared/providers";
 import { candidateSuperseded } from "@shared/conflictScope";
 import { inspectCandidate, latestCandidate } from "./candidates";
@@ -138,16 +138,7 @@ const coordinator = (move: CoordinatorMove, targetId: string | null = null): Mov
   message: COORDINATOR_MOVES[move].message,
 });
 
-/** The requests of the work `requestId` belongs to: its dialog, from the grilling that opened the work (or the dialog's start) to it. */
-export function workRequests(document: ProjectDocument, requestId: string): Set<string> | null {
-  const index = document.requests.findIndex((r) => r.id === requestId);
-  if (index < 0) return null;
-  const goalId = document.requests[index]!.goalId ?? null;
-  const dialog = document.requests.slice(0, index + 1).filter((r) => (r.goalId ?? null) === goalId);
-  const subject = grillingSubject(document, requestId);
-  const start = subject ? Math.max(0, dialog.findIndex((r) => r.id === subject)) : 0;
-  return new Set(dialog.slice(start).map((r) => r.id));
-}
+export { workRequests };
 
 const allAssignments = (document: ProjectDocument) => document.team.specialists.flatMap((s) => s.assignments);
 

@@ -73,4 +73,20 @@ describe("activityLog: the Coordinator's automatic moves (issue #241)", () => {
   it("is empty without automatic moves", () => {
     expect(activityLog([request("person", "completed", null, 0)], [])).toEqual([]);
   });
+
+  it("lists the rounds with an outcome beside the moves, and says what started each move (A05)", () => {
+    const requests = [request("round-move", "completed", { move: "assignWork", by: "trama", trigger: "round" }, 2)];
+    const rounds = [
+      { id: "R1", at: new Date(Date.UTC(2026, 8, 27, 10, 0)).toISOString(), detail: "Luca lavora sulla fetta S2.", requestId: null },
+      { id: "R2", at: new Date(Date.UTC(2026, 8, 27, 10, 3)).toISOString(), detail: 'Avviata la mossa "Assegna il lavoro".', requestId: null },
+    ];
+    const log = activityLog(requests, [line("round-move", "Assegna il lavoro")], rounds);
+    expect(log.map((e) => [e.kind, e.id])).toEqual([
+      ["round", "R2"],
+      ["move", "round-move"],
+      ["round", "R1"],
+    ]);
+    expect(log[1]).toMatchObject({ trigger: "Nel giro periodico", label: "Assegna il lavoro" });
+    expect(log[0]).toMatchObject({ label: "Giro del Coordinatore", outcome: "done", detail: 'Avviata la mossa "Assegna il lavoro".', move: null });
+  });
 });
