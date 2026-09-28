@@ -3742,8 +3742,9 @@ await page.getByTestId("overview").waitFor({ state: "detached", timeout: 30_000 
 await page.waitForTimeout(1_500);
 await page.getByRole("button", { name: "Panoramica dei progetti" }).click();
 await priority.waitFor();
-await page.waitForTimeout(800);
-if ((await priorityNames()).join("|") !== moved39.join("|")) throw new Error("Opening a project changed the order of the projects");
+let reopened39 = await priorityNames();
+for (const end = Date.now() + 10_000; reopened39.join("|") !== moved39.join("|") && Date.now() < end; reopened39 = await priorityNames()) await page.waitForTimeout(250);
+if (reopened39.join("|") !== moved39.join("|")) throw new Error(`Opening a project changed the order of the projects: ${moved39.join(", ")} became ${reopened39.join(", ")}`);
 await page.getByRole("button", { name: "Panoramica dei progetti" }).click();
 // The shared limit sits next to the project's own limit in the settings.
 await page.getByRole("button", { name: "Impostazioni" }).click();

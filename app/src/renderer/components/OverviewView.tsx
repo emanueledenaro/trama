@@ -55,9 +55,13 @@ export function OverviewView() {
   const [loading, setLoading] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Readings can end out of order: only the latest one may replace what the overview shows.
+  const latestRead = useRef(0);
   const load = () => {
+    const read = ++latestRead.current;
     setLoading(true);
     void act("overview:read", undefined).then((result) => {
+      if (read !== latestRead.current) return;
       setLoading(false);
       if (result) setEntries(result);
     });
