@@ -111,13 +111,13 @@ describe("agent bot state (W16)", () => {
   });
 
   it("maps each state to its move and expression", () => {
-    expect(ACTIVITY_LOOK.idle).toMatchObject({ animation: "idle", expression: "neutral", followsCursor: true });
+    expect(ACTIVITY_LOOK.idle).toEqual({ animation: "idle", expression: "neutral" });
     expect(ACTIVITY_LOOK.thinking.animation).toBe("thinking");
     expect(ACTIVITY_LOOK.working).toMatchObject({ animation: "idle", expression: "attentive" });
     expect(ACTIVITY_LOOK.waiting.animation).toBe("notification");
     expect(ACTIVITY_LOOK.blocked.animation).toBe("exclamation");
     expect(ACTIVITY_LOOK.done.expression).toBe("happy");
-    expect(ACTIVITY_LOOK.inactive).toMatchObject({ animation: "sleep", followsCursor: false });
+    expect(ACTIVITY_LOOK.inactive).toEqual({ animation: "sleep", expression: "sleepy" });
   });
 
   it("plays an alert before a notification and wide eyes on finishing, only on a change", () => {
