@@ -214,7 +214,7 @@ import { draftSlicing, readSlicerAnswer, sliceViews, slicerTurn, TICKET_TRIAGE_L
 import { approvePactDemo, inspectPactDemo, runPactDemo } from "./core/pactDemo";
 import { readRepositoryFile, scanRepository } from "./core/repositoryScanner";
 import { messageStyle } from "./core/messageStyle";
-import { DEFAULT_LANGUAGE, isLanguage, type Language, languageFromSystem } from "@shared/i18n";
+import { DEFAULT_LANGUAGE, isLanguage, type Language, languageFromSystem, translator } from "@shared/i18n";
 import { toolErrorMessage, toolErrorsRule, withoutToolErrors } from "./core/toolErrors";
 import { installedSkillVersion, prepareSkills, rollbackSkills, SELECTED_SKILLS, SKILL_VERSION, type SetupReport, updateSkills } from "./core/skillSetup";
 import {
@@ -262,7 +262,7 @@ import {
   readBranchPullRequest,
   readCloudConditions,
 } from "./core/cloudSession";
-import { canMovePlace, chooseWorkPlace, cloudEligible, cloudWorking, isWorkPlaceSetting, workPlaceSetting } from "@shared/workPlace";
+import { canMovePlace, chooseWorkPlace, type CloudConditions, cloudEligible, cloudWorking, isWorkPlaceSetting, workPlaceSetting } from "@shared/workPlace";
 import {
   beginReviews,
   checksToRun,
@@ -3773,25 +3773,18 @@ export class TramaController {
     if (!cloudEligible(specialist, assignment)) return "local";
     const document = project.document;
     const setting = workPlaceSetting(document);
-    // Work with a worktree on the Mac goes on there: its changes are not on GitHub.
+    const unread: CloudConditions = { repository: project.github.repository, unpushed: { kind: "unreadable" }, localOnlyFiles: [], account: null, mandateRefuses: false };
+    // Always local reads nothing: no session can start.
     const conditions =
       setting === "local" && assignment.placeChoice !== "cloud"
-        ? { repository: null, unpushed: null, localOnlyFiles: [], account: null, mandate: null }
+        ? unread
         : await readCloudConditions({
             root: project.rootPath,
             repository: project.github.repository,
             account: this.state.providers[provider]?.account ?? null,
             mandate: document.mandate,
-          }).catch((error: Error) => ({ repository: project.github.repository, unpushed: error.message, localOnlyFiles: [], account: null, mandate: null }));
-    let place = chooseWorkPlace({ setting, provider, assignment, conditions });
-    if (place.where === "cloud" && assignment.workspace && !assignment.workspaceRemovedAt) {
-      place = {
-        ...place,
-        where: "local",
-        reason: "Il lavoro continua nella sua copia di lavoro sul Mac, dove ha già delle modifiche.",
-        cloudBlocked: { reason: "Le modifiche di questo incarico stanno sul Mac, non su GitHub.", enable: "Per usare il cloud, fai assegnare di nuovo la fetta." },
-      };
-    }
+          }).catch(() => unread);
+    const place = chooseWorkPlace({ t: translator(this.state.language), setting, provider, assignment, conditions });
     if (!findAssignment(document, assignment.id) || assignment.status !== "preparing") return "local";
     const previous = assignment.place;
     recordPlace(document, assignment.id, place);
@@ -3820,7 +3813,6 @@ export class TramaController {
       const issue = relatedIssue(document, assignment);
       branch = cloudBranchName(branchPrefix(type, assignment.commit?.hotfix ?? false, conventions), title, issue, conventions);
       const developer = developerSkillsDelivery({ implement: await this.nativeSkill("implement"), tdd: await this.nativeSkill("tdd") }, false, true);
-      const resumed = assignment.turns.length > 0;
       prompt = cloudSessionPrompt({
         projectName: project.name,
         developerName: specialist.name,
@@ -3830,7 +3822,8 @@ export class TramaController {
         conventions,
         issue,
         instructions: specialistInstructionsWithStandard("", developerStandard(document.cleanCode), developer.text),
-        task: [resumed ? resumeInput(assignment, document.decisions) : openingInput(assignment, document.decisions), sliceBriefing(document, assignment)].filter(Boolean).join("\n\n"),
+        // Every cloud session starts from GitHub on a branch of its own: a resume there is a new start of the work.
+        task: [openingInput(assignment, document.decisions), sliceBriefing(document, assignment)].filter(Boolean).join("\n\n"),
       });
     } catch (error) {
       confirmStopWithoutTurn(document, assignmentId, `La sessione cloud non è partita: ${(error as Error).message}`);

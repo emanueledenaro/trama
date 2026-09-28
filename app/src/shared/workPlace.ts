@@ -1,5 +1,6 @@
 import type { ProviderAccount, ProviderId } from "./codex";
 import type { AssignmentPlace, CloudSessionStatus, ProjectDocument, Specialist, SpecialistAssignment, WorkPlace, WorkPlaceSetting } from "./domain";
+import type { MessageParams, Translate } from "./i18n";
 
 /**
  * The place of a developer's work (A19, issue #260, ADR 0017): in a worktree on the Mac, or in a cloud session of the
@@ -15,11 +16,8 @@ export const CLOUD_STARTERS: readonly ProviderId[] = ["claudeAgent"];
 
 export const offersCloud = (provider: ProviderId | null | undefined): boolean => CLOUD_PROVIDERS.includes(provider ?? "codex");
 
-export const WORK_PLACE_OPTIONS: { value: WorkPlaceSetting; label: string; description: string }[] = [
-  { value: "automatic", label: "Automatico", description: "Il Coordinatore sceglie per tipo di lavoro e scrive il motivo nella scheda dell'incarico." },
-  { value: "local", label: "Sempre in locale", description: "Ogni incarico lavora sul Mac. Nessuna sessione cloud parte." },
-  { value: "cloud", label: "Cloud quando possibile", description: "Gli incarichi di sviluppo vanno in cloud quando si può, altrimenti in locale." },
-];
+/** The three values of the project's setting, in the order the settings show them. */
+export const WORK_PLACE_SETTINGS: readonly WorkPlaceSetting[] = ["automatic", "local", "cloud"];
 
 /** The project's setting: automatic unless the person changed it. */
 export function workPlaceSetting(document: Pick<ProjectDocument, "settings">): WorkPlaceSetting {
@@ -37,69 +35,73 @@ export function cloudEligible(specialist: Pick<Specialist, "role">, assignment: 
   return specialist.role === "developer" && !assignment.duty && assignment.tools.includes("edits");
 }
 
-/** What stops the cloud now; each field is null or empty when it holds. Read by the main process, judged here. */
+/** What the base branch has that GitHub does not: uncommitted files, no branch on GitHub, or commits not pushed. */
+export type UnpushedWork = { kind: "dirty" } | { kind: "noUpstream" } | { kind: "ahead"; count: number } | { kind: "unreadable" };
+
+/** What stops the cloud now; each field is null, false or empty when it holds. Read by the main process, judged here. */
 export interface CloudConditions {
   /** The GitHub repository of the project, `owner/name`; null when it is not on GitHub. */
   repository: string | null;
-  /** The base branch has changes the cloud cannot see: uncommitted files or commits not pushed. Null when clean. */
-  unpushed: string | null;
+  /** The base branch has changes the cloud cannot see; null when it matches GitHub. */
+  unpushed: UnpushedWork | null;
   /** Files ignored by git that the project keeps only on the Mac, like `.env`. */
   localOnlyFiles: string[];
   /** The provider's account as Trama last read it. */
   account: ProviderAccount | null;
-  /** Why the mandate does not allow the pull request the session opens; null when it does. */
-  mandate: string | null;
+  /** The mandate does not allow the draft pull request the session opens. */
+  mandateRefuses: boolean;
 }
 
 const PROVIDER_NAMES: Partial<Record<ProviderId, string>> = { claudeAgent: "Claude", codex: "Codex" };
 const nameOf = (provider: ProviderId) => PROVIDER_NAMES[provider] ?? provider;
 
+function unpushedText(t: Translate, unpushed: UnpushedWork): string {
+  switch (unpushed.kind) {
+    case "dirty":
+      return t("workPlace.unpushed.dirty");
+    case "noUpstream":
+      return t("workPlace.unpushed.noUpstream");
+    case "ahead":
+      return t("workPlace.unpushed.ahead", { count: unpushed.count });
+    default:
+      return t("workPlace.unpushed.unreadable");
+  }
+}
+
 /**
  * Why the cloud cannot run this work now, with the step that enables it; null when it can (Q27). `personAsked` lets
  * the person's own move to the cloud pass the files kept only on the Mac: the person knows whether the session needs them.
  */
-export function cloudBlock(provider: ProviderId, conditions: CloudConditions, personAsked = false): { reason: string; enable: string } | null {
-  if (!offersCloud(provider)) {
-    return { reason: `${nameOf(provider)} lavora solo in locale: il cloud c'è con Claude e Codex.`, enable: "Scegli Claude per questo incarico." };
-  }
-  if (!CLOUD_STARTERS.includes(provider)) {
-    return { reason: "Trama non avvia ancora le attività di Codex Cloud.", enable: "Scegli Claude per questo incarico, se vuoi il cloud." };
-  }
-  if (!conditions.repository) {
-    return { reason: "Il progetto non è su GitHub, e la sessione cloud parte dal repository su GitHub.", enable: "Pubblica il progetto su GitHub con il remoto origin, poi riprendi l'incarico." };
-  }
-  if (conditions.unpushed) {
-    return { reason: `Il branch del progetto ha modifiche che GitHub non ha: ${conditions.unpushed}`, enable: "Fai commit e push delle modifiche, poi riprendi l'incarico." };
-  }
+export function cloudBlock(t: Translate, provider: ProviderId, conditions: CloudConditions, personAsked = false): { reason: string; enable: string } | null {
+  const block = (key: BlockKey, params?: MessageParams) => ({ reason: t(`workPlace.block.${key}`, params), enable: t(`workPlace.block.${key}.enable`) });
+  if (!offersCloud(provider)) return block("provider", { provider: nameOf(provider) });
+  if (!CLOUD_STARTERS.includes(provider)) return block("codex");
+  if (!conditions.repository) return block("github");
+  if (conditions.unpushed) return block("unpushed", { detail: unpushedText(t, conditions.unpushed) });
   const account = conditions.account;
-  if (account?.kind === "blocked") {
-    return { reason: `${nameOf(provider)} è al limite di utilizzo.`, enable: "Aspetta che il limite passi, poi riprendi l'incarico." };
-  }
-  if (account?.kind !== "authenticated" && account?.kind !== "chatgpt") {
-    return { reason: `${nameOf(provider)} non è collegato.`, enable: "Accedi con `claude login` nel terminale e collega il repository da claude.ai/code, poi aggiorna i collegamenti." };
-  }
-  if (conditions.mandate) {
-    return { reason: `La sessione cloud apre una pull request in bozza. ${conditions.mandate}`, enable: "Concedi nel mandato l'apertura delle pull request." };
-  }
-  if (conditions.localOnlyFiles.length && !personAsked) {
-    const files = conditions.localOnlyFiles.slice(0, 3).join(", ");
-    return {
-      reason: `Il progetto usa file che stanno solo sul Mac: ${files}.`,
-      enable: "Se la sessione non ne ha bisogno, o hai messo i valori nell'ambiente cloud di Claude Code, sposta l'incarico in cloud dalla sua scheda.",
-    };
-  }
+  if (account?.kind === "blocked") return block("limit", { provider: nameOf(provider) });
+  if (account?.kind !== "authenticated" && account?.kind !== "chatgpt") return block("signedOut", { provider: nameOf(provider) });
+  if (conditions.mandateRefuses) return block("mandate");
+  if (conditions.localOnlyFiles.length && !personAsked) return block("localFiles", { files: conditions.localOnlyFiles.slice(0, 3).join(", ") });
   return null;
+}
+
+type BlockKey = "provider" | "codex" | "github" | "unpushed" | "limit" | "signedOut" | "mandate" | "localFiles" | "localWork";
+
+/** The cloud is not used because the work already has changes in its worktree on the Mac. */
+export function localWorkBlock(t: Translate): { reason: string; enable: string } {
+  return { reason: t("workPlace.block.localWork"), enable: t("workPlace.block.localWork.enable") };
 }
 
 /**
  * The Coordinator's choice by type of work in automatic (Q30): a slice of code goes to the cloud and frees the Mac;
  * a live trial and an urgent fix stay local, where Trama tries them at once.
  */
-export function automaticPlace(assignment: SpecialistAssignment): { where: WorkPlace; reason: string } {
-  if (assignment.exercise) return { where: "local", reason: "Il lavoro prevede una prova dal vivo, che si fa sul Mac." };
-  if (assignment.commit?.hotfix) return { where: "local", reason: "È una correzione urgente: resta sul Mac per verificarla subito." };
-  if (!assignment.slice) return { where: "local", reason: "Il lavoro non è una fetta del piano: in cloud va solo il codice di una fetta." };
-  return { where: "cloud", reason: "È una fetta di codice senza prove dal vivo: in cloud libera il Mac e continua anche con Trama chiusa." };
+export function automaticPlace(t: Translate, assignment: SpecialistAssignment): { where: WorkPlace; reason: string } {
+  if (assignment.exercise) return { where: "local", reason: t("workPlace.reason.liveTrial") };
+  if (assignment.commit?.hotfix) return { where: "local", reason: t("workPlace.reason.hotfix") };
+  if (!assignment.slice) return { where: "local", reason: t("workPlace.reason.notSlice") };
+  return { where: "cloud", reason: t("workPlace.reason.slice") };
 }
 
 /**
@@ -107,12 +109,14 @@ export function automaticPlace(assignment: SpecialistAssignment): { where: WorkP
  * chooses by type of work. The cloud is used only when nothing blocks it; otherwise the place is local with the reason.
  */
 export function chooseWorkPlace(input: {
+  t: Translate;
   setting: WorkPlaceSetting;
   provider: ProviderId;
   assignment: SpecialistAssignment;
   conditions: CloudConditions;
   now?: Date;
 }): AssignmentPlace {
+  const { t } = input;
   const at = (input.now ?? new Date()).toISOString();
   const choice = input.assignment.placeChoice ?? null;
   const local = (chosenBy: AssignmentPlace["chosenBy"], reason: string, cloudBlocked: AssignmentPlace["cloudBlocked"] = null): AssignmentPlace => ({
@@ -122,22 +126,23 @@ export function chooseWorkPlace(input: {
     cloudBlocked,
     at,
   });
-  if (choice === "local") return local("person", "Lo hai spostato tu in locale.");
+  if (choice === "local") return local("person", t("workPlace.reason.personLocal"));
   let wanted: { chosenBy: AssignmentPlace["chosenBy"]; reason: string };
   if (choice === "cloud") {
-    wanted = { chosenBy: "person", reason: "Lo hai spostato tu in cloud." };
+    wanted = { chosenBy: "person", reason: t("workPlace.reason.personCloud") };
   } else if (input.setting === "local") {
-    return local("setting", "Il progetto lavora sempre in locale.");
+    return local("setting", t("workPlace.reason.alwaysLocal"));
   } else if (input.setting === "cloud") {
-    if (!input.assignment.slice) return local("setting", "Il lavoro non è una fetta del piano: in cloud va solo il codice di una fetta.");
-    wanted = { chosenBy: "setting", reason: "Il progetto usa il cloud quando possibile." };
+    if (!input.assignment.slice) return local("setting", t("workPlace.reason.notSlice"));
+    wanted = { chosenBy: "setting", reason: t("workPlace.reason.cloudWhenPossible") };
   } else {
-    const automatic = automaticPlace(input.assignment);
+    const automatic = automaticPlace(t, input.assignment);
     if (automatic.where === "local") return local("coordinator", automatic.reason);
     wanted = { chosenBy: "coordinator", reason: automatic.reason };
   }
-  const blocked = cloudBlock(input.provider, input.conditions, choice === "cloud");
-  if (blocked) return local(wanted.chosenBy, `Il cloud non si può usare ora, quindi lavora in locale. ${blocked.reason}`, blocked);
+  const hasLocalWork = Boolean(input.assignment.workspace && !input.assignment.workspaceRemovedAt);
+  const blocked = hasLocalWork ? localWorkBlock(t) : cloudBlock(t, input.provider, input.conditions, choice === "cloud");
+  if (blocked) return local(wanted.chosenBy, t("workPlace.reason.blocked", { reason: blocked.reason }), blocked);
   return { where: "cloud", chosenBy: wanted.chosenBy, reason: wanted.reason, cloudBlocked: null, at };
 }
 
@@ -145,13 +150,14 @@ export function chooseWorkPlace(input: {
 export const cloudWorking = (assignment: SpecialistAssignment): boolean =>
   assignment.cloud?.status === "starting" || assignment.cloud?.status === "working" || assignment.cloud?.status === "draft";
 
-export const CLOUD_STATUS: Record<CloudSessionStatus, { label: string; tone: "info" | "success" | "warning" | "destructive" | "secondary" }> = {
-  starting: { label: "In avvio", tone: "info" },
-  working: { label: "Al lavoro", tone: "info" },
-  draft: { label: "Pull request in bozza aperta", tone: "info" },
-  returned: { label: "Tornata sul Mac", tone: "success" },
-  stopped: { label: "Fermata in Trama", tone: "secondary" },
-  failed: { label: "Non riuscita", tone: "destructive" },
+/** The badge tone of each state of a cloud session; the label is `cloudSession.status.<state>` in the catalog. */
+export const CLOUD_STATUS_TONE: Record<CloudSessionStatus, "info" | "success" | "warning" | "destructive" | "secondary"> = {
+  starting: "info",
+  working: "info",
+  draft: "info",
+  returned: "success",
+  stopped: "secondary",
+  failed: "destructive",
 };
 
 /** Whether the person can move the work now (Q30): before it starts, or when it waits for a resume. */

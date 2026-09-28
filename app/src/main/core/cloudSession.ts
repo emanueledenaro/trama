@@ -5,12 +5,12 @@ import { readdir } from "node:fs/promises";
 import { join } from "node:path";
 import type { CommitConventions, ProjectMandate } from "@shared/domain";
 import type { ProviderAccount } from "@shared/codex";
-import type { CloudConditions } from "@shared/workPlace";
+import type { CloudConditions, UnpushedWork } from "@shared/workPlace";
 import { validateBranchName, validateCommitMessage, workBranchName } from "./conventions";
 import { ghEnvironment } from "./github";
 import { REPORT_TEMPLATE } from "./implementation";
 import { git, runProcess } from "./process";
-import { pushAuthorization, pushRefusal } from "./push";
+import { pushAuthorization } from "./push";
 import { secretFindings } from "./quality";
 import { buildClaudeEnvironment, resolveClaudeExecutable } from "./providers/claudeAgent";
 import { slug, type WorkspaceReview } from "./workspace";
@@ -194,13 +194,13 @@ async function localOnlyFiles(root: string): Promise<string[]> {
 }
 
 /** What the base branch has that GitHub does not: uncommitted tracked files, or commits not pushed. Null when clean. */
-async function unpushedChanges(root: string): Promise<string | null> {
+async function unpushedChanges(root: string): Promise<UnpushedWork | null> {
   const dirty = (await git(["status", "--porcelain", "--untracked-files=no"], root)).trim();
-  if (dirty) return "file modificati non salvati in un commit.";
+  if (dirty) return { kind: "dirty" };
   const upstream = await runProcess("git", ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"], { cwd: root, env: { ...process.env, GIT_OPTIONAL_LOCKS: "0" } });
-  if (upstream.exitCode !== 0) return "il branch non ha un branch corrispondente su GitHub.";
+  if (upstream.exitCode !== 0) return { kind: "noUpstream" };
   const ahead = Number((await git(["rev-list", "--count", "@{u}..HEAD"], root)).trim());
-  return ahead > 0 ? `${ahead === 1 ? "un commit non pubblicato" : `${ahead} commit non pubblicati`}.` : null;
+  return ahead > 0 ? { kind: "ahead", count: ahead } : null;
 }
 
 /** Reads the conditions of the cloud for the project now (Q27). */
@@ -213,9 +213,9 @@ export async function readCloudConditions(input: {
   const gitRoot = existsSync(join(input.root, ".git"));
   return {
     repository: input.repository,
-    unpushed: gitRoot ? await unpushedChanges(input.root).catch((error: Error) => error.message) : "la cartella non è un repository git.",
+    unpushed: gitRoot ? await unpushedChanges(input.root).catch((): UnpushedWork => ({ kind: "unreadable" })) : { kind: "unreadable" },
     localOnlyFiles: await localOnlyFiles(input.root),
     account: input.account,
-    mandate: pushRefusal(pushAuthorization(input.mandate)) || null,
+    mandateRefuses: pushAuthorization(input.mandate) !== "authorized",
   };
 }

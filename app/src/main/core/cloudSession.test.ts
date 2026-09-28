@@ -88,12 +88,12 @@ describe("the conditions of the cloud and the return to the Mac (A19)", () => {
   it("reads unpushed work, files kept only on the Mac and the mandate", async () => {
     const { project } = repository();
     const read = () => readCloudConditions({ root: project, repository: "acme/shop", account: { kind: "authenticated", label: null }, mandate: null });
-    expect(await read()).toMatchObject({ unpushed: null, localOnlyFiles: [], mandate: expect.stringMatching(/mandato/) });
+    expect(await read()).toMatchObject({ unpushed: null, localOnlyFiles: [], mandateRefuses: true });
     writeFileSync(join(project, ".env"), "TOKEN=1\n");
     writeFileSync(join(project, "README.md"), "shop 2\n");
-    expect(await read()).toMatchObject({ unpushed: "file modificati non salvati in un commit.", localOnlyFiles: [".env"] });
+    expect(await read()).toMatchObject({ unpushed: { kind: "dirty" }, localOnlyFiles: [".env"] });
     run(project, "commit", "--quiet", "-am", "docs: rename");
-    expect((await read()).unpushed).toBe("un commit non pubblicato.");
+    expect((await read()).unpushed).toEqual({ kind: "ahead", count: 1 });
   });
 
   it("brings the branch the session pushed into a worktree of Trama, against the project's HEAD", async () => {

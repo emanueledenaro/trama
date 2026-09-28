@@ -21,7 +21,7 @@ import { classifyProviderFailure } from "@shared/providerFailure";
 import { capabilityLines, coordinatorUnavailableReason, PROVIDERS, type ProviderDescriptor } from "@shared/providers";
 import { AIHERO_ATTRIBUTION } from "@shared/skills";
 import { MAX_PARALLEL_DEVELOPERS_SETTING, MIN_PARALLEL_DEVELOPERS, parallelDevelopers } from "@shared/parallel";
-import { offersCloud, WORK_PLACE_OPTIONS, workPlaceSetting } from "@shared/workPlace";
+import { offersCloud, WORK_PLACE_SETTINGS, workPlaceSetting } from "@shared/workPlace";
 import { GitHubCliDescription } from "@/components/GitHubCliStatus";
 import { TramaMark } from "@/components/brand/TramaMark";
 import { ProviderIcon } from "@/components/ProviderIcon";
@@ -557,46 +557,44 @@ function ParallelDevelopersGroup() {
  * cloud is offered only when the project's provider has one (Claude or Codex).
  */
 function WorkPlaceGroup() {
+  const t = useT();
   const project = useUi((s) => s.app?.project ?? null);
   const usable = project && !project.isDemo && project.stateWritable;
   const provider = project ? (project.document.coordinator.threadProvider ?? project.document.selectedProvider ?? "codex") : null;
   const cloud = offersCloud(provider);
   const setting = project ? workPlaceSetting(project.document) : null;
-  const options = cloud ? WORK_PLACE_OPTIONS : WORK_PLACE_OPTIONS.filter((option) => option.value === "local");
+  const options = cloud ? WORK_PLACE_SETTINGS : WORK_PLACE_SETTINGS.filter((value) => value === "local");
   const selected = cloud ? setting : "local";
   return (
-    <Group
-      title="Luogo di lavoro"
-      note="In cloud va solo il lavoro degli sviluppatori sulle fette. Il Coordinatore, i ruoli in sola lettura, le prove dal vivo e la verifica finale restano sul Mac. Le sessioni cloud contano negli sviluppatori in parallelo e continuano anche con Trama chiusa."
-    >
+    <Group title={t("settings.workPlace.title")} note={t("settings.workPlace.note")}>
       <Row
-        label={project ? `Dove lavorano gli sviluppatori in ${project.name}` : "Dove lavorano gli sviluppatori"}
+        label={project ? t("settings.workPlace.inProject", { name: project.name }) : t("settings.workPlace.inOpenProject")}
         description={
           !project
-            ? "Apri un progetto per scegliere il luogo di lavoro."
+            ? t("settings.workPlace.openProject")
             : project.isDemo
-              ? "Il progetto di esempio lavora in locale."
+              ? t("settings.workPlace.demo")
               : !cloud
-                ? `${PROVIDERS.find((p) => p.id === provider)?.name ?? provider} lavora solo in locale: il cloud c'è con Claude e Codex.`
-                : (WORK_PLACE_OPTIONS.find((option) => option.value === setting)?.description ?? "")
+                ? t("settings.workPlace.localOnly", { provider: PROVIDERS.find((p) => p.id === provider)?.name ?? String(provider) })
+                : t(`workPlace.setting.${setting!}.description`)
         }
         control={
           usable ? (
-            <div role="radiogroup" aria-label="Luogo di lavoro" className="flex rounded-lg bg-[var(--color-background-button-secondary)] p-0.5" data-testid="work-place">
-              {options.map((option) => (
+            <div role="radiogroup" aria-label={t("settings.workPlace.title")} className="flex rounded-lg bg-[var(--color-background-button-secondary)] p-0.5" data-testid="work-place">
+              {options.map((value) => (
                 <button
-                  key={option.value}
+                  key={value}
                   type="button"
                   role="radio"
-                  aria-checked={selected === option.value}
+                  aria-checked={selected === value}
                   disabled={!cloud}
-                  onClick={() => void act("project:settings", { workPlace: option.value })}
+                  onClick={() => void act("project:settings", { workPlace: value })}
                   className={cn(
                     "flex h-6 items-center justify-center whitespace-nowrap rounded-md px-2 text-ui-sm transition-colors",
-                    selected === option.value ? "bg-[var(--color-background-surface)] text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
+                    selected === value ? "bg-[var(--color-background-surface)] text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
                   )}
                 >
-                  {option.label}
+                  {t(`workPlace.setting.${value}`)}
                 </button>
               ))}
             </div>

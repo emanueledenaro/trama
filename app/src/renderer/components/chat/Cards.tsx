@@ -58,6 +58,7 @@ import { asTitle, useRecord } from "@/lib/references";
 import { PlanSpecBody } from "./PlanSpec";
 import { DutyFields } from "./DutyFields";
 import { PlaceActions, PlaceField } from "./PlaceField";
+import { cloudWorking } from "@shared/workPlace";
 import { GateField } from "./GateField";
 import { latestGate } from "@shared/gate";
 import { Sep } from "@/components/ui/sep";
@@ -796,9 +797,10 @@ export function AssignmentCard({ assignmentId }: { assignmentId: string }) {
           <div className="mt-0.5 text-ui-sm text-warning">Ultimo turno eseguito con {lastTurn.model}</div>
         ) : null}
       </Field>
-      <PlaceField specialist={specialist} assignment={assignment} />
+      <PlaceField assignment={assignment} />
       <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-ui-sm text-muted-foreground">
-        <span>{assignment.tools.includes("edits") ? "Copia di lavoro propria" : "Sola lettura"}</span>
+        {/* Work in a cloud session has no copy on the Mac until its branch comes back (A19). */}
+        {cloudWorking(assignment) ? null : <span>{assignment.tools.includes("edits") ? "Copia di lavoro propria" : "Sola lettura"}</span>}
         {assignment.requiredChecks.length ? <span>Verifiche: {assignment.requiredChecks.join(", ")}</span> : null}
       </div>
       {assignment.workspace ? (
