@@ -1,21 +1,13 @@
 /**
  * The Coordinator's context, managed by Trama the same way on every provider (ADR 0018). Past the project's threshold,
  * at the end of a turn, Trama writes a context summary from its records and the Coordinator goes on in a new session.
- * The texts never name a provider. Pure.
+ * The person's texts live in the catalogs under `context.` and never name a provider. Pure.
  */
 
 export const DEFAULT_CONTEXT_THRESHOLD = 80;
 
-export const CONTEXT_ROLLOVER_TITLE = "Contesto riordinato";
-export const CONTEXT_ROLLOVER_DETAIL =
-  "Il Coordinatore continua in una sessione nuova con il riepilogo di Trama: obiettivi, decisioni, mandato, incarichi e candidati. La conversazione resta qui.";
+/** Why the new session exists, as the model reads it in the study turn of the reorder. */
 export const CONTEXT_ROLLOVER_REASON = "riordino del contesto";
-export const ROLLOVER_FAILED_TITLE = "Contesto quasi pieno";
-export const ROLLOVER_RETRY_DETAIL = "Il contesto del Coordinatore è quasi pieno. Trama riprova al prossimo messaggio.";
-export const ROLLOVER_COMPACTED_DETAIL =
-  "Trama non ha potuto aprire una sessione nuova: il Coordinatore continua nella sessione attuale, compattata per fare spazio.";
-export const METER_EXPLANATION =
-  "Quando supera la soglia, Trama riordina il contesto: il Coordinatore continua in una sessione nuova con un riepilogo scritto da Trama. La conversazione resta qui.";
 
 export interface ContextReading {
   usedTokens: number;

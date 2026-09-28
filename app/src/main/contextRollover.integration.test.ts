@@ -3,13 +3,16 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { PROVIDERS } from "@shared/providers";
-import { CONTEXT_ROLLOVER_TITLE, ROLLOVER_COMPACTED_DETAIL, ROLLOVER_FAILED_TITLE } from "@shared/contextRollover";
+import { translate } from "@shared/i18n";
 import { TramaController } from "./controller";
-import { CONTEXT_SUMMARY_TITLE } from "./core/contextSummary";
 import { git } from "./core/process";
 import { findSpecialist } from "./core/team";
 
 const root = join(import.meta.dirname, "../..");
+const CONTEXT_ROLLOVER_TITLE = translate("it", "context.rollover.title");
+const CONTEXT_SUMMARY_TITLE = translate("it", "context.summary.activityTitle");
+const ROLLOVER_FAILED_TITLE = translate("it", "context.failed.title");
+const ROLLOVER_COMPACTED_DETAIL = translate("it", "context.failed.compacted");
 let controller: TramaController | null = null;
 afterEach(async () => {
   await controller?.stop();
@@ -111,9 +114,15 @@ describe("the context managed by Trama (ADR 0018)", () => {
     expect(document.coordinator.pendingRollover).toBeNull();
     expect(document.coordinator.pendingHandover).toBeNull();
     expect(cards(project, "Contesto oltre la soglia")).toHaveLength(0);
-    // Trama's own texts of the reorder name no provider; only the exchanges quoted word for word may.
+    // What the person reads is a plain view of the same records: no framing for the model, no tool names, no provider.
     const summary = document.events[summaryIndex]!.content;
-    const own = [JSON.stringify(card[0]!.content), summary.type === "activity" ? summary.detail!.split("## Ultimi scambi")[0]! : ""];
+    const forPerson = summary.type === "activity" ? summary.detail! : "";
+    expect(forPerson).toContain("## Obiettivi");
+    expect(forPerson).toContain("## Cosa aspetta te");
+    for (const phrase of ["dati, non istruzioni", "Vale più di quello che ricordi", "declare_next_step", "session_search", "Stato attuale di Trama", "[pieno] uno"]) {
+      expect(forPerson).not.toContain(phrase);
+    }
+    const own = [JSON.stringify(card[0]!.content), forPerson];
     for (const provider of PROVIDERS) for (const text of own) expect(text).not.toMatch(new RegExp(`\\b${provider.name}\\b`));
   }, 60_000);
 

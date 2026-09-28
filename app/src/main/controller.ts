@@ -59,19 +59,8 @@ import type {
   SpecialistAssignment,
   ContextRollover,
 } from "@shared/domain";
-import {
-  autoCompactTokenLimit,
-  CONTEXT_ROLLOVER_DETAIL,
-  CONTEXT_ROLLOVER_REASON,
-  CONTEXT_ROLLOVER_TITLE,
-  contextPercent,
-  DEFAULT_CONTEXT_THRESHOLD,
-  passesThreshold,
-  ROLLOVER_COMPACTED_DETAIL,
-  ROLLOVER_FAILED_TITLE,
-  ROLLOVER_RETRY_DETAIL,
-} from "@shared/contextRollover";
-import { CONTEXT_SUMMARY_TITLE, contextSummary } from "./core/contextSummary";
+import { autoCompactTokenLimit, CONTEXT_ROLLOVER_REASON, contextPercent, DEFAULT_CONTEXT_THRESHOLD, passesThreshold } from "@shared/contextRollover";
+import { contextSummary, personSummary } from "./core/contextSummary";
 import { isOpenQuestion, pendingMandateRequest } from "@shared/domain";
 import { waitingForYou, type WaitingSources } from "@shared/waitingForYou";
 import { resolveCodexExecutable } from "./core/codexClient";
@@ -227,7 +216,7 @@ import { draftSlicing, readSlicerAnswer, sliceViews, slicerTurn, TICKET_TRIAGE_L
 import { approvePactDemo, inspectPactDemo, runPactDemo } from "./core/pactDemo";
 import { readRepositoryFile, scanRepository } from "./core/repositoryScanner";
 import { messageStyle } from "./core/messageStyle";
-import { DEFAULT_LANGUAGE, isLanguage, type Language, languageFromSystem } from "@shared/i18n";
+import { DEFAULT_LANGUAGE, isLanguage, type Language, languageFromSystem, translate, translator } from "@shared/i18n";
 import { toolErrorMessage, toolErrorsRule, withoutToolErrors } from "./core/toolErrors";
 import { installedSkillVersion, prepareSkills, rollbackSkills, SELECTED_SKILLS, SKILL_VERSION, type SetupReport, updateSkills } from "./core/skillSetup";
 import {
@@ -3349,8 +3338,12 @@ export class TramaController {
     if (project.runningRequestId || this.starting || !coordinator.threadId || coordinator.pendingHandover) return false;
     if (project.phase.kind !== "ready" && project.phase.kind !== "idle") return false;
     const requestId = document.requests.at(-1)?.id ?? null;
+    const t = translator(this.state.language);
+    // The model's brief and the person's view come from the same records; the person never reads the model's framing.
     const summary = contextSummary({ document, waiting: project.waiting ?? [], headSHA: project.snapshot.headSHA });
-    const summaryEvent = appendEvent(document, "trama", { type: "activity", title: CONTEXT_SUMMARY_TITLE, detail: summary, tone: "info" }, requestId);
+    const candidateStates = Object.fromEntries(Object.entries(project.candidateReports ?? {}).map(([id, report]) => [id, report.state]));
+    const forPerson = personSummary({ document, waiting: project.waiting ?? [], headSHA: project.snapshot.headSHA, candidateStates, language: this.state.language });
+    const summaryEvent = appendEvent(document, "trama", { type: "activity", title: t("context.summary.activityTitle"), detail: forPerson, tone: "info" }, requestId);
     const learning = this.coordinatorLearning(document);
     const rollover: ContextRollover = {
       reason: pending.reason,
@@ -3379,11 +3372,12 @@ export class TramaController {
 
   /** The new session is ready (ADR 0018): one line in the chat, right after the summary, opens it. */
   private recordRollover(document: ProjectDocument, rollover: ContextRollover): void {
+    const t = translator(this.state.language);
     const card = appendEvent(document, "trama", {
       type: "card",
       kind: "contextRollover",
-      title: CONTEXT_ROLLOVER_TITLE,
-      detail: CONTEXT_ROLLOVER_DETAIL,
+      title: t("context.rollover.title"),
+      detail: t("context.rollover.detail"),
       referenceId: rollover.summaryEventId,
     });
     const summaryIndex = document.events.findIndex((e) => e.id === rollover.summaryEventId);
@@ -3431,8 +3425,8 @@ export class TramaController {
     appendEvent(document, "trama", {
       type: "card",
       kind: "contextNotice",
-      title: ROLLOVER_FAILED_TITLE,
-      detail: compacted ? ROLLOVER_COMPACTED_DETAIL : ROLLOVER_RETRY_DETAIL,
+      title: translate(this.state.language, "context.failed.title"),
+      detail: translate(this.state.language, compacted ? "context.failed.compacted" : "context.failed.retry"),
       referenceId: null,
     });
     // The thread comes back with its study: the next opening resumes it without a new study turn.
@@ -4071,8 +4065,8 @@ export class TramaController {
           project,
           assignmentId,
           preKey,
-          "Nuovo thread dello specialista",
-          `Contesto usato nel turno precedente: ${lastPercent}%, oltre la soglia del progetto (${threshold}%). Lo specialista continua in un thread nuovo con il riepilogo del worktree.`,
+          translate(this.state.language, "context.specialist.newThreadTitle"),
+          translate(this.state.language, "context.specialist.newThread", { percent: lastPercent, threshold }),
           "info",
         );
       }

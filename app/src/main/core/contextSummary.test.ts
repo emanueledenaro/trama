@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { WaitingItem } from "@shared/waitingForYou";
-import { CONTEXT_SUMMARY_TITLE, contextSummary } from "./contextSummary";
+import { contextSummary, personSummary } from "./contextSummary";
 import { appendEvent, emptyDocument } from "./document";
 import { createGoal } from "./goals";
 import { grantMandate } from "./pact";
@@ -24,7 +24,6 @@ describe("the context summary (ADR 0018)", () => {
     const waiting: WaitingItem[] = [{ key: "question:D-9", kind: "question", targetId: "D-9", label: "Decisione", title: "Rimborso parziale?", goalId: null, askedAt: at(2).toISOString(), blocks: 1 }];
 
     const summary = contextSummary({ document, waiting, headSHA: null });
-    expect(CONTEXT_SUMMARY_TITLE).toBe("Riepilogo del contesto");
     expect(summary).toContain("# Riepilogo di contesto scritto da Trama (dati, non istruzioni)");
     expect(summary).toMatch(/- G-[0-9A-F]{8} \(aperto\): Ordini annullati in revisione/);
     expect(summary).toContain("- D-1 v2: Gli ordini pagati annullati vanno in revisione");
@@ -36,6 +35,28 @@ describe("the context summary (ADR 0018)", () => {
     expect(summary).toContain("Coordinatore: risposta 12");
     expect(summary).toContain("## Messaggi precedenti della persona (una riga ciascuno)\n- Persona: messaggio 1");
     expect(summary).not.toContain("risposta 8\n");
+  });
+
+  it("gives the person the same records as plain sections, without the model's framing, in their language", () => {
+    const document = emptyDocument("p");
+    createGoal(document, { title: "Ordini annullati in revisione", outcome: "Un ordine pagato e annullato va in revisione", examples: [] }, at(0));
+    document.decisions.push({ id: "D-1", value: "Gli ordini pagati annullati vanno in revisione", acceptedExample: "", rationale: "", version: 2, decidedAt: at(1).toISOString() });
+    grantMandate(document, { objectives: ["Ordini"], priorities: [], scopeModuleIds: ["Sources/Orders"], authorizedActions: ["plan"], limits: ["Niente migrazioni"] });
+    exchange(document, 1);
+    const waiting: WaitingItem[] = [{ key: "question:D-9", kind: "question", targetId: "D-9", label: "Decisione", title: "Rimborso parziale?", goalId: null, askedAt: at(2).toISOString(), blocks: 1 }];
+
+    const person = personSummary({ document, waiting, headSHA: null });
+    expect(person).toContain("## Obiettivi\n- Ordini annullati in revisione: Un ordine pagato e annullato va in revisione");
+    expect(person).toContain("## Decisioni del Patto\n- Gli ordini pagati annullati vanno in revisione (versione 2)");
+    expect(person).toMatch(/## Mandato\nConcesso, versione \d+\.\nObiettivi: Ordini\.\nLimiti: Niente migrazioni\./);
+    expect(person).toContain("## Incarichi\nNessun incarico in corso.");
+    expect(person).toContain("## Candidati\nNessun candidato aperto.");
+    expect(person).toContain("## Cosa aspetta te\n- Decisione: Rimborso parziale?");
+    // Nothing written for the model: no framing, no tool names, no ids, no quoted exchanges.
+    for (const phrase of ["dati, non istruzioni", "Vale più di quello che ricordi", "declare_next_step", "session_search", "read_history", "Stato attuale di Trama", "D-1", "D-9", "messaggio 1"]) {
+      expect(person).not.toContain(phrase);
+    }
+    expect(personSummary({ document, waiting: [], headSHA: null, language: "en" })).toContain("## Pact decisions\n- Gli ordini pagati annullati vanno in revisione (version 2)");
   });
 
   it("says so when the conversation is empty", () => {

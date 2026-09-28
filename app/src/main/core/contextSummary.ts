@@ -1,7 +1,9 @@
-import type { ConversationEvent, ProjectDocument, SpecialistAssignment } from "@shared/domain";
+import type { CandidateState, ConversationEvent, ProjectDocument, SpecialistAssignment } from "@shared/domain";
+import { DEFAULT_LANGUAGE, type Language, translator } from "@shared/i18n";
 import { workingGoals } from "@shared/goals";
 import { openGrillingQuestions } from "@shared/grilling";
 import type { WaitingItem } from "@shared/waitingForYou";
+import { latestCandidate } from "./candidates";
 import { currentStateText } from "./coordinatorGrounding";
 import { focusText } from "./focus";
 import { activeAssignments } from "./team";
@@ -9,11 +11,10 @@ import { workState, workStateText } from "./workPhase";
 
 /**
  * The context summary (ADR 0018): what the Coordinator needs to go on in a new session, written by Trama from its own
- * records, never by the model. Trama writes it when the Coordinator's context passes the project's threshold, keeps it
- * in Activity and hands it to the new session with the study and the memory. Pure.
+ * records, never by the model. Trama writes it when the Coordinator's context passes the project's threshold and hands it
+ * to the new session with the study and the memory. The person reads another view of the same records in Activity and
+ * in the chat: plain sections, without the framing written for the model. Pure.
  */
-
-export const CONTEXT_SUMMARY_TITLE = "Riepilogo del contesto";
 
 /** The exchanges the summary quotes word for word, so a short answer such as "sì, procedi" keeps its sense. */
 const VERBATIM_EXCHANGES = 8;
@@ -130,4 +131,56 @@ export function contextSummary({ document, waiting, headSHA }: ContextSummaryInp
     .filter((lines) => lines.length)
     .map((lines) => lines.join("\n"))
     .join("\n\n");
+}
+
+export interface PersonSummaryInput extends ContextSummaryInput {
+  /** The state of each candidate as the main process computed it. */
+  candidateStates?: Record<string, CandidateState>;
+  language?: Language;
+}
+
+/**
+ * The same records for the person (ADR 0018): goals, Pact decisions, mandate, assignments, candidates and what waits
+ * for them, as plain sections in their language. No framing for the model, no ids, no tool names.
+ */
+export function personSummary({ document, waiting, candidateStates = {}, language = DEFAULT_LANGUAGE }: PersonSummaryInput): string {
+  const t = translator(language);
+  const section = (title: string, items: string[], empty: string) => [`## ${title}`, ...(items.length ? items.map((i) => `- ${i}`) : [empty])].join("\n");
+  const goals = workingGoals(document).map((g) =>
+    t(g.status === "proposed" ? "context.summary.proposedGoal" : "context.summary.openGoal", { title: g.title, outcome: oneLine(g.outcome, 300) }),
+  );
+  const decisions = document.decisions.map((d) => t("context.summary.decision", { value: oneLine(d.value, 300), version: String(d.version) }));
+  const mandate = document.mandate?.status === "granted" ? document.mandate : null;
+  const mandateLines = mandate
+    ? [
+        t("context.summary.mandateGranted", { version: String(mandate.version) }),
+        ...(mandate.objectives.length ? [t("context.summary.mandateObjectives", { list: mandate.objectives.join("; ") })] : []),
+        ...(mandate.priorities.length ? [t("context.summary.mandatePriorities", { list: mandate.priorities.join("; ") })] : []),
+        ...(mandate.limits.length ? [t("context.summary.mandateLimits", { list: mandate.limits.join("; ") })] : []),
+      ]
+    : [t("context.summary.noMandate")];
+  const nameOf = (specialistId: string) => document.team.specialists.find((s) => s.id === specialistId)?.name ?? specialistId;
+  const assignments = activeAssignments(document).map((a) =>
+    t("context.summary.assignment", { name: nameOf(a.specialistId), status: t(`context.assignment.${a.status}`), objective: oneLine(a.objective, 300) }),
+  );
+  const candidates = document.team.specialists
+    .flatMap((s) => s.assignments)
+    .map((assignment) => ({ assignment, candidate: latestCandidate(document, assignment.id) }))
+    .filter(({ candidate }) => candidate !== null && !candidate.pullRequest?.mergedAt && candidateStates[candidate.id] !== "superseded")
+    .map(({ assignment, candidate }) => {
+      const state = candidateStates[candidate!.id];
+      return t("context.summary.candidate", {
+        name: nameOf(assignment.specialistId),
+        state: t(state ? `context.candidate.${state}` : "context.candidate.unknown"),
+        objective: oneLine(assignment.objective, 300),
+      });
+    });
+  return [
+    section(t("context.summary.goals"), goals, t("context.summary.noGoals")),
+    section(t("context.summary.pact"), decisions, t("context.summary.noDecisions")),
+    [`## ${t("context.summary.mandate")}`, ...mandateLines].join("\n"),
+    section(t("context.summary.assignments"), assignments, t("context.summary.noAssignments")),
+    section(t("context.summary.candidates"), candidates, t("context.summary.noCandidates")),
+    section(t("context.summary.waiting"), waiting.map((w) => t("context.summary.waitingItem", { label: w.label, title: w.title })), t("context.summary.noWaiting")),
+  ].join("\n\n");
 }

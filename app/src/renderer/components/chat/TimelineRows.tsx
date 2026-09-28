@@ -414,7 +414,7 @@ function RowContent({ row, streaming = false, latest = false }: { row: TimelineR
             <PresenceConsentCard proposal={content.referenceId} detail={content.detail} />
           </WaitingOr>
         );
-      if (row.cardKind === "contextRollover") return <ContextRolloverCard title={content.title} detail={content.detail} summaryEventId={content.referenceId} />;
+      if (row.cardKind === "contextRollover") return <ContextRolloverCard summaryEventId={content.referenceId} />;
       return <ContextNoticeCard title={content.title} detail={content.detail} />;
     }
   }

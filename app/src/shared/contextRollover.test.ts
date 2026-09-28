@@ -1,16 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { autoCompactTokenLimit, contextPercent, passesThreshold } from "./contextRollover";
+import { CATALOGS } from "./i18n";
 import { PROVIDERS } from "./providers";
-import {
-  autoCompactTokenLimit,
-  CONTEXT_ROLLOVER_DETAIL,
-  CONTEXT_ROLLOVER_TITLE,
-  contextPercent,
-  METER_EXPLANATION,
-  passesThreshold,
-  ROLLOVER_COMPACTED_DETAIL,
-  ROLLOVER_FAILED_TITLE,
-  ROLLOVER_RETRY_DETAIL,
-} from "./contextRollover";
 
 describe("the context managed by Trama (ADR 0018)", () => {
   it("reads the share of the window within 0-100, and nothing without a window", () => {
@@ -35,8 +26,11 @@ describe("the context managed by Trama (ADR 0018)", () => {
     expect(autoCompactTokenLimit(null)).toBeNull();
   });
 
-  it("names no provider in the texts the person reads", () => {
-    const texts = [CONTEXT_ROLLOVER_TITLE, CONTEXT_ROLLOVER_DETAIL, ROLLOVER_FAILED_TITLE, ROLLOVER_RETRY_DETAIL, ROLLOVER_COMPACTED_DETAIL, METER_EXPLANATION];
-    for (const provider of PROVIDERS) for (const text of texts) expect(text).not.toMatch(new RegExp(`\\b${provider.name}\\b`));
+  it("names no provider in the texts the person reads, in every language", () => {
+    for (const catalog of Object.values(CATALOGS)) {
+      const texts = Object.entries(catalog).filter(([key]) => key.startsWith("context.")).map(([, text]) => text);
+      expect(texts.length).toBeGreaterThan(40);
+      for (const provider of PROVIDERS) for (const text of texts) expect(text).not.toMatch(new RegExp(`\\b${provider.name}\\b`));
+    }
   });
 });

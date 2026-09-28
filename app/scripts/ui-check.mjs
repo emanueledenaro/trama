@@ -1618,8 +1618,20 @@ await rolloverLine.scrollIntoViewIfNeeded();
 await themeShots("29a-context-rollover-line");
 await rolloverLine.getByRole("button", { name: "Apri: Contesto riordinato" }).click();
 await rolloverLine.getByTestId("context-summary").waitFor();
-await rolloverLine.getByText("Riepilogo di contesto scritto da Trama").first().waitFor();
-await rolloverLine.scrollIntoViewIfNeeded();
+await rolloverLine.getByText("Cosa aspetta te").first().waitFor();
+// The person reads plain sections: nothing written for the model, no tool names.
+const summaryText = await rolloverLine.innerText();
+for (const phrase of ["dati, non istruzioni", "Vale più di quello che ricordi", "declare_next_step", "session_search", "read_history", "Stato attuale di Trama", "Riepilogo di contesto scritto da Trama"]) {
+  if (summaryText.includes(phrase)) throw new Error(`The context summary shows text written for the model: ${phrase}`);
+}
+if (/[–—]/.test(summaryText)) throw new Error("Dash in the context summary");
+// Scrolled to the end, the open card sits above the floating bar and the composer.
+await page.locator(".chat-timeline-scroll").evaluate((scroller) => scroller.scrollTo({ top: scroller.scrollHeight }));
+await page.waitForTimeout(300);
+const cardBottom = (await rolloverLine.boundingBox()).y + (await rolloverLine.boundingBox()).height;
+const covers = [await page.locator("form.chat-composer-surface").boundingBox()];
+if (await page.getByTestId("waiting-summary").count()) covers.push(await page.getByTestId("waiting-summary").boundingBox());
+for (const box of covers) if (cardBottom > box.y + 1) throw new Error(`The open context summary is covered at ${Math.round(box.y)} (card ends at ${Math.round(cardBottom)})`);
 await themeShots("29b-context-rollover-summary");
 await rolloverLine.getByRole("button", { name: "Chiudi: Contesto riordinato" }).click();
 const meter = page.getByTestId("context-meter");
