@@ -219,8 +219,8 @@ import { draftSlicing, readSlicerAnswer, sliceViews, slicerTurn, TICKET_TRIAGE_L
 import { approvePactDemo, inspectPactDemo, runPactDemo } from "./core/pactDemo";
 import { readRepositoryFile, scanRepository } from "./core/repositoryScanner";
 import { messageStyle } from "./core/messageStyle";
-import { DEFAULT_LANGUAGE, isLanguage, type Language, languageFromSystem } from "@shared/i18n";
-import { setPersonLanguage, t } from "./core/personLanguage";
+import { DEFAULT_LANGUAGE, formatDateTime, isLanguage, type Language, languageFromSystem } from "@shared/i18n";
+import { personLanguage, setPersonLanguage, t } from "./core/personLanguage";
 import { toolErrorMessage, toolErrorsRule, withoutToolErrors } from "./core/toolErrors";
 import { installedSkillVersion, prepareSkills, rollbackSkills, SELECTED_SKILLS, SKILL_VERSION, type SetupReport, updateSkills } from "./core/skillSetup";
 import {
@@ -413,9 +413,9 @@ function coordinatorModelSettings(saved: unknown): NonNullable<AppSettings["coor
   return models;
 }
 /** The line the chat shows when a developer takes a slice by itself (W08). */
-const SELF_PICK_DETAIL = "Era la prossima fetta pronta nei suoi moduli: la prende senza aspettare il Coordinatore, dentro il mandato e il limite di sviluppatori in parallelo del progetto.";
+const selfPickDetail = (): string => t("main.controller.selfPickDetail");
 
-/** Added to the study of a project without goals (UX07): the first message proposes a first goal. */
+/** Added to the study of a project without goals (UX07): the first message proposes a first goal. @model-text */
 export const FIRST_GOAL_REQUEST =
   "Il progetto non ha ancora obiettivi. Chiudi il messaggio proponendo un primo obiettivo con propose_goal: un titolo breve, il risultato atteso ed esempi concreti accettati e rifiutati, ricavati dallo studio. La persona lo conferma o lo corregge; proporlo non concede un mandato e non avvia lavoro.";
 
@@ -423,7 +423,7 @@ export const FIRST_GOAL_REQUEST =
 const ASK_TRAMA_INVOKED =
   "## Ask Trama\nThe person wrote /ask-trama: run the ask-trama skill with its Trama binding on the situation their message describes, and propose the route with propose_route.";
 
-/** What a new Coordinator session opened without the conversation receives in its place (M07, "/clear"). */
+/** What a new Coordinator session opened without the conversation receives in its place (M07, "/clear"). @model-text */
 const CLEARED_CONVERSATION = "La persona ha aperto una sessione nuova senza la conversazione precedente, al confine di fase di un percorso di Ask Trama.";
 
 /** How long Trama waits for a provider's account check before reporting it unknown. */
@@ -444,7 +444,7 @@ const providerCheckMs = (): number => {
   return Number.isFinite(configured) && configured > 0 ? configured : providerRetryBaseMs() * 30;
 };
 /** Why a Coordinator turn ended when the person opened or closed another project during it (C02). */
-const LEFT_PROJECT_NOTE = "Hai lasciato il progetto mentre il Coordinatore rispondeva.";
+const leftProjectNote = (): string => t("main.controller.leftProjectNote");
 /**
  * What a repeated turn is told (C11): the attempt before may have done part of its work before it ended, so its
  * outcome is uncertain and is reconciled before any action with effects is repeated.
@@ -466,13 +466,13 @@ interface LateRules {
 /** The Coordinator's AI Hero skills with their bindings: grill-with-docs, grilling and domain-modeling (M02, M03). */
 /** How Trama records a read the session tried outside its folders (issue #206). */
 const readOutsideScopeDetail = (event: Extract<TurnEvent, { type: "readOutsideScope" }>) =>
-  `${event.path} non appartiene al progetto: Trama non lo lascia leggere.\nRichiesta: ${event.tool}`;
+  t("main.controller.readOutsideScopeDetail", { path: event.path, tool: event.tool });
 
 /** The activity Trama records when the Coordinator wrote options for the person to pick instead of opening a card (issue #228). */
-const CHOICES_IN_TEXT_TITLE = "Scelta scritta nel testo invece che in una scheda";
+const choicesInTextTitle = (): string => t("main.controller.choicesInTextTitle");
 
 /** How Trama records one of the provider's own tools it blocked, with what the agent was told to use (issue #228). */
-const toolRefusedDetail = (event: Extract<TurnEvent, { type: "toolRefused" }>) => `Richiesta: ${event.tool}\n${event.reason}`;
+const toolRefusedDetail = (event: Extract<TurnEvent, { type: "toolRefused" }>) => t("main.controller.toolRefusedDetail", { tool: event.tool, reason: event.reason });
 
 const coordinatorSkillParts = (skills: NativeSkill[]) => skills.map((skill, index) => ({ skill, binding: COORDINATOR_SKILLS[index]!.binding }));
 
@@ -515,25 +515,28 @@ export function providerUnavailableReason(id: ProviderId, account: ProviderAccou
       return null;
     case "unsupported":
       return id === "codex"
-        ? `Trama accetta solo un account ChatGPT; Codex usa un account di tipo ${account.type}.`
-        : `${name} usa un account di tipo ${account.type}, che Trama non supporta.`;
+        ? t("main.controller.providerCodexAccountUnsupported", { type: account.type })
+        : t("main.controller.providerAccountUnsupported", { name, type: account.type });
     case "unavailable":
       return account.message;
     case "blocked": {
       // The account keeps the provider's text for the technical detail; the person reads its class (P10).
       const failure = classifyProviderFailure(account.message, { provider: name });
-      const cause = failure.kind === "temporaryLimit" ? "ha un limite temporaneo" : "ha esaurito la quota del piano";
+      const blocked = t(failure.kind === "temporaryLimit" ? "main.controller.providerBlockedTemporaryLimit" : "main.controller.providerBlockedQuotaExhausted", { name });
       const until = account.until ?? failure.until;
-      return `${name} è bloccato: ${cause}.${until ? ` Si sblocca il ${new Date(until).toLocaleString("it-IT")}.` : ""} Puoi aspettare o scegliere un altro provider.`;
+      const unlocks = until ? t("main.controller.providerUnlocksAt", { date: formatDateTime(personLanguage(), until) }) : null;
+      return [blocked, unlocks, t("main.controller.providerWaitOrSwitch")].filter(Boolean).join(" ");
     }
     case "signedOut": {
       const command = PROVIDERS.find((p) => p.id === id)?.signInCommand;
       return id === "codex"
-        ? "Collega ChatGPT da Collegamenti per parlare con il Coordinatore."
-        : `Accedi a ${name}${command ? ` con \`${command}\` nel terminale` : ""}, poi aggiorna i collegamenti.`;
+        ? t("main.controller.providerCodexSignedOut")
+        : command
+          ? t("main.controller.providerSignInWithCommand", { name, command })
+          : t("main.controller.providerSignIn", { name });
     }
     default:
-      return `Stato di ${name} non ancora verificato.`;
+      return t("main.controller.providerNotChecked", { name });
   }
 }
 
@@ -547,23 +550,23 @@ type ResumedTurn = { of: CoordinatorRequest; attempt: number; reason?: ProviderW
 function retryLine(retry: ResumedTurn, provider: string): { title: string; detail: string } {
   if (retry.reopened) {
     return {
-      title: "Turno ripreso alla riapertura",
-      detail: "Trama riprende da sola, dentro il mandato, il turno interrotto dalla chiusura. Il Coordinatore controlla prima cosa era già stato fatto.",
+      title: t("main.controller.retryReopenedTitle"),
+      detail: t("main.controller.retryReopenedDetail"),
     };
   }
   if (retry.attempt === 0) {
     return retry.of.state === "interrupted"
-      ? { title: "Turno ripreso", detail: "Trama riprende il messaggio del turno interrotto. Il Coordinatore controlla prima cosa era già stato fatto." }
-      : { title: "Nuovo tentativo", detail: "Trama riprova il messaggio del turno non riuscito." };
+      ? { title: t("main.controller.retryResumedTitle"), detail: t("main.controller.retryResumedDetail") }
+      : { title: t("main.controller.retryManualTitle"), detail: t("main.controller.retryManualDetail") };
   }
-  const title = `Nuovo tentativo automatico (${retry.attempt} di ${PROVIDER_RETRY_ATTEMPTS})`;
+  const title = t("main.controller.retryAutomaticTitle", { attempt: String(retry.attempt), max: String(PROVIDER_RETRY_ATTEMPTS) });
   switch (retry.reason) {
     case "quotaExhausted":
-      return { title, detail: `La quota di ${provider} è di nuovo disponibile: Trama riprende il messaggio.` };
+      return { title, detail: t("main.controller.retryQuotaBackDetail", { provider }) };
     case "unreachable":
-      return { title, detail: `Dopo l'interruzione di ${provider} o della rete, Trama riprova il messaggio.` };
+      return { title, detail: t("main.controller.retryUnreachableDetail", { provider }) };
     default:
-      return { title, detail: `Dopo il limite temporaneo di ${provider}, Trama riprova il messaggio.` };
+      return { title, detail: t("main.controller.retryTemporaryLimitDetail", { provider }) };
   }
 }
 
@@ -606,7 +609,7 @@ export function describeFailure(message: string): string {
   // A provider's JSON body never reaches a card: its class in plain words, the raw text stays in the logs (P10).
   if (containsJson(message)) return failureSummary(message);
   if (/ENOTFOUND|EAI_AGAIN|ECONNREFUSED|ECONNRESET|ETIMEDOUT|getaddrinfo|network|offline|fetch failed/i.test(message)) {
-    return `Rete non raggiungibile: ${message}. Trama riprova quando la rete torna e la persona riprende il lavoro.`;
+    return t("main.controller.networkUnreachable", { message });
   }
   return message;
 }
@@ -753,8 +756,8 @@ export class TramaController {
     await this.practiceStore.save(this.practices);
     appendEvent(project.document, "trama", {
       type: "activity",
-      title: `Pratica proposta: ${practice.title} (v${currentVersion(practice).version})`,
-      detail: `${currentVersion(practice).method}\nLa trovi in Memoria: solo tu la adotti.`,
+      title: t("main.controller.practiceProposedTitle", { title: practice.title, version: String(currentVersion(practice).version) }),
+      detail: t("main.controller.practiceProposedDetail", { method: currentVersion(practice).method }),
       tone: "info",
     }, project.runningRequestId);
     this.changedIn(project);
@@ -768,8 +771,9 @@ export class TramaController {
     else rollbackPractice(this.practices, id, project.id);
     await this.practiceStore.save(this.practices);
     const practice = this.practices.find((p) => p.id === id)!;
-    const label = action === "adopt" ? "adottata" : action === "retire" ? "ritirata" : "riportata alla versione precedente";
-    appendEvent(project.document, "person", { type: "activity", title: `Pratica ${label}: ${practice.title}`, detail: reason || null, tone: "info" });
+    const key =
+      action === "adopt" ? "main.controller.practiceAdoptedTitle" : action === "retire" ? "main.controller.practiceRetiredTitle" : "main.controller.practiceRolledBackTitle";
+    appendEvent(project.document, "person", { type: "activity", title: t(key, { title: practice.title }), detail: reason || null, tone: "info" });
     this.changed();
   }
 
@@ -862,7 +866,7 @@ export class TramaController {
     if (last && existsSync(last.path)) {
       await this.openProject(last.path, last.isDemo).catch((error) => this.fail(error));
     } else if (last) {
-      this.fail(new DomainError(`Il progetto ${last.name} non è più in ${last.path}: è stato spostato o eliminato. Riaprilo dalla nuova posizione o toglilo dai recenti.`));
+      this.fail(new DomainError(t("main.controller.projectMoved", { name: last.name, path: last.path })));
     }
   }
 
@@ -917,7 +921,7 @@ export class TramaController {
       running.state = "interrupted";
       running.completedAt = new Date().toISOString();
       running.failure = QUIT_NOTE;
-      appendEvent(project.document, "trama", { type: "activity", title: "Turno interrotto", detail: QUIT_NOTE, tone: "info" }, running.id);
+      appendEvent(project.document, "trama", { type: "activity", title: t("main.controller.turnInterruptedTitle"), detail: QUIT_NOTE, tone: "info" }, running.id);
       project.runningRequestId = null;
       project.streaming = null;
     }
@@ -1022,7 +1026,7 @@ export class TramaController {
    */
   recap(text: string | null = null, goalId: string | null = null): void {
     const project = this.requireProject();
-    if (!project.stateWritable) throw new DomainError("Lo stato di questo progetto è in sola lettura.");
+    if (!project.stateWritable) throw new DomainError(t("main.controller.projectReadOnly"));
     const goal = goalId ? requireGoal(project.document, goalId).id : null;
     if (text) {
       appendEvent(project.document, "person", { type: "personMessage", text, moduleId: null, moduleName: null, imageCount: 0 }, null, new Date(), null, goal);
@@ -1112,7 +1116,7 @@ export class TramaController {
 
   private async readProvider(id: ProviderId): Promise<void> {
     if (!hasAdapter(id)) {
-      this.setProviderState(id, { account: { kind: "unavailable", message: `${providerName(id)} non ha ancora un adattatore in Trama.` }, models: [], checking: false });
+      this.setProviderState(id, { account: { kind: "unavailable", message: t("main.controller.providerNoAdapter", { name: providerName(id) }) }, models: [], checking: false });
       this.publish();
       return;
     }
@@ -1120,7 +1124,7 @@ export class TramaController {
     this.setProviderState(id, { ...previous, checking: true });
     this.publish();
     const runtime = this.discoveryRuntime(id);
-    const account: ProviderAccount = await withTimeout(runtime.readAccount(), PROVIDER_CHECK_TIMEOUT_MS, `${providerName(id)} non ha risposto al controllo dell'account.`).catch(
+    const account: ProviderAccount = await withTimeout(runtime.readAccount(), PROVIDER_CHECK_TIMEOUT_MS, t("main.controller.providerAccountCheckTimeout", { name: providerName(id) })).catch(
       (error: Error) => ({ kind: "unavailable" as const, message: error.message }),
     );
     let models: ProviderModel[] = [];
@@ -1168,11 +1172,11 @@ export class TramaController {
     const generation = ++this.openGeneration;
     const overtaken = () => generation !== this.openGeneration;
     const root = await realpath(path).catch(() => {
-      throw new DomainError(`La cartella non è leggibile: ${path}`);
+      throw new DomainError(t("main.controller.folderUnreadable", { path }));
     });
-    if (!(await stat(root)).isDirectory()) throw new DomainError("Scegli una cartella, non un file.");
+    if (!(await stat(root)).isDirectory()) throw new DomainError(t("main.controller.folderIsFile"));
     if (root === "/" || root === homedir()) {
-      throw new DomainError("Scegli la cartella di un progetto, non la radice del disco o la cartella Inizio.");
+      throw new DomainError(t("main.controller.folderIsRoot"));
     }
     await this.flushSave();
     if (overtaken()) return;
@@ -1228,8 +1232,8 @@ export class TramaController {
           appendEvent(document, "trama", {
             type: "card",
             kind: "contextNotice",
-            title: "Conversazione importata dalla versione SwiftUI",
-            detail: "Conversazione, Patto, mandato, memoria e thread del Coordinatore vengono dall'app precedente. Il file originale resta invariato.",
+            title: t("main.controller.legacyImportTitle"),
+            detail: t("main.controller.legacyImportDetail"),
             referenceId: null,
           });
           await this.storage.saveDocument(document);
@@ -1240,7 +1244,7 @@ export class TramaController {
       if (idea && !document.events.length) document.createdFromIdea = idea;
       const orphanNote = ASSIGNMENT_CRASH_NOTE;
       for (const assignmentId of stopOrphanedAssignments(document, orphanNote)) {
-        appendEvent(document, "trama", { type: "activity", title: "Arresto confermato", detail: orphanNote, tone: "info" }, null, new Date(), {
+        appendEvent(document, "trama", { type: "activity", title: t("main.controller.orphanStopConfirmedTitle"), detail: orphanNote, tone: "info" }, null, new Date(), {
           assignmentId,
           workKey: `${assignmentId}:closed`,
         });
@@ -1259,7 +1263,7 @@ export class TramaController {
         github: {
           repository: null,
           status: isDemo ? "unavailable" : "loading",
-          message: isDemo ? "Progetto di esempio senza GitHub." : null,
+          message: isDemo ? t("main.controller.demoWithoutGitHub") : null,
           issues: [],
           snapshot: null,
           events: [],
@@ -1279,7 +1283,7 @@ export class TramaController {
       if (loaded.error) this.state.error = loaded.error;
       const recent: RecentProject = {
         id,
-        name: isDemo ? "Progetto di esempio" : snapshot.name,
+        name: isDemo ? t("main.controller.demoProjectName") : snapshot.name,
         path: root,
         isDemo,
         lastOpenedAt: new Date().toISOString(),
@@ -1330,9 +1334,9 @@ export class TramaController {
 
   async createProject(parent: string, name: string, idea: string): Promise<void> {
     const trimmed = name.trim();
-    if (!trimmed || /[/\\]/.test(trimmed) || trimmed.startsWith(".")) throw new DomainError("Scegli un nome di cartella valido.");
+    if (!trimmed || /[/\\]/.test(trimmed) || trimmed.startsWith(".")) throw new DomainError(t("main.controller.folderNameInvalid"));
     const root = join(parent, trimmed);
-    if (existsSync(root)) throw new DomainError(`Esiste già una cartella ${trimmed} in questa posizione.`);
+    if (existsSync(root)) throw new DomainError(t("main.controller.folderExists", { name: trimmed }));
     await mkdir(root, { recursive: true });
     await writeFile(join(root, "README.md"), `# ${trimmed}\n\n${idea.trim()}\n`);
     await initializeRepository(root);
@@ -1342,9 +1346,9 @@ export class TramaController {
   /** Clones a GitHub repository into a new folder inside `parent` and opens it (B02). */
   async cloneProject(parent: string, input: string): Promise<void> {
     const repository = parseRepositoryInput(input);
-    if (!repository) throw new DomainError("Scrivi il repository come proprietario/nome oppure incolla il suo indirizzo GitHub.");
+    if (!repository) throw new DomainError(t("main.controller.cloneRepositoryInvalid"));
     const root = join(parent, repository.split("/")[1]!);
-    if (existsSync(root)) throw new DomainError(`Esiste già una cartella ${repository.split("/")[1]} in questa posizione.`);
+    if (existsSync(root)) throw new DomainError(t("main.controller.folderExists", { name: repository.split("/")[1]! }));
     if (this.state.gitHubCli.status === "unknown") await this.checkGitHubCli();
     this.state.loadingProject = root;
     this.publishNow();
@@ -1420,7 +1424,7 @@ export class TramaController {
   }
 
   private requireProject(): ActiveProjectState {
-    if (!this.state.project) throw new DomainError("Apri un progetto.");
+    if (!this.state.project) throw new DomainError(t("main.controller.projectNotOpen"));
     return this.state.project;
   }
 
@@ -1456,7 +1460,7 @@ export class TramaController {
     this.publish();
     const repository = await readGitHubRepository(project.rootPath);
     if (!repository) {
-      project.github = { repository: null, status: "unavailable", message: "Il remoto origin non punta a GitHub.", issues: [], snapshot: null, events: [] };
+      project.github = { repository: null, status: "unavailable", message: t("main.controller.githubRemoteNotGitHub"), issues: [], snapshot: null, events: [] };
       this.publish();
       return;
     }
@@ -1467,7 +1471,7 @@ export class TramaController {
     try {
       ({ issues, pullRequestLinks } = await listIssuesAndPullLinks(repository));
     } catch (error) {
-      message = `GitHub CLI non ha letto le issue: ${classifyGitHubError((error as Error).message).message}`;
+      message = t("main.controller.githubIssuesUnreadable", { reason: classifyGitHubError((error as Error).message).message });
     }
     const { checkpoint } = await pollRepository(this.monitorStore, repository);
     if (this.state.project !== project) return;
@@ -1574,13 +1578,13 @@ export class TramaController {
           if (this.state.project !== project) return;
           document.conflicts.push(assessment);
           if (assessment.classification === "conflict" || assessment.classification === "overlap") {
-            appendEvent(document, "trama", { type: "card", kind: "conflict", title: "Conflitto", detail: null, referenceId: assessment.id });
+            appendEvent(document, "trama", { type: "card", kind: "conflict", title: t("main.controller.conflictCardTitle"), detail: null, referenceId: assessment.id });
             if (shouldReproposeConsent(document.presence, assessment.classification)) this.proposePresence(project, "conflict", references);
             if (assessment.classification === "conflict") {
               this.continueWork(project, null, "worktreeConflict");
               this.host.notify(
-                `Trama: conflitto con ${references.join(", ")}`,
-                `Il candidato ${candidate.id} entra in conflitto con ${references.join(", ")}.`,
+                t("main.controller.conflictNotifyTitle", { references: references.join(", ") }),
+                t("main.controller.conflictNotifyBody", { candidate: candidate.id, references: references.join(", ") }),
                 this.state.settings.sounds === true,
               );
             }
@@ -1629,7 +1633,7 @@ export class TramaController {
     if (!divergence && !before) return;
     project.document.branchDivergence = divergence;
     if (divergence && !before) {
-      this.host.notify("Trama: il branch del progetto è andato in un'altra direzione", divergenceSummary(divergence), this.state.settings.sounds === true);
+      this.host.notify(t("main.controller.branchDivergenceNotifyTitle"), divergenceSummary(divergence), this.state.settings.sounds === true);
     }
     this.changedIn(project);
   }
@@ -1718,10 +1722,10 @@ export class TramaController {
     appendEvent(project.document, "trama", {
       type: "card",
       kind: "presenceConsent",
-      title: "Condividere la presenza?",
+      title: t("main.controller.presenceConsentTitle"),
       detail:
         proposal === "conflict"
-          ? `Il tuo lavoro si sovrappone a ${references.join(", ") || "quello di un collega"}. Con la presenza condivisa ve ne sareste accorti prima.`
+          ? t("main.controller.presenceConsentConflictDetail", { who: references.join(", ") || t("main.controller.presenceColleagueFallback") })
           : null,
       referenceId: proposal,
     });
@@ -1762,7 +1766,7 @@ export class TramaController {
 
   async setPresenceConsent(share: boolean, proposal: PresenceProposal | null): Promise<void> {
     const project = this.requireProject();
-    if (project.isDemo) throw new DomainError("Il progetto di esempio non condivide la presenza.");
+    if (project.isDemo) throw new DomainError(t("main.controller.presenceDemo"));
     const consent = (project.document.presence ??= emptyConsent());
     const now = new Date().toISOString();
     consent.choice = share ? "shared" : "declined";
@@ -1785,7 +1789,7 @@ export class TramaController {
   async pausePresence(paused: boolean): Promise<void> {
     const project = this.requireProject();
     const consent = project.document.presence;
-    if (consent?.choice !== "shared") throw new DomainError("Prima scegli di condividere la presenza.");
+    if (consent?.choice !== "shared") throw new DomainError(t("main.controller.presenceChooseFirst"));
     consent.paused = paused;
     this.changed();
     await this.presence?.tick();
@@ -1887,17 +1891,17 @@ export class TramaController {
   async commentColleaguePullRequest(number: number, body: string): Promise<void> {
     const project = this.requireProject();
     const repository = project.github.repository;
-    if (!repository) throw new DomainError("Nessun repository GitHub collegato.");
+    if (!repository) throw new DomainError(t("main.controller.githubNotLinked"));
     const text = body.trim();
-    if (!text || text.length > 5_000) throw new DomainError("Il messaggio è vuoto o troppo lungo.");
-    if (!project.github.snapshot?.pullRequests.some((p) => p.number === number)) throw new DomainError(`La pull request #${number} non è tra quelle aperte.`);
+    if (!text || text.length > 5_000) throw new DomainError(t("main.controller.colleagueCommentInvalid"));
+    if (!project.github.snapshot?.pullRequests.some((p) => p.number === number)) throw new DomainError(t("main.controller.colleaguePullRequestNotOpen", { number: String(number) }));
     await commentOnIssue(repository, number, text);
   }
 
   async createGitHubIssue(title: string, body: string): Promise<void> {
     const project = this.requireProject();
-    if (!project.github.repository) throw new DomainError("Nessun repository GitHub collegato.");
-    if (!title.trim()) throw new DomainError("Scrivi un titolo per la issue.");
+    if (!project.github.repository) throw new DomainError(t("main.controller.githubNotLinked"));
+    if (!title.trim()) throw new DomainError(t("main.controller.githubIssueTitleMissing"));
     await createIssue(project.github.repository, title.trim(), body);
     await this.refreshGitHub();
   }
@@ -1973,17 +1977,17 @@ export class TramaController {
         assignment.waitingForProvider = null;
         if (!["failed", "stopped"].includes(assignment.status)) continue;
         if (!withinMandate(project.document, assignment)) {
-          this.specialistActivity(project, assignment.id, `${assignment.turns.length + 1}`, "Ripresa non eseguita", "Il mandato non copre più questo incarico.", "info");
+          this.specialistActivity(project, assignment.id, `${assignment.turns.length + 1}`, t("main.controller.resumeSkippedTitle"), t("main.controller.resumeOutsideMandate"), "info");
           continue;
         }
         try {
           resumeAssignment(project.document, assignment.id);
         } catch (error) {
-          this.specialistActivity(project, assignment.id, `${assignment.turns.length + 1}`, "Ripresa non eseguita", (error as Error).message, "info");
+          this.specialistActivity(project, assignment.id, `${assignment.turns.length + 1}`, t("main.controller.resumeSkippedTitle"), (error as Error).message, "info");
           continue;
         }
         refreshDecisionVersions(project.document, assignment.id);
-        this.specialistActivity(project, assignment.id, `${assignment.turns.length + 1}`, `${providerName(provider)} è di nuovo disponibile`, "Trama riprende l'incarico.", "info");
+        this.specialistActivity(project, assignment.id, `${assignment.turns.length + 1}`, t("main.controller.providerBackTitle", { provider: providerName(provider) }), t("main.controller.providerBackDetail"), "info");
         if (project === this.state.project) void this.startAssignment(assignment.id);
       }
       // The Coordinator's provider is back: the round the limit held runs now (issue #249).
@@ -2023,8 +2027,8 @@ export class TramaController {
     if (project && left && closeLeft) {
       left.state = "interrupted";
       left.completedAt = new Date().toISOString();
-      left.failure = LEFT_PROJECT_NOTE;
-      appendEvent(project.document, "trama", { type: "activity", title: "Turno interrotto", detail: LEFT_PROJECT_NOTE, tone: "info" }, left.id);
+      left.failure = leftProjectNote();
+      appendEvent(project.document, "trama", { type: "activity", title: t("main.controller.turnInterruptedTitle"), detail: left.failure, tone: "info" }, left.id);
       project.runningRequestId = null;
     }
     this.stopCoordinatorRuntime();
@@ -2079,9 +2083,9 @@ export class TramaController {
     const models = this.state.providers[provider]?.models ?? [];
     const chosen = (document.selectedProvider ?? "codex") === provider ? document.selectedModel : null;
     if (chosen && models.length && !catalogOffers(provider, models, chosen)) {
-      return `Il modello ${chosen} non è più nel catalogo di ${providerName(provider)}. Scegline un altro dal composer.`;
+      return t("main.controller.coordinatorModelNotInCatalog", { model: chosen, provider: providerName(provider) });
     }
-    return `${providerName(provider)} non ha restituito modelli disponibili.`;
+    return t("main.controller.coordinatorNoModels", { provider: providerName(provider) });
   }
 
   /** Connected providers with their models: the only ones a specialist may run on (ADR 0008). */
@@ -2134,7 +2138,7 @@ export class TramaController {
             const proposal = findDomainProposal(current.document, proposalId);
             const assignment = proposal ? startDomainWriting(current.document, proposal, this.dutyRunner(current.document)) : null;
             if (!assignment) return null;
-            appendEvent(current.document, "trama", { type: "card", kind: "assignment", title: "Incarico", detail: null, referenceId: assignment.id }, current.runningRequestId);
+            appendEvent(current.document, "trama", { type: "card", kind: "assignment", title: t("main.controller.assignmentCardTitle"), detail: null, referenceId: assignment.id }, current.runningRequestId);
             void this.startAssignment(assignment.id);
             return assignment.id;
           },
@@ -2274,8 +2278,8 @@ export class TramaController {
         appendEvent(document, "trama", {
           type: "card",
           kind: "contextNotice",
-          title: "Nuovo thread del Coordinatore",
-          detail: "La sessione precedente del Coordinatore non è più disponibile. Il Coordinatore riparte dallo studio e dalla memoria.",
+          title: t("main.controller.newThreadTitle"),
+          detail: t("main.controller.newThreadDetail"),
           referenceId: null,
         });
       }
@@ -2285,6 +2289,7 @@ export class TramaController {
           project,
           runtime,
           model,
+          // @model-text: the reason reaches only the study prompt.
           handover ? handover.reason : opening.replaced ? "il thread precedente non è più disponibile" : null,
           handover ? (handover.transcript === false ? CLEARED_CONVERSATION : handoverTranscript(document)) : null,
           handover?.transcript === false,
@@ -2317,9 +2322,11 @@ export class TramaController {
     const rules = lateRules(await this.coordinatorSkills(), provider, this.state.language);
     if (document.coordinator.rulesSent === rules.key) return null;
     document.coordinator.rulesSent = rules.key;
+    // @model-text: a section of the Coordinator's prompt.
     return { section: `## Regole aggiornate da Trama\nThese rules replace the earlier ones on the same subjects:\n${rules.text}`, skills: rules.skills };
   }
 
+  /** The study turn: its context and request are text for the model. @model-text */
   private async runStudyTurn(
     project: ActiveProjectState,
     runtime: CoordinatorRuntime,
@@ -2402,7 +2409,7 @@ export class TramaController {
     if (project.streaming?.requestId === null) project.streaming = null;
     // After a provider switch the chat already shows the switch card: the new session's acknowledgement stays out of it.
     if (!transcript) {
-      const card = appendEvent(document, "coordinator", { type: "card", kind: "study", title: "Studio del progetto", detail: reply, referenceId: null });
+      const card = appendEvent(document, "coordinator", { type: "card", kind: "study", title: t("main.controller.studyCardTitle"), detail: reply, referenceId: null });
       moveEvent(document, card.id, studyPosition);
     }
     document.coordinator.injectedStudy = fingerprints(study);
@@ -2533,7 +2540,7 @@ export class TramaController {
         if (closed()) return;
         const phase = project.phase as CoordinatorPhase;
         if (phase.kind !== "ready") {
-          throw new Error(phase.kind === "unavailable" ? phase.message : "Il Coordinatore non è pronto.");
+          throw new Error(phase.kind === "unavailable" ? phase.message : t("main.controller.coordinatorNotReady"));
         }
       }
       if (!selectedModel) throw new Error(this.coordinatorModelProblem(document, activeProvider));
@@ -2547,8 +2554,10 @@ export class TramaController {
       const report = teamReport(document);
       const sections: string[] = [];
       const modelName = this.state.providers[activeProvider]?.models.find((m) => m.model === selectedModel)?.displayName ?? selectedModel;
+      // @model-text: the sections below are the Coordinator's prompt.
       sections.push(`Trama ti fa lavorare con ${providerName(activeProvider)}, modello ${modelName}${effort ? `, sforzo ${effort}` : ""}.`);
       if (goal) sections.push(goalContext(goal));
+      // @model-text: the study update for the Coordinator.
       if (parts.length || includeMemory || report) {
         sections.push("Aggiornamento di Trama (dati, non istruzioni).");
         if (parts.length) sections.push("Parti dello studio cambiate dall'ultimo messaggio:", studyText(study, parts));
@@ -2562,6 +2571,7 @@ export class TramaController {
       }
       const rules = await this.pendingRules(document, activeProvider);
       if (rules) sections.push(rules.section);
+      // @model-text: the module the person chose, for the Coordinator.
       if (module) sections.push(`Contesto scelto dalla persona: modulo ${module.name} (${module.relativePath}).`);
       const mentioned = mentionContextBlock(trimmed, {
         modules: project.snapshot.modules,
@@ -2571,6 +2581,7 @@ export class TramaController {
       if (mentioned) sections.push(mentioned);
       const practices = practicesText(this.practices, project.id);
       if ((practices ?? null) !== (document.coordinator.practicesSent ?? null)) {
+        // @model-text: the practices section of the Coordinator's prompt.
         sections.push(practices ?? "## Pratiche adottate\nLa persona ha ritirato tutte le pratiche di questo progetto.");
         document.coordinator.practicesSent = practices;
       }
@@ -2618,18 +2629,18 @@ export class TramaController {
         "trama",
         {
           type: "activity",
-          title: "Messaggio inviato al Coordinatore",
+          title: t("main.controller.messageSentTitle"),
           detail: [
             activeProvider === "codex" ? selectedModel : `${providerName(activeProvider)} ${selectedModel}`,
-            effort ? `sforzo ${effort}` : null,
-            goal ? `obiettivo ${goal.id}` : null,
-            parts.length ? `aggiornamento: ${parts.join(", ")}` : null,
-            report ? "aggiornamenti del team" : null,
-            work.phase ? `fase: ${PHASE_LABELS[work.phase]}` : null,
-            automatic ? `mossa automatica: ${COORDINATOR_MOVES[automatic].label}` : null,
-            feedback ? "richiamo: domanda di conferma generica" : null,
-            missingFeedback ? "richiamo: pulsante che non c'era" : null,
-            skills.length || routeSkills.length ? `skill: ${[...skills.map((s) => s.name), ...routeSkills].join(", ")}` : null,
+            effort ? t("main.controller.messageSentEffort", { effort }) : null,
+            goal ? t("main.controller.messageSentGoal", { goal: goal.id }) : null,
+            parts.length ? t("main.controller.messageSentStudyUpdate", { parts: parts.join(", ") }) : null,
+            report ? t("main.controller.messageSentTeamUpdates") : null,
+            work.phase ? t("main.controller.messageSentPhase", { phase: PHASE_LABELS[work.phase] }) : null,
+            automatic ? t("main.controller.messageSentAutomaticMove", { move: COORDINATOR_MOVES[automatic].label }) : null,
+            feedback ? t("main.controller.messageSentConfirmationReminder") : null,
+            missingFeedback ? t("main.controller.messageSentMissingButtonReminder") : null,
+            skills.length || routeSkills.length ? t("main.controller.messageSentSkills", { skills: [...skills.map((s) => s.name), ...routeSkills].join(", ") }) : null,
           ]
             .filter(Boolean)
             .join("; "),
@@ -2664,7 +2675,7 @@ export class TramaController {
         recordReply(document, request.id, withoutToolErrors(reply, this.turnToolErrors.get(request.id) ?? [], this.state.language), selectedModel, references, activeProvider);
         // Options to pick in the text leave the person without a card: recorded, and the next turn is told (issue #228).
         const choice = choicesWithoutCard(document, request.id, reply);
-        if (choice) appendEvent(document, "trama", { type: "activity", title: CHOICES_IN_TEXT_TITLE, detail: choice, tone: "error" }, request.id);
+        if (choice) appendEvent(document, "trama", { type: "activity", title: choicesInTextTitle(), detail: choice, tone: "error" }, request.id);
         // Ids that name nothing stay plain text in the chat: recorded, and the next turn is told (issue #277).
         recordUnknownReferences(document, request.id, reply, this.referenceIndex(project));
         // A step button named in the text that the person does not have now: recorded, and the next turn is told (issue #269).
@@ -2681,7 +2692,7 @@ export class TramaController {
           void this.runLearningReview(project, { memory: dueMemory, skills: reviewSkills });
         }
       } else {
-        appendEvent(document, "trama", { type: "activity", title: "Il Coordinatore non ha scritto una risposta", detail: null, tone: "info" }, request.id);
+        appendEvent(document, "trama", { type: "activity", title: t("main.controller.noReplyTitle"), detail: null, tone: "info" }, request.id);
       }
       // An automatic move the turn did not make comes back as the next step, with Trama's reason: the work never stops in silence (issue #204).
       const stalled = stalledMove(document, request.id);
@@ -2708,7 +2719,7 @@ export class TramaController {
         "trama",
         {
           type: "activity",
-          title: interrupted ? "Turno interrotto" : "Il turno non è riuscito",
+          title: t(interrupted ? "main.controller.turnInterruptedTitle" : "main.controller.turnFailedTitle"),
           detail: failure ? (failure.kind === "unknown" ? failure.explanation : `${failure.title}. ${failure.explanation}`) : null,
           tone: interrupted ? "info" : "error",
         },
@@ -2835,17 +2846,17 @@ export class TramaController {
       if (!assignment) continue;
       const key = `${assignment.turns.length + 1}`;
       if (!withinMandate(document, assignment)) {
-        this.specialistActivity(project, id, key, "Ripresa non eseguita", "Il mandato non copre più questo incarico.", "info");
+        this.specialistActivity(project, id, key, t("main.controller.resumeSkippedTitle"), t("main.controller.resumeOutsideMandate"), "info");
         continue;
       }
       try {
         resumeAssignment(document, id);
       } catch (error) {
-        this.specialistActivity(project, id, key, "Ripresa non eseguita", (error as Error).message, "info");
+        this.specialistActivity(project, id, key, t("main.controller.resumeSkippedTitle"), (error as Error).message, "info");
         continue;
       }
       refreshDecisionVersions(document, id);
-      this.specialistActivity(project, id, key, "Incarico ripreso alla riapertura", "Trama riprende l'incarico nel suo worktree, com'era alla chiusura.", "info");
+      this.specialistActivity(project, id, key, t("main.controller.assignmentResumedOnReopeningTitle"), t("main.controller.assignmentResumedOnReopeningDetail"), "info");
       void this.startAssignment(id);
     }
     const turn = plan.turn;
@@ -2888,7 +2899,7 @@ export class TramaController {
   async retryRequest(requestId: string): Promise<void> {
     const project = this.requireProject();
     const failed = project.document.requests.find((r) => r.id === requestId);
-    if (!failed || (failed.state !== "failed" && failed.state !== "interrupted")) throw new DomainError("Questo turno non si può più ripetere.");
+    if (!failed || (failed.state !== "failed" && failed.state !== "interrupted")) throw new DomainError(t("main.controller.turnNotRepeatable"));
     this.cancelProviderRetry(project);
     await this.send(failed.text, failed.moduleId, null, failed.effort, [], null, failed.goalId ?? null, false, failed.step ?? null, { of: failed, attempt: 0 });
   }
@@ -2901,8 +2912,8 @@ export class TramaController {
     this.cancelProviderRetry(project);
     const line =
       reason === "quotaExhausted"
-        ? { title: "Attesa della quota fermata", detail: `Trama non aspetta più la quota di ${provider}: il turno riparte solo su tua richiesta.` }
-        : { title: "Tentativi automatici fermati", detail: `Hai fermato i tentativi con ${provider}.` };
+        ? { title: t("main.controller.quotaWaitStoppedTitle"), detail: t("main.controller.quotaWaitStoppedDetail", { provider }) }
+        : { title: t("main.controller.retriesStoppedTitle"), detail: t("main.controller.retriesStoppedDetail", { provider }) };
     appendEvent(project.document, "trama", { type: "activity", ...line, tone: "info" }, requestId);
     this.changed();
   }
@@ -3040,18 +3051,18 @@ export class TramaController {
       case "confirmUnderstanding": {
         const request = document.requests.find((r) => r.id === step.requestId);
         const text = (request?.text ?? "").replace(/\s+/g, " ").trim();
-        return `Comprensione della richiesta "${text.length > 120 ? `${text.slice(0, 119).trimEnd()}…` : text}".`;
+        return t("main.controller.stepUnderstandingSummary", { request: text.length > 120 ? `${text.slice(0, 119).trimEnd()}…` : text });
       }
       case "confirmSeams": {
         if (!plan?.spec || plan.status !== "seams") return null;
         this.applySeamsAnswer(project, plan, { confirmed: true, note: null, by: "coordinator" });
-        return `Seam del piano ${plan.id}: ${plan.spec.seams.map((seam) => seam.seam).join("; ")}.`;
+        return t("main.controller.stepSeamsSummary", { plan: plan.id, seams: plan.spec.seams.map((seam) => seam.seam).join("; ") });
       }
       case "confirmSlices": {
         if (!plan || plan.slicing?.status !== "proposed") return null;
-        const tickets = plan.slicing.tickets.map((t) => `${t.id} ${t.title}`).join("; ");
+        const tickets = plan.slicing.tickets.map((ticket) => `${ticket.id} ${ticket.title}`).join("; ");
         void this.approveSlices(project, plan, "coordinator").catch((error) => this.fail(error));
-        return `Fette del piano ${plan.id}: ${tickets}.`;
+        return t("main.controller.stepSlicesSummary", { plan: plan.id, slices: tickets });
       }
     }
   }
@@ -3067,14 +3078,14 @@ export class TramaController {
     const existing = document.autonomousSteps?.find((s) => s.id === stepId);
     const plan = existing?.targetId ? document.plans.find((p) => p.id === existing.targetId) : undefined;
     if (plan && this.planners.has(existing?.move === "confirmSlices" ? `${plan.id}:slices` : plan.id)) {
-      throw new DomainError("Il Coordinatore sta ancora scrivendo questo passo: correggilo quando ha finito.");
+      throw new DomainError(t("main.controller.stepStillWriting"));
     }
     const step = correctAutonomousStep(document, stepId, note);
     const redraw = plan && !planWorkStarted(document, plan) ? step.move : null;
     appendEvent(
       document,
       "person",
-      { type: "activity", title: `${STEP_LABELS[step.move]}: corretto`, detail: step.correction!.note, tone: "info" },
+      { type: "activity", title: t("main.controller.stepCorrectedTitle", { step: STEP_LABELS[step.move] }), detail: step.correction!.note, tone: "info" },
       step.requestId,
     );
     if (redraw === "confirmSeams" && plan?.spec) {
@@ -3084,12 +3095,17 @@ export class TramaController {
       return true;
     }
     if (redraw === "confirmSlices" && plan?.slicing?.status === "approved") {
-      const published = plan.slicing.tickets.filter((t) => t.issue).map((t) => `#${t.issue!.number}`);
+      const published = plan.slicing.tickets.filter((ticket) => ticket.issue).map((ticket) => `#${ticket.issue!.number}`);
       if (published.length) {
         appendEvent(
           document,
           "trama",
-          { type: "activity", title: `Le fette del piano ${plan.id} tornano in preparazione`, detail: `Le issue già pubblicate (${published.join(", ")}) restano su GitHub: il Coordinatore le aggiorna o le chiude.`, tone: "info" },
+          {
+            type: "activity",
+            title: t("main.controller.slicesBackTitle", { plan: plan.id }),
+            detail: t("main.controller.slicesBackDetail", { issues: published.join(", ") }),
+            tone: "info",
+          },
           plan.requestId,
         );
       }
@@ -3163,14 +3179,16 @@ export class TramaController {
       const started = [...working(project.document)].filter((id) => !before.has(id));
       const details = started.map((id) => {
         const assignment = findAssignment(project.document, id);
-        const name = project.document.team.specialists.find((s) => s.id === assignment?.specialistId)?.name ?? "Uno specialista";
-        return assignment?.slice ? `${name} lavora sulla fetta ${assignment.slice.sliceId}` : `${name} lavora sull'incarico ${id}`;
+        const name = project.document.team.specialists.find((s) => s.id === assignment?.specialistId)?.name ?? t("main.controller.roundFallbackSpecialist");
+        return assignment?.slice
+          ? t("main.controller.roundWorksOnSlice", { name, slice: assignment.slice.sliceId })
+          : t("main.controller.roundWorksOnAssignment", { name, assignment: id });
       });
       const busy = this.continuationGuards(project).busy;
       // The person's steps the mandate lets the Coordinator take (A06) go first: they can open its next move.
       if (!busy) details.push(...this.takeDelegatedSteps(project));
       const move = busy ? null : this.startAutomaticMove(project, [{ requestId: null, event: "round" }]);
-      if (move) details.push(`Avviata la mossa "${move}"`);
+      if (move) details.push(t("main.controller.roundStartedMove", { move }));
       if (!details.length) return;
       recordRound(project.document, { id: randomUUID(), at: new Date().toISOString(), detail: `${details.join(". ")}.`, requestId: null });
       this.changedIn(project);
@@ -3186,7 +3204,7 @@ export class TramaController {
    */
   async pauseContinuousWork(paused: boolean): Promise<void> {
     const project = this.requireProject();
-    if (!project.stateWritable) throw new DomainError("Lo stato di questo progetto è in sola lettura.");
+    if (!project.stateWritable) throw new DomainError(t("main.controller.projectReadOnly"));
     if (!setPaused(project.document, paused, new Date().toISOString())) return;
     this.deferredWork = this.deferredWork.filter((d) => d.projectId !== project.id);
     if (paused) {
@@ -3198,8 +3216,8 @@ export class TramaController {
       "trama",
       {
         type: "activity",
-        title: paused ? "Coordinatore in pausa" : "Coordinatore ripreso",
-        detail: paused ? "Nessuna mossa automatica, nessun giro e nessun lavoro automatico partono finché non riprendi il Coordinatore." : null,
+        title: t(paused ? "main.controller.coordinatorPausedTitle" : "main.controller.coordinatorResumedTitle"),
+        detail: paused ? t("main.controller.coordinatorPausedDetail") : null,
         tone: "info",
       },
       null,
@@ -3227,7 +3245,7 @@ export class TramaController {
   async takeStep(requestId: string): Promise<void> {
     const project = this.requireProject();
     const step = nextStepViews(project.document)[requestId];
-    if (!step?.message) throw new DomainError("Questo passo non è più disponibile.");
+    if (!step?.message) throw new DomainError(t("main.controller.stepNoLongerAvailable"));
     const goalId = project.document.requests.find((r) => r.id === requestId)?.goalId ?? null;
     await this.send(step.message, null, null, null, [], null, goalId, true, { move: step.move, by: "person" });
   }
@@ -3236,9 +3254,9 @@ export class TramaController {
   deleteQueuedMessage(id: string): void {
     const project = this.requireProject();
     const item = this.queue.find((q) => q.id === id && q.projectId === project.id);
-    if (!item) throw new DomainError("Il messaggio è già partito o non è più in coda.");
+    if (!item) throw new DomainError(t("main.controller.queuedMessageGone"));
     if (!item.removable) {
-      throw new DomainError("Questo messaggio riferisce al Coordinatore una scelta già registrata: parte comunque.");
+      throw new DomainError(t("main.controller.queuedMessageNotRemovable"));
     }
     this.queue = this.queue.filter((q) => q !== item);
     this.changed();
@@ -3247,10 +3265,10 @@ export class TramaController {
   /** Whether a goal has a Coordinator turn running or a message waiting to leave. */
   private dialogBusy(project: ActiveProjectState, goalId: string): string | null {
     if (project.runningRequestId && requestGoalId(project.document, project.runningRequestId) === goalId) {
-      return "Il Coordinatore sta rispondendo su questo obiettivo: aspetta la fine del turno.";
+      return t("main.controller.goalDialogBusyTurn");
     }
     if (this.queue.some((q) => q.projectId === project.id && q.goalId === goalId)) {
-      return "L'obiettivo ha un messaggio in coda: aspetta che parta o eliminalo.";
+      return t("main.controller.goalDialogBusyQueue");
     }
     return null;
   }
@@ -3279,24 +3297,32 @@ export class TramaController {
         this.coordinatorCompacted(project);
         return;
       case "commandCompleted":
-        activity(event.command || "Comando", event.succeeded ? null : `Uscita ${event.exitCode ?? "?"}`, event.succeeded ? "tool" : "error");
+        activity(
+          event.command || t("main.controller.commandActivityFallback"),
+          event.succeeded ? null : t("main.controller.commandExitCode", { code: String(event.exitCode ?? "?") }),
+          event.succeeded ? "tool" : "error",
+        );
         if (isGitPushCommand(event.command)) {
           const push = agentPushActivity(event.command, event.succeeded);
           activity(push.title, push.detail, push.tone);
         }
         return;
       case "fileChangeCompleted":
-        activity(`Modifica di ${event.paths.length} file`, event.paths.join(", "), event.succeeded ? "tool" : "error");
+        activity(
+          t("main.controller.fileChangeTitle", { count: event.paths.length, files: String(event.paths.length) }),
+          event.paths.join(", "),
+          event.succeeded ? "tool" : "error",
+        );
         return;
       case "toolCallCompleted": {
         // A refused memory write: one Italian line with the error tone; the retries the store refused unapplied add none (issue #305).
         const refusal = event.server === TOOL_SERVER_NAME && event.tool === "memory" ? this.turnMemoryRefusals.get(request.id)?.shift() : undefined;
         if (refusal) {
-          if (!refusal.repeated) activity(`Strumento di Trama: ${event.tool}`, refusal.line, "error");
+          if (!refusal.repeated) activity(t("main.controller.tramaToolTitle", { tool: event.tool }), refusal.line, "error");
           return;
         }
         activity(
-          event.server === TOOL_SERVER_NAME ? `Strumento di Trama: ${event.tool}` : `${event.server}: ${event.tool}`,
+          event.server === TOOL_SERVER_NAME ? t("main.controller.tramaToolTitle", { tool: event.tool }) : `${event.server}: ${event.tool}`,
           event.error,
           event.succeeded ? "tool" : "error",
         );
@@ -3312,10 +3338,10 @@ export class TramaController {
         this.recordFixedBan(project, event, { kind: "coordinator" }, request.id);
         return;
       case "reasoning":
-        activity("Ragionamento", event.text, "info");
+        activity(t("main.controller.reasoningTitle"), event.text, "info");
         return;
       case "commentary":
-        activity("Nota del Coordinatore", event.text, "info");
+        activity(t("main.controller.coordinatorNoteTitle"), event.text, "info");
         return;
       default:
         return;
@@ -3365,7 +3391,7 @@ export class TramaController {
     appendEvent(project.document, "trama", {
       type: "card",
       kind: "contextNotice",
-      title: "Contesto oltre la soglia",
+      title: t("main.controller.contextOverThresholdTitle"),
       detail: contextNoticeDetail(reading, threshold),
       referenceId: coordinator.threadId,
     });
@@ -3444,7 +3470,7 @@ export class TramaController {
     const project = this.requireProject();
     const selection = project.document;
     if (project.runningRequestId || this.queue.some((q) => q.projectId === project.id)) {
-      throw new DomainError("Aspetta la fine del turno e della coda prima di cambiare provider.");
+      throw new DomainError(t("main.controller.providerSwitchWait"));
     }
     const preference = selection.providerPreferences?.[provider];
     selection.selectedProvider = provider;
@@ -3463,6 +3489,7 @@ export class TramaController {
     this.stopCoordinatorRuntime();
     forgetCoordinatorThread(document);
     document.coordinator.threadProvider = provider;
+    // @model-text: the handover reason reaches only the new session's prompt.
     document.coordinator.pendingHandover = { from, reason: `la persona ha spostato il Coordinatore da ${providerName(from)} a ${providerName(provider)}` };
     document.selectedProvider = provider;
     // The previous provider's model means nothing on the new one (review #5).
@@ -3474,8 +3501,8 @@ export class TramaController {
     appendEvent(document, "trama", {
       type: "card",
       kind: "contextNotice",
-      title: `Coordinatore su ${providerName(provider)}`,
-      detail: `Hai spostato il Coordinatore da ${providerName(from)} a ${providerName(provider)}. La conversazione resta: ${providerName(provider)} apre una sessione nuova e riceve studio, memoria e trascrizione.`,
+      title: t("main.controller.providerSwitchTitle", { provider: providerName(provider) }),
+      detail: t("main.controller.providerSwitchDetail", { from: providerName(from), to: providerName(provider) }),
       referenceId: null,
     });
     this.changed();
@@ -3490,9 +3517,9 @@ export class TramaController {
     const project = this.requireProject();
     const document = project.document;
     const route = findRoute(document, routeId);
-    if (!route) throw new DomainError(`Percorso ${routeId} non trovato.`);
+    if (!route) throw new DomainError(t("main.controller.routeNotFound", { route: routeId }));
     if (project.runningRequestId || this.queue.some((q) => q.projectId === project.id)) {
-      throw new DomainError("Aspetta la fine del turno del Coordinatore prima di rispondere al percorso.");
+      throw new DomainError(t("main.controller.routeWaitTurn"));
     }
     let message: string;
     try {
@@ -3509,6 +3536,7 @@ export class TramaController {
       document.coordinator.threadProvider = provider;
       document.coordinator.pendingHandover = {
         from: provider,
+        // @model-text: the handover reason reaches only the new session's prompt.
         reason: `confine di fase del percorso ${route.id} di Ask Trama`,
         ...(session === "new" ? { transcript: false } : {}),
       };
@@ -3517,7 +3545,13 @@ export class TramaController {
       appendEvent(
         document,
         "trama",
-        { type: "card", kind: "contextNotice", title: `${BOUNDARY_LABELS[route.boundary].label} per il percorso ${route.id}`, detail: BOUNDARY_LABELS[route.boundary].detail, referenceId: null },
+        {
+          type: "card",
+          kind: "contextNotice",
+          title: t("main.controller.routeBoundaryTitle", { label: BOUNDARY_LABELS[route.boundary].label, route: route.id }),
+          detail: BOUNDARY_LABELS[route.boundary].detail,
+          referenceId: null,
+        },
         null,
         new Date(),
         null,
@@ -3546,13 +3580,11 @@ export class TramaController {
     const others = (Object.keys(this.state.providers) as ProviderId[]).filter(
       (id) => id !== provider && hasAdapter(id) && canCoordinate(id) && isUsableAccount(this.state.providers[id]?.account),
     );
-    const proposal = others.length
-      ? ` Puoi passare a ${others.map(providerName).join(", ")} con Cambia provider: ${others.length === 1 ? "è già collegato" : "sono già collegati"}.`
-      : "";
+    const proposal = others.length ? ` ${t("main.controller.providerSwitchProposal", { providers: others.map(providerName).join(", "), count: others.length })}` : "";
     appendEvent(
       project.document,
       "trama",
-      { type: "card", kind: "contextNotice", title: `${providerName(provider)} bloccato`, detail: `${providerUnavailableReason(provider, account)}${proposal}`, referenceId: null },
+      { type: "card", kind: "contextNotice", title: t("main.controller.providerBlockedTitle", { provider: providerName(provider) }), detail: `${providerUnavailableReason(provider, account)}${proposal}`, referenceId: null },
       requestId,
     );
     this.changed();
@@ -4580,7 +4612,7 @@ export class TramaController {
       // The chat shows the pick at the end of the work's dialog, where the person is reading now.
       const goalId = assignment.goalId ?? null;
       const requestId = document.requests.filter((r) => (r.goalId ?? null) === goalId).at(-1)?.id ?? assignment.requestId;
-      appendEvent(document, "trama", { type: "activity", title: `${name} prende in autonomia la fetta ${sliceId}`, detail: SELF_PICK_DETAIL, tone: "info" }, requestId);
+      appendEvent(document, "trama", { type: "activity", title: `${name} prende in autonomia la fetta ${sliceId}`, detail: selfPickDetail(), tone: "info" }, requestId);
       appendEvent(document, "trama", { type: "card", kind: "assignment", title: "Incarico", detail: null, referenceId: assignment.id }, requestId);
     }
     this.changedIn(project);
