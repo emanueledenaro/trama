@@ -11,8 +11,8 @@ describe("Chiedi al Coordinatore (W12)", () => {
   });
 
   it("asks about the specialist's latest assignment, or about the role when there is none", () => {
-    expect(specialistQuestion({ name: "Ada" }, { id: "A-1", objective: "Annullare gli ordini pagati" })).toBe(
-      "Aggiornami sull'incarico A-1 di Ada: «Annullare gli ordini pagati».",
+    expect(specialistQuestion({ name: "Ada" }, { objective: "Annullare gli ordini pagati" })).toBe(
+      "Aggiornami sul lavoro di Ada: «Annullare gli ordini pagati».",
     );
     expect(specialistQuestion({ name: "Guardiano delle regressioni" }, null)).toContain("Guardiano delle regressioni");
   });

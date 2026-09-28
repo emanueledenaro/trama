@@ -141,3 +141,19 @@ describe("references in messages (issue #277)", () => {
     expect(referenceListing(buildReferenceIndex({ document: empty, modules: [], github }))).toBeNull();
   });
 });
+
+describe("routes of Ask Trama (issue #270)", () => {
+  it("names a route by its situation in the message that starts it, with the id on hover", () => {
+    const document = emptyDocument("p");
+    document.routes = [{ id: "AT-66666666", situation: "Voglio capire chi vede gli ordini", reason: "Serve un chiarimento" } as never];
+    const index = buildReferenceIndex({ document, modules: [], github: { ...github, issues: [], pullRequestLinks: [], status: "idle" } as GitHubState });
+    const text = "Avvia il percorso AT-66666666 di Ask Trama: chiarire.";
+    const [before, part] = splitReferences(text, index);
+    expect(part).toMatchObject({ text: "AT-66666666", reference: { target: { kind: "route", id: "AT-66666666" } } });
+    const reference = (part as { reference: Parameters<typeof referenceText>[0] }).reference;
+    expect(referenceText(reference, "AT-66666666", before!.text)).toBe("«Voglio capire chi vede gli ordini»");
+    expect(referenceTitle(reference)).toBe("AT-66666666: Serve un chiarimento");
+    expect(parseReferenceHref(referenceHref(reference.target))).toEqual({ kind: "route", id: "AT-66666666" });
+    expect(unknownReferences("Avvia il percorso AT-77777777", index)).toEqual(["AT-77777777"]);
+  });
+});

@@ -91,7 +91,7 @@ export function RecapCard({ recapId, title }: { recapId: string; title: string }
             <ul className="list-disc space-y-0.5 pl-4" data-testid="recap-milestones">
               {recap.milestones.map((text) => (
                 <li key={text} className="break-words">
-                  {text}
+                  <ReferenceText text={text} />
                 </li>
               ))}
             </ul>
@@ -111,7 +111,9 @@ export function RecapCard({ recapId, title }: { recapId: string; title: string }
           )}
         </Field>
         <Field label="Cosa faccio">
-          <p data-testid="recap-doing">{recap.doing}</p>
+          <p data-testid="recap-doing">
+            <ReferenceText text={recap.doing} />
+          </p>
         </Field>
         <Field label="Cosa mi serve da te">
           {recap.needs.length ? (

@@ -219,7 +219,7 @@ await composer().fill("[dominio]");
 await page.keyboard.press("Enter");
 const domainCard = page.locator(".chat-card", { has: page.getByTestId("domain-proposal") }).last();
 await domainCard.getByText("In attesa", { exact: true }).waitFor({ timeout: 20_000 });
-await domainCard.getByText(/Il mandato non permette di lavorare in un worktree su root/).waitFor();
+await domainCard.getByText(/Il mandato non permette di lavorare in una copia di lavoro su root/).waitFor();
 for (const expected of ["Ordine in revisione", "Ordine sospeso, Rimborso in attesa", "Gli ordini pagati annullati vanno in revisione", "docs/adr/NNNN-"]) {
   if (!(await domainCard.innerText()).includes(expected)) throw new Error(`The domain proposal does not show "${expected}"`);
 }
@@ -325,23 +325,23 @@ const earlierSeamChecks = await seamChecks.count();
 await page.getByLabel("Messaggio al Coordinatore").fill("[piano]");
 await page.keyboard.press("Enter");
 const seamCheck = seamChecks.nth(earlierSeamChecks);
-const confirmSeams = seamCheck.getByRole("button", { name: "Conferma i seam" });
+const confirmSeams = seamCheck.getByRole("button", { name: "Conferma i punti di prova" });
 await confirmSeams.waitFor({ timeout: 20_000 });
 await seamCheck.scrollIntoViewIfNeeded();
 const confirmBox = await confirmSeams.boundingBox();
 const seamBox = await seamCheck.boundingBox();
-if (!confirmBox || !seamBox || seamBox.x + seamBox.width - (confirmBox.x + confirmBox.width) > 2) throw new Error("Conferma i seam is not on the right");
+if (!confirmBox || !seamBox || seamBox.x + seamBox.width - (confirmBox.x + confirmBox.width) > 2) throw new Error("Conferma i punti di prova is not on the right");
 await shot("04c1-plan-seams");
-// The next step "Conferma i seam" targets the plan card, like "Rivedi il piano": the button brings the card into view.
+// The next step "Conferma i punti di prova" targets the plan card, like "Rivedi il piano": the button brings the card into view.
 await page.getByLabel("Messaggio al Coordinatore").fill("[passo:confirmSeams] A che punto è il piano?");
 await page.keyboard.press("Enter");
-const seamsStep = page.getByTestId("next-step").getByRole("button", { name: "Conferma i seam" }).last();
+const seamsStep = page.getByTestId("next-step").getByRole("button", { name: "Conferma i punti di prova" }).last();
 await seamsStep.waitFor({ timeout: 20_000 });
 await page.getByRole("button", { name: "Interrompi" }).waitFor({ state: "hidden", timeout: 20_000 });
 await seamsStep.click();
 await page.waitForTimeout(800);
 if (!(await seamCheck.evaluate((card) => { const box = card.getBoundingClientRect(); return box.bottom > 0 && box.top < window.innerHeight; }))) {
-  throw new Error("The next step Conferma i seam did not bring the plan card into view");
+  throw new Error("The next step Conferma i punti di prova did not bring the plan card into view");
 }
 await shot("04c1b-next-step-seams");
 await confirmSeams.click();
@@ -852,7 +852,7 @@ await page.getByText(/Mandato v2/).first().waitFor({ timeout: 20_000 });
 await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
 await send("[piano]");
 const sliceSeams = page.locator('[data-testid="plan-spec"][data-status="seams"]').last();
-await sliceSeams.getByRole("button", { name: "Conferma i seam" }).click({ timeout: 20_000 });
+await sliceSeams.getByRole("button", { name: "Conferma i punti di prova" }).click({ timeout: 20_000 });
 const sliceSpec = page.locator('[data-testid="plan-spec"][data-status="ready"]').last();
 await sliceSpec.getByTestId("plan-slices").getByRole("button", { name: "Conferma le fette" }).click({ timeout: 20_000 });
 await sliceSpec.getByText("Restano in Trama").waitFor({ timeout: 20_000 });

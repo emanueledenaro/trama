@@ -111,7 +111,7 @@ describe("choosing the milestones", () => {
     merge(document, "C-1", 52);
     document.goals = [{ id: "G-1", title: "Resi senza telefonate", outcome: "", examples: [], status: "achieved", origin: "person", createdAt: at(0), updatedAt: at(7), decisionIds: [] }];
     expect(milestones(document, views({ S1: "done", S2: "working" }))).toEqual([
-      { key: "slice:P-1:S1", kind: "sliceDone", text: "Fetta S1 fatta: Stato della revisione (#41)" },
+      { key: "slice:P-1:S1", kind: "sliceDone", text: "Fetta 1 fatta: Stato della revisione (#41)" },
       { key: "merged:C-1", kind: "candidateMerged", text: "Candidato unito con la pull request #52" },
       { key: "goal:G-1", kind: "goalAchieved", text: "Obiettivo raggiunto: Resi senza telefonate" },
     ]);
@@ -143,7 +143,7 @@ describe("choosing the milestones", () => {
     const reached = views({ S1: "done", S2: "ready" });
     expect(newMilestones(document, reached).map((m) => m.key)).toEqual(["slice:P-1:S1", "merged:C-1"]);
     const written = recap(document, 10, "milestone", reached);
-    expect(written.milestones).toEqual(["Fetta S1 fatta: Stato della revisione (#41)", "Candidato unito con la pull request #52"]);
+    expect(written.milestones).toEqual(["Fetta 1 fatta: Stato della revisione (#41)", "Candidato unito con la pull request #52"]);
     expect(document.recap?.recaps).toHaveLength(1);
     // Later events find nothing new: no second recap for the same milestone.
     expect(newMilestones(document, reached)).toEqual([]);
@@ -165,14 +165,14 @@ describe("the content of a recap", () => {
     slicedPlan(document, 3);
     const first = recap(document, 4, "request");
     expect(first.done).toEqual([
-      { text: "Assegna il lavoro: fatta", number: null, url: null },
-      { text: "Aperta la issue #41 della fetta S1: Stato della revisione", number: 41, url: "https://github.com/o/r/issues/41" },
+      { text: "Assegnazione del lavoro fatta", number: null, url: null },
+      { text: "Aperta la issue #41 della fetta 1: Stato della revisione", number: 41, url: "https://github.com/o/r/issues/41" },
     ]);
     move(document, "m2", 6, "Verifica il candidato");
     move(document, "m3", 8, "Prepara il piano", "running");
     const second = recap(document, 9, "request");
     // Only what came after the first recap; the move still running is what the Coordinator does, not what it did.
-    expect(second.done).toEqual([{ text: "Verifica il candidato: fatta", number: null, url: null }]);
+    expect(second.done).toEqual([{ text: "Verifica del candidato fatta", number: null, url: null }]);
   });
 
   it("gives the reason of a move not made without repeating the outcome", () => {
@@ -180,7 +180,7 @@ describe("the content of a recap", () => {
     move(document, "m1", 1, "Esegui le verifiche");
     document.requests[0]!.step!.stalled = "La mossa automatica non è riuscita: l'incarico A-1 è concluso ma il suo candidato non è stato dichiarato.";
     expect(recap(document, 2, "request").done).toEqual([
-      { text: "Esegui le verifiche: non riuscita. L'incarico A-1 è concluso ma il suo candidato non è stato dichiarato.", number: null, url: null },
+      { text: "Verifica del lavoro non riuscita. L'incarico A-1 è concluso ma il suo candidato non è stato dichiarato.", number: null, url: null },
     ]);
   });
 

@@ -1,3 +1,4 @@
+import { RecordLabel } from "@/components/chat/ReferenceText";
 import { IconArchive, IconArrowLeft, IconMessageCircle, IconPlus, IconTarget, IconTrash } from "@tabler/icons-react";
 import { useState } from "react";
 import type { GoalExample, GoalStatus, ProjectGoal } from "@shared/domain";
@@ -301,7 +302,8 @@ export function GoalView({ id, edit = false }: { id: string; edit?: boolean }) {
           <GoalBadges goal={goal} />
         </div>
         <p className="mt-0.5 text-ui-xs text-muted-foreground">
-          <span className="font-mono">{goal.id}</span><Sep />{goal.origin === "person" ? "creato da te" : "proposto dal Coordinatore"}<Sep />{formatRelativeTime(goal.createdAt)}
+          <span title={goal.id} data-goal-id={goal.id}>{goal.origin === "person" ? "creato da te" : "proposto dal Coordinatore"}</span>
+          <Sep />{formatRelativeTime(goal.createdAt)}
           {goal.archivedAt ? (
             <>
               <Sep />archiviato {formatRelativeTime(goal.archivedAt)}
@@ -385,7 +387,7 @@ export function GoalView({ id, edit = false }: { id: string; edit?: boolean }) {
         {links.decisions.map((decision) => (
           <div key={decision.id} className="flex items-center gap-2 py-0.5">
             <button type="button" className="min-w-0 flex-1 truncate text-left text-ui hover:underline" onClick={() => setInspector({ kind: "decision", id: decision.id })}>
-              <span className="font-mono text-[11px] text-muted-foreground">{decision.id} v{decision.version}</span> {decision.value}
+              <span title={decision.id}>{decision.value}</span> <span className="text-ui-xs text-muted-foreground">versione {decision.version}</span>
             </button>
             <button
               type="button"
@@ -461,8 +463,11 @@ export function GoalView({ id, edit = false }: { id: string; edit?: boolean }) {
               onClick={() => setInspector({ kind: "candidate", id: candidate.id })}
               className="-mx-2 flex w-[calc(100%+1rem)] items-center gap-2 rounded-lg px-2 py-1 text-left text-ui hover:bg-[var(--sidebar-accent)]"
             >
-              <span className="font-mono text-[11px] text-muted-foreground">{candidate.id}</span>
-              <span className="min-w-0 flex-1 truncate">{candidate.changedFiles.length} file</span>
+              <span className="min-w-0 flex-1 truncate">
+                <RecordLabel id={candidate.id} />
+                <Sep />
+                {candidate.changedFiles.length} file
+              </span>
               {report ? <Badge tone={CANDIDATE_STATE[report.state].tone}>{CANDIDATE_STATE[report.state].label}</Badge> : null}
             </button>
           );

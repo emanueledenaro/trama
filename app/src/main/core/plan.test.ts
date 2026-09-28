@@ -266,7 +266,7 @@ describe("the plan as a spec with to-spec (M04)", () => {
     const base = { seams: [seam], sections: null, affectedModuleIDs: [], references: [], requiredDecisionIDs: [], issue: null, publishFailure: null };
     document.plans.push(plan({ id: "P-1", spec: { ...base, seamsAnswer } }), plan({ id: "P-2" }), plan({ id: "P-3", status: "seams", spec: { ...base, seamsAnswer: null } }));
     const [writing, lost, waiting] = normalizeDocument(JSON.parse(JSON.stringify(document)), "p").plans;
-    expect(writing).toMatchObject({ status: "seams", spec: { seams: [seam], seamsAnswer: null }, failure: expect.stringMatching(/rispondi di nuovo sui seam/) });
+    expect(writing).toMatchObject({ status: "seams", spec: { seams: [seam], seamsAnswer: null }, failure: expect.stringMatching(/rispondi di nuovo sui punti di prova/) });
     expect(lost).toMatchObject({ status: "failed" });
     expect(waiting).toMatchObject({ status: "seams", failure: null });
   });
