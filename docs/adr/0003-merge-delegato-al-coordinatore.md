@@ -1,6 +1,6 @@
 # Merge delegato al Coordinatore entro il mandato
 
-Stato: accettata durante l'intervista, risposta Q7. Implementazione ancora da verificare.
+Stato: accettata durante l'intervista, risposta Q7. Implementata nella issue #41 (`app/src/main/core/integration.ts`), con i limiti in `docs/verifiche/c09-unione-con-mandato-2026-09-28.md`.
 
 La persona ha scelto di delegare al Coordinatore la valutazione e il merge delle modifiche ordinarie o previste dai ticket entro il mandato del progetto. Nei casi distruttivi seri il Coordinatore ferma l'operazione e coinvolge il Product Owner. Questa scelta evita la conferma umana ripetuta per ogni integrazione tecnica mantenendo umane le decisioni di prodotto.
 
