@@ -15,6 +15,7 @@ Su Linux nel container (xvfb), dopo il merge di `origin/main` a `d550ab7`:
 - `xvfb-run -a node scripts/ui-check.mjs`: corsa completa, uscita 0, 357 schermate. Passo nuovo `30a`-`30e`, in chiaro e in scuro. Una corsa precedente sulla stessa base si era fermata al passo del monitor ("Monitor attivo" non visibile entro il tempo), un passo che questo lavoro non tocca; la corsa successiva è passata. Anche una corsa prima dell'ultimo merge di main era passata con 357 schermate.
 - `npm run check:names`, `npm run check:upstream-names`: ok.
 - `node scripts/conventional-commits/cli.mjs commit-range origin/main HEAD`: ok.
+- Dopo il merge di `origin/main` a `6b6e33a` (#219, nessun file in `app/`): `npx tsc --noEmit -p .` senza errori, `npx vitest run` con 135 file e 1265 test superati, `npm run build` riuscito. La ui-check non è stata rieseguita su questa base: il codice dell'app è lo stesso della corsa verde su `d550ab7`.
 
 ## Comportamento
 
