@@ -505,7 +505,16 @@ export function DecisionCard({ requestId }: { requestId: string }) {
 }
 
 /** The questions of one grilling round (M01), together under the round they belong to. */
-export function GrillingRoundCard({ round, questionIds }: { round: number; questionIds: string[] }) {
+export function GrillingRoundCard({
+  round,
+  questionIds,
+  renderQuestion = (id) => <DecisionCard key={id} requestId={id} />,
+}: {
+  round: number;
+  questionIds: string[];
+  /** How each question shows; the chat puts a reference in place of a question that still waits (issue #240). */
+  renderQuestion?: (id: string) => React.ReactNode;
+}) {
   const project = useUi((s) => s.app?.project)!;
   const questions = questionIds.map((id) => project.document.decisionRequests.find((r) => r.id === id)).filter((r) => r !== undefined);
   // A withdrawn question is closed without an answer: it no longer counts among the answers the round waits for.
@@ -523,9 +532,7 @@ export function GrillingRoundCard({ round, questionIds }: { round: number; quest
           {complete ? "Turno completo" : `${answered} di ${asked.length} risposte`}
         </Badge>
       </div>
-      {questions.map((q) => (
-        <DecisionCard key={q.id} requestId={q.id} />
-      ))}
+      {questions.map((q) => renderQuestion(q.id))}
     </section>
   );
 }

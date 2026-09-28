@@ -1,5 +1,15 @@
 // Derived from third-party MIT code; see THIRD_PARTY_NOTICES.md.
-import { IconAlertTriangle, IconChevronDown, IconCircleDashed, IconFocus2, IconHandStop, IconPlayerTrackNext, IconUsers } from "@tabler/icons-react";
+import {
+  IconAlertTriangle,
+  IconChevronDown,
+  IconCircleDashed,
+  IconFocus2,
+  IconHandStop,
+  IconPlayerPause,
+  IconPlayerPlay,
+  IconPlayerTrackNext,
+  IconUsers,
+} from "@tabler/icons-react";
 import { useState } from "react";
 import type { FocusTask, StatusLineAction, StatusLineView } from "@shared/domain";
 import { type OverlapItem, overlapSummary, strongest } from "@shared/overlap";
@@ -49,7 +59,8 @@ const STATUS_ICONS: Record<StatusLineView["state"], React.ReactNode> = {
 
 /**
  * The Coordinator's status line (Q6): what it does now and next, why the work is held and what unblocks it, computed by
- * Trama from the records. On the right: Activity, the stop of the automatic move that runs, and the person's move last.
+ * Trama from the records. On the right: Activity, the Pause of continuous work or its Riprendi (A05), the stop of the
+ * automatic move that runs, and the person's move last. The Pause is always there, so the person can always reach it.
  */
 function StatusLine({ line }: { line: StatusLineView }) {
   const setInspector = useUi((s) => s.setInspector);
@@ -62,9 +73,15 @@ function StatusLine({ line }: { line: StatusLineView }) {
     window.setTimeout(() => runNextStep(action, action.requestId), 120);
   };
   return (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5" data-testid="status-line" data-state={line.state}>
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5" data-testid="status-line" data-state={line.state} data-paused={line.paused ? "true" : "false"}>
       <div className="flex min-w-[12rem] flex-1 items-start gap-2">
-        <span className="mt-0.5 flex size-4 shrink-0 items-center justify-center">{STATUS_ICONS[line.state]}</span>
+        <span className="mt-0.5 flex size-4 shrink-0 items-center justify-center">
+          {line.paused && line.state !== "working" ? (
+            <IconPlayerPause className="size-3.5 shrink-0 text-[var(--color-text-foreground-secondary)]" stroke={1.8} />
+          ) : (
+            STATUS_ICONS[line.state]
+          )}
+        </span>
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
           <span className={cn("min-w-0 text-ui", line.state === "idle" ? "text-muted-foreground" : "text-foreground")} data-testid="status-line-text">
             {line.text}
@@ -80,6 +97,22 @@ function StatusLine({ line }: { line: StatusLineView }) {
         <Button size="xs" variant="ghost" onClick={() => setInspector({ kind: "activity" })}>
           Attività
         </Button>
+        {line.paused ? (
+          <Button size="xs" variant={line.action || line.runningMove ? "outline" : "default"} onClick={() => void act("coordinator:pause", { paused: false })}>
+            <IconPlayerPlay className="size-3.5" stroke={1.8} />
+            Riprendi
+          </Button>
+        ) : (
+          <Button
+            size="xs"
+            variant="ghost"
+            title="Ferma mosse automatiche, giri e lavoro automatico del progetto"
+            onClick={() => void act("coordinator:pause", { paused: true })}
+          >
+            <IconPlayerPause className="size-3.5" stroke={1.8} />
+            Pausa
+          </Button>
+        )}
         {line.runningMove ? (
           <Button size="xs" variant="outline" aria-label={`Ferma: ${line.runningMove.label}`} onClick={() => void act("coordinator:interrupt", undefined)}>
             Ferma

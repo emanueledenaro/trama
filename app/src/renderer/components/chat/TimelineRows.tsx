@@ -44,6 +44,7 @@ import {
   TeamProposalCard,
 } from "./Cards";
 import { ChatMarkdown } from "./ChatMarkdown";
+import { WaitingOr } from "@/components/WaitingView";
 import { Sep } from "@/components/ui/sep";
 
 function DisclosureChevron({ open }: { open: boolean }) {
@@ -402,17 +403,47 @@ export function TimelineRowView({ row, streaming = false, latest = false }: { ro
     case "failure":
       return <TurnFailure row={row} />;
     case "grillingRound":
-      return <GrillingRoundCard round={row.round} questionIds={row.questionIds} />;
+      return (
+        <GrillingRoundCard
+          round={row.round}
+          questionIds={row.questionIds}
+          renderQuestion={(id) => (
+            <WaitingOr key={id} kind="question" targetId={id}>
+              <DecisionCard requestId={id} />
+            </WaitingOr>
+          )}
+        />
+      );
     case "card": {
       const content = row.event.content;
       if (content.type !== "card") return null;
       if (row.cardKind === "study") return <StudyCard title={content.title} text={content.detail ?? ""} streaming={streaming} />;
-      if (row.cardKind === "mandate" && content.referenceId) return <MandateCard requestId={content.referenceId} />;
-      if (row.cardKind === "decision" && content.referenceId) return <DecisionCard requestId={content.referenceId} />;
-      if (row.cardKind === "teamProposal" && content.referenceId) return <TeamProposalCard proposalId={content.referenceId} />;
+      if (row.cardKind === "mandate" && content.referenceId)
+        return (
+          <WaitingOr kind="mandate" targetId={content.referenceId}>
+            <MandateCard requestId={content.referenceId} />
+          </WaitingOr>
+        );
+      if (row.cardKind === "decision" && content.referenceId)
+        return (
+          <WaitingOr kind="question" targetId={content.referenceId}>
+            <DecisionCard requestId={content.referenceId} />
+          </WaitingOr>
+        );
+      if (row.cardKind === "teamProposal" && content.referenceId)
+        return (
+          <WaitingOr kind="team" targetId={content.referenceId}>
+            <TeamProposalCard proposalId={content.referenceId} />
+          </WaitingOr>
+        );
       if (row.cardKind === "assignment" && content.referenceId) return <AssignmentCard assignmentId={content.referenceId} />;
       if (row.cardKind === "candidate" && content.referenceId) return <CandidateCard candidateId={content.referenceId} />;
-      if (row.cardKind === "plan" && content.referenceId) return <PlanCard planId={content.referenceId} />;
+      if (row.cardKind === "plan" && content.referenceId)
+        return (
+          <WaitingOr kind="plan" targetId={content.referenceId}>
+            <PlanCard planId={content.referenceId} />
+          </WaitingOr>
+        );
       if (row.cardKind === "conflict" && content.referenceId) return <ConflictCard assessmentId={content.referenceId} />;
       if (row.cardKind === "goal" && content.referenceId) return <GoalCard goalId={content.referenceId} />;
       if (row.cardKind === "domainProposal" && content.referenceId) return <DomainProposalCard proposalId={content.referenceId} />;
