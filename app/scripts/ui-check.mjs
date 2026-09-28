@@ -1003,7 +1003,7 @@ await shot("04e5-team-renamed-in-chat");
       await page.setViewportSize({ width, height });
       await page.waitForTimeout(300);
       // The discussion's header, or the squads' summary, on top of the side bar.
-      await squadPanel.locator('[data-testid="discussion-header"], [data-testid="squads-summary"]').first().evaluate((el) => el.scrollIntoView({ block: "start" }));
+      await squadPanel.locator('[data-testid="discussion-header"], [data-testid="squads-summary"]').first().evaluate((el) => (el.closest('[data-testid="agent-thread"]') ?? el).scrollIntoView({ block: "start" }));
       await noHorizontalScroll(`${name} ${size}`);
       for (const provider of ["codex", "claudeAgent"]) {
         for (const dark of [false, true]) {
@@ -1061,7 +1061,7 @@ await shot("04e5-team-renamed-in-chat");
   // The discussion the lead closed: the proposals of the participants and the lead's decision.
   await openView("Squadre");
   await decidedRow.click();
-  await thread.locator('[data-testid="discussion-outcome"][data-how="agreed"]').getByText(/^Decisa da /).waitFor();
+  await thread.locator('[data-testid="discussion-outcome"][data-how="agreed"]').getByText(/Decisa da Capo /).waitFor();
   if ((await thread.getByTestId("discussion-proposal").count()) < 2) throw new Error("The participants' proposals are not in the discussion");
   await header.getByText("Stima e divisione del lavoro").waitFor();
   await discussionShots("41e-discussion-decided");
