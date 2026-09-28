@@ -14,6 +14,11 @@ const isGlassWindows = process.platform === "win32" && Number(release().split(".
 const rendererUrl = process.env.TRAMA_RENDERER_URL;
 let window: BrowserWindow | null = null;
 
+// The Trama logo is the app's icon on every platform, also when Trama runs unpackaged (npm start, dev), where macOS
+// would show Electron's icon in the Dock and Windows and Linux would show none on the window and in the taskbar.
+const iconDirectory = app.isPackaged ? join(process.resourcesPath, "icons") : join(app.getAppPath(), "resources", "icons");
+const windowIcon = process.platform === "win32" ? join(iconDirectory, "icon.ico") : join(iconDirectory, "png", "512x512.png");
+
 function surfaceColor(): string {
   return nativeTheme.shouldUseDarkColors ? "#111111" : "#ffffff";
 }
@@ -65,6 +70,7 @@ function createWindow(): void {
     minHeight: 640,
     show: false,
     title: "Trama",
+    ...(isMac ? {} : { icon: windowIcon }),
     ...(isMac
       ? {
           titleBarStyle: "hiddenInset" as const,
@@ -336,6 +342,8 @@ app.on("second-instance", () => {
 });
 
 app.whenReady().then(async () => {
+  // A packaged app takes its Dock icon from the bundle; unpackaged, Electron's own icon would show.
+  if (isMac && !app.isPackaged) app.dock?.setIcon(join(iconDirectory, "png", "1024x1024.png"));
   // macOS shows its own panel for Informazioni su Trama: the version, and the build's commit in brackets.
   app.setAboutPanelOptions({
     applicationName: "Trama",
