@@ -2,6 +2,7 @@ import type { CoordinatorRequest, NextMove, ProjectDocument, SpecialistAssignmen
 import { focusView } from "./focus";
 import { BLOCK_LABELS, BLOCK_PHRASES, COORDINATOR_MOVES, type CoordinatorMove, type WorkState, nextStepViews, workRequests, workState } from "./workPhase";
 import { isActive } from "./team";
+import { type ProviderWait, providerWaitLine } from "./resumeWork";
 
 /**
  * The Coordinator's status line (Q6): one sentence that says what the Coordinator does now and what it does next, as in
@@ -131,10 +132,11 @@ function slicesHeld(state: WorkState): string | null {
 }
 
 /**
- * The status line of the project. Pure: `runningRequestId` is the Coordinator turn that runs now, if any. The next move
- * and the person's button come from the task in focus; what runs now comes from the whole project.
+ * The status line of the project. Pure: `runningRequestId` is the Coordinator turn that runs now, if any, and `wait` the
+ * provider limit the Coordinator waits for (issue #249). The next move and the person's button come from the task in
+ * focus; what runs now comes from the whole project.
  */
-export function statusLine(document: ProjectDocument, runningRequestId: string | null): StatusLineView {
+export function statusLine(document: ProjectDocument, runningRequestId: string | null, wait: ProviderWait | null = null, at = new Date()): StatusLineView {
   const running = runningRequestId ? (document.requests.find((r) => r.id === runningRequestId && r.state === "running") ?? null) : null;
   const focus = focusView(document).focus;
   const latest = focus ? latestOf(document, focus.goalId) : null;
@@ -176,7 +178,21 @@ export function statusLine(document: ProjectDocument, runningRequestId: string |
   // In pause nothing automatic starts (A05): the line says what still ends and how the work goes on again.
   if (document.continuousWork?.paused === true) {
     const paused = [now ? `${now}.` : null, workers ? `${workers}.` : null, PAUSED_SENTENCE].filter((s): s is string => s !== null);
-    return { state: now || workers ? "working" : "waiting", text: paused.join(" "), reason, action, runningMove, paused: true };
+    return { state: now || workers ? "working" : "waiting", text: paused.join(" "), reason, action, runningMove, paused: true, providerWait: null };
+  }
+
+  // A provider limit holds moves, rounds and new turns (issue #249): the line says what it waits for and until when.
+  if (wait && !running) {
+    const line = providerWaitLine(wait, at);
+    return {
+      state: workers ? "working" : "blocked",
+      text: [line.text, workers ? `${workers}.` : null].filter((s): s is string => s !== null).join(" "),
+      reason: line.reason,
+      action: null,
+      runningMove: null,
+      paused: false,
+      providerWait: { provider: wait.provider, until: wait.until },
+    };
   }
 
   const sentences: string[] = [];
@@ -194,5 +210,6 @@ export function statusLine(document: ProjectDocument, runningRequestId: string |
     action,
     runningMove,
     paused: false,
+    providerWait: null,
   };
 }
