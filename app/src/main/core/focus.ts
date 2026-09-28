@@ -10,19 +10,17 @@ import { PHASE_LABELS, workRequests, workState } from "./workPhase";
  * work, a goal achieved, abandoned or archived) or goes on pause, the focus passes to the next task in the queue.
  */
 
-/** Longest title taken from the first message of work in the project dialog. */
-export const TASK_TITLE_LIMIT = 80;
+/**
+ * Title of the project's work outside the goals when it serves no goal. The first message is never the title
+ * (issue #241): it is often a request already met, or words for the Coordinator rather than a name for the work.
+ */
+export const PROJECT_WORK_TITLE = "Lavoro del progetto";
 
 /** How many queued tasks the Coordinator reads by name. */
 const QUEUE_IN_PROMPT = 5;
 
 /** Label of a task that has no work yet. */
 export const NOT_STARTED_LABEL = "da avviare";
-
-const shortTitle = (text: string) => {
-  const line = text.replace(/\s+/g, " ").trim();
-  return line.length > TASK_TITLE_LIMIT ? `${line.slice(0, TASK_TITLE_LIMIT - 1).trimEnd()}…` : line || "Lavoro del progetto";
-};
 
 /**
  * The goal the project dialog's work serves, when its assignments name one: the work is named after the goal, not after
@@ -60,7 +58,8 @@ function describe(document: ProjectDocument, requestId: string | null) {
   return {
     phase,
     phaseLabel: phase ? PHASE_LABELS[phase] : NOT_STARTED_LABEL,
-    blocker: state?.blocker ?? null,
+    // The bar and the queue speak to the person: the reason without ids, branches or files (issue #241).
+    blocker: state?.why ?? state?.blocker ?? null,
     // The person's move shows even when the work is blocked: it is often what unblocks it, as a pending mandate.
     waitingFor: waiting?.label ?? null,
   };
@@ -90,7 +89,7 @@ export function openTasks(document: ProjectDocument): OpenTask[] {
       tasks.push({
         id,
         goalId: null,
-        title: servedGoalTitle(document, latest.id) ?? shortTitle(first.text),
+        title: servedGoalTitle(document, latest.id) ?? PROJECT_WORK_TITLE,
         createdAt: first.createdAt,
         ...described,
       });
@@ -180,10 +179,7 @@ export function resumeTask(document: ProjectDocument, taskId: string): void {
   };
 }
 
-/**
- * How the Coordinator reads a task's name: a goal's title, or the project dialog's work named as such. The first
- * message the bar shows as its title is the person's text, and the Coordinator reads it in its own dialog already.
- */
+/** How the Coordinator reads a task's name: a goal's title, or the project's work outside the goals named as such. */
 const promptName = (task: FocusTask) => (task.goalId ? `l'obiettivo "${task.title}"` : "il lavoro del progetto fuori dagli obiettivi");
 
 const taskLine = (task: FocusTask) =>

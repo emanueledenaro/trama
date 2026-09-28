@@ -231,7 +231,7 @@ export interface FocusTask {
   /** Null when the task has no work yet: a goal nobody started. */
   phase: WorkPhase | null;
   phaseLabel: string;
-  /** Why the work cannot go on; set only in the blocked phase. */
+  /** Why the work cannot go on, in the person's words; set only in the blocked phase. */
   blocker: string | null;
   /** The person's move the work waits for, as its button says it ("Rispondi alla domanda"); null when none. */
   waitingFor: string | null;

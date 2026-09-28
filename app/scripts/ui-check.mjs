@@ -1301,6 +1301,8 @@ const focusBar = page.getByTestId("focus-bar");
 await focusBar.waitFor({ timeout: 20_000 });
 const focusTitle = async () => (await focusBar.getByTestId("focus-title").textContent()).trim();
 const firstFocus = await focusTitle();
+// Issue #241: the bar is titled with the goal, never with the first message of a dialog.
+if (/^\[/.test(firstFocus)) throw new Error(`The focus bar is titled with a message: ${firstFocus}`);
 await focusBar.getByTestId("focus-phase").first().waitFor();
 const queueToggle = focusBar.getByRole("button", { name: /^In coda/ });
 await queueToggle.click();
@@ -1576,6 +1578,19 @@ await app.evaluate(({ nativeTheme }) => {
   nativeTheme.themeSource = "system";
 });
 await page.evaluate(() => document.documentElement.classList.remove("dark"));
+// Issue #241: the tool's English error stays out of the chat; the reply says it in Italian and Activity keeps the detail.
+if (await page.getByText(/is an assignment, not a candidate/).count()) throw new Error("A tool error reached the chat");
+await page.getByText(/uno strumento di Trama ha rifiutato la richiesta/).last().waitFor();
+await page.getByTestId("status-line").getByRole("button", { name: "Attività" }).click();
+const toolErrors = page.getByTestId("activity-log").locator('[data-testid="activity-entry"][data-outcome="stalled"]').first().getByTestId("activity-tool-errors");
+await toolErrors.locator("summary").click();
+await toolErrors.getByText(/is an assignment, not a candidate/).first().waitFor();
+for (const dark of [false, true]) {
+  await page.evaluate((on) => document.documentElement.classList.toggle("dark", on), dark);
+  await shot(`18a4-activity-tool-errors-${dark ? "dark" : "light"}`);
+}
+await page.evaluate(() => document.documentElement.classList.remove("dark"));
+await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
 // The person takes the move again: it reaches the Coordinator as the person's message, and the button goes away.
 await retryButton.click();
 await page.getByText("Esegui le verifiche del lavoro.").last().waitFor({ timeout: 20_000 });
@@ -1661,7 +1676,8 @@ await blockedGate.locator('[data-testid="gate-review"][data-role="security"]').g
 await blockedGate.locator('[data-testid="gate-finding"][data-severity="blocking"]').getByText("Segreto nel diff: chiave API in NOTE.md").waitFor();
 await blockedGate.locator('[data-testid="gate-review"][data-role="devops"][data-status="skipped"]').getByText(/il diff contiene un segreto/).waitFor();
 await blockedGate.getByTestId("gate-returned").getByText(/Rimandato a Ada con i rilievi bloccanti/).waitFor();
-await page.getByText(/Via libera rifiutato: .*GATE_BLOCKED/).last().waitFor({ timeout: 20_000 });
+// The refusal's technical text stays in the turn's activity (issue #241); the card above says why in Italian.
+await page.getByText(/^Via libera rifiutato: /).last().waitFor({ timeout: 20_000 });
 await secretCandidate.getByText("Rilievo bloccante dei revisori").waitFor();
 await secretCandidate.getByText("In costruzione", { exact: true }).waitFor();
 await page.getByRole("button", { name: "Interrompi" }).waitFor({ state: "hidden", timeout: 20_000 });
@@ -1796,7 +1812,13 @@ const sliceSpec = page.locator('[data-testid="plan-spec"][data-status="ready"]')
 await sliceSpec.getByText("Restano in Trama").waitFor({ timeout: 20_000 });
 // W05: an assignment without its contract (seams, Pact decisions) is refused with a clear tool failure; no card appears.
 await send("[assegna] [senza-contratto]");
-await page.getByText(/Rifiutato: .*incomplete_contract.*seams.*decisionIDs/).last().waitFor({ timeout: 20_000 });
+await page.getByText(/Rifiutato: .*incomplete_contract/).last().waitFor({ timeout: 20_000 });
+// The tool's own words stay in the turn's activity, out of the reply (issue #241).
+const contractRefusal = await page.evaluate(async () => {
+  const state = await window.trama.getState();
+  return state.project.document.events.findLast((e) => e.content.type === "activity" && e.content.tone === "error")?.content.detail ?? "";
+});
+if (!/seams.*decisionIDs/.test(contractRefusal)) throw new Error(`The contract refusal does not name the missing fields: ${contractRefusal}`);
 if ((await assignmentCards.count()) !== 5) throw new Error("An assignment without its contract reached a developer");
 await send("[assegna] [test]");
 const sliceWork = assignmentCards.nth(5);

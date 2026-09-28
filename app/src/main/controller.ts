@@ -198,6 +198,7 @@ import { draftSlicing, readSlicerAnswer, sliceViews, slicerTurn, TICKET_TRIAGE_L
 import { approvePactDemo, inspectPactDemo, runPactDemo } from "./core/pactDemo";
 import { readRepositoryFile, scanRepository } from "./core/repositoryScanner";
 import { messageStyle } from "./core/messageStyle";
+import { TOOL_ERRORS_RULE, toolErrorMessage, withoutToolErrors } from "./core/toolErrors";
 import { installedSkillVersion, prepareSkills, rollbackSkills, SELECTED_SKILLS, SKILL_VERSION, type SetupReport, updateSkills } from "./core/skillSetup";
 import {
   beginTurn,
@@ -448,7 +449,7 @@ const coordinatorSkillParts = (skills: NativeSkill[]) => skills.map((skill, inde
 type CleanCodeReview = { threadId: string; answer: ReviewAnswer; standard: StandardCheck | null };
 
 function lateRules(skills: NativeSkill[], provider: ProviderId): LateRules {
-  const style = messageStyle("the person");
+  const style = [messageStyle("the person"), TOOL_ERRORS_RULE].join("\n");
   const full = [style, NEXT_STEP_RULES, deliverNativeSkills(coordinatorSkillParts(skills), false).text].join("\n\n");
   const delivery = deliverNativeSkills(coordinatorSkillParts(skills), provider === "codex");
   return {
@@ -2025,7 +2026,8 @@ export class TramaController {
         const current = this.state.project;
         if (!current || current.id !== project.id) throw new Error("The project is no longer open.");
         const counters = this.coordinatorLearning(current.document);
-        return runCoordinatorTool(name, args, {
+        const runningRequestId = current.runningRequestId;
+        const result = await runCoordinatorTool(name, args, {
           document: current.document,
           learning: this.learningFor(current),
           sessionSearch: {
@@ -2080,6 +2082,10 @@ export class TramaController {
           orderPlan: (order) => this.orderPlan({ ...order, requestId: current.runningRequestId, orderedBy: "coordinator" }).id,
           askTramaCatalog: async () => ({ references: routeReferences(await this.nativeSkill(ASK_TRAMA_SKILL)), bundled: [...SELECTED_SKILLS] }),
         });
+        // The error stays in Activity; the reply of the turn never pastes it into the chat (issue #241).
+        const error = toolErrorMessage(result);
+        if (error && runningRequestId) this.turnToolErrors.set(runningRequestId, [...(this.turnToolErrors.get(runningRequestId) ?? []), error]);
+        return result;
       },
       TOOL_SERVER_INSTRUCTIONS,
     );
@@ -2551,7 +2557,7 @@ export class TramaController {
       request.completedAt = new Date().toISOString();
       const references = referencedPaths(reply, paths);
       if (reply) {
-        recordReply(document, request.id, reply, selectedModel, references, activeProvider);
+        recordReply(document, request.id, withoutToolErrors(reply, this.turnToolErrors.get(request.id) ?? []), selectedModel, references, activeProvider);
         // Options to pick in the text leave the person without a card: recorded, and the next turn is told (issue #228).
         const choice = choicesWithoutCard(document, request.id, reply);
         if (choice) appendEvent(document, "trama", { type: "activity", title: CHOICES_IN_TEXT_TITLE, detail: choice, tone: "error" }, request.id);
@@ -2609,6 +2615,7 @@ export class TramaController {
       if (!interrupted) void this.noticeIfBlocked(project, activeProvider, message, request.id);
     } finally {
       this.turnToolIterations.delete(request.id);
+      this.turnToolErrors.delete(request.id);
       this.turnLearningWrites.delete(request.id);
       if (project.runningRequestId === request.id) project.runningRequestId = null;
       if (project.streaming?.requestId === request.id) project.streaming = null;
@@ -5731,6 +5738,8 @@ export class TramaController {
   private readonly learningReviews = new Map<string, AbortController>();
   /** Tool iterations of each running Coordinator turn: the skill review counts them. */
   private readonly turnToolIterations = new Map<string, number>();
+  /** The messages of the tools that failed in each running Coordinator turn, kept out of its reply (issue #241). */
+  private readonly turnToolErrors = new Map<string, string[]>();
   /** Learning tools the Coordinator wrote with in each running turn. */
   private readonly turnLearningWrites = new Map<string, string[]>();
   private curatorTimer: NodeJS.Timeout | null = null;

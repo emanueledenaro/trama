@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { CoordinatorRequest, ProjectDocument, WorkPlan } from "@shared/domain";
 import { placeGrillingQuestion } from "@shared/grilling";
 import { emptyDocument } from "./document";
-import { focusTask, focusText, focusView, NOT_STARTED_LABEL, openTasks, pauseTask, resumeTask, taskIdOf, TASK_TITLE_LIMIT } from "./focus";
+import { focusTask, focusText, focusView, NOT_STARTED_LABEL, openTasks, pauseTask, resumeTask, taskIdOf, PROJECT_WORK_TITLE } from "./focus";
 import { archiveGoal, createGoal, proposeGoal, updateGoal } from "./goals";
 import { createDecisionRequest, createMandateRequest, grantMandate } from "./pact";
 import { assign, confirmTeam, proposeTeam } from "./team";
@@ -118,7 +118,7 @@ describe("open tasks", () => {
         title: "Revisione degli ordini",
         phase: "blocked",
         phaseLabel: "bloccata",
-        blocker: "Il piano P-3 non è riuscito: Il pianificatore non ha risposto.",
+        blocker: "Il piano non è riuscito: va rifatto.",
         waitingFor: null,
         status: "focus",
       },
@@ -126,7 +126,7 @@ describe("open tasks", () => {
         {
           id: "work:r1",
           goalId: null,
-          title: "Aggiungi il login con GitHub",
+          title: PROJECT_WORK_TITLE,
           phase: "spec",
           phaseLabel: "spec",
           blocker: null,
@@ -160,15 +160,15 @@ describe("open tasks", () => {
     expect(focusView(document)).toEqual({ focus: null, queue: [] });
   });
 
-  it("titles the project dialog's work with its first message, shortened", () => {
+  it("never titles the project dialog's work with its first message (issue #241)", () => {
     const document = emptyDocument("p");
-    request(document, "r1", null, 1, "a".repeat(200));
+    request(document, "r1", null, 1, "[proponi-team] creami degli agenti");
     question(document, "r1");
     const [task] = openTasks(document);
-    expect(task!.title).toHaveLength(TASK_TITLE_LIMIT);
-    expect(task!.title.endsWith("…")).toBe(true);
+    expect(task!.title).toBe(PROJECT_WORK_TITLE);
     expect(taskIdOf(document, "r1")).toBe("work:r1");
   });
+
 
   it("names the project dialog's work after the goal its assignments serve, not after its first message (issue #241)", () => {
     const document = emptyDocument("p");
