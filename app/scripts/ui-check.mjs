@@ -1487,7 +1487,7 @@ git("remote", "add", "origin", "https://github.com/trama-ui/negozio.git");
 // P10: the fake Codex answers the "[limite-temporaneo]" turns with OpenRouter's upstream 429 twice, then works again;
 // a short first wait keeps the automatic retry within the check.
 // FAKE_CODEX_LIGHT_MODEL gives the catalogue a light model, so focus mode has a stronger one to confirm serious findings (F02).
-({ app, page } = await launch({ PATH: `${ghBin}:${process.env.PATH}`, FAKE_GH_TEAM: "1", TRAMA_PROVIDER_RETRY_MS: "4000", FAKE_CODEX_RATE_LIMITS: "2", FAKE_CODEX_LIGHT_MODEL: "gpt-5.5-mini" }));
+({ app, page } = await launch({ PATH: `${ghBin}:${process.env.PATH}`, FAKE_GH_TEAM: "1", FAKE_GH_COUNTER: join(ghBin, "issues"), TRAMA_PROVIDER_RETRY_MS: "4000", FAKE_CODEX_RATE_LIMITS: "2", FAKE_CODEX_LIGHT_MODEL: "gpt-5.5-mini" }));
 const goalsRow = page.getByRole("button", { name: /^Obiettivi/ }).first();
 await goalsRow.waitFor({ timeout: 30_000 });
 // B02: after the first launch the welcome never shows by itself again.
@@ -2040,6 +2040,35 @@ await app.evaluate(({ nativeTheme }) => {
   nativeTheme.themeSource = "system";
 });
 await page.evaluate(() => document.documentElement.classList.remove("dark"));
+// F04: from a finding to work, one click each. The verified finding becomes a ticket (an issue: GitHub is linked here)
+// and its correction an assignment for Ada, who wrote the candidate, within the mandate. The hypothesis cannot become
+// an assignment; as a trade-off it becomes a Pact card. The report reaches GitHub only when the person publishes it.
+const verifiedFinding = auditFinding("standards", "verified");
+const hypothesisFinding = auditFinding("spec", "hypothesis");
+const findingActions = await verifiedFinding.getByTestId("audit-finding-actions").locator(":scope > button").allTextContents();
+if (findingActions.join("|") !== "Crea un ticket|È un compromesso|Affida la correzione") throw new Error(`Finding actions out of order: ${findingActions}`);
+if (await hypothesisFinding.getByRole("button", { name: "Affida la correzione" }).count()) throw new Error("A hypothesis can become an assignment");
+await focusAudit.getByTestId("focus-audit-publication").getByText(/Pubblicarlo su GitHub è facoltativo/).waitFor();
+await verifiedFinding.scrollIntoViewIfNeeded();
+await themeShots("20g-finding-actions");
+await verifiedFinding.getByRole("button", { name: "Crea un ticket" }).click();
+await verifiedFinding.locator('[data-testid="audit-finding-followups"] [data-kind="ticket"]').getByText("issue #41").waitFor({ timeout: 20_000 });
+await hypothesisFinding.getByRole("button", { name: "È un compromesso" }).click();
+await hypothesisFinding.locator('[data-testid="audit-finding-followups"] [data-kind="pactCard"]').getByText(/^Scheda del Patto: /).waitFor({ timeout: 20_000 });
+await verifiedFinding.getByRole("button", { name: "Affida la correzione" }).click();
+await verifiedFinding.locator('[data-testid="audit-finding-followups"] [data-kind="assignment"]').getByText(/^Incarico: /).waitFor({ timeout: 20_000 });
+if (await verifiedFinding.getByTestId("audit-finding-actions").count()) throw new Error("A finding offers the same work twice");
+await page.getByRole("button", { name: "Pubblica su GitHub" }).click();
+await focusAudit.getByTestId("focus-audit-publication").getByText("issue #42").waitFor({ timeout: 20_000 });
+if (await page.getByRole("button", { name: "Pubblica su GitHub" }).count()) throw new Error("The report can be published twice");
+await verifiedFinding.scrollIntoViewIfNeeded();
+await themeShots("20h-finding-work");
+await focusAudit.getByTestId("focus-audit-publication").scrollIntoViewIfNeeded();
+await themeShots("20i-focus-audit-published");
+// The correction is Ada's new assignment in the work's dialog; it ends before the next step gives her work.
+const correctionWork = assignmentCards.nth(6);
+await waitInCard(correctionWork, (card) => card.getByText(/Correggere il rilievo: Possibile Mysterious Name/), "finding correction");
+await waitInCard(correctionWork, (card) => card.getByText("Concluso", { exact: true }), "finding correction ended", 30_000);
 await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
 await showWaiting();
 await correctedCard.scrollIntoViewIfNeeded();
@@ -2068,7 +2097,7 @@ await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
 // the report's doubts. The Coordinator puts it on a Pact card that blocks the work; the person's answer resumes the
 // developer in the same session, and the card and the assignment say so.
 await send("[assegna:S1] [test] [domanda]");
-const questionWork = assignmentCards.nth(6);
+const questionWork = assignmentCards.nth(7);
 await questionWork.getByText("In pausa", { exact: true }).waitFor({ timeout: 20_000 });
 await questionWork.locator('[data-testid="assignment-question"][data-state="asked"]').getByText(/buono/).waitFor();
 await questionWork.getByText("Aspetta il Coordinatore").waitFor();
@@ -2181,7 +2210,7 @@ await page.getByRole("button", { name: "Impostazioni" }).click();
 await page.getByTestId("settings").waitFor({ state: "hidden" });
 // The first slice is verified on new work that passes its check and the technical review: S2 and S3 become ready.
 await send("[assegna:S1]");
-const verifiedSliceWork = assignmentCards.nth(7);
+const verifiedSliceWork = assignmentCards.nth(8);
 await verifiedSliceWork.getByText("Concluso", { exact: true }).waitFor({ timeout: 20_000 });
 await send(`[candidato:${await cardAssignment(verifiedSliceWork)}:${candidateDecision}]`);
 const teamSlices = sliceSpec.getByTestId("plan-slices");
@@ -2194,13 +2223,13 @@ await milestoneRecap.waitFor({ timeout: 20_000 });
 if ((await milestoneRecap.count()) !== 1) throw new Error("The slice done was told in more than one recap");
 await milestoneRecap.evaluate((card) => card.scrollIntoView({ block: "center" }));
 await themeShots("22c-recap-milestone");
-if ((await assignmentCards.count()) !== 8) throw new Error("A developer took a slice while continuous work was off");
+if ((await assignmentCards.count()) !== 9) throw new Error("A developer took a slice while continuous work was off");
 // Continuous work on: at the next event of the work (here the end of a Coordinator turn) Ada is free and takes S2 in
 // autonomy; the assignment card says so and the slice shows who took it.
 await page.evaluate(() => window.trama.invoke("settings:update", { continuousWork: true }));
 // "Come procede il lavoro?" would ask for a recap, which opens no turn (issue #242): the check writes to the Coordinator.
 await send("Vai avanti con il lavoro");
-const pickedCard = assignmentCards.nth(8);
+const pickedCard = assignmentCards.nth(9);
 await waitInCard(pickedCard, (card) => card.getByTestId("assignment-self-picked"), "self-picked");
 await waitInCard(pickedCard, (card) => card.getByText(/^S2 Il supporto vede gli ordini in revisione$/), "slice S2");
 const pickedSlice = teamSlices.locator('[data-testid="plan-slice"][data-self-picked="yes"]').first();

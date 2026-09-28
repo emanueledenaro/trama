@@ -1490,7 +1490,19 @@ export interface AuditFinding {
   observed: string | null;
   /** The stronger model's answer for a serious finding Trama could not recheck. */
   confirmation: { model: string; confirmed: boolean; reason: string; at: string } | null;
+  /** What the person made of the finding (F04), at most one of each kind; absent before the first. */
+  followUps?: FindingFollowUp[];
 }
+
+/**
+ * What the person made of a finding with one click (F04, issue #128). "ticket": a found problem in Trama's ledger, with
+ * its GitHub issue when the repository is linked, else kept as Trama's own work. "assignment": the correction given
+ * to a developer within the mandate. "pactCard": a trade-off put to the person as a question of the Pact.
+ */
+export type FindingFollowUp =
+  | { kind: "ticket"; problemId: string; issue: { number: number; url: string } | null; at: string }
+  | { kind: "assignment"; assignmentId: string; at: string }
+  | { kind: "pactCard"; questionId: string; at: string };
 
 /** One axis of AI Hero's code-review skill, run as a read-only session of its own (F01). */
 export interface AuditAxis {
@@ -1535,6 +1547,11 @@ export interface FocusAudit {
   startedAt: string;
   updatedAt: string;
   finishedAt: string | null;
+  /**
+   * Where the person published the report on GitHub (F04), only when they chose to: a comment on the candidate's pull
+   * request, or an issue when it has none. Absent while the report stays in Trama.
+   */
+  publication?: { kind: "pullRequestComment" | "issue"; number: number; url: string; at: string } | null;
 }
 
 /** The figures of the team that review a candidate at its moment (W10, spec #137 Q10). */

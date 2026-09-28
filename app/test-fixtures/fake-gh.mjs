@@ -8,7 +8,7 @@
 // and its slices with their blocking links (M05). With FAKE_GH_ISSUE_BASE as well, a new issue takes the next number
 // after that base and the issues list holds the issues created so far, as the Coordinator opens them for the problems
 // it finds (A08); the label writes of the triage are answered.
-import { appendFileSync, readFileSync } from "node:fs";
+import { appendFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 
 const args = process.argv.slice(2);
 if (process.env.FAKE_GH_LOG) appendFileSync(process.env.FAKE_GH_LOG, `${JSON.stringify(args)}\n`);
@@ -47,8 +47,12 @@ const field = (call, name) =>
   call.flatMap((arg, index) => (call[index - 1] === "--raw-field" && arg.startsWith(`${name}=`) ? [arg.slice(name.length + 1)] : []));
 if (method === "POST" && rest === "/issues") {
   // With a log, each new issue takes the next number, from 7: the spec first, then its slices (M05).
+  // With FAKE_GH_COUNTER and no log, each new issue takes the next number after 40, counted in that file (F04).
+  const counter = process.env.FAKE_GH_LOG ? null : process.env.FAKE_GH_COUNTER;
+  const counted = counter ? (existsSync(counter) ? Number(readFileSync(counter, "utf8")) : 0) + 1 : null;
+  if (counter) writeFileSync(counter, String(counted));
   const created = process.env.FAKE_GH_LOG ? createdIssues().length : 1;
-  const number = (issueBase ?? 6) + created;
+  const number = counted !== null ? 40 + counted : (issueBase ?? 6) + created;
   reply({ id: 1000 + number, number, html_url: `https://github.com/${name}/issues/${number}` });
 }
 if (method === "PATCH" && /^\/issues\/\d+$/.test(rest)) reply({});

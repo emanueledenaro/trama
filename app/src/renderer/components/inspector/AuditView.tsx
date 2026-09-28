@@ -1,6 +1,6 @@
 import { plainText } from "@shared/plainLanguage";
-import { RecordLabel } from "@/components/chat/ReferenceText";
-import type { AuditAxis, AuditFinding, FindingStatus, FocusAudit } from "@shared/domain";
+import { RecordLabel, RecordName } from "@/components/chat/ReferenceText";
+import type { AuditAxis, AuditFinding, FindingFollowUp, FindingStatus, FocusAudit } from "@shared/domain";
 import { evidenceLabel, FINDING_STATUS_TEXT, findingTally } from "@shared/findings";
 import { ChatMarkdown } from "@/components/chat/ChatMarkdown";
 import { EvidenceRow } from "@/components/chat/Cards";
@@ -29,8 +29,64 @@ const STATUS_TONE: Record<FindingStatus, "secondary" | "success" | "info" | "war
   hypothesis: "warning",
 };
 
+/** What the person made of a finding (F04), each with a link to its record. */
+function FollowUpLine({ followUp }: { followUp: FindingFollowUp }) {
+  const setInspector = useUi((s) => s.setInspector);
+  if (followUp.kind === "ticket") {
+    return followUp.issue ? (
+      <>
+        Ticket:{" "}
+        <button type="button" className="text-[var(--color-text-accent)] hover:underline" onClick={() => setInspector({ kind: "issue", number: followUp.issue!.number })}>
+          issue #{followUp.issue.number}
+        </button>
+      </>
+    ) : (
+      <>
+        Ticket nel{" "}
+        <button type="button" className="text-[var(--color-text-accent)] hover:underline" onClick={() => setInspector({ kind: "activity" })}>
+          backlog di Trama
+        </button>
+        , senza GitHub
+      </>
+    );
+  }
+  if (followUp.kind === "assignment") return <>Incarico: <RecordName id={followUp.assignmentId} /></>;
+  return <>Scheda del Patto: <RecordName id={followUp.questionId} /></>;
+}
+
+/**
+ * From a finding to work (F04): a ticket, the correction as an assignment within the mandate, or a Pact card when the
+ * finding is a trade-off. Only a finding whose proof held becomes an assignment; each action is offered once.
+ */
+function FindingActions({ auditId, finding }: { auditId: string; finding: AuditFinding }) {
+  const linked = useUi((s) => s.app?.project?.github.status === "ready" && s.app.project.github.repository !== null);
+  const done = new Set((finding.followUps ?? []).map((f) => f.kind));
+  const correctable = finding.status === "verified" || finding.status === "confirmed";
+  const followUp = (kind: FindingFollowUp["kind"]) => void act("finding:followUp", { auditId, findingId: finding.id, kind });
+  if (done.size === 3 || (done.has("ticket") && done.has("pactCard") && !correctable)) return null;
+  return (
+    <div className="cta-row pt-0.5" data-testid="audit-finding-actions">
+      {done.has("ticket") ? null : (
+        <Button size="xs" variant="ghost" title={linked ? "Apre una issue su GitHub con la prova del rilievo." : "GitHub non è collegato: il ticket resta nel backlog di Trama."} onClick={() => followUp("ticket")}>
+          Crea un ticket
+        </Button>
+      )}
+      {done.has("pactCard") ? null : (
+        <Button size="xs" variant="ghost" title="Il rilievo è un compromesso: diventa una domanda del Patto." onClick={() => followUp("pactCard")}>
+          È un compromesso
+        </Button>
+      )}
+      {correctable && !done.has("assignment") ? (
+        <Button size="xs" variant="outline" title="Uno sviluppatore libero corregge il rilievo, solo dentro il mandato." onClick={() => followUp("assignment")}>
+          Affida la correzione
+        </Button>
+      ) : null}
+    </div>
+  );
+}
+
 /** One finding with its proof and how Trama verified it (F02): a hypothesis is shown as one, never as a fact. */
-function FindingRow({ finding }: { finding: AuditFinding }) {
+function FindingRow({ finding, auditId, actionable }: { finding: AuditFinding; auditId: string; actionable: boolean }) {
   const { evidence } = finding;
   return (
     <li className="space-y-1 py-1.5" data-testid="audit-finding" data-finding={finding.id} data-status={finding.status} data-severity={finding.severity}>
@@ -49,11 +105,21 @@ function FindingRow({ finding }: { finding: AuditFinding }) {
           {finding.observed}
         </pre>
       ) : null}
+      {finding.followUps?.length ? (
+        <ul className="space-y-0.5 text-ui-sm text-muted-foreground" data-testid="audit-finding-followups">
+          {finding.followUps.map((followUp) => (
+            <li key={followUp.kind} data-kind={followUp.kind}>
+              <FollowUpLine followUp={followUp} />
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      {actionable ? <FindingActions auditId={auditId} finding={finding} /> : null}
     </li>
   );
 }
 
-function AxisBody({ axis, name }: { axis: AuditAxis; name: "standards" | "spec" }) {
+function AxisBody({ axis, name, audit }: { axis: AuditAxis; name: "standards" | "spec"; audit: FocusAudit }) {
   if (axis.status === "waiting") return <EmptyNote>Parte dopo le verifiche reali.</EmptyNote>;
   if (axis.status === "running") {
     return (
@@ -83,7 +149,7 @@ function AxisBody({ axis, name }: { axis: AuditAxis; name: "standards" | "spec" 
       {axis.items?.length ? (
         <ul className="divide-y divide-[color:var(--color-border)]" data-testid="audit-findings">
           {axis.items.map((finding) => (
-            <FindingRow key={finding.id} finding={finding} />
+            <FindingRow key={finding.id} finding={finding} auditId={audit.id} actionable={audit.status === "done"} />
           ))}
         </ul>
       ) : null}
@@ -101,6 +167,7 @@ function AxisBody({ axis, name }: { axis: AuditAxis; name: "standards" | "spec" 
 export function AuditView({ id }: { id: string }) {
   const project = useUi((s) => s.app?.project)!;
   const setInspector = useUi((s) => s.setInspector);
+  const linked = project.github.status === "ready" && project.github.repository !== null;
   const audit = (project.document.audits ?? []).find((a) => a.id === id);
   if (!audit) return <div className="p-4"><EmptyNote>Esame non trovato.</EmptyNote></div>;
   const candidate = project.document.candidates.find((c) => c.id === audit.target.candidateId);
@@ -138,12 +205,12 @@ export function AuditView({ id }: { id: string }) {
       </InspectorSection>
       <InspectorSection title="Standards">
         <div data-testid="audit-axis" data-axis="standards" data-status={audit.standards.status}>
-          <AxisBody axis={audit.standards} name="standards" />
+          <AxisBody axis={audit.standards} name="standards" audit={audit} />
         </div>
       </InspectorSection>
       <InspectorSection title="Spec" aside={audit.specSource ? <Badge tone="outline">{audit.specSource}</Badge> : null}>
         <div data-testid="audit-axis" data-axis="spec" data-status={audit.spec.status}>
-          <AxisBody axis={audit.spec} name="spec" />
+          <AxisBody axis={audit.spec} name="spec" audit={audit} />
         </div>
       </InspectorSection>
       {audit.summary ? (
@@ -152,8 +219,37 @@ export function AuditView({ id }: { id: string }) {
           {tally ? <p className="mt-1 text-ui-sm text-muted-foreground" data-testid="focus-audit-tally">Stato dei rilievi: {tally}.</p> : null}
         </InspectorSection>
       ) : null}
+      {audit.status === "done" ? (
+        <InspectorSection title="Pubblicazione">
+          {audit.publication ? (
+            <p className="text-ui-sm text-foreground" data-testid="focus-audit-publication">
+              Pubblicato su GitHub:{" "}
+              <button
+                type="button"
+                className="text-[var(--color-text-accent)] hover:underline"
+                onClick={() => setInspector(audit.publication!.kind === "issue" ? { kind: "issue", number: audit.publication!.number } : { kind: "pullRequest", number: audit.publication!.number })}
+              >
+                {audit.publication.kind === "issue" ? `issue #${audit.publication.number}` : `commento alla pull request #${audit.publication.number}`}
+              </button>
+              <Sep />
+              {formatRelativeTime(audit.publication.at)}
+            </p>
+          ) : (
+            <p className="text-ui-sm text-muted-foreground" data-testid="focus-audit-publication">
+              {linked
+                ? "Il rapporto resta in Trama. Pubblicarlo su GitHub è facoltativo: va come commento alla pull request del candidato, o in una issue nuova se non ne ha una."
+                : "Il rapporto resta in Trama. Con GitHub collegato puoi pubblicarlo, se vuoi."}
+            </p>
+          )}
+        </InspectorSection>
+      ) : null}
       {running || !candidate ? null : (
         <div className="cta-row px-4 py-3">
+          {audit.status === "done" && linked && !audit.publication ? (
+            <Button size="sm" variant="ghost" onClick={() => void act("audit:publish", { auditId: audit.id })}>
+              Pubblica su GitHub
+            </Button>
+          ) : null}
           <Button
             size="sm"
             variant="outline"
