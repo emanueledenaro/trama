@@ -105,6 +105,39 @@ describe("conflicts between the team's worktrees (W08)", () => {
     expect((await git(["status", "--porcelain"], ada.worktreeRoot)).trim()).toBe("M a.txt");
   });
 
+  it("does not compare, nor block on, a candidate replaced by later work on the same issue (U02)", async () => {
+    const { ada, bruno } = await repository();
+    await writeFile(join(ada.worktreeRoot, "a.txt"), "uno\nDUE di Ada\ntre\n");
+    await writeFile(join(bruno.worktreeRoot, "a.txt"), "uno\ndue di Bruno\ntre\n");
+    const document = emptyDocument("p");
+    const older = await developerWork(document, "Ada", ada, 1);
+    const newer = await developerWork(document, "Bruno", bruno, 2);
+    expect(worktreePairs(document)).toHaveLength(1);
+    document.conflicts = [
+      {
+        id: worktreeAssessmentId(newer, older),
+        candidateId: newer.id,
+        snapshotId: newer.snapshotId,
+        remoteSHA: "0".repeat(40),
+        references: [`${older.id} di Ada (${ada.branch})`],
+        otherCandidateId: older.id,
+        otherSnapshotId: older.snapshotId,
+        classification: "conflict",
+        conflictingFiles: ["a.txt"],
+        detail: "",
+        checkedAt: "",
+      },
+    ];
+    expect(inspectCandidate(document, newer, null).map((b) => b.code)).toContain("WORKTREE_CONFLICT");
+    // Ada takes up the same issue again: her first candidate is superseded and collides with no one.
+    const specialist = document.team.specialists.find((s) => s.id === older.specialistId)!;
+    const first = specialist.assignments[0]!;
+    Object.assign(first, { issueNumber: 13, createdAt: "2026-09-26T10:00:00Z" });
+    specialist.assignments.push({ ...first, id: "A-Ada-2", createdAt: "2026-09-26T11:00:00Z", workspace: null });
+    expect(worktreePairs(document)).toEqual([]);
+    expect(inspectCandidate(document, newer, null).map((b) => b.code)).not.toContain("WORKTREE_CONFLICT");
+  });
+
   it("tells the same files without a textual conflict, and skips pairs with no file in common", async () => {
     const { ada, bruno } = await repository();
     await writeFile(join(ada.worktreeRoot, "a.txt"), "UNO\ndue\ntre\n");
