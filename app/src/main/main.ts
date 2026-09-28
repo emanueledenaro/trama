@@ -30,8 +30,9 @@ function surfaceColor(): string {
 const legacyRoot = process.env.TRAMA_DATA_DIR ? (process.env.TRAMA_LEGACY_DIR ?? null) : join(app.getPath("appData"), "Trama");
 const controller = new TramaController(process.env.TRAMA_DATA_DIR ?? join(app.getPath("appData"), "Trama", "Desktop"), {
   publish: (state) => {
-    if (menuLanguage !== null && state.language !== menuLanguage) buildMenu(state.language);
     window?.webContents.send("trama:state", state);
+    // The menu speaks the language Trama speaks, and is built again when the person changes it (issue #345).
+    if (app.isReady() && state.language !== menuLanguage) buildMenu(state.language);
   },
   openExternal: (url) => shell.openExternal(url),
   applyTheme: (theme: AppSettings["theme"]) => {
@@ -154,7 +155,7 @@ const handlers: { [K in ActionName]: Handler<K> } = {
   "coordinator:selectModel": ({ model, effort, provider }) => controller.selectModel(model, effort, provider ?? null),
   "coordinator:setFastMode": ({ enabled }) => controller.setFastMode(enabled),
   "coordinator:selectProvider": ({ provider }) => controller.selectProvider(provider),
-  "coordinator:saveDraft": ({ text }) => controller.saveDraft(text),
+  "coordinator:saveDraft": ({ text, projectId }) => controller.saveDraft(text, projectId ?? null),
   "coordinator:deleteQueued": async ({ id }) => controller.deleteQueuedMessage(id),
   "goal:create": (input) => controller.createGoal(input),
   "goal:update": ({ id, ...change }) => controller.updateGoal(id, change),
@@ -163,7 +164,9 @@ const handlers: { [K in ActionName]: Handler<K> } = {
   "focus:change": ({ action, taskId }) => controller.changeFocus(action, taskId),
   "candidate:observeExample": (input) => controller.observeExample(input),
   "overview:read": () => controller.projectsOverview(),
+  "overview:prioritize": ({ projectId, direction }) => controller.prioritizeProject(projectId, direction),
   "coordinator:setContextThreshold": ({ percent }) => controller.setContextThreshold(percent),
+  "coordinator:reorderContext": () => controller.reorderContext(),
   "pact:decide": (input) => controller.recordDecision(input),
   "decision:answer": ({ requestId, alternativeIndex, freeText }) => controller.answerDecision(requestId, alternativeIndex, freeText),
   "decision:withdraw": ({ requestId, reason }) => controller.withdrawDecision(requestId, reason),
@@ -176,6 +179,8 @@ const handlers: { [K in ActionName]: Handler<K> } = {
   "team:answer": ({ proposalId, keeping, note }) => controller.answerTeamProposal(proposalId, keeping, note),
   "assignment:stop": ({ assignmentId }) => controller.stopSpecialistWork(assignmentId),
   "assignment:resume": ({ assignmentId }) => controller.resumeSpecialistWork(assignmentId),
+  "assignment:place": ({ assignmentId, where }) => controller.moveAssignmentPlace(assignmentId, where),
+  "assignment:cloudCheck": ({ assignmentId }) => controller.checkCloudSession(assignmentId),
   "assignment:changeProvider": ({ assignmentId, provider, model }) => controller.changeAssignmentProvider(assignmentId, provider, model),
   "specialist:remove": ({ specialistId, reason }) => controller.removeSpecialistByPerson(specialistId, reason),
   "specialist:rename": ({ specialistId, name }) => controller.renameSpecialistByPerson(specialistId, name),
@@ -187,6 +192,8 @@ const handlers: { [K in ActionName]: Handler<K> } = {
   "candidate:reject": ({ candidateId, note }) => controller.rejectCandidateByPerson(candidateId, note),
   "candidate:shot": ({ candidateId, index }) => controller.interfaceShot(candidateId, index),
   "candidate:focusAudit": async ({ candidateId }) => controller.startFocusAudit(candidateId),
+  "finding:followUp": ({ auditId, findingId, kind }) => controller.followUpFinding(auditId, findingId, kind),
+  "audit:publish": ({ auditId }) => controller.publishAuditReport(auditId),
   "candidate:publish": ({ candidateId }) => controller.publishCandidateByPerson(candidateId),
   "codex:refresh": () => controller.refreshCodex(),
   "codex:login": () => controller.login(),
@@ -244,7 +251,6 @@ function sendMenu(command: MenuCommand): void {
   window?.webContents.send("trama:menu", command);
 }
 
-// The menu speaks the language Trama speaks, and is built again when the person changes it (issue #345).
 let menuLanguage: Language | null = null;
 
 function buildMenu(language: Language): void {
@@ -277,7 +283,13 @@ app.on("second-instance", () => {
 app.whenReady().then(async () => {
   // A packaged app takes its Dock icon from the bundle; unpackaged, Electron's own icon would show.
   if (isMac && !app.isPackaged) app.dock?.setIcon(join(iconDirectory, "png", "1024x1024.png"));
-  buildMenu(controller.snapshot.language);
+  // macOS shows its own panel for Informazioni su Trama: the version, and the build's commit in brackets.
+  app.setAboutPanelOptions({
+    applicationName: "Trama",
+    applicationVersion: app.getVersion(),
+    ...(__TRAMA_COMMIT__ ? { version: __TRAMA_COMMIT__ } : {}),
+  });
+  buildMenu(menuLanguage ?? controller.snapshot.language);
   if (!startedHidden) createWindow();
   await controller.start();
   // After sleep the monitor's timer and the providers' state are stale: check again at once.

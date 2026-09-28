@@ -36,7 +36,11 @@ const launch = async (env = {}) => {
   return { app, page };
 };
 let { app, page } = await launch();
+// Every screenshot has its own name: a second one with the same name would overwrite the first without a word.
+const shotNames = new Set();
 const shot = async (name) => {
+  if (shotNames.has(name)) throw new Error(`Two screenshots named ${name}`);
+  shotNames.add(name);
   await page.waitForTimeout(400);
   await page.screenshot({ path: join(out, `${name}.png`) });
   console.log("saved", name);
@@ -188,7 +192,20 @@ const themeShots = async (name) => {
   await page.evaluate((on) => document.documentElement.classList.toggle("dark", on), wasDark);
 };
 // Frames of the intro: replayed and held, its animations paused at fixed times, in the light and dark themes of two providers.
+// The window opens hidden and shows on ready-to-show (main.ts); the DOM can be ready before that, and a screenshot of a
+// hidden or not yet painted window fails ("Unable to capture screenshot"). So each frame waits for a visible window and
+// for a painted frame after the animations are set, instead of assuming a fixed time is enough.
+const windowShown = async () => {
+  const end = Date.now() + 10_000;
+  while (!(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.isVisible() ?? false))) {
+    if (Date.now() > end) throw new Error("The window did not show within 10s");
+    await page.waitForTimeout(20);
+  }
+  await page.waitForFunction(() => document.visibilityState === "visible");
+};
+const painted = () => page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(() => done()))));
 const introFrames = async (label, times) => {
+  await windowShown();
   await page.evaluate(() => window.dispatchEvent(new Event("trama:replay-intro")));
   await page.getByTestId("launch-intro").waitFor();
   for (const time of times) {
@@ -199,6 +216,7 @@ const introFrames = async (label, times) => {
         animation.currentTime = t;
       }
     }, time);
+    await painted();
     await page.screenshot({ path: join(out, `00-intro-${label}-${String(time).padStart(4, "0")}ms.png`) });
   }
   const running = await page.evaluate(() => document.querySelector('[data-testid="launch-intro"]')?.getAnimations({ subtree: true }).length ?? 0);
@@ -366,22 +384,13 @@ await setTheme("system");
 await page.setViewportSize({ width: 1280, height: 820 });
 // B01: Trama's mark sits in the sidebar's brand slot and on the project picker, in the colors of the provider theme,
 // light and dark. The brand slot's gradient must change with the provider and with the theme.
-const brandLook = (provider, dark) =>
-  page.evaluate(
-    ([name, isDark]) => {
-      if (name) document.documentElement.dataset.provider = name;
-      else delete document.documentElement.dataset.provider;
-      document.documentElement.classList.toggle("dark", isDark);
-    },
-    [provider, dark],
-  );
 const startLook = await page.evaluate(() => ({ provider: document.documentElement.dataset.provider ?? null, dark: document.documentElement.classList.contains("dark") }));
 if ((await page.locator('[data-testid="brand-slot"] [data-trama-mark="glyph"]').count()) !== 1) throw new Error("No Trama mark in the sidebar's brand slot");
 if ((await page.locator("[data-trama-mark]").count()) < 2) throw new Error("No Trama mark on the project picker");
 const markColors = new Set();
 for (const provider of ["codex", "claudeAgent", "grok"]) {
   for (const dark of [false, true]) {
-    await brandLook(provider, dark);
+    await setLookTo(provider, dark);
     const color = await page.evaluate(() => {
       const stop = document.querySelector('[data-testid="brand-slot"] [data-trama-mark] stop');
       return stop ? getComputedStyle(stop).stopColor : null;
@@ -392,7 +401,7 @@ for (const provider of ["codex", "claudeAgent", "grok"]) {
   }
 }
 if (markColors.size !== 6) throw new Error(`The mark does not follow the provider theme: ${[...markColors].join(", ")}`);
-await brandLook(startLook.provider, startLook.dark);
+await setLookTo(startLook.provider, startLook.dark);
 await seamShots("logo", "logo");
 await expectContrastFallback();
 await picker.getByRole("button", { name: "Clona da GitHub" }).click();
@@ -898,35 +907,35 @@ await domainCard.getByText(/ha scritto la proposta nella copia di lavoro dell'in
 await page.getByRole("button", { name: "Interrompi" }).waitFor({ state: "hidden", timeout: 20_000 });
 await domainCard.scrollIntoViewIfNeeded();
 await shot("04k-domain-proposal-written");
-// #305: the context meter and the threshold card read the request that fills the window, the same rule for every
-// provider: no provider name and no number past the window, in light and dark.
+// #305 and #313: the context meter reads the request that fills the window, the same rule for every provider: no
+// provider name and no number past the window. Past the threshold Trama reorders the context at the end of the turn
+// (ADR 0018), so the reading is taken under a 95% threshold. Light and dark.
 {
   const providerNames = ["ChatGPT", "Codex", "Claude", "Cursor", "Antigravity", "Grok", "Droid", "Devin", "OpenCode", "Pi"];
   const noProviderName = (text, where) => {
     const found = providerNames.find((name) => new RegExp(`(?<!\\p{L})${name}(?!\\p{L})`, "u").test(text));
     if (found) throw new Error(`${where} names the provider ${found}: ${text}`);
   };
+  await page.evaluate(() => window.trama.invoke("coordinator:setContextThreshold", { percent: 95 }));
+  const reordersBefore = await page.getByTestId("context-rollover").count();
   await composer().fill("[pieno] Quanto contesto resta?");
   await page.keyboard.press("Enter");
-  const notice = page.getByTestId("context-notice").filter({ hasText: "Contesto oltre la soglia" }).last();
-  await notice.waitFor({ timeout: 20_000 });
+  await page.getByText("[pieno] Quanto contesto resta?", { exact: true }).waitFor();
   await page.getByRole("button", { name: "Interrompi" }).waitFor({ state: "hidden", timeout: 20_000 });
-  const noticeText = (await notice.innerText()).replace(/\s+/g, " ");
-  noProviderName(noticeText, "The threshold card");
-  if (!noticeText.includes("piena al 89% (230.000 su 258.000 token)")) throw new Error(`The threshold card does not read the context in use: ${noticeText}`);
-  await notice.scrollIntoViewIfNeeded();
-  await themeShots("04l-context-threshold-card");
   const meter = page.getByTestId("context-meter");
-  if ((await meter.innerText()).trim() !== "89%") throw new Error(`The context meter shows ${await meter.innerText()}`);
+  await page.waitForFunction(() => document.querySelector('[data-testid="context-meter"]')?.textContent?.trim() === "89%", null, { timeout: 20_000 });
+  if ((await meter.getAttribute("title")) !== "230.000 su 258.000 token") throw new Error(`The context meter's tokens: ${await meter.getAttribute("title")}`);
   await meter.click();
-  const meterPopup = page.getByRole("dialog").filter({ hasText: "Finestra di contesto" });
+  const meterPopup = page.getByTestId("context-meter-popup");
   await meterPopup.waitFor();
   const meterText = (await meterPopup.innerText()).replace(/\s+/g, " ");
   noProviderName(meterText, "The context meter");
-  if (!meterText.includes("89% usato, 230.000 su 258.000 token")) throw new Error(`The context meter does not read the context in use: ${meterText}`);
+  if (!meterText.includes("Contesto del Coordinatore: 89%")) throw new Error(`The context meter does not read the context in use: ${meterText}`);
   await themeShots("04m-context-meter");
   await page.keyboard.press("Escape");
   await meterPopup.waitFor({ state: "hidden" });
+  if ((await page.getByTestId("context-rollover").count()) !== reordersBefore) throw new Error("Trama reordered the context under the threshold");
+  // The threshold stays at 95% in this project: the reorder itself is checked on its own project, in steps 29a to 29c.
 }
 await openView("Regole", "Mappa");
 await shot("05-map");
@@ -964,6 +973,26 @@ await shot("05-map");
       };
     });
   const transparent = (color) => color === "rgba(0, 0, 0, 0)" || color === "transparent";
+  // The strip lights up after the 300ms hover delay plus a 0.1s transition, so a read at a fixed time can catch it
+  // halfway (rgba(0, 95, 184, 0.957)). These helpers read again every 20ms, up to 1.5s, until the strip is the opaque
+  // accent, and return the last reading either way: the assertions below decide.
+  const channels = (color) => {
+    const [r, g, b, a = 1] = (color.match(/[\d.]+/g) ?? []).map(Number);
+    return { r, g, b, a };
+  };
+  const opaqueAccent = ({ strip, accent }) => {
+    const [lit, wanted] = [channels(strip), channels(accent)];
+    return lit.a === 1 && lit.r === wanted.r && lit.g === wanted.g && lit.b === wanted.b;
+  };
+  const settledLook = async (sash) => {
+    const end = Date.now() + 1_500;
+    let reading = await look(sash);
+    while (!opaqueAccent(reading) && Date.now() < end) {
+      await page.waitForTimeout(20);
+      reading = await look(sash);
+    }
+    return reading;
+  };
   for (const sash of [sidebarSash]) {
     const rest = await look(sash);
     if (!transparent(rest.background) || !transparent(rest.strip) || rest.children || rest.text || (rest.after !== "none" && rest.after !== "normal"))
@@ -1005,7 +1034,7 @@ await shot("05-map");
     const [sidebarLine, sidebarPanel, chat] = await Promise.all([pixel(edges.sidebar - 1, y), pixel(edges.sidebar - 12, y), pixel(edges.sidebar + 12, y)]);
     const seen = JSON.stringify({ mode, sidebarLine, sidebarPanel, chat });
     if (apart(sidebarLine, sidebarPanel) < 8 || apart(sidebarLine, chat) < 8) throw new Error(`A panel border does not show at rest: ${seen}`);
-    if (apart(sidebarPanel, chat) < 3) throw new Error(`The side bar does not stand apart from the chat: ${seen}`);
+    if (apart(sidebarPanel, chat) < 3) throw new Error(`The side panels do not stand apart from the chat: ${seen}`);
     await shot(`22-sash-rest-${mode}`);
   }
   await page.evaluate(() => document.documentElement.classList.remove("dark"));
@@ -1022,14 +1051,12 @@ await shot("05-map");
   await page.mouse.move(sidebarBox.x + sidebarBox.width / 2, 300);
   await page.waitForTimeout(100);
   if (!transparent((await look(sidebarSash)).strip)) throw new Error("The sash lights up before the hover delay");
-  await page.waitForTimeout(250);
-  const hovered = await look(sidebarSash);
-  if (hovered.strip !== hovered.accent || hovered.stripWidth !== "4px") throw new Error(`After 350ms of hover the sash is not a 4px focusBorder strip: ${JSON.stringify(hovered)}`);
+  const hovered = await settledLook(sidebarSash);
+  if (hovered.strip !== hovered.accent || hovered.stripWidth !== "4px") throw new Error(`After the hover delay the sash is not a 4px focusBorder strip: ${JSON.stringify(hovered)}`);
   // VS Code's focusBorder: #005FB8 in Light Modern, #0078D4 in Dark Modern.
   for (const [mode, focusBorder] of [["light", "rgb(0, 95, 184)"], ["dark", "rgb(0, 120, 212)"]]) {
     await page.evaluate((dark) => document.documentElement.classList.toggle("dark", dark), mode === "dark");
-    await page.waitForTimeout(200);
-    const lit = (await look(sidebarSash)).strip;
+    const lit = (await settledLook(sidebarSash)).strip;
     if (lit !== focusBorder) throw new Error(`The ${mode} hovered sash is ${lit}, not VS Code's focusBorder ${focusBorder}`);
     await shot(`22-sash-hover-${mode}`);
   }
@@ -1039,8 +1066,7 @@ await shot("05-map");
   await page.mouse.move(dragBox.x + dragBox.width / 2, 300);
   await page.mouse.down();
   await page.mouse.move(dragBox.x + dragBox.width / 2 + 60, 300, { steps: 6 });
-  await page.waitForTimeout(200);
-  const dragged = await look(sidebarSash);
+  const dragged = await settledLook(sidebarSash);
   if (dragged.strip !== dragged.accent) throw new Error(`The dragged sash is not lit: ${JSON.stringify(dragged)}`);
   await shot("22-sash-drag-light");
   await page.mouse.up();
@@ -1221,7 +1247,7 @@ await shot("14b-grilling-withdrawn");
 // The seams come first and wait for the person, with the confirmation on the right; then the spec with the
 // template's sections, which stays in Trama without GitHub. The mandate allows planning, so the Coordinator would
 // confirm the seams and the slices by itself (A06): the check pauses continuous work, and in pause they stay the person's.
-await page.getByTestId("status-line").getByRole("button", { name: "Pausa", exact: true }).click();
+await page.getByTestId("status-line").getByRole("button", { name: "Pausa del Coordinatore", exact: true }).click();
 await page.locator('[data-testid="status-line"][data-paused="true"]').waitFor({ timeout: 20_000 });
 await page.getByLabel("Messaggio al Coordinatore").fill("[piano]");
 await page.keyboard.press("Enter");
@@ -1278,7 +1304,7 @@ await page.evaluate(() => document.documentElement.classList.add("dark"));
 // The slices held the work for the person while in pause. After Riprendi, the end of the next turn lets the
 // Coordinator confirm them by itself within the mandate (A06): they stay in Trama without GitHub, the first is ready
 // and the others wait for it, and the work goes on by itself (W04). The example project runs no periodic round.
-await page.getByTestId("status-line").getByRole("button", { name: "Riprendi" }).click();
+await page.getByTestId("status-line").getByRole("button", { name: "Riprendi il Coordinatore" }).click();
 await page.locator('[data-testid="status-line"][data-paused="true"]').waitFor({ state: "detached", timeout: 20_000 });
 await page.getByRole("button", { name: "Chiudi la barra laterale" }).click();
 await page.getByLabel("Messaggio al Coordinatore").fill("A che punto sono le fette?");
@@ -1394,6 +1420,18 @@ await shot("16c-specialist-ask");
 await composer().fill("");
 // Lavoro: a candidate opens with its diff; the card inside it offers no "Apri il diff" that would do nothing.
 await openView("Lavoro", "Candidati");
+// Issue #272: Lavoro names the plan as its chat card does, and a finished candidate never reads "In costruzione".
+{
+  const workPanel = page.getByTestId("side-bar");
+  await workPanel.getByText("Fette confermate dal Coordinatore").first().waitFor({ timeout: 10_000 });
+  if (await workPanel.getByText("In costruzione", { exact: true }).count()) throw new Error("Lavoro calls a candidate under construction");
+  const wasDark = await page.evaluate(() => document.documentElement.classList.contains("dark"));
+  for (const dark of [false, true]) {
+    await page.evaluate((on) => document.documentElement.classList.toggle("dark", on), dark);
+    await shot(`10h-work-states-${dark ? "dark" : "light"}`);
+  }
+  await page.evaluate((on) => document.documentElement.classList.toggle("dark", on), wasDark);
+}
 await page.getByTestId("side-bar").locator('button[data-record-id^="C-"]').first().click();
 await page.getByTestId("side-bar").getByText(/^Diff catturato da Trama/).waitFor();
 if (await page.getByTestId("side-bar").getByRole("button", { name: "Apri il diff" }).count()) throw new Error("The candidate view offers a diff it already shows");
@@ -1470,27 +1508,27 @@ await understandingStep.getByRole("button", { name: "Annulla" }).click();
 await page.getByRole("button", { name: "Chiudi la barra laterale" }).click();
 // A05: the Pause of continuous work is always on the status line. In pause the line says so, Riprendi takes the place
 // of Pausa as the primary on the right, and nothing automatic starts; Riprendi brings the line back.
-await statusLine.getByRole("button", { name: "Pausa", exact: true }).click();
+await statusLine.getByRole("button", { name: "Pausa del Coordinatore", exact: true }).click();
 const pausedLine = page.locator('[data-testid="status-line"][data-paused="true"]');
 await pausedLine.waitFor({ timeout: 20_000 });
-await pausedLine.getByTestId("status-line-text").getByText(/In pausa: i turni in corso finiscono/).waitFor();
-const resumeButton = pausedLine.getByRole("button", { name: "Riprendi" });
+await pausedLine.getByTestId("status-line-text").getByText(/Coordinatore in pausa: i turni in corso finiscono/).waitFor();
+const resumeButton = pausedLine.getByRole("button", { name: "Riprendi il Coordinatore" });
 await resumeButton.waitFor();
 // The last action sits on the right: Riprendi, unless the person has a move of their own, which stays last. Issue #330:
 // in the status bar Riprendi is an icon and the person's move is text, so the window keeps one filled button.
 const lastButton = pausedLine.getByRole("button").last();
 const lastBox = await lastButton.boundingBox();
 const pausedBox = await pausedLine.boundingBox();
-if (!lastBox || !pausedBox || pausedBox.x + pausedBox.width - (lastBox.x + lastBox.width) > 2) throw new Error("The last action of the paused line is not on the right");
-if ((await lastButton.getAttribute("aria-label")) !== "Riprendi" && !(await pausedLine.locator("button:not([aria-label])").count())) {
-  throw new Error("The last action of the paused line is neither Riprendi nor the person's move");
+if (!lastBox || !pausedBox || pausedBox.x + pausedBox.width - (lastBox.x + lastBox.width) > 2) throw new Error("The primary of the paused line is not on the right");
+if ((await lastButton.getAttribute("aria-label")) !== "Riprendi il Coordinatore" && !(await pausedLine.locator("button:not([aria-label])").count())) {
+  throw new Error("The last button of the paused line is not the primary");
 }
 await themeShots("15c-status-line-paused");
 await page.waitForTimeout(300);
 if (await statusLine.getByRole("button", { name: /^Ferma/ }).count()) throw new Error("Trama started a move in pause");
 await resumeButton.click();
 await page.locator('[data-testid="status-line"][data-paused="false"]').waitFor({ timeout: 20_000 });
-await statusLine.getByRole("button", { name: "Pausa", exact: true }).waitFor();
+await statusLine.getByRole("button", { name: "Pausa del Coordinatore", exact: true }).waitFor();
 // Issue #242: the person asks for the recap with /riepilogo, offered first by the composer's menu. Trama writes it
 // in the chat from the records at once: what I did, what I do, what I need from you, with
 // each item of Aspetta te opening on the right. The chat before the recap, then the recap, in light and dark.
@@ -1530,6 +1568,11 @@ const settings = page.getByTestId("settings");
 await settings.waitFor();
 await settings.getByRole("button", { name: /^Collegamenti/ }).first().click();
 await shot("11-connections");
+// Issue #71: every provider, ChatGPT included, shows its capabilities in the same panel.
+const capabilityToggles = settings.getByRole("button", { name: /^Capacità/ });
+await capabilityToggles.first().click();
+await themeShots("11b-connections-capabilities");
+await capabilityToggles.first().click();
 await settings.getByRole("button", { name: /^Generale/ }).first().click();
 // Issue #301: the language sits in Generale and changes the page at once.
 await settings.getByTestId("language-choice").getByRole("radio", { name: "Italiano", checked: true }).waitFor();
@@ -1538,18 +1581,32 @@ await settings.getByTestId("language-choice").getByRole("radio", { name: "Englis
 await settings.getByRole("button", { name: /^Connections/ }).first().waitFor();
 await settings.getByRole("heading", { name: "General" }).waitFor();
 await shot("12-settings-en");
+// Issue #348: Informazioni shows the version of app/package.json, in each language.
+const appVersion = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8")).version;
+const aboutVersion = settings.getByTestId("about-version");
+if (!(await aboutVersion.textContent())?.startsWith(`Version ${appVersion}.`)) throw new Error(`About does not show Version ${appVersion}`);
 await settings.getByTestId("language-choice").getByRole("radio", { name: "Italiano" }).click();
 await settings.getByRole("button", { name: /^Collegamenti/ }).first().waitFor();
+await settings.getByTestId("about-version").getByText(`Versione ${appVersion}.`, { exact: false }).waitFor();
 // B01: Informazioni shows the mark on its tile with the version, in every provider theme.
 await settings.getByTestId("about-trama").locator('[data-trama-mark="tile"]').waitFor();
 for (const provider of ["codex", "claudeAgent", "grok"]) {
   for (const dark of [false, true]) {
-    await brandLook(provider, dark);
+    await setLookTo(provider, dark);
     await settings.getByTestId("about-trama").scrollIntoViewIfNeeded();
     await shot(`12b-about-${provider}-${dark ? "dark" : "light"}`);
   }
 }
-await brandLook(startLook.provider, startLook.dark);
+await setLookTo(startLook.provider, startLook.dark);
+// Issue #345: on Windows and Linux the menu's Informazioni su Trama brings the settings' About into view.
+if (process.platform !== "darwin") {
+  await settings.getByTestId("language-choice").scrollIntoViewIfNeeded();
+  await clickMenu("about");
+  await page.waitForFunction(() => {
+    const box = document.querySelector('[data-testid="about-trama"]')?.getBoundingClientRect();
+    return Boolean(box) && box.top >= 0 && box.bottom <= window.innerHeight;
+  });
+}
 // W12, Impostazioni: the theme follows the choice at once.
 await page.getByRole("radio", { name: "Scuro" }).click();
 await page.getByRole("radio", { name: "Scuro", checked: true }).waitFor();
@@ -1675,7 +1732,9 @@ await queueToggle.click();
 const queue = focusBar.getByTestId("focus-queue");
 await queue.waitFor();
 if (!(await queue.getByTestId("focus-queue-item").count())) throw new Error("The task queue is empty");
-const pause = focusBar.getByRole("button", { name: "Metti in pausa" });
+// Issue #272: suspending the task in focus and the Coordinator's Pause never share a name.
+const pause = focusBar.getByRole("button", { name: "Sospendi questo lavoro" });
+if (await focusBar.getByRole("button", { name: /^(Metti in pausa|Pausa)$/ }).count()) throw new Error("A pause in the focus bar has an ambiguous name");
 const actionsOnRight = async (size) => {
   const bar = await focusBar.boundingBox();
   const button = await pause.boundingBox();
@@ -1693,6 +1752,7 @@ const focusIs = (title, equal) =>
 await focusIs(firstFocus, false);
 const pausedItem = queue.locator('[data-testid="focus-queue-item"][data-status="paused"]').filter({ hasText: firstFocus });
 await pausedItem.waitFor({ timeout: 10_000 });
+await pausedItem.getByText(/^Sospeso/).waitFor();
 await shot("17a-focus-paused-next");
 await pausedItem.getByRole("button", { name: "Metti in primo piano" }).click();
 await focusIs(firstFocus, true);
@@ -1702,22 +1762,13 @@ await shot("17b-focus-back");
 await seamShots("focus", "focus");
 // Light and dark on two providers' themes, then a narrow window where the bar wraps without a horizontal scroll.
 const look = await page.evaluate(() => ({ provider: document.documentElement.dataset.provider ?? null, dark: document.documentElement.classList.contains("dark") }));
-const setLook = (provider, dark) =>
-  page.evaluate(
-    ([name, isDark]) => {
-      if (name) document.documentElement.dataset.provider = name;
-      else delete document.documentElement.dataset.provider;
-      document.documentElement.classList.toggle("dark", isDark);
-    },
-    [provider, dark],
-  );
 for (const provider of ["codex", "claudeAgent"]) {
   for (const dark of [false, true]) {
-    await setLook(provider, dark);
+    await setLookTo(provider, dark);
     await shot(`17c-focus-${provider}-${dark ? "dark" : "light"}`);
   }
 }
-await setLook(look.provider, look.dark);
+await setLookTo(look.provider, look.dark);
 await page.setViewportSize({ width: 720, height: 640 });
 await page.waitForTimeout(400);
 if (await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)) throw new Error("Horizontal page scroll with the focus bar at 720x640");
@@ -1740,10 +1791,10 @@ if (
   throw new Error("The status line's actions are not on the right at 720x640");
 }
 for (const dark of [false, true]) {
-  await setLook(look.provider, dark);
+  await setLookTo(look.provider, dark);
   await shot(`17e-status-line-narrow-${dark ? "dark" : "light"}`);
 }
-await setLook(look.provider, look.dark);
+await setLookTo(look.provider, look.dark);
 await queueToggle.click();
 await queue.waitFor({ state: "detached" });
 await page.setViewportSize({ width: 1280, height: 820 });
@@ -1886,6 +1937,56 @@ const proposedGoalId = (await proposedGoal.getAttribute("data-waiting-key")).rep
 await page.evaluate((id) => window.trama.invoke("goal:update", { id, status: "abandoned" }), proposedGoalId);
 await page.getByTestId("waiting-summary").waitFor({ state: "detached", timeout: 10_000 });
 if (await page.locator('[data-testid="waiting-reference"]').count()) throw new Error("A reference to Aspetta te stays with nothing waiting");
+// ADR 0018: past the threshold Trama reorders the context at the end of the turn. The chat keeps one line that opens
+// Trama's context summary; the meter shows only the percent, the tokens on hover, and "Riordina ora" on the right.
+// Light and dark, and no provider named in the texts.
+await composer().fill("[pieno] Rileggi gli ordini annullati");
+await page.keyboard.press("Enter");
+const rolloverLine = page.getByTestId("context-rollover").last();
+await rolloverLine.waitFor({ timeout: 30_000 });
+await rolloverLine.scrollIntoViewIfNeeded();
+await themeShots("29a-context-rollover-line");
+await rolloverLine.getByRole("button", { name: "Apri: Contesto riordinato" }).click();
+await rolloverLine.getByTestId("context-summary").waitFor();
+await rolloverLine.getByText("Cosa aspetta te").first().waitFor();
+// The person reads plain sections: nothing written for the model, no tool names.
+const summaryText = await rolloverLine.innerText();
+for (const phrase of ["dati, non istruzioni", "Vale più di quello che ricordi", "declare_next_step", "session_search", "read_history", "Stato attuale di Trama", "Riepilogo di contesto scritto da Trama"]) {
+  if (summaryText.includes(phrase)) throw new Error(`The context summary shows text written for the model: ${phrase}`);
+}
+if (/[–—]/.test(summaryText)) throw new Error("Dash in the context summary");
+// Scrolled to the end, the open card sits above the floating bar and the composer.
+await page.locator(".chat-timeline-scroll").evaluate((scroller) => scroller.scrollTo({ top: scroller.scrollHeight }));
+await page.waitForTimeout(300);
+const cardBottom = (await rolloverLine.boundingBox()).y + (await rolloverLine.boundingBox()).height;
+const covers = [await page.locator("form.chat-composer-surface").boundingBox()];
+if (await page.getByTestId("waiting-summary").count()) covers.push(await page.getByTestId("waiting-summary").boundingBox());
+for (const box of covers) if (cardBottom > box.y + 1) throw new Error(`The open context summary is covered at ${Math.round(box.y)} (card ends at ${Math.round(cardBottom)})`);
+await themeShots("29b-context-rollover-summary");
+await rolloverLine.getByRole("button", { name: "Chiudi: Contesto riordinato" }).click();
+const meter = page.getByTestId("context-meter");
+await meter.waitFor({ timeout: 30_000 });
+if (!/^\d+%$/.test((await meter.innerText()).trim())) throw new Error(`The meter shows more than the percent: ${await meter.innerText()}`);
+if (!/ su [\d.]+ token$/.test((await meter.getAttribute("title")) ?? "")) throw new Error("The meter has no tokens on hover");
+await meter.click();
+const meterPopup = page.getByTestId("context-meter-popup");
+await meterPopup.waitFor();
+const meterText = await meterPopup.innerText();
+for (const name of ["Codex", "Claude", "OpenCode", "Cursor", "Devin", "Droid", "Grok", "Antigravity"]) {
+  if (meterText.includes(name)) throw new Error(`The meter names a provider: ${name}`);
+}
+if (/[–—]/.test(meterText)) throw new Error("Dash in the meter");
+const reorderNow = meterPopup.getByRole("button", { name: "Riordina ora" });
+const reorderRow = await reorderNow.evaluate((button) => {
+  const row = button.closest(".cta-row");
+  return row ? { right: row.getBoundingClientRect().right, button: button.getBoundingClientRect().right } : null;
+});
+if (!reorderRow || Math.abs(reorderRow.right - reorderRow.button) > 1) throw new Error("Riordina ora is not on the right of its row");
+await themeShots("29c-context-meter");
+const reordersSoFar = await page.getByTestId("context-rollover").count();
+await reorderNow.click();
+await page.getByTestId("context-rollover").nth(reordersSoFar).waitFor({ timeout: 30_000 });
+await page.keyboard.press("Escape").catch(() => undefined);
 const send = async (text) => {
   await composer().fill(text);
   await page.keyboard.press("Enter");
@@ -1995,7 +2096,7 @@ const candidateOf = async (card) => candidateCards.filter({ has: page.locator(`[
 const failedCard = await candidateOf(spacesCard);
 await failedCard.locator('[data-testid="candidate-evidence"][data-check="git_diff_check"][data-result="fail"]').waitFor({ timeout: 30_000 });
 await page.getByText(/Via libera rifiutato: .*candidate_not_verified/).first().waitFor({ timeout: 20_000 });
-await failedCard.getByText("In costruzione", { exact: true }).waitFor();
+await failedCard.getByText("Da sistemare", { exact: true }).waitFor();
 await failedCard.getByText("Verifica non superata").waitFor();
 await failedCard.getByRole("button", { name: "Output originale" }).click();
 const failedOutput = failedCard.getByTestId("evidence-output");
@@ -2066,7 +2167,7 @@ await blockedGate.getByTestId("gate-returned").getByText(/Rimandato a Ada con i 
 // The refusal's technical text stays in the turn's activity (issue #241); the card above says why in Italian.
 await page.getByText(/^Via libera rifiutato: /).last().waitFor({ timeout: 20_000 });
 await secretCandidate.getByText("I revisori hanno trovato un problema da correggere").waitFor();
-await secretCandidate.getByText("In costruzione", { exact: true }).waitFor();
+await secretCandidate.getByText("Da sistemare", { exact: true }).waitFor();
 await page.getByRole("button", { name: "Interrompi" }).waitFor({ state: "hidden", timeout: 20_000 });
 await secretWork.getByText("Concluso", { exact: true }).waitFor({ timeout: 30_000 });
 await blockedGate.evaluate((item) => item.scrollIntoView({ block: "center" }));
@@ -2113,12 +2214,12 @@ await mandateItem.getByText(/^Come sistemarlo: Concedi o correggi il mandato/).w
 if ((await stoppedQuality.locator('[data-testid="quality-item"][data-passed="no"]').count()) !== 1) throw new Error("Only the mandate should stop the corrected candidate");
 if (await correctedCard.getByRole("button", { name: /Prepara la pull request/ }).count()) throw new Error("A pull request can be prepared outside the mandate");
 await mandateItem.evaluate((item) => item.scrollIntoView({ block: "center" }));
-await shot("18e1-publication-outside-mandate");
+await shot("18e3-publication-outside-mandate");
 await app.evaluate(({ nativeTheme }) => {
   nativeTheme.themeSource = "dark";
 });
 await page.evaluate(() => document.documentElement.classList.add("dark"));
-await shot("18e2-publication-outside-mandate-dark");
+await shot("18e4-publication-outside-mandate-dark");
 await app.evaluate(({ nativeTheme }) => {
   nativeTheme.themeSource = "system";
 });
@@ -2350,6 +2451,34 @@ await app.evaluate(({ nativeTheme }) => {
   nativeTheme.themeSource = "system";
 });
 await page.evaluate(() => document.documentElement.classList.remove("dark"));
+// F04: from a finding to work, one click each. This candidate's project has no GitHub remote: the verified finding
+// goes to Trama's backlog, and its correction becomes an assignment for Ada, who wrote the candidate, within the
+// mandate. The hypothesis cannot become an assignment; as a trade-off it becomes a Pact card. Without GitHub the report
+// stays in Trama and there is nothing to publish.
+const verifiedFinding = auditFinding("standards", "verified");
+const hypothesisFinding = auditFinding("spec", "hypothesis");
+const findingActions = await verifiedFinding.getByTestId("audit-finding-actions").locator(":scope > button").allTextContents();
+if (findingActions.join("|") !== "Metti nel backlog|È un compromesso|Affida la correzione") throw new Error(`Finding actions out of order: ${findingActions}`);
+if (await hypothesisFinding.getByRole("button", { name: "Affida la correzione" }).count()) throw new Error("A hypothesis can become an assignment");
+await focusAudit.getByTestId("focus-audit-publication").getByText(/Con GitHub collegato puoi pubblicarlo/).waitFor();
+if (await page.getByRole("button", { name: "Pubblica su GitHub" }).count()) throw new Error("A report can be published without GitHub");
+await verifiedFinding.scrollIntoViewIfNeeded();
+await themeShots("20g-finding-actions");
+await verifiedFinding.getByRole("button", { name: "Metti nel backlog" }).click();
+await verifiedFinding.locator('[data-testid="audit-finding-followups"] [data-kind="ticket"]').getByText("backlog di Trama").waitFor({ timeout: 20_000 });
+await hypothesisFinding.getByRole("button", { name: "È un compromesso" }).click();
+await hypothesisFinding.locator('[data-testid="audit-finding-followups"] [data-kind="pactCard"]').getByText(/^Scheda del Patto: /).waitFor({ timeout: 20_000 });
+await verifiedFinding.getByRole("button", { name: "Affida la correzione" }).click();
+await verifiedFinding.locator('[data-testid="audit-finding-followups"] [data-kind="assignment"]').getByText(/^Incarico: /).waitFor({ timeout: 20_000 });
+const leftActions = await verifiedFinding.getByTestId("audit-finding-actions").locator(":scope > button").allTextContents();
+if (leftActions.join("|") !== "È un compromesso") throw new Error(`A finding offers the same work twice: ${leftActions}`);
+if (await hypothesisFinding.getByRole("button", { name: "È un compromesso" }).count()) throw new Error("A finding offers the same Pact card twice");
+await verifiedFinding.scrollIntoViewIfNeeded();
+await themeShots("20h-finding-work");
+// The correction is Ada's new assignment in the work's dialog; it ends before the next step gives her work.
+const correctionWork = assignmentCards.nth(6);
+await waitInCard(correctionWork, (card) => card.getByText(/Correggere il rilievo: Possibile Mysterious Name/), "finding correction");
+await waitInCard(correctionWork, (card) => card.getByText("Concluso", { exact: true }), "finding correction ended", 30_000);
 await page.getByRole("button", { name: "Chiudi la barra laterale" }).click();
 await showWaiting();
 await correctedCard.scrollIntoViewIfNeeded();
@@ -2378,12 +2507,12 @@ await page.getByRole("button", { name: "Chiudi la barra laterale" }).click();
 // the report's doubts. The Coordinator puts it on a Pact card that blocks the work; the person's answer resumes the
 // developer in the same session, and the card and the assignment say so.
 await send("[assegna:S1] [test] [domanda]");
-const questionWork = assignmentCards.nth(6);
-await questionWork.getByText("In pausa", { exact: true }).waitFor({ timeout: 20_000 });
+const questionWork = assignmentCards.nth(7);
+await questionWork.getByText("Aspetta una risposta", { exact: true }).waitFor({ timeout: 20_000 });
 await questionWork.locator('[data-testid="assignment-question"][data-state="asked"]').getByText(/buono/).waitFor();
 await questionWork.getByText("Aspetta il Coordinatore").waitFor();
 await questionWork.getByTestId("report-doubts").getByText(/Domanda al Coordinatore/).waitFor();
-await sliceSpec.locator('[data-testid="plan-slice"][data-state="paused"]').getByText("In pausa").waitFor({ timeout: 20_000 });
+await sliceSpec.locator('[data-testid="plan-slice"][data-state="paused"]').getByText("Aspetta una risposta").waitFor({ timeout: 20_000 });
 await questionWork.scrollIntoViewIfNeeded();
 await shot("19e-developer-question");
 await send("[blocca-dubbio]");
@@ -2409,10 +2538,10 @@ await blockingCard.scrollIntoViewIfNeeded();
 await shot("19f-blocking-card");
 const questionLook = await page.evaluate(() => ({ provider: document.documentElement.dataset.provider ?? null, dark: document.documentElement.classList.contains("dark") }));
 for (const provider of ["codex", "claudeAgent"]) {
-  await setLook(provider, true);
+  await setLookTo(provider, true);
   await shot(`19g-blocking-card-${provider}-dark`);
 }
-await setLook(questionLook.provider, questionLook.dark);
+await setLookTo(questionLook.provider, questionLook.dark);
 await blockingCard.getByRole("button", { name: "Registra la decisione" }).click();
 await questionWork.getByText("Concluso", { exact: true }).waitFor({ timeout: 30_000 });
 await openSettled(questionWork);
@@ -2426,9 +2555,9 @@ await answeredBlocking.getByText("Il lavoro è ripreso con la tua risposta.").wa
 if (await answeredBlocking.getByTestId("blocks-work").count()) throw new Error("An answered card still says it blocks the work");
 await questionWork.scrollIntoViewIfNeeded();
 await shot("19h-developer-question-resumed");
-await setLook("claudeAgent", true);
+await setLookTo("claudeAgent", true);
 await shot("19i-developer-question-resumed-claude-dark");
-await setLook(questionLook.provider, questionLook.dark);
+await setLookTo(questionLook.provider, questionLook.dark);
 // W07: the developer's question lives in a conversation between agents, recorded with the author of every message:
 // the developer's question, the Coordinator's Pact card, the person's answer on it. The person reads it from the
 // assignment's card or the specialist's page, never from the sidebar, and cannot write in it: the person talks only
@@ -2452,11 +2581,11 @@ await agentThread.getByText("Per dire qualcosa a un agente scrivi al Coordinator
 await shot("19j-agent-thread");
 for (const provider of ["codex", "claudeAgent"]) {
   for (const dark of [false, true]) {
-    await setLook(provider, dark);
+    await setLookTo(provider, dark);
     await shot(`19l-agent-thread-${provider}-${dark ? "dark" : "light"}`);
   }
 }
-await setLook(questionLook.provider, questionLook.dark);
+await setLookTo(questionLook.provider, questionLook.dark);
 // The specialist's page lists every conversation the developer takes part in.
 await agentThread.getByRole("button", { name: "Apri lo sviluppatore" }).click();
 const specialistThreads = page.getByTestId("specialist-threads").getByRole("button", { name: /Domanda al Coordinatore, fetta S1/ });
@@ -2491,7 +2620,7 @@ await page.getByRole("button", { name: "Impostazioni" }).click();
 await page.getByTestId("settings").waitFor({ state: "hidden" });
 // The first slice is verified on new work that passes its check and the technical review: S2 and S3 become ready.
 await send("[assegna:S1]");
-const verifiedSliceWork = assignmentCards.nth(7);
+const verifiedSliceWork = assignmentCards.nth(8);
 await verifiedSliceWork.getByText("Concluso", { exact: true }).waitFor({ timeout: 20_000 });
 await send(`[candidato:${await cardAssignment(verifiedSliceWork)}:${candidateDecision}]`);
 const teamSlices = sliceSpec.getByTestId("plan-slices");
@@ -2504,13 +2633,13 @@ await milestoneRecap.waitFor({ timeout: 20_000 });
 if ((await milestoneRecap.count()) !== 1) throw new Error("The slice done was told in more than one recap");
 await milestoneRecap.evaluate((card) => card.scrollIntoView({ block: "center" }));
 await themeShots("22c-recap-milestone");
-if ((await assignmentCards.count()) !== 8) throw new Error("A developer took a slice while continuous work was off");
+if ((await assignmentCards.count()) !== 9) throw new Error("A developer took a slice while continuous work was off");
 // Continuous work on: at the next event of the work (here the end of a Coordinator turn) Ada is free and takes S2 in
 // autonomy; the assignment card says so and the slice shows who took it.
 await page.evaluate(() => window.trama.invoke("settings:update", { continuousWork: true }));
 // "Come procede il lavoro?" would ask for a recap, which opens no turn (issue #242): the check writes to the Coordinator.
 await send("Vai avanti con il lavoro");
-const pickedCard = assignmentCards.nth(8);
+const pickedCard = assignmentCards.nth(9);
 await waitInCard(pickedCard, (card) => card.getByTestId("assignment-self-picked"), "self-picked");
 await waitInCard(pickedCard, (card) => card.getByText(/^S2 Il supporto vede gli ordini in revisione$/), "slice S2");
 const pickedSlice = teamSlices.locator('[data-testid="plan-slice"][data-self-picked="yes"]').first();
@@ -2571,11 +2700,11 @@ await shot("21a-ask-trama-route");
 const routeLook = await page.evaluate(() => ({ provider: document.documentElement.dataset.provider ?? null, dark: document.documentElement.classList.contains("dark") }));
 for (const provider of ["codex", "claudeAgent"]) {
   for (const dark of [false, true]) {
-    await setLook(provider, dark);
+    await setLookTo(provider, dark);
     await shot(`21b-ask-trama-route-${provider}-${dark ? "dark" : "light"}`);
   }
 }
-await setLook(routeLook.provider, routeLook.dark);
+await setLookTo(routeLook.provider, routeLook.dark);
 await routeCard.getByRole("button", { name: "Avvia il percorso" }).click();
 // Started, the route leaves Aspetta te and the chat shows its card again in full.
 const startedRoute = page.getByRole("main").locator('[data-anchor="route"]').last();
@@ -2687,6 +2816,88 @@ const presenceReply = await presenceAnswer.innerText();
 if (!presenceReply.includes("src/payments.js") || !presenceReply.includes("Sezione presenza ricevuta")) throw new Error(`Presence answer: ${presenceReply}`);
 await presenceAnswer.scrollIntoViewIfNeeded();
 await shot("16d-presence-coordinator");
+// Issue #328: editorial typography. A message and its titles read in Newsreader, the controls in Inter and the code in
+// JetBrains Mono, all bundled with the app: the computed families use the tokens and each font is really loaded.
+// Every provider theme, light and dark, and the narrow window keep the 18px body inside the chat.
+await composer().fill("## Annullare un ordine\n\nUn ordine pagato e annullato va in revisione, come in `CancelPaidOrder.swift`.\n\n```swift\nlet stato = ordine.annulla()\n```");
+await page.keyboard.press("Enter");
+const typeMessage = page.locator(".chat-markdown--user").filter({ hasText: "Annullare un ordine" }).last();
+await typeMessage.locator("pre code").waitFor({ timeout: 20_000 });
+await page.getByText("Questa risposta arriva dal server di prova").last().waitFor({ timeout: 30_000 });
+const typography = () =>
+  page.evaluate(async () => {
+    await document.fonts.ready;
+    const user = [...document.querySelectorAll(".chat-markdown--user")].filter((node) => node.textContent.includes("Annullare un ordine")).pop();
+    const reply = [...document.querySelectorAll(".chat-markdown:not(.chat-markdown--user)")].filter((node) => node.textContent.includes("server di prova")).pop();
+    const style = (node) => {
+      if (!node) return null;
+      const s = getComputedStyle(node);
+      return { family: s.fontFamily, size: s.fontSize, weight: s.fontWeight, lineHeight: s.lineHeight, optical: s.fontOpticalSizing };
+    };
+    const loaded = (family) => [...document.fonts].some((face) => face.family.replace(/["']/g, "") === family && face.status === "loaded");
+    return {
+      message: style(reply?.querySelector("p") ?? reply),
+      title: style(user?.querySelector("h2")),
+      button: style(document.querySelector("form.chat-composer-surface button")),
+      code: style(user?.querySelector("pre code")),
+      inline: style(user?.querySelector("p code")),
+      fonts: Object.fromEntries(
+        [
+          ["Newsreader Variable", '400 18px "Newsreader Variable"'],
+          ["Newsreader Variable 500", '500 24px "Newsreader Variable"'],
+          ["Inter Variable", '500 13px "Inter Variable"'],
+          ["JetBrains Mono Variable", '400 14px "JetBrains Mono Variable"'],
+        ].map(([name, font]) => [name, document.fonts.check(font, "Aa") && loaded(name.replace(/ 500$/, ""))]),
+      ),
+    };
+  });
+const types = await typography();
+const firstFamily = (style) => style?.family.split(",")[0].replace(/["']/g, "").trim();
+if (firstFamily(types.message) !== "Newsreader Variable" || types.message.size !== "18px" || types.message.optical !== "auto") throw new Error(`Message typography: ${JSON.stringify(types.message)}`);
+if (Math.abs(parseFloat(types.message.lineHeight) / 18 - 1.68) > 0.01) throw new Error(`Message line height: ${JSON.stringify(types.message)}`);
+if (firstFamily(types.title) !== "Newsreader Variable" || types.title.weight !== "500") throw new Error(`Title typography: ${JSON.stringify(types.title)}`);
+const titleLeading = parseFloat(types.title.lineHeight) / parseFloat(types.title.size);
+if (titleLeading < 1.3 || titleLeading > 1.35) throw new Error(`Title line height: ${JSON.stringify(types.title)}`);
+if (firstFamily(types.button) !== "Inter Variable") throw new Error(`Button typography: ${JSON.stringify(types.button)}`);
+if (firstFamily(types.code) !== "JetBrains Mono Variable" || firstFamily(types.inline) !== "JetBrains Mono Variable") throw new Error(`Code typography: ${JSON.stringify([types.code, types.inline])}`);
+const missingFonts = Object.entries(types.fonts).filter(([, ok]) => !ok).map(([name]) => name);
+if (missingFonts.length) throw new Error(`Fonts not loaded: ${missingFonts.join(", ")}`);
+// Nothing leaves the chat: no horizontal page scroll, every message inside the timeline, no text wider than its box.
+const typographyOverflow = () =>
+  page.evaluate(() => {
+    const timeline = document.querySelector(".chat-timeline-scroll")?.getBoundingClientRect();
+    const problems = [];
+    if (document.documentElement.scrollWidth > innerWidth) problems.push("page scroll");
+    for (const node of document.querySelectorAll(".chat-timeline-scroll .chat-markdown")) {
+      const box = node.getBoundingClientRect();
+      if (!box.width) continue;
+      if (timeline && (box.left < timeline.left - 1 || box.right > timeline.right + 1)) problems.push(`message outside the timeline: ${node.textContent.slice(0, 40)}`);
+      for (const child of node.querySelectorAll(":scope > :not(pre, table, .chat-compare)")) {
+        if (child.scrollWidth > child.clientWidth + 1) problems.push(`text wider than its box: ${child.textContent.slice(0, 40)}`);
+      }
+    }
+    return problems;
+  });
+const typeLook = await lookOf();
+await typeMessage.scrollIntoViewIfNeeded();
+for (const provider of ["codex", "claudeAgent", "cursor", "antigravity", "grok", "droid", "devin", "opencode", "pi"]) {
+  for (const dark of [false, true]) {
+    await setLookTo(provider, dark);
+    const problems = await typographyOverflow();
+    if (problems.length) throw new Error(`Typography with ${provider} ${dark ? "dark" : "light"}: ${problems.join("; ")}`);
+    if (provider === "codex" || provider === "claudeAgent") await shot(`16d1-typography-${provider}-${dark ? "dark" : "light"}`);
+  }
+}
+await setLookTo(typeLook.provider, typeLook.dark);
+// In a narrow window the side bar takes room from the chat: closed, the messages are what the shot shows (issue #330).
+if (await page.getByTestId("side-bar").count()) await page.getByRole("button", { name: "Chiudi la barra laterale" }).click();
+await page.setViewportSize({ width: 720, height: 640 });
+await typeMessage.scrollIntoViewIfNeeded();
+await page.waitForTimeout(400);
+const narrowProblems = await typographyOverflow();
+if (narrowProblems.length) throw new Error(`Typography at 720x640: ${narrowProblems.join("; ")}`);
+await shot("16d2-typography-narrow");
+await page.setViewportSize({ width: 1280, height: 820 });
 // G02: Gruppo is the picture of who works on what. One row per person and per agent, with identity, active branch,
 // "anche su", the request, the files and the freshness; the person's own switch is in the view, on the right.
 await openView("Lavoro", "Gruppo");
@@ -2725,11 +2936,11 @@ await shot("16a-presence-group");
 const groupLook = await page.evaluate(() => ({ provider: document.documentElement.dataset.provider ?? null, dark: document.documentElement.classList.contains("dark") }));
 for (const provider of ["codex", "claudeAgent"]) {
   for (const dark of [false, true]) {
-    await setLook(provider, dark);
+    await setLookTo(provider, dark);
     await shot(`16b-presence-group-${provider}-${dark ? "dark" : "light"}`);
   }
 }
-await setLook(groupLook.provider, groupLook.dark);
+await setLookTo(groupLook.provider, groupLook.dark);
 // A wide inspector puts the details beside each name; a narrow window floats it over the chat without a horizontal scroll.
 await page.getByTestId("side-bar").getByRole("button", { name: "Allarga la barra laterale" }).click();
 await page.waitForTimeout(400);
@@ -2748,6 +2959,14 @@ await page.getByTestId("settings").getByRole("button", { name: "Metti in pausa" 
 await page.getByTestId("settings").getByRole("button", { name: "Riprendi" }).waitFor();
 await shot("16c-presence-settings");
 await page.getByTestId("settings").getByRole("button", { name: "Riprendi" }).click();
+// Issue #272: the Monitor never says "no repository" above the repository it then offers.
+await page.getByTestId("settings").getByRole("button", { name: /^Monitor/ }).first().click();
+await page.getByTestId("settings").getByText("Repository osservati").waitFor();
+{
+  const text = await page.getByTestId("settings").innerText();
+  if (/Nessun repository/.test(text) && /Repository del progetto aperto/.test(text)) throw new Error("The Monitor says no repository above the project's one");
+}
+await shot("16f-monitor-settings");
 
 // P10, GitHub CLI: with gh logged in, Collegamenti says so without the guide, and Controlla di nuovo reads it again.
 await page.getByTestId("settings").getByRole("button", { name: /^Collegamenti/ }).first().click();
@@ -2823,11 +3042,11 @@ const noJson = async (where) => {
 await noJson("waiting");
 for (const provider of ["codex", "pi"]) {
   for (const dark of [false, true]) {
-    await setLook(provider, dark);
+    await setLookTo(provider, dark);
     await shot(`20b-provider-limit-waiting-${provider}-${dark ? "dark" : "light"}`);
   }
 }
-await setLook(null, false);
+await setLookTo(null, false);
 await limitCard.getByRole("button", { name: "Ferma i tentativi" }).click();
 await limitCard.getByTestId("provider-retry").waitFor({ state: "detached", timeout: 10_000 });
 const limitActions = ["Aggiungi la tua chiave", "Cambia modello", "Riprova"];
@@ -2843,10 +3062,10 @@ await noJson("stopped");
 await limitCard.getByRole("button", { name: "Dettagli tecnici" }).click();
 await limitCard.getByText(/upstream_provider_shared_pool/).waitFor();
 for (const dark of [false, true]) {
-  await setLook(null, dark);
+  await setLookTo(null, dark);
   await shot(`20c-provider-limit-actions-${dark ? "dark" : "light"}`);
 }
-await setLook(null, false);
+await setLookTo(null, false);
 // Cambia modello opens the picker on the provider's models.
 await limitCard.getByRole("button", { name: "Cambia modello", exact: true }).click();
 await page.getByRole("listbox", { name: "Modelli" }).waitFor({ timeout: 5_000 });
@@ -2870,10 +3089,10 @@ for (let tries = 0; (await fakeReplies()) <= repliesBefore; tries++) {
 if ((await page.locator('[role="alert"][data-failure-kind="temporaryLimit"]').count()) !== 2) throw new Error("Expected the two 429 failures in the chat");
 if ((await personMessage()) !== messagesBefore) throw new Error("A retry wrote the person's message again");
 for (const dark of [false, true]) {
-  await setLook(null, dark);
+  await setLookTo(null, dark);
   await shot(`20f-provider-recovered-${dark ? "dark" : "light"}`);
 }
-await setLook(null, false);
+await setLookTo(null, false);
 
 // B02: with no project open the picker lists the recent projects with their path, last work, state and colleagues.
 // Switching projects never replays the launch intro.
@@ -2968,11 +3187,11 @@ await page.keyboard.press("Enter");
 // The card waits for the person in Aspetta te; the chat keeps its reference (issue #240).
 const reviewCard = await waitingItem(page.locator('[data-testid="waiting-reference"][data-waiting-kind="question"]').first(), 90_000);
 await reviewCard.getByText(/Approfondire l'annullamento/).first().waitFor();
-// Issue #270: Clean Code's card reads plain. The skill it received shows by name, not as "skill:<name>:<path>", the
-// proposal says "Approfondire" once, and its work is named, not cited by id. Both themes.
-await reviewCard.getByText(/Skill ricevute: .*improve-codebase-architecture/).first().waitFor();
+// Issues #270 and #272: Clean Code's card reads plain. The fake recommends only when the review received its skill,
+// no path or delivery proof shows, the options are the proposals' titles, and its work is named, not cited by id.
+await reviewCard.getByText(/Partire dall'annullamento/).first().waitFor();
 const reviewText = await reviewCard.innerText();
-if (/skill:|SKILL\.md|Approfondire: Approfondire|incarico A-[0-9A-F]{8}/.test(reviewText)) throw new Error(`Clean Code's card is not plain: ${reviewText}`);
+if (/skill:|SKILL\.md|Skill ricevute|Approfondire: |incarico A-[0-9A-F]{8}/.test(reviewText)) throw new Error(`Clean Code's card is not plain: ${reviewText}`);
 await reviewCard.evaluate((item) => item.scrollIntoView({ block: "start" }));
 for (const dark of [false, true]) {
   await page.evaluate((theme) => window.trama.invoke("settings:update", { theme }), dark ? "dark" : "light");
@@ -3065,6 +3284,25 @@ for (const dark of [false, true]) {
   await page.evaluate((theme) => window.trama.invoke("settings:update", { theme }), dark ? "dark" : "light");
   await page.waitForFunction((wanted) => document.documentElement.classList.contains("dark") === wanted, dark);
   await shot(`22b-automatic-work-role-${dark ? "dark" : "light"}`);
+}
+// Issue #272: the Clean Code card offers the proposals by their own titles and no text of the fake's own checks; once
+// the person answers, the review's work says what was chosen, never "proposte da decidere" again.
+{
+  const reference = page.locator('[data-testid="waiting-reference"][data-waiting-kind="question"]').first();
+  const requestId = (await reference.getAttribute("data-waiting-key")).replace(/^question:/, "");
+  const body = await page.locator("body").innerText();
+  if (/Approfondire: /.test(body)) throw new Error("A Clean Code option repeats the verb of the question");
+  if (/Skill ricevute/.test(body)) throw new Error("The Clean Code card shows the fake's delivery proof");
+  await page.evaluate((id) => window.trama.invoke("decision:answer", { requestId: id, alternativeIndex: 1, freeText: null }), requestId);
+  await dutyPanel.getByText("Revisione dell'architettura: hai scelto «Unire i pagamenti»").first().waitFor({ timeout: 20_000 });
+  if (/proposte da decidere/.test(await page.locator("body").innerText())) throw new Error("The review still asks to decide after the answer");
+  const answeredWork = dutyPanel.getByText("Revisione dell'architettura: hai scelto «Unire i pagamenti»").first();
+  await answeredWork.scrollIntoViewIfNeeded();
+  for (const dark of [false, true]) {
+    await page.evaluate((theme) => window.trama.invoke("settings:update", { theme }), dark ? "dark" : "light");
+    await page.waitForFunction((wanted) => document.documentElement.classList.contains("dark") === wanted, dark);
+    await shot(`22c-clean-code-answered-${dark ? "dark" : "light"}`);
+  }
 }
 await page.evaluate(() => window.trama.invoke("settings:update", { theme: "system" }));
 await app.close();
@@ -3519,11 +3757,11 @@ const waitForReply = async (before, what) => {
 const lookShots = async (name) => {
   for (const provider of ["codex", "claudeAgent"]) {
     for (const dark of [false, true]) {
-      await setLook(provider, dark);
+      await setLookTo(provider, dark);
       await shot(`${name}-${provider}-${dark ? "dark" : "light"}`);
     }
   }
-  await setLook(null, false);
+  await setLookTo(null, false);
 };
 
 // Network outage: the failure says so, Trama retries by itself once, and the turn ends with the provider's reply.
@@ -3594,15 +3832,6 @@ await page.evaluate(() => window.trama.invoke("settings:update", { continuousWor
 await page.evaluate((path) => window.trama.invoke("project:open", { path }), mandateProject);
 await page.getByTestId("dialog-title").filter({ hasText: "trama-ui-mandato" }).waitFor({ timeout: 30_000 });
 await page.getByText("Ho letto lo studio").first().waitFor({ timeout: 30_000 });
-const mandateShots = async (name) => {
-  for (const provider of ["codex", "claudeAgent"]) {
-    for (const dark of [false, true]) {
-      await setLook(provider, dark);
-      await shot(`${name}-${provider}-${dark ? "dark" : "light"}`);
-    }
-  }
-  await setLook(null, false);
-};
 await page.getByTestId("waiting-summary").getByText("Mandato di progetto").waitFor();
 const projectMandate = await openWaiting("mandate");
 await projectMandate.getByText("Proposta di mandato di progetto").waitFor();
@@ -3611,7 +3840,7 @@ if ((await fixedBans.locator("li").count()) !== 6) throw new Error("The project 
 if (await fixedBans.locator("input, button, [role='switch']").count()) throw new Error("A fixed ban has a control to turn it on");
 await primaryLast(projectMandate.locator(".cta-row"), "Project mandate");
 await fixedBans.scrollIntoViewIfNeeded();
-await mandateShots("26a-project-mandate");
+await lookShots("26a-project-mandate");
 await projectMandate.getByRole("button", { name: "Concedi", exact: true }).click();
 await page.getByText("Ho concesso il mandato (versione 1).").first().waitFor({ timeout: 20_000 });
 // The goal the study proposed may still wait (issue #292): only the mandate must have left Aspetta te.
@@ -3625,13 +3854,16 @@ await page.getByRole("button", { name: "Restringi", exact: true }).click();
 const restrict = page.getByTestId("mandate-restrict");
 await restrict.getByRole("checkbox", { name: "Integrare candidati verificati" }).uncheck();
 await primaryLast(restrict.locator(".cta-row"), "Mandate restriction");
-await mandateShots("26b-mandate-restrict");
+// Before it takes effect the form says which work stops (C06): here nothing runs, so nothing stops.
+await restrict.getByText(/si ferma subito; il resto continua\. Nessun lavoro in corso si ferma\./).waitFor();
+await lookShots("26b-mandate-restrict");
 await restrict.getByRole("button", { name: "Restringi il mandato" }).click();
 await page.getByText(/Mandato v2/).first().waitFor({ timeout: 20_000 });
 const restriction = await page.getByTestId("mandate-restriction").innerText();
 if (!restriction.includes("integrare candidati verificati") || /[–—]/.test(restriction)) throw new Error(`Restriction: ${restriction}`);
 await page.getByText(/Ho ristretto il mandato/).first().waitFor({ timeout: 20_000 });
-await mandateShots("26c-mandate-restricted");
+await page.getByText(/Nessun lavoro in corso era fuori dal mandato ristretto/).first().waitFor({ timeout: 20_000 });
+await lookShots("26c-mandate-restricted");
 // The correction form starts from the restricted version: saving it never brings back what the restriction took away.
 await page.getByRole("button", { name: "Correggi", exact: true }).click();
 if (await page.getByTestId("side-bar").getByRole("checkbox", { name: "Integrare candidati verificati" }).isChecked()) {
@@ -3652,7 +3884,7 @@ const bannedCard = bannedItem.getByTestId("fixed-ban-card");
 await bannedCard.getByText("git push --force origin main").waitFor();
 await bannedCard.getByText("Force push", { exact: true }).waitFor();
 await primaryLast(bannedCard.locator(".cta-row"), "Fixed ban");
-await mandateShots("26d-fixed-ban");
+await lookShots("26d-fixed-ban");
 await bannedCard.getByRole("button", { name: "Ho visto" }).click();
 await bannedItem.waitFor({ state: "detached", timeout: 20_000 });
 await page.evaluate(() => window.trama.invoke("settings:update", { theme: "system" }));
@@ -3671,15 +3903,6 @@ const problemProject = async (name, remote) => {
   execFileSync("git", ["-C", path, "add", "."]);
   execFileSync("git", ["-C", path, "-c", "user.name=Trama UI", "-c", "user.email=ui@trama.local", "commit", "-q", "-m", "Negozio"]);
   return path;
-};
-const problemShots = async (name) => {
-  for (const provider of ["codex", "claudeAgent"]) {
-    for (const dark of [false, true]) {
-      await setLook(provider, dark);
-      await shot(`${name}-${provider}-${dark ? "dark" : "light"}`);
-    }
-  }
-  await setLook(null, false);
 };
 const redCheckWithMandate = async (path, title) => {
   await page.evaluate(() => window.trama.invoke("settings:update", { continuousWork: false, theme: "light" }));
@@ -3721,7 +3944,7 @@ if (openedIssues.length !== 1) throw new Error(`Expected one issue for the red c
 if (!openedIssues[0].includes("labels[]=needs-triage")) throw new Error("The issue of the problem does not carry the needs-triage label");
 if (!problemCalls.some((call) => call.includes("POST") && call.some((arg) => /\/issues\/21\/labels$/.test(arg)))) throw new Error("Trama did not apply the triage labels");
 if (/[–—]/.test(await problemLog.innerText())) throw new Error("A dash in the steps of the found problem");
-await problemShots("27a-found-problem-issue");
+await lookShots("27a-found-problem-issue");
 // The recap cites the issue the Coordinator opened, with its number.
 await page.getByRole("button", { name: "Chiudi la barra laterale" }).click();
 await composer().fill("/riep");
@@ -3732,7 +3955,7 @@ await page.keyboard.press("Enter");
 const problemRecap = page.getByTestId("recap-card").last();
 await problemRecap.getByText(/Aperta la issue #21 per un problema trovato/).waitFor({ timeout: 20_000 });
 await problemRecap.scrollIntoViewIfNeeded();
-await problemShots("27b-found-problem-recap");
+await lookShots("27b-found-problem-recap");
 await app.close();
 
 ({ app, page } = await launch());
@@ -3741,9 +3964,66 @@ const localBacklog = page.getByTestId("problem-backlog");
 await localBacklog.getByTestId("problem-backlog-item").filter({ hasText: "Solo in Trama" }).waitFor({ timeout: 90_000 });
 await page.getByTestId("activity-log").locator('[data-testid="activity-problem"]').filter({ hasText: "Nel backlog di Trama" }).waitFor();
 await localBacklog.scrollIntoViewIfNeeded();
-await problemShots("27c-found-problem-local-backlog");
+await lookShots("27c-found-problem-local-backlog");
 await app.close();
 
+
+// Issue #42 (C10): the Coordinator reports on a ticket. A partial increment leaves the issue open, and Activity says what
+// is missing in Italian, with the criteria by name; a GitHub write that fails is a step "non riuscito", never an update.
+const ticketFile = join(await mkdtemp(join(tmpdir(), "trama-ui-ticket-gh-")), "ticket.json");
+const ticketIssue = { number: 42, title: "Annullo degli ordini dal riepilogo", state: "open", body: "## Criteri\n\n- [ ] Il riepilogo mostra l'annullo\n- [ ] Le verifiche passano", comments: [], pulls: {} };
+await writeFile(ticketFile, JSON.stringify(ticketIssue));
+({ app, page } = await launch({ PATH: `${ghBin}:${process.env.PATH}`, FAKE_GH_TICKET: ticketFile }));
+await page.evaluate(() => window.trama.invoke("settings:update", { continuousWork: false, theme: "light" }));
+await page.evaluate((project) => window.trama.invoke("project:open", { path: project }), await problemProject("ticket", "https://github.com/trama-ui/ticket.git"));
+await page.getByTestId("dialog-title").filter({ hasText: "trama-ui-ticket" }).waitFor({ timeout: 30_000 });
+await page.getByText("Ho letto lo studio").first().waitFor({ timeout: 30_000 });
+await page.evaluate(() =>
+  window.trama.invoke("mandate:grant", {
+    requestId: null,
+    objectives: ["Chiudere i ticket con le prove"],
+    priorities: [],
+    scopeModuleIds: ["Sources/Orders"],
+    authorizedActions: ["openPullRequest", "integrateCandidate"],
+    limits: [],
+  }),
+);
+await page.getByText("Ho concesso il mandato (versione 1).").first().waitFor({ timeout: 20_000 });
+await page.getByRole("button", { name: "Interrompi" }).waitFor({ state: "hidden", timeout: 20_000 });
+const askTicket = async (text, reply) => {
+  await composer().click({ timeout: 60_000 });
+  await composer().pressSequentially(text);
+  await page.keyboard.press("Enter");
+  await page.getByText(reply).first().waitFor({ timeout: 30_000 });
+  await page.getByRole("button", { name: "Interrompi" }).waitFor({ state: "hidden", timeout: 30_000 });
+};
+// Opens the turn's steps in Activity from its line in the chat, with the ticket's steps unfolded.
+const ticketSteps = async (reply) => {
+  await page.getByTestId("work-line").getByRole("button", { name: /^Ha lavorato per/ }).last().click();
+  const steps = page.getByTestId("side-bar").getByTestId("technical-step").filter({ hasText: /^Issue #42 «Annullo degli ordini dal riepilogo»/ });
+  const step = steps.filter({ hasText: reply }).first();
+  await step.waitFor({ timeout: 10_000 });
+  if ((await step.locator("button + *").count()) === 0) await step.getByRole("button").click();
+  return step;
+};
+await askTicket("[ticket] Aggiorna la issue 42", /Ho registrato l'avanzamento sulla issue #42/);
+const partialStep = await ticketSteps("avanzamento registrato");
+await partialStep.getByText("Resta aperta: manca «Il riepilogo mostra l'annullo»; manca «Le verifiche passano»; nessuna pull request di questo lavoro è stata unita.").waitFor();
+if (/Criterion|pull request of this work|[–—]/.test(await partialStep.innerText())) throw new Error("The ticket step is not plain Italian");
+let ticketState = JSON.parse(await readFile(ticketFile, "utf8"));
+if (ticketState.state !== "open" || ticketState.comments.length !== 1 || ticketState.body !== ticketIssue.body) throw new Error("The partial report closed the issue or ticked a criterion");
+await partialStep.scrollIntoViewIfNeeded();
+await lookShots("30a-ticket-partial");
+await page.getByRole("button", { name: "Chiudi la barra laterale" }).click();
+await writeFile(ticketFile, JSON.stringify({ ...ticketState, failComment: true }));
+await askTicket("[ticket:errore] Aggiorna ancora la issue 42", /Non sono riuscito ad aggiornare la issue #42/);
+const failedStep = await ticketSteps("aggiornamento non riuscito");
+await failedStep.getByText("GitHub non ha risposto come atteso: il resoconto non è stato pubblicato, la issue resta aperta.").waitFor();
+ticketState = JSON.parse(await readFile(ticketFile, "utf8"));
+if (ticketState.state !== "open" || ticketState.comments.length !== 1) throw new Error("The failed report changed the issue");
+await failedStep.scrollIntoViewIfNeeded();
+await lookShots("30b-ticket-failed");
+await app.close();
 
 // Issue #249: the always active Coordinator of a project with a mandate. A provider limit holds moves, rounds and new
 // turns, and the status line says what it waits for; on reopening Trama the turn that waited for the limit waits again
@@ -3765,15 +4045,6 @@ const alwaysMandate = await openWaiting("mandate");
 await alwaysMandate.getByRole("button", { name: "Concedi", exact: true }).click();
 await page.getByText("Ho concesso il mandato (versione 1).").first().waitFor({ timeout: 20_000 });
 await page.getByRole("button", { name: "Chiudi la barra laterale" }).click();
-const waitShots = async (name) => {
-  for (const provider of ["codex", "claudeAgent"]) {
-    for (const dark of [false, true]) {
-      await setLook(provider, dark);
-      await shot(`${name}-${provider}-${dark ? "dark" : "light"}`);
-    }
-  }
-  await setLook(null, false);
-};
 // The page changes at each launch: the line is looked up again every time.
 const checkWaitingLine = async (where) => {
   const waitingLine = page.locator('[data-testid="status-line"][data-provider-wait="true"]');
@@ -3781,7 +4052,7 @@ const checkWaitingLine = async (where) => {
   await waitingLine.getByTestId("status-line-text").getByText(/^Aspetto che la quota di ChatGPT si sblocchi/).waitFor();
   await waitingLine.getByTestId("status-line-reason").getByText("Fino ad allora non parte nessun turno. Poi riprendo da solo.").waitFor();
   // The Pause stays reachable while the Coordinator waits.
-  await waitingLine.getByRole("button", { name: "Pausa", exact: true }).waitFor();
+  await waitingLine.getByRole("button", { name: "Pausa del Coordinatore", exact: true }).waitFor();
   if (/[–—]/.test(await waitingLine.innerText())) throw new Error(`${where}: dash in the status line`);
 };
 const alwaysReplies = () => page.getByText("Questa risposta arriva dal server di prova").count();
@@ -3799,7 +4070,7 @@ await page.keyboard.press("Enter");
 await page.locator('[role="alert"][data-failure-kind="quotaExhausted"]').last().waitFor({ timeout: 30_000 });
 await checkWaitingLine("Limit");
 await page.getByTestId("status-line").scrollIntoViewIfNeeded();
-await waitShots("28a-status-line-provider-wait");
+await lookShots("28a-status-line-provider-wait");
 
 // Esci while the quota is still used up: after reopening, the turn waits again, and no new turn starts meanwhile.
 await app.close();
@@ -3808,7 +4079,7 @@ await page.getByTestId("dialog-title").filter({ hasText: "trama-ui-sempre-attivo
 await checkWaitingLine("Reopened limit");
 await page.waitForTimeout(7_000);
 if ((await page.locator('[role="alert"][data-failure-kind="quotaExhausted"]').count()) !== 1) throw new Error("Trama started a turn while the quota was used up");
-await waitShots("28b-reopened-provider-wait");
+await lookShots("28b-reopened-provider-wait");
 let alwaysSoFar = await alwaysReplies();
 await rm(alwaysQuota);
 await waitForAlwaysReply(alwaysSoFar, "Reopened limit");
@@ -3841,10 +4112,10 @@ for (let index = (await turnLines.count()) - 1; index >= 0 && !(await reopenedRo
 await reopenedRow.waitFor({ timeout: 10_000 });
 await page.waitForTimeout(1_000);
 await reopenedRow.scrollIntoViewIfNeeded();
-await waitShots("28d-reopened-turn-resumed");
+await lookShots("28d-reopened-turn-resumed");
 
 // A project in Pause stays in Pause after the restart: the turn Esci ended waits for the person.
-await page.locator('[data-testid="status-line"]').getByRole("button", { name: "Pausa", exact: true }).click();
+await page.locator('[data-testid="status-line"]').getByRole("button", { name: "Pausa del Coordinatore", exact: true }).click();
 await page.locator('[data-testid="status-line"][data-paused="true"]').waitFor();
 await app.close();
 ({ app, page } = await launch(alwaysEnv));
@@ -3863,7 +4134,399 @@ const pausedQuit = page.getByRole("status").filter({ hasText: "Trama è stato ch
 await pausedQuit.waitFor({ timeout: 30_000 });
 await page.waitForTimeout(2_000);
 if ((await alwaysReplies()) !== alwaysSoFar) throw new Error("A turn resumed in Pause");
-await waitShots("28e-reopened-paused");
+await lookShots("28e-reopened-paused");
+await page.evaluate(() => window.trama.invoke("settings:update", { theme: "system" }));
+await app.close();
+
+// Issue #40: the chat tells an overlap, a reproduced conflict and a semantic hypothesis apart. Each card names the
+// project, the assignments, the base and the copies compared, with the time of the GitHub reading apart from the time
+// of the AI analysis. A hypothesis stays an interpretation until the scenario on the combined candidate fails; only
+// then it blocks the green light. Both themes.
+const conflictsProject = await mkdtemp(join(tmpdir(), "trama-ui-conflitti-"));
+await cp(resolve("resources/DemoProject"), conflictsProject, { recursive: true });
+const conflictsGit = (...args) => execFileSync("git", ["-C", conflictsProject, ...args], { encoding: "utf8" });
+conflictsGit("init", "-q", "-b", "main");
+conflictsGit("add", ".");
+conflictsGit("-c", "user.name=Trama UI", "-c", "user.email=ui@trama.local", "commit", "-q", "-m", "Negozio");
+const conflictsBase = conflictsGit("rev-parse", "HEAD").trim();
+({ app, page } = await launch());
+await page.evaluate(() => window.trama.invoke("settings:update", { continuousWork: false, theme: "light" }));
+await page.evaluate((path) => window.trama.invoke("project:open", { path }), conflictsProject);
+await page.getByText("Ho letto lo studio").first().waitFor({ timeout: 30_000 });
+await app.close();
+let conflictsPath = null;
+for (const file of await readdir(join(dataDir, "Projects"))) {
+  if ((await readFile(join(dataDir, "Projects", file), "utf8")).includes("trama-ui-conflitti-")) conflictsPath = join(dataDir, "Projects", file);
+}
+if (!conflictsPath) throw new Error("Conflicts: the project's state was not saved");
+{
+  const document = JSON.parse(await readFile(conflictsPath, "utf8"));
+  const at = (hour, minute = 0) => `2026-09-28T${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}:00.000Z`;
+  const work = (id, specialistId, objective, hour, branch, issueNumber) => ({
+    id,
+    specialistId,
+    requestId: null,
+    kind: "agreedTicket",
+    objective,
+    issueNumber,
+    exercise: null,
+    moduleIds: [],
+    dependencies: [],
+    model: "gpt-6-luna",
+    tools: ["commands", "edits"],
+    requiredChecks: ["node_test"],
+    instructions: "",
+    mandateVersion: 1,
+    createdAt: at(hour),
+    status: "completed",
+    workspace: { sourceRoot: conflictsProject, worktreeRoot: join(conflictsProject, "..", `wt-${id}`), branch, baseSHA: conflictsBase },
+    threadId: null,
+    turns: [],
+    stops: [],
+    result: "Fatto.",
+    failure: null,
+    updatedAt: at(hour),
+    lastUpdate: "",
+    reportedStatus: "completed",
+  });
+  const cart = work("A-1C0A7E21", "S-ADA", "Sconto nel carrello", 9, "feature/sconto-carrello", 41);
+  const orders = work("A-6B3F90D4", "S-ADA", "Totale degli ordini", 10, "feature/totale-ordini", 43);
+  const rounding = work("A-94E2B7C8", "S-BEA", "Arrotondamento dei prezzi", 9, "feature/arrotondamento-prezzi", 44);
+  const specialist = (id, name, color, assignments) => ({
+    id,
+    name,
+    competence: "Next.js",
+    reason: "",
+    moduleIds: [],
+    role: "developer",
+    origin: "teamProposal",
+    color,
+    tag: "Next.js",
+    createdAt: at(8),
+    status: "available",
+    model: "gpt-6-luna",
+    tools: ["commands", "edits"],
+    updatedAt: at(12),
+    lastUpdate: "",
+    removal: null,
+    assignments,
+  });
+  document.team.specialists.push(specialist("S-ADA", "Ada", "blue", [cart, orders]), specialist("S-BEA", "Bea", "green", [rounding]));
+  const candidate = (id, assignment, snapshotId, hour, changedFiles) => ({
+    id,
+    assignmentId: assignment.id,
+    specialistId: assignment.specialistId,
+    snapshotId,
+    baseSHA: conflictsBase,
+    diff: "",
+    changedFiles,
+    touchedModules: [],
+    requiredDecisionIds: [],
+    decisionVersions: {},
+    requiredChecks: ["node_test"],
+    unresolvedChoices: [],
+    externalEffects: [],
+    declaredAt: at(hour),
+    updatedAt: at(hour),
+    evidence: { node_test: { check: "node_test", result: "pass", command: "npm test", output: "", snapshotId, decisionVersions: {}, recordedAt: at(hour) } },
+    technicalReview: null,
+    clearance: null,
+    humanApproval: null,
+    pullRequest: null,
+  });
+  const cartWork = candidate("C-3F1A9B20", cart, "5e2c8a17d09b4f6e", 10, ["src/lib/prezzi.ts", "src/app/carrello/page.tsx"]);
+  const roundingWork = candidate("C-7D42C1E5", rounding, "a81f3c90b27d4e55", 11, ["src/lib/prezzi.ts"]);
+  const ordersWork = candidate("C-51B0E7A3", orders, "c4d9e012f7a35b68", 12, ["src/lib/ordini.ts"]);
+  document.candidates.push(cartWork, roundingWork, ordersWork);
+  const pullSHA = "8e1d4c7b2a9f0e3d6c5b4a39281706f5e4d3c2b1";
+  document.conflicts = [
+    {
+      id: `${roundingWork.snapshotId}:worktree:${cartWork.snapshotId}`,
+      candidateId: roundingWork.id,
+      snapshotId: roundingWork.snapshotId,
+      remoteSHA: "0b7e5d3c1a2f4e6d8c9b0a1f2e3d4c5b6a7f8e9d",
+      references: [cartWork.id],
+      otherCandidateId: cartWork.id,
+      otherSnapshotId: cartWork.snapshotId,
+      classification: "overlap",
+      conflictingFiles: ["src/lib/prezzi.ts"],
+      detail: "Nessun conflitto testuale tra le due copie di lavoro, ma entrambe cambiano src/lib/prezzi.ts.",
+      checkedAt: at(11, 2),
+    },
+    {
+      id: `${cartWork.snapshotId}:${pullSHA}`,
+      candidateId: cartWork.id,
+      snapshotId: cartWork.snapshotId,
+      remoteSHA: pullSHA,
+      references: ["#42 feature/coupon-checkout"],
+      classification: "conflict",
+      conflictingFiles: ["src/app/carrello/page.tsx"],
+      conflictingLines: { "src/app/carrello/page.tsx": [{ start: 14, end: 18 }] },
+      detail: "La fusione temporanea produce conflitti testuali.",
+      checkedAt: at(10, 6),
+      remoteReadAt: at(10, 5),
+    },
+  ];
+  document.conflicts.push(
+    {
+      id: `${ordersWork.snapshotId}:semantic:${cartWork.snapshotId}`,
+      candidateId: ordersWork.id,
+      snapshotId: ordersWork.snapshotId,
+      remoteSHA: conflictsBase,
+      references: [cartWork.id],
+      otherCandidateId: cartWork.id,
+      otherSnapshotId: cartWork.snapshotId,
+      classification: "hypothesis",
+      conflictingFiles: [],
+      detail: "Lo scenario sul candidato combinato passa: l'incompatibilità resta un'ipotesi.",
+      checkedAt: at(12, 20),
+      semantic: {
+        explanation: "Il totale degli ordini somma i prezzi prima dello sconto del carrello: il totale potrebbe non coincidere con quello pagato.",
+        analyzedAt: at(12, 10),
+        check: "node_test",
+        scenario: { result: "pass", command: "npm test", output: "", ranAt: at(12, 20) },
+      },
+    },
+    {
+      id: `${ordersWork.snapshotId}:semantic:${roundingWork.snapshotId}`,
+      candidateId: ordersWork.id,
+      snapshotId: ordersWork.snapshotId,
+      remoteSHA: conflictsBase,
+      references: [roundingWork.id],
+      otherCandidateId: roundingWork.id,
+      otherSnapshotId: roundingWork.snapshotId,
+      classification: "semantic",
+      conflictingFiles: [],
+      detail: "Ognuno passa da solo, ma sul candidato combinato test Node fallisce: le due modifiche sono incompatibili.",
+      checkedAt: at(12, 25),
+      semantic: {
+        explanation: "Bea arrotonda i prezzi unitari, Ada arrotonda il totale: insieme il totale può perdere un centesimo.",
+        analyzedAt: at(12, 12),
+        check: "node_test",
+        scenario: { result: "fail", command: "npm test", output: "FAIL ordini.test.ts > totale con tre righe\nexpected 30.00, received 29.99", ranAt: at(12, 25) },
+      },
+    },
+  );
+  let sequence = Math.max(0, ...document.events.map((e) => e.sequence));
+  const card = (kind, referenceId, minute) => ({ id: `E-c08-${++sequence}`, sequence, origin: "trama", requestId: null, createdAt: at(12, minute), content: { type: "card", kind, title: kind, detail: null, referenceId } });
+  document.events.push(...document.conflicts.map((a, index) => card("conflict", a.id, 30 + index)), card("candidate", ordersWork.id, 40));
+  await writeFile(conflictsPath, JSON.stringify(document));
+}
+({ app, page } = await launch());
+await page.evaluate((path) => window.trama.invoke("project:open", { path }), conflictsProject);
+await page.locator(".chat-card").filter({ hasText: "Pull request aperta" }).first().waitFor({ timeout: 30_000 });
+const conflictShots = ["overlap", "conflict", "hypothesis", "semantic"];
+for (const kind of conflictShots) {
+  const one = page.locator(`[data-testid="conflict-card"][data-classification="${kind}"]`);
+  if ((await one.count()) !== 1) throw new Error(`Conflicts: ${await one.count()} cards for ${kind}`);
+  const text = await one.innerText();
+  if (/[–—]|[A-Z]-[0-9A-F]{8}/.test(text)) throw new Error(`Conflicts: a dash or an id in the ${kind} card: ${text}`);
+  for (const wanted of ["Progetto trama-ui-conflitti-", "Ada, ", "base ", "copi"]) {
+    if (!text.includes(wanted)) throw new Error(`Conflicts: the ${kind} card does not say ${wanted}: ${text}`);
+  }
+}
+{
+  const pullCard = await page.locator('[data-testid="conflict-card"][data-classification="conflict"]').innerText();
+  if (!pullCard.includes("GitHub letto alle") || !pullCard.includes("prova di fusione alle")) throw new Error(`Conflicts: the GitHub card mixes its times: ${pullCard}`);
+  const hypothesis = await page.locator('[data-testid="conflict-card"][data-classification="hypothesis"]').innerText();
+  if (!hypothesis.includes("analisi AI alle") || !hypothesis.includes("non ancora una prova")) throw new Error(`Conflicts: the hypothesis is not an interpretation: ${hypothesis}`);
+  const semantic = page.locator('[data-testid="conflict-card"][data-classification="semantic"]');
+  await semantic.locator('[data-testid="semantic-scenario"][data-result="fail"]').waitFor();
+  if (!(await semantic.innerText()).includes("Incompatibili") && !(await page.locator(".chat-card", { has: semantic }).innerText()).includes("Incompatibili")) {
+    throw new Error("Conflicts: the proved case is not marked incompatible");
+  }
+}
+for (const kind of conflictShots) {
+  const one = page.locator(`[data-testid="conflict-card"][data-classification="${kind}"]`);
+  await one.evaluate((element) => element.scrollIntoView({ block: "center" }));
+  for (const dark of [false, true]) {
+    await page.evaluate((theme) => window.trama.invoke("settings:update", { theme }), dark ? "dark" : "light");
+    await page.waitForFunction((wanted) => document.documentElement.classList.contains("dark") === wanted, dark);
+    await shot(`29-conflicts-${kind}-${dark ? "dark" : "light"}`);
+  }
+}
+// The proved case blocks the green light of the newer candidate; the hypothesis next to it does not.
+const blockedCandidate = page.locator('[data-testid="candidate-blockers"]').filter({ hasText: "Incompatibile con un altro lavoro" });
+await blockedCandidate.waitFor({ timeout: 10_000 });
+if ((await blockedCandidate.locator("li").filter({ hasText: "Incompatibile" }).count()) !== 1) throw new Error("Conflicts: the hypothesis blocks the green light too");
+await blockedCandidate.evaluate((element) => element.scrollIntoView({ block: "center" }));
+for (const dark of [false, true]) {
+  await page.evaluate((theme) => window.trama.invoke("settings:update", { theme }), dark ? "dark" : "light");
+  await page.waitForFunction((wanted) => document.documentElement.classList.contains("dark") === wanted, dark);
+  await shot(`29-conflicts-blocked-${dark ? "dark" : "light"}`);
+}
+await page.evaluate(() => window.trama.invoke("settings:update", { theme: "system" }));
+await app.close();
+
+// Issue #260 (A19): a developer's slice in a Claude Code cloud session, with the place of work the person chooses. The
+// project's setting sits in the settings; the assignment card says where the work runs, who chose it and why, the step
+// that enables the cloud when it cannot be used, and the session's link and state. The sessions are a declared fixture:
+// their state is written in the project's document and no real session opens. Light and dark.
+const cloudProject = await mkdtemp(join(tmpdir(), "trama-ui-cloud-"));
+await cp(resolve("resources/DemoProject"), cloudProject, { recursive: true });
+({ app, page } = await launch());
+await page.evaluate(() => window.trama.invoke("settings:update", { continuousWork: false, theme: "light" }));
+await page.evaluate((path) => window.trama.invoke("project:open", { path }), cloudProject);
+await page.getByText("Ho letto lo studio").first().waitFor({ timeout: 30_000 });
+await app.close();
+let cloudPath = null;
+for (const file of await readdir(join(dataDir, "Projects"))) {
+  if ((await readFile(join(dataDir, "Projects", file), "utf8")).includes("trama-ui-cloud-")) cloudPath = join(dataDir, "Projects", file);
+}
+if (!cloudPath) throw new Error("Cloud sessions: the project's state was not saved");
+{
+  const document = JSON.parse(await readFile(cloudPath, "utf8"));
+  const start = Date.now();
+  const at = (minute) => new Date(start + minute * 60_000).toISOString();
+  const session = (overrides) => ({
+    provider: "claudeAgent",
+    url: "https://claude.ai/code/session_01ui",
+    branch: "feature/issue-21-carrello-trama-0c1a2b3c",
+    baseBranch: "main",
+    status: "working",
+    pullRequest: null,
+    startedAt: at(2),
+    checkedAt: at(3),
+    failure: null,
+    instructions: [{ text: "Lavora sul branch, esegui i controlli di pubblicazione prima del push e apri la pull request in bozza verso main.", at: at(2) }],
+    macChecks: null,
+    ...overrides,
+  });
+  const work = (id, specialistId, objective, extra) => ({
+    id,
+    specialistId,
+    requestId: null,
+    kind: "agreedTicket",
+    objective,
+    issueNumber: null,
+    exercise: null,
+    moduleIds: [],
+    dependencies: [],
+    model: "claude-sonnet-5",
+    provider: "claudeAgent",
+    modelReason: "Fetta di codice di media difficoltà.",
+    tools: ["commands", "edits"],
+    requiredChecks: ["git_status"],
+    instructions: "",
+    mandateVersion: 1,
+    createdAt: at(1),
+    workspace: null,
+    threadId: null,
+    stops: [],
+    failure: null,
+    updatedAt: at(3),
+    reportedStatus: null,
+    ...extra,
+  });
+  const cloudReason = "È una fetta di codice senza prove dal vivo: in cloud libera il Mac e continua anche con Trama chiusa.";
+  const working = work("A-C10D0001", "S-ADA", "Il carrello ricorda i prodotti tra due visite", {
+    status: "running",
+    turns: [{ id: "cloud-1", number: 1, model: "claude-sonnet-5", provider: "claudeAgent", startedAt: at(2), endedAt: null, outcome: null }],
+    result: null,
+    lastUpdate: "Al lavoro in una sessione cloud sul branch feature/issue-21-carrello-trama-0c1a2b3c",
+    place: { where: "cloud", chosenBy: "coordinator", reason: cloudReason, cloudBlocked: null, at: at(2) },
+    cloud: session({}),
+  });
+  const returned = work("A-C10D0002", "S-BRUNO", "Il prezzo scontato si vede nella scheda", {
+    status: "completed",
+    turns: [{ id: "cloud-2", number: 1, model: "claude-sonnet-5", provider: "claudeAgent", startedAt: at(1), endedAt: at(3), outcome: "completed" }],
+    result: "La sessione cloud ha aperto la pull request in bozza #34.",
+    lastUpdate: "Incarico concluso",
+    workspace: { sourceRoot: cloudProject, worktreeRoot: join(cloudProject, "..", "wt-cloud-2"), branch: "feature/issue-22-prezzo-scontato-trama-5d6e7f80", baseSHA: "0".repeat(40) },
+    place: { where: "cloud", chosenBy: "setting", reason: "Il progetto usa il cloud quando possibile.", cloudBlocked: null, at: at(1) },
+    cloud: session({
+      url: "https://claude.ai/code/session_02ui",
+      branch: "feature/issue-22-prezzo-scontato-trama-5d6e7f80",
+      status: "returned",
+      pullRequest: { number: 34, url: "https://github.com/acme/negozio/pull/34", draft: true },
+      macChecks: { snapshotId: "snap-cloud-2", problems: [], at: at(3) },
+    }),
+  });
+  const local = work("A-C10D0003", "S-CARLA", "La pagina dell'ordine mostra lo stato della spedizione", {
+    status: "stopped",
+    turns: [],
+    result: null,
+    lastUpdate: "Fermato: la persona ha fermato il lavoro",
+    place: {
+      where: "local",
+      chosenBy: "coordinator",
+      reason: "Il cloud non si può usare ora, quindi lavora in locale. Il progetto non è su GitHub, e la sessione cloud parte dal repository su GitHub.",
+      cloudBlocked: {
+        reason: "Il progetto non è su GitHub, e la sessione cloud parte dal repository su GitHub.",
+        enable: "Pubblica il progetto su GitHub con il remoto origin, poi riprendi l'incarico.",
+      },
+      at: at(1),
+    },
+  });
+  const developer = (id, name, color, assignment) => ({
+    id,
+    name,
+    competence: "Next.js",
+    reason: "",
+    moduleIds: [],
+    role: "developer",
+    origin: "teamProposal",
+    color,
+    tag: "Next.js",
+    createdAt: at(0),
+    status: assignment.status === "running" ? "working" : "available",
+    model: "claude-sonnet-5",
+    tools: ["commands", "edits"],
+    updatedAt: at(3),
+    lastUpdate: "",
+    removal: null,
+    assignments: [assignment],
+  });
+  document.team.specialists.push(developer("S-ADA", "Ada", "blue", working), developer("S-BRUNO", "Bruno", "green", returned), developer("S-CARLA", "Carla", "orange", local));
+  document.settings = { ...(document.settings ?? {}), workPlace: "cloud" };
+  let sequence = Math.max(0, ...document.events.map((e) => e.sequence));
+  const card = (minute, referenceId) => ({ id: `E-cloud-${++sequence}`, sequence, origin: "trama", requestId: null, createdAt: at(minute), content: { type: "card", kind: "assignment", title: "assignment", detail: null, referenceId } });
+  document.events.push(card(1, local.id), card(2, working.id), card(3, returned.id));
+  await writeFile(cloudPath, JSON.stringify(document));
+}
+({ app, page } = await launch());
+await page.evaluate((path) => window.trama.invoke("project:open", { path }), cloudProject);
+const cloudCard = (name) => page.locator('.chat-card:not([data-testid="settled-card"] .chat-card), [data-testid="settled-card"]').filter({ hasText: /^Incarico / }).filter({ hasText: name }).last();
+// Trama closing and reopening does not stop a running cloud session (Q28): Ada's work is still at work.
+for (const [name, testid, file] of [
+  ["Ada", '[data-testid="cloud-session"][data-status="working"]', "31b-cloud-session-working"],
+  ["Bruno", '[data-testid="cloud-mac-checks"][data-passed="yes"]', "31c-cloud-session-returned"],
+  ["Carla", '[data-testid="assignment-place-enable"]', "31d-cloud-blocked-local"],
+]) {
+  const found = cloudCard(name);
+  await waitInCard(found, (card) => card.locator(testid), `${name}: ${testid}`, 30_000);
+  // The card from its top, so its buttons stay above the composer.
+  await found.evaluate((card) => card.scrollIntoView({ block: "start" }));
+  for (const dark of [false, true]) {
+    await page.evaluate((theme) => window.trama.invoke("settings:update", { theme }), dark ? "dark" : "light");
+    await page.waitForFunction((wanted) => document.documentElement.classList.contains("dark") === wanted, dark);
+    await shot(`${file}-${dark ? "dark" : "light"}`);
+  }
+}
+if (!(await cloudCard("Ada").getByRole("button", { name: "Controlla la sessione" }).isVisible())) throw new Error("Cloud sessions: a running session has no check");
+if (!(await cloudCard("Carla").getByRole("button", { name: "Sposta in cloud" }).isVisible())) throw new Error("Cloud sessions: stopped local work cannot move to the cloud");
+const cloudState = await page.evaluate(async () => (await window.trama.getState()).project.document.team.specialists.find((s) => s.name === "Ada").assignments[0]);
+if (cloudState.status !== "running" || cloudState.cloud.status !== "working") throw new Error(`Cloud sessions: reopening stopped the cloud work: ${cloudState.status}`);
+// The person moves Carla's work to the cloud for its next resume: the card says so.
+await cloudCard("Carla").getByRole("button", { name: "Sposta in cloud" }).click();
+await cloudCard("Carla").getByText("Alla prossima ripresa lavora in cloud, come hai scelto.").waitFor();
+await cloudCard("Carla").getByRole("button", { name: "Sposta in locale" }).waitFor();
+// The project's setting: three values, the person's choice kept.
+await page.getByRole("button", { name: "Impostazioni" }).click();
+const cloudSettings = page.getByTestId("settings");
+await cloudSettings.getByRole("button", { name: /^Metodo di lavoro/ }).first().click();
+const workPlace = cloudSettings.getByTestId("work-place");
+await workPlace.getByRole("radio", { name: "Cloud quando possibile", checked: true }).waitFor();
+await workPlace.getByRole("radio", { name: "Automatico" }).click();
+await workPlace.getByRole("radio", { name: "Automatico", checked: true }).waitFor();
+await workPlace.scrollIntoViewIfNeeded();
+for (const dark of [false, true]) {
+  await page.evaluate((theme) => window.trama.invoke("settings:update", { theme }), dark ? "dark" : "light");
+  await page.waitForFunction((wanted) => document.documentElement.classList.contains("dark") === wanted, dark);
+  await shot(`31a-work-place-setting-${dark ? "dark" : "light"}`);
+}
+const savedSetting = await page.evaluate(async () => (await window.trama.getState()).project.document.settings.workPlace);
+if (savedSetting !== "automatic") throw new Error(`Cloud sessions: the setting was not saved: ${savedSetting}`);
 await page.evaluate(() => window.trama.invoke("settings:update", { theme: "system" }));
 await app.close();
 
@@ -4005,4 +4668,50 @@ await page.getByTestId("activity-log").locator('[data-testid="activity-merge"]')
 await themeShots("30e-merge-activity-person");
 await page.getByRole("button", { name: "Chiudi la barra laterale" }).click();
 await page.evaluate(() => window.trama.invoke("settings:update", { theme: "system" }));
+await app.close();
+
+// Issue #39: the projects share the developers. The overview says how many work in all projects and keeps the
+// Product Owner's order of the projects: the arrows move a project, opening another one leaves the order as it is.
+({ app, page } = await launch());
+await page.getByTestId("dialog-title").first().waitFor({ timeout: 30_000 });
+// Issue #330: the overview opens from the Projects view.
+await openView("Progetti");
+await page.getByRole("button", { name: "Panoramica dei progetti" }).click();
+const priority = page.getByTestId("overview-priority");
+await priority.waitFor({ timeout: 10_000 });
+await priority.getByTestId("shared-capacity").filter({ hasText: /Sviluppatori al lavoro in tutti i progetti: \d+ su 6/ }).waitFor();
+const priorityNames = () => priority.getByTestId("overview-priority-row").locator("span.truncate").allInnerTexts();
+const before39 = await priorityNames();
+if (before39.length < 2) throw new Error("The overview ranks fewer than two projects");
+await priority.getByRole("button", { name: `Sposta ${before39[1]} più in alto` }).click();
+await page.waitForFunction(
+  ([first]) => document.querySelector('[data-testid="overview-priority-row"] span.truncate')?.textContent === first,
+  [before39[1]],
+  { timeout: 10_000 },
+);
+const moved39 = await priorityNames();
+if (moved39[0] !== before39[1] || moved39[1] !== before39[0]) throw new Error(`The project did not move up: ${moved39.join(", ")}`);
+await priority.scrollIntoViewIfNeeded();
+await themeShots("39a-overview-priority");
+// Opening a project from the overview does not rank it.
+await page.getByTestId("overview-project").filter({ hasText: before39[0] }).getByRole("button", { name: before39[0], exact: true }).click();
+await page.getByTestId("overview").waitFor({ state: "detached", timeout: 30_000 });
+await page.waitForTimeout(1_500);
+await page.getByRole("button", { name: "Panoramica dei progetti" }).click();
+await priority.waitFor();
+let reopened39 = await priorityNames();
+for (const end = Date.now() + 10_000; reopened39.join("|") !== moved39.join("|") && Date.now() < end; reopened39 = await priorityNames()) await page.waitForTimeout(250);
+if (reopened39.join("|") !== moved39.join("|")) throw new Error(`Opening a project changed the order of the projects: ${moved39.join(", ")} became ${reopened39.join(", ")}`);
+await page.getByRole("button", { name: "Panoramica dei progetti" }).click();
+// The shared limit sits next to the project's own limit in the settings.
+await page.getByRole("button", { name: "Impostazioni" }).click();
+const sharedSettings = page.getByTestId("settings");
+await sharedSettings.getByRole("button", { name: /^Metodo di lavoro/ }).first().click();
+const sharedPicker = sharedSettings.getByTestId("shared-developers");
+await sharedPicker.getByRole("radio", { name: "6", checked: true }).waitFor();
+await sharedPicker.getByRole("radio", { name: "4" }).click();
+await sharedPicker.getByRole("radio", { name: "4", checked: true }).waitFor();
+await sharedPicker.scrollIntoViewIfNeeded();
+await noHorizontalScroll("shared developers");
+await themeShots("39b-shared-developers");
 await app.close();

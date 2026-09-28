@@ -13,6 +13,7 @@ export const MENU_VIEWS = ["waiting", "work", "teams", "rules", "memory"] as con
 /** What a menu item asks the window to do; the renderer handles each command in `App.tsx`. */
 export type MenuCommand =
   | "settings"
+  | "about"
   | "createProject"
   | "refreshProject"
   | "focusComposer"
@@ -25,6 +26,7 @@ export type MenuCommand =
 
 export const MENU_COMMANDS: MenuCommand[] = [
   "settings",
+  "about",
   "createProject",
   "refreshProject",
   "focusComposer",
@@ -76,7 +78,10 @@ export function menuTemplate({ platform, language, packaged, actions }: MenuOpti
   const section = (mac: MessageKey, other: MessageKey) => t(isMac ? mac : other);
   const send = (command: MenuCommand) => () => actions.send(command);
   const settings: MenuItemConstructorOptions = { label: t("menu.settings"), accelerator: "CmdOrCtrl+,", click: send("settings") };
-  const about: MenuItemConstructorOptions = { role: "about", label: t("menu.about") };
+  // macOS shows its own About panel; Windows and Linux have none, so there it opens the About of the settings.
+  const about: MenuItemConstructorOptions = isMac
+    ? { id: "about", role: "about", label: t("menu.about") }
+    : { id: "about", label: t("menu.about"), click: send("about") };
 
   const appMenu: MenuItemConstructorOptions = {
     label: "Trama",

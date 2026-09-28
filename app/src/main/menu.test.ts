@@ -118,9 +118,13 @@ describe("application menu (issue #345)", () => {
   });
 
   it("keeps About at the end of Help on Windows and Linux, and in the app menu on macOS", () => {
+    expect(submenu(build("darwin", "en").template[0]!)[0]).toMatchObject({ role: "about", label: "About Trama" });
     for (const platform of ["win32", "linux"] as const) {
-      const help = submenu(build(platform, "en").template.at(-1)!);
-      expect(help.at(-1)).toMatchObject({ role: "about", label: "About Trama" });
+      const { template, calls } = build(platform, "en");
+      const about = submenu(template.at(-1)!).at(-1)!;
+      // Windows and Linux have no About panel: the item opens the About of the settings.
+      expect(about).toMatchObject({ label: "About Trama" });
+      expect(clickOf(about, calls)).toBe("send:about");
     }
     const macHelp = submenu(build("darwin", "en").template.at(-1)!);
     expect(macHelp.some((item) => item.role === "about")).toBe(false);

@@ -467,8 +467,8 @@ export class CodexClient {
   private endTurn(turn: ActiveTurn): void {
     if (this.activeTurn === turn) this.activeTurn = null;
     if (!turn.turnId) return;
+    // Kept until the app-server process changes: a late event can name any earlier turn of that process.
     this.endedTurnIds.add(turn.turnId);
-    if (this.endedTurnIds.size > 100) this.endedTurnIds.delete(this.endedTurnIds.values().next().value!);
   }
 
   private adoptTurnId(turn: ActiveTurn, turnId: string): void {
@@ -577,6 +577,11 @@ export class CodexClient {
   private send(message: JsonObject): void {
     if (!this.child || !this.child.stdin.writable) throw new CodexError("processExited", "Codex app-server non è attivo.");
     this.child.stdin.write(`${JSON.stringify(message)}\n`);
+  }
+
+  /** Asks Codex to compact a thread loaded in this process now (`thread/compact/start`). */
+  async compactThread(threadId: string): Promise<void> {
+    await this.request("thread/compact/start", { threadId }, 120_000);
   }
 
   private request(method: string, params: JsonObject, timeoutMs?: number): Promise<Json> {

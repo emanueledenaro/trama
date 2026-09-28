@@ -1,6 +1,17 @@
+import { execFileSync } from "node:child_process";
 import { build, context } from "esbuild";
 
 const watch = process.argv.includes("--watch");
+
+// The short commit of the build, shown next to the version in Informazioni su Trama; empty outside git.
+function buildCommit() {
+  if (process.env.GITHUB_SHA) return process.env.GITHUB_SHA.slice(0, 7);
+  try {
+    return execFileSync("git", ["rev-parse", "--short=7", "HEAD"], { encoding: "utf8" }).trim();
+  } catch {
+    return "";
+  }
+}
 
 const shared = {
   bundle: true,
@@ -18,6 +29,7 @@ const shared = {
     "@earendil-works/*",
   ],
   logLevel: "info",
+  define: { __TRAMA_COMMIT__: JSON.stringify(buildCommit()) },
 };
 
 const configs = [

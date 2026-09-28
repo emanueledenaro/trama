@@ -67,6 +67,11 @@ export function App() {
     const offMenu = window.trama.onMenu((command) => {
       const ui = useUi.getState();
       if (command === "settings") ui.openSettings("general");
+      else if (command === "about") {
+        // Informazioni su Trama on Windows and Linux: the last group of the general settings, brought into view.
+        ui.openSettings("general");
+        requestAnimationFrame(() => document.querySelector('[data-testid="about-trama"]')?.scrollIntoView({ block: "center" }));
+      }
       else if (command === "createProject") ui.setDialog("createProject");
       else if (command === "guide") ui.setDialog("guide");
       else if (command === "welcome") ui.setWelcome("hello");

@@ -53,6 +53,7 @@ const receivedByThread = new Map();
 // Threads opened for "[lento:sempre]" work: the Coordinator's instructions carry the tag, so a resumed turn, whose
 // prompt only says to go on, stays running until interrupted like the first one. "[lento]" work ends when resumed.
 const slowThreads = new Set();
+const fullThreads = new Set();
 // The first slice Trama lists as ready in the Coordinator's message (M05), as assign_task's slice argument.
 const readySlice = (text) => {
   const id = text.match(/^- (S\d+) «[^»]*»:[^\n]* pronta\./m)?.[1];
@@ -82,7 +83,7 @@ let processedTokens = 0;
 createInterface({ input: process.stdin }).on("line", async (line) => {
   const { id, method, params } = JSON.parse(line);
   // FAKE_CODEX_LOG names a file that receives each session and turn request, so tests can read what Trama asked for.
-  if (process.env.FAKE_CODEX_LOG && (method === "thread/start" || method === "thread/resume" || method === "turn/start")) {
+  if (process.env.FAKE_CODEX_LOG && (method === "thread/start" || method === "thread/resume" || method === "turn/start" || method === "thread/compact/start")) {
     const { appendFileSync } = await import("node:fs");
     appendFileSync(process.env.FAKE_CODEX_LOG, `${JSON.stringify({ method, params })}\n`);
   }
@@ -140,11 +141,23 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
     case "thread/resume":
       return send({ id, error: { code: -32000, message: "thread not found" } });
     case "thread/start": {
+      // FAKE_CODEX_FAIL_THREAD_START names a file: while it exists, one new thread fails to open and the file goes away,
+      // so a test can make the Coordinator's new session fail once (ADR 0018).
+      const failStart = process.env.FAKE_CODEX_FAIL_THREAD_START;
+      if (failStart) {
+        const { existsSync, rmSync } = await import("node:fs");
+        if (existsSync(failStart)) {
+          rmSync(failStart);
+          return send({ id, error: { code: -32000, message: "thread/start failed: server overloaded" } });
+        }
+      }
       const threadId = `thread-${process.pid}-${++threads}`;
       const server = params.config?.["mcp_servers.trama"];
       if (server) toolServers.set(threadId, server);
       threadProfiles.set(threadId, { permissions: params.permissions ?? null, config: params.config ?? {} });
       if (String(params.developerInstructions ?? "").includes("[lento:sempre]")) slowThreads.add(threadId);
+      // "[specialista-pieno]": a specialist's thread whose turns use most of the context window (ADR 0018).
+      if (String(params.developerInstructions ?? "").includes("[specialista-pieno]")) fullThreads.add(threadId);
       return send({ id, result: { thread: { id: threadId } } });
     }
     case "turn/start": {
@@ -290,6 +303,15 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
         const file = text.match(/File cambiati: ([^,\n]+?)(?:,|\.\n|\.$)/m)?.[1] ?? "?";
         // Each finding carries a proof of a different kind (F02): a line of a changed file Trama can reread, a
         // reproduction only a stronger model can confirm, and a command outside Trama's own checks.
+        // The Standards finding quotes the first line of the changed file, as it reads in the worktree.
+        const { readFileSync } = await import("node:fs");
+        const { join } = await import("node:path");
+        let firstLine = "";
+        try {
+          firstLine = readFileSync(join(params.cwd ?? "", file), "utf8").split("\n")[0].trim();
+        } catch {
+          firstLine = "";
+        }
         const proof = (kind, fields) => ({ kind, file: "", line: 0, quote: "", command: "", steps: "", ...fields });
         const answer = text.includes("You are the Spec sub-agent")
           ? {
@@ -306,7 +328,7 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
             }
           : {
               report: `### Violazioni documentate\n\nNessuna.\n\n### Smell (giudizio)\n\n- Possibile Mysterious Name in \`${file}\`.\n\nDiff letto con \`git diff ${fixedPoint}\`. Skill ricevute: ${skills.join(", ")}.`,
-              findings: [{ title: `Possibile Mysterious Name in ${file}`, severity: "minor", evidence: proof("fileLine", { file, line: 1 }) }],
+              findings: [{ title: `Possibile Mysterious Name in ${file}`, severity: "minor", evidence: proof("fileLine", { file, line: 1, quote: firstLine }) }],
               worst: `Possibile Mysterious Name in ${file}`,
             };
         // With FAKE_CODEX_AUDIT_GATE the axis answers only once the test creates that file, so a test can hold both
@@ -373,7 +395,7 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
           strength,
           adrConflict: "",
         });
-        const answer = { candidates: [candidate("Approfondire l'annullamento", "Strong"), candidate("Unire i pagamenti", "Speculative")], topRecommendation: `Skill ricevute: ${seen.join(", ")}${memory}` };
+        const answer = { candidates: [candidate("Approfondire l'annullamento", "Strong"), candidate("Unire i pagamenti", "Speculative")], topRecommendation: `${seen.some((item) => item.startsWith("skill:improve-codebase-architecture:") && item.endsWith("/improve-codebase-architecture/SKILL.md")) ? "Partire dall'annullamento: tocca un solo modulo." : `Skill mancante: ${seen.join(", ") || "nessuna"}.`}${memory}` };
         setTimeout(() => finish(JSON.stringify(answer)), 10);
         return;
       }
@@ -519,6 +541,9 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
         if (text.includes("[spazi]")) {
           const { appendFileSync } = await import("node:fs");
           appendFileSync(tracked, "// Nota dello specialista   \n");
+        }
+        if (fullThreads.has(threadId)) {
+          send({ method: "thread/tokenUsage/updated", params: { threadId, turnId, tokenUsage: { total: { totalTokens: 230_000 }, last: { totalTokens: 230_000 }, modelContextWindow: 258_000 } } });
         }
         if (text.includes("[lento]") || slowThreads.has(threadId)) return; // stays running until interrupted
         if (text.includes("## Trama binding for the tdd skill")) {
@@ -668,6 +693,25 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
         finish(done.join(" ") || "Non ho fatto la mossa.");
         return;
       }
+      if (text.includes("[ticket")) {
+        // [ticket] reports a partial increment on issue 42 and asks to close it (C10); [ticket:errore] reports another
+        // one, for a GitHub that fails the write. Trama keeps the issue open and says what is missing or what failed.
+        const failing = text.includes("[ticket:errore]");
+        callTool(threadId, "update_ticket", {
+          issueNumber: 42,
+          summary: failing ? "La prova nell'app è fatta; manca la CI." : "Il riepilogo mostra l'annullo; mancano la prova nell'app e la CI.",
+          criteria: [
+            { index: 0, outcome: "partial", evidence: [], limits: failing ? "Manca la CI" : "Manca la prova nell'app" },
+            { index: 1, outcome: "notMet", evidence: [] },
+          ],
+          openParts: ["Le verifiche passano"],
+          close: true,
+        }).then((result) => {
+          toolDone("update_ticket", result);
+          finish(result.isError ? "Non sono riuscito ad aggiornare la issue #42: il resoconto non è su GitHub." : "Ho registrato l'avanzamento sulla issue #42, che resta aperta.");
+        });
+        return;
+      }
       if (text.includes("[memoria-piena]")) {
         // A model that keeps retrying a note too long for the memory, then pastes the first error (issue #305).
         (async () => {
@@ -772,7 +816,7 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
                 ? ["git_status", "node_test"]
                 : ["git_status"],
           tools: ["edits"],
-          instructions: `${text.includes("[segreto]") ? "[segreto] " : ""}${text.includes("[bloccante]") ? "[bloccante] " : ""}${text.includes("[lento]") ? "[lento] " : ""}${text.includes("[lento:sempre]") ? "[lento:sempre] " : ""}${text.includes("[spazi]") ? "[spazi] " : ""}${text.includes("[domanda]") ? "[domanda] " : ""}${text.includes("[interfaccia]") ? "[interfaccia] " : ""}${text.includes("[impostazioni]") ? "[impostazioni] " : ""}Scrivi una nota`,
+          instructions: `${text.includes("[segreto]") ? "[segreto] " : ""}${text.includes("[bloccante]") ? "[bloccante] " : ""}${text.includes("[lento]") ? "[lento] " : ""}${text.includes("[lento:sempre]") ? "[lento:sempre] " : ""}${text.includes("[specialista-pieno]") ? "[specialista-pieno] " : ""}${text.includes("[spazi]") ? "[spazi] " : ""}${text.includes("[domanda]") ? "[domanda] " : ""}${text.includes("[interfaccia]") ? "[interfaccia] " : ""}${text.includes("[impostazioni]") ? "[impostazioni] " : ""}Scrivi una nota`,
         }).then((result) => {
           toolDone("assign_task", result);
           finish(result.isError ? `Rifiutato: ${result.content[0].text}` : "Ho assegnato il lavoro ad Ada.");
@@ -930,8 +974,11 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
         send({ method: "item/completed", params: { threadId, turnId, item: { id: "gh-study", type: "commandExecution", command: "gh issue list", exitCode: 1, status: "failed", aggregatedOutput: "error connecting to api.github.com" } } });
       }
       // Like Codex: `total` adds up every request of the thread and keeps growing, `last` is the request that fills the window (issue #305).
-      processedTokens += text.includes("[pieno]") ? 2_300_000 : 120_000;
-      const lastRequest = text.includes("[pieno]") ? 230_000 : text.includes("[compattato]") ? 20_000 : 12_000;
+      // A study turn opens a new session: its reading is small even when the summary quotes "[pieno]" (ADR 0018).
+      // 13.000 of 258.000 is 5,04%: just past the lowest threshold with the exact share (issue #272).
+      const full = text.includes("[pieno]") && !text.startsWith("Studio del progetto scritto da Trama");
+      processedTokens += full ? 2_300_000 : 120_000;
+      const lastRequest = full ? 230_000 : text.includes("[compattato]") ? 20_000 : 13_000;
       if (text.includes("[compattato]")) {
         send({ method: "item/completed", params: { threadId, turnId, item: { id: "compaction", type: "contextCompaction" } } });
       }
@@ -966,6 +1013,10 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
       }, 20 * pieces.length + 20);
       return;
     }
+    case "thread/compact/start":
+      // Codex compacts the thread and says so with a notification.
+      send({ id, result: {} });
+      return send({ method: "thread/compacted", params: { threadId: params.threadId } });
     case "turn/interrupt":
       send({ id, result: {} });
       return send({ method: "turn/completed", params: { threadId: params.threadId, turn: { id: params.turnId, status: "interrupted" } } });

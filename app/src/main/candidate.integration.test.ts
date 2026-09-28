@@ -109,6 +109,10 @@ describe("verified candidate in the chat (V05)", () => {
     const requests = (await readFile(log, "utf8")).trim().split("\n").map((line) => JSON.parse(line) as Request);
     const reviewer = requests.find((r) => r.method === "turn/start" && r.params.threadId === review.reviewerThreadId)!;
     expect(reviewer.params).toMatchObject({ cwd: fix.workspace!.worktreeRoot });
+    // The profile is named once, on the thread: the turn leaves it unnamed (Codex 0.155).
+    const reviewerThread = requests.filter((r) => r.method === "thread/start" && String(r.params.developerInstructions).includes("technical reviewer of a candidate"));
+    expect(reviewerThread).not.toHaveLength(0);
+    for (const opened of reviewerThread) expect(opened.params).toMatchObject({ permissions: "trama_read" });
     expect(reviewer.params).not.toHaveProperty("permissions");
     expect(reviewer.params).not.toHaveProperty("sandboxPolicy");
     expect(String((reviewer.params.input as { text: string }[])[0]!.text)).toContain(`Revisione tecnica del candidato ${corrected.id}`);
