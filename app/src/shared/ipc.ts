@@ -147,6 +147,10 @@ export interface ActionMap {
   /** Shows an examination in the full-screen focus mode; notifications wait until the person leaves it (F03). */
   "focusMode:enter": [{ auditId: string }, void];
   "focusMode:exit": [void, void];
+  /** Turns a finding of focus mode into work (F04): a ticket, an assignment within the mandate or a Pact card. */
+  "finding:followUp": [{ auditId: string; findingId: string; kind: "ticket" | "assignment" | "pactCard" }, void];
+  /** Publishes the report of a finished focus mode on GitHub, only when the person asks (F04). */
+  "audit:publish": [{ auditId: string }, void];
   "candidate:publish": [{ candidateId: string }, void];
   "candidate:previewPullRequest": [
     { candidateId: string },

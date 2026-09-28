@@ -6,11 +6,12 @@ import { evidenceLabel, FINDING_STATUS_TEXT, findingTally, fixedPointText, focus
 import { plainText } from "@shared/plainLanguage";
 import { EvidenceRow } from "@/components/chat/Cards";
 import { ChatMarkdown } from "@/components/chat/ChatMarkdown";
-import { AUDIT_STATUS_TEXT, examineAgain, FINDING_TONE, isRunning } from "@/components/inspector/AuditView";
+import { AUDIT_STATUS_TEXT, examineAgain, FINDING_TONE, FindingActions, FollowUpLine, isRunning } from "@/components/inspector/AuditView";
 import { Spinner } from "@/components/Spinner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/field";
 import { Sep } from "@/components/ui/sep";
+import { formatRelativeTime } from "@/lib/format";
 import { cn } from "@/lib/cn";
 import { useT, withNodes } from "@/lib/i18n";
 import { act, useUi } from "@/lib/store";
@@ -88,7 +89,7 @@ function Progress({ audit, checks }: { audit: FocusAudit; checks: string[] }) {
   );
 }
 
-function FindingButton({ finding, selected, onSelect }: { finding: AuditFinding; selected: boolean; onSelect(): void }) {
+function FindingButton({ finding, auditId, actionable, selected, onSelect }: { finding: AuditFinding; auditId: string; actionable: boolean; selected: boolean; onSelect(): void }) {
   const t = useT();
   const { evidence } = finding;
   return (
@@ -113,7 +114,56 @@ function FindingButton({ finding, selected, onSelect }: { finding: AuditFinding;
           })}
         </span>
       </button>
+      {/* What the person made of the finding, and the work it can still become (F04); beside the button, never inside it. */}
+      {finding.followUps?.length || actionable ? (
+        <div className="space-y-0.5 px-2.5 pb-1.5">
+          {finding.followUps?.length ? (
+            <ul className="space-y-0.5 text-ui-sm text-muted-foreground" data-testid="audit-finding-followups">
+              {finding.followUps.map((followUp) => (
+                <li key={followUp.kind} data-kind={followUp.kind}>
+                  <FollowUpLine followUp={followUp} />
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          {actionable ? <FindingActions auditId={auditId} finding={finding} /> : null}
+        </div>
+      ) : null}
     </li>
+  );
+}
+
+/** Publishing the report on GitHub (F04): optional, only when the person asks; the report always stays in Trama. */
+function Publication({ audit }: { audit: FocusAudit }) {
+  const t = useT();
+  const linked = useUi((s) => s.app?.project?.github.status === "ready" && s.app.project.github.repository !== null);
+  const setInspector = useUi((s) => s.setInspector);
+  const published = audit.publication;
+  return (
+    <section aria-label={t("audit.publication.title")}>
+      <h3 className="mb-1.5 text-ui-sm font-medium text-muted-foreground">{t("audit.publication.title")}</h3>
+      {published ? (
+        <p className="text-ui-sm text-foreground" data-testid="focus-audit-publication">
+          {withNodes(t("audit.publication.done"), {
+            link: (
+              <button
+                type="button"
+                className="text-[var(--color-text-accent)] hover:underline"
+                onClick={() => setInspector(published.kind === "issue" ? { kind: "issue", number: published.number } : { kind: "pullRequest", number: published.number })}
+              >
+                {t(published.kind === "issue" ? "audit.publication.issue" : "audit.publication.comment", { number: String(published.number) })}
+              </button>
+            ),
+          })}
+          <Sep />
+          {formatRelativeTime(published.at)}
+        </p>
+      ) : (
+        <p className="text-ui-sm text-muted-foreground" data-testid="focus-audit-publication">
+          {t(linked ? "audit.publication.optional" : "audit.publication.noGitHub")}
+        </p>
+      )}
+    </section>
   );
 }
 
@@ -143,7 +193,7 @@ function Findings({ audit, selected, onSelect }: { audit: FocusAudit; selected: 
                 {axis.items?.length ? (
                   <ul className="space-y-0.5" data-testid="audit-findings">
                     {axis.items.map((finding) => (
-                      <FindingButton key={finding.id} finding={finding} selected={selected === finding.id} onSelect={() => onSelect(finding.id)} />
+                      <FindingButton key={finding.id} finding={finding} auditId={audit.id} actionable={audit.status === "done"} selected={selected === finding.id} onSelect={() => onSelect(finding.id)} />
                     ))}
                   </ul>
                 ) : (
@@ -165,6 +215,7 @@ function Findings({ audit, selected, onSelect }: { audit: FocusAudit; selected: 
           </section>
         );
       })}
+      {audit.status === "done" ? <Publication audit={audit} /> : null}
     </div>
   );
 }
@@ -262,6 +313,7 @@ export function FocusModeView({ isMac }: { isMac: boolean }) {
     );
   }
   const running = isRunning(audit);
+  const linked = project.github.status === "ready" && project.github.repository !== null;
   const target = audit.target;
   const assignment = target.kind === "candidate" ? project.document.team.specialists.flatMap((s) => s.assignments).find((a) => a.id === target.assignmentId) : null;
   const candidate = target.kind === "candidate" ? project.document.candidates.find((c) => c.id === target.candidateId) : null;
@@ -292,6 +344,11 @@ export function FocusModeView({ isMac }: { isMac: boolean }) {
             {focus.pausedNotifications ? t("focus.pausedCount", { count: focus.pausedNotifications }) : t("focus.paused")}
           </span>
           <div className="cta-row">
+            {audit.status === "done" && linked && !audit.publication ? (
+              <Button size="sm" variant="ghost" onClick={() => void act("audit:publish", { auditId: audit.id })}>
+                {t("audit.publication.publish")}
+              </Button>
+            ) : null}
             {running ? null : (
               <Button size="sm" variant="outline" onClick={() => void examineAgain(audit)}>
                 {t("focus.again")}
