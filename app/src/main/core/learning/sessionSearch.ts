@@ -102,7 +102,7 @@ function messageOf(event: ConversationEvent): StoredMessage | null {
 }
 
 function sessionTitle(document: ProjectDocument, sessionId: string): string {
-  if (sessionId === PROJECT_DIALOG_ID) return "Dialogo del progetto";
+  if (sessionId === PROJECT_DIALOG_ID) return "Chat del progetto";
   return document.goals?.find((g) => g.id === sessionId)?.title ?? sessionId;
 }
 

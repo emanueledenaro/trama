@@ -1308,6 +1308,17 @@ export function PlanCard({ planId }: { planId: string }) {
   const proposal = plan.proposal;
   const moduleName = (id: string) => project.snapshot.modules.find((m) => m.id === id)?.name ?? id;
   const pendingQuestions = project.document.decisionRequests.filter((r) => plan.decisionRequestIds.includes(r.id) && isOpenQuestion(r)).length;
+  if (plan.status === "superseded") {
+    // One goal, one active plan (U01): a replaced plan stays in the history, without its actions.
+    return (
+      <CardFrame icon={<IconListCheck stroke={1.8} />} title={`Piano ${plan.id}`} aside={<Badge tone="secondary">Superato</Badge>}>
+        <p className="text-ui-sm text-muted-foreground" data-testid="plan-superseded">
+          {plan.summary}<Sep />
+          {plan.supersededBy ? `Sostituito dal piano ${plan.supersededBy}: l'obiettivo ha un solo piano attivo.` : "Sostituito da un piano più recente dell'obiettivo."}
+        </p>
+      </CardFrame>
+    );
+  }
   return (
     <CardFrame
       icon={<IconListCheck stroke={1.8} />}
@@ -1430,7 +1441,7 @@ export function PlanCard({ planId }: { planId: string }) {
                   moduleId: null,
                   model: null,
                   effort: null,
-                  // The approval belongs to the dialog of the plan, not always to the project's (W12).
+                  // The approval belongs to the goal of the plan, whatever the filter of the chat (W12, U01).
                   goalId: project.document.requests.find((r) => r.id === plan.requestId)?.goalId ?? null,
                 })
               }

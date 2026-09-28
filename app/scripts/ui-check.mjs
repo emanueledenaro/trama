@@ -779,12 +779,41 @@ const goalTitle = "Ordini annullati in revisione";
 const goalId = (await page.getByText(/^G-[0-9A-F]{8}$/).first().textContent()).trim();
 await page.getByLabel("Messaggio al Coordinatore").fill("Da dove partiamo per questo obiettivo?");
 await page.keyboard.press("Enter");
-await page.getByText(/Dialogo dell'obiettivo G-/).first().waitFor({ timeout: 20_000 });
+await page.getByText(/Messaggio sull'obiettivo G-/).first().waitFor({ timeout: 20_000 });
 await shot("10d-goal-dialog");
-// The project dialog keeps its own conversation.
-await page.getByRole("button", { name: "Dialogo del progetto" }).click();
+// U01: one chat per project. The goal filter shows only the goal's messages; the whole chat shows everything, in
+// order, with the goal next to the messages about it. The composer and its draft stay the same across filters.
+if (await page.getByText("Ho letto lo studio").count()) throw new Error("The goal filter shows messages outside the goal");
+await page.getByLabel("Messaggio al Coordinatore").fill("Bozza che resta nella chat");
+await page.getByRole("button", { name: "Chat del Coordinatore" }).click();
 await page.getByText("Ho letto lo studio").first().waitFor();
-if (await page.getByText(/Dialogo dell'obiettivo G-/).count()) throw new Error("The goal dialog leaked into the project dialog");
+await page.getByText(/Messaggio sull'obiettivo G-/).first().waitFor();
+await page.getByTestId("chat-goal-tag").filter({ hasText: goalTitle }).last().scrollIntoViewIfNeeded();
+if ((await page.getByLabel("Messaggio al Coordinatore").inputValue()) !== "Bozza che resta nella chat") throw new Error("The chat's draft changed with the filter");
+await shot("10f-single-chat-dark");
+await page.getByTestId("chat-filter").click();
+await page.getByRole("menuitem", { name: goalTitle }).waitFor();
+await shot("10g-chat-filter-menu-dark");
+await page.keyboard.press("Escape");
+await app.evaluate(({ nativeTheme }) => {
+  nativeTheme.themeSource = "light";
+});
+await page.evaluate(() => document.documentElement.classList.remove("dark"));
+await page.getByTestId("chat-goal-tag").filter({ hasText: goalTitle }).last().scrollIntoViewIfNeeded();
+await shot("10f-single-chat-light");
+await page.getByTestId("chat-filter").click();
+await page.getByRole("menuitem", { name: goalTitle }).click();
+await page.getByTestId("dialog-title").filter({ hasText: goalTitle }).waitFor();
+if (await page.getByText("Ho letto lo studio").count()) throw new Error("The goal filter shows messages outside the goal");
+await shot("10h-chat-filtered-light");
+await page.getByTestId("chat-filter").click();
+await page.getByRole("menuitem", { name: "Tutta la chat" }).click();
+await page.getByText("Ho letto lo studio").first().waitFor();
+await page.getByLabel("Messaggio al Coordinatore").fill("");
+await app.evaluate(({ nativeTheme }) => {
+  nativeTheme.themeSource = "dark";
+});
+await page.evaluate(() => document.documentElement.classList.add("dark"));
 // The overview (UX03) lists the project with its open goals.
 await page.getByRole("button", { name: "Panoramica dei progetti" }).click();
 await page.getByTestId("overview-project").first().getByText("Ordini annullati in revisione").waitFor({ timeout: 10_000 });
@@ -904,11 +933,11 @@ await page.getByLabel("Titolo dell'obiettivo").fill("Obiettivo creato per sbagli
 await page.getByLabel("Risultato atteso").fill("Nessuno: è un doppione.");
 await page.getByRole("button", { name: "Crea l'obiettivo" }).click();
 await page.getByTestId("dialog-title").filter({ hasText: "Obiettivo creato per sbaglio" }).waitFor();
-await page.getByTestId("goal-dialog-header").getByRole("button", { name: "Elimina il dialogo" }).click();
-const confirmDelete = page.getByRole("dialog", { name: "Eliminare il dialogo vuoto?" });
+await page.getByTestId("goal-dialog-header").getByRole("button", { name: "Elimina l'obiettivo" }).click();
+const confirmDelete = page.getByRole("dialog", { name: "Eliminare l'obiettivo vuoto?" });
 await confirmDelete.waitFor();
 await shot("14d-delete-empty-dialog");
-await confirmDelete.getByRole("button", { name: "Elimina il dialogo" }).click();
+await confirmDelete.getByRole("button", { name: "Elimina l'obiettivo" }).click();
 await confirmDelete.waitFor({ state: "hidden" });
 await page.getByTestId("dialog-title").filter({ hasText: "Progetto di esempio" }).waitFor();
 if (await page.getByTestId("sidebar-goal").filter({ hasText: "Obiettivo creato per sbaglio" }).count()) throw new Error("The deleted goal is still in the sidebar");

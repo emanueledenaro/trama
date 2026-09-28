@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import type { ProviderId } from "@shared/codex";
-import { dialogComposer, findGoal } from "@shared/goals";
+import { chatComposer } from "@shared/goals";
 import { shouldShowWelcomeOnLaunch } from "@shared/onboarding";
 import { ChatView } from "@/components/chat/ChatView";
 import { Dialogs } from "@/components/Dialogs";
@@ -26,20 +26,17 @@ function useThemeClass(theme: "system" | "light" | "dark" | undefined) {
   }, [theme]);
 }
 
-/** The window glass takes the light of the Coordinator's provider in the open dialog, steady. */
+/** The window glass takes the light of the Coordinator's provider in the project's chat, steady. */
 function useProviderTheme() {
   const project = useUi((s) => s.app?.project ?? null);
-  const goalId = useUi((s) => s.dialogGoalId);
   useEffect(() => {
     const provider: ProviderId | null = project
-      ? (dialogComposer(project.document, findGoal(project.document, goalId)?.id ?? null).selectedProvider ??
-        project.document.coordinator.threadProvider ??
-        "codex")
+      ? (chatComposer(project.document).selectedProvider ?? project.document.coordinator.threadProvider ?? "codex")
       : null;
     // The provider's theme (index.css) sets the light, accent, surfaces and primary button of the whole app.
     if (provider) document.documentElement.dataset.provider = provider;
     else delete document.documentElement.dataset.provider;
-  }, [project, goalId]);
+  }, [project]);
 }
 
 export function App() {
