@@ -129,7 +129,7 @@ function work(document: ProjectDocument, specialist: string, requestId: string, 
 describe("statusLine: what the Coordinator does now and next (issue #241)", () => {
   it("says nothing is going on, without invented text, in a project with no work", () => {
     const document = emptyDocument("p");
-    expect(statusLine(document, null)).toEqual({ state: "idle", text: NOTHING_GOING_ON, reason: null, action: null, runningMove: null, paused: false });
+    expect(statusLine(document, null)).toEqual({ state: "idle", text: NOTHING_GOING_ON, reason: null, action: null, runningMove: null, paused: false, providerWait: null });
     request(document, "r1");
     expect(statusLine(document, null).text).toBe(NOTHING_GOING_ON);
   });

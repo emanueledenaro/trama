@@ -360,6 +360,50 @@ describe("quit and provider waits (C11)", () => {
     expect(findSpecialist(saved, "Ada")!.assignments[0]!.status).toBe("stopped");
   }, 30_000);
 
+  /** Trama opened again on the same data, as after a restart. */
+  async function reopen(data: string) {
+    controller = new TramaController(data, {
+      publish: () => undefined,
+      openExternal: async () => undefined,
+      applyTheme: () => undefined,
+      notify: () => undefined,
+      setOpenAtLogin: () => undefined,
+      aiHeroResourceDirectory: join(root, "resources/AIHero"),
+      demoResourceDirectory: "",
+      codexExecutable: join(root, "test-fixtures/fake-codex.mjs"),
+    });
+    await controller.start();
+    await until(() => controller!.snapshot.project?.phase.kind === "ready");
+    return controller.snapshot.project!.document;
+  }
+
+  it("resumes the work Esci stopped when Trama opens again, within the mandate, with a check of what is done (issue #249)", async () => {
+    const { data, assignment } = await running();
+    await controller!.stop();
+    const document = await reopen(data);
+    const resumed = findSpecialist(document, "Ada")!.assignments[0]!;
+    expect(resumed.id).toBe(assignment.id);
+    await until(() => resumed.status === "running");
+    expect(resumed.turns).toHaveLength(2);
+    expect(document.events.some((e) => e.assignmentId === resumed.id && e.content.type === "activity" && e.content.title === "Incarico ripreso alla riapertura")).toBe(
+      true,
+    );
+    await controller!.stopSpecialistWork(resumed.id);
+    await until(() => resumed.status === "stopped");
+  }, 45_000);
+
+  it("keeps the work of a project in Pause stopped after a restart (issue #249)", async () => {
+    const { data, assignment } = await running();
+    await controller!.pauseContinuousWork(true);
+    await controller!.stop();
+    const document = await reopen(data);
+    expect(document.continuousWork?.paused).toBe(true);
+    await new Promise((r) => setTimeout(r, 500));
+    const kept = findSpecialist(document, "Ada")!.assignments[0]!;
+    expect(kept).toMatchObject({ id: assignment.id, status: "stopped" });
+    expect(kept.turns).toHaveLength(1);
+  }, 45_000);
+
   it("resumes only waiting work when the provider is available again", async () => {
     const { assignment } = await running();
     await controller!.stopSpecialistWork(assignment.id);

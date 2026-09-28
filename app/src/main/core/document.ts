@@ -51,6 +51,10 @@ export function emptyDocument(projectId: string): ProjectDocument {
 export const QUIT_NOTE = "Trama è stato chiuso mentre il Coordinatore lavorava.";
 /** Why a turn left running on disk ended: Trama stopped without Esci, a crash or a forced stop (C11). */
 export const CRASH_NOTE = "Trama si è chiuso senza fermare il turno mentre il Coordinatore lavorava.";
+/** Why a specialist's work stopped when the person quit Trama (C11); with a mandate it resumes on reopening (issue #249). */
+export const ASSIGNMENT_QUIT_NOTE = "Esci: Trama si sta chiudendo. L'incarico riprende alla riapertura se il mandato lo consente.";
+/** Why a specialist's work left running on disk stopped: Trama stopped without Esci (C11). */
+export const ASSIGNMENT_CRASH_NOTE = "Trama si è interrotto senza un arresto controllato (crash o chiusura forzata) mentre lo specialista lavorava.";
 
 /**
  * Fills fields added after a document was written, completes an older team with the fixed roles (W09), marks

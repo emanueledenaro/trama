@@ -307,6 +307,8 @@ export interface ProviderRetryView {
   maxAttempts: number;
   /** When the retry, or the check of the quota, starts, ISO. */
   at: string;
+  /** When the provider said the limit ends, ISO; null or absent when it did not say (issue #249). */
+  until?: string | null;
 }
 
 /** The sentence under a failure while Trama waits to resume the turn, from the seconds left. */
