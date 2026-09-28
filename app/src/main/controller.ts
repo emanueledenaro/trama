@@ -4994,7 +4994,7 @@ export class TramaController {
     try {
       if (kind === "ticket") {
         const finding = actionableFinding(audit, findingId);
-        if (finding.followUps?.some((f) => f.kind === "ticket")) throw new FindingWorkError("Da questo rilievo hai già creato un ticket.");
+        if (finding.followUps?.some((f) => f.kind === "ticket")) throw new FindingWorkError("Da questo rilievo hai già creato una issue o una voce del backlog.");
         const repository = project.github.status === "ready" ? project.github.repository : null;
         let issue: { number: number; url: string } | null = null;
         if (repository) {
@@ -5012,7 +5012,7 @@ export class TramaController {
           "person",
           {
             type: "activity",
-            title: issue ? `Ticket #${issue.number} da un rilievo della focus mode` : "Ticket nel backlog di Trama da un rilievo della focus mode",
+            title: issue ? `Issue #${issue.number} aperta da un rilievo dell'esame approfondito` : "Un rilievo dell'esame approfondito va nel backlog di Trama",
             detail: `${finding.title}\n${problem.evidence.label}`,
             tone: "info",
           },
@@ -5040,7 +5040,7 @@ export class TramaController {
       appendEvent(
         document,
         "person",
-        { type: "activity", title: `${name} riceve la correzione di un rilievo della focus mode`, detail: `${assignment.objective}\nViene dal ${candidateName(document, audit)}.`, tone: "info" },
+        { type: "activity", title: `${name} riceve la correzione di un rilievo dell'esame approfondito`, detail: `${assignment.objective}\nViene dal ${candidateName(document, audit)}.`, tone: "info" },
         assignment.requestId,
       );
       appendEvent(document, "trama", { type: "card", kind: "assignment", title: "Incarico", detail: null, referenceId: assignment.id }, assignment.requestId);
@@ -5077,7 +5077,7 @@ export class TramaController {
         await commentOnIssue(repository, target.number, body);
         published = target;
       } else {
-        const issue = await createIssue(repository, `Rapporto della focus mode sul ${candidateName(document, audit)}`, body);
+        const issue = await createIssue(repository, `Rapporto dell'esame approfondito sul ${candidateName(document, audit)}`, body);
         published = { kind: "issue", number: issue.number, url: issue.url };
       }
     } catch (error) {

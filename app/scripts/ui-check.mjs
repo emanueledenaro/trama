@@ -1487,7 +1487,7 @@ git("remote", "add", "origin", "https://github.com/trama-ui/negozio.git");
 // P10: the fake Codex answers the "[limite-temporaneo]" turns with OpenRouter's upstream 429 twice, then works again;
 // a short first wait keeps the automatic retry within the check.
 // FAKE_CODEX_LIGHT_MODEL gives the catalogue a light model, so focus mode has a stronger one to confirm serious findings (F02).
-({ app, page } = await launch({ PATH: `${ghBin}:${process.env.PATH}`, FAKE_GH_TEAM: "1", FAKE_GH_COUNTER: join(ghBin, "issues"), TRAMA_PROVIDER_RETRY_MS: "4000", FAKE_CODEX_RATE_LIMITS: "2", FAKE_CODEX_LIGHT_MODEL: "gpt-5.5-mini" }));
+({ app, page } = await launch({ PATH: `${ghBin}:${process.env.PATH}`, FAKE_GH_TEAM: "1", TRAMA_PROVIDER_RETRY_MS: "4000", FAKE_CODEX_RATE_LIMITS: "2", FAKE_CODEX_LIGHT_MODEL: "gpt-5.5-mini" }));
 const goalsRow = page.getByRole("button", { name: /^Obiettivi/ }).first();
 await goalsRow.waitFor({ timeout: 30_000 });
 // B02: after the first launch the welcome never shows by itself again.
@@ -2040,31 +2040,30 @@ await app.evaluate(({ nativeTheme }) => {
   nativeTheme.themeSource = "system";
 });
 await page.evaluate(() => document.documentElement.classList.remove("dark"));
-// F04: from a finding to work, one click each. The verified finding becomes a ticket (an issue: GitHub is linked here)
-// and its correction an assignment for Ada, who wrote the candidate, within the mandate. The hypothesis cannot become
-// an assignment; as a trade-off it becomes a Pact card. The report reaches GitHub only when the person publishes it.
+// F04: from a finding to work, one click each. This candidate's project has no GitHub remote: the verified finding
+// goes to Trama's backlog, and its correction becomes an assignment for Ada, who wrote the candidate, within the
+// mandate. The hypothesis cannot become an assignment; as a trade-off it becomes a Pact card. Without GitHub the report
+// stays in Trama and there is nothing to publish.
 const verifiedFinding = auditFinding("standards", "verified");
 const hypothesisFinding = auditFinding("spec", "hypothesis");
 const findingActions = await verifiedFinding.getByTestId("audit-finding-actions").locator(":scope > button").allTextContents();
-if (findingActions.join("|") !== "Crea un ticket|È un compromesso|Affida la correzione") throw new Error(`Finding actions out of order: ${findingActions}`);
+if (findingActions.join("|") !== "Metti nel backlog|È un compromesso|Affida la correzione") throw new Error(`Finding actions out of order: ${findingActions}`);
 if (await hypothesisFinding.getByRole("button", { name: "Affida la correzione" }).count()) throw new Error("A hypothesis can become an assignment");
-await focusAudit.getByTestId("focus-audit-publication").getByText(/Pubblicarlo su GitHub è facoltativo/).waitFor();
+await focusAudit.getByTestId("focus-audit-publication").getByText(/Con GitHub collegato puoi pubblicarlo/).waitFor();
+if (await page.getByRole("button", { name: "Pubblica su GitHub" }).count()) throw new Error("A report can be published without GitHub");
 await verifiedFinding.scrollIntoViewIfNeeded();
 await themeShots("20g-finding-actions");
-await verifiedFinding.getByRole("button", { name: "Crea un ticket" }).click();
-await verifiedFinding.locator('[data-testid="audit-finding-followups"] [data-kind="ticket"]').getByText("issue #41").waitFor({ timeout: 20_000 });
+await verifiedFinding.getByRole("button", { name: "Metti nel backlog" }).click();
+await verifiedFinding.locator('[data-testid="audit-finding-followups"] [data-kind="ticket"]').getByText("backlog di Trama").waitFor({ timeout: 20_000 });
 await hypothesisFinding.getByRole("button", { name: "È un compromesso" }).click();
 await hypothesisFinding.locator('[data-testid="audit-finding-followups"] [data-kind="pactCard"]').getByText(/^Scheda del Patto: /).waitFor({ timeout: 20_000 });
 await verifiedFinding.getByRole("button", { name: "Affida la correzione" }).click();
 await verifiedFinding.locator('[data-testid="audit-finding-followups"] [data-kind="assignment"]').getByText(/^Incarico: /).waitFor({ timeout: 20_000 });
-if (await verifiedFinding.getByTestId("audit-finding-actions").count()) throw new Error("A finding offers the same work twice");
-await page.getByRole("button", { name: "Pubblica su GitHub" }).click();
-await focusAudit.getByTestId("focus-audit-publication").getByText("issue #42").waitFor({ timeout: 20_000 });
-if (await page.getByRole("button", { name: "Pubblica su GitHub" }).count()) throw new Error("The report can be published twice");
+const leftActions = await verifiedFinding.getByTestId("audit-finding-actions").locator(":scope > button").allTextContents();
+if (leftActions.join("|") !== "È un compromesso") throw new Error(`A finding offers the same work twice: ${leftActions}`);
+if (await hypothesisFinding.getByRole("button", { name: "È un compromesso" }).count()) throw new Error("A finding offers the same Pact card twice");
 await verifiedFinding.scrollIntoViewIfNeeded();
 await themeShots("20h-finding-work");
-await focusAudit.getByTestId("focus-audit-publication").scrollIntoViewIfNeeded();
-await themeShots("20i-focus-audit-published");
 // The correction is Ada's new assignment in the work's dialog; it ends before the next step gives her work.
 const correctionWork = assignmentCards.nth(6);
 await waitInCard(correctionWork, (card) => card.getByText(/Correggere il rilievo: Possibile Mysterious Name/), "finding correction");

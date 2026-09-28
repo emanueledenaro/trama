@@ -146,7 +146,7 @@ describe("finding to ticket", () => {
   it("creates one ticket per finding", () => {
     const { document, audit } = project();
     recordFindingTicket(document, audit, item(audit, "standards-1"), null);
-    expect(() => recordFindingTicket(document, audit, item(audit, "standards-1"), null)).toThrow("hai già creato un ticket");
+    expect(() => recordFindingTicket(document, audit, item(audit, "standards-1"), null)).toThrow("hai già creato una issue o una voce del backlog");
   });
 });
 
@@ -245,7 +245,7 @@ describe("report publication", () => {
     const text = auditReportMarkdown(document, audit);
     expect(text.indexOf("### Verifiche reali")).toBeLessThan(text.indexOf("### Standards"));
     expect(text.indexOf("### Standards")).toBeLessThan(text.indexOf("### Spec"));
-    expect(text).toContain("## Focus mode sul candidato di Ada");
+    expect(text).toContain("## Esame approfondito sul candidato di Ada");
     expect(text).toContain("**Grave.** Rilievo standards-1 (verificato da trama; prova: Sources/Payments/Refund.swift:12)");
     expect(text).toContain("Nessuna spec disponibile");
     expect(text).not.toContain(audit.target.candidateId);

@@ -35,14 +35,15 @@ function FollowUpLine({ followUp }: { followUp: FindingFollowUp }) {
   if (followUp.kind === "ticket") {
     return followUp.issue ? (
       <>
-        Ticket:{" "}
+        Issue{" "}
         <button type="button" className="text-[var(--color-text-accent)] hover:underline" onClick={() => setInspector({ kind: "issue", number: followUp.issue!.number })}>
-          issue #{followUp.issue.number}
-        </button>
+          #{followUp.issue.number}
+        </button>{" "}
+        su GitHub
       </>
     ) : (
       <>
-        Ticket nel{" "}
+        Nel{" "}
         <button type="button" className="text-[var(--color-text-accent)] hover:underline" onClick={() => setInspector({ kind: "activity" })}>
           backlog di Trama
         </button>
@@ -67,8 +68,8 @@ function FindingActions({ auditId, finding }: { auditId: string; finding: AuditF
   return (
     <div className="cta-row pt-0.5" data-testid="audit-finding-actions">
       {done.has("ticket") ? null : (
-        <Button size="xs" variant="ghost" title={linked ? "Apre una issue su GitHub con la prova del rilievo." : "GitHub non è collegato: il ticket resta nel backlog di Trama."} onClick={() => followUp("ticket")}>
-          Crea un ticket
+        <Button size="xs" variant="ghost" title={linked ? "Apre una issue su GitHub con la prova del rilievo." : "GitHub non è collegato: il rilievo va nel backlog di Trama."} onClick={() => followUp("ticket")}>
+          {linked ? "Apri una issue" : "Metti nel backlog"}
         </Button>
       )}
       {done.has("pactCard") ? null : (

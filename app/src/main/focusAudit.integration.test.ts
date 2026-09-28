@@ -167,7 +167,7 @@ describe("focus mode on a candidate (F01)", () => {
     await controller.followUpFinding(auditId, "standards-1", "ticket");
     const ticket = document.problems!.items.at(-1)!;
     expect(ticket).toMatchObject({ issue: null, placement: { kind: "backlog" }, evidence: { kind: "finding", reference: auditId } });
-    await expect(controller.followUpFinding(auditId, "standards-1", "ticket")).rejects.toThrow("hai già creato un ticket");
+    await expect(controller.followUpFinding(auditId, "standards-1", "ticket")).rejects.toThrow("hai già creato una issue o una voce del backlog");
     await expect(controller.publishAuditReport(auditId)).rejects.toThrow("Nessun repository GitHub collegato");
     expect(audit.publication).toBeUndefined();
     // A hypothesis never becomes an assignment; a trade-off becomes a question of the Pact in the work's dialog.
