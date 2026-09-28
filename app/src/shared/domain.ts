@@ -1515,11 +1515,25 @@ export interface AuditAxis {
  * code-review in parallel and read-only. The checks are evidence; the axes' findings are the model's judgement,
  * each with a proof that Trama verifies (F02).
  */
+/**
+ * What focus mode examines (F03, spec #124 Q1): a candidate against its base, or a module or the whole project against a
+ * fixed point the person chose. A module keeps its name and path as they were when the examination opened.
+ */
+export type FocusTarget =
+  | { kind: "candidate"; candidateId: string; assignmentId: string }
+  | { kind: "module"; moduleId: string; moduleName: string; path: string }
+  | { kind: "project" };
+
 export interface FocusAudit {
   id: string;
-  target: { kind: "candidate"; candidateId: string; assignmentId: string };
-  /** The fixed point of code-review: the candidate's base commit. */
+  target: FocusTarget;
+  /** The fixed point of code-review: the candidate's base commit, or the commit the person's fixed point resolved to. */
   fixedPoint: string;
+  /** The fixed point as the person wrote it (a branch, a tag, `HEAD~5`); absent for a candidate, whose base is the fixed point. */
+  fixedPointRef?: string;
+  /** The commits between the fixed point and HEAD, one line each, for a module or the project (F03). */
+  commits?: string[];
+  /** The candidate's snapshot, or the checkout's HEAD for a module or the project. */
   snapshotId: string;
   changedFiles: string[];
   status: AuditStatus;
@@ -1871,6 +1885,15 @@ export interface AppState {
   onboarding: import("./onboarding").OnboardingState;
   /** GitHub CLI's login, read on demand for the guide. */
   gitHubCli: import("./onboarding").GitHubCliState;
+  /** The full-screen focus mode the person is in (F03); null outside it. Notifications wait until the person leaves it. */
+  focusMode?: FocusModeState | null;
+}
+
+/** Focus mode on screen (F03): the examination shown and the notifications held back while it stays open. */
+export interface FocusModeState {
+  projectId: string;
+  auditId: string;
+  pausedNotifications: number;
 }
 
 export interface ProviderState {

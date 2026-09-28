@@ -1,4 +1,4 @@
-import { IconArrowLeft, IconExternalLink, IconFileText, IconFolder, IconMessageCircle } from "@tabler/icons-react";
+import { IconArrowLeft, IconExternalLink, IconFileText, IconFocus2, IconFolder, IconMessageCircle } from "@tabler/icons-react";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { act, useUi } from "@/lib/store";
@@ -12,6 +12,7 @@ const ROW =
 export function MapView() {
   const project = useUi((s) => s.app?.project)!;
   const setInspector = useUi((s) => s.setInspector);
+  const openFocusStart = useUi((s) => s.openFocusStart);
   const { snapshot } = project;
   const marks = project.overlaps?.modules ?? {};
   return (
@@ -36,6 +37,11 @@ export function MapView() {
             ))}
           </ul>
         ) : null}
+        <div className="cta-row mt-3">
+          <Button size="sm" variant="outline" onClick={() => openFocusStart({ kind: "project" })}>
+            <IconFocus2 stroke={1.8} /> Focus mode sul progetto
+          </Button>
+        </div>
       </InspectorSection>
       <InspectorSection title="Moduli">
         {snapshot.modules.length === 0 ? <EmptyNote>Nessun file sorgente riconosciuto.</EmptyNote> : null}
@@ -65,6 +71,7 @@ export function ModuleView({ id }: { id: string }) {
   const project = useUi((s) => s.app?.project)!;
   const setInspector = useUi((s) => s.setInspector);
   const askCoordinator = useUi((s) => s.askCoordinator);
+  const openFocusStart = useUi((s) => s.openFocusStart);
   const module = project.snapshot.modules.find((m) => m.id === id);
   const fileMarks = project.overlaps?.files ?? {};
   const moduleOverlaps = (project.overlaps?.items ?? []).filter((item) => item.modules.some((m) => m.id === id));
@@ -79,6 +86,9 @@ export function ModuleView({ id }: { id: string }) {
         <h3 className="mt-2 text-ui-lg font-medium text-foreground">{module.name}</h3>
         <p className="mt-0.5 font-mono text-[11px] text-muted-foreground">{module.relativePath}</p>
         <div className="cta-row mt-3">
+          <Button size="sm" variant="outline" onClick={() => openFocusStart({ kind: "module", moduleId: module.id })}>
+            <IconFocus2 stroke={1.8} /> Focus mode
+          </Button>
           <Button size="sm" onClick={() => askCoordinator(moduleQuestion(module.name), { moduleId: module.id })}>
             <IconMessageCircle stroke={1.8} /> Chiedi al Coordinatore su questo modulo
           </Button>

@@ -6,6 +6,7 @@ import {
   AuditError,
   AXIS_BINDINGS,
   auditSpec,
+  citedIssues,
   axisTurn,
   beginAxes,
   closeAudit,
@@ -13,10 +14,14 @@ import {
   type FindingDraft,
   finishAxis,
   latestAudit,
+  latestAuditOn,
   NO_SPEC,
   openAudit,
+  openScopedAudit,
+  rangeSpec,
   readAxisAnswer,
   recordAuditCheck,
+  scopedCodeReviewBinding,
 } from "./audit";
 import { declareCandidate } from "./candidates";
 import { emptyDocument, normalizeDocument } from "./document";
@@ -268,5 +273,56 @@ describe("the focus mode report (F01)", () => {
     const reopened = normalizeDocument(JSON.parse(JSON.stringify(document)) as ProjectDocument, "p");
     expect(reopened.audits![0]).toEqual(JSON.parse(JSON.stringify(done)));
     expect(reopened.audits![1]).toMatchObject({ status: "failed", failure: expect.stringContaining("interrotta"), standards: { status: "failed" }, spec: { status: "failed" } });
+  });
+});
+
+describe("focus mode on a module or the whole project (F03)", () => {
+  const range = { ref: "main", fixedPoint: "f1f2f3f4f5", headSHA: "abc123", changedFiles: ["Sources/Orders/Order.swift"], commits: ["abc123 feat: track paid orders (#9)", "def456 fix: keep #12 and &#13; apart"] };
+  const orders = { kind: "module", moduleId: "Sources/Orders", moduleName: "Orders", path: "Sources/Orders" } as const;
+
+  it("pins the person's fixed point and runs one examination at a time per target", () => {
+    const document = project();
+    const audit = openScopedAudit(document, orders, range, at(5));
+    expect(audit).toMatchObject({ target: orders, fixedPoint: "f1f2f3f4f5", fixedPointRef: "main", snapshotId: "abc123", changedFiles: ["Sources/Orders/Order.swift"], status: "checking" });
+    expect(() => openScopedAudit(document, orders, range)).toThrow("La focus mode sul modulo Orders è già in corso.");
+    // Another target is another examination: the project can be examined while the module is.
+    const whole = openScopedAudit(document, { kind: "project" }, range, at(6));
+    expect(latestAuditOn(document, { kind: "project" })).toBe(whole);
+    expect(latestAuditOn(document, orders)).toBe(audit);
+    expect(() => openScopedAudit(document, { kind: "project" }, range)).toThrow("La focus mode sull'intero progetto è già in corso.");
+  });
+
+  it("reads the spec from the issues the commits cite, and skips the Spec axis without one", () => {
+    expect(citedIssues(range.commits)).toEqual([9, 12]);
+    expect(rangeSpec(range.commits, [issue])).toEqual({ source: "Issue #9 citata nei commit", text: "# Annullare un ordine (issue #9)\n\nUn ordine pagato va in revisione." });
+    expect(rangeSpec(range.commits, [])).toBeNull();
+    expect(rangeSpec(["abc feat: no issue"], [issue])).toBeNull();
+  });
+
+  it("gives each axis the skill, the module's binding with its path, the commits and the captured diff", async () => {
+    const document = project();
+    const audit = openScopedAudit(document, orders, range, at(5));
+    const skill = await codeReview();
+    const turn = axisTurn({ projectName: "ordini", audit, spec: rangeSpec(range.commits, [issue]), diff: "+++ b/Sources/Orders/Order.swift\n+paid" }, "spec", skill, false);
+    expect(Buffer.from(turn.prompt, "utf8").includes(await original())).toBe(true);
+    const binding = scopedCodeReviewBinding(orders);
+    expect(turn.prompt.endsWith(`## Trama binding for the code-review skill\n${binding}\n${AXIS_BINDINGS.spec}`)).toBe(true);
+    expect(binding).toContain("focus mode on the module `Sources/Orders` of the project");
+    expect(binding).toContain("followed by `-- Sources/Orders`");
+    expect(turn.prompt).toContain("Focus mode, asse Spec del modulo Orders (`Sources/Orders`).");
+    expect(turn.prompt).toContain("Punto fisso: f1f2f3f4f5 (il punto fisso scelto dalla persona: `main`).");
+    expect(turn.prompt).toContain("- abc123 feat: track paid orders (#9)");
+    expect(turn.prompt).toContain("Spec, fonte: Issue #9 citata nei commit");
+    expect(turn.prompt).toContain("```diff\n+++ b/Sources/Orders/Order.swift\n+paid\n```");
+    const whole = scopedCodeReviewBinding({ kind: "project" });
+    expect(whole).toContain("focus mode on the whole project");
+    expect(whole).not.toContain("-- ");
+  });
+
+  it("maps the skill's words without restating its method, for a module as for a candidate", async () => {
+    const text = (await original()).toString("utf8");
+    const binding = scopedCodeReviewBinding(orders);
+    for (const sentence of text.split(/(?<=\.)\s+/).filter((s) => s.length > 40)) expect(binding).not.toContain(sentence.trim());
+    for (const verb of ["\"The user\"", "\"the fixed point\"", "`git diff <fixed-point>...HEAD`", "/setup-trama", "step 4", "step 5"]) expect(binding).toContain(verb);
   });
 });

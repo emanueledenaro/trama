@@ -40,7 +40,10 @@ export type MainView = "dialog" | "overview" | "settings";
 /** The sections of the settings page; "connections" holds ChatGPT, GitHub and the providers. */
 export type SettingsSection = "general" | "connections" | "method" | "standard" | "learning" | "monitor" | "presence";
 
-export type DialogName = "createProject" | "cloneProject" | "search" | "guide" | null;
+export type DialogName = "createProject" | "cloneProject" | "search" | "guide" | "focusMode" | null;
+
+/** What the focus mode dialog opens on (F03): a module of the project or the whole project. */
+export type FocusStartTarget = { kind: "module"; moduleId: string } | { kind: "project" };
 
 /** The welcome (B02): its first page, or one of its configuration steps. */
 export type WelcomePage = "hello" | GuideStepId;
@@ -88,6 +91,9 @@ interface UiState {
   setInspector(target: InspectorTarget | null): void;
   toggleInspector(target: InspectorTarget): void;
   setDialog(dialog: DialogName, returnTo?: DialogName): void;
+  /** The target the focus mode dialog starts on; the person can change it there (F03). */
+  focusStart: FocusStartTarget;
+  openFocusStart(target: FocusStartTarget): void;
   setExercise(exercise: ExerciseId | null): void;
   setToast(message: string | null, tone?: "warning" | "info"): void;
   focusComposer(moduleId?: string | null): void;
@@ -199,6 +205,8 @@ export const useUi = create<UiState>((set, get) => ({
     if (dialog === null && back) set({ dialog: back, dialogReturn: null });
     else set({ dialog, dialogReturn: returnTo });
   },
+  focusStart: { kind: "project" },
+  openFocusStart: (focusStart) => set({ focusStart, dialog: "focusMode", dialogReturn: null }),
   setExercise: (exercise) => set({ exercise }),
   setToast: (toast, toastTone = "warning") => set({ toast, toastTone }),
   // The composer lives in the dialog: from the overview or the settings, writing to the Coordinator goes back to it.

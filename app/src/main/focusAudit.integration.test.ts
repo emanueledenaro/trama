@@ -1,4 +1,4 @@
-import { cp, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { cp, mkdtemp, readdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -28,11 +28,12 @@ async function until(check: () => boolean, timeout = 15_000): Promise<void> {
 
 type Request = { method: string; params: Record<string, unknown> };
 
+const notified: { title: string; body: string }[] = [];
 const host = {
   publish: () => undefined,
   openExternal: async () => undefined,
   applyTheme: () => undefined,
-  notify: () => undefined,
+  notify: (title: string, body: string) => void notified.push({ title, body }),
   setOpenAtLogin: () => undefined,
   aiHeroResourceDirectory: join(root, "resources/AIHero"),
   demoResourceDirectory: "",
@@ -192,5 +193,111 @@ describe("focus mode on a candidate (F01)", () => {
     await controller.start();
     await until(() => controller!.snapshot.project?.phase.kind === "ready" || controller!.snapshot.project?.phase.kind === "unavailable");
     expect(controller.snapshot.project!.document.audits).toEqual(saved);
+  }, 60_000);
+});
+
+describe("focus mode on a module or the whole project, full screen (F03)", () => {
+  it("fails clearly on a bad fixed point or an empty diff, examines the module from the person's point, and holds notifications while the work goes on", async () => {
+    const log = join(await mkdtemp(join(tmpdir(), "trama-log-")), "codex.log");
+    process.env.FAKE_CODEX_LOG = log;
+    process.env.FAKE_CODEX_LIGHT_MODEL = "gpt-5.5-mini";
+    const repo = await mkdtemp(join(tmpdir(), "trama-repo-"));
+    await cp(join(root, "resources/DemoProject"), repo, { recursive: true });
+    const commit = (message: string) => git(["-c", "user.name=T", "-c", "user.email=t@t", "commit", "-m", message], repo, false);
+    await git(["init", "-b", "main"], repo, false);
+    await git(["add", "."], repo, false);
+    await commit("init");
+    const orders = join(repo, "Sources/Orders", (await readdir(join(repo, "Sources/Orders")))[0]!);
+    await writeFile(orders, `${await readFile(orders, "utf8")}\n// Paid orders go to review.\n`);
+    await git(["add", "."], repo, false);
+    await commit("feat: send paid orders to review (#12)");
+    const dataDir = await mkdtemp(join(tmpdir(), "trama-data-"));
+    controller = new TramaController(dataDir, host);
+    await controller.start();
+    await controller.updateSettings({ continuousWork: false });
+    await controller.openProject(repo);
+    await until(() => controller!.snapshot.project?.phase.kind === "ready");
+    const project = controller.snapshot.project!;
+    const document = project.document;
+    project.github.issues.push({ number: 12, title: "Ordini pagati in revisione", state: "open", body: "Un ordine pagato annullato va in revisione.", url: "u", author: null, labels: [], updatedAt: "" });
+
+    // Step 1 of code-review happens before anything starts: a point that does not exist, or no change, is a clear error.
+    await expect(controller.startScopedFocusAudit({ kind: "project" }, "release-9")).rejects.toThrow('Il punto fisso "release-9" non esiste in questo repository');
+    await expect(controller.startScopedFocusAudit({ kind: "module", moduleId: "Sources/Payments" }, "HEAD~1")).rejects.toThrow("Nessun cambiamento nel modulo `Sources/Payments`");
+    await expect(controller.startScopedFocusAudit({ kind: "project" }, "HEAD")).rejects.toThrow("Nessun cambiamento tra il punto fisso");
+    expect(document.audits ?? []).toEqual([]);
+    expect(await controller.focusFixedPoints()).toEqual(["HEAD~1"]);
+
+    const gates = await mkdtemp(join(tmpdir(), "trama-gates-"));
+    process.env.FAKE_CODEX_AUDIT_GATE = join(gates, "module");
+    const auditId = await controller.startScopedFocusAudit({ kind: "module", moduleId: "Sources/Orders" }, "HEAD~1");
+    const audit = document.audits!.find((a) => a.id === auditId)!;
+    expect(audit).toMatchObject({
+      target: { kind: "module", moduleId: "Sources/Orders", moduleName: "Orders", path: "Sources/Orders" },
+      fixedPointRef: "HEAD~1",
+      fixedPoint: (await git(["rev-parse", "HEAD~1"], repo)).trim(),
+      snapshotId: (await git(["rev-parse", "HEAD"], repo)).trim(),
+      changedFiles: [orders.slice(repo.length + 1)],
+    });
+    expect(audit.commits).toEqual([expect.stringContaining("feat: send paid orders to review (#12)")]);
+
+    // Full screen: the person is in focus mode, and notifications wait until they leave it.
+    controller.enterFocusMode(auditId);
+    expect(controller.snapshot.focusMode).toEqual({ projectId: project.id, auditId, pausedNotifications: 0 });
+    const notify = (title: string) => (controller as unknown as { notify(title: string, body: string): void }).notify(title, "dettaglio");
+    notify("Trama: conflitto tra due worktree");
+    expect(notified).toEqual([]);
+    expect(controller.snapshot.focusMode?.pausedNotifications).toBe(1);
+
+    // The authorized work goes on while focus mode is open.
+    await controller.send("[proponi-team]", null, null, null);
+    await controller.answerTeamProposal(document.team.proposals[0]!.id, null, null);
+    await controller.grantMandate({
+      requestId: null,
+      objectives: ["Documentare l'annullamento"],
+      priorities: [],
+      scopeModuleIds: ["Sources/Orders"],
+      authorizedActions: ["executeInWorktree"],
+      limits: [],
+    });
+    await controller.send("[assegna]", null, null, null);
+    const work = findSpecialist(document, "Ada")!.assignments[0]!;
+    await until(() => work.status === "completed");
+    expect(controller.snapshot.focusMode?.auditId).toBe(auditId);
+
+    // The checks ran on the checkout at the pinned HEAD; the axes read the project, and the Spec axis the issue a commit cites.
+    await until(() => audit.standards.threadId !== null && audit.spec.threadId !== null);
+    await writeFile(join(gates, "module"), "");
+    await until(() => audit.status === "done");
+    expect(audit.checks.length).toBeGreaterThan(0);
+    expect(audit.checks.every((c) => c.snapshotId === audit.snapshotId)).toBe(true);
+    expect(audit.specSource).toBe("Issue #12 citata nei commit");
+    expect(audit.standards.report).toContain(`git diff ${audit.fixedPoint}`);
+    expect(audit.standards.items).toEqual([expect.objectContaining({ status: "verified" })]);
+    const requests = (await readFile(log, "utf8"))
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line) as Request);
+    const axisTurn = requests.find((r) => r.method === "turn/start" && r.params.threadId === audit.standards.threadId)!;
+    expect(axisTurn.params).toMatchObject({ cwd: repo });
+    const text = (axisTurn.params.input as { text?: string }[])[0]!.text!;
+    expect(text).toContain("the person opened focus mode on the module `Sources/Orders` of the project");
+    expect(text).toContain("Focus mode, asse Standards del modulo Orders (`Sources/Orders`).");
+
+    // Leaving focus mode delivers what waited; several notifications arrive as one summary.
+    controller.exitFocusMode();
+    expect(controller.snapshot.focusMode).toBeNull();
+    expect(notified).toEqual([{ title: "Trama: conflitto tra due worktree", body: "dettaglio" }]);
+    controller.enterFocusMode(auditId);
+    notify("Trama: conflitto con #4");
+    notify("Trama: aggiornamenti condivisi");
+    controller.exitFocusMode();
+    expect(notified.at(-1)).toEqual({
+      title: "Trama: novità durante la focus mode",
+      body: "2 notifiche sono arrivate mentre eri in focus mode: conflitto con #4; aggiornamenti condivisi.",
+    });
+    expect(notified).toHaveLength(2);
+    notify("Trama: dopo");
+    expect(notified).toHaveLength(3);
   }, 60_000);
 });

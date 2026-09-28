@@ -1388,10 +1388,10 @@ export function CandidateCard({ candidateId }: { candidateId: string }) {
           size="sm"
           variant="outline"
           onClick={() => {
-            // Focus mode opens the latest examination of this candidate, or starts the first one (F01).
-            const latest = (project.document.audits ?? []).filter((a) => a.target.candidateId === candidateId).at(-1);
-            if (latest) setInspector({ kind: "audit", id: latest.id });
-            else void act("candidate:focusAudit", { candidateId }).then((id) => id && setInspector({ kind: "audit", id }));
+            // Focus mode opens the latest examination of this candidate, or starts the first one (F01), full screen (F03).
+            const latest = (project.document.audits ?? []).filter((a) => a.target.kind === "candidate" && a.target.candidateId === candidateId).at(-1);
+            if (latest) void act("focusMode:enter", { auditId: latest.id });
+            else void act("candidate:focusAudit", { candidateId }).then((id) => (id ? act("focusMode:enter", { auditId: id }) : undefined));
           }}
         >
           <IconFocus2 /> Esame approfondito

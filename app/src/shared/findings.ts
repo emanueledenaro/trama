@@ -1,4 +1,4 @@
-import type { AuditFinding, FindingEvidence, FindingStatus, FocusAudit } from "./domain";
+import type { AuditFinding, FindingEvidence, FindingStatus, FocusAudit, FocusTarget } from "./domain";
 
 /** The status of a finding as the report names it (F02). */
 export const FINDING_STATUS_TEXT: Record<FindingStatus, string> = {
@@ -33,4 +33,28 @@ export function findingTally(audit: FocusAudit): string | null {
     .filter(([n]) => n > 0)
     .map(([n, one, many]) => `${n} ${n === 1 ? one : many}`)
     .join(", ");
+}
+
+/**
+ * What focus mode examines, in Italian and with names instead of ids (F03): "il modulo Orders", "l'intero progetto",
+ * or the candidate by the objective of its assignment when it is known.
+ */
+export function focusTargetText(target: FocusTarget, objective?: string | null): string {
+  if (target.kind === "module") return `il modulo ${target.moduleName}`;
+  if (target.kind === "project") return "l'intero progetto";
+  return objective ? `il candidato di «${objective}»` : "il candidato";
+}
+
+/** The same with "su": "sul modulo Orders", "sull'intero progetto", "sul candidato". */
+export function focusTargetOn(target: FocusTarget): string {
+  if (target.kind === "module") return `sul modulo ${target.moduleName}`;
+  return target.kind === "project" ? "sull'intero progetto" : "sul candidato";
+}
+
+/** The fixed point as the person reads it: the revision they wrote and its short commit, or the candidate's base. */
+export function fixedPointText(audit: FocusAudit): string {
+  const short = audit.fixedPoint.slice(0, 7);
+  if (audit.target.kind === "candidate") return `la base del candidato, ${short}`;
+  const ref = audit.fixedPointRef ?? short;
+  return ref === short || audit.fixedPoint.startsWith(ref) ? short : `${ref}, ${short}`;
 }

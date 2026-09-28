@@ -129,6 +129,16 @@ export interface ActionMap {
   "candidate:approve": [{ candidateId: string }, void];
   /** Opens focus mode on a candidate (F01): real checks, then code-review's two axes. Returns the examination's id. */
   "candidate:focusAudit": [{ candidateId: string }, string];
+  /**
+   * Opens focus mode on a module or the whole project from a fixed point the person chose (F03). A point that does not
+   * exist or an empty diff is an error. Returns the examination's id.
+   */
+  "focusMode:open": [{ target: { kind: "module"; moduleId: string } | { kind: "project" }; fixedPoint: string }, string];
+  /** Revisions to suggest as the fixed point: default branches ahead of which HEAD is, the last tag, a few steps back. */
+  "focusMode:fixedPoints": [void, string[]];
+  /** Shows an examination in the full-screen focus mode; notifications wait until the person leaves it (F03). */
+  "focusMode:enter": [{ auditId: string }, void];
+  "focusMode:exit": [void, void];
   "candidate:publish": [{ candidateId: string }, void];
   "candidate:previewPullRequest": [
     { candidateId: string },

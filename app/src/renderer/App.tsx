@@ -4,6 +4,7 @@ import { chatComposer } from "@shared/goals";
 import { shouldShowWelcomeOnLaunch } from "@shared/onboarding";
 import { ChatView } from "@/components/chat/ChatView";
 import { Dialogs } from "@/components/Dialogs";
+import { FocusModeView } from "@/components/focus/FocusModeView";
 import { Inspector } from "@/components/inspector/Inspector";
 import { WelcomeView } from "@/components/launch/WelcomeView";
 import { Sash, useResizableWidth } from "@/lib/resizable";
@@ -105,52 +106,60 @@ export function App() {
 
   if (!app) return null;
   const isMac = app.platform === "darwin";
+  // Full-screen focus mode (F03) takes the whole window for the project on screen, until the person leaves it.
+  const inFocus = app.project !== null && app.focusMode?.projectId === app.project.id;
 
   return (
     <TooltipProvider delay={500}>
-      <div
-        className="flex h-svh w-full bg-[var(--app-shell-background)]"
-        data-sidebar-state={sidebarOpen ? "expanded" : "collapsed"}
-        // Behind the welcome the window is inert, even when the focus was not yet inside it (B02).
-        inert={welcomeOpen}
-      >
+      {inFocus ? (
+        <div className="flex h-svh w-full bg-[var(--app-shell-background)]" inert={welcomeOpen}>
+          <FocusModeView isMac={isMac} />
+        </div>
+      ) : (
         <div
-          className={cn(
-            "relative h-svh shrink-0 overflow-hidden",
-            !sidebar.resizing && "transition-[width] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]",
-          )}
-          style={{ width: sidebarOpen ? sidebar.width : 0 }}
+          className="flex h-svh w-full bg-[var(--app-shell-background)]"
+          data-sidebar-state={sidebarOpen ? "expanded" : "collapsed"}
+          // Behind the welcome the window is inert, even when the focus was not yet inside it (B02).
+          inert={welcomeOpen}
         >
           <div
             className={cn(
-              "app-sidebar-surface absolute inset-y-0 left-0 flex flex-col transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]",
-              !sidebarOpen && "-translate-x-full",
+              "relative h-svh shrink-0 overflow-hidden",
+              !sidebar.resizing && "transition-[width] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]",
             )}
-            style={{ width: sidebar.width }}
+            style={{ width: sidebarOpen ? sidebar.width : 0 }}
           >
-            <Sidebar isMac={isMac} />
+            <div
+              className={cn(
+                "app-sidebar-surface absolute inset-y-0 left-0 flex flex-col transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]",
+                !sidebarOpen && "-translate-x-full",
+              )}
+              style={{ width: sidebar.width }}
+            >
+              <Sidebar isMac={isMac} />
+            </div>
+          </div>
+          <div className="relative flex h-svh min-h-0 min-w-0 flex-1">
+            {sidebarOpen ? (
+              <Sash
+                side="right"
+                label="Larghezza della barra laterale. Clic per nasconderla"
+                size={sidebar.width}
+                min={sidebar.bounds.min}
+                max={sidebar.bounds.max}
+                onResize={sidebar.setWidth}
+                onReset={sidebar.reset}
+                onClick={() => useUi.getState().toggleSidebar()}
+                onDragChange={sidebar.setResizing}
+              />
+            ) : null}
+            <main className="chat-content-card @container/main relative z-[15] flex min-w-0 flex-1 overflow-hidden">
+              <ChatView isMac={isMac} />
+              {inspector && app.project && mainView === "dialog" ? <Inspector /> : null}
+            </main>
           </div>
         </div>
-        <div className="relative flex h-svh min-h-0 min-w-0 flex-1">
-          {sidebarOpen ? (
-            <Sash
-              side="right"
-              label="Larghezza della barra laterale. Clic per nasconderla"
-              size={sidebar.width}
-              min={sidebar.bounds.min}
-              max={sidebar.bounds.max}
-              onResize={sidebar.setWidth}
-              onReset={sidebar.reset}
-              onClick={() => useUi.getState().toggleSidebar()}
-              onDragChange={sidebar.setResizing}
-            />
-          ) : null}
-          <main className="chat-content-card @container/main relative z-[15] flex min-w-0 flex-1 overflow-hidden">
-            <ChatView isMac={isMac} />
-            {inspector && app.project && mainView === "dialog" ? <Inspector /> : null}
-          </main>
-        </div>
-      </div>
+      )}
       <WelcomeView />
       <Dialogs />
       <Toast />

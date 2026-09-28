@@ -1,7 +1,8 @@
+import { IconFocus2 } from "@tabler/icons-react";
 import { plainText } from "@shared/plainLanguage";
 import { RecordLabel } from "@/components/chat/ReferenceText";
 import type { AuditAxis, AuditFinding, FindingStatus, FocusAudit } from "@shared/domain";
-import { evidenceLabel, FINDING_STATUS_TEXT, findingTally } from "@shared/findings";
+import { evidenceLabel, FINDING_STATUS_TEXT, findingTally, fixedPointText } from "@shared/findings";
 import { ChatMarkdown } from "@/components/chat/ChatMarkdown";
 import { EvidenceRow } from "@/components/chat/Cards";
 import { Spinner } from "@/components/Spinner";
@@ -12,7 +13,7 @@ import { formatRelativeTime } from "@/lib/format";
 import { act, useUi } from "@/lib/store";
 import { EmptyNote, InspectorSection } from "./Inspector";
 
-const STATUS_TEXT: Record<FocusAudit["status"], string> = {
+export const AUDIT_STATUS_TEXT: Record<FocusAudit["status"], string> = {
   checking: "Verifiche reali nella sandbox",
   reviewing: "Esame degli assi Standards e Spec, in sola lettura",
   verifying: "Verifica delle prove dei rilievi",
@@ -20,9 +21,11 @@ const STATUS_TEXT: Record<FocusAudit["status"], string> = {
   failed: "Esame non riuscito",
 };
 
+export const isRunning = (audit: FocusAudit) => audit.status === "checking" || audit.status === "reviewing" || audit.status === "verifying";
+
 const findings = (n: number) => (n === 0 ? "Nessun rilievo" : n === 1 ? "1 rilievo" : `${n} rilievi`);
 
-const STATUS_TONE: Record<FindingStatus, "secondary" | "success" | "info" | "warning"> = {
+export const FINDING_TONE: Record<FindingStatus, "secondary" | "success" | "info" | "warning"> = {
   pending: "secondary",
   verified: "success",
   confirmed: "info",
@@ -35,7 +38,7 @@ function FindingRow({ finding }: { finding: AuditFinding }) {
   return (
     <li className="space-y-1 py-1.5" data-testid="audit-finding" data-finding={finding.id} data-status={finding.status} data-severity={finding.severity}>
       <div className="flex flex-wrap items-center gap-1.5">
-        <Badge tone={STATUS_TONE[finding.status]}>{FINDING_STATUS_TEXT[finding.status]}</Badge>
+        <Badge tone={FINDING_TONE[finding.status]}>{FINDING_STATUS_TEXT[finding.status]}</Badge>
         {finding.severity === "serious" ? <Badge tone="destructive">Grave</Badge> : null}
         <span className="text-ui-sm text-foreground">{finding.title}</span>
       </div>
@@ -53,7 +56,7 @@ function FindingRow({ finding }: { finding: AuditFinding }) {
   );
 }
 
-function AxisBody({ axis, name }: { axis: AuditAxis; name: "standards" | "spec" }) {
+function AxisBody({ axis, name, target }: { axis: AuditAxis; name: "standards" | "spec"; target: FocusAudit["target"]["kind"] }) {
   if (axis.status === "waiting") return <EmptyNote>Parte dopo le verifiche reali.</EmptyNote>;
   if (axis.status === "running") {
     return (
@@ -68,7 +71,11 @@ function AxisBody({ axis, name }: { axis: AuditAxis; name: "standards" | "spec" 
         {/* The skill's own words ("no spec available") stay in the record; the person reads them in Italian (issue #270). */}
         <p className="text-ui text-foreground/85">{axis.report ? plainText(axis.report) : null}</p>
         <p className="text-ui-sm text-muted-foreground">
-          {name === "spec" ? "Il candidato non viene da una fetta di un piano né da una issue collegata all'incarico." : null}
+          {name !== "spec"
+            ? null
+            : target === "candidate"
+              ? "Il candidato non viene da una fetta di un piano né da una issue collegata all'incarico."
+              : "I commit dal punto fisso non citano una issue che Trama conosce."}
         </p>
       </div>
     );
@@ -95,33 +102,43 @@ function AxisBody({ axis, name }: { axis: AuditAxis; name: "standards" | "spec" 
 }
 
 /**
- * Focus mode on a candidate (F01): the real checks first, then the Standards and Spec reports of code-review kept
- * apart, as the skill presents them, each finding with its proof and its verification (F02). A simple view in the inspector; the full-screen view comes later.
+ * The report of one focus mode examination in the inspector (F01), reopenable after the full-screen view (F03): the
+ * real checks first, then the Standards and Spec reports of code-review kept apart, as the skill presents them, each
+ * finding with its proof and its verification (F02).
  */
 export function AuditView({ id }: { id: string }) {
   const project = useUi((s) => s.app?.project)!;
   const setInspector = useUi((s) => s.setInspector);
   const audit = (project.document.audits ?? []).find((a) => a.id === id);
   if (!audit) return <div className="p-4"><EmptyNote>Esame non trovato.</EmptyNote></div>;
-  const candidate = project.document.candidates.find((c) => c.id === audit.target.candidateId);
-  const running = audit.status === "checking" || audit.status === "reviewing" || audit.status === "verifying";
+  const target = audit.target;
+  const candidate = target.kind === "candidate" ? project.document.candidates.find((c) => c.id === target.candidateId) : null;
+  const running = isRunning(audit);
   const tally = findingTally(audit);
   const checks = candidate?.requiredChecks ?? audit.checks.map((c) => c.check);
   return (
     <div data-testid="focus-audit" data-status={audit.status}>
       <InspectorSection title="Bersaglio">
         <p className="text-ui-sm text-foreground">
-          <button type="button" className="text-[var(--color-text-accent)] hover:underline" onClick={() => setInspector({ kind: "candidate", id: audit.target.candidateId })}>
-            <RecordLabel id={audit.target.candidateId} />
-          </button>
+          {target.kind === "candidate" ? (
+            <button type="button" className="text-[var(--color-text-accent)] hover:underline" onClick={() => setInspector({ kind: "candidate", id: target.candidateId })}>
+              <RecordLabel id={target.candidateId} />
+            </button>
+          ) : target.kind === "module" ? (
+            <button type="button" className="text-[var(--color-text-accent)] hover:underline" onClick={() => setInspector({ kind: "module", id: target.moduleId })}>
+              Modulo {target.moduleName}
+            </button>
+          ) : (
+            "L'intero progetto"
+          )}
           <Sep />
-          punto fisso <span className="font-mono text-[11.5px]" title={audit.fixedPoint}>{audit.fixedPoint.slice(0, 10)}</span>, la base del candidato
+          punto fisso <span className="font-mono text-[11.5px]" title={audit.fixedPoint}>{fixedPointText(audit)}</span>
           <Sep />
           {audit.changedFiles.length === 1 ? "1 file" : `${audit.changedFiles.length} file`}
         </p>
         <p className="mt-1.5 flex items-center gap-1.5 text-ui-sm text-muted-foreground" data-testid="focus-audit-status">
           {running ? <Spinner /> : null}
-          {STATUS_TEXT[audit.status]}
+          {AUDIT_STATUS_TEXT[audit.status]}
           {audit.finishedAt && !running ? <><Sep />{formatRelativeTime(audit.finishedAt)}</> : null}
         </p>
         {audit.status === "failed" && audit.failure ? <p className="mt-1 text-ui-sm text-destructive">{audit.failure}</p> : null}
@@ -138,12 +155,12 @@ export function AuditView({ id }: { id: string }) {
       </InspectorSection>
       <InspectorSection title="Standards">
         <div data-testid="audit-axis" data-axis="standards" data-status={audit.standards.status}>
-          <AxisBody axis={audit.standards} name="standards" />
+          <AxisBody axis={audit.standards} name="standards" target={target.kind} />
         </div>
       </InspectorSection>
       <InspectorSection title="Spec" aside={audit.specSource ? <Badge tone="outline">{audit.specSource}</Badge> : null}>
         <div data-testid="audit-axis" data-axis="spec" data-status={audit.spec.status}>
-          <AxisBody axis={audit.spec} name="spec" />
+          <AxisBody axis={audit.spec} name="spec" target={target.kind} />
         </div>
       </InspectorSection>
       {audit.summary ? (
@@ -152,17 +169,29 @@ export function AuditView({ id }: { id: string }) {
           {tally ? <p className="mt-1 text-ui-sm text-muted-foreground" data-testid="focus-audit-tally">Stato dei rilievi: {tally}.</p> : null}
         </InspectorSection>
       ) : null}
-      {running || !candidate ? null : (
-        <div className="cta-row px-4 py-3">
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => void act("candidate:focusAudit", { candidateId: candidate.id }).then((next) => next && setInspector({ kind: "audit", id: next }))}
-          >
+      <div className="cta-row px-4 py-3">
+        <Button size="sm" variant="outline" onClick={() => void act("focusMode:enter", { auditId: audit.id })}>
+          <IconFocus2 /> Apri a tutto schermo
+        </Button>
+        {running || (target.kind === "candidate" && !candidate) ? null : (
+          <Button size="sm" variant="outline" onClick={() => void examineAgain(audit)}>
             Esamina di nuovo
           </Button>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
+}
+
+/** Starts a new examination of the same target, with the same fixed point for a module or the project, and shows it full screen. */
+export async function examineAgain(audit: FocusAudit): Promise<void> {
+  const target = audit.target;
+  const next =
+    target.kind === "candidate"
+      ? await act("candidate:focusAudit", { candidateId: target.candidateId })
+      : await act("focusMode:open", {
+          target: target.kind === "module" ? { kind: "module", moduleId: target.moduleId } : { kind: "project" },
+          fixedPoint: audit.fixedPointRef ?? audit.fixedPoint,
+        });
+  if (next) await act("focusMode:enter", { auditId: next });
 }
