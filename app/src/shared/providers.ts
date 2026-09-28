@@ -1,4 +1,4 @@
-/** The nine providers in Synara's order, each with an adapter in app/src/main/core/providers (ADR 0012). */
+/** The nine providers in display order, each with an adapter in app/src/main/core/providers (ADR 0012). */
 export interface ProviderCapabilities {
   sessionModelSwitch: "inSession" | "restartSession" | "unsupported";
   conversationRollback: "native" | "restartSession" | null;
@@ -105,4 +105,17 @@ export function catalogOffers(provider: string, models: readonly CatalogEntry[],
   if (base === undefined) return false;
   const efforts = typeof base === "string" ? [] : (base.supportedReasoningEfforts ?? []);
   return efforts.length === 0 || efforts.includes(named.effort!);
+}
+
+/**
+ * The Coordinator's model when the project has no choice of its own (issue #205): the model the person last chose in
+ * Trama if the catalogue still offers it, else the catalogue's default, else its first model. Null without a catalogue.
+ */
+export function coordinatorDefaultModel(
+  provider: string,
+  models: readonly { model: string; isDefault?: boolean; supportedReasoningEfforts?: readonly string[] }[],
+  preferred: string | null | undefined,
+): string | null {
+  if (preferred && (models.length === 0 || catalogOffers(provider, models, preferred))) return preferred;
+  return models.find((m) => m.isDefault)?.model ?? models[0]?.model ?? null;
 }

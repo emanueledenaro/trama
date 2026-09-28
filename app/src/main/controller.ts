@@ -4,18 +4,34 @@ import { mkdir, readFile as readFileText, realpath, stat, writeFile } from "node
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { isUsableAccount, type ProviderAccount, type ProviderId, type ProviderModel, READ_OUTSIDE_SCOPE_TITLE, TOOL_REFUSED_TITLE, type TurnEvent } from "@shared/codex";
-import { PROVIDERS, canCoordinate, catalogModel, catalogOffers, coordinatorUnavailableReason, supportsReadOnly, type CatalogEntry } from "@shared/providers";
+import { PROVIDERS, canCoordinate, catalogModel, catalogOffers, coordinatorDefaultModel, coordinatorUnavailableReason, supportsReadOnly, type CatalogEntry } from "@shared/providers";
 import { shortId } from "@shared/ids";
+import { activeTerms, workStoppedBy } from "@shared/mandate";
 import { mentionContextBlock } from "@shared/mentions";
+import { buildReferenceIndex, referenceListing, type ReferenceIndex } from "@shared/references";
 import { codexSkillText, type LoadedSkill, skillInvocations } from "@shared/skills";
 import { isUnsupportedModelError } from "@shared/timeline";
-import { classifyProviderFailure, containsJson, failureSummary, type ProviderRetryView, retryDelayMs } from "@shared/providerFailure";
+import {
+  classifyProviderFailure,
+  containsJson,
+  failureSummary,
+  type ProviderRetryView,
+  type ProviderWaitReason,
+  quotaCheckDelayMs,
+  retryDelayMs,
+  waitReasonOf,
+} from "@shared/providerFailure";
 import type { ImageAttachmentInput } from "@shared/ipc";
 import type {
   ActiveProjectState,
   AutomaticWorkRequest,
+  BranchDivergence,
   Candidate,
+  CandidateGate,
   FocusAudit,
+  GateRole,
+  StandardCheck,
+  TechnicalReview,
   WorktreeSession,
   AgentColor,
   AppSettings,
@@ -23,6 +39,7 @@ import type {
   AppState,
   CoordinatorPhase,
   CoordinatorRequest,
+  GitHubIssue,
   GitHubState,
   Practice,
   PracticeView,
@@ -30,15 +47,19 @@ import type {
   LearningReviewRun,
   ProjectOverview,
   ProviderState,
+  FixedBanRefusal,
   MandateAction,
   ProjectDocument,
   WorkKind,
   WorkPlan,
+  RecapReason,
+  RecapRecord,
   RecentProject,
   RequestStep,
   SpecialistAssignment,
 } from "@shared/domain";
-import { isOpenQuestion } from "@shared/domain";
+import { isOpenQuestion, pendingMandateRequest } from "@shared/domain";
+import { waitingForYou, type WaitingSources } from "@shared/waitingForYou";
 import { resolveCodexExecutable } from "./core/codexClient";
 import { CodexRuntime } from "./core/providers/codex";
 import { createRuntime, hasAdapter } from "./core/providers/registry";
@@ -84,22 +105,58 @@ import {
   updateCleanCode,
 } from "./core/cleanCode";
 import { openingInput, resumeInput, specialistInstructions } from "./core/specialistBriefing";
+import { recordGate } from "./core/agentThreads";
 import { prepareDemoProject } from "./core/demoProject";
-import { appendEvent, emptyDocument, handoverTranscript, moveEvent, recordReply, referencedPaths } from "./core/document";
-import { candidateGoalId, dialogComposer, findGoal, projectGoals, requestGoalId } from "@shared/goals";
+import {
+  appendEvent,
+  ASSIGNMENT_CRASH_NOTE,
+  ASSIGNMENT_QUIT_NOTE,
+  emptyDocument,
+  handoverTranscript,
+  moveEvent,
+  QUIT_NOTE,
+  recordReply,
+  referencedPaths,
+} from "./core/document";
+import { type ProviderWait, providerWaitLine, reopeningResume } from "./core/resumeWork";
+import { recordUnknownReferences, unknownReferencesFeedback } from "./core/referenceCheck";
+import { candidateGoalId, findGoal, projectGoals, requestGoalId } from "@shared/goals";
 import { focusTask, focusText, focusView, pauseTask, resumeTask } from "./core/focus";
+import { statusLine } from "./core/statusLine";
 import { COORDINATOR_MOVES, type CoordinatorMove, nextStepViews, PHASE_LABELS, workState, workStateText } from "./core/workPhase";
+import { availableButtons, currentStateText, MISSING_BUTTON_TITLE, missingButtonDetail, missingButtonFeedback, missingButtons } from "./core/coordinatorGrounding";
 import {
   AUTOMATIC_MOVE_DETAIL,
   automaticMove,
   automaticMoveSection,
+  BLOCK_LABELS,
+  blockOutcome,
+  blockOutcomeActivity,
   choicesWithoutCard,
   confirmationFeedback,
   type ContinuationGuards,
+  type GitHubReading,
+  gitHubWorkEvents,
+  hasOpenWork,
+  isPaused,
+  PROJECT_EVENTS,
+  projectMove,
+  recordRound,
+  ROUND_INTERVAL_MS,
+  setPaused,
   stalledMove,
   type WorkEvent,
 } from "./core/continuousWork";
 import { openGrillingQuestions } from "@shared/grilling";
+import {
+  correctAutonomousStep,
+  correctionMessage,
+  type DelegatedStep,
+  delegatedSteps,
+  planWorkStarted,
+  recordAutonomousStep,
+  STEP_LABELS,
+} from "./core/autonomousCycle";
 import {
   archiveGoal,
   createGoal,
@@ -117,7 +174,10 @@ import {
   closeIssue,
   commentOnIssue,
   addBlockedBy,
+  addIssueLabels,
   createIssue,
+  listIssues,
+  removeIssueLabel,
   linkedIssueNumbers,
   listIssuesAndPullLinks,
   readGitHubRepository,
@@ -139,17 +199,21 @@ import {
   DomainError,
   grantMandate,
   mandateMessage,
+  mandateRejectionMessage,
   resolveMandateRequest,
+  rejectMandateRequest,
   revokeMandate,
   withdrawalMessage,
   withdrawDecisionRequest,
 } from "./core/pact";
 import { availableChecks, CHECKS, lendNodeDependencies, type ReadOnlyCheck, runReadOnlyCheck } from "./core/checks";
-import { checkSpecSections, PlanError, type PlannerSkills, plannerTurn, readPlannerAnswer, SPEC_TRIAGE_LABEL, specMarkdown } from "./core/plan";
+import { checkSpecSections, PlanError, type PlannerSkills, plannerTurn, readPlannerAnswer, SPEC_TRIAGE_LABEL, specMarkdown, supersedeGoalPlans } from "./core/plan";
+import { asksForRecap, type Milestone, newMilestones, recapTitle, writeRecap } from "./core/recap";
 import { draftSlicing, readSlicerAnswer, sliceViews, slicerTurn, TICKET_TRIAGE_LABEL, ticketMarkdown } from "./core/slices";
 import { approvePactDemo, inspectPactDemo, runPactDemo } from "./core/pactDemo";
 import { readRepositoryFile, scanRepository } from "./core/repositoryScanner";
 import { messageStyle } from "./core/messageStyle";
+import { TOOL_ERRORS_RULE, toolErrorMessage, withoutToolErrors } from "./core/toolErrors";
 import { installedSkillVersion, prepareSkills, rollbackSkills, SELECTED_SKILLS, SKILL_VERSION, type SetupReport, updateSkills } from "./core/skillSetup";
 import {
   beginTurn,
@@ -171,6 +235,7 @@ import {
   changeAssignmentProvider,
   refreshDecisionVersions,
   resumeAssignment,
+  reopenForFindings,
   resumePausedAssignment,
   stopOrphanedAssignments,
   TeamError,
@@ -179,16 +244,57 @@ import {
   type TurnEnd,
 } from "./core/team";
 import { answeredWork, ASK_COORDINATOR_TOOL, askCoordinator, asksCoordinator, DEVELOPER_TOOL_SERVER_INSTRUCTIONS, personAnswered, QuestionError } from "./core/developerQuestions";
-import { prepareWorktree, removeWorktree, reviewWorktree, validateWorktree } from "./core/workspace";
-import { AuditError, type AxisName, type AxisTurn, auditSpec, axisThread, axisTurn, beginAxes, closeAudit, failAudit, findAudit, finishAxis, openAudit, readAxisAnswer, recordAuditCheck } from "./core/audit";
+import { checkoutCommit, prepareWorktree, removeWorktree, reviewWorktree, validateWorktree } from "./core/workspace";
+import {
+  beginReviews,
+  checksToRun,
+  cleanCodeOutcome,
+  closeGate,
+  compareSuite,
+  failedChecks,
+  failGate,
+  finishReview,
+  gateReview,
+  gateSummary,
+  guardianOutcome,
+  markRegressions,
+  openGate,
+  pendingReturns,
+  readReviewerAnswer,
+  returnFindings,
+  returnWaiting,
+  type ReviewerTurn,
+  reviewerTurn,
+  reviewThread,
+  SESSION_ROLES,
+  stopAtChecks,
+  stopAtSecrets,
+  suiteChecks,
+  usesCodeReview,
+} from "./core/gate";
+import { blockingFindings, GATE_STATUS } from "@shared/gate";
+import { roleProfile } from "@shared/roster";
+import { confirmationModel, confirmationTurn, confirmFinding, NO_STRONGER_MODEL, readConfirmation, recheckFindings } from "./core/auditFindings";
+import { AuditError, type AxisName, type AxisTurn, auditSpec, axisThread, axisTurn, beginAxes, beginVerification, closeAudit, failAudit, findAudit, finishAxis, openAudit, readAxisAnswer, recordAuditCheck } from "./core/audit";
 import { approveCandidate, candidateReport, findCandidate, latestCandidate, recordEvidence, recordTechnicalReview } from "./core/candidates";
+import { assessBranchDivergence } from "./core/branchDivergence";
 import { assessConflict } from "./core/conflicts";
 import { pickSlices } from "./core/slicePicking";
 import { assessWorktreePair, worktreePairs } from "./core/worktreeConflicts";
 import { clampParallelDevelopers } from "@shared/parallel";
 import { pullRequestBody, publishCandidate } from "./core/publication";
+import { agentPushActivity, isGitPushCommand, pushActivity, pushAuthorization, pushRefusal } from "./core/push";
+import {
+  acknowledgeFixedBanRefusal,
+  fixedBanActivity,
+  needsProjectMandate,
+  proposeProjectMandate,
+  recordFixedBanRefusal,
+  restrictMandate,
+  restrictionMessage,
+} from "./core/projectMandate";
 import { branchPrefix, commitHeader, readProjectConventions, requireValidCommitMessage, validateCommitMessage } from "./core/conventions";
-import { candidateCommit, qualityGate, qualityMissing, relatedIssue, workCommitType } from "./core/quality";
+import { candidateCommit, qualityGate, qualityMissing, relatedIssue, secretFindings, workCommitType } from "./core/quality";
 import {
   applyAutomaticTransitions,
   autoSummary,
@@ -222,6 +328,7 @@ import { cloneRepository, hasAiHero, readGitHubCliStatus, simulateColleagueChang
 import { type AgentWork, type PresenceContext, PresenceService } from "./core/presence";
 import { overlapModules, probeColleagues, projectOverlaps } from "./core/overlap";
 import { compareSides, coordinatorNotice, type PresenceProbe } from "@shared/overlap";
+import { candidateSuperseded, divergenceSummary } from "@shared/conflictScope";
 import { type AgentOverlap, agentOverlapKey, agentOverlaps, occupantName, presenceSection } from "./core/coordinatorPresence";
 import { emptyConsent, type PresenceProposal, type PresenceTask, type PresenceView, shouldProposeConsent, shouldReproposeConsent } from "@shared/presence";
 import { agentTag } from "@shared/identity";
@@ -254,6 +361,8 @@ import {
   type DutyRunner,
   dutySession,
   nextDuty,
+  observeIssues,
+  environmentFailure,
   recordCheckOutcome,
   startDomainWriting,
   startDutyOnRequest,
@@ -261,9 +370,33 @@ import {
   withinMandate,
 } from "./core/duties";
 import { findDomainProposal } from "@shared/domainDocs";
+import {
+  collectProblems,
+  keepInLocalBacklog,
+  labelsAfterTriage,
+  latestTriage,
+  parseTriageLabels,
+  placeProblems,
+  problemIssueBody,
+  problemsToOpen,
+  recordIssueFailure,
+  recordProblemIssue,
+  sameProblemIssue,
+  ISSUE_RETRY_MS,
+  TRIAGE_LABELS_PATH,
+} from "./core/problems";
 
-/** The model Trama prefers for the Coordinator when the Codex catalogue offers it. */
-const PREFERRED_COORDINATOR_MODEL = "gpt-5.6-luna";
+/** The person's Coordinator models as read from settings.json: entries without a model name are dropped. */
+function coordinatorModelSettings(saved: unknown): NonNullable<AppSettings["coordinatorModels"]> {
+  if (!saved || typeof saved !== "object") return {};
+  const models: NonNullable<AppSettings["coordinatorModels"]> = {};
+  for (const [provider, value] of Object.entries(saved as Record<string, unknown>)) {
+    const entry = value as { model?: unknown; effort?: unknown } | null;
+    if (!PROVIDERS.some((p) => p.id === provider) || typeof entry?.model !== "string" || !entry.model) continue;
+    models[provider as ProviderId] = { model: entry.model, effort: typeof entry.effort === "string" ? entry.effort : null };
+  }
+  return models;
+}
 /** The line the chat shows when a developer takes a slice by itself (W08). */
 const SELF_PICK_DETAIL = "Era la prossima fetta pronta nei suoi moduli: la prende senza aspettare il Coordinatore, dentro il mandato e il limite di sviluppatori in parallelo del progetto.";
 
@@ -287,8 +420,22 @@ const providerRetryBaseMs = (): number => {
   const configured = Number(process.env.TRAMA_PROVIDER_RETRY_MS);
   return Number.isFinite(configured) && configured > 0 ? configured : 30_000;
 };
+/**
+ * How often Trama checks a used up quota again while it waits to resume a turn (C11), 15 minutes by default; the reset
+ * time comes first when sooner. TRAMA_PROVIDER_CHECK_MS shortens it for the UI check.
+ */
+const providerCheckMs = (): number => {
+  const configured = Number(process.env.TRAMA_PROVIDER_CHECK_MS);
+  return Number.isFinite(configured) && configured > 0 ? configured : providerRetryBaseMs() * 30;
+};
 /** Why a Coordinator turn ended when the person opened or closed another project during it (C02). */
 const LEFT_PROJECT_NOTE = "Hai lasciato il progetto mentre il Coordinatore rispondeva.";
+/**
+ * What a repeated turn is told (C11): the attempt before may have done part of its work before it ended, so its
+ * outcome is uncertain and is reconciled before any action with effects is repeated.
+ */
+const RESUMED_TURN =
+  "## Resumed turn\nThis message was sent before and its turn ended early. Part of that work may already be done: before repeating any action with effects (proposals, assignments, plans, decisions, cards, file changes), check the conversation and the project state, and do not repeat what is already there.";
 
 /**
  * Coordinator rules added after threads were opened (writing, next step, grilling, domain modeling): a resumed thread
@@ -314,8 +461,11 @@ const toolRefusedDetail = (event: Extract<TurnEvent, { type: "toolRefused" }>) =
 
 const coordinatorSkillParts = (skills: NativeSkill[]) => skills.map((skill, index) => ({ skill, binding: COORDINATOR_SKILLS[index]!.binding }));
 
+/** Clean Code's part of the candidate gate (W10): the technical review's session, answer and Trama's measures. */
+type CleanCodeReview = { threadId: string; answer: ReviewAnswer; standard: StandardCheck | null };
+
 function lateRules(skills: NativeSkill[], provider: ProviderId): LateRules {
-  const style = messageStyle("the person");
+  const style = [messageStyle("the person"), TOOL_ERRORS_RULE].join("\n");
   const full = [style, NEXT_STEP_RULES, deliverNativeSkills(coordinatorSkillParts(skills), false).text].join("\n\n");
   const delivery = deliverNativeSkills(coordinatorSkillParts(skills), provider === "codex");
   return {
@@ -332,6 +482,7 @@ function forgetCoordinatorThread(document: ProjectDocument): void {
   document.coordinator.injectedStudy = {};
   document.coordinator.memorySentToThread = null;
   document.coordinator.practicesSent = null;
+  document.coordinator.referencesSent = null;
   document.coordinator.contextWarnedAt = null;
 }
 
@@ -368,6 +519,36 @@ export function providerUnavailableReason(id: ProviderId, account: ProviderAccou
     }
     default:
       return `Stato di ${name} non ancora verificato.`;
+  }
+}
+
+/**
+ * A turn Trama repeats (P10, C11): the request it repeats, the automatic attempt (0 for Riprova or a resume), why it
+ * waited, and whether Trama took it up by itself on reopening a project with a mandate (issue #249).
+ */
+type ResumedTurn = { of: CoordinatorRequest; attempt: number; reason?: ProviderWaitReason; reopened?: boolean };
+
+/** Trama's line in the chat when a turn is repeated (P10, C11): the message is already above it. */
+function retryLine(retry: ResumedTurn, provider: string): { title: string; detail: string } {
+  if (retry.reopened) {
+    return {
+      title: "Turno ripreso alla riapertura",
+      detail: "Trama riprende da sola, dentro il mandato, il turno interrotto dalla chiusura. Il Coordinatore controlla prima cosa era già stato fatto.",
+    };
+  }
+  if (retry.attempt === 0) {
+    return retry.of.state === "interrupted"
+      ? { title: "Turno ripreso", detail: "Trama riprende il messaggio del turno interrotto. Il Coordinatore controlla prima cosa era già stato fatto." }
+      : { title: "Nuovo tentativo", detail: "Trama riprova il messaggio del turno non riuscito." };
+  }
+  const title = `Nuovo tentativo automatico (${retry.attempt} di ${PROVIDER_RETRY_ATTEMPTS})`;
+  switch (retry.reason) {
+    case "quotaExhausted":
+      return { title, detail: `La quota di ${provider} è di nuovo disponibile: Trama riprende il messaggio.` };
+    case "unreachable":
+      return { title, detail: `Dopo l'interruzione di ${provider} o della rete, Trama riprova il messaggio.` };
+    default:
+      return { title, detail: `Dopo il limite temporaneo di ${provider}, Trama riprova il messaggio.` };
   }
 }
 
@@ -605,6 +786,8 @@ export class TramaController {
       project.document.plans.filter((p) => p.slicing?.status === "approved").map((p) => [p.id, sliceViews(project.document, p)]),
     );
     project.focus = focusView(project.document);
+    project.statusLine = statusLine(project.document, project.runningRequestId, this.coordinatorWait(project));
+    project.waiting = waitingForYou(project.document, this.waitingSources(project, { sliceViews: project.sliceViews, candidateReports: project.candidateReports }));
     project.automaticWork = project.isDemo ? [] : automaticWorkStatus(project.document, this.dutyContext(project, project.snapshot.headSHA));
     project.overlaps = projectOverlaps(project, this.presenceProbes);
     project.pactDemoBlockers = project.document.pactDemo ? inspectPactDemo(project.document, project.document.pactDemo) : [];
@@ -620,6 +803,7 @@ export class TramaController {
       autoPrepareMethod: settings.autoPrepareMethod !== false,
       continuousWork: settings.continuousWork !== false,
       learning: learningSettings(settings.learning),
+      coordinatorModels: coordinatorModelSettings(settings.coordinatorModels),
     };
     this.lastProjectId = settings.lastProjectId ?? null;
     this.practices = await this.practiceStore.load();
@@ -628,6 +812,7 @@ export class TramaController {
     this.scheduleMonitor();
     this.curatorTimer = setInterval(() => void this.maybeRunCurator(), 3_600_000);
     this.curatorTimer.unref?.();
+    this.scheduleRounds();
     this.host.applyTheme(this.state.settings.theme);
     this.state.recentProjects = await this.storage.loadRecentProjects();
     if (this.legacyRoot && !(await this.storage.hasRecentProjects())) {
@@ -655,10 +840,12 @@ export class TramaController {
 
   async stop(): Promise<void> {
     this.quitting = true;
+    this.closeTurnForQuit();
     this.cancelProviderRetry(null);
     for (const [, planner] of this.planners) planner.stop();
     this.planners.clear();
     for (const [, run] of this.auditRuns) for (const client of run.clients) client.stop();
+    for (const [, run] of this.gateRuns) for (const client of run.clients) client.stop();
     for (const [, timer] of this.providerWaits) clearTimeout(timer);
     this.providerWaits.clear();
     await this.stopSpecialistsForQuit();
@@ -666,6 +853,8 @@ export class TramaController {
     this.monitorTimer = null;
     if (this.curatorTimer) clearInterval(this.curatorTimer);
     this.curatorTimer = null;
+    if (this.roundTimer) clearInterval(this.roundTimer);
+    this.roundTimer = null;
     for (const [, review] of this.learningReviews) review.abort();
     this.learningReviews.clear();
     this.unwatchProject();
@@ -681,6 +870,31 @@ export class TramaController {
     this.providerDiscovery.clear();
   }
 
+  /**
+   * Esci during a Coordinator turn (C11): the Coordinator's runtime and its tools stop first, so nothing the turn does
+   * lands after it is closed; then the turn ends as interrupted, with its reason, and the messages still queued go back
+   * to the chat's draft. The person resumes it explicitly after reopening.
+   */
+  private closeTurnForQuit(): void {
+    this.stopCoordinatorRuntime();
+    const project = this.state.project;
+    if (!project) return;
+    const running = project.runningRequestId ? project.document.requests.find((r) => r.id === project.runningRequestId) : undefined;
+    if (running?.state === "running") {
+      running.state = "interrupted";
+      running.completedAt = new Date().toISOString();
+      running.failure = QUIT_NOTE;
+      appendEvent(project.document, "trama", { type: "activity", title: "Turno interrotto", detail: QUIT_NOTE, tone: "info" }, running.id);
+      project.runningRequestId = null;
+      project.streaming = null;
+    }
+    // The chat has one composer (U01): every queued message goes back to its draft, in order.
+    for (const item of this.queue.filter((q) => q.projectId === project.id)) {
+      project.document.composerDraft = [project.document.composerDraft, item.text].filter(Boolean).join("\n\n");
+    }
+    this.queue = this.queue.filter((q) => q.projectId !== project.id);
+  }
+
   // MARK: Publishing
 
   private publish(): void {
@@ -694,6 +908,8 @@ export class TramaController {
   private publishNow(): void {
     if (this.publishTimer) clearTimeout(this.publishTimer);
     this.publishTimer = null;
+    // Every change reaches the person through here: a milestone it brought becomes a recap, saved with the project.
+    if (this.state.project && this.recapMilestones(this.state.project)) this.scheduleSave();
     this.refreshDerived();
     this.host.publish(this.state);
   }
@@ -719,6 +935,69 @@ export class TramaController {
   private changed(): void {
     this.scheduleSave();
     this.publish();
+  }
+
+  /**
+   * What "Aspetta te" reads besides the document: the slices of each approved breakdown, the verdict of each candidate
+   * not yet published and the memory proposals. `derived` passes the slices and verdicts the published state has just
+   * computed, so they are not computed twice.
+   */
+  private waitingSources(project: ActiveProjectState, derived?: Pick<WaitingSources, "sliceViews" | "candidateReports">): WaitingSources {
+    const document = project.document;
+    const views =
+      derived?.sliceViews ?? Object.fromEntries(document.plans.filter((p) => p.slicing?.status === "approved").map((p) => [p.id, sliceViews(document, p)]));
+    const reports =
+      derived?.candidateReports ??
+      Object.fromEntries(document.candidates.filter((c) => !c.pullRequest).map((c) => [c.id, candidateReport(document, c, project.snapshot.headSHA)]));
+    return { sliceViews: views, candidateReports: reports, memoryProposals: project === this.state.project ? this.state.learning?.proposals : undefined };
+  }
+
+  /**
+   * The milestones the project reached since the last reading become one recap of the Coordinator in the chat (A03),
+   * however many arrived together. The first reading of a project only takes note of what it already reached. Returns
+   * whether the document changed.
+   */
+  private recapMilestones(project: ActiveProjectState): boolean {
+    if (!project.stateWritable) return false;
+    const sources = this.waitingSources(project);
+    const first = !project.document.recap;
+    const untold = newMilestones(project.document, sources.sliceViews ?? {});
+    if (untold.length) this.appendRecap(project, "milestone", untold, sources);
+    return first || untold.length > 0;
+  }
+
+  /** Writes a recap and its card in the chat (A03): under the goal the person asked it in, else on the whole project. */
+  private appendRecap(project: ActiveProjectState, reason: RecapReason, reached: Milestone[], sources: WaitingSources, goalId: string | null = null): RecapRecord {
+    const now = new Date();
+    const recap = writeRecap(project.document, {
+      id: randomUUID(),
+      at: now.toISOString(),
+      reason,
+      milestones: reached,
+      runningRequestId: project.runningRequestId,
+      sources,
+    });
+    appendEvent(project.document, "coordinator", { type: "card", kind: "recap", title: recapTitle(recap), detail: null, referenceId: recap.id }, null, now, null, goalId);
+    return recap;
+  }
+
+  /**
+   * The person asks for a recap (A03), with the command, a short request in the chat or the search palette: their
+   * message and the recap go in the chat at once, without a provider turn, also while the Coordinator works.
+   */
+  recap(text: string | null = null, goalId: string | null = null): void {
+    const project = this.requireProject();
+    if (!project.stateWritable) throw new DomainError("Lo stato di questo progetto è in sola lettura.");
+    const goal = goalId ? requireGoal(project.document, goalId).id : null;
+    if (text) {
+      appendEvent(project.document, "person", { type: "personMessage", text, moduleId: null, moduleName: null, imageCount: 0 }, null, new Date(), null, goal);
+      project.document.composerDraft = "";
+    }
+    // Milestones reached and not told yet are part of this recap, so they are not told again right after it.
+    const sources = this.waitingSources(project);
+    const untold = newMilestones(project.document, sources.sliceViews ?? {});
+    this.appendRecap(project, untold.length ? "milestone" : "request", untold, sources, goal);
+    this.changed();
   }
 
   private async saveSettings(): Promise<void> {
@@ -886,7 +1165,8 @@ export class TramaController {
         this.watchProject(root);
         if (!isDemo) this.startPresence(parked);
         void this.loadSkills();
-        void this.startCoordinator();
+        // Continuous work picks up where it was with a round once the Coordinator is open (A05).
+        void this.startCoordinator().then(() => this.runRound(), () => undefined).catch((error) => this.fail(error));
         // Work that waited for a provider while the project was parked is checked again now.
         const waiting = new Set(parked.document.team.specialists.flatMap((sp) => sp.assignments.flatMap((a) => (a.waitingForProvider ? [a.waitingForProvider.provider] : []))));
         for (const provider of waiting) void this.resumeWaitingWork(provider);
@@ -912,7 +1192,7 @@ export class TramaController {
       }
       document ??= emptyDocument(id);
       if (idea && !document.events.length) document.createdFromIdea = idea;
-      const orphanNote = "Trama si è interrotto senza un arresto controllato (crash o chiusura forzata) mentre lo specialista lavorava.";
+      const orphanNote = ASSIGNMENT_CRASH_NOTE;
       for (const assignmentId of stopOrphanedAssignments(document, orphanNote)) {
         appendEvent(document, "trama", { type: "activity", title: "Arresto confermato", detail: orphanNote, tone: "info" }, null, new Date(), {
           assignmentId,
@@ -968,12 +1248,24 @@ export class TramaController {
       if (!isDemo) this.startPresence(project);
       // Paused work whose question got its answer before a restart resumes now (W06).
       if (loaded.writable) this.resumeAnsweredWork(project);
+      // A project without a mandate gets the proposal of the project mandate for the whole cycle (issue #244).
+      if (!isDemo && loaded.writable) this.proposeProjectMandate(project);
       if (!isDemo && loaded.writable && shouldAutoPrepareMethod(this.state.settings, this.state.onboarding) && !hasAiHero(root)) {
         // T04: the method is ready when the project opens; existing files are never overwritten.
         void this.prepareSkills().catch((error) => this.fail(error));
       }
       void this.loadSkills();
-      void this.startCoordinator();
+      // After a restart continuous work picks up from the recorded step, then with a round, once the Coordinator is open
+      // (A05, issue #249).
+      void this.startCoordinator()
+        .then(
+          async () => {
+            await this.resumeOnReopening(project);
+            await this.runRound();
+          },
+          () => undefined,
+        )
+        .catch((error) => this.fail(error));
       const waiting = new Set(document.team.specialists.flatMap((sp) => sp.assignments.flatMap((a) => (a.waitingForProvider ? [a.waitingForProvider.provider] : []))));
       for (const provider of waiting) void this.resumeWaitingWork(provider);
     } catch (error) {
@@ -1111,6 +1403,7 @@ export class TramaController {
   async refreshGitHub(): Promise<void> {
     const project = this.state.project;
     if (!project || project.isDemo) return;
+    const before = this.gitHubReading(project);
     project.github = { ...project.github, status: "loading" };
     this.publish();
     const repository = await readGitHubRepository(project.rootPath);
@@ -1142,6 +1435,7 @@ export class TramaController {
     };
     this.updateMonitorStatus(repository, checkpoint);
     this.publish();
+    this.noticeGitHubWork(project, before);
     void this.presence?.tick();
     void this.assessRemoteConflicts();
     void this.recordMergedPullRequests(project, repository);
@@ -1152,10 +1446,12 @@ export class TramaController {
   private async refreshIssues(project: ActiveProjectState): Promise<void> {
     const repository = project.github.repository;
     if (!repository || project.github.status !== "ready") return;
+    const before = this.gitHubReading(project);
     const read = await listIssuesAndPullLinks(repository).catch(() => null);
     if (!read || this.state.project !== project) return;
     project.github = { ...project.github, ...read };
     this.publish();
+    this.noticeGitHubWork(project, before);
     void this.runDuties();
   }
 
@@ -1179,25 +1475,29 @@ export class TramaController {
   private assessingConflicts = false;
 
   /**
-   * Compares every unpublished candidate with the colleagues' remote heads (open pull requests and
-   * the default branch) through a temporary merge. At most eight new comparisons per run.
+   * Compares every unpublished candidate still open with the remote heads (open pull requests and the default branch)
+   * through a temporary merge. At most eight new comparisons per run. First the project's branch is compared with the
+   * default branch (U02): when they diverged, that is one project notice and the default branch is not compared again
+   * on each candidate built on the branch.
    */
   async assessRemoteConflicts(): Promise<void> {
     const project = this.state.project;
     const snapshot = project?.github.snapshot;
     const repository = project?.github.repository;
     if (!project || !snapshot || !repository || this.assessingConflicts || snapshot.warnings.length) return;
-    const document = project.document;
-    const candidates = document.candidates.filter(
-      (c) => !c.pullRequest && latestCandidate(document, c.assignmentId)?.id === c.id && findAssignment(document, c.assignmentId)?.workspace,
-    );
-    if (!candidates.length) return;
     this.assessingConflicts = true;
     try {
+      const document = project.document;
+      const defaultHead = snapshot.branches.find((b) => b.name === snapshot.defaultBranch);
+      if (defaultHead) await this.assessBranchDivergence(project, repository, snapshot.defaultBranch, defaultHead.sha);
+      if (this.state.project !== project) return;
+      const candidates = document.candidates.filter(
+        (c) => !c.pullRequest && !candidateSuperseded(document, c) && findAssignment(document, c.assignmentId)?.workspace,
+      );
+      if (!candidates.length) return;
       document.conflicts ??= [];
       const heads = new Map<string, string[]>();
-      const defaultHead = snapshot.branches.find((b) => b.name === snapshot.defaultBranch);
-      if (defaultHead) heads.set(defaultHead.sha.toLowerCase(), [snapshot.defaultBranch]);
+      if (defaultHead && !document.branchDivergence) heads.set(defaultHead.sha.toLowerCase(), [snapshot.defaultBranch]);
       for (const pull of snapshot.pullRequests) {
         const sha = pull.headSHA.toLowerCase();
         heads.set(sha, [...(heads.get(sha) ?? []), `#${pull.number} ${pull.headRef}`]);
@@ -1228,8 +1528,9 @@ export class TramaController {
             appendEvent(document, "trama", { type: "card", kind: "conflict", title: "Conflitto", detail: null, referenceId: assessment.id });
             if (shouldReproposeConsent(document.presence, assessment.classification)) this.proposePresence(project, "conflict", references);
             if (assessment.classification === "conflict") {
+              this.continueWork(project, null, "worktreeConflict");
               this.host.notify(
-                "Trama: conflitto con il lavoro di un collega",
+                `Trama: conflitto con ${references.join(", ")}`,
                 `Il candidato ${candidate.id} entra in conflitto con ${references.join(", ")}.`,
                 this.state.settings.sounds === true,
               );
@@ -1241,6 +1542,47 @@ export class TramaController {
     } finally {
       this.assessingConflicts = false;
     }
+  }
+
+  /** The last pair of heads compared for the divergence, so an unchanged pair is not fetched and merged again. */
+  private divergenceChecked: string | null = null;
+
+  /**
+   * Compares the project's checkout with the default branch on GitHub (U02) and keeps the divergence on the document:
+   * the chat shows it as one project notice while it holds, and it disappears once the branches are realigned.
+   */
+  private async assessBranchDivergence(project: ActiveProjectState, repository: string, defaultBranch: string, remoteSHA: string): Promise<void> {
+    const headSHA = await this.headSHA(project.rootPath);
+    if (!headSHA || this.state.project !== project) return;
+    const branch = (await git(["symbolic-ref", "--quiet", "--short", "HEAD"], project.rootPath).catch(() => "")).trim() || null;
+    if (this.state.project !== project) return;
+    // The names are in the key too: a renamed default branch or a switch to a branch on the same commit changes the notice.
+    const key = [project.id, branch ?? "", headSHA, defaultBranch, remoteSHA.toLowerCase()].join("\0");
+    if (this.divergenceChecked === key) return;
+    let divergence: BranchDivergence | null;
+    try {
+      divergence = await assessBranchDivergence({
+        sourceRoot: project.rootPath,
+        branch,
+        defaultBranch,
+        headSHA,
+        remoteSHA,
+        source: { kind: "github", repository },
+        cacheRoot: join(this.storage.root, "RemoteCache"),
+      });
+    } catch {
+      // A remote that cannot be read now is compared again at the next refresh; the last known state stays.
+      return;
+    }
+    if (this.state.project !== project) return;
+    this.divergenceChecked = key;
+    const before = project.document.branchDivergence ?? null;
+    if (!divergence && !before) return;
+    project.document.branchDivergence = divergence;
+    if (divergence && !before) {
+      this.host.notify("Trama: il branch del progetto è andato in un'altra direzione", divergenceSummary(divergence), this.state.settings.sounds === true);
+    }
+    this.changedIn(project);
   }
 
   // MARK: Presence (G01)
@@ -1534,7 +1876,7 @@ export class TramaController {
       const project = this.projectById(runtime.projectId);
       const assignment = project ? findAssignment(project.document, assignmentId) : null;
       if (project && assignment && isActive(assignment) && assignment.status !== "stopRequested") {
-        requestStop(project.document, assignment.specialistId, "Trama", "Esci: Trama si sta chiudendo. Riprendi l'incarico quando vuoi.");
+        requestStop(project.document, assignment.specialistId, "Trama", ASSIGNMENT_QUIT_NOTE);
       }
     }
     await Promise.all(entries.map(([, r]) => withTimeout(r.client.interrupt(), 5_000, "timeout").catch(() => r.client.stop())));
@@ -1574,6 +1916,8 @@ export class TramaController {
     // Only the selected project starts work; parked projects keep waiting until the person comes back (review #8).
     const projects = this.state.project ? [this.state.project] : [];
     for (const project of projects) {
+      // In pause the work stays waiting: the next resume after Riprendi picks it up (A05).
+      if (isPaused(project.document)) continue;
       for (const specialist of project.document.team.specialists) {
         const assignment = specialist.assignments.at(-1);
         if (!assignment?.waitingForProvider || assignment.waitingForProvider.provider !== provider) continue;
@@ -1593,6 +1937,8 @@ export class TramaController {
         this.specialistActivity(project, assignment.id, `${assignment.turns.length + 1}`, `${providerName(provider)} è di nuovo disponibile`, "Trama riprende l'incarico.", "info");
         if (project === this.state.project) void this.startAssignment(assignment.id);
       }
+      // The Coordinator's provider is back: the round the limit held runs now (issue #249).
+      if (this.coordinatorProvider(project.document) === provider) void this.runRound().catch((error) => this.fail(error));
     }
   }
 
@@ -1600,7 +1946,7 @@ export class TramaController {
   private readonly parkedProjects = new Map<string, ActiveProjectState>();
 
   private hasRunningWork(projectId: string): boolean {
-    return [...this.specialistRuntimes.values()].some((r) => r.projectId === projectId) || [...this.auditRuns.values()].some((r) => r.projectId === projectId);
+    return [...this.specialistRuntimes.values()].some((r) => r.projectId === projectId) || [...this.auditRuns.values(), ...this.gateRuns.values()].some((r) => r.projectId === projectId);
   }
 
   /**
@@ -1660,18 +2006,14 @@ export class TramaController {
 
   /**
    * The model the Coordinator runs on. A model the person chose that the catalogue no longer offers is
-   * never replaced silently: the result is null and the reason is `coordinatorModelProblem`.
+   * never replaced silently: the result is null and the reason is `coordinatorModelProblem`. A project without a
+   * choice of its own takes the model the person last chose in Trama, then the catalogue's default (issue #205).
    */
   private coordinatorModel(document: ProjectDocument, provider = this.coordinatorProvider(document)): string | null {
     const models = this.state.providers[provider]?.models ?? [];
     const chosen = (document.selectedProvider ?? "codex") === provider ? document.selectedModel : (document.providerPreferences?.[provider]?.model ?? null);
     if (chosen) return models.length === 0 || catalogOffers(provider, models, chosen) ? chosen : null;
-    return (
-      (provider === "codex" ? models.find((m) => m.model === PREFERRED_COORDINATOR_MODEL)?.model : undefined) ??
-      models.find((m) => m.isDefault)?.model ??
-      models[0]?.model ??
-      null
-    );
+    return coordinatorDefaultModel(provider, models, this.state.settings.coordinatorModels?.[provider]?.model);
   }
 
   private coordinatorModelProblem(document: ProjectDocument, provider: ProviderId): string {
@@ -1690,7 +2032,7 @@ export class TramaController {
       .map((id) => ({ id, models: this.state.providers[id].models.map((m) => m.model), catalog: this.state.providers[id].models }));
   }
 
-  private async ensureRuntime(project: ActiveProjectState): Promise<CoordinatorRuntime> {
+  private async ensureRuntime(project: ActiveProjectState, generation: number | null = null): Promise<CoordinatorRuntime> {
     const provider = this.coordinatorProvider(project.document);
     if (this.runtime && this.runtime.projectId === project.id && this.runtime.provider === provider) return this.runtime;
     this.stopCoordinatorRuntime();
@@ -1701,7 +2043,8 @@ export class TramaController {
         const current = this.state.project;
         if (!current || current.id !== project.id) throw new Error("The project is no longer open.");
         const counters = this.coordinatorLearning(current.document);
-        return runCoordinatorTool(name, args, {
+        const runningRequestId = current.runningRequestId;
+        const result = await runCoordinatorTool(name, args, {
           document: current.document,
           learning: this.learningFor(current),
           sessionSearch: {
@@ -1756,10 +2099,19 @@ export class TramaController {
           orderPlan: (order) => this.orderPlan({ ...order, requestId: current.runningRequestId, orderedBy: "coordinator" }).id,
           askTramaCatalog: async () => ({ references: routeReferences(await this.nativeSkill(ASK_TRAMA_SKILL)), bundled: [...SELECTED_SKILLS] }),
         });
+        // The error stays in Activity; the reply of the turn never pastes it into the chat (issue #241).
+        const error = toolErrorMessage(result);
+        if (error && runningRequestId) this.turnToolErrors.set(runningRequestId, [...(this.turnToolErrors.get(runningRequestId) ?? []), error]);
+        return result;
       },
       TOOL_SERVER_INSTRUCTIONS,
     );
     await toolServer.start();
+    // A model change replaced the opening that asked for this runtime: the newer opening creates its own.
+    if (generation !== null && generation !== this.coordinatorGeneration) {
+      toolServer.stop();
+      throw new Error("The Coordinator's opening was replaced.");
+    }
     const client = createRuntime(provider, {
       executable: provider === "codex" ? this.host.codexExecutable : null,
       toolServer: { name: TOOL_SERVER_NAME, url: toolServer.url, token: toolServer.token, tools: toolServer.toolNames },
@@ -1770,6 +2122,10 @@ export class TramaController {
   }
 
   private starting: { project: ActiveProjectState | null; attempt: Promise<void> } | null = null;
+  /** The model the Coordinator's latest opening started with, so a different choice during it can restart it. */
+  private coordinatorOpening: { project: ActiveProjectState; model: string } | null = null;
+  /** Counts the Coordinator's openings: one that a newer opening replaced stops at its next step. */
+  private coordinatorGeneration = 0;
 
   /**
    * Opens or resumes the Coordinator thread; concurrent callers for the same project share the same attempt. An
@@ -1789,6 +2145,7 @@ export class TramaController {
   private async openCoordinator(): Promise<void> {
     const project = this.state.project;
     if (!project) return;
+    const generation = ++this.coordinatorGeneration;
     const document = project.document;
     const provider = this.coordinatorProvider(document);
     if (!this.state.providers[provider].account) await this.refreshProvider(provider);
@@ -1807,14 +2164,19 @@ export class TramaController {
       return;
     }
     project.phase = { kind: "opening" };
+    this.coordinatorOpening = { project, model };
     this.publish();
+    let runtime: CoordinatorRuntime | null = null;
     try {
-      const runtime = await this.ensureRuntime(project);
+      runtime = await this.ensureRuntime(project, generation);
       const study = await buildStudy(project.snapshot, document, project.github);
       document.coordinator.study = study;
-      if (this.runtime !== runtime) return;
+      if (this.runtime !== runtime || generation !== this.coordinatorGeneration) return;
       const previous = document.coordinator.threadId;
-      const rules = lateRules(await this.coordinatorSkills(), provider);
+      const skills = await this.coordinatorSkills();
+      // A model change while the skills loaded replaced this opening: its stopped runtime must not open a thread.
+      if (this.state.project !== project || this.runtime !== runtime || generation !== this.coordinatorGeneration) return;
+      const rules = lateRules(skills, provider);
       // Codex takes the Coordinator's skills as native skill inputs in the thread's first turn, the others in their instructions.
       const inInstructions = rules.skills.length === 0;
       const opening = await runtime.client.openThread({
@@ -1823,13 +2185,13 @@ export class TramaController {
         developerInstructions: developerInstructions(
           project.name,
           this.learningFor(project).promptContext().guidance,
-          inInstructions ? deliverNativeSkills(coordinatorSkillParts(await this.coordinatorSkills()), false).text : null,
+          inInstructions ? deliverNativeSkills(coordinatorSkillParts(skills), false).text : null,
         ),
         resumeThreadId: previous,
         readableRoots: this.readableRoots(project),
       });
       // A provider switch during the opening replaced this runtime: its result must not come back (review #1).
-      if (this.state.project !== project || this.runtime !== runtime) return;
+      if (this.state.project !== project || this.runtime !== runtime || generation !== this.coordinatorGeneration) return;
       const learningState = this.coordinatorLearning(document);
       if (opening.threadId !== previous) {
         // A new thread holds none of the earlier events: session search may return all of them.
@@ -1845,6 +2207,7 @@ export class TramaController {
         document.coordinator.injectedStudy = {};
         document.coordinator.memorySentToThread = null;
         document.coordinator.practicesSent = null;
+        document.coordinator.referencesSent = null;
         document.coordinator.contextWarnedAt = null;
         appendEvent(document, "trama", {
           type: "card",
@@ -1864,14 +2227,18 @@ export class TramaController {
           handover ? (handover.transcript === false ? CLEARED_CONVERSATION : handoverTranscript(document)) : null,
           handover?.transcript === false,
         );
+        // A model change during the study replaced this runtime: the new opening still needs the handover.
+        if (this.runtime !== runtime) return;
         document.coordinator.pendingHandover = null;
       }
-      if (this.state.project !== project || this.runtime !== runtime) return;
+      if (this.state.project !== project || this.runtime !== runtime || generation !== this.coordinatorGeneration) return;
       project.phase = { kind: "ready" };
       this.changed();
       void this.runDuties();
     } catch (error) {
       if (this.state.project !== project || this.coordinatorProvider(document) !== provider) return;
+      // The runtime stopped because the person chose another model: the opening that replaced this one owns the phase.
+      if (generation !== this.coordinatorGeneration || (runtime && this.runtime !== runtime)) return;
       project.phase = { kind: "unavailable", message: (error as Error).message };
       project.streaming = null;
       this.changed();
@@ -1951,6 +2318,8 @@ export class TramaController {
           this.publish();
         } else if (event.type === "tokenUsage") {
           project.contextUsage = { usedTokens: event.usedTokens, contextWindow: event.contextWindow };
+        } else if (event.type === "fixedBanRefused") {
+          this.recordFixedBan(project, event, { kind: "coordinator" });
         } else if (event.type === "toolRefused") {
           // A refusal during the study is visible too (issue #228).
           appendEvent(document, "trama", { type: "activity", title: TOOL_REFUSED_TITLE, detail: toolRefusedDetail(event), tone: "error" }, null);
@@ -1958,6 +2327,8 @@ export class TramaController {
         }
       },
     });
+    // The person chose another model during the study: the reply of the stopped session is not the study (issue #205).
+    if (this.runtime !== runtime) return;
     if (project.streaming?.requestId === null) project.streaming = null;
     // After a provider switch the chat already shows the switch card: the new session's acknowledgement stays out of it.
     if (!transcript) {
@@ -1983,13 +2354,15 @@ export class TramaController {
     /** The next step the message takes: the person's button, or Trama starting the Coordinator's move (W04). */
     step: RequestStep | null = null,
     /** The failed request this one repeats (P10): the chat does not show the message a second time. */
-    retry: { of: CoordinatorRequest; attempt: number } | null = null,
+    retry: ResumedTurn | null = null,
     /** Bundled skills without a Trama flow that a started Ask Trama route runs, delivered with their original text (M07). */
     routeSkills: string[] = [],
   ): Promise<void> {
     const project = this.requireProject();
     const trimmed = text.trim();
     if (!trimmed) return;
+    // A request for a recap is answered by Trama from the records, not by a provider turn (A03).
+    if (!step && !retry && removable && images.length === 0 && asksForRecap(trimmed)) return this.recap(trimmed, goalId);
     // A new message or a step decides for the person: a waiting automatic retry no longer applies.
     if (!retry) this.cancelProviderRetry(project);
     const goal = goalId ? requireGoal(project.document, goalId) : null;
@@ -2012,7 +2385,7 @@ export class TramaController {
         removable,
         step,
       });
-      if (typed) dialogComposer(project.document, goal?.id ?? null).composerDraft = "";
+      if (typed) project.document.composerDraft = "";
       this.changed();
       return;
     }
@@ -2043,27 +2416,23 @@ export class TramaController {
       ...(retry ? { retry: { of: retry.of.id, attempt: retry.attempt } } : {}),
     };
     document.requests.push(request);
-    if (typed) dialogComposer(document, goal?.id ?? null).composerDraft = "";
+    if (typed) document.composerDraft = "";
     const automatic = step?.by === "trama" ? (step.move as CoordinatorMove) : null;
     if (retry) {
       // The message is already in the chat, above the failure: the retry is a line of Trama's (P10).
-      appendEvent(
-        document,
-        "trama",
-        {
-          type: "activity",
-          title: retry.attempt > 0 ? `Nuovo tentativo automatico (${retry.attempt} di ${PROVIDER_RETRY_ATTEMPTS})` : "Nuovo tentativo",
-          detail: retry.attempt > 0 ? `Dopo il limite temporaneo di ${providerName(activeProvider)}, Trama riprova il messaggio.` : "Trama riprova il messaggio del turno non riuscito.",
-          tone: "info",
-        },
-        request.id,
-      );
+      appendEvent(document, "trama", { type: "activity", ...retryLine(retry, providerName(activeProvider)), tone: "info" }, request.id);
     } else if (automatic) {
       // A move Trama started by itself is not the person's message: the chat shows it as its own line, with a stop (W04).
       appendEvent(
         document,
         "trama",
-        { type: "card", kind: "automaticStep", title: COORDINATOR_MOVES[automatic].label, detail: AUTOMATIC_MOVE_DETAIL, referenceId: request.id },
+        {
+          type: "card",
+          kind: "automaticStep",
+          title: step?.block ? BLOCK_LABELS[step.block.kind] : COORDINATOR_MOVES[automatic].label,
+          detail: step?.block ? `${step.block.why} ${AUTOMATIC_MOVE_DETAIL}` : AUTOMATIC_MOVE_DETAIL,
+          referenceId: request.id,
+        },
         request.id,
       );
     } else {
@@ -2088,6 +2457,8 @@ export class TramaController {
     try {
       if (project.phase.kind !== "ready") {
         await this.startCoordinator();
+        // A model change restarted the opening this turn waited for: it waits for the new one.
+        if (this.starting?.project === project) await this.starting.attempt;
         if (closed()) return;
         const phase = project.phase as CoordinatorPhase;
         if (phase.kind !== "ready") {
@@ -2132,10 +2503,18 @@ export class TramaController {
         sections.push(practices ?? "## Pratiche adottate\nLa persona ha ritirato tutte le pratiche di questo progetto.");
         document.coordinator.practicesSent = practices;
       }
+      // The real ids the Coordinator may cite, when they changed since the thread last received them (issue #277).
+      const listing = referenceListing(this.referenceIndex(project));
+      if ((listing ?? null) !== (document.coordinator.referencesSent ?? null)) {
+        if (listing) sections.push(listing);
+        document.coordinator.referencesSent = listing;
+      }
       // Every turn: the phase of the work this message belongs to and the moves declare_next_step accepts (W01).
       const work = workState(document, request.id);
       sections.push(workStateText(work));
-      if (automatic) sections.push(automaticMoveSection(automatic));
+      // Every turn: the buttons the person sees and the current mandate, plan and candidates, from Trama's records (issue #269).
+      sections.push(currentStateText(document, request.id, project.snapshot.headSHA));
+      if (automatic) sections.push(automaticMoveSection(automatic, request.step?.block ?? null));
       // Every turn: the task in focus and the queue, so the Coordinator brings a conversation that drifts back to the focus (W02).
       const focus = focusText(document, request.id);
       if (focus) sections.push(focus);
@@ -2145,6 +2524,12 @@ export class TramaController {
       // The previous reply closed with a generic confirmation question: Trama tells the Coordinator, not the model's own memory (W04).
       const feedback = confirmationFeedback(document, request.id);
       if (feedback) sections.push(feedback);
+      // The previous reply cited ids that name nothing: Trama tells the Coordinator which ones (issue #277).
+      const unknownFeedback = unknownReferencesFeedback(document, request.id);
+      if (unknownFeedback) sections.push(unknownFeedback);
+      // The previous reply named a step button the person did not have: the Coordinator reads it back (issue #269).
+      const missingFeedback = missingButtonFeedback(document, request.id);
+      if (missingFeedback) sections.push(missingFeedback);
       const skills = skillInvocations(trimmed, project.skills);
       // /ask-trama (M07): the thread holds the skill and its binding; the person asks for it now.
       if (/(^|\s)[/$]ask-trama(?=\s|$)/.test(trimmed)) sections.push(ASK_TRAMA_INVOKED);
@@ -2156,6 +2541,7 @@ export class TramaController {
         : null;
       if (routed) sections.push(routed.text);
       sections.push(codexSkillText(trimmed, project.skills));
+      if (retry) sections.push(RESUMED_TURN);
       appendEvent(
         document,
         "trama",
@@ -2171,6 +2557,7 @@ export class TramaController {
             work.phase ? `fase: ${PHASE_LABELS[work.phase]}` : null,
             automatic ? `mossa automatica: ${COORDINATOR_MOVES[automatic].label}` : null,
             feedback ? "richiamo: domanda di conferma generica" : null,
+            missingFeedback ? "richiamo: pulsante che non c'era" : null,
             skills.length || routeSkills.length ? `skill: ${[...skills.map((s) => s.name), ...routeSkills].join(", ")}` : null,
           ]
             .filter(Boolean)
@@ -2186,13 +2573,15 @@ export class TramaController {
         cwd: project.rootPath,
         model: selectedModel,
         effort,
-        fastMode: this.fastModeFor(dialogComposer(document, goal?.id ?? null), activeProvider, selectedModel),
+        fastMode: this.fastModeFor(document, activeProvider, selectedModel),
         images: attachments,
         // The skills of the late rules go once, next to the skills the person invoked.
         skills: [...(rules?.skills ?? []).filter((r) => !skills.some((s) => s.name === r.name)), ...skills, ...(routed?.skills ?? [])],
         onEvent: (event) => this.handleTurnEvent(project, request, event),
       });
       if (closed()) return;
+      // The turn ran on the model the person chose: the thread now carries it (issue #205).
+      if (activeProvider === this.coordinatorProvider(document)) document.coordinator.threadModel = selectedModel;
       document.coordinator.injectedStudy = { ...document.coordinator.injectedStudy, ...fingerprints(study) };
       document.coordinator.memorySentToThread = document.coordinator.threadId;
       if (report) markReported(document, report.ids);
@@ -2201,10 +2590,18 @@ export class TramaController {
       request.completedAt = new Date().toISOString();
       const references = referencedPaths(reply, paths);
       if (reply) {
-        recordReply(document, request.id, reply, selectedModel, references, activeProvider);
+        recordReply(document, request.id, withoutToolErrors(reply, this.turnToolErrors.get(request.id) ?? []), selectedModel, references, activeProvider);
         // Options to pick in the text leave the person without a card: recorded, and the next turn is told (issue #228).
         const choice = choicesWithoutCard(document, request.id, reply);
         if (choice) appendEvent(document, "trama", { type: "activity", title: CHOICES_IN_TEXT_TITLE, detail: choice, tone: "error" }, request.id);
+        // Ids that name nothing stay plain text in the chat: recorded, and the next turn is told (issue #277).
+        recordUnknownReferences(document, request.id, reply, this.referenceIndex(project));
+        // A step button named in the text that the person does not have now: recorded, and the next turn is told (issue #269).
+        const buttons = availableButtons(document, request.id);
+        const missing = missingButtons(reply, buttons);
+        if (missing.length) {
+          appendEvent(document, "trama", { type: "activity", title: MISSING_BUTTON_TITLE, detail: missingButtonDetail(missing, buttons), tone: "error" }, request.id);
+        }
         // A write in this turn already reset its counter: the review it would have started is not due.
         const writes = this.turnLearningWrites.get(request.id) ?? [];
         const reviewSkills = !writes.includes("skill_manage") && finishTurnSkillNudge(this.coordinatorLearning(document), this.turnToolIterations.get(request.id) ?? 0);
@@ -2220,6 +2617,12 @@ export class TramaController {
       if (stalled && request.step) {
         request.step.stalled = stalled.reason;
         request.nextStep = { move: stalled.move, reason: stalled.reason, declaredAt: new Date().toISOString() };
+      }
+      // A technical block the move resolved: the person is told the outcome afterwards, in Activity (A06, Q3).
+      const unblocked = blockOutcome(document, request.id);
+      if (unblocked && request.step?.block) {
+        request.step.block.outcome = { ...unblocked, at: new Date().toISOString() };
+        appendEvent(document, "coordinator", blockOutcomeActivity(request.step.block, unblocked), request.id);
       }
     } catch (error) {
       if (closed()) return;
@@ -2241,8 +2644,9 @@ export class TramaController {
         request.id,
       );
       if (selectedModel && isUnsupportedModelError(message)) this.markModelUnsupported(activeProvider, selectedModel);
-      // A temporary limit passes by itself: Trama retries with a growing wait, and the person can stop it (P10).
-      if (failure?.kind === "temporaryLimit") this.scheduleProviderRetry(project, request, failure.until);
+      // A limit, a used up quota or an outage passes: Trama waits and resumes the turn, and the person can stop it (P10, C11).
+      const waitReason = failure ? waitReasonOf(failure.kind) : null;
+      if (failure && waitReason) this.scheduleProviderRetry(project, request, waitReason, failure.until);
       const code = errorCode(error);
       if (code === "rpcError" && /thread|rollout|session/i.test(message)) {
         document.coordinator.threadId = null;
@@ -2252,6 +2656,7 @@ export class TramaController {
       if (!interrupted) void this.noticeIfBlocked(project, activeProvider, message, request.id);
     } finally {
       this.turnToolIterations.delete(request.id);
+      this.turnToolErrors.delete(request.id);
       this.turnLearningWrites.delete(request.id);
       if (project.runningRequestId === request.id) project.runningRequestId = null;
       if (project.streaming?.requestId === request.id) project.streaming = null;
@@ -2262,18 +2667,26 @@ export class TramaController {
     }
   }
 
-  // MARK: Retries after a temporary provider limit (P10)
+  // MARK: Waiting to resume a turn after a limit or an outage (P10, C11)
 
   private providerRetryTimer: { projectId: string; timer: NodeJS.Timeout } | null = null;
 
-  /** Schedules the next automatic retry of `request`, with a doubling wait, up to PROVIDER_RETRY_ATTEMPTS. */
-  private scheduleProviderRetry(project: ActiveProjectState, request: CoordinatorRequest, until: string | null): void {
+  /**
+   * Schedules the next automatic retry of `request` while Trama stays open, one timer at a time so there is never a
+   * burst of retries. A temporary limit or an outage waits longer at each attempt; a used up quota waits for its reset,
+   * checking the account meanwhile, and the turn starts again only once the provider can work.
+   */
+  private scheduleProviderRetry(project: ActiveProjectState, request: CoordinatorRequest, reason: ProviderWaitReason, until: string | null): void {
     const attempt = (request.retry?.attempt ?? 0) + 1;
     this.cancelProviderRetry(project);
     if (this.quitting || attempt > PROVIDER_RETRY_ATTEMPTS) return;
     const provider = request.provider ?? this.coordinatorProvider(project.document);
-    const delay = retryDelayMs(attempt, providerRetryBaseMs(), until);
-    const view: ProviderRetryView = { requestId: request.id, provider: providerName(provider), attempt, maxAttempts: PROVIDER_RETRY_ATTEMPTS, at: new Date(Date.now() + delay).toISOString() };
+    const delay = reason === "quotaExhausted" ? quotaCheckDelayMs(providerCheckMs(), until) : retryDelayMs(attempt, providerRetryBaseMs(), until);
+    this.armProviderRetry(project, { requestId: request.id, provider: providerName(provider), reason, attempt, maxAttempts: PROVIDER_RETRY_ATTEMPTS, at: "", until }, delay);
+  }
+
+  private armProviderRetry(project: ActiveProjectState, base: ProviderRetryView, delay: number): void {
+    const view: ProviderRetryView = { ...base, at: new Date(Date.now() + delay).toISOString() };
     project.providerRetry = view;
     const timer = setTimeout(() => {
       if (this.providerRetryTimer?.timer === timer) this.providerRetryTimer = null;
@@ -2293,19 +2706,110 @@ export class TramaController {
 
   private async fireProviderRetry(project: ActiveProjectState, view: ProviderRetryView): Promise<void> {
     if (project.providerRetry !== view) return;
-    project.providerRetry = null;
     // The person left the project, or another turn or message came first: the retry no longer applies.
-    if (this.quitting || this.state.project !== project || project.runningRequestId || this.queue.some((q) => q.projectId === project.id)) {
+    const stale = () =>
+      this.quitting ||
+      this.state.project !== project ||
+      project.runningRequestId !== null ||
+      this.queue.some((q) => q.projectId === project.id) ||
+      project.document.requests.at(-1)?.id !== view.requestId;
+    const failed = project.document.requests.find((r) => r.id === view.requestId);
+    // A turn Esci ended waits too when it is resumed on reopening while the provider is blocked (issue #249).
+    if (stale() || (failed?.state !== "failed" && failed?.state !== "interrupted")) {
+      project.providerRetry = null;
       this.changed();
       return;
     }
-    const failed = project.document.requests.find((r) => r.id === view.requestId);
-    if (failed?.state !== "failed") return;
+    if (view.reason === "quotaExhausted") {
+      // The account says whether the quota came back: until then no turn starts, only another check later (C11).
+      const provider = failed.provider ?? this.coordinatorProvider(project.document);
+      await this.refreshProvider(provider);
+      if (project.providerRetry !== view) return;
+      if (stale()) {
+        project.providerRetry = null;
+        this.changed();
+        return;
+      }
+      const account = this.state.providers[provider]?.account ?? null;
+      if (providerUnavailableReason(provider, account) !== null) {
+        const until = account?.kind === "blocked" ? account.until : null;
+        this.armProviderRetry(project, { ...view, until: until ?? view.until ?? null }, quotaCheckDelayMs(providerCheckMs(), until));
+        this.publish();
+        return;
+      }
+    }
+    project.providerRetry = null;
     // The dialog's model now, so a model the person picked after the failure is the one retried.
     await this.send(failed.text, failed.moduleId, null, failed.effort, [], null, failed.goalId ?? null, false, failed.step ?? null, {
       of: failed,
       attempt: view.attempt,
+      reason: view.reason,
     });
+  }
+
+  /**
+   * On reopening a project with a granted mandate, not in Pause (issue #249): the specialists' work Esci or a crash
+   * stopped resumes in its own worktree, and the Coordinator turn it ended is taken up again, told to reconcile what
+   * was already done before repeating an action with effects. A turn that failed on a provider limit waits for its end.
+   * Without a mandate or in Pause nothing starts: the person resumes by hand (C11).
+   */
+  private async resumeOnReopening(project: ActiveProjectState): Promise<void> {
+    if (this.quitting || this.state.project !== project || project.isDemo || !project.stateWritable) return;
+    const document = project.document;
+    const plan = reopeningResume(document, this.state.settings.continuousWork !== false);
+    if (!plan.turn && !plan.assignments.length) return;
+    for (const id of plan.assignments) {
+      const assignment = findAssignment(document, id);
+      if (!assignment) continue;
+      const key = `${assignment.turns.length + 1}`;
+      if (!withinMandate(document, assignment)) {
+        this.specialistActivity(project, id, key, "Ripresa non eseguita", "Il mandato non copre più questo incarico.", "info");
+        continue;
+      }
+      try {
+        resumeAssignment(document, id);
+      } catch (error) {
+        this.specialistActivity(project, id, key, "Ripresa non eseguita", (error as Error).message, "info");
+        continue;
+      }
+      refreshDecisionVersions(document, id);
+      this.specialistActivity(project, id, key, "Incarico ripreso alla riapertura", "Trama riprende l'incarico nel suo worktree, com'era alla chiusura.", "info");
+      void this.startAssignment(id);
+    }
+    const turn = plan.turn;
+    const request = turn ? document.requests.find((r) => r.id === turn.requestId) : undefined;
+    if (!turn || !request) {
+      this.changed();
+      return;
+    }
+    const provider = this.coordinatorProvider(document);
+    const account = this.state.providers[provider]?.account ?? null;
+    if (turn.kind === "wait") {
+      this.scheduleProviderRetry(project, request, turn.reason, turn.until);
+    } else if (account?.kind === "blocked") {
+      // The provider is still at its limit: the turn waits for it, with checks of the account only.
+      this.scheduleProviderRetry(project, request, "quotaExhausted", account.until);
+    } else if (project.runningRequestId === null && !this.queue.some((q) => q.projectId === project.id)) {
+      await this.send(request.text, request.moduleId, null, request.effort, [], null, request.goalId ?? null, false, request.step ?? null, {
+        of: request,
+        attempt: 0,
+        reopened: true,
+      });
+      return;
+    }
+    this.changed();
+  }
+
+  /** After the computer wakes up, a turn waiting for the network or a quota is checked soon instead of at its old time (C11). */
+  resumeAfterSleep(): void {
+    const project = this.state.project;
+    const view = project?.providerRetry;
+    if (!project || !view || this.quitting || view.reason === "temporaryLimit") return;
+    const soon = 5_000;
+    if (Date.parse(view.at) - Date.now() <= soon) return;
+    this.cancelProviderRetry(project);
+    this.armProviderRetry(project, view, soon);
+    this.publish();
   }
 
   /** The person repeats a failed turn (Riprova): same message, model and step, without writing it again (P10). */
@@ -2321,9 +2825,13 @@ export class TramaController {
   stopProviderRetry(): void {
     const project = this.state.project;
     if (!project?.providerRetry) return;
-    const { requestId, provider } = project.providerRetry;
+    const { requestId, provider, reason } = project.providerRetry;
     this.cancelProviderRetry(project);
-    appendEvent(project.document, "trama", { type: "activity", title: "Tentativi automatici fermati", detail: `Hai fermato i tentativi con ${provider}.`, tone: "info" }, requestId);
+    const line =
+      reason === "quotaExhausted"
+        ? { title: "Attesa della quota fermata", detail: `Trama non aspetta più la quota di ${provider}: il turno riparte solo su tua richiesta.` }
+        : { title: "Tentativi automatici fermati", detail: `Hai fermato i tentativi con ${provider}.` };
+    appendEvent(project.document, "trama", { type: "activity", ...line, tone: "info" }, requestId);
     this.changed();
   }
 
@@ -2347,31 +2855,64 @@ export class TramaController {
     return true;
   }
 
-  // MARK: Continuous work (W04)
+  // MARK: Continuous work (W04, A05)
 
-  /** Plans and assignments that ended while the Coordinator was busy: weighed when its turn ends. */
-  private deferredWork: { projectId: string; requestId: string; event: WorkEvent }[] = [];
+  /** Work that ended or events that arrived while the Coordinator was busy: weighed when its turn ends. */
+  private deferredWork: { projectId: string; requestId: string | null; event: WorkEvent }[] = [];
   /** The automatic move that is starting and has no running request yet: no second move meanwhile. */
   private automaticStarting: { projectId: string } | null = null;
+  /** The periodic round of continuous work (A05), on while Trama is open. */
+  private roundTimer: NodeJS.Timeout | null = null;
+  /** The round that runs now: a tick meanwhile waits for the next one. */
+  private roundRunning = false;
+
+  /**
+   * The provider limit the selected project's Coordinator waits for (issue #249): a turn waiting to be resumed after a
+   * limit, a used up quota or an outage, or its provider's account blocked while the project has open work. Null when
+   * it can work.
+   */
+  private coordinatorWait(project: ActiveProjectState): ProviderWait | null {
+    const provider = this.coordinatorProvider(project.document);
+    const account = this.state.providers[provider]?.account ?? null;
+    const retry = project.providerRetry;
+    // The end of the limit, from the failure or from the account the check read.
+    if (retry) {
+      const fromAccount = account?.kind === "blocked" && providerName(provider) === retry.provider ? account.until : null;
+      return { provider: retry.provider, reason: retry.reason, until: retry.until ?? fromAccount };
+    }
+    // Without open work a blocked account holds nothing: the line does not promise a resume.
+    if (account?.kind !== "blocked" || !hasOpenWork(project.document)) return null;
+    return { provider: providerName(provider), reason: "quotaExhausted", until: account.until };
+  }
 
   private continuationGuards(project: ActiveProjectState): ContinuationGuards {
     const provider = this.coordinatorProvider(project.document);
+    const wait = project.providerRetry ? providerWaitLine(this.coordinatorWait(project)!).text : null;
     const unavailable =
+      wait ??
       providerUnavailableReason(provider, this.state.providers[provider]?.account ?? null) ??
       (project.phase.kind === "unavailable" ? project.phase.message : null) ??
       (this.coordinatorModel(project.document, provider) ? null : this.coordinatorModelProblem(project.document, provider));
     return {
       enabled: this.state.settings.continuousWork !== false,
+      paused: isPaused(project.document),
       busy: project.runningRequestId !== null || this.automaticStarting?.projectId === project.id || this.queue.some((q) => q.projectId === project.id),
       unavailable,
     };
   }
 
-  /** A plan or an assignment of the selected project ended: the work may go on by itself now, or after the running turn. */
+  /**
+   * A plan or an assignment of the selected project ended, or an event of the whole project arrived (a red check, a
+   * conflict between worktrees, a new issue, a commented pull request): the work may go on by itself now, or after the
+   * running turn. `requestId` is null for an event of the whole project.
+   */
   private continueWork(project: ActiveProjectState, requestId: string | null, event: WorkEvent): void {
-    if (!requestId || this.quitting || this.state.project !== project) return;
+    if (this.quitting || this.state.project !== project) return;
+    if (!requestId && !PROJECT_EVENTS.includes(event)) return;
     if (this.continuationGuards(project).busy) {
-      this.deferredWork.push({ projectId: project.id, requestId, event });
+      if (!this.deferredWork.some((d) => d.projectId === project.id && d.requestId === requestId && d.event === event)) {
+        this.deferredWork.push({ projectId: project.id, requestId, event });
+      }
       return;
     }
     this.startAutomaticMove(project, [{ requestId, event }]);
@@ -2385,21 +2926,124 @@ export class TramaController {
     const deferred = this.deferredWork.filter((d) => d.projectId === project.id);
     this.deferredWork = this.deferredWork.filter((d) => d.projectId !== project.id);
     if (this.quitting || this.state.project !== project) return;
-    if (project.document.requests.find((r) => r.id === requestId)?.state !== "completed") return;
+    const request = project.document.requests.find((r) => r.id === requestId);
+    if (request?.state !== "completed") return;
     this.startAutomaticMove(project, [{ requestId, event: "turnEnded" }, ...deferred]);
+    // A turn resumed after a limit also brings back the round the limit held (issue #249).
+    if ((request.retry?.attempt ?? 0) > 0) void this.runRound().catch((error) => this.fail(error));
   }
 
-  /** Starts the first automatic move the events allow, as a Coordinator turn: at most one (W04). */
-  private startAutomaticMove(project: ActiveProjectState, events: { requestId: string; event: WorkEvent }[]): void {
+  /**
+   * Takes the person's steps the mandate lets the Coordinator take by itself (A06): the team, the shared understanding,
+   * the seams and the slices. Each is recorded as the Coordinator's and told in Activity. Returns what was taken.
+   */
+  private takeDelegatedSteps(project: ActiveProjectState): string[] {
+    const document = project.document;
+    const taken: string[] = [];
+    // One step can open the next (the understanding opens the plan): the loop stops when no new step is possible.
+    for (let pass = 0; pass < 4; pass++) {
+      const steps = delegatedSteps(document, this.continuationGuards(project));
+      if (!steps.length) break;
+      for (const step of steps) {
+        const summary = this.takeDelegatedStep(project, step);
+        if (!summary) continue;
+        // Told in Activity and in the recap from the record, not in the chat: the single moves stay out of it (Q6).
+        const record = recordAutonomousStep(document, step, summary);
+        taken.push(STEP_LABELS[record.move]);
+      }
+    }
+    if (taken.length) this.changedIn(project);
+    return taken;
+  }
+
+  /** Makes one delegated step on the records, as the person's button would; returns what was confirmed, or null. */
+  private takeDelegatedStep(project: ActiveProjectState, step: DelegatedStep): string | null {
+    const document = project.document;
+    const plan = document.plans.find((p) => p.id === step.targetId);
+    switch (step.move) {
+      case "confirmTeam": {
+        const created = confirmTeam(document, step.targetId!, null, null);
+        return `Team: ${created.map((s) => s.name).join(", ")}.`;
+      }
+      case "confirmUnderstanding": {
+        const request = document.requests.find((r) => r.id === step.requestId);
+        const text = (request?.text ?? "").replace(/\s+/g, " ").trim();
+        return `Comprensione della richiesta "${text.length > 120 ? `${text.slice(0, 119).trimEnd()}…` : text}".`;
+      }
+      case "confirmSeams": {
+        if (!plan?.spec || plan.status !== "seams") return null;
+        this.applySeamsAnswer(project, plan, { confirmed: true, note: null, by: "coordinator" });
+        return `Seam del piano ${plan.id}: ${plan.spec.seams.map((seam) => seam.seam).join("; ")}.`;
+      }
+      case "confirmSlices": {
+        if (!plan || plan.slicing?.status !== "proposed") return null;
+        const tickets = plan.slicing.tickets.map((t) => `${t.id} ${t.title}`).join("; ");
+        void this.approveSlices(project, plan, "coordinator").catch((error) => this.fail(error));
+        return `Fette del piano ${plan.id}: ${tickets}.`;
+      }
+    }
+  }
+
+  /**
+   * The person corrects a step the Coordinator took within the mandate (A06), in their own words: the correction is
+   * recorded and the work starts again from that step. The seams and the slices are redrawn with the correction while no
+   * work started on them; otherwise, and for the understanding and the team, the correction goes to the Coordinator.
+   */
+  async correctAutonomousStep(stepId: string, note: string): Promise<boolean> {
+    const project = this.requireProject();
+    const document = project.document;
+    const existing = document.autonomousSteps?.find((s) => s.id === stepId);
+    const plan = existing?.targetId ? document.plans.find((p) => p.id === existing.targetId) : undefined;
+    if (plan && this.planners.has(existing?.move === "confirmSlices" ? `${plan.id}:slices` : plan.id)) {
+      throw new DomainError("Il Coordinatore sta ancora scrivendo questo passo: correggilo quando ha finito.");
+    }
+    const step = correctAutonomousStep(document, stepId, note);
+    const redraw = plan && !planWorkStarted(document, plan) ? step.move : null;
+    appendEvent(
+      document,
+      "person",
+      { type: "activity", title: `${STEP_LABELS[step.move]}: corretto`, detail: step.correction!.note, tone: "info" },
+      step.requestId,
+    );
+    if (redraw === "confirmSeams" && plan?.spec) {
+      plan.spec.sections = null;
+      plan.slicing = null;
+      this.applySeamsAnswer(project, plan, { confirmed: false, note: step.correction!.note, by: null });
+      return true;
+    }
+    if (redraw === "confirmSlices" && plan?.slicing?.status === "approved") {
+      const published = plan.slicing.tickets.filter((t) => t.issue).map((t) => `#${t.issue!.number}`);
+      if (published.length) {
+        appendEvent(
+          document,
+          "trama",
+          { type: "activity", title: `Le fette del piano ${plan.id} tornano in preparazione`, detail: `Le issue già pubblicate (${published.join(", ")}) restano su GitHub: il Coordinatore le aggiorna o le chiude.`, tone: "info" },
+          plan.requestId,
+        );
+      }
+      plan.slicing = { ...plan.slicing, status: "proposed", approvedAt: null, approvedBy: null };
+      this.startSlicing(project, plan, step.correction!.note);
+      return true;
+    }
+    this.changed();
+    await this.send(correctionMessage(step), null, null, null, [], null, step.goalId, false);
+    return true;
+  }
+
+  /** Starts the first automatic move the events allow, as a Coordinator turn: at most one (W04). Returns its name, or null. */
+  private startAutomaticMove(project: ActiveProjectState, events: { requestId: string | null; event: WorkEvent }[]): string | null {
+    this.takeDelegatedSteps(project);
     const guards = this.continuationGuards(project);
     for (const { requestId, event } of events) {
-      const move = automaticMove(project.document, requestId, event, guards);
+      const move = requestId && !PROJECT_EVENTS.includes(event)
+        ? automaticMove(project.document, requestId, event, guards)
+        : (projectMove(project.document, event, guards)?.move ?? null);
       if (!move) continue;
       // The model of the dialog's latest turn, while the Coordinator's provider still offers it.
       const provider = this.coordinatorProvider(project.document);
       const models = this.state.providers[provider]?.models ?? [];
       const model = move.model && (models.length === 0 || catalogOffers(provider, models, move.model)) ? move.model : null;
-      const step: RequestStep = { move: move.move, by: "trama" };
+      const step: RequestStep = { move: move.move, by: "trama", trigger: event, ...(move.block ? { block: move.block } : {}) };
       const starting = { projectId: project.id };
       this.automaticStarting = starting;
       void this.send(move.message, null, model, model ? move.effort : null, [], null, move.goalId, false, step)
@@ -2407,8 +3051,100 @@ export class TramaController {
         .finally(() => {
           if (this.automaticStarting === starting) this.automaticStarting = null;
         });
+      return move.label;
+    }
+    return null;
+  }
+
+  /** Starts the periodic round (A05): it runs while Trama is open, on the project with open work. */
+  private scheduleRounds(): void {
+    if (this.roundTimer) clearInterval(this.roundTimer);
+    this.roundTimer = setInterval(() => void this.runRound().catch((error) => this.fail(error)), ROUND_INTERVAL_MS);
+    this.roundTimer.unref?.();
+  }
+
+  /**
+   * The round of continuous work (A05): Trama reads the state of the selected project again, resumes the work whose
+   * question has its answer, lets free developers take ready slices, starts the fixed roles' automatic work the rules
+   * call for, and starts the Coordinator's next move when it is its own. Nothing runs in pause, without open work or in
+   * the example project; a round that finds nothing to do opens no provider turn and leaves no record.
+   */
+  async runRound(): Promise<void> {
+    const project = this.state.project;
+    if (!project || this.quitting || this.roundRunning || !project.stateWritable || project.isDemo) return;
+    if (this.state.settings.continuousWork === false || isPaused(project.document) || !hasOpenWork(project.document)) return;
+    // A provider limit holds the round until it ends (issue #249); a blocked account is checked again at its end.
+    if (this.coordinatorWait(project)) {
+      if (!project.providerRetry) this.scheduleProviderWait(this.coordinatorProvider(project.document));
       return;
     }
+    this.roundRunning = true;
+    try {
+      const working = (document: ProjectDocument) =>
+        new Set(document.team.specialists.flatMap((s) => s.assignments.filter(isActive).map((a) => a.id)));
+      const before = working(project.document);
+      this.resumeAnsweredWork(project);
+      await this.runDuties();
+      if (this.state.project !== project || this.quitting || isPaused(project.document)) return;
+      const started = [...working(project.document)].filter((id) => !before.has(id));
+      const details = started.map((id) => {
+        const assignment = findAssignment(project.document, id);
+        const name = project.document.team.specialists.find((s) => s.id === assignment?.specialistId)?.name ?? "Uno specialista";
+        return assignment?.slice ? `${name} lavora sulla fetta ${assignment.slice.sliceId}` : `${name} lavora sull'incarico ${id}`;
+      });
+      const busy = this.continuationGuards(project).busy;
+      // The person's steps the mandate lets the Coordinator take (A06) go first: they can open its next move.
+      if (!busy) details.push(...this.takeDelegatedSteps(project));
+      const move = busy ? null : this.startAutomaticMove(project, [{ requestId: null, event: "round" }]);
+      if (move) details.push(`Avviata la mossa "${move}"`);
+      if (!details.length) return;
+      recordRound(project.document, { id: randomUUID(), at: new Date().toISOString(), detail: `${details.join(". ")}.`, requestId: null });
+      this.changedIn(project);
+    } finally {
+      this.roundRunning = false;
+    }
+  }
+
+  /**
+   * The person pauses or resumes the continuous work of the open project (A05). In pause no automatic move, round or
+   * automatic work starts; the turns that run end, and a waiting retry of an automatic move is cancelled. Resuming
+   * runs a round at once. The state is saved with the project and holds after a restart.
+   */
+  async pauseContinuousWork(paused: boolean): Promise<void> {
+    const project = this.requireProject();
+    if (!project.stateWritable) throw new DomainError("Lo stato di questo progetto è in sola lettura.");
+    if (!setPaused(project.document, paused, new Date().toISOString())) return;
+    this.deferredWork = this.deferredWork.filter((d) => d.projectId !== project.id);
+    if (paused) {
+      const retried = project.providerRetry ? project.document.requests.find((r) => r.id === project.providerRetry!.requestId) : null;
+      if (retried?.step?.by === "trama") this.cancelProviderRetry(project);
+    }
+    appendEvent(
+      project.document,
+      "trama",
+      {
+        type: "activity",
+        title: paused ? "Lavoro continuo in pausa" : "Lavoro continuo ripreso",
+        detail: paused ? "Nessuna mossa automatica, nessun giro e nessun lavoro automatico partono finché non riprendi." : null,
+        tone: "info",
+      },
+      null,
+    );
+    this.changedIn(project);
+    if (!paused) await this.runRound();
+  }
+
+  /** What GitHub said about the project at the last reading, to compare with the next one (A05); null before one. */
+  private gitHubReading(project: ActiveProjectState): GitHubReading | null {
+    if (project.github.status !== "ready" || !project.github.snapshot) return null;
+    return { issues: project.github.issues, pullRequests: project.github.snapshot.pullRequests };
+  }
+
+  /** A new issue, a commented pull request or a red check on GitHub since `before` may start the Coordinator's move (A05). */
+  private noticeGitHubWork(project: ActiveProjectState, before: GitHubReading | null): void {
+    const after = this.gitHubReading(project);
+    if (!after) return;
+    for (const event of gitHubWorkEvents(before, after)) this.continueWork(project, null, event);
   }
 
   /** The person takes the next step shown under a reply when it is a message (W01): Trama sends it and records the step (W04). */
@@ -2432,13 +3168,13 @@ export class TramaController {
     this.changed();
   }
 
-  /** Whether the dialog of a goal has a Coordinator turn running or a message waiting to leave. */
+  /** Whether a goal has a Coordinator turn running or a message waiting to leave. */
   private dialogBusy(project: ActiveProjectState, goalId: string): string | null {
     if (project.runningRequestId && requestGoalId(project.document, project.runningRequestId) === goalId) {
-      return "Il Coordinatore sta rispondendo in questo dialogo: aspetta la fine del turno.";
+      return "Il Coordinatore sta rispondendo su questo obiettivo: aspetta la fine del turno.";
     }
     if (this.queue.some((q) => q.projectId === project.id && q.goalId === goalId)) {
-      return "Il dialogo ha un messaggio in coda: aspetta che parta o eliminalo.";
+      return "L'obiettivo ha un messaggio in coda: aspetta che parta o eliminalo.";
     }
     return null;
   }
@@ -2473,6 +3209,10 @@ export class TramaController {
       }
       case "commandCompleted":
         activity(event.command || "Comando", event.succeeded ? null : `Uscita ${event.exitCode ?? "?"}`, event.succeeded ? "tool" : "error");
+        if (isGitPushCommand(event.command)) {
+          const push = agentPushActivity(event.command, event.succeeded);
+          activity(push.title, push.detail, push.tone);
+        }
         return;
       case "fileChangeCompleted":
         activity(`Modifica di ${event.paths.length} file`, event.paths.join(", "), event.succeeded ? "tool" : "error");
@@ -2489,6 +3229,9 @@ export class TramaController {
         return;
       case "toolRefused":
         activity(TOOL_REFUSED_TITLE, toolRefusedDetail(event), "error");
+        return;
+      case "fixedBanRefused":
+        this.recordFixedBan(project, event, { kind: "coordinator" }, request.id);
         return;
       case "reasoning":
         activity("Ragionamento", event.text, "info");
@@ -2533,10 +3276,9 @@ export class TramaController {
   }
 
   /** The composer's selection (ADR 0010): remembered per provider; the provider changes on the next message. */
-  async selectModel(model: string, effort: string | null, provider: ProviderId | null = null, goalId: string | null = null): Promise<void> {
+  async selectModel(model: string, effort: string | null, provider: ProviderId | null = null): Promise<void> {
     const project = this.requireProject();
-    if (goalId) requireGoal(project.document, goalId);
-    const selection = dialogComposer(project.document, goalId);
+    const selection = project.document;
     const id = provider ?? selection.selectedProvider ?? "codex";
     // A name with its level, as Antigravity lists it, becomes the catalogue model and that level.
     const named = catalogModel(id, model);
@@ -2546,7 +3288,33 @@ export class TramaController {
     selection.selectedModel = model;
     selection.selectedEffort = effort;
     selection.providerPreferences = { ...selection.providerPreferences, [id]: { model, effort } };
+    // The person's choice is Trama's default for the Coordinator of the next new project (issue #205).
+    this.state.settings = { ...this.state.settings, coordinatorModels: { ...this.state.settings.coordinatorModels, [id]: { model, effort } } };
+    this.restartOpeningOnModelChange(project, id);
     this.changed();
+    await this.saveSettings();
+  }
+
+  /**
+   * A Coordinator still opening or studying on another model starts again on the one the person just chose: the study
+   * is never recorded on a model the person replaced, and a studied project resumes its thread on it (issue #205).
+   */
+  private restartOpeningOnModelChange(project: ActiveProjectState, provider: ProviderId): void {
+    const document = project.document;
+    const opening = this.coordinatorOpening;
+    if (project.phase.kind !== "opening" && project.phase.kind !== "studying") return;
+    if (opening?.project !== project || provider !== this.coordinatorProvider(document)) return;
+    const model = this.coordinatorModel(document, provider);
+    if (!model || model === opening.model) return;
+    // Every step of the replaced opening checks the generation, including a runtime it is still creating.
+    this.coordinatorGeneration += 1;
+    this.stopCoordinatorRuntime();
+    // A thread without the study starts again; a studied project resumes its thread on the new model.
+    if (Object.keys(document.coordinator.injectedStudy).length === 0) forgetCoordinatorThread(document);
+    if (this.starting?.project === project) this.starting = null;
+    project.phase = { kind: "idle" };
+    project.streaming = null;
+    void this.startCoordinator();
   }
 
   /** The fast tier to send with a turn: only for a model that offers it, and only once the person chose. */
@@ -2556,19 +3324,17 @@ export class TramaController {
     return offered ? selection.selectedFastMode : null;
   }
 
-  /** Turns fast mode on or off for the dialog; it applies to models that offer a fast tier. */
-  async setFastMode(enabled: boolean, goalId: string | null = null): Promise<void> {
+  /** Turns fast mode on or off for the chat; it applies to models that offer a fast tier. */
+  async setFastMode(enabled: boolean): Promise<void> {
     const project = this.requireProject();
-    if (goalId) requireGoal(project.document, goalId);
-    dialogComposer(project.document, goalId).selectedFastMode = enabled;
+    project.document.selectedFastMode = enabled;
     this.changed();
   }
 
   /** Chooses the provider in the composer; the model is the one last used with it, if any. */
-  async selectProvider(provider: ProviderId, goalId: string | null = null): Promise<void> {
+  async selectProvider(provider: ProviderId): Promise<void> {
     const project = this.requireProject();
-    if (goalId) requireGoal(project.document, goalId);
-    const selection = dialogComposer(project.document, goalId);
+    const selection = project.document;
     if (project.runningRequestId || this.queue.some((q) => q.projectId === project.id)) {
       throw new DomainError("Aspetta la fine del turno e della coda prima di cambiare provider.");
     }
@@ -2684,11 +3450,11 @@ export class TramaController {
     this.changed();
   }
 
-  saveDraft(text: string, goalId: string | null = null): void {
+  /** The chat has one composer (U01): its draft lives on the document whatever goal the chat is filtered on. */
+  saveDraft(text: string): void {
     const project = this.state.project;
     if (!project) return;
-    if (goalId && !findGoal(project.document, goalId)) return;
-    dialogComposer(project.document, goalId).composerDraft = text;
+    project.document.composerDraft = text;
     this.scheduleSave();
   }
 
@@ -2903,31 +3669,59 @@ export class TramaController {
     limits: string[];
   }): Promise<void> {
     const project = this.requireProject();
-    assertMandateRequestAnswerable(project.document, input.requestId);
+    // A mandate the person writes answers the pending project mandate too (issue #244): it does not wait any longer.
+    const pending = pendingMandateRequest(project.document);
+    const requestId = input.requestId ?? (pending?.projectCycle ? pending.id : null);
+    assertMandateRequestAnswerable(project.document, requestId);
     const hadMandate = project.document.mandate?.status === "granted";
     const mandate = grantMandate(project.document, input);
     const kind = hadMandate ? "corrected" : "granted";
-    if (input.requestId) resolveMandateRequest(project.document, input.requestId, kind, mandate.version);
+    if (requestId) resolveMandateRequest(project.document, requestId, kind, mandate.version);
     this.stopWorkOutsideMandate("Il mandato corretto non copre più questo lavoro.");
     this.changed();
     void this.runDuties();
     await this.send(mandateMessage(kind, mandate.version), null, null, null, [], null, null, false);
   }
 
-  async revokeMandate(reason: string, requestId: string | null): Promise<void> {
+  /**
+   * Asks for the project mandate on the Coordinator's behalf when the project has none and nothing waits (issue #244).
+   * Trama asks it by rule, without a turn of the model; the proposal waits in "Aspetta te".
+   */
+  private proposeProjectMandate(project: ActiveProjectState): void {
+    const moduleIds = project.snapshot.modules.map((m) => m.id);
+    if (!needsProjectMandate(project.document, moduleIds)) return;
+    const request = proposeProjectMandate(project.document, moduleIds);
+    appendEvent(project.document, "trama", { type: "card", kind: "mandate", title: "Mandato di progetto", detail: null, referenceId: request.id });
+    this.changedIn(project);
+  }
+
+  /**
+   * Narrows the mandate in force without revoking it (issue #244). Running turns end as they are; from the next turn
+   * the Coordinator reads the new version, and work outside it does not start again.
+   */
+  async restrictMandate(input: { scopeModuleIds: string[]; authorizedActions: MandateAction[] }): Promise<void> {
     const project = this.requireProject();
-    const document = project.document;
-    // A stale card must not revoke the active mandate: only the latest request can be answered (W14).
-    assertMandateRequestAnswerable(document, requestId);
-    if (requestId && !document.mandate) {
-      resolveMandateRequest(document, requestId, "revoked", null);
-    } else {
-      revokeMandate(document, reason);
-      if (requestId) resolveMandateRequest(document, requestId, "revoked", null);
-      this.stopWorkOutsideMandate(`Mandato revocato: ${reason}`);
-    }
+    const mandate = restrictMandate(project.document, input);
+    this.changed();
+    const moduleName = (id: string) => project.snapshot.modules.find((m) => m.id === id)?.name ?? id;
+    await this.send(restrictionMessage(mandate, moduleName), null, null, null, [], null, null, false);
+  }
+
+  /** Revokes the mandate in force, from the Mandate view only: a proposal card never reaches it. */
+  async revokeMandate(reason: string): Promise<void> {
+    const project = this.requireProject();
+    revokeMandate(project.document, reason);
+    this.stopWorkOutsideMandate(`Mandato revocato: ${reason}`);
     this.changed();
     await this.send(mandateMessage("revoked", null, reason), null, null, null, [], null, null, false);
+  }
+
+  /** Turns down a mandate proposal. The mandate in force, if any, stays as it is and no work stops. */
+  async rejectMandateRequest(requestId: string, reason: string): Promise<void> {
+    const project = this.requireProject();
+    const request = rejectMandateRequest(project.document, requestId, reason);
+    this.changed();
+    await this.send(mandateRejectionMessage(project.document, request, reason), null, null, null, [], null, null, false);
   }
 
   // MARK: Team
@@ -2936,6 +3730,31 @@ export class TramaController {
 
   private get worktreesRoot(): string {
     return join(this.storage.root, "Worktrees");
+  }
+
+  /**
+   * An action a fixed ban stopped before it started (issue #244): it becomes an item of "Aspetta te" with its reason and
+   * an activity line where it happened. Every attempt counts, also the same command tried again; the providers report
+   * each call once, however many of their hooks refuse it.
+   */
+  private recordFixedBan(
+    project: ActiveProjectState,
+    event: Extract<TurnEvent, { type: "fixedBanRefused" }>,
+    by: FixedBanRefusal["by"],
+    requestId: string | null = null,
+    work: { assignmentId: string; workKey: string } | null = null,
+  ): void {
+    const document = project.document;
+    const refusal = recordFixedBanRefusal(document, { ban: event.ban, action: event.action, by });
+    appendEvent(document, by.kind === "specialist" ? "specialist" : "trama", fixedBanActivity(refusal), requestId, new Date(), work);
+    this.changedIn(project);
+  }
+
+  /** The person has seen an action a fixed ban stopped: it leaves "Aspetta te" (issue #244). */
+  acknowledgeFixedBan(id: string): void {
+    const project = this.requireProject();
+    acknowledgeFixedBanRefusal(project.document, id);
+    this.changed();
   }
 
   private specialistActivity(
@@ -2959,6 +3778,7 @@ export class TramaController {
       this.changed();
       return;
     }
+    this.recapMilestones(project);
     if (project.stateWritable) void this.storage.saveDocument(project.document).catch((error) => this.fail(error));
     this.publish();
   }
@@ -3107,6 +3927,10 @@ export class TramaController {
                 event.succeeded ? null : `Uscita ${event.exitCode ?? "?"}${event.output ? `\n${event.output.slice(-2_000)}` : ""}`,
                 event.succeeded ? "tool" : "error",
               );
+              if (isGitPushCommand(event.command)) {
+                const push = agentPushActivity(event.command, event.succeeded);
+                this.specialistActivity(project, assignmentId, key, push.title, push.detail, push.tone);
+              }
               return;
             case "fileChangeCompleted":
               this.specialistActivity(
@@ -3127,6 +3951,11 @@ export class TramaController {
             case "toolRefused":
               this.specialistActivity(project, assignmentId, key, TOOL_REFUSED_TITLE, toolRefusedDetail(event), "error");
               return;
+            case "fixedBanRefused": {
+              const specialistId = findAssignment(project.document, assignmentId)?.specialistId ?? "";
+              this.recordFixedBan(project, event, { kind: "specialist", specialistId, assignmentId }, null, { assignmentId, workKey: `${assignmentId}:${key}` });
+              return;
+            }
             default:
               return;
           }
@@ -3241,7 +4070,8 @@ export class TramaController {
    * the rest waits for the next end of work.
    */
   private resumeAnsweredWork(project: ActiveProjectState): void {
-    if (this.quitting || project !== this.state.project) return;
+    // In pause the answer waits with its work: Riprendi resumes it (A05).
+    if (this.quitting || project !== this.state.project || isPaused(project.document)) return;
     for (const assignment of answeredWork(project.document)) {
       if (!withinMandate(project.document, assignment)) continue;
       try {
@@ -3346,6 +4176,7 @@ export class TramaController {
       try {
         do {
           this.dutiesAgain = false;
+          await this.handleProblems();
           await this.startNextDuty();
           await this.moveTeam();
         } while (this.dutiesAgain);
@@ -3356,9 +4187,102 @@ export class TramaController {
     return this.dutiesRun;
   }
 
+  /**
+   * The problems found outside the work in progress (A08): Trama records them, opens one issue each on GitHub or links
+   * the open one about the same problem, applies the triage labels after the triage and places each problem with the
+   * assignment that works on it or in the backlog. Without GitHub the problems stay in Trama as backlog items. Nothing
+   * is opened in pause, in the example project or without a granted mandate. Every step goes to Activity.
+   */
+  /** When Trama last tried to apply the triage labels to a problem's issue, by problem id. */
+  private readonly problemLabelAttempts = new Map<string, number>();
+
+  private async handleProblems(): Promise<void> {
+    const project = this.state.project;
+    if (!project || !project.stateWritable || project.isDemo || this.quitting) return;
+    const document = project.document;
+    if (isPaused(document)) return;
+    const github = project.github;
+    const ready = github.status === "ready" && github.repository !== null;
+    let changed = !document.problems;
+    changed = collectProblems(document, ready ? github.issues : null).length > 0 || changed;
+    changed = placeProblems(document).length > 0 || changed;
+    if (github.status === "unavailable") changed = keepInLocalBacklog(document).length > 0 || changed;
+    if (!ready || document.mandate?.status !== "granted") {
+      if (changed) this.changedIn(project);
+      return;
+    }
+    const repository = github.repository!;
+    const labels = parseTriageLabels(await readRepositoryFile(TRIAGE_LABELS_PATH, project.rootPath).catch(() => null));
+    const waiting = problemsToOpen(document);
+    if (waiting.length) {
+      // Read again just before opening, so an issue opened meanwhile about the same problem is not duplicated.
+      const issues = await listIssues(repository).catch((error: Error) => {
+        for (const problem of waiting) recordIssueFailure(problem, `GitHub CLI non ha letto le issue: ${classifyGitHubError(error.message).message}`);
+        return null;
+      });
+      if (this.state.project !== project) return;
+      if (issues) {
+        // The rule of new issues must know them before the Coordinator opens one, or the new one would count as old.
+        observeIssues(document, { issues, pullRequests: github.pullRequestLinks ?? null });
+        for (const problem of waiting) {
+          const existing = sameProblemIssue(problem, issues);
+          if (existing) {
+            recordProblemIssue(problem, existing, false);
+            continue;
+          }
+          const body = problemIssueBody(problem);
+          try {
+            const created = await createIssue(repository, problem.title, body, [labels["needs-triage"]]);
+            recordProblemIssue(problem, created, true);
+            const issue: GitHubIssue = {
+              number: created.number,
+              title: problem.title,
+              state: "open",
+              body,
+              url: created.url,
+              author: github.capabilities?.login ?? null,
+              labels: [labels["needs-triage"]],
+              updatedAt: new Date().toISOString(),
+            };
+            issues.push(issue);
+            // The triage rule reads the issues Trama keeps: the new one reaches the bug triage without waiting for a refresh.
+            if (this.state.project === project) project.github = { ...project.github, issues: [...project.github.issues, issue] };
+          } catch (error) {
+            recordIssueFailure(problem, `La issue non è stata aperta: ${classifyGitHubError((error as Error).message).message}`);
+          }
+        }
+      }
+      changed = true;
+    }
+    for (const problem of document.problems?.items ?? []) {
+      const issue = problem.issue;
+      const outcome = issue?.opened && !problem.labelsApplied ? latestTriage(document, issue.number)?.duty?.outcome : null;
+      if (!issue || outcome?.kind !== "triage") continue;
+      // A failed attempt waits before the next one, like the opening of the issue.
+      const tried = this.problemLabelAttempts.get(problem.id);
+      if (tried && Date.now() - tried < ISSUE_RETRY_MS) continue;
+      this.problemLabelAttempts.set(problem.id, Date.now());
+      const { add, remove } = labelsAfterTriage(labels, outcome);
+      try {
+        await addIssueLabels(repository, issue.number, add);
+        if (remove) await removeIssueLabel(repository, issue.number, remove);
+        problem.labelsApplied = add;
+        changed = true;
+      } catch {
+        // The labels are applied at the next look.
+      }
+    }
+    if (changed && this.state.project === project) {
+      placeProblems(document);
+      this.changedIn(project);
+    }
+  }
+
   private async startNextDuty(): Promise<void> {
     const project = this.state.project;
     if (!project || !project.stateWritable || this.quitting) return;
+    // In pause no automatic work of the fixed roles starts (A05).
+    if (isPaused(project.document)) return;
     if (project.isDemo) {
       // The example project runs no automatic work of its own, but a glossary and ADR proposal drawn from the
       // person's decisions waits only for the mandate there too (M03).
@@ -3386,8 +4310,12 @@ export class TramaController {
    */
   private async moveTeam(): Promise<void> {
     const project = this.state.project;
-    if (!project || !project.stateWritable || this.quitting || project.isDemo) return;
-    if (this.state.settings.continuousWork !== false) this.pickFreeSlices(project);
+    if (!project || !project.stateWritable || this.quitting) return;
+    // In pause nobody takes new work by itself (A05); the worktrees are still compared, which starts no agent.
+    const paused = isPaused(project.document);
+    if (!paused) this.retryGateReturns(project);
+    if (project.isDemo) return;
+    if (this.state.settings.continuousWork !== false && !paused) this.pickFreeSlices(project);
     await this.assessWorktreeConflicts(project);
   }
 
@@ -3607,10 +4535,7 @@ export class TramaController {
     const project = this.state.project;
     if (!project) return;
     const document = project.document;
-    for (const specialist of document.team.specialists) {
-      const assignment = specialist.assignments.at(-1);
-      if (!assignment || !isActive(assignment) || assignment.status === "stopRequested") continue;
-      if (withinMandate(document, assignment)) continue;
+    for (const { specialist, assignment } of workStoppedBy(document, activeTerms(document.mandate))) {
       requestStop(document, specialist.id, "Trama", reason);
       void this.stopAssignmentRuntime(assignment.id);
     }
@@ -3678,6 +4603,24 @@ export class TramaController {
     const assignment = findAssignment(document, candidate.assignmentId);
     if (!assignment?.workspace) throw new Error(`Candidate ${candidateId} has no worktree.`);
     const { result, snapshot } = await this.runCandidateCheck(project, assignment.workspace, check);
+    // A failure of the sandbox or the machine says nothing about the candidate: its evidence and the person's
+    // approval stay as they were, and nothing is diagnosed (issue #271).
+    const environment = result.exitCode !== 0 && environmentFailure(result.output);
+    if (environment) {
+      appendEvent(
+        document,
+        "trama",
+        {
+          type: "activity",
+          title: `Verifica ${CHECKS[check].title} su ${candidateId}: non riuscita per la sandbox o la macchina, le evidenze restano quelle di prima`,
+          detail: result.output.slice(-4_000) || null,
+          tone: "error",
+        },
+        requestId,
+      );
+      this.changedIn(project);
+      return result;
+    }
     recordEvidence(document, candidateId, {
       check,
       passed: result.exitCode === 0,
@@ -3695,6 +4638,8 @@ export class TramaController {
       target: { kind: "candidate", candidateId },
     });
     if (failure) void this.runDuties();
+    // A red check may make the next move the Coordinator's own: it resolves the block by itself (A05).
+    if (result.exitCode !== 0) this.continueWork(project, null, "checkFailed");
     appendEvent(
       document,
       "trama",
@@ -3711,26 +4656,122 @@ export class TramaController {
     return result;
   }
 
-  /** A technical review from a thread distinct from the author's, read-only in the candidate's worktree. */
-  private async reviewCandidate(candidateId: string, requestId: string | null) {
+  /**
+   * The candidate gate (W10): Trama's real checks first, then every candidate reviewer of the team in parallel on the
+   * diff. Clean Code is the technical review, from a thread distinct from the author's; the regression guardian runs
+   * the suite on the base and on the candidate; the other figures are read-only sessions on cheap models. The review
+   * recorded on the candidate carries the gate's verdict; a blocking finding sends the work back to its developer.
+   */
+  private async reviewCandidate(candidateId: string, requestId: string | null): Promise<TechnicalReview> {
     const project = this.requireProject();
     const document = project.document;
     const candidate = findCandidate(document, candidateId);
     if (!candidate) throw new Error(`Unknown candidate ${candidateId}.`);
     const assignment = findAssignment(document, candidate.assignmentId);
     if (!assignment?.workspace) throw new Error(`Candidate ${candidateId} has no worktree.`);
-    // The reviewer reads only: a worktree-only provider hands the review to the Coordinator's provider.
+    const gate = openGate(document, candidate);
+    this.changedIn(project);
+    const run = { projectId: project.id, clients: new Set<AgentRuntime>() };
+    this.gateRuns.set(gate.id, run);
+    // Set inside the parallel run: TypeScript cannot follow the assignment through the callback.
+    let cleanCode = null as CleanCodeReview | null;
+    try {
+      // The facts first: every required check without current evidence runs now, in the sandbox.
+      for (const check of checksToRun(document, candidate)) await this.verifyCandidate(candidate.id, check, requestId);
+      const failed = failedChecks(candidate);
+      if (failed.length) {
+        stopAtChecks(gate, failed);
+        this.changedIn(project);
+        await this.guardSuite(project, gate, candidate);
+        markRegressions(document, gate);
+      } else if (secretFindings(candidate).length) {
+        // A secret in the diff never reaches a model: Trama's scan blocks the candidate before any session opens.
+        stopAtSecrets(gate, secretFindings(candidate));
+        this.changedIn(project);
+        await this.guardSuite(project, gate, candidate);
+      } else {
+        const provider = this.reviewerProvider(document, assignment);
+        const runner = this.dutyRunner(document);
+        const spec = auditSpec(document, assignment, project.github.issues);
+        beginReviews(gate, { spec: spec !== null, model: runner?.model ?? null, cleanCodeModel: provider.model });
+        this.changedIn(project);
+        const input = { projectName: project.name, gate, candidate, assignment, spec };
+        const skill = await this.nativeSkill("code-review");
+        const sessions = SESSION_ROLES.filter((role) => gateReview(gate, role).status === "running").map((role) =>
+          this.runGateReviewer(project, gate, role, runner, () => reviewerTurn(input, role, usesCodeReview(role) ? skill : null, runner?.provider === "codex"), assignment.workspace!.worktreeRoot),
+        );
+        const cleanCodeRun = this.runCleanCodeReview(project, candidate, assignment, provider, run.clients).then(
+          (result) => {
+            cleanCode = result;
+            finishReview(gate, "cleanCode", cleanCodeOutcome(result.answer));
+            reviewThread(gate, "cleanCode", result.threadId);
+          },
+          (error: Error) => finishReview(gate, "cleanCode", { failure: error.message }),
+        );
+        await Promise.all([cleanCodeRun, this.guardSuite(project, gate, candidate), ...sessions]);
+      }
+      closeGate(gate);
+    } catch (error) {
+      failGate(gate, (error as Error).message);
+    } finally {
+      this.gateRuns.delete(gate.id);
+      this.changedIn(project);
+    }
+    const review = recordTechnicalReview(document, candidateId, {
+      reviewerThreadId: cleanCode?.threadId ?? `gate:${gate.id}`,
+      authorThreadId: assignment.threadId,
+      verdict: gate.status === "passed" ? "approved" : "changesRequested",
+      summary: gate.failure && gate.status === "failed" ? `${gateSummary(document, gate)} ${gate.failure}`.trim() : gateSummary(document, gate),
+      // Clean Code's findings and Trama's measures only when it reviewed: a failed check stops it before it starts.
+      ...(cleanCode ? { findings: cleanCode.answer.findings, standard: cleanCode.standard } : {}),
+      gateId: gate.id,
+    });
+    // The reviewers and the guardian tell the developer in their own conversations (W07).
+    recordGate(document, gate);
+    appendEvent(
+      document,
+      "trama",
+      { type: "activity", title: `Revisori sul candidato ${candidateId}: ${GATE_STATUS[gate.status].label.toLowerCase()}`, detail: review.summary, tone: gate.status === "passed" ? "tool" : "error" },
+      requestId,
+    );
+    if (gate.status === "blocked" && !gate.checksFailed.length) this.returnToDeveloper(project, gate);
+    this.changedIn(project);
+    this.releaseParkedProject(project);
+    // A check red on the base too or a finding outside the candidate is a problem to open an issue for (A08).
+    void this.runDuties();
+    return review;
+  }
+
+  /** Running gates are running work: their sessions stop when Trama quits. */
+  private readonly gateRuns = new Map<string, { projectId: string; clients: Set<AgentRuntime> }>();
+
+  /** Clean Code reads only: a worktree-only provider hands the review to the Coordinator's provider. */
+  private reviewerProvider(document: ProjectDocument, assignment: SpecialistAssignment): { provider: ProviderId; model: string | null } {
     const authorProvider = assignment.provider ?? "codex";
     const provider = supportsReadOnly(authorProvider) ? authorProvider : this.coordinatorProvider(document);
     const model = provider === authorProvider ? assignment.model : (document.coordinator.threadModel ?? this.coordinatorModel(document, provider));
+    return { provider, model };
+  }
+
+  /** Clean Code's part of the gate: the technical review against Trama's standard (Q03), read-only in the worktree. */
+  private async runCleanCodeReview(
+    project: ActiveProjectState,
+    candidate: Candidate,
+    assignment: SpecialistAssignment,
+    reviewer: { provider: ProviderId; model: string | null },
+    clients: Set<AgentRuntime>,
+  ): Promise<CleanCodeReview> {
+    const document = project.document;
+    const { provider, model } = reviewer;
     if (!model) throw new Error(this.coordinatorModelProblem(document, provider));
     const client = createRuntime(provider, { executable: provider === "codex" ? this.host.codexExecutable : null, requestTimeoutMs: 15_000 });
+    clients.add(client);
     try {
       // The standard's measures are Trama's own, taken before the reviewer reads anything (Q03).
-      const standard = await checkStandard(candidate, assignment.workspace.worktreeRoot, document.cleanCode);
+      const standard = await checkStandard(candidate, assignment.workspace!.worktreeRoot, document.cleanCode);
       const opening = await client.openThread({
         model,
-        cwd: assignment.workspace.worktreeRoot,
+        cwd: assignment.workspace!.worktreeRoot,
         ephemeral: true,
         readableRoots: this.readableRoots(project),
         developerInstructions: reviewerInstructions(document.cleanCode),
@@ -3752,36 +4793,147 @@ export class TramaController {
       const answer = await client.runTurn({
         threadId: opening.threadId,
         prompt,
-        cwd: assignment.workspace.worktreeRoot,
+        cwd: assignment.workspace!.worktreeRoot,
         model,
         outputSchema: REVIEW_OUTPUT_SCHEMA,
         onEvent: () => undefined,
       });
-      let parsed: ReviewAnswer;
       try {
-        parsed = readReviewAnswer(JSON.parse(extractJsonAnswer(answer)) as Record<string, unknown>);
+        return { threadId: opening.threadId, answer: readReviewAnswer(JSON.parse(extractJsonAnswer(answer)) as Record<string, unknown>), standard };
       } catch {
         throw new Error("La revisione tecnica non ha restituito un verdetto leggibile.");
       }
-      const review = recordTechnicalReview(document, candidateId, {
-        reviewerThreadId: opening.threadId,
-        authorThreadId: assignment.threadId,
-        verdict: parsed.verdict,
-        summary: parsed.summary,
-        findings: parsed.findings,
-        standard,
-      });
-      appendEvent(
-        document,
-        "trama",
-        { type: "activity", title: `Revisione tecnica di ${candidateId}: ${review.verdict === "approved" ? "approvata" : "modifiche richieste"}`, detail: review.summary, tone: "tool" },
-        requestId,
-      );
-      this.changedIn(project);
-      return review;
     } finally {
+      clients.delete(client);
       client.stop();
     }
+  }
+
+  /**
+   * The regression guardian's part of the gate: the candidate's suite on its base, in a detached checkout and in the
+   * sandbox, against the evidence on the candidate. A test that passed on the base and fails now blocks the candidate.
+   */
+  private async guardSuite(project: ActiveProjectState, gate: CandidateGate, candidate: Candidate): Promise<void> {
+    try {
+      const checks = suiteChecks(candidate);
+      if (checks.length) {
+        const base = await checkoutCommit(project.rootPath, gate.baseSHA, join(this.storage.root, "Gate"));
+        try {
+          for (const check of checks) {
+            if (this.quitting) throw new Error("Trama si sta chiudendo.");
+            const result = await runReadOnlyCheck(check, base.path, {
+              codexExecutable: resolveCodexExecutable(this.host.codexExecutable),
+              scratchRoot: join(this.storage.root, "Checks"),
+              dependencyRoot: project.rootPath,
+            }).catch((error: Error) => ({ command: [] as string[], exitCode: -1, output: error.message }));
+            const evidence = candidate.evidence[check];
+            gate.suite.push(
+              compareSuite(
+                check,
+                { result: result.command.length === 0 ? "notRun" : result.exitCode === 0 ? "pass" : "fail", output: result.output },
+                evidence ? evidence.result : "notRun",
+              ),
+            );
+            this.changedIn(project);
+          }
+        } finally {
+          await base.remove();
+        }
+      }
+      finishReview(gate, "regressionGuardian", guardianOutcome(gate.suite));
+    } catch (error) {
+      finishReview(gate, "regressionGuardian", { failure: (error as Error).message });
+    }
+  }
+
+  /** One figure of the gate: a read-only session of its own, in the candidate's worktree, on a cheap model. */
+  private async runGateReviewer(project: ActiveProjectState, gate: CandidateGate, role: GateRole, runner: DutyRunner | null, turn: () => ReviewerTurn, cwd: string): Promise<void> {
+    if (!runner) {
+      finishReview(gate, role, { failure: "Nessun modello in sola lettura disponibile per i revisori del candidato." });
+      return;
+    }
+    const client = createRuntime(runner.provider, { executable: runner.provider === "codex" ? this.host.codexExecutable : null, requestTimeoutMs: 15_000 });
+    const run = this.gateRuns.get(gate.id);
+    run?.clients.add(client);
+    try {
+      if (this.quitting) throw new Error("Trama si sta chiudendo.");
+      const { instructions, prompt, skills, outputSchema } = turn();
+      const opening = await client.openThread({ model: runner.model, cwd, developerInstructions: instructions, sandbox: "read-only", ephemeral: true, readableRoots: this.readableRoots(project) });
+      reviewThread(gate, role, opening.threadId);
+      this.changedIn(project);
+      const raw = await client.runTurn({ threadId: opening.threadId, prompt, cwd, model: runner.model, skills, outputSchema, onEvent: () => undefined });
+      finishReview(gate, role, readReviewerAnswer(raw));
+    } catch (error) {
+      finishReview(gate, role, { failure: (error as Error).message });
+    } finally {
+      run?.clients.delete(client);
+      client.stop();
+      this.changedIn(project);
+    }
+  }
+
+  /**
+   * A blocking finding goes back to the developer (W10): each reviewer's message lands in the developer's work, where
+   * the person reads it, and the work resumes in the same session and worktree with the findings, within the mandate.
+   */
+  private returnToDeveloper(project: ActiveProjectState, gate: CandidateGate): void {
+    const document = project.document;
+    const assignment = findAssignment(document, gate.assignmentId);
+    if (!assignment) return;
+    const developer = document.team.specialists.find((s) => s.id === assignment.specialistId);
+    const workKey = `${assignment.id}:${assignment.turns.length + 1}`;
+    for (const review of gate.reviews) {
+      const blocking = blockingFindings(review);
+      if (!blocking.length) continue;
+      const reviewer = document.team.specialists.find((s) => s.role === review.role && s.status !== "removed")?.name ?? roleProfile(review.role).name;
+      appendEvent(
+        document,
+        "specialist",
+        {
+          type: "activity",
+          title: `${reviewer} a ${developer?.name ?? assignment.specialistId}: ${blocking.length === 1 ? "1 rilievo bloccante" : `${blocking.length} rilievi bloccanti`} sul candidato ${gate.candidateId}`,
+          detail: blocking.map((f) => `- ${f.title}${f.file ? ` (${f.file})` : ""}${f.detail !== f.title ? `: ${f.detail}` : ""}`).join("\n"),
+          tone: "error",
+        },
+        null,
+        new Date(),
+        { assignmentId: assignment.id, workKey },
+      );
+    }
+    gate.returned = { assignmentId: assignment.id, at: new Date().toISOString(), waiting: this.resumeWithFindings(project, gate) };
+    this.changedIn(project);
+  }
+
+  /**
+   * Resumes the developer with the gate's blocking findings, in its session and worktree, and says why it cannot when
+   * it cannot. Only in the project open now: a project the person left keeps the work for when it opens again.
+   */
+  private resumeWithFindings(project: ActiveProjectState, gate: CandidateGate): string | null {
+    const document = project.document;
+    const assignment = findAssignment(document, gate.assignmentId);
+    if (!assignment) return "L'incarico non c'è più: serve un nuovo incarico.";
+    if (project !== this.state.project) return "Il progetto non è aperto: il lavoro riprende quando lo riapri.";
+    if (!withinMandate(document, assignment)) return "Il mandato attuale non copre più questo incarico: il lavoro riprende quando lo concedi di nuovo.";
+    try {
+      reopenForFindings(document, assignment.id, { gateId: gate.id, candidateId: gate.candidateId, findings: returnFindings(document, gate) });
+    } catch (error) {
+      return error instanceof TeamError ? returnWaiting(error.code, error.message) : (error as Error).message;
+    }
+    void this.startAssignment(assignment.id);
+    return null;
+  }
+
+  /** The findings that waited for their developer go back at the next event of the work that may have freed it (W10). */
+  private retryGateReturns(project: ActiveProjectState): void {
+    let moved = false;
+    for (const gate of pendingReturns(project.document)) {
+      const waiting = this.resumeWithFindings(project, gate);
+      if (waiting === gate.returned!.waiting) continue;
+      gate.returned!.waiting = waiting;
+      gate.updatedAt = new Date().toISOString();
+      moved = true;
+    }
+    if (moved) this.changedIn(project);
   }
 
   // MARK: Focus mode
@@ -3846,6 +4998,7 @@ export class TramaController {
       this.changedIn(project);
       const input = { projectName: project.name, audit, candidate, assignment, spec };
       await Promise.all(axes.map((axis) => this.runAuditAxis(project, audit, axis, axisTurn(input, axis, skill, runner.provider === "codex"), runner, assignment.workspace!.worktreeRoot)));
+      await this.verifyAuditFindings(project, audit, candidate.id, runner, assignment.workspace.worktreeRoot);
       closeAudit(audit);
     } catch (error) {
       failAudit(audit, (error as Error).message);
@@ -3853,6 +5006,44 @@ export class TramaController {
       this.auditRuns.delete(auditId);
       this.changedIn(project);
       this.releaseParkedProject(project);
+    }
+  }
+
+  /**
+   * Verification of the findings (F02): Trama rechecks the proofs it can run itself, then a stronger model reads the
+   * serious findings Trama could not recheck. What neither confirms stays a hypothesis.
+   */
+  private async verifyAuditFindings(project: ActiveProjectState, audit: FocusAudit, candidateId: string, runner: DutyRunner, cwd: string): Promise<void> {
+    beginVerification(audit);
+    this.changedIn(project);
+    const serious = await recheckFindings(audit, cwd);
+    this.changedIn(project);
+    if (!serious.length) return;
+    const document = project.document;
+    const model = confirmationModel(runner.model, document.coordinator.threadModel ?? this.coordinatorModel(document, runner.provider));
+    if (!model) {
+      for (const { finding } of serious) confirmFinding(finding, { failure: NO_STRONGER_MODEL });
+      return;
+    }
+    const client = createRuntime(runner.provider, { executable: runner.provider === "codex" ? this.host.codexExecutable : null, requestTimeoutMs: 15_000 });
+    const run = this.auditRuns.get(audit.id);
+    run?.clients.add(client);
+    try {
+      for (const { axis, finding } of serious) {
+        try {
+          if (this.quitting) throw new Error("Trama si sta chiudendo.");
+          const turn = confirmationTurn({ projectName: project.name, audit, candidateId }, axis, finding);
+          const opening = await client.openThread({ model, cwd, developerInstructions: turn.instructions, sandbox: "read-only", ephemeral: true, readableRoots: this.readableRoots(project) });
+          const raw = await client.runTurn({ threadId: opening.threadId, prompt: turn.prompt, cwd, model, outputSchema: turn.outputSchema, onEvent: () => undefined });
+          confirmFinding(finding, { model, ...readConfirmation(raw) });
+        } catch (error) {
+          confirmFinding(finding, { failure: `La conferma di ${model} non è riuscita: ${(error as Error).message}` });
+        }
+        this.changedIn(project);
+      }
+    } finally {
+      run?.clients.delete(client);
+      client.stop();
     }
   }
 
@@ -3935,11 +5126,20 @@ export class TramaController {
     const candidate = findCandidate(document, candidateId);
     if (!candidate) throw new DomainError("Candidato non trovato.");
     const report = candidateReport(document, candidate, await this.headSHA(project.rootPath));
+    if (report.state === "superseded") throw new DomainError("Il candidato è stato sostituito da un lavoro più recente: pubblica quello nuovo.");
     if (report.blockers.length) throw new DomainError(`Il candidato non è verificato: ${report.blockers.map((b) => b.code).join(", ")}.`);
     if (!candidate.humanApproval || report.approvalInvalidated) throw new DomainError("Rivedi e approva il candidato prima di pubblicarlo.");
     if (candidate.pullRequest) throw new DomainError(`Il candidato è già pubblicato: ${candidate.pullRequest.url}`);
     const repository = project.github.repository;
     if (!repository) throw new DomainError("Il progetto non ha un remoto GitHub.");
+    // The mandate decides before anything is committed or pushed, even when the person asks (issue #273).
+    const refusal = pushRefusal(pushAuthorization(document.mandate));
+    if (refusal) {
+      const branch = findAssignment(document, candidate.assignmentId)?.workspace?.branch ?? "branch del candidato";
+      appendEvent(document, "trama", pushActivity({ outcome: "refused", branch, remote: "origin", reason: refusal }));
+      this.changed();
+      throw new DomainError(refusal);
+    }
     // The quality standard comes before anything leaves the machine (Q01).
     const message = await this.candidateMessage(project, candidate);
     const missing = qualityMissing(qualityGate(document, candidate, report, repository));
@@ -3949,6 +5149,7 @@ export class TramaController {
     if (!capabilities.canPush) throw new DomainError(`Il tuo account GitHub non ha il permesso di push su ${repository}.`);
     const assignment = findAssignment(document, candidate.assignmentId)!;
     const baseBranch = project.snapshot.branch ?? "main";
+    // Every push, refused, failed or done, stays in the conversation (issue #273).
     const published = await publishCandidate({
       candidate,
       assignment,
@@ -3957,6 +5158,13 @@ export class TramaController {
       message,
       conventions: candidate.commit!.conventions,
       body: pullRequestBody(candidate, assignment, document.decisions, relatedIssue(document, assignment)),
+      mandate: document.mandate,
+      onPush: (record) => {
+        appendEvent(document, "trama", pushActivity(record));
+        // A push a fixed ban stopped waits for the person in Aspetta te (issue #244).
+        if (record.outcome === "refused" && record.ban) recordFixedBanRefusal(document, { ban: record.ban, action: `git push ${record.remote} ${record.branch}`, by: { kind: "trama" } });
+        this.changed();
+      },
     });
     candidate.pullRequest = { ...published, at: new Date().toISOString() };
     appendEvent(document, "trama", { type: "activity", title: `Pull request #${published.number} pubblicata`, detail: published.url, tone: "tool" });
@@ -4064,7 +5272,9 @@ export class TramaController {
         this.updateMonitorStatus(repository, checkpoint);
         const project = this.state.project;
         if (project && project.github.repository?.toLowerCase() === repository.toLowerCase()) {
+          const before = this.gitHubReading(project);
           project.github = { ...project.github, snapshot: checkpoint.snapshot, events: checkpoint.events };
+          this.noticeGitHubWork(project, before);
           void this.assessRemoteConflicts();
           void this.refreshIssues(project);
         }
@@ -4119,6 +5329,11 @@ export class TramaController {
       updatedAt: now,
     };
     project.document.plans.push(plan);
+    // One goal, one active plan (U01): the new plan replaces the earlier ones of its goal.
+    for (const old of supersedeGoalPlans(project.document, plan)) {
+      this.planners.get(old.id)?.stop();
+      this.planners.delete(old.id);
+    }
     appendEvent(project.document, "trama", { type: "card", kind: "plan", title: "Piano", detail: null, referenceId: plan.id }, input.requestId);
     this.changed();
     void this.runPlanner(project, plan);
@@ -4185,18 +5400,28 @@ export class TramaController {
     if (!plan?.spec || plan.status !== "seams") throw new DomainError("Il piano non aspetta una risposta sui seam.");
     const note = input.note?.trim() || null;
     if (!input.confirmed && !note) throw new DomainError("Scrivi cosa cambiare nei seam.");
+    this.applySeamsAnswer(project, plan, { confirmed: input.confirmed, note, by: "person" });
+  }
+
+  /**
+   * Records the answer on the seams and starts the planner that writes the spec with it: the person's, or the
+   * Coordinator's within the mandate (A06), or a correction of the Coordinator's (by null: already told by the caller).
+   */
+  private applySeamsAnswer(project: ActiveProjectState, plan: WorkPlan, answer: { confirmed: boolean; note: string | null; by: "person" | "coordinator" | null }): void {
     const now = new Date().toISOString();
-    plan.spec.seamsAnswer = { confirmed: input.confirmed, note: input.confirmed ? null : note, at: now };
+    plan.spec!.seamsAnswer = { confirmed: answer.confirmed, note: answer.confirmed ? null : answer.note, at: now, ...(answer.by === "coordinator" ? { by: "coordinator" as const } : {}) };
     plan.status = "planning";
     plan.failure = null;
     plan.updatedAt = now;
-    appendEvent(
-      project.document,
-      "person",
-      { type: "activity", title: input.confirmed ? `Seam del piano ${plan.id} confermati` : `Seam del piano ${plan.id} corretti`, detail: plan.spec.seamsAnswer.note, tone: "info" },
-      plan.requestId,
-    );
-    this.changed();
+    if (answer.by === "person") {
+      appendEvent(
+        project.document,
+        "person",
+        { type: "activity", title: answer.confirmed ? `Seam del piano ${plan.id} confermati` : `Seam del piano ${plan.id} corretti`, detail: plan.spec!.seamsAnswer.note, tone: "info" },
+        plan.requestId,
+      );
+    }
+    this.changedIn(project);
     void this.runPlanner(project, plan);
   }
 
@@ -4315,7 +5540,9 @@ export class TramaController {
         return;
       }
       plan.status = "ready";
-      await this.publishSpec(project, plan);
+      // A spec rewritten after a correction (A06) updates the issue it was published as.
+      if (spec.issue) await this.updatePublishedSpec(project, plan);
+      else await this.publishSpec(project, plan);
       // The spec written, to-tickets splits it into vertical slices (M05).
       this.startSlicing(project, plan, null);
     } catch (error) {
@@ -4354,7 +5581,6 @@ export class TramaController {
     if (!plan || slicing?.status !== "proposed") throw new DomainError("Il piano non aspetta una risposta sulle fette.");
     const note = input.note?.trim() || null;
     if (!input.confirmed && !note) throw new DomainError("Scrivi cosa cambiare nelle fette.");
-    const now = new Date().toISOString();
     appendEvent(
       project.document,
       "person",
@@ -4365,11 +5591,19 @@ export class TramaController {
       this.startSlicing(project, plan, note);
       return;
     }
+    await this.approveSlices(project, plan, "person");
+  }
+
+  /** Approves the proposed breakdown, publishes it and lets the work go on: the person's answer, or the Coordinator's (A06). */
+  private async approveSlices(project: ActiveProjectState, plan: WorkPlan, by: "person" | "coordinator"): Promise<void> {
+    const slicing = plan.slicing!;
+    const now = new Date().toISOString();
     slicing.status = "approved";
     slicing.approvedAt = now;
+    slicing.approvedBy = by === "coordinator" ? "coordinator" : null;
     slicing.failure = null;
     plan.updatedAt = now;
-    this.changed();
+    this.changedIn(project);
     await this.publishSlices(project, plan);
     this.continueWork(project, plan.requestId, "planEnded");
   }
@@ -4685,6 +5919,8 @@ export class TramaController {
   private readonly learningReviews = new Map<string, AbortController>();
   /** Tool iterations of each running Coordinator turn: the skill review counts them. */
   private readonly turnToolIterations = new Map<string, number>();
+  /** The messages of the tools that failed in each running Coordinator turn, kept out of its reply (issue #241). */
+  private readonly turnToolErrors = new Map<string, string[]>();
   /** Learning tools the Coordinator wrote with in each running turn. */
   private readonly turnLearningWrites = new Map<string, string[]>();
   private curatorTimer: NodeJS.Timeout | null = null;
@@ -4713,6 +5949,11 @@ export class TramaController {
    * The learning counters of a project. A project from before learning keeps its thread: the live part
    * starts at the last study card, which opens each thread, so earlier threads are searchable.
    */
+  /** The records, repository and GitHub reading of the project the Coordinator's ids are checked against (issue #277). */
+  private referenceIndex(project: ActiveProjectState): ReferenceIndex {
+    return buildReferenceIndex({ document: project.document, modules: project.snapshot.modules, github: project.github });
+  }
+
   private coordinatorLearning(document: ProjectDocument) {
     if (!document.coordinator.learning) {
       const studyIndex = document.events.findLastIndex((e) => e.content.type === "card" && e.content.kind === "study");
@@ -4757,7 +5998,7 @@ export class TramaController {
   }
 
   /**
-   * Hermes' background review: an unattended session of the Coordinator's provider and model reads the
+   * The background review: an unattended session of the Coordinator's provider and model reads the
    * transcript and may only write memory and skills. One pass at a time per project; the conversation
    * never waits for it. `focus` comes from the person, and makes the pass attended.
    */
@@ -4828,7 +6069,7 @@ export class TramaController {
   }
 
   /**
-   * Hermes' curator tick: at most once per interval, after two idle hours, never on the first check.
+   * The curator tick: at most once per interval, after two idle hours, never on the first check.
    * The deterministic pass always runs; the model pass only when the person turned consolidation on.
    */
   async maybeRunCurator(force = false, dryRun = false): Promise<void> {
@@ -4919,7 +6160,7 @@ export class TramaController {
     this.learningChanged();
   }
 
-  /** The person corrects memory directly: their writes apply at once, as in Hermes' journey view. */
+  /** The person corrects memory directly: their writes apply at once, without a review. */
   editLearnedMemory(input: { target: "memory" | "user"; action: "add" | "replace" | "remove"; oldText?: string; content?: string }): { success: boolean; error: string | null } {
     const learning = this.learningFor(this.requireProject());
     const store = learning.memory;
@@ -4982,7 +6223,7 @@ export class TramaController {
     return readFileText(join(dir, "SKILL.md"), "utf8");
   }
 
-  /** The person asks for a review now, optionally with a focus (Hermes' /refine). */
+  /** The person asks for a review now, optionally with a focus. */
   async reviewLearningNow(focus: string): Promise<void> {
     const project = this.requireProject();
     const learning = this.learningFor(project);

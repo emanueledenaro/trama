@@ -103,7 +103,7 @@ function PageHeader({ title, description, actions }: { title: string; descriptio
   );
 }
 
-/** A titled card of rows, as in the Codex and Synara settings. */
+/** A titled card of rows, as in the Codex settings. */
 function Group({ title, note, children }: { title?: string; note?: React.ReactNode; children: React.ReactNode }) {
   return (
     <section className="mb-6 last:mb-0">
@@ -490,7 +490,7 @@ function MethodSection() {
       <Group title="Lavoro continuo">
         <ToggleRow
           label="Il Coordinatore va avanti da solo dentro il mandato"
-          description="Prepara il piano, assegna il lavoro ed esegue le verifiche senza chiedere. Ti chiede solo decisioni di prodotto, il mandato, il team e l'unione del candidato. Puoi fermare ogni mossa dalla chat."
+          description="Prepara il piano, assegna il lavoro ed esegue le verifiche senza chiedere. Ti chiede solo decisioni di prodotto, il mandato, il team e l'unione del candidato. Puoi fermare ogni mossa dalla riga di stato, e fermare tutto il lavoro automatico del progetto con Pausa."
           checked={continuousWork}
           onChange={(value) => void act("settings:update", { continuousWork: value })}
         />

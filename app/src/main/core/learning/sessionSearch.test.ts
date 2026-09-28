@@ -17,14 +17,14 @@ function conversation() {
   return { document, goal };
 }
 
-describe("SessionSearch (Hermes session_search)", () => {
+describe("SessionSearch", () => {
   it("discovers past messages, hydrates the top result and skips the live thread and specialists", () => {
     const { document } = conversation();
     const search = new SessionSearch({ document, currentSessionId: PROJECT_DIALOG_ID, liveFromSequence: 6 });
     const result = search.run({ query: "docker" });
     expect(result).toMatchObject({ success: true, mode: "discover", count: 1 });
     const top = (result.results as Record<string, unknown>[])[0]!;
-    expect(top).toMatchObject({ session_id: PROJECT_DIALOG_ID, match_message_id: 1, detail: "full", title: "Dialogo del progetto" });
+    expect(top).toMatchObject({ session_id: PROJECT_DIALOG_ID, match_message_id: 1, detail: "full", title: "Chat del progetto" });
     expect(String(top.snippet)).toContain(">>>docker<<<");
     expect((top.messages as { id: number }[]).map((m) => m.id)).toEqual([1, 2]);
   });

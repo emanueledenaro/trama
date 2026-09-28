@@ -2,9 +2,10 @@ import { describe, expect, it } from "vitest";
 import type { CoordinatorRequest, ProjectDocument, WorkPlan } from "@shared/domain";
 import { placeGrillingQuestion } from "@shared/grilling";
 import { emptyDocument } from "./document";
-import { focusTask, focusText, focusView, NOT_STARTED_LABEL, openTasks, pauseTask, resumeTask, taskIdOf, TASK_TITLE_LIMIT } from "./focus";
+import { focusTask, focusText, focusView, NOT_STARTED_LABEL, openTasks, pauseTask, resumeTask, taskIdOf, PROJECT_WORK_TITLE } from "./focus";
 import { archiveGoal, createGoal, proposeGoal, updateGoal } from "./goals";
-import { createDecisionRequest } from "./pact";
+import { createDecisionRequest, createMandateRequest, grantMandate } from "./pact";
+import { assign, confirmTeam, proposeTeam } from "./team";
 
 const at = (minute: number) => new Date(Date.UTC(2026, 8, 25, 10, minute));
 
@@ -117,7 +118,7 @@ describe("open tasks", () => {
         title: "Revisione degli ordini",
         phase: "blocked",
         phaseLabel: "bloccata",
-        blocker: "Il piano P-3 non è riuscito: Il pianificatore non ha risposto.",
+        blocker: "Il piano non è riuscito: va rifatto.",
         waitingFor: null,
         status: "focus",
       },
@@ -125,7 +126,7 @@ describe("open tasks", () => {
         {
           id: "work:r1",
           goalId: null,
-          title: "Aggiungi il login con GitHub",
+          title: PROJECT_WORK_TITLE,
           phase: "spec",
           phaseLabel: "spec",
           blocker: null,
@@ -159,14 +160,34 @@ describe("open tasks", () => {
     expect(focusView(document)).toEqual({ focus: null, queue: [] });
   });
 
-  it("titles the project dialog's work with its first message, shortened", () => {
+  it("never titles the project dialog's work with its first message (issue #241)", () => {
     const document = emptyDocument("p");
-    request(document, "r1", null, 1, "a".repeat(200));
+    request(document, "r1", null, 1, "[proponi-team] creami degli agenti");
     question(document, "r1");
     const [task] = openTasks(document);
-    expect(task!.title).toHaveLength(TASK_TITLE_LIMIT);
-    expect(task!.title.endsWith("…")).toBe(true);
+    expect(task!.title).toBe(PROJECT_WORK_TITLE);
     expect(taskIdOf(document, "r1")).toBe("work:r1");
+  });
+
+
+  it("names the project dialog's work after the goal its assignments serve, not after its first message (issue #241)", () => {
+    const document = emptyDocument("p");
+    const orders = goal(document, "Revisione degli ordini", 0);
+    request(document, "r1", null, 1, "creami degli agenti");
+    grantMandate(document, { objectives: ["Ordini"], priorities: [], scopeModuleIds: ["Sources/Orders"], authorizedActions: ["executeInWorktree"], limits: [] });
+    const proposal = proposeTeam(document, { requestId: null, summary: null, members: [{ name: "Luca", competence: "TypeScript", reason: "Il negozio", moduleIds: ["Sources/Orders"] }] });
+    confirmTeam(document, proposal.id, null, null);
+    const order = { specialist: "Luca", kind: "agreedTicket" as const, objective: "Ordini", issueNumber: null, exercise: null, moduleIds: ["Sources/Orders"], dependencies: [], model: "gpt-6-luna", tools: ["edits" as const], requiredChecks: [], instructions: "Scrivi", goalId: orders.id };
+    assign(document, order, document.mandate!.version, "r1", at(2));
+    expect(openTasks(document).find((t) => t.id === "work:r1")?.title).toBe("Revisione degli ordini");
+  });
+
+  it("shows the person's move even when the work is blocked: it is often what unblocks it (issue #241)", () => {
+    const document = emptyDocument("p");
+    request(document, "r1", null, 1, "Aggiungi il login");
+    plan(document, "r1", "failed");
+    createMandateRequest(document, { requestId: "r1", reason: "Serve", objectives: ["o"], priorities: [], scopeModuleIds: ["Sources/Orders"], authorizedActions: ["plan"], limits: [] });
+    expect(focusView(document).focus).toMatchObject({ phase: "blocked", waitingFor: "Concedi il mandato" });
   });
 });
 
@@ -234,14 +255,14 @@ describe("focus for the Coordinator", () => {
     request(document, "r2", null, 6, "Che ore sono?");
     const onFocus = focusText(document, "g1")!;
     expect(onFocus).toContain(`In focus: l'obiettivo "Revisione degli ordini" (goal:${orders.id}), fase spec.`);
-    expect(onFocus).toContain(`In coda: il lavoro del dialogo del progetto, l'obiettivo "Esportazione CSV".`);
+    expect(onFocus).toContain(`In coda: il lavoro del progetto fuori dagli obiettivi, l'obiettivo "Esportazione CSV".`);
     expect(onFocus).toContain("resta su questo task");
     pauseTask(document, `goal:${exports.id}`);
     expect(focusText(document, "g2")).toContain(
       'Il messaggio riguarda l\'obiettivo "Esportazione CSV", che è in pausa. Rispondi, poi riporta la conversazione sul task in focus',
     );
     // A message in the project dialog belongs to the dialog's work, which is queued.
-    expect(focusText(document, "r2")).toContain("Il messaggio riguarda il lavoro del dialogo del progetto, che è in coda.");
+    expect(focusText(document, "r2")).toContain("Il messaggio riguarda il lavoro del progetto fuori dagli obiettivi, che è in coda.");
   });
 
   it("brings a message outside any task back to the focus", () => {

@@ -1,13 +1,12 @@
 /**
  * Shared Agent Client Protocol runtime for the ACP providers (Cursor, Grok, Droid, Devin).
  *
- * Ported from Synara (https://github.com/Emanuele-web04/synara, MIT, Copyright (c) 2026 T3 Tools Inc.
- * and Emanuele Di Pietro): acp/AcpSessionRuntime.ts (startup, auth policies, resume/load, MCP
- * servers), AcpRuntimeModel.ts (session/update parsing, tool call state, config options),
- * AcpAdapterSupport.ts (permission option selection, prompt completion), AcpTurnIdleWatchdog.ts,
- * AcpLoadReplayGate.ts, AcpElicitationSupport.ts, skillPromptInjection.ts,
- * providerChildEnvironment.ts and providerBinaryResolution.ts. The Effect machinery is replaced by
- * a plain JSON-RPC client over ndjson stdio; the protocol handling follows Synara.
+ * Covers session startup, auth policies, resume/load and MCP servers, session/update parsing, tool
+ * call state and config options, permission option selection, prompt completion, the turn idle
+ * watchdog, the load replay gate, elicitation, inline skills, the child environment and binary
+ * resolution. It is a plain JSON-RPC client over ndjson stdio.
+ *
+ * Derived from third-party MIT code; see THIRD_PARTY_NOTICES.md.
  */
 import { type ChildProcessWithoutNullStreams, execFile, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
@@ -15,6 +14,7 @@ import { accessSync, constants, existsSync, lstatSync, readdirSync } from "node:
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { delimiter, dirname, extname, isAbsolute, join, resolve } from "node:path";
+import { commandBan, type FixedBan, fixedBanMessage, pathBan } from "@shared/fixedBans";
 import type { LoadedSkill } from "@shared/skills";
 import {
   type AgentRuntime,
@@ -31,6 +31,7 @@ import {
 } from "../types";
 import { expandHome, readableRoots } from "../../readScope";
 import { absoluteUnnormalized, containedWriteTarget, currentUsageLimit, PendingTurn, usageLimitError, writeFileNoFollow } from "../providerSupport";
+import { checkedOutBranch } from "../../push";
 import { prepareStdioHostToolServer, type StdioHostToolServer } from "../hostToolProxy";
 import { ToolRefusals } from "../toolRefusal";
 
@@ -169,7 +170,7 @@ export function buildChildEnvironment(
   const env: NodeJS.ProcessEnv = {};
   for (const [key, value] of Object.entries({ ...baseEnv, ...overrides })) {
     const upper = key.toUpperCase();
-    if (upper.startsWith("TRAMA_") || upper.startsWith("SYNARA_")) continue;
+    if (upper.startsWith("TRAMA_")) continue;
     if (INHERITED_NATIVE_CAPABILITY_KEYS.has(upper)) continue;
     if (PROVIDER_CREDENTIAL_KEYS.has(upper) && !allowed.has(upper)) continue;
     env[key] = value;
@@ -465,6 +466,14 @@ export function decidePermission(input: {
     default:
       return "reject";
   }
+}
+
+/** The fixed ban a permission request runs into (issue #244): a secret file it names, or a banned command. */
+export function permissionBan(kind: string | null, paths: string[], command: string | null, cwd: string | null = null): { ban: FixedBan; action: string } | null {
+  const secret = paths.find((path) => pathBan(path));
+  if (secret) return { ban: pathBan(secret)!, action: `${kind ?? "accesso"} ${secret}` };
+  const ban = kind === "execute" && command ? commandBan(command, undefined, () => (cwd ? checkedOutBranch(cwd) : null)) : null;
+  return ban && command ? { ban, action: command } : null;
 }
 
 /** Picks the provider option for a decision; `null` means answer with `cancelled`. */
@@ -765,7 +774,7 @@ function requestErrorDetail(error: JsonObject): string {
   return message || detail || "Richiesta ACP non riuscita.";
 }
 
-/** Synara's isAcpAuthRequiredError: -32000 with a recognizable auth-failure phrase. */
+/** An auth-required error is -32000 with a recognizable auth-failure phrase. */
 export function isAuthRequiredError(error: unknown): boolean {
   return (
     error instanceof AcpRequestError &&
@@ -1271,6 +1280,7 @@ export class AcpAgentRuntime implements AgentRuntime {
         return this.answerPermission(params, policy);
       case "fs/read_text_file": {
         const path = asString(params.path);
+        this.refuseBannedPath(path, "fs/read_text_file");
         const inside = path !== null && isAbsolute(path) && (policy.readableRoots ?? [policy.cwd]).some((root) => resolvesInside(root, path));
         if (policy.active && path && isAbsolute(path) && !inside) this.reportOutsideRead(path, "fs/read_text_file", "fs/read_text_file");
         if (!policy.active || !path || !inside || lstatSync(path, { throwIfNoEntry: false })?.isSymbolicLink()) {
@@ -1286,6 +1296,7 @@ export class AcpAgentRuntime implements AgentRuntime {
       }
       case "fs/write_text_file": {
         const path = asString(params.path);
+        this.refuseBannedPath(path, "fs/write_text_file");
         const content = asString(params.content);
         const target = policy.active && policy.writableRoot && path && isAbsolute(path) ? containedWriteTarget(policy.writableRoot, path) : null;
         if (target === null || content === null) {
@@ -1321,6 +1332,13 @@ export class AcpAgentRuntime implements AgentRuntime {
           readableRoots: policy.readableRoots,
         });
     const itemId = trimmed(toolCall.toolCallId) ?? randomUUID();
+    // The fixed bans hold before every other rule (issue #244): a secret file or a banned command is refused and recorded.
+    const banned = policy.active ? permissionBan(kind, paths, toolCallCommand(toolCall.rawInput, title), policy.cwd) : null;
+    if (banned) {
+      this.activeTurn?.onEvent({ type: "fixedBanRefused", itemId, ...banned });
+      const optionId = selectPermissionOption("reject", params.options);
+      return optionId ? { outcome: { outcome: "selected", optionId } } : { outcome: { outcome: "cancelled" } };
+    }
     if (policy.active && decision === "reject" && (kind === "read" || kind === "search" || kind === "think")) {
       const outside = paths.find((path) => !(policy.readableRoots ?? [policy.cwd]).some((root) => resolvesInside(root, path)));
       if (outside) this.reportOutsideRead(outside, itemId, title ?? kind);
@@ -1335,9 +1353,17 @@ export class AcpAgentRuntime implements AgentRuntime {
       const tool = (server && named ? `${server}: ${named}` : null) ?? toolCallCommand(toolCall.rawInput, title) ?? title ?? kind ?? "strumento";
       policy.refuse?.({ itemId, tool, kind });
     }
-    // With no active turn Synara cancels: late or replayed requests must not inherit a turn's authority.
+    // With no active turn the request is cancelled: late or replayed requests must not inherit a turn's authority.
     const optionId = policy.active ? selectPermissionOption(decision, params.options) : null;
     return optionId ? { outcome: { outcome: "selected", optionId } } : { outcome: { outcome: "cancelled" } };
+  }
+
+  /** A secret or credential file is refused whatever the turn allows, and recorded for "Aspetta te" (issue #244). */
+  private refuseBannedPath(path: string | null, tool: string): void {
+    const ban = path ? pathBan(path) : null;
+    if (!ban || !path) return;
+    this.activeTurn?.onEvent({ type: "fixedBanRefused", itemId: randomUUID(), ban, action: `${tool} ${path}` });
+    throw new AcpRequestError(-32000, fixedBanMessage(ban), undefined);
   }
 
   /** Records a read Trama refused outside the session's folders (issue #206). */

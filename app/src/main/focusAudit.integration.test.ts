@@ -15,6 +15,7 @@ afterEach(async () => {
   delete process.env.FAKE_CODEX_LOG;
   delete process.env.FAKE_CODEX_AUDIT_GATE;
   delete process.env.FAKE_CODEX_LOG_CHECKS;
+  delete process.env.FAKE_CODEX_LIGHT_MODEL;
 });
 
 async function until(check: () => boolean, timeout = 15_000): Promise<void> {
@@ -42,6 +43,8 @@ describe("focus mode on a candidate (F01)", () => {
   it("runs the real checks, then code-review's two axes in parallel and read-only, and keeps the report after a restart", async () => {
     const log = join(await mkdtemp(join(tmpdir(), "trama-log-")), "codex.log");
     process.env.FAKE_CODEX_LOG = log;
+    // A light model in the catalogue: the axes run on it, and the Coordinator's model is the stronger one (F02).
+    process.env.FAKE_CODEX_LIGHT_MODEL = "gpt-5.5-mini";
     const repo = await mkdtemp(join(tmpdir(), "trama-repo-"));
     await cp(join(root, "resources/DemoProject"), repo, { recursive: true });
     await git(["init", "-b", "main"], repo, false);
@@ -122,12 +125,24 @@ describe("focus mode on a candidate (F01)", () => {
 
     expect(audit.specSource).toBe("Issue #12");
     expect(audit.standards).toMatchObject({ status: "done", findings: 1, worst: expect.stringContaining("Mysterious Name") });
-    expect(audit.spec).toMatchObject({ status: "done", findings: 1 });
+    expect(audit.spec).toMatchObject({ status: "done", findings: 2 });
     expect(audit.standards.report).toContain(`git diff ${candidate.baseSHA}`);
     expect(audit.spec.report).toContain("Fonte: Issue #12");
     expect(audit.summary).toBe(
-      `Standards: 1 rilievo, il più grave: Possibile Mysterious Name in ${candidate.changedFiles[0]}. Spec: 1 rilievo, il più grave: Il criterio sull'ordine non pagato non ha un test.`,
+      `Standards: 1 rilievo, il più grave: Possibile Mysterious Name in ${candidate.changedFiles[0]}. Spec: 2 rilievi, il più grave: Il criterio sull'ordine non pagato non ha un test.`,
     );
+    // F02: each finding ends in one of three states. Trama reread the line the Standards axis named; the stronger model
+    // confirmed the serious Spec finding Trama could not run; the minor one, whose command is not one of Trama's checks,
+    // stays a hypothesis.
+    expect(audit.standards.model).toBe("gpt-5.5-mini");
+    expect(audit.standards.items).toEqual([
+      expect.objectContaining({ status: "verified", evidence: { kind: "fileLine", file: candidate.changedFiles[0], line: 1, quote: "" }, confirmation: null }),
+    ]);
+    const [serious, minor] = audit.spec.items!;
+    expect(serious).toMatchObject({ severity: "serious", status: "confirmed", confirmation: { model: "gpt-5.5", confirmed: true } });
+    expect(minor).toMatchObject({ severity: "minor", status: "hypothesis", evidence: { kind: "command", command: "make check" } });
+    const confirmations = (await auditLog()).filter((r) => r.method === "thread/start" && String(r.params.developerInstructions).includes("second reader of focus mode"));
+    expect(confirmations.map((r) => r.params)).toEqual([expect.objectContaining({ model: "gpt-5.5", cwd: work.workspace!.worktreeRoot, ephemeral: true })]);
     const requests = (await readFile(log, "utf8"))
       .slice(checksBefore)
       .trim()

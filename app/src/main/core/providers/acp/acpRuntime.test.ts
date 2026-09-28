@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { TurnEvent } from "@shared/codex";
 import { clearUsageLimitsForTests } from "../providerSupport";
 import { CoordinatorToolServer, toolSuccess } from "../../toolServer";
-import { AcpAgentRuntime, type AcpProviderProfile, buildChildEnvironment, decidePermission, hostToolName, parseUsageLimit } from "./acpRuntime";
+import { AcpAgentRuntime, type AcpProviderProfile, buildChildEnvironment, decidePermission, hostToolName, parseUsageLimit, permissionBan } from "./acpRuntime";
 import { cursorProfile } from "./cursor";
 import { devinProfile } from "./devin";
 import { droidProfile } from "./droid";
@@ -415,5 +415,15 @@ describe("ACP policy helpers", () => {
     expect(env.TRAMA_COORDINATOR_TOKEN).toBeUndefined();
     expect(env.ELECTRON_RUN_AS_NODE).toBeUndefined();
     expect(env.PATH?.startsWith("/usr/bin")).toBe(true);
+  });
+});
+
+describe("fixed bans on ACP permission requests (issue #244)", () => {
+  it("refuses secret files and banned commands before the agent runs them", () => {
+    expect(permissionBan("read", ["/work/.env"], null)).toEqual({ ban: "secrets", action: "read /work/.env" });
+    expect(permissionBan("edit", ["/work/keys/deploy.pem"], null)).toMatchObject({ ban: "secrets" });
+    expect(permissionBan("execute", [], "git push origin --delete feature/x")).toEqual({ ban: "deleteRemoteRef", action: "git push origin --delete feature/x" });
+    expect(permissionBan("execute", [], "npm test")).toBeNull();
+    expect(permissionBan("read", ["/work/src/app.ts"], null)).toBeNull();
   });
 });

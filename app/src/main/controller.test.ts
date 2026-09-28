@@ -6,9 +6,12 @@ import { dirname, join } from "node:path";
 import { existsSync } from "node:fs";
 import { afterEach, describe, expect, it } from "vitest";
 import type { AppState, ProjectDocument } from "@shared/domain";
-import { decisionDependents, dialogEvents, findGoal, projectGoals } from "@shared/goals";
+import { chatEvents, decisionDependents, dialogEvents, findGoal, projectGoals } from "@shared/goals";
+import { activityLog } from "@shared/activity";
 import { deriveTimelineRows } from "@shared/timeline";
+import { waitingForYou } from "@shared/waitingForYou";
 import { TramaController } from "./controller";
+import { QUIT_NOTE } from "./core/document";
 import { AppStorage } from "./core/storage";
 import { developers } from "./core/team";
 
@@ -42,12 +45,25 @@ async function interruptOnceSent(document: ProjectDocument, requestId: string): 
  * Answers a grilling and confirms the shared understanding with the step's button, within a mandate that allows
  * planning (W04): the next move is the Coordinator's plan.
  */
-async function confirmUnderstanding(document: ProjectDocument): Promise<void> {
+async function confirmUnderstanding(document: ProjectDocument, byPerson = false): Promise<void> {
   await controller!.grantMandate({ requestId: null, objectives: ["o"], priorities: [], scopeModuleIds: ["Sources/Orders"], authorizedActions: ["plan"], limits: [] });
   await controller!.send("[grilling:1] Gli ordini pagati annullati vanno in revisione", null, null, null);
   for (const question of [...document.decisionRequests]) await controller!.answerDecision(question.id, 1, null);
-  await controller!.send("[passo:confirmUnderstanding] Riassumi quello che abbiamo deciso", null, null, null);
-  await controller!.takeStep(document.requests.at(-1)!.id);
+  if (byPerson) {
+    // In pause the step stays the person's, with its button.
+    await controller!.send("[passo:confirmUnderstanding] Riassumi quello che abbiamo deciso", null, null, null);
+    await controller!.takeStep(document.requests.at(-1)!.id);
+    return;
+  }
+  // Within the mandate the Coordinator confirms the shared understanding by itself once no question is open (A06).
+  await until(() => (document.autonomousSteps ?? []).some((s) => s.move === "confirmUnderstanding"), 20_000);
+}
+
+/** Waits until Trama handed the running turn to the provider, so Esci finds a turn to end. */
+async function interruptOnceSentOrQuit(document: ProjectDocument, requestId: string): Promise<void> {
+  await until(() =>
+    document.events.some((e) => e.requestId === requestId && e.content.type === "activity" && e.content.title === "Messaggio inviato al Coordinatore"),
+  );
 }
 
 const automaticRequests = (document: ProjectDocument) => document.requests.filter((r) => r.step?.by === "trama");
@@ -75,6 +91,12 @@ async function setup() {
   await controller.openProject(project);
   await until(() => controller!.snapshot.project?.phase.kind === "ready");
   return { data, project };
+}
+
+/** The detail of the latest failed tool call: where a tool's refusal stays, out of the Coordinator's reply. */
+function lastToolError(document: ProjectDocument): string {
+  const content = document.events.findLast((e) => e.content.type === "activity" && e.content.tone === "error")?.content;
+  return content?.type === "activity" ? (content.detail ?? "") : "";
 }
 
 describe("TramaController", () => {
@@ -145,7 +167,8 @@ describe("TramaController", () => {
     await controller!.send("Come funziona l'annullamento?", "Sources/Orders", null, null);
     const request = project.document.requests[0]!;
     expect(request.state).toBe("completed");
-    const kinds = project.document.events.map((e) => e.content.type);
+    // The project mandate proposed at the opening (issue #244) waits in Aspetta te and is not part of this exchange.
+    const kinds = project.document.events.filter((e) => !(e.content.type === "card" && e.content.kind === "mandate")).map((e) => e.content.type);
     // The study card, then the first goal the Coordinator proposed in it (UX07).
     expect(kinds).toEqual(["card", "card", "personMessage", "activity", "activity", "coordinatorText"]);
     const reply = project.document.events.at(-1)!.content;
@@ -166,7 +189,7 @@ describe("TramaController", () => {
     expect(developers(document)).toHaveLength(0);
   });
 
-  it("keeps two goal dialogs apart from the project dialog and gives the Coordinator the goal", async () => {
+  it("keeps one chat with one composer and tags each message with the goal it was sent under (U01)", async () => {
     const { data } = await setup();
     const first = await controller!.createGoal({
       title: "Revisione degli ordini",
@@ -177,30 +200,30 @@ describe("TramaController", () => {
     const project = controller!.snapshot.project!;
     const document = project.document;
 
-    controller!.saveDraft("bozza del primo", first);
-    controller!.saveDraft("bozza del progetto", null);
-    await controller!.selectModel("gpt-5.5", "high", "codex", second);
-    expect(findGoal(document, first)!.dialog.composerDraft).toBe("bozza del primo");
-    expect(document.composerDraft).toBe("bozza del progetto");
-    expect(findGoal(document, second)!.dialog).toMatchObject({ selectedModel: "gpt-5.5", selectedEffort: "high" });
-    expect(document.selectedEffort).toBeNull();
+    // One draft and one selection, whatever goal the chat is filtered on.
+    expect(findGoal(document, first)!.dialog).toBeUndefined();
+    controller!.saveDraft("bozza della chat");
+    await controller!.selectModel("gpt-5.5", "high", "codex");
+    expect(document.composerDraft).toBe("bozza della chat");
+    expect(document).toMatchObject({ selectedModel: "gpt-5.5", selectedEffort: "high" });
     // An Antigravity name with its level, as agy lists it, is stored as catalogue model plus level (issue #209).
-    await controller!.selectModel("Gemini 3.8 Flash (High)", null, "antigravity", first);
-    expect(findGoal(document, first)!.dialog).toMatchObject({ selectedProvider: "antigravity", selectedModel: "Gemini 3.8 Flash", selectedEffort: "high" });
+    await controller!.selectModel("Gemini 3.8 Flash (High)", null, "antigravity");
+    expect(document).toMatchObject({ selectedProvider: "antigravity", selectedModel: "Gemini 3.8 Flash", selectedEffort: "high" });
+    await controller!.selectModel("gpt-5.5", "high", "codex");
 
     await controller!.send("Da dove partiamo?", null, null, null, [], null, first);
     const request = document.requests.at(-1)!;
     expect(request.goalId).toBe(first);
-    expect(findGoal(document, first)!.dialog.composerDraft).toBe("");
-    expect(document.composerDraft).toBe("bozza del progetto");
-    const goalEvents = dialogEvents(document.events, first);
+    expect(document.composerDraft).toBe("");
+    const goalEvents = chatEvents(document.events, first);
     expect(goalEvents.map((e) => e.content.type)).toEqual(["card", "personMessage", "activity", "activity", "coordinatorText"]);
     const reply = goalEvents.at(-1)!.content;
-    expect(reply).toMatchObject({ text: expect.stringContaining(`Dialogo dell'obiettivo ${first}`) });
-    expect(dialogEvents(document.events, second).map((e) => e.content.type)).toEqual(["card"]);
-    expect(dialogEvents(document.events, null).some((e) => e.content.type === "personMessage")).toBe(false);
+    expect(reply).toMatchObject({ text: expect.stringContaining(`Messaggio sull'obiettivo ${first}`) });
+    expect(chatEvents(document.events, second).map((e) => e.content.type)).toEqual(["card"]);
+    // The whole chat shows every goal's messages, in the order they were recorded.
+    expect(chatEvents(document.events, null)).toEqual(document.events);
 
-    // A message queued in one dialog stays there even if the person moves on before it leaves. "[attesa]" keeps the
+    // A message queued under one goal keeps that goal even if the person changes the filter. "[attesa]" keeps the
     // first turn running until it is interrupted: a reply that ends by itself could finish between two checks.
     const running = controller!.send("[attesa] Primo messaggio", null, null, null, [], null, null);
     await until(() => project.runningRequestId !== null);
@@ -214,7 +237,7 @@ describe("TramaController", () => {
     expect(queued.goalId).toBe(second);
     expect(document.requests.find((r) => r.id === firstId)!.goalId ?? null).toBeNull();
 
-    // Goals, dialogs and drafts survive a restart.
+    // Goals, their messages and the selection survive a restart.
     await controller!.stop();
     let state: AppState | null = null;
     controller = new TramaController(data, {
@@ -233,8 +256,8 @@ describe("TramaController", () => {
     await until(() => state?.project?.document !== undefined);
     const reopened = controller.snapshot.project!.document;
     expect(projectGoals(reopened).map((g) => g.id)).toEqual(projectGoals(document).map((g) => g.id));
-    expect(dialogEvents(reopened.events, first)).toHaveLength(goalEvents.length);
-    expect(findGoal(reopened, second)!.dialog.selectedModel).toBe("gpt-5.5");
+    expect(chatEvents(reopened.events, first)).toHaveLength(goalEvents.length);
+    expect(reopened.selectedModel).toBe("gpt-5.5");
   });
 
   it("links a decision asked in a goal dialog to that goal and answers there", async () => {
@@ -412,6 +435,23 @@ describe("TramaController", () => {
     expect(second.spec ?? null).toBeNull();
   });
 
+  it("keeps one active plan per goal: a new plan stops and supersedes the one still being prepared (U01)", async () => {
+    await setup();
+    const project = controller!.snapshot.project!;
+    const goal = await controller!.createGoal({ title: "Revisione", outcome: "Gli ordini pagati annullati vanno in revisione", examples: [] });
+    await controller!.send("Come si annulla un ordine pagato?", null, null, null, [], null, goal);
+    const requestId = project.document.requests.at(-1)!.id;
+    const first = controller!.orderPlan({ requestId, orderedBy: "person", kind: "agreedTicket", moduleIds: [], summary: "Primo", issueNumber: null });
+    const second = controller!.orderPlan({ requestId, orderedBy: "person", kind: "agreedTicket", moduleIds: [], summary: "Secondo", issueNumber: null });
+    expect(first).toMatchObject({ status: "superseded", supersededBy: second.id });
+    await until(() => second.status !== "planning");
+    // The replaced planner's late answer does not bring the old plan back.
+    await new Promise((r) => setTimeout(r, 300));
+    expect(first.status).toBe("superseded");
+    expect(first.spec ?? null).toBeNull();
+    expect(second.status).toBe("seams");
+  });
+
   it("gives the Coordinator thread the original grill-with-docs, grilling, domain-modeling and ask-trama skills once, also when it is already open (M02, M03, M07)", async () => {
     await setup();
     const document = controller!.snapshot.project!.document;
@@ -430,6 +470,8 @@ describe("TramaController", () => {
 
   it("grills a request in rounds and starts the plan only when no question is open (M01)", async () => {
     await setup();
+    // The Coordinator's own steps would start the plan at the first settled round (A06): here the rounds are the subject.
+    await controller!.updateSettings({ continuousWork: false });
     const project = controller!.snapshot.project!;
     const document = project.document;
     await controller!.send("[grilling:1] Gli ordini pagati annullati vanno in revisione", null, null, null);
@@ -451,7 +493,8 @@ describe("TramaController", () => {
     // The next round waits for the whole frontier; the answers stay recorded as Pact decisions.
     await controller!.answerDecision(round1[0]!.id, 0, null);
     await controller!.send("[grilling:2]", null, null, null);
-    expect(document.events.at(-1)!.content).toMatchObject({ text: expect.stringContaining("still has open questions") });
+    // The refusal stays in the turn's activity; the reply does not paste it (issue #241).
+    expect(lastToolError(document)).toContain("still has open questions");
     await controller!.answerDecision(round1[1]!.id, 1, null);
     await controller!.send("[grilling:2]", null, null, null);
     const round2 = document.decisionRequests[2]!;
@@ -474,7 +517,8 @@ describe("TramaController", () => {
     await controller!.send("[passo:preparePlan] Ciao", null, null, null);
     const greeting = document.requests[0]!;
     expect(greeting.nextStep).toBeUndefined();
-    expect(document.events.at(-1)!.content).toMatchObject({ text: expect.stringContaining("No move is allowed now") });
+    // The refusal stays in the turn's activity; the reply does not paste it (issue #241).
+    expect(lastToolError(document)).toContain("No move is allowed now");
 
     // A request for work: the grilling round, then one step, the person's answers.
     await controller!.send("[grilling:1] [passo:answerQuestions] Gli ordini pagati annullati vanno in revisione", null, null, null);
@@ -502,17 +546,19 @@ describe("TramaController", () => {
       await until(() => automaticRequests(document).length === 1, 20_000);
       const move = automaticRequests(document)[0]!;
       expect(move).toMatchObject({ state: "running", step: { move: "preparePlan", by: "trama" }, text: "Prepara il piano." });
+      // The status line names the move that runs and carries its stop (issue #241).
+      await until(() => controller!.snapshot.project!.statusLine?.runningMove?.requestId === move.id, 20_000);
+      expect(controller!.snapshot.project!.statusLine).toMatchObject({ state: "working", text: expect.stringContaining("Sto preparando il piano") });
       await interruptOnceSent(document, move.id);
       await until(() => move.state === "interrupted" && project.runningRequestId === null, 20_000);
       await new Promise((r) => setTimeout(r, 300));
       expect(automaticRequests(document)).toHaveLength(1);
       expect(document.plans).toEqual([]);
-      // The chat shows the move as Trama's line, then the interruption in its place.
+      // The move is not a row of the chat (issue #241): Activity lists it as stopped, and the status line has no stop left.
       const rows = deriveTimelineRows(document.events, document.requests, null, new Set(), document.decisionRequests);
-      const index = rows.findIndex((r) => r.kind === "card" && r.cardKind === "automaticStep");
-      expect(rows[index]).toMatchObject({ event: { requestId: move.id, content: { title: "Prepara il piano" } } });
-      expect(rows.slice(index).some((r) => r.kind === "failure" && r.interrupted && r.requestId === move.id)).toBe(true);
-      expect(rows.some((r) => r.kind === "person" && r.event.requestId === move.id)).toBe(false);
+      expect(rows.some((r) => ("requestId" in r && r.requestId === move.id) || ("event" in r && r.event.requestId === move.id))).toBe(false);
+      expect(activityLog(document.requests, document.events)).toEqual([expect.objectContaining({ requestId: move.id, label: "Prepara il piano", outcome: "stopped" })]);
+      expect(controller!.snapshot.project!.statusLine?.runningMove).toBeNull();
     } finally {
       delete process.env.FAKE_CODEX_AUTOMATIC;
     }
@@ -540,6 +586,112 @@ describe("TramaController", () => {
     } finally {
       delete process.env.FAKE_CODEX_AUTOMATIC;
     }
+  }, 60_000);
+
+  it("holds every automatic move in pause, keeps the pause after a restart, and Riprendi starts the move with a round (A05)", async () => {
+    process.env.FAKE_CODEX_AUTOMATIC = "idle";
+    try {
+      const { data } = await setup();
+      const project = controller!.snapshot.project!;
+      const document = project.document;
+      await controller!.pauseContinuousWork(true);
+      expect(controller!.snapshot.project!.statusLine).toMatchObject({ paused: true });
+      await confirmUnderstanding(document, true);
+      await new Promise((r) => setTimeout(r, 300));
+      // In pause the Coordinator's move stays a move: nothing automatic starts, the round included.
+      expect(automaticRequests(document)).toEqual([]);
+      await controller!.runRound();
+      expect(automaticRequests(document)).toEqual([]);
+      await controller!.stop();
+
+      let state: AppState | null = null;
+      controller = new TramaController(data, {
+        publish: (s) => {
+          state = s;
+        },
+        openExternal: async () => undefined,
+        applyTheme: () => undefined,
+        notify: () => undefined,
+        setOpenAtLogin: () => undefined,
+        aiHeroResourceDirectory: join(root, "resources/AIHero"),
+        demoResourceDirectory: join(root, "resources/DemoProject"),
+        codexExecutable: join(root, "test-fixtures/fake-codex.mjs"),
+      });
+      await controller.start();
+      await until(() => state?.project?.phase.kind === "ready");
+      const reopened = controller.snapshot.project!;
+      expect(reopened.document.continuousWork?.paused).toBe(true);
+      expect(reopened.statusLine).toMatchObject({ paused: true });
+      await new Promise((r) => setTimeout(r, 300));
+      expect(automaticRequests(reopened.document)).toEqual([]);
+
+      // Riprendi runs a round at once: the Coordinator's move starts, and Activity says the round started it.
+      await controller.pauseContinuousWork(false);
+      await until(() => automaticRequests(reopened.document)[0]?.state === "completed" && reopened.runningRequestId === null, 20_000);
+      expect(automaticRequests(reopened.document)[0]!.step).toMatchObject({ move: "preparePlan", by: "trama", trigger: "round" });
+      const rounds = reopened.document.continuousWork!.rounds;
+      expect(rounds.at(-1)!.detail).toBe('Avviata la mossa "Prepara il piano".');
+      expect(activityLog(reopened.document.requests, reopened.document.events, rounds).map((e) => e.kind)).toEqual(["move", "round"]);
+
+      // The move was not made: the next round does not repeat it and opens no provider turn.
+      const requests = reopened.document.requests.length;
+      await controller.runRound();
+      await new Promise((r) => setTimeout(r, 300));
+      expect(reopened.document.requests).toHaveLength(requests);
+      expect(reopened.document.continuousWork!.rounds).toHaveLength(rounds.length);
+    } finally {
+      delete process.env.FAKE_CODEX_AUTOMATIC;
+    }
+  }, 90_000);
+
+  it("writes the recap asked with the command or in the chat from the records, without a provider turn (A03)", async () => {
+    await setup();
+    const document = controller!.snapshot.project!.document;
+    const requests = document.requests.length;
+    await controller!.send("/riepilogo", null, null, null);
+    await controller!.send("A che punto siamo?", null, null, null);
+    expect(document.requests).toHaveLength(requests);
+    const cards = document.events.filter((e) => e.content.type === "card" && e.content.kind === "recap");
+    expect(cards).toHaveLength(2);
+    expect(document.events.filter((e) => e.content.type === "personMessage").map((e) => (e.content as { text: string }).text)).toEqual(["/riepilogo", "A che punto siamo?"]);
+    const recaps = document.recap!.recaps;
+    expect(recaps.map((r) => r.reason)).toEqual(["request", "request"]);
+    expect(recaps[0]).toMatchObject({ milestones: [], doing: controller!.snapshot.project!.statusLine!.text });
+    // A longer message is the Coordinator's, as any other.
+    await controller!.send("Fammi un riepilogo delle scelte sul checkout e poi prepara il piano", null, null, null);
+    expect(document.requests).toHaveLength(requests + 1);
+  }, 60_000);
+
+  it("writes one recap for a milestone, and tells it once (A03)", async () => {
+    await setup();
+    const document = controller!.snapshot.project!.document;
+    const goalId = await controller!.createGoal({ title: "Resi senza telefonate", outcome: "Il cliente apre un reso da solo", examples: [] });
+    await new Promise((r) => setTimeout(r, 100));
+    expect(document.recap?.recaps ?? []).toEqual([]);
+    await controller!.updateGoal(goalId, { status: "achieved" });
+    await until(() => (document.recap?.recaps.length ?? 0) > 0);
+    // More changes after the milestone do not tell it again.
+    await controller!.updateGoal(goalId, { title: "Resi senza telefonate al supporto" });
+    await controller!.send("/riepilogo", null, null, null);
+    await new Promise((r) => setTimeout(r, 100));
+    const recaps = document.recap!.recaps;
+    expect(recaps.map((r) => r.reason)).toEqual(["milestone", "request"]);
+    expect(recaps[0]!.milestones).toEqual(["Obiettivo raggiunto: Resi senza telefonate"]);
+    expect(recaps[1]!.milestones).toEqual([]);
+    const card = document.events.find((e) => e.content.type === "card" && e.content.kind === "recap");
+    expect(card?.content).toMatchObject({ title: "Riepilogo: un traguardo", referenceId: recaps[0]!.id });
+    expect(card?.goalId).toBeUndefined();
+  }, 60_000);
+
+  it("runs no round on a project without open work (A05)", async () => {
+    await setup();
+    const document = controller!.snapshot.project!.document;
+    await controller!.send("Ciao", null, null, null);
+    const requests = document.requests.length;
+    await controller!.runRound();
+    await new Promise((r) => setTimeout(r, 200));
+    expect(document.requests).toHaveLength(requests);
+    expect(document.continuousWork?.rounds ?? []).toEqual([]);
   }, 60_000);
 
   it("retries a turn after a temporary 429 with a growing wait, without writing the message again (P10)", async () => {
@@ -603,6 +755,332 @@ describe("TramaController", () => {
     }
   }, 60_000);
 
+  it("waits out a network outage and resumes the turn by itself, telling the Coordinator to reconcile first (C11)", async () => {
+    process.env.TRAMA_PROVIDER_RETRY_MS = "40";
+    const log = join(await mkdtemp(join(tmpdir(), "trama-log-")), "requests.jsonl");
+    process.env.FAKE_CODEX_LOG = log;
+    try {
+      await setup();
+      const project = controller!.snapshot.project!;
+      const document = project.document;
+      await controller!.send("[rete-assente] Come si annulla un ordine?", null, null, null);
+      const first = document.requests[0]!;
+      expect(first.state).toBe("failed");
+      expect(project.providerRetry).toMatchObject({ requestId: first.id, reason: "unreachable", attempt: 1, maxAttempts: 5 });
+      await until(() => document.requests.at(-1)?.state === "completed", 10_000);
+      expect(document.requests.map((r) => [r.state, r.retry?.attempt ?? null])).toEqual([
+        ["failed", null],
+        ["completed", 1],
+      ]);
+      expect(document.events.filter((e) => e.content.type === "personMessage")).toHaveLength(1);
+      const activities = document.events.flatMap((e) => (e.content.type === "activity" ? [e.content] : []));
+      expect(activities.find((a) => a.title === "Il turno non è riuscito")?.detail).toMatch(/^Provider non raggiungibile\. /);
+      expect(activities.find((a) => a.title === "Nuovo tentativo automatico (1 di 5)")?.detail).toContain("rete");
+      // The repeated turn is told that part of the first attempt may be done already.
+      const { readFile } = await import("node:fs/promises");
+      const turns = (await readFile(log, "utf8"))
+        .trim()
+        .split("\n")
+        .map((line) => JSON.parse(line) as { method: string; params: { input?: { text: string }[] } })
+        .filter((entry) => entry.method === "turn/start" && entry.params.input?.[0]?.text.includes("[rete-assente]"));
+      expect(turns.map((t) => t.params.input![0]!.text.includes("## Resumed turn"))).toEqual([false, true]);
+    } finally {
+      delete process.env.TRAMA_PROVIDER_RETRY_MS;
+      delete process.env.FAKE_CODEX_LOG;
+    }
+  }, 60_000);
+
+  it("waits for a used up quota with account checks only, and resumes the turn when it comes back (C11)", async () => {
+    process.env.TRAMA_PROVIDER_RETRY_MS = "10";
+    const quota = join(await mkdtemp(join(tmpdir(), "trama-quota-")), "exhausted");
+    process.env.FAKE_CODEX_QUOTA_FILE = quota;
+    try {
+      await setup();
+      const project = controller!.snapshot.project!;
+      const document = project.document;
+      await writeFile(quota, "");
+      await controller!.send("Riprendi il piano degli annullamenti", null, null, null);
+      const first = document.requests[0]!;
+      expect(first.state).toBe("failed");
+      expect(project.providerRetry).toMatchObject({ requestId: first.id, reason: "quotaExhausted", attempt: 1 });
+      // Several checks of the account pass, with no new turn: no burst of retries while the quota is used up.
+      await until(() => controller!.snapshot.providers.codex.account?.kind === "blocked");
+      await new Promise((r) => setTimeout(r, 1_000));
+      expect(document.requests).toHaveLength(1);
+      expect(project.providerRetry).toMatchObject({ requestId: first.id, reason: "quotaExhausted", attempt: 1 });
+
+      const { rm } = await import("node:fs/promises");
+      await rm(quota);
+      await until(() => document.requests.at(-1)?.state === "completed", 10_000);
+      expect(document.requests.map((r) => [r.state, r.retry?.attempt ?? null])).toEqual([
+        ["failed", null],
+        ["completed", 1],
+      ]);
+      expect(project.providerRetry ?? null).toBeNull();
+      const activities = document.events.flatMap((e) => (e.content.type === "activity" ? [e.content] : []));
+      expect(activities.find((a) => a.title === "Nuovo tentativo automatico (1 di 5)")?.detail).toBe(
+        "La quota di ChatGPT è di nuovo disponibile: Trama riprende il messaggio.",
+      );
+    } finally {
+      delete process.env.TRAMA_PROVIDER_RETRY_MS;
+      delete process.env.FAKE_CODEX_QUOTA_FILE;
+    }
+  }, 60_000);
+
+  it("stops waiting for a quota when the person sends a new message (C11)", async () => {
+    process.env.TRAMA_PROVIDER_RETRY_MS = "1000";
+    const quota = join(await mkdtemp(join(tmpdir(), "trama-quota-")), "exhausted");
+    process.env.FAKE_CODEX_QUOTA_FILE = quota;
+    try {
+      await setup();
+      const project = controller!.snapshot.project!;
+      const document = project.document;
+      await writeFile(quota, "");
+      await controller!.send("Primo messaggio", null, null, null);
+      expect(project.providerRetry).toMatchObject({ reason: "quotaExhausted" });
+      // The check of the account after the failure ends first, so it cannot mark the provider blocked again later.
+      await until(() => controller!.snapshot.providers.codex.account?.kind === "blocked");
+      const { rm } = await import("node:fs/promises");
+      await rm(quota);
+      await controller!.refreshCodex();
+      await until(() => controller!.snapshot.providers.codex.account?.kind === "chatgpt" && controller!.snapshot.providers.codex.models.length > 0);
+      await controller!.send("Lascia stare, parliamo d'altro", null, null, null);
+      expect(project.providerRetry ?? null).toBeNull();
+      // Waking the computer brings no cancelled wait back.
+      controller!.resumeAfterSleep();
+      await new Promise((r) => setTimeout(r, 300));
+      // The first message is not repeated after the newer one.
+      expect(document.requests.map((r) => [r.text, r.state])).toEqual([
+        ["Primo messaggio", "failed"],
+        ["Lascia stare, parliamo d'altro", "completed"],
+      ]);
+    } finally {
+      delete process.env.TRAMA_PROVIDER_RETRY_MS;
+      delete process.env.FAKE_CODEX_QUOTA_FILE;
+    }
+  }, 60_000);
+
+  it("ends a running turn on Esci with its reason, and the reopened project resumes it only when asked (C11)", async () => {
+    const { data } = await setup();
+    const project = controller!.snapshot.project!;
+    const document = project.document;
+    void controller!.send("[attesa] Prepara il piano degli annullamenti", null, null, null);
+    await until(() => project.runningRequestId !== null);
+    const turnId = project.runningRequestId!;
+    await until(() =>
+      document.events.some((e) => e.requestId === turnId && e.content.type === "activity" && e.content.title === "Messaggio inviato al Coordinatore"),
+    );
+    const goalId = await controller!.createGoal({ title: "Annullamenti", outcome: "Gli ordini annullati tornano in revisione.", examples: [] });
+    await controller!.send("Poi controlla i test", null, null, null);
+    await controller!.send("Per l'obiettivo: rileggi gli esempi", null, null, null, [], null, goalId);
+    await controller!.stop();
+    expect(document.requests.find((r) => r.id === turnId)).toMatchObject({ state: "interrupted", failure: QUIT_NOTE });
+    // The messages still in the queue go back to the chat's one draft, in order, instead of vanishing (U01).
+    expect(document.composerDraft).toBe("Poi controlla i test\n\nPer l'obiettivo: rileggi gli esempi");
+    expect(findGoal(document, goalId)!.dialog).toBeUndefined();
+
+    // After the restart the provider answers: the resumed turn can end.
+    process.env.FAKE_CODEX_NO_WAIT = "1";
+    try {
+      let state: AppState | null = null;
+      controller = new TramaController(data, {
+        publish: (s) => {
+          state = s;
+        },
+        openExternal: async () => undefined,
+        applyTheme: () => undefined,
+        notify: () => undefined,
+        setOpenAtLogin: () => undefined,
+        aiHeroResourceDirectory: join(root, "resources/AIHero"),
+        demoResourceDirectory: join(root, "resources/DemoProject"),
+        codexExecutable: join(root, "test-fixtures/fake-codex.mjs"),
+      });
+      await controller.start();
+      await until(() => state?.project?.document !== undefined);
+      const reopened = controller.snapshot.project!;
+      const interrupted = reopened.document.requests.find((r) => r.id === turnId)!;
+      expect(interrupted).toMatchObject({ state: "interrupted", failure: QUIT_NOTE });
+      const rows = deriveTimelineRows(reopened.document.events, reopened.document.requests, null, new Set(), reopened.document.decisionRequests);
+      expect(rows.find((r) => r.kind === "failure" && r.requestId === turnId)).toMatchObject({ interrupted: true, message: QUIT_NOTE });
+      // Esci asks for an explicit resume: nothing starts by itself on reopening.
+      await new Promise((r) => setTimeout(r, 300));
+      expect(reopened.document.requests).toHaveLength(1);
+      expect(reopened.providerRetry ?? null).toBeNull();
+
+      await controller.retryRequest(turnId);
+      const resumed = reopened.document.requests[1]!;
+      expect(resumed).toMatchObject({ text: interrupted.text, state: "completed", retry: { of: turnId, attempt: 0 } });
+      expect(reopened.document.events.some((e) => e.requestId === resumed.id && e.content.type === "activity" && e.content.title === "Turno ripreso")).toBe(true);
+      expect(reopened.document.events.filter((e) => e.content.type === "personMessage" && e.content.text === interrupted.text)).toHaveLength(1);
+    } finally {
+      delete process.env.FAKE_CODEX_NO_WAIT;
+    }
+  }, 60_000);
+
+  /** Trama opened again on the same data, as after a restart, with the last project selected. */
+  async function restart(data: string, ready = true) {
+    let state: AppState | null = null;
+    controller = new TramaController(data, {
+      publish: (s) => {
+        state = s;
+      },
+      openExternal: async () => undefined,
+      applyTheme: () => undefined,
+      notify: () => undefined,
+      setOpenAtLogin: () => undefined,
+      aiHeroResourceDirectory: join(root, "resources/AIHero"),
+      demoResourceDirectory: join(root, "resources/DemoProject"),
+      codexExecutable: join(root, "test-fixtures/fake-codex.mjs"),
+    });
+    await controller.start();
+    // With the quota used up the Coordinator cannot open: the project is there all the same.
+    await until(() => (ready ? state?.project?.phase.kind === "ready" : state?.project?.document !== undefined));
+    return controller.snapshot.project!;
+  }
+
+  const grantProjectMandate = () =>
+    controller!.grantMandate({ requestId: null, objectives: ["o"], priorities: [], scopeModuleIds: ["Sources/Orders"], authorizedActions: ["plan"], limits: [] });
+
+  it("holds moves and rounds while a provider limit lasts, says so in the status line, and resumes the move at its end (issue #249)", async () => {
+    process.env.TRAMA_PROVIDER_RETRY_MS = "10";
+    const quota = join(await mkdtemp(join(tmpdir(), "trama-quota-")), "exhausted");
+    process.env.FAKE_CODEX_QUOTA_FILE = quota;
+    try {
+      await setup();
+      const project = controller!.snapshot.project!;
+      const document = project.document;
+      // The understanding is confirmed in Pause, so the Coordinator's move waits for Riprendi.
+      await controller!.pauseContinuousWork(true);
+      await confirmUnderstanding(document, true);
+      await writeFile(quota, "");
+      await controller!.pauseContinuousWork(false);
+      await until(() => automaticRequests(document)[0]?.state === "failed");
+      const move = automaticRequests(document)[0]!;
+      expect(move.step).toMatchObject({ move: "preparePlan", by: "trama", trigger: "round" });
+      await until(() => project.providerRetry?.reason === "quotaExhausted");
+      await until(() => controller!.snapshot.providers.codex.account?.kind === "blocked");
+      await until(() => controller!.snapshot.project!.statusLine?.providerWait !== null);
+      expect(controller!.snapshot.project!.statusLine).toMatchObject({
+        state: "blocked",
+        text: expect.stringMatching(/^Aspetto che la quota di ChatGPT si sblocchi/),
+        reason: "Fino ad allora non parte nessun turno. Poi riprendo da solo.",
+        providerWait: { provider: "ChatGPT" },
+      });
+      // Rounds and new moves wait: several checks of the account pass with no new turn.
+      const requests = document.requests.length;
+      await controller!.runRound();
+      await new Promise((r) => setTimeout(r, 800));
+      expect(document.requests).toHaveLength(requests);
+
+      // The quota comes back: the move starts again by itself, and the line no longer waits.
+      const { rm } = await import("node:fs/promises");
+      await rm(quota);
+      await until(() => automaticRequests(document).at(-1)?.state === "completed", 20_000);
+      expect(automaticRequests(document).map((r) => [r.state, r.step?.move, r.retry?.attempt ?? null])).toEqual([
+        ["failed", "preparePlan", null],
+        ["completed", "preparePlan", 1],
+      ]);
+      await until(() => controller!.snapshot.project!.statusLine?.providerWait === null);
+    } finally {
+      delete process.env.TRAMA_PROVIDER_RETRY_MS;
+      delete process.env.FAKE_CODEX_QUOTA_FILE;
+    }
+  }, 90_000);
+
+  it("takes up the turn Esci ended when Trama opens again with a mandate, reconciling first (issue #249)", async () => {
+    const log = join(await mkdtemp(join(tmpdir(), "trama-log-")), "requests.jsonl");
+    process.env.FAKE_CODEX_LOG = log;
+    try {
+      const { data } = await setup();
+      const project = controller!.snapshot.project!;
+      await grantProjectMandate();
+      void controller!.send("[attesa] Prepara il piano degli annullamenti", null, null, null);
+      await until(() => project.runningRequestId !== null);
+      const turnId = project.runningRequestId!;
+      await interruptOnceSentOrQuit(project.document, turnId);
+      await controller!.stop();
+      expect(project.document.requests.find((r) => r.id === turnId)).toMatchObject({ state: "interrupted", failure: QUIT_NOTE });
+
+      process.env.FAKE_CODEX_NO_WAIT = "1";
+      const reopened = await restart(data);
+      await until(() => reopened.document.requests.at(-1)?.state === "completed", 20_000);
+      const resumed = reopened.document.requests.at(-1)!;
+      expect(resumed).toMatchObject({ text: "[attesa] Prepara il piano degli annullamenti", retry: { of: turnId, attempt: 0 } });
+      const line = reopened.document.events.find((e) => e.requestId === resumed.id && e.content.type === "activity" && e.content.title === "Turno ripreso alla riapertura");
+      expect(line).toBeDefined();
+      // One message of the person, and the resumed turn is told to check what was already done.
+      expect(reopened.document.events.filter((e) => e.content.type === "personMessage" && e.content.text === resumed.text)).toHaveLength(1);
+      const { readFile } = await import("node:fs/promises");
+      const turns = (await readFile(log, "utf8"))
+        .trim()
+        .split("\n")
+        .map((entry) => JSON.parse(entry) as { method: string; params: { input?: { text: string }[] } })
+        .filter((entry) => entry.method === "turn/start" && entry.params.input?.[0]?.text.includes("[attesa] Prepara il piano"));
+      // The first attempt, then only the resumed turn carries the note (the study of the reopened project quotes the chat).
+      const marked = turns.map((t) => t.params.input![0]!.text.includes("## Resumed turn"));
+      expect(marked[0]).toBe(false);
+      expect(marked.at(-1)).toBe(true);
+      expect(marked.filter(Boolean)).toHaveLength(1);
+    } finally {
+      delete process.env.FAKE_CODEX_LOG;
+      delete process.env.FAKE_CODEX_NO_WAIT;
+    }
+  }, 90_000);
+
+  it("leaves the turn Esci ended alone after a restart when the project is in Pause (issue #249)", async () => {
+    const { data } = await setup();
+    const project = controller!.snapshot.project!;
+    await grantProjectMandate();
+    await controller!.pauseContinuousWork(true);
+    void controller!.send("[attesa] Prepara il piano degli annullamenti", null, null, null);
+    await until(() => project.runningRequestId !== null);
+    await interruptOnceSentOrQuit(project.document, project.runningRequestId!);
+    await controller!.stop();
+    process.env.FAKE_CODEX_NO_WAIT = "1";
+    try {
+      const reopened = await restart(data);
+      await new Promise((r) => setTimeout(r, 500));
+      expect(reopened.document.continuousWork?.paused).toBe(true);
+      expect(reopened.statusLine).toMatchObject({ paused: true });
+      expect(reopened.document.requests.at(-1)).toMatchObject({ state: "interrupted", failure: QUIT_NOTE });
+      expect(reopened.document.requests.some((r) => r.retry)).toBe(false);
+    } finally {
+      delete process.env.FAKE_CODEX_NO_WAIT;
+    }
+  }, 90_000);
+
+  it("waits for the end of the limit that failed the latest turn before Esci, then resumes it by itself (issue #249)", async () => {
+    process.env.TRAMA_PROVIDER_RETRY_MS = "10";
+    const quota = join(await mkdtemp(join(tmpdir(), "trama-quota-")), "exhausted");
+    process.env.FAKE_CODEX_QUOTA_FILE = quota;
+    try {
+      const { data } = await setup();
+      const project = controller!.snapshot.project!;
+      await grantProjectMandate();
+      await writeFile(quota, "");
+      await controller!.send("Riprendi il piano degli annullamenti", null, null, null);
+      expect(project.document.requests.at(-1)!.state).toBe("failed");
+      await controller!.stop();
+
+      const count = project.document.requests.length;
+      const reopened = await restart(data, false);
+      await until(() => reopened.providerRetry?.reason === "quotaExhausted");
+      await new Promise((r) => setTimeout(r, 500));
+      // No new turn while the quota is used up.
+      expect(reopened.document.requests).toHaveLength(count);
+      const { rm } = await import("node:fs/promises");
+      await rm(quota);
+      await until(() => reopened.document.requests.at(-1)?.state === "completed", 20_000);
+      expect(reopened.document.requests.slice(count - 1).map((r) => [r.text, r.state, r.retry?.attempt ?? null])).toEqual([
+        ["Riprendi il piano degli annullamenti", "failed", null],
+        ["Riprendi il piano degli annullamenti", "completed", 1],
+      ]);
+    } finally {
+      delete process.env.TRAMA_PROVIDER_RETRY_MS;
+      delete process.env.FAKE_CODEX_QUOTA_FILE;
+    }
+  }, 90_000);
+
   it("tells the Coordinator when its previous reply closed with a generic confirmation question (W04)", async () => {
     await setup();
     const project = controller!.snapshot.project!;
@@ -621,18 +1099,78 @@ describe("TramaController", () => {
     expect(sentDetail(document.requests[2]!.id)).not.toMatchObject({ detail: expect.stringContaining("richiamo") });
   }, 60_000);
 
+  it("proposes the project mandate when a project opens without one, and not again once it is granted (issue #244)", async () => {
+    const { project: path } = await setup();
+    const document = controller!.snapshot.project!.document;
+    expect(document.mandateRequests).toHaveLength(1);
+    const [request] = document.mandateRequests;
+    expect(request).toMatchObject({ projectCycle: true, requestId: null, resolution: null, authorizedActions: ["plan", "executeInWorktree", "openPullRequest", "integrateCandidate", "composeTeam"] });
+    expect(document.events.filter((e) => e.content.type === "card" && e.content.kind === "mandate").map((e) => e.content)).toEqual([
+      expect.objectContaining({ title: "Mandato di progetto", referenceId: request!.id }),
+    ]);
+    // Opening it again while the proposal waits asks nothing more.
+    await controller!.closeProject();
+    await controller!.openProject(path);
+    expect(controller!.snapshot.project!.document.mandateRequests).toHaveLength(1);
+
+    await controller!.grantMandate({ ...request!, requestId: request!.id });
+    const granted = controller!.snapshot.project!.document;
+    expect(granted.mandate).toMatchObject({ status: "granted", version: 1 });
+    await controller!.closeProject();
+    await controller!.openProject(path);
+    expect(controller!.snapshot.project!.document.mandateRequests).toHaveLength(1);
+  });
+
+  it("restricts the mandate without revoking it and tells the Coordinator (issue #244)", async () => {
+    await setup();
+    const document = controller!.snapshot.project!.document;
+    const [request] = document.mandateRequests;
+    await controller!.grantMandate({ ...request!, requestId: request!.id });
+    await controller!.restrictMandate({ scopeModuleIds: request!.scopeModuleIds, authorizedActions: ["plan", "executeInWorktree"] });
+    expect(document.mandate).toMatchObject({ status: "granted", version: 2, authorizedActions: ["plan", "executeInWorktree"] });
+    expect(document.mandate!.history.map((h) => h.version)).toEqual([1]);
+    const message = document.events.findLast((e) => e.content.type === "personMessage")!.content;
+    expect(message).toMatchObject({ text: expect.stringContaining("Ho ristretto il mandato") });
+  });
+
+  it("stops a command a fixed ban covers, whatever the mandate, and puts it in Aspetta te (issue #244)", async () => {
+    await setup();
+    const project = controller!.snapshot.project!;
+    const document = project.document;
+    const [request] = document.mandateRequests;
+    await controller!.grantMandate({ ...request!, requestId: request!.id });
+    await controller!.send("[vietato:git push --force origin main]", null, null, null);
+    await until(() => project.runningRequestId === null && document.requests.at(-1)!.state !== "running", 20_000);
+    expect(document.requests.at(-1)!.state).toBe("interrupted");
+    expect(document.fixedBanRefusals).toEqual([
+      expect.objectContaining({ ban: "forcePush", action: "git push --force origin main", by: { kind: "coordinator" }, acknowledgedAt: null }),
+    ]);
+    // The goal the study proposed waits as well (issue #292): only the refusals are counted here.
+    const refusals = () => waitingForYou(document).filter((i) => i.kind === "fixedBan");
+    expect(refusals()).toHaveLength(1);
+    expect(document.events.some((e) => e.content.type === "activity" && e.content.title.startsWith("Azione fermata da un divieto fisso"))).toBe(true);
+    // The same command tried again is a second refusal, not folded into the first.
+    await controller!.send("[vietato:git push --force origin main]", null, null, null);
+    await until(() => project.runningRequestId === null && document.fixedBanRefusals!.length === 2, 20_000);
+    expect(refusals()).toHaveLength(2);
+    for (const refusal of document.fixedBanRefusals!) controller!.acknowledgeFixedBan(refusal.id);
+    expect(refusals()).toEqual([]);
+  });
+
   it("supersedes a pending mandate request with a newer one, which alone can be granted (W14)", async () => {
     await setup();
     const document = controller!.snapshot.project!.document;
     await controller!.send("[chiedi-mandato:Primo]", null, null, null);
     await controller!.send("[chiedi-mandato:Secondo]", null, null, null);
-    const [first, second] = document.mandateRequests;
+    // The project mandate proposed at the opening (issue #244) is the oldest request: the Coordinator's first supersedes it.
+    const [project, first, second] = document.mandateRequests;
+    expect(project).toMatchObject({ projectCycle: true, resolution: { kind: "superseded", supersededBy: first!.id } });
     expect(first!.resolution).toMatchObject({ kind: "superseded", supersededBy: second!.id });
     expect(second!.resolution).toBeNull();
     // The Coordinator learns which request the new one replaced.
     expect(document.events.at(-1)!.content).toMatchObject({ text: expect.stringContaining(first!.id) });
-    // Both cards stay in the history.
-    expect(document.events.filter((e) => e.content.type === "card" && e.content.kind === "mandate")).toHaveLength(2);
+    // Every card stays in the history.
+    expect(document.events.filter((e) => e.content.type === "card" && e.content.kind === "mandate")).toHaveLength(3);
 
     const input = { objectives: ["o"], priorities: [], scopeModuleIds: ["Sources/Orders"], authorizedActions: ["plan" as const], limits: [] };
     await expect(controller!.grantMandate({ ...input, requestId: first!.id })).rejects.toThrow(/superata/);
@@ -642,9 +1180,37 @@ describe("TramaController", () => {
     expect(second!.resolution).toMatchObject({ kind: "granted", version: 1 });
 
     // Declining the superseded card later must not revoke the mandate granted from the newer one.
-    await expect(controller!.revokeMandate("vecchia", first!.id)).rejects.toThrow(/superata/);
+    await expect(controller!.rejectMandateRequest(first!.id, "vecchia")).rejects.toThrow(/superata/);
     expect(document.mandate?.status).toBe("granted");
     expect(first!.resolution?.kind).toBe("superseded");
+  });
+
+  it("rejects a mandate proposal without touching the mandate in force (U03)", async () => {
+    await setup();
+    const document = controller!.snapshot.project!.document;
+    await controller!.grantMandate({
+      requestId: null,
+      objectives: ["o"],
+      priorities: [],
+      scopeModuleIds: ["Sources/Orders"],
+      authorizedActions: ["plan", "executeInWorktree"],
+      limits: [],
+    });
+    await controller!.send("[chiedi-mandato:Solo piani]", null, null, null);
+    const request = document.mandateRequests.at(-1)!;
+    await expect(controller!.rejectMandateRequest(request.id, "  ")).rejects.toThrow(/perché/);
+    expect(request.resolution).toBeNull();
+
+    await controller!.rejectMandateRequest(request.id, "Serve ancora il worktree");
+    expect(document.mandate).toMatchObject({ status: "granted", version: 1, authorizedActions: ["plan", "executeInWorktree"] });
+    expect(request.resolution).toMatchObject({ kind: "rejected", version: null });
+    const told = document.events.filter((e) => e.content.type === "personMessage").at(-1)!.content;
+    expect(told).toMatchObject({ text: expect.stringContaining("resta la versione 1") });
+    await expect(controller!.rejectMandateRequest(request.id, "di nuovo")).rejects.toThrow(/già una risposta/);
+
+    // Revoking is a separate act on the mandate in force.
+    await controller!.revokeMandate("Pausa");
+    expect(document.mandate?.status).toBe("revoked");
   });
 
   it("refuses prepare_plan without a mandate and runs it within one", async () => {
@@ -655,12 +1221,29 @@ describe("TramaController", () => {
     await controller!.grantMandate({ requestId: null, objectives: ["o"], priorities: [], scopeModuleIds: ["Sources/Orders"], authorizedActions: ["plan"], limits: [] });
     await controller!.send("[piano]", null, null, null);
     expect(project.document.plans[0]?.orderedBy).toBe("coordinator");
-    await until(() => project.document.plans[0]!.status === "seams");
+    // Within the mandate the Coordinator confirms the seams to-spec proposed by itself (A06).
+    await until(() => (project.document.autonomousSteps ?? []).some((s) => s.move === "confirmSeams"));
+    expect(project.document.plans[0]!.spec!.seamsAnswer).toMatchObject({ confirmed: true, by: "coordinator" });
+    expect(activityLog(project.document.requests, project.document.events, [], [], project.document.autonomousSteps).map((e) => e.label)).toContain("Seam confermati dal Coordinatore");
+
+    // The person corrects the seams in their own words: the planner writes the spec again from that step (A06).
+    const plan = project.document.plans[0]!;
+    await until(() => plan.status === "ready" && plan.slicing?.status !== "drafting");
+    const step = project.document.autonomousSteps!.find((s) => s.move === "confirmSeams")!;
+    await expect(controller!.correctAutonomousStep(step.id, "Testa anche il rimborso")).resolves.toBe(true);
+    expect(step.correction).toMatchObject({ note: "Testa anche il rimborso" });
+    expect(plan.spec!.seamsAnswer).toMatchObject({ confirmed: false, note: "Testa anche il rimborso" });
+    await until(() => plan.status === "ready");
+    expect(plan.spec!.sections!.furtherNotes).toContain("Testa anche il rimborso");
+    const corrected = project.document.events.find((e) => e.content.type === "activity" && e.content.title === "Seam confermati dal Coordinatore: corretto");
+    expect(corrected?.origin).toBe("person");
   });
 
   // A grilling round, two planner turns and a restart: slower than the default timeout on a loaded machine.
   it("writes the spec with to-spec once the person confirms the seams, keeps it in Trama and after a restart (M04)", async () => {
     const { data } = await setup();
+    // With continuous work off the seams stay the person's step, as without a mandate (A06).
+    await controller!.updateSettings({ continuousWork: false });
     const project = controller!.snapshot.project!;
     const document = project.document;
     await controller!.send("[grilling:1] Gli ordini pagati annullati vanno in revisione", null, null, null);
@@ -899,10 +1482,10 @@ describe("TramaController", () => {
     const empty = await controller!.createGoal({ title: "Doppione", outcome: "Creato per sbaglio", examples: [] });
     const used = await controller!.createGoal({ title: "Revisione", outcome: "Ordini in revisione", examples: [] });
     await controller!.send("Da dove partiamo?", null, null, null, [], null, used);
-    await expect(controller!.deleteGoal(used)).rejects.toThrow(/non è vuoto/);
+    await expect(controller!.deleteGoal(used)).rejects.toThrow(/ha già una cronologia/);
     // The Coordinator's first proposal has its card in the project dialog: it is history too.
     const proposed = document.goals!.find((g) => g.origin === "coordinator")!;
-    await expect(controller!.deleteGoal(proposed.id)).rejects.toThrow(/non è vuoto/);
+    await expect(controller!.deleteGoal(proposed.id)).rejects.toThrow(/ha già una cronologia/);
 
     await controller!.deleteGoal(empty);
     expect(findGoal(document, empty)).toBeNull();
@@ -921,7 +1504,7 @@ describe("TramaController", () => {
     await until(() => project.runningRequestId !== null);
     const runningId = project.runningRequestId!;
     await controller!.send("Messaggio da togliere", null, null, null);
-    controller!.saveDraft("Bozza che resta", null);
+    controller!.saveDraft("Bozza che resta");
     await controller!.answerDecision(question.id, 0, null);
     const queued = controller!.snapshot.project!.queuedMessages;
     expect(queued.map((q) => [q.text, q.goalId, q.removable])).toEqual([
@@ -967,7 +1550,7 @@ describe("TramaController", () => {
   });
 });
 
-describe("learning ported from Hermes (ADR 0014)", () => {
+describe("the learning loop (ADR 0014)", () => {
   it("keeps memory in Trama's folder and recalls earlier dialogs only outside the live thread", async () => {
     const { data, project: root } = await setup();
     const { existsSync, readFileSync } = await import("node:fs");

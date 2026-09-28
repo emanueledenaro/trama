@@ -5,6 +5,7 @@ import { needsWorktree } from "./team";
 import { contractBriefing, REPORT_HEADINGS } from "./implementation";
 import { answerBriefing, asksCoordinator } from "./developerQuestions";
 import { providerToolsRule } from "./providers/toolRefusal";
+import { stoppedByClosing } from "./resumeWork";
 
 export function specialistInstructions(projectName: string, specialist: Specialist, assignment: SpecialistAssignment): string {
   const lines = [
@@ -65,16 +66,36 @@ export function resumeInput(assignment: SpecialistAssignment, decisions: PactDec
   const lines = [`Riprendi l'incarico ${assignment.id}: ${assignment.objective}`];
   const stop = assignment.stops.at(-1);
   if (stop?.confirmedAt) lines.push(`Il lavoro era stato fermato (${stop.reason}). Il worktree è come l'hai lasciato.`);
+  // Trama closed during the turn (issue #249): its outcome is uncertain, so what is done is checked before it is repeated.
+  if (stoppedByClosing(assignment)) {
+    lines.push("Trama si è chiuso durante il tuo turno: parte del lavoro può essere già fatta. Prima di ripetere un'azione con effetti, controlla nel worktree cosa c'è già e non rifarlo.");
+  }
   if (assignment.failure) lines.push(`Il turno precedente non è riuscito: ${assignment.failure}`);
   const relied = decisionLines(assignment, decisions);
   if (relied.length) lines.push(...relied, "Se una decisione è cambiata rispetto al lavoro fatto, adegua il lavoro alla versione attuale.");
   // The answer to the developer's question (W06) that paused the work.
   const answer = answerBriefing(assignment);
   if (answer.length) lines.push("", ...answer, "");
+  // The candidate gate sent the work back (W10): the blocking findings, once, in the first turn after the return.
+  const returned = gateReturnBriefing(assignment);
+  if (returned.length) lines.push("", ...returned, "");
   lines.push("Continua da dove eri rimasto e riporta cosa hai fatto in questo turno.");
   if (assignment.seams) {
     const headings = Object.values(REPORT_HEADINGS).map((h) => `\`${h}\``).join(", ");
     lines.push(`Chiudi con il rapporto dell'incarico su tutto il lavoro, non solo su questo turno: ${headings}.`);
   }
   return lines.join("\n");
+}
+
+/** The blocking findings of the candidate gate (W10), for the first turn after the work came back; empty otherwise. */
+export function gateReturnBriefing(assignment: SpecialistAssignment): string[] {
+  const returned = assignment.gateReturn;
+  if (!returned) return [];
+  const last = assignment.turns.at(-1);
+  if (last && last.startedAt > returned.at) return [];
+  return [
+    `Rilievi bloccanti dei revisori sul candidato ${returned.candidateId}: il candidato non arriva alla persona finché non li risolvi.`,
+    ...returned.findings.map((f) => `- ${f}`),
+    "Correggi il lavoro nel worktree, riesegui le verifiche e riporta cosa hai cambiato per ogni rilievo. Se un rilievo ti sembra sbagliato, dillo con il motivo invece di ignorarlo.",
+  ];
 }

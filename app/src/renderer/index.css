@@ -1,7 +1,6 @@
 /*
- * Design tokens and surfaces follow Synara (github.com/Emanuele-web04/synara at eaa61eded31b6755d4f30ba8eabc5d905cf817cb, apps/web/src/index.css
- * and theme/theme.logic.ts, MIT License, Copyright (c) 2026 T3 Tools Inc. and Emanuele Di Pietro).
- * Values are those of Synara's default "codex" theme.
+ * Design tokens and surfaces. Values are those of the default "codex" theme.
+ * Derived from third-party MIT code; see THIRD_PARTY_NOTICES.md.
  */
 @import "tailwindcss";
 
@@ -1034,7 +1033,7 @@ button {
   }
 }
 
-/* Chat markdown, as in Synara. */
+/* Chat markdown. */
 .chat-markdown {
   min-width: 0;
   overflow-wrap: anywhere;
@@ -1144,6 +1143,27 @@ button {
 .chat-markdown a:hover {
   text-decoration: underline;
   text-underline-offset: 0.18em;
+}
+/* A reference to a record of Trama (issue #277): a link in a message, a button in a plain text. */
+.chat-reference {
+  display: inline;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  text-align: inherit;
+  color: var(--color-token-text-link-foreground);
+  text-decoration: none;
+  cursor: pointer;
+}
+.chat-reference:hover {
+  text-decoration: underline;
+  text-underline-offset: 0.18em;
+}
+.chat-reference:focus-visible {
+  outline: 2px solid var(--color-token-text-link-foreground);
+  outline-offset: 1px;
+  border-radius: 2px;
 }
 .chat-markdown hr {
   margin: 1.5rem 0;

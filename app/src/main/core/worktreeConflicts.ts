@@ -1,5 +1,5 @@
+import { candidateSuperseded } from "@shared/conflictScope";
 import type { Candidate, ConflictAssessment, ProjectDocument, WorktreeSession } from "@shared/domain";
-import { latestCandidate } from "./candidates";
 import { probeWorktrees } from "./conflicts";
 import { findAssignment } from "./team";
 
@@ -21,11 +21,14 @@ export interface WorktreePair {
 
 export const worktreeAssessmentId = (mine: Candidate, other: Candidate) => `${mine.snapshotId}:worktree:${other.snapshotId}`;
 
-/** The candidates still to merge whose worktree is there: the latest of each assignment, without a merged pull request. */
+/**
+ * The candidates still to merge whose worktree is there: the latest of each assignment, without a merged pull request
+ * and not replaced by later work (U02). Only two of them, from different assignments, can collide.
+ */
 function openCandidates(document: ProjectDocument): { candidate: Candidate; session: WorktreeSession }[] {
   const open: { candidate: Candidate; session: WorktreeSession }[] = [];
   for (const candidate of document.candidates) {
-    if (candidate.pullRequest?.mergedAt || latestCandidate(document, candidate.assignmentId)?.id !== candidate.id) continue;
+    if (candidate.pullRequest?.mergedAt || candidateSuperseded(document, candidate)) continue;
     const assignment = findAssignment(document, candidate.assignmentId);
     if (!assignment?.workspace || assignment.workspaceRemovedAt) continue;
     open.push({ candidate, session: assignment.workspace });

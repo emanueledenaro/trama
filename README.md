@@ -41,15 +41,16 @@ Trama puts one **Coordinator** between you and the agents:
 - **An assignment contract and a developer's report.** Every task carries its goal, the seams to test, the Pact decisions it depends on and the checks required; Trama refuses an incomplete one. Each developer closes with a structured report of files touched, tests written and seams covered - a claim, never evidence.
 - **Developers can ask, and pause.** A developer with a doubt asks the Coordinator through a tool; the slice pauses and the developer is freed while dependent slices wait. The Coordinator answers from facts, or opens a Pact decision when the answer blocks the work, and the assignment resumes in the same worktree once it is answered ([#202](https://github.com/emanueledenaro/trama/pull/202)).
 - **A Clean Code standard, measured by Trama.** Work in a worktree gets Trama's own Clean Code standard, after a project's own rules and the native skills. Trama measures the argument count and length of every function the candidate adds or touches, and duplicated blocks on the added lines, as evidence for the technical review; a finding on naming, hidden side effects or duplication always blocks. Rules are configurable per project in Settings ([#201](https://github.com/emanueledenaro/trama/pull/201)).
+- **Every candidate reviewer, in parallel.** Before a candidate reaches you, Trama runs the checks still missing, then the whole candidate team reviews the diff at once: spec reviewer, Clean Code with the technical review, regression guardian, security, performance, UX, DevOps and documentation. The guardian runs the candidate's build and tests on its base commit and compares them; a test that passed and now fails blocks the candidate. A reviewer with nothing to say signs "Niente da segnalare"; a blocking finding goes back to the developer, who resumes in the same worktree.
 - **Presence and collaboration.** The Group view's "Who works on what" board, the map and the focus bar show who, person or agent, is working on which branch and files, shared over dedicated git refs with your consent. Overlaps are flagged at three levels, same module, same file, real conflict, and the Coordinator itself steers new assignments away from files a colleague already has open.
-- **Focus mode with native code review.** Open a candidate and Trama runs its real checks first, then two read-only passes of the `code-review` skill in parallel, Standards and Spec, against the candidate's base commit.
+- **Focus mode with native code review.** Open a candidate and Trama runs its real checks first, then two read-only passes of the `code-review` skill in parallel, Standards and Spec, against the candidate's base commit. Each finding carries a proof: Trama rechecks the ones it can run, a stronger model confirms serious ones Trama cannot, and the rest are shown as hypotheses.
 - **Nine providers, every role.** Codex, Claude, Cursor, Grok, Droid, Devin, OpenCode, Antigravity and Pi behind one runtime interface. Antigravity now works in every role, not only for developers: read-only for the Coordinator, planners, reviewers and checks, edits only inside a developer's own worktree.
 - **Understandable provider and GitHub errors.** A rate limit, an expired quota, a missing login or an unreachable provider get a plain explanation and the matching action, retry, change model or provider, add your key, log in again, never a raw error payload. On a temporary limit the Coordinator and specialists wait with a growing backoff and resume the work themselves.
 - **A publishing standard.** Trama reads a project's own conventions first (`AGENTS.md`, `CONTRIBUTING.md`, commitlint config, existing branch prefixes) and falls back to Conventional Commits and Conventional Branch. It writes the commit message and branch name itself, and publishes a candidate only when it is verified, the message is valid, no secrets or sensitive files are staged, `git diff --check` is clean, the linked issue exists and no Pact question is still open ([its ADR](docs/adr/0016-conventional-commits-e-standard-di-pubblicazione.md)).
 - **A guided first run.** A brief animated intro leads into a Welcome flow for connecting a provider, GitHub and the AI Hero method, each step skippable and resumable later. The project picker then lists your recents with their phase, blockers and active colleagues, next to opening a folder, cloning from GitHub or trying the sample project.
 - **Checks Trama runs itself.** `git_status`, `git_diff_check`, `swift_build`, `swift_test`, `node_test` and `node_typecheck`, with Node checks in a sandbox that allows only local networking.
 - **Goals with examples.** Outcomes with accepted and rejected examples that tasks, candidates and decisions link to explicitly.
-- **Memory and learning.** The Coordinator keeps notes on you and the project, searches past conversations and maintains the skills it learns, ported from Hermes Agent.
+- **Memory and learning.** The Coordinator keeps notes on you and the project, searches past conversations and maintains the skills it learns.
 - **Repository map.** Swift and JavaScript/TypeScript projects are indexed into modules from their real paths, with secrets and symlinks excluded.
 
 <table>
@@ -105,7 +106,7 @@ flowchart LR
     P --> PL[Spec and slices]
     PL -->|within the mandate| A[Assignment contract in worktrees]
     A --> C[Candidate]
-    C --> V[Checks and focus mode review]
+    C --> V[Checks, reviewer gate and focus mode]
     V --> AP[Your approval]
     AP --> PR[Branch and pull request]
 ```
@@ -114,7 +115,7 @@ flowchart LR
 2. **Decide.** Each answer is a versioned decision in the Pact. Changing a decision invalidates only the work that depended on it.
 3. **Plan.** `to-spec` writes the request as a spec with the seams you confirm; `to-tickets` splits it into vertical slices in dependency order.
 4. **Delegate.** Within the mandate, the Coordinator assigns ready slices to developers, one each, through an assignment contract: goal, seams, decisions and checks required. Each works in a dedicated worktree with `implement` and `tdd`, and closes with a structured report.
-5. **Verify.** A candidate carries its diff, the decisions it relies on and the check results Trama ran itself. Focus mode adds a read-only Standards and Spec review on demand. A later relevant change revokes the approval.
+5. **Verify.** A candidate carries its diff, the decisions it relies on and the check results Trama ran itself. Then every candidate reviewer examines the diff in parallel, and a regression or a blocking finding sends the work back to its developer. Focus mode adds a read-only Standards and Spec review on demand. A later relevant change revokes the approval.
 6. **Publish.** With your explicit action, Trama writes a Conventional Commit and branch name by its publishing standard, then opens the pull request through `gh`.
 
 Throughout, presence shows who else is on the same files, and the Coordinator avoids assigning work where a colleague already has it open.
@@ -132,7 +133,7 @@ The vocabulary (Coordinator, Pact, mandate, candidate, moment, presence, focus m
 | Antigravity | yes | No, fake CLI only. Every role: read-only for the Coordinator, planners, reviewers and checks, edits only in a specialist's worktree, never shell or network |
 | Droid | yes | No. Not detected on the test machine |
 
-The adapters are ported from [Synara](https://github.com/Emanuele-web04/synara) ([ADR 0012](docs/adr/0012-provider-di-synara-in-typescript.md)). Credentials stay with each provider's official CLI. Trama does not read `auth.json` or copy tokens.
+The adapters are written in TypeScript in the main process ([ADR 0012](docs/adr/0012-provider-in-typescript.md)). Credentials stay with each provider's official CLI. Trama does not read `auth.json` or copy tokens.
 
 ## Configuration
 
@@ -164,13 +165,15 @@ npm run dist        # package with electron-builder
 | --- | --- |
 | `app/src/main` | Main process: repository scanner, Coordinator, MCP tool server on `127.0.0.1`, Pact, mandate, team, goals, checks, presence, GitHub, persistence |
 | `app/src/main/core/providers` | The nine provider adapters behind `AgentRuntime` |
-| `app/src/main/core/learning` | Memory and learning loop ported from [Hermes Agent](https://github.com/NousResearch/hermes-agent) ([ADR 0014](docs/adr/0014-apprendimento-di-hermes.md)) |
+| `app/src/main/core/learning` | Coordinator memory, past conversation search, learned skills, experience review and weekly skill upkeep ([ADR 0014](docs/adr/0014-apprendimento-del-coordinatore.md)) |
 | `app/src/main/core/nativeSkills.ts` | Delivers a bundled skill unchanged, with a binding to Trama's tools |
 | `app/src/main/core/audit.ts` | Focus mode: real checks first, then the `code-review` skill on two read-only sessions |
+| `app/src/main/core/gate.ts` | Candidate gate: the checks, then every candidate reviewer in parallel, the suite on base and candidate, the return to the developer |
+| `app/src/main/core/auditFindings.ts` | Focus mode findings: Trama rechecks each proof, a stronger model confirms serious ones |
 | `app/src/main/core/presence.ts` | Presence over dedicated git refs, and overlap checks against colleagues' branches |
 | `app/src/main/core/conventions.ts`, `app/src/main/core/quality.ts` | Reads a project's own commit and branch conventions, and gates publishing on the standard |
 | `app/src/preload` | Typed IPC bridge. The renderer has no Node access |
-| `app/src/renderer` | React, Tailwind CSS 4 and `@base-ui/react` on Synara's design tokens |
+| `app/src/renderer` | React, Tailwind CSS 4 and `@base-ui/react` on Trama's design tokens |
 | `app/src/renderer/components/brand` | `TramaMark`, the app's woven-ribbon glyph, tinted to each provider's accent |
 | `app/src/shared` | Shared types and logic: timeline, grilling rounds, team roster, presence, overlap |
 | `app/resources/AIHero` | Bundled skills, license and `bundle.json` with every renamed file |
@@ -184,7 +187,7 @@ CI ([`electron.yml`](.github/workflows/electron.yml)) runs type check, tests, bu
 ## Status and known limits
 
 - **End to end.** No candidate has yet been declared and verified end to end on a real project. The closest live run (26 September, real Codex `gpt-6-luna`) reached a developer's finished worktree and stopped before declaring a candidate, on a bug in `verify_candidate` ([verification log](docs/verifiche/v04-v05.md), [#204](https://github.com/emanueledenaro/trama/issues/204)).
-- **Candidate gate.** Focus mode reviews one candidate on demand with two axes, Standards and Spec. Running every fixed role over a candidate automatically, in parallel, is still open ([#147](https://github.com/emanueledenaro/trama/issues/147)).
+- **Candidate gate.** Verified with the fake Codex only, not yet with a real model ([verification log](docs/verifiche/w10-cancello-candidato-2026-09-27.md)). The regression guardian compares the build and test checks the candidate requires, not a suite the assignment did not name. The messages between reviewers and developers are recorded in the developer's work; their own threads come with [#144](https://github.com/emanueledenaro/trama/issues/144).
 - **Pull requests.** Publishing is tested up to the branch push. Creating the PR with `gh` has not been tested from the app on a real repository.
 - **Sandbox.** The Node sandbox with local networking is tested on macOS only. On Windows, tests that open a local server fail under the Codex sandbox. The Linux `bubblewrap` path is coded but not tested on a real Linux machine.
 - **Provider switch.** Switching providers mid-conversation is verified only live.
@@ -192,7 +195,7 @@ CI ([`electron.yml`](.github/workflows/electron.yml)) runs type check, tests, bu
 - **Distribution.** No signed or notarized package has been produced yet.
 - **Planning docs.** Some documents in `docs/` still describe the SwiftUI version.
 
-The complete list is in [ADR 0011](docs/adr/0011-app-desktop-electron-con-design-synara.md) and in [GitHub Issues](https://github.com/emanueledenaro/trama/issues). Code or a passing local test alone does not close a ticket; the verification logs are in [`docs/verifiche/`](docs/verifiche/).
+The complete list is in [ADR 0011](docs/adr/0011-app-desktop-electron.md) and in [GitHub Issues](https://github.com/emanueledenaro/trama/issues). Code or a passing local test alone does not close a ticket; the verification logs are in [`docs/verifiche/`](docs/verifiche/).
 
 ## Contributing
 
@@ -207,9 +210,8 @@ Issues and pull requests are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) be
 
 ## Acknowledgements
 
-- [Synara](https://github.com/Emanuele-web04/synara) for the interface and the provider adapters (MIT, [attribution](docs/synara-attribution.md)).
+- Third-party code and licenses are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 - [Matt Pocock's skills](https://github.com/mattpocock/skills) for the bundled skills (MIT, [attribution](docs/aihero-attribution.md)).
-- [Hermes Agent](https://github.com/NousResearch/hermes-agent) for the learning loop (MIT, [attribution](docs/hermes-attribution.md)).
 - [Codex](https://github.com/openai/codex) by OpenAI, installed separately and not bundled with the app.
 
 ## License

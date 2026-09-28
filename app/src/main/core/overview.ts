@@ -30,7 +30,7 @@ export function summarizeProject(
   }
   const toApprove = document.candidates.filter((candidate, index) => {
     const report = input.candidateReports[index];
-    return report && report.state !== "building" && !candidate.pullRequest && (!candidate.humanApproval || report.approvalInvalidated);
+    return report && (report.state === "verified" || report.state === "decided") && !candidate.pullRequest && (!candidate.humanApproval || report.approvalInvalidated);
   }).length;
   const runningWork = input.runningAssignments;
   const reasons: string[] = [];

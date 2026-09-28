@@ -158,6 +158,28 @@ function requestConversation(document: ProjectDocument, requestId: string | null
   return lines.reverse().join("\n\n") || "La conversazione è vuota.";
 }
 
+/** Plan states that still lead the work of their goal: a failed or superseded plan leads nothing. */
+const LEADING: WorkPlan["status"][] = ["planning", "seams", "ready", "stale"];
+
+/**
+ * Keeps one active plan per goal (U01): `plan` replaces every earlier plan of the same goal that still leads its
+ * work, and those are marked superseded with the id of the one that replaced them. Plans of the whole project, with
+ * no goal, are left alone. Returns the plans it superseded, so a planner still running on one can be stopped.
+ */
+export function supersedeGoalPlans(document: ProjectDocument, plan: WorkPlan, now = new Date()): WorkPlan[] {
+  const goalId = requestGoalId(document, plan.requestId);
+  if (!goalId) return [];
+  const replaced = document.plans.filter(
+    (p) => p.id !== plan.id && LEADING.includes(p.status) && p.createdAt <= plan.createdAt && requestGoalId(document, p.requestId) === goalId,
+  );
+  for (const old of replaced) {
+    old.status = "superseded";
+    old.supersededBy = plan.id;
+    old.updatedAt = now.toISOString();
+  }
+  return replaced;
+}
+
 const seamLines = (seams: SpecSeam[]) =>
   seams.map((s, index) => `${index + 1}. ${s.seam} (${s.existing ? "esistente" : "nuovo"}). Si verifica: ${s.tests}`).join("\n");
 

@@ -73,7 +73,7 @@ async function copyUntracked(paths: string[], from: string, to: string, byteLimi
   }
 }
 
-type ProbeResult = { status: "clean" | "conflict" | "unavailable"; conflictingFiles: string[]; lines: Record<string, LineRange[]>; detail: string };
+export type ProbeResult = { status: "clean" | "conflict" | "unavailable"; conflictingFiles: string[]; lines: Record<string, LineRange[]>; detail: string };
 
 /**
  * Reproduces a candidate's worktree as a temporary commit on its base in `clone`, a scratch clone of the same
@@ -121,7 +121,7 @@ async function commitCandidate(clone: string, session: WorktreeSession, snapshot
 }
 
 /** Merges two commits of `clone` through `git merge-tree`, without a checkout, and reads the conflicts. */
-async function mergeProbe(clone: string, ours: string, theirs: string): Promise<ProbeResult> {
+export async function mergeProbe(clone: string, ours: string, theirs: string): Promise<ProbeResult> {
   const base = await runProcess("git", [...GIT_SAFE_OPTIONS, "merge-base", ours, theirs], { cwd: clone, env: gitEnvironment(true) });
   if (base.exitCode !== 0) return { status: "unavailable", conflictingFiles: [], lines: {}, detail: "Le due revisioni non hanno una base comune verificabile." };
   const merge = await runProcess("git", [...GIT_SAFE_OPTIONS, "merge-tree", "--write-tree", "--name-only", "--messages", ours, theirs], {

@@ -1,11 +1,10 @@
 /**
  * OpenCode runtime: a private `opencode serve` on loopback, driven through `@opencode-ai/sdk/v2`.
  *
- * Ported from Synara (https://github.com/Emanuele-web04/synara, MIT, Copyright (c) 2026 T3 Tools Inc.
- * and Emanuele Di Pietro): server startup and CLI search paths (opencodeRuntime.ts,
- * providerBinaryResolution.ts), model and provider discovery (OpenCodeDiscovery.ts), message and part
- * state (openCodeMessageState.ts), event mapping, permission policy and idle handling
- * (Layers/OpenCodeAdapter.ts), inline skills (skillPromptInjection.ts). See docs/synara-attribution.md.
+ * Covers server startup and CLI search paths, model and provider discovery, message and part state,
+ * event mapping, permission policy, idle handling and inline skills.
+ *
+ * Derived from third-party MIT code; see THIRD_PARTY_NOTICES.md.
  */
 import { type ChildProcess, spawn } from "node:child_process";
 import { randomBytes, randomUUID } from "node:crypto";
@@ -53,7 +52,7 @@ const EVENT_RECONNECT_DELAYS_MS = [250, 1_000, 2_500, 5_000];
 const SUBSCRIPTION_READY_TIMEOUT_MS = 2_000;
 /** Quiet window after `session.idle` when the final answer is already settled. */
 const IDLE_SETTLE_MS = 250;
-/** Longer window when idle arrives before any answer or right after tool calls (Synara's premature idle). */
+/** Longer window when idle arrives before any answer or right after tool calls (premature idle). */
 const PREMATURE_IDLE_GRACE_MS = 10_000;
 const MAX_TURN_INPUT_CHARS = 120_000;
 const MAX_INLINE_SKILL_CHARS = 24_000;
@@ -197,8 +196,8 @@ function stopProcess(child: ChildProcess): void {
 }
 
 /**
- * Starts `opencode serve` on loopback with a free port, HTTP basic auth and Trama's config, as Synara
- * does, then probes `GET /provider`: a 404/405 means the CLI lacks the API this adapter needs.
+ * Starts `opencode serve` on loopback with a free port, HTTP basic auth and Trama's config,
+ * then probes `GET /provider`: a 404/405 means the CLI lacks the API this adapter needs.
  */
 export async function startOpenCodeServer(input: StartServerInput): Promise<OpenCodeServerHandle> {
   const port = await freePort();
@@ -322,7 +321,7 @@ export function buildServerConfig(input: { disabledMcpServers: Iterable<string> 
   };
 }
 
-/** Trama's host tools as a remote MCP server, as Synara's `buildOpenCodeMcpServer`. */
+/** Trama's host tools as a remote MCP server. */
 export function buildToolServerMcp(toolServer: HostToolServer): McpRemoteConfig {
   return {
     type: "remote",
@@ -339,7 +338,7 @@ const READ_ONLY_TOOLS = ["read", "glob", "grep", "list", "lsp", "todoread", "tod
 const OPENCODE_FILE_PERMISSIONS = new Set([...READ_ONLY_TOOLS, "edit", "external_directory", "doom_loop"]);
 
 /**
- * Session ruleset. OpenCode evaluates the last matching rule, so it starts closed (Synara's plan-mode
+ * Session ruleset. OpenCode evaluates the last matching rule, so it starts closed (the plan-mode
  * shape): that also hides the person's custom and MCP tools. Reads are allowed except secrets; edits
  * only inside `writableRoot`; bash, web access, sub-agents and questions stay denied because Trama has
  * no safe shell policy and never asks the person.
@@ -395,8 +394,8 @@ function hasInlineApiKey(provider: OpenCodeProvider): boolean {
 }
 
 /**
- * Connected providers worth offering, as Synara's `resolvePreferredOpenCodeModelProviders`. Trama does not
- * read OpenCode's auth.json (ADR 0011), so stored credentials count through `source: "api"` instead.
+ * Connected providers worth offering. Trama does not read OpenCode's auth.json (ADR 0011), so stored
+ * credentials count through `source: "api"` instead.
  */
 export function preferredProviders(list: ProviderList): OpenCodeProvider[] {
   const connected = new Set(list.connected ?? []);
@@ -481,7 +480,7 @@ const IMAGE_TYPES: Record<string, string> = {
   ".webp": "image/webp",
 };
 
-/** OpenCode file parts reject many document types; only images go as native parts (Synara). */
+/** OpenCode file parts reject many document types; only images go as native parts. */
 export function imageParts(paths: string[]): { type: "file"; mime: string; filename: string; url: string }[] {
   return paths.flatMap((path) => {
     const mime = IMAGE_TYPES[extname(path).toLowerCase()];
@@ -489,7 +488,7 @@ export function imageParts(paths: string[]): { type: "file"; mime: string; filen
   });
 }
 
-/** OpenCode has no native skill loading: skill files are inlined in the prompt (Synara's skillPromptInjection). */
+/** OpenCode has no native skill loading: skill files are inlined in the prompt. */
 export async function inlineSkillInstructions(skills: LoadedSkill[], maxChars: number): Promise<string> {
   let text = "";
   for (const skill of skills) {
@@ -1386,7 +1385,7 @@ export class OpenCodeRuntime implements AgentRuntime {
   }
 
   /**
-   * OpenCode can report idle before the final assistant events (Synara's premature idle): wait for a quiet
+   * OpenCode can report idle before the final assistant events (premature idle): wait for a quiet
    * window, longer when no answer has arrived yet or the last step ended in tool calls.
    */
   private onIdle(turn: ActiveTurn, client: OpencodeClient): void {

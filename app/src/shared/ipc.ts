@@ -37,7 +37,7 @@ export interface ActionMap {
       images?: ImageAttachmentInput[];
       /** The composer's provider; a different one moves the Coordinator (ADR 0009). */
       provider?: ProviderId | null;
-      /** The goal dialog the message is sent from; absent or null is the project dialog (UX02). */
+      /** The goal the chat was filtered on when the message was sent (U01); absent or null is the whole project. */
       goalId?: string | null;
     },
     void,
@@ -45,15 +45,19 @@ export interface ActionMap {
   /** Takes the next step shown under a reply when it is a message to the Coordinator; Trama records the step (W04). */
   "coordinator:takeStep": [{ requestId: string }, void];
   "coordinator:interrupt": [void, void];
+  /** Pauses or resumes the project's continuous work (A05): the Pause stops automatic moves, rounds and automatic work. */
+  "coordinator:pause": [{ paused: boolean }, void];
+  /** The person asks the Coordinator for a recap (A03): Trama writes it in the chat from the records. */
+  "coordinator:recap": [{ goalId?: string | null }, void];
   "coordinator:retry": [void, void];
   /** Repeats a failed turn without writing the message again (P10). */
   "coordinator:retryRequest": [{ requestId: string }, void];
   /** Stops the automatic retries after a temporary provider limit (P10). */
   "coordinator:stopRetry": [void, void];
-  "coordinator:selectModel": [{ model: string; effort: string | null; provider?: ProviderId | null; goalId?: string | null }, void];
-  "coordinator:setFastMode": [{ enabled: boolean; goalId?: string | null }, void];
-  "coordinator:selectProvider": [{ provider: ProviderId; goalId?: string | null }, void];
-  "coordinator:saveDraft": [{ text: string; goalId?: string | null }, void];
+  "coordinator:selectModel": [{ model: string; effort: string | null; provider?: ProviderId | null }, void];
+  "coordinator:setFastMode": [{ enabled: boolean }, void];
+  "coordinator:selectProvider": [{ provider: ProviderId }, void];
+  "coordinator:saveDraft": [{ text: string }, void];
   /** Deletes a message still waiting in the queue (W03); a message that reports a recorded choice stays. */
   "coordinator:deleteQueued": [{ id: string }, void];
   "goal:create": [GoalInputPayload, string];
@@ -86,7 +90,14 @@ export interface ActionMap {
     },
     void,
   ];
-  "mandate:revoke": [{ reason: string; requestId: string | null }, void];
+  "mandate:revoke": [{ reason: string }, void];
+  /** Narrows the mandate in force without revoking it: fewer modules or actions, never more (issue #244). */
+  "mandate:restrict": [{ scopeModuleIds: string[]; authorizedActions: MandateAction[] }, void];
+  /** The person has seen an action a fixed ban stopped; it leaves Aspetta te (issue #244). */
+  "fixedBan:acknowledge": [{ id: string }, void];
+  "mandate:reject": [{ requestId: string; reason: string }, void];
+  /** The person corrects a step the Coordinator took by itself within the mandate, in their own words (A06). */
+  "autonomousStep:correct": [{ stepId: string; note: string }, boolean];
   "team:answer": [{ proposalId: string; keeping: string[] | null; note: string | null }, void];
   "assignment:stop": [{ assignmentId: string }, void];
   "assignment:resume": [{ assignmentId: string }, void];
