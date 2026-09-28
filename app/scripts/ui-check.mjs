@@ -909,6 +909,8 @@ await firstSquad.locator('[data-testid="team-figure"][data-role="qa"]').waitFor(
     await detail.getByRole("button", { name: "Squadre", exact: true }).click();
     await summary.waitFor();
   }
+  // The person's tab stays open after going back to the list (issue #336): close it, as the side bar did.
+  await closeDetails();
   await page.setViewportSize({ width: 1280, height: 820 });
 }
 await openSharedRoles();
@@ -918,14 +920,23 @@ if (await sharedRoles.locator('[data-role="qa"], [data-role="squadLead"]').count
 if (await teamPanel.getByText("Chiarimento e spec", { exact: true }).count()) throw new Error("The Squads view still lists the team moment by moment");
 await themeShots("04e-squads");
 // W16: right after the team is generated, every agent rests with its eyes open; only an agent out of the team sleeps.
-const teamEyes = await teamPanel.evaluate((el) =>
-  [...el.querySelectorAll('[data-testid="agent-bot"]')].map((bot) => ({
-    agent: bot.dataset.agent,
-    activity: bot.dataset.activity,
-    eyes: Number(bot.querySelector('[data-part="eyes"]')?.getAttribute("opacity") ?? 0),
-    open: Math.max(...[...bot.querySelectorAll('[data-part^="eye-"]')].map((eye) => eye.getBBox().height)),
-  })),
-);
+// A blink lasts 0.13 s and comes every few seconds, so with a dozen bots one sample often catches one: three samples
+// 200 ms apart, and each bot keeps its widest eyes, since no blink covers two of them.
+const eyeSamples = [];
+for (let i = 0; i < 3; i++) {
+  if (i) await page.waitForTimeout(200);
+  eyeSamples.push(
+    await teamPanel.evaluate((el) =>
+      [...el.querySelectorAll('[data-testid="agent-bot"]')].map((bot) => ({
+        agent: bot.dataset.agent,
+        activity: bot.dataset.activity,
+        eyes: Number(bot.querySelector('[data-part="eyes"]')?.getAttribute("opacity") ?? 0),
+        open: Math.max(...[...bot.querySelectorAll('[data-part^="eye-"]')].map((eye) => eye.getBBox().height)),
+      })),
+    ),
+  );
+}
+const teamEyes = eyeSamples[0].map((bot, i) => ({ ...bot, open: Math.max(...eyeSamples.map((sample) => sample[i]?.open ?? 0)) }));
 const shut = teamEyes.filter((bot) => bot.activity === "inactive" || bot.eyes < 1 || bot.open < 5);
 if (shut.length) throw new Error(`Bots without open eyes right after the team: ${JSON.stringify(shut)}`);
 // W15: each agent has an avatar with its initial and a colored tag; the tag comes from the proposal.
