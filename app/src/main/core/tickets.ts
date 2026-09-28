@@ -51,11 +51,6 @@ export interface EvidenceContext {
   commits: Set<string>;
 }
 
-/**
- * A criterion counts as met only with evidence Trama can see: a candidate that is verified or decided,
- * a published pull request, or a commit that exists in the repository. The end of an agent's turn, code on disk
- * or a SHA that names nothing is not evidence.
- */
 const COMMIT = /^[0-9a-f]{7,40}$/i;
 
 export const isCommitReference = (reference: string) => COMMIT.test(reference);
@@ -65,6 +60,11 @@ export function citedCommits(criteria: CriterionReport[]): string[] {
   return [...new Set(criteria.flatMap((c) => c.evidence.filter((reference) => COMMIT.test(reference))))];
 }
 
+/**
+ * A criterion counts as met only with evidence Trama can see: a candidate that is verified or decided,
+ * a published pull request, or a commit that exists in the repository. The end of an agent's turn, code on disk
+ * or a SHA that names nothing is not evidence.
+ */
 export function evidenceProblems(criterion: CriterionReport, context: EvidenceContext): string[] {
   if (criterion.outcome !== "met") return [];
   if (!criterion.evidence.length) return [`Criterion ${criterion.index + 1} is marked met without evidence.`];
