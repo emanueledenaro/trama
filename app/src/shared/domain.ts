@@ -41,8 +41,16 @@ export interface ConflictAssessment {
   snapshotId: string;
   remoteSHA: string;
   references: string[];
-  classification: "conflict" | "overlap" | "clean" | "unknown";
+  /**
+   * `hypothesis` is an AI's reading that two changes in different files may not work together: an interpretation, never
+   * evidence. `semantic` is the same case once the scenario on the combined candidate failed where each side passed.
+   */
+  classification: "conflict" | "overlap" | "clean" | "unknown" | "hypothesis" | "semantic";
   conflictingFiles: string[];
+  /** When Trama read the other side on GitHub, apart from `checkedAt`, when it compared; absent for local sides. */
+  remoteReadAt?: string;
+  /** The AI's hypothesis and the scenario that tests it (issue #40); only on `hypothesis` and `semantic`. */
+  semantic?: SemanticHypothesis;
   /** The lines in conflict for each file, in the candidate's version (G03); absent in older assessments. */
   conflictingLines?: Record<string, import("./overlap").LineRange[]>;
   /**
@@ -53,6 +61,23 @@ export interface ConflictAssessment {
   otherSnapshotId?: string;
   detail: string;
   checkedAt: string;
+}
+
+/**
+ * Why two candidates that change different files may still not work together, as an AI read it, and the scenario Trama
+ * runs to find out: a required check on the two candidates merged in a separate copy (issue #40).
+ */
+export interface SemanticHypothesis {
+  /** The AI's reading of the risk: an interpretation, never evidence. */
+  explanation: string;
+  /** When the AI wrote the reading; a hypothesis carried to newer snapshots keeps the time of the original reading. */
+  analyzedAt: string;
+  /** The required check the scenario runs on the combined candidate. */
+  check: string;
+  /** The run on the combined candidate; null while it has not run on these snapshots yet. */
+  scenario: { result: "pass" | "fail" | "notRun"; command: string; output: string; ranAt: string } | null;
+  /** The assessment this one carries on after one of the two candidates changed: its reading, not its scenario. */
+  carriedFrom?: string;
 }
 
 /** A divergence between the project's branch and the default branch on GitHub, with the files the merge leaves in conflict. */
