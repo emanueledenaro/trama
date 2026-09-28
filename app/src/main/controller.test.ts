@@ -398,13 +398,13 @@ describe("TramaController", () => {
   it("checks the threshold in the study turn too (issue #305)", async () => {
     await setup();
     const project = controller!.snapshot.project!;
-    // The fake study turn reads 12.000 of 258.000 tokens: 5%, at the lowest threshold.
+    // The fake study turn reads 13.000 of 258.000 tokens: 5,04%, just past the lowest threshold with the exact share.
     controller!.setContextThreshold(5);
     const internal = controller as unknown as { runStudyTurn(p: unknown, r: unknown, m: string, reason: string | null): Promise<void>; runtime: unknown };
     project.document.coordinator.contextWarnedAt = null;
     project.contextUsage = null;
     await internal.runStudyTurn(project, internal.runtime, "gpt-5.5", null);
-    expect(project.contextUsage).toEqual({ usedTokens: 12_000, contextWindow: 258_000 });
+    expect(project.contextUsage).toEqual({ usedTokens: 13_000, contextWindow: 258_000 });
     expect(project.document.events.filter((e) => e.content.type === "card" && e.content.title === "Contesto oltre la soglia").length).toBeGreaterThan(0);
   });
 
