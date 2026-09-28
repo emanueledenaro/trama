@@ -4700,6 +4700,11 @@ export class TramaController {
     try {
       // The facts first: every required check without current evidence runs now, in the sandbox.
       for (const check of checksToRun(document, candidate)) await this.verifyCandidate(candidate.id, check, requestId);
+      // A check the sandbox or the machine kept from running left no evidence: no reviewer starts without it (issue #271).
+      const unverified = checksToRun(document, candidate);
+      if (unverified.length) {
+        throw new Error(`Le verifiche ${unverified.map((c) => CHECKS[c].title).join(", ")} non sono riuscite per la sandbox o la macchina: rilancia la revisione quando girano.`);
+      }
       const failed = failedChecks(candidate);
       if (failed.length) {
         stopAtChecks(gate, failed);

@@ -252,7 +252,6 @@ function WorkTurn({ row, focused, dialog }: { row: WorkRow; focused: boolean; di
     setOpen(true);
     ref.current?.scrollIntoView({ block: "start" });
   }, [focused]);
-  if (!steps.length && !row.running) return null;
   const started = row.activities[0]?.createdAt;
   return (
     <li ref={ref} className="py-2" data-testid="work-turn" data-work={row.id} data-focused={focused || undefined}>
@@ -287,9 +286,9 @@ function TechnicalWork({ focusWork }: { focusWork?: string }) {
   const project = useUi((s) => s.app?.project);
   const document = project?.document;
   const running = project?.runningWork;
-  // A turn with only empty notes has no entry: it is left out before the page is counted.
+  // A turn with only empty notes has no entry, also while it runs: it is left out before the page is counted.
   const turns = useMemo(
-    () => (document ? workTurns(document.events, document.requests, running ?? []).filter((t) => t.running || compactSteps(t.activities).length) : []),
+    () => (document ? workTurns(document.events, document.requests, running ?? []).filter((t) => compactSteps(t.activities).length) : []),
     [document, running],
   );
   const titles = useMemo(() => new Map((document ? projectGoals(document) : []).map((g) => [g.id, g.title])), [document]);
