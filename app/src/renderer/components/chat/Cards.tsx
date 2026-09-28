@@ -375,7 +375,7 @@ export function MandateCard({ requestId }: { requestId: string }) {
             <Button size="sm" variant="ghost" onClick={() => setRejecting(true)}>
               Rifiuta la proposta
             </Button>
-            <Button size="sm" variant="outline" onClick={() => setInspector({ kind: "mandate" })}>
+            <Button size="sm" variant="outline" onClick={() => setInspector({ kind: "mandate", change: "correct" })}>
               Correggi
             </Button>
             <Button
