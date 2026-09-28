@@ -625,6 +625,32 @@ describe("team and candidate tools under the mandate (V04, V05)", () => {
     expect(document.team.specialists.find((s) => s.id === created.specialistID)).toMatchObject({ origin: "coordinator", reason: "Serve per i rimborsi", moduleIds: ["Sources/Payments"] });
   });
 
+  it("assign_task refuses work that builds on work the mandate no longer covers (C06)", async () => {
+    const document = emptyDocument("p");
+    const { context, started } = mandateContext(document);
+    confirmTeam(
+      document,
+      proposeTeam(document, {
+        requestId: null,
+        summary: null,
+        members: [
+          { name: "Ada", competence: "Swift", reason: "r", moduleIds: [] },
+          { name: "Bea", competence: "Swift", reason: "r", moduleIds: [] },
+        ],
+      }).id,
+      null,
+      null,
+    );
+    grant(document, ["executeInWorktree"], ["Sources/Orders", "Sources/Payments"]);
+    const base = assign(document, { ...order, moduleIds: ["Sources/Orders"], model: "gpt-5.5" } as never, 1, null);
+    base.status = "completed";
+    grant(document, ["executeInWorktree"], ["Sources/Payments"]);
+    const refused = await refusal("assign_task", { ...order, specialist: "Bea", moduleIDs: ["Sources/Payments"], dependencies: [base.id] }, context);
+    expect(refused).toContain("dependency_outside_mandate");
+    expect(refused).toContain(base.id);
+    expect(started).toEqual([]);
+  });
+
   it("declare_candidate answers to the mandate and binds the candidate to base, decisions and required checks; clear_candidate needs integrateCandidate", async () => {
     const document = emptyDocument("p");
     const { context } = mandateContext(document);
@@ -741,6 +767,65 @@ describe("team and candidate tools under the mandate (V04, V05)", () => {
     const corrected = parse(await runCoordinatorTool("set_commit_message", { candidate: candidate.id, type: "docs", scope: "", description: "Describe order cancellation" }, context));
     expect(corrected.pullRequestTitle).toBe("docs: describe order cancellation");
     expect(candidate.commit).toMatchObject({ type: "docs", scope: null, correctedBy: "coordinator" });
+  });
+});
+
+describe("report_semantic_risk (issue #40)", () => {
+  /** Two developers with one open candidate each, in different files, that both passed node_test. */
+  function twoCandidates() {
+    const document = emptyDocument("p");
+    for (const [index, name, file] of [[1, "Bea", "prezzi.ts"], [2, "Ada", "ordini.ts"]] as const) {
+      const at = `2026-09-28T10:0${index}:00.000Z`;
+      document.team.specialists.push({
+        id: `S-${name}`,
+        name,
+        assignments: [{ id: `A-${name}`, specialistId: `S-${name}`, status: "completed", workspace: { sourceRoot: "/p", worktreeRoot: `/wt/${name}`, branch: name, baseSHA: "base" } }],
+      } as never);
+      document.candidates.push({
+        id: `C-${name}`,
+        assignmentId: `A-${name}`,
+        specialistId: `S-${name}`,
+        snapshotId: `snap-${name}`,
+        baseSHA: "base",
+        changedFiles: [file],
+        requiredChecks: ["node_test"],
+        declaredAt: at,
+        evidence: { node_test: { check: "node_test", result: "pass", snapshotId: `snap-${name}` } },
+        pullRequest: null,
+      } as never);
+    }
+    const cards: string[] = [];
+    let scenarios = 0;
+    const context = {
+      ...teamContext(document),
+      availableChecks: ["node_test", "git_status"],
+      addCard: (_kind: string, _title: string, id: string) => cards.push(id),
+      runSemanticScenarios: () => (scenarios += 1),
+    } as unknown as ToolContext;
+    return { document, context, cards, scenarios: () => scenarios };
+  }
+
+  const report = { candidate: "C-Bea", otherCandidate: "A-Ada", explanation: "Il totale somma prezzi già arrotondati.", check: "node_test" };
+
+  it("records a hypothesis with one card, starts the scenario and blocks nothing", async () => {
+    const { document, context, cards, scenarios } = twoCandidates();
+    const result = parse(await runCoordinatorTool("report_semantic_risk", report, context));
+    expect(result).toMatchObject({ assessmentID: "snap-Ada:semantic:snap-Bea", created: true, classification: "hypothesis", blocks: false, scenario: null });
+    expect(cards).toEqual(["snap-Ada:semantic:snap-Bea"]);
+    expect(scenarios()).toBe(1);
+    // The same report again: no second card and no second assessment.
+    expect(parse(await runCoordinatorTool("report_semantic_risk", report, context))).toMatchObject({ created: false });
+    expect(cards).toHaveLength(1);
+    expect(document.conflicts).toHaveLength(1);
+  });
+
+  it("refuses candidates in the same files and a check the project does not have", async () => {
+    const { document, context, cards } = twoCandidates();
+    document.candidates[1]!.changedFiles = ["prezzi.ts"];
+    expect(parse(await runCoordinatorTool("report_semantic_risk", report, context)).error.code).toBe("same_files");
+    expect(parse(await runCoordinatorTool("report_semantic_risk", { ...report, check: "swift_test" }, context)).error.code).toBe("check_unavailable");
+    expect(cards).toEqual([]);
+    expect(COORDINATOR_TOOLS.find((t) => t.name === "report_semantic_risk")?.required).toEqual(["candidate", "otherCandidate", "explanation", "check"]);
   });
 });
 

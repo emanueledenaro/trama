@@ -7,7 +7,7 @@ export function DutyFields({ assignment }: { assignment: SpecialistAssignment })
   const document = useUi((s) => s.app?.project?.document);
   const duty = assignment.duty;
   if (!duty || !document) return null;
-  const outcome = dutyOutcomeText(duty);
+  const outcome = dutyOutcomeText(duty, document);
   return (
     <div data-testid="duty-fields">
       <div className="mt-2">

@@ -33,7 +33,7 @@ async function colleaguePush(colleague: string, file: string, content: string): 
   return (await git(["rev-parse", "HEAD"], colleague)).trim();
 }
 
-async function assess(setupResult: Awaited<ReturnType<typeof setup>>, remoteSHA: string) {
+async function assess(setupResult: Awaited<ReturnType<typeof setup>>, remoteSHA: string, remoteReadAt?: string) {
   const review = await reviewWorktree(setupResult.session);
   return assessConflict({
     candidateId: "C-1",
@@ -45,6 +45,7 @@ async function assess(setupResult: Awaited<ReturnType<typeof setup>>, remoteSHA:
     source: { kind: "local", path: setupResult.remote },
     cacheRoot: await mkdtemp(join(tmpdir(), "trama-cache-")),
     probeRoot: await mkdtemp(join(tmpdir(), "trama-probe-")),
+    remoteReadAt,
   });
 }
 
@@ -53,8 +54,11 @@ describe("remote conflicts", () => {
     const context = await setup();
     await writeFile(join(context.session.worktreeRoot, "a.txt"), "uno\nDUE candidato\ntre\n");
     const sha = await colleaguePush(context.colleague, "a.txt", "uno\ndue collega\ntre\n");
-    const result = await assess(context, sha);
+    const result = await assess(context, sha, "2026-09-28T10:05:00.000Z");
     expect(result.classification).toBe("conflict");
+    // Issue #40: the reading on GitHub keeps its own time, apart from the time of the merge probe.
+    expect(result.remoteReadAt).toBe("2026-09-28T10:05:00.000Z");
+    expect(result.checkedAt).not.toBe(result.remoteReadAt);
     expect(result.conflictingFiles).toEqual(["a.txt"]);
     // G03: the lines in conflict, in the candidate's version.
     expect(result.conflictingLines).toEqual({ "a.txt": [{ start: 2, end: 2 }] });

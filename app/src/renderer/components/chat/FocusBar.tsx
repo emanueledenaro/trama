@@ -177,7 +177,7 @@ export function FocusPanel() {
               </Button>
             ) : null}
             {focus ? (
-              <Button size="xs" variant="outline" onClick={() => void change("pause", focus.id)}>
+              <Button size="xs" variant="outline" title={t("focus.pauseHint")} onClick={() => void change("pause", focus.id)}>
                 {t("focus.pause")}
               </Button>
             ) : null}

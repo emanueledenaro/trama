@@ -2,6 +2,7 @@ import { release } from "node:os";
 import { join } from "node:path";
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, Notification, powerMonitor, shell, type MenuItemConstructorOptions } from "electron";
 import type { AppSettings } from "@shared/domain";
+import { DEFAULT_LANGUAGE, type Language, translate } from "@shared/i18n";
 import type { ActionMap, ActionName } from "@shared/ipc";
 import { TramaController } from "./controller";
 
@@ -25,7 +26,11 @@ function surfaceColor(): string {
 // The desktop app keeps its state in Trama/Desktop; the SwiftUI app's files in Trama are only read.
 const legacyRoot = process.env.TRAMA_DATA_DIR ? (process.env.TRAMA_LEGACY_DIR ?? null) : join(app.getPath("appData"), "Trama");
 const controller = new TramaController(process.env.TRAMA_DATA_DIR ?? join(app.getPath("appData"), "Trama", "Desktop"), {
-  publish: (state) => window?.webContents.send("trama:state", state),
+  publish: (state) => {
+    window?.webContents.send("trama:state", state);
+    // The menu's Informazioni su Trama follows the interface language.
+    if (app.isReady() && state.language !== menuLanguage) buildMenu(state.language);
+  },
   openExternal: (url) => shell.openExternal(url),
   applyTheme: (theme: AppSettings["theme"]) => {
     nativeTheme.themeSource = theme;
@@ -147,7 +152,7 @@ const handlers: { [K in ActionName]: Handler<K> } = {
   "coordinator:selectModel": ({ model, effort, provider }) => controller.selectModel(model, effort, provider ?? null),
   "coordinator:setFastMode": ({ enabled }) => controller.setFastMode(enabled),
   "coordinator:selectProvider": ({ provider }) => controller.selectProvider(provider),
-  "coordinator:saveDraft": ({ text }) => controller.saveDraft(text),
+  "coordinator:saveDraft": ({ text, projectId }) => controller.saveDraft(text, projectId ?? null),
   "coordinator:deleteQueued": async ({ id }) => controller.deleteQueuedMessage(id),
   "goal:create": (input) => controller.createGoal(input),
   "goal:update": ({ id, ...change }) => controller.updateGoal(id, change),
@@ -156,7 +161,9 @@ const handlers: { [K in ActionName]: Handler<K> } = {
   "focus:change": ({ action, taskId }) => controller.changeFocus(action, taskId),
   "candidate:observeExample": (input) => controller.observeExample(input),
   "overview:read": () => controller.projectsOverview(),
+  "overview:prioritize": ({ projectId, direction }) => controller.prioritizeProject(projectId, direction),
   "coordinator:setContextThreshold": ({ percent }) => controller.setContextThreshold(percent),
+  "coordinator:reorderContext": () => controller.reorderContext(),
   "pact:decide": (input) => controller.recordDecision(input),
   "decision:answer": ({ requestId, alternativeIndex, freeText }) => controller.answerDecision(requestId, alternativeIndex, freeText),
   "decision:withdraw": ({ requestId, reason }) => controller.withdrawDecision(requestId, reason),
@@ -169,6 +176,8 @@ const handlers: { [K in ActionName]: Handler<K> } = {
   "team:answer": ({ proposalId, keeping, note }) => controller.answerTeamProposal(proposalId, keeping, note),
   "assignment:stop": ({ assignmentId }) => controller.stopSpecialistWork(assignmentId),
   "assignment:resume": ({ assignmentId }) => controller.resumeSpecialistWork(assignmentId),
+  "assignment:place": ({ assignmentId, where }) => controller.moveAssignmentPlace(assignmentId, where),
+  "assignment:cloudCheck": ({ assignmentId }) => controller.checkCloudSession(assignmentId),
   "assignment:changeProvider": ({ assignmentId, provider, model }) => controller.changeAssignmentProvider(assignmentId, provider, model),
   "specialist:remove": ({ specialistId, reason }) => controller.removeSpecialistByPerson(specialistId, reason),
   "specialist:rename": ({ specialistId, name }) => controller.renameSpecialistByPerson(specialistId, name),
@@ -180,6 +189,8 @@ const handlers: { [K in ActionName]: Handler<K> } = {
   "candidate:reject": ({ candidateId, note }) => controller.rejectCandidateByPerson(candidateId, note),
   "candidate:shot": ({ candidateId, index }) => controller.interfaceShot(candidateId, index),
   "candidate:focusAudit": async ({ candidateId }) => controller.startFocusAudit(candidateId),
+  "finding:followUp": ({ auditId, findingId, kind }) => controller.followUpFinding(auditId, findingId, kind),
+  "audit:publish": ({ auditId }) => controller.publishAuditReport(auditId),
   "candidate:publish": ({ candidateId }) => controller.publishCandidateByPerson(candidateId),
   "codex:refresh": () => controller.refreshCodex(),
   "codex:login": () => controller.login(),
@@ -237,14 +248,18 @@ function sendMenu(command: string): void {
   window?.webContents.send("trama:menu", command);
 }
 
-function buildMenu(): void {
+let menuLanguage: Language | null = null;
+
+function buildMenu(language: Language): void {
+  menuLanguage = language;
+  const about = translate(language, "menu.about");
   const template: MenuItemConstructorOptions[] = [
     ...(isMac
       ? [
           {
             label: "Trama",
             submenu: [
-              { role: "about" as const, label: "Informazioni su Trama" },
+              { role: "about" as const, label: about },
               { type: "separator" as const },
               { label: "Impostazioni…", accelerator: "CmdOrCtrl+,", click: () => sendMenu("settings") },
               { type: "separator" as const },
@@ -314,6 +329,8 @@ function buildMenu(): void {
         { label: "Benvenuto in Trama", click: () => sendMenu("welcome") },
         { label: "Guida introduttiva", click: () => sendMenu("guide") },
         { label: "Esercizi sul progetto di esempio", click: () => sendMenu("exercises") },
+        // Windows and Linux have no application menu: Informazioni su Trama opens the section of Impostazioni.
+        ...(isMac ? [] : [{ type: "separator" as const }, { label: about, click: () => sendMenu("about") }]),
       ],
     },
   ];
@@ -333,7 +350,13 @@ app.on("second-instance", () => {
 app.whenReady().then(async () => {
   // A packaged app takes its Dock icon from the bundle; unpackaged, Electron's own icon would show.
   if (isMac && !app.isPackaged) app.dock?.setIcon(join(iconDirectory, "png", "1024x1024.png"));
-  buildMenu();
+  // macOS shows its own panel for Informazioni su Trama: the version, and the build's commit in brackets.
+  app.setAboutPanelOptions({
+    applicationName: "Trama",
+    applicationVersion: app.getVersion(),
+    ...(__TRAMA_COMMIT__ ? { version: __TRAMA_COMMIT__ } : {}),
+  });
+  buildMenu(menuLanguage ?? DEFAULT_LANGUAGE);
   if (!startedHidden) createWindow();
   await controller.start();
   // After sleep the monitor's timer and the providers' state are stale: check again at once.
