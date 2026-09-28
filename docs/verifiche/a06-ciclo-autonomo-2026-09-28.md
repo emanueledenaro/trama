@@ -1,15 +1,15 @@
 # A06: il Coordinatore fa da solo il ciclo dentro il mandato e risolve i blocchi tecnici
 
-Data: 28 settembre 2026. Issue #246, specifica #239 (Q1, Q3), ADR 0017. Base: `origin/main` 9534073.
+Data: 28 settembre 2026. Issue #246, specifica #239 (Q1, Q3), ADR 0017. Base: `origin/main` fec5b66.
 
 ## Cosa è stato verificato
 
 Tutte le prove usano il Codex finto (`app/test-fixtures/fake-codex.mjs`). Nessuna esecuzione reale di un provider.
 
 - `npx tsc --noEmit -p .`: nessun errore.
-- `npx vitest run`: 124 file, 1215 test superati, 3 saltati (due corse complete verdi; in una terza corsa `problems.integration.test.ts` di A08 è fallito una volta sotto carico e passa da solo tre volte su tre).
+- `npx vitest run`: 125 file, 1219 test superati, 3 saltati. Su una base precedente `problems.integration.test.ts` di A08 è fallito una volta sotto carico; da solo passa tre volte su tre.
 - `npm run build`: riuscito.
-- `xvfb-run -a node scripts/ui-check.mjs`: una corsa completa, uscita 0, 329 schermate. Passi nuovi o cambiati: `14b0-block-resolution`, `04c4a-slices-by-coordinator`, `15b-activity`, `15b1-activity-step-correct`, in chiaro e in scuro.
+- `xvfb-run -a node scripts/ui-check.mjs`: una corsa completa, uscita 0, 331 schermate. Una corsa precedente si era fermata su due righe di stato insieme (vedi Limiti). Passi nuovi o cambiati: `14b0-block-resolution`, `04c4a-slices-by-coordinator`, `15b-activity`, `15b1-activity-step-correct`, in chiaro e in scuro.
 
 ## Comportamento
 
@@ -48,3 +48,4 @@ Prima e dopo, in chiaro e in scuro, in `a06-ciclo-autonomo/`. Le schermate "prim
 - La correzione di fette già pubblicate lascia su GitHub le issue della divisione precedente.
 - L'esito di un blocco è quello letto a fine turno: "risolto" vuol dire che il lavoro non è più fermo per quel motivo, per esempio perché è partito un nuovo incarico, non che la verifica sia già verde.
 - Nella ui-check, perché le schermate dei pulsanti della persona su seam e fette restino, la prova mette il lavoro continuo in Pausa prima del piano: in pausa quei passi restano della persona.
+- La ui-check si è fermata a volte, in locale e in CI, perché trovava due righe di stato. La barra di focus e il riquadro della chat erano fratelli con la stessa chiave React (`project.id`): con chiavi duplicate React può lasciare una barra vecchia nel DOM quando il progetto cambia. Ora hanno chiavi distinte. Dopo la correzione la corsa è passata, ma il problema compariva solo a volte: una corsa verde non prova da sola che sia risolto.
