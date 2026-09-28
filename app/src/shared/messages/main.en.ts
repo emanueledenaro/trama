@@ -504,11 +504,6 @@ export const mainEn: Record<keyof typeof mainIt, string> = {
   "main.controller.learningReviewTitle": "Experience review",
   "main.controller.learningReviewDetail":
     "{actions}\nYou find it in Memory: you can correct or withdraw what was learned.",
-  "main.controller.curatorTitle": "Maintenance of the learned skills",
-  "main.controller.curatorRetiredSkill": "{name} (retired)",
-  "main.controller.curatorArchived": "Archived: {skills}",
-  "main.controller.curatorRestoreHint":
-    "Archived skills can be restored from Memory.",
   "main.controller.skillPinned":
     "'{name}' is pinned: unpin it before archiving it.",
   "main.controller.skillMissing": "Skill {name} no longer exists.",

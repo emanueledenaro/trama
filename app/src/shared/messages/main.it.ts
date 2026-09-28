@@ -516,11 +516,6 @@ export const mainIt = {
   "main.controller.learningReviewTitle": "Revisione dell'esperienza",
   "main.controller.learningReviewDetail":
     "{actions}\nLo trovi in Memoria: puoi correggere o ritirare quanto appreso.",
-  "main.controller.curatorTitle": "Manutenzione delle skill apprese",
-  "main.controller.curatorRetiredSkill": "{name} (ritirata)",
-  "main.controller.curatorArchived": "Archiviate: {skills}",
-  "main.controller.curatorRestoreHint":
-    "Le skill archiviate si ripristinano da Memoria.",
   "main.controller.skillPinned":
     "'{name}' è fissata: togli il fissaggio prima di archiviarla.",
   "main.controller.skillMissing": "La skill {name} non esiste più.",

@@ -238,6 +238,7 @@ import { readRepositoryFile, scanRepository } from "./core/repositoryScanner";
 import { messageStyle } from "./core/messageStyle";
 import { DEFAULT_LANGUAGE, formatDateTime, isLanguage, type Language, languageFromSystem, type MessageKey, translate, translator } from "@shared/i18n";
 import { personLanguage, setPersonLanguage, t } from "./core/personLanguage";
+import { curatorRunLine, curatorRunView } from "@shared/curatorReport";
 import { toolErrorMessage, toolErrorsRule, withoutToolErrors } from "./core/toolErrors";
 import { installedSkillVersion, prepareSkills, rollbackSkills, SELECTED_SKILLS, SKILL_VERSION, type SetupReport, updateSkills } from "./core/skillSetup";
 import {
@@ -7602,11 +7603,22 @@ export class TramaController {
     });
     const owner = this.projectById(project.id);
     if (owner && (counts.markedStale || counts.archived || report.consolidated.length || report.pruned.length)) {
-      const archived = [...report.consolidated.map((c) => `${c.name} → ${c.into}`), ...report.pruned.map((p) => t("main.controller.curatorRetiredSkill", { name: p.name }))];
+      const t = translator(this.state.language);
+      const archived = [
+        ...report.consolidated.map((c) => `${c.name} → ${c.into}`),
+        ...report.pruned.map((p) => t("memory.curator.retiredSkill", { name: p.name })),
+      ];
       appendEvent(owner.document, "trama", {
         type: "activity",
-        title: t("main.controller.curatorTitle"),
-        detail: [summary, archived.length ? t("main.controller.curatorArchived", { skills: archived.join(", ") }) : null, t("main.controller.curatorRestoreHint")].filter(Boolean).join("\n"),
+        title: t("memory.curator.activityTitle"),
+        // The person reads the counts in their language, not the upkeep's technical summary (issue #335).
+        detail: [
+          curatorRunLine(t, curatorRunView({ dryRun, autoTransitions: counts, ...report, llmError })!),
+          archived.length ? t("memory.curator.activityArchived", { names: archived.join(", ") }) : null,
+          t("memory.curator.activityRestore"),
+        ]
+          .filter(Boolean)
+          .join("\n"),
         tone: "info",
       });
       this.changedIn(owner);
