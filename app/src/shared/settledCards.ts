@@ -126,11 +126,20 @@ export function settledCard(document: ProjectDocument, row: TimelineRow, context
     case "candidate": {
       const state = context.candidateStates[id];
       const candidate = document.candidates.find((c) => c.id === id);
-      // A decided candidate still waits for the person to publish it: only a replaced one is settled.
-      if (!candidate || state !== "superseded") return null;
+      // A decided candidate still waits for its merge or for the person: only a replaced, a merged or a refused one is
+      // settled (issue #247). The refusal's reason went back to the developer; the correction is a new candidate.
+      const merged = Boolean(candidate?.pullRequest?.mergedAt);
+      const refused = Boolean(candidate?.humanRejection) && !merged;
+      if (!candidate || (state !== "superseded" && !merged && !refused)) return null;
       const specialist = document.team.specialists.find((s) => s.id === candidate.specialistId);
       const files = candidate.changedFiles.length === 1 ? "1 file" : `${candidate.changedFiles.length} file`;
-      return { title: `Candidato ${candidate.id}`, subject: specialist ? `${specialist.name}: ${files}` : files, answer: null, outcome: CANDIDATE_STATE[state] };
+      const outcome: Label = merged
+        ? { label: `Unito, #${candidate.pullRequest!.number}`, tone: "success" }
+        : state === "superseded"
+          ? CANDIDATE_STATE[state]
+          : { label: "Rifiutato da te", tone: "warning" };
+      const what = refused && state !== "superseded" ? `${files}, motivo: ${candidate.humanRejection!.note}` : files;
+      return { title: `Candidato ${candidate.id}`, subject: specialist ? `${specialist.name}: ${what}` : what, answer: null, outcome };
     }
     default:
       return null;
