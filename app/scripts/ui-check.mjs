@@ -3589,117 +3589,119 @@ await app.close();
 // not exist or an empty diff is a clear error in the dialog; the examination then takes the whole window, with the
 // progress on the left, the findings in the middle and the proof on the right, the exit on the right of the header
 // and the notifications paused. Several window sizes, both themes.
-const focusProject = await mkdtemp(join(tmpdir(), "trama-ui-esame-"));
-await cp(resolve("resources/DemoProject"), focusProject, { recursive: true });
-const focusGit = (...args) => execFileSync("git", ["-C", focusProject, "-c", "user.name=Trama UI", "-c", "user.email=ui@trama.local", ...args], { stdio: "ignore" });
-focusGit("init", "-q", "-b", "main");
-focusGit("add", ".");
-focusGit("commit", "-q", "-m", "Negozio");
-focusGit("tag", "v1");
-const focusOrder = join(focusProject, "Sources/Orders/Order.swift");
-await writeFile(focusOrder, `${await readFile(focusOrder, "utf8")}\n// Paid orders go to review.\n`);
-focusGit("add", ".");
-focusGit("commit", "-q", "-m", "feat: send paid orders to review");
-({ app, page } = await launch());
-await page.evaluate(() => window.trama.invoke("settings:update", { continuousWork: false, theme: "light" }));
-await page.evaluate((path) => window.trama.invoke("project:open", { path }), focusProject);
-await page.getByTestId("dialog-title").filter({ hasText: "trama-ui-esame" }).waitFor({ timeout: 30_000 });
-await page.getByText("Ho letto lo studio").first().waitFor({ timeout: 30_000 });
-const focusThemes = async (name) => {
-  for (const dark of [false, true]) {
-    await page.evaluate((theme) => window.trama.invoke("settings:update", { theme }), dark ? "dark" : "light");
-    await page.waitForFunction((wanted) => document.documentElement.classList.contains("dark") === wanted, dark);
-    await shot(`${name}-${dark ? "dark" : "light"}`);
-  }
-  await page.evaluate(() => window.trama.invoke("settings:update", { theme: "light" }));
-  await page.waitForFunction(() => !document.documentElement.classList.contains("dark"));
-};
-// The primary action of a row is the last one, on the right.
-const lastAction = async (row, label) => {
-  const labels = (await row.locator("button").allTextContents()).map((text) => text.trim());
-  if (labels.at(-1) !== label) throw new Error(`"${label}" is not the last action: ${labels}`);
-  const [button, box] = [await row.getByRole("button", { name: label }).boundingBox(), await row.boundingBox()];
-  if (!button || !box || box.x + box.width - (button.x + button.width) > 4) throw new Error(`"${label}" is not on the right`);
-};
-await page.getByRole("button", { name: "Mappa del progetto" }).click();
-const inspectorPane = page.getByTestId("inspector");
-await inspectorPane.getByRole("button", { name: "Esame approfondito del progetto" }).waitFor();
-await focusThemes("29a-focus-map");
-await inspectorPane.getByRole("option", { name: /Orders/ }).click();
-const moduleActions = inspectorPane.locator(".cta-row").first();
-await lastAction(moduleActions, "Chiedi al Coordinatore su questo modulo");
-await focusThemes("29b-focus-module");
+{
+  const focusProject = await mkdtemp(join(tmpdir(), "trama-ui-esame-"));
+  await cp(resolve("resources/DemoProject"), focusProject, { recursive: true });
+  const focusGit = (...args) => execFileSync("git", ["-C", focusProject, "-c", "user.name=Trama UI", "-c", "user.email=ui@trama.local", ...args], { stdio: "ignore" });
+  focusGit("init", "-q", "-b", "main");
+  focusGit("add", ".");
+  focusGit("commit", "-q", "-m", "Negozio");
+  focusGit("tag", "v1");
+  const focusOrder = join(focusProject, "Sources/Orders/Order.swift");
+  await writeFile(focusOrder, `${await readFile(focusOrder, "utf8")}\n// Paid orders go to review.\n`);
+  focusGit("add", ".");
+  focusGit("commit", "-q", "-m", "feat: send paid orders to review");
+  ({ app, page } = await launch());
+  await page.evaluate(() => window.trama.invoke("settings:update", { continuousWork: false, theme: "light" }));
+  await page.evaluate((path) => window.trama.invoke("project:open", { path }), focusProject);
+  await page.getByTestId("dialog-title").filter({ hasText: "trama-ui-esame" }).waitFor({ timeout: 30_000 });
+  await page.getByText("Ho letto lo studio").first().waitFor({ timeout: 30_000 });
+  const focusThemes = async (name) => {
+    for (const dark of [false, true]) {
+      await page.evaluate((theme) => window.trama.invoke("settings:update", { theme }), dark ? "dark" : "light");
+      await page.waitForFunction((wanted) => document.documentElement.classList.contains("dark") === wanted, dark);
+      await shot(`${name}-${dark ? "dark" : "light"}`);
+    }
+    await page.evaluate(() => window.trama.invoke("settings:update", { theme: "light" }));
+    await page.waitForFunction(() => !document.documentElement.classList.contains("dark"));
+  };
+  // The primary action of a row is the last one, on the right.
+  const lastAction = async (row, label) => {
+    const labels = (await row.locator("button").allTextContents()).map((text) => text.trim());
+    if (labels.at(-1) !== label) throw new Error(`"${label}" is not the last action: ${labels}`);
+    const [button, box] = [await row.getByRole("button", { name: label }).boundingBox(), await row.boundingBox()];
+    if (!button || !box || box.x + box.width - (button.x + button.width) > 4) throw new Error(`"${label}" is not on the right`);
+  };
+  await page.getByRole("button", { name: "Mappa del progetto" }).click();
+  const inspectorPane = page.getByTestId("inspector");
+  await inspectorPane.getByRole("button", { name: "Esame approfondito del progetto" }).waitFor();
+  await focusThemes("29a-focus-map");
+  await inspectorPane.getByRole("option", { name: /Orders/ }).click();
+  const moduleActions = inspectorPane.locator(".cta-row").first();
+  await lastAction(moduleActions, "Chiedi al Coordinatore su questo modulo");
+  await focusThemes("29b-focus-module");
 
-// The dialog starts on the module. A fixed point that does not exist, then a module with no change, fail there.
-await moduleActions.getByRole("button", { name: "Esame approfondito" }).click();
-const focusStart = page.getByRole("dialog", { name: "Esame approfondito" });
-await focusStart.getByRole("radio", { name: /Il modulo Orders/ }).and(page.locator('[aria-checked="true"]')).waitFor();
-await focusStart.getByRole("button", { name: "v1", exact: true }).waitFor();
-await focusStart.getByRole("button", { name: "HEAD~1", exact: true }).waitFor();
-await focusStart.getByLabel("Punto fisso").fill("release-9");
-await focusStart.getByRole("button", { name: "Avvia l'esame" }).click();
-await focusStart.getByTestId("focus-start-error").getByText('Il punto fisso "release-9" non esiste in questo repository: scrivi un commit, un branch o un tag che esiste.').waitFor();
-await focusThemes("29c-focus-start-missing-point");
-await focusStart.getByRole("radio", { name: /Il modulo Payments/ }).click();
-await focusStart.getByRole("button", { name: "v1", exact: true }).click();
-await focusStart.getByRole("button", { name: "Avvia l'esame" }).click();
-await focusStart.getByTestId("focus-start-error").getByText(/Nessun cambiamento nel modulo Payments tra il punto fisso "v1"/).waitFor();
-await focusThemes("29d-focus-start-empty-diff");
-if (await page.locator("[data-focus-mode]").count()) throw new Error("Focus mode opened on a failed fixed point");
+  // The dialog starts on the module. A fixed point that does not exist, then a module with no change, fail there.
+  await moduleActions.getByRole("button", { name: "Esame approfondito" }).click();
+  const focusStart = page.getByRole("dialog", { name: "Esame approfondito" });
+  await focusStart.getByRole("radio", { name: /Il modulo Orders/ }).and(page.locator('[aria-checked="true"]')).waitFor();
+  await focusStart.getByRole("button", { name: "v1", exact: true }).waitFor();
+  await focusStart.getByRole("button", { name: "HEAD~1", exact: true }).waitFor();
+  await focusStart.getByLabel("Punto fisso").fill("release-9");
+  await focusStart.getByRole("button", { name: "Avvia l'esame" }).click();
+  await focusStart.getByTestId("focus-start-error").getByText('Il punto fisso "release-9" non esiste in questo repository: scrivi un commit, un branch o un tag che esiste.').waitFor();
+  await focusThemes("29c-focus-start-missing-point");
+  await focusStart.getByRole("radio", { name: /Il modulo Payments/ }).click();
+  await focusStart.getByRole("button", { name: "v1", exact: true }).click();
+  await focusStart.getByRole("button", { name: "Avvia l'esame" }).click();
+  await focusStart.getByTestId("focus-start-error").getByText(/Nessun cambiamento nel modulo Payments tra il punto fisso "v1"/).waitFor();
+  await focusThemes("29d-focus-start-empty-diff");
+  if (await page.locator("[data-focus-mode]").count()) throw new Error("Focus mode opened on a failed fixed point");
 
-// The module from v1: full screen, three columns, the exit last on the right, notifications paused.
-await focusStart.getByRole("radio", { name: /Il modulo Orders/ }).click();
-await focusStart.getByRole("button", { name: "Avvia l'esame" }).click();
-const focusView = page.locator("[data-focus-mode]");
-await focusView.waitFor({ timeout: 20_000 });
-await page.locator('[data-focus-mode][data-status="done"]').waitFor({ timeout: 60_000 });
-await focusView.getByTestId("focus-mode-title").getByText("Esame approfondito del modulo Orders").waitFor();
-await focusView.getByTestId("focus-mode-notifications").getByText("Notifiche in pausa").waitFor();
-await lastAction(focusView.locator("header .cta-row"), "Esci dall'esame");
-if (await page.getByTestId("inspector").count()) throw new Error("Focus mode leaves the inspector on screen");
-await focusView.getByTestId("focus-progress").getByText("v1, ", { exact: false }).waitFor();
-await focusView.locator('[data-testid="audit-axis"][data-axis="spec"][data-status="skipped"]').getByText("Nessun piano da confrontare").waitFor();
-const moduleFinding = focusView.locator('[data-testid="audit-axis"][data-axis="standards"] [data-testid="audit-finding"][data-status="verified"]');
-await moduleFinding.getByText(/Mysterious Name in Sources\/Orders\/Order\.swift/).waitFor();
-await focusView.getByTestId("focus-proof").getByText("Trama ha letto Sources/Orders/Order.swift:1: la riga esiste.").waitFor();
-// Each column stays inside the window at every size, with no horizontal scroll.
-const columnsFit = async (size) => {
-  const layout = await page.evaluate(() => {
-    const box = (id) => document.querySelector(`[data-testid="${id}"]`)?.getBoundingClientRect() ?? null;
-    return {
-      width: window.innerWidth,
-      scroll: document.documentElement.scrollWidth,
-      columns: ["focus-progress", "focus-findings", "focus-proof-column"].map((id) => {
-        const b = box(id);
-        return b && { left: b.left, right: b.right, width: b.width, height: b.height };
-      }),
-    };
-  });
-  if (layout.scroll > layout.width) throw new Error(`Focus mode scrolls sideways at ${size}: ${JSON.stringify(layout)}`);
-  for (const column of layout.columns) {
-    if (!column || column.width < 150 || column.height < 120 || column.left < 0 || column.right > layout.width + 1) throw new Error(`A focus mode column does not fit at ${size}: ${JSON.stringify(layout)}`);
+  // The module from v1: full screen, three columns, the exit last on the right, notifications paused.
+  await focusStart.getByRole("radio", { name: /Il modulo Orders/ }).click();
+  await focusStart.getByRole("button", { name: "Avvia l'esame" }).click();
+  const focusView = page.locator("[data-focus-mode]");
+  await focusView.waitFor({ timeout: 20_000 });
+  await page.locator('[data-focus-mode][data-status="done"]').waitFor({ timeout: 60_000 });
+  await focusView.getByTestId("focus-mode-title").getByText("Esame approfondito del modulo Orders").waitFor();
+  await focusView.getByTestId("focus-mode-notifications").getByText("Notifiche in pausa").waitFor();
+  await lastAction(focusView.locator("header .cta-row"), "Esci dall'esame");
+  if (await page.getByTestId("inspector").count()) throw new Error("Focus mode leaves the inspector on screen");
+  await focusView.getByTestId("focus-progress").getByText("v1, ", { exact: false }).waitFor();
+  await focusView.locator('[data-testid="audit-axis"][data-axis="spec"][data-status="skipped"]').getByText("Nessun piano da confrontare").waitFor();
+  const moduleFinding = focusView.locator('[data-testid="audit-axis"][data-axis="standards"] [data-testid="audit-finding"][data-status="verified"]');
+  await moduleFinding.getByText(/Mysterious Name in Sources\/Orders\/Order\.swift/).waitFor();
+  await focusView.getByTestId("focus-proof").getByText("Trama ha letto Sources/Orders/Order.swift:1: la riga esiste.").waitFor();
+  // Each column stays inside the window at every size, with no horizontal scroll.
+  const columnsFit = async (size) => {
+    const layout = await page.evaluate(() => {
+      const box = (id) => document.querySelector(`[data-testid="${id}"]`)?.getBoundingClientRect() ?? null;
+      return {
+        width: window.innerWidth,
+        scroll: document.documentElement.scrollWidth,
+        columns: ["focus-progress", "focus-findings", "focus-proof-column"].map((id) => {
+          const b = box(id);
+          return b && { left: b.left, right: b.right, width: b.width, height: b.height };
+        }),
+      };
+    });
+    if (layout.scroll > layout.width) throw new Error(`Focus mode scrolls sideways at ${size}: ${JSON.stringify(layout)}`);
+    for (const column of layout.columns) {
+      if (!column || column.width < 150 || column.height < 120 || column.left < 0 || column.right > layout.width + 1) throw new Error(`A focus mode column does not fit at ${size}: ${JSON.stringify(layout)}`);
+    }
+  };
+  for (const [width, height] of [[1280, 820], [1600, 1000], [1024, 700], [720, 640]]) {
+    await page.setViewportSize({ width, height });
+    await columnsFit(`${width}x${height}`);
+    await focusThemes(`29e-focus-module-${width}x${height}`);
   }
-};
-for (const [width, height] of [[1280, 820], [1600, 1000], [1024, 700], [720, 640]]) {
-  await page.setViewportSize({ width, height });
-  await columnsFit(`${width}x${height}`);
-  await focusThemes(`29e-focus-module-${width}x${height}`);
+  await page.setViewportSize({ width: 1280, height: 820 });
+  // Esc leaves too; the module is still where the person left it.
+  await page.keyboard.press("Escape");
+  await focusView.waitFor({ state: "detached" });
+  await page.getByTestId("inspector").getByText("Sources/Orders").first().waitFor();
+
+  // The whole project from HEAD~1, left with the exit button.
+  await page.getByRole("button", { name: "Mappa del progetto" }).click();
+  await page.getByTestId("inspector").getByRole("button", { name: "Esame approfondito del progetto" }).click();
+  await focusStart.getByRole("radio", { name: "L'intero progetto" }).and(page.locator('[aria-checked="true"]')).waitFor();
+  await focusStart.getByRole("button", { name: "HEAD~1", exact: true }).click();
+  await focusStart.getByRole("button", { name: "Avvia l'esame" }).click();
+  await page.locator('[data-focus-mode][data-status="done"]').waitFor({ timeout: 60_000 });
+  await focusView.getByTestId("focus-mode-title").getByText("Esame approfondito dell'intero progetto").waitFor();
+  await focusThemes("29f-focus-project");
+  await focusView.getByRole("button", { name: "Esci dall'esame" }).click();
+  await focusView.waitFor({ state: "detached" });
+  await app.close();
 }
-await page.setViewportSize({ width: 1280, height: 820 });
-// Esc leaves too; the module is still where the person left it.
-await page.keyboard.press("Escape");
-await focusView.waitFor({ state: "detached" });
-await page.getByTestId("inspector").getByText("Sources/Orders").first().waitFor();
-
-// The whole project from HEAD~1, left with the exit button.
-await page.getByRole("button", { name: "Mappa del progetto" }).click();
-await page.getByTestId("inspector").getByRole("button", { name: "Esame approfondito del progetto" }).click();
-await focusStart.getByRole("radio", { name: "L'intero progetto" }).and(page.locator('[aria-checked="true"]')).waitFor();
-await focusStart.getByRole("button", { name: "HEAD~1", exact: true }).click();
-await focusStart.getByRole("button", { name: "Avvia l'esame" }).click();
-await page.locator('[data-focus-mode][data-status="done"]').waitFor({ timeout: 60_000 });
-await focusView.getByTestId("focus-mode-title").getByText("Esame approfondito dell'intero progetto").waitFor();
-await focusThemes("29f-focus-project");
-await focusView.getByRole("button", { name: "Esci dall'esame" }).click();
-await focusView.waitFor({ state: "detached" });
-await app.close();

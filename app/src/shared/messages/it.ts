@@ -318,6 +318,7 @@ export const it = {
     "Nessun cambiamento nel modulo {name} tra il punto fisso \"{ref}\" e l'ultimo commit, a parte file sensibili che Trama non legge: scegli un punto fisso più indietro.",
   "focus.error.running": "L'esame approfondito {target} è già in corso.",
   "focus.error.moduleGone": "Il modulo non esiste più dopo l'ultima scansione.",
+  "focus.error.newCommit": "Il progetto ha un nuovo commit dopo l'apertura dell'esame approfondito: aprilo di nuovo per esaminare la versione attuale.",
   "focus.error.projectChanged": "Il progetto è cambiato mentre Trama leggeva il punto fisso.",
   "focus.notify.title": "Trama: novità durante l'esame approfondito",
   "focus.notify.body": "{count} notifiche sono arrivate durante l'esame approfondito: {titles}.",

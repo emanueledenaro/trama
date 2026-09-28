@@ -5021,7 +5021,7 @@ export class TramaController {
 
   enterFocusMode(auditId: string): void {
     const project = this.requireProject();
-    if (!findAudit(project.document, auditId)) throw new DomainError("Esame non trovato.");
+    if (!findAudit(project.document, auditId)) throw new DomainError(translate(this.state.language, "focus.notFound"));
     this.focusMode = { projectId: project.id, auditId, held: this.focusMode?.held ?? [] };
     this.changed();
   }
@@ -5107,7 +5107,7 @@ export class TramaController {
     for (const check of availableChecks(project.rootPath)) {
       const result = await runReadOnlyCheck(check, project.rootPath, { codexExecutable: executable, scratchRoot: join(this.storage.root, "Checks") });
       if (result.headSHA !== audit.snapshotId) {
-        throw new Error("Il progetto ha un nuovo commit dopo l'apertura della focus mode: aprila di nuovo per esaminare la versione attuale.");
+        throw new Error(translate(this.state.language, "focus.error.newCommit"));
       }
       recordAuditCheck(audit, {
         check,

@@ -316,6 +316,7 @@ export const en: Record<keyof typeof it, string> = {
     "Nothing changed in the {name} module between the fixed point \"{ref}\" and the latest commit, apart from sensitive files Trama does not read: pick an earlier fixed point.",
   "focus.error.running": "The in-depth review {target} is already running.",
   "focus.error.moduleGone": "The module no longer exists after the last scan.",
+  "focus.error.newCommit": "The project has a new commit since the in-depth review opened: open it again to review the current version.",
   "focus.error.projectChanged": "The project changed while Trama read the fixed point.",
   "focus.notify.title": "Trama: news during the in-depth review",
   "focus.notify.body": "{count} notifications arrived during the in-depth review: {titles}.",
