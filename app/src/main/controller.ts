@@ -726,7 +726,7 @@ export class TramaController {
     );
     project.focus = focusView(project.document);
     project.statusLine = statusLine(project.document, project.runningRequestId);
-    project.waiting = waitingForYou(project.document, this.waitingSources(project));
+    project.waiting = waitingForYou(project.document, this.waitingSources(project, { sliceViews: project.sliceViews, candidateReports: project.candidateReports }));
     project.automaticWork = project.isDemo ? [] : automaticWorkStatus(project.document, this.dutyContext(project, project.snapshot.headSHA));
     project.overlaps = projectOverlaps(project, this.presenceProbes);
     project.pactDemoBlockers = project.document.pactDemo ? inspectPactDemo(project.document, project.document.pactDemo) : [];
@@ -878,12 +878,16 @@ export class TramaController {
 
   /**
    * What "Aspetta te" reads besides the document: the slices of each approved breakdown, the verdict of each candidate
-   * not yet published and the memory proposals.
+   * not yet published and the memory proposals. `derived` passes the slices and verdicts the published state has just
+   * computed, so they are not computed twice.
    */
-  private waitingSources(project: ActiveProjectState): WaitingSources {
+  private waitingSources(project: ActiveProjectState, derived?: Pick<WaitingSources, "sliceViews" | "candidateReports">): WaitingSources {
     const document = project.document;
-    const views = Object.fromEntries(document.plans.filter((p) => p.slicing?.status === "approved").map((p) => [p.id, sliceViews(document, p)]));
-    const reports = Object.fromEntries(document.candidates.filter((c) => !c.pullRequest).map((c) => [c.id, candidateReport(document, c, project.snapshot.headSHA)]));
+    const views =
+      derived?.sliceViews ?? Object.fromEntries(document.plans.filter((p) => p.slicing?.status === "approved").map((p) => [p.id, sliceViews(document, p)]));
+    const reports =
+      derived?.candidateReports ??
+      Object.fromEntries(document.candidates.filter((c) => !c.pullRequest).map((c) => [c.id, candidateReport(document, c, project.snapshot.headSHA)]));
     return { sliceViews: views, candidateReports: reports, memoryProposals: project === this.state.project ? this.state.learning?.proposals : undefined };
   }
 
