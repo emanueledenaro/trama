@@ -190,6 +190,7 @@ const TECHNICAL_BLOCKS: Partial<Record<string, TechnicalBlock>> = {
   GATE_BLOCKED: "checkFailed",
   WORKTREE_CONFLICT: "worktreeConflict",
   REMOTE_CONFLICT: "worktreeConflict",
+  CLOUD_CHECK_FAILED: "checkFailed",
 };
 
 /** Whose work an assignment is, in the person's words and without the article: "lavoro di Luca su S2". */
@@ -214,6 +215,8 @@ function candidateBlockerWhy(work: string, blocker: CandidateBlocker): string {
       return `Il ${work} è in conflitto con il branch principale su GitHub: vanno riallineati.`;
     case "WORKTREE_CONFLICT":
       return `Il ${work} tocca gli stessi file di un altro lavoro in corso.`;
+    case "CLOUD_CHECK_FAILED":
+      return `Il ${work} viene dal cloud e non ha superato i controlli sul Mac.`;
     default:
       return `Il ${work} non si può ancora unire.`;
   }
@@ -235,6 +238,8 @@ function candidateBlockerText(candidate: Candidate, blocker: CandidateBlocker): 
       return `Il candidato ${candidate.id} è in conflitto con il lavoro su GitHub: ${blocker.detail}`;
     case "WORKTREE_CONFLICT":
       return `Il candidato ${candidate.id} è in conflitto con il lavoro di un altro incarico: ${blocker.detail}`;
+    case "CLOUD_CHECK_FAILED":
+      return `Il candidato ${candidate.id} viene da una sessione cloud e non ha superato i controlli sul Mac: ${blocker.detail}`;
     default:
       return `Il candidato ${candidate.id} è bloccato: ${blockerText(ITALIAN, blocker.code).toLowerCase()}. ${blocker.detail}`.trim();
   }

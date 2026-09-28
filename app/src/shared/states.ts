@@ -1,5 +1,5 @@
 import type { MessageKey, Translate } from "./i18n";
-import type { AssignmentStatus, CandidateBlocker, CandidateReport, CandidateState, FocusTask, SliceState, WorkPlan } from "./domain";
+import type { AssignmentStatus, CandidateBlocker, CloudSessionStatus, CandidateReport, CandidateState, FocusTask, SliceState, WorkPlan } from "./domain";
 
 /**
  * One vocabulary of states for every view (issue #272): the chat card, the inspector lists, the settled line and the
@@ -29,6 +29,16 @@ export const assignmentStatus = (t: Translate, status: AssignmentStatus): StateL
   label: t(`shared.assignment.${status}`),
   tone: ASSIGNMENT_TONE[status],
 });
+
+/** The tone of each state of a cloud session (A19); its words are `cloudSession.status.<state>` in the catalog. */
+export const CLOUD_SESSION_TONE: Record<CloudSessionStatus, StateTone> = {
+  starting: "info",
+  working: "info",
+  draft: "info",
+  returned: "success",
+  stopped: "secondary",
+  failed: "destructive",
+};
 
 const SLICE_TONE: Record<SliceState, StateTone> = {
   blocked: "secondary",

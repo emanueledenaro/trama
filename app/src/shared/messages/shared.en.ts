@@ -709,4 +709,7 @@ export const sharedEn: Record<keyof typeof sharedIt, string> = {
 
   // Context notice title
   "shared.context.noticeTitle": "Context over the threshold",
+
+  // Cloud sessions (A19)
+  "shared.blocker.CLOUD_CHECK_FAILED": "The cloud session's work did not pass the checks on the Mac",
 };

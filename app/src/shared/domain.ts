@@ -619,6 +619,62 @@ export interface SpecialistAssignment {
   questions?: DeveloperQuestion[];
   /** The candidate gate sent the work back with blocking findings (W10); the latest return, absent before any. */
   gateReturn?: { gateId: string; candidateId: string; findings: string[]; at: string } | null;
+  /** Where the work runs and why (A19, issue #260); absent for work that never had a choice, which runs locally. */
+  place?: AssignmentPlace | null;
+  /** The person's move of this work between local and cloud (A19); it holds for the next start or resume. */
+  placeChoice?: WorkPlace | null;
+  /** The cloud session that runs the work (A19); absent for local work. */
+  cloud?: CloudSession | null;
+}
+
+/** Where a developer's work runs (A19, ADR 0017): in a worktree on the Mac, or in a provider's cloud session. */
+export type WorkPlace = "local" | "cloud";
+
+/** The project's setting for the place of work (A19): automatic unless the person changes it. */
+export type WorkPlaceSetting = "automatic" | "local" | "cloud";
+
+/** The place Trama chose for a start of the work, with why in the person's words (A19). */
+export interface AssignmentPlace {
+  where: WorkPlace;
+  /** Who decided: the project setting, the Coordinator in automatic, or the person on the card. */
+  chosenBy: "setting" | "coordinator" | "person";
+  /** Why, in plain Italian. */
+  reason: string;
+  /** When the cloud was wanted but cannot be used: why, and the step that enables it. */
+  cloudBlocked: { reason: string; enable: string } | null;
+  at: string;
+}
+
+/**
+ * "starting": Trama is opening the session. "working": the session writes the code. "draft": the session opened its
+ * draft pull request, and Trama brings its branch to the Mac. "returned": the branch is in a local worktree and the
+ * work goes on as a candidate. "stopped": the person stopped the work in Trama. "failed": the session could not start
+ * or its result could not return.
+ */
+export type CloudSessionStatus = "starting" | "working" | "draft" | "returned" | "stopped" | "failed";
+
+/** A cloud session of Claude Code that runs a developer's work (A19, ADR 0017). */
+export interface CloudSession {
+  provider: ProviderId;
+  /** The provider's link to the session; null when it gave none. */
+  url: string | null;
+  /** The branch the session works on and pushes: the branch of the assignment. */
+  branch: string;
+  baseBranch: string;
+  status: CloudSessionStatus;
+  /** The draft pull request the session opened: it becomes the candidate. */
+  pullRequest: { number: number; url: string; draft: boolean } | null;
+  startedAt: string;
+  /** When Trama last read the state of the session on GitHub. */
+  checkedAt: string | null;
+  failure: string | null;
+  /** What Trama asked the session, in order (Q26): kept on the assignment. */
+  instructions: { text: string; at: string }[];
+  /**
+   * Trama's own run on the Mac of the publication checks the session also runs (no secrets or sensitive files,
+   * clean `git diff --check`, valid commit messages), on the snapshot it checked. A problem stops the candidate.
+   */
+  macChecks: { snapshotId: string; problems: string[]; at: string } | null;
 }
 
 /**
@@ -1532,6 +1588,8 @@ export type TechnicalBlock = "checkFailed" | "worktreeConflict" | "stalledAssign
 export interface ProjectSettings {
   /** Developers at work at the same time (W08); absent means three. */
   parallelDevelopers?: number;
+  /** Where developers' work runs (A19); absent means automatic. */
+  workPlace?: WorkPlaceSetting;
 }
 
 /** "verifying": both axes ended and Trama rechecks the proof of each finding (F02). */

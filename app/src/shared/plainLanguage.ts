@@ -32,6 +32,12 @@ export const GLOSSARY: GlossaryTerm[] = [
   { term: "Esame approfondito", meaning: "Una lettura completa di un candidato: prima le verifiche, poi il confronto con le regole del codice e con il piano.", insteadOf: ["Focus mode", "audit"] },
   { term: "Punti di prova", meaning: "I punti del codice da cui i test controllano un comportamento senza toccare il resto.", insteadOf: ["seam"] },
   { term: "Copia di lavoro", meaning: "Una cartella separata del progetto dove uno sviluppatore lavora senza toccare la tua.", insteadOf: ["worktree"] },
+  {
+    term: "Sessione cloud",
+    meaning: "Il lavoro di uno sviluppatore che gira sui server del provider invece che sul Mac. Torna come pull request in bozza e Trama lo verifica sul Mac.",
+    insteadOf: ["remoto", "sandbox"],
+  },
+  { term: "Luogo di lavoro", meaning: "Dove lavora un incarico: in locale sul Mac o in una sessione cloud. Lo sceglie l'impostazione del progetto, e puoi spostare un incarico.", insteadOf: [] },
   { term: "Patto Vivo", meaning: "Le decisioni che hai preso sul comportamento del prodotto, con la loro versione.", insteadOf: ["pact"] },
   { term: "Mandato", meaning: "Il permesso che dai al Coordinatore per fare da solo alcune cose.", insteadOf: ["mandate"] },
   { term: "Aspetta te", meaning: "L'elenco delle domande, proposte e permessi che aspettano una tua risposta.", insteadOf: ["pending", "waiting"] },
@@ -54,6 +60,7 @@ export const BLOCKER_CODES = [
   "GATE_RUNNING",
   "GATE_FAILED",
   "REMOTE_CONFLICT",
+  "CLOUD_CHECK_FAILED",
   "WORKTREE_CONFLICT",
 ] as const;
 type BlockerCode = (typeof BLOCKER_CODES)[number];

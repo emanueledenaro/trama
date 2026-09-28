@@ -708,4 +708,7 @@ export const sharedIt = {
 
   // Context notice title
   "shared.context.noticeTitle": "Contesto oltre la soglia",
+
+  // Cloud sessions (A19)
+  "shared.blocker.CLOUD_CHECK_FAILED": "Il lavoro della sessione cloud non ha superato i controlli sul Mac",
 } satisfies Record<string, string>;
