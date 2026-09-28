@@ -8,8 +8,9 @@ let last: { document: unknown; snapshot: unknown; github: unknown; language: Lan
 let stable: { key: string; index: ReferenceIndex } | null = null;
 
 // The files come from one scan: its time and size stand for thousands of paths.
-const fingerprint = (index: ReferenceIndex, project: ActiveProjectState) =>
+const fingerprint = (index: ReferenceIndex, project: ActiveProjectState, language: Language) =>
   JSON.stringify([
+    language,
     [project.snapshot.rootPath, project.snapshot.scannedAt, project.snapshot.totalFileCount],
     index.githubReady,
     [...index.ids.values()].map((r) => [r.id, r.label, r.detail]),
@@ -28,7 +29,7 @@ export function referenceIndexOf(project: ActiveProjectState | null | undefined,
   if (!project) return null;
   if (last && last.document === project.document && last.snapshot === project.snapshot && last.github === project.github && last.language === language) return last.index;
   const built = buildReferenceIndex(translator(language), { document: project.document, modules: project.snapshot.modules, github: project.github });
-  const key = fingerprint(built, project);
+  const key = fingerprint(built, project, language);
   const index = stable?.key === key ? stable.index : built;
   stable = { key, index };
   last = { document: project.document, snapshot: project.snapshot, github: project.github, language, index };

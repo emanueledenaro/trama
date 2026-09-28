@@ -54,7 +54,10 @@ export function contextReading(usage: ContextUsage | null, threshold: number): C
   return { state, percent, usedTokens: used, contextWindow: window };
 }
 
-/** The detail of the "Contesto oltre la soglia" card: the meter's reading, never a provider name. */
+/** The title of the card that says the context passed the threshold. */
+export const contextNoticeTitle = (t: Translate): string => t("shared.context.noticeTitle");
+
+/** The detail of that card: the meter's reading, never a provider name. */
 export function contextNoticeDetail(t: Translate, reading: ContextReading, threshold: number): string {
   const numbers = reading.usedTokens !== null && reading.contextWindow !== null ? ` ${t("shared.context.tokens", { used: reading.usedTokens, window: reading.contextWindow })}` : "";
   return t("shared.context.notice", { percent: reading.percent ?? 0, numbers, threshold });

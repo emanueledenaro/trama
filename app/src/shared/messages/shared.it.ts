@@ -705,4 +705,7 @@ export const sharedIt = {
   // Pasted text
   "shared.paste.lines": "{count} righe",
   "shared.paste.characters": "{count} caratteri",
+
+  // Context notice title
+  "shared.context.noticeTitle": "Contesto oltre la soglia",
 } satisfies Record<string, string>;

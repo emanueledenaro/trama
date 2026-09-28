@@ -3,7 +3,7 @@ import { existsSync, type FSWatcher, watch } from "node:fs";
 import { mkdir, readFile as readFileBinary, readFile as readFileText, realpath, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { type ContextUsage, contextNoticeDetail, contextReading, invalidContextUsage } from "@shared/contextReading";
+import { type ContextUsage, contextNoticeDetail, contextNoticeTitle, contextReading, invalidContextUsage } from "@shared/contextReading";
 import { isUsableAccount, type ProviderAccount, type ProviderId, type ProviderModel, readOutsideScopeTitle, toolRefusedTitle, type TurnEvent } from "@shared/codex";
 import { PROVIDERS, canCoordinate, catalogModel, catalogOffers, coordinatorDefaultModel, coordinatorUnavailableReason, supportsReadOnly, type CatalogEntry } from "@shared/providers";
 import { shortId } from "@shared/ids";
@@ -2604,7 +2604,8 @@ export class TramaController {
         document.coordinator.practicesSent = practices;
       }
       // The real ids the Coordinator may cite, when they changed since the thread last received them (issue #277).
-      const listing = referenceListing(this.referenceIndex(project));
+      // The listing is text for the Coordinator: its names stay in Italian whatever the interface language.
+      const listing = referenceListing(this.referenceIndex(project, ITALIAN));
       if ((listing ?? null) !== (document.coordinator.referencesSent ?? null)) {
         if (listing) sections.push(listing);
         document.coordinator.referencesSent = listing;
@@ -3399,7 +3400,7 @@ export class TramaController {
     appendEvent(project.document, "trama", {
       type: "card",
       kind: "contextNotice",
-      title: "Contesto oltre la soglia",
+      title: contextNoticeTitle(this.t),
       detail: contextNoticeDetail(this.t, reading, threshold),
       referenceId: coordinator.threadId,
     });
@@ -6520,8 +6521,8 @@ export class TramaController {
    * starts at the last study card, which opens each thread, so earlier threads are searchable.
    */
   /** The records, repository and GitHub reading of the project the Coordinator's ids are checked against (issue #277). */
-  private referenceIndex(project: ActiveProjectState): ReferenceIndex {
-    return buildReferenceIndex(this.t, { document: project.document, modules: project.snapshot.modules, github: project.github });
+  private referenceIndex(project: ActiveProjectState, t: Translate = this.t): ReferenceIndex {
+    return buildReferenceIndex(t, { document: project.document, modules: project.snapshot.modules, github: project.github });
   }
 
   private coordinatorLearning(document: ProjectDocument) {

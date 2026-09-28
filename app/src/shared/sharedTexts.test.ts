@@ -5,7 +5,7 @@ import { describe, expect, it as test } from "vitest";
 import { activityOutcomeLabel } from "./activity";
 import { threadParticipants } from "./agentThreads";
 import { boundaryLabel } from "./askTrama";
-import { contextMeterLines } from "./contextReading";
+import { contextMeterLines, contextNoticeTitle } from "./contextReading";
 import { fixedBanInfo } from "./fixedBans";
 import { translator } from "./i18n";
 import { en as english } from "./messages/en";
@@ -146,6 +146,8 @@ describe("shared texts in English (issue #301)", () => {
     const reading = { state: "near" as const, percent: 75, usedTokens: 12_000, contextWindow: 16_000 };
     expect(contextMeterLines(en, reading).usage).toBe("75% used, 12,000 of 16,000 tokens");
     expect(contextMeterLines(it, reading).usage).toBe("75% usato, 12.000 su 16.000 token");
+    expect(contextNoticeTitle(en)).toBe("Context over the threshold");
+    expect(contextNoticeTitle(it)).toBe("Contesto oltre la soglia");
     expect(relativeAgo(en, "2026-09-27T12:00:00Z", new Date("2026-09-28T12:00:00Z"))).toBe("yesterday");
   });
 

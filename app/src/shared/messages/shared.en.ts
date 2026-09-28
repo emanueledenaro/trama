@@ -706,4 +706,7 @@ export const sharedEn: Record<keyof typeof sharedIt, string> = {
   // Pasted text
   "shared.paste.lines": "{count} lines",
   "shared.paste.characters": "{count} characters",
+
+  // Context notice title
+  "shared.context.noticeTitle": "Context over the threshold",
 };
