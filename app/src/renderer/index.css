@@ -1580,3 +1580,13 @@ body:has(.sash--horizontal.active) {
   border-radius: 0 1px 1px 0;
   background: var(--app-focus-border, var(--color-text-accent));
 }
+
+/* A line of the chat Activity brought into view with "Mostra nella chat" (issue #337): a short tint, then nothing. */
+.chat-work-line {
+  border-radius: 6px;
+  transition: background-color 600ms ease-out;
+}
+.chat-work-line[data-highlight="true"] {
+  background: color-mix(in srgb, var(--app-focus-border) 12%, transparent);
+  transition: none;
+}

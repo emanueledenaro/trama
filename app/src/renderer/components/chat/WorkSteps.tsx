@@ -95,10 +95,11 @@ export function useWorkSpecialist(row: WorkRow) {
 }
 
 /** Who worked and for how long, as the chat line and Activity both say it. */
-export function WorkLabel({ row }: { row: WorkRow }) {
+export function WorkLabel({ row, avatar = true }: { row: WorkRow; avatar?: boolean }) {
   const specialist = useWorkSpecialist(row);
-  // The specialist's identity leads the label (W15): avatar, name and tag in its color.
-  const who = specialist ? <AgentName agent={specialist} size={32} className="mr-1" /> : null;
+  // The specialist's identity leads the label (W15): avatar, name and tag in its color. A row of Activity shows the
+  // avatar in its own column, so the label leaves it out there.
+  const who = specialist ? <AgentName agent={specialist} avatar={avatar} size={32} className="mr-1" /> : null;
   const label = row.running
     ? specialist ? <>{who}sta lavorando</> : "Il Coordinatore sta lavorando"
     : row.durationMs !== null
