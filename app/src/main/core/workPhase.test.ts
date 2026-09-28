@@ -286,12 +286,15 @@ describe("workState: the phase and the allowed moves of a request (W01)", () => 
     expect(workState(failed.document, "r3")).toMatchObject({
       phase: "blocked",
       blocker: `L'incarico ${failed.assignment.id} non è riuscito: Il provider ha chiuso la sessione.`,
+      why: expect.stringMatching(/^Il lavoro di \S+ non è riuscito\.$/),
       moves: [{ move: "assignWork", actor: "coordinator" }],
     });
 
     const check = withAssignment();
     const red = candidate(check.document, check.assignment.id, "fail", "approved");
     expect(workState(check.document, "r3")).toMatchObject({ phase: "blocked", blocker: `La verifica git_status del candidato ${red.id} non è passata.`, moves: [{ move: "assignWork" }] });
+    // The person reads whose work it is, without the candidate's id (issue #241).
+    expect(workState(check.document, "r3").why).toMatch(/^Una verifica del lavoro di \S+ non è passata\.$/);
 
     const review = withAssignment();
     const changes = candidate(review.document, review.assignment.id, "pass", "changesRequested");
@@ -322,7 +325,13 @@ describe("workState: the phase and the allowed moves of a request (W01)", () => 
     const document = emptyDocument("p");
     request(document, "r1");
     const failed = plan(document, "r1", "failed");
-    expect(workState(document, "r1")).toEqual({ phase: "blocked", blocker: `Il piano ${failed.id} non è riuscito: Il pianificatore non ha risposto.`, moves: [] });
+    // The blocker keeps the plan's id for the Coordinator; the person reads the reason without it (issue #241).
+    expect(workState(document, "r1")).toEqual({
+      phase: "blocked",
+      blocker: `Il piano ${failed.id} non è riuscito: Il pianificatore non ha risposto.`,
+      why: "Il piano non è riuscito: va rifatto.",
+      moves: [],
+    });
     mandate(document, ["plan"]);
     expect(moves(document, "r1")).toEqual(["preparePlan"]);
     failed.status = "stale";

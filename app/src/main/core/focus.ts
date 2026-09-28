@@ -1,5 +1,5 @@
 import type { FocusTask, FocusView, ProjectDocument, TaskFocus } from "@shared/domain";
-import { workingGoals } from "@shared/goals";
+import { projectGoals, workingGoals } from "@shared/goals";
 import { DomainError } from "./pact";
 import { PHASE_LABELS, workRequests, workState } from "./workPhase";
 
@@ -24,6 +24,20 @@ const shortTitle = (text: string) => {
   return line.length > TASK_TITLE_LIMIT ? `${line.slice(0, TASK_TITLE_LIMIT - 1).trimEnd()}…` : line || "Lavoro nel dialogo del progetto";
 };
 
+/**
+ * The goal the project dialog's work serves, when its assignments name one: the work is named after the goal, not after
+ * the first message of the dialog, which may be a request already met.
+ */
+function servedGoalTitle(document: ProjectDocument, requestId: string): string | null {
+  const scope = workRequests(document, requestId);
+  if (!scope) return null;
+  const goalId = document.team.specialists
+    .flatMap((s) => s.assignments)
+    .filter((a) => a.requestId !== null && scope.has(a.requestId) && a.goalId)
+    .at(-1)?.goalId;
+  return goalId ? (projectGoals(document).find((g) => g.id === goalId)?.title ?? null) : null;
+}
+
 /** The task the request `requestId` belongs to, or null when it is a message outside any work (a greeting, a question). */
 export function taskIdOf(document: ProjectDocument, requestId: string): string | null {
   const request = document.requests.find((r) => r.id === requestId);
@@ -47,7 +61,8 @@ function describe(document: ProjectDocument, requestId: string | null) {
     phase,
     phaseLabel: phase ? PHASE_LABELS[phase] : NOT_STARTED_LABEL,
     blocker: state?.blocker ?? null,
-    waitingFor: phase === "blocked" ? null : (waiting?.label ?? null),
+    // The person's move shows even when the work is blocked: it is often what unblocks it, as a pending mandate.
+    waitingFor: waiting?.label ?? null,
   };
 }
 
@@ -75,7 +90,7 @@ export function openTasks(document: ProjectDocument): OpenTask[] {
       tasks.push({
         id,
         goalId: null,
-        title: shortTitle(first.text),
+        title: servedGoalTitle(document, latest.id) ?? shortTitle(first.text),
         createdAt: first.createdAt,
         ...described,
       });
