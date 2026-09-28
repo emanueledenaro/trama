@@ -829,6 +829,7 @@
     "src/main/core/storage.test.ts :: AppStorage > accepts only supported images within the limits",
     "src/main/core/storage.test.ts :: AppStorage > keeps the latest of two overlapping saves",
     "src/main/core/storage.test.ts :: AppStorage > keeps the team, its assignments and their candidates across a save and a reopening (V04, V05)",
+    "src/main/core/storage.test.ts :: AppStorage > reads a document only after the saves already asked for it",
     "src/main/core/storage.test.ts :: AppStorage > saves documents privately and marks unreadable state as not writable",
     "src/main/core/study.test.ts :: study > injects only changed parts and never the history",
     "src/main/core/study.test.ts :: study > redacts credentials",

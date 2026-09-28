@@ -86,6 +86,19 @@ describe("AppStorage", () => {
     expect((await storage.loadDocument("p1")).document?.composerDraft).toBe("ultima");
   });
 
+  // Issue #317: a project reopened right after it left the parked projects must not read a save still on its way.
+  it("reads a document only after the saves already asked for it", async () => {
+    const storage = new AppStorage(await mkdtemp(join(tmpdir(), "trama-storage-")));
+    const first = emptyDocument("p1");
+    first.composerDraft = "prima";
+    await storage.saveDocument(first);
+    const latest = emptyDocument("p1");
+    latest.composerDraft = `ultima${"x".repeat(8 * 1_048_576)}`;
+    const saving = storage.saveDocument(latest);
+    expect((await storage.loadDocument("p1")).document?.composerDraft?.startsWith("ultima")).toBe(true);
+    await saving;
+  });
+
   it("accepts only supported images within the limits", async () => {
     const storage = new AppStorage(await mkdtemp(join(tmpdir(), "trama-storage-")));
     const png = { name: "a.png", mimeType: "image/png", dataBase64: Buffer.from("png").toString("base64") };
