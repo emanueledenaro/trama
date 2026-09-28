@@ -67,7 +67,7 @@ import { waitingForYou, type WaitingSources } from "@shared/waitingForYou";
 import { resolveCodexExecutable } from "./core/codexClient";
 import { CodexRuntime } from "./core/providers/codex";
 import { createRuntime, hasAdapter } from "./core/providers/registry";
-import { type AgentRuntime, extractJsonAnswer } from "./core/providers/types";
+import { type AgentRuntime, extractJsonAnswer, isInterruptedTurn } from "./core/providers/types";
 import {
   COORDINATOR_TOOLS,
   learningTools,
@@ -2707,7 +2707,7 @@ export class TramaController {
     } catch (error) {
       if (closed()) return;
       const message = (error as Error).message;
-      const interrupted = /interrott/i.test(message);
+      const interrupted = isInterruptedTurn(error);
       request.state = interrupted ? "interrupted" : "failed";
       request.completedAt = new Date().toISOString();
       request.failure = message;
@@ -4052,7 +4052,7 @@ export class TramaController {
     if (!assignment || assignment.status !== "preparing") return;
     const specialist = document.team.specialists.find((s) => s.id === assignment.specialistId)!;
     const provider = assignment.provider ?? "codex";
-    const blocked = hasAdapter(provider) ? providerUnavailableReason(provider, this.state.providers[provider]?.account ?? null) : t("main.controller.providerNoAdapter", { provider: providerName(provider) });
+    const blocked = hasAdapter(provider) ? providerUnavailableReason(provider, this.state.providers[provider]?.account ?? null) : t("main.controller.assignmentProviderNoAdapter", { provider: providerName(provider) });
     if (blocked) {
       confirmStopWithoutTurn(document, assignmentId, t("main.controller.providerCannotWork", { provider: providerName(provider), reason: blocked }));
       this.specialistActivity(project, assignmentId, `${assignment.turns.length + 1}`, t("main.controller.assignmentWaitingProviderTitle"), blocked, "error");
@@ -4230,7 +4230,7 @@ export class TramaController {
       outcome = { kind: "completed", text: text || t("main.controller.specialistNoReport") };
     } catch (error) {
       const message = (error as Error).message;
-      outcome = /interrott/i.test(message) ? { kind: "interrupted" } : { kind: "failed", message: describeFailure(message) };
+      outcome = isInterruptedTurn(error) ? { kind: "interrupted" } : { kind: "failed", message: describeFailure(message) };
     } finally {
       client.stop();
       toolServer?.stop();
