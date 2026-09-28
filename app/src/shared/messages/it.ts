@@ -202,6 +202,28 @@ export const it = {
   "settings.parallel.openProject": "Apri un progetto per scegliere il limite.",
   "settings.parallel.demo": "Il progetto di esempio non ha un limite da scegliere.",
   "settings.parallel.default": "Tre, se non lo cambi.",
+  "settings.parallel.shared": "Al massimo in tutti i progetti",
+  "settings.parallel.sharedLabel": "Sviluppatori in tutti i progetti",
+  "settings.parallel.sharedDescription":
+    "Vale anche per i progetti che lasci mentre il loro team lavora. Chi resta senza posto aspetta e parte secondo l'ordine dei progetti della Panoramica. Sei, se non lo cambi.",
+
+  // Projects overview (issue #39)
+  "overview.ci.summary": "CI delle pull request aperte: {parts}",
+  "overview.ci.none": "CI: nessuna pull request aperta con controlli",
+  "overview.ci.failing": "{count} rosse",
+  "overview.ci.failing.one": "{count} rossa",
+  "overview.ci.pending": "{count} in corso",
+  "overview.ci.passing": "{count} verdi",
+  "overview.ci.passing.one": "{count} verde",
+  "overview.priority.title": "Ordine dei progetti",
+  "overview.priority.note":
+    "I progetti che lasci continuano il lavoro già autorizzato. Quando uno sviluppatore si libera, passa al primo progetto di questa lista che ha lavoro in attesa. Aprire un progetto non cambia l'ordine.",
+  "overview.priority.capacity": "Sviluppatori al lavoro in tutti i progetti: {running} su {limit}.",
+  "overview.priority.waiting": "{count} incarichi aspettano uno sviluppatore libero.",
+  "overview.priority.waiting.one": "{count} incarico aspetta uno sviluppatore libero.",
+  "overview.priority.waitingBadge": "{count} in attesa",
+  "overview.priority.up": "Sposta {name} più in alto",
+  "overview.priority.down": "Sposta {name} più in basso",
 
   "settings.standard.description":
     "Lo standard Clean Code di Trama, versione {version}. Gli sviluppatori lo ricevono come testo di Trama accanto alle skill, che restano col testo originale, e la revisione tecnica controlla il diff anche rispetto a questo standard.",

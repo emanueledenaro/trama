@@ -1,10 +1,12 @@
-import { IconAlertTriangle, IconFolder, IconRefresh, IconTarget } from "@tabler/icons-react";
+import { IconAlertTriangle, IconChevronDown, IconChevronUp, IconFolder, IconRefresh, IconTarget } from "@tabler/icons-react";
 import { useEffect, useRef, useState } from "react";
-import type { AttentionReason, ProjectOverview } from "@shared/domain";
+import type { AttentionReason, ProjectOverview, SharedCapacity } from "@shared/domain";
+import type { Translate } from "@shared/i18n";
 import { Spinner } from "@/components/Spinner";
 import { Badge } from "@/components/ui/field";
 import { Button } from "@/components/ui/button";
 import { formatRelativeTime } from "@/lib/format";
+import { useT } from "@/lib/i18n";
 import { act, useUi } from "@/lib/store";
 import { Sep } from "@/components/ui/sep";
 
@@ -14,6 +16,17 @@ const ATTENTION: Record<AttentionReason, { label: string; tone: "warning" | "des
   approval: { label: "Risultato da approvare", tone: "success" },
   running: { label: "Al lavoro", tone: "info" },
 };
+
+/** The checks of the open pull requests in plain words; null when the repository was not read. */
+function ciLabel(t: Translate, ci: ProjectOverview["ci"]): string | null {
+  if (!ci) return null;
+  const parts = [
+    ci.failing ? t("overview.ci.failing", { count: ci.failing }) : null,
+    ci.pending ? t("overview.ci.pending", { count: ci.pending }) : null,
+    ci.passing ? t("overview.ci.passing", { count: ci.passing }) : null,
+  ].filter(Boolean);
+  return parts.length ? t("overview.ci.summary", { parts: parts.join(", ") }) : t("overview.ci.none");
+}
 
 function sourceLabel(entry: ProjectOverview): string {
   switch (entry.source) {
@@ -37,12 +50,18 @@ export function OverviewView() {
   const openGoalOf = useUi((s) => s.openGoalOf);
   const setMainView = useUi((s) => s.setMainView);
   const [entries, setEntries] = useState<ProjectOverview[] | null>(null);
+  const capacity = app.sharedCapacity;
+  const t = useT();
   const [loading, setLoading] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Readings can end out of order: only the latest one may replace what the overview shows.
+  const latestRead = useRef(0);
   const load = () => {
+    const read = ++latestRead.current;
     setLoading(true);
     void act("overview:read", undefined).then((result) => {
+      if (read !== latestRead.current) return;
       setLoading(false);
       if (result) setEntries(result);
     });
@@ -100,6 +119,11 @@ export function OverviewView() {
                   {entry.reasons.length ? entry.reasons.join(", ") : entry.source === "live" || entry.source === "saved" ? "Niente in attesa" : null}
                 </p>
                 {entry.problem ? <p className="mt-1 text-ui-xs text-destructive">{entry.problem}</p> : null}
+                {ciLabel(t, entry.ci) ? (
+                  <p className={`mt-1 text-ui-xs ${entry.ci?.failing ? "text-destructive" : "text-muted-foreground"}`} data-testid="overview-ci">
+                    {ciLabel(t, entry.ci)}
+                  </p>
+                ) : null}
                 <p className="mt-1 text-ui-xs text-muted-foreground/70">{sourceLabel(entry)}</p>
                 {entry.goals.length ? (
                   <div className="mt-2 flex flex-wrap gap-1.5">
@@ -124,7 +148,47 @@ export function OverviewView() {
             ))}
           </ul>
         )}
+        {entries?.length ? <PrioritySection entries={entries} capacity={capacity} /> : null}
       </div>
     </div>
+  );
+}
+
+/**
+ * The Product Owner's order of the projects and the developers they share (issue #39). A freed developer goes to the
+ * first project in this list that has work waiting; opening a project does not move it.
+ */
+function PrioritySection({ entries, capacity }: { entries: ProjectOverview[]; capacity: SharedCapacity }) {
+  const ranked = [...entries].sort((a, b) => a.priority - b.priority);
+  const t = useT();
+  const move = (entry: ProjectOverview, direction: "up" | "down") => void act("overview:prioritize", { projectId: entry.id, direction });
+  return (
+    <section className="mt-6" aria-labelledby="overview-priority-title" data-testid="overview-priority">
+      <h2 id="overview-priority-title" className="text-ui font-medium text-foreground">
+        {t("overview.priority.title")}
+      </h2>
+      <p className="mt-1 text-ui-sm text-muted-foreground">{t("overview.priority.note")}</p>
+      <p className="mt-1 text-ui-sm text-muted-foreground" data-testid="shared-capacity">
+        {t("overview.priority.capacity", { running: capacity.running, limit: capacity.limit })}
+        {capacity.waiting ? ` ${t("overview.priority.waiting", { count: capacity.waiting })}` : null}
+      </p>
+      <ol className="mt-2 space-y-1">
+        {ranked.map((entry, index) => (
+          <li key={entry.id} className="flex items-center gap-2 rounded-lg px-2 py-1 hover:bg-[var(--sidebar-accent)]" data-testid="overview-priority-row">
+            <span className="w-5 shrink-0 text-right text-ui-sm tabular-nums text-muted-foreground">{index + 1}</span>
+            <span className="min-w-0 flex-1 truncate text-ui text-foreground">{entry.name}</span>
+            {entry.waitingForCapacity ? <Badge tone="info">{t("overview.priority.waitingBadge", { count: entry.waitingForCapacity })}</Badge> : null}
+            <div className="cta-row shrink-0">
+              <Button size="icon-xs" variant="ghost" disabled={index === ranked.length - 1} onClick={() => move(entry, "down")} aria-label={t("overview.priority.down", { name: entry.name })}>
+                <IconChevronDown />
+              </Button>
+              <Button size="icon-xs" variant="ghost" disabled={index === 0} onClick={() => move(entry, "up")} aria-label={t("overview.priority.up", { name: entry.name })}>
+                <IconChevronUp />
+              </Button>
+            </div>
+          </li>
+        ))}
+      </ol>
+    </section>
   );
 }
