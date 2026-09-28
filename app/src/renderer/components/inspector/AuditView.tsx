@@ -88,7 +88,7 @@ function AxisBody({ axis, name }: { axis: AuditAxis; name: "standards" | "spec" 
         </ul>
       ) : null}
       <div className="text-ui">
-        <ChatMarkdown text={axis.report ?? ""} />
+        <ChatMarkdown text={axis.report ?? ""} plain />
       </div>
     </div>
   );

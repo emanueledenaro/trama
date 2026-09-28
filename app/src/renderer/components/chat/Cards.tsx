@@ -816,7 +816,7 @@ export function AssignmentCard({ assignmentId }: { assignmentId: string }) {
           </button>
           {showResult ? (
             <div className="mt-1 rounded-lg bg-[var(--app-chat-code-surface)] px-3 py-2">
-              <ChatMarkdown text={assignment.result} />
+              <ChatMarkdown text={assignment.result} plain />
             </div>
           ) : null}
         </div>
@@ -1265,13 +1265,22 @@ function TechnicalReviewField({ review }: { review: TechnicalReview }) {
   );
 }
 
-/** A decision the candidate relies on, by what it decides, with its version; the id on hover (issue #270). */
+/**
+ * A decision the work relies on, by what that version decided, with its version; the id on hover (issue #270). A
+ * decision changed since then shows the words of the version the work used, not the current ones.
+ */
 function DecisionLink({ id, version }: { id: string; version: number | undefined }) {
   const setInspector = useUi((s) => s.setInspector);
   const record = useRecord(id);
+  const used = useUi((s) => {
+    const document = s.app?.project?.document;
+    if (!document || version === undefined) return null;
+    return [...document.decisions, ...document.decisionHistory].find((d) => d.id === id && d.version === version) ?? null;
+  });
+  const words = used ? `«${used.value.length > 48 ? `${used.value.slice(0, 47).trimEnd()}…` : used.value}»` : (record?.short ?? id);
   return (
     <button type="button" title={id} className="mr-2 text-ui-sm text-[var(--color-text-accent)] hover:underline" onClick={() => setInspector({ kind: "decision", id })}>
-      {record?.short ?? id}
+      {words}
       {version !== undefined ? `, versione ${version}` : ""}
     </button>
   );

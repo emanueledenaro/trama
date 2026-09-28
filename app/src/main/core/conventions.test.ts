@@ -170,6 +170,16 @@ describe("deriving the commit (Q01)", () => {
     expect(validateCommitMessage("strict: aggiorna la tipizzazione", conventions).join(" ")).toMatch(/Il tipo "strict"/);
   });
 
+  it("keeps a project's own commit types even when none is Conventional Commits' (issue #270)", () => {
+    const conventions = conventionsFromText({
+      instructions: [{ path: "CONTRIBUTING.md", text: "## Commit messages\n\nTypes: `add`, `change`, `remove`.\n\nTypeScript types: `strict`, `esnext`, `bundler`." }],
+      commitlint: null,
+      branches: [],
+    });
+    expect(conventions.types).toEqual(["add", "change", "remove"]);
+    expect(validateCommitMessage("add: the search palette", conventions)).toEqual([]);
+  });
+
   it("formats header, body and footers as the specification lays them out", () => {
     const message = formatCommitMessage({
       type: "feat",

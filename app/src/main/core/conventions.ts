@@ -121,12 +121,15 @@ export function conventionsFromText(input: { instructions: { path: string; text:
     let used = false;
     // A line that names types lists them in backticks: "Tipi usati: `feat`, `fix`, ...".
     if (!input.commitlint) {
-      for (const line of file.text.split("\n")) {
+      const lines = file.text.split("\n");
+      for (const [at, line] of lines.entries()) {
         if (!/\b(types?|tipi)\b/i.test(line)) continue;
         const listed = [...line.matchAll(/`([a-z]+)`/g)].map((m) => m[1]!);
-        // A list of other things ("types: `strict`, `esnext`, `bundler`") is not a list of commit types: it names
-        // at least two of Conventional Commits' own.
-        if (listed.length >= 3 && listed.filter((t) => CONVENTIONAL_TYPES.includes(t)).length >= 2) {
+        // A list of other things ("types: `strict`, `esnext`, `bundler`") is not a list of commit types. A list of
+        // commit types names Conventional Commits' own, or sits where the text speaks of commits: the same line or
+        // the three before it, as "Commit messages" above "Types: `add`, `change`, `remove`".
+        const aboutCommits = /\bcommit/i.test(lines.slice(Math.max(0, at - 3), at + 1).join("\n"));
+        if (listed.length >= 3 && (aboutCommits || listed.filter((t) => CONVENTIONAL_TYPES.includes(t)).length >= 2)) {
           types = [...new Set(listed)];
           used = true;
           break;

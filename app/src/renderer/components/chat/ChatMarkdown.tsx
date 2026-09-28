@@ -61,12 +61,15 @@ const COMPONENTS: Components = {
   table: (props) => <ChatTable {...props} components={INNER} />,
 };
 
-export const ChatMarkdown = memo(function ChatMarkdown({ text, user = false, className }: { text: string; user?: boolean; className?: string }) {
+/**
+ * `plain`: the text is an agent's result or report that Trama shows in a card, made plain for the person (issue #270).
+ * Messages, issues and other published text stay as written.
+ */
+export const ChatMarkdown = memo(function ChatMarkdown({ text, user = false, plain = false, className }: { text: string; user?: boolean; plain?: boolean; className?: string }) {
   const index = useReferenceIndex();
-  // The person's own words stay as they wrote them; Trama's and the agents' are made plain (issue #270).
   const plugins = useMemo<NonNullable<Options["remarkPlugins"]>>(
-    () => [remarkGfm, remarkCallouts, ...(user ? [] : [remarkPlainText]), [remarkReferences, { index }]],
-    [index, user],
+    () => [remarkGfm, remarkCallouts, ...(plain ? [remarkPlainText] : []), [remarkReferences, { index }]],
+    [index, plain],
   );
   return (
     <div className={cn("chat-markdown w-full min-w-0 text-foreground", user && "chat-markdown--user", className)}>
