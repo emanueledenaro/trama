@@ -3506,8 +3506,15 @@ await page.getByTestId("dialog-title").filter({ hasText: "trama-ui-sempre-attivo
 // written again.
 await waitForAlwaysReply(alwaysSoFar, "Reopened turn");
 if ((await page.getByText("[attesa] Controlla i test dei resi", { exact: true }).count()) !== 1) throw new Error("The resumed turn wrote the message again");
-await page.getByRole("button", { name: /^Ha lavorato per/ }).last().click();
-const reopenedRow = page.getByText("Turno ripreso alla riapertura", { exact: true }).last();
+// The turn's steps are in Activity (issue #271): once the turn ends, its line opens them there. The newest line
+// that holds Trama's line is the resumed turn; on a slow runner the reply comes before the turn is closed.
+await page.getByRole("button", { name: "Interrompi" }).waitFor({ state: "hidden", timeout: 30_000 });
+const reopenedRow = page.getByTestId("inspector").getByText("Turno ripreso alla riapertura", { exact: true }).last();
+const turnLines = page.getByTestId("work-line").getByRole("button", { name: /^Ha lavorato per/ });
+for (let index = (await turnLines.count()) - 1; index >= 0 && !(await reopenedRow.isVisible()); index -= 1) {
+  await turnLines.nth(index).click();
+  await page.waitForTimeout(300);
+}
 await reopenedRow.waitFor({ timeout: 10_000 });
 await page.waitForTimeout(1_000);
 await reopenedRow.scrollIntoViewIfNeeded();
