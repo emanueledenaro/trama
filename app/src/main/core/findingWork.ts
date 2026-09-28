@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { ProviderId } from "@shared/codex";
 import type {
+  AuditAxis,
   AuditFinding,
   DecisionRequest,
   FindingFollowUp,
@@ -10,7 +11,7 @@ import type {
   Specialist,
   SpecialistAssignment,
 } from "@shared/domain";
-import { evidenceLabel, FINDING_STATUS_TEXT } from "@shared/findings";
+import { auditFindings, auditLenses, evidenceLabel, FINDING_STATUS_TEXT, LENS_NAMES, lensTitle } from "@shared/findings";
 import type { MessageKey } from "@shared/i18n";
 import { shortId } from "@shared/ids";
 import type { PresenceView } from "@shared/presence";
@@ -41,7 +42,7 @@ const FOLLOW_UP_NAMES: Record<FindingFollowUp["kind"], MessageKey> = {
 /** The finding of a finished examination, or why the person cannot act on it. */
 export function actionableFinding(audit: FocusAudit, findingId: string): AuditFinding {
   if (audit.status !== "done") throw new FindingWorkError(t("main.findingWork.notDone"));
-  const finding = [...(audit.standards.items ?? []), ...(audit.spec.items ?? [])].find((f) => f.id === findingId);
+  const finding = auditFindings(audit).find((f) => f.id === findingId);
   if (!finding) throw new FindingWorkError(t("main.findingWork.notFound"));
   return finding;
 }
@@ -67,7 +68,13 @@ export function findingProof(finding: AuditFinding): string {
   return t("main.findingWork.reproduction", { steps: evidence.steps });
 }
 
-const axisOf = (finding: AuditFinding) => (finding.id.startsWith("spec") ? "Spec" : "Standards");
+/** Where a finding comes from, by its id: an axis of code-review, or one of Trama's lenses (F05). */
+function sourceOf(finding: AuditFinding): { of: string; name: string } {
+  const lens = LENS_NAMES.find((name) => finding.id.startsWith(`${name}-`));
+  if (lens) return { of: t("main.findingWork.source.lensOf", { lens: lensTitle(lens) }), name: t("main.findingWork.source.lens", { lens: lensTitle(lens) }) };
+  const axis = finding.id.startsWith("spec") ? "Spec" : "Standards";
+  return { of: t("main.findingWork.source.axisOf", { axis }), name: t("main.findingWork.source.axis", { axis }) };
+}
 
 /** The candidate as the person reads it: "candidato di Luca", by the developer who wrote it (issue #270). */
 export function candidateName(document: ProjectDocument, audit: FocusAudit): string {
@@ -79,7 +86,7 @@ export function candidateName(document: ProjectDocument, audit: FocusAudit): str
 /** Everything the finding says, in Markdown: status, proof, what Trama read and where it comes from. */
 export function findingMarkdown(document: ProjectDocument, audit: FocusAudit, finding: AuditFinding): string {
   return [
-    t(finding.severity === "serious" ? "main.findingWork.markdown.titleSerious" : "main.findingWork.markdown.title", { axis: axisOf(finding), title: finding.title }),
+    t(finding.severity === "serious" ? "main.findingWork.markdown.titleSerious" : "main.findingWork.markdown.title", { source: sourceOf(finding).of, title: finding.title }),
     `${t("main.findingWork.markdown.status", { status: FINDING_STATUS_TEXT[finding.status] })}${finding.basis ? ` ${finding.basis}` : ""}`,
     t("main.findingWork.markdown.proof", { proof: findingProof(finding) }),
     ...(finding.observed ? [`${t("main.findingWork.markdown.observed")}\n\n\`\`\`\n${finding.observed}\n\`\`\``] : []),
@@ -259,7 +266,7 @@ export function findingPactCard(document: ProjectDocument, audit: FocusAudit, fi
       requestId: work?.requestId ?? null,
       category: "product",
       question: t("main.findingWork.pact.question", { title: finding.title }),
-      concreteCase: [t("main.findingWork.pact.case", { candidate: candidateName(document, audit), axis: axisOf(finding) }), t("main.findingWork.pact.proof", { proof: findingProof(finding) }), finding.basis ?? ""]
+      concreteCase: [t("main.findingWork.pact.case", { candidate: candidateName(document, audit), source: sourceOf(finding).name }), t("main.findingWork.pact.proof", { proof: findingProof(finding) }), finding.basis ?? ""]
         .filter(Boolean)
         .join(" "),
       alternatives: [
@@ -289,9 +296,8 @@ export function findingPactCard(document: ProjectDocument, audit: FocusAudit, fi
 /** The report as it goes to GitHub: the real checks first, then the two axes apart, each finding with its proof. */
 export function auditReportMarkdown(document: ProjectDocument, audit: FocusAudit): string {
   const checks = audit.checks.map((c) => `- \`${c.check}\`: ${t(c.result === "pass" ? "main.findingWork.report.passed" : "main.findingWork.report.failed")}`);
-  const axis = (name: "standards" | "spec", title: string) => {
-    const value = audit[name];
-    const items = (value.items ?? []).map(
+  const findingLines = (value: AuditAxis) =>
+    (value.items ?? []).map(
       (f) =>
         `- ${t("main.findingWork.report.item", {
           serious: f.severity === "serious" ? t("main.findingWork.report.serious") : "",
@@ -300,6 +306,9 @@ export function auditReportMarkdown(document: ProjectDocument, audit: FocusAudit
           proof: evidenceLabel(f.evidence),
         })}`,
     );
+  const axis = (name: "standards" | "spec", title: string) => {
+    const value = audit[name];
+    const items = findingLines(value);
     return [`### ${title}`, value.status === "skipped" ? t("main.findingWork.report.noSpec") : items.length ? items.join("\n") : t("main.findingWork.report.noFindings")].join("\n\n");
   };
   return [
@@ -309,6 +318,14 @@ export function auditReportMarkdown(document: ProjectDocument, audit: FocusAudit
     checks.length ? checks.join("\n") : t("main.findingWork.report.noChecks"),
     axis("standards", "Standards"),
     axis("spec", "Spec"),
+    // Trama's lenses (F05) follow the axes, marked as Trama's additions.
+    ...auditLenses(audit).map(({ name, lens }) => {
+      const items = findingLines(lens);
+      return [
+        t("main.findingWork.report.lensTitle", { lens: lensTitle(name) }),
+        lens.status === "failed" ? t("main.findingWork.report.lensFailed") : items.length ? items.join("\n") : t("main.findingWork.report.noFindings"),
+      ].join("\n\n");
+    }),
     ...(audit.summary ? [t("main.findingWork.report.summary", { summary: audit.summary })] : []),
     t("main.findingWork.report.note"),
   ].join("\n\n");

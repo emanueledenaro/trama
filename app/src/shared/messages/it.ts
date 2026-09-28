@@ -180,6 +180,15 @@ export const it = {
   "github.detail.signedOut": "gh non ha un accesso valido. Esegui {command} nel terminale, poi premi Controlla di nuovo.",
   "github.detail.signedOutDetail": "gh non ha un accesso valido: {detail}. Esegui {command} nel terminale, poi premi Controlla di nuovo.",
 
+  // Merge stopped on a destructive change (issue #41)
+  "mergeStop.title": "Il Coordinatore non unisce questo candidato da solo: la scelta è tua.",
+  "mergeStop.consequences": "Conseguenze",
+  "mergeStop.alternatives": "Cosa puoi fare",
+  "mergeStop.declined": "Hai scelto di non unirlo. Resta qui finché non chiedi una versione nuova.",
+  "mergeStop.decline": "Non unire",
+  "mergeStop.merge": "Unisci comunque",
+  "merge.mandateVersion": "Mandato versione {version}.",
+
   // Settings
   "settings.sections": "Sezioni delle impostazioni",
   "settings.section.general": "Generale",
@@ -337,6 +346,24 @@ export const it = {
   "audit.publication.issue": "issue #{number}",
   "audit.publication.comment": "commento alla pull request #{number}",
   "audit.publication.publish": "Pubblica su GitHub",
+
+  // Focus mode lenses (F05)
+  "audit.lenses.title": "Lenti di Trama",
+  "audit.lenses.addedBy": "Aggiunte di Trama",
+  "audit.lens.addedBy": "Aggiunta di Trama",
+  "audit.lenses.note":
+    "Sicurezza, qualità dei test e allineamento tra documenti e codice sono controlli in più di Trama: non vengono dal metodo AI Hero, che dà gli assi Standards e Spec. Ogni lente legge il candidato in sola lettura e i suoi rilievi passano la stessa verifica degli assi.",
+  "audit.lens.security": "Sicurezza",
+  "audit.lens.tests": "Qualità dei test",
+  "audit.lens.docs": "Documenti e codice",
+  "audit.lenses.summary": "Lenti di Trama: {summary}",
+  "audit.lens.noFindings": "{lens}: nessun rilievo.",
+  "audit.lens.findings": "{lens}: {count} rilievi.",
+  "audit.lens.findings.one": "{lens}: 1 rilievo.",
+  "audit.lens.findingsWorst": "{lens}: {count} rilievi, il più grave: {worst}.",
+  "audit.lens.findingsWorst.one": "{lens}: 1 rilievo, il più grave: {worst}.",
+  "audit.lens.failed": "{lens}: non riuscita.",
+  "audit.lens.running": "{lens}: in corso.",
 
   // Context managed by Trama (ADR 0018)
   "context.meter.aria": "Contesto del Coordinatore: {percent}%, riordino sopra il {threshold}%",

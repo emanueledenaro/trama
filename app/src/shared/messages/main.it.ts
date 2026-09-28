@@ -1827,6 +1827,7 @@ export const mainIt = {
     "Il candidato non ha superato il cancello dei revisori.",
   "main.merge.noClearance":
     "Manca il via libera del Coordinatore su questo candidato.",
+  "main.merge.clearanceOtherMandate": "Il via libera è stato dato con un mandato diverso da quello in vigore: serve un nuovo via libera.",
   "main.merge.running": "Trama sta unendo il candidato.",
   "main.merge.stopped": "L'unione di questo candidato si è fermata.",
   "main.merge.githubRefused": "GitHub non ha unito la pull request.",
@@ -1845,6 +1846,23 @@ export const mainIt = {
   "main.merge.mergedByPerson": "Candidato {id} unito con il tuo ok",
   "main.merge.mergedDetail": "Pull request #{number}: {url}",
   "main.merge.failed": "Unione del candidato {id} non riuscita",
+  "main.merge.destructiveTitle": "Unione fermata: serve la tua decisione",
+  "main.merge.destructiveDetail": "{reasons} La trovi in Aspetta te con conseguenze e alternative.",
+  "main.merge.destructive.breaking": "Modifica incompatibile.",
+  "main.merge.destructive.breakingConsequence": "Chi usa questa parte deve adattarsi: {breaking}",
+  "main.merge.destructive.deletes": "Cancella {count} file.",
+  "main.merge.destructive.deletes.one": "Cancella un file.",
+  "main.merge.destructive.deletedConsequence": "Dopo l'unione sul branch principale non ci sono più: {files}.",
+  "main.merge.destructive.andOthers": " e altri {count}",
+  "main.merge.destructive.sql": "Contiene istruzioni che cancellano dati.",
+  "main.merge.destructive.sqlConsequence": "Quando le istruzioni girano, i dati tolti non tornano indietro senza un backup.",
+  "main.merge.destructive.mergeAnyway": "Unisci comunque, se le conseguenze ti vanno bene: Trama unisce con il tuo ok.",
+  "main.merge.destructive.askSafer": "Chiedi al Coordinatore una versione che non toglie niente, per esempio prima deprecare e poi rimuovere.",
+  "main.merge.destructive.leave": "Non unire e lascia le cose come sono.",
+  "main.merge.destructive.stopped": "Il Coordinatore non unisce questo candidato da solo: {reasons}",
+  "main.merge.destructive.noStop": "Il candidato non ha un'unione fermata.",
+  "main.merge.drift.newWork": "Sul branch della pull request #{number} è arrivato altro lavoro dopo la pubblicazione: serve un nuovo candidato con nuove verifiche.",
+  "main.merge.drift.conflicts": "GitHub trova conflitti tra la pull request #{number} e la base.",
   "main.merge.banned": "Unione fermata da un divieto fisso",
   "main.merge.bannedDetail":
     "{reason} Nessun mandato lo concede: il candidato {id} aspetta te.",
@@ -2278,9 +2296,9 @@ export const mainIt = {
   "main.findingWork.reproduction": "riproduzione:\n{steps}",
   "main.findingWork.candidateOf": "candidato di {author}",
   "main.findingWork.candidateReviewed": "candidato esaminato",
-  "main.findingWork.markdown.title": "**Rilievo dell'asse {axis}:** {title}",
+  "main.findingWork.markdown.title": "**Rilievo {source}:** {title}",
   "main.findingWork.markdown.titleSerious":
-    "**Rilievo dell'asse {axis}, grave:** {title}",
+    "**Rilievo {source}, grave:** {title}",
   "main.findingWork.markdown.status": "**Stato:** {status}.",
   "main.findingWork.markdown.proof": "**Prova:** {proof}",
   "main.findingWork.markdown.observed": "Cosa ha letto Trama:",
@@ -2321,7 +2339,7 @@ export const mainIt = {
   "main.findingWork.pact.question":
     "Il rilievo «{title}» è un compromesso da accettare o va corretto?",
   "main.findingWork.pact.case":
-    "Esame approfondito sul {candidate}, asse {axis}.",
+    "Esame approfondito sul {candidate}, {source}.",
   "main.findingWork.pact.proof": "Prova: {proof}.",
   "main.findingWork.pact.acceptBehavior":
     "Accettare il compromesso: il codice resta com'è e il rilievo «{title}» non si corregge.",
@@ -2339,6 +2357,12 @@ export const mainIt = {
   "main.findingWork.report.item": "{serious}{title} ({status}; prova: {proof})",
   "main.findingWork.report.noSpec":
     "Nessuna spec disponibile: l'asse non è partito.",
+  "main.findingWork.source.axisOf": "dell'asse {axis}",
+  "main.findingWork.source.axis": "asse {axis}",
+  "main.findingWork.source.lensOf": "della lente di Trama {lens}",
+  "main.findingWork.source.lens": "lente di Trama {lens}",
+  "main.findingWork.report.lensTitle": "### {lens} (lente di Trama)",
+  "main.findingWork.report.lensFailed": "La lente non ha prodotto un rapporto.",
   "main.findingWork.report.noFindings": "Nessun rilievo.",
   "main.findingWork.report.title": "## Esame approfondito sul {candidate}",
   "main.findingWork.report.scope":
