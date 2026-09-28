@@ -4089,7 +4089,15 @@ const englishActivity = page.getByTestId("activity-log");
 await englishActivity.waitFor();
 await themeShots("41-main-en");
 await englishLine.getByTestId("status-line-text").getByText(/^Coordinator paused: running turns finish/).waitFor({ timeout: 10_000 });
-await englishActivity.getByText("Coordinator paused", { exact: true }).first().waitFor({ timeout: 10_000 });
+// The rows already in Activity keep the language they were written in; what the main process writes now is English.
+const italianWords = /[àèìòù]|\b(?:il|la|non|che|della|nel|Coordinatore|Concedi|Rivedi|Conferma|Lavoro del progetto)\b/;
+const englishTexts = [
+  await englishLine.getByTestId("status-line-text").innerText(),
+  ...(await englishLine.locator('.cta-row > button[data-variant="default"]').allInnerTexts()),
+  ...(await page.getByTestId("focus-title").allInnerTexts()),
+];
+const stillItalian = englishTexts.filter((text) => italianWords.test(text));
+if (stillItalian.length) throw new Error(`Main texts still in Italian after the switch: ${stillItalian.join(" | ")}`);
 await noHorizontalScroll("main texts in English");
 const englishLayout = await englishLine.evaluate((line) => {
   const box = line.getBoundingClientRect();
