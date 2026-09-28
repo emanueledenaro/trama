@@ -544,7 +544,7 @@ export const en: Record<keyof typeof it, string> = {
   // Window (issue #330)
   "workbench.views": "Views",
   "workbench.view.projects": "Projects",
-  "workbench.view.conversation": "Conversation",
+  "workbench.view.conversation": "Coordinator",
   "workbench.view.waiting": "Waiting for you",
   "workbench.view.waitingCount": "Waiting for you: {count} items",
   "workbench.view.waitingCount.one": "Waiting for you: 1 item",
