@@ -13,6 +13,7 @@ import type {
   RecentProject,
 } from "@shared/domain";
 import { emptyDocument } from "./document";
+import { t } from "./personLanguage";
 
 /**
  * Reads, never writes, the state of the SwiftUI app in `Application Support/Trama`.
@@ -89,7 +90,7 @@ function convertContent(content: JsonObject): EventContent | null {
     return {
       type: "card",
       kind: "contextNotice",
-      title: kind === "contextNotice" ? title : `${title} (importata dalla versione SwiftUI)`,
+      title: kind === "contextNotice" ? title : t("main.legacy.importedTitle", { title }),
       detail: str(card.detail),
       referenceId: null,
     };

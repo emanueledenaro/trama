@@ -6,6 +6,7 @@ import type { AppSettings, MonitorState, ProjectDocument, RecentProject } from "
 import type { ImageAttachmentInput } from "@shared/ipc";
 import type { OnboardingState } from "@shared/onboarding";
 import { normalizeDocument } from "./document";
+import { t } from "./personLanguage";
 
 const MAXIMUM_RECENT_PROJECTS = 20;
 const MAXIMUM_IMAGES = 8;
@@ -46,7 +47,7 @@ async function writeNow(path: string, contents: string): Promise<void> {
 async function readJson<T>(path: string): Promise<T | null> {
   await pendingWrites.get(path);
   if (!existsSync(path)) return null;
-  if ((await lstat(path)).isSymbolicLink()) throw new Error(`Il file di stato è un collegamento simbolico: ${path}`);
+  if ((await lstat(path)).isSymbolicLink()) throw new Error(t("main.storage.symlink", { path }));
   return JSON.parse(await readFile(path, "utf8")) as T;
 }
 
@@ -111,21 +112,21 @@ export class AppStorage {
       return {
         document: null,
         writable: false,
-        error: `Lo stato del progetto non è leggibile e resta invariato in ${path}. ${(error as Error).message}`,
+        error: t("main.storage.unreadable", { path, detail: (error as Error).message }),
       };
     }
   }
 
   /** Stores composer images inside Trama's folder and returns their absolute paths. */
   async saveAttachments(projectId: string, images: ImageAttachmentInput[]): Promise<string[]> {
-    if (images.length > MAXIMUM_IMAGES) throw new Error(`Puoi allegare al massimo ${MAXIMUM_IMAGES} immagini per messaggio.`);
+    if (images.length > MAXIMUM_IMAGES) throw new Error(t("main.storage.tooManyImages", { max: MAXIMUM_IMAGES }));
     const directory = join(this.root, "Attachments", createHash("sha256").update(projectId).digest("hex").slice(0, 16));
     const paths: string[] = [];
     for (const image of images) {
       const extension = IMAGE_EXTENSIONS[image.mimeType];
-      if (!extension) throw new Error(`Formato immagine non supportato: ${image.name}.`);
+      if (!extension) throw new Error(t("main.storage.unsupportedImage", { name: image.name }));
       const data = Buffer.from(image.dataBase64, "base64");
-      if (data.length === 0 || data.length > MAXIMUM_IMAGE_BYTES) throw new Error(`L'immagine ${image.name} supera 10 MB o è vuota.`);
+      if (data.length === 0 || data.length > MAXIMUM_IMAGE_BYTES) throw new Error(t("main.storage.imageTooLarge", { name: image.name }));
       const path = join(directory, `${randomUUID()}.${extension}`);
       await mkdir(directory, { recursive: true });
       await writeFile(path, data, { mode: 0o600 });

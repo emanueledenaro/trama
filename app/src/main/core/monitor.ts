@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { GitHubPullRequest, GitHubSnapshot, TeamEvent } from "@shared/domain";
 import { checksConclusion, ghEnvironment, linkedIssueNumbers } from "./github";
+import { t } from "./personLanguage";
 import { runProcess } from "./process";
 import { writeAtomically } from "./storage";
 
@@ -13,7 +14,7 @@ const MAXIMUM_EVENTS = 200;
 
 async function ghJson<T>(endpoint: string): Promise<T> {
   const result = await runProcess("gh", ["api", "--method", "GET", endpoint], { env: ghEnvironment(), timeoutMs: 20_000 });
-  if (result.exitCode !== 0) throw new Error(result.stderr.trim().split("\n")[0] || `gh api ${endpoint} non riuscito`);
+  if (result.exitCode !== 0) throw new Error(result.stderr.trim().split("\n")[0] || t("main.monitor.ghFailed", { endpoint }));
   return JSON.parse(result.stdout) as T;
 }
 
@@ -64,8 +65,8 @@ export async function fetchGitHubSnapshot(repository: string, previous: GitHubSn
   const branches = await paged<{ name: string; commit: { sha: string } }>(`repos/${repository}/branches`);
   const pulls = await paged<RawPullRequest>(`repos/${repository}/pulls?state=open`);
   const warnings: string[] = [];
-  if (branches.reachedLimit) warnings.push(`Elenco branch limitato ai primi ${PAGE_SIZE * MAXIMUM_PAGES} risultati.`);
-  if (pulls.reachedLimit) warnings.push(`Elenco pull request limitato ai primi ${PAGE_SIZE * MAXIMUM_PAGES} risultati.`);
+  if (branches.reachedLimit) warnings.push(t("main.monitor.branchesLimited", { count: String(PAGE_SIZE * MAXIMUM_PAGES) }));
+  if (pulls.reachedLimit) warnings.push(t("main.monitor.pullsLimited", { count: String(PAGE_SIZE * MAXIMUM_PAGES) }));
   const snapshot: GitHubSnapshot = {
     repository,
     defaultBranch: metadata.default_branch,
@@ -91,7 +92,7 @@ export async function fetchGitHubSnapshot(repository: string, previous: GitHubSn
     warnings,
   };
   const renamed = metadata.full_name && metadata.full_name.toLowerCase() !== repository.toLowerCase() ? metadata.full_name : null;
-  if (renamed) warnings.push(`Il repository è stato rinominato in ${renamed}: aggiorna il remoto origin.`);
+  if (renamed) warnings.push(t("main.monitor.renamed", { name: renamed }));
   snapshot.renamedTo = renamed;
 
   // Reviews and checks: read again only for pull requests that changed, within a budget per poll.
@@ -145,10 +146,10 @@ export function diffSnapshots(previous: GitHubSnapshot | null, next: GitHubSnaps
         change: before ? "updated" : "created",
         reference: branch.name,
         title: !before
-          ? `Nuovo branch ${branch.name}`
+          ? t("main.monitor.branchCreated", { branch: branch.name })
           : next.forcePushed?.includes(branch.name)
-            ? `Riscrittura forzata di ${branch.name}`
-            : `Nuovi commit su ${branch.name}`,
+            ? t("main.monitor.branchForcePushed", { branch: branch.name })
+            : t("main.monitor.branchUpdated", { branch: branch.name }),
         author: null,
         beforeSHA: before?.sha ?? null,
         afterSHA: branch.sha,
@@ -164,7 +165,7 @@ export function diffSnapshots(previous: GitHubSnapshot | null, next: GitHubSnaps
         entity: "branch",
         change: "deleted",
         reference: branch.name,
-        title: `Branch ${branch.name} eliminato`,
+        title: t("main.monitor.branchDeleted", { branch: branch.name }),
         author: null,
         beforeSHA: branch.sha,
         afterSHA: null,
@@ -183,7 +184,7 @@ export function diffSnapshots(previous: GitHubSnapshot | null, next: GitHubSnaps
         entity: "pullRequest",
         change: before ? "updated" : "created",
         reference: `#${pull.number}`,
-        title: `${before ? "Aggiornata" : "Aperta"} #${pull.number} ${pull.title}${pull.fromFork ? " (da un fork)" : ""}`,
+        title: t(`main.monitor.pull${before ? "Updated" : "Opened"}${pull.fromFork ? "FromFork" : ""}`, { number: String(pull.number), title: pull.title }),
         author: pull.author,
         beforeSHA: before?.headSHA ?? null,
         afterSHA: pull.headSHA,
@@ -195,14 +196,14 @@ export function diffSnapshots(previous: GitHubSnapshot | null, next: GitHubSnaps
     const before = oldPulls.get(pull.number);
     if (!before) continue;
     if (pull.reviewState && before.reviewState !== pull.reviewState && pull.reviewState !== "none") {
-      const label = pull.reviewState === "approved" ? "approvata" : pull.reviewState === "changesRequested" ? "modifiche richieste" : "commentata";
+      const label = t(pull.reviewState === "approved" ? "main.monitor.reviewApproved" : pull.reviewState === "changesRequested" ? "main.monitor.reviewChanges" : "main.monitor.reviewCommented");
       events.push({
         ...base,
         id: eventId(["review", pull.number, pull.headSHA, pull.reviewState]),
         entity: "pullRequest",
         change: "updated",
         reference: `#${pull.number}`,
-        title: `Revisione di #${pull.number}: ${label}`,
+        title: t("main.monitor.review", { number: String(pull.number), label }),
         author: pull.author,
         beforeSHA: pull.headSHA,
         afterSHA: pull.headSHA,
@@ -216,7 +217,7 @@ export function diffSnapshots(previous: GitHubSnapshot | null, next: GitHubSnaps
         entity: "pullRequest",
         change: "updated",
         reference: `#${pull.number}`,
-        title: `CI di #${pull.number}: ${pull.checks === "success" ? "verde" : "fallita"}`,
+        title: t(pull.checks === "success" ? "main.monitor.ciGreen" : "main.monitor.ciFailed", { number: String(pull.number) }),
         author: pull.author,
         beforeSHA: pull.headSHA,
         afterSHA: pull.headSHA,
@@ -232,7 +233,7 @@ export function diffSnapshots(previous: GitHubSnapshot | null, next: GitHubSnaps
         entity: "pullRequest",
         change: "deleted",
         reference: `#${pull.number}`,
-        title: `Chiusa #${pull.number} ${pull.title}`,
+        title: t("main.monitor.pullClosed", { number: String(pull.number), title: pull.title }),
         author: pull.author,
         beforeSHA: pull.headSHA,
         afterSHA: null,

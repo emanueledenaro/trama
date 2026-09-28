@@ -5,6 +5,7 @@ import { copyFile, lstat, mkdir, realpath, rm } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
 import type { ConflictAssessment, WorktreeSession } from "@shared/domain";
 import { conflictRanges, type LineRange } from "@shared/overlap";
+import { t } from "./personLanguage";
 import { GIT_SAFE_OPTIONS, git, gitEnvironment, runProcess } from "./process";
 import { reviewWorktree } from "./workspace";
 
@@ -40,7 +41,7 @@ export function remoteTransport(source: RemoteSource): { url: string; options: s
 /** A bare cache that shares the source's objects and fetches one remote revision at a time. */
 export async function fetchRemoteRevision(sourceRoot: string, source: RemoteSource, sha: string, cacheRoot: string): Promise<string> {
   const revision = sha.toLowerCase();
-  if (!isObjectId(revision)) throw new Error(`Revisione non valida: ${sha}`);
+  if (!isObjectId(revision)) throw new Error(t("main.conflicts.invalidRevision", { sha }));
   await mkdir(cacheRoot, { recursive: true });
   const root = await realpath(cacheRoot);
   const { url: remote, options: transport } = remoteTransport(source);
@@ -54,7 +55,7 @@ export async function fetchRemoteRevision(sourceRoot: string, source: RemoteSour
     [...transport, "fetch", "--no-tags", "--force", `--depth=${MAXIMUM_HISTORY_DEPTH}`, remote, `${revision}:refs/trama-cache/${revision}`],
     { cwd: cache, env: { ...gitEnvironment(false), GIT_TERMINAL_PROMPT: "0" }, timeoutMs: 120_000 },
   );
-  if (fetch.exitCode !== 0) throw new Error(`Revisione remota non disponibile: ${fetch.stderr.trim().split("\n").at(-1) ?? ""}`);
+  if (fetch.exitCode !== 0) throw new Error(t("main.conflicts.remoteUnavailable", { detail: fetch.stderr.trim().split("\n").at(-1) ?? "" }));
   return cache;
 }
 
@@ -63,11 +64,11 @@ async function copyUntracked(paths: string[], from: string, to: string, byteLimi
   for (const path of paths) {
     const source = join(from, path);
     const info = await lstat(source);
-    if (!info.isFile()) throw new Error(`Percorso non sicuro nel candidato: ${path}`);
+    if (!info.isFile()) throw new Error(t("main.conflicts.unsafePath", { path }));
     total += info.size;
-    if (total > byteLimit) throw new Error("Il candidato supera il limite della prova di fusione.");
+    if (total > byteLimit) throw new Error(t("main.conflicts.tooLarge"));
     const target = join(to, path);
-    if (relative(to, target).startsWith("..")) throw new Error(`Percorso non sicuro nel candidato: ${path}`);
+    if (relative(to, target).startsWith("..")) throw new Error(t("main.conflicts.unsafePath", { path }));
     await mkdir(dirname(target), { recursive: true });
     await copyFile(source, target);
   }
@@ -81,15 +82,15 @@ export type ProbeResult = { status: "clean" | "conflict" | "unavailable"; confli
  */
 async function commitCandidate(clone: string, session: WorktreeSession, snapshotId: string, byteLimit = MAXIMUM_CANDIDATE_BYTES): Promise<string> {
   const review = await reviewWorktree(session);
-  if (review.snapshotId !== snapshotId) throw new Error("Il candidato è cambiato durante la prova.");
+  if (review.snapshotId !== snapshotId) throw new Error(t("main.conflicts.changedDuringProbe"));
   await git(["checkout", "--quiet", "--force", "--detach", session.baseSHA, "--"], clone, false);
   await git(["clean", "-fdxq"], clone, false);
   const diff = await runProcess("git", [...GIT_SAFE_OPTIONS, "diff", "--binary", "--no-ext-diff", session.baseSHA, "--"], {
     cwd: session.worktreeRoot,
     env: gitEnvironment(true),
   });
-  if (diff.exitCode !== 0) throw new Error("Il diff del candidato non è leggibile.");
-  if (diff.stdout.length > byteLimit) throw new Error("Il candidato supera il limite della prova di fusione.");
+  if (diff.exitCode !== 0) throw new Error(t("main.conflicts.diffUnreadable"));
+  if (diff.stdout.length > byteLimit) throw new Error(t("main.conflicts.tooLarge"));
   if (diff.stdout) {
     const apply = await new Promise<number>((resolve, reject) => {
       const child = spawn("git", [...GIT_SAFE_OPTIONS, "apply", "--binary", "--index", "--whitespace=nowarn", "-"], {
@@ -102,7 +103,7 @@ async function commitCandidate(clone: string, session: WorktreeSession, snapshot
       child.stdin.on("error", () => undefined);
       child.stdin.end(diff.stdout);
     });
-    if (apply !== 0) throw new Error("Il candidato non si applica alla sua base.");
+    if (apply !== 0) throw new Error(t("main.conflicts.doesNotApply"));
   }
   const untracked = (await git(["ls-files", "--others", "--exclude-standard", "-z"], session.worktreeRoot)).split("\0").filter(Boolean);
   await copyUntracked(
@@ -123,19 +124,19 @@ async function commitCandidate(clone: string, session: WorktreeSession, snapshot
 /** Merges two commits of `clone` through `git merge-tree`, without a checkout, and reads the conflicts. */
 export async function mergeProbe(clone: string, ours: string, theirs: string): Promise<ProbeResult> {
   const base = await runProcess("git", [...GIT_SAFE_OPTIONS, "merge-base", ours, theirs], { cwd: clone, env: gitEnvironment(true) });
-  if (base.exitCode !== 0) return { status: "unavailable", conflictingFiles: [], lines: {}, detail: "Le due revisioni non hanno una base comune verificabile." };
+  if (base.exitCode !== 0) return { status: "unavailable", conflictingFiles: [], lines: {}, detail: t("main.conflicts.noMergeBase") };
   const merge = await runProcess("git", [...GIT_SAFE_OPTIONS, "merge-tree", "--write-tree", "--name-only", "--messages", ours, theirs], {
     cwd: clone,
     env: gitEnvironment(true),
   });
-  if (merge.exitCode === 0) return { status: "clean", conflictingFiles: [], lines: {}, detail: "La fusione temporanea è stata riprodotta senza conflitti testuali." };
-  if (merge.exitCode !== 1) return { status: "unavailable", conflictingFiles: [], lines: {}, detail: `git merge-tree non ha completato la prova: ${merge.stderr.trim()}` };
+  if (merge.exitCode === 0) return { status: "clean", conflictingFiles: [], lines: {}, detail: t("main.conflicts.clean") };
+  if (merge.exitCode !== 1) return { status: "unavailable", conflictingFiles: [], lines: {}, detail: t("main.conflicts.mergeTreeFailed", { detail: merge.stderr.trim() }) };
   // Output: the tree id, the conflicted file names, a blank line and the messages.
   const output = merge.stdout.split("\n");
   const blank = output.indexOf("", 1);
   const files = [...new Set(output.slice(1, blank < 0 ? undefined : blank).filter(Boolean))].sort();
   const lines = await conflictLines(clone, output[0]!.trim(), files);
-  return { status: "conflict", conflictingFiles: files, lines, detail: "La fusione temporanea produce conflitti testuali." };
+  return { status: "conflict", conflictingFiles: files, lines, detail: t("main.conflicts.conflict") };
 }
 
 async function scratchClone(sourceRoot: string, probeRoot: string): Promise<string> {
@@ -157,7 +158,7 @@ export async function probeConflict(
   probeRoot: string,
 ): Promise<ProbeResult> {
   const review = await reviewWorktree(session);
-  if (review.snapshotId !== snapshotId) throw new Error("Il candidato è cambiato durante la prova.");
+  if (review.snapshotId !== snapshotId) throw new Error(t("main.conflicts.changedDuringProbe"));
   const clone = await scratchClone(session.sourceRoot, probeRoot);
   try {
     const candidateSHA = await commitCandidate(clone, session, snapshotId);
@@ -250,7 +251,7 @@ export async function assessConflict(input: {
       ...(result.status === "conflict" && Object.keys(result.lines).length ? { conflictingLines: result.lines } : {}),
       detail:
         classification === "overlap"
-          ? `Nessun conflitto testuale, ma entrambe le revisioni cambiano ${overlap.join(", ")}.`
+          ? t("main.conflicts.overlap", { files: overlap.join(", ") })
           : result.detail,
     };
   } catch (error) {

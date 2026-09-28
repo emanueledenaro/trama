@@ -4,6 +4,7 @@ import type { ConversationEvent, EventContent, EventOrigin, ProjectDocument } fr
 import { requestGoalId } from "@shared/goals";
 import { interruptAudits } from "./audit";
 import { interruptGates } from "./gate";
+import { t } from "./personLanguage";
 import { migrateToSingleChat } from "./singleChat";
 import { completeTeam } from "./team";
 
@@ -47,13 +48,16 @@ export function emptyDocument(projectId: string): ProjectDocument {
   return document;
 }
 
+// @model-text: not model text, but stable markers. The four notes below are stored in the document and resumeWork.ts
+// recognizes a stop by Esci or by a crash by comparing the stored text with them, so they cannot change with the
+// interface language until that match stops depending on the words (issue #301).
 /** Why a Coordinator turn ended when the person quit Trama during it (C11): Esci closes the turn itself. */
 export const QUIT_NOTE = "Trama è stato chiuso mentre il Coordinatore lavorava.";
-/** Why a turn left running on disk ended: Trama stopped without Esci, a crash or a forced stop (C11). */
+/** Why a turn left running on disk ended: Trama stopped without Esci, a crash or a forced stop (C11). @model-text: stable marker. */
 export const CRASH_NOTE = "Trama si è chiuso senza fermare il turno mentre il Coordinatore lavorava.";
-/** Why a specialist's work stopped when the person quit Trama (C11); with a mandate it resumes on reopening (issue #249). */
+/** Why a specialist's work stopped when the person quit Trama (C11); with a mandate it resumes on reopening (issue #249). @model-text: stable marker. */
 export const ASSIGNMENT_QUIT_NOTE = "Esci: Trama si sta chiudendo. L'incarico riprende alla riapertura se il mandato lo consente.";
-/** Why a specialist's work left running on disk stopped: Trama stopped without Esci (C11). */
+/** Why a specialist's work left running on disk stopped: Trama stopped without Esci (C11). @model-text: stable marker. */
 export const ASSIGNMENT_CRASH_NOTE = "Trama si è interrotto senza un arresto controllato (crash o chiusura forzata) mentre lo specialista lavorava.";
 
 /**
@@ -84,15 +88,15 @@ export function normalizeDocument(raw: Partial<ProjectDocument>, projectId: stri
       // The spec was being written after the seam check (M04): the seams wait for the person's answer again.
       plan.status = "seams";
       plan.spec.seamsAnswer = null;
-      plan.failure = "La scrittura della spec si è interrotta prima della fine: rispondi di nuovo sui punti di prova.";
+      plan.failure = t("main.document.specInterrupted");
     } else if (plan.status === "planning") {
       plan.status = "failed";
-      plan.failure = "La preparazione si è interrotta prima della fine: chiedi di nuovo il piano.";
+      plan.failure = t("main.document.planInterrupted");
     }
     // A breakdown still being drawn lost its slicer (M05): the person asks for it again from the plan card.
     if (plan.slicing?.status === "drafting") {
       plan.slicing.status = "failed";
-      plan.slicing.failure = "La divisione in fette si è interrotta prima della fine: chiedila di nuovo.";
+      plan.slicing.failure = t("main.document.slicingInterrupted");
     }
   }
   // Focus mode lost its sessions too (F01): the examination stays, marked as interrupted.
@@ -147,6 +151,7 @@ export function recordReply(
 }
 
 /**
+ * @model-text: the transcript is written for the model.
  * The conversation so far, written by Trama for a new provider session (ADR 0009): the person's
  * messages and the Coordinator's answers, newest last, within a character budget.
  */

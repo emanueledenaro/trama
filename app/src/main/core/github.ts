@@ -1,6 +1,7 @@
 import { execFile } from "node:child_process";
 import { delimiter } from "node:path";
 import type { GitHubCapabilities, GitHubIssue, PullRequestLink } from "@shared/domain";
+import { t } from "./personLanguage";
 
 const REMOTE_PREFIXES = ["git@github.com:", "https://github.com/", "ssh://git@github.com/"];
 
@@ -138,7 +139,7 @@ export async function createIssue(repository: string, title: string, body: strin
     { env: ghEnvironment(), timeout: 20_000 },
   );
   const issue = JSON.parse(output) as { id?: unknown; number?: unknown; html_url?: unknown };
-  if (typeof issue.number !== "number" || typeof issue.html_url !== "string") throw new Error("GitHub non ha restituito la issue creata.");
+  if (typeof issue.number !== "number" || typeof issue.html_url !== "string") throw new Error(t("main.github.issueMissing"));
   return { number: issue.number, url: issue.html_url, ...(typeof issue.id === "number" ? { id: issue.id } : {}) };
 }
 
@@ -253,7 +254,7 @@ export async function mergePullRequest(repository: string, number: number, input
         { env: ghEnvironment(), timeout: 30_000 },
       );
       const merged = JSON.parse(output) as { merged?: boolean; sha?: string; message?: string };
-      if (merged.merged === false) throw new Error(merged.message ?? "GitHub non ha unito la pull request.");
+      if (merged.merged === false) throw new Error(merged.message ?? t("main.merge.githubRefused"));
       return { sha: typeof merged.sha === "string" ? merged.sha : null, method };
     } catch (error) {
       refusal = error as Error;
@@ -261,7 +262,7 @@ export async function mergePullRequest(repository: string, number: number, input
       if (!/not allowed|merge_method/i.test(refusal.message)) break;
     }
   }
-  throw new Error(`GitHub non ha unito la pull request #${number}: ${refusal?.message.split("\n")[0] ?? "errore sconosciuto"}`);
+  throw new Error(t("main.github.mergeFailed", { number: String(number), detail: refusal?.message.split("\n")[0] ?? t("main.github.unknownError") }));
 }
 
 /** State of a pull request and the rollup of its checks, from gh. */
@@ -293,19 +294,19 @@ export function checksConclusion(rollup: { conclusion?: string | null; state?: s
 /** Turns a gh failure into a status the person can act on. */
 export function classifyGitHubError(message: string): { status: GitHubCapabilities["status"]; message: string } {
   if (/ENOENT|command not found|not recognized/i.test(message)) {
-    return { status: "ghMissing", message: "GitHub CLI (gh) non è installato. Installalo ed esegui gh auth login." };
+    return { status: "ghMissing", message: t("main.github.ghMissing") };
   }
   if (/not logged|auth login|authentication required|HTTP 401/i.test(message)) {
-    return { status: "signedOut", message: "GitHub CLI non ha un accesso valido. Esegui gh auth login nel terminale." };
+    return { status: "signedOut", message: t("main.github.signedOut") };
   }
   if (/SAML|SSO/i.test(message)) {
-    return { status: "sso", message: "L'organizzazione richiede SSO: autorizza il token di gh per l'organizzazione (gh auth refresh)." };
+    return { status: "sso", message: t("main.github.sso") };
   }
   if (/rate limit|HTTP 429|secondary rate/i.test(message)) {
-    return { status: "rateLimited", message: "GitHub ha applicato un limite di richieste. Trama riprova più tardi." };
+    return { status: "rateLimited", message: t("main.github.rateLimited") };
   }
   if (/HTTP 404|Not Found/i.test(message)) {
-    return { status: "notFound", message: "Il repository non esiste o il tuo account non vi ha accesso (repository privato)." };
+    return { status: "notFound", message: t("main.github.notFound") };
   }
   return { status: "error", message: message.split("\n")[0] ?? message };
 }

@@ -1,12 +1,14 @@
 import type { Candidate, CommitConventions, PactDecision, ProjectMandate, SpecialistAssignment } from "@shared/domain";
 import { commitHeader, parseCommitMessage, requireValidCommitMessage } from "./conventions";
 import { ghEnvironment } from "./github";
+import { t } from "./personLanguage";
 import { git, runProcess } from "./process";
 import { fixedPushRefusal, pushAuthorization, pushBranch, type PushRecord, pushRefusal, PushRefusedError } from "./push";
 import { candidateTrailer } from "./quality";
 import { reviewWorktree } from "./workspace";
 
 /**
+ * @model-text: the pull request body is project content written into the repository, in the project's language.
  * The body of Trama's pull request (Q01): what changes, the checks Trama ran with their outcome, the seams the developer
  * says it tested (a statement, not evidence), the limits and the linked issue. The title is the commit's header.
  */
@@ -77,7 +79,7 @@ export async function publishCandidate(input: {
   onPush: (record: PushRecord) => void;
 }): Promise<{ url: string; number: number; branch: string; headSHA: string }> {
   const workspace = input.assignment.workspace;
-  if (!workspace) throw new Error("L'incarico non ha un worktree da pubblicare.");
+  if (!workspace) throw new Error(t("main.publication.noWorktree"));
   // The fixed bans hold before the mandate and before anything is committed (issue #244).
   const banned = fixedPushRefusal(workspace.branch, [input.baseBranch]);
   if (banned) {
@@ -95,14 +97,14 @@ export async function publishCandidate(input: {
   // files the candidate excludes (dotfiles, build output) may stay untracked without blocking a retry.
   const review = await reviewWorktree(workspace);
   if (review.snapshotId !== input.candidate.snapshotId) {
-    throw new Error("Il worktree è cambiato dopo la dichiarazione del candidato: serve un nuovo candidato con nuove verifiche.");
+    throw new Error(t("main.publication.worktreeChanged"));
   }
   // Trama refuses to write a message that breaks Conventional Commits or the project's rules (Q01).
   requireValidCommitMessage(input.message, input.conventions);
   const marker = candidateTrailer(input.candidate.id);
-  if (!input.message.split("\n").includes(marker)) throw new Error(`Il messaggio di commit non porta il marcatore del candidato (${marker}).`);
+  if (!input.message.split("\n").includes(marker)) throw new Error(t("main.publication.missingMarker", { marker }));
   const title = commitHeader(input.message);
-  // Commits before Q01 carried the marker as a sentence.
+  // Commits before Q01 carried the marker as a sentence. @model-text: a pattern that reads git history.
   const legacyMarker = `Candidato ${input.candidate.id} preparato con Trama.`;
   const committed = (
     await git(["log", "--format=%H", "--fixed-strings", `--grep=${marker}`, `--grep=${legacyMarker}`, `${workspace.baseSHA}..HEAD`], root)
@@ -113,7 +115,7 @@ export async function publishCandidate(input: {
     await git(["add", "--", ...input.candidate.changedFiles], root, false);
     const staged = (await git(["diff", "--cached", "--name-only", "-z", "--no-renames", "HEAD"], root)).split("\0").filter(Boolean);
     const extra = staged.filter((path) => !input.candidate.changedFiles.includes(path));
-    if (extra.length) throw new Error(`L'indice contiene file fuori dal candidato: ${extra.join(", ")}.`);
+    if (extra.length) throw new Error(t("main.publication.extraFiles", { files: extra.join(", ") }));
     await git(["commit", "--no-verify", "--cleanup=whitespace", "-m", input.message], root, false);
   }
   await pushBranch({ root, branch: workspace.branch, mandate: input.mandate, onRecord: input.onPush, mainBranches: [input.baseBranch] });
@@ -124,7 +126,7 @@ export async function publishCandidate(input: {
   const afterPush = await findPullRequest(input.repository, workspace.branch).catch(() => null);
   if (afterPush?.state === "open") return { url: afterPush.url, number: afterPush.number, branch: workspace.branch, headSHA };
   if (afterPush) {
-    throw new Error(`La pull request #${afterPush.number} di questo branch è già chiusa: il nuovo candidato richiede un nuovo incarico.`);
+    throw new Error(t("main.publication.pullRequestClosed", { number: String(afterPush.number) }));
   }
   const created = await runProcess(
     "gh",
@@ -144,7 +146,7 @@ export async function publishCandidate(input: {
     ],
     { env: ghEnvironment(), timeoutMs: 30_000 },
   );
-  if (created.exitCode !== 0) throw new Error(`GitHub non ha creato la pull request: ${created.stderr.trim() || created.stdout.trim()}`);
+  if (created.exitCode !== 0) throw new Error(t("main.publication.createFailed", { detail: created.stderr.trim() || created.stdout.trim() }));
   const json = JSON.parse(created.stdout) as { html_url: string; number: number };
   return { url: json.html_url, number: json.number, branch: workspace.branch, headSHA };
 }
@@ -157,7 +159,7 @@ export async function findPullRequest(repository: string, branch: string): Promi
     ["api", "--method", "GET", `repos/${repository}/pulls?state=all&head=${encodeURIComponent(`${owner}:${branch}`)}`],
     { env: ghEnvironment(), timeoutMs: 30_000 },
   );
-  if (listed.exitCode !== 0) throw new Error(`GitHub non ha elencato le pull request: ${listed.stderr.trim() || listed.stdout.trim()}`);
+  if (listed.exitCode !== 0) throw new Error(t("main.publication.listFailed", { detail: listed.stderr.trim() || listed.stdout.trim() }));
   const rows = JSON.parse(listed.stdout) as { html_url: string; number: number; state: string }[];
   return rows[0] ? { url: rows[0].html_url, number: rows[0].number, state: rows[0].state } : null;
 }

@@ -15,6 +15,8 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFile
 import { dirname, join } from "node:path";
 import type { LearnedSkillView, LearningReviewRun, LearningSettings, LearningView } from "@shared/domain";
 import { DEFAULT_LEARNING_SETTINGS } from "@shared/domain";
+import { formatNumber } from "@shared/i18n";
+import { personLanguage, t } from "../personLanguage";
 import { CuratorStateStore, DEFAULT_CURATOR_CONFIG, type CuratorConfig } from "./curator";
 import {
   applyMemoryProposal,
@@ -62,10 +64,10 @@ export function memoryChangeLine(op: JsonRecord): string {
   const action = String(op.action ?? "");
   const old = oneLine(op.old_text);
   const content = oneLine(op.content ?? op.new_text);
-  if (action === "remove") return `Togliere la nota «${old}»`;
-  if (action === "replace") return `Sostituire la nota «${old}» con «${content}»`;
-  if (action === "add") return `Aggiungere la nota «${content}»`;
-  return `Cambiare la nota: «${content || old}»`;
+  if (action === "remove") return t("main.memory.change.remove", { old });
+  if (action === "replace") return t("main.memory.change.replace", { old, content });
+  if (action === "add") return t("main.memory.change.add", { content });
+  return t("main.memory.change.other", { content: content || old });
 }
 
 /**
@@ -76,7 +78,10 @@ export function memoryProposalSummary(payload: JsonRecord): string {
   const operations = payloadOperations(payload);
   if (operations.length === 1) return memoryChangeLine(operations[0]!);
   const removals = operations.filter((op) => op.action === "remove" || op.action === "replace").length;
-  return `Riordinare ${operations.length} note${removals ? `: ${removals === 1 ? "una cambia o sparisce" : `${removals} cambiano o spariscono`}` : ""}`;
+  if (!removals) return t("main.memory.reorder", { count: operations.length });
+  return removals === 1
+    ? t("main.memory.reorderOneChanges", { count: operations.length })
+    : t("main.memory.reorderChanges", { count: operations.length, removed: removals });
 }
 
 function readJson<T>(path: string, fallback: T): T {
@@ -208,10 +213,8 @@ export class ProjectLearning {
     const removed: string[] = [];
     while (kept.length > 1 && size(kept) > limit) removed.push(kept.shift()!);
     if (!removed.length || size(kept) > limit) return null;
-    const format = (n: number) => n.toLocaleString("it-IT");
-    const summary =
-      `${target === "user" ? "Il profilo" : "La memoria del progetto"} supera il limite (${format(chars)} su ${format(limit)} caratteri). ` +
-      "Trama propone di togliere le note più vecchie; puoi anche accorciarle a mano.";
+    const format = (n: number) => formatNumber(personLanguage(), n);
+    const summary = t(target === "user" ? "main.memory.userOverLimit" : "main.memory.projectOverLimit", { chars: format(chars), limit: format(limit) });
     return this.stageProposal({ target, summary, kind: "consolidation", payload: { target, operations: removed.map((entry) => ({ action: "remove", old_text: entry })) } });
   }
 
@@ -223,7 +226,7 @@ export class ProjectLearning {
     if (approve && proposal.expected) {
       const now = this.matches(proposal.target, proposal.payload);
       const changed = proposal.expected.some((e, i) => now[i]?.entry !== e.entry);
-      if (changed) return { success: false, code: "stale_proposal", error: "La memoria è cambiata dopo la proposta: le voci che toccava non sono più le stesse. Scartala." };
+      if (changed) return { success: false, code: "stale_proposal", error: t("main.memory.staleProposal") };
     }
     const result = approve ? applyMemoryProposal(this.memory, proposal.payload) : { success: true, message: "Discarded." };
     if (result.success === true) writeJson(join(this.projectDir, "proposals.json"), all.filter((p) => p.id !== id));
