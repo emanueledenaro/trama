@@ -3623,7 +3623,7 @@ export class TramaController {
     const document = project.document;
     const previous = structuredClone(document.goals);
     const goal = createGoal(document, input);
-    const card = appendEvent(document, "person", { type: "card", kind: "goal", title: "Obiettivo", detail: null, referenceId: goal.id }, null, new Date(), null, goal.id);
+    const card = appendEvent(document, "person", { type: "card", kind: "goal", title: t("main.controller.goalCardTitle"), detail: null, referenceId: goal.id }, null, new Date(), null, goal.id);
     await this.saveGoalChange(project, previous, card.id);
     return goal.id;
   }
@@ -3662,14 +3662,14 @@ export class TramaController {
     };
     if (!project.stateWritable) {
       rollBack();
-      throw new Error("Il focus non è stato salvato: lo stato del progetto non è leggibile e Trama non lo sovrascrive.");
+      throw new Error(t("main.controller.focusNotSavedUnreadable"));
     }
     try {
       await this.storage.saveDocument(document);
     } catch (error) {
       rollBack();
       this.publish();
-      throw new Error(`Il focus non è stato salvato: ${(error as Error).message}`);
+      throw new Error(t("main.controller.focusNotSaved", { error: (error as Error).message }));
     }
     this.publish();
   }
@@ -3702,14 +3702,14 @@ export class TramaController {
     };
     if (!project.stateWritable) {
       rollBack();
-      throw new Error("L'obiettivo non è stato salvato: lo stato del progetto non è leggibile e Trama non lo sovrascrive.");
+      throw new Error(t("main.controller.goalNotSavedUnreadable"));
     }
     try {
       await this.storage.saveDocument(document);
     } catch (error) {
       rollBack();
       this.publish();
-      throw new Error(`L'obiettivo non è stato salvato: ${(error as Error).message}`);
+      throw new Error(t("main.controller.goalNotSaved", { error: (error as Error).message }));
     }
     this.publish();
   }
@@ -3798,7 +3798,7 @@ export class TramaController {
   /** The person moves a project up or down in the order that shares out the free developers (issue #39). */
   async prioritizeProject(projectId: string, direction: "up" | "down"): Promise<void> {
     const order = this.projectPriority();
-    if (!order.includes(projectId)) throw new DomainError("Il progetto non è tra quelli recenti.");
+    if (!order.includes(projectId)) throw new DomainError(t("main.controller.projectNotRecent"));
     this.state.settings = { ...this.state.settings, projectPriority: moveProject(order, projectId, direction) };
     this.publish();
     await this.saveSettings();
@@ -3820,7 +3820,7 @@ export class TramaController {
     const stopped: string[] = [];
     for (const assignment of assignmentsAffectedByDecision(project.document, decisionId)) {
       if (assignment.status === "stopRequested") continue;
-      requestStop(project.document, assignment.specialistId, "Trama", `La decisione ${decisionId} è cambiata o è in revisione.`);
+      requestStop(project.document, assignment.specialistId, "Trama", t("main.controller.decisionChangedStop", { decision: decisionId }));
       void this.stopAssignmentRuntime(assignment.id);
       stopped.push(assignment.id);
     }
@@ -3870,7 +3870,7 @@ export class TramaController {
     const mandate = grantMandate(project.document, input);
     const kind = hadMandate ? "corrected" : "granted";
     if (requestId) resolveMandateRequest(project.document, requestId, kind, mandate.version);
-    this.stopWorkOutsideMandate("Il mandato corretto non copre più questo lavoro.");
+    this.stopWorkOutsideMandate(t("main.controller.mandateCorrectedStop"));
     this.changed();
     void this.runDuties();
     await this.send(mandateMessage(kind, mandate.version), null, null, null, [], null, null, false);
@@ -3884,7 +3884,7 @@ export class TramaController {
     const moduleIds = project.snapshot.modules.map((m) => m.id);
     if (!needsProjectMandate(project.document, moduleIds)) return;
     const request = proposeProjectMandate(project.document, moduleIds);
-    appendEvent(project.document, "trama", { type: "card", kind: "mandate", title: "Mandato di progetto", detail: null, referenceId: request.id });
+    appendEvent(project.document, "trama", { type: "card", kind: "mandate", title: t("main.controller.projectMandateCardTitle"), detail: null, referenceId: request.id });
     this.changedIn(project);
   }
 
@@ -3896,7 +3896,7 @@ export class TramaController {
   async restrictMandate(input: { scopeModuleIds: string[]; authorizedActions: MandateAction[] }): Promise<void> {
     const project = this.requireProject();
     const mandate = restrictMandate(project.document, input);
-    const stopped = this.stopWorkOutsideMandate("Il mandato ristretto non copre più questo lavoro. Il worktree resta com'è.");
+    const stopped = this.stopWorkOutsideMandate(t("main.controller.mandateRestrictedStop"));
     this.changed();
     const moduleName = (id: string) => project.snapshot.modules.find((m) => m.id === id)?.name ?? id;
     await this.send(restrictionMessage(mandate, moduleName, stopped), null, null, null, [], null, null, false);
@@ -3906,7 +3906,7 @@ export class TramaController {
   async revokeMandate(reason: string): Promise<void> {
     const project = this.requireProject();
     revokeMandate(project.document, reason);
-    this.stopWorkOutsideMandate(`Mandato revocato: ${reason}`);
+    this.stopWorkOutsideMandate(t("main.controller.mandateRevokedStop", { reason }));
     this.changed();
     await this.send(mandateMessage("revoked", null, reason), null, null, null, [], null, null, false);
   }
@@ -3954,8 +3954,8 @@ export class TramaController {
       project,
       assignment.id,
       `${assignment.turns.length + 1}`,
-      "In attesa di uno sviluppatore libero",
-      `Nei progetti aperti lavorano già ${limit} ${limit === 1 ? "sviluppatore" : "sviluppatori"}, il massimo condiviso. L'incarico parte appena se ne libera uno, secondo l'ordine dei progetti della Panoramica.`,
+      t("main.controller.waitingForDeveloperTitle"),
+      t("main.controller.waitingForDeveloperDetail", { count: limit }),
       "info",
     );
     return false;
@@ -3972,8 +3972,8 @@ export class TramaController {
       const assignment = findAssignment(project.document, request.assignmentId)!;
       if (!withinMandate(project.document, assignment)) {
         this.capacityQueue = this.capacityQueue.filter((r) => r !== request);
-        confirmStopWithoutTurn(project.document, assignment.id, "Il mandato non copre più questo incarico.");
-        this.specialistActivity(project, assignment.id, `${assignment.turns.length + 1}`, "Avvio non eseguito", "Il mandato non copre più questo incarico.", "info");
+        confirmStopWithoutTurn(project.document, assignment.id, t("main.controller.mandateNoLongerCoversAssignment"));
+        this.specialistActivity(project, assignment.id, `${assignment.turns.length + 1}`, t("main.controller.startSkippedTitle"), t("main.controller.mandateNoLongerCoversAssignment"), "info");
         this.releaseParkedProject(project);
         continue;
       }
@@ -4054,10 +4054,10 @@ export class TramaController {
     if (!assignment || assignment.status !== "preparing") return;
     const specialist = document.team.specialists.find((s) => s.id === assignment.specialistId)!;
     const provider = assignment.provider ?? "codex";
-    const blocked = hasAdapter(provider) ? providerUnavailableReason(provider, this.state.providers[provider]?.account ?? null) : `${providerName(provider)} non ha un adattatore.`;
+    const blocked = hasAdapter(provider) ? providerUnavailableReason(provider, this.state.providers[provider]?.account ?? null) : t("main.controller.providerNoAdapter", { provider: providerName(provider) });
     if (blocked) {
-      confirmStopWithoutTurn(document, assignmentId, `${providerName(provider)} non può lavorare ora: ${blocked}`);
-      this.specialistActivity(project, assignmentId, `${assignment.turns.length + 1}`, "Incarico in attesa del provider", blocked, "error");
+      confirmStopWithoutTurn(document, assignmentId, t("main.controller.providerCannotWork", { provider: providerName(provider), reason: blocked }));
+      this.specialistActivity(project, assignmentId, `${assignment.turns.length + 1}`, t("main.controller.assignmentWaitingProviderTitle"), blocked, "error");
       return;
     }
     // Developers share one pool of slots across the open projects; the fixed roles never count (issue #39).
@@ -4086,8 +4086,10 @@ export class TramaController {
         project,
       assignmentId,
       preKey,
-      resumed ? "Ripresa dell'incarico" : "Avvio dell'incarico",
-      `${provider === "codex" ? "" : `${providerName(provider)} `}${assignment.model}, ${needsWorktree(assignment) ? "worktree proprio" : "sola lettura"}`,
+      resumed ? t("main.controller.assignmentResumedTitle") : t("main.controller.assignmentStartedTitle"),
+      t(needsWorktree(assignment) ? "main.controller.assignmentRunsInWorktree" : "main.controller.assignmentRunsReadOnly", {
+        model: `${provider === "codex" ? "" : `${providerName(provider)} `}${assignment.model}`,
+      }),
       "info",
     );
     let turnId: string | null = null;
@@ -4109,14 +4111,14 @@ export class TramaController {
             conventions,
           });
           recordWorkspace(document, assignmentId, workspace);
-          this.specialistActivity(project, assignmentId, preKey, "Worktree pronto", workspace.branch, "info");
+          this.specialistActivity(project, assignmentId, preKey, t("main.controller.worktreeReadyTitle"), workspace.branch, "info");
           // The specialist can run the project's tests only with its dependencies; lent from the checkout.
           const missing = await lendNodeDependencies(workspace.worktreeRoot, project.rootPath).catch((error: Error) => error.message);
-          if (missing) this.specialistActivity(project, assignmentId, preKey, "Dipendenze non disponibili", missing, "info");
+          if (missing) this.specialistActivity(project, assignmentId, preKey, t("main.controller.dependenciesUnavailableTitle"), missing, "info");
         }
         cwd = assignment.workspace!.worktreeRoot;
       }
-      if (assignment.status !== "preparing") throw new Error("L'arresto è stato richiesto prima dell'avvio.");
+      if (assignment.status !== "preparing") throw new Error(t("main.controller.stopBeforeStart"));
       // A fixed role's automatic work runs its original AI Hero skill (W11).
       const duty = assignment.duty
         ? dutySession({
@@ -4155,8 +4157,8 @@ export class TramaController {
       });
       recordThread(document, assignmentId, opening.threadId);
       // A stop requested while the session was opening ends the work here (review #6).
-      if ((assignment.status as string) === "stopRequested") throw new Error("L'arresto è stato richiesto prima dell'avvio del turno.");
-      if (opening.replaced && assignment.threadId) this.specialistActivity(project, assignmentId, preKey, "Nuovo thread dello specialista", null, "info");
+      if ((assignment.status as string) === "stopRequested") throw new Error(t("main.controller.stopBeforeTurn"));
+      if (opening.replaced && assignment.threadId) this.specialistActivity(project, assignmentId, preKey, t("main.controller.newSpecialistThreadTitle"), null, "info");
       const task = duty?.prompt ?? (resumed ? resumeInput(assignment, document.decisions) : openingInput(assignment, document.decisions));
       const prompt = [task, briefing, developer && nativeInput ? developer.text : null].filter(Boolean).join("\n\n");
       const text = await client.runTurn({
@@ -4179,18 +4181,18 @@ export class TramaController {
           const key = `${assignment.turns.length}`;
           switch (event.type) {
             case "commentary":
-              this.specialistActivity(project, assignmentId, key, "Nota dello specialista", event.text, "info");
+              this.specialistActivity(project, assignmentId, key, t("main.controller.specialistNoteTitle"), event.text, "info");
               return;
             case "reasoning":
-              this.specialistActivity(project, assignmentId, key, "Ragionamento", event.text, "info");
+              this.specialistActivity(project, assignmentId, key, t("main.controller.specialistReasoningTitle"), event.text, "info");
               return;
             case "commandCompleted":
               this.specialistActivity(
         project,
                 assignmentId,
                 key,
-                event.command || "Comando",
-                event.succeeded ? null : `Uscita ${event.exitCode ?? "?"}${event.output ? `\n${event.output.slice(-2_000)}` : ""}`,
+                event.command || t("main.controller.specialistCommandTitle"),
+                event.succeeded ? null : `${t("main.controller.specialistCommandExit", { code: `${event.exitCode ?? "?"}` })}${event.output ? `\n${event.output.slice(-2_000)}` : ""}`,
                 event.succeeded ? "tool" : "error",
               );
               if (isGitPushCommand(event.command)) {
@@ -4203,7 +4205,7 @@ export class TramaController {
         project,
                 assignmentId,
                 key,
-                event.succeeded ? `Ha modificato ${event.paths.length === 1 ? "un file" : `${event.paths.length} file`}` : "Modifica dei file non riuscita",
+                event.succeeded ? t("main.controller.specialistEditedFiles", { count: event.paths.length }) : t("main.controller.specialistEditFailed"),
                 event.paths.join(", "),
                 event.succeeded ? "tool" : "error",
               );
@@ -4227,7 +4229,7 @@ export class TramaController {
           }
         },
       });
-      outcome = { kind: "completed", text: text || "Lo specialista non ha scritto un resoconto." };
+      outcome = { kind: "completed", text: text || t("main.controller.specialistNoReport") };
     } catch (error) {
       const message = (error as Error).message;
       outcome = /interrott/i.test(message) ? { kind: "interrupted" } : { kind: "failed", message: describeFailure(message) };
@@ -4240,21 +4242,21 @@ export class TramaController {
     if (turnId) {
       endTurn(document, assignmentId, turnId, outcome);
     } else {
-      confirmStopWithoutTurn(document, assignmentId, outcome.kind === "failed" ? outcome.message : "Il turno non era partito.");
+      confirmStopWithoutTurn(document, assignmentId, outcome.kind === "failed" ? outcome.message : t("main.controller.turnNotStarted"));
     }
     const final = findAssignment(document, assignmentId)!;
     if (final.status === "completed" && final.duty && outcome.kind === "completed") {
       const { decisionRequestId } = concludeDuty(document, assignmentId, outcome.text);
-      if (decisionRequestId) appendEvent(document, "trama", { type: "card", kind: "decision", title: "Decisione", detail: null, referenceId: decisionRequestId });
+      if (decisionRequestId) appendEvent(document, "trama", { type: "card", kind: "decision", title: t("main.controller.decisionCardTitle"), detail: null, referenceId: decisionRequestId });
     }
     const [title, detail] =
       final.status === "completed"
-        ? ["Incarico concluso", final.result]
+        ? [t("main.controller.assignmentCompletedTitle"), final.result]
         : final.status === "stopped"
-          ? ["Arresto confermato", final.stops.at(-1)?.reason ?? null]
+          ? [t("main.controller.stopConfirmedTitle"), final.stops.at(-1)?.reason ?? null]
           : final.status === "paused"
-            ? ["In pausa per una domanda", final.lastUpdate]
-            : ["Incarico non riuscito", final.failure];
+            ? [t("main.controller.pausedForQuestionTitle"), final.lastUpdate]
+            : [t("main.controller.assignmentFailedTitle"), final.failure];
     this.specialistActivity(project, assignmentId, turnId ? `${final.turns.length}` : preKey, title, detail, final.status === "failed" ? "error" : "info");
     const stop = final.stops.at(-1);
     if (final.status === "stopped" && stop?.thenRemove) {
@@ -4273,13 +4275,17 @@ export class TramaController {
           project,
           assignmentId,
           `${final.turns.length}`,
-          `In attesa che ${providerName(provider)} si sblocchi`,
-          `${providerUnavailableReason(provider, account)} Trama riprende da solo l'incarico quando torna disponibile, se il mandato lo copre ancora.`,
+          t("main.controller.waitingProviderUnblockTitle", { provider: providerName(provider) }),
+          t("main.controller.waitingProviderUnblockDetail", { reason: `${providerUnavailableReason(provider, account)}` }),
           "info",
         );
         this.host.notify(
-          `Trama: ${providerName(provider)} bloccato`,
-          `Il lavoro di ${specialist.name} in ${project.isDemo ? "Progetto di esempio" : project.name} aspetta che ${providerName(provider)} si sblocchi.`,
+          t("main.controller.providerBlockedNotificationTitle", { provider: providerName(provider) }),
+          t("main.controller.providerBlockedNotificationBody", {
+            specialist: specialist.name,
+            project: project.isDemo ? t("main.controller.exampleProjectName") : project.name,
+            provider: providerName(provider),
+          }),
           this.state.settings.sounds === true,
         );
         this.scheduleProviderWait(provider);
@@ -4293,8 +4299,8 @@ export class TramaController {
           project,
           assignmentId,
           `${final.turns.length}`,
-          `In attesa che il limite temporaneo di ${providerName(provider)} passi`,
-          `Non è la quota dell'account. Trama riprende da sola l'incarico tra ${Math.round(delay / 1_000)} secondi, se il mandato lo copre ancora.`,
+          t("main.controller.waitingTemporaryLimitTitle", { provider: providerName(provider) }),
+          t("main.controller.waitingTemporaryLimitDetail", { seconds: Math.round(delay / 1_000) }),
           "info",
         );
         this.scheduleProviderWait(provider, delay);
@@ -4326,7 +4332,7 @@ export class TramaController {
             context: typeof args.context === "string" ? args.context : null,
           });
           const turns = findAssignment(project.document, assignmentId)?.turns.length ?? 0;
-          this.specialistActivity(project, assignmentId, `${turns}`, `Domanda ${question.id} al Coordinatore`, question.question, "info");
+          this.specialistActivity(project, assignmentId, `${turns}`, t("main.controller.developerQuestionTitle", { question: question.id }), question.question, "info");
           return toolSuccess({
             questionID: question.id,
             status: "recorded",
@@ -4356,7 +4362,7 @@ export class TramaController {
         if (error instanceof TeamError) continue;
         throw error;
       }
-      this.specialistActivity(project, assignment.id, `${assignment.turns.length + 1}`, "Risposta ricevuta", "Trama riprende il lavoro con la risposta.", "info");
+      this.specialistActivity(project, assignment.id, `${assignment.turns.length + 1}`, t("main.controller.answerReceivedTitle"), t("main.controller.answerReceivedDetail"), "info");
       void this.startAssignment(assignment.id);
     }
   }
@@ -4418,13 +4424,13 @@ export class TramaController {
     requestedBy: "person" | "coordinator",
     requestId: string | null,
   ): Promise<SpecialistAssignment> {
-    if (!project.stateWritable) throw new DomainError("Lo stato di questo progetto è in sola lettura.");
-    if (project.isDemo) throw new DomainError("Nel progetto di esempio i compiti automatici restano fermi.");
+    if (!project.stateWritable) throw new DomainError(t("main.controller.projectStateReadOnly"));
+    if (project.isDemo) throw new DomainError(t("main.controller.exampleProjectDutiesStill"));
     const headSHA = await this.headSHA(project.rootPath);
     // The person may have opened another project meanwhile: the work would be recorded where nothing starts it.
-    if (this.state.project !== project) throw new DomainError("Il progetto è cambiato: il lavoro automatico non è partito.");
+    if (this.state.project !== project) throw new DomainError(t("main.controller.projectChangedDutyNotStarted"));
     const assignment = startDutyOnRequest(project.document, request, this.dutyContext(project, headSHA), requestedBy);
-    appendEvent(project.document, "trama", { type: "card", kind: "assignment", title: "Incarico", detail: null, referenceId: assignment.id }, requestId);
+    appendEvent(project.document, "trama", { type: "card", kind: "assignment", title: t("main.controller.assignmentCardTitle"), detail: null, referenceId: assignment.id }, requestId);
     this.changedIn(project);
     void this.startAssignment(assignment.id);
     return assignment;
@@ -4493,7 +4499,7 @@ export class TramaController {
     if (waiting.length) {
       // Read again just before opening, so an issue opened meanwhile about the same problem is not duplicated.
       const issues = await listIssues(repository).catch((error: Error) => {
-        for (const problem of waiting) recordIssueFailure(problem, `GitHub CLI non ha letto le issue: ${classifyGitHubError(error.message).message}`);
+        for (const problem of waiting) recordIssueFailure(problem, t("main.controller.problemIssuesUnreadable", { error: classifyGitHubError(error.message).message }));
         return null;
       });
       if (this.state.project !== project) return;
@@ -4524,7 +4530,7 @@ export class TramaController {
             // The triage rule reads the issues Trama keeps: the new one reaches the bug triage without waiting for a refresh.
             if (this.state.project === project) project.github = { ...project.github, issues: [...project.github.issues, issue] };
           } catch (error) {
-            recordIssueFailure(problem, `La issue non è stata aperta: ${classifyGitHubError((error as Error).message).message}`);
+            recordIssueFailure(problem, t("main.controller.problemIssueNotOpened", { error: classifyGitHubError((error as Error).message).message }));
           }
         }
       }
@@ -4564,7 +4570,7 @@ export class TramaController {
       // person's decisions waits only for the mandate there too (M03).
       const writing = startWaitingDomainWriting(project.document, this.dutyRunner(project.document));
       if (writing) {
-        appendEvent(project.document, "trama", { type: "card", kind: "assignment", title: "Incarico", detail: null, referenceId: writing.id });
+        appendEvent(project.document, "trama", { type: "card", kind: "assignment", title: t("main.controller.assignmentCardTitle"), detail: null, referenceId: writing.id });
         void this.startAssignment(writing.id);
         this.changed();
       }
@@ -4574,7 +4580,7 @@ export class TramaController {
     if (this.state.project !== project) return;
     const assignment = nextDuty(project.document, this.dutyContext(project, headSHA));
     if (assignment) {
-      appendEvent(project.document, "trama", { type: "card", kind: "assignment", title: "Incarico", detail: null, referenceId: assignment.id });
+      appendEvent(project.document, "trama", { type: "card", kind: "assignment", title: t("main.controller.assignmentCardTitle"), detail: null, referenceId: assignment.id });
       void this.startAssignment(assignment.id);
     }
     this.changed();
@@ -4612,8 +4618,8 @@ export class TramaController {
       // The chat shows the pick at the end of the work's dialog, where the person is reading now.
       const goalId = assignment.goalId ?? null;
       const requestId = document.requests.filter((r) => (r.goalId ?? null) === goalId).at(-1)?.id ?? assignment.requestId;
-      appendEvent(document, "trama", { type: "activity", title: `${name} prende in autonomia la fetta ${sliceId}`, detail: selfPickDetail(), tone: "info" }, requestId);
-      appendEvent(document, "trama", { type: "card", kind: "assignment", title: "Incarico", detail: null, referenceId: assignment.id }, requestId);
+      appendEvent(document, "trama", { type: "activity", title: t("main.controller.selfPickTitle", { developer: name, slice: sliceId }), detail: selfPickDetail(), tone: "info" }, requestId);
+      appendEvent(document, "trama", { type: "card", kind: "assignment", title: t("main.controller.assignmentCardTitle"), detail: null, referenceId: assignment.id }, requestId);
     }
     this.changedIn(project);
     for (const { assignment } of picked) void this.startAssignment(assignment.id);
@@ -4638,11 +4644,11 @@ export class TramaController {
           (document.conflicts ??= []).push(assessment);
           if (assessment.classification === "conflict" || assessment.classification === "overlap") {
             const assignment = findAssignment(document, pair.mine.assignmentId);
-            appendEvent(document, "trama", { type: "card", kind: "conflict", title: "Conflitto", detail: null, referenceId: assessment.id }, assignment?.requestId ?? null);
+            appendEvent(document, "trama", { type: "card", kind: "conflict", title: t("main.controller.conflictCardTitle"), detail: null, referenceId: assessment.id }, assignment?.requestId ?? null);
             if (assessment.classification === "conflict") {
               this.host.notify(
-                "Trama: conflitto tra due worktree",
-                `Il candidato ${pair.mine.id} entra in conflitto con ${pair.other.id}: si risolve prima dell'unione.`,
+                t("main.controller.worktreeConflictNotificationTitle"),
+                t("main.controller.worktreeConflictNotificationBody", { candidate: pair.mine.id, other: pair.other.id }),
                 this.state.settings.sounds === true,
               );
             }
@@ -4658,11 +4664,11 @@ export class TramaController {
   /** The person changes a setting of the open project (W08: the developers in parallel). */
   updateProjectSettings(update: ProjectSettings): void {
     const project = this.requireProject();
-    if (!project.stateWritable) throw new DomainError("Lo stato di questo progetto è in sola lettura.");
+    if (!project.stateWritable) throw new DomainError(t("main.controller.projectStateReadOnly"));
     const settings = { ...(project.document.settings ?? {}) };
     if (update.parallelDevelopers !== undefined) {
       const limit = clampParallelDevelopers(update.parallelDevelopers);
-      if (limit === null) throw new DomainError("Il numero di sviluppatori in parallelo deve essere un numero intero.");
+      if (limit === null) throw new DomainError(t("main.controller.parallelDevelopersNotInteger"));
       settings.parallelDevelopers = limit;
     }
     project.document.settings = settings;
@@ -4680,7 +4686,7 @@ export class TramaController {
       return;
     }
     if (project) {
-      confirmStopWithoutTurn(project.document, assignmentId, "Nessun turno in corso.");
+      confirmStopWithoutTurn(project.document, assignmentId, t("main.controller.noTurnRunning"));
       this.changed();
     }
   }
@@ -4690,7 +4696,7 @@ export class TramaController {
     const project = this.requireProject();
     const assignment = findAssignment(project.document, assignmentId);
     if (!assignment || !isActive(assignment)) return;
-    requestStop(project.document, assignment.specialistId, "Persona", "Fermato dalla persona");
+    requestStop(project.document, assignment.specialistId, t("main.controller.personActor"), t("main.controller.stoppedByPerson"));
     this.changed();
     await this.stopAssignmentRuntime(assignmentId);
   }
@@ -4699,13 +4705,13 @@ export class TramaController {
   async removeAssignmentWorktree(assignmentId: string): Promise<void> {
     const project = this.requireProject();
     const assignment = findAssignment(project.document, assignmentId);
-    if (!assignment?.workspace || assignment.workspaceRemovedAt) throw new DomainError("L'incarico non ha un worktree da rimuovere.");
-    if (isActive(assignment)) throw new DomainError("Ferma l'incarico prima di rimuovere il worktree.");
+    if (!assignment?.workspace || assignment.workspaceRemovedAt) throw new DomainError(t("main.controller.noWorktreeToRemove"));
+    if (isActive(assignment)) throw new DomainError(t("main.controller.stopBeforeRemovingWorktree"));
     // A fix of a candidate works in the candidate's worktree (W11): the worktree goes only when all of them stopped.
     const sharing = project.document.team.specialists
       .flatMap((s) => s.assignments)
       .filter((a) => a.workspace?.worktreeRoot === assignment.workspace!.worktreeRoot && !a.workspaceRemovedAt);
-    if (sharing.some(isActive)) throw new DomainError("Un altro incarico sta lavorando in questo worktree: aspetta che finisca.");
+    if (sharing.some(isActive)) throw new DomainError(t("main.controller.worktreeInUse"));
     const published = project.document.candidates.some((c) => sharing.some((a) => a.id === c.assignmentId) && c.pullRequest);
     const { branchDeleted } = await removeWorktree(assignment.workspace, this.worktreesRoot, published);
     const removedAt = new Date().toISOString();
@@ -4715,8 +4721,8 @@ export class TramaController {
       "trama",
       {
         type: "activity",
-        title: "Worktree rimosso",
-        detail: branchDeleted ? `Anche il branch ${assignment.workspace.branch} è stato eliminato: non aveva commit.` : `Il branch ${assignment.workspace.branch} resta.`,
+        title: t("main.controller.worktreeRemovedTitle"),
+        detail: t(branchDeleted ? "main.controller.worktreeRemovedBranchDeleted" : "main.controller.worktreeRemovedBranchKept", { branch: assignment.workspace.branch }),
         tone: "info",
       },
       null,
@@ -4733,13 +4739,18 @@ export class TramaController {
     if (reason) throw new DomainError(reason);
     const models = this.state.providers[provider].models;
     if (models.length && !catalogOffers(provider, models, model)) {
-      throw new DomainError(`Il modello ${model} non è nel catalogo di ${providerName(provider)}.`);
+      throw new DomainError(t("main.controller.modelNotInCatalog", { model, provider: providerName(provider) }));
     }
     const assignment = changeAssignmentProvider(project.document, assignmentId, provider, model);
     appendEvent(
       project.document,
       "trama",
-      { type: "activity", title: "Provider dell'incarico cambiato", detail: `${providerName(provider)} ${model}. Incarico e worktree restano; la prossima ripresa apre una sessione nuova.`, tone: "info" },
+      {
+        type: "activity",
+        title: t("main.controller.assignmentProviderChangedTitle"),
+        detail: t("main.controller.assignmentProviderChangedDetail", { provider: providerName(provider), model }),
+        tone: "info",
+      },
       null,
       new Date(),
       { assignmentId, workKey: `${assignmentId}:${assignment.turns.length + 1}` },
@@ -4750,9 +4761,9 @@ export class TramaController {
   async resumeSpecialistWork(assignmentId: string): Promise<void> {
     const project = this.requireProject();
     const paused = findAssignment(project.document, assignmentId);
-    if (!paused || !withinMandate(project.document, paused)) throw new DomainError("Il mandato attuale non copre più questo incarico.");
+    if (!paused || !withinMandate(project.document, paused)) throw new DomainError(t("main.controller.currentMandateNoLongerCovers"));
     if (findAssignment(project.document, assignmentId)?.workspaceRemovedAt) {
-      throw new DomainError("Il worktree di questo incarico è stato rimosso: assegna un nuovo incarico.");
+      throw new DomainError(t("main.controller.assignmentWorktreeRemoved"));
     }
     // Paused work with its answer resumes like Trama resumes it (W06); other work was stopped or failed.
     if (paused.status === "paused") resumePausedAssignment(project.document, assignmentId);
@@ -4762,7 +4773,7 @@ export class TramaController {
       appendEvent(
         project.document,
         "trama",
-        { type: "activity", title: "Incarico ridelegato sulle decisioni attuali", detail: moved.join(", "), tone: "info" },
+        { type: "activity", title: t("main.controller.assignmentRedelegatedTitle"), detail: moved.join(", "), tone: "info" },
         null,
         new Date(),
         { assignmentId, workKey: `${assignmentId}:${(findAssignment(project.document, assignmentId)?.turns.length ?? 0) + 1}` },
@@ -4774,7 +4785,7 @@ export class TramaController {
 
   async removeSpecialistByPerson(specialistId: string, reason: string): Promise<void> {
     const project = this.requireProject();
-    removeSpecialist(project.document, specialistId, reason, "Persona");
+    removeSpecialist(project.document, specialistId, reason, t("main.controller.personActor"));
     this.changed();
   }
 
@@ -4785,8 +4796,8 @@ export class TramaController {
     if (previousName !== specialist.name) {
       appendEvent(project.document, "trama", {
         type: "activity",
-        title: "Sviluppatore rinominato",
-        detail: `${previousName} ora si chiama ${specialist.name} (${specialist.id}).`,
+        title: t("main.controller.developerRenamedTitle"),
+        detail: t("main.controller.developerRenamedDetail", { previous: previousName, name: specialist.name, id: specialist.id }),
         tone: "info",
       });
     }
@@ -4819,7 +4830,7 @@ export class TramaController {
     const document = project.document;
     const stopped = workStoppedBy(document, activeTerms(document.mandate));
     for (const { specialist, assignment, dependsOn } of stopped) {
-      requestStop(document, specialist.id, "Trama", dependsOn ? `Dipende da ${dependsOn.id}. ${reason}` : reason);
+      requestStop(document, specialist.id, "Trama", dependsOn ? t("main.controller.dependsOnStop", { assignment: dependsOn.id, reason }) : reason);
       void this.stopAssignmentRuntime(assignment.id);
     }
     this.changed();
@@ -4835,7 +4846,7 @@ export class TramaController {
       "trama",
       {
         type: "activity",
-        title: `Verifica ${CHECKS[check].title}: ${result.exitCode === 0 ? "superata" : "non superata"}`,
+        title: t(result.exitCode === 0 ? "main.controller.checkoutCheckPassed" : "main.controller.checkoutCheckFailed", { check: CHECKS[check].title }),
         detail: result.output.slice(-4_000) || null,
         tone: result.exitCode === 0 ? "tool" : "error",
       },
@@ -4896,7 +4907,7 @@ export class TramaController {
         "trama",
         {
           type: "activity",
-          title: `Verifica ${CHECKS[check].title} su ${candidateId}: non riuscita per la sandbox o la macchina, le evidenze restano quelle di prima`,
+          title: t("main.controller.candidateCheckEnvironment", { check: CHECKS[check].title, candidate: candidateId }),
           detail: result.output.slice(-4_000) || null,
           tone: "error",
         },
@@ -4929,7 +4940,7 @@ export class TramaController {
       "trama",
       {
         type: "activity",
-        title: `Verifica ${CHECKS[check].title} su ${candidateId}: ${result.exitCode === 0 ? "superata" : "non superata"}`,
+        title: t(result.exitCode === 0 ? "main.controller.candidateCheckPassed" : "main.controller.candidateCheckFailed", { check: CHECKS[check].title, candidate: candidateId }),
         detail: result.output.slice(-4_000) || null,
         tone: result.exitCode === 0 ? "tool" : "error",
       },
@@ -5022,7 +5033,10 @@ export class TramaController {
     appendEvent(
       document,
       "trama",
-      { type: "activity", title: `Revisori sul candidato ${candidateId}: ${GATE_STATUS[gate.status].label.toLowerCase()}`, detail: review.summary, tone: gate.status === "passed" ? "tool" : "error" },
+      {
+        type: "activity",
+        title: t("main.controller.gateReviewersTitle", { candidate: candidateId, status: GATE_STATUS[gate.status].label.toLowerCase() }),
+        detail: review.summary, tone: gate.status === "passed" ? "tool" : "error" },
       requestId,
     );
     if (gate.status === "blocked" && !gate.checksFailed.length) this.returnToDeveloper(project, gate);
@@ -5067,11 +5081,13 @@ export class TramaController {
         readableRoots: this.readableRoots(project),
         developerInstructions: reviewerInstructions(document.cleanCode, this.state.language),
       });
+      // @model-text: the technical review's prompt for the Clean Code reviewer.
       const decisions = candidate.requiredDecisionIds
         .map((id) => document.decisions.find((d) => d.id === id))
         .filter((d) => d !== undefined)
         .map((d) => `- ${d.id} v${d.version}: ${d.value} (esempio: ${d.acceptedExample})`)
         .join("\n");
+      // @model-text: the technical review's prompt for the Clean Code reviewer.
       const prompt = [
         `Revisione tecnica del candidato ${candidate.id} per l'incarico ${assignment.id}: ${assignment.objective}`,
         `Decisioni del Patto da rispettare:\n${decisions}`,
@@ -5092,7 +5108,7 @@ export class TramaController {
       try {
         return { threadId: opening.threadId, answer: readReviewAnswer(JSON.parse(extractJsonAnswer(answer)) as Record<string, unknown>), standard };
       } catch {
-        throw new Error("La revisione tecnica non ha restituito un verdetto leggibile.");
+        throw new Error(t("main.controller.reviewUnreadableVerdict"));
       }
     } finally {
       clients.delete(client);
@@ -5111,7 +5127,7 @@ export class TramaController {
         const base = await checkoutCommit(project.rootPath, gate.baseSHA, join(this.storage.root, "Gate"));
         try {
           for (const check of checks) {
-            if (this.quitting) throw new Error("Trama si sta chiudendo.");
+            if (this.quitting) throw new Error(t("main.controller.tramaQuitting"));
             const result = await runReadOnlyCheck(check, base.path, {
               codexExecutable: resolveCodexExecutable(this.host.codexExecutable),
               scratchRoot: join(this.storage.root, "Checks"),
@@ -5140,14 +5156,14 @@ export class TramaController {
   /** One figure of the gate: a read-only session of its own, in the candidate's worktree, on a cheap model. */
   private async runGateReviewer(project: ActiveProjectState, gate: CandidateGate, role: GateRole, runner: DutyRunner | null, turn: () => ReviewerTurn, cwd: string): Promise<void> {
     if (!runner) {
-      finishReview(gate, role, { failure: "Nessun modello in sola lettura disponibile per i revisori del candidato." });
+      finishReview(gate, role, { failure: t("main.controller.noReadOnlyModelForReviewers") });
       return;
     }
     const client = createRuntime(runner.provider, { executable: runner.provider === "codex" ? this.host.codexExecutable : null, requestTimeoutMs: 15_000 });
     const run = this.gateRuns.get(gate.id);
     run?.clients.add(client);
     try {
-      if (this.quitting) throw new Error("Trama si sta chiudendo.");
+      if (this.quitting) throw new Error(t("main.controller.tramaQuitting"));
       const { instructions, prompt, skills, outputSchema } = turn();
       const opening = await client.openThread({ model: runner.model, cwd, developerInstructions: instructions, sandbox: "read-only", ephemeral: true, readableRoots: this.readableRoots(project) });
       reviewThread(gate, role, opening.threadId);
@@ -5182,7 +5198,12 @@ export class TramaController {
         "specialist",
         {
           type: "activity",
-          title: `${reviewer} a ${developer?.name ?? assignment.specialistId}: ${blocking.length === 1 ? "1 rilievo bloccante" : `${blocking.length} rilievi bloccanti`} sul candidato ${gate.candidateId}`,
+          title: t("main.controller.blockingFindingsTitle", {
+            reviewer,
+            developer: developer?.name ?? assignment.specialistId,
+            count: blocking.length,
+            candidate: gate.candidateId,
+          }),
           detail: blocking.map((f) => `- ${f.title}${f.file ? ` (${f.file})` : ""}${f.detail !== f.title ? `: ${f.detail}` : ""}`).join("\n"),
           tone: "error",
         },
@@ -5202,9 +5223,9 @@ export class TramaController {
   private resumeWithFindings(project: ActiveProjectState, gate: CandidateGate): string | null {
     const document = project.document;
     const assignment = findAssignment(document, gate.assignmentId);
-    if (!assignment) return "L'incarico non c'è più: serve un nuovo incarico.";
-    if (project !== this.state.project) return "Il progetto non è aperto: il lavoro riprende quando lo riapri.";
-    if (!withinMandate(document, assignment)) return "Il mandato attuale non copre più questo incarico: il lavoro riprende quando lo concedi di nuovo.";
+    if (!assignment) return t("main.controller.findingsWaitAssignmentGone");
+    if (project !== this.state.project) return t("main.controller.findingsWaitProjectClosed");
+    if (!withinMandate(document, assignment)) return t("main.controller.findingsWaitMandate");
     try {
       reopenForFindings(document, assignment.id, { gateId: gate.id, candidateId: gate.candidateId, findings: returnFindings(document, gate) });
     } catch (error) {
@@ -5237,7 +5258,7 @@ export class TramaController {
   startFocusAudit(candidateId: string): string {
     const project = this.requireProject();
     const candidate = findCandidate(project.document, candidateId);
-    if (!candidate) throw new DomainError("Candidato non trovato.");
+    if (!candidate) throw new DomainError(t("main.controller.candidateNotFound"));
     let audit: FocusAudit;
     try {
       audit = openAudit(project.document, candidate);
@@ -5260,14 +5281,14 @@ export class TramaController {
     try {
       const candidate = findCandidate(document, audit.target.candidateId)!;
       const assignment = findAssignment(document, candidate.assignmentId);
-      if (!assignment?.workspace || assignment.workspaceRemovedAt) throw new Error("Il candidato non ha più il suo worktree: la focus mode non può leggerlo.");
+      if (!assignment?.workspace || assignment.workspaceRemovedAt) throw new Error(t("main.controller.focusNoWorktree"));
       // The facts first: Trama's own checks in the sandbox, on the candidate as declared. Focus mode reads only: the
       // evidence goes in the report and leaves the candidate's evidence, green light and approval as they are.
       for (const check of candidate.requiredChecks) {
         if (!(check in CHECKS)) continue;
         const { result, snapshot } = await this.runCandidateCheck(project, assignment.workspace, check as ReadOnlyCheck);
         if (snapshot.snapshotId !== candidate.snapshotId) {
-          throw new Error(`Il worktree è cambiato dopo la dichiarazione del candidato ${candidate.id}: la focus mode esamina solo il candidato dichiarato.`);
+          throw new Error(t("main.controller.focusWorktreeChanged", { candidate: candidate.id }));
         }
         recordAuditCheck(audit, {
           check,
@@ -5282,7 +5303,7 @@ export class TramaController {
       }
       // Cheap models for the axes (spec #124, Q3): the fixed roles' lightest model, read-only.
       const runner = this.dutyRunner(document);
-      if (!runner) throw new Error("Nessun modello in sola lettura disponibile per gli assi di code-review.");
+      if (!runner) throw new Error(t("main.controller.noReadOnlyModelForAxes"));
       const skill = await this.nativeSkill("code-review");
       const spec = auditSpec(document, assignment, project.github.issues);
       const axes = beginAxes(audit, spec?.source ?? null, runner.model);
@@ -5322,13 +5343,13 @@ export class TramaController {
     try {
       for (const { axis, finding } of serious) {
         try {
-          if (this.quitting) throw new Error("Trama si sta chiudendo.");
+          if (this.quitting) throw new Error(t("main.controller.tramaQuitting"));
           const turn = confirmationTurn({ projectName: project.name, audit, candidateId, language: this.state.language }, axis, finding);
           const opening = await client.openThread({ model, cwd, developerInstructions: turn.instructions, sandbox: "read-only", ephemeral: true, readableRoots: this.readableRoots(project) });
           const raw = await client.runTurn({ threadId: opening.threadId, prompt: turn.prompt, cwd, model, outputSchema: turn.outputSchema, onEvent: () => undefined });
           confirmFinding(finding, { model, ...readConfirmation(raw) });
         } catch (error) {
-          confirmFinding(finding, { failure: `La conferma di ${model} non è riuscita: ${(error as Error).message}` });
+          confirmFinding(finding, { failure: t("main.controller.confirmationFailed", { model, error: (error as Error).message }) });
         }
         this.changedIn(project);
       }
@@ -5344,7 +5365,7 @@ export class TramaController {
     const run = this.auditRuns.get(audit.id);
     run?.clients.add(client);
     try {
-      if (this.quitting) throw new Error("Trama si sta chiudendo.");
+      if (this.quitting) throw new Error(t("main.controller.tramaQuitting"));
       const opening = await client.openThread({
         model: runner.model,
         cwd,
@@ -5380,7 +5401,7 @@ export class TramaController {
   ): Promise<{ repository: string | null; head: string | null; base: string; title: string; message: string; body: string }> {
     const project = this.requireProject();
     const candidate = findCandidate(project.document, candidateId);
-    if (!candidate) throw new DomainError("Candidato non trovato.");
+    if (!candidate) throw new DomainError(t("main.controller.candidateNotFound"));
     const assignment = findAssignment(project.document, candidate.assignmentId)!;
     const message = await this.candidateMessage(project, candidate);
     return {
@@ -5401,7 +5422,7 @@ export class TramaController {
     const conventions = await readProjectConventions(project.rootPath);
     if (!candidate.commit) candidate.commit = candidateCommit(project.document, candidate, conventions);
     const problems = validateCommitMessage(candidate.commit.message, conventions);
-    if (problems.length) throw new DomainError(`Trama non scrive questo messaggio di commit: ${problems.join(" ")} Chiedi al Coordinatore di correggerlo.`);
+    if (problems.length) throw new DomainError(t("main.controller.commitMessageRefused", { problems: problems.join(" ") }));
     return candidate.commit.message;
   }
 
@@ -5409,14 +5430,14 @@ export class TramaController {
     const project = this.requireProject();
     const document = project.document;
     const candidate = findCandidate(document, candidateId);
-    if (!candidate) throw new DomainError("Candidato non trovato.");
+    if (!candidate) throw new DomainError(t("main.controller.candidateNotFound"));
     const report = candidateReport(document, candidate, await this.headSHA(project.rootPath));
-    if (report.state === "superseded") throw new DomainError("Il candidato è stato sostituito da un lavoro più recente: pubblica quello nuovo.");
-    if (report.blockers.length) throw new DomainError(`Il candidato non è verificato: ${report.blockers.map((b) => b.code).join(", ")}.`);
-    if (!candidate.humanApproval || report.approvalInvalidated) throw new DomainError("Rivedi e approva il candidato prima di pubblicarlo.");
-    if (candidate.pullRequest) throw new DomainError(`Il candidato è già pubblicato: ${candidate.pullRequest.url}`);
+    if (report.state === "superseded") throw new DomainError(t("main.controller.candidateSuperseded"));
+    if (report.blockers.length) throw new DomainError(t("main.controller.candidateNotVerified", { blockers: report.blockers.map((b) => b.code).join(", ") }));
+    if (!candidate.humanApproval || report.approvalInvalidated) throw new DomainError(t("main.controller.candidateNeedsApproval"));
+    if (candidate.pullRequest) throw new DomainError(t("main.controller.candidateAlreadyPublished", { url: candidate.pullRequest.url }));
     const published = await this.publishCandidateNow(project, candidate, report);
-    await this.send(`Ho pubblicato il candidato ${candidate.id} come pull request #${published.number}: ${published.url}`, null, null, null, [], null, null, false);
+    await this.send(t("main.controller.candidatePublishedMessage", { candidate: candidate.id, number: `${published.number}`, url: published.url }), null, null, null, [], null, null, false);
   }
 
   /**
@@ -5426,11 +5447,11 @@ export class TramaController {
   private async publishCandidateNow(project: ActiveProjectState, candidate: Candidate, report: CandidateReport): Promise<NonNullable<Candidate["pullRequest"]>> {
     const document = project.document;
     const repository = project.github.repository;
-    if (!repository) throw new DomainError("Il progetto non ha un remoto GitHub.");
+    if (!repository) throw new DomainError(t("main.controller.projectNoGitHubRemote"));
     // The mandate decides before anything is committed or pushed, even when the person asks (issue #273).
     const refusal = pushRefusal(pushAuthorization(document.mandate));
     if (refusal) {
-      const branch = findAssignment(document, candidate.assignmentId)?.workspace?.branch ?? "branch del candidato";
+      const branch = findAssignment(document, candidate.assignmentId)?.workspace?.branch ?? t("main.controller.candidateBranchFallback");
       appendEvent(document, "trama", pushActivity({ outcome: "refused", branch, remote: "origin", reason: refusal }));
       this.changedIn(project);
       throw new PushRefusedError(refusal);
@@ -5438,10 +5459,10 @@ export class TramaController {
     // The quality standard comes before anything leaves the machine (Q01).
     const message = await this.candidateMessage(project, candidate);
     const missing = qualityMissing(qualityGate(document, candidate, report, repository));
-    if (missing.length) throw new DomainError(`Il candidato non rispetta lo standard di pubblicazione: ${missing.map((m) => m.detail).join(" ")}`);
+    if (missing.length) throw new DomainError(t("main.controller.publicationStandardMissing", { missing: missing.map((m) => m.detail).join(" ") }));
     const capabilities = await readGitHubCapabilities(repository);
-    if (capabilities.status !== "ready") throw new DomainError(capabilities.message ?? "GitHub non è raggiungibile.");
-    if (!capabilities.canPush) throw new DomainError(`Il tuo account GitHub non ha il permesso di push su ${repository}.`);
+    if (capabilities.status !== "ready") throw new DomainError(capabilities.message ?? t("main.controller.gitHubUnreachable"));
+    if (!capabilities.canPush) throw new DomainError(t("main.controller.gitHubNoPushPermission", { repository }));
     const assignment = findAssignment(document, candidate.assignmentId)!;
     const baseBranch = project.snapshot.branch ?? "main";
     const published = await publishCandidate({
@@ -5461,7 +5482,7 @@ export class TramaController {
       },
     });
     candidate.pullRequest = { ...published, at: new Date().toISOString() };
-    appendEvent(document, "trama", { type: "activity", title: `Pull request #${published.number} pubblicata`, detail: published.url, tone: "tool" });
+    appendEvent(document, "trama", { type: "activity", title: t("main.controller.pullRequestPublishedTitle", { number: `${published.number}` }), detail: published.url, tone: "tool" });
     this.changedIn(project);
     return candidate.pullRequest;
   }
@@ -5506,7 +5527,7 @@ export class TramaController {
       if (candidate.pullRequest?.mergedAt || this.integrating.has(candidate.id)) continue;
       if (latestCandidate(document, candidate.assignmentId)?.id !== candidate.id) continue;
       // A merge cut short by a restart is tried again: Trama reads the pull request before it merges anything.
-      if (candidate.merge?.status === "running") candidate.merge = { ...candidate.merge, status: "waiting", detail: "L'unione è stata interrotta: Trama riprova." };
+      if (candidate.merge?.status === "running") candidate.merge = { ...candidate.merge, status: "waiting", detail: t("main.controller.mergeInterrupted") };
       const report = candidateReport(document, candidate, head);
       if (report.state === "superseded" || report.blockers.length) continue;
       const { route } = mergeRoute(document, candidate, project.github.repository);
@@ -5543,15 +5564,15 @@ export class TramaController {
     this.changedIn(project);
     try {
       const pull = candidate.pullRequest ?? (await this.publishCandidateNow(project, candidate, report));
-      if (!pull.headSHA) throw new DomainError(`Trama non conosce il commit pubblicato nella pull request #${pull.number}: uniscila su GitHub dopo averla guardata.`);
+      if (!pull.headSHA) throw new DomainError(t("main.controller.mergeUnknownHead", { number: `${pull.number}` }));
       const now = candidateReport(document, candidate, await this.headSHA(project.rootPath));
       const covered = contentFingerprint(document, candidate) === fingerprint && !now.blockers.length && !now.clearanceInvalidated && (by === "coordinator" || !now.approvalInvalidated);
-      if (!covered) throw new DomainError("Il candidato è cambiato dopo il via libera: serve un nuovo via libera sul candidato com'è ora.");
+      if (!covered) throw new DomainError(t("main.controller.mergeCandidateChanged"));
       const checks = await readPullRequestStatus(repository, pull.number).catch(() => null);
       // A pull request just opened has no checks yet: GitHub starts them in a moment, so Trama waits before it reads them.
       const young = Date.now() - Date.parse(pull.at) < this.checksDelay;
       if (checks?.state !== "MERGED" && (checks?.checks === "pending" || (checks?.checks === "none" && young))) {
-        recordMerge(document, candidate, by, "waiting", `Aspetto le verifiche della pull request #${pull.number}.`);
+        recordMerge(document, candidate, by, "waiting", t("main.controller.mergeWaitingChecks", { number: `${pull.number}` }));
         this.changedIn(project);
         this.integrateLater(project, this.checksDelay);
         return;
@@ -5562,13 +5583,12 @@ export class TramaController {
         this.changedIn(project);
         return;
       }
-      if (checks?.checks === "failure") throw new DomainError(`Le verifiche della pull request #${pull.number} su GitHub sono rosse: il Coordinatore le sistema prima dell'unione.`);
+      if (checks?.checks === "failure") throw new DomainError(t("main.controller.mergeChecksRed", { number: `${pull.number}` }));
       const message = await this.candidateMessage(project, candidate);
-      const authority = by === "coordinator" ? "Via libera del Coordinatore" : "Ok della persona sulle schermate";
       const merged = await mergePullRequest(repository, pull.number, {
         sha: pull.headSHA,
         title: mergeCommitTitle(commitHeader(message), pull.number),
-        message: `${authority} sul candidato ${candidate.id}, unito da Trama.`,
+        message: t(by === "coordinator" ? "main.controller.mergeCommitByCoordinator" : "main.controller.mergeCommitByPerson", { candidate: candidate.id }),
       });
       pull.mergedAt = new Date().toISOString();
       pull.mergedBy = by;
@@ -5623,17 +5643,17 @@ export class TramaController {
   async interfaceShot(candidateId: string, index: number): Promise<string> {
     const project = this.requireProject();
     const shot = findCandidate(project.document, candidateId)?.interfaceShots?.shots[index];
-    if (!shot) throw new DomainError("Schermata non trovata.");
+    if (!shot) throw new DomainError(t("main.controller.shotNotFound"));
     const root = join(this.storage.root, "Shots", project.id, candidateId);
     const path = await realpath(shot.path);
-    if (!path.startsWith(`${await realpath(root)}/`)) throw new DomainError("Schermata fuori dalla cartella di Trama.");
+    if (!path.startsWith(`${await realpath(root)}/`)) throw new DomainError(t("main.controller.shotOutsideFolder"));
     return `data:image/png;base64,${(await readFileBinary(path)).toString("base64")}`;
   }
 
   /** The person's ok on an interface candidate: the approval, then Trama merges it when the green light holds (issue #247). */
   async approveCandidateByPerson(candidateId: string): Promise<void> {
     const project = this.requireProject();
-    approveCandidate(project.document, candidateId, "Persona", await this.headSHA(project.rootPath));
+    approveCandidate(project.document, candidateId, t("main.controller.personActor"), await this.headSHA(project.rootPath));
     this.changed();
     await this.integrateCandidates(project);
   }
@@ -5646,24 +5666,25 @@ export class TramaController {
   async rejectCandidateByPerson(candidateId: string, note: string): Promise<void> {
     const project = this.requireProject();
     const document = project.document;
-    const candidate = rejectCandidate(document, candidateId, note, "Persona");
+    const candidate = rejectCandidate(document, candidateId, note, t("main.controller.personActor"));
     const reason = candidate.humanRejection!.note;
     const assignment = findAssignment(document, candidate.assignmentId);
     const developer = document.team.specialists.find((s) => s.id === candidate.specialistId);
     appendEvent(
       document,
       "person",
-      { type: "activity", title: `Candidato ${candidate.id} rifiutato`, detail: reason, tone: "error" },
+      { type: "activity", title: t("main.controller.candidateRejectedTitle", { candidate: candidate.id }), detail: reason, tone: "error" },
       null,
       new Date(),
       assignment ? { assignmentId: assignment.id, workKey: `${assignment.id}:${assignment.turns.length + 1}` } : undefined,
     );
-    let waiting: string | null = assignment ? null : "L'incarico non c'è più.";
+    let waiting: string | null = assignment ? null : t("main.controller.rejectionAssignmentGone");
     if (assignment) {
-      if (!withinMandate(document, assignment)) waiting = "Il mandato attuale non copre più questo incarico.";
+      if (!withinMandate(document, assignment)) waiting = t("main.controller.currentMandateNoLongerCovers");
       else {
         try {
           const gateId = latestGate(document.gates, candidate.id)?.id ?? candidate.id;
+          // @model-text: the finding goes back to the developer.
           reopenForFindings(document, assignment.id, { gateId, candidateId: candidate.id, findings: [`La persona ha rifiutato il candidato guardando le schermate: ${reason}`] });
         } catch (error) {
           waiting = error instanceof TeamError ? returnWaiting(error.code, error.message) : (error as Error).message;
@@ -5676,7 +5697,9 @@ export class TramaController {
       return;
     }
     await this.send(
-      `Ho rifiutato il candidato ${candidate.id}${developer ? ` di ${developer.name}` : ""}: ${reason}\nIl lavoro non riprende da solo (${waiting}): fallo correggere con un nuovo incarico.`,
+      developer
+        ? t("main.controller.candidateRejectedMessage", { candidate: candidate.id, developer: developer.name, reason, waiting: `${waiting}` })
+        : t("main.controller.candidateRejectedMessageNoDeveloper", { candidate: candidate.id, reason, waiting: `${waiting}` }),
       null, null, null, [], null, candidate.goalId ?? null, false,
     );
   }
@@ -5741,8 +5764,15 @@ export class TramaController {
       "trama",
       {
         type: "activity",
-        title: `Issue #${input.issueNumber}: ${closed && input.close ? "chiusa con le prove" : duplicate ? "avanzamento già registrato" : "avanzamento registrato"}`,
-        detail: blockers.length ? `Resta aperta: ${blockers.join(" ")}` : met.length ? `Criteri spuntati: ${met.map((i) => i + 1).join(", ")}` : null,
+        title: t(
+          closed && input.close ? "main.controller.ticketClosedTitle" : duplicate ? "main.controller.ticketProgressRepeatedTitle" : "main.controller.ticketProgressTitle",
+          { issue: `${input.issueNumber}` },
+        ),
+        detail: blockers.length
+          ? t("main.controller.ticketStillOpen", { blockers: blockers.join(" ") })
+          : met.length
+            ? t("main.controller.ticketCriteriaChecked", { criteria: met.map((i) => i + 1).join(", ") })
+            : null,
         tone: "tool",
       },
       requestId,
@@ -5788,7 +5818,7 @@ export class TramaController {
           void this.refreshIssues(project);
         }
         if (incoming.length) {
-          this.host.notify("Trama: aggiornamenti condivisi", `${incoming.length === 1 ? "Una novità" : `${incoming.length} novità`} su ${repository}. Apri Trama per valutarne l'impatto sul tuo lavoro.`);
+          this.host.notify(t("main.controller.monitorNotificationTitle"), t("main.controller.monitorNotificationBody", { count: incoming.length, repository }));
         }
       }
     } finally {
@@ -5802,7 +5832,7 @@ export class TramaController {
     if (update.enabled !== undefined) monitor.enabled = update.enabled;
     if (update.intervalSeconds !== undefined) monitor.intervalSeconds = Math.min(3_600, Math.max(60, Math.round(update.intervalSeconds)));
     if (update.addRepository && !monitor.repositories.some((r) => r.toLowerCase() === update.addRepository!.toLowerCase())) {
-      if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(update.addRepository)) throw new DomainError("Repository non valido.");
+      if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(update.addRepository)) throw new DomainError(t("main.controller.invalidRepository"));
       monitor.repositories = [...monitor.repositories, update.addRepository];
     }
     if (update.removeRepository) monitor.repositories = monitor.repositories.filter((r) => r !== update.removeRepository);
@@ -5843,7 +5873,7 @@ export class TramaController {
       this.planners.get(old.id)?.stop();
       this.planners.delete(old.id);
     }
-    appendEvent(project.document, "trama", { type: "card", kind: "plan", title: "Piano", detail: null, referenceId: plan.id }, input.requestId);
+    appendEvent(project.document, "trama", { type: "card", kind: "plan", title: t("main.controller.planCardTitle"), detail: null, referenceId: plan.id }, input.requestId);
     this.changed();
     void this.runPlanner(project, plan);
     return plan;
@@ -5860,7 +5890,7 @@ export class TramaController {
     this.planners.delete(planId);
     client?.stop();
     plan.status = "failed";
-    plan.failure = "Annullato dalla persona.";
+    plan.failure = t("main.controller.planCancelledByPerson");
     plan.updatedAt = new Date().toISOString();
     this.changed();
   }
@@ -5873,7 +5903,7 @@ export class TramaController {
     const project = this.requireProject();
     const plan = project.document.plans.find((p) => p.id === input.planId);
     if ("sections" in input) {
-      if (!plan?.spec?.sections || (plan.status !== "ready" && plan.status !== "stale")) throw new DomainError("Il piano non ha ancora una spec da correggere.");
+      if (!plan?.spec?.sections || (plan.status !== "ready" && plan.status !== "stale")) throw new DomainError(t("main.controller.planNoSpecToCorrect"));
       try {
         plan.spec.sections = checkSpecSections(input.sections);
       } catch (error) {
@@ -5882,20 +5912,20 @@ export class TramaController {
       }
       plan.editedAt = new Date().toISOString();
       plan.updatedAt = plan.editedAt;
-      appendEvent(project.document, "person", { type: "activity", title: `Spec del piano ${plan.id} corretta`, detail: plan.spec.sections.title, tone: "info" }, plan.requestId);
+      appendEvent(project.document, "person", { type: "activity", title: t("main.controller.specCorrectedTitle", { plan: plan.id }), detail: plan.spec.sections.title, tone: "info" }, plan.requestId);
       this.changed();
       if (plan.spec.issue) void this.updatePublishedSpec(project, plan);
       // A breakdown the person has not approved yet is redrawn on the corrected spec (M05).
       if (plan.status === "ready" && (plan.slicing?.status === "proposed" || plan.slicing?.status === "failed")) this.startSlicing(project, plan, null);
       return;
     }
-    if (!plan?.proposal) throw new DomainError("Il piano non ha ancora una proposta da correggere.");
+    if (!plan?.proposal) throw new DomainError(t("main.controller.planNoProposalToCorrect"));
     const steps = input.steps.map((s) => s.trim()).filter(Boolean);
-    if (!steps.length || !input.proposedBehavior.trim()) throw new DomainError("Un piano corretto ha almeno un passo e un comportamento.");
+    if (!steps.length || !input.proposedBehavior.trim()) throw new DomainError(t("main.controller.planCorrectionIncomplete"));
     plan.proposal = { ...plan.proposal, steps, proposedBehavior: input.proposedBehavior.trim(), acceptedExample: input.acceptedExample.trim() };
     plan.editedAt = new Date().toISOString();
     plan.updatedAt = plan.editedAt;
-    appendEvent(project.document, "person", { type: "activity", title: `Piano ${plan.id} corretto`, detail: steps.join("\n"), tone: "info" }, plan.requestId);
+    appendEvent(project.document, "person", { type: "activity", title: t("main.controller.planCorrectedTitle", { plan: plan.id }), detail: steps.join("\n"), tone: "info" }, plan.requestId);
     this.changed();
   }
 
@@ -5906,9 +5936,9 @@ export class TramaController {
   answerSeams(input: { planId: string; confirmed: boolean; note: string | null }): void {
     const project = this.requireProject();
     const plan = project.document.plans.find((p) => p.id === input.planId);
-    if (!plan?.spec || plan.status !== "seams") throw new DomainError("Il piano non aspetta una risposta sui seam.");
+    if (!plan?.spec || plan.status !== "seams") throw new DomainError(t("main.controller.planNotWaitingSeams"));
     const note = input.note?.trim() || null;
-    if (!input.confirmed && !note) throw new DomainError("Scrivi cosa cambiare nei seam.");
+    if (!input.confirmed && !note) throw new DomainError(t("main.controller.seamsCorrectionEmpty"));
     this.applySeamsAnswer(project, plan, { confirmed: input.confirmed, note, by: "person" });
   }
 
@@ -5926,7 +5956,7 @@ export class TramaController {
       appendEvent(
         project.document,
         "person",
-        { type: "activity", title: answer.confirmed ? `Seam del piano ${plan.id} confermati` : `Seam del piano ${plan.id} corretti`, detail: plan.spec!.seamsAnswer.note, tone: "info" },
+        { type: "activity", title: t(answer.confirmed ? "main.controller.seamsConfirmedTitle" : "main.controller.seamsCorrectedTitle", { plan: plan.id }), detail: plan.spec!.seamsAnswer.note, tone: "info" },
         plan.requestId,
       );
     }
@@ -5938,11 +5968,11 @@ export class TramaController {
   async publishPlanSpec(planId: string): Promise<void> {
     const project = this.requireProject();
     const plan = project.document.plans.find((p) => p.id === planId);
-    if (!plan?.spec?.sections || plan.status !== "ready") throw new DomainError("Il piano non ha una spec pronta da pubblicare.");
+    if (!plan?.spec?.sections || plan.status !== "ready") throw new DomainError(t("main.controller.planNoSpecToPublish"));
     if (plan.spec.issue) return;
-    if (!this.specRepository(project)) throw new DomainError("GitHub non è collegato: la spec resta in Trama.");
+    if (!this.specRepository(project)) throw new DomainError(t("main.controller.specStaysInTrama"));
     await this.publishSpec(project, plan);
-    if (plan.spec.publishFailure) throw new DomainError(`La spec non è stata pubblicata su GitHub: ${plan.spec.publishFailure}`);
+    if (plan.spec.publishFailure) throw new DomainError(t("main.controller.specNotPublished", { error: plan.spec.publishFailure }));
   }
 
   /** The repository a spec is published to: the project's GitHub when it is connected, otherwise none. */
@@ -5962,7 +5992,7 @@ export class TramaController {
       appendEvent(
         project.document,
         "trama",
-        { type: "activity", title: `Spec del piano ${plan.id} pubblicata come issue #${issue.number}`, detail: issue.url, tone: "tool" },
+        { type: "activity", title: t("main.controller.specPublishedTitle", { plan: plan.id, issue: `${issue.number}` }), detail: issue.url, tone: "tool" },
         plan.requestId,
       );
       void this.refreshGitHub();
@@ -5978,11 +6008,11 @@ export class TramaController {
     const repository = this.specRepository(project);
     if (!spec?.sections || !spec.issue) return;
     try {
-      if (!repository) throw new Error("GitHub non è collegato.");
+      if (!repository) throw new Error(t("main.controller.gitHubNotConnected"));
       await updateIssueText(repository, spec.issue.number, spec.sections.title, specMarkdown(spec.sections));
       spec.publishFailure = null;
     } catch (error) {
-      spec.publishFailure = `La issue #${spec.issue.number} non ha preso la correzione: ${classifyGitHubError((error as Error).message).message}`;
+      spec.publishFailure = t("main.controller.specIssueNotUpdated", { issue: `${spec.issue.number}`, error: classifyGitHubError((error as Error).message).message });
     }
     this.changedIn(project);
   }
@@ -6015,7 +6045,7 @@ export class TramaController {
     const client = createRuntime(provider, { executable: provider === "codex" ? this.host.codexExecutable : null, requestTimeoutMs: 15_000 });
     this.planners.set(plan.id, client);
     try {
-      if (!model) throw new Error("Nessun modello disponibile per il pianificatore.");
+      if (!model) throw new Error(t("main.controller.noModelForPlanner"));
       const turn = plannerTurn(await this.plannerSkills(), provider === "codex", { plan, document, snapshot: project.snapshot });
       const opening = await client.openThread({
         model,
@@ -6045,7 +6075,7 @@ export class TramaController {
       if (plan.status !== "planning") return; // cancelled during the last check (review #12)
       if (changedMeanwhile) {
         plan.status = "stale";
-        plan.failure = "Il repository è cambiato durante l'analisi: rivaluta il piano o chiedine uno nuovo.";
+        plan.failure = t("main.controller.repositoryChangedDuringPlan");
         return;
       }
       plan.status = "ready";
@@ -6087,13 +6117,13 @@ export class TramaController {
     const project = this.requireProject();
     const plan = project.document.plans.find((p) => p.id === input.planId);
     const slicing = plan?.slicing;
-    if (!plan || slicing?.status !== "proposed") throw new DomainError("Il piano non aspetta una risposta sulle fette.");
+    if (!plan || slicing?.status !== "proposed") throw new DomainError(t("main.controller.planNotWaitingSlices"));
     const note = input.note?.trim() || null;
-    if (!input.confirmed && !note) throw new DomainError("Scrivi cosa cambiare nelle fette.");
+    if (!input.confirmed && !note) throw new DomainError(t("main.controller.slicesCorrectionEmpty"));
     appendEvent(
       project.document,
       "person",
-      { type: "activity", title: input.confirmed ? `Fette del piano ${plan.id} confermate` : `Fette del piano ${plan.id} corrette`, detail: input.confirmed ? null : note, tone: "info" },
+      { type: "activity", title: t(input.confirmed ? "main.controller.slicesConfirmedTitle" : "main.controller.slicesCorrectedTitle", { plan: plan.id }), detail: input.confirmed ? null : note, tone: "info" },
       plan.requestId,
     );
     if (!input.confirmed) {
@@ -6121,8 +6151,8 @@ export class TramaController {
   slicePlan(planId: string): void {
     const project = this.requireProject();
     const plan = project.document.plans.find((p) => p.id === planId);
-    if (!plan?.spec?.sections || plan.status !== "ready") throw new DomainError("Il piano non ha una spec pronta da dividere in fette.");
-    if (plan.slicing && plan.slicing.status !== "failed") throw new DomainError("Le fette del piano sono già in preparazione o proposte.");
+    if (!plan?.spec?.sections || plan.status !== "ready") throw new DomainError(t("main.controller.planNoSpecToSlice"));
+    if (plan.slicing && plan.slicing.status !== "failed") throw new DomainError(t("main.controller.slicesAlreadyInProgress"));
     this.startSlicing(project, plan, null);
   }
 
@@ -6147,11 +6177,11 @@ export class TramaController {
           const blockingId = ids.get(blocker);
           if (blockingId === undefined) continue;
           await addBlockedBy(repository, issue.number, blockingId).catch((error: unknown) => {
-            problems.push(`#${issue.number} bloccata da ${blocker} solo nel testo: ${classifyGitHubError((error as Error).message).message}`);
+            problems.push(t("main.controller.sliceBlockedInTextOnly", { issue: `${issue.number}`, blocker, error: classifyGitHubError((error as Error).message).message }));
           });
         }
       } catch (error) {
-        problems.push(`La fetta ${ticket.id} non è stata pubblicata: ${classifyGitHubError((error as Error).message).message}`);
+        problems.push(t("main.controller.sliceNotPublished", { slice: ticket.id, error: classifyGitHubError((error as Error).message).message }));
         // A later slice would reference a blocker that has no issue: the rest waits for a retry.
         break;
       }
@@ -6162,7 +6192,7 @@ export class TramaController {
       appendEvent(
         project.document,
         "trama",
-        { type: "activity", title: `Fette del piano ${plan.id} pubblicate come issue`, detail: published.join(", "), tone: "tool" },
+        { type: "activity", title: t("main.controller.slicesPublishedTitle", { plan: plan.id }), detail: published.join(", "), tone: "tool" },
         plan.requestId,
       );
       void this.refreshGitHub();
@@ -6174,8 +6204,8 @@ export class TramaController {
   async publishPlanSlices(planId: string): Promise<void> {
     const project = this.requireProject();
     const plan = project.document.plans.find((p) => p.id === planId);
-    if (plan?.slicing?.status !== "approved") throw new DomainError("Il piano non ha fette approvate da pubblicare.");
-    if (!this.specRepository(project)) throw new DomainError("GitHub non è collegato: le fette restano in Trama.");
+    if (plan?.slicing?.status !== "approved") throw new DomainError(t("main.controller.planNoApprovedSlices"));
+    if (!this.specRepository(project)) throw new DomainError(t("main.controller.slicesStayInTrama"));
     await this.publishSlices(project, plan);
     if (plan.slicing.publishFailure) throw new DomainError(plan.slicing.publishFailure);
   }
@@ -6191,7 +6221,7 @@ export class TramaController {
     const client = createRuntime(provider, { executable: provider === "codex" ? this.host.codexExecutable : null, requestTimeoutMs: 15_000 });
     this.planners.set(key, client);
     try {
-      if (!model) throw new Error("Nessun modello disponibile per dividere il lavoro in fette.");
+      if (!model) throw new Error(t("main.controller.noModelForSlicer"));
       const turn = slicerTurn(await this.nativeSkill("to-tickets"), provider === "codex", { plan, snapshot: project.snapshot });
       const opening = await client.openThread({
         model,
@@ -6230,14 +6260,14 @@ export class TramaController {
 
   runPactDemo(): void {
     const project = this.requireProject();
-    if (!project.isDemo) throw new DomainError("Lo scenario vale solo per il progetto di esempio.");
+    if (!project.isDemo) throw new DomainError(t("main.controller.pactDemoOnlyExample"));
     runPactDemo(project.document);
     this.changed();
   }
 
   approvePactDemo(): void {
     const project = this.requireProject();
-    approvePactDemo(project.document, "Utente locale di Trama, simulazione");
+    approvePactDemo(project.document, t("main.controller.pactDemoApprover"));
     this.changed();
   }
 
@@ -6253,8 +6283,8 @@ export class TramaController {
     appendEvent(project.document, "trama", {
       type: "activity",
       title: updating
-        ? `Metodo di lavoro AI Hero aggiornato da ${installed}: ${report.pathsCreated.length} file`
-        : `Metodo di lavoro AI Hero: ${report.pathsCreated.length} file creati`,
+        ? t("main.controller.aiHeroUpdatedTitle", { version: `${installed}`, count: report.pathsCreated.length })
+        : t("main.controller.aiHeroPreparedTitle", { count: report.pathsCreated.length }),
       detail: [report.version, ...report.warnings].join("\n"),
       tone: "info",
     });
@@ -6275,8 +6305,8 @@ export class TramaController {
     const { restored, preserved } = await rollbackSkills(project.rootPath);
     appendEvent(project.document, "trama", {
       type: "activity",
-      title: "Aggiornamento del metodo AI Hero annullato",
-      detail: [...restored, ...preserved.map((p) => `Modificato da te dopo l'aggiornamento, non ripristinato: ${p}`)].join("\n") || null,
+      title: t("main.controller.aiHeroRollbackTitle"),
+      detail: [...restored, ...preserved.map((p) => t("main.controller.aiHeroRollbackKept", { path: p }))].join("\n") || null,
       tone: "info",
     });
     this.changed();
@@ -6336,7 +6366,7 @@ export class TramaController {
 
   /** Opens the example project, a local copy marked as an exercise, and records the start. */
   async startExercise(exercise: ExerciseId): Promise<void> {
-    if (!EXERCISE_IDS.includes(exercise)) throw new DomainError("Esercizio sconosciuto.");
+    if (!EXERCISE_IDS.includes(exercise)) throw new DomainError(t("main.controller.unknownExercise"));
     if (!this.state.project?.isDemo) await this.openDemo();
     const project = this.requireProject();
     const record = (project.document.exercises ??= { startedAt: {}, observed: {} });
@@ -6379,7 +6409,7 @@ export class TramaController {
    */
   async simulateRemoteChanges(): Promise<void> {
     const project = this.requireProject();
-    if (!project.isDemo) throw new DomainError("L'esercizio di conflitto vale solo per il progetto di esempio.");
+    if (!project.isDemo) throw new DomainError(t("main.controller.conflictExerciseOnlyExample"));
     if (this.simulatingConflicts) return;
     const document = project.document;
     const eligible = document.candidates
@@ -6389,17 +6419,17 @@ export class TramaController {
         return exercise(b) - exercise(a) || b.declaredAt.localeCompare(a.declaredAt);
       });
     const candidate = eligible[0];
-    if (!candidate) throw new DomainError("Serve un candidato non pubblicato in un worktree: completa prima l'esercizio di modifica.");
+    if (!candidate) throw new DomainError(t("main.controller.conflictExerciseNeedsCandidate"));
     const done = (document.conflicts ?? []).filter((a) => a.candidateId === candidate.id && a.snapshotId === candidate.snapshotId && isExerciseAssessment(a));
     if (done.some((a) => a.classification === "clean") && done.some((a) => a.classification === "conflict")) {
-      throw new DomainError(`Il confronto di esercizio è già stato fatto sul candidato ${candidate.id}.`);
+      throw new DomainError(t("main.controller.conflictExerciseDone", { candidate: candidate.id }));
     }
     this.simulatingConflicts = true;
     try {
       appendEvent(document, "trama", {
         type: "activity",
-        title: "Esercizio di conflitto",
-        detail: `Trama crea due modifiche simulate in una copia locale separata e le confronta con il candidato ${candidate.id}. Non c'è un collaboratore reale e non si usa la rete.`,
+        title: t("main.controller.conflictExerciseTitle"),
+        detail: t("main.controller.conflictExerciseDetail", { candidate: candidate.id }),
         tone: "info",
       });
       this.changed();
@@ -6413,7 +6443,7 @@ export class TramaController {
       document.conflicts ??= [];
       for (const assessment of assessments) {
         document.conflicts.push(assessment);
-        appendEvent(document, "trama", { type: "card", kind: "conflict", title: "Esercizio di conflitto", detail: null, referenceId: assessment.id });
+        appendEvent(document, "trama", { type: "card", kind: "conflict", title: t("main.controller.conflictExerciseTitle"), detail: null, referenceId: assessment.id });
       }
       this.changed();
     } finally {
@@ -6477,7 +6507,7 @@ export class TramaController {
     return document.coordinator.learning;
   }
 
-  /** Memory as a frozen block and the skills index, in the form the Coordinator receives them. */
+  /** Memory as a frozen block and the skills index, in the form the Coordinator receives them. @model-text */
   private learnedContext(project: ActiveProjectState): { memory: string; skills: string } {
     const context = this.learningFor(project).promptContext();
     const blocks = [context.memory, context.user].filter(Boolean);
@@ -6572,8 +6602,8 @@ export class TramaController {
       if (owner && (run.actions.length || run.status === "failed")) {
         appendEvent(owner.document, "trama", {
           type: "activity",
-          title: run.status === "failed" ? "La revisione dell'esperienza non è riuscita" : "Revisione dell'esperienza",
-          detail: run.status === "failed" ? run.error : `${run.actions.join(", ")}\nLo trovi in Memoria: puoi correggere o ritirare quanto appreso.`,
+          title: run.status === "failed" ? t("main.controller.learningReviewFailedTitle") : t("main.controller.learningReviewTitle"),
+          detail: run.status === "failed" ? run.error : t("main.controller.learningReviewDetail", { actions: run.actions.join(", ") }),
           tone: run.status === "failed" ? "error" : "info",
         });
         this.changedIn(owner);
@@ -6662,11 +6692,11 @@ export class TramaController {
     });
     const owner = this.projectById(project.id);
     if (owner && (counts.markedStale || counts.archived || report.consolidated.length || report.pruned.length)) {
-      const archived = [...report.consolidated.map((c) => `${c.name} → ${c.into}`), ...report.pruned.map((p) => `${p.name} (ritirata)`)];
+      const archived = [...report.consolidated.map((c) => `${c.name} → ${c.into}`), ...report.pruned.map((p) => t("main.controller.curatorRetiredSkill", { name: p.name }))];
       appendEvent(owner.document, "trama", {
         type: "activity",
-        title: "Manutenzione delle skill apprese",
-        detail: [summary, archived.length ? `Archiviate: ${archived.join(", ")}` : null, "Le skill archiviate si ripristinano da Memoria."].filter(Boolean).join("\n"),
+        title: t("main.controller.curatorTitle"),
+        detail: [summary, archived.length ? t("main.controller.curatorArchived", { skills: archived.join(", ") }) : null, t("main.controller.curatorRestoreHint")].filter(Boolean).join("\n"),
         tone: "info",
       });
       this.changedIn(owner);
@@ -6745,7 +6775,7 @@ export class TramaController {
         break;
       case "archive":
       case "restore": {
-        if (input.action === "archive" && skills.usage.get(input.name).pinned) failure = `'${input.name}' è fissata: togli il fissaggio prima di archiviarla.`;
+        if (input.action === "archive" && skills.usage.get(input.name).pinned) failure = t("main.controller.skillPinned", { name: input.name });
         else {
           const outcome = input.action === "archive" ? skills.archive(input.name) : skills.restore(input.name);
           if (!outcome.ok) failure = outcome.message;
@@ -6769,7 +6799,7 @@ export class TramaController {
 
   async learnedSkillContent(name: string): Promise<string> {
     const dir = this.learningFor(this.requireProject()).skills.findSkill(name);
-    if (!dir) throw new DomainError(`La skill ${name} non esiste più.`);
+    if (!dir) throw new DomainError(t("main.controller.skillMissing", { name }));
     return readFileText(join(dir, "SKILL.md"), "utf8");
   }
 
@@ -6801,10 +6831,10 @@ export class TramaController {
   }
 
   async updateSettings(update: Partial<AppSettings>): Promise<void> {
-    if ("language" in update && update.language !== undefined && !isLanguage(update.language)) throw new DomainError("Lingua non disponibile.");
+    if ("language" in update && update.language !== undefined && !isLanguage(update.language)) throw new DomainError(t("main.controller.languageUnavailable"));
     if (update.sharedDevelopers !== undefined) {
       const limit = clampSharedDevelopers(update.sharedDevelopers);
-      if (limit === null) throw new DomainError("Il numero di sviluppatori condivisi deve essere un numero intero.");
+      if (limit === null) throw new DomainError(t("main.controller.sharedDevelopersNotInteger"));
       update = { ...update, sharedDevelopers: limit };
     }
     // The order of the projects changes only with the arrows of the Panoramica.
@@ -6835,7 +6865,7 @@ export class TramaController {
   }
 }
 
-/** What Trama writes to the Coordinator when its agents overlap someone else (G04, decision 10). */
+/** What Trama writes to the Coordinator when its agents overlap someone else (G04, decision 10). @model-text */
 function overlapMessage(overlaps: AgentOverlap[]): string {
   const lines = overlaps.slice(0, 5).map(
     (o) => `- l'incarico ${o.assignmentId} di ${o.specialistName}${o.slice ? ` (fetta ${o.slice})` : ""} tocca ${o.files.slice(0, 8).join(", ")}, come ${occupantName(o.occupant)}.`,
