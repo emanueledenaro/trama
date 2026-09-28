@@ -153,6 +153,15 @@ export const it = {
   "github.detail.signedOut": "gh non ha un accesso valido. Esegui {command} nel terminale, poi premi Controlla di nuovo.",
   "github.detail.signedOutDetail": "gh non ha un accesso valido: {detail}. Esegui {command} nel terminale, poi premi Controlla di nuovo.",
 
+  // Merge stopped on a destructive change (issue #41)
+  "mergeStop.title": "Il Coordinatore non unisce questo candidato da solo: la scelta è tua.",
+  "mergeStop.consequences": "Conseguenze",
+  "mergeStop.alternatives": "Cosa puoi fare",
+  "mergeStop.declined": "Hai scelto di non unirlo. Resta qui finché non chiedi una versione nuova.",
+  "mergeStop.decline": "Non unire",
+  "mergeStop.merge": "Unisci comunque",
+  "merge.mandateVersion": "Mandato versione {version}.",
+
   // Settings
   "settings.sections": "Sezioni delle impostazioni",
   "settings.section.general": "Generale",

@@ -2,13 +2,14 @@ import { describe, expect, it } from "vitest";
 import type { CandidateGate } from "@shared/domain";
 import { approveCandidate, candidateReport, clearCandidate, declareCandidate, recordEvidence, recordTechnicalReview } from "./candidates";
 import { emptyDocument } from "./document";
-import { mergeActivity, mergeBan, MERGE_RETRY_MS, mergeCommitTitle, mergeReadiness, mergeRoute, recordMerge, rejectCandidate } from "./merge";
-import { decide, grantMandate } from "./pact";
+import { declineDestructiveMerge, deletedFiles, destructiveChange, mergeActivity, mergeBan, MERGE_RETRY_MS, mergeCommitTitle, mergeReadiness, mergeRoute, pullRequestDrift, recordMerge, rejectCandidate, stopDestructiveMerge } from "./merge";
+import { decide, grantMandate, revokeMandate } from "./pact";
+import { restrictMandate } from "./projectMandate";
 import { assign, beginTurn, confirmTeam, endTurn, proposeTeam } from "./team";
 
 const BRANCHES = { head: "feature/negozio-trama-0a1b2c3d", base: "main" };
 
-function setup(changedFiles: string[], actions: Parameters<typeof grantMandate>[1]["authorizedActions"] = ["executeInWorktree", "openPullRequest", "integrateCandidate"]) {
+function setup(changedFiles: string[], actions: Parameters<typeof grantMandate>[1]["authorizedActions"] = ["executeInWorktree", "openPullRequest", "integrateCandidate"], diff = "d") {
   const document = emptyDocument("p");
   grantMandate(document, { objectives: ["Negozio"], priorities: [], scopeModuleIds: ["m"], authorizedActions: actions, limits: [] });
   const decision = decide(document, { id: null, value: "Revisione", acceptedExample: "e", rationale: "r" });
@@ -38,7 +39,7 @@ function setup(changedFiles: string[], actions: Parameters<typeof grantMandate>[
   );
   beginTurn(document, assignment.id, "t", "gpt");
   endTurn(document, assignment.id, "t", { kind: "completed", text: "ok" });
-  const review = { snapshotId: "snap", baseSHA: "base", diff: "d", changedFiles, excludedSensitiveFiles: [], whitespaceErrors: [] };
+  const review = { snapshotId: "snap", baseSHA: "base", diff, changedFiles, excludedSensitiveFiles: [], whitespaceErrors: [] };
   const candidate = declareCandidate(document, { assignmentId: assignment.id, decisionIds: [decision.id], unresolvedChoices: [], externalEffects: [] }, review);
   recordEvidence(document, candidate.id, { check: "git_status", passed: true, command: "git status", output: "", snapshotId: "snap" });
   recordTechnicalReview(document, candidate.id, { reviewerThreadId: "r", authorThreadId: "a", verdict: "approved", summary: "ok" });
@@ -170,5 +171,85 @@ describe("merge of a candidate (issue #247)", () => {
 
   it("titles the merge commit with the candidate's header and the pull request", () => {
     expect(mergeCommitTitle("feat(checkout): show the paid orders", 12)).toBe("feat(checkout): show the paid orders (#12)");
+  });
+});
+
+describe("merge by mandate without faking the human review (issue #41)", () => {
+  const ready = (diff = "d") => {
+    const s = setup(["NOTE.md"], undefined, diff);
+    passGate(s.document, s.candidate.id);
+    clearCandidate(s.document, s.candidate.id, "Coordinatore", "base");
+    return s;
+  };
+
+  it("merges only on a green light of the mandate in force, and records that mandate on the merge", () => {
+    const s = ready();
+    expect(s.candidate.clearance).toMatchObject({ actor: "Coordinatore", mandateVersion: 1 });
+    expect(readiness(s)).toEqual({ kind: "merge", by: "coordinator" });
+    recordMerge(s.document, s.candidate, "coordinator", "merged");
+    expect(s.candidate.merge).toMatchObject({ by: "coordinator", mandateVersion: 1 });
+    // A green light given before it carried its mandate is not reused.
+    const legacy = ready();
+    delete legacy.candidate.clearance!.mandateVersion;
+    expect(readiness(legacy)).toEqual({ kind: "wait", reason: "Il via libera è stato dato con un mandato diverso da quello in vigore: serve un nuovo via libera." });
+    // A narrower mandate still covering the candidate asks a new green light too.
+    const narrowed = ready();
+    narrowed.document.mandate!.authorizedActions.push("plan");
+    restrictMandate(narrowed.document, { scopeModuleIds: ["m"], authorizedActions: ["executeInWorktree", "openPullRequest", "integrateCandidate"] });
+    expect(readiness(narrowed)).toMatchObject({ kind: "wait", reason: expect.stringMatching(/mandato diverso/) });
+    clearCandidate(narrowed.document, narrowed.candidate.id, "Coordinatore", "base");
+    expect(readiness(narrowed)).toEqual({ kind: "merge", by: "coordinator" });
+    // The person's ok never records a mandate, and a revoked mandate leaves the merge to the person.
+    recordMerge(narrowed.document, narrowed.candidate, "person", "running");
+    expect(narrowed.candidate.merge!.mandateVersion).toBeNull();
+    revokeMandate(narrowed.document, "Pausa");
+    expect(mergeRoute(narrowed.document, narrowed.candidate, "org/negozio").route).toBe("person");
+  });
+
+  it("stops a serious destructive change for the person, and merges it only on their ok", () => {
+    const diff = "diff --git a/old.ts b/old.ts\ndeleted file mode 100644\n--- a/old.ts\n+++ /dev/null\ndiff --git a/db.sql b/db.sql\n+DROP TABLE orders;";
+    const s = ready(diff);
+    const decided = readiness(s);
+    expect(decided.kind).toBe("destructive");
+    const stop = decided.kind === "destructive" ? decided.stop : null!;
+    expect(stop.reasons).toEqual(["Cancella un file.", "Contiene istruzioni che cancellano dati."]);
+    expect(stop.consequences.join(" ")).toMatch(/old\.ts/);
+    expect(stop.alternatives).toHaveLength(3);
+    stopDestructiveMerge(s.document, s.candidate, stop);
+    expect(s.candidate.merge).toMatchObject({ by: "coordinator", status: "stopped", mandateVersion: 1, stop: { acknowledgedAt: null } });
+    expect(readiness(s)).toMatchObject({ kind: "wait" });
+    expect(mergeActivity(s.candidate, { kind: "destructive", reasons: stop.reasons }, "coordinator")).toMatchObject({ title: "Unione fermata: serve la tua decisione", tone: "error" });
+    // The green light is not the person's ok: only their approval merges it, as their act.
+    expect(s.candidate.humanApproval).toBeNull();
+    approveCandidate(s.document, s.candidate.id, "Persona", "base");
+    expect(readiness(s)).toEqual({ kind: "merge", by: "person" });
+
+    const declined = ready(diff);
+    stopDestructiveMerge(declined.document, declined.candidate, destructiveChange(declined.candidate)!);
+    declineDestructiveMerge(declined.candidate);
+    expect(declined.candidate.merge!.stop!.acknowledgedAt).not.toBeNull();
+    expect(readiness(declined)).toMatchObject({ kind: "wait" });
+    expect(() => declineDestructiveMerge(ready().candidate)).toThrow(/unione fermata/);
+  });
+
+  it("reads an incompatible change and deleted files, and leaves ordinary changes alone", () => {
+    expect(deletedFiles("diff --git a/x.ts b/x.ts\ndeleted file mode 100644\ndiff --git a/y.ts b/y.ts\n+y")).toEqual(["x.ts"]);
+    const s = ready("diff --git a/y.ts b/y.ts\n+const deleteFromCart = 1;\n-DROP TABLE old;");
+    expect(destructiveChange(s.candidate)).toBeNull();
+    s.candidate.commit = { type: "feat", scope: null, description: "d", breaking: "l'API degli ordini cambia", message: "feat!: d", conventions: {} as never, correctedBy: null };
+    expect(destructiveChange(s.candidate)?.reasons).toEqual(["Modifica incompatibile."]);
+    // An interface candidate already waits for the person: the Coordinator's stop does not apply to it.
+    const ui = setup(["web/index.css"], undefined, "diff --git a/web/old.css b/web/old.css\ndeleted file mode 100644");
+    passGate(ui.document, ui.candidate.id);
+    clearCandidate(ui.document, ui.candidate.id, "Coordinatore", "base");
+    expect(readiness(ui)).toEqual({ kind: "person" });
+  });
+
+  it("stops a merge when the pull request changed after the check", () => {
+    const status = { number: 21, state: "OPEN" as const, mergedAt: null, checks: "success" as const };
+    expect(pullRequestDrift("abc", { ...status, headSHA: "abc", mergeable: true })).toBeNull();
+    expect(pullRequestDrift("abc", status)).toBeNull();
+    expect(pullRequestDrift("abc", { ...status, headSHA: "def" })).toMatch(/altro lavoro/);
+    expect(pullRequestDrift("abc", { ...status, headSHA: "abc", mergeable: false })).toMatch(/conflitti/);
   });
 });
