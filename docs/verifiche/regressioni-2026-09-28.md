@@ -38,6 +38,8 @@ I 3 test saltati sono gli stessi di prima del 26 settembre, più uno: "saves a g
 
 Nessuna regressione grande: non ho aperto issue nuove.
 
+Dopo il riallineamento con 59e2a83 un altro test è rosso su `main`, e non lo tocco qui. "confirms the shared understanding within a mandate that allows planning, and never without one" in `app/src/main/core/autonomousCycle.test.ts` (#296) mette i passi del Coordinatore su un orologio finto che parte alle 9:00 UTC del 28 settembre 2026, mentre `createDecisionRequest` usa l'ora vera. Dalle 9:00 UTC di oggi la domanda risulta più recente del passo e il test fallisce senza nessuna modifica al codice. Lo corregge la PR #321. Ho fatto girare tutta la suite con l'orologio spostato avanti di un giorno: nessun altro test dipende dall'ora reale. L'unico altro errore, in `presence.test.ts`, viene dal metodo, perché git scrive l'ora vera.
+
 ## 4. Cose viste e non corrette qui
 
 - Molti prefissi numerici degli screenshot sono condivisi da scenari diversi (per esempio `20a-focus-audit` e `20a-github-connected-dark`, `23a-references` e `23a-coordinator-outage-waiting`, `16a`, `22a`, `26a`). I nomi completi sono diversi e nessun file viene sovrascritto. Rinumerarli cambierebbe i nomi citati nei registri di `docs/verifiche/`, quindi li lascio come sono.
