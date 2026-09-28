@@ -1,6 +1,6 @@
 # Avvisi di terze parti
 
-Trama contiene codice, testi e design derivati dai progetti qui sotto, tutti distribuiti con licenza MIT. Questo file e i file in [`docs/legal/`](docs/legal/) sono gli unici punti del repository che nominano questi progetti. I file derivati rimandano qui.
+Trama contiene codice, testi e design derivati dai progetti qui sotto, distribuiti con licenza MIT, e include i font elencati in [Font](#font), distribuiti con licenza SIL Open Font License 1.1. Questo file e i file in [`docs/legal/`](docs/legal/) sono gli unici punti del repository che nominano questi progetti. I file derivati rimandano qui.
 
 ## Synara
 
@@ -73,6 +73,16 @@ SOFTWARE.
 - Cosa include Trama: le skill in `app/resources/AIHero/skills/`, con il testo originale.
 - Copyright: `Copyright (c) 2026 Matt Pocock`, licenza MIT, testo in [app/resources/AIHero/LICENSE](app/resources/AIHero/LICENSE).
 - Dettagli: [docs/aihero-attribution.md](docs/aihero-attribution.md).
+
+## Font
+
+Trama include questi font nel renderer, con i pacchetti `@fontsource-variable` in `app/package.json`. I file dei font finiscono nel pacchetto dell'app e non vengono scaricati a ogni avvio.
+
+| Font | Uso in Trama | Pacchetto | Copyright | Licenza |
+| --- | --- | --- | --- | --- |
+| Newsreader | testo dei contenuti e titoli | `@fontsource-variable/newsreader` | `Copyright 2020 The Newsreader Project Authors` (<https://github.com/productiontype/Newsreader>) | OFL-1.1, [docs/legal/newsreader-OFL.txt](docs/legal/newsreader-OFL.txt) |
+| Inter | interfaccia | `@fontsource-variable/inter` | `Copyright 2016 The Inter Project Authors` (<https://github.com/rsms/inter>) | OFL-1.1, [docs/legal/inter-OFL.txt](docs/legal/inter-OFL.txt) |
+| JetBrains Mono | codice | `@fontsource-variable/jetbrains-mono` | `Copyright 2020 The JetBrains Mono Project Authors` (<https://github.com/JetBrains/JetBrainsMono>) | OFL-1.1, [docs/legal/jetbrains-mono-OFL.txt](docs/legal/jetbrains-mono-OFL.txt) |
 
 ## Controllo
 

@@ -7,6 +7,9 @@ describe("contextReading (issue #305)", () => {
     expect(contextReading({ usedTokens: 120_000, contextWindow: 258_000 }, 80)).toEqual({ state: "ok", percent: 47, usedTokens: 120_000, contextWindow: 258_000 });
     expect(contextReading({ usedTokens: 190_000, contextWindow: 258_000 }, 80)).toMatchObject({ state: "near", percent: 74 });
     expect(contextReading({ usedTokens: 230_000, contextWindow: 258_000 }, 80)).toMatchObject({ state: "over", percent: 89 });
+    // The exact share decides (issue #272): 79.6% shows as 80% and stays under an 80% threshold.
+    expect(contextReading({ usedTokens: 796, contextWindow: 1_000 }, 80)).toMatchObject({ state: "near", percent: 80 });
+    expect(contextReading({ usedTokens: 800, contextWindow: 1_000 }, 80)).toMatchObject({ state: "over", percent: 80 });
   });
 
   it("keeps a reading a little past the window at the window, and never shows more", () => {

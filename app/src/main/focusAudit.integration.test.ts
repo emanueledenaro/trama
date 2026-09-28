@@ -119,6 +119,8 @@ describe("focus mode on a candidate (F01)", () => {
     );
     expect(checksEnded).toHaveLength(candidate.requiredChecks.length);
     expect(axesOpened).toHaveLength(2);
+    // Both axes open under the read-only profile; the turns then leave it unnamed (Codex 0.155).
+    for (const index of axesOpened) expect(entries[index]!.params).toMatchObject({ permissions: "trama_read" });
     expect(Math.max(...checksEnded)).toBeLessThan(Math.min(...axesOpened));
     await writeFile(join(gates, "first"), "");
     await until(() => audit.status === "done");
@@ -136,7 +138,7 @@ describe("focus mode on a candidate (F01)", () => {
     // stays a hypothesis.
     expect(audit.standards.model).toBe("gpt-5.5-mini");
     expect(audit.standards.items).toEqual([
-      expect.objectContaining({ status: "verified", evidence: { kind: "fileLine", file: candidate.changedFiles[0], line: 1, quote: "" }, confirmation: null }),
+      expect.objectContaining({ status: "verified", evidence: { kind: "fileLine", file: candidate.changedFiles[0], line: 1, quote: expect.stringMatching(/\S/) }, confirmation: null }),
     ]);
     const [serious, minor] = audit.spec.items!;
     expect(serious).toMatchObject({ severity: "serious", status: "confirmed", confirmation: { model: "gpt-5.5", confirmed: true } });
