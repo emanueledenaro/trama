@@ -1168,6 +1168,8 @@ export const mainEn: Record<keyof typeof mainIt, string> = {
     "the work of the cloud session did not pass the checks on the Mac",
   "main.quality.blocker.WORKTREE_CONFLICT":
     "there is a conflict with the work of another assignment",
+  "main.candidates.worktreeChanged": "The working copy changed after this candidate: declare a new candidate from it.",
+  "main.quality.blocker.WORKTREE_CHANGED": "the working copy changed after the candidate",
   "main.quality.blocker.SEMANTIC_CONFLICT":
     "a check fails together with the work of another assignment",
   "main.quality.verified.missing": "Not verified: {blockers}.",

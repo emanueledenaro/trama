@@ -218,7 +218,7 @@ export function inspectCandidate(document: ProjectDocument, candidate: Candidate
   }
   // The developer changed the worktree after the candidate (issue #388): it no longer describes the work to review.
   if (!candidate.pullRequest && worktreeChanged(document, candidate)) {
-    blockers.push({ code: "WORKTREE_CHANGED", detail: "The worktree changed after this candidate: declare a new candidate from it." });
+    blockers.push({ code: "WORKTREE_CHANGED", detail: t("main.candidates.worktreeChanged") });
   }
   for (const [id, version] of Object.entries(candidate.decisionVersions)) {
     if (document.decisions.find((d) => d.id === id)?.version !== version) blockers.push({ code: "DECISION_CHANGED", detail: id });

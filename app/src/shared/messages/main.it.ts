@@ -1216,6 +1216,8 @@ export const mainIt = {
     "il lavoro della sessione cloud non ha superato i controlli sul Mac",
   "main.quality.blocker.WORKTREE_CONFLICT":
     "c'è un conflitto con il lavoro di un altro incarico",
+  "main.candidates.worktreeChanged": "La copia di lavoro è cambiata dopo questo candidato: dichiarane uno nuovo dalla copia di lavoro.",
+  "main.quality.blocker.WORKTREE_CHANGED": "la copia di lavoro è cambiata dopo il candidato",
   "main.quality.blocker.SEMANTIC_CONFLICT":
     "insieme al lavoro di un altro incarico una verifica non passa",
   "main.quality.verified.missing": "Non è verificato: {blockers}.",
