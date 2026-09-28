@@ -1025,10 +1025,19 @@ export interface Candidate {
   updatedAt: string;
   evidence: Record<string, CandidateEvidence>;
   technicalReview: TechnicalReview | null;
-  clearance: { actor: string; fingerprint: string; at: string } | null;
+  /**
+   * The Coordinator's green light. `mandateVersion` is the mandate it was given under (issue #41); a green light
+   * without it predates the merge by mandate and never lets the Coordinator merge.
+   */
+  clearance: { actor: string; fingerprint: string; at: string; mandateVersion?: number } | null;
   humanApproval: { actor: string; fingerprint: string; at: string } | null;
-  /** mergedAt: when Trama saw the pull request merged on GitHub. */
-  pullRequest: { url: string; number: number; branch: string; at: string; mergedAt?: string | null } | null;
+  /**
+   * mergedAt: when Trama saw the pull request merged on GitHub. headSHA: the commit Trama pushed (issue #41); absent in
+   * pull requests published before the merge by mandate, which the Coordinator does not merge.
+   */
+  pullRequest: { url: string; number: number; branch: string; at: string; mergedAt?: string | null; headSHA?: string } | null;
+  /** The Coordinator's merge of the published pull request within the mandate (issue #41); absent until it tries. */
+  integration?: CandidateIntegration | null;
   /** The goal of the assignment, copied when the candidate is declared. */
   goalId?: string | null;
   /** The person's observations of the goal's examples on this exact snapshot (UX06). */
@@ -1042,6 +1051,39 @@ export interface Candidate {
   commit?: CandidateCommit;
   /** What `git diff --check` reported on the candidate's snapshot (Q01); absent in candidates declared before it. */
   whitespaceErrors?: string[];
+}
+
+/**
+ * The Coordinator merging a published candidate within the mandate (issue #41, ADR 0003). It is the Coordinator's act
+ * under a mandate version, never a human review: the person's approval stays as it was. Publishing, the merge on the
+ * remote, CI and any distribution are separate events: this record covers only the merge.
+ */
+export interface CandidateIntegration {
+  actor: "Coordinatore";
+  mandateVersion: number;
+  /** Where the merge goes, fixed at the first attempt: a retry after a failure or a timeout goes to the same place. */
+  destination: { repository: string; pullRequestNumber: number; baseBranch: string; headSHA: string };
+  /**
+   * "merging": the request left and its outcome is not known yet (a timeout, the app closed); Trama reads the pull
+   * request before trying again. "stopped": a serious destructive case that waits for the person.
+   */
+  status: "merging" | "merged" | "failed" | "stopped";
+  startedAt: string;
+  updatedAt: string;
+  /** The merge commit on the remote, once merged. */
+  mergeSHA: string | null;
+  /** Why the latest attempt did not merge, in the person's words. */
+  failure: string | null;
+  stop: IntegrationStop | null;
+}
+
+/** A merge the Coordinator stopped because it would destroy something: what happens, and what the person can do. */
+export interface IntegrationStop {
+  reasons: string[];
+  consequences: string[];
+  alternatives: string[];
+  /** When the person saw it: it leaves Aspetta te and stays on the candidate. */
+  acknowledgedAt: string | null;
 }
 
 /** A seam as the developer of a slice reported it (M06). */

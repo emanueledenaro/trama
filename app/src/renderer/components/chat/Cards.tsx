@@ -28,6 +28,7 @@ import {
   type QualityItem,
   type SpecialistAssignment,
   type TechnicalReview,
+  type CandidateIntegration,
   type MandateAction,
   type TestedSeam,
   developerQuestionState,
@@ -1286,6 +1287,49 @@ function DecisionLink({ id, version }: { id: string; version: number | undefined
   );
 }
 
+/** The Coordinator's merge within the mandate (issue #41): its outcome, never a review of the person. */
+function IntegrationField({ integration }: { integration: CandidateIntegration }) {
+  const pull = `#${integration.destination.pullRequestNumber}`;
+  const stop = integration.status === "stopped" ? integration.stop : null;
+  return (
+    <Field label="Unione con il mandato">
+      <div className="space-y-1 text-ui-sm" data-testid="candidate-integration" data-status={integration.status}>
+        {integration.status === "merged" ? (
+          <p>
+            Pull request {pull} unita dal Coordinatore con il mandato versione {integration.mandateVersion}
+            {integration.mergeSHA ? <span className="font-mono text-muted-foreground"> ({integration.mergeSHA.slice(0, 7)})</span> : null}.{" "}
+            <span className="text-muted-foreground">È il suo via libera, non una tua revisione. La tua copia locale e l'app in uso non cambiano, e non parte nessuna distribuzione.</span>
+          </p>
+        ) : integration.status === "merging" ? (
+          <p>Unione di {pull} in corso. Se GitHub non risponde, Trama rilegge la pull request prima di riprovare.</p>
+        ) : integration.status === "failed" ? (
+          <p>
+            Unione di {pull} non riuscita: {integration.failure} <span className="text-muted-foreground">Il prossimo tentativo va alla stessa pull request.</span>
+          </p>
+        ) : stop ? (
+          <>
+            <p className="text-foreground/90">
+              Il Coordinatore non unisce {pull}, la scelta è tua. {stop.reasons.join(" ")}
+            </p>
+            <p className="font-medium text-foreground">Conseguenze</p>
+            <ul className="list-disc space-y-0.5 pl-4">
+              {stop.consequences.map((c) => (
+                <li key={c}>{c}</li>
+              ))}
+            </ul>
+            <p className="font-medium text-foreground">Cosa puoi fare</p>
+            <ul className="list-disc space-y-0.5 pl-4">
+              {stop.alternatives.map((a) => (
+                <li key={a}>{a}</li>
+              ))}
+            </ul>
+          </>
+        ) : null}
+      </div>
+    </Field>
+  );
+}
+
 export function CandidateCard({ candidateId }: { candidateId: string }) {
   const project = useUi((s) => s.app?.project)!;
   const setInspector = useUi((s) => s.setInspector);
@@ -1369,6 +1413,7 @@ export function CandidateCard({ candidateId }: { candidateId: string }) {
           {report.clearanceInvalidated ? "Il via libera del Coordinatore non vale più: sono cambiate evidenze o decisioni." : "Via libera del Coordinatore."}
         </p>
       ) : null}
+      {candidate.integration ? <IntegrationField integration={candidate.integration} /> : null}
       {candidate.pullRequest ? (
         <button
           type="button"
@@ -1404,6 +1449,11 @@ export function CandidateCard({ candidateId }: { candidateId: string }) {
         {approved && publishable && report.state !== "superseded" && !candidate.pullRequest && project.github.repository && !preview ? (
           <Button size="sm" onClick={() => void act("candidate:previewPullRequest", { candidateId }).then((p) => setPreview(p ?? null))}>
             <IconGitPullRequest /> Prepara la pull request
+          </Button>
+        ) : null}
+        {candidate.integration?.status === "stopped" && candidate.integration.stop && !candidate.integration.stop.acknowledgedAt && !candidate.pullRequest?.mergedAt ? (
+          <Button size="sm" onClick={() => void act("candidate:acknowledgeIntegrationStop", { candidateId })}>
+            Ho visto
           </Button>
         ) : null}
       </div>

@@ -236,6 +236,32 @@ describe("Aspetta te (issue #240)", () => {
       expect(items.find((i) => i.kind === "route")).toMatchObject({ label: "Percorso di Ask Trama", title: "Situazione AT-1", blocks: 1 });
     });
 
+    it("lists a merge the Coordinator stopped until the person saw it or the pull request merged (issue #41)", () => {
+      const document = withRequests();
+      const stopped = (acknowledgedAt: string | null) => ({
+        actor: "Coordinatore" as const,
+        mandateVersion: 1,
+        destination: { repository: "o/r", pullRequestNumber: 7, baseBranch: "main", headSHA: "h" },
+        status: "stopped" as const,
+        startedAt: "2026-09-01T08:00:00Z",
+        updatedAt: "2026-09-01T08:00:00Z",
+        mergeSHA: null,
+        failure: null,
+        stop: { reasons: ["Cancella un file."], consequences: [], alternatives: [], acknowledgedAt },
+      });
+      const pull = (mergedAt: string | null) => ({ url: "", number: 7, branch: "b", at: "", mergedAt });
+      document.candidates.push(
+        candidate("C1", { pullRequest: pull(null), integration: stopped(null) }),
+        candidate("C2", { pullRequest: pull(null), integration: stopped("2026-09-01T09:00:00Z") }),
+        candidate("C3", { pullRequest: pull("2026-09-01T09:00:00Z"), integration: stopped(null) }),
+        candidate("C4", { pullRequest: pull(null), integration: { ...stopped(null), status: "failed", stop: null } }),
+      );
+      const items = waitingForYou(document, {});
+      expect(items).toEqual([
+        { key: "integration:C1", kind: "candidate", targetId: "C1", label: "Unione fermata", title: "Pull request #7: Cancella un file.", goalId: null, askedAt: "2026-09-01T08:00:00Z", blocks: 1 },
+      ]);
+    });
+
     it("keeps one order for every kind: the work held first, then the oldest", () => {
       const document = withRequests(["R1", null]);
       document.goals = [goal("G1", "proposed", "2026-09-01T05:00:00Z")];

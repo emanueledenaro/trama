@@ -184,10 +184,14 @@ import {
   classifyGitHubError,
   readGitHubCapabilities,
   readIssue,
+  mergePullRequest,
+  readBranchHead,
+  readPullRequestForMerge,
   readPullRequestStatus,
   updateIssueBody,
   updateIssueText,
 } from "./core/github";
+import { acknowledgeIntegrationStop, integrateByMandate, type IntegrationOutcome, type MergePort, reconcileIntegration } from "./core/integration";
 import { convertLegacyDocument, readLegacyDocument, readLegacyRecentProjects } from "./core/legacyImport";
 import { type MonitorCheckpoint, MonitorStore, pollRepository } from "./core/monitor";
 import {
@@ -1463,6 +1467,11 @@ export class TramaController {
     const open = new Set(snapshot.pullRequests.map((p) => p.number));
     let merged = false;
     for (const candidate of project.document.candidates) {
+      // A merge by mandate whose answer was lost (issue #41): GitHub says whether it merged, at its own destination.
+      if (candidate.integration?.status === "merging") {
+        const settled = await reconcileIntegration(candidate, this.mergePort(candidate.integration.destination.repository), new Date().toISOString());
+        if (settled !== "unknown") merged = true;
+      }
       const pull = candidate.pullRequest;
       if (!pull || pull.mergedAt || open.has(pull.number)) continue;
       const status = await readPullRequestStatus(repository, pull.number).catch(() => null);
@@ -2097,6 +2106,7 @@ export class TramaController {
           verifyCandidate: (candidateId, check) => this.verifyCandidate(candidateId, check, current.runningRequestId),
           reviewCandidate: (candidateId) => this.reviewCandidate(candidateId, current.runningRequestId),
           headSHA: () => this.headSHA(current.rootPath),
+          integrateCandidate: (candidateId) => this.integrateCandidateByMandate(candidateId, current.runningRequestId),
           orderPlan: (order) => this.orderPlan({ ...order, requestId: current.runningRequestId, orderedBy: "coordinator" }).id,
           askTramaCatalog: async () => ({ references: routeReferences(await this.nativeSkill(ASK_TRAMA_SKILL)), bundled: [...SELECTED_SKILLS] }),
         });
@@ -5178,6 +5188,54 @@ export class TramaController {
     appendEvent(document, "trama", { type: "activity", title: `Pull request #${published.number} pubblicata`, detail: published.url, tone: "tool" });
     this.changed();
     await this.send(`Ho pubblicato il candidato ${candidate.id} come pull request #${published.number}: ${published.url}`, null, null, null, [], null, null, false);
+  }
+
+  /** Trama's GitHub for the merge by mandate: reads and merges through gh (issue #41). */
+  private mergePort(repository: string): MergePort {
+    return {
+      readPullRequest: (number) => readPullRequestForMerge(repository, number),
+      readBaseHead: (branch) => readBranchHead(repository, branch),
+      merge: (number, headSHA, title) => mergePullRequest(repository, number, headSHA, title),
+    };
+  }
+
+  /**
+   * The Coordinator merges a candidate's pull request within the mandate (issue #41). Every outcome but a block leaves a
+   * line in Activity; a destructive change waits for the person in Aspetta te.
+   */
+  async integrateCandidateByMandate(candidateId: string, requestId: string | null): Promise<IntegrationOutcome> {
+    const project = this.requireProject();
+    const document = project.document;
+    const candidate = findCandidate(document, candidateId);
+    if (!candidate) throw new DomainError("Candidato non trovato.");
+    const repository = candidate.integration?.destination.repository ?? project.github.repository;
+    if (!repository) throw new DomainError("Il progetto non ha un remoto GitHub.");
+    const baseBranch = candidate.integration?.destination.baseBranch ?? project.snapshot.branch ?? "main";
+    const title = candidate.commit ? commitHeader(candidate.commit.message) : `Candidato ${candidate.id}`;
+    const outcome = await integrateByMandate({
+      document,
+      candidate,
+      repository,
+      baseBranch,
+      title,
+      port: this.mergePort(repository),
+      persist: () => this.changedIn(project),
+      record: (event) => {
+        appendEvent(document, "trama", { type: "activity", title: event.title, detail: event.detail, tone: event.tone }, requestId);
+        this.changedIn(project);
+      },
+    });
+    if (outcome.status === "merged" && !outcome.duplicate) void this.refreshGitHub();
+    return outcome;
+  }
+
+  /** The person has seen a merge the Coordinator stopped: it leaves Aspetta te and stays on the candidate (issue #41). */
+  acknowledgeIntegrationStop(candidateId: string): void {
+    const project = this.requireProject();
+    const candidate = findCandidate(project.document, candidateId);
+    if (!candidate) throw new DomainError("Candidato non trovato.");
+    acknowledgeIntegrationStop(candidate);
+    this.changed();
   }
 
   // MARK: Tickets

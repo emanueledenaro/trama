@@ -238,6 +238,22 @@ export function waitingForYou(document: ProjectDocument, sources: WaitingSources
     });
   }
 
+  // A merge the Coordinator stopped because it would destroy something (issue #41): the choice is the person's.
+  for (const candidate of document.candidates) {
+    const integration = candidate.integration;
+    if (integration?.status !== "stopped" || !integration.stop || integration.stop.acknowledgedAt || candidate.pullRequest?.mergedAt) continue;
+    items.push({
+      key: `integration:${candidate.id}`,
+      kind: "candidate",
+      targetId: candidate.id,
+      label: "Unione fermata",
+      title: `Pull request #${integration.destination.pullRequestNumber}: ${integration.stop.reasons.join(" ")}`,
+      goalId: candidate.goalId ?? null,
+      askedAt: integration.startedAt,
+      blocks: 1,
+    });
+  }
+
   // An action a fixed ban stopped (issue #244): no mandate grants it, so it waits for the person until they have seen it.
   for (const refusal of (document.fixedBanRefusals ?? []).filter((r) => !r.acknowledgedAt)) {
     items.push({

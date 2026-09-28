@@ -25,6 +25,7 @@ import type { GitHubState } from "@shared/domain";
 import { createDecisionRequest, createMandateRequest, DELEGABLE_ACTIONS, DomainError, MAXIMUM_ALTERNATIVES } from "./pact";
 import { ALL_CHECKS, CHECKS, type CheckResult, type ReadOnlyCheck } from "./checks";
 import { candidateReport, CandidateError, clearCandidate, declareCandidate, findCandidate, latestCandidate } from "./candidates";
+import type { IntegrationOutcome } from "./integration";
 import { studyText } from "./study";
 import { findGoal, requestGoalId } from "@shared/goals";
 import { isFixedRole, roleDuties } from "@shared/roster";
@@ -524,6 +525,14 @@ export const COORDINATOR_TOOLS: ToolDefinition[] = [
     readOnly: false,
   },
   {
+    name: "integrate_candidate",
+    description:
+      "Within the mandate (integrateCandidate), merge on GitHub the pull request the person published for a candidate. Trama merges only when every condition holds on that exact candidate: your green light given under the mandate in force, a technical review distinct from the author, the required checks and the gate on its snapshot, no conflict, the base on GitHub unchanged since the candidate was built, the pull request's head still the commit Trama pushed, and green CI. Trama reads the pull request again right before merging: a concurrent change stops it. An incompatible change, deleted files or SQL that deletes data are never merged by you: Trama stops the merge and shows the person the consequences and the alternatives. The merge is your act under the mandate, never the person's review; it deploys nothing and does not update the app. A retry after a failure or a timeout goes to the same pull request and never merges twice.",
+    properties: { candidate: text },
+    required: ["candidate"],
+    readOnly: false,
+  },
+  {
     name: "propose_domain_docs",
     description:
       "Propose the glossary terms and ADRs of the domain-modeling skill, drawn from Pact decisions of the person (decisionIDs). You are read-only: Trama shows the proposal to the person as a card, and within the mandate (executeInWorktree on the modules of the files) the documentation and domain role writes it in its own worktree with the same skill; the result becomes a candidate. Outside the mandate the proposal waits, and the card says why. Each term follows CONTEXT-FORMAT.md: term, a definition of one or two sentences, the words to avoid. Each ADR follows ADR-FORMAT.md: title, a body of one to three sentences, and consideredOptions and consequences only when they add value. contextPath defaults to CONTEXT.md; the ADRs go to docs/adr next to it, with the next number.",
@@ -652,6 +661,8 @@ export interface ToolContext {
   /** Runs a technical review in a thread distinct from the author's. */
   reviewCandidate(candidateId: string): Promise<TechnicalReview>;
   headSHA(): Promise<string | null>;
+  /** Merges a published candidate within the mandate (issue #41); absent where Trama cannot reach GitHub. */
+  integrateCandidate?(candidateId: string): Promise<IntegrationOutcome>;
   /** Starts Trama's planner in the background and returns the plan id. */
   orderPlan(order: { kind: WorkKind; moduleIds: string[]; summary: string; issueNumber: number | null }): string;
 }
@@ -1514,6 +1525,28 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
         context.changed();
         return toolSuccess({ candidateID: candidate.id, state: "decided", note: "The person still reviews and publishes the candidate." });
       }
+      case "integrate_candidate": {
+        const found = candidateArgument(document, args.candidate);
+        if ("failure" in found) return found.failure;
+        const candidate = found.candidate;
+        const authorization = authorize(document.mandate, "integrateCandidate", candidate.touchedModules);
+        if (authorization !== "authorized") return refused(authorization, "integrateCandidate");
+        if (!context.integrateCandidate) return toolFailure("unavailable", "Trama cannot merge pull requests here.");
+        const outcome = await context.integrateCandidate(candidate.id);
+        switch (outcome.status) {
+          case "merged":
+            return toolSuccess({ candidateID: candidate.id, status: "merged", pullRequest: outcome.integration.destination.pullRequestNumber, duplicate: outcome.duplicate, mergeSHA: outcome.integration.mergeSHA });
+          case "blocked":
+            return toolFailure("integration_blocked", `Candidate ${candidate.id} cannot be merged now: ${outcome.blockers.map((b) => `${b.code} (${b.detail})`).join("; ")}.`);
+          case "stopped":
+            return toolFailure("person_required", `The merge of candidate ${candidate.id} is a serious destructive change (${outcome.integration.stop?.reasons.join(" ")}). It waits for the person in Aspetta te with consequences and alternatives: do not retry it.`);
+          case "failed":
+            return toolFailure("integration_failed", `The merge of candidate ${candidate.id} did not happen: ${outcome.integration.failure}`);
+          case "unknown":
+            return toolFailure("integration_unknown", `GitHub did not say whether pull request #${outcome.integration.destination.pullRequestNumber} merged. Trama reads it before any new attempt; call integrate_candidate again later.`);
+        }
+        return toolFailure("integration_failed", "Unknown outcome.");
+      }
       case "declare_next_step": {
         const request = document.requests.find((r) => r.id === context.runningRequestId);
         if (!request) return toolFailure("no_request", "A next step closes a turn that answers a message of the person.");
@@ -1636,7 +1669,7 @@ export function developerInstructions(projectName: string, learningGuidance: str
     "run_readonly_check runs a check on the project checkout without writing to it; you may use it without a mandate.",
     "The presence tells who works on what in the team: colleagues who share it in Trama, with their branch, task and the paths they touch, and their agents. read_presence reads it. When you assign work avoid the files colleagues are touching; when one of your developers overlaps a colleague, move or postpone its task; when you propose a goal someone already works on, say so; answer \"who is touching X\" only from read_presence. Never block a person or ask a colleague to stop.",
     "The person works by goals: a goal has a desired outcome and accepted and refused examples. The person talks with you in one chat per project; goals are filters of that chat, not separate dialogs, and you stay one Coordinator with one mandate and one Pact for all of them. When the person writes with the chat filtered on a goal Trama says so and gives you the goal; answer about that goal, and the work you assign in that turn is linked to it. A goal has one active plan: a new plan for it replaces the earlier one. read_goals lists the goals; propose_goal proposes a new one that the person confirms.",
-    "When a specialist's work is done, declare_candidate captures its worktree and binds it to the Pact decisions it must respect; verify_candidate runs its required checks and review_candidate passes it through the gate of every candidate reviewer, which sends the work back to its developer on a blocking finding: when that happens, wait for the developer and declare the new candidate. Within the mandate, clear_candidate gives your green light to a verified and approved candidate. The person always reviews and publishes it: never claim that work is merged or published.",
+    "When a specialist's work is done, declare_candidate captures its worktree and binds it to the Pact decisions it must respect; verify_candidate runs its required checks and review_candidate passes it through the gate of every candidate reviewer, which sends the work back to its developer on a blocking finding: when that happens, wait for the developer and declare the new candidate. Within the mandate, clear_candidate gives your green light to a verified and approved candidate. The person always reviews and publishes it: never claim that work is published. Once the person published it, within the mandate integrateCandidate, integrate_candidate merges its pull request when CI is green and nothing changed; claim a merge only when integrate_candidate says merged.",
     "Trama writes commits in Conventional Commits 1.0.0, or in the rules the project declares, and names branches feature/, bugfix/ or hotfix/. It derives the type and scope from the kind of work, the files and the modules: when they are wrong, correct them with set_commit_message before the person publishes. Trama publishes only a candidate that meets its quality standard: verified, a valid message, no secrets or sensitive files, a clean git diff --check, its issue linked when one exists and no Pact question left open.",
     "When the person answers a card, withdraws a question or changes the mandate, Trama writes it to you as the person's message.",
     NEXT_STEP_RULES,

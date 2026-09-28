@@ -236,7 +236,9 @@ export function clearCandidate(document: ProjectDocument, candidateId: string, a
   if (candidate.technicalReview?.verdict !== "approved") {
     throw new CandidateError("review_required", `Candidate ${candidate.id} needs a technical review that approves it before the green light.`);
   }
-  candidate.clearance = { actor, fingerprint: contentFingerprint(document, candidate), at: now.toISOString() };
+  // The mandate version travels with the green light: a later mandate needs a new one before a merge (issue #41).
+  const mandateVersion = document.mandate?.status === "granted" ? { mandateVersion: document.mandate.version } : {};
+  candidate.clearance = { actor, fingerprint: contentFingerprint(document, candidate), at: now.toISOString(), ...mandateVersion };
   candidate.updatedAt = now.toISOString();
   return candidate;
 }

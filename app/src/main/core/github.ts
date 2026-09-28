@@ -241,6 +241,80 @@ export async function readPullRequestStatus(repository: string, number: number):
   };
 }
 
+/** What the merge by mandate reads of a pull request just before merging it (issue #41). */
+export interface PullRequestForMerge {
+  number: number;
+  state: "OPEN" | "CLOSED" | "MERGED";
+  headSHA: string;
+  baseBranch: string;
+  /** False when GitHub finds conflicts with the base; null while GitHub is still computing it. */
+  mergeable: boolean | null;
+  mergeSHA: string | null;
+  checks: "success" | "failure" | "pending" | "none";
+}
+
+export async function readPullRequestForMerge(repository: string, number: number): Promise<PullRequestForMerge> {
+  const raw = JSON.parse(
+    await run("gh", ["pr", "view", String(number), "--repo", repository, "--json", "number,state,headRefOid,baseRefName,mergeable,mergeCommit,statusCheckRollup"], {
+      env: ghEnvironment(),
+      timeout: 20_000,
+    }),
+  ) as {
+    number: number;
+    state: string;
+    headRefOid: string;
+    baseRefName: string;
+    mergeable?: string | null;
+    mergeCommit?: { oid?: string | null } | null;
+    statusCheckRollup?: { conclusion?: string | null; state?: string | null; status?: string | null }[];
+  };
+  return {
+    number: raw.number,
+    state: raw.state === "MERGED" ? "MERGED" : raw.state === "CLOSED" ? "CLOSED" : "OPEN",
+    headSHA: raw.headRefOid,
+    baseBranch: raw.baseRefName,
+    mergeable: raw.mergeable === "MERGEABLE" ? true : raw.mergeable === "CONFLICTING" ? false : null,
+    mergeSHA: raw.mergeCommit?.oid ?? null,
+    checks: checksConclusion(raw.statusCheckRollup ?? []),
+  };
+}
+
+/** The commit the branch points to on GitHub. */
+export async function readBranchHead(repository: string, branch: string): Promise<string> {
+  const sha = await run("gh", ["api", "--method", "GET", `repos/${repository}/branches/${encodeURIComponent(branch)}`, "--jq", ".commit.sha"], {
+    env: ghEnvironment(),
+    timeout: 20_000,
+  });
+  return sha.trim();
+}
+
+/**
+ * Merges a pull request with a merge commit, only while its head is still `headSHA`: GitHub refuses the merge when
+ * someone pushed in between. The merge commit's title follows the repository's convention, `<title> (#N)`.
+ */
+export async function mergePullRequest(repository: string, number: number, headSHA: string, title: string): Promise<{ sha: string }> {
+  const raw = JSON.parse(
+    await run(
+      "gh",
+      [
+        "api",
+        "--method",
+        "PUT",
+        `repos/${repository}/pulls/${number}/merge`,
+        "--raw-field",
+        "merge_method=merge",
+        "--raw-field",
+        `sha=${headSHA}`,
+        "--raw-field",
+        `commit_title=${title} (#${number})`,
+      ],
+      { env: ghEnvironment(), timeout: 60_000 },
+    ),
+  ) as { sha?: string; merged?: boolean; message?: string };
+  if (!raw.merged || !raw.sha) throw new Error(raw.message ?? "GitHub non ha unito la pull request.");
+  return { sha: raw.sha };
+}
+
 export function checksConclusion(rollup: { conclusion?: string | null; state?: string | null; status?: string | null }[]): "success" | "failure" | "pending" | "none" {
   if (!rollup.length) return "none";
   const outcomes = rollup.map((c) => (c.conclusion ?? c.state ?? "").toUpperCase());

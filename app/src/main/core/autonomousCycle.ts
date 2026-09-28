@@ -13,7 +13,8 @@ import { workRequests, workState } from "./workPhase";
  * shared understanding, the team, the seams of the spec and the slices) are taken by the Coordinator when the mandate
  * covers them. Trama takes them from the records, never from what a model says, records them as the Coordinator's and
  * tells them in Activity and in the recap. The person corrects any of them in their own words and the work starts again
- * from that step. Product decisions, the mandate and the merge stay with the person.
+ * from that step. Product decisions and the mandate stay with the person; the merge of a published pull request
+ * follows its own conditions (integration.ts, issue #41).
  */
 
 /** The action of the mandate each step needs: the understanding, the seams and the slices are planning; the team is composing it. */
