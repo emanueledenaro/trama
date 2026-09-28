@@ -49,8 +49,8 @@ export const CANDIDATE_STATE: Record<CandidateState, StateLabel> = {
   superseded: { label: "Superato", tone: "secondary" },
 };
 
-/** Blockers that only wait for Trama to finish checking: nothing to fix yet. */
-const STILL_CHECKING = new Set(["EVIDENCE_MISSING", "EVIDENCE_STALE", "GATE_RUNNING"]);
+/** Blockers that only wait for Trama to finish checking, or to run the reviewers again (as workPhase.ts): nothing to fix yet. */
+const STILL_CHECKING = new Set(["EVIDENCE_MISSING", "EVIDENCE_STALE", "GATE_RUNNING", "GATE_FAILED"]);
 
 /** The badge of one candidate, the same in the card, in Lavoro and in the goal. */
 export function candidateStatus(report: Pick<CandidateReport, "state" | "blockers">): StateLabel {

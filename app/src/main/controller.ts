@@ -3252,8 +3252,10 @@ export class TramaController {
     const fill = usage ? contextFill(usage) : null;
     if (!fill) return;
     const threshold = coordinator.contextThreshold ?? 80;
+    // The exact share decides the notice, so 79.6% does not pass an 80% threshold; the rounded one is only shown.
+    const exact = fill.over ? 100 : (fill.used / fill.window) * 100;
     const percent = fill.percent;
-    if (percent < threshold || coordinator.contextWarnedAt === threshold) return;
+    if (exact < threshold || coordinator.contextWarnedAt === threshold) return;
     coordinator.contextWarnedAt = threshold;
     const format = (n: number) => n.toLocaleString("it-IT");
     appendEvent(project.document, "trama", {

@@ -20,6 +20,8 @@ describe("one vocabulary of states (issue #272)", () => {
   it("does not call a finished candidate under construction", () => {
     expect(candidateStatus({ state: "building", blockers: [{ code: "GATE_RUNNING", detail: "" }, { code: "EVIDENCE_MISSING", detail: "git_status" }] })).toEqual({ label: "In verifica", tone: "info" });
     expect(candidateStatus({ state: "building", blockers: [{ code: "CHECK_FAILED", detail: "node_test" }] })).toEqual({ label: "Da sistemare", tone: "warning" });
+    // Reviewers that did not finish are run again: nothing to fix yet, as the work phase says.
+    expect(candidateStatus({ state: "building", blockers: [{ code: "GATE_FAILED", detail: "" }] }).label).toBe("In verifica");
     expect(candidateStatus({ state: "verified", blockers: [] }).label).toBe("Verificato");
     expect(candidateStatus({ state: "superseded", blockers: [] }).label).toBe("Superato");
   });

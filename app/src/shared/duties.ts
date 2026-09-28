@@ -75,6 +75,8 @@ export function architectureAnswer(document: Pick<ProjectDocument, "decisionRequ
 
 /** The line under a work's card and in Team: for an architecture review it follows the Pact card; otherwise the last update. */
 export function assignmentLine(document: Pick<ProjectDocument, "decisionRequests"> | null, assignment: SpecialistAssignment): string {
+  // Records written before issue #272 keep "In pausa: aspetta la risposta ...": the line says it as the badge does.
+  if (assignment.status === "paused") return assignment.lastUpdate.replace(/^In pausa: aspetta /, "Aspetta ");
   const outcome = assignment.duty?.outcome;
   if (outcome?.kind !== "architecture" || !outcome.proposals.length) return assignment.lastUpdate;
   const answer = architectureAnswer(document, outcome);

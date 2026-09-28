@@ -72,6 +72,11 @@ describe("automatic work in the person's words (W11)", () => {
     expect(dutyOutcomeText(work.duty!, answered)).toBe("2 proposte: hai scelto «Unire i pagamenti».");
   });
 
+  it("says a paused work waits for an answer, as its badge does, also in records written before (issue #272)", () => {
+    const paused = { status: "paused", lastUpdate: "In pausa: aspetta la risposta alla domanda Q-1" } as SpecialistAssignment;
+    expect(assignmentLine(null, paused)).toBe("Aspetta la risposta alla domanda Q-1");
+  });
+
   it("finds the latest triage of an issue", () => {
     const triage = (id: string, issueNumber: number) => ({ id, issueNumber, duty: duty({ kind: "newIssue", issueNumber, title: "t" }) }) as unknown as SpecialistAssignment;
     const withTriage = { ...document, team: { proposals: [], confirmedAt: null, specialists: [{ assignments: [triage("A-1", 4), triage("A-2", 5), triage("A-3", 4)] }] } } as unknown as ProjectDocument;
