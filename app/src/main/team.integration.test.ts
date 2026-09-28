@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { cp, mkdtemp } from "node:fs/promises";
+import { cp, mkdtemp, readdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -184,10 +184,17 @@ describe("team flow", () => {
     await until(() => plan.slicing?.status === "approved", 30_000);
     expect(plan.spec!.seamsAnswer).toMatchObject({ confirmed: true, by: "coordinator" });
     expect(plan.slicing!.approvedBy).toBe("coordinator");
-    expect((document.autonomousSteps ?? []).map((s) => s.move)).toEqual(["confirmUnderstanding", "confirmSeams", "confirmSlices"]);
+    // The squads came with the team the person confirmed (A10): one for the area of Ada's module.
+    expect((document.autonomousSteps ?? []).map((s) => s.move)).toEqual(["formSquads", "confirmUnderstanding", "confirmSeams", "confirmSlices"]);
+    expect(document.team.squads?.map((s) => [s.name, s.moduleIds, s.developerIds])).toEqual([["Orders", ["Sources/Orders"], [findSpecialist(document, "Ada")!.id]]]);
     // Activity tells them from the records; the chat keeps no line for them (Q6).
     const told = activityLog(document.requests, document.events, [], [], document.autonomousSteps).filter((e) => e.kind === "step").map((e) => e.label);
-    expect(told).toEqual(["Fette confermate dal Coordinatore", "Seam confermati dal Coordinatore", "Comprensione confermata dal Coordinatore"]);
+    expect(told).toEqual([
+      "Fette confermate dal Coordinatore",
+      "Seam confermati dal Coordinatore",
+      "Comprensione confermata dal Coordinatore",
+      "Squadre formate dal Coordinatore",
+    ]);
     expect(document.events.some((e) => e.content.type === "activity" && /dal Coordinatore$/.test(e.content.title))).toBe(false);
 
     // Then Trama assigns the first unblocked slice, and once Ada ends it runs the checks and the review, up to the person's candidate.
@@ -381,6 +388,27 @@ describe("quit and provider waits (C11)", () => {
     );
     await controller!.stopSpecialistWork(resumed.id);
     await until(() => resumed.status === "stopped");
+  }, 45_000);
+
+  it("gives a project saved with the team of before its squads when it opens again, without losing a developer (A10)", async () => {
+    const { data } = await running();
+    await controller!.stop();
+    // The saved document as Trama wrote it before squads: no squads, no squad leads, no formation step.
+    const projects = join(data, "Projects");
+    for (const file of await readdir(projects)) {
+      const path = join(projects, file);
+      const saved = JSON.parse(await readFile(path, "utf8"));
+      delete saved.team.squads;
+      saved.team.specialists = saved.team.specialists.filter((s: { role: string }) => s.role !== "squadLead");
+      saved.autonomousSteps = (saved.autonomousSteps ?? []).filter((s: { move: string }) => s.move !== "formSquads");
+      await writeFile(path, JSON.stringify(saved));
+    }
+    const document = await reopen(data);
+    await until(() => (document.team.squads ?? []).length > 0);
+    const ada = findSpecialist(document, "Ada")!;
+    expect(document.team.squads!.map((s) => [s.name, s.developerIds])).toEqual([["Orders", [ada.id]]]);
+    expect(developers(document).map((s) => s.name)).toEqual(["Ada"]);
+    expect(document.autonomousSteps?.filter((s) => s.move === "formSquads")).toHaveLength(1);
   }, 45_000);
 
   it("keeps the work of a project in Pause stopped after a restart (issue #249)", async () => {

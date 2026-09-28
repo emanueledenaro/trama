@@ -36,6 +36,7 @@ const PROFILES: RoleProfile[] = [
   { role: "research", name: "Ricerca", tag: "Ricerca", competence: "Studia librerie e API sconosciute su fonti affidabili." },
   { role: "documentation", name: "Documentazione e dominio", tag: "Documentazione", competence: "Tiene allineati glossario, ADR e documentazione." },
   { role: "developer", name: "Sviluppatori", tag: "Sviluppo", competence: "Scelti per il progetto: il Coordinatore li propone e tu li confermi." },
+  { role: "squadLead", name: "Capo squadra", tag: "Capo", competence: "Fa da Scrum Master della squadra: divide il lavoro dell'area e conduce stand-up, stime e retrospettive." },
   { role: "bugTriage", name: "Bug triage e debugger", tag: "Triage", competence: "Smista le issue e trova la causa dei bug." },
   { role: "specReviewer", name: "Revisore della spec", tag: "Spec", competence: "Controlla che il candidato faccia quello che la spec chiede." },
   { role: "cleanCode", name: "Clean Code", tag: "Clean Code", competence: "Controlla gli standard del repository e la forma dei moduli. Segnala e propone, non modifica il codice." },
@@ -51,6 +52,7 @@ const DUTIES: (RoleDuty & { role: TeamRole })[] = [
   { moment: "spec", role: "ux", task: "Interviene quando la spec tocca l'interfaccia.", skills: ["prototype"] },
   { moment: "spec", role: "research", task: "Studia le librerie e le API sconosciute.", skills: ["research"] },
   { moment: "spec", role: "documentation", task: "Aggiorna glossario e decisioni.", skills: ["domain-modeling"] },
+  { moment: "slices", role: "squadLead", task: "Divide il lavoro dell'area della sua squadra e tiene la riga di stato della squadra.", skills: [] },
   { moment: "slices", role: "developer", task: "Ogni sviluppatore realizza una fetta alla volta, partendo dai test.", skills: ["implement", "tdd"] },
   { moment: "slices", role: "bugTriage", task: "Diagnostica una verifica che fallisce.", skills: ["diagnosing-bugs"] },
   { moment: "candidate", role: "specReviewer", task: "Confronta il diff con la spec.", skills: ["code-review"] },
@@ -65,8 +67,11 @@ const DUTIES: (RoleDuty & { role: TeamRole })[] = [
   { moment: "background", role: "cleanCode", task: "Propone miglioramenti dell'architettura quando il team è libero.", skills: ["improve-codebase-architecture"] },
 ];
 
-/** The roles every team always has, beside the developers chosen for the project. */
-export const FIXED_ROLES: TeamRole[] = PROFILES.filter((p) => p.role !== "developer").map((p) => p.role);
+/** The roles every team always has, beside the developers chosen for the project; squad leads come with the squads (A10). */
+export const FIXED_ROLES: TeamRole[] = PROFILES.filter((p) => p.role !== "developer" && p.role !== "squadLead").map((p) => p.role);
+
+/** The fixed roles that serve every squad (A10, Q15): all but QA, which each squad has of its own. */
+export const SHARED_ROLES: TeamRole[] = FIXED_ROLES.filter((role) => role !== "qa");
 
 export function roleProfile(role: TeamRole): RoleProfile {
   return PROFILES.find((p) => p.role === role)!;

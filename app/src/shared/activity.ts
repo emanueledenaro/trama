@@ -1,4 +1,4 @@
-import type { AutonomousStep, ConversationEvent, CoordinatorRequest, DelegableMove, FoundProblem, NextMove, RoundRecord, WorkEvent } from "./domain";
+import type { AutonomousMove, AutonomousStep, ConversationEvent, CoordinatorRequest, FoundProblem, NextMove, RoundRecord, WorkEvent } from "./domain";
 import { problemActivity } from "./problems";
 
 /**
@@ -23,7 +23,7 @@ export interface ActivityEntry {
   kind: "move" | "round" | "problem" | "step";
   /** The request of the move; for a round, the move it started, or null. */
   requestId: string | null;
-  /** The move; null for a round. */
+  /** The move; null for a round and for the squads the Coordinator formed (A10). */
   move: NextMove | null;
   /** What started the move, in the person's words ("dopo una verifica rossa"); null for a round or an older record. */
   trigger: string | null;
@@ -51,12 +51,16 @@ export const ACTIVITY_OUTCOME_LABELS: Record<ActivityOutcome, string> = {
   corrected: "Corretto",
 };
 
-/** The steps the Coordinator takes for the person within the mandate (A06), as Activity and the recap name them. */
-export const AUTONOMOUS_STEP_LABELS: Record<DelegableMove, string> = {
+/**
+ * The steps the Coordinator takes for the person within the mandate (A06), and the squads it forms after the study
+ * (A10), as Activity and the recap name them.
+ */
+export const AUTONOMOUS_STEP_LABELS: Record<AutonomousMove, string> = {
   confirmUnderstanding: "Comprensione confermata dal Coordinatore",
   confirmTeam: "Team confermato dal Coordinatore",
   confirmSeams: "Seam confermati dal Coordinatore",
   confirmSlices: "Fette confermate dal Coordinatore",
+  formSquads: "Squadre formate dal Coordinatore",
 };
 
 /** Whether a request is a turn Trama started by itself with continuous work (W04), not a message of the person. */
@@ -153,7 +157,7 @@ export function activityLog(
       id: step.id,
       kind: "step",
       requestId: step.requestId,
-      move: step.move,
+      move: step.move === "formSquads" ? null : step.move,
       trigger: null,
       label: AUTONOMOUS_STEP_LABELS[step.move],
       goalId: step.goalId,

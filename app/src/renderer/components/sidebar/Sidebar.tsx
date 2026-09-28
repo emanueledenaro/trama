@@ -243,7 +243,7 @@ export function Sidebar({ isMac }: { isMac: boolean }) {
             />
             <SidebarRow
               icon={<IconUsersGroup className="size-3.5" stroke={1.8} />}
-              label="Team"
+              label="Squadre"
               active={isActive("team") || isActive("specialist")}
               badge={pendingTeam ? 1 : activeWork}
               onClick={() => setInspector({ kind: "team" })}

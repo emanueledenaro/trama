@@ -281,7 +281,7 @@ import { assessBranchDivergence } from "./core/branchDivergence";
 import { assessConflict } from "./core/conflicts";
 import { pickSlices } from "./core/slicePicking";
 import { assessWorktreePair, worktreePairs } from "./core/worktreeConflicts";
-import { clampParallelDevelopers } from "@shared/parallel";
+import { clampSquadLimit } from "@shared/squads";
 import { pullRequestBody, publishCandidate } from "./core/publication";
 import { agentPushActivity, isGitPushCommand, pushActivity, pushAuthorization, pushRefusal } from "./core/push";
 import {
@@ -349,6 +349,7 @@ import {
   UNKNOWN_GITHUB_CLI,
 } from "@shared/onboarding";
 import { buildStudy, fingerprints, partsToInject, studyText } from "./core/study";
+import { formSquads, recordSquadFormation } from "./core/squads";
 import { CoordinatorToolServer, TOOL_SERVER_NAME, toolFailure, toolSuccess } from "./core/toolServer";
 import { deliverNativeSkill, deliverNativeSkills, loadNativeSkill, type NativeSkill } from "./core/nativeSkills";
 import { answerRoute, askTramaComposerSkill, boundarySession, RouteError, routeReferences, skillInRouteBinding } from "./core/askTrama";
@@ -2171,6 +2172,7 @@ export class TramaController {
       const study = await buildStudy(project.snapshot, document, project.github);
       document.coordinator.study = study;
       if (this.runtime !== runtime || generation !== this.coordinatorGeneration) return;
+      this.formSquads(project);
       const previous = document.coordinator.threadId;
       const skills = await this.coordinatorSkills();
       // A model change while the skills loaded replaced this opening: its stopped runtime must not open a thread.
@@ -2470,6 +2472,7 @@ export class TramaController {
       const study = await buildStudy(project.snapshot, document, project.github);
       if (closed()) return;
       document.coordinator.study = study;
+      this.formSquads(project);
       const parts = partsToInject(study, document.coordinator.injectedStudy);
       const includeMemory = document.coordinator.memorySentToThread !== document.coordinator.threadId;
       const report = teamReport(document);
@@ -2949,10 +2952,24 @@ export class TramaController {
         // Told in Activity and in the recap from the record, not in the chat: the single moves stay out of it (Q6).
         const record = recordAutonomousStep(document, step, summary);
         taken.push(STEP_LABELS[record.move]);
+        // The squads follow the team, recorded as a step of their own (A10).
+        if (record.move === "confirmTeam" && this.formSquads(project)) taken.push(STEP_LABELS.formSquads);
       }
     }
     if (taken.length) this.changedIn(project);
     return taken;
+  }
+
+  /**
+   * After the study, and once the team exists, the Coordinator forms the squads from the areas of the Map and places the
+   * developers without one (A10). Told in Activity and in the recap, not in the chat. Returns whether anything changed.
+   */
+  private formSquads(project: ActiveProjectState): boolean {
+    const formation = formSquads(project.document, project.snapshot.modules);
+    if (!formation) return false;
+    recordSquadFormation(project.document, formation);
+    this.changedIn(project);
+    return true;
   }
 
   /** Makes one delegated step on the records, as the person's button would; returns what was confirmed, or null. */
@@ -4377,16 +4394,20 @@ export class TramaController {
     }
   }
 
-  /** The person changes a setting of the open project (W08: the developers in parallel). */
+  /** The person changes a setting of the open project (A10, Q22: developers per squad and squads at work together). */
   updateProjectSettings(update: ProjectSettings): void {
     const project = this.requireProject();
     if (!project.stateWritable) throw new DomainError("Lo stato di questo progetto è in sola lettura.");
     const settings = { ...(project.document.settings ?? {}) };
-    if (update.parallelDevelopers !== undefined) {
-      const limit = clampParallelDevelopers(update.parallelDevelopers);
-      if (limit === null) throw new DomainError("Il numero di sviluppatori in parallelo deve essere un numero intero.");
-      settings.parallelDevelopers = limit;
-    }
+    const limitOf = (value: unknown, what: string) => {
+      const limit = clampSquadLimit(value);
+      if (limit === null) throw new DomainError(`Il numero di ${what} deve essere un numero intero.`);
+      return limit;
+    };
+    if (update.developersPerSquad !== undefined) settings.developersPerSquad = limitOf(update.developersPerSquad, "sviluppatori per squadra");
+    if (update.activeSquads !== undefined) settings.activeSquads = limitOf(update.activeSquads, "squadre al lavoro insieme");
+    // The limit chosen before squads is still read as the limit per squad.
+    if (update.parallelDevelopers !== undefined) settings.parallelDevelopers = limitOf(update.parallelDevelopers, "sviluppatori in parallelo");
     project.document.settings = settings;
     this.changedIn(project);
     // A higher limit lets free developers take the ready slices now.
@@ -4525,6 +4546,7 @@ export class TramaController {
     const project = this.requireProject();
     confirmTeam(project.document, proposalId, keeping, note);
     const proposal = project.document.team.proposals.find((p) => p.id === proposalId)!;
+    this.formSquads(project);
     this.changed();
     await this.send(teamMessage(project.document, proposal), null, null, null, [], null, null, false);
   }

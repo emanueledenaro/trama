@@ -118,7 +118,7 @@ function ChatHeader({ isMac }: { isMac: boolean }) {
     { target: { kind: "map" }, label: "Mappa", icon: <IconSitemap stroke={1.8} /> },
     { target: { kind: "pact" }, label: "Patto", icon: <IconRosetteDiscountCheck stroke={1.8} />, count: pendingDecisions },
     { target: { kind: "mandate" }, label: "Mandato", icon: <IconShieldCheck stroke={1.8} />, count: pendingMandate },
-    { target: { kind: "team" }, label: "Team", icon: <IconUsersGroup stroke={1.8} />, count: pendingTeam },
+    { target: { kind: "team" }, label: "Squadre", icon: <IconUsersGroup stroke={1.8} />, count: pendingTeam },
     { target: { kind: "work" }, label: "Lavoro", icon: <IconFileDiff stroke={1.8} /> },
     { target: { kind: "group" }, label: "Gruppo", icon: <IconGitPullRequest stroke={1.8} /> },
     { target: { kind: "issues" }, label: "Issue", icon: <IconCircleDot stroke={1.8} />, count: openIssues },

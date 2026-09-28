@@ -1,18 +1,19 @@
 import type { ProviderId } from "@shared/codex";
 import type { ProjectDocument, SliceTicket, Specialist, SpecialistAssignment, WorkPlan } from "@shared/domain";
 import { requestGoalId } from "@shared/goals";
-import { parallelDevelopers } from "@shared/parallel";
 import type { PresenceView } from "@shared/presence";
 import type { RepositoryModule } from "@shared/repository";
+import { roomForWork, squadForModules, squadLimitProblem, squadLimitText } from "@shared/squads";
 import { moduleOverlaps, occupantName } from "./coordinatorPresence";
 import { agreedSeams, contractSeams } from "./implementation";
 import { delivered, sliceViews } from "./slices";
-import { activeAssignments, activeDevelopers, assign, authorize, developers, isActive, isTeamConfirmed, TeamError } from "./team";
+import { activeAssignments, assign, authorize, developers, isActive, isTeamConfirmed, TeamError } from "./team";
 import { workState } from "./workPhase";
 
 /**
  * Independent movement (W08, issue #145): a free developer takes by itself the next unblocked slice that fits its
- * modules, within the mandate and the project's parallel limit, without waiting for a Coordinator turn. The rule is
+ * modules, within the mandate and the squads' limits (A10), without waiting for a Coordinator turn. A slice belongs to
+ * the squad of its area: while that squad has developers, only they take it. The rule is
  * Trama's and deterministic; the contract is the one the Coordinator would write for the slice (W05), drawn from the
  * approved breakdown, the confirmed seams and the slices of the same plan already assigned.
  */
@@ -100,13 +101,12 @@ const bulletList = (items: string[]) => items.map((item) => `- ${item}`).join("\
 
 /**
  * Lets each free developer take the next ready slice that fits it, in the order of the breakdown, and records the
- * assignments. Nothing starts while the mandate does not cover the work, beyond the parallel limit, on modules another
+ * assignments. Nothing starts while the mandate does not cover the work, beyond the squads' limits, on modules another
  * assignment is working on, or where a colleague is touching files now (G04). A paused slice (W06) is never taken.
  */
 export function pickSlices(document: ProjectDocument, input: PickInput): PickOutcome[] {
   if (!isTeamConfirmed(document) || document.mandate?.status !== "granted") return [];
   const outcomes: PickOutcome[] = [];
-  const limit = parallelDevelopers(document);
   // A developer whose work is paused on a question (W06) keeps its worktree for the answer: it is not free.
   const free = developers(document)
     .filter((s) => !s.assignments.some((a) => isActive(a) || a.status === "paused"))
@@ -115,7 +115,7 @@ export function pickSlices(document: ProjectDocument, input: PickInput): PickOut
     const tickets = plan.slicing!.tickets;
     for (const view of sliceViews(document, plan)) {
       if (view.state !== "ready") continue;
-      if (!free.length || activeDevelopers(document) >= limit) return outcomes;
+      if (!free.length || !roomForWork(document)) return outcomes;
       const ticket = tickets.find((t) => t.id === view.id)!;
       const earlier = planAssignments(document, plan.id);
       const moduleIds = sliceModules(ticket, plan, input.modules, earlier);
@@ -138,9 +138,18 @@ export function pickSlices(document: ProjectDocument, input: PickInput): PickOut
         waiting(`Qualcuno tocca ora questi moduli: ${occupied.map((o) => occupantName(o.occupant)).join(", ")}.`);
         continue;
       }
-      const developer = free.find((s) => coversModules(s, moduleIds));
+      // The slice belongs to the squad of its area (A10): while that squad has developers, the work is theirs.
+      const squad = squadForModules(document, moduleIds);
+      const owners = squad ? free.filter((s) => squad.developerIds.includes(s.id)) : [];
+      const inSquad = squad && document.team.specialists.some((s) => s.status !== "removed" && squad.developerIds.includes(s.id));
+      const developer = (inSquad ? owners : free).find((s) => coversModules(s, moduleIds));
       if (!developer) {
-        waiting("Nessuno sviluppatore libero copre i moduli di questa fetta.");
+        waiting(inSquad ? `Nessuno sviluppatore libero della squadra ${squad.name} copre i moduli di questa fetta.` : "Nessuno sviluppatore libero copre i moduli di questa fetta.");
+        continue;
+      }
+      const full = squadLimitProblem(document, developer);
+      if (full) {
+        waiting(squadLimitText(full));
         continue;
       }
       const chosen = providerFor(developer, earlier, input);

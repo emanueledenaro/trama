@@ -13,7 +13,7 @@ import { WorkView } from "./WorkView";
 import { IssueDetail, IssuesView } from "./IssuesView";
 import { MandateView } from "./MandateView";
 import { MemoryView } from "./MemoryView";
-import { SpecialistView, TeamView } from "./TeamView";
+import { SpecialistView, SquadsView } from "./TeamView";
 import { FilePreview, MapView, ModuleView } from "./MapView";
 import { DecisionView, PactView } from "./PactView";
 import { BranchView, CommitView, PullRequestView } from "./GitView";
@@ -31,7 +31,7 @@ const TITLES = {
   decision: "Decisione",
   mandate: "Mandato del Coordinatore",
   memory: "Memoria del Coordinatore",
-  team: "Team del progetto",
+  team: "Squadre del progetto",
   specialist: "Specialista",
   agentThread: "Chat tra agenti",
   candidate: "Candidato",
@@ -108,7 +108,7 @@ export function Inspector() {
         {target.kind === "decision" ? <DecisionView id={target.id} /> : null}
         {target.kind === "mandate" ? <MandateView /> : null}
         {target.kind === "memory" ? <MemoryView /> : null}
-        {target.kind === "team" ? <TeamView /> : null}
+        {target.kind === "team" ? <SquadsView /> : null}
         {target.kind === "specialist" ? <SpecialistView id={target.id} /> : null}
         {target.kind === "agentThread" ? <AgentThreadView id={target.id} /> : null}
         {target.kind === "candidate" ? <CandidateView id={target.id} /> : null}

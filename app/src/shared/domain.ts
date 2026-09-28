@@ -619,6 +619,11 @@ export interface SpecialistAssignment {
   questions?: DeveloperQuestion[];
   /** The candidate gate sent the work back with blocking findings (W10); the latest return, absent before any. */
   gateReturn?: { gateId: string; candidateId: string; findings: string[]; at: string } | null;
+  /**
+   * Where the work runs (Q24): on the Mac or in a provider's cloud session. Absent means local. Work in a cloud session
+   * counts in the squads' limits like local work (Q29).
+   */
+  workplace?: "local" | "cloud";
 }
 
 /**
@@ -926,6 +931,7 @@ export type TeamRole =
   | "research"
   | "documentation"
   | "developer"
+  | "squadLead"
   | "bugTriage"
   | "specReviewer"
   | "cleanCode"
@@ -969,6 +975,24 @@ export interface ProjectTeam {
   proposals: TeamProposal[];
   specialists: Specialist[];
   confirmedAt: string | null;
+  /** The squads by product area (A10, Q14); absent until the Coordinator forms them after the study. */
+  squads?: Squad[];
+}
+
+/**
+ * A stable squad that takes the work of one area of the product (A10, Q14, Q15): the area's modules of the Map, a squad
+ * lead, one to three developers and a dedicated QA. The other fixed roles are shared and belong to no squad.
+ */
+export interface Squad {
+  id: string;
+  /** The area's name, as the Map names its module. */
+  name: string;
+  /** The Map modules of the area; empty for the one squad of a project whose work has no module yet. */
+  moduleIds: string[];
+  leadId: string;
+  qaId: string;
+  developerIds: string[];
+  createdAt: string;
 }
 
 export interface CandidateEvidence {
@@ -1431,6 +1455,9 @@ export interface ProblemLedger {
 /** The person's steps the project mandate lets the Coordinator take by itself (A06, Q1). */
 export type DelegableMove = "confirmUnderstanding" | "confirmTeam" | "confirmSeams" | "confirmSlices";
 
+/** A step the Coordinator records in Activity and the recap: a person's step it took (A06), or the squads it formed (A10). */
+export type AutonomousMove = DelegableMove | "formSquads";
+
 /**
  * A step of the person the Coordinator took by itself within the mandate (A06): the understanding, the team, the seams
  * or the slices it confirmed. It is told in Activity and in the recap, and the person can correct it in their own words:
@@ -1438,7 +1465,7 @@ export type DelegableMove = "confirmUnderstanding" | "confirmTeam" | "confirmSea
  */
 export interface AutonomousStep {
   id: string;
-  move: DelegableMove;
+  move: AutonomousMove;
   /** The request of the dialog the step belongs to; null for the team, which is the project's. */
   requestId: string | null;
   goalId: string | null;
@@ -1455,8 +1482,12 @@ export interface AutonomousStep {
 export type TechnicalBlock = "checkFailed" | "worktreeConflict" | "stalledAssignment";
 
 export interface ProjectSettings {
-  /** Developers at work at the same time (W08); absent means three. */
+  /** Developers at work at the same time before squads (W08); read as the squads' limit of developers when that is absent. */
   parallelDevelopers?: number;
+  /** Developers of one squad at work at the same time (A10, Q22); absent means three. */
+  developersPerSquad?: number;
+  /** Squads of the project at work at the same time (A10, Q22); absent means three. */
+  activeSquads?: number;
 }
 
 /** "verifying": both axes ended and Trama rechecks the proof of each finding (F02). */

@@ -306,12 +306,12 @@ describe("assigning only unblocked slices (M05)", () => {
     expect(workState(document, "r1").moves.map((m) => m.move)).not.toContain("assignWork");
   });
 
-  it("follows the project's parallel limit when the person changes it (W08)", () => {
+  it("follows the limit chosen before squads as the limit per squad (W08, A10)", () => {
     const tickets = [ticket(1), ticket(2), ticket(3), ticket(4)];
     const { document, plan } = project("approved", tickets);
     document.settings = { parallelDevelopers: 1 };
     work(document, "Ada", "S1", 3, "Sources/Orders");
-    expect(() => work(document, "Bruno", "S2", 4, "Sources/Payments")).toThrow(/1 developer is already at work, the project's limit/);
+    expect(() => work(document, "Bruno", "S2", 4, "Sources/Payments")).toThrow(/1 developer is already at work in the team, the limit per squad/);
     expect(workState(document, "r1").slices?.limit).toBe(1);
     document.settings = { parallelDevelopers: 4 };
     work(document, "Bruno", "S2", 4, "Sources/Payments");

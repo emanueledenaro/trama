@@ -19,7 +19,7 @@ import { DEFAULT_LEARNING_SETTINGS, type LearningSettings, type ThemePreference 
 import { classifyProviderFailure } from "@shared/providerFailure";
 import { capabilityLines, coordinatorUnavailableReason, PROVIDERS, type ProviderDescriptor } from "@shared/providers";
 import { AIHERO_ATTRIBUTION } from "@shared/skills";
-import { MAX_PARALLEL_DEVELOPERS_SETTING, MIN_PARALLEL_DEVELOPERS, parallelDevelopers } from "@shared/parallel";
+import { MAX_SQUAD_LIMIT_SETTING, MIN_SQUAD_LIMIT, squadLimits, type SquadLimits } from "@shared/squads";
 import { GitHubCliDescription } from "@/components/GitHubCliStatus";
 import { TramaMark } from "@/components/brand/TramaMark";
 import { ProviderIcon } from "@/components/ProviderIcon";
@@ -495,47 +495,56 @@ function MethodSection() {
           onChange={(value) => void act("settings:update", { continuousWork: value })}
         />
       </Group>
-      <ParallelDevelopersGroup />
+      <SquadLimitsGroup />
     </>
   );
 }
 
-const PARALLEL_OPTIONS = Array.from({ length: MAX_PARALLEL_DEVELOPERS_SETTING - MIN_PARALLEL_DEVELOPERS + 1 }, (_, index) => MIN_PARALLEL_DEVELOPERS + index);
+const LIMIT_OPTIONS = Array.from({ length: MAX_SQUAD_LIMIT_SETTING - MIN_SQUAD_LIMIT + 1 }, (_, index) => MIN_SQUAD_LIMIT + index);
 
-/** W08: how many developers work at the same time in the open project; three unless the person changes it. */
-function ParallelDevelopersGroup() {
+/** One limit of the squads, as a row of numbers to pick from. */
+function LimitPicker({ label, value, setting }: { label: string; value: number; setting: keyof SquadLimits }) {
+  return (
+    <div role="radiogroup" aria-label={label} className="flex rounded-lg bg-[var(--color-background-button-secondary)] p-0.5" data-testid={`squad-limit-${setting}`}>
+      {LIMIT_OPTIONS.map((option) => (
+        <button
+          key={option}
+          type="button"
+          role="radio"
+          aria-checked={value === option}
+          onClick={() => void act("project:settings", { [setting]: option })}
+          className={cn(
+            "flex h-6 min-w-7 items-center justify-center rounded-md px-2 text-ui-sm tabular-nums transition-colors",
+            value === option ? "bg-[var(--color-background-surface)] text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
+          )}
+        >
+          {option}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/** A10, Q22: how many developers of a squad and how many squads work at the same time in the open project; three and three. */
+function SquadLimitsGroup() {
   const project = useUi((s) => s.app?.project ?? null);
   const usable = project && !project.isDemo && project.stateWritable;
-  const limit = project ? parallelDevelopers(project.document) : null;
+  const limits = project ? squadLimits(project.document) : null;
+  const unavailable = !project ? "Apri un progetto per scegliere i limiti." : project.isDemo ? "Il progetto di esempio non ha limiti da scegliere." : null;
   return (
     <Group
-      title="Sviluppatori in parallelo"
-      note="Ogni sviluppatore libero prende in autonomia la prossima fetta pronta nei suoi moduli, dentro il mandato e con il lavoro continuo attivo. I ruoli fissi non contano nel limite."
+      title={project ? `Squadre di ${project.name}` : "Squadre"}
+      note="Ogni sviluppatore libero prende in autonomia la prossima fetta pronta della sua squadra, dentro il mandato e con il lavoro continuo attivo. I ruoli fissi non contano nei limiti; gli incarichi in una sessione cloud contano come quelli sul Mac."
     >
       <Row
-        label={project ? `Al massimo in ${project.name}` : "Al massimo nel progetto aperto"}
-        description={!project ? "Apri un progetto per scegliere il limite." : project.isDemo ? "Il progetto di esempio non ha un limite da scegliere." : "Tre, se non lo cambi."}
-        control={
-          usable ? (
-            <div role="radiogroup" aria-label="Sviluppatori in parallelo" className="flex rounded-lg bg-[var(--color-background-button-secondary)] p-0.5" data-testid="parallel-developers">
-              {PARALLEL_OPTIONS.map((value) => (
-                <button
-                  key={value}
-                  type="button"
-                  role="radio"
-                  aria-checked={limit === value}
-                  onClick={() => void act("project:settings", { parallelDevelopers: value })}
-                  className={cn(
-                    "flex h-6 min-w-7 items-center justify-center rounded-md px-2 text-ui-sm tabular-nums transition-colors",
-                    limit === value ? "bg-[var(--color-background-surface)] text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
-                  )}
-                >
-                  {value}
-                </button>
-              ))}
-            </div>
-          ) : null
-        }
+        label="Sviluppatori al lavoro per squadra"
+        description={unavailable ?? "Tre, se non lo cambi."}
+        control={usable && limits ? <LimitPicker label="Sviluppatori al lavoro per squadra" value={limits.developersPerSquad} setting="developersPerSquad" /> : null}
+      />
+      <Row
+        label="Squadre al lavoro insieme"
+        description={unavailable ?? "Tre, se non lo cambi."}
+        control={usable && limits ? <LimitPicker label="Squadre al lavoro insieme" value={limits.activeSquads} setting="activeSquads" /> : null}
       />
     </Group>
   );
