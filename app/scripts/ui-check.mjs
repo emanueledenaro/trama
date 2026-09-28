@@ -4793,7 +4793,8 @@ await englishLine.getByTestId("status-line-text").getByText(/^Coordinator paused
 const italianWords = /[àèìòù]|\b(?:il|la|non|che|della|nel|Coordinatore|Concedi|Rivedi|Conferma|Lavoro del progetto)\b/;
 const englishTexts = [
   await englishLine.getByTestId("status-line-text").innerText(),
-  ...(await englishLine.locator('.cta-row > button[data-variant="default"]').allInnerTexts()),
+  // Issue #330: in the status bar the person's move is a text button and the Coordinator's actions are icons.
+  ...(await englishLine.locator("button:not([aria-label])").allInnerTexts()),
   ...(await page.getByTestId("focus-title").allInnerTexts()),
 ];
 const stillItalian = englishTexts.filter((text) => italianWords.test(text));
@@ -4812,7 +4813,10 @@ const englishLayout = await englishLine.evaluate((line) => {
 });
 if (englishLayout.buttonsOutside) throw new Error(`${englishLayout.buttonsOutside} status line actions do not fit in English`);
 if (englishLayout.textOutside) throw new Error("The English status line text runs out of the line");
-await primaryLast(englishLine.locator(".cta-row").first(), "Status line in English");
+// The last action sits on the right, as in Italian.
+const englishLast = await englishLine.getByRole("button").last().boundingBox();
+const englishBox = await englishLine.boundingBox();
+if (!englishLast || !englishBox || englishBox.x + englishBox.width - (englishLast.x + englishLast.width) > 2) throw new Error("The last action of the English status line is not on the right");
 await page.evaluate(() => window.trama.invoke("coordinator:pause", { paused: false }));
 await page.evaluate(() => window.trama.invoke("settings:update", { language: "it" }));
 await page.waitForFunction(() => document.documentElement.lang === "it");
