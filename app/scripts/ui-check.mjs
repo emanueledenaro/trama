@@ -2903,7 +2903,6 @@ const alwaysMandate = await openWaiting("mandate");
 await alwaysMandate.getByRole("button", { name: "Concedi", exact: true }).click();
 await page.getByText("Ho concesso il mandato (versione 1).").first().waitFor({ timeout: 20_000 });
 await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
-const alwaysLine = page.getByTestId("status-line");
 const waitShots = async (name) => {
   for (const provider of ["codex", "claudeAgent"]) {
     for (const dark of [false, true]) {
@@ -2913,8 +2912,9 @@ const waitShots = async (name) => {
   }
   await setLook(null, false);
 };
-const waitingLine = page.locator('[data-testid="status-line"][data-provider-wait="true"]');
+// The page changes at each launch: the line is looked up again every time.
 const checkWaitingLine = async (where) => {
+  const waitingLine = page.locator('[data-testid="status-line"][data-provider-wait="true"]');
   await waitingLine.waitFor({ timeout: 30_000 });
   await waitingLine.getByTestId("status-line-text").getByText(/^Aspetto che la quota di ChatGPT si sblocchi/).waitFor();
   await waitingLine.getByTestId("status-line-reason").getByText("Fino ad allora non parte nessun turno. Poi riprendo da solo.").waitFor();
@@ -2936,7 +2936,7 @@ await page.getByLabel("Messaggio al Coordinatore").fill("Prepara il riepilogo de
 await page.keyboard.press("Enter");
 await page.locator('[role="alert"][data-failure-kind="quotaExhausted"]').last().waitFor({ timeout: 30_000 });
 await checkWaitingLine("Limit");
-await alwaysLine.scrollIntoViewIfNeeded();
+await page.getByTestId("status-line").scrollIntoViewIfNeeded();
 await waitShots("27a-status-line-provider-wait");
 
 // Esci while the quota is still used up: after reopening, the turn waits again, and no new turn starts meanwhile.
@@ -2959,14 +2959,18 @@ await page.getByLabel("Messaggio al Coordinatore").fill("[attesa] Controlla i te
 await page.keyboard.press("Enter");
 await page.getByText("[attesa] Controlla i test dei resi", { exact: true }).waitFor();
 await page.waitForTimeout(1_500);
+alwaysSoFar = await alwaysReplies();
 await app.close();
 ({ app, page } = await launch({ ...alwaysEnv, FAKE_CODEX_NO_WAIT: "1" }));
 await page.getByTestId("dialog-title").filter({ hasText: "trama-ui-sempre-attivo" }).waitFor({ timeout: 30_000 });
-const reopenedRow = page.getByText("Turno ripreso alla riapertura").last();
-await reopenedRow.waitFor({ timeout: 30_000 });
-await page.getByText(/Trama riprende da sola, dentro il mandato, il turno interrotto dalla chiusura/).last().waitFor();
+// Nobody presses Riprendi: the resumed turn replies by itself, its work lists Trama's line, and the message is not
+// written again.
+await waitForAlwaysReply(alwaysSoFar, "Reopened turn");
 if ((await page.getByText("[attesa] Controlla i test dei resi", { exact: true }).count()) !== 1) throw new Error("The resumed turn wrote the message again");
-await page.waitForTimeout(1_500);
+await page.getByRole("button", { name: /^Ha lavorato per/ }).last().click();
+const reopenedRow = page.getByText("Turno ripreso alla riapertura", { exact: true }).last();
+await reopenedRow.waitFor({ timeout: 10_000 });
+await page.waitForTimeout(1_000);
 await reopenedRow.scrollIntoViewIfNeeded();
 await waitShots("27d-reopened-turn-resumed");
 
@@ -2980,6 +2984,7 @@ await page.getByLabel("Messaggio al Coordinatore").fill("[attesa] Rileggi gli es
 await page.keyboard.press("Enter");
 await page.getByText("[attesa] Rileggi gli esempi dei resi", { exact: true }).waitFor();
 await page.waitForTimeout(1_500);
+alwaysSoFar = await alwaysReplies();
 await app.close();
 ({ app, page } = await launch({ ...alwaysEnv, FAKE_CODEX_NO_WAIT: "1" }));
 await page.getByTestId("dialog-title").filter({ hasText: "trama-ui-sempre-attivo" }).waitFor({ timeout: 30_000 });
@@ -2988,7 +2993,7 @@ await pausedAgain.waitFor({ timeout: 30_000 });
 const pausedQuit = page.getByRole("status").filter({ hasText: "Trama è stato chiuso mentre il Coordinatore lavorava." }).last();
 await pausedQuit.waitFor({ timeout: 30_000 });
 await page.waitForTimeout(2_000);
-if ((await page.getByText("Turno ripreso alla riapertura").count()) !== 1) throw new Error("A turn resumed in Pause");
+if ((await alwaysReplies()) !== alwaysSoFar) throw new Error("A turn resumed in Pause");
 await waitShots("27e-reopened-paused");
 await page.evaluate(() => window.trama.invoke("settings:update", { theme: "system" }));
 await app.close();

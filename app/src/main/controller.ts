@@ -2803,10 +2803,14 @@ export class TramaController {
    * it can work.
    */
   private coordinatorWait(project: ActiveProjectState): ProviderWait | null {
-    const retry = project.providerRetry;
-    if (retry) return { provider: retry.provider, reason: retry.reason, until: retry.until ?? null };
     const provider = this.coordinatorProvider(project.document);
     const account = this.state.providers[provider]?.account ?? null;
+    const retry = project.providerRetry;
+    // The end of the limit, from the failure or from the account the check read.
+    if (retry) {
+      const fromAccount = account?.kind === "blocked" && providerName(provider) === retry.provider ? account.until : null;
+      return { provider: retry.provider, reason: retry.reason, until: retry.until ?? fromAccount };
+    }
     // Without open work a blocked account holds nothing: the line does not promise a resume.
     if (account?.kind !== "blocked" || !hasOpenWork(project.document)) return null;
     return { provider: providerName(provider), reason: "quotaExhausted", until: account.until };
