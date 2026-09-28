@@ -1,3 +1,4 @@
+import { checkName } from "@shared/states";
 import type { CandidateGate, GateReview, ProjectDocument } from "@shared/domain";
 import { GATE_STATUS, isGateRunning, isRegression, reviewOutcome } from "@shared/gate";
 import { roleProfile } from "@shared/roster";
@@ -67,7 +68,7 @@ export function GateField({ gate, document }: { gate: CandidateGate; document: P
       </div>
       {gate.checksFailed.length ? (
         <p className="mt-0.5 text-ui-sm text-muted-foreground">
-          Verifiche non superate: <span className="font-mono text-[11.5px]">{gate.checksFailed.join(", ")}</span>. I revisori del diff non sono partiti: la verifica fallita passa al debugger.
+          Verifiche non superate: {gate.checksFailed.map(checkName).join(", ")}. I revisori del diff non sono partiti: la verifica fallita passa al debugger.
         </p>
       ) : null}
       {gate.status === "failed" && gate.failure ? <p className="mt-0.5 text-ui-sm text-destructive">{gate.failure}</p> : null}
@@ -84,7 +85,7 @@ export function GateField({ gate, document }: { gate: CandidateGate; document: P
           <ul className="space-y-0.5 text-ui-sm">
             {gate.suite.map((c) => (
               <li key={c.check} data-testid="gate-suite-check" data-check={c.check} data-regression={isRegression(c) ? "yes" : "no"}>
-                <span className="font-mono text-[11.5px]">{c.check}</span>
+                <span title={c.check}>{checkName(c.check)}</span>
                 <Sep />
                 base {RESULT[c.base]}
                 <Sep />
