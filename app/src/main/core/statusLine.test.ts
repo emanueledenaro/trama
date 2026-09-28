@@ -1,9 +1,10 @@
 import { afterEach, describe, expect, it } from "vitest";
 import type { CoordinatorRequest, MandateAction, ProjectDocument, RequestStep, WorkPlan } from "@shared/domain";
 import { placeGrillingQuestion } from "@shared/grilling";
+import { declareCandidate, recordEvidence, recordTechnicalReview } from "./candidates";
 import { emptyDocument } from "./document";
 import { createGoal } from "./goals";
-import { answerDecisionRequest, createDecisionRequest, createMandateRequest, grantMandate } from "./pact";
+import { answerDecisionRequest, createDecisionRequest, createMandateRequest, decide, grantMandate } from "./pact";
 import { setPaused } from "./continuousWork";
 import { setPersonLanguage } from "./personLanguage";
 import { NOTHING_GOING_ON, PAUSED_SENTENCE, statusLine } from "./statusLine";
@@ -237,6 +238,34 @@ describe("statusLine: what the Coordinator does now and next (issue #241)", () =
     request(document, "g1", { goalId: goal.id });
     grill(document, "g1");
     expect(statusLine(document, null)).toMatchObject({ state: "waiting", action: { move: "answerQuestions", goalId: goal.id } });
+  });
+
+  it("waits for the person on a candidate only they can settle, instead of announcing a move the Coordinator does not have (issue #390)", () => {
+    const document = confirmed();
+    request(document, "r3");
+    team(document);
+    const luca = assign(
+      document,
+      { specialist: "Luca", kind: "agreedTicket", objective: "Carrello", issueNumber: null, exercise: null, moduleIds: ["Sources/Orders"], dependencies: [], model: "gpt-6-luna", tools: ["edits"], requiredChecks: ["git_status"], instructions: "Scrivi" },
+      document.mandate!.version,
+      "r3",
+      at(2),
+    );
+    endTurn(document, luca.id, null, { kind: "completed", text: "Fatto" });
+    const decision = document.decisions[0]!;
+    const stale = declareCandidate(
+      document,
+      { assignmentId: luca.id, decisionIds: [decision.id], unresolvedChoices: [], externalEffects: [] },
+      { snapshotId: "snap-1", baseSHA: "base", diff: "+x", changedFiles: ["NOTE.md"], excludedSensitiveFiles: [], whitespaceErrors: [] },
+    );
+    recordEvidence(document, stale.id, { check: "git_status", passed: true, command: "git status", output: "", snapshotId: stale.snapshotId });
+    recordTechnicalReview(document, stale.id, { reviewerThreadId: "reviewer", authorThreadId: "author", verdict: "approved", summary: "Letto" });
+    decide(document, { id: decision.id, value: "Anche il cliente, senza lo stato interno", acceptedExample: "e", rationale: "r" });
+
+    const line = statusLine(document, null);
+    expect(line.text).toBe("Aspetto te per andare avanti.");
+    expect(line.text).not.toContain("Il prossimo passo è mio");
+    expect(line.action).toMatchObject({ move: "reviewCandidate", actor: "person", targetId: stale.id });
   });
 
   it("says the work is paused, keeps what still ends, and keeps the person's button (A05)", () => {
