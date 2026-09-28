@@ -55,6 +55,33 @@ const REVIEW_PROPOSAL_SUMMARY = "Una revisione propone di cambiare la memoria.";
 const payloadOperations = (payload: JsonRecord): JsonRecord[] =>
   Array.isArray(payload.operations) ? (payload.operations as JsonRecord[]).map((op) => (op && typeof op === "object" ? op : {})) : [payload];
 
+const oneLine = (value: unknown) => String(value ?? "").replace(/\s+/g, " ").trim();
+
+/**
+ * One change of a proposal as the person reads it (issue #270): the review records "- remove: pnpm" for itself,
+ * the person reads "Togliere la nota: «pnpm»".
+ */
+export function memoryChangeLine(op: JsonRecord): string {
+  const action = String(op.action ?? "");
+  const old = oneLine(op.old_text);
+  const content = oneLine(op.content ?? op.new_text);
+  if (action === "remove") return `Togliere la nota «${old}»`;
+  if (action === "replace") return `Sostituire la nota «${old}» con «${content}»`;
+  if (action === "add") return `Aggiungere la nota «${content}»`;
+  return `Cambiare la nota: «${content || old}»`;
+}
+
+/**
+ * The title of a proposal in Aspetta te and in Memoria: what it changes, in one line. The label beside it already
+ * says where: "Memoria, profilo" or "Memoria, note sul progetto".
+ */
+export function memoryProposalSummary(payload: JsonRecord): string {
+  const operations = payloadOperations(payload);
+  if (operations.length === 1) return memoryChangeLine(operations[0]!);
+  const removals = operations.filter((op) => op.action === "remove" || op.action === "replace").length;
+  return `Riordinare ${operations.length} note${removals ? `: ${removals === 1 ? "una cambia o sparisce" : `${removals} cambiano o spariscono`}` : ""}`;
+}
+
 function readJson<T>(path: string, fallback: T): T {
   try {
     return existsSync(path) ? (JSON.parse(readFileSync(path, "utf8")) as T) : fallback;
@@ -253,12 +280,13 @@ export class ProjectLearning {
       user: store("user"),
       skills: this.skillViews(),
       archivedSkills: this.skills.archivedNames(),
-      proposals: this.proposals().map(({ id, target, summary, createdAt, operations, payload }) => ({
+      // The review's own words stay in proposals.json; the person reads the changes in Italian (issue #270).
+      proposals: this.proposals().map(({ id, target, createdAt, payload }) => ({
         id,
         target,
-        summary,
+        summary: memoryProposalSummary(payload),
         createdAt,
-        operations: operations ?? payloadOperations(payload).map(batchOpLine),
+        operations: payloadOperations(payload).map(memoryChangeLine),
       })),
       reviews: this.reviews(),
       curator: {

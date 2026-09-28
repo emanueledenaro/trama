@@ -311,7 +311,7 @@ export function returnWaiting(code: string, message: string): string {
     case "work_not_independent":
       return "Qualcuno lavora sugli stessi moduli: il lavoro riprende quando finisce.";
     case "no_worktree":
-      return "Il worktree dell'incarico non c'è più: serve un nuovo incarico.";
+      return "La copia di lavoro dell'incarico non c'è più: serve un nuovo incarico.";
     case "specialist_removed":
       return "Lo sviluppatore non è più nel team: serve un nuovo incarico.";
     default:

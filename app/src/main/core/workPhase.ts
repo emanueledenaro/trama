@@ -1,3 +1,4 @@
+import { BLOCKER_TEXT } from "@shared/plainLanguage";
 import type {
   Candidate,
   CandidateBlocker,
@@ -104,7 +105,7 @@ export const PERSON_MOVE_LABELS = {
   confirmUnderstanding: "Conferma la comprensione",
   grantMandate: "Concedi il mandato",
   confirmTeam: "Conferma il team",
-  confirmSeams: "Conferma i seam",
+  confirmSeams: "Conferma i punti di prova",
   confirmSlices: "Conferma le fette",
   reviewPlan: "Rivedi il piano",
   reviewCandidate: "Verifica il candidato",
@@ -234,7 +235,7 @@ function candidateBlockerText(candidate: Candidate, blocker: CandidateBlocker): 
     case "WORKTREE_CONFLICT":
       return `Il candidato ${candidate.id} è in conflitto con il lavoro di un altro incarico: ${blocker.detail}`;
     default:
-      return `Il candidato ${candidate.id} è bloccato: ${blocker.code} ${blocker.detail}`.trim();
+      return `Il candidato ${candidate.id} è bloccato: ${(BLOCKER_TEXT[blocker.code] ?? blocker.code).toLowerCase()}. ${blocker.detail}`.trim();
   }
 }
 

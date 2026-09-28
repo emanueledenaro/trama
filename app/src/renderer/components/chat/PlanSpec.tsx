@@ -115,7 +115,7 @@ export function PlanSpecBody({ plan }: { plan: WorkPlan }) {
         <p className="mt-2 text-ui text-foreground/90">Prima di scrivere la spec, il pianificatore propone dove testare il lavoro. Vanno bene?</p>
       ) : null}
 
-      <Section label="Seam da testare">
+      <Section label="Punti di prova da testare">
         <div className="space-y-1.5">
           {spec.seams.map((seam) => (
             <div key={seam.seam} data-testid="plan-seam" className="rounded-lg border border-[color:var(--color-border)] px-3 py-2">
@@ -136,10 +136,10 @@ export function PlanSpecBody({ plan }: { plan: WorkPlan }) {
         correction === null ? (
           <div className="cta-row mt-3">
             <Button size="sm" variant="ghost" onClick={() => setCorrection("")}>
-              Correggi i seam
+              Correggi i punti di prova
             </Button>
             <Button size="sm" onClick={() => void act("plan:answerSeams", { planId: plan.id, confirmed: true, note: null })}>
-              Conferma i seam
+              Conferma i punti di prova
             </Button>
           </div>
         ) : (
@@ -147,8 +147,8 @@ export function PlanSpecBody({ plan }: { plan: WorkPlan }) {
             <TextArea
               value={correction}
               onChange={(e) => setCorrection(e.target.value)}
-              placeholder="Cosa cambieresti? Per esempio un seam da aggiungere o da spostare"
-              aria-label="Correzione dei seam"
+              placeholder="Cosa cambieresti? Per esempio un punto di prova da aggiungere o da spostare"
+              aria-label="Correzione dei punti di prova"
               className="min-h-12"
             />
             <div className="cta-row">
