@@ -218,7 +218,7 @@ export const it = {
   "settings.parallel.inProject": "Al massimo in {name}",
   "settings.parallel.inOpenProject": "Al massimo nel progetto aperto",
   "settings.parallel.projectLabel": "Sviluppatori nel progetto",
-  "settings.parallel.default": "Nove, cioè tre squadre da tre, se non lo cambi. Le squadre lavorano dentro questo limite.",
+  "settings.parallel.default": "Se non lo cambi, quanti ne permettono le squadre formate: tre per squadra, fino a nove. Le squadre lavorano dentro questo limite.",
   "settings.parallel.shared": "Al massimo in tutti i progetti",
   "settings.parallel.sharedLabel": "Sviluppatori in tutti i progetti",
   "settings.parallel.sharedDescription":

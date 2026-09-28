@@ -216,7 +216,7 @@ export const en: Record<keyof typeof it, string> = {
   "settings.parallel.inProject": "At most in {name}",
   "settings.parallel.inOpenProject": "At most in the open project",
   "settings.parallel.projectLabel": "Developers in the project",
-  "settings.parallel.default": "Nine, that is three squads of three, unless you change it. The squads work within this limit.",
+  "settings.parallel.default": "Unless you change it, as many as the squads formed allow: three per squad, up to nine. The squads work within this limit.",
   "settings.parallel.shared": "At most in all projects",
   "settings.parallel.sharedLabel": "Developers in all projects",
   "settings.parallel.sharedDescription":
