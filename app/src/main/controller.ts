@@ -3175,8 +3175,8 @@ export class TramaController {
       "trama",
       {
         type: "activity",
-        title: paused ? "Lavoro continuo in pausa" : "Lavoro continuo ripreso",
-        detail: paused ? "Nessuna mossa automatica, nessun giro e nessun lavoro automatico partono finché non riprendi." : null,
+        title: paused ? "Coordinatore in pausa" : "Coordinatore ripreso",
+        detail: paused ? "Nessuna mossa automatica, nessun giro e nessun lavoro automatico partono finché non riprendi il Coordinatore." : null,
         tone: "info",
       },
       null,
