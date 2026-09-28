@@ -44,6 +44,7 @@ export const GLOSSARY: GlossaryTerm[] = [
 /** A candidate's blocker, by code, in the person's words. */
 export const BLOCKER_TEXT: Record<string, string> = {
   BASE_CHANGED: "Il codice di partenza è cambiato",
+  WORKTREE_CHANGED: "La copia di lavoro è cambiata dopo il candidato",
   DECISION_CHANGED: "Una decisione è cambiata",
   UNRESOLVED_CHOICE: "Resta una scelta da fare",
   EXTERNAL_EFFECT_UNSUPPORTED: "Ha un effetto esterno che Trama non sa verificare",
