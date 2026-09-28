@@ -21,6 +21,7 @@ import { formatRelativeTime } from "@/lib/format";
 import { act, useUi } from "@/lib/store";
 import { specialistQuestion } from "@/lib/askCoordinator";
 import { AutomaticWorkSection } from "./AutomaticWork";
+import { GroupBoardSection } from "./GroupBoard";
 import { EmptyNote, InspectorSection } from "./Inspector";
 import { Sep } from "@/components/ui/sep";
 import { ReferenceText } from "@/components/chat/ReferenceText";
@@ -169,6 +170,8 @@ export function TeamView() {
           {project.isDemo ? " Nel progetto di esempio restano ferme." : project.document.mandate?.status === "granted" ? "" : " Si attivano quando concedi un mandato."}
         </p>
       </InspectorSection>
+      {/* Who works on what moved here from Gruppo (issue #332); B04 builds the summary of Squadre around it. */}
+      <GroupBoardSection />
       <AutomaticWorkSection />
       {pending ? (
         <InspectorSection title="Proposta in attesa">

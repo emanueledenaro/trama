@@ -304,6 +304,20 @@ function ConnectionsSection() {
   const language = useLanguage();
   const codex = useUi((s) => s.app!.codex);
   const gitHubCli = useUi((s) => s.app!.gitHubCli);
+  const capabilities = useUi((s) => s.app?.project?.github.capabilities ?? null);
+  // What the account can do in the open project's repository, which Issue showed before Lavoro (issue #332).
+  const access = !capabilities
+    ? null
+    : capabilities.status === "ready"
+      ? [
+          capabilities.login ? t("github.access.login", { login: capabilities.login }) : t("github.access.gh"),
+          capabilities.private === null ? null : capabilities.private ? t("github.access.private") : t("github.access.public"),
+          capabilities.canPush ? t("github.access.canPush") : t("github.access.readOnly"),
+          capabilities.rateRemaining !== null ? t("github.access.rate", { count: capabilities.rateRemaining }) : null,
+        ]
+          .filter(Boolean)
+          .join(", ")
+      : capabilities.message;
   // The state is read each time the page opens, so a login made in the terminal meanwhile shows up (P10).
   useEffect(() => {
     if (useUi.getState().app?.gitHubCli.status !== "checking") void act("onboarding:checkGitHub", undefined);
@@ -365,7 +379,16 @@ function ConnectionsSection() {
               <IconBrandGithub className="size-4" stroke={1.7} /> GitHub
             </span>
           }
-          description={<GitHubCliDescription state={gitHubCli} />}
+          description={
+            <>
+              <GitHubCliDescription state={gitHubCli} />
+              {access ? (
+                <span className="mt-1 block" data-testid="github-access">
+                  {t("settings.connections.githubAccess", { access })}
+                </span>
+              ) : null}
+            </>
+          }
           control={
             <>
               <Badge tone={gitHubCli.status === "ready" ? "success" : gitHubCli.status === "error" ? "warning" : "secondary"}>

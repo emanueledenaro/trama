@@ -237,7 +237,7 @@ export function StatusBar() {
           ) : null}
           {popup === "divergence" && divergence ? (
             <StatusPopup side="start">
-              <BranchDivergencePanel divergence={divergence} onDone={() => setPopup(null)} />
+              <BranchDivergencePanel divergence={divergence} filesOpen onDone={() => setPopup(null)} />
             </StatusPopup>
           ) : null}
         </>

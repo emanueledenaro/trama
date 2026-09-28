@@ -66,7 +66,10 @@ describe("window layout (issue #330)", () => {
     expect(parentOf({ kind: "module", id: "Orders" })).toEqual({ kind: "map" });
     expect(parentOf({ kind: "decision", id: "D-1" })).toEqual({ kind: "pact" });
     expect(tabOf({ kind: "candidate", id: "C-1" })).toBe("work");
-    expect(tabOf({ kind: "goal", id: "G-1" })).toBe("goals");
+    // Issue #332: Lavoro is one view, so every detail of it goes back to it.
+    expect(tabOf({ kind: "goal", id: "G-1" })).toBe("work");
+    expect(tabOf({ kind: "pullRequest", number: 4 })).toBe("work");
+    expect(tabOf({ kind: "issue", number: 7 })).toBe("work");
     expect(tabOf({ kind: "mandate" })).toBe("mandate");
     expect(isDetail({ kind: "module", id: "Orders" })).toBe(true);
     expect(isDetail({ kind: "specialist", id: "S-1" })).toBe(true);
@@ -74,7 +77,12 @@ describe("window layout (issue #330)", () => {
     expect(isDetail({ kind: "goals", create: true })).toBe(true);
     expect(isDetail({ kind: "waiting", key: "question:1" })).toBe(false);
     expect(isDetail({ kind: "map" })).toBe(false);
-    expect(isDetail({ kind: "activity" })).toBe(false);
+    // Activity opens under Lavoro, with a way back to it, until the bottom panel (B08).
+    expect(isDetail({ kind: "activity" })).toBe(true);
+    expect(isDetail({ kind: "goals" })).toBe(false);
+    expect(isDetail({ kind: "group" })).toBe(false);
+    expect(isDetail({ kind: "issues" })).toBe(false);
+    expect(isDetail({ kind: "work" })).toBe(false);
   });
 
   it("lists every tab inside its own view and opens a view on its first tab", () => {
@@ -82,7 +90,8 @@ describe("window layout (issue #330)", () => {
       for (const tab of tabs) expect(VIEW_OF[tab]).toBe(view);
       if (tabs.length > 1) for (const tab of tabs) expect(TAB_LABELS[tab]).toBeDefined();
     }
-    expect(homeOf("work")).toEqual({ kind: "goals" });
+    expect(homeOf("work")).toEqual({ kind: "work" });
+    expect(VIEW_TABS.work).toEqual(["work"]);
     expect(homeOf("rules")).toEqual({ kind: "mandate" });
     expect(VIEW_TABS.rules).toEqual(["mandate", "pact", "standard"]);
     expect(homeOf("projects")).toBeNull();
