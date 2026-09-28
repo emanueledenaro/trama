@@ -133,6 +133,7 @@ export interface ActionMap {
   "candidate:approve": [{ candidateId: string }, void];
   /** The person refuses an interface candidate with a reason, which goes back to the developer (issue #247). */
   "candidate:reject": [{ candidateId: string; note: string }, void];
+  "candidate:declineMerge": [{ candidateId: string }, void];
   /** One screenshot of an interface candidate, as a data URL (issue #247). */
   "candidate:shot": [{ candidateId: string; index: number }, string];
   /** Opens focus mode on a candidate (F01): real checks, then code-review's two axes. Returns the examination's id. */
