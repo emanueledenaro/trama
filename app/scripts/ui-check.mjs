@@ -5456,8 +5456,8 @@ await page.getByText("scegli chi resta nella vista Squadre").first().waitFor({ t
 await openView("Squadre");
 const mergeProposalCard = squadsSide.getByTestId("squad-merge-proposal");
 await mergeProposalCard.getByText("Hai chiesto al Coordinatore di unire Catalogo a Ordini e pagamenti.", { exact: false }).waitFor({ timeout: 20_000 });
-const proposalButtons = await mergeProposalCard.locator(".cta-row button").allTextContents();
-if (proposalButtons.at(-1)?.trim() !== "Unisci") throw new Error(`Merge is not the last call to action: ${proposalButtons}`);
+const squadProposalButtons = await mergeProposalCard.locator(".cta-row button").allTextContents();
+if (squadProposalButtons.at(-1)?.trim() !== "Unisci") throw new Error(`Merge is not the last call to action: ${squadProposalButtons}`);
 await themeShots("51j-squad-merge-proposal");
 await mergeProposalCard.getByRole("button", { name: "Lascia com'è" }).click();
 await mergeProposalCard.waitFor({ state: "detached", timeout: 20_000 });
