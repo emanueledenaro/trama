@@ -339,7 +339,7 @@ describe("choosing the slices by squad (A10, Q12)", () => {
     // and waits; S3 is Catalogo's.
     expect(outcomesOf(document, outcomes)).toEqual([
       "S1: Bruno",
-      expect.stringMatching(/^S2: Aspetta che finisca A-[0-9A-F]{8}, che lavora sugli stessi moduli\.$/),
+      "S2: Aspetta che Bruno finisca «S1 Fetta 1»: lavora sugli stessi moduli.",
       "S3: Ada",
     ]);
   });

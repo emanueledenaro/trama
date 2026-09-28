@@ -136,7 +136,7 @@ function SquadSection({ squad }: { squad: Squad }) {
   const project = useUi((s) => s.app?.project)!;
   const document = project.document;
   const specialists = document.team.specialists;
-  const modules = squad.moduleIds.map((id) => project.snapshot.modules.find((m) => m.id === id)?.relativePath ?? id);
+  const modules = squad.moduleIds.map((id) => project.snapshot.modules.find((m) => m.id === id)?.name ?? id);
   const developers = byIds(specialists, squad.developerIds);
   const working = developers.some((s) => s.status === "working" || s.status === "stopping");
   return (

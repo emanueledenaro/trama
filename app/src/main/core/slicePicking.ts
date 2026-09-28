@@ -134,7 +134,9 @@ export function pickSlices(document: ProjectDocument, input: PickInput): PickOut
       }
       const busy = activeAssignments(document).filter((a) => a.moduleIds.some((id) => moduleIds.includes(id)));
       if (busy.length) {
-        waiting(`Aspetta che finisca ${busy.map((a) => a.id).join(", ")}, che lavora sugli stessi moduli.`);
+        // Named by developer and work, never by id: the reason reaches the person in the list of slices (A10, U05).
+        const who = busy.map((a) => `${document.team.specialists.find((s) => s.id === a.specialistId)?.name ?? "uno sviluppatore"} finisca «${a.objective}»`);
+        waiting(`Aspetta che ${who.join(" e che ")}: lavora sugli stessi moduli.`);
         continue;
       }
       const occupied = moduleOverlaps(input.presence, input.modules, moduleIds);
