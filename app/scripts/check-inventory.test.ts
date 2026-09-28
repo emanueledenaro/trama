@@ -53,13 +53,10 @@ describe("compareInventory", () => {
 describe("the inventory of main", () => {
   it("still has every test, screenshot and ui-check check it recorded, with no new skip and nothing focused", () => {
     const recorded = JSON.parse(readFileSync(INVENTORY, "utf8"));
-    expect(compareInventory(recorded, currentInventory())).toEqual({
-      missingTests: [],
-      missingShots: [],
-      missingChecks: [],
-      newSkips: [],
-      focused: [],
-      duplicateShots: [],
-    });
+    const result: Record<string, string[]> = compareInventory(recorded, currentInventory());
+    // One line per item, by name: the CI log shows exactly what went missing.
+    const problems = Object.entries(result).flatMap(([kind, list]) => list.map((entry) => `${kind}: ${entry}`));
+    const hint = "Restore what a merge dropped, or run `node scripts/check-inventory.mjs --write` if the pull request removed it on purpose.";
+    expect(problems, `${hint}\n${problems.join("\n")}`).toEqual([]);
   });
 });
