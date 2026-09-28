@@ -2,7 +2,8 @@ import { mkdir, mkdtemp, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { codexPermissionProfiles, deniedReadFolders, expandHome, isReadable, privatePathsInCommand, readableRoots, toolchainRoots } from "./readScope";
+import { spawnSync } from "node:child_process";
+import { codexPermissionProfiles, deniedReadFolders, expandHome, isReadable, privatePathsInCommand, readableRoots, sandboxGitEnvironment, toolchainRoots } from "./readScope";
 
 const home = "/home/rita";
 const codexHome = "/home/rita/.codex";
@@ -102,5 +103,35 @@ describe("read scope of agent sessions (issue #206)", () => {
       "permissions.trama_write": { filesystem: { ":minimal": "read", [worktree]: "write", "/home/rita/negozio": "read" }, network: { enabled: false } },
     });
     expect(Object.keys(codexPermissionProfiles(["/home/rita/negozio"], null))).toEqual(["permissions.trama_read"]);
+  });
+});
+
+describe("git in a sandboxed shell (issue #391)", () => {
+  it("reads no global file, so a hidden ~/.gitconfig does not break it, and signs commits as the person", async () => {
+    // The sandbox hides the home folder; here ~/.gitconfig cannot be read because it is a folder.
+    const hiddenHome = await mkdtemp(join(tmpdir(), "trama-home-"));
+    await mkdir(join(hiddenHome, ".gitconfig"));
+    const repo = await mkdtemp(join(tmpdir(), "trama-sandbox-git-"));
+    const run = (args: string[], extra: Record<string, string>) =>
+      spawnSync("git", args, { cwd: repo, encoding: "utf8", env: { ...process.env, HOME: hiddenHome, XDG_CONFIG_HOME: join(hiddenHome, ".config"), ...extra } });
+    const env = sandboxGitEnvironment({ name: "Rita Bianchi", email: "rita@bottegarossi.it" });
+    expect(run(["init", "-q"], env)).toMatchObject({ status: 0, stderr: "" });
+    // As before the fix: git without the sandbox's environment trips on the hidden file.
+    expect(run(["status", "--short"], {}).stderr).toMatch(/unable to access .*\.gitconfig/);
+
+    expect(env).toEqual({
+      GIT_CONFIG_GLOBAL: "/dev/null",
+      GIT_AUTHOR_NAME: "Rita Bianchi",
+      GIT_AUTHOR_EMAIL: "rita@bottegarossi.it",
+      GIT_COMMITTER_NAME: "Rita Bianchi",
+      GIT_COMMITTER_EMAIL: "rita@bottegarossi.it",
+    });
+    expect(run(["status", "--short"], env)).toMatchObject({ status: 0, stderr: "" });
+    await writeFile(join(repo, "a.txt"), "uno\n");
+    expect(run(["add", "a.txt"], env)).toMatchObject({ status: 0, stderr: "" });
+    expect(run(["commit", "-q", "-m", "chore: add a"], env)).toMatchObject({ status: 0, stderr: "" });
+    expect(run(["log", "-1", "--format=%an <%ae>"], env).stdout.trim()).toBe("Rita Bianchi <rita@bottegarossi.it>");
+    // Without an identity git still reads no global file.
+    expect(sandboxGitEnvironment(null)).toEqual({ GIT_CONFIG_GLOBAL: "/dev/null" });
   });
 });

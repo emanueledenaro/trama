@@ -18,6 +18,7 @@ import { isOpenQuestion, pendingMandateRequest } from "@shared/domain";
 import { workRequests } from "@shared/grilling";
 import { PROVIDERS } from "@shared/providers";
 import { candidateSuperseded } from "@shared/conflictScope";
+import { PERSON_BLOCKERS } from "@shared/waitingForYou";
 import { inspectCandidate, latestCandidate } from "./candidates";
 import { pendingQuestion, pendingState, type QuestionView, questionsText, questionViews } from "./developerQuestions";
 import { sliceViews, slicesText } from "./slices";
@@ -181,14 +182,15 @@ const hardBlockers = (blockers: CandidateBlocker[]) => blockers.filter((b) => !W
 
 /**
  * Candidate blockers that are technical (A06, Q3): a red check, the reviewers' blocking finding, a conflict between
- * worktrees or with the main branch. The Coordinator resolves them by itself within the mandate; the others (a Pact
- * decision that changed, a choice left open, an external effect) wait for the person.
+ * worktrees or with the main branch. The Coordinator resolves them by itself within the mandate; the ones in
+ * PERSON_BLOCKERS (a Pact decision that changed, a choice left open, an external effect) wait for the person.
  */
 const TECHNICAL_BLOCKS: Partial<Record<string, TechnicalBlock>> = {
   CHECK_FAILED: "checkFailed",
   GATE_BLOCKED: "checkFailed",
   WORKTREE_CONFLICT: "worktreeConflict",
   REMOTE_CONFLICT: "worktreeConflict",
+  SEMANTIC_CONFLICT: "worktreeConflict",
   CLOUD_CHECK_FAILED: "checkFailed",
 };
 
@@ -214,6 +216,8 @@ function candidateBlockerWhy(work: string, blocker: CandidateBlocker): string {
       return `Il ${work} è in conflitto con il branch principale su GitHub: vanno riallineati.`;
     case "WORKTREE_CONFLICT":
       return `Il ${work} tocca gli stessi file di un altro lavoro in corso.`;
+    case "SEMANTIC_CONFLICT":
+      return `Il ${work} non funziona insieme a un altro lavoro in corso: una verifica fallisce sulle due modifiche unite.`;
     case "CLOUD_CHECK_FAILED":
       return `Il ${work} viene dal cloud e non ha superato i controlli sul Mac.`;
     default:
@@ -237,6 +241,8 @@ function candidateBlockerText(candidate: Candidate, blocker: CandidateBlocker): 
       return `Il candidato ${candidate.id} è in conflitto con il lavoro su GitHub: ${blocker.detail}`;
     case "WORKTREE_CONFLICT":
       return `Il candidato ${candidate.id} è in conflitto con il lavoro di un altro incarico: ${blocker.detail}`;
+    case "SEMANTIC_CONFLICT":
+      return `Il candidato ${candidate.id} non funziona insieme al lavoro di un altro incarico: ${blocker.detail}`;
     case "CLOUD_CHECK_FAILED":
       return `Il candidato ${candidate.id} viene da una sessione cloud e non ha superato i controlli sul Mac: ${blocker.detail}`;
     default:
@@ -446,7 +452,9 @@ function assignedWork(
     if (isActive(assignment)) continue;
     const blocker = hardBlockers(inspectCandidate(document, candidate, null))[0];
     if (blocker) {
-      moves.assignWork();
+      // A blocker only the person settles waits for them (issue #390): new work would not settle it.
+      if (PERSON_BLOCKERS.includes(blocker.code)) moves.add(person("reviewCandidate", PERSON_MOVE_LABELS.reviewCandidate, candidate.id));
+      else moves.assignWork();
       return {
         phase: "blocked",
         blocker: candidateBlockerText(candidate, blocker),

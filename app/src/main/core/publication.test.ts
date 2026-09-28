@@ -1,4 +1,4 @@
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -132,5 +132,59 @@ describe("publication outside the mandate (issue #273)", () => {
       { outcome: "started", branch: workspace.branch, remote: "origin" },
       { outcome: "pushed", branch: workspace.branch, remote: "origin" },
     ]);
+  });
+});
+
+describe("publication without personal or business data (issue #391)", () => {
+  it("removes them from the commit message, the pull request's title and its body, naming the file that holds them", async () => {
+    const remote = await mkdtemp(join(tmpdir(), "trama-remote-"));
+    await git(["init", "--bare", "-b", "main"], remote, false);
+    const repo = await mkdtemp(join(tmpdir(), "trama-repo-"));
+    await git(["init", "-b", "main"], repo, false);
+    await writeFile(join(repo, "a.txt"), "uno\n");
+    await git(["add", "."], repo, false);
+    await git(["-c", "user.name=T", "-c", "user.email=t@t", "commit", "-m", "init"], repo, false);
+    await git(["remote", "add", "origin", remote], repo, false);
+    const workspace = await prepareWorktree(repo, "Ada", await mkdtemp(join(tmpdir(), "trama-wt-")));
+    await git(["config", "user.name", "T"], workspace.worktreeRoot, false);
+    await git(["config", "user.email", "t@t"], workspace.worktreeRoot, false);
+    await writeFile(join(workspace.worktreeRoot, "a.txt"), "Bottega Rossi srl\nP.IVA 01234567897\nPEC bottegarossi@pec.it\n");
+    const review = await reviewWorktree(workspace);
+    const candidate = { id: "C-1", snapshotId: review.snapshotId, changedFiles: review.changedFiles } as unknown as Candidate;
+    const assignment = { id: "A-1", objective: "Cambia a", workspace } as unknown as SpecialistAssignment;
+    const bin = await mkdtemp(join(tmpdir(), "trama-gh-"));
+    const log = join(bin, "gh.log");
+    await writeFile(
+      join(bin, "gh"),
+      `#!/usr/bin/env node
+const { appendFileSync } = require("node:fs");
+const args = process.argv.slice(2);
+appendFileSync(${JSON.stringify(log)}, JSON.stringify(args) + "\\n");
+process.stdout.write(args.includes("POST") ? JSON.stringify({ html_url: "https://github.com/o/r/pull/3", number: 3 }) : "[]");
+`,
+      { mode: 0o755 },
+    );
+    const path = process.env.PATH;
+    process.env.PATH = `${bin}:${path}`;
+    try {
+      const published = await publishCandidate({
+        candidate,
+        assignment,
+        repository: "o/r",
+        baseBranch: "main",
+        message: "fix: show 01234567897 only on invoices\n\nThe footer printed the PEC bottegarossi@pec.it.\n\nTrama-Candidate: C-1",
+        conventions: DEFAULT_CONVENTIONS,
+        body: "Il piè di pagina mostrava P.IVA 01234567897 e PEC bottegarossi@pec.it.",
+        ...allowed,
+      });
+      expect(published.number).toBe(3);
+    } finally {
+      process.env.PATH = path;
+    }
+    const created = (await readFile(log, "utf8")).trim().split("\n").map((line) => JSON.parse(line) as string[]).find((args) => args.includes("POST"))!;
+    expect(created).toContain("title=fix: show [partita IVA rimossa, vedi a.txt:2] only on invoices");
+    expect(created).toContain("body=Il piè di pagina mostrava P.IVA [partita IVA rimossa, vedi a.txt:2] e PEC [PEC rimossa, vedi a.txt:3].");
+    const committed = (await git(["log", "-1", "--format=%B"], workspace.worktreeRoot)).trim();
+    expect(committed).toBe("fix: show [partita IVA rimossa, vedi a.txt:2] only on invoices\n\nThe footer printed the PEC [PEC rimossa, vedi a.txt:3].\n\nTrama-Candidate: C-1");
   });
 });

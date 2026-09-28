@@ -16,6 +16,7 @@ La stessa tabella sta in `app/src/shared/plainLanguage.ts`. Un test controlla ch
 | Verifiche | I comandi di prova che Trama esegue davvero sul candidato, come i test. | check, evidence |
 | Revisori | Gli agenti che leggono il candidato prima dell'unione e segnalano i problemi. | gate, review gate |
 | Esame approfondito | Una lettura completa di un candidato: prima le verifiche, poi il confronto con le regole del codice e con il piano. | Focus mode, audit |
+| Lenti di Trama | I controlli in più dell'esame approfondito, aggiunti da Trama: sicurezza, qualità dei test, documenti e codice. | lens |
 | Punti di prova | I punti del codice da cui i test controllano un comportamento senza toccare il resto. | seam |
 | Copia di lavoro | Una cartella separata del progetto dove uno sviluppatore lavora senza toccare la tua. | worktree |
 | Sessione cloud | Il lavoro di uno sviluppatore che gira sui server del provider invece che sul Mac. Torna come pull request in bozza e Trama lo verifica sul Mac. | remoto, sandbox |
