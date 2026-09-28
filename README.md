@@ -37,10 +37,10 @@ Trama puts one **Coordinator** between you and the agents:
 ## Features
 
 - **The AI Hero method, run natively.** A request is clarified in numbered rounds with `grilling`; `domain-modeling` proposes glossary terms and ADRs from the decisions taken; `to-spec` turns the plan into a spec with the seams you confirm; `to-tickets` splits it into vertical slices with their acceptance criteria. Each developer ships a slice with `implement` and `tdd`. Bug triage, failed-check diagnosis and Clean Code's architecture review start on their own within the mandate. Every skill keeps Matt Pocock's original text, with a thin Trama binding.
-- **A focused work loop.** The chat leads with the task in focus, its phase and the one next step allowed right now; the rest wait in a queue, started ones first. Inside the mandate the Coordinator takes its own next moves - preparing the plan, assigning work, running checks - and stops only for the person: product decisions, confirming the shared understanding, the mandate, the team, the seams and the slices proposed in the plan, and the merge.
+- **A focused work loop.** The chat leads with the task in focus, its phase and the one next step allowed right now; the rest wait in a queue, started ones first. Inside the mandate the Coordinator takes its own next moves - preparing the plan, assigning work, running checks - and stops only for the person: product decisions, confirming the shared understanding, the mandate, the team, the seams and the slices proposed in the plan, and any merge that needs your ok.
 - **A compact history.** Each work turn is one line in the chat, who worked, for how long, how many tools and errors; it opens on the spot into Activity's own "Passi tecnici" list, with repeated steps and empty notes grouped and counted instead of listed one by one. A resolved card, a decision answered, a mandate granted, a slice closed, collapses to a single outcome line; anything still waiting on you, or still actionable, stays open ([verification log](docs/verifiche/u06-cronologia-compatta-2026-09-28.md)).
 - **Plain language, real names.** Cards, the inspector and Activity call a decision, a task or a candidate by its name, with the technical id only on hover; comparisons, cross-references and internal codes are written as short sentences instead of ids and constants ([verification log](docs/verifiche/u05-linguaggio-umano-2026-09-28.md)).
-- **Merges the clear-cut candidates itself.** A verified candidate that already has the Coordinator's green light, and the mandate to integrate, is published and merged on its own once its checks are green; Activity and the summary record it. A candidate that touches the interface never merges itself: it waits for you in Aspetta te with before-and-after screenshots, light and dark, to approve or reject ([verification log](docs/verifiche/a07-unione-con-via-libera-2026-09-28.md)).
+- **Merges the clear-cut candidates itself.** A verified candidate that already has the Coordinator's green light, has a GitHub remote and has the mandate to integrate its modules, is published and merged on its own once its checks are green; Activity and the summary record it. A candidate that touches the interface, lacks a remote or falls outside the mandate never merges itself: it waits for you in Aspetta te, with before-and-after screenshots, light and dark, when the project's own `screenshots` script can produce them, or a note explaining why it could not, to approve or reject ([verification log](docs/verifiche/a07-unione-con-via-libera-2026-09-28.md)).
 - **An assignment contract and a developer's report.** Every task carries its goal, the seams to test, the Pact decisions it depends on and the checks required; Trama refuses an incomplete one. Each developer closes with a structured report of files touched, tests written and seams covered - a claim, never evidence.
 - **Developers can ask, and pause.** A developer with a doubt asks the Coordinator through a tool; the slice pauses and the developer is freed while dependent slices wait. The Coordinator answers from facts, or opens a Pact decision when the answer blocks the work, and the assignment resumes in the same worktree once it is answered ([#202](https://github.com/emanueledenaro/trama/pull/202)).
 - **A Clean Code standard, measured by Trama.** Work in a worktree gets Trama's own Clean Code standard, after a project's own rules and the native skills. Trama measures the argument count and length of every function the candidate adds or touches, and duplicated blocks on the added lines, as evidence for the technical review; a finding on naming, hidden side effects or duplication always blocks. Rules are configurable per project in Settings ([#201](https://github.com/emanueledenaro/trama/pull/201)).
@@ -70,7 +70,7 @@ Trama puts one **Coordinator** between you and the agents:
   </tr>
 </table>
 
-The app interface is in Italian, except the first-launch language choice and the Settings page, which also ship in English ([#303](https://github.com/emanueledenaro/trama/pull/303)); the rest of the English translation is still underway. Most of the documentation in `docs/` is in Italian.
+The app interface is in Italian, except the first-launch language choice and most of the Settings page, which also ship in English ([#303](https://github.com/emanueledenaro/trama/pull/303)); provider capabilities, the Clean Code rules and the presence checks in Settings stay Italian even when English is selected, and so does the rest of the interface. Most of the documentation in `docs/` is in Italian.
 
 ## Quick start
 
@@ -111,9 +111,9 @@ flowchart LR
     PL -->|within the mandate| A[Assignment contract in worktrees]
     A --> C[Candidate]
     C --> V[Checks, reviewer gate and focus mode]
-    V --> M{Green light and interface check}
-    M -->|no interface change| PR[Trama merges it]
-    M -->|changes the interface| AP[Your approval]
+    V --> M{Green light, remote, mandate, interface check}
+    M -->|clear to integrate| PR[Trama merges it]
+    M -->|interface, no remote or outside the mandate| AP[Your approval]
     AP --> PR
 ```
 
@@ -122,7 +122,7 @@ flowchart LR
 3. **Plan.** `to-spec` writes the request as a spec with the seams you confirm; `to-tickets` splits it into vertical slices in dependency order.
 4. **Delegate.** Within the mandate, the Coordinator assigns ready slices to developers, one each, through an assignment contract: goal, seams, decisions and checks required. Each works in a dedicated worktree with `implement` and `tdd`, and closes with a structured report.
 5. **Verify.** A candidate carries its diff, the decisions it relies on and the check results Trama ran itself. Then every candidate reviewer examines the diff in parallel, and a regression or a blocking finding sends the work back to its developer. Focus mode adds a read-only Standards and Spec review on demand. A later relevant change revokes the approval.
-6. **Publish.** Trama writes a Conventional Commit and branch name by its publishing standard and opens the pull request through `gh`. A candidate with the Coordinator's own green light and nothing touching the interface merges there and then; one that changes the interface waits for your explicit approval, with before-and-after screenshots.
+6. **Publish.** Trama writes a Conventional Commit and branch name by its publishing standard and opens the pull request through `gh`. A candidate with the Coordinator's own green light, a GitHub remote, the mandate to integrate its modules and nothing touching the interface merges there and then; one that changes the interface, lacks a remote or falls outside the mandate waits for your explicit approval, with before-and-after screenshots when the project can produce them.
 
 Throughout, presence shows who else is on the same files, and the Coordinator avoids assigning work where a colleague already has it open.
 
@@ -197,7 +197,7 @@ CI ([`electron.yml`](.github/workflows/electron.yml)) runs type check, tests, bu
 - **End to end.** No candidate has yet been declared and verified end to end on a real project. The closest live run (26 September, real Codex `gpt-6-luna`) reached a developer's finished worktree and stopped before declaring a candidate, on a bug in `verify_candidate` ([verification log](docs/verifiche/v04-v05.md), [#204](https://github.com/emanueledenaro/trama/issues/204)).
 - **Candidate gate.** Verified with the fake Codex only, not yet with a real model ([verification log](docs/verifiche/w10-cancello-candidato-2026-09-27.md)). The regression guardian compares the build and test checks the candidate requires, not a suite the assignment did not name. The messages between reviewers and developers are recorded in the developer's work; their own threads come with [#144](https://github.com/emanueledenaro/trama/issues/144).
 - **Pull requests and merges.** Publishing and the merge of a clear-cut candidate are both tested with a fake `gh` only; no real pull request has been opened or merged from the app on GitHub ([verification log](docs/verifiche/a07-unione-con-via-libera-2026-09-28.md)). Recognizing an interface change relies on file paths, so a UI file with an unusual name or path could be missed.
-- **Language.** English ships for the first-launch choice and the Settings page only ([#303](https://github.com/emanueledenaro/trama/pull/303)); the rest of the interface is still Italian.
+- **Language.** English ships for the first-launch choice and most of the Settings page ([#303](https://github.com/emanueledenaro/trama/pull/303)); provider capabilities, the Clean Code rules, the presence checks in Settings and the rest of the interface are still Italian.
 - **Sandbox.** The Node sandbox with local networking is tested on macOS only. On Windows, tests that open a local server fail under the Codex sandbox. The Linux `bubblewrap` path is coded but not tested on a real Linux machine.
 - **Provider switch.** Switching providers mid-conversation is verified only live.
 - **Presence.** Verified against a local bare remote and, once, directly against GitHub. A remote other than GitHub or a local folder, and a repository whose CI triggers on any push, are not verified.
