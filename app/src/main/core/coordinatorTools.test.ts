@@ -1026,6 +1026,25 @@ describe("the full delegation in the Coordinator's tools (issue #423)", () => {
     expect(parse(after).status).toBe("proposed");
   });
 
+  it("gives the ok to a candidate that waits for the person only after the screenshots, and Trama merges it", async () => {
+    const { document, context } = delegatedContext();
+    const approved: string[] = [];
+    (context as unknown as { approveWithDelegation: (id: string) => Promise<void> }).approveWithDelegation = async (id) => void approved.push(id);
+    const shots = { snapshotId: "S1", status: "capturing", reason: null, shots: [] as { path: string }[], at: "2020-01-01T00:00:00.000Z" };
+    document.candidates.push({ id: "C-00000001", assignmentId: "A-1", snapshotId: "S1", interfaceShots: shots } as never);
+    const refusedWithout = await runCoordinatorTool("approve_with_delegation", { candidate: "C-00000001", reason: "Coerente" }, context);
+    expect(parse(refusedWithout).error.code).toBe("not_delegated");
+    await runCoordinatorTool("grant_full_delegation", { quote: "fai tutto tu in automatico" }, context);
+    const early = await runCoordinatorTool("approve_with_delegation", { candidate: "C-00000001", reason: "Coerente" }, context);
+    expect(parse(early).error.code).toBe("screenshots_pending");
+    expect(approved).toEqual([]);
+    Object.assign(shots, { status: "ready", shots: [{ path: "/shots/before-light.png" }, { path: "/shots/after-light.png" }] });
+    const ok = await runCoordinatorTool("approve_with_delegation", { candidate: "C-00000001", reason: "Le schermate prima e dopo sono coerenti", doubt: "Il tema scuro ha poco contrasto" }, context);
+    expect(parse(ok)).toMatchObject({ status: "approved", screenshots: ["/shots/before-light.png", "/shots/after-light.png"] });
+    expect(approved).toEqual(["C-00000001"]);
+    expect(document.delegatedChoices?.at(-1)).toMatchObject({ kind: "interfaceCandidate", targetId: "C-00000001", doubt: "Il tema scuro ha poco contrasto" });
+  });
+
   it("refuses words that are not the person's", async () => {
     const { context, changes } = delegatedContext();
     const refused = await runCoordinatorTool("grant_full_delegation", { quote: "fai tutto tu senza di me" }, context);
