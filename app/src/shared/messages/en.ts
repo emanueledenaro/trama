@@ -824,4 +824,9 @@ export const en: Record<keyof typeof it, string> = {
   "settings.learning.moved": "The learning switches are in Memory, under How it learns, next to the reviews and the upkeep of the skills.",
   "settings.learning.open": "Open in Memory",
   "settings.learning.openProject": "Open a project to see what the Coordinator learns.",
+
+  // Work the review stopped too many times in a row (issue #389)
+  "reviewLoop.label": "Work stopped several times",
+  "reviewLoop.title": "{objective}: the review stopped it {count} times in a row. Tell the Coordinator how to go on.",
+  "reviewLoop.held": "the review stopped it {count} times in a row, so Trama no longer sends it back by itself. Decide how to go on in Waiting for you.",
 };

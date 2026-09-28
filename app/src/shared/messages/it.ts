@@ -825,6 +825,11 @@ export const it = {
   "settings.learning.moved": "Gli interruttori dell'apprendimento stanno in Memoria, in Come impara, accanto alle revisioni e alla manutenzione delle skill.",
   "settings.learning.open": "Apri in Memoria",
   "settings.learning.openProject": "Apri un progetto per vedere cosa impara il Coordinatore.",
+
+  // Work the review stopped too many times in a row (issue #389)
+  "reviewLoop.label": "Lavoro fermato più volte",
+  "reviewLoop.title": "{objective}: la revisione l'ha fermato {count} volte di seguito. Scrivi al Coordinatore come andare avanti.",
+  "reviewLoop.held": "la revisione l'ha fermato {count} volte di seguito, quindi Trama non lo rimanda più indietro da sola. Decidi tu come andare avanti in Aspetta te.",
 } satisfies Record<string, string>;
 
 export type MessageKey = Exclude<keyof typeof it, `${string}.one`>;
