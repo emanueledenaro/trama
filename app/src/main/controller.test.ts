@@ -1045,7 +1045,7 @@ describe("TramaController", () => {
     // Within the mandate the Coordinator confirms the seams to-spec proposed by itself (A06).
     await until(() => (project.document.autonomousSteps ?? []).some((s) => s.move === "confirmSeams"));
     expect(project.document.plans[0]!.spec!.seamsAnswer).toMatchObject({ confirmed: true, by: "coordinator" });
-    expect(activityLog(project.document.requests, project.document.events, [], project.document.autonomousSteps).map((e) => e.label)).toContain("Seam confermati dal Coordinatore");
+    expect(activityLog(project.document.requests, project.document.events, [], [], project.document.autonomousSteps).map((e) => e.label)).toContain("Seam confermati dal Coordinatore");
 
     // The person corrects the seams in their own words: the planner writes the spec again from that step (A06).
     const plan = project.document.plans[0]!;

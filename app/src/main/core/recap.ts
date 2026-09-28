@@ -89,7 +89,7 @@ export function markTold(document: ProjectDocument, keys: string[]): RecapLedger
   return ledger;
 }
 
-/** The issues the Coordinator opened after `since`: its specs and its slices published on GitHub, newest last. */
+/** The issues the Coordinator opened after `since`: its specs and slices published on GitHub and the issues of the problems it found, newest last. */
 function openedIssues(document: ProjectDocument, since: string | null): (RecapFact & { at: string })[] {
   const facts: (RecapFact & { at: string })[] = [];
   const after = (at: string) => since === null || at > since;
@@ -102,6 +102,13 @@ function openedIssues(document: ProjectDocument, since: string | null): (RecapFa
       if (ticket.issue && after(ticket.issue.at)) {
         facts.push({ text: `Aperta la issue #${ticket.issue.number} della fetta ${ticket.id}: ${ticket.title}`, number: ticket.issue.number, url: ticket.issue.url, at: ticket.issue.at });
       }
+    }
+  }
+  // The issues it opened by itself for the problems it found outside the work in progress (A08).
+  for (const problem of document.problems?.items ?? []) {
+    const issue = problem.issue;
+    if (issue?.opened && after(issue.at)) {
+      facts.push({ text: `Aperta la issue #${issue.number} per un problema trovato: ${problem.title}`, number: issue.number, url: issue.url, at: issue.at });
     }
   }
   return facts.sort((a, b) => a.at.localeCompare(b.at));
@@ -126,7 +133,7 @@ function stepLine(entry: { label: string; outcome: ActivityOutcome; detail: stri
  * opened, with their number. Moves still running belong to "Cosa faccio". Pure.
  */
 export function doneSince(document: ProjectDocument, since: string | null): RecapFact[] {
-  const entries = activityLog(document.requests, document.events, document.continuousWork?.rounds ?? [], document.autonomousSteps ?? [])
+  const entries = activityLog(document.requests, document.events, document.continuousWork?.rounds ?? [], [], document.autonomousSteps ?? [])
     .filter((entry) => entry.outcome !== "running" && (since === null || entry.startedAt > since))
     .reverse();
   const moves = entries.map((entry) => ({

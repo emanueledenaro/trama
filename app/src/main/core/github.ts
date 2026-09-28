@@ -158,6 +158,26 @@ export async function updateIssueText(repository: string, number: number, title:
   });
 }
 
+/** Adds labels to an issue, keeping the ones it has. */
+export async function addIssueLabels(repository: string, number: number, labels: string[]): Promise<void> {
+  await run("gh", ["api", "--method", "POST", `repos/${repository}/issues/${number}/labels`, ...labels.flatMap((label) => ["--raw-field", `labels[]=${label}`])], {
+    env: ghEnvironment(),
+    timeout: 20_000,
+  });
+}
+
+/** Removes a label from an issue; a label the issue does not have is not an error. */
+export async function removeIssueLabel(repository: string, number: number, label: string): Promise<void> {
+  try {
+    await run("gh", ["api", "--method", "DELETE", `repos/${repository}/issues/${number}/labels/${encodeURIComponent(label)}`], {
+      env: ghEnvironment(),
+      timeout: 20_000,
+    });
+  } catch (error) {
+    if (!/HTTP 404|Not Found/i.test((error as Error).message)) throw error;
+  }
+}
+
 export interface IssueDetail {
   number: number;
   state: "open" | "closed";
