@@ -17,7 +17,7 @@ import { useEffect, useState } from "react";
 import type { ProviderAccount, ProviderId } from "@shared/codex";
 import { DEFAULT_LEARNING_SETTINGS, type LearningSettings, type ThemePreference } from "@shared/domain";
 import { classifyProviderFailure } from "@shared/providerFailure";
-import { capabilityLines, PROVIDERS, type ProviderDescriptor } from "@shared/providers";
+import { capabilityLines, coordinatorUnavailableReason, PROVIDERS, type ProviderDescriptor } from "@shared/providers";
 import { AIHERO_ATTRIBUTION } from "@shared/skills";
 import { MAX_PARALLEL_DEVELOPERS_SETTING, MIN_PARALLEL_DEVELOPERS, parallelDevelopers } from "@shared/parallel";
 import { GitHubCliDescription } from "@/components/GitHubCliStatus";
@@ -103,7 +103,7 @@ function PageHeader({ title, description, actions }: { title: string; descriptio
   );
 }
 
-/** A titled card of rows, as in the Codex and Synara settings. */
+/** A titled card of rows, as in the Codex settings. */
 function Group({ title, note, children }: { title?: string; note?: React.ReactNode; children: React.ReactNode }) {
   return (
     <section className="mb-6 last:mb-0">
@@ -368,6 +368,7 @@ function ProviderRow({ provider }: { provider: ProviderDescriptor }) {
               Accesso: <code className="font-mono text-foreground/90">{provider.signInCommand}</code>
             </span>
           ) : null}
+          {coordinatorUnavailableReason(id) ? <span className="block text-warning">{coordinatorUnavailableReason(id)}</span> : null}
           {hint ? <span className="block text-foreground/80">{hint}</span> : null}
         </>
       }
@@ -489,7 +490,7 @@ function MethodSection() {
       <Group title="Lavoro continuo">
         <ToggleRow
           label="Il Coordinatore va avanti da solo dentro il mandato"
-          description="Prepara il piano, assegna il lavoro ed esegue le verifiche senza chiedere. Ti chiede solo decisioni di prodotto, il mandato, il team e l'unione del candidato. Puoi fermare ogni mossa dalla chat."
+          description="Prepara il piano, assegna il lavoro ed esegue le verifiche senza chiedere. Ti chiede solo decisioni di prodotto, il mandato, il team e l'unione del candidato. Puoi fermare ogni mossa dalla riga di stato, e fermare tutto il lavoro automatico del progetto con Pausa."
           checked={continuousWork}
           onChange={(value) => void act("settings:update", { continuousWork: value })}
         />

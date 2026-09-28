@@ -2,7 +2,9 @@ import { cp, mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { activityLog } from "@shared/activity";
 import type { ProjectDocument } from "@shared/domain";
+import { TOOL_ERROR_PLACEHOLDER } from "./core/toolErrors";
 import { TramaController } from "./controller";
 import { git } from "./core/process";
 import { findSpecialist } from "./core/team";
@@ -190,13 +192,16 @@ describe("the checks after an ended assignment (issue #204)", () => {
     expect(sent).toContain("chiama prima declare_candidate");
     // Twice the assignment id, as in the live run: each refusal names the move to make first, and nothing is declared.
     expect(toolResults(document, move.id, "verify_candidate").length).toBeGreaterThanOrEqual(2);
+    // The reply pasted the tool's English error: Trama keeps it in Activity and the chat says it in Italian (issue #241).
     const reply = document.events.findLast((e) => e.requestId === move.id && e.content.type === "coordinatorText")!;
-    expect(reply.content).toMatchObject({ text: expect.stringContaining(`First call declare_candidate with assignment ${work.id}`) });
+    expect(reply.content).toMatchObject({ text: `Non posso eseguire le verifiche: ${TOOL_ERROR_PLACEHOLDER}` });
+    const activity = activityLog(document.requests, document.events).find((e) => e.requestId === move.id)!;
+    expect(activity.toolErrors.some((e) => e.detail?.includes(`First call declare_candidate with assignment ${work.id}`))).toBe(true);
     expect(document.candidates).toEqual([]);
 
     // The work waits for the person, who sees why and the move to take again.
     const reason = `La mossa automatica non è riuscita: l'incarico ${work.id} è concluso ma il suo candidato non è stato dichiarato.`;
-    expect(move.step).toEqual({ move: "verifyCandidate", by: "trama", stalled: reason });
+    expect(move.step).toEqual({ move: "verifyCandidate", by: "trama", trigger: "assignmentEnded", stalled: reason });
     await until(() => Boolean(project.nextSteps[move.id]));
     expect(project.nextSteps[move.id]).toMatchObject({ move: "verifyCandidate", actor: "coordinator", label: "Esegui le verifiche", reason });
     await new Promise((r) => setTimeout(r, 300));
@@ -219,7 +224,7 @@ describe("the checks after an ended assignment (issue #204)", () => {
     expect(candidate.assignmentId).toBe(work.id);
     expect(candidate.evidence.git_status?.result).toBe("pass");
     expect(candidate.technicalReview?.verdict).toBe("approved");
-    expect(move.step).toEqual({ move: "verifyCandidate", by: "trama" });
+    expect(move.step).toEqual({ move: "verifyCandidate", by: "trama", trigger: "assignmentEnded" });
     expect(move.nextStep).toBeUndefined();
     expect(workState(document, document.requests.at(-1)!.id)).toMatchObject({ phase: "candidate", moves: [{ move: "reviewCandidate", actor: "person" }] });
   }, 60_000);

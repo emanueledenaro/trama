@@ -16,6 +16,7 @@ import {
   IconUsersGroup,
   IconUsers,
   IconFocus2,
+  IconLock,
 } from "@tabler/icons-react";
 import { readableFailure } from "@shared/providerFailure";
 import {
@@ -27,13 +28,17 @@ import {
   type QualityItem,
   type SpecialistAssignment,
   type TechnicalReview,
+  type MandateAction,
   type TestedSeam,
   developerQuestionState,
   isOpenQuestion,
 } from "@shared/domain";
 import { CLEAN_CODE_RULES, type CodeMeasure } from "@shared/cleanCode";
 import { isExerciseAssessment } from "@shared/onboarding";
+import { candidateSuperseded, CONFLICT_SIDE_TITLE, conflictSide, explainedByDivergence, otherSideSuperseded } from "@shared/conflictScope";
+import { type ListChange, type MandateProposalDiff, mandateProposalDiff, unchangedMandate } from "@shared/mandate";
 import { findGoal } from "@shared/goals";
+import { FIXED_BANS, fixedBanInfo } from "@shared/fixedBans";
 import { adrMarkdown, adrPath, findDomainProposal, glossaryEntry } from "@shared/domainDocs";
 import { PROVIDERS } from "@shared/providers";
 import { BOUNDARY_LABELS, findRoute, firstRunnableStep, ROUTE_PATH_LABELS, type RouteStatus, STEP_KIND_LABELS, TRAMA_FLOWS } from "@shared/askTrama";
@@ -47,14 +52,17 @@ import { cn } from "@/lib/cn";
 import { act, useUi } from "@/lib/store";
 import { ACTION_LABELS } from "@/lib/labels";
 import { ChatMarkdown } from "./ChatMarkdown";
+import { ReferenceText } from "./ReferenceText";
 import { PlanSpecBody } from "./PlanSpec";
 import { DutyFields } from "./DutyFields";
+import { GateField } from "./GateField";
+import { latestGate } from "@shared/gate";
 import { Sep } from "@/components/ui/sep";
 import { AgentName } from "@/components/AgentIdentity";
 import { OverlapRow } from "@/components/OverlapNotice";
-import { compareSides, linesLabel, type OverlapItem } from "@shared/overlap";
+import { compareSides, type LineRange, linesLabel, type OverlapItem } from "@shared/overlap";
 
-function CardFrame({
+export function CardFrame({
   icon,
   title,
   aside,
@@ -85,7 +93,7 @@ function CardFrame({
 /** The provider's name; an absent provider is Codex, as in documents written before providers. */
 const providerLabel = (id: string | undefined | null) => PROVIDERS.find((p) => p.id === (id ?? "codex"))?.name ?? id ?? "Codex";
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+export function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="mt-2">
       <div className="text-ui-xs text-muted-foreground/70">{label}</div>
@@ -134,17 +142,118 @@ export function ContextNoticeCard({ title, detail }: { title: string; detail: st
     <div className="my-3 flex items-start gap-2 rounded-xl bg-[var(--color-background-button-secondary)] px-3.5 py-2.5 text-ui">
       <IconInfoCircle className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
       <div>
-        <div className="text-foreground/90">{title}</div>
-        {detail ? <div className="text-ui-sm text-muted-foreground">{readableFailure(detail)}</div> : null}
+        <div className="text-foreground/90">
+          <ReferenceText text={title} />
+        </div>
+        {detail ? (
+          <div className="text-ui-sm text-muted-foreground">
+            <ReferenceText text={readableFailure(detail)} />
+          </div>
+        ) : null}
       </div>
     </div>
+  );
+}
+
+/** A bulleted list of a card: one item per line, never joined into a sentence. */
+function ItemList({ items, testId }: { items: string[]; testId?: string }) {
+  return (
+    <ul className="list-disc space-y-0.5 pl-4" data-testid={testId}>
+      {items.map((item) => (
+        <li key={item} className="break-words">
+          {item}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/**
+ * The fixed bans every mandate excludes (issue #244): a plain list with no control to turn them on, because no mandate
+ * grants them.
+ */
+export function FixedBansField() {
+  return (
+    <div className="mt-2" data-testid="fixed-bans">
+      <div className="flex items-center gap-1 text-ui-xs text-muted-foreground/70">
+        <IconLock className="size-3" stroke={1.8} /> Divieti fissi, sempre esclusi
+      </div>
+      <ul className="mt-0.5 list-disc space-y-0.5 pl-4 text-ui text-foreground/90">
+        {FIXED_BANS.map((ban) => (
+          <li key={ban.id} className="break-words">
+            {ban.label}
+          </li>
+        ))}
+      </ul>
+      <p className="mt-1 text-ui-xs text-muted-foreground">Nessun mandato li concede. Se il lavoro ne richiede uno, Trama lo ferma prima che parta e lo mette in Aspetta te.</p>
+    </div>
+  );
+}
+
+/** One list of the mandate the proposal changes: what it adds and what it takes away. */
+function ChangeRow({ label, change, testId }: { label: string; change: ListChange<string>; testId: string }) {
+  if (!change.added.length && !change.removed.length) return null;
+  return (
+    <div className="mt-1.5" data-testid={testId}>
+      <div className="text-ui-xs text-muted-foreground/70">{label}</div>
+      {change.added.length ? (
+        <div className="mt-0.5 text-ui-sm" data-testid="mandate-diff-added">
+          <span className="text-success">Aggiunge</span>
+          <ItemList items={change.added} />
+        </div>
+      ) : null}
+      {change.removed.length ? (
+        <div className="mt-0.5 text-ui-sm" data-testid="mandate-diff-removed">
+          <span className="text-destructive">Toglie</span>
+          <ItemList items={change.removed} />
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/** What granting the proposal would change in the mandate in force, and which running work would stop. */
+function MandateDiffField({ diff, moduleName }: { diff: MandateProposalDiff; moduleName: (id: string) => string }) {
+  const named = (c: ListChange<string>, name: (v: string) => string) => ({ added: c.added.map(name), removed: c.removed.map(name) });
+  return (
+    <Field label={`Cosa cambia rispetto al mandato in vigore, versione ${diff.version}`}>
+      <div data-testid="mandate-diff">
+        {unchangedMandate(diff) ? (
+          <p className="text-ui-sm text-muted-foreground">La proposta non cambia niente del mandato in vigore.</p>
+        ) : (
+          <>
+            <ChangeRow label="Perimetro" change={named(diff.modules, moduleName)} testId="mandate-diff-modules" />
+            <ChangeRow label="Azioni autorizzate" change={named(diff.actions, (a) => ACTION_LABELS[a as MandateAction])} testId="mandate-diff-actions" />
+            <ChangeRow label="Obiettivi" change={diff.objectives} testId="mandate-diff-objectives" />
+            <ChangeRow label="Priorità" change={diff.priorities} testId="mandate-diff-priorities" />
+            <ChangeRow label="Limiti" change={diff.limits} testId="mandate-diff-limits" />
+          </>
+        )}
+        <div className="mt-1.5" data-testid="mandate-diff-stopped" data-count={diff.stoppedWork.length}>
+          <div className="text-ui-xs text-muted-foreground/70">Lavori che si fermerebbero</div>
+          {diff.stoppedWork.length ? (
+            <ul className="list-disc space-y-0.5 pl-4 text-ui-sm">
+              {diff.stoppedWork.map(({ specialist, assignment }) => (
+                <li key={assignment.id} className="break-words">
+                  <AgentName agent={specialist} />
+                  <Sep />
+                  {assignment.objective}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-ui-sm text-muted-foreground">Nessuno: il lavoro in corso resta dentro il mandato.</p>
+          )}
+        </div>
+      </div>
+    </Field>
   );
 }
 
 export function MandateCard({ requestId }: { requestId: string }) {
   const project = useUi((s) => s.app?.project)!;
   const setInspector = useUi((s) => s.setInspector);
-  const [revoking, setRevoking] = useState(false);
+  const [rejecting, setRejecting] = useState(false);
   const [reason, setReason] = useState("");
   const request = project.document.mandateRequests.find((r) => r.id === requestId);
   if (!request) return null;
@@ -153,22 +262,36 @@ export function MandateCard({ requestId }: { requestId: string }) {
   const hasMandate = project.document.mandate?.status === "granted";
   // A newer request replaced this one before the person answered (W14): grey, kept in the history, not grantable.
   const superseded = resolution?.kind === "superseded";
+  // Only a pending proposal compares with the mandate in force: an answered one describes the past.
+  const diff = resolution ? null : mandateProposalDiff(project.document, request);
 
   return (
     <CardFrame
       icon={<IconShieldCheck stroke={1.8} />}
-      title="Mandato"
+      title={
+        resolution
+          ? request.projectCycle
+            ? "Mandato di progetto"
+            : "Mandato"
+          : hasMandate
+            ? "Proposta di nuovo mandato"
+            : request.projectCycle
+              ? "Proposta di mandato di progetto"
+              : "Proposta di mandato"
+      }
       className={cn(superseded && "opacity-60")}
       aside={
         resolution ? (
-          <Badge tone={resolution.kind === "revoked" || superseded ? "secondary" : "success"}>
+          <Badge tone={resolution.kind === "granted" || resolution.kind === "corrected" ? "success" : "secondary"}>
             {resolution.kind === "granted"
               ? `Concesso, v${resolution.version}`
               : resolution.kind === "corrected"
                 ? `Corretto, v${resolution.version}`
                 : superseded
                   ? "Superata"
-                  : "Non concesso"}
+                  : resolution.kind === "rejected"
+                    ? "Rifiutata"
+                    : "Non concesso"}
           </Badge>
         ) : (
           <Badge tone="info">In attesa</Badge>
@@ -178,40 +301,64 @@ export function MandateCard({ requestId }: { requestId: string }) {
       <p className="text-ui text-foreground/90">{request.reason}</p>
       {superseded ? (
         <p className="mt-1 text-ui-sm text-muted-foreground" data-testid="superseded-mandate">
-          Superata dalla richiesta {resolution.supersededBy ?? "più recente"}: non si può più concedere.
+          Superata da una richiesta più recente: non si può più concedere.
         </p>
       ) : null}
-      <Field label="Obiettivi">
-        <ul className="list-disc pl-4">
-          {request.objectives.map((o) => (
-            <li key={o}>{o}</li>
-          ))}
-        </ul>
+      {diff ? <MandateDiffField diff={diff} moduleName={moduleName} /> : null}
+      <Field label={diff ? "Obiettivi proposti" : "Obiettivi"}>
+        <ItemList items={request.objectives} />
       </Field>
-      {request.priorities.length ? <Field label="Priorità">{request.priorities.join(", ")}</Field> : null}
-      <Field label="Perimetro">{request.scopeModuleIds.map(moduleName).join(", ")}</Field>
-      <Field label="Azioni autorizzate">{request.authorizedActions.map((a) => ACTION_LABELS[a]).join(", ")}</Field>
-      {request.limits.length ? <Field label="Limiti">{request.limits.join(", ")}</Field> : null}
+      {request.priorities.length ? (
+        <Field label="Priorità">
+          <ItemList items={request.priorities} />
+        </Field>
+      ) : null}
+      <Field label="Perimetro">
+        <ItemList items={request.scopeModuleIds.map(moduleName)} />
+      </Field>
+      <Field label="Azioni autorizzate">
+        <ItemList items={request.authorizedActions.map((a) => ACTION_LABELS[a])} />
+      </Field>
+      {request.limits.length ? (
+        <Field label="Limiti">
+          <ItemList items={request.limits} testId="mandate-limits" />
+        </Field>
+      ) : null}
+      <FixedBansField />
+      {resolution?.kind === "rejected" ? (
+        <p className="mt-2 text-ui-sm text-muted-foreground">Hai rifiutato la proposta. Il mandato in vigore non è cambiato.</p>
+      ) : null}
       {!resolution ? (
-        revoking ? (
+        rejecting ? (
           <div className="mt-3 space-y-2">
-            <TextArea value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Motivo" aria-label="Motivo della revoca" />
+            <TextArea
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              placeholder="Perché la rifiuti? Il Coordinatore legge il motivo."
+              aria-label="Motivo del rifiuto"
+              className="min-h-12"
+              autoFocus
+            />
+            <p className="text-ui-xs text-muted-foreground">
+              {hasMandate ? "Il mandato in vigore resta com'è e nessun lavoro si ferma." : "Il progetto resta senza mandato."}
+            </p>
             <div className="cta-row">
-              <Button
-                size="sm"
-                variant="destructive"
-                disabled={!reason.trim()}
-                onClick={() => void act("mandate:revoke", { reason: reason.trim(), requestId })}
-              >
-                {hasMandate ? "Revoca il mandato" : "Non concedere"}
-              </Button>
-              <Button size="sm" variant="ghost" onClick={() => setRevoking(false)}>
+              <Button size="sm" variant="ghost" onClick={() => setRejecting(false)}>
                 Annulla
+              </Button>
+              <Button size="sm" disabled={!reason.trim()} onClick={() => void act("mandate:reject", { requestId, reason: reason.trim() })}>
+                Rifiuta la proposta
               </Button>
             </div>
           </div>
         ) : (
           <div className="cta-row mt-3">
+            <Button size="sm" variant="ghost" onClick={() => setRejecting(true)}>
+              Rifiuta la proposta
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => setInspector({ kind: "mandate" })}>
+              Correggi
+            </Button>
             <Button
               size="sm"
               onClick={() =>
@@ -225,17 +372,49 @@ export function MandateCard({ requestId }: { requestId: string }) {
                 })
               }
             >
-              {hasMandate ? "Accetta la proposta" : "Concedi"}
-            </Button>
-            <Button size="sm" variant="outline" onClick={() => setInspector({ kind: "mandate" })}>
-              Correggi
-            </Button>
-            <Button size="sm" variant="ghost" onClick={() => setRevoking(true)}>
-              {hasMandate ? "Revoca" : "Non concedere"}
+              Concedi
             </Button>
           </div>
         )
       ) : null}
+    </CardFrame>
+  );
+}
+
+/**
+ * An action a fixed ban stopped before it started (issue #244): what was tried, by whom and why no mandate grants it.
+ * The person handles it outside Trama if they want it; "Ho visto" takes it out of Aspetta te.
+ */
+export function FixedBanCard({ refusalId }: { refusalId: string }) {
+  const project = useUi((s) => s.app?.project)!;
+  const refusal = project.document.fixedBanRefusals?.find((r) => r.id === refusalId);
+  if (!refusal) return null;
+  const info = fixedBanInfo(refusal.ban);
+  const by = refusal.by;
+  const specialist = by.kind === "specialist" ? project.document.team.specialists.find((sp) => sp.id === by.specialistId) : null;
+  return (
+    <CardFrame
+      icon={<IconLock stroke={1.8} />}
+      title="Azione fermata da un divieto fisso"
+      aside={refusal.acknowledgedAt ? <Badge tone="secondary">Vista</Badge> : <Badge tone="warning">Fermata</Badge>}
+    >
+      <div data-testid="fixed-ban-card">
+        <p className="text-ui text-foreground/90">{info.reason} Nessun mandato la concede: se serve, la fai tu fuori da Trama.</p>
+        <Field label="Divieto">{info.label}</Field>
+        <Field label="Chi l'ha chiesta">
+          {specialist ? <AgentName agent={specialist} /> : by.kind === "coordinator" ? "Il Coordinatore" : "Trama"}
+        </Field>
+        <Field label="Azione">
+          <code className="block font-mono text-ui-sm break-all whitespace-pre-wrap text-foreground/90">{refusal.action}</code>
+        </Field>
+        {!refusal.acknowledgedAt ? (
+          <div className="cta-row mt-3">
+            <Button size="sm" onClick={() => void act("fixedBan:acknowledge", { id: refusal.id })}>
+              Ho visto
+            </Button>
+          </div>
+        ) : null}
+      </div>
     </CardFrame>
   );
 }
@@ -406,7 +585,16 @@ export function DecisionCard({ requestId }: { requestId: string }) {
 }
 
 /** The questions of one grilling round (M01), together under the round they belong to. */
-export function GrillingRoundCard({ round, questionIds }: { round: number; questionIds: string[] }) {
+export function GrillingRoundCard({
+  round,
+  questionIds,
+  renderQuestion = (id) => <DecisionCard key={id} requestId={id} />,
+}: {
+  round: number;
+  questionIds: string[];
+  /** How each question shows; the chat puts a reference in place of a question that still waits (issue #240). */
+  renderQuestion?: (id: string) => React.ReactNode;
+}) {
   const project = useUi((s) => s.app?.project)!;
   const questions = questionIds.map((id) => project.document.decisionRequests.find((r) => r.id === id)).filter((r) => r !== undefined);
   // A withdrawn question is closed without an answer: it no longer counts among the answers the round waits for.
@@ -424,9 +612,7 @@ export function GrillingRoundCard({ round, questionIds }: { round: number; quest
           {complete ? "Turno completo" : `${answered} di ${asked.length} risposte`}
         </Badge>
       </div>
-      {questions.map((q) => (
-        <DecisionCard key={q.id} requestId={q.id} />
-      ))}
+      {questions.map((q) => renderQuestion(q.id))}
     </section>
   );
 }
@@ -449,6 +635,8 @@ export function TeamProposalCard({ proposalId }: { proposalId: string }) {
   if (!proposal) return null;
   const selected = kept ?? proposal.members.map((m) => m.name);
   const resolution = proposal.resolution;
+  // Confirmed by the Coordinator within the mandate (A06): the person corrects it from Activity.
+  const byCoordinator = (project.document.autonomousSteps ?? []).some((step) => step.move === "confirmTeam" && step.targetId === proposal.id);
   const moduleName = (id: string) => project.snapshot.modules.find((m) => m.id === id)?.name ?? id;
   const corrected = selected.length !== proposal.members.length || note.trim().length > 0;
   return (
@@ -458,7 +646,13 @@ export function TeamProposalCard({ proposalId }: { proposalId: string }) {
       aside={
         resolution ? (
           <Badge tone={resolution.kind === "superseded" ? "secondary" : "success"}>
-            {resolution.kind === "confirmed" ? "Team confermato" : resolution.kind === "corrected" ? "Team corretto" : "Proposta sostituita"}
+            {resolution.kind === "confirmed"
+              ? byCoordinator
+                ? "Team confermato dal Coordinatore"
+                : "Team confermato"
+              : resolution.kind === "corrected"
+                ? "Team corretto"
+                : "Proposta sostituita"}
           </Badge>
         ) : (
           <Badge tone="info">In attesa</Badge>
@@ -551,7 +745,7 @@ export function AssignmentCard({ assignmentId }: { assignmentId: string }) {
       }
     >
       <Field label="Specialista">
-        <AgentName agent={specialist} /> <span className="text-muted-foreground"><Sep />{specialist.competence}</span>
+        <AgentName agent={specialist} size={32} /> <span className="text-muted-foreground"><Sep />{specialist.competence}</span>
       </Field>
       <Field label="Obiettivo">{assignment.objective}</Field>
       {assignment.selfPicked ? (
@@ -602,6 +796,7 @@ export function AssignmentCard({ assignmentId }: { assignmentId: string }) {
       {assignment.failure ? <Field label="Errore">{readableFailure(assignment.failure)}</Field> : null}
       {assignment.report !== undefined ? <ReportField report={assignment.report} /> : null}
       {assignment.questions?.length ? <QuestionsField questions={assignment.questions} /> : null}
+      <ThreadLinks assignmentId={assignment.id} />
       {assignment.result ? (
         <div className="mt-2">
           <button type="button" className="inline-flex items-center gap-1 text-ui-sm text-muted-foreground hover:text-foreground" onClick={() => setShowResult(!showResult)}>
@@ -700,6 +895,7 @@ export const CANDIDATE_STATE: Record<CandidateState, { label: string; tone: "inf
   building: { label: "In costruzione", tone: "secondary" },
   verified: { label: "Verificato", tone: "info" },
   decided: { label: "Deciso", tone: "success" },
+  superseded: { label: "Superato", tone: "secondary" },
 };
 
 const BLOCKER_TEXT: Record<string, string> = {
@@ -710,8 +906,11 @@ const BLOCKER_TEXT: Record<string, string> = {
   EVIDENCE_MISSING: "Verifica da eseguire",
   EVIDENCE_STALE: "Verifica non più valida",
   CHECK_FAILED: "Verifica non superata",
-  REMOTE_CONFLICT: "Conflitto con il lavoro di un collega",
-  WORKTREE_CONFLICT: "Conflitto con il worktree di un altro sviluppatore",
+  GATE_BLOCKED: "Rilievo bloccante dei revisori",
+  GATE_RUNNING: "Revisori al lavoro",
+  GATE_FAILED: "Revisione da rilanciare",
+  REMOTE_CONFLICT: "Conflitto con il lavoro su GitHub",
+  WORKTREE_CONFLICT: "Conflitto con il lavoro di un altro incarico",
 };
 
 const QUALITY_LABEL: Record<QualityItem["code"], string> = {
@@ -721,6 +920,7 @@ const QUALITY_LABEL: Record<QualityItem["code"], string> = {
   DIFF_CHECK: "git diff --check",
   ISSUE_LINKED: "Issue collegata",
   PACT_SETTLED: "Nessuna domanda aperta nel Patto",
+  MANDATE: "Mandato",
 };
 
 /** The quality standard before publishing (Q01): each condition, and for a missing one what to do. */
@@ -943,6 +1143,24 @@ function QuestionsField({ questions }: { questions: DeveloperQuestion[] }) {
   );
 }
 
+/** Links to the conversations between agents about this work (W07), read-only in the inspector. */
+function ThreadLinks({ assignmentId }: { assignmentId: string }) {
+  const threads = useUi((s) => s.app?.project?.document.agentThreads)?.filter((t) => t.assignmentId === assignmentId) ?? [];
+  const setInspector = useUi((s) => s.setInspector);
+  if (!threads.length) return null;
+  return (
+    <Field label="Chat tra agenti">
+      <div className="flex flex-wrap gap-x-3 gap-y-1" data-testid="assignment-threads">
+        {threads.map((thread) => (
+          <button key={thread.id} type="button" className="text-left text-ui-sm text-[var(--color-text-accent)] hover:underline" onClick={() => setInspector({ kind: "agentThread", id: thread.id })}>
+            {thread.title} ({thread.messages.length})
+          </button>
+        ))}
+      </div>
+    </Field>
+  );
+}
+
 /** The developer's structured report (W05), saved when the work ended: its statement, never evidence. */
 function ReportField({ report }: { report: DeveloperReport | null }) {
   return (
@@ -992,7 +1210,8 @@ function TechnicalReviewField({ review }: { review: TechnicalReview }) {
   return (
     <Field label={`Revisione tecnica, ${review.verdict === "approved" ? "approvata" : "modifiche richieste"}`}>
       <div data-testid="technical-review" data-verdict={review.verdict}>
-        <p>{review.summary}</p>
+        {/* With the candidate gate (W10) the summary is the gate's, shown figure by figure above. */}
+        {review.gateId ? null : <p>{review.summary}</p>}
         {standard ? (
           <div className="mt-1.5" data-testid="review-measures">
             <div className="text-ui-xs text-muted-foreground/70">
@@ -1065,8 +1284,13 @@ export function CandidateCard({ candidateId }: { candidateId: string }) {
   return (
     <CardFrame icon={<IconFileDiff stroke={1.8} />} title={`Candidato ${candidate.id}`} aside={<Badge tone={state.tone}>{state.label}</Badge>}>
       <p className="text-ui-sm text-muted-foreground">
-        {specialist ? <AgentName agent={specialist} /> : candidate.specialistId}<Sep />incarico {candidate.assignmentId}<Sep />{candidate.changedFiles.length === 1 ? "1 file" : `${candidate.changedFiles.length} file`}
+        {specialist ? <AgentName agent={specialist} size={32} /> : candidate.specialistId}<Sep />incarico {candidate.assignmentId}<Sep />{candidate.changedFiles.length === 1 ? "1 file" : `${candidate.changedFiles.length} file`}
       </p>
+      {report.state === "superseded" ? (
+        <p className="mt-1 text-ui-sm text-muted-foreground" data-testid="candidate-superseded">
+          Sostituito da un lavoro più recente: non va unito e non entra in conflitto con nessuno.
+        </p>
+      ) : null}
       <Field label="Decisioni pertinenti">
         {candidate.requiredDecisionIds.map((id) => (
           <button key={id} type="button" className="mr-2 font-mono text-[11.5px] text-[var(--color-text-accent)] hover:underline" onClick={() => setInspector({ kind: "decision", id })}>
@@ -1082,8 +1306,12 @@ export function CandidateCard({ candidateId }: { candidateId: string }) {
           ))}
         </div>
       </Field>
+      {(() => {
+        const gate = latestGate(project.document.gates, candidate.id);
+        return gate ? <GateField gate={gate} document={project.document} /> : null;
+      })()}
       {candidate.technicalReview ? <TechnicalReviewField review={candidate.technicalReview} /> : null}
-      {report.blockers.length ? (
+      {report.blockers.length && report.state !== "superseded" ? (
         <Field label="Cosa manca">
           <ul className="space-y-0.5 text-ui-sm">
             {report.blockers.map((b) => (
@@ -1096,9 +1324,11 @@ export function CandidateCard({ candidateId }: { candidateId: string }) {
         </Field>
       ) : null}
       {(() => {
-        const conflicts = (project.document.conflicts ?? []).filter((a) => a.candidateId === candidate.id && a.classification !== "clean");
-        return conflicts.length ? (
-          <Field label="Lavoro dei colleghi">
+        const conflicts = (project.document.conflicts ?? []).filter(
+          (a) => a.candidateId === candidate.id && a.classification !== "clean" && !explainedByDivergence(project.document, a) && !otherSideSuperseded(project.document, a),
+        );
+        return conflicts.length && report.state !== "superseded" ? (
+          <Field label="Confronti con altro lavoro">
             {conflicts.map((a) => (
               <div key={a.id} className="text-ui-sm">
                 {CONFLICT_LABEL[a.classification].label} con {a.references.join(", ")}
@@ -1141,12 +1371,12 @@ export function CandidateCard({ candidateId }: { candidateId: string }) {
         >
           <IconFocus2 /> Focus mode
         </Button>
-        {report.blockers.length === 0 && !approved ? (
+        {report.blockers.length === 0 && !approved && report.state !== "superseded" ? (
           <Button size="sm" variant="outline" onClick={() => void act("candidate:approve", { candidateId })}>
             Approva questo candidato
           </Button>
         ) : null}
-        {approved && publishable && !candidate.pullRequest && project.github.repository && !preview ? (
+        {approved && publishable && report.state !== "superseded" && !candidate.pullRequest && project.github.repository && !preview ? (
           <Button size="sm" onClick={() => void act("candidate:previewPullRequest", { candidateId }).then((p) => setPreview(p ?? null))}>
             <IconGitPullRequest /> Prepara la pull request
           </Button>
@@ -1163,11 +1393,11 @@ export function CandidateCard({ candidateId }: { candidateId: string }) {
           </pre>
           <pre className="max-h-48 overflow-auto whitespace-pre-wrap font-sans text-ui-xs text-foreground/85">{preview.body}</pre>
           <div className="cta-row">
-            <Button size="sm" onClick={() => void act("candidate:publish", { candidateId }).then(() => setPreview(null))}>
-              <IconGitPullRequest /> Pubblica
-            </Button>
             <Button size="sm" variant="ghost" onClick={() => setPreview(null)}>
               Annulla
+            </Button>
+            <Button size="sm" onClick={() => void act("candidate:publish", { candidateId }).then(() => setPreview(null))}>
+              <IconGitPullRequest /> Pubblica
             </Button>
           </div>
         </div>
@@ -1185,6 +1415,17 @@ export function PlanCard({ planId }: { planId: string }) {
   const proposal = plan.proposal;
   const moduleName = (id: string) => project.snapshot.modules.find((m) => m.id === id)?.name ?? id;
   const pendingQuestions = project.document.decisionRequests.filter((r) => plan.decisionRequestIds.includes(r.id) && isOpenQuestion(r)).length;
+  if (plan.status === "superseded") {
+    // One goal, one active plan (U01): a replaced plan stays in the history, without its actions.
+    return (
+      <CardFrame icon={<IconListCheck stroke={1.8} />} title={`Piano ${plan.id}`} aside={<Badge tone="secondary">Superato</Badge>}>
+        <p className="text-ui-sm text-muted-foreground" data-testid="plan-superseded">
+          {plan.summary}<Sep />
+          {plan.supersededBy ? `Sostituito dal piano ${plan.supersededBy}: l'obiettivo ha un solo piano attivo.` : "Sostituito da un piano più recente dell'obiettivo."}
+        </p>
+      </CardFrame>
+    );
+  }
   return (
     <CardFrame
       icon={<IconListCheck stroke={1.8} />}
@@ -1206,7 +1447,7 @@ export function PlanCard({ planId }: { planId: string }) {
         ) : plan.status === "ready" && plan.slicing?.status === "proposed" ? (
           <Badge tone="warning">Fette da rivedere</Badge>
         ) : plan.status === "ready" && plan.slicing?.status === "approved" ? (
-          <Badge tone="success">Fette confermate</Badge>
+          <Badge tone="success">{plan.slicing.approvedBy === "coordinator" ? "Fette confermate dal Coordinatore" : "Fette confermate"}</Badge>
         ) : plan.status === "stale" ? (
           <Badge tone="warning">Da rivalutare</Badge>
         ) : plan.status === "failed" ? (
@@ -1307,7 +1548,7 @@ export function PlanCard({ planId }: { planId: string }) {
                   moduleId: null,
                   model: null,
                   effort: null,
-                  // The approval belongs to the dialog of the plan, not always to the project's (W12).
+                  // The approval belongs to the goal of the plan, whatever the filter of the chat (W12, U01).
                   goalId: project.document.requests.find((r) => r.id === plan.requestId)?.goalId ?? null,
                 })
               }
@@ -1328,6 +1569,30 @@ const CONFLICT_LABEL = {
   unknown: { label: "Non verificato", tone: "secondary" as const },
 };
 
+/** How many files a conflict lists before "Mostra tutti" (issue #271). */
+const CONFLICT_FILES_SHOWN = 5;
+
+/** The files of a conflict: the first few, the rest on request (issue #271). */
+function ConflictFiles({ files, lines }: { files: string[]; lines?: Record<string, LineRange[]> | null }) {
+  const [all, setAll] = useState(false);
+  const shown = all ? files : files.slice(0, CONFLICT_FILES_SHOWN);
+  return (
+    <div className="flex flex-wrap items-center gap-1" data-testid="conflict-files">
+      {shown.map((file) => (
+        <span key={file} className="rounded-md bg-[var(--color-background-button-secondary)] px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground">
+          {file}
+          {lines?.[file]?.length ? <span className="font-sans">, {linesLabel(lines[file]!)}</span> : null}
+        </span>
+      ))}
+      {files.length > shown.length ? (
+        <button type="button" className="px-1 text-ui-xs text-[var(--color-text-accent)] hover:underline" onClick={() => setAll(true)}>
+          Mostra tutti i {files.length} file
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
 export function ConflictCard({ assessmentId }: { assessmentId: string }) {
   const project = useUi((s) => s.app?.project)!;
   const setInspector = useUi((s) => s.setInspector);
@@ -1335,6 +1600,19 @@ export function ConflictCard({ assessmentId }: { assessmentId: string }) {
   if (!assessment) return null;
   const label = CONFLICT_LABEL[assessment.classification];
   const exercise = isExerciseAssessment(assessment);
+  const side = conflictSide(assessment, (project.presence?.others ?? []).map((o) => o.record));
+  const title = exercise ? "Esercizio di conflitto" : CONFLICT_SIDE_TITLE[side];
+  // The divergence of the project's branch is one notice above the chat (U02): the card only points to it.
+  if (!exercise && explainedByDivergence(project.document, assessment)) {
+    return (
+      <CardFrame icon={<IconGitBranch stroke={1.8} />} title={title} aside={<Badge tone="secondary">Nell'avviso del progetto</Badge>}>
+        <p className="text-ui-sm text-muted-foreground" data-testid="conflict-in-divergence">
+          Questo confronto ripeteva la divergenza tra il branch del progetto e {project.document.branchDivergence!.defaultBranch}: non dipende dal
+          candidato. Trama la segnala una volta sola, nell'avviso sopra la chat.
+        </p>
+      </CardFrame>
+    );
+  }
   // A comparison made on an older snapshot of the candidate, or against a head that moved on, is obsolete (T13).
   const candidate = project.document.candidates.find((c) => c.id === assessment.candidateId);
   // Against another developer's worktree (W08) the other side is that candidate, not a remote head.
@@ -1349,11 +1627,22 @@ export function ConflictCard({ assessmentId }: { assessmentId: string }) {
     project.github.snapshot && !exercise && !worktree
       ? new Set([...project.github.snapshot.branches.map((b) => b.sha.toLowerCase()), ...project.github.snapshot.pullRequests.map((p) => p.headSHA.toLowerCase())])
       : null;
+  // A candidate replaced by later work is not merged by anyone (U02): there is nothing to resolve.
+  const superseded = !exercise && ((candidate && candidateSuperseded(project.document, candidate)) || otherSideSuperseded(project.document, assessment));
   const obsolete = (candidate && candidate.snapshotId !== assessment.snapshotId) || otherMoved || (heads !== null && !heads.has(assessment.remoteSHA.toLowerCase()));
+  if (superseded) {
+    return (
+      <CardFrame icon={<IconGitBranch stroke={1.8} />} title={title} aside={<Badge tone="secondary">Superato</Badge>}>
+        <p className="text-ui-sm text-muted-foreground" data-testid="conflict-superseded">
+          {worktree ? "Uno dei due candidati" : "Il candidato"} è stato sostituito da un lavoro più recente: questo conflitto non va risolto.
+        </p>
+      </CardFrame>
+    );
+  }
   return (
     <CardFrame
       icon={<IconGitBranch stroke={1.8} />}
-      title={exercise ? "Esercizio di conflitto" : worktree ? "Worktree del team" : "Lavoro dei colleghi"}
+      title={title}
       aside={
         <>
           {exercise ? <Badge tone="info">Esercizio</Badge> : null}
@@ -1365,7 +1654,7 @@ export function ConflictCard({ assessmentId }: { assessmentId: string }) {
         <p className="mb-1 text-ui-xs text-muted-foreground">
           {worktree
             ? "Uno dei due candidati è cambiato dopo questo confronto: Trama ne farà uno nuovo."
-            : "Il candidato o il lavoro del collega sono cambiati dopo questo confronto: Trama ne farà uno nuovo."}
+            : "Il candidato o il lavoro su GitHub sono cambiati dopo questo confronto: Trama ne farà uno nuovo."}
         </p>
       ) : null}
       {exercise ? (
@@ -1382,14 +1671,7 @@ export function ConflictCard({ assessmentId }: { assessmentId: string }) {
       <p className="mt-1 text-ui-sm text-muted-foreground">{assessment.detail}</p>
       {assessment.conflictingFiles.length ? (
         <Field label={assessment.classification === "conflict" ? "File in conflitto" : "File cambiati da entrambi"}>
-          <div className="flex flex-wrap gap-1">
-            {assessment.conflictingFiles.map((file) => (
-              <span key={file} className="rounded-md bg-[var(--color-background-button-secondary)] px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground">
-                {file}
-                {assessment.conflictingLines?.[file]?.length ? <span className="font-sans">, {linesLabel(assessment.conflictingLines[file]!)}</span> : null}
-              </span>
-            ))}
-          </div>
+          <ConflictFiles files={assessment.conflictingFiles} lines={assessment.conflictingLines} />
         </Field>
       ) : null}
     </CardFrame>

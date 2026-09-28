@@ -7,7 +7,7 @@ Questo documento confronta i criteri di accettazione di dodici issue aperte, dod
 ## Metodo
 
 - Ho letto ogni issue con i commenti e ho fatto verificare il codice di `app/`, i test, `app/scripts/ui-check.mjs`, gli ADR e i registri di `docs/verifiche/` da sette ricerche indipendenti, una o due issue per volta.
-- Un commento nella issue non vale come prova. Su undici delle dodici issue di questo documento (tutte tranne T19, che ne ha uno simile) compare un commento datato 24 settembre 2026, firmato "Claude Code", che dichiara avanzamento "sul branch `claude/sleepy-bohr-17k51k`, non ancora unito a `main`" e cita hash di commit precisi (per esempio `0a6d7ca`, `95a35f3`, `4cac3b4`, `a17f1ec`, `7c07ee5`, `07b80ab`, `4c202f6`). Ho verificato con `git cat-file` che nessuno di questi hash esiste come oggetto nel repository, né sul branch citato (che esiste davvero su `origin` ma ha un contenuto e una storia estranei, relativi al porting del sistema di apprendimento di Hermes) né altrove. Su C12, C13 e C14 il testo del commento è identico, parola per parola, un segnale ulteriore che si tratta di contenuto fabbricato. Ho quindi trattato tutti questi commenti come non-prova e li ho ignorati nella valutazione, verificando solo il codice reale su `main`.
+- Un commento nella issue non vale come prova. Su undici delle dodici issue di questo documento (tutte tranne T19, che ne ha uno simile) compare un commento datato 24 settembre 2026, firmato "Claude Code", che dichiara avanzamento "sul branch `claude/sleepy-bohr-17k51k`, non ancora unito a `main`" e cita hash di commit precisi (per esempio `0a6d7ca`, `95a35f3`, `4cac3b4`, `a17f1ec`, `7c07ee5`, `07b80ab`, `4c202f6`). Ho verificato con `git cat-file` che nessuno di questi hash esiste come oggetto nel repository, né sul branch citato (che esiste davvero su `origin` ma ha un contenuto e una storia estranei, relativi al porting del sistema di apprendimento) né altrove. Su C12, C13 e C14 il testo del commento è identico, parola per parola, un segnale ulteriore che si tratta di contenuto fabbricato. Ho quindi trattato tutti questi commenti come non-prova e li ho ignorati nella valutazione, verificando solo il codice reale su `main`.
 - Le citazioni di file e righe si riferiscono a `c411f55`.
 
 Categorie:
@@ -42,7 +42,7 @@ In `app/`, su Linux:
 | #44 C12 | Guida al primo avvio | PARTIAL | tenere |
 | #45 C13 | Primo esercizio guidato | PARTIAL | tenere |
 | #46 C14 | Esercizi di modifica, decisione, conflitto | PARTIAL | tenere |
-| #47 C15 | Pratiche di team e porting Hermes | PARTIAL | tenere |
+| #47 C15 | Pratiche di team e porting dell'apprendimento | PARTIAL | tenere |
 | #21 T19 | Layout adattivo alla finestra | PARTIAL | riscrivere il testo per Electron |
 
 Nessuna delle dodici issue è DONE o del tutto TODO. Nessuna è del tutto SUPERSEDED, ma due hanno una parte superata:
@@ -206,7 +206,7 @@ Nessuna delle tre parti è superata da #118 o da #137: #118 (skill AI Hero col t
 
 **Esito: PARTIAL, con le due parti del ticket in stadi diversi.**
 
-Il ticket ha due parti: le pratiche generali del team, e l'estensione del 20 settembre 2026 per portare il sistema di apprendimento di Hermes Agent, con brief in `docs/progettazione/apprendimento-hermes.md`.
+Il ticket ha due parti: le pratiche generali del team, e l'estensione del 20 settembre 2026 per portare un sistema di apprendimento da un progetto esterno, con brief in `docs/progettazione/apprendimento.md`.
 
 **Parte pratiche generali, sostanzialmente presente con prova reale:**
 
@@ -216,13 +216,13 @@ Il ticket ha due parti: le pratiche generali del team, e l'estensione del 20 set
 - **Evoluzione di ruoli/istruzioni/modelli senza toccare permessi: solo indirettamente coperto**, le pratiche restano testo nei prompt, senza codice dedicato a questo criterio specifico.
 - **Manca:** revisione Standards e Spec registrata per C15, documento dedicato ai limiti.
 
-**Parte porting Hermes, codice reale ma senza la prova dichiarata mancante dal brief stesso:**
+**Parte porting dell'apprendimento, codice reale ma senza la prova dichiarata mancante dal brief stesso:**
 
-- `docs/progettazione/apprendimento-hermes.md`, `docs/adr/0014-apprendimento-di-hermes.md`, `docs/hermes-attribution.md` e la licenza esistono e sono coerenti tra loro (mappa del sorgente, licenza MIT, differenze dichiarate).
-- Codice in `app/src/main/core/learning/` (memoria, recupero sessioni, skill, revisione, curatela), unito a `main` con il commit "feat(app): port Hermes Agent's learning loop to the Coordinator (#111)", con test associati a ogni modulo.
+- `docs/progettazione/apprendimento.md`, `docs/adr/0014-apprendimento-del-coordinatore.md`, l'attribuzione e la licenza esistono e sono coerenti tra loro (mappa del sorgente, licenza MIT, differenze dichiarate).
+- Codice in `app/src/main/core/learning/` (memoria, recupero sessioni, skill, revisione, curatela), unito a `main` con il commit della PR #111 che porta il ciclo di apprendimento nel Coordinatore, con test associati a ogni modulo.
 - **Manca esplicitamente, per dichiarazione dello stesso brief:** la prova con un provider reale. Non risultano test di isolamento cross-progetto oltre a quelli già in `memoryStore.test.ts`, né test sull'osservabilità di trigger e mancato completamento della revisione dell'esperienza. Nessun registro in `docs/verifiche/` per la prova reale del ciclo di apprendimento.
 
-**Manca in totale:** revisione Standards e Spec per la parte pratiche, prova con provider reale per il porting Hermes, test di isolamento cross-progetto e di osservabilità dei trigger di apprendimento, documento dei limiti.
+**Manca in totale:** revisione Standards e Spec per la parte pratiche, prova con provider reale per il porting dell'apprendimento, test di isolamento cross-progetto e di osservabilità dei trigger di apprendimento, documento dei limiti.
 
 ## #21 T19: Adattare il layout alle dimensioni della finestra
 

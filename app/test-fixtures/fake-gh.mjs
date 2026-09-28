@@ -1,10 +1,13 @@
 #!/usr/bin/env node
 // Stand-in for GitHub CLI in tests and the UI check: one repository with one open issue and no pull requests.
 // With FAKE_GH_TEAM a colleague who does not use Trama has one open pull request and there is one more branch,
-// for the Gruppo view (G02).
+// for the Gruppo view (G02). With FAKE_GH_MERGED_PULL the issues list also holds a merged pull request that names #7,
+// as GitHub lists pull requests with the issues (issue #231).
 // It never reaches GitHub; anything it does not know fails like a gh error. With FAKE_GH_LOG it writes every call,
 // one JSON array per line, to that file, and it answers the issue writes Trama makes when it publishes a spec (M04)
-// and its slices with their blocking links (M05).
+// and its slices with their blocking links (M05). With FAKE_GH_ISSUE_BASE as well, a new issue takes the next number
+// after that base and the issues list holds the issues created so far, as the Coordinator opens them for the problems
+// it finds (A08); the label writes of the triage are answered.
 import { appendFileSync, readFileSync } from "node:fs";
 
 const args = process.argv.slice(2);
@@ -31,16 +34,27 @@ if (path === "rate_limit") reply("5000\n");
 const repository = path.match(/^repos\/([^/]+\/[^/]+)(\/.*)?$/);
 if (!repository) fail(`fake gh: ${endpoint} not supported`);
 const [, name, rest = ""] = repository;
+/** The issues created so far, from the log, in order. */
+const createdIssues = () =>
+  process.env.FAKE_GH_LOG
+    ? readFileSync(process.env.FAKE_GH_LOG, "utf8")
+        .split("\n")
+        .filter((line) => line.includes('"POST"') && line.includes('/issues"'))
+        .map((line) => JSON.parse(line))
+    : [];
+const issueBase = process.env.FAKE_GH_ISSUE_BASE ? Number(process.env.FAKE_GH_ISSUE_BASE) : null;
+const field = (call, name) =>
+  call.flatMap((arg, index) => (call[index - 1] === "--raw-field" && arg.startsWith(`${name}=`) ? [arg.slice(name.length + 1)] : []));
 if (method === "POST" && rest === "/issues") {
   // With a log, each new issue takes the next number, from 7: the spec first, then its slices (M05).
-  const created = process.env.FAKE_GH_LOG
-    ? readFileSync(process.env.FAKE_GH_LOG, "utf8").split("\n").filter((line) => line.includes('"POST"') && line.includes('/issues"')).length
-    : 1;
-  const number = 6 + created;
+  const created = process.env.FAKE_GH_LOG ? createdIssues().length : 1;
+  const number = (issueBase ?? 6) + created;
   reply({ id: 1000 + number, number, html_url: `https://github.com/${name}/issues/${number}` });
 }
 if (method === "PATCH" && /^\/issues\/\d+$/.test(rest)) reply({});
 if (method === "POST" && /^\/issues\/\d+\/dependencies\/blocked_by$/.test(rest)) reply({});
+if (issueBase !== null && method === "POST" && /^\/issues\/\d+\/labels$/.test(rest)) reply([]);
+if (issueBase !== null && method === "DELETE" && /^\/issues\/\d+\/labels\/[^/]+$/.test(rest)) reply([]);
 if (method !== "GET") fail(`fake gh: ${method} ${endpoint} not supported`);
 if (rest === "") reply({ default_branch: "main", full_name: name, private: false, permissions: { pull: true, push: false, admin: false } });
 if (rest === "/issues") {
@@ -57,6 +71,33 @@ if (rest === "/issues") {
             labels: [{ name: "bug" }],
             updated_at: "2026-09-25T09:00:00Z",
           },
+          ...(process.env.FAKE_GH_MERGED_PULL
+            ? [
+                {
+                  number: 8,
+                  title: "Annullo dal riepilogo",
+                  state: "closed",
+                  body: "Closes #7",
+                  html_url: `https://github.com/${name}/pull/8`,
+                  user: { login: "collega" },
+                  labels: [],
+                  updated_at: "2026-09-25T10:00:00Z",
+                  pull_request: { merged_at: "2026-09-25T10:00:00Z" },
+                },
+              ]
+            : []),
+          ...(issueBase !== null
+            ? createdIssues().map((call, index) => ({
+                number: issueBase + index + 1,
+                title: field(call, "title")[0] ?? "",
+                state: "open",
+                body: field(call, "body")[0] ?? "",
+                html_url: `https://github.com/${name}/issues/${issueBase + index + 1}`,
+                user: { login: "trama-ui" },
+                labels: field(call, "labels[]").map((label) => ({ name: label })),
+                updated_at: "2026-09-28T10:00:00Z",
+              }))
+            : []),
         ]
       : [],
   );

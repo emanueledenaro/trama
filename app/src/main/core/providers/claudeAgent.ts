@@ -1,11 +1,7 @@
 /**
  * Claude Agent runtime over `@anthropic-ai/claude-agent-sdk`.
  *
- * Ports the protocol logic of Synara's Claude provider (Layers/ClaudeAdapter.ts, claudeAuthStatus.ts,
- * claudeAuthStatusLock.ts, claudeProcessEnv.ts, claudeTokenUsage.ts, providerBinaryResolution.ts,
- * skillPromptInjection.ts and the Claude parts of Layers/ProviderHealth.ts) from
- * https://github.com/Emanuele-web04/synara, MIT, Copyright (c) 2026 T3 Tools Inc. and Emanuele Di Pietro.
- * See docs/synara-attribution.md.
+ * Derived from third-party MIT code; see THIRD_PARTY_NOTICES.md.
  *
  * Each turn runs one SDK query in streaming-input mode: the first turn creates the session with a
  * UUID chosen here (`sessionId`), later turns `resume` it. Credentials stay in the official Claude
@@ -43,7 +39,10 @@ import {
   extractJsonAnswer,
 } from "./types";
 import { deniedReadFolders, expandHome, readableRoots, toolchainRoots } from "../readScope";
+import { commandBan, type FixedBan, fixedBanMessage, pathBan } from "@shared/fixedBans";
+import { checkedOutBranch, isGitPushCommand } from "../push";
 import { absoluteUnnormalized, isWritableTarget, PendingTurn } from "./providerSupport";
+import { externalToolKind, refusalReason } from "./toolRefusal";
 
 type ClaudeSdk = typeof import("@anthropic-ai/claude-agent-sdk");
 
@@ -241,7 +240,7 @@ export function parseClaudeAuthStatus(result: CommandResult): ParsedAuth {
 
 /**
  * A clean `{"loggedIn":false}` without login text is the signature of a lost refresh-token rotation
- * race with another `claude auth status`; Synara re-probes once after the rotation settles.
+ * race with another `claude auth status`; the status is probed again once after the rotation settles.
  */
 export function isStructuredAuthFalseNegative(result: CommandResult): boolean {
   return result.code === 0 && extractAuthBoolean(parseJsonOutput(result.stdout).value) === false && !hasLoginRequiredText(result);
@@ -371,10 +370,22 @@ export interface ToolPolicy {
   hostServer: string | null;
   /** Folders the read tools may reach (issue #206); only `cwd` when absent. */
   readableRoots?: string[];
+  /** Names of the tools on Trama's server, so a refusal can name the one to use (issue #228). */
+  hostTools?: readonly string[];
+  /** The project's main branch names, for the fixed ban on pushing to it (issue #244); main and master always count. */
+  mainBranches?: string[];
 }
 
-/** A refused read outside the readable roots names its path, so Trama can record it. */
-export type ToolDecision = { allow: true } | { allow: false; reason: string; outsideRead?: string };
+/**
+ * A refused read outside the readable roots names its path, so Trama can record it. `providerTool` marks one of
+ * Claude's own tools that a Trama tool replaces (issue #228): the reason names that tool.
+ */
+export type ToolDecision =
+  | { allow: true }
+  | { allow: false; reason: string; outsideRead?: string; providerTool?: boolean; ban?: { ban: FixedBan; action: string } };
+
+/** A refusal by a fixed ban (issue #244): it holds whatever the mandate and the sandbox would allow. */
+const banned = (ban: FixedBan, action: string): ToolDecision => ({ allow: false, reason: fixedBanMessage(ban), ban: { ban, action } });
 
 /** Tools that reach the network, ask the person, or start agents Trama cannot see. Always removed. */
 export const ALWAYS_DISALLOWED_TOOLS = [
@@ -390,6 +401,8 @@ export const ALWAYS_DISALLOWED_TOOLS = [
   "RemoteTrigger",
   "CronCreate",
 ];
+/** The tool through which Claude Code returns the answer of a turn with `outputFormat`. */
+export const STRUCTURED_OUTPUT_TOOL = "StructuredOutput";
 const WRITE_TOOLS = new Set(["Edit", "Write", "MultiEdit", "NotebookEdit"]);
 const SHELL_TOOLS = new Set(["Bash", "BashOutput", "KillShell", "KillBash", "Monitor"]);
 const READ_TOOLS = new Set(["Read", "Glob", "Grep", "LS", "NotebookRead", "TodoWrite", "ToolSearch", "ListMcpResourcesTool", "ReadMcpResourceTool"]);
@@ -416,14 +429,25 @@ export function decideToolPermission(
   policy: ToolPolicy,
   writable: (root: string, path: string) => boolean = isWritableTarget,
 ): ToolDecision {
+  const providerTool = (tool: string, kind: string | null = null): ToolDecision => ({
+    allow: false,
+    reason: refusalReason(externalToolKind(tool, kind), policy.hostTools ?? []),
+    providerTool: true,
+  });
+  // The SDK's structured answer (outputFormat json_schema), which Trama itself asks for: never a provider tool to block.
+  if (toolName === STRUCTURED_OUTPUT_TOOL) return { allow: true };
   const mcp = parseMcpToolName(toolName);
-  if (mcp) {
-    return mcp.server === policy.hostServer
-      ? { allow: true }
-      : { allow: false, reason: `Trama allows only its own MCP server; ${mcp.server} is not available.` };
-  }
+  if (mcp) return mcp.server === policy.hostServer ? { allow: true } : providerTool(`${mcp.server} ${mcp.tool}`);
+  if (toolName === "WebFetch" || toolName === "WebSearch") return providerTool(toolName, "fetch");
   if (ALWAYS_DISALLOWED_TOOLS.includes(toolName)) {
     return { allow: false, reason: `${toolName} is not available in Trama.` };
+  }
+  // The fixed bans come before every other rule: no mandate, sandbox or writable root lifts them (issue #244).
+  const bannedPath = READ_TOOLS.has(toolName) || WRITE_TOOLS.has(toolName) ? toolPath(input) : null;
+  if (bannedPath && pathBan(bannedPath)) return banned(pathBan(bannedPath)!, `${toolName} ${bannedPath}`);
+  if (SHELL_TOOLS.has(toolName) && typeof input.command === "string") {
+    const ban = commandBan(input.command, policy.mainBranches, () => checkedOutBranch(policy.cwd));
+    if (ban) return banned(ban, input.command);
   }
   if (READ_TOOLS.has(toolName)) {
     const path = toolPath(input);
@@ -444,13 +468,17 @@ export function decideToolPermission(
       : { allow: false, reason: `Writes are allowed only inside ${policy.writableRoot}.` };
   }
   if (SHELL_TOOLS.has(toolName)) {
-    if (!policy.writableRoot) return { allow: false, reason: "This turn is read-only: shell commands are not allowed." };
+    if (!policy.writableRoot) return providerTool(typeof input.command === "string" ? input.command : toolName, "execute");
     if (input.dangerouslyDisableSandbox === true) {
       return { allow: false, reason: "Commands must run inside the sandbox." };
     }
+    // Only Trama pushes, and only within the mandate (issue #273); the sandbox has no network either.
+    if (typeof input.command === "string" && isGitPushCommand(input.command)) {
+      return { allow: false, reason: "Only Trama pushes branches, and only when the mandate allows it: do not run git push." };
+    }
     return { allow: true };
   }
-  return { allow: false, reason: `${toolName} is not available in Trama.` };
+  return providerTool(toolName);
 }
 
 // ── Query options ───────────────────────────────────────────────────
@@ -1175,6 +1203,7 @@ export class ClaudeAgentRuntime implements AgentRuntime {
       writableRoot,
       hostServer: this.options.toolServer?.name ?? null,
       readableRoots: [...thread.readableRoots, ...readableRoots(options.cwd)],
+      hostTools: this.options.toolServer?.tools ?? [],
     };
     // A refused read outside the project is recorded once per path and tool (issue #206).
     const reported = new Set<string>();
@@ -1183,6 +1212,16 @@ export class ClaudeAgentRuntime implements AgentRuntime {
       if (!decision.allow && decision.outsideRead && !reported.has(`${toolName}:${decision.outsideRead}`)) {
         reported.add(`${toolName}:${decision.outsideRead}`);
         options.onEvent({ type: "readOutsideScope", itemId, path: decision.outsideRead, tool: toolName });
+      }
+      // A fixed ban is recorded once per call, for "Aspetta te" (issue #244).
+      if (!decision.allow && decision.ban && !reported.has(`banned:${itemId}`)) {
+        reported.add(`banned:${itemId}`);
+        options.onEvent({ type: "fixedBanRefused", itemId, ban: decision.ban.ban, action: decision.ban.action });
+      }
+      // canUseTool and the hook may both refuse the same call: one activity per call (issue #228).
+      if (!decision.allow && decision.providerTool && !reported.has(`refused:${itemId}`)) {
+        reported.add(`refused:${itemId}`);
+        options.onEvent({ type: "toolRefused", itemId, tool: toolName, reason: decision.reason });
       }
       return decision;
     };

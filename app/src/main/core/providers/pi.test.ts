@@ -153,7 +153,7 @@ describe("Pi account and models", () => {
 
   it("lists provider-qualified models with Pi's thinking levels", async () => {
     const models = await new PiRuntime().listModels();
-    // Synara keeps Fable 5.1, Fable 5 and Opus 4.8 visible once Anthropic is authenticated.
+    // Fable 5.1, Fable 5 and Opus 4.8 stay visible once Anthropic is authenticated.
     expect(models.map((model) => model.id)).toEqual([
       "anthropic/claude-x",
       "openai/gpt-x",
@@ -415,6 +415,9 @@ describe("Pi host tools", () => {
       expect(calls).toEqual([["propose_team", { size: 2 }]]);
       expect(events).toContainEqual({ type: "toolCallStarted", itemId: "m1", server: "trama", tool: "propose_team" });
       expect(events).toContainEqual(expect.objectContaining({ type: "toolCallCompleted", server: "trama", succeeded: true }));
+
+      // Issue #228: Pi has no GitHub, web or shell tool of its own here, and extensions stay off.
+      expect(options.tools.filter((name) => /bash|web|fetch|github/i.test(name))).toEqual([]);
 
       const denied = new PiRuntime({ toolServer: { name: "trama", url, token: "wrong" } });
       await expect(denied.openThread({ model: "anthropic/claude-x", cwd: root, developerInstructions: "" })).rejects.toThrow(/401/);

@@ -1,4 +1,4 @@
-import { IconArrowLeft, IconCircleCheck, IconCircleDot, IconExternalLink, IconMessageCircle, IconPlus, IconRefresh } from "@tabler/icons-react";
+import { IconArrowLeft, IconCircleCheck, IconCircleDot, IconExternalLink, IconMessageCircle, IconPlayerPlay, IconPlus, IconRefresh } from "@tabler/icons-react";
 import { useState } from "react";
 import { issueTriage } from "@shared/duties";
 import { ASSIGNMENT_STATUS } from "@/components/chat/Cards";
@@ -10,6 +10,7 @@ import { cn } from "@/lib/cn";
 import { formatRelativeTime } from "@/lib/format";
 import { act, useUi } from "@/lib/store";
 import { issueQuestion } from "@/lib/askCoordinator";
+import { useTriageOnRequest } from "./AutomaticWork";
 import { EmptyNote, InspectorSection } from "./Inspector";
 import { Sep } from "@/components/ui/sep";
 
@@ -138,6 +139,8 @@ export function IssuesView() {
 export function IssueDetail({ number }: { number: number }) {
   const issue = useUi((s) => s.app?.project?.github.issues.find((i) => i.number === number));
   const triage = useUi((s) => (s.app?.project ? issueTriage(s.app.project.document, number) : null));
+  const onRequest = useTriageOnRequest();
+  const [starting, setStarting] = useState(false);
   const setInspector = useUi((s) => s.setInspector);
   const askCoordinator = useUi((s) => s.askCoordinator);
   if (!issue) return <div className="p-4"><EmptyNote>Issue non trovata.</EmptyNote></div>;
@@ -160,12 +163,26 @@ export function IssueDetail({ number }: { number: number }) {
         </div>
         <div className="cta-row mt-3">
           <Button size="sm" variant="ghost" onClick={() => void act("shell:openExternal", { url: issue.url })}>
-            <IconExternalLink stroke={1.8} /> GitHub
+            <IconExternalLink stroke={1.8} /> Apri su GitHub
           </Button>
-          <Button size="sm" onClick={() => askCoordinator(issueQuestion(issue))}>
+          <Button size="sm" variant={onRequest && issue.state === "open" ? "outline" : "default"} onClick={() => askCoordinator(issueQuestion(issue))}>
             <IconMessageCircle stroke={1.8} /> Chiedi al Coordinatore
           </Button>
+          {onRequest && issue.state === "open" ? (
+            <Button
+              size="sm"
+              data-testid="issue-triage-start"
+              disabled={!onRequest.allowed || starting}
+              onClick={() => {
+                setStarting(true);
+                void act("automaticWork:start", { kind: "triage", issueNumber: issue.number }).finally(() => setStarting(false));
+              }}
+            >
+              <IconPlayerPlay stroke={1.8} /> {triage ? "Rifai il triage ora" : "Avvia il triage ora"}
+            </Button>
+          ) : null}
         </div>
+        {onRequest && issue.state === "open" && onRequest.reason ? <p className="mt-1.5 text-right text-ui-xs text-muted-foreground">{onRequest.reason}</p> : null}
       </div>
       <InspectorSection title="Descrizione">
         {issue.body ? <ChatMarkdown text={issue.body} /> : <EmptyNote>Nessuna descrizione.</EmptyNote>}

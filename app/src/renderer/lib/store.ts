@@ -6,6 +6,8 @@ import type { ExerciseId, GuideStepId } from "@shared/onboarding";
 
 export type InspectorTarget =
   | { kind: "map" }
+  /** Everything that waits for the person (issue #240); `key` brings one item into view. */
+  | { kind: "waiting"; key?: string }
   | { kind: "module"; id: string }
   | { kind: "file"; path: string }
   | { kind: "pact" }
@@ -14,13 +16,21 @@ export type InspectorTarget =
   | { kind: "memory" }
   | { kind: "team" }
   | { kind: "specialist"; id: string }
+  /** A conversation between agents (W07). */
+  | { kind: "agentThread"; id: string }
   | { kind: "candidate"; id: string }
   /** Focus mode on a candidate (F01): the report of one examination. */
   | { kind: "audit"; id: string }
   | { kind: "group" }
   | { kind: "work" }
+  /** `work` opens one turn of work with its technical steps (issue #271). */
+  | { kind: "activity"; work?: string }
   | { kind: "issues" }
   | { kind: "issue"; number: number }
+  /** A pull request, a commit or a branch a message cites (issue #277). */
+  | { kind: "pullRequest"; number: number }
+  | { kind: "commit"; sha: string }
+  | { kind: "branch"; name: string }
   | { kind: "goals"; create?: boolean }
   | { kind: "goal"; id: string; edit?: boolean };
 
@@ -55,7 +65,7 @@ interface UiState {
   /** A question another view prepared for the composer; the composer takes it once and clears it (W12). */
   composerPrefill: string | null;
   mainView: MainView;
-  /** The goal whose dialog is shown; null is the project dialog (UX02). */
+  /** The goal the one chat is filtered on; null shows the whole chat (UX02, U01). */
   dialogGoalId: string | null;
   /** A goal to open once its project is the selected one, after a switch from the overview. */
   pendingGoal: { projectId: string; goalId: string } | null;
@@ -65,9 +75,10 @@ interface UiState {
   settingsReturn: Exclude<MainView, "settings">;
   openSettings(section?: SettingsSection): void;
   closeSettings(): void;
+  /** Shows the chat filtered on a goal, or the whole chat with null (U01). */
   openDialog(goalId: string | null): void;
   openGoalOf(projectId: string, goalId: string): void;
-  /** Inspector history for the back and forward buttons, as Synara's app navigation. */
+  /** Inspector history for the back and forward buttons. */
   history: (InspectorTarget | null)[];
   historyIndex: number;
   goBack(): void;
@@ -81,7 +92,7 @@ interface UiState {
   setToast(message: string | null, tone?: "warning" | "info"): void;
   focusComposer(moduleId?: string | null): void;
   /**
-   * "Chiedi al Coordinatore" from a panel: shows the dialog (a goal's when `goalId` is given), puts `text` in the
+   * "Chiedi al Coordinatore" from a panel: shows the chat (filtered on the goal when `goalId` is given), puts `text` in the
    * composer ready to edit or send, and focuses it. Nothing is sent (W12).
    */
   askCoordinator(text: string, options?: { goalId?: string | null; moduleId?: string | null }): void;

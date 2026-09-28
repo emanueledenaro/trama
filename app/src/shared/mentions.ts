@@ -3,9 +3,9 @@ import type { RepositoryModule } from "./repository";
 
 /**
  * Mention tokens, their resolution and the context block sent to the Coordinator.
- * Serialization and file scores follow Synara's composerMentions.ts and workspaceEntries.ts.
+ * Derived from third-party MIT code; see THIRD_PARTY_NOTICES.md.
  * Modules, issues and decisions are written `@module:<id>`, `@issue:<number>`, `@decision:<id>`;
- * files stay plain `@path` text, as in Synara.
+ * files stay plain `@path` text.
  */
 export type MentionKind = "module" | "issue" | "decision" | "file";
 export const MENTION_KINDS: MentionKind[] = ["module", "issue", "decision", "file"];
@@ -165,7 +165,7 @@ export function fuzzyScore(text: string, query: string): number | null {
   return indices[0]! * 2 + gaps * 3 + (indices.at(-1)! - indices[0]! + 1) + Math.min(64, text.length - query.length);
 }
 
-/** Synara's scoreEntry for a file path; lower is better and null means no match. */
+/** Match score for a file path; lower is better and null means no match. */
 export function fileScore(path: string, query: string): number | null {
   const q = query.replace(/^[@./]+/, "").toLowerCase();
   if (!q) return 1;

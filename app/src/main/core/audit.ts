@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { AuditAxis, Candidate, CandidateEvidence, FocusAudit, GitHubIssue, ProjectDocument, SpecialistAssignment } from "@shared/domain";
+import type { AuditAxis, AuditFinding, Candidate, CandidateEvidence, FindingEvidence, FocusAudit, GitHubIssue, ProjectDocument, SpecialistAssignment } from "@shared/domain";
 import { shortId } from "@shared/ids";
 import type { LoadedSkill } from "@shared/skills";
 import { assignmentSlice } from "./implementation";
@@ -11,6 +11,7 @@ import { extractJsonAnswer } from "./providers/types";
  * Focus mode on a candidate (F01, issue #125): Trama pins the candidate's base as the fixed point, runs the real checks
  * in the sandbox, then the two axes of AI Hero's code-review skill as parallel read-only sessions, each with the
  * skill's original text and a thin binding. The report keeps the checks first and the two axes apart, as the skill does.
+ * Each finding carries a proof that Trama verifies before the report closes (F02, see auditFindings.ts).
  */
 
 export class AuditError extends Error {
@@ -37,7 +38,8 @@ export const CODE_REVIEW_BINDING = [
   "The diff command: the working directory is the candidate's worktree, whose changes may not be committed yet. Where the skill writes `git diff <fixed-point>...HEAD`, run `git diff <fixed point>` here and list new files with `git status`; Trama's captured diff is in this turn as data. The commit list may be empty.",
   "The issue tracker, /setup-trama and fetching an issue: this session has no network and runs no setup. Trama already looked for the spec (step 2) and puts it in this turn when it found one.",
   "Trama's real checks on this candidate ran before this session, in the sandbox: their results are in this turn and are evidence. Do not run them again.",
-  "Your final answer follows the JSON schema that comes with the turn: `report` is your report as your brief asks, in Markdown and in Italian; `findings` is the number of your findings; `worst` is your worst finding in one line, empty when there is none. Trama aggregates the two reports as step 5 says.",
+  "Your final answer follows the JSON schema that comes with the turn: `report` is your report as your brief asks, in Markdown and in Italian; `findings` lists the same findings, one entry each; `worst` is your worst finding in one line, empty when there is none. Trama aggregates the two reports as step 5 says.",
+  "Proof of each finding (a Trama addition, spec #124): give the `evidence` Trama can recheck. `fileLine` names a file of the worktree relative to its root, the line number and the text of that line in `quote`; `command` names a command whose failure shows the finding; `reproduction` gives the steps in `steps`; `none` when you have no proof, and the finding then stays a hypothesis. `severity` is `serious` when the finding breaks behaviour, a hard documented standard or a requirement of the spec, `minor` otherwise. Leave the fields a kind does not use empty, with `line` 0.",
 ].join("\n");
 
 /** The line of the binding that tells a session which sub-agent of step 4 it is. */
@@ -47,14 +49,49 @@ export const AXIS_BINDINGS: Record<AxisName, string> = {
   spec: "You are the Spec sub-agent. Your brief is the Spec sub-agent prompt of step 4; the spec is the one Trama put in this turn.",
 };
 
+const EVIDENCE_SCHEMA = {
+  type: "object",
+  properties: {
+    kind: { type: "string", enum: ["fileLine", "command", "reproduction", "none"] },
+    file: { type: "string" },
+    line: { type: "integer" },
+    quote: { type: "string" },
+    command: { type: "string" },
+    steps: { type: "string" },
+  },
+  required: ["kind", "file", "line", "quote", "command", "steps"],
+  additionalProperties: false,
+} as const;
+
 export const AXIS_SCHEMA = {
   type: "object",
-  properties: { report: { type: "string" }, findings: { type: "integer" }, worst: { type: "string" } },
+  properties: {
+    report: { type: "string" },
+    findings: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: { title: { type: "string" }, severity: { type: "string", enum: ["serious", "minor"] }, evidence: EVIDENCE_SCHEMA },
+        required: ["title", "severity", "evidence"],
+        additionalProperties: false,
+      },
+    },
+    worst: { type: "string" },
+  },
   required: ["report", "findings", "worst"],
   additionalProperties: false,
 } as const;
 
-const RUNNING = new Set<FocusAudit["status"]>(["checking", "reviewing"]);
+/** A finding as an axis wrote it, before Trama verifies it. */
+export type FindingDraft = Pick<AuditFinding, "title" | "severity" | "evidence">;
+
+export interface AxisAnswer {
+  report: string;
+  worst: string | null;
+  findings: FindingDraft[];
+}
+
+const RUNNING = new Set<FocusAudit["status"]>(["checking", "reviewing", "verifying"]);
 
 export const isAuditRunning = (audit: FocusAudit) => RUNNING.has(audit.status);
 
@@ -144,8 +181,22 @@ export function axisThread(audit: FocusAudit, axis: AxisName, threadId: string):
   audit[axis].threadId = threadId;
 }
 
+/** Reads the proof of one finding; a proof that names nothing checkable is no proof. */
+function readEvidence(raw: unknown): FindingEvidence | null {
+  if (!raw || typeof raw !== "object") return null;
+  const value = raw as Record<string, unknown>;
+  const text = (key: string) => (typeof value[key] === "string" ? (value[key] as string).trim() : "");
+  if (value.kind === "fileLine") {
+    const line = typeof value.line === "number" && Number.isInteger(value.line) ? value.line : 0;
+    return text("file") && line > 0 ? { kind: "fileLine", file: text("file"), line, quote: text("quote") } : null;
+  }
+  if (value.kind === "command") return text("command") ? { kind: "command", command: text("command") } : null;
+  if (value.kind === "reproduction") return text("steps") ? { kind: "reproduction", steps: text("steps") } : null;
+  return null;
+}
+
 /** Reads a sub-agent's answer; a missing report is a failure of the axis, never an empty pass. */
-export function readAxisAnswer(raw: string): { report: string; findings: number; worst: string | null } {
+export function readAxisAnswer(raw: string): AxisAnswer {
   let answer: { report?: unknown; findings?: unknown; worst?: unknown };
   try {
     answer = JSON.parse(extractJsonAnswer(raw)) as typeof answer;
@@ -154,17 +205,18 @@ export function readAxisAnswer(raw: string): { report: string; findings: number;
   }
   const report = typeof answer.report === "string" ? answer.report.trim() : "";
   if (!report) throw new AuditError("empty_report", "L'asse ha risposto senza rapporto.");
-  const findings = typeof answer.findings === "number" && Number.isFinite(answer.findings) ? Math.max(0, Math.round(answer.findings)) : 0;
   const worst = typeof answer.worst === "string" && answer.worst.trim() ? answer.worst.trim() : null;
-  return { report, findings, worst };
+  const findings = (Array.isArray(answer.findings) ? answer.findings : []).flatMap((item: unknown): FindingDraft[] => {
+    if (!item || typeof item !== "object") return [];
+    const value = item as Record<string, unknown>;
+    const title = typeof value.title === "string" ? value.title.trim() : "";
+    if (!title) return [];
+    return [{ title, severity: value.severity === "serious" ? "serious" : "minor", evidence: readEvidence(value.evidence) }];
+  });
+  return { report, worst, findings };
 }
 
-export function finishAxis(
-  audit: FocusAudit,
-  axis: AxisName,
-  outcome: { report: string; findings: number; worst: string | null } | { failure: string },
-  now = new Date(),
-): void {
+export function finishAxis(audit: FocusAudit, axis: AxisName, outcome: AxisAnswer | { failure: string }, now = new Date()): void {
   const current = audit[axis];
   current.finishedAt = now.toISOString();
   if ("failure" in outcome) {
@@ -173,9 +225,24 @@ export function finishAxis(
   } else {
     current.status = "done";
     current.report = outcome.report;
-    current.findings = outcome.findings;
+    current.findings = outcome.findings.length;
     current.worst = outcome.worst;
+    // Every finding starts unverified: only Trama's recheck or the second model moves it (F02).
+    current.items = outcome.findings.map((draft, index) => ({
+      id: `${axis}-${index + 1}`,
+      ...draft,
+      status: "pending",
+      basis: null,
+      observed: null,
+      confirmation: null,
+    }));
   }
+  audit.updatedAt = now.toISOString();
+}
+
+/** Both axes ended: Trama verifies the findings' proofs before the report closes (F02). */
+export function beginVerification(audit: FocusAudit, now = new Date()): void {
+  audit.status = "verifying";
   audit.updatedAt = now.toISOString();
 }
 
@@ -215,6 +282,12 @@ export function failAudit(audit: FocusAudit, failure: string, now = new Date()):
       axis.status = "failed";
       axis.failure ??= failure;
       axis.finishedAt = now.toISOString();
+    }
+    // A finding whose verification never ended is not verified: it stays a hypothesis.
+    for (const finding of axis.items ?? []) {
+      if (finding.status !== "pending") continue;
+      finding.status = "hypothesis";
+      finding.basis = "La verifica si è interrotta prima di ricontrollare la prova.";
     }
   }
   audit.finishedAt = now.toISOString();

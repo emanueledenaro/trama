@@ -3,13 +3,14 @@ import type { WorkPlan } from "@shared/domain";
 import { candidateReport, declareCandidate, recordEvidence } from "./candidates";
 import { DEFAULT_CONVENTIONS, validateCommitMessage } from "./conventions";
 import { emptyDocument } from "./document";
-import { createDecisionRequest, decide } from "./pact";
+import { createDecisionRequest, decide, grantMandate, revokeMandate } from "./pact";
 import { pullRequestBody } from "./publication";
 import { candidateCommit, qualityGate, qualityMissing, relatedIssue, secretFindings, workCommitType } from "./quality";
 import { assign, beginTurn, confirmTeam, endTurn, findAssignment, proposeTeam } from "./team";
 
 function setup(options: { kind?: "agreedTicket" | "decidedBehaviorCorrection"; diff?: string; changedFiles?: string[]; whitespaceErrors?: string[]; issueNumber?: number | null } = {}) {
   const document = emptyDocument("p");
+  grantMandate(document, { objectives: ["o"], priorities: [], scopeModuleIds: ["src/Orders"], authorizedActions: ["executeInWorktree", "openPullRequest"], limits: [] });
   const decision = decide(document, { id: null, value: "Revisione", acceptedExample: "e", rationale: "r" });
   confirmTeam(
     document,
@@ -88,7 +89,19 @@ describe("the quality standard before publishing (Q01)", () => {
   it("passes for a verified candidate with a valid message and a clean diff", () => {
     const { gate } = setup();
     expect(qualityMissing(gate())).toEqual([]);
-    expect(gate().map((i) => i.code)).toEqual(["VERIFIED", "COMMIT_MESSAGE", "NO_SECRETS", "DIFF_CHECK", "ISSUE_LINKED", "PACT_SETTLED"]);
+    expect(gate().map((i) => i.code)).toEqual(["VERIFIED", "COMMIT_MESSAGE", "NO_SECRETS", "DIFF_CHECK", "ISSUE_LINKED", "PACT_SETTLED", "MANDATE"]);
+  });
+
+  it("does not publish without a mandate that grants pull requests (issue #273)", () => {
+    const { document, gate } = setup();
+    // Mandate v2 forbids publishing: executing in a worktree only.
+    grantMandate(document, { objectives: ["o"], priorities: [], scopeModuleIds: ["src/Orders"], authorizedActions: ["executeInWorktree"], limits: ["Niente pubblicazioni"] });
+    expect(qualityMissing(gate()).map((m) => m.code)).toEqual(["MANDATE"]);
+    expect(qualityMissing(gate())[0]!.detail).toMatch(/non permette di aprire pull request/);
+    revokeMandate(document, "stop");
+    expect(qualityMissing(gate())[0]!.detail).toMatch(/revocato/);
+    document.mandate = null;
+    expect(qualityMissing(gate())[0]!.detail).toMatch(/non ha un mandato/);
   });
 
   it("says what is missing and how to fix it", () => {

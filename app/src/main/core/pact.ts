@@ -96,7 +96,7 @@ export function revokeMandate(document: ProjectDocument, reason: string, now = n
 export function resolveMandateRequest(
   document: ProjectDocument,
   requestId: string,
-  kind: "granted" | "corrected" | "revoked",
+  kind: "granted" | "corrected" | "rejected",
   version: number | null,
   now = new Date(),
 ): MandateRequest | null {
@@ -120,6 +120,13 @@ export function assertMandateRequestAnswerable(document: ProjectDocument, reques
     throw new DomainError(`La richiesta di mandato ${requestId} è superata da ${resolution.supersededBy ?? "una richiesta più recente"}: non si può più concedere.`);
   }
   throw new DomainError(`La richiesta di mandato ${requestId} ha già una risposta.`);
+}
+
+/** Turns down a pending mandate request with the person's reason. The mandate in force is left untouched. */
+export function rejectMandateRequest(document: ProjectDocument, requestId: string, reason: string, now = new Date()): MandateRequest {
+  assertMandateRequestAnswerable(document, requestId);
+  if (!reason.trim()) throw new DomainError("Indica perché rifiuti la proposta.");
+  return resolveMandateRequest(document, requestId, "rejected", null, now)!;
 }
 
 export function createMandateRequest(
@@ -255,6 +262,12 @@ export const mandateMessage = (kind: "granted" | "corrected" | "revoked", versio
     : kind === "corrected"
       ? `Ho corretto il mandato: ora è alla versione ${version}.`
       : `Ho revocato il mandato.${reason ? ` Motivo: ${reason}` : ""}`;
+
+export function mandateRejectionMessage(document: ProjectDocument, request: MandateRequest, reason: string): string {
+  const mandate = document.mandate;
+  const kept = mandate?.status === "granted" ? ` Il mandato in vigore resta la versione ${mandate.version}, senza modifiche.` : " Resta senza mandato.";
+  return `Ho rifiutato la proposta di mandato ${request.id}.${kept} Motivo: ${sentence(reason.trim())}`;
+}
 
 export const decisionMessage = (request: DecisionRequest, decision: PactDecision) =>
   `Ho risposto alla domanda «${request.question}»: ${decision.value}. È la decisione ${decision.id}, versione ${decision.version} del Patto.`;

@@ -5,6 +5,7 @@ import type { Specialist, SpecialistAssignment } from "@shared/domain";
 import { findGoal } from "@shared/goals";
 import { PROVIDERS } from "@shared/providers";
 import { AGENT_PALETTE } from "@shared/identity";
+import { agentThreadsByRecent, threadParticipants } from "@shared/agentThreads";
 import { FIXED_ROLES, isFixedRole, roleDuties, roleProfile, type RosterFigure, TEAM_MOMENTS, teamRoster } from "@shared/roster";
 import { AgentAvatar, AgentName, AgentTag, agentStyle } from "@/components/AgentIdentity";
 import { ASSIGNMENT_STATUS, AssignmentCard, CandidateCard, TeamProposalCard } from "@/components/chat/Cards";
@@ -18,6 +19,7 @@ import { cn } from "@/lib/cn";
 import { formatRelativeTime } from "@/lib/format";
 import { act, useUi } from "@/lib/store";
 import { specialistQuestion } from "@/lib/askCoordinator";
+import { AutomaticWorkSection } from "./AutomaticWork";
 import { EmptyNote, InspectorSection } from "./Inspector";
 import { Sep } from "@/components/ui/sep";
 
@@ -35,7 +37,8 @@ export function StatusDot({ status }: { status: Specialist["status"] }) {
     <span
       className={cn(
         "size-1.5 shrink-0 rounded-full",
-        status === "available" && "bg-success",
+        // Free reads as an empty ring, so it never looks like "at work" (issue #241).
+        status === "available" && "border border-muted-foreground/60",
         status === "stopped" && "bg-warning",
         status === "removed" && "bg-muted-foreground/40",
       )}
@@ -63,8 +66,8 @@ function DeveloperRow({ specialist }: { specialist: Specialist }) {
   const goal = current ? findGoal(project.document, current.goalId) : null;
   return (
     <button type="button" data-testid="team-developer" onClick={() => setInspector({ kind: "specialist", id: specialist.id })} className={ROW}>
-      <span className="mt-0.5 flex w-4 justify-center">
-        <AgentAvatar agent={specialist} />
+      <span className="flex w-8 justify-center">
+        <AgentAvatar agent={specialist} size={32} />
       </span>
       <span className="min-w-0 flex-1">
         <span className="block text-ui text-foreground">
@@ -92,7 +95,7 @@ function FigureRow({ figure }: { figure: RosterFigure }) {
   const specialist = figure.specialists[0];
   const body = (
     <>
-      <span className="mt-0.5 flex w-4 justify-center">{specialist ? <AgentAvatar agent={specialist} /> : null}</span>
+      <span className="flex w-8 justify-center">{specialist ? <AgentAvatar agent={specialist} size={32} /> : null}</span>
       <span className="min-w-0 flex-1">
         <span className="flex items-center gap-1.5 text-ui text-foreground">
           {specialist ? <AgentName agent={specialist} avatar={false} /> : figure.profile.name}
@@ -156,6 +159,7 @@ export function TeamView() {
           {project.isDemo ? " Nel progetto di esempio restano ferme." : project.document.mandate?.status === "granted" ? "" : " Si attivano quando concedi un mandato."}
         </p>
       </InspectorSection>
+      <AutomaticWorkSection />
       {pending ? (
         <InspectorSection title="Proposta in attesa">
           <TeamProposalCard proposalId={pending.id} />
@@ -211,16 +215,24 @@ export function SpecialistView({ id }: { id: string }) {
         <button type="button" className="inline-flex items-center gap-1 text-ui-sm text-muted-foreground hover:text-foreground" onClick={() => setInspector({ kind: "team" })}>
           <IconArrowLeft className="size-3.5" /> Team
         </button>
-        <div className="mt-2 flex items-center gap-2">
-          <AgentAvatar agent={specialist} className="size-5 text-ui-xs" />
-          <h3 className="text-ui-lg font-medium text-foreground">{specialist.name}</h3>
-          <AgentTag agent={specialist} className="text-ui-sm" />
-          <Badge>{specialist.id}</Badge>
-          <span className="ml-auto flex items-center gap-1.5 text-ui-sm text-muted-foreground">
-            <StatusDot status={specialist.status} /> {STATUS_LABEL[specialist.status]}
-          </span>
+        {/* The bot sits beside the header, so it takes no room from the name and the status; the row wraps before
+            anything is cut, and the status never shrinks. */}
+        <div className="mt-2 flex items-start gap-3" data-testid="specialist-header">
+          <AgentAvatar agent={specialist} size={48} />
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+              <h3 className="min-w-0 max-w-full truncate text-ui-lg font-medium text-foreground" title={specialist.name}>
+                {specialist.name}
+              </h3>
+              <AgentTag agent={specialist} className="text-ui-sm" />
+              <Badge>{specialist.id}</Badge>
+              <span className="ml-auto flex shrink-0 items-center gap-1.5 whitespace-nowrap text-ui-sm text-muted-foreground" data-testid="specialist-status">
+                <StatusDot status={specialist.status} /> {STATUS_LABEL[specialist.status]}
+              </span>
+            </div>
+            <p className="mt-0.5 text-ui text-muted-foreground">{specialist.competence}</p>
+          </div>
         </div>
-        <p className="mt-0.5 text-ui text-muted-foreground">{specialist.competence}</p>
         <div className="cta-row mt-3">
           {specialist.status !== "removed" && !fixed ? (
             <Button
@@ -266,6 +278,7 @@ export function SpecialistView({ id }: { id: string }) {
         ) : null}
       </div>
       {specialist.status !== "removed" ? <AgentColorPicker specialist={specialist} /> : null}
+      <SpecialistThreads specialistId={specialist.id} />
       <InspectorSection title="Perché è nel team">
         <p className="text-ui text-foreground/90">{specialist.reason}</p>
         <p className="mt-1 text-ui-xs text-muted-foreground">
@@ -288,6 +301,7 @@ export function SpecialistView({ id }: { id: string }) {
           ))}
         </div>
       </InspectorSection>
+      {fixed ? <AutomaticWorkSection role={specialist.role} /> : null}
       {current && ["stopped", "failed"].includes(current.status) ? <AssignmentProvider assignment={current} /> : null}
       {current?.workspace && !current.workspaceRemovedAt && ["stopped", "failed", "completed"].includes(current.status) ? (
         <InspectorSection title="Worktree">
@@ -378,7 +392,7 @@ function RenameSpecialist({ specialist, onDone }: { specialist: Specialist; onDo
 function AgentColorPicker({ specialist }: { specialist: Specialist }) {
   return (
     <InspectorSection title="Colore">
-      <p className="text-ui-sm text-muted-foreground">Il colore sta solo sull'avatar e sul tag. Badge e schede restano sui colori di stato.</p>
+      <p className="text-ui-sm text-muted-foreground">Il colore sta solo sul bot e sul tag. Badge e schede restano sui colori di stato.</p>
       <div className="mt-2 flex flex-wrap gap-1.5" role="radiogroup" aria-label="Colore dell'agente">
         {AGENT_PALETTE.map((entry) => {
           const selected = entry.color === specialist.color;
@@ -391,13 +405,13 @@ function AgentColorPicker({ specialist }: { specialist: Specialist }) {
                 aria-label={entry.label}
                 data-testid="agent-color"
                 className={cn(
-                  "agent-identity agent-avatar size-6 text-ui-xs transition-shadow",
+                  "agent-identity inline-flex size-10 items-center justify-center rounded-full transition-shadow",
                   selected ? "ring-2 ring-[var(--agent)] ring-offset-1 ring-offset-background" : "hover:ring-1 hover:ring-[var(--agent)]",
                 )}
                 style={agentStyle({ color: entry.color })}
                 onClick={() => (selected ? undefined : void act("specialist:setColor", { specialistId: specialist.id, color: entry.color }))}
               >
-                {[...specialist.name.trim()][0]?.toLocaleUpperCase("it") ?? "?"}
+                <AgentAvatar agent={{ ...specialist, color: entry.color }} activity="idle" size={32} />
               </button>
             </Tooltip>
           );
@@ -453,6 +467,31 @@ function AssignmentProvider({ assignment }: { assignment: SpecialistAssignment }
         >
           Cambia
         </Button>
+      </div>
+    </InspectorSection>
+  );
+}
+
+/** Every conversation between agents the specialist takes part in (W07), the most recent first. */
+function SpecialistThreads({ specialistId }: { specialistId: string }) {
+  const document = useUi((s) => s.app?.project?.document);
+  const setInspector = useUi((s) => s.setInspector);
+  const threads = agentThreadsByRecent(document?.agentThreads ?? []).filter((t) => t.specialistIds.includes(specialistId));
+  if (!document || !threads.length) return null;
+  return (
+    <InspectorSection title={`Chat tra agenti (${threads.length})`}>
+      <div className="flex flex-col gap-1" data-testid="specialist-threads">
+        {threads.map((thread) => (
+          <button
+            key={thread.id}
+            type="button"
+            className="flex min-w-0 items-center gap-2 rounded-md px-1 py-0.5 text-left text-ui hover:bg-[var(--sidebar-accent)]"
+            onClick={() => setInspector({ kind: "agentThread", id: thread.id })}
+          >
+            <span className="min-w-0 flex-1 truncate text-foreground/90">{thread.title}</span>
+            <span className="shrink-0 text-ui-xs text-muted-foreground">{threadParticipants(thread, document.team.specialists)}</span>
+          </button>
+        ))}
       </div>
     </InspectorSection>
   );

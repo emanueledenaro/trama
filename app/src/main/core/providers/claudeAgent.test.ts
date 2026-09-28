@@ -132,6 +132,22 @@ describe("tool permissions", () => {
   const readOnly = { cwd: "/repo", writableRoot: null, hostServer: "trama" };
   const writable = { cwd: "/work/tree", writableRoot: "/work/tree", hostServer: null };
 
+  it("refuses what a fixed ban covers before anything runs, in every turn (issue #244)", () => {
+    const force = decideToolPermission("Bash", { command: "git push --force origin feature/x" }, writable, identity);
+    expect(force).toMatchObject({ allow: false, ban: { ban: "forcePush", action: "git push --force origin feature/x" } });
+    expect(force.allow ? "" : force.reason).toMatch(/fixed ban/);
+    expect(decideToolPermission("Bash", { command: "git tag v1.0.0" }, writable, identity)).toMatchObject({ ban: { ban: "tagOrRelease" } });
+    expect(decideToolPermission("Bash", { command: "gh repo edit --visibility public" }, writable, identity)).toMatchObject({ ban: { ban: "repositorySettings" } });
+    // Secret files: reads by the Coordinator's read-only turn and writes by a specialist alike.
+    expect(decideToolPermission("Read", { file_path: "/repo/.env" }, readOnly, identity)).toMatchObject({ allow: false, ban: { ban: "secrets" } });
+    expect(decideToolPermission("Write", { file_path: "/work/tree/certs/server.pem" }, writable, identity)).toMatchObject({ allow: false, ban: { ban: "secrets" } });
+    // The Coordinator's shell is off anyway; a banned command is still recorded as the ban.
+    expect(decideToolPermission("Bash", { command: "gh auth token" }, readOnly, identity)).toMatchObject({ ban: { ban: "secrets" } });
+    // Ordinary work goes on.
+    expect(decideToolPermission("Bash", { command: "npm test" }, writable, identity).allow).toBe(true);
+    expect(decideToolPermission("Read", { file_path: "/repo/.env.example" }, readOnly, identity).allow).toBe(true);
+  });
+
   it("keeps read-only turns from writing or running commands", () => {
     expect(decideToolPermission("Read", { file_path: "/repo/a.ts" }, readOnly, identity).allow).toBe(true);
     expect(decideToolPermission("Grep", {}, readOnly, identity).allow).toBe(true);
@@ -147,7 +163,9 @@ describe("tool permissions", () => {
     expect(decideToolPermission("Grep", { pattern: "ordini" }, scoped, identity).allow).toBe(true);
     const memory = decideToolPermission("Grep", { pattern: "ordini", path: "~/.codex/memories/MEMORY.md" }, scoped, identity);
     expect(memory).toMatchObject({ allow: false, outsideRead: resolve(homedir(), ".codex/memories/MEMORY.md") });
-    expect(decideToolPermission("Read", { file_path: "../altro/.env" }, scoped, identity)).toMatchObject({ allow: false, outsideRead: "/altro/.env" });
+    expect(decideToolPermission("Read", { file_path: "../altro/note.md" }, scoped, identity)).toMatchObject({ allow: false, outsideRead: "/altro/note.md" });
+    // A secret file is refused by its fixed ban first, wherever it is (issue #244).
+    expect(decideToolPermission("Read", { file_path: "../altro/.env" }, scoped, identity)).toMatchObject({ allow: false, ban: { ban: "secrets" } });
     expect(decideToolPermission("Glob", { pattern: "*", path: "/home" }, scoped, identity).allow).toBe(false);
     expect(decideToolPermission("LS", { path: "/etc" }, readOnly, identity).allow).toBe(false);
   });
@@ -162,6 +180,25 @@ describe("tool permissions", () => {
     expect(decideToolPermission("mcp__trama__propose_plan", {}, readOnly, identity).allow).toBe(true);
     expect(decideToolPermission("mcp__github__create_issue", {}, readOnly, identity).allow).toBe(false);
     expect(parseMcpToolName("mcp__trama__propose_plan")).toEqual({ server: "trama", tool: "propose_plan" });
+  });
+
+  it("names Trama's tool when it refuses Claude's own GitHub, web or shell tools (issue #228)", () => {
+    const coordinator = { ...readOnly, hostTools: ["read_issues", "run_readonly_check"] };
+    expect(decideToolPermission("mcp__github__list_issues", {}, coordinator, identity)).toEqual({
+      allow: false,
+      providerTool: true,
+      reason: expect.stringContaining("Gli strumenti GitHub del provider sono bloccati: per le issue usa read_issues di Trama."),
+    });
+    expect(decideToolPermission("Bash", { command: "gh issue list" }, coordinator, identity)).toMatchObject({
+      providerTool: true,
+      reason: expect.stringContaining("read_issues di Trama"),
+    });
+    expect(decideToolPermission("WebFetch", { url: "https://github.com" }, coordinator, identity)).toMatchObject({
+      providerTool: true,
+      reason: expect.stringContaining("Trama non consente accessi alla rete"),
+    });
+    expect(decideToolPermission("Edit", { file_path: "/repo/a.ts" }, coordinator, identity)).not.toHaveProperty("providerTool");
+    expect(decideToolPermission("StructuredOutput", { verdict: "bug" }, coordinator, identity)).toEqual({ allow: true });
   });
 
   it("limits writes to the writable root", () => {
@@ -470,6 +507,76 @@ describe("ClaudeAgentRuntime", () => {
     await runtime.runTurn({ threadId, prompt: "Ancora", cwd: "/repo", model: "sonnet", onEvent: () => undefined });
     expect(sdk.query.mock.calls[1]![0].options).toMatchObject({ resume: threadId });
     expect(sdk.query.mock.calls[1]![0].options.sessionId).toBeUndefined();
+  });
+
+  it("refuses Claude's GitHub tool with the reason and lets the turn use read_issues (issue #228)", async () => {
+    const toolServer = { name: "trama", url: "http://127.0.0.1:1/mcp", token: "t", tools: ["read_issues"] };
+    const runtime = new ClaudeAgentRuntime({ executable, toolServer });
+    const { threadId } = await runtime.openThread({ model: "sonnet", cwd: "/repo", developerInstructions: "" });
+    const answers: unknown[] = [];
+    sdk.query.mockImplementationOnce(({ options }: { options: { canUseTool: (name: string, input: unknown, context: unknown) => Promise<unknown> } }) => {
+      async function* turn() {
+        const context = { toolUseID: "t-gh", signal: new AbortController().signal };
+        answers.push(await options.canUseTool("mcp__github__list_issues", {}, context));
+        answers.push(await options.canUseTool("mcp__trama__read_issues", {}, { ...context, toolUseID: "t-trama" }));
+        yield assistant([{ type: "tool_use", id: "t-trama", name: "mcp__trama__read_issues", input: {} }]);
+        yield toolResult("t-trama", "[]");
+        yield result({ session_id: threadId });
+      }
+      return Object.assign(turn(), { interrupt: vi.fn(), close: vi.fn(), supportedModels: vi.fn(async () => []) });
+    });
+    const events: TurnEvent[] = [];
+    await runtime.runTurn({ threadId, prompt: "Leggi le issue", cwd: "/repo", model: "sonnet", onEvent: (e) => events.push(e) });
+    expect(answers[0]).toEqual({ behavior: "deny", message: expect.stringContaining("per le issue usa read_issues di Trama") });
+    expect(answers[1]).toMatchObject({ behavior: "allow" });
+    expect(events).toContainEqual({ type: "toolRefused", itemId: "t-gh", tool: "mcp__github__list_issues", reason: expect.stringContaining("read_issues") });
+    expect(events).toContainEqual(expect.objectContaining({ type: "toolCallCompleted", server: "trama", tool: "read_issues", succeeded: true }));
+  });
+
+  it("lets a read-only turn return the structured answer Trama asked for", async () => {
+    const runtime = new ClaudeAgentRuntime({ executable });
+    const { threadId } = await runtime.openThread({ model: "haiku", cwd: "/repo", developerInstructions: "" });
+    const answers: unknown[] = [];
+    const answer = { issue: 228, verdict: "bug" };
+    sdk.query.mockImplementationOnce(({ options }: { options: { canUseTool: (name: string, input: unknown, context: unknown) => Promise<unknown> } }) => {
+      async function* turn() {
+        answers.push(await options.canUseTool("StructuredOutput", answer, { toolUseID: "t-out", signal: new AbortController().signal }));
+        yield result({ session_id: threadId, result: "", structured_output: answer });
+      }
+      return Object.assign(turn(), { interrupt: vi.fn(), close: vi.fn(), supportedModels: vi.fn(async () => []) });
+    });
+    const events: TurnEvent[] = [];
+    const text = await runtime.runTurn({
+      threadId,
+      prompt: "Triage",
+      cwd: "/repo",
+      model: "haiku",
+      outputSchema: { type: "object", required: ["issue", "verdict"] },
+      onEvent: (e) => events.push(e),
+    });
+    expect(answers).toEqual([{ behavior: "allow", updatedInput: answer }]);
+    expect(JSON.parse(text)).toEqual(answer);
+    expect(events.some((e) => e.type === "toolRefused")).toBe(false);
+  });
+
+  it("gives Trama's tools to every turn, a resumed one after an interrupt included (issue #228)", async () => {
+    const toolServer = { name: "trama", url: "http://127.0.0.1:1/mcp", token: "t", tools: ["request_decision"] };
+    const runtime = new ClaudeAgentRuntime({ executable, toolServer });
+    const { threadId } = await runtime.openThread({ model: "sonnet", cwd: "/repo", developerInstructions: "" });
+    sdk.query.mockReturnValueOnce(fakeQuery([{ type: "system", subtype: "init", session_id: threadId }], { waitForInterrupt: true }));
+    const first = runtime.runTurn({ threadId, prompt: "Lavora", cwd: "/repo", model: "sonnet", onEvent: () => undefined });
+    await vi.waitFor(() => expect(sdk.query).toHaveBeenCalled());
+    await runtime.interrupt();
+    await expect(first).rejects.toThrow(/interrotto/);
+    sdk.getSessionInfo.mockResolvedValueOnce({ sessionId: threadId });
+    await runtime.openThread({ model: "sonnet", cwd: "/repo", developerInstructions: "", resumeThreadId: threadId });
+    sdk.query.mockReturnValueOnce(fakeQuery([result({ session_id: threadId })]));
+    await runtime.runTurn({ threadId, prompt: "Riprendi", cwd: "/repo", model: "sonnet", onEvent: () => undefined });
+    for (const call of sdk.query.mock.calls) {
+      expect(call[0].options.mcpServers).toHaveProperty("trama");
+      expect(call[0].options.allowedTools).toEqual(["mcp__trama"]);
+    }
+    expect(sdk.query.mock.calls.at(-1)![0].options).toMatchObject({ resume: threadId });
   });
 
   it("interrupts a running turn", async () => {

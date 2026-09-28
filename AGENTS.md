@@ -1,6 +1,6 @@
 # Trama
 
-App desktop in Electron (`app/`), con l'interfaccia di Synara: seguire i token, le misure e i componenti in `app/src/renderer` (ADR 0011). Il motore AI è Codex App Server di OpenAI. I sorgenti SwiftUI sono stati rimossi e restano nella cronologia git.
+App desktop in Electron (`app/`): per l'interfaccia seguire i token, le misure e i componenti in `app/src/renderer` (ADR 0011). Il motore AI è Codex App Server di OpenAI. I sorgenti SwiftUI sono stati rimossi e restano nella cronologia git.
 
 ## Humanizer
 

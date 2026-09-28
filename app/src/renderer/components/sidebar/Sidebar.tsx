@@ -1,9 +1,10 @@
-// Layout and classes follow Synara (github.com/Emanuele-web04/synara, MIT License, Copyright (c) 2026 T3 Tools Inc. and Emanuele Di Pietro).
+// Derived from third-party MIT code; see THIRD_PARTY_NOTICES.md.
 import {
   IconCircleDot,
   IconFolder,
   IconFolderOpen,
   IconFolderPlus,
+  IconHourglass,
   IconArrowNarrowLeft,
   IconArrowNarrowRight,
   IconFileDiff,
@@ -19,7 +20,6 @@ import {
   IconSitemap,
   IconUsersGroup,
   IconX,
-  IconListCheck,
   IconBrain,
   IconPencilPlus,
   IconArchive,
@@ -31,6 +31,7 @@ import { AgentAvatar, AgentTag } from "@/components/AgentIdentity";
 import { useState } from "react";
 import type * as React from "react";
 import { Spinner } from "@/components/Spinner";
+import { useWaiting } from "@/components/WaitingView";
 import { TramaMark } from "@/components/brand/TramaMark";
 import { isOpenQuestion, pendingMandateRequest, type ProjectGoal, type Specialist } from "@shared/domain";
 import { goalDialogIsEmpty, workingGoals } from "@shared/goals";
@@ -38,7 +39,7 @@ import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/cn";
 import { act, type InspectorTarget, useUi } from "@/lib/store";
 
-/** Row styling shared by every sidebar row, as in Synara's sidebarRowStyles. */
+/** Row styling shared by every sidebar row. */
 export const SIDEBAR_ROW =
   "flex w-full min-w-0 cursor-pointer items-center text-left select-none h-7 min-h-7 gap-2 rounded-md px-2 py-0.5 text-ui font-normal outline-hidden transition-colors focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring";
 const ROW_IDLE = "text-foreground/89 hover:bg-[var(--sidebar-accent)] hover:text-[var(--sidebar-accent-foreground)]";
@@ -144,13 +145,11 @@ export function Sidebar({ isMac }: { isMac: boolean }) {
   const project = app.project;
   const document = project?.document;
   const pendingDecisions = document?.decisionRequests.filter(isOpenQuestion) ?? [];
-  // A grilling round is one row with its count, not one row per question.
-  const pendingRows = sidebarDecisionRows(pendingDecisions);
   const pendingMandate = document ? pendingMandateRequest(document) : null;
   const openIssues = project?.github.issues.filter((i) => i.state === "open").length ?? 0;
   const pendingTeam = document?.team.proposals.some((p) => !p.resolution) ?? false;
   const activeWork = document?.team.specialists.filter((s) => s.status === "working" || s.status === "stopping").length ?? 0;
-  const verifiedCandidates = project ? Object.values(project.candidateReports).filter((r) => r.state !== "building").length : 0;
+  const verifiedCandidates = project ? Object.values(project.candidateReports).filter((r) => r.state === "verified" || r.state === "decided").length : 0;
   const specialists = sidebarSpecialists(document?.team.specialists ?? []);
   const running = Boolean(project?.runningRequestId) || project?.phase.kind === "studying" || project?.phase.kind === "opening";
   const isActive = (kind: InspectorTarget["kind"]) => inspector?.kind === kind;
@@ -165,6 +164,7 @@ export function Sidebar({ isMac }: { isMac: boolean }) {
   const [deleting, setDeleting] = useState<ProjectGoal | null>(null);
   const runningGoalId = project?.runningRequestId ? (document?.requests.find((r) => r.id === project.runningRequestId)?.goalId ?? null) : null;
   const proposedGoals = goals.filter((g) => g.status === "proposed").length;
+  const waiting = useWaiting().length;
 
   return (
     <div className="flex h-full min-h-0 flex-col text-foreground">
@@ -206,6 +206,14 @@ export function Sidebar({ isMac }: { isMac: boolean }) {
         </div>
         {project ? (
           <div className="flex flex-col gap-0.5 px-2 pt-0.5 pb-1.5">
+            {/* Everything that waits for the person, in one place always in view (issue #240). */}
+            <SidebarRow
+              icon={<IconHourglass className="size-3.5" stroke={1.8} />}
+              label="Aspetta te"
+              active={isActive("waiting")}
+              badge={waiting}
+              onClick={() => setInspector({ kind: "waiting" })}
+            />
             <SidebarRow
               icon={<IconTarget className="size-3.5" stroke={1.8} />}
               label="Obiettivi"
@@ -264,6 +272,7 @@ export function Sidebar({ isMac }: { isMac: boolean }) {
               icon={<IconBrain className="size-3.5" stroke={1.8} />}
               label="Memoria"
               active={isActive("memory")}
+              badge={app.learning?.proposals.length ?? 0}
               onClick={() => setInspector({ kind: "memory" })}
             />
           </div>
@@ -326,16 +335,19 @@ export function Sidebar({ isMac }: { isMac: boolean }) {
                     </div>
                   </div>
                   {open && project ? (
-                    <div className="flex flex-col gap-0.5 pt-0.5">
+                    // Under the project only the one chat, its goal filters and the agents' cards (U01). Questions and
+                    // decisions wait in "Aspetta te" and in the Patto, not here.
+                    <div className="flex flex-col gap-0.5 pt-0.5" data-testid="sidebar-project-rows">
                       <button
                         type="button"
+                        data-testid="sidebar-chat"
                         onClick={() => openDialog(null)}
                         className={cn(SIDEBAR_ROW, "relative pl-8", mainView === "dialog" && !dialogGoalId ? ROW_ACTIVE : ROW_IDLE)}
                       >
                         <IconMessageCircle className="size-3 shrink-0 text-muted-foreground" stroke={1.8} />
-                        <span className="min-w-0 flex-1 truncate text-ui leading-5">Dialogo del progetto</span>
+                        <span className="min-w-0 flex-1 truncate text-ui leading-5">Chat del Coordinatore</span>
                         <span className="flex w-[15px] shrink-0 items-center justify-center">
-                          {running && !runningGoalId ? <Spinner /> : null}
+                          {running ? <Spinner /> : null}
                         </span>
                       </button>
                       {goals.map((goal) => {
@@ -365,13 +377,13 @@ export function Sidebar({ isMac }: { isMac: boolean }) {
                               </span>
                             </button>
                             {busy ? null : (
-                              // Archive always; delete only while the dialog has no history.
+                              // Archive always; delete only while the goal has no history in the chat.
                               <div className="absolute top-1/2 right-1.5 flex -translate-y-1/2 items-center gap-0.5 opacity-0 transition-opacity group-hover/goal-row:opacity-100 focus-within:opacity-100">
                                 {empty ? (
-                                  <Tooltip label="Elimina il dialogo vuoto">
+                                  <Tooltip label="Elimina l'obiettivo vuoto">
                                     <button
                                       type="button"
-                                      aria-label={`Elimina il dialogo vuoto ${goal.title}`}
+                                      aria-label={`Elimina l'obiettivo vuoto ${goal.title}`}
                                       className="sidebar-icon-button size-5"
                                       onClick={() => setDeleting(goal)}
                                     >
@@ -398,31 +410,17 @@ export function Sidebar({ isMac }: { isMac: boolean }) {
                         <button
                           key={specialist.id}
                           type="button"
+                          data-testid="sidebar-agent"
                           onClick={() => setInspector({ kind: "specialist", id: specialist.id })}
                           className={cn(SIDEBAR_ROW, "pl-8", inspector?.kind === "specialist" && inspector.id === specialist.id ? ROW_ACTIVE : ROW_IDLE)}
                         >
-                          <AgentAvatar agent={specialist} className="-ml-0.5" />
+                          <AgentAvatar agent={specialist} size={24} className="-my-1 -ml-1" />
                           <span className="flex min-w-0 flex-1 items-center gap-1.5 text-ui leading-5 text-foreground/95">
                             <span className="min-w-0 truncate">{specialist.name}</span>
                             <AgentTag agent={specialist} className="shrink-0" />
                           </span>
                           <span className="flex w-[15px] shrink-0 items-center justify-center">
                             <StatusDot status={specialist.status} />
-                          </span>
-                        </button>
-                      ))}
-                      {pendingRows.map((row) => (
-                        <button
-                          key={row.id}
-                          type="button"
-                          onClick={() => setInspector({ kind: "pact" })}
-                          title={row.title}
-                          className={cn(SIDEBAR_ROW, "pl-8", ROW_IDLE)}
-                        >
-                          {row.round ? <IconListCheck className="size-3 shrink-0 text-muted-foreground" stroke={1.8} /> : <span className="size-3 shrink-0" />}
-                          <span className="min-w-0 flex-1 truncate text-ui leading-5 text-foreground/95">{row.title}</span>
-                          <span className="flex w-[15px] shrink-0 items-center justify-center">
-                            <span className="size-[7px] rounded-full bg-[var(--color-text-accent)]" />
                           </span>
                         </button>
                       ))}
@@ -448,34 +446,9 @@ export function Sidebar({ isMac }: { isMac: boolean }) {
 
 /**
  * The team members listed under the open project: the developers, then a fixed role only while it has work to show,
- * so eleven idle figures do not push the dialogs down. The Team panel shows everyone (W09).
+ * so eleven idle figures do not push the goals down. The Team panel shows everyone (W09).
  */
 export function sidebarSpecialists(specialists: Specialist[]): Specialist[] {
   const members = specialists.filter((s) => s.status !== "removed");
   return [...members.filter((s) => s.role === "developer"), ...members.filter((s) => s.role !== "developer" && s.status !== "available")];
-}
-
-/** Pending decisions as sidebar rows: each grilling round becomes one row, other decisions keep their own. */
-export function sidebarDecisionRows(pending: { id: string; question: string; grilling?: { subjectRequestId: string; round: number } | null }[]) {
-  const rows: { id: string; title: string; round: number | null }[] = [];
-  const rounds = new Map<string, { id: string; round: number; count: number }>();
-  for (const request of pending) {
-    if (!request.grilling) {
-      rows.push({ id: request.id, title: request.question, round: null });
-      continue;
-    }
-    const key = `${request.grilling.subjectRequestId}:${request.grilling.round}`;
-    const existing = rounds.get(key);
-    if (existing) existing.count += 1;
-    else {
-      const entry = { id: `round-${key}`, round: request.grilling.round, count: 1 };
-      rounds.set(key, entry);
-      rows.push({ id: entry.id, title: "", round: entry.round });
-    }
-  }
-  return rows.map((row) => {
-    if (row.round === null) return row;
-    const entry = [...rounds.values()].find((r) => r.id === row.id)!;
-    return { ...row, title: `Chiarimento, turno ${entry.round} · ${entry.count} ${entry.count === 1 ? "domanda" : "domande"}` };
-  });
 }

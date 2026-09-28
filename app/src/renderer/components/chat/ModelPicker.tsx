@@ -2,7 +2,7 @@ import { Popover } from "@base-ui/react/popover";
 import { IconBolt, IconBoltFilled, IconChevronDown, IconRotateClockwise } from "@tabler/icons-react";
 import { isUsableAccount, type ProviderId } from "@shared/codex";
 import { failureSummary } from "@shared/providerFailure";
-import { PROVIDERS } from "@shared/providers";
+import { coordinatorUnavailableReason, PROVIDERS } from "@shared/providers";
 import { useEffect, useRef, useState } from "react";
 import { PROVIDER_GLOW, ProviderIcon } from "@/components/ProviderIcon";
 import { PickerHeader, PickerList, PickerNote, PickerOption, PickerPopup, PickerSearch, usePickerSearch } from "@/components/ui/picker";
@@ -35,7 +35,6 @@ export function ModelPicker({
   effort,
   modelMissing,
   busy,
-  goalId,
   fastMode,
 }: {
   className: string;
@@ -44,7 +43,6 @@ export function ModelPicker({
   effort: string | null;
   modelMissing: boolean;
   busy: boolean;
-  goalId: string | null;
   fastMode: boolean;
 }) {
   const providers = useUi((s) => s.app!.providers);
@@ -77,7 +75,7 @@ export function ModelPicker({
 
   const choose = (model: string) => {
     const next = models.find((m) => m.model === model);
-    void act("coordinator:selectModel", { model, effort: next?.defaultReasoningEffort ?? null, provider: browsing, goalId });
+    void act("coordinator:selectModel", { model, effort: next?.defaultReasoningEffort ?? null, provider: browsing });
     setOpen(false);
   };
 
@@ -172,6 +170,8 @@ export function ModelPicker({
           )}
         </PickerList>
 
+        {coordinatorUnavailableReason(browsing) ? <p className="px-4 pb-2 text-ui-xs text-warning">{coordinatorUnavailableReason(browsing)}</p> : null}
+
         {modelMissing && browsing === selectedProvider ? (
           <p className="px-4 pb-2 text-ui-xs text-warning">{selectedModel} non è più disponibile: scegline un altro.</p>
         ) : null}
@@ -183,8 +183,8 @@ export function ModelPicker({
             defaultValue={current.defaultReasoningEffort ?? null}
             modelName={current.displayName}
             accent={PROVIDER_GLOW[selectedProvider]}
-            fast={current.supportsFastMode ? { enabled: fastMode, onToggle: () => void act("coordinator:setFastMode", { enabled: !fastMode, goalId }) } : null}
-            onChange={(level) => void act("coordinator:selectModel", { model: current.model, effort: level, provider: selectedProvider, goalId })}
+            fast={current.supportsFastMode ? { enabled: fastMode, onToggle: () => void act("coordinator:setFastMode", { enabled: !fastMode }) } : null}
+            onChange={(level) => void act("coordinator:selectModel", { model: current.model, effort: level, provider: selectedProvider })}
           />
         ) : null}
       </PickerPopup>

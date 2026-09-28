@@ -1,21 +1,28 @@
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import type { DutySkill, GitHubIssue, MandateAction, ProjectDocument, SpecialistAssignment } from "@shared/domain";
+import type { DutySkill, GitHubIssue, MandateAction, ProjectDocument, PullRequestLink, SpecialistAssignment } from "@shared/domain";
+import { dutyTriggerText } from "@shared/duties";
 import { declareCandidate } from "./candidates";
 import { emptyDocument } from "./document";
 import {
   ARCHITECTURE_BINDING,
+  automaticWorkStatus,
   concludeDuty,
   DIAGNOSIS_BINDING,
   DOMAIN_WRITING_BINDING,
   type DutyContext,
+  DutyRequestError,
   dutyModel,
   dutySession,
   FIX_BINDING,
+  environmentFailure,
+  dutyLedger,
   nextDuty,
+  onRequestBindingLine,
   recordCheckOutcome,
   startDomainWriting,
+  startDutyOnRequest,
   TRIAGE_BINDING,
   withinMandate,
 } from "./duties";
@@ -219,6 +226,50 @@ describe("diagnosis of failed checks (W11)", () => {
     expect(diagnosis.duty).toMatchObject({ skill: "diagnosing-bugs", trigger: { kind: "failedCheck", failureId: failure.id } });
     expect(failure.diagnosisId).toBe(diagnosis.id);
     finish(document, diagnosis);
+    expect(nextDuty(document, context())).toBeNull();
+  });
+
+  it("never diagnoses a failure of the sandbox or the machine as a bug of the project (issue #271)", () => {
+    const document = project();
+    const failed = { check: "node_typecheck" as const, passed: false, ran: true, command: "npm run typecheck", target: { kind: "checkout" as const, headSHA: HEAD } };
+    const sandbox = [
+      "Error: EPERM: operation not permitted, open '/Users/p/.npm/_logs/debug.log'",
+      "listen EPERM: operation not permitted 127.0.0.1\n[Trama] Alcuni fallimenti vengono dalla sandbox: la rete è permessa solo verso 127.0.0.1, internet è bloccato.",
+      "mkdir: /private/var/folders/x: Read-only file system",
+      "sh: tsc: command not found",
+      "bwrap: Creating new namespace failed: Operation not permitted",
+    ];
+    recordCheckOutcome(document, { ...failed, passed: true, output: "" });
+    for (const output of sandbox) {
+      expect(environmentFailure(output)).toBe(true);
+      expect(recordCheckOutcome(document, { ...failed, output })).toBeNull();
+    }
+    // The failure says nothing about the code: it does not hide the pass recorded before, and nothing starts.
+    expect(document.duties?.failures ?? []).toEqual([]);
+    expect(document.duties?.checkoutChecks.node_typecheck).toEqual({ headSHA: HEAD, passed: true });
+    expect(nextDuty(document, context())).toBeNull();
+    // A failure of the code on the same check is still diagnosed.
+    expect(environmentFailure("src/app/page.tsx(3,7): error TS2322: Type 'string' is not assignable to type 'number'.")).toBe(false);
+    expect(recordCheckOutcome(document, { ...failed, output: "src/app/page.tsx(3,7): error TS2322" })).not.toBeNull();
+    expect(nextDuty(document, context())?.duty?.skill).toBe("diagnosing-bugs");
+  });
+
+  it("leaves out a sandbox failure recorded before the rule, and says the diagnosis has nothing to do", () => {
+    const document = project();
+    dutyLedger(document).failures.push({
+      id: "F-1",
+      check: "node_typecheck",
+      title: "typecheck Node",
+      command: "npm run typecheck",
+      target: "checkout",
+      candidateId: null,
+      assignmentId: null,
+      version: HEAD,
+      regression: false,
+      output: "Error: EACCES: permission denied, mkdir '/Users/p/.cache'",
+      at: "2026-09-27T10:00:00.000Z",
+      diagnosisId: null,
+    });
     expect(nextDuty(document, context())).toBeNull();
   });
 
@@ -489,5 +540,194 @@ describe("mandate and model of the automatic work (W11)", () => {
     expect(dutyModel([model("claude-sonnet-4-5", true), model("claude-haiku-4-5")], "claude-sonnet-4-5")?.model).toBe("claude-haiku-4-5");
     expect(dutyModel([model("gpt-5.5", true), model("gpt-5.5-fast")], "gpt-5.5")).toEqual({ model: "gpt-5.5", reason: expect.stringMatching(/Coordinatore/) });
     expect(dutyModel([], null)).toBeNull();
+  });
+});
+
+const pull = (number: number, linkedIssues: number[]): PullRequestLink => ({ number, linkedIssues });
+
+describe("only issues that are new for Trama go to triage (issue #231)", () => {
+  it("leaves out an issue already in work, one with a linked pull request and one that was closed and reopened", () => {
+    const document = project();
+    nextDuty(document, context({ issues: [] }));
+    const { work } = withCandidate(document);
+    work.issueNumber = 187;
+    // A pull request of any state: GitHub lists the closed and merged ones with the issues.
+    const linked = pull(190, [188]);
+    // The reopened issue was seen closed: it never becomes new again.
+    nextDuty(document, context({ issues: [issue(189, [], "closed")], pullRequests: [] }));
+    const issues = [issue(187), issue(188), issue(189), issue(191)];
+    const triage = nextDuty(document, context({ issues, pullRequests: [linked] }))!;
+    expect(triage.issueNumber).toBe(191);
+    const dropped = Object.fromEntries((document.duties?.newIssues ?? []).map((e) => [e.number, e.dropped]));
+    expect(dropped[187]).toContain(work.id);
+    expect(dropped[188]).toContain("#190");
+    expect(dropped[189]).toContain("chiusa");
+    expect(dropped[191]).toBeNull();
+    // A pull request that shows up later still takes the issue out before its triage.
+    finish(document, triage);
+    const later = nextDuty(document, context({ issues: [...issues, issue(192)], pullRequests: [linked, pull(193, [192])] }));
+    expect(later?.duty?.skill).not.toBe("triage");
+    expect(document.duties?.newIssues?.find((e) => e.number === 192)?.dropped).toContain("#193");
+  });
+
+  it("treats every issue GitHub lists as already seen when the ledger predates the record of new issues", () => {
+    const document = project();
+    // A ledger written before issue #231: a low baseline and no record of the issues seen since.
+    document.duties = { issueBaseline: 100, failures: [], checkoutChecks: {} };
+    expect(nextDuty(document, context({ issues: [issue(120), issue(187)] }))?.duty?.skill).not.toBe("triage");
+    expect(document.duties.issueBaseline).toBe(187);
+    expect(nextDuty(document, context({ issues: [issue(120), issue(187), issue(200)] }))?.issueNumber).toBe(200);
+  });
+
+  it("keeps the baseline when GitHub is not read, so a lost cache makes nothing new", () => {
+    const document = project();
+    nextDuty(document, context({ issues: [issue(5)] }));
+    nextDuty(document, context({ issues: null }));
+    expect(document.duties?.issueBaseline).toBe(5);
+    expect(nextDuty(document, context({ issues: [issue(5)] }))).toBeNull();
+  });
+});
+
+describe("the state of the automatic work (issue #231)", () => {
+  const byKind = (document: ProjectDocument, overrides: Partial<DutyContext> = {}) =>
+    Object.fromEntries(automaticWorkStatus(document, context(overrides)).map((w) => [w.kind, w]));
+
+  it("says Clean Code waits for a free team, and how many assignments are at work", () => {
+    const document = project();
+    withCandidate(document);
+    const busy = assign(
+      document,
+      { specialist: "Ada", kind: "agreedTicket", objective: "Altro", issueNumber: null, exercise: null, moduleIds: ["app"], dependencies: [], model: "m", tools: ["commands"], requiredChecks: [], instructions: "i" },
+      1,
+      null,
+    );
+    const waiting = byKind(document).architectureReview!;
+    expect(waiting).toMatchObject({ state: "waiting", role: "cleanCode", onRequest: { allowed: true } });
+    expect(waiting.detail).toContain("team sia libero: un incarico è al lavoro");
+    finish(document, busy);
+    expect(byKind(document, { coordinatorBusy: true }).architectureReview!.detail).toContain("Coordinatore");
+    expect(byKind(document).architectureReview!.state).toBe("due");
+    const review = nextDuty(document, context())!;
+    expect(byKind(document).architectureReview).toMatchObject({ state: "running", assignmentId: review.id });
+    expect(byKind(document).architectureReview!.onRequest).toMatchObject({ allowed: false });
+  });
+
+  it("says why nothing starts: no mandate, no provider, no new issue", () => {
+    const document = project(null);
+    nextDuty(document, context({ issues: [issue(1)] }));
+    nextDuty(document, context({ issues: [issue(1), issue(2)] }));
+    const noMandate = byKind(document, { issues: [issue(1), issue(2)] });
+    expect(noMandate.triage).toMatchObject({ state: "waiting", onRequest: { allowed: false } });
+    expect(noMandate.triage!.detail).toContain("#2");
+    expect(noMandate.triage!.detail).toContain("mandato");
+    grantMandate(document, { objectives: ["o"], priorities: [], scopeModuleIds: ["app"], authorizedActions: ["plan"], limits: [] });
+    expect(byKind(document, { issues: [issue(1), issue(2)], runner: null }).triage!.detail).toContain("provider");
+    expect(byKind(document, { issues: [issue(1)] }).triage).toMatchObject({ state: "idle" });
+    expect(byKind(document).diagnosis).toMatchObject({ state: "idle", onRequest: null });
+    expect(byKind(document).architectureReview).toMatchObject({ state: "idle" });
+    expect(byKind(document).domainWriting).toMatchObject({ state: "idle", onRequest: null });
+    // Reading the state changes nothing.
+    const before = JSON.stringify(document);
+    byKind(document, { issues: [issue(1), issue(2), issue(3)] });
+    expect(JSON.stringify(document)).toBe(before);
+  });
+});
+
+describe("the state of the domain writing (issue #231)", () => {
+  it("is due when nothing holds it, and names what holds it otherwise", () => {
+    const proposal = (scope: string[]) => ({
+      id: "P-1",
+      requestId: null,
+      decisionIds: ["D-1"],
+      contextPath: "CONTEXT.md",
+      adrDirectory: "docs/adr",
+      terms: [{ term: "Ordine", definition: "d", avoid: [] }],
+      adrs: [],
+      moduleIds: scope,
+      scopeModuleIds: scope,
+      createdAt: "",
+      assignmentId: null,
+      // A reason saved earlier, no longer true: the state reads the rules again.
+      waiting: "Senza un mandato valido nessuno scrive i file: la proposta aspetta il mandato.",
+    });
+    const writing = (document: ProjectDocument, overrides: Partial<DutyContext> = {}) =>
+      automaticWorkStatus(document, context(overrides)).find((w) => w.kind === "domainWriting")!;
+    const document = project();
+    document.domainProposals = [proposal(["app"])];
+    expect(writing(document)).toMatchObject({ state: "due", detail: expect.stringContaining("P-1") });
+    expect(writing(document, { runner: null }).detail).toContain("provider");
+    // Another assignment at work on the proposal's modules: assignDuty would refuse it, so it waits.
+    const { work } = withCandidate(document);
+    work.status = "running";
+    expect(writing(document)).toMatchObject({ state: "waiting", detail: expect.stringContaining(`app (incarico ${work.id})`) });
+    work.status = "completed";
+    document.domainProposals = [proposal(["docs"])];
+    expect(writing(document)).toMatchObject({ state: "waiting", detail: expect.stringContaining("correzione del mandato") });
+    expect(writing(project(null))).toMatchObject({ state: "idle" });
+  });
+});
+
+describe("automatic work started on request (issue #231)", () => {
+  it("starts Clean Code's review now, outside the rule, and says who asked", async () => {
+    const document = project();
+    const review = startDutyOnRequest(document, { kind: "architectureReview" }, context(), "person");
+    expect(roleOf(document, review)).toBe("cleanCode");
+    expect(review).toMatchObject({ tools: ["commands"], model: "gpt-5.6-luna", status: "preparing" });
+    expect(review.duty).toMatchObject({ skill: "improve-codebase-architecture", requestedBy: "person", trigger: { kind: "idleTeam", headSHA: HEAD } });
+    expect(dutyTriggerText(document, review.duty!)).toBe(`Su richiesta tua: revisione al commit ${HEAD.slice(0, 7)}`);
+    const session = dutySession({
+      projectName: "p",
+      document,
+      assignment: review,
+      moduleIds: ["app"],
+      issue: null,
+      resumed: false,
+      skill: await loadNativeSkill(skillsDirectory, "improve-codebase-architecture"),
+      nativeInput: false,
+    });
+    expect(session.prompt).toContain(ARCHITECTURE_BINDING);
+    expect(session.prompt).toContain(onRequestBindingLine("person"));
+    expect(session.instructions).toContain("because the person asked");
+    // The role is busy now: a second request is refused with the reason.
+    expect(() => startDutyOnRequest(document, { kind: "architectureReview" }, context(), "coordinator")).toThrow(/al lavoro sull'incarico/);
+    // The rule stays as it is: it does not start another review on the same commit.
+    finish(document, review);
+    concludeDuty(document, review.id, architectureAnswer(0));
+    expect(nextDuty(document, context())).toBeNull();
+  });
+
+  it("starts the triage of an open issue the Coordinator names, even one that is not new", () => {
+    const document = project();
+    nextDuty(document, context({ issues: [issue(187)] }));
+    const triage = startDutyOnRequest(document, { kind: "triage", issueNumber: 187 }, context({ issues: [issue(187)] }), "coordinator");
+    expect(triage).toMatchObject({ issueNumber: 187 });
+    expect(triage.duty).toMatchObject({ skill: "triage", requestedBy: "coordinator" });
+    expect(dutyTriggerText(document, triage.duty!)).toContain("Su richiesta del Coordinatore");
+    finish(document, triage);
+    const refuse = (issues: GitHubIssue[] | null, number: number) => {
+      try {
+        startDutyOnRequest(document, { kind: "triage", issueNumber: number }, context({ issues }), "person");
+        return null;
+      } catch (error) {
+        return (error as DutyRequestError).code;
+      }
+    };
+    expect(refuse([issue(187)], 5)).toBe("issue_not_found");
+    expect(refuse([issue(5, [], "closed")], 5)).toBe("issue_closed");
+    expect(refuse(null, 187)).toBe("github_unavailable");
+  });
+
+  it("refuses without a granted mandate or a provider", () => {
+    const code = (document: ProjectDocument, overrides: Partial<DutyContext> = {}) => {
+      try {
+        startDutyOnRequest(document, { kind: "architectureReview" }, context(overrides), "person");
+        return null;
+      } catch (error) {
+        return (error as DutyRequestError).code;
+      }
+    };
+    expect(code(project(null))).toBe("mandate_missing");
+    expect(code(project(), { runner: null })).toBe("provider_unavailable");
+    expect(code(project(), { headSHA: null })).toBe("head_unknown");
   });
 });

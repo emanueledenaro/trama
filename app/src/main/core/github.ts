@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { delimiter } from "node:path";
-import type { GitHubCapabilities, GitHubIssue } from "@shared/domain";
+import type { GitHubCapabilities, GitHubIssue, PullRequestLink } from "@shared/domain";
 
 const REMOTE_PREFIXES = ["git@github.com:", "https://github.com/", "ssh://git@github.com/"];
 
@@ -61,6 +61,14 @@ export async function readGitHubRepository(root: string): Promise<string | null>
   }
 }
 
+/** Issue references in a pull request: `#12` in its title or body (not `owner/repo#12`) and `issue-12` in its branch. */
+export function linkedIssueNumbers(title: string, body: string | null, headRef: string): number[] {
+  const numbers = new Set<number>();
+  for (const match of `${title}\n${body ?? ""}`.matchAll(/(?<![\w/&])#(\d+)\b/g)) numbers.add(Number(match[1]));
+  for (const match of headRef.matchAll(/(?:^|[/_-])(?:issues?|gh)[-_]?(\d+)(?=$|[/_-])/gi)) numbers.add(Number(match[1]));
+  return [...numbers].filter((n) => n > 0).sort((a, b) => a - b);
+}
+
 interface RawIssue {
   number: number;
   title: string;
@@ -74,7 +82,16 @@ interface RawIssue {
 }
 
 export async function listIssues(repository: string): Promise<GitHubIssue[]> {
+  return (await listIssuesAndPullLinks(repository)).issues;
+}
+
+/**
+ * The issues of every state, and the issues each pull request of every state names in its title or body: GitHub lists
+ * pull requests with the issues, so a closed or merged one still takes its issue out of triage (issue #231).
+ */
+export async function listIssuesAndPullLinks(repository: string): Promise<{ issues: GitHubIssue[]; pullRequestLinks: PullRequestLink[] }> {
   const issues: GitHubIssue[] = [];
+  const pullRequestLinks: PullRequestLink[] = [];
   for (let page = 1; page <= 10; page++) {
     const output = await run("gh", ["api", "--method", "GET", `repos/${repository}/issues?state=all&per_page=100&page=${page}`], {
       env: ghEnvironment(),
@@ -82,7 +99,11 @@ export async function listIssues(repository: string): Promise<GitHubIssue[]> {
     });
     const rows = JSON.parse(output) as RawIssue[];
     for (const row of rows) {
-      if (row.pull_request) continue;
+      if (row.pull_request) {
+        const linkedIssues = linkedIssueNumbers(row.title, row.body, "").filter((n) => n !== row.number);
+        if (linkedIssues.length) pullRequestLinks.push({ number: row.number, linkedIssues });
+        continue;
+      }
       issues.push({
         number: row.number,
         title: row.title,
@@ -96,7 +117,7 @@ export async function listIssues(repository: string): Promise<GitHubIssue[]> {
     }
     if (rows.length < 100) break;
   }
-  return issues;
+  return { issues, pullRequestLinks };
 }
 
 /** Opens an issue; `labels` are applied when the person's gh session may set them. Returns the issue GitHub created. */
@@ -135,6 +156,26 @@ export async function updateIssueText(repository: string, number: number, title:
     env: ghEnvironment(),
     timeout: 20_000,
   });
+}
+
+/** Adds labels to an issue, keeping the ones it has. */
+export async function addIssueLabels(repository: string, number: number, labels: string[]): Promise<void> {
+  await run("gh", ["api", "--method", "POST", `repos/${repository}/issues/${number}/labels`, ...labels.flatMap((label) => ["--raw-field", `labels[]=${label}`])], {
+    env: ghEnvironment(),
+    timeout: 20_000,
+  });
+}
+
+/** Removes a label from an issue; a label the issue does not have is not an error. */
+export async function removeIssueLabel(repository: string, number: number, label: string): Promise<void> {
+  try {
+    await run("gh", ["api", "--method", "DELETE", `repos/${repository}/issues/${number}/labels/${encodeURIComponent(label)}`], {
+      env: ghEnvironment(),
+      timeout: 20_000,
+    });
+  } catch (error) {
+    if (!/HTTP 404|Not Found/i.test((error as Error).message)) throw error;
+  }
 }
 
 export interface IssueDetail {

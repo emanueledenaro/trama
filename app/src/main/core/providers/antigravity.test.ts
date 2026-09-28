@@ -14,7 +14,6 @@ import {
   isAllowedAntigravityTool,
   isDeniedAntigravityTool,
   hookScriptSource,
-  mcpProxyScriptSource,
   isAntigravityBackgroundStart,
   parseAntigravityModelLines,
   parseAntigravityPrintResult,
@@ -23,10 +22,11 @@ import {
   antigravityHelpOffersEffort,
   antigravityModelArgs,
 } from "./antigravity";
+import { mcpProxyScriptSource } from "./hostToolProxy";
 import { clearUsageLimitsForTests, parseUsageLimit } from "./providerSupport";
 import { CoordinatorToolServer, toolSuccess } from "../toolServer";
 
-/** A fake `agy` that answers health probes and prints Synara-format stream-json with hook events. */
+/** A fake `agy` that answers health probes and prints stream-json in the CLI's format with hook events. */
 const FAKE_AGY = String.raw`
 const fs = require("node:fs");
 const args = process.argv.slice(2);
@@ -108,6 +108,15 @@ const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
     process.exit(0);
   }
   hook("pre-invocation", {});
+  if (scenario === "github") {
+    // Issue #228: first the person's GitHub MCP tool; once Trama names read_issues, that one.
+    const prompt = args[args.indexOf("-p") + 1];
+    const reply = prompt.includes("read_issues di Trama") ? "trama" : "github";
+    tool(1, reply === "trama" ? "mcp_trama_read_issues" : "mcp_github_list_issues", {}, { toolOutput: "[]" });
+    fs.appendFileSync(process.env.FAKE_AGY_LOG, "prompt " + JSON.stringify(prompt) + "\n");
+    out({ event: "result", result: { status: "SUCCESS", response: reply } });
+    process.exit(0);
+  }
   tool(1, "run_command", { CommandLine: "\"curl https://example.com > /etc/x\"" }, { toolOutput: "ok\nexited with code 0" });
   tool(2, "write_to_file", { TargetFile: process.cwd() + "/a.txt" }, { error: "" });
   tool(3, "view_file", { AbsolutePath: process.cwd() + "/README.md" }, { error: "boom" });
@@ -135,7 +144,7 @@ const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
  * PreToolUse payloads in the shape the Antigravity CLI sends to hooks (`conversationId`, `stepIdx`,
- * `toolCall: { name, args }`), with the tool names and argument keys Synara's adapter tests record.
+ * `toolCall: { name, args }`), with the tool names and argument keys taken from third-party adapter tests (see THIRD_PARTY_NOTICES.md).
  * These are not captured from a live `agy`: the live proof in the pull request covers that.
  */
 const READ_ONLY_RECORDED_DENIALS = (worktree: string): Record<string, unknown>[] =>
@@ -682,7 +691,8 @@ describe("Antigravity turns", () => {
     });
     const second = (await logLines())[1] as { args: string[] };
     expect(second.args.slice(0, 2)).toEqual(["--conversation", "conv-1"]);
-    expect(second.args.at(-1)).toBe("ancora");
+    // The hook's denials carry no message: the next prompt says what Trama blocked (issue #228).
+    expect(second.args.at(-1)).toMatch(/^Nel turno precedente Trama ha bloccato questi strumenti del provider:\n- curl https:\/\/example.com > \/etc\/x: .*\n- search_web: .*\n- invoke_subagent: .*\n\nancora$/);
 
     await mkdir(join(root, "home", ".gemini", "antigravity-cli", "brain", "conv-1"), { recursive: true });
     const other = make();
@@ -806,6 +816,37 @@ describe("Antigravity turns", () => {
       await runtime.runTurn({ threadId, prompt: "x", cwd: worktree, model: "m", writableRoot: worktree, onEvent: () => undefined });
       const call = (await logLines())[0] as { env: Record<string, string | undefined> };
       expect(call.env.hostTools).toBe("propose_plan");
+    } finally {
+      server.stop();
+    }
+  });
+
+  it("records a refused GitHub tool and names read_issues in the next turn (issue #228)", async () => {
+    process.env.FAKE_AGY_SCENARIO = "github";
+    const server = new CoordinatorToolServer(
+      [{ name: "read_issues", description: "Legge le issue", properties: {}, required: [], readOnly: true }],
+      async () => toolSuccess({ issues: [] }),
+      "istruzioni",
+    );
+    const url = await server.start();
+    try {
+      runtime = new AntigravityRuntime(
+        { executable: join(root, "agy"), toolServer: { name: "trama", url, token: server.token, tools: server.toolNames } },
+        { homeDir: join(root, "home") },
+      );
+      const { threadId } = await runtime.openThread({ model: "m", cwd: root, developerInstructions: "", sandbox: "read-only" });
+      const events: TurnEvent[] = [];
+      const run = () => runtime!.runTurn({ threadId, prompt: "leggi le issue", cwd: root, model: "m", onEvent: (e) => events.push(e) });
+      expect(await run()).toBe("github");
+      expect(events).toContainEqual({
+        type: "toolRefused",
+        itemId: expect.any(String),
+        tool: "mcp_github_list_issues",
+        reason: expect.stringContaining("Gli strumenti GitHub del provider sono bloccati: per le issue usa read_issues di Trama."),
+      });
+      expect(await run()).toBe("trama");
+      expect(await readFile(join(root, "log.ndjson"), "utf8")).toContain("denied mcp_github_list_issues");
+      expect(events).toContainEqual(expect.objectContaining({ type: "toolCallStarted", tool: "mcp_trama_read_issues" }));
     } finally {
       server.stop();
     }

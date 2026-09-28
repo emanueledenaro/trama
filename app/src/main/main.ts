@@ -128,13 +128,15 @@ const handlers: { [K in ActionName]: Handler<K> } = {
     controller.send(text, moduleId, model, effort, images ?? [], provider ?? null, goalId ?? null),
   "coordinator:takeStep": ({ requestId }) => controller.takeStep(requestId),
   "coordinator:interrupt": () => controller.interrupt(),
+  "coordinator:pause": ({ paused }) => controller.pauseContinuousWork(paused),
+  "coordinator:recap": ({ goalId }) => controller.recap(null, goalId ?? null),
   "coordinator:retry": () => controller.startCoordinator(),
   "coordinator:retryRequest": ({ requestId }) => controller.retryRequest(requestId),
   "coordinator:stopRetry": () => controller.stopProviderRetry(),
-  "coordinator:selectModel": ({ model, effort, provider, goalId }) => controller.selectModel(model, effort, provider ?? null, goalId ?? null),
-  "coordinator:setFastMode": ({ enabled, goalId }) => controller.setFastMode(enabled, goalId ?? null),
-  "coordinator:selectProvider": ({ provider, goalId }) => controller.selectProvider(provider, goalId ?? null),
-  "coordinator:saveDraft": ({ text, goalId }) => controller.saveDraft(text, goalId ?? null),
+  "coordinator:selectModel": ({ model, effort, provider }) => controller.selectModel(model, effort, provider ?? null),
+  "coordinator:setFastMode": ({ enabled }) => controller.setFastMode(enabled),
+  "coordinator:selectProvider": ({ provider }) => controller.selectProvider(provider),
+  "coordinator:saveDraft": ({ text }) => controller.saveDraft(text),
   "coordinator:deleteQueued": async ({ id }) => controller.deleteQueuedMessage(id),
   "goal:create": (input) => controller.createGoal(input),
   "goal:update": ({ id, ...change }) => controller.updateGoal(id, change),
@@ -148,7 +150,11 @@ const handlers: { [K in ActionName]: Handler<K> } = {
   "decision:answer": ({ requestId, alternativeIndex, freeText }) => controller.answerDecision(requestId, alternativeIndex, freeText),
   "decision:withdraw": ({ requestId, reason }) => controller.withdrawDecision(requestId, reason),
   "mandate:grant": (input) => controller.grantMandate(input),
-  "mandate:revoke": ({ reason, requestId }) => controller.revokeMandate(reason, requestId),
+  "mandate:revoke": ({ reason }) => controller.revokeMandate(reason),
+  "mandate:restrict": (input) => controller.restrictMandate(input),
+  "fixedBan:acknowledge": ({ id }) => controller.acknowledgeFixedBan(id),
+  "mandate:reject": ({ requestId, reason }) => controller.rejectMandateRequest(requestId, reason),
+  "autonomousStep:correct": ({ stepId, note }) => controller.correctAutonomousStep(stepId, note),
   "team:answer": ({ proposalId, keeping, note }) => controller.answerTeamProposal(proposalId, keeping, note),
   "assignment:stop": ({ assignmentId }) => controller.stopSpecialistWork(assignmentId),
   "assignment:resume": ({ assignmentId }) => controller.resumeSpecialistWork(assignmentId),
@@ -156,6 +162,7 @@ const handlers: { [K in ActionName]: Handler<K> } = {
   "specialist:remove": ({ specialistId, reason }) => controller.removeSpecialistByPerson(specialistId, reason),
   "specialist:rename": ({ specialistId, name }) => controller.renameSpecialistByPerson(specialistId, name),
   "specialist:setColor": ({ specialistId, color }) => controller.setSpecialistColorByPerson(specialistId, color),
+  "automaticWork:start": (request) => controller.startAutomaticWork(request),
   "pactDemo:run": () => controller.runPactDemo(),
   "pactDemo:approve": () => controller.approvePactDemo(),
   "candidate:approve": ({ candidateId }) => controller.approveCandidateByPerson(candidateId),
@@ -319,6 +326,7 @@ app.whenReady().then(async () => {
     void controller.pollMonitor().catch(() => undefined);
     void controller.refreshCodex();
     void controller.refreshProviders();
+    controller.resumeAfterSleep();
   });
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { catalogModel, catalogOffers } from "./providers";
+import { catalogModel, catalogOffers, coordinatorDefaultModel } from "./providers";
 
 describe("catalogue names", () => {
   const antigravity = ["Gemini 3.8 Flash", "Gemini 3.1 Pro", "Claude Sonnet 4.6"];
@@ -30,5 +30,24 @@ describe("catalogue names", () => {
     expect(catalogOffers("antigravity", catalog, "Claude Sonnet 4.6 (Thinking)")).toBe(true);
     expect(catalogOffers("antigravity", catalog, "Claude Sonnet 4.6 (High)")).toBe(false);
     expect(catalogOffers("antigravity", catalog, "Gemini 3.1 Pro")).toBe(true);
+  });
+});
+
+describe("the Coordinator's default model (issue #205)", () => {
+  const catalog = [
+    { model: "model-a", isDefault: false },
+    { model: "model-b", isDefault: true },
+  ];
+
+  it("takes the person's last choice while the catalogue offers it, then the catalogue's default", () => {
+    expect(coordinatorDefaultModel("codex", catalog, "model-a")).toBe("model-a");
+    expect(coordinatorDefaultModel("codex", catalog, "model-gone")).toBe("model-b");
+    expect(coordinatorDefaultModel("codex", catalog, null)).toBe("model-b");
+    expect(coordinatorDefaultModel("codex", [{ model: "only" }], null)).toBe("only");
+  });
+
+  it("keeps the person's choice before the catalogue arrives, and has no model without either", () => {
+    expect(coordinatorDefaultModel("codex", [], "model-a")).toBe("model-a");
+    expect(coordinatorDefaultModel("codex", [], null)).toBeNull();
   });
 });

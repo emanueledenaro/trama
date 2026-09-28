@@ -1,9 +1,7 @@
 /**
  * Factory Droid over ACP (`droid exec --output-format acp`).
  *
- * Ported from Synara (https://github.com/Emanuele-web04/synara, MIT, Copyright (c) 2026 T3 Tools Inc.
- * and Emanuele Di Pietro): acp/DroidAcpSupport.ts, DroidTurnCancellation.ts, Layers/DroidAdapter.ts
- * and the Droid part of Layers/ProviderHealth.ts.
+ * Derived from third-party MIT code; see THIRD_PARTY_NOTICES.md.
  */
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -59,7 +57,7 @@ export const droidProfile: AcpProviderProfile = {
     ]),
   async launch(executable, input) {
     const args = ["exec", "--output-format", "acp"];
-    // Synara passes its own system prompt the same way (DROID_RESOURCE_DISCIPLINE_PROMPT).
+    // Developer instructions go in as an appended system prompt.
     if (appendsInstructions(input)) args.push("--append-system-prompt", input.developerInstructions.trim());
     // `droid exec` ignores -m in ACP mode; the model goes through session/set_config_option.
     return { command: executable, args, env: buildChildEnvironment(executable, DROID_API_KEY_ENV_KEYS) };

@@ -1,4 +1,4 @@
-// Layout and classes follow Synara's SidebarSearchPalette (github.com/Emanuele-web04/synara, MIT License).
+// Derived from third-party MIT code; see THIRD_PARTY_NOTICES.md.
 import { Dialog as DialogPrimitive } from "@base-ui/react/dialog";
 import {
   IconBrain,
@@ -8,6 +8,7 @@ import {
   IconFolder,
   IconFolderPlus,
   IconGitPullRequest,
+  IconListDetails,
   IconPencilPlus,
   IconPlugConnected,
   IconRosetteDiscountCheck,
@@ -69,10 +70,18 @@ export function SearchPalette() {
       close();
     };
     const project = app.project;
+    // The recap is a card of the chat (A03): the chat opens on the filter the person was on.
+    const askRecap = () => {
+      const goalId = useUi.getState().dialogGoalId;
+      close();
+      useUi.getState().openDialog(goalId);
+      void act("coordinator:recap", { goalId });
+    };
     const actions: PaletteItem[] = [
       ...(project
         ? [
             { id: "write", label: "Scrivi al Coordinatore", icon: <IconPencilPlus className={ICON} />, run: () => (close(), focusComposer()) },
+            { id: "recap", label: "Chiedi il riepilogo al Coordinatore", icon: <IconListDetails className={ICON} />, run: askRecap },
             { id: "map", label: "Mappa del progetto", icon: <IconSitemap className={ICON} />, run: inspect({ kind: "map" }) },
             { id: "pact", label: "Patto", icon: <IconRosetteDiscountCheck className={ICON} />, run: inspect({ kind: "pact" }) },
             { id: "mandate", label: "Mandato", icon: <IconShieldCheck className={ICON} />, run: inspect({ kind: "mandate" }) },
