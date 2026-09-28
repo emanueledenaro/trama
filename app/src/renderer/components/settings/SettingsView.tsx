@@ -16,7 +16,7 @@ import {
 import { useEffect, useState } from "react";
 import type { ProviderAccount } from "@shared/codex";
 import type { GitHubCliState } from "@shared/onboarding";
-import { DEFAULT_LEARNING_SETTINGS, type LearningSettings, type ThemePreference } from "@shared/domain";
+import type { ThemePreference } from "@shared/domain";
 import { classifyProviderFailure } from "@shared/providerFailure";
 import { capabilityLines, coordinatorUnavailableReason, PROVIDERS, type ProviderDescriptor } from "@shared/providers";
 import { AIHERO_ATTRIBUTION } from "@shared/skills";
@@ -28,6 +28,7 @@ import { ProviderIcon } from "@/components/ProviderIcon";
 import { Spinner } from "@/components/Spinner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/field";
+import { Toggle } from "@/components/ui/toggle";
 import { CLEAN_CODE_VERSION } from "@shared/cleanCode";
 import { cn } from "@/lib/cn";
 import { useLanguage, useT } from "@/lib/i18n";
@@ -136,24 +137,6 @@ function Row({ label, description, control, children }: { label: React.ReactNode
       </div>
       {children}
     </div>
-  );
-}
-
-export function Toggle({ checked, onChange, label }: { checked: boolean; onChange: (value: boolean) => void; label: string }) {
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={checked}
-      aria-label={label}
-      onClick={() => onChange(!checked)}
-      className={cn(
-        "relative inline-flex h-[18px] w-[30px] shrink-0 cursor-pointer items-center rounded-full transition-colors",
-        checked ? "bg-[var(--color-text-accent)]" : "bg-[var(--color-border-heavy)]",
-      )}
-    >
-      <span className={cn("inline-block size-[14px] rounded-full bg-white shadow-sm transition-transform", checked ? "translate-x-[14px]" : "translate-x-[2px]")} />
-    </button>
   );
 }
 
@@ -705,26 +688,30 @@ function StandardSection() {
   );
 }
 
-/** What the Coordinator's learning may do (ADR 0014). */
+/**
+ * The learning switches moved to Memoria, in Come impara (issue #335): they live next to the reviews and the upkeep
+ * they turn on and off. Settings keeps this way there.
+ */
 function LearningSection() {
-  const saved = useUi((s) => s.app?.settings.learning);
-  const learning = { ...DEFAULT_LEARNING_SETTINGS, ...(saved ?? {}) };
-  const set = (change: Partial<LearningSettings>) => void act("settings:update", { learning: change });
+  const project = useUi((s) => s.app?.project ?? null);
+  const setInspector = useUi((s) => s.setInspector);
   const t = useT();
   return (
     <>
-      <PageHeader title={t("settings.learning.title")} description={t("settings.learning.description")} />
-      <Group note={t("settings.learning.note")}>
-        <ToggleRow label={t("settings.learning.memory")} checked={learning.memory} onChange={(value) => set({ memory: value })} />
-        <ToggleRow
-          label={t("settings.learning.userProfile")}
-          description={t("settings.learning.userProfileDescription")}
-          checked={learning.userProfile}
-          onChange={(value) => set({ userProfile: value })}
-        />
-        <ToggleRow label={t("settings.learning.backgroundReview")} checked={learning.backgroundReview} onChange={(value) => set({ backgroundReview: value })} />
-        <ToggleRow label={t("settings.learning.curator")} checked={learning.curator} onChange={(value) => set({ curator: value })} />
-        <ToggleRow label={t("settings.learning.consolidate")} checked={learning.consolidate} onChange={(value) => set({ consolidate: value })} />
+      <PageHeader title={t("settings.section.learning")} description={t("settings.learning.description")} />
+      <Group>
+        {!project ? (
+          <Row label={<span className="text-muted-foreground">{t("settings.learning.openProject")}</span>} />
+        ) : (
+          <Row
+            label={<span className="text-muted-foreground">{t("settings.learning.moved")}</span>}
+            control={
+              <Button size="sm" variant="outline" data-testid="learning-open-memory" onClick={() => setInspector({ kind: "memory", howItLearns: true })}>
+                {t("settings.learning.open")}
+              </Button>
+            }
+          />
+        )}
       </Group>
     </>
   );
