@@ -25,13 +25,16 @@ import {
   type Candidate,
   type CandidateEvidence,
   type CandidateState,
+  type ConflictAssessment,
   type DeveloperQuestion,
   type DeveloperReport,
   type QualityItem,
   type SpecialistAssignment,
   type TechnicalReview,
   type MandateAction,
+  type ProjectDocument,
   type MergeRoute,
+  type MergeStop,
   type TestedSeam,
   developerQuestionState,
   isOpenQuestion,
@@ -62,6 +65,8 @@ import { BLOCKER_TEXT, plainConflictReference, plainText } from "@shared/plainLa
 import { asTitle, useRecord } from "@/lib/references";
 import { PlanSpecBody } from "./PlanSpec";
 import { DutyFields } from "./DutyFields";
+import { PlaceActions, PlaceField } from "./PlaceField";
+import { cloudWorking } from "@shared/workPlace";
 import { GateField } from "./GateField";
 import { RuleLabel } from "./RuleLabel";
 import { InterfaceShotsField } from "./InterfaceShots";
@@ -69,6 +74,7 @@ import { latestGate } from "@shared/gate";
 import { assignmentLine } from "@shared/duties";
 import { ASSIGNMENT_STATUS, CANDIDATE_STATE, candidateStatus, checkName, checkResult, planStatus } from "@shared/states";
 import { Sep } from "@/components/ui/sep";
+import { formatTime } from "@/lib/format";
 import { AgentName } from "@/components/AgentIdentity";
 import { OverlapRow } from "@/components/OverlapNotice";
 import { compareSides, type LineRange, linesLabel, type OverlapItem } from "@shared/overlap";
@@ -784,7 +790,9 @@ export function AssignmentCard({ assignmentId }: { assignmentId: string }) {
       {assignment.seams ? (
         <ContractFields assignment={assignment} decisions={project.document.decisions} />
       ) : assignment.dependencies.length ? (
-        <Field label={t("chat.card.assignment.dependencies")}>{assignment.dependencies.join(", ")}</Field>
+        <Field label={t("chat.card.assignment.dependencies")}>
+          <ReferenceText text={assignment.dependencies.join(", ")} />
+        </Field>
       ) : null}
       {goal ? (
         <Field label={t("chat.card.assignment.goal")}>
@@ -808,8 +816,10 @@ export function AssignmentCard({ assignmentId }: { assignmentId: string }) {
           <div className="mt-0.5 text-ui-sm text-warning">{t("chat.card.assignment.lastTurn", { model: lastTurn.model })}</div>
         ) : null}
       </Field>
+      <PlaceField assignment={assignment} />
       <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-ui-sm text-muted-foreground">
-        <span>{assignment.tools.includes("edits") ? t("chat.card.assignment.ownWorkingCopy") : t("chat.card.assignment.readOnly")}</span>
+        {/* Work in a cloud session has no copy on the Mac until its branch comes back (A19). */}
+        {cloudWorking(assignment) ? null : <span>{assignment.tools.includes("edits") ? t("chat.card.assignment.ownWorkingCopy") : t("chat.card.assignment.readOnly")}</span>}
         {assignment.requiredChecks.length ? <span>{t("chat.card.assignment.checks", { checks: assignment.requiredChecks.map(checkName).join(", ") })}</span> : null}
       </div>
       {assignment.workspace ? (
@@ -817,7 +827,9 @@ export function AssignmentCard({ assignmentId }: { assignmentId: string }) {
           <IconGitBranch className="size-3" /> {assignment.workspace.branch}
         </div>
       ) : null}
-      <p className="mt-2 text-ui-sm text-muted-foreground">{assignmentLine(project.document, assignment)}</p>
+      <p className="mt-2 text-ui-sm text-muted-foreground">
+        <ReferenceText text={assignmentLine(project.document, assignment)} />
+      </p>
       {assignment.failure ? <Field label={t("chat.card.error")}>{readableFailure(assignment.failure)}</Field> : null}
       {assignment.report !== undefined ? <ReportField report={assignment.report} /> : null}
       {assignment.questions?.length ? <QuestionsField questions={assignment.questions} /> : null}
@@ -836,6 +848,7 @@ export function AssignmentCard({ assignmentId }: { assignmentId: string }) {
       ) : null}
       {isCurrent && (active || assignment.status === "stopped" || assignment.status === "failed" || answeredPause) ? (
         <div className="cta-row mt-3">
+          <PlaceActions specialist={specialist} assignment={assignment} />
           {active ? (
             <Button size="sm" variant="outline" disabled={assignment.status === "stopRequested"} onClick={() => void act("assignment:stop", { assignmentId })}>
               {t("chat.card.assignment.stop")}
@@ -943,7 +956,7 @@ function QualityField({ items }: { items: QualityItem[] }) {
                 <span className="text-foreground">{t(QUALITY_LABEL[item.code])}</span>
                 <span className={cn("text-muted-foreground", item.code === "COMMIT_MESSAGE" && item.passed && "font-mono text-[11.5px]")}>
                   <Sep />
-                  {item.detail}
+                  {item.code === "COMMIT_MESSAGE" ? item.detail : <ReferenceText text={item.detail} />}
                 </span>
                 {item.fix ? <span className="block text-ui-xs text-muted-foreground">{t("chat.card.quality.fix", { fix: item.fix })}</span> : null}
               </span>
@@ -1142,12 +1155,12 @@ function QuestionsField({ questions }: { questions: DeveloperQuestion[] }) {
               {question.context ? <div className="text-ui-sm text-muted-foreground">{t("chat.card.question.context", { context: question.context })}</div> : null}
               {answer?.kind === "facts" ? (
                 <div className="mt-0.5 text-ui-sm text-foreground/90" data-testid="question-answer">
-                  {t("chat.card.question.coordinatorAnswer", { text: answer.text })}
+                  {withNodes(t("chat.card.question.coordinatorAnswer"), { text: <ReferenceText text={answer.text} /> })}
                   <div className="text-ui-xs text-muted-foreground">{t("chat.card.question.sources", { sources: answer.sources.join(", ") })}</div>
                 </div>
               ) : answer?.kind === "person" ? (
                 <div className="mt-0.5 text-ui-sm text-foreground/90" data-testid="question-answer">
-                  {answer.text ? t("chat.card.question.personAnswer", { text: answer.text }) : <ReferenceText text={t("chat.card.question.waitingForYou", { id: answer.decisionRequestId })} />}
+                  <ReferenceText text={answer.text ? t("chat.card.question.personAnswer", { text: answer.text }) : t("chat.card.question.waitingForYou", { id: answer.decisionRequestId })} />
                 </div>
               ) : null}
             </li>
@@ -1169,7 +1182,7 @@ function ThreadLinks({ assignmentId }: { assignmentId: string }) {
       <div className="flex flex-wrap gap-x-3 gap-y-1" data-testid="assignment-threads">
         {threads.map((thread) => (
           <button key={thread.id} type="button" className="text-left text-ui-sm text-[var(--color-text-accent)] hover:underline" onClick={() => setInspector({ kind: "agentThread", id: thread.id })}>
-            {thread.title} ({thread.messages.length})
+            <ReferenceText text={thread.title} links={false} /> ({thread.messages.length})
           </button>
         ))}
       </div>
@@ -1301,7 +1314,8 @@ function MergeLine({ candidate, route, routeReason, open, approved }: { candidat
   if (pull?.mergedAt) {
     text = pull.mergedBy === "coordinator" ? t("chat.card.merge.byCoordinator") : pull.mergedBy === "person" ? t("chat.card.merge.byPerson") : t("chat.card.merge.onGitHub");
   } else if (merge && open && merge.status !== "merged") {
-    text = merge.status === "running" ? t("chat.card.merge.running") : merge.detail;
+    // A destructive stop says it in its own field, with consequences and alternatives (issue #41).
+    text = merge.status === "running" ? t("chat.card.merge.running") : merge.stop ? null : merge.detail;
     if (merge.status === "failed" || merge.status === "stopped") tone = "text-destructive";
   } else if (open && candidate.humanRejection) {
     text = t("chat.card.merge.rejected", { note: candidate.humanRejection.note });
@@ -1320,8 +1334,60 @@ function MergeLine({ candidate, route, routeReason, open, approved }: { candidat
   return (
     <p className={cn("mt-2 text-ui-sm", tone)} data-testid="candidate-merge" data-route={route} data-status={pull?.mergedAt ? "merged" : (merge?.status ?? "none")}>
       {text}
+      {pull?.mergedAt && pull.mergedBy === "coordinator" && merge?.mandateVersion ? <MergeMandate version={merge.mandateVersion} /> : null}
     </p>
   );
+}
+
+/**
+ * A merge the Coordinator stopped because it destroys something (issue #41): the reasons, what happens and what the
+ * person can do. The texts of the stop are Trama's records, in Italian.
+ */
+function MergeStopField({ stop }: { stop: MergeStop }) {
+  const t = useT();
+  return (
+    <div className="mt-2 space-y-1 text-ui-sm" data-testid="candidate-merge-stop">
+      <p className="text-foreground/90">
+        {t("mergeStop.title")} {stop.reasons.join(" ")}
+      </p>
+      <p className="font-medium text-foreground">{t("mergeStop.consequences")}</p>
+      <ul className="list-disc space-y-0.5 pl-4">
+        {stop.consequences.map((c) => (
+          <li key={c}>{c}</li>
+        ))}
+      </ul>
+      <p className="font-medium text-foreground">{t("mergeStop.alternatives")}</p>
+      <ul className="list-disc space-y-0.5 pl-4">
+        {stop.alternatives.map((a) => (
+          <li key={a}>{a}</li>
+        ))}
+      </ul>
+      {stop.acknowledgedAt ? <p className="text-muted-foreground">{t("mergeStop.declined")}</p> : null}
+    </div>
+  );
+}
+
+/** The person's choice on a stopped merge: leave it, or merge it with their ok (issue #41). Primary last. */
+function MergeStopActions({ candidateId, declined }: { candidateId: string; declined: boolean }) {
+  const t = useT();
+  return (
+    <>
+      {declined ? null : (
+        <Button size="sm" variant="outline" onClick={() => void act("candidate:declineMerge", { candidateId })}>
+          {t("mergeStop.decline")}
+        </Button>
+      )}
+      <Button size="sm" onClick={() => void act("candidate:approve", { candidateId })}>
+        <IconGitMerge /> {t("mergeStop.merge")}
+      </Button>
+    </>
+  );
+}
+
+/** The mandate a merge on the Coordinator's green light ran under (issue #41). */
+function MergeMandate({ version }: { version: number }) {
+  const t = useT();
+  return <span data-testid="candidate-merge-mandate"> {t("merge.mandateVersion", { version })}</span>;
 }
 
 /**
@@ -1369,6 +1435,8 @@ export function CandidateCard({ candidateId }: { candidateId: string }) {
   const merged = Boolean(candidate.pullRequest?.mergedAt);
   const open = report.blockers.length === 0 && report.state !== "superseded" && !merged;
   const decidable = route === "interface" && open && !approved && !candidate.humanRejection;
+  // Issue #41: a destructive change the Coordinator stopped waits for the person's choice.
+  const stop = candidate.merge?.status === "stopped" ? (candidate.merge.stop ?? null) : null;
   return (
     <CardFrame icon={<IconFileDiff stroke={1.8} />} title={record ? asTitle(record.label) : t("chat.card.candidate.title")} hint={candidate.id} aside={<Badge tone={state.tone}>{state.label}</Badge>}>
       <p className="text-ui-sm text-muted-foreground">
@@ -1401,7 +1469,7 @@ export function CandidateCard({ candidateId }: { candidateId: string }) {
       {candidate.technicalReview ? <TechnicalReviewField review={candidate.technicalReview} /> : null}
       {report.blockers.length && report.state !== "superseded" ? (
         <Field label={t("chat.card.candidate.missing")}>
-          <ul className="space-y-0.5 text-ui-sm">
+          <ul className="space-y-0.5 text-ui-sm" data-testid="candidate-blockers">
             {report.blockers.map((b) => (
               <li key={`${b.code}-${b.detail}`}>
                 {BLOCKER_TEXT[b.code] ?? b.code}
@@ -1457,6 +1525,7 @@ export function CandidateCard({ candidateId }: { candidateId: string }) {
         </p>
       ) : null}
       <MergeLine candidate={candidate} route={route} routeReason={report.mergeRouteReason ?? null} open={open} approved={Boolean(approved)} />
+      {stop && open ? <MergeStopField stop={stop} /> : null}
       {candidate.pullRequest ? (
         <button
           type="button"
@@ -1499,6 +1568,7 @@ export function CandidateCard({ candidateId }: { candidateId: string }) {
             </Button>
           </>
         ) : null}
+        {stop && open && !approved ? <MergeStopActions candidateId={candidateId} declined={Boolean(stop.acknowledgedAt)} /> : null}
         {route === "person" && approved && publishable && report.state !== "superseded" && !candidate.pullRequest && project.github.repository && !preview ? (
           <Button size="sm" onClick={() => void act("candidate:previewPullRequest", { candidateId }).then((p) => setPreview(p ?? null))}>
             <IconGitPullRequest /> {t("chat.card.candidate.preparePullRequest")}
@@ -1703,7 +1773,101 @@ const CONFLICT_LABEL = {
   overlap: { label: "chat.card.conflict.overlap", tone: "warning" as const },
   clean: { label: "chat.card.conflict.clean", tone: "success" as const },
   unknown: { label: "chat.card.conflict.unknown", tone: "secondary" as const },
+  hypothesis: { label: "chat.card.conflict.hypothesis", tone: "info" as const },
+  semantic: { label: "chat.card.conflict.semantic", tone: "destructive" as const },
 } satisfies Record<string, { label: MessageKey; tone: string }>;
+
+/** Who did each side of a comparison, as the person reads it: "Ada, Sconto nel carrello". */
+function candidateWork(document: ProjectDocument, candidateId: string | undefined): string | null {
+  const candidate = document.candidates.find((c) => c.id === candidateId);
+  if (!candidate) return null;
+  const specialist = document.team.specialists.find((s) => s.id === candidate.specialistId);
+  const assignment = specialist?.assignments.find((a) => a.id === candidate.assignmentId);
+  return [specialist?.name, assignment?.objective].filter(Boolean).join(", ") || null;
+}
+
+/**
+ * Where a comparison comes from (issue #40): the project, the assignments, the base and the copies compared, and each
+ * source with its own time, so the reading on GitHub, the merge probe and the AI's analysis are never one moment.
+ */
+function ConflictProvenance({ assessment, projectName, document }: { assessment: ConflictAssessment; projectName: string; document: ProjectDocument }) {
+  const t = useT();
+  const candidate = document.candidates.find((c) => c.id === assessment.candidateId);
+  const works = [candidateWork(document, assessment.candidateId), assessment.otherCandidateId ? candidateWork(document, assessment.otherCandidateId) : null].filter(
+    (w): w is string => Boolean(w),
+  );
+  const copies = [assessment.snapshotId, assessment.otherSnapshotId].filter((id): id is string => Boolean(id)).map((id) => id.slice(0, 7));
+  const semantic = assessment.semantic;
+  const times = [
+    assessment.remoteReadAt ? t("conflict.githubReadAt", { time: formatTime(assessment.remoteReadAt) }) : null,
+    semantic
+      ? t(semantic.carriedFrom ? "conflict.analyzedAtEarlier" : "conflict.analyzedAt", { time: formatTime(semantic.analyzedAt) })
+      : t("conflict.probedAt", { time: formatTime(assessment.checkedAt) }),
+    semantic?.scenario ? t("conflict.scenarioAt", { time: formatTime(semantic.scenario.ranAt) }) : null,
+  ].filter((time): time is string => Boolean(time));
+  const mono = (text: string) => <span className="font-mono text-[11px]">{text}</span>;
+  return (
+    <Field label={t("conflict.origin")}>
+      <div className="space-y-0.5 text-ui-sm text-muted-foreground" data-testid="conflict-provenance">
+        <p>
+          {t("conflict.project", { name: projectName })}
+          {works.length ? (
+            <>
+              <Sep />
+              {t("conflict.assignments", { count: works.length, works: works.join("; ") })}
+            </>
+          ) : null}
+        </p>
+        <p>
+          {t("conflict.base")} {mono((candidate?.baseSHA ?? assessment.remoteSHA).slice(0, 7))}
+          <Sep />
+          {t("conflict.copies", { count: copies.length })} {mono(copies.join(` ${t("conflict.and")} `))}
+          {assessment.otherCandidateId ? null : (
+            <>
+              <Sep />
+              {t("conflict.remote")} {mono(assessment.remoteSHA.slice(0, 7))}
+            </>
+          )}
+        </p>
+        <p>
+          {times.map((time, index) => (
+            <span key={time}>
+              {index ? <Sep /> : null}
+              {time}
+            </span>
+          ))}
+        </p>
+      </div>
+    </Field>
+  );
+}
+
+/** The AI's reading of a semantic risk and the scenario that tests it on the combined candidate (issue #40). */
+function SemanticFields({ assessment }: { assessment: ConflictAssessment }) {
+  const t = useT();
+  const semantic = assessment.semantic!;
+  const scenario = semantic.scenario;
+  const reading = t(assessment.classification === "semantic" ? "conflict.reading.semantic" : "conflict.reading.hypothesis");
+  return (
+    <>
+      <Field label={t("conflict.reading")}>
+        <p data-testid="semantic-reading">
+          <span className="text-muted-foreground">{withNodes(reading, { explanation: <span className="text-foreground/90">{semantic.explanation}</span> })}</span>
+        </p>
+      </Field>
+      <Field label={t("conflict.scenario")}>
+        <p className="text-ui-sm" data-testid="semantic-scenario" data-result={scenario?.result ?? "pending"}>
+          <span className="font-mono text-[11.5px]">{semantic.check}</span> {t(scenario ? `conflict.scenario.${scenario.result}` : "conflict.scenario.pending")}
+        </p>
+        {scenario?.result === "fail" && scenario.output ? (
+          <pre className="mt-1 max-h-32 overflow-auto rounded-md bg-[var(--color-background-button-secondary)] p-2 font-mono text-[11px] whitespace-pre-wrap text-muted-foreground">
+            {scenario.output.slice(-800)}
+          </pre>
+        ) : null}
+      </Field>
+    </>
+  );
+}
 
 /** How many files a conflict lists before "Mostra tutti" (issue #271). */
 const CONFLICT_FILES_SHOWN = 5;
@@ -1794,23 +1958,27 @@ export function ConflictCard({ assessmentId }: { assessmentId: string }) {
             : t("chat.card.conflict.obsoleteRemote")}
         </p>
       ) : null}
-      {exercise ? (
-        <p className="mb-1 text-ui-sm text-muted-foreground">{t("chat.card.conflict.exerciseNote")}</p>
-      ) : null}
-      <p className="text-ui text-foreground/90">
-        {withNodes(t("chat.card.conflict.pair", { sha: worktree ? "" : ` (${assessment.remoteSHA.slice(0, 7)})` }), {
-          candidate: <RecordName id={assessment.candidateId} short />,
-          references: <ReferenceText text={assessment.references.map(plainConflictReference).join(", ")} />,
-        })}
-      </p>
-      <p className="mt-1 text-ui-sm text-muted-foreground">
-        <ReferenceText text={assessment.detail} />
-      </p>
-      {assessment.conflictingFiles.length ? (
-        <Field label={assessment.classification === "conflict" ? t("chat.card.conflict.files") : t("chat.card.conflict.bothChanged")}>
-          <ConflictFiles files={assessment.conflictingFiles} lines={assessment.conflictingLines} />
-        </Field>
-      ) : null}
+      <div data-testid="conflict-card" data-classification={assessment.classification}>
+        {exercise ? (
+          <p className="mb-1 text-ui-sm text-muted-foreground">{t("chat.card.conflict.exerciseNote")}</p>
+        ) : null}
+        <p className="text-ui text-foreground/90">
+          {withNodes(t("chat.card.conflict.pair", { sha: worktree ? "" : ` (${assessment.remoteSHA.slice(0, 7)})` }), {
+            candidate: <RecordName id={assessment.candidateId} short />,
+            references: <ReferenceText text={assessment.references.map(plainConflictReference).join(", ")} />,
+          })}
+        </p>
+        <p className="mt-1 text-ui-sm text-muted-foreground">
+          <ReferenceText text={assessment.detail} />
+        </p>
+        {assessment.semantic ? <SemanticFields assessment={assessment} /> : null}
+        {assessment.conflictingFiles.length ? (
+          <Field label={assessment.classification === "conflict" ? t("chat.card.conflict.files") : t("chat.card.conflict.bothChanged")}>
+            <ConflictFiles files={assessment.conflictingFiles} lines={assessment.conflictingLines} />
+          </Field>
+        ) : null}
+        {exercise ? null : <ConflictProvenance assessment={assessment} projectName={project.name} document={project.document} />}
+      </div>
     </CardFrame>
   );
 }

@@ -1,4 +1,4 @@
-import type { AssignmentStatus, CandidateBlocker, CandidateReport, CandidateState, FocusTask, SliceState, WorkPlan } from "./domain";
+import type { AssignmentStatus, CandidateBlocker, CloudSessionStatus, CandidateReport, CandidateState, FocusTask, SliceState, WorkPlan } from "./domain";
 
 /**
  * One vocabulary of states for every view (issue #272): the chat card, the inspector lists, the settled line and the
@@ -22,6 +22,16 @@ export const ASSIGNMENT_STATUS: Record<AssignmentStatus, StateLabel> = {
   failed: { label: "Non riuscito", tone: "destructive" },
   // A developer's question holds the work until the answer: not the Coordinator's Pause, not a suspended task.
   paused: { label: "Aspetta una risposta", tone: "warning" },
+};
+
+/** The tone of each state of a cloud session (A19); its words are `cloudSession.status.<state>` in the catalog. */
+export const CLOUD_SESSION_TONE: Record<CloudSessionStatus, StateTone> = {
+  starting: "info",
+  working: "info",
+  draft: "info",
+  returned: "success",
+  stopped: "secondary",
+  failed: "destructive",
 };
 
 export const SLICE_STATE: Record<SliceState, StateLabel> = {

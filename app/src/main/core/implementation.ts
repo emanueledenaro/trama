@@ -60,16 +60,28 @@ export const TDD_BINDING = [
   `Report (a Trama addition): end your answer with the report of the assignment, five blocks in this order: \`${REPORT_HEADINGS.filesTouched}\`, \`${REPORT_HEADINGS.testsWritten}\`, \`${TESTED_SEAMS_HEADING}\`, \`${REPORT_HEADINGS.doubts}\` and \`${REPORT_HEADINGS.exceptions}\`, one \`- <item>\` per line and \`- none\` for an empty block. Under \`${TESTED_SEAMS_HEADING}\` write one line per seam of the contract you tested, \`- <seam number>: <test files or test names>\`, and leave out a seam you did not test. Trama saves the report on the assignment and copies the seams onto the candidate as your statement, never as evidence: only Trama's checks count as evidence.`,
 ].join("\n");
 
+/**
+ * The same binding for a developer that works in a cloud session of the provider (A19, ADR 0017): the session commits
+ * on the assignment's branch, runs the publication checks that do not need the Mac, pushes and opens a draft pull
+ * request. Trama brings the branch back to the Mac and checks it again there.
+ */
+export const IMPLEMENT_CLOUD_BINDING = [
+  ...IMPLEMENT_BINDING.split("\n").slice(0, 3),
+  "\"Run typechecking regularly, single test files regularly, and the full test suite once at the end\": run the project's own commands in this cloud session. Report each command you ran with its outcome.",
+  "\"Use /code-review\": the review runs outside this session. When the draft pull request is open, Trama brings the branch to the Mac, captures it as a candidate, runs the required checks of the assignment listed in the message and asks a technical review from a thread distinct from yours. Do not stand in for them.",
+  "\"Commit your work to the current branch\": commit on the branch of the assignment named in the message, with a Conventional Commits message. Before pushing, run the publication checks listed in the message; then push the branch and open the pull request as a draft.",
+].join("\n");
+
 export interface DeveloperSkills {
   implement: NativeSkill;
   tdd: NativeSkill;
 }
 
 /** The developer's skills in the order implement names them: implement, then tdd, each followed by its binding. */
-export function developerSkillsDelivery(skills: DeveloperSkills, nativeInput: boolean): SkillDelivery {
+export function developerSkillsDelivery(skills: DeveloperSkills, nativeInput: boolean, cloud = false): SkillDelivery {
   return deliverNativeSkills(
     [
-      { skill: skills.implement, binding: IMPLEMENT_BINDING },
+      { skill: skills.implement, binding: cloud ? IMPLEMENT_CLOUD_BINDING : IMPLEMENT_BINDING },
       { skill: skills.tdd, binding: TDD_BINDING },
     ],
     nativeInput,

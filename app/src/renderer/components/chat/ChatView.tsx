@@ -1,87 +1,32 @@
 // Derived from third-party MIT code; see THIRD_PARTY_NOTICES.md.
-import {
-  IconBrain,
-  IconCircleDot,
-  IconFolderOpen,
-  IconHourglass,
-  IconLayoutSidebarRight,
-  IconRefresh,
-  IconRosetteDiscountCheck,
-  IconSchool,
-  IconShieldCheck,
-  IconSitemap,
-  IconTarget,
-  IconUsersGroup,
-  IconFileDiff,
-  IconGitPullRequest,
-  IconTrash,
-  IconChevronDown,
-  IconCheck,
-} from "@tabler/icons-react";
+import { IconSchool, IconTarget, IconTrash, IconChevronDown, IconCheck, IconX } from "@tabler/icons-react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { isOpenQuestion, type QueuedMessage } from "@shared/domain";
+import type { QueuedMessage } from "@shared/domain";
 import { deriveTimelineRows, rowAnchors } from "@shared/timeline";
 import { chatEvents, chatRequests, findGoal, timelineRowGoalId, workingGoals } from "@shared/goals";
 import { GoalDialogHeader } from "@/components/inspector/GoalsView";
 import { OverviewView } from "@/components/OverviewView";
 import { SettingsView } from "@/components/settings/SettingsView";
-import { NavigationButtons, SidebarTrigger } from "@/components/sidebar/Sidebar";
 import { useSeam } from "@/components/Seam";
 import { TramaMark } from "@/components/brand/TramaMark";
 import { Button } from "@/components/ui/button";
 import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/cn";
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "@/components/ui/menu";
-import { act, type InspectorTarget, refreshProject, useUi } from "@/lib/store";
+import { useT } from "@/lib/i18n";
+import { act, useUi } from "@/lib/store";
 import { ExercisePanel } from "@/components/onboarding/ExercisePanel";
 import { ProjectPicker } from "@/components/launch/ProjectPicker";
 import { Composer } from "./Composer";
-import { BranchDivergenceNotice } from "./BranchDivergenceNotice";
-import { FocusBar } from "./FocusBar";
 import { useWaiting, WaitingSummary } from "@/components/WaitingView";
 import { TimelineRowView } from "./TimelineRows";
-import { useT } from "@/lib/i18n";
 
-const HEADER_CHIP =
+export const HEADER_CHIP =
   "!h-7 shrink-0 rounded-lg gap-1.5 border-0 px-1.5 text-ui-sm font-normal transition-colors text-[var(--color-text-foreground-secondary)] hover:bg-[var(--color-background-button-secondary-hover)] hover:text-[var(--color-text-foreground)] inline-flex items-center";
-const HEADER_CHIP_ACTIVE = "bg-[var(--color-background-button-secondary)] text-[var(--color-text-foreground)]";
-
-interface HeaderPanel {
-  target: InspectorTarget;
-  label: string;
-  icon: React.ReactNode;
-  count?: number;
-}
-
-/** The panels of a narrow dialog, in one menu; the button shows how many things wait for the person. */
-function PanelsMenu({ panels }: { panels: HeaderPanel[] }) {
-  const inspector = useUi((s) => s.inspector);
-  const toggle = useUi((s) => s.toggleInspector);
-  const t = useT();
-  // Everything that waits for the person is in Aspetta te (issue #240): the button shows its count, never a sum of the panels.
-  const waiting = panels.find((panel) => panel.target.kind === "waiting")?.count ?? 0;
-  return (
-    <Menu>
-      <MenuTrigger aria-label={t("chat.view.panels")} className={cn(HEADER_CHIP, inspector && HEADER_CHIP_ACTIVE)}>
-        <IconLayoutSidebarRight className="size-3.5 opacity-70" stroke={1.8} />
-        <span>{t("chat.view.panels")}</span>
-        {waiting ? <span className="text-ui-xs text-[var(--color-text-accent)]">{waiting}</span> : null}
-      </MenuTrigger>
-      <MenuPopup align="end">
-        {panels.map((panel) => (
-          <MenuItem key={panel.target.kind} onClick={() => toggle(panel.target)}>
-            <span className="flex size-4 items-center justify-center opacity-70 [&>svg]:size-3.5">{panel.icon}</span>
-            <span className="flex-1">{panel.label}</span>
-            {panel.count ? <span className="text-ui-xs text-[var(--color-text-accent)]">{panel.count}</span> : null}
-          </MenuItem>
-        ))}
-      </MenuPopup>
-    </Menu>
-  );
-}
+export const HEADER_CHIP_ACTIVE = "bg-[var(--color-background-button-secondary)] text-[var(--color-text-foreground)]";
 
 /** Recalls the exercise guide on the example project. */
-function ExercisesChip() {
+export function ExercisesChip() {
   const exercise = useUi((s) => s.exercise);
   const setExercise = useUi((s) => s.setExercise);
   const t = useT();
@@ -99,109 +44,30 @@ function ExercisesChip() {
   );
 }
 
-function ChatHeader({ isMac }: { isMac: boolean }) {
+/** The editor's header over the overview and the settings, which open in place of the conversation (issue #330). */
+function EditorHeader() {
   const t = useT();
-  const app = useUi((s) => s.app)!;
-  const sidebarOpen = useUi((s) => s.sidebarOpen);
-  const inspector = useUi((s) => s.inspector);
-  const setInspector = useUi((s) => s.setInspector);
-  const project = app.project;
-  const pendingDecisions = project?.document.decisionRequests.filter(isOpenQuestion).length ?? 0;
-  const pendingMandate = project?.document.mandateRequests.some((r) => !r.resolution) ? 1 : 0;
-  const openIssues = project?.github.issues.filter((i) => i.state === "open").length ?? 0;
-  const pendingTeam = project?.document.team.proposals.some((p) => !p.resolution) ? 1 : 0;
   const mainView = useUi((s) => s.mainView);
-  const openDialog = useUi((s) => s.openDialog);
-  const goal = useUi((s) => (project ? findGoal(project.document, s.dialogGoalId) : null));
-  const proposedGoals = project ? workingGoals(project.document).filter((g) => g.status === "proposed").length : 0;
-  const waiting = useWaiting().length;
-  const memoryProposals = app.learning?.proposals.length ?? 0;
-  const panels: HeaderPanel[] = [
-    { target: { kind: "waiting" }, label: t("chat.view.panel.waiting"), icon: <IconHourglass stroke={1.8} />, count: waiting },
-    { target: { kind: "goals" }, label: t("chat.view.panel.goals"), icon: <IconTarget stroke={1.8} />, count: proposedGoals },
-    { target: { kind: "map" }, label: t("chat.view.panel.map"), icon: <IconSitemap stroke={1.8} /> },
-    { target: { kind: "pact" }, label: t("chat.view.panel.pact"), icon: <IconRosetteDiscountCheck stroke={1.8} />, count: pendingDecisions },
-    { target: { kind: "mandate" }, label: t("chat.view.panel.mandate"), icon: <IconShieldCheck stroke={1.8} />, count: pendingMandate },
-    { target: { kind: "team" }, label: t("chat.view.panel.team"), icon: <IconUsersGroup stroke={1.8} />, count: pendingTeam },
-    { target: { kind: "work" }, label: t("chat.view.panel.work"), icon: <IconFileDiff stroke={1.8} /> },
-    { target: { kind: "group" }, label: t("chat.view.panel.group"), icon: <IconGitPullRequest stroke={1.8} /> },
-    { target: { kind: "issues" }, label: t("chat.view.panel.issues"), icon: <IconCircleDot stroke={1.8} />, count: openIssues },
-    { target: { kind: "memory" }, label: t("chat.view.panel.memory"), icon: <IconBrain stroke={1.8} />, count: memoryProposals },
-  ];
-
+  const hasProject = useUi((s) => Boolean(s.app?.project));
+  const closeSettings = useUi((s) => s.closeSettings);
+  const setMainView = useUi((s) => s.setMainView);
+  if (mainView === "dialog") return null;
   return (
-    <div
-      className={cn(
-        "chat-surface-divider drag-region flex h-[46px] shrink-0 items-center gap-2 px-3 sm:px-5",
-        !sidebarOpen && isMac && "desktop-top-bar-traffic-light-gutter",
-      )}
-    >
-      {!sidebarOpen ? (
-        <div className="-ml-1.5 flex shrink-0 items-center gap-0.5">
-          <SidebarTrigger />
-          <NavigationButtons />
-        </div>
-      ) : null}
-      <div className="flex min-w-[7rem] flex-1 items-center gap-2">
-        {mainView === "overview" ? (
-          <h2 className="truncate font-system-ui text-ui font-normal text-foreground">{t("chat.view.overview")}</h2>
-        ) : mainView === "settings" ? (
-          <h2 className="truncate font-system-ui text-ui font-normal text-foreground">{t("chat.view.settings")}</h2>
-        ) : project ? (
-          <>
-            <span className="inline-flex size-3.5 shrink-0 items-center justify-center text-muted-foreground">
-              <IconFolderOpen className="size-3.5" stroke={1.7} />
-            </span>
-            {/* One chat per project (U01): with a goal filter the title names the goal the next message is about. */}
-            {goal ? (
-              <button
-                type="button"
-                className="no-drag max-w-[14rem] truncate font-system-ui text-ui font-normal text-muted-foreground hover:text-foreground"
-                onClick={() => openDialog(null)}
-                title={t("chat.view.showWholeChat")}
-              >
-                {project.isDemo ? t("chat.view.demoProject") : project.name}
-              </button>
-            ) : null}
-            {goal ? <span className="text-muted-foreground/60">›</span> : null}
-            <h2 className="max-w-[clamp(12rem,42vw,36rem)] truncate font-system-ui text-ui font-normal text-foreground" data-testid="dialog-title">
-              {goal ? goal.title : project.isDemo ? t("chat.view.demoProject") : project.name}
-            </h2>
-            <div className="flex min-w-0 items-center gap-1 overflow-hidden text-ui-sm text-muted-foreground/55">
-              {project.snapshot.branch ? <span className="truncate">{project.snapshot.branch}</span> : null}
-            </div>
-          </>
-        ) : (
-          <h2 className="truncate font-system-ui text-ui font-normal text-foreground">Trama</h2>
-        )}
-      </div>
-      {project && mainView === "dialog" ? (
-        // The panels live in the sidebar; only while the sidebar is hidden does the header offer them, in one menu.
-        <div className="no-drag flex items-center gap-1">
-          <GoalFilterMenu />
-          {project.isDemo ? <ExercisesChip /> : null}
-          {sidebarOpen ? null : <PanelsMenu panels={panels} />}
-        </div>
-      ) : null}
-      {project && mainView === "dialog" ? (
-        // Refresh and the inspector toggle never scroll away.
-        <div className="no-drag flex shrink-0 items-center gap-1">
-          <Tooltip label={t("chat.view.refresh")}>
-            <button type="button" className={HEADER_CHIP} aria-label={t("chat.view.refresh")} onClick={() => void refreshProject()}>
-              <IconRefresh className="size-3.5 opacity-70" stroke={1.8} />
-            </button>
-          </Tooltip>
-          <Tooltip label={inspector ? t("chat.view.closeInspector") : t("chat.view.showDetails")}>
-            <button
-              type="button"
-              aria-label={t("chat.view.toggleDetails")}
-              className={cn(HEADER_CHIP, inspector && HEADER_CHIP_ACTIVE)}
-              onClick={() => setInspector(inspector ? null : { kind: "map" })}
-            >
-              <IconLayoutSidebarRight className="size-3.5 opacity-70" stroke={1.8} />
-            </button>
-          </Tooltip>
-        </div>
+    <div className="chat-surface-divider flex h-[35px] shrink-0 items-center gap-2 px-4">
+      <h2 className="min-w-0 flex-1 truncate font-system-ui text-ui font-normal text-foreground">
+        {mainView === "overview" ? t("workbench.title.overview") : t("workbench.view.settings")}
+      </h2>
+      {hasProject ? (
+        <Tooltip label={t("workbench.editor.close")}>
+          <button
+            type="button"
+            aria-label={t("workbench.editor.close")}
+            className="sidebar-icon-button size-6 rounded-md"
+            onClick={() => (mainView === "settings" ? closeSettings() : setMainView("dialog"))}
+          >
+            <IconX className="size-3.5" />
+          </button>
+        </Tooltip>
       ) : null}
     </div>
   );
@@ -211,7 +77,7 @@ function ChatHeader({ isMac }: { isMac: boolean }) {
  * The goal filter of the chat (U01): the whole chat or the messages and events of one goal. It only changes what the
  * chat shows and what the next message is about; the Coordinator, the composer and the draft stay the same.
  */
-function GoalFilterMenu() {
+export function GoalFilterMenu() {
   const project = useUi((s) => s.app?.project)!;
   const filter = useUi((s) => s.dialogGoalId);
   const t = useT();
@@ -466,28 +332,26 @@ function Timeline() {
   );
 }
 
-export function ChatView({ isMac }: { isMac: boolean }) {
+/** The editor area (issue #330): the conversation with the Coordinator, or the overview or the settings in its place. */
+export function ChatView() {
   const project = useUi((s) => s.app?.project);
   const mainView = useUi((s) => s.mainView);
   const goalId = useUi((s) => s.dialogGoalId);
   return (
     <div className="@container/chat relative flex min-w-0 flex-1 flex-col">
-      <ChatHeader isMac={isMac} />
+      <EditorHeader />
       {mainView === "overview" ? (
         <OverviewView />
       ) : mainView === "settings" ? (
         <SettingsView />
       ) : project ? (
         <>
-          {/* Outside the chat's pane: the bar and its open queue stay while the person changes the filter (W02). */}
-          {/* Siblings need distinct keys: a key shared with the pane left a stale focus bar mounted on a project change. */}
-          <FocusBar key={`focus-${project.id}`} />
-          <BranchDivergenceNotice />
           <div key={`pane-${project.id}`} className="chat-pane-enter relative flex min-h-0 flex-1 flex-col">
             {/* The composer stays mounted across filters: one chat, one draft (U01). */}
             <Timeline key={goalId ?? "all"} />
             <ExercisePanel />
-            <div className="chat-composer-dock pointer-events-none absolute inset-x-0 bottom-0 px-3 pb-3 sm:px-5 sm:pb-4">
+            {/* The status bar sits right below: 8 px keep the composer off it and leave the conversation 580 px at 1280x800 (issue #330). */}
+            <div className="chat-composer-dock pointer-events-none absolute inset-x-0 bottom-0 px-3 pb-2 sm:px-5">
               <div className="pointer-events-auto">
                 <WaitingSummary />
                 <Composer />

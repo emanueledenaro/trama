@@ -76,6 +76,7 @@ export interface ActionMap {
   "overview:read": [void, ProjectOverview[]];
   "overview:prioritize": [{ projectId: string; direction: "up" | "down" }, void];
   "coordinator:setContextThreshold": [{ percent: number }, void];
+  "coordinator:reorderContext": [void, void];
   "pact:decide": [{ id: string | null; value: string; acceptedExample: string; rationale: string }, void];
   "decision:answer": [{ requestId: string; alternativeIndex: number | null; freeText: string | null }, void];
   /** Withdraws an open question with a reason; the Coordinator reads it as the person's message (W03). */
@@ -102,6 +103,8 @@ export interface ActionMap {
   "team:answer": [{ proposalId: string; keeping: string[] | null; note: string | null }, void];
   "assignment:stop": [{ assignmentId: string }, void];
   "assignment:resume": [{ assignmentId: string }, void];
+  "assignment:place": [{ assignmentId: string; where: import("./domain").WorkPlace }, void];
+  "assignment:cloudCheck": [{ assignmentId: string }, void];
   "assignment:removeWorktree": [{ assignmentId: string }, void];
   "assignment:changeProvider": [{ assignmentId: string; provider: ProviderId; model: string }, void];
   "specialist:remove": [{ specialistId: string; reason: string }, void];
@@ -131,10 +134,15 @@ export interface ActionMap {
   "candidate:approve": [{ candidateId: string }, void];
   /** The person refuses an interface candidate with a reason, which goes back to the developer (issue #247). */
   "candidate:reject": [{ candidateId: string; note: string }, void];
+  "candidate:declineMerge": [{ candidateId: string }, void];
   /** One screenshot of an interface candidate, as a data URL (issue #247). */
   "candidate:shot": [{ candidateId: string; index: number }, string];
   /** Opens focus mode on a candidate (F01): real checks, then code-review's two axes. Returns the examination's id. */
   "candidate:focusAudit": [{ candidateId: string }, string];
+  /** Turns a finding of focus mode into work (F04): a ticket, an assignment within the mandate or a Pact card. */
+  "finding:followUp": [{ auditId: string; findingId: string; kind: "ticket" | "assignment" | "pactCard" }, void];
+  /** Publishes the report of a finished focus mode on GitHub, only when the person asks (F04). */
+  "audit:publish": [{ auditId: string }, void];
   "candidate:publish": [{ candidateId: string }, void];
   "candidate:previewPullRequest": [
     { candidateId: string },

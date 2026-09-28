@@ -37,6 +37,7 @@ import { SettledOr } from "./SettledCard";
 import { DisclosureChevron, WorkLabel } from "./WorkSteps";
 import { WaitingOr } from "@/components/WaitingView";
 import { RecapCard } from "./RecapCard";
+import { ContextRolloverCard } from "./ContextRolloverCard";
 import { Sep } from "@/components/ui/sep";
 
 function PersonMessage({ row }: { row: Extract<TimelineRow, { kind: "person" }> }) {
@@ -418,6 +419,7 @@ function RowContent({ row, streaming = false, latest = false }: { row: TimelineR
             <PresenceConsentCard proposal={content.referenceId} detail={content.detail} />
           </WaitingOr>
         );
+      if (row.cardKind === "contextRollover") return <ContextRolloverCard summaryEventId={content.referenceId} />;
       return <ContextNoticeCard title={content.title} detail={content.detail} />;
     }
   }

@@ -1,6 +1,6 @@
 import { checkName } from "@shared/states";
 import type { CandidateGate, GateReview, ProjectDocument } from "@shared/domain";
-import { GATE_STATUS, isGateRunning, isRegression, reviewOutcome } from "@shared/gate";
+import { GATE_STATUS, gateRowFindings, isGateRunning, isRegression, reviewOutcome } from "@shared/gate";
 import { roleProfile } from "@shared/roster";
 import { AgentName } from "@/components/AgentIdentity";
 import { Spinner } from "@/components/Spinner";
@@ -13,11 +13,12 @@ import { ReferenceText } from "./ReferenceText";
 
 const RESULT: Record<"pass" | "fail" | "notRun", MessageKey> = { pass: "chat.gate.resultPass", fail: "chat.gate.resultFail", notRun: "chat.gate.resultNotRun" };
 
-function ReviewRow({ review, document }: { review: GateReview; document: ProjectDocument }) {
+function ReviewRow({ gate, review, document }: { gate: CandidateGate; review: GateReview; document: ProjectDocument }) {
   const t = useT();
   const figure = document.team.specialists.find((s) => s.role === review.role && s.status !== "removed");
   const outcome = reviewOutcome(review);
-  const findings = [...review.findings].sort((a, b) => (a.severity === b.severity ? 0 : a.severity === "blocking" ? -1 : 1));
+  const candidate = document.candidates.find((c) => c.id === gate.candidateId);
+  const findings = [...gateRowFindings(gate, review, candidate)].sort((a, b) => (a.severity === b.severity ? 0 : a.severity === "blocking" ? -1 : 1));
   return (
     <li data-testid="gate-review" data-role={review.role} data-status={review.status} className="py-1">
       <div className="flex min-w-0 items-center gap-2 text-ui-sm">
@@ -78,7 +79,7 @@ export function GateField({ gate, document }: { gate: CandidateGate; document: P
         {gate.reviews
           .filter((r) => !(gate.checksFailed.length && r.status === "skipped"))
           .map((review) => (
-            <ReviewRow key={review.role} review={review} document={document} />
+            <ReviewRow key={review.role} gate={gate} review={review} document={document} />
           ))}
       </ul>
       {gate.suite.length && guardian ? (

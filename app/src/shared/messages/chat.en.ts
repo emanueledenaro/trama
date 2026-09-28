@@ -283,6 +283,8 @@ export const chatEn: Record<keyof typeof chatIt, string> = {
   "chat.card.conflict.overlap": "Same files",
   "chat.card.conflict.clean": "No conflict",
   "chat.card.conflict.unknown": "Not checked",
+  "chat.card.conflict.hypothesis": "Hypothesis",
+  "chat.card.conflict.semantic": "Incompatible",
   "chat.card.conflict.showAll": "Show all {count} files",
   "chat.card.conflict.exerciseTitle": "Conflict exercise",
   "chat.card.conflict.inNotice": "In the project notice",
@@ -327,7 +329,6 @@ export const chatEn: Record<keyof typeof chatIt, string> = {
   "chat.card.route.decline": "Do not start",
   "chat.card.route.start": "Start the route",
 
-  // Timeline, plan, slices, reviewers and recap
   // Timeline rows
   "chat.timeline.module": "Module {name}",
   "chat.timeline.images": "{count} images",
@@ -476,26 +477,8 @@ export const chatEn: Record<keyof typeof chatIt, string> = {
   "chat.plan.approve": "Approve the plan and ask to build it",
 
   // Chat header, timeline and queue (ChatView)
-  "chat.view.panels": "Panels",
   "chat.view.exercises": "Exercises",
-  "chat.view.panel.waiting": "Waiting for you",
-  "chat.view.panel.goals": "Goals",
-  "chat.view.panel.map": "Map",
-  "chat.view.panel.pact": "Pact",
-  "chat.view.panel.mandate": "Mandate",
-  "chat.view.panel.team": "Team",
-  "chat.view.panel.work": "Work",
-  "chat.view.panel.group": "Group",
-  "chat.view.panel.issues": "Issues",
-  "chat.view.panel.memory": "Memory",
-  "chat.view.overview": "Projects overview",
-  "chat.view.settings": "Settings",
-  "chat.view.showWholeChat": "Show the whole chat",
   "chat.view.demoProject": "Example project",
-  "chat.view.refresh": "Refresh the project",
-  "chat.view.closeInspector": "Close the inspector",
-  "chat.view.showDetails": "Show details",
-  "chat.view.toggleDetails": "Show or hide the details",
   "chat.view.filterByGoal": "Filter the chat by goal",
   "chat.view.wholeChat": "The whole chat",
   "chat.view.onlyThisGoal": "Show only this goal",
@@ -516,24 +499,13 @@ export const chatEn: Record<keyof typeof chatIt, string> = {
   "chat.view.delete": "Delete",
   "chat.view.queuedFixed": "It reports a choice already recorded: it leaves anyway.",
   "chat.view.studyTitle": "Project study",
-  // Branch divergence notice
-  "chat.divergence.label": "Notice about the project's branch",
-  "chat.divergence.showFiles": "Show the {count} files",
-  "chat.divergence.showFiles.one": "Show the file",
-  "chat.divergence.ask": "Ask the Coordinator how to realign",
 
   // Comparison tables and links in messages
   "chat.compare.recommended": "Recommended",
   "chat.markdown.openFile": "Open {file} in the inspector",
 
   // Context window
-  "chat.context.meterLabel": "Context window: {percent}%, warning threshold {threshold}%",
-  "chat.context.meterUnknown": "Context window: reading not available, warning threshold {threshold}%",
   "chat.context.percent": "{percent}%",
-  "chat.context.title": "Context window",
-  "chat.context.warnAbove": "Warn above",
-  "chat.context.threshold": "Warning threshold",
-  "chat.context.forProject": "For this project",
 
   // Message context
   "chat.contextPicker.label": "Message context",
@@ -571,27 +543,6 @@ export const chatEn: Record<keyof typeof chatIt, string> = {
   "chat.composer.askTrama": "Ask Trama: describe the situation and the Coordinator proposes the path",
   "chat.composer.interrupt": "Stop",
   "chat.composer.send": "Send to the Coordinator",
-  // Focus bar and status line
-  "chat.focus.waitingFor": "Waiting for you: {what}",
-  "chat.focus.activity": "Activity",
-  "chat.focus.resumeShort": "Resume",
-  "chat.focus.pauseHint": "Stops the project's automatic moves, rounds and automatic work",
-  "chat.focus.pauseShort": "Pause",
-  "chat.focus.stopMove": "Stop: {move}",
-  "chat.focus.stop": "Stop",
-  "chat.focus.details": "Details ({count})",
-  "chat.focus.details.one": "Details",
-  "chat.focus.open": "Open",
-  "chat.focus.putInFocus": "Put in focus",
-  "chat.focus.queue": "Queued {queued}",
-  "chat.focus.queuePaused": ", {count} suspended",
-  "chat.focus.queuePaused.one": ", {count} suspended",
-  "chat.focus.label": "Work in focus",
-  "chat.focus.inFocus": "In focus",
-  "chat.focus.none": "No work in focus: all of it is suspended.",
-  "chat.focus.suspendHint": "Takes this work out of focus: the next one in the queue takes its place",
-  "chat.focus.goToWork": "Go to the work",
-  "chat.focus.queueLabel": "Queued work",
   // Model picker
   "chat.model.effort.minimal": "Minimal",
   "chat.model.effort.low": "Low",

@@ -119,7 +119,23 @@ describe("focus mode on a candidate (F01)", () => {
     );
     expect(checksEnded).toHaveLength(candidate.requiredChecks.length);
     expect(axesOpened).toHaveLength(2);
+    // Both axes open under the read-only profile; the turns then leave it unnamed (Codex 0.155).
+    for (const index of axesOpened) expect(entries[index]!.params).toMatchObject({ permissions: "trama_read" });
     expect(Math.max(...checksEnded)).toBeLessThan(Math.min(...axesOpened));
+    // F05: Trama's three lenses run next to the axes, each its own read-only session, after the checks.
+    await until(() => Object.values(audit.lenses ?? {}).every((lens) => lens.threadId !== null));
+    const lensThreads = Object.values(audit.lenses!).map((lens) => lens.threadId!);
+    expect(new Set([...axisThreads, ...lensThreads]).size).toBe(5);
+    entries = await auditLog();
+    const lensesOpened = entries.flatMap((r, index) => (r.method === "thread/start" && String(r.params.developerInstructions).includes("lens of focus mode") ? [index] : []));
+    expect(lensesOpened).toHaveLength(3);
+    expect(Math.max(...checksEnded)).toBeLessThan(Math.min(...lensesOpened));
+    for (const index of lensesOpened) {
+      const instructions = String(entries[index]!.params.developerInstructions);
+      expect(instructions).toContain("Trama's own addition");
+      expect(instructions).toContain("read-only");
+      expect(entries[index]!.params).toMatchObject({ ephemeral: true, cwd: work.workspace!.worktreeRoot });
+    }
     await writeFile(join(gates, "first"), "");
     await until(() => audit.status === "done");
 
@@ -141,8 +157,23 @@ describe("focus mode on a candidate (F01)", () => {
     const [serious, minor] = audit.spec.items!;
     expect(serious).toMatchObject({ severity: "serious", status: "confirmed", confirmation: { model: "gpt-5.5", confirmed: true } });
     expect(minor).toMatchObject({ severity: "minor", status: "hypothesis", evidence: { kind: "command", command: "make check" } });
+    // The lenses' findings go through the same verification (F05): Trama reread the security line, the stronger model
+    // confirmed the serious test finding, and the documents finding without a proof stays a hypothesis.
+    expect(audit.lenses).toMatchObject({
+      security: { status: "done", findings: 1, model: "gpt-5.5-mini", items: [expect.objectContaining({ id: "security-1", severity: "serious", status: "verified" })] },
+      tests: { status: "done", findings: 1, items: [expect.objectContaining({ id: "tests-1", status: "confirmed", confirmation: expect.objectContaining({ model: "gpt-5.5" }) })] },
+      docs: { status: "done", findings: 1, items: [expect.objectContaining({ id: "docs-1", evidence: null, status: "hypothesis" })] },
+    });
+    // The lenses carry no skill: they are Trama's own, not code-review.
+    for (const lens of Object.values(audit.lenses!)) {
+      const turn = (await auditLog()).find((r) => r.method === "turn/start" && r.params.threadId === lens.threadId)!;
+      expect((turn.params.input as { type: string }[]).filter((item) => item.type === "skill")).toEqual([]);
+    }
     const confirmations = (await auditLog()).filter((r) => r.method === "thread/start" && String(r.params.developerInstructions).includes("second reader of focus mode"));
-    expect(confirmations.map((r) => r.params)).toEqual([expect.objectContaining({ model: "gpt-5.5", cwd: work.workspace!.worktreeRoot, ephemeral: true })]);
+    expect(confirmations.map((r) => r.params)).toEqual([
+      expect.objectContaining({ model: "gpt-5.5", cwd: work.workspace!.worktreeRoot, ephemeral: true }),
+      expect.objectContaining({ model: "gpt-5.5", cwd: work.workspace!.worktreeRoot, ephemeral: true }),
+    ]);
     const requests = (await readFile(log, "utf8"))
       .slice(checksBefore)
       .trim()
@@ -162,6 +193,38 @@ describe("focus mode on a candidate (F01)", () => {
     // The candidate itself is untouched: focus mode reads only, and its checks leave evidence, green light and approval as they are.
     expect(JSON.parse(JSON.stringify({ evidence: candidate.evidence, clearance: candidate.clearance, humanApproval: candidate.humanApproval }))).toEqual(untouched);
     expect(candidate.pullRequest).toBeNull();
+
+    // F04: from a finding to work. Without GitHub the ticket stays in Trama's backlog; the report is not published.
+    await controller.followUpFinding(auditId, "standards-1", "ticket");
+    const ticket = document.problems!.items.at(-1)!;
+    expect(ticket).toMatchObject({ issue: null, placement: { kind: "backlog" }, evidence: { kind: "finding", reference: auditId } });
+    await expect(controller.followUpFinding(auditId, "standards-1", "ticket")).rejects.toThrow("hai già creato una issue o una voce del backlog");
+    await expect(controller.publishAuditReport(auditId)).rejects.toThrow("Nessun repository GitHub collegato");
+    expect(audit.publication).toBeUndefined();
+    // A hypothesis never becomes an assignment; a trade-off becomes a question of the Pact in the work's dialog.
+    await expect(controller.followUpFinding(auditId, minor!.id, "assignment")).rejects.toThrow("è un'ipotesi");
+    await controller.followUpFinding(auditId, minor!.id, "pactCard");
+    const card = document.decisionRequests.at(-1)!;
+    expect(card).toMatchObject({ requestId: work.requestId, outcome: null });
+    expect(document.events.some((e) => e.content.type === "card" && e.content.kind === "decision" && e.content.referenceId === card.id)).toBe(true);
+    // The verified finding goes to Ada, who wrote the candidate, within the mandate, and the work starts.
+    await controller.followUpFinding(auditId, "standards-1", "assignment");
+    const correction = specialist.assignments.at(-1)!;
+    expect(correction).toMatchObject({ objective: expect.stringContaining("Mysterious Name"), moduleIds: work.moduleIds, mandateVersion: document.mandate!.version });
+    expect(audit.standards.items![0]!.followUps!.map((f) => f.kind)).toEqual(["ticket", "assignment"]);
+    await until(() => correction.status === "completed");
+    // Nothing starts outside the mandate: once it is revoked the confirmed Spec finding stays without an assignment.
+    await controller.revokeMandate("Fine del lavoro");
+    await expect(controller.followUpFinding(auditId, serious!.id, "assignment")).rejects.toThrow("nessun incarico parte fuori dal mandato");
+    expect(specialist.assignments.at(-1)).toBe(correction);
+    await controller.grantMandate({
+      requestId: null,
+      objectives: ["Documentare l'annullamento"],
+      priorities: [],
+      scopeModuleIds: ["Sources/Orders"],
+      authorizedActions: ["executeInWorktree", "integrateCandidate"],
+      limits: [],
+    });
 
     // Without a spec the Spec axis does not run and says so in the skill's words.
     work.issueNumber = null;

@@ -4,15 +4,18 @@ import { chatComposer } from "@shared/goals";
 import { shouldShowWelcomeOnLaunch } from "@shared/onboarding";
 import { ChatView } from "@/components/chat/ChatView";
 import { Dialogs } from "@/components/Dialogs";
-import { Inspector } from "@/components/inspector/Inspector";
 import { WelcomeView } from "@/components/launch/WelcomeView";
 import { Sash, useResizableWidth } from "@/lib/resizable";
-import { Sidebar } from "@/components/sidebar/Sidebar";
+import { ActivityBar } from "@/components/workbench/ActivityBar";
+import { SideBar } from "@/components/workbench/SideBar";
+import { StatusBar } from "@/components/workbench/StatusBar";
+import { TitleBar } from "@/components/workbench/TitleBar";
 import { Toast } from "@/components/Toast";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { cn } from "@/lib/cn";
-import { useDocumentLanguage } from "@/lib/i18n";
+import { useDocumentLanguage, useT } from "@/lib/i18n";
 import { act, refreshProject, useUi } from "@/lib/store";
+import { SIDE_BAR_MIN_WIDTH, sideBarDefaultWidth, sideBarMaxWidth } from "@/lib/workbench";
 
 function useThemeClass(theme: "system" | "light" | "dark" | undefined) {
   useEffect(() => {
@@ -45,10 +48,11 @@ export function App() {
   useProviderTheme();
   useDocumentLanguage();
   const setApp = useUi((s) => s.setApp);
+  const t = useT();
   const sidebarOpen = useUi((s) => s.sidebarOpen);
   const inspector = useUi((s) => s.inspector);
-  const sidebar = useResizableWidth("trama.sidebarWidth", { initial: 256, min: 208, max: (viewport) => Math.min(440, viewport * 0.35) });
-  const mainView = useUi((s) => s.mainView);
+  // The side bar: 300 px, 340 from a 1500 px window, remembered; the chat keeps 420 px beside it (issue #330).
+  const sidebar = useResizableWidth("trama.sideBarWidth", { initial: sideBarDefaultWidth, min: SIDE_BAR_MIN_WIDTH, max: sideBarMaxWidth });
   const welcomeOpen = useUi((s) => s.welcome !== null);
 
   useEffect(() => {
@@ -74,7 +78,7 @@ export function App() {
       else if (!ui.app?.project) ui.setToast("Apri o crea un progetto per usare questa voce.", "info");
       else if (command === "focusComposer") ui.focusComposer();
       else if (command === "refreshProject") void refreshProject();
-      else if (command === "toggleInspector") ui.setInspector(ui.inspector && ui.mainView === "dialog" ? null : { kind: "map" });
+      else if (command === "toggleInspector") ui.setInspector(ui.sidebarOpen && ui.mainView === "dialog" ? null : { kind: "map" });
       else if (command.startsWith("inspector:")) {
         ui.setInspector({ kind: command.slice("inspector:".length) as "map" | "pact" | "mandate" | "issues" | "team" | "work" | "group" | "memory" });
       }
@@ -116,47 +120,46 @@ export function App() {
   return (
     <TooltipProvider delay={500}>
       <div
-        className="flex h-svh w-full bg-[var(--app-shell-background)]"
+        className="flex h-svh w-full flex-col bg-[var(--app-shell-background)]"
         data-sidebar-state={sidebarOpen ? "expanded" : "collapsed"}
+        data-testid="workbench"
         // Behind the welcome the window is inert, even when the focus was not yet inside it (B02).
         inert={welcomeOpen}
       >
-        <div
-          className={cn(
-            "relative h-svh shrink-0 overflow-hidden",
-            !sidebar.resizing && "transition-[width] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]",
-          )}
-          style={{ width: sidebarOpen ? sidebar.width : 0 }}
-        >
-          <div
-            className={cn(
-              "app-sidebar-surface absolute inset-y-0 left-0 flex flex-col border-r border-[color:var(--app-panel-border)] transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]",
-              !sidebarOpen && "-translate-x-full",
-            )}
-            style={{ width: sidebar.width }}
-          >
-            <Sidebar isMac={isMac} />
-          </div>
-        </div>
-        <div className="relative flex h-svh min-h-0 min-w-0 flex-1">
+        <TitleBar isMac={isMac} />
+        <div className="flex min-h-0 flex-1">
+          <ActivityBar />
           {sidebarOpen ? (
-            <Sash
-              side="right"
-              label="Larghezza della barra laterale. Clic per nasconderla"
-              size={sidebar.width}
-              min={sidebar.bounds.min}
-              max={sidebar.bounds.max}
-              onResize={sidebar.setWidth}
-              onReset={sidebar.reset}
-              onClick={() => useUi.getState().toggleSidebar()}
-              onDragChange={sidebar.setResizing}
+            <SideBar
+              size={{
+                width: sidebar.width,
+                max: sidebar.bounds.max,
+                widen: () => sidebar.setWidth(sidebar.bounds.max),
+                reset: sidebar.reset,
+                resizing: sidebar.resizing,
+              }}
             />
           ) : null}
-          <main className="chat-content-card @container/main relative z-[15] flex min-w-0 flex-1 overflow-hidden">
-            <ChatView isMac={isMac} />
-            {inspector && app.project && mainView === "dialog" ? <Inspector /> : null}
-          </main>
+          <div className="relative flex min-h-0 min-w-0 flex-1">
+            {sidebarOpen ? (
+              <Sash
+                side="right"
+                label={t("workbench.sideBar.resize")}
+                size={sidebar.width}
+                min={sidebar.bounds.min}
+                max={sidebar.bounds.max}
+                onResize={sidebar.setWidth}
+                onReset={sidebar.reset}
+                onClick={() => useUi.getState().toggleSidebar()}
+                onDragChange={sidebar.setResizing}
+              />
+            ) : null}
+            <main className="chat-content-card @container/main relative z-[15] flex min-w-0 flex-1 overflow-hidden">
+              <ChatView />
+            </main>
+          </div>
         </div>
+        <StatusBar />
       </div>
       <WelcomeView />
       <Dialogs />

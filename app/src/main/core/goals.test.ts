@@ -2,7 +2,8 @@ import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
-import type { Candidate, GitHubSnapshot, ProjectDocument, RecentProject } from "@shared/domain";
+import type { Candidate, CandidateReport, GitHubSnapshot, ProjectDocument, RecentProject } from "@shared/domain";
+import { waitingForYou } from "@shared/waitingForYou";
 import {
   candidateGoalId,
   chatComposer,
@@ -570,6 +571,33 @@ describe("projects overview (UX03)", () => {
       candidateReports: [{ state: "verified", blockers: [], clearanceInvalidated: false, approvalInvalidated: false }],
     });
     expect(summary).toMatchObject({ attention: "approval", toApprove: 1, goals: [{ id: goal.id, title: goal.title, status: "open" }] });
+  });
+
+  it("counts what waits for the person from the same list as Aspetta te (issue #390)", () => {
+    const document = teamDocument();
+    const decision = decide(document, { id: null, value: "v", acceptedExample: "e", rationale: "r" });
+    const done = (objective: string) => {
+      const value = assign(
+        document,
+        { specialist: "Ada", kind: "agreedTicket", objective, issueNumber: null, exercise: null, moduleIds: ["Sources/Orders"], dependencies: [], model: "gpt-5.5", tools: ["edits"], requiredChecks: [], instructions: "i" },
+        1,
+        null,
+      );
+      value.status = "completed";
+      return value;
+    };
+    candidate(document, done("Carrello").id, [decision.id], "snap-a");
+    candidate(document, done("Prezzi").id, [decision.id], "snap-b");
+    const reports: CandidateReport[] = [
+      // Trama merges it with the Coordinator's green light: nothing to approve for the person.
+      { state: "decided", blockers: [], clearanceInvalidated: false, approvalInvalidated: false, mergeRoute: "coordinator" },
+      // A decision changed after it: only the person says what to do with it.
+      { state: "building", blockers: [{ code: "DECISION_CHANGED", detail: decision.id }], clearanceInvalidated: false, approvalInvalidated: false, mergeRoute: "coordinator" },
+    ];
+    const summary = summarizeProject(recent("x", "X"), document, { source: "live", selected: true, runningAssignments: 0, candidateReports: reports });
+    const waiting = waitingForYou(document, { candidateReports: Object.fromEntries(document.candidates.map((c, index) => [c.id, reports[index]!])) });
+    expect(waiting.map((i) => i.key)).toEqual([`candidate:${document.candidates[1]!.id}`]);
+    expect(summary).toMatchObject({ toApprove: waiting.length, pendingDecisions: 0, attention: "approval" });
   });
 });
 

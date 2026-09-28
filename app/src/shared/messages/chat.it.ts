@@ -283,6 +283,8 @@ export const chatIt = {
   "chat.card.conflict.overlap": "Stessi file",
   "chat.card.conflict.clean": "Nessun conflitto",
   "chat.card.conflict.unknown": "Non verificato",
+  "chat.card.conflict.hypothesis": "Ipotesi",
+  "chat.card.conflict.semantic": "Incompatibili",
   "chat.card.conflict.showAll": "Mostra tutti i {count} file",
   "chat.card.conflict.exerciseTitle": "Esercizio di conflitto",
   "chat.card.conflict.inNotice": "Nell'avviso del progetto",
@@ -327,7 +329,6 @@ export const chatIt = {
   "chat.card.route.decline": "Non avviare",
   "chat.card.route.start": "Avvia il percorso",
 
-  // Timeline, plan, slices, reviewers and recap
   // Timeline rows
   "chat.timeline.module": "Modulo {name}",
   "chat.timeline.images": "{count} immagini",
@@ -476,26 +477,8 @@ export const chatIt = {
   "chat.plan.approve": "Approva il piano e chiedi di realizzarlo",
 
   // Chat header, timeline and queue (ChatView)
-  "chat.view.panels": "Pannelli",
   "chat.view.exercises": "Esercizi",
-  "chat.view.panel.waiting": "Aspetta te",
-  "chat.view.panel.goals": "Obiettivi",
-  "chat.view.panel.map": "Mappa",
-  "chat.view.panel.pact": "Patto",
-  "chat.view.panel.mandate": "Mandato",
-  "chat.view.panel.team": "Team",
-  "chat.view.panel.work": "Lavoro",
-  "chat.view.panel.group": "Gruppo",
-  "chat.view.panel.issues": "Issue",
-  "chat.view.panel.memory": "Memoria",
-  "chat.view.overview": "Panoramica dei progetti",
-  "chat.view.settings": "Impostazioni",
-  "chat.view.showWholeChat": "Mostra tutta la chat",
   "chat.view.demoProject": "Progetto di esempio",
-  "chat.view.refresh": "Aggiorna progetto",
-  "chat.view.closeInspector": "Chiudi l'ispettore",
-  "chat.view.showDetails": "Mostra dettagli",
-  "chat.view.toggleDetails": "Mostra o nascondi i dettagli",
   "chat.view.filterByGoal": "Filtra la chat per obiettivo",
   "chat.view.wholeChat": "Tutta la chat",
   "chat.view.onlyThisGoal": "Mostra solo questo obiettivo",
@@ -516,24 +499,13 @@ export const chatIt = {
   "chat.view.delete": "Elimina",
   "chat.view.queuedFixed": "Riferisce una scelta già registrata: parte comunque.",
   "chat.view.studyTitle": "Studio del progetto",
-  // Branch divergence notice
-  "chat.divergence.label": "Avviso sul branch del progetto",
-  "chat.divergence.showFiles": "Mostra i {count} file",
-  "chat.divergence.showFiles.one": "Mostra il file",
-  "chat.divergence.ask": "Chiedi al Coordinatore come riallineare",
 
   // Comparison tables and links in messages
   "chat.compare.recommended": "Consigliata",
   "chat.markdown.openFile": "Apri {file} nell'ispettore",
 
   // Context window
-  "chat.context.meterLabel": "Finestra di contesto: {percent}%, soglia di avviso {threshold}%",
-  "chat.context.meterUnknown": "Finestra di contesto: misura non disponibile, soglia di avviso {threshold}%",
   "chat.context.percent": "{percent}%",
-  "chat.context.title": "Finestra di contesto",
-  "chat.context.warnAbove": "Avviso sopra",
-  "chat.context.threshold": "Soglia di avviso",
-  "chat.context.forProject": "Per questo progetto",
 
   // Message context
   "chat.contextPicker.label": "Contesto del messaggio",
@@ -571,27 +543,6 @@ export const chatIt = {
   "chat.composer.askTrama": "Ask Trama: descrivi la situazione e il Coordinatore propone il percorso",
   "chat.composer.interrupt": "Interrompi",
   "chat.composer.send": "Invia al Coordinatore",
-  // Focus bar and status line
-  "chat.focus.waitingFor": "Aspetta te: {what}",
-  "chat.focus.activity": "Attività",
-  "chat.focus.resumeShort": "Riprendi",
-  "chat.focus.pauseHint": "Ferma mosse automatiche, giri e lavoro automatico del progetto",
-  "chat.focus.pauseShort": "Pausa",
-  "chat.focus.stopMove": "Ferma: {move}",
-  "chat.focus.stop": "Ferma",
-  "chat.focus.details": "Dettagli ({count})",
-  "chat.focus.details.one": "Dettagli",
-  "chat.focus.open": "Apri",
-  "chat.focus.putInFocus": "Metti in primo piano",
-  "chat.focus.queue": "In coda {queued}",
-  "chat.focus.queuePaused": ", {count} sospesi",
-  "chat.focus.queuePaused.one": ", {count} sospeso",
-  "chat.focus.label": "Lavoro in primo piano",
-  "chat.focus.inFocus": "In primo piano",
-  "chat.focus.none": "Nessun lavoro in primo piano: sono tutti sospesi.",
-  "chat.focus.suspendHint": "Toglie questo lavoro dal primo piano: passa al prossimo in coda",
-  "chat.focus.goToWork": "Vai al lavoro",
-  "chat.focus.queueLabel": "Lavori in coda",
   // Model picker
   "chat.model.effort.minimal": "Minimo",
   "chat.model.effort.low": "Basso",

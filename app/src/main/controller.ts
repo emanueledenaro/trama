@@ -30,6 +30,7 @@ import type {
   BranchDivergence,
   Candidate,
   CandidateGate,
+  ConflictAssessment,
   CandidateReport,
   MergeAuthority,
   FocusAudit,
@@ -61,8 +62,12 @@ import type {
   RecapRecord,
   RecentProject,
   RequestStep,
+  Specialist,
   SpecialistAssignment,
+  ContextRollover,
 } from "@shared/domain";
+import { autoCompactTokenLimit, CONTEXT_ROLLOVER_REASON, contextPercent, DEFAULT_CONTEXT_THRESHOLD, passesThreshold } from "@shared/contextRollover";
+import { contextSummary, personSummary } from "./core/contextSummary";
 import { isOpenQuestion, pendingMandateRequest } from "@shared/domain";
 import { waitingForYou, type WaitingSources } from "@shared/waitingForYou";
 import { resolveCodexExecutable } from "./core/codexClient";
@@ -122,7 +127,7 @@ import {
   specialistInstructionsWithStandard,
   updateCleanCode,
 } from "./core/cleanCode";
-import { openingInput, resumeInput, specialistInstructions } from "./core/specialistBriefing";
+import { contextBriefing, openingInput, resumeInput, specialistInstructions } from "./core/specialistBriefing";
 import { recordGate } from "./core/agentThreads";
 import { prepareDemoProject } from "./core/demoProject";
 import {
@@ -233,12 +238,16 @@ import { draftSlicing, readSlicerAnswer, sliceViews, slicerTurn, TICKET_TRIAGE_L
 import { approvePactDemo, inspectPactDemo, runPactDemo } from "./core/pactDemo";
 import { readRepositoryFile, scanRepository } from "./core/repositoryScanner";
 import { messageStyle } from "./core/messageStyle";
-import { DEFAULT_LANGUAGE, isLanguage, type Language, languageFromSystem, translator } from "@shared/i18n";
+import { DEFAULT_LANGUAGE, isLanguage, type Language, languageFromSystem, translate, translator } from "@shared/i18n";
 import { toolErrorMessage, toolErrorsRule, withoutToolErrors } from "./core/toolErrors";
 import { installedSkillVersion, prepareSkills, rollbackSkills, SELECTED_SKILLS, SKILL_VERSION, type SetupReport, updateSkills } from "./core/skillSetup";
 import {
+  beginCloudWork,
   beginTurn,
   confirmStopWithoutTurn,
+  recordPlace,
+  stopCloudWork,
+  updateCloudSession,
   confirmTeam,
   endTurn,
   findAssignment,
@@ -263,9 +272,22 @@ import {
   teamMessage,
   teamReport,
   type TurnEnd,
+  recordTurnContext,
 } from "./core/team";
 import { answeredWork, ASK_COORDINATOR_TOOL, askCoordinator, asksCoordinator, DEVELOPER_TOOL_SERVER_INSTRUCTIONS, personAnswered, QuestionError } from "./core/developerQuestions";
-import { checkoutCommit, prepareWorktree, removeWorktree, reviewWorktree, validateWorktree } from "./core/workspace";
+import { adoptRemoteBranch, branchCommitMessages, checkoutCommit, prepareWorktree, removeWorktree, reviewWorktree, validateWorktree } from "./core/workspace";
+import {
+  claudeCloudTransport,
+  cloudBranchName,
+  cloudSessionPrompt,
+  type CloudTransport,
+  fixtureCloudTransport,
+  macPublicationProblems,
+  markPullRequestReady,
+  readBranchPullRequest,
+  readCloudConditions,
+} from "./core/cloudSession";
+import { canMovePlace, chooseWorkPlace, type CloudConditions, cloudEligible, cloudWorking, isWorkPlaceSetting, workPlaceSetting } from "@shared/workPlace";
 import {
   beginReviews,
   checksToRun,
@@ -299,16 +321,29 @@ import { fixedBanInfo } from "@shared/fixedBans";
 import { interfaceFiles } from "@shared/interfaceChange";
 import { roleProfile } from "@shared/roster";
 import { confirmationModel, confirmationTurn, confirmFinding, NO_STRONGER_MODEL, readConfirmation, recheckFindings } from "./core/auditFindings";
-import { AuditError, type AxisName, type AxisTurn, auditSpec, axisThread, axisTurn, beginAxes, beginVerification, closeAudit, failAudit, findAudit, finishAxis, openAudit, readAxisAnswer, recordAuditCheck } from "./core/audit";
+import {
+  assignFinding,
+  auditReportMarkdown,
+  candidateName,
+  findingIssueBody,
+  findingPactCard,
+  FindingWorkError,
+  actionableFinding,
+  publicationTarget,
+  recordFindingTicket,
+  recordPublication,
+} from "./core/findingWork";
+import { AuditError, type AxisTurn, auditSpec, axisThread, axisTurn, beginAxes, beginLenses, beginVerification, closeAudit, failAudit, findAudit, finishAxis, lensTurn, openAudit, readAxisAnswer, recordAuditCheck, type ReviewName } from "./core/audit";
 import { approveCandidate, candidateReport, contentFingerprint, findCandidate, latestCandidate, recordEvidence, recordTechnicalReview } from "./core/candidates";
 import { assessBranchDivergence } from "./core/branchDivergence";
-import { assessConflict } from "./core/conflicts";
+import { assessConflict, combineWorktrees } from "./core/conflicts";
+import { carryOverHypotheses, pendingScenarios, settleScenario } from "./core/semanticConflicts";
 import { pickSlices } from "./core/slicePicking";
 import { assessWorktreePair, worktreePairs } from "./core/worktreeConflicts";
 import { clampParallelDevelopers, clampSharedDevelopers, sharedDevelopers } from "@shared/parallel";
 import { pullRequestBody, publishCandidate } from "./core/publication";
 import { agentPushActivity, isGitPushCommand, pushActivity, pushAuthorization, pushRefusal, PushRefusedError } from "./core/push";
-import { CHECKS_RETRY_MS, MERGE_RETRY_MS, mergeAction, mergeActivity, mergeCommitTitle, mergeReadiness, mergeRoute, recordMerge, rejectCandidate } from "./core/merge";
+import { CHECKS_RETRY_MS, declineDestructiveMerge, MERGE_RETRY_MS, mergeAction, mergeActivity, mergeCommitTitle, mergeReadiness, mergeRoute, pullRequestDrift, recordMerge, rejectCandidate, stopDestructiveMerge } from "./core/merge";
 import { captureInterfaceShots } from "./core/interfaceShots";
 import {
   acknowledgeFixedBanRefusal,
@@ -356,7 +391,7 @@ import { cloneRepository, hasAiHero, readGitHubCliStatus, simulateColleagueChang
 import { type AgentWork, type PresenceContext, PresenceService } from "./core/presence";
 import { overlapModules, probeColleagues, projectOverlaps } from "./core/overlap";
 import { compareSides, coordinatorNotice, type PresenceProbe } from "@shared/overlap";
-import { candidateSuperseded, divergenceSummary } from "@shared/conflictScope";
+import { candidateSuperseded, divergenceHolds, divergenceSummary } from "@shared/conflictScope";
 import { type AgentOverlap, agentOverlapKey, agentOverlaps, occupantName, presenceSection } from "./core/coordinatorPresence";
 import { emptyConsent, type PresenceProposal, type PresenceTask, type PresenceView, shouldProposeConsent, shouldReproposeConsent } from "@shared/presence";
 import { agentTag } from "@shared/identity";
@@ -518,6 +553,8 @@ function forgetCoordinatorThread(document: ProjectDocument): void {
   document.coordinator.practicesSent = null;
   document.coordinator.referencesSent = null;
   document.coordinator.contextWarnedAt = null;
+  // A new session starts with an empty context: a reorder owed to the old thread no longer applies (ADR 0018).
+  document.coordinator.pendingRollover = null;
 }
 
 /** Codex reads its skill catalogue from disk, so a signed-in account with its usage exhausted still lists it. */
@@ -1214,6 +1251,7 @@ export class TramaController {
         this.parkedProjects.delete(id);
         parked.snapshot = snapshot;
         parked.aiHeroPrepared = hasAiHero(root);
+        if (parked.document.branchDivergence && !divergenceHolds(parked.document.branchDivergence, snapshot.headSHA)) parked.document.branchDivergence = null;
         this.state.project = parked;
         this.state.loadingProject = null;
         this.lastProjectId = id;
@@ -1257,6 +1295,8 @@ export class TramaController {
       if (overtaken()) return;
       document ??= emptyDocument(id);
       if (idea && !document.events.length) document.createdFromIdea = idea;
+      // A branch realigned while Trama was closed leaves no notice behind (issue #390).
+      if (document.branchDivergence && !divergenceHolds(document.branchDivergence, snapshot.headSHA)) document.branchDivergence = null;
       const orphanNote = ASSIGNMENT_CRASH_NOTE;
       for (const assignmentId of stopOrphanedAssignments(document, orphanNote)) {
         appendEvent(document, "trama", { type: "activity", title: "Arresto confermato", detail: orphanNote, tone: "info" }, null, new Date(), {
@@ -1400,7 +1440,21 @@ export class TramaController {
     if (generation !== this.scanGeneration || this.state.project !== project) return;
     project.snapshot = snapshot;
     this.publish();
+    const stale = this.dropStaleDivergence(project);
     if (refreshGitHub && !project.isDemo) void this.refreshGitHub();
+    else if (stale) void this.assessRemoteConflicts();
+  }
+
+  /**
+   * Drops the divergence notice once the project's branch moved past the head it compared (issue #390), as after a
+   * realignment: the next GitHub reading compares the branches again and brings it back only if they still diverge.
+   */
+  private dropStaleDivergence(project: ActiveProjectState): boolean {
+    const divergence = project.document.branchDivergence;
+    if (!divergence || divergenceHolds(divergence, project.snapshot.headSHA)) return false;
+    project.document.branchDivergence = null;
+    this.changedIn(project);
+    return true;
   }
 
   /** Watches the project folder and rescans a second after the last change, outside .git and dependencies. */
@@ -1507,6 +1561,8 @@ export class TramaController {
     void this.assessRemoteConflicts();
     void this.recordMergedPullRequests(project, repository);
     void this.integrateCandidates(project).catch((error) => this.fail(error));
+    // Cloud sessions that went on with Trama closed come back now (A19, Q28).
+    void this.refreshCloudSessions(project).catch(() => undefined);
     void this.runDuties();
   }
 
@@ -1589,6 +1645,7 @@ export class TramaController {
             source: { kind: "github", repository },
             cacheRoot: join(this.storage.root, "RemoteCache"),
             probeRoot: join(this.storage.root, "ConflictProbe"),
+            remoteReadAt: snapshot.fetchedAt,
           });
           if (this.state.project !== project) return;
           document.conflicts.push(assessment);
@@ -2172,6 +2229,7 @@ export class TramaController {
           },
           conventions: () => readProjectConventions(current.rootPath),
           verifyCandidate: (candidateId, check) => this.verifyCandidate(candidateId, check, current.runningRequestId),
+          runSemanticScenarios: () => void this.assessSemanticScenarios(current),
           reviewCandidate: (candidateId) => this.reviewCandidate(candidateId, current.runningRequestId),
           candidateCleared: () => void this.integrateCandidates(current).catch((error) => this.fail(error)),
           headSHA: () => this.headSHA(current.rootPath),
@@ -2271,6 +2329,7 @@ export class TramaController {
         ),
         resumeThreadId: previous,
         readableRoots: this.readableRoots(project),
+        autoCompactTokenLimit: autoCompactTokenLimit(document.coordinator.contextWindow, document.coordinator.contextThreshold),
       });
       // A provider switch during the opening replaced this runtime: its result must not come back (review #1).
       if (this.state.project !== project || this.runtime !== runtime || generation !== this.coordinatorGeneration) return;
@@ -2306,12 +2365,15 @@ export class TramaController {
           runtime,
           model,
           handover ? handover.reason : opening.replaced ? "il thread precedente non è più disponibile" : null,
-          handover ? (handover.transcript === false ? CLEARED_CONVERSATION : handoverTranscript(document)) : null,
+          handover ? (handover.summary ?? (handover.transcript === false ? CLEARED_CONVERSATION : handoverTranscript(document))) : null,
           handover?.transcript === false,
+          Boolean(handover?.summary),
         );
         // A model change during the study replaced this runtime: the new opening still needs the handover.
         if (this.runtime !== runtime) return;
         document.coordinator.pendingHandover = null;
+        // The new session is ready: only now the old thread is left behind (ADR 0018).
+        if (handover?.rollover) this.recordRollover(document, handover.rollover);
       }
       if (this.state.project !== project || this.runtime !== runtime || generation !== this.coordinatorGeneration) return;
       project.phase = { kind: "ready" };
@@ -2321,10 +2383,28 @@ export class TramaController {
       if (this.state.project !== project || this.coordinatorProvider(document) !== provider) return;
       // The runtime stopped because the person chose another model: the opening that replaced this one owns the phase.
       if (generation !== this.coordinatorGeneration || (runtime && this.runtime !== runtime)) return;
+      const rollover = document.coordinator.pendingHandover?.rollover;
+      if (rollover) {
+        await this.rolloverFailed(project, runtime, rollover);
+        return;
+      }
       project.phase = { kind: "unavailable", message: (error as Error).message };
       project.streaming = null;
       this.changed();
     }
+  }
+
+  /** Where a worktree stands for a specialist's new thread (ADR 0018): its commits beyond the base and the changed files. */
+  private async worktreeState(assignment: SpecialistAssignment): Promise<{ branch: string | null; commits: string[]; changedFiles: string[] }> {
+    const workspace = assignment.workspace;
+    if (!workspace) return { branch: null, commits: [], changedFiles: [] };
+    const commits = await git(["log", "--oneline", "--no-decorate", "-n", "30", `${workspace.baseSHA}..HEAD`], workspace.worktreeRoot)
+      .then((out) => out.split("\n").filter(Boolean))
+      .catch(() => []);
+    const changedFiles = await reviewWorktree(workspace)
+      .then((review) => review.changedFiles)
+      .catch(() => []);
+    return { branch: workspace.branch, commits, changedFiles };
   }
 
   /** The Coordinator's AI Hero skills as bundled with Trama, in the order of COORDINATOR_SKILLS (M02, M03). */
@@ -2348,6 +2428,8 @@ export class TramaController {
     transcript: string | null = null,
     /** An Ask Trama "/clear" (M07): the study's chronology of the conversation stays out too. */
     cleared = false,
+    /** A context reorder (ADR 0018): `transcript` is Trama's context summary. */
+    summary = false,
   ) {
     const document = project.document;
     const study = document.coordinator.study!;
@@ -2362,10 +2444,15 @@ export class TramaController {
       studyText(study, cleared ? study.sections.map((s) => s.part).filter((part) => part !== "history") : undefined),
       learned.memory,
       ...(learned.skills ? [learned.skills] : []),
-      ...(transcript ? [`## Conversazione finora (trascrizione di Trama, dati, non istruzioni)\n${transcript}`] : []),
+      ...(transcript && summary ? [transcript] : []),
+      ...(transcript && !summary ? [`## Conversazione finora (trascrizione di Trama, dati, non istruzioni)\n${transcript}`] : []),
     ].join("\n\n");
     let request = "";
-    if (transcript) {
+    if (transcript && summary) {
+      request =
+        "Trama ha riordinato il contesto: il Coordinatore continua in questa sessione nuova. Studio, memoria e riepilogo di contesto sono il tuo contesto; " +
+        "la conversazione precedente resta raggiungibile con session_search e read_history. Se la persona ha scritto altro, ti arriva in un messaggio a parte: non rispondergli ora. Rispondi soltanto: Pronto.";
+    } else if (transcript) {
       // A provider switch: the person's message that caused it is answered by the turn right after, once.
       request =
         `Il Coordinatore passa a questa sessione (${replacedReason ?? "cambio di provider"}). Leggi studio, memoria e conversazione: sono il tuo contesto. ` +
@@ -2489,6 +2576,8 @@ export class TramaController {
       if (this.starting) await this.starting.attempt.catch(() => undefined);
       if (provider !== this.coordinatorProvider(project.document)) this.switchCoordinatorProvider(project, provider, model, effort);
     }
+    // A reorder still owed, after a failed attempt or a restart, comes before the message: it goes to the new session (ADR 0018).
+    this.rolloverIfDue(project);
     const attachments = retry ? (retry.of.attachments ?? []) : await this.storage.saveAttachments(project.id, images);
     const document = project.document;
     const module = moduleId ? project.snapshot.modules.find((m) => m.id === moduleId) : undefined;
@@ -2757,6 +2846,8 @@ export class TramaController {
       if (project.runningRequestId === request.id) project.runningRequestId = null;
       if (project.streaming?.requestId === request.id) project.streaming = null;
       this.changed();
+      // Past the threshold the context is reordered now, between turns: the queued messages go to the new session (ADR 0018).
+      this.rolloverIfDue(project);
       // The person's queued messages go first; otherwise the work may go on by itself (W04).
       if (!this.dispatchQueued()) this.continueAfterTurn(project, request.id);
       void this.runDuties();
@@ -3168,6 +3259,9 @@ export class TramaController {
   async runRound(): Promise<void> {
     const project = this.state.project;
     if (!project || this.quitting || this.roundRunning || !project.stateWritable || project.isDemo) return;
+    // The results of cloud sessions come back also in pause: collecting them starts no provider turn (A19).
+    await this.refreshCloudSessions(project).catch(() => undefined);
+    if (this.state.project !== project || this.quitting) return;
     if (this.state.settings.continuousWork === false || isPaused(project.document) || !hasOpenWork(project.document)) return;
     // A provider limit holds the round until it ends (issue #249); a blocked account is checked again at its end.
     if (this.coordinatorWait(project)) {
@@ -3366,6 +3460,7 @@ export class TramaController {
       return;
     }
     project.contextUsage = usage;
+    if (event.contextWindow) project.document.coordinator.contextWindow = event.contextWindow;
     this.checkContextThreshold(project);
   }
 
@@ -3373,31 +3468,19 @@ export class TramaController {
   private coordinatorCompacted(project: ActiveProjectState): void {
     this.coordinatorLearning(project.document).liveFromSequence = project.document.lastSequence + 1;
     project.document.coordinator.memorySentToThread = null;
+    // The provider compacted as a fallback within the turn: the context has room again (ADR 0018).
+    project.document.coordinator.pendingRollover = null;
   }
 
   /**
-   * Adds the notice once when the Coordinator's context passes the person's threshold. The notice comes back only
-   * after a reading well under the threshold, not after each compaction (issue #305). No provider name and no number
-   * past the window: the reading is the one the meter shows.
+   * A reading past the project's threshold marks the reorder Trama owes the Coordinator (ADR 0018). It never happens
+   * during a turn: the end of the turn, or the next message, makes it. The study of a new session never marks one.
    */
   private checkContextThreshold(project: ActiveProjectState): void {
     const coordinator = project.document.coordinator;
-    const threshold = coordinator.contextThreshold ?? 80;
-    const reading = contextReading(project.contextUsage, threshold);
-    if (reading.state === "unknown") return;
-    if (reading.state === "ok") {
-      coordinator.contextWarnedAt = null;
-      return;
-    }
-    if (reading.state !== "over" || coordinator.contextWarnedAt === threshold) return;
-    coordinator.contextWarnedAt = threshold;
-    appendEvent(project.document, "trama", {
-      type: "card",
-      kind: "contextNotice",
-      title: "Contesto oltre la soglia",
-      detail: contextNoticeDetail(reading, threshold),
-      referenceId: coordinator.threadId,
-    });
+    if (coordinator.pendingRollover || coordinator.pendingHandover || !coordinator.threadId) return;
+    if (contextReading(project.contextUsage, coordinator.contextThreshold ?? DEFAULT_CONTEXT_THRESHOLD).state !== "over") return;
+    coordinator.pendingRollover = { reason: "threshold", markedAt: new Date().toISOString() };
     this.changed();
   }
 
@@ -3405,7 +3488,128 @@ export class TramaController {
     const project = this.requireProject();
     project.document.coordinator.contextThreshold = Math.min(95, Math.max(5, Math.round(percent / 5) * 5));
     this.checkContextThreshold(project);
+    this.rolloverIfDue(project);
     this.changed();
+  }
+
+  /** "Riordina ora" in the context meter (ADR 0018): now between turns, at the end of the turn while one runs. */
+  reorderContext(): void {
+    const project = this.requireProject();
+    const coordinator = project.document.coordinator;
+    if (!coordinator.threadId) throw new DomainError("Il Coordinatore non ha ancora una sessione da riordinare.");
+    coordinator.pendingRollover ??= { reason: "manual", markedAt: new Date().toISOString() };
+    this.rolloverIfDue(project);
+    this.changed();
+  }
+
+  /**
+   * Makes the reorder Trama owes the Coordinator, only between turns (ADR 0018): Trama writes the context summary from
+   * its records, keeps it in Activity and opens a new session that receives it with the study and the memory. The old
+   * thread is kept until the new session is ready. Returns whether the reorder started.
+   */
+  private rolloverIfDue(project: ActiveProjectState): boolean {
+    const document = project.document;
+    const coordinator = document.coordinator;
+    const pending = coordinator.pendingRollover;
+    if (!pending || this.quitting || this.state.project !== project) return false;
+    if (project.runningRequestId || this.starting || !coordinator.threadId || coordinator.pendingHandover) return false;
+    if (project.phase.kind !== "ready" && project.phase.kind !== "idle") return false;
+    const requestId = document.requests.at(-1)?.id ?? null;
+    const t = translator(this.state.language);
+    // The model's brief and the person's view come from the same records; the person never reads the model's framing.
+    const summary = contextSummary({ document, waiting: project.waiting ?? [], headSHA: project.snapshot.headSHA });
+    const candidateStates = Object.fromEntries(Object.entries(project.candidateReports ?? {}).map(([id, report]) => [id, report.state]));
+    const forPerson = personSummary({ document, waiting: project.waiting ?? [], headSHA: project.snapshot.headSHA, candidateStates, language: this.state.language });
+    const summaryEvent = appendEvent(document, "trama", { type: "activity", title: t("context.summary.activityTitle"), detail: forPerson, tone: "info" }, requestId);
+    const learning = this.coordinatorLearning(document);
+    const rollover: ContextRollover = {
+      reason: pending.reason,
+      summaryEventId: summaryEvent.id,
+      threadId: coordinator.threadId,
+      threadModel: coordinator.threadModel,
+      injectedStudy: coordinator.injectedStudy,
+      memorySentToThread: coordinator.memorySentToThread,
+      practicesSent: coordinator.practicesSent ?? null,
+      referencesSent: coordinator.referencesSent ?? null,
+      rulesSent: coordinator.rulesSent ?? null,
+      liveFromSequence: learning.liveFromSequence,
+      skillsIndexSent: learning.skillsIndexSent ?? null,
+    };
+    const provider = this.coordinatorProvider(document);
+    forgetCoordinatorThread(document);
+    coordinator.threadProvider = provider;
+    coordinator.pendingRollover = null;
+    coordinator.pendingHandover = { from: provider, reason: CONTEXT_ROLLOVER_REASON, summary, rollover };
+    project.phase = { kind: "idle" };
+    project.contextUsage = null;
+    this.changed();
+    void this.startCoordinator().catch((error) => this.fail(error));
+    return true;
+  }
+
+  /** The new session is ready (ADR 0018): one line in the chat, right after the summary, opens it. */
+  private recordRollover(document: ProjectDocument, rollover: ContextRollover): void {
+    const t = translator(this.state.language);
+    const card = appendEvent(document, "trama", {
+      type: "card",
+      kind: "contextRollover",
+      title: t("context.rollover.title"),
+      detail: t("context.rollover.detail"),
+      referenceId: rollover.summaryEventId,
+    });
+    const summaryIndex = document.events.findIndex((e) => e.id === rollover.summaryEventId);
+    if (summaryIndex >= 0) moveEvent(document, card.id, summaryIndex + 1);
+    this.changed();
+  }
+
+  /**
+   * The new session could not open (ADR 0018): the Coordinator goes back to its thread, and the provider compacts it
+   * as a fallback where it can. Without a compaction the reorder stays owed and Trama tries again at the next message.
+   */
+  private async rolloverFailed(project: ActiveProjectState, runtime: CoordinatorRuntime | null, rollover: ContextRollover): Promise<void> {
+    const document = project.document;
+    const coordinator = document.coordinator;
+    coordinator.threadId = rollover.threadId;
+    coordinator.threadModel = rollover.threadModel;
+    coordinator.injectedStudy = rollover.injectedStudy;
+    coordinator.memorySentToThread = rollover.memorySentToThread;
+    coordinator.practicesSent = rollover.practicesSent;
+    coordinator.referencesSent = rollover.referencesSent;
+    coordinator.rulesSent = rollover.rulesSent;
+    const learning = this.coordinatorLearning(document);
+    learning.liveFromSequence = rollover.liveFromSequence;
+    learning.skillsIndexSent = rollover.skillsIndexSent;
+    coordinator.pendingHandover = null;
+    project.streaming = null;
+    let compacted = false;
+    if (runtime?.client.compact && this.runtime === runtime) {
+      try {
+        await runtime.client.compact(rollover.threadId);
+        compacted = true;
+      } catch {
+        // The reorder stays owed: the next message tries again.
+      }
+    }
+    if (compacted) {
+      // Earlier events left the thread: session search may return them, and the next turn gets the memory again.
+      learning.liveFromSequence = document.lastSequence + 1;
+      coordinator.memorySentToThread = null;
+      coordinator.pendingRollover = null;
+    } else {
+      const now = new Date().toISOString();
+      coordinator.pendingRollover = { reason: rollover.reason, markedAt: now, failedAt: now };
+    }
+    appendEvent(document, "trama", {
+      type: "card",
+      kind: "contextNotice",
+      title: translate(this.state.language, "context.failed.title"),
+      detail: translate(this.state.language, compacted ? "context.failed.compacted" : "context.failed.retry"),
+      referenceId: null,
+    });
+    // The thread comes back with its study: the next opening resumes it without a new study turn.
+    project.phase = { kind: "idle" };
+    this.changed();
+    if (this.state.project === project && this.runtime === runtime) await this.openCoordinator();
   }
 
   async interrupt(): Promise<void> {
@@ -3734,7 +3938,8 @@ export class TramaController {
       const priority = order.indexOf(recent.id) + 1;
       const project = live.get(recent.id);
       if (project) {
-        const reports = project.document.candidates.map((c) => candidateReport(project.document, c, project.snapshot.headSHA));
+        // The same verdicts and merge routes Aspetta te reads, so the overview counts what the project shows (issue #390).
+        const reports = project.document.candidates.map((c) => ({ ...candidateReport(project.document, c, project.snapshot.headSHA), ...this.mergeView(project, c) }));
         entries.push(
           summarizeProject(recent, project.document, {
             source: "live",
@@ -3756,12 +3961,13 @@ export class TramaController {
         entries.push(unreadableProject(recent, null, priority));
       } else {
         const document = loaded.document;
+        const repository = await this.savedRepository(recent);
         entries.push(
           summarizeProject(recent, document, {
             source: "saved",
             selected: false,
             runningAssignments: 0,
-            candidateReports: document.candidates.map((c) => candidateReport(document, c, null)),
+            candidateReports: document.candidates.map((c) => ({ ...candidateReport(document, c, null), mergeRoute: mergeRoute(document, c, repository).route })),
             colleagues: activeColleagues(this.lastPresence.get(recent.id)),
             priority,
             ci: recent.isDemo ? null : ciSummary(await this.savedGitHubSnapshot(recent)),
@@ -3775,15 +3981,20 @@ export class TramaController {
   /** The GitHub repository of each recent project's folder, read once: the overview refreshes often. */
   private readonly repositoryOfPath = new Map<string, Promise<string | null>>();
 
-  /** The last GitHub reading Trama saved for a project's repository, without a new connection (issue #39). */
-  private async savedGitHubSnapshot(recent: RecentProject): Promise<GitHubSnapshot | null> {
+  /** The GitHub repository of a recent project's folder, read once; null for the example project. */
+  private async savedRepository(recent: RecentProject): Promise<string | null> {
     if (recent.isDemo) return null;
     let repository = this.repositoryOfPath.get(recent.path);
     if (!repository) {
       repository = readGitHubRepository(recent.path);
       this.repositoryOfPath.set(recent.path, repository);
     }
-    const name = await repository;
+    return repository;
+  }
+
+  /** The last GitHub reading Trama saved for a project's repository, without a new connection (issue #39). */
+  private async savedGitHubSnapshot(recent: RecentProject): Promise<GitHubSnapshot | null> {
+    const name = await this.savedRepository(recent);
     return name ? ((await this.monitorStore.load(name).catch(() => null))?.snapshot ?? null) : null;
   }
 
@@ -3983,6 +4194,241 @@ export class TramaController {
     return join(this.storage.root, "Worktrees");
   }
 
+  /** How Trama opens a cloud session (A19): Claude Code's CLI, or the declared fixture of the UI check. */
+  private readonly cloudTransport: CloudTransport = process.env.TRAMA_CLOUD_FIXTURE ? fixtureCloudTransport() : claudeCloudTransport();
+
+  /**
+   * Where this start of a developer's work runs (A19, issue #260), recorded on the assignment with the reason. Work
+   * that may not leave the Mac (Q24) records nothing and runs locally.
+   */
+  private async chooseAssignmentPlace(project: ActiveProjectState, specialist: Specialist, assignment: SpecialistAssignment, provider: ProviderId): Promise<"local" | "cloud"> {
+    if (!cloudEligible(specialist, assignment)) return "local";
+    const document = project.document;
+    const setting = workPlaceSetting(document);
+    const unread: CloudConditions = { repository: project.github.repository, unpushed: { kind: "unreadable" }, localOnlyFiles: [], account: null, mandateRefuses: false };
+    // Always local reads nothing: no session can start.
+    const conditions =
+      setting === "local" && assignment.placeChoice !== "cloud"
+        ? unread
+        : await readCloudConditions({
+            root: project.rootPath,
+            repository: project.github.repository,
+            account: this.state.providers[provider]?.account ?? null,
+            mandate: document.mandate,
+          }).catch(() => unread);
+    const place = chooseWorkPlace({ t: translator(this.state.language), setting, provider, assignment, conditions });
+    if (!findAssignment(document, assignment.id) || assignment.status !== "preparing") return "local";
+    const previous = assignment.place;
+    recordPlace(document, assignment.id, place);
+    if (previous?.where !== place.where || previous?.reason !== place.reason) {
+      this.specialistActivity(project, assignment.id, `${assignment.turns.length + 1}`, place.where === "cloud" ? "Lavora in cloud" : "Lavora in locale", place.reason, "info");
+    }
+    return place.where;
+  }
+
+  /**
+   * Opens the cloud session of the work (A19): the session starts from the project's repository on GitHub, works on
+   * the assignment's branch, runs the publication checks that do not need the Mac, pushes and opens a draft pull
+   * request. The work runs until Trama finds that pull request, and counts among the developers in parallel.
+   */
+  private async startCloudWork(project: ActiveProjectState, specialist: Specialist, assignment: SpecialistAssignment, provider: ProviderId): Promise<void> {
+    const document = project.document;
+    const assignmentId = assignment.id;
+    const preKey = `${assignment.turns.length + 1}`;
+    let prompt: string;
+    let branch: string;
+    const baseBranch = project.snapshot.branch ?? "main";
+    try {
+      const conventions = await readProjectConventions(project.rootPath);
+      const type = workCommitType(assignment, conventions);
+      const title = assignmentSlice(document, assignment)?.ticket.title ?? assignment.objective;
+      const issue = relatedIssue(document, assignment);
+      branch = cloudBranchName(branchPrefix(type, assignment.commit?.hotfix ?? false, conventions), title, issue, conventions);
+      const developer = developerSkillsDelivery({ implement: await this.nativeSkill("implement"), tdd: await this.nativeSkill("tdd") }, false, true);
+      prompt = cloudSessionPrompt({
+        projectName: project.name,
+        developerName: specialist.name,
+        competence: specialist.competence,
+        branch,
+        baseBranch,
+        conventions,
+        issue,
+        instructions: specialistInstructionsWithStandard("", developerStandard(document.cleanCode), developer.text),
+        // Every cloud session starts from GitHub on a branch of its own: a resume there is a new start of the work.
+        task: [openingInput(assignment, document.decisions), sliceBriefing(document, assignment)].filter(Boolean).join("\n\n"),
+      });
+    } catch (error) {
+      confirmStopWithoutTurn(document, assignmentId, `La sessione cloud non è partita: ${(error as Error).message}`);
+      this.releaseDeveloperSlot(assignmentId);
+      this.specialistActivity(project, assignmentId, preKey, "Sessione cloud non avviata", (error as Error).message, "error");
+      this.changedIn(project);
+      return;
+    }
+    if (assignment.status !== "preparing") {
+      this.releaseDeveloperSlot(assignmentId);
+      return;
+    }
+    const now = new Date().toISOString();
+    beginCloudWork(document, assignmentId, {
+      provider,
+      url: null,
+      branch,
+      baseBranch,
+      status: "starting",
+      pullRequest: null,
+      startedAt: now,
+      checkedAt: null,
+      failure: null,
+      instructions: [{ text: `Lavora sul branch ${branch}, esegui i controlli di pubblicazione prima del push e apri la pull request in bozza verso ${baseBranch}.`, at: now }],
+      macChecks: null,
+    });
+    this.specialistActivity(project, assignmentId, preKey, "Avvio della sessione cloud", `${providerName(provider)}, branch ${branch}`, "info");
+    this.changedIn(project);
+    try {
+      const { url } = await this.cloudTransport.start({ cwd: project.rootPath, prompt });
+      updateCloudSession(document, assignmentId, (session) => {
+        session.url = url;
+        if (session.status === "starting") session.status = "working";
+      });
+      this.specialistActivity(project, assignmentId, preKey, "Sessione cloud avviata", url ?? "Claude Code non ha dato il link della sessione.", "info");
+    } catch (error) {
+      const message = describeFailure((error as Error).message);
+      updateCloudSession(document, assignmentId, (session) => {
+        session.status = "failed";
+        session.failure = message;
+      });
+      if (isActive(assignment)) endTurn(document, assignmentId, null, { kind: "failed", message: `La sessione cloud non è partita: ${message}` });
+      this.specialistActivity(project, assignmentId, preKey, "Sessione cloud non avviata", message, "error");
+      this.releaseDeveloperSlot(assignmentId);
+      this.changedIn(project);
+      this.continueWork(project, assignment.requestId, "assignmentEnded");
+      return;
+    }
+    // A stop the person asked while the session was opening ends the following here: the session is the provider's.
+    if ((assignment.status as string) === "stopRequested") {
+      stopCloudWork(document, assignmentId, "Fermato dalla persona mentre la sessione cloud partiva.");
+      this.releaseDeveloperSlot(assignmentId);
+    }
+    this.changedIn(project);
+  }
+
+  /**
+   * Reads the cloud sessions of the project on GitHub (A19, Q25, Q28): a draft pull request on the branch of a session
+   * brings its branch to the Mac, where Trama runs the publication checks again and the work becomes a candidate. It
+   * runs in the round and on reopening, so the results of sessions that went on with Trama closed are collected.
+   */
+  async refreshCloudSessions(project: ActiveProjectState | null = this.state.project): Promise<void> {
+    if (!project || this.quitting || project.isDemo || !project.stateWritable || this.refreshingCloud) return;
+    // A session that went on with Trama closed holds its shared slot again after the reopening (Q29).
+    for (const assignment of project.document.team.specialists.flatMap((s) => s.assignments)) {
+      if (assignment.status === "running" && cloudWorking(assignment)) this.developerSlots.add(assignment.id);
+    }
+    const repository = project.github.repository;
+    if (!repository) return;
+    this.refreshingCloud = true;
+    try {
+      await this.collectCloudResults(project, repository);
+    } finally {
+      this.refreshingCloud = false;
+    }
+    void this.runDuties();
+  }
+
+  /** A refresh of the cloud sessions runs now: a second one waits for the next round. */
+  private refreshingCloud = false;
+
+  private async collectCloudResults(project: ActiveProjectState, repository: string): Promise<void> {
+    const document = project.document;
+    const working = document.team.specialists.flatMap((s) => s.assignments).filter((a) => a.status === "running" && a.cloud && cloudWorking(a));
+    for (const assignment of working) {
+      const session = assignment.cloud!;
+      const pull = await readBranchPullRequest(repository, session.branch).catch(() => undefined);
+      if (pull === undefined || this.state.project !== project || assignment.status !== "running") continue;
+      if (!pull) {
+        updateCloudSession(document, assignment.id, () => undefined);
+        continue;
+      }
+      const key = `${assignment.turns.length}`;
+      if (pull.state !== "open") {
+        updateCloudSession(document, assignment.id, (s) => {
+          s.status = "failed";
+          s.failure = `La pull request #${pull.number} è stata chiusa prima delle verifiche di Trama.`;
+          s.pullRequest = { number: pull.number, url: pull.url, draft: pull.draft };
+        });
+        endTurn(document, assignment.id, null, { kind: "failed", message: `La pull request #${pull.number} della sessione cloud è stata chiusa prima delle verifiche di Trama.` });
+        this.specialistActivity(project, assignment.id, key, "Sessione cloud non riuscita", pull.url, "error");
+        this.releaseDeveloperSlot(assignment.id);
+        this.changedIn(project);
+        continue;
+      }
+      updateCloudSession(document, assignment.id, (s) => {
+        s.status = "draft";
+        s.pullRequest = { number: pull.number, url: pull.url, draft: pull.draft };
+      });
+      this.changedIn(project);
+      try {
+        const workspace = await adoptRemoteBranch(project.rootPath, session.branch, this.worktreesRoot);
+        recordWorkspace(document, assignment.id, workspace);
+        const review = await reviewWorktree(workspace);
+        const conventions = await readProjectConventions(project.rootPath);
+        const problems = macPublicationProblems(review, await branchCommitMessages(workspace), conventions);
+        updateCloudSession(document, assignment.id, (s) => {
+          s.status = "returned";
+          s.macChecks = { snapshotId: review.snapshotId, problems, at: new Date().toISOString() };
+        });
+        endTurn(document, assignment.id, null, { kind: "completed", text: pull.body.trim() || `La sessione cloud ha aperto la pull request in bozza #${pull.number}.` });
+        this.specialistActivity(project, assignment.id, key, "Sessione cloud tornata sul Mac", `Pull request in bozza #${pull.number}, branch ${session.branch}: ${pull.url}`, "info");
+        this.specialistActivity(
+          project,
+          assignment.id,
+          key,
+          problems.length ? "Controlli sul Mac non superati" : "Controlli sul Mac superati",
+          problems.length ? `${problems.join(" ")} Il candidato resta fermo finché il lavoro non li supera.` : "Niente segreti né file sensibili, git diff --check pulito, messaggi di commit validi.",
+          problems.length ? "error" : "info",
+        );
+      } catch (error) {
+        const message = describeFailure((error as Error).message);
+        updateCloudSession(document, assignment.id, (s) => {
+          s.status = "failed";
+          s.failure = message;
+        });
+        endTurn(document, assignment.id, null, { kind: "failed", message: `Il lavoro della sessione cloud non è tornato sul Mac: ${message}` });
+        this.specialistActivity(project, assignment.id, key, "Sessione cloud non tornata sul Mac", message, "error");
+      }
+      this.releaseDeveloperSlot(assignment.id);
+      this.changedIn(project);
+      this.continueWork(project, assignment.requestId, "assignmentEnded");
+    }
+  }
+
+  /** The person checks the cloud session of the work now, from its card (A19). */
+  async checkCloudSession(assignmentId: string): Promise<void> {
+    const project = this.requireProject();
+    const assignment = findAssignment(project.document, assignmentId);
+    if (!assignment?.cloud) throw new DomainError("L'incarico non lavora in una sessione cloud.");
+    if (!project.github.repository) throw new DomainError("Il progetto non ha un remoto GitHub: Trama non può leggere la sessione.");
+    await this.refreshCloudSessions(project);
+  }
+
+  /** The person moves the work between local and cloud (A19, Q30): before it starts, or for its next resume. */
+  moveAssignmentPlace(assignmentId: string, where: "local" | "cloud"): void {
+    const project = this.requireProject();
+    const assignment = findAssignment(project.document, assignmentId);
+    if (!assignment) throw new DomainError("Incarico non trovato.");
+    if (!canMovePlace(assignment)) throw new DomainError("Puoi spostare l'incarico prima dell'avvio o quando aspetta una ripresa.");
+    assignment.placeChoice = where;
+    assignment.updatedAt = new Date().toISOString();
+    this.specialistActivity(
+      project,
+      assignmentId,
+      `${assignment.turns.length + 1}`,
+      where === "cloud" ? "Spostato in cloud" : "Spostato in locale",
+      where === "cloud" ? "Alla prossima ripresa lavora in una sessione cloud, se il cloud si può usare." : "Alla prossima ripresa lavora sul Mac.",
+      "info",
+    );
+    this.changed();
+  }
+
   /**
    * An action a fixed ban stopped before it started (issue #244): it becomes an item of "Aspetta te" with its reason and
    * an activity line where it happened. Every attempt counts, also the same command tried again; the providers report
@@ -4063,6 +4509,16 @@ export class TramaController {
       this.publish();
       return;
     }
+    // A developer's slice may run in a cloud session of the provider (A19): the setting, the person's move and the
+    // conditions of the cloud decide, and the card says why. The session keeps its shared slot while it works (Q29).
+    if ((await this.chooseAssignmentPlace(project, specialist, assignment, provider)) === "cloud") {
+      await this.startCloudWork(project, specialist, assignment, provider);
+      return;
+    }
+    if (assignment.status !== "preparing" || this.specialistRuntimes.has(assignmentId)) {
+      if (!this.specialistRuntimes.has(assignmentId)) this.releaseDeveloperSlot(assignmentId);
+      return;
+    }
     // A developer asks the Coordinator with its one Trama tool (W06); a fixed role's automatic work has none.
     const toolServer = asksCoordinator(specialist, assignment) ? this.developerToolServer(project, assignmentId) : null;
     try {
@@ -4089,6 +4545,8 @@ export class TramaController {
       "info",
     );
     let turnId: string | null = null;
+    // A reading may arrive before the turn id when the provider's lines come in one chunk: kept until the turn starts.
+    let earlyPercent: number | null = null;
     let outcome: TurnEnd;
     try {
       let cwd = project.rootPath;
@@ -4137,6 +4595,11 @@ export class TramaController {
         ? developerSkillsDelivery({ implement: await this.nativeSkill("implement"), tdd: await this.nativeSkill("tdd") }, nativeInput)
         : null;
       const baseInstructions = duty?.instructions ?? specialistInstructions(project.name, specialist, assignment, this.state.language);
+      // A resumed work whose last turn passed the threshold goes on in a new thread with a brief of its worktree (ADR 0018).
+      const threshold = document.coordinator.contextThreshold ?? DEFAULT_CONTEXT_THRESHOLD;
+      const lastPercent = assignment.turns.at(-1)?.contextPercent ?? null;
+      const reorder = resumed && assignment.threadId !== null && lastPercent !== null && lastPercent >= threshold;
+      const brief = reorder ? contextBriefing(assignment, await this.worktreeState(assignment)) : null;
       const opening = await client.openThread({
         model: assignment.model,
         cwd,
@@ -4148,15 +4611,25 @@ export class TramaController {
           developer && !nativeInput ? developer.text : null,
         ),
         sandbox: needsWorktree(assignment) ? "workspace-write" : "read-only",
-        resumeThreadId: assignment.threadId,
+        resumeThreadId: reorder ? null : assignment.threadId,
         readableRoots: this.readableRoots(project),
       });
       recordThread(document, assignmentId, opening.threadId);
+      if (reorder) {
+        this.specialistActivity(
+          project,
+          assignmentId,
+          preKey,
+          translate(this.state.language, "context.specialist.newThreadTitle"),
+          translate(this.state.language, "context.specialist.newThread", { percent: lastPercent, threshold }),
+          "info",
+        );
+      }
       // A stop requested while the session was opening ends the work here (review #6).
       if ((assignment.status as string) === "stopRequested") throw new Error("L'arresto è stato richiesto prima dell'avvio del turno.");
       if (opening.replaced && assignment.threadId) this.specialistActivity(project, assignmentId, preKey, "Nuovo thread dello specialista", null, "info");
       const task = duty?.prompt ?? (resumed ? resumeInput(assignment, document.decisions) : openingInput(assignment, document.decisions));
-      const prompt = [task, briefing, developer && nativeInput ? developer.text : null].filter(Boolean).join("\n\n");
+      const prompt = [brief, task, briefing, developer && nativeInput ? developer.text : null].filter(Boolean).join("\n\n");
       const text = await client.runTurn({
         threadId: opening.threadId,
         prompt,
@@ -4169,6 +4642,7 @@ export class TramaController {
           if (event.type === "turnStarted") {
             turnId = event.turnId;
             beginTurn(document, assignmentId, event.turnId, assignment.model, new Date(), provider);
+            if (earlyPercent !== null) recordTurnContext(document, assignmentId, event.turnId, earlyPercent);
             this.changedIn(project);
             // A stop requested before the turn id was known reaches the provider now.
             if (assignment.status === "stopRequested") void client.interrupt().catch(() => client.stop());
@@ -4176,6 +4650,13 @@ export class TramaController {
           }
           const key = `${assignment.turns.length}`;
           switch (event.type) {
+            case "tokenUsage": {
+              const percent = contextPercent(event);
+              if (percent === null) return;
+              if (turnId) recordTurnContext(document, assignmentId, turnId, percent);
+              else earlyPercent = Math.max(earlyPercent ?? 0, percent);
+              return;
+            }
             case "commentary":
               this.specialistActivity(project, assignmentId, key, "Nota dello specialista", event.text, "info");
               return;
@@ -4247,7 +4728,7 @@ export class TramaController {
     }
     const final = findAssignment(document, assignmentId)!;
     if (final.status === "completed" && final.duty && outcome.kind === "completed") {
-      const { decisionRequestId } = concludeDuty(document, assignmentId, outcome.text);
+      const { decisionRequestId } = concludeDuty(document, assignmentId, outcome.text, new Date(), this.state.language);
       if (decisionRequestId) appendEvent(document, "trama", { type: "card", kind: "decision", title: "Decisione", detail: null, referenceId: decisionRequestId });
     }
     const [title, detail] =
@@ -4596,6 +5077,7 @@ export class TramaController {
     if (project.isDemo) return;
     if (this.state.settings.continuousWork !== false && !paused) this.pickFreeSlices(project);
     await this.assessWorktreeConflicts(project);
+    await this.assessSemanticScenarios(project);
   }
 
   private pickFreeSlices(project: ActiveProjectState): void {
@@ -4658,6 +5140,74 @@ export class TramaController {
     }
   }
 
+  private runningScenarios = false;
+
+  /**
+   * The scenarios of the semantic hypotheses (issue #40): a hypothesis whose candidates moved on carries on to the new
+   * pair, then each hypothesis not tried on its current snapshots runs its check on the two candidates merged in a
+   * separate copy, in the sandbox. A failure where each side passed alone is evidence and blocks the newer candidate.
+   */
+  private async assessSemanticScenarios(project: ActiveProjectState): Promise<void> {
+    if (this.runningScenarios || !project.stateWritable) return;
+    this.runningScenarios = true;
+    try {
+      for (const carried of carryOverHypotheses(project.document)) {
+        const assignment = findAssignment(project.document, project.document.candidates.find((c) => c.id === carried.candidateId)?.assignmentId ?? "");
+        appendEvent(project.document, "trama", { type: "card", kind: "conflict", title: "Conflitto", detail: null, referenceId: carried.id }, assignment?.requestId ?? null);
+        this.changedIn(project);
+      }
+      for (let pending = pendingScenarios(project.document)[0]; pending; pending = pendingScenarios(project.document)[0]) {
+        if (this.quitting || this.state.project !== project) return;
+        const run = await this.runScenario(project, pending);
+        if (this.state.project !== project) return;
+        settleScenario(project.document, pending, run);
+        if (pending.classification === "semantic") {
+          const names = [pending.candidateId, pending.otherCandidateId].map((id) => {
+            const candidate = project.document.candidates.find((c) => c.id === id);
+            return project.document.team.specialists.find((s) => s.id === candidate?.specialistId)?.name ?? "un altro incarico";
+          });
+          this.host.notify(
+            "Trama: due lavori non funzionano insieme",
+            `Il lavoro di ${names[0]} e quello di ${names[1]} passano da soli, ma insieme una verifica fallisce.`,
+            this.state.settings.sounds === true,
+          );
+        }
+        this.changedIn(project);
+      }
+    } finally {
+      this.runningScenarios = false;
+    }
+  }
+
+  /** Runs a hypothesis's check on the combined candidate; a machine or sandbox failure is `notRun`, never evidence. */
+  private async runScenario(project: ActiveProjectState, assessment: ConflictAssessment): Promise<{ result: "pass" | "fail" | "notRun"; command: string; output: string }> {
+    const document = project.document;
+    const side = (id: string | undefined) => {
+      const candidate = document.candidates.find((c) => c.id === id);
+      const session = candidate ? findAssignment(document, candidate.assignmentId)?.workspace : undefined;
+      return candidate && session ? { session, snapshotId: candidate.snapshotId } : null;
+    };
+    const mine = side(assessment.candidateId);
+    const other = side(assessment.otherCandidateId);
+    const check = assessment.semantic!.check as ReadOnlyCheck;
+    if (!mine || !other) return { result: "notRun", command: "", output: "Una delle due copie di lavoro non c'è più." };
+    const combined = await combineWorktrees(mine, other, join(this.storage.root, "ConflictProbe"));
+    if (combined.status !== "clean") return { result: "notRun", command: "", output: combined.detail };
+    try {
+      const result = await runReadOnlyCheck(check, combined.path, {
+        codexExecutable: resolveCodexExecutable(this.host.codexExecutable),
+        scratchRoot: join(this.storage.root, "Checks"),
+        dependencyRoot: project.rootPath,
+      });
+      const ran = result.command.length > 0 && !(result.exitCode !== 0 && environmentFailure(result.output));
+      return { result: !ran ? "notRun" : result.exitCode === 0 ? "pass" : "fail", command: result.command.join(" "), output: result.output };
+    } catch (error) {
+      return { result: "notRun", command: "", output: (error as Error).message };
+    } finally {
+      await combined.remove();
+    }
+  }
+
   /** The person changes a setting of the open project (W08: the developers in parallel). */
   updateProjectSettings(update: ProjectSettings): void {
     const project = this.requireProject();
@@ -4667,6 +5217,10 @@ export class TramaController {
       const limit = clampParallelDevelopers(update.parallelDevelopers);
       if (limit === null) throw new DomainError("Il numero di sviluppatori in parallelo deve essere un numero intero.");
       settings.parallelDevelopers = limit;
+    }
+    if (update.workPlace !== undefined) {
+      if (!isWorkPlaceSetting(update.workPlace)) throw new DomainError("Il luogo di lavoro deve essere Automatico, Sempre in locale o Cloud quando possibile.");
+      settings.workPlace = update.workPlace;
     }
     project.document.settings = settings;
     this.changedIn(project);
@@ -4683,7 +5237,13 @@ export class TramaController {
       return;
     }
     if (project) {
-      confirmStopWithoutTurn(project.document, assignmentId, "Nessun turno in corso.");
+      const assignment = findAssignment(project.document, assignmentId);
+      if (assignment && cloudWorking(assignment)) {
+        stopCloudWork(project.document, assignmentId, "Trama non segue più la sessione cloud. La sessione si ferma dalla sua pagina di Claude Code.");
+        this.releaseDeveloperSlot(assignmentId);
+      } else {
+        confirmStopWithoutTurn(project.document, assignmentId, "Nessun turno in corso.");
+      }
       this.changed();
     }
   }
@@ -5234,7 +5794,7 @@ export class TramaController {
 
   /**
    * The person opens focus mode on a candidate (F01): the fixed point is its base. Trama runs the real checks in the
-   * sandbox first, then the two axes of code-review in parallel, read-only. Returns the examination's id at once;
+   * sandbox first, then the two axes of code-review and Trama's three lenses (F05) in parallel, read-only. Returns the examination's id at once;
    * the report fills in as the work goes and stays in the project.
    */
   startFocusAudit(candidateId: string): string {
@@ -5252,6 +5812,115 @@ export class TramaController {
     this.auditRuns.set(audit.id, { projectId: project.id, clients: new Set() });
     void this.runAudit(project, audit.id);
     return audit.id;
+  }
+
+  /**
+   * From a finding to work (F04): the person turns a finding into a ticket (a GitHub issue when the repository is
+   * linked, else Trama's own backlog item), an assignment within the mandate, or a Pact card for a trade-off.
+   */
+  async followUpFinding(auditId: string, findingId: string, kind: "ticket" | "assignment" | "pactCard"): Promise<void> {
+    const project = this.requireProject();
+    const document = project.document;
+    const audit = findAudit(document, auditId);
+    if (!audit) throw new DomainError("Esame non trovato.");
+    const candidate = findCandidate(document, audit.target.candidateId);
+    const requestId = (candidate ? findAssignment(document, candidate.assignmentId)?.requestId : null) ?? null;
+    try {
+      if (kind === "ticket") {
+        const finding = actionableFinding(audit, findingId);
+        if (finding.followUps?.some((f) => f.kind === "ticket")) throw new FindingWorkError("Da questo rilievo hai già creato una issue o una voce del backlog.");
+        const repository = project.github.status === "ready" ? project.github.repository : null;
+        let issue: { number: number; url: string } | null = null;
+        if (repository) {
+          const labels = parseTriageLabels(await readRepositoryFile(TRIAGE_LABELS_PATH, project.rootPath).catch(() => null));
+          try {
+            issue = await createIssue(repository, finding.title, findingIssueBody(document, audit, finding), [labels["needs-triage"]]);
+          } catch (error) {
+            throw new DomainError(`La issue non è stata aperta: ${classifyGitHubError((error as Error).message).message}`);
+          }
+        }
+        if (this.state.project !== project) return;
+        const problem = recordFindingTicket(document, audit, finding, issue);
+        appendEvent(
+          document,
+          "person",
+          {
+            type: "activity",
+            title: issue ? `Issue #${issue.number} aperta da un rilievo dell'esame approfondito` : "Un rilievo dell'esame approfondito va nel backlog di Trama",
+            detail: `${finding.title}\n${problem.evidence.label}`,
+            tone: "info",
+          },
+          requestId,
+        );
+        this.changedIn(project);
+        if (issue) void this.refreshGitHub();
+        return;
+      }
+      if (kind === "pactCard") {
+        const request = findingPactCard(document, audit, findingId);
+        appendEvent(document, "trama", { type: "card", kind: "decision", title: "Decisione", detail: null, referenceId: request.id }, request.requestId);
+        this.changedIn(project);
+        return;
+      }
+      const provider = this.coordinatorProvider(document);
+      const model = document.coordinator.threadModel ?? this.coordinatorModel(document, provider);
+      const assignment = assignFinding(document, audit, findingId, {
+        modules: project.snapshot.modules,
+        presence: project.presence ?? null,
+        providers: this.connectedProviders(),
+        fallback: model ? { provider, model } : null,
+      });
+      const name = document.team.specialists.find((s) => s.id === assignment.specialistId)?.name ?? assignment.specialistId;
+      appendEvent(
+        document,
+        "person",
+        { type: "activity", title: `${name} riceve la correzione di un rilievo dell'esame approfondito`, detail: `${assignment.objective}\nViene dal ${candidateName(document, audit)}.`, tone: "info" },
+        assignment.requestId,
+      );
+      appendEvent(document, "trama", { type: "card", kind: "assignment", title: "Incarico", detail: null, referenceId: assignment.id }, assignment.requestId);
+      this.changedIn(project);
+      void this.startAssignment(assignment.id);
+    } catch (error) {
+      if (error instanceof FindingWorkError) throw new DomainError(error.message);
+      throw error;
+    }
+  }
+
+  /**
+   * Publishes the report of a finished focus mode on GitHub, only when the person asks (spec #124, Q5): a comment on the
+   * candidate's open pull request, else a new issue. The report stays in Trama either way.
+   */
+  async publishAuditReport(auditId: string): Promise<void> {
+    const project = this.requireProject();
+    const document = project.document;
+    const audit = findAudit(document, auditId);
+    if (!audit) throw new DomainError("Esame non trovato.");
+    const repository = project.github.status === "ready" ? project.github.repository : null;
+    if (!repository) throw new DomainError("Nessun repository GitHub collegato: il rapporto resta in Trama.");
+    let target: ReturnType<typeof publicationTarget>;
+    try {
+      target = publicationTarget(document, audit);
+    } catch (error) {
+      if (error instanceof FindingWorkError) throw new DomainError(error.message);
+      throw error;
+    }
+    const body = auditReportMarkdown(document, audit);
+    let published: { kind: "pullRequestComment" | "issue"; number: number; url: string };
+    try {
+      if (target.kind === "pullRequestComment") {
+        await commentOnIssue(repository, target.number, body);
+        published = target;
+      } else {
+        const issue = await createIssue(repository, `Rapporto dell'esame approfondito sul ${candidateName(document, audit)}`, body);
+        published = { kind: "issue", number: issue.number, url: issue.url };
+      }
+    } catch (error) {
+      throw new DomainError(`Il rapporto non è stato pubblicato: ${classifyGitHubError((error as Error).message).message}`);
+    }
+    if (this.state.project !== project) return;
+    recordPublication(audit, published);
+    this.changedIn(project);
+    if (published.kind === "issue") void this.refreshGitHub();
   }
 
   /** Running examinations are running work: their project stays loaded when the person leaves it (C07). */
@@ -5289,9 +5958,15 @@ export class TramaController {
       const skill = await this.nativeSkill("code-review");
       const spec = auditSpec(document, assignment, project.github.issues);
       const axes = beginAxes(audit, spec?.source ?? null, runner.model);
+      // Trama's lenses run next to the axes, on the same light model, with Trama's own brief (F05).
+      const lenses = beginLenses(audit, runner.model);
       this.changedIn(project);
       const input = { projectName: project.name, audit, candidate, assignment, spec, language: this.state.language };
-      await Promise.all(axes.map((axis) => this.runAuditAxis(project, audit, axis, axisTurn(input, axis, skill, runner.provider === "codex"), runner, assignment.workspace!.worktreeRoot)));
+      const cwd = assignment.workspace.worktreeRoot;
+      await Promise.all([
+        ...axes.map((axis) => this.runAuditAxis(project, audit, axis, axisTurn(input, axis, skill, runner.provider === "codex"), runner, cwd)),
+        ...lenses.map((lens) => this.runAuditAxis(project, audit, lens, lensTurn(input, lens), runner, cwd)),
+      ]);
       await this.verifyAuditFindings(project, audit, candidate.id, runner, assignment.workspace.worktreeRoot);
       closeAudit(audit);
     } catch (error) {
@@ -5341,8 +6016,8 @@ export class TramaController {
     }
   }
 
-  /** One axis of code-review: a read-only session of its own, in the candidate's worktree. */
-  private async runAuditAxis(project: ActiveProjectState, audit: FocusAudit, axis: AxisName, turn: AxisTurn, runner: DutyRunner, cwd: string): Promise<void> {
+  /** One axis of code-review or one of Trama's lenses: a read-only session of its own, in the candidate's worktree. */
+  private async runAuditAxis(project: ActiveProjectState, audit: FocusAudit, axis: ReviewName, turn: AxisTurn, runner: DutyRunner, cwd: string): Promise<void> {
     const client = createRuntime(runner.provider, { executable: runner.provider === "codex" ? this.host.codexExecutable : null, requestTimeoutMs: 15_000, language: () => this.state.language });
     const run = this.auditRuns.get(audit.id);
     run?.clients.add(client);
@@ -5447,6 +6122,9 @@ export class TramaController {
     if (!capabilities.canPush) throw new DomainError(`Il tuo account GitHub non ha il permesso di push su ${repository}.`);
     const assignment = findAssignment(document, candidate.assignmentId)!;
     const baseBranch = project.snapshot.branch ?? "main";
+    // Work from a cloud session already has its draft pull request (A19): Trama checks it again on the Mac and takes it out of draft.
+    if (assignment.cloud?.status === "returned" && assignment.cloud.pullRequest) return this.publishCloudCandidate(project, candidate, assignment, repository, message);
+    // Every push, refused, failed or done, stays in the conversation (issue #273).
     const published = await publishCandidate({
       candidate,
       assignment,
@@ -5524,6 +6202,13 @@ export class TramaController {
         this.changedIn(project);
         continue;
       }
+      // A destructive change waits for the person with its consequences and alternatives (issue #41).
+      if (readiness.kind === "destructive") {
+        stopDestructiveMerge(document, candidate, readiness.stop);
+        appendEvent(document, "trama", mergeActivity(candidate, { kind: "destructive", reasons: readiness.stop.reasons }, "coordinator"));
+        this.changedIn(project);
+        continue;
+      }
       if (readiness.kind !== "merge" || (readiness.by === "coordinator" && isPaused(document))) continue;
       this.integrating.add(candidate.id);
       try {
@@ -5562,10 +6247,19 @@ export class TramaController {
       if (checks?.state === "MERGED") {
         pull.mergedAt = checks.mergedAt ?? new Date().toISOString();
         recordMerge(document, candidate, by, "merged");
+        candidate.merge!.mergeSHA = checks.mergeSHA ?? null;
         this.changedIn(project);
         return;
       }
       if (checks?.checks === "failure") throw new DomainError(`Le verifiche della pull request #${pull.number} su GitHub sono rosse: il Coordinatore le sistema prima dell'unione.`);
+      // Read right before the merge (issue #41): another push on the branch, or conflicts with the base, stop it here.
+      const drift = checks ? pullRequestDrift(pull.headSHA, checks) : null;
+      if (drift) {
+        recordMerge(document, candidate, by, "stopped", drift);
+        appendEvent(document, "trama", mergeActivity(candidate, { kind: "failed", reason: drift }, by));
+        this.changedIn(project);
+        return;
+      }
       const message = await this.candidateMessage(project, candidate);
       const authority = by === "coordinator" ? "Via libera del Coordinatore" : "Ok della persona sulle schermate";
       const merged = await mergePullRequest(repository, pull.number, {
@@ -5580,6 +6274,18 @@ export class TramaController {
       appendEvent(document, "trama", mergeActivity(candidate, { kind: "merged", number: pull.number, url: pull.url }, by));
     } catch (error) {
       const reason = (error as Error).message;
+      // The request may have merged before its answer got lost (a timeout): GitHub says so, and nothing merges twice (issue #41).
+      const pull = candidate.pullRequest;
+      const after = pull && !(error instanceof PushRefusedError) ? await readPullRequestStatus(repository, pull.number).catch(() => null) : null;
+      if (pull && after?.state === "MERGED") {
+        pull.mergedAt = after.mergedAt ?? new Date().toISOString();
+        pull.mergedBy = by;
+        recordMerge(document, candidate, by, "merged");
+        candidate.merge!.mergeSHA = after.mergeSHA ?? null;
+        appendEvent(document, "trama", mergeActivity(candidate, { kind: "merged", number: pull.number, url: pull.url }, by));
+        this.changedIn(project);
+        return;
+      }
       // The mandate or a fixed ban stopped the push: nothing to try again until the person changes something.
       recordMerge(document, candidate, by, error instanceof PushRefusedError ? "stopped" : "failed", reason);
       appendEvent(document, "trama", mergeActivity(candidate, { kind: "failed", reason }, by));
@@ -5641,6 +6347,15 @@ export class TramaController {
     await this.integrateCandidates(project);
   }
 
+  /** The person chose not to merge a destructive candidate the Coordinator stopped (issue #41): it leaves Aspetta te. */
+  declineMergeByPerson(candidateId: string): void {
+    const project = this.requireProject();
+    const candidate = findCandidate(project.document, candidateId);
+    if (!candidate) throw new DomainError("Candidato non trovato.");
+    declineDestructiveMerge(candidate);
+    this.changed();
+  }
+
   /**
    * The person refuses an interface candidate with a reason (issue #247): the refusal is recorded on that content and the
    * reason goes back to the developer as a finding, in the same session and worktree. When the work cannot resume, the
@@ -5682,6 +6397,64 @@ export class TramaController {
       `Ho rifiutato il candidato ${candidate.id}${developer ? ` di ${developer.name}` : ""}: ${reason}\nIl lavoro non riprende da solo (${waiting}): fallo correggere con un nuovo incarico.`,
       null, null, null, [], null, candidate.goalId ?? null, false,
     );
+  }
+
+  /**
+   * Publishes the candidate of a cloud session (A19, Q25): Trama runs the publication checks again on the Mac, on the
+   * exact candidate, then takes the session's draft pull request out of draft with its own body. Changes made on the Mac
+   * after the session (a resume after the reviewers) are committed and pushed on the same branch first. A failed check
+   * stops the candidate with its reason and the pull request stays a draft.
+   */
+  private async publishCloudCandidate(
+    project: ActiveProjectState,
+    candidate: Candidate,
+    assignment: SpecialistAssignment,
+    repository: string,
+    message: string,
+  ): Promise<NonNullable<Candidate["pullRequest"]>> {
+    const document = project.document;
+    const session = assignment.cloud!;
+    const pull = session.pullRequest!;
+    const workspace = assignment.workspace;
+    if (!workspace) throw new DomainError("Il lavoro della sessione cloud non ha una copia di lavoro sul Mac.");
+    const review = await reviewWorktree(workspace);
+    if (review.snapshotId !== candidate.snapshotId) throw new DomainError("La copia di lavoro è cambiata dopo il candidato: serve un nuovo candidato con nuove verifiche.");
+    const conventions = await readProjectConventions(project.rootPath);
+    const problems = macPublicationProblems(review, await branchCommitMessages(workspace), conventions);
+    updateCloudSession(document, assignment.id, (s) => {
+      s.macChecks = { snapshotId: review.snapshotId, problems, at: new Date().toISOString() };
+    });
+    if (problems.length) {
+      appendEvent(document, "trama", { type: "activity", title: "Controlli sul Mac non superati", detail: `${problems.join(" ")} La pull request #${pull.number} resta in bozza.`, tone: "error" });
+      this.changedIn(project);
+      throw new DomainError(`Trama ha ripetuto sul Mac i controlli di pubblicazione e non sono superati: ${problems.join(" ")}`);
+    }
+    const body = pullRequestBody(candidate, assignment, document.decisions, relatedIssue(document, assignment));
+    if ((await git(["status", "--porcelain"], workspace.worktreeRoot)).trim()) {
+      await publishCandidate({
+        candidate,
+        assignment,
+        repository,
+        baseBranch: session.baseBranch,
+        message,
+        conventions: candidate.commit!.conventions,
+        body,
+        mandate: document.mandate,
+        onPush: (record) => {
+          appendEvent(document, "trama", pushActivity(record));
+          if (record.outcome === "refused" && record.ban) recordFixedBanRefusal(document, { ban: record.ban, action: `git push ${record.remote} ${record.branch}`, by: { kind: "trama" } });
+          this.changedIn(project);
+        },
+      });
+    }
+    await markPullRequestReady(repository, pull.number, body);
+    updateCloudSession(document, assignment.id, (s) => {
+      s.pullRequest = { ...pull, draft: false };
+    });
+    candidate.pullRequest = { url: pull.url, number: pull.number, branch: session.branch, at: new Date().toISOString() };
+    appendEvent(document, "trama", { type: "activity", title: `Pull request #${pull.number} pronta per la revisione`, detail: `Controlli sul Mac superati, bozza tolta: ${pull.url}`, tone: "tool" });
+    this.changedIn(project);
+    return candidate.pullRequest;
   }
 
   // MARK: Tickets
