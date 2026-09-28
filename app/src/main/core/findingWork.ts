@@ -71,9 +71,18 @@ function sourceOf(finding: AuditFinding): { of: string; name: string } {
   return { of: `dell'asse ${axis}`, name: `asse ${axis}` };
 }
 
-/** The candidate as the person reads it: "candidato di Luca", by the developer who wrote it (issue #270). */
+/** The candidate an examination read, or null for a module or the whole project (F03). */
+export const auditCandidateId = (audit: FocusAudit): string | null => (audit.target.kind === "candidate" ? audit.target.candidateId : null);
+
+/**
+ * What was examined as the person reads it, after "sul": "candidato di Luca", by the developer who wrote it (issue
+ * #270), or "modulo Orders" and "progetto" for a module or the whole project (F03).
+ */
 export function candidateName(document: ProjectDocument, audit: FocusAudit): string {
-  const work = findAssignment(document, audit.target.assignmentId);
+  const target = audit.target;
+  if (target.kind === "module") return `modulo ${target.moduleName}`;
+  if (target.kind === "project") return "progetto";
+  const work = findAssignment(document, target.assignmentId);
   const author = work ? document.team.specialists.find((s) => s.id === work.specialistId)?.name : null;
   return author ? `candidato di ${author}` : "candidato esaminato";
 }
@@ -173,7 +182,7 @@ export function assignFinding(document: ProjectDocument, audit: FocusAudit, find
     throw new FindingWorkError("Il rilievo è un'ipotesi: la sua prova non ha retto. Aprine una issue o una scheda del Patto, non un incarico.");
   }
   if (!isTeamConfirmed(document)) throw new FindingWorkError("La squadra non è ancora confermata: nessuno può ricevere l'incarico.");
-  const candidate = findCandidate(document, audit.target.candidateId);
+  const candidate = (auditCandidateId(audit) ? findCandidate(document, auditCandidateId(audit)!) : null);
   const candidateWork = candidate ? findAssignment(document, candidate.assignmentId) : null;
   const moduleIds = findingModules(finding, candidateWork, input.modules);
   if (!moduleIds.length) throw new FindingWorkError("Trama non sa a quale modulo appartiene il rilievo: chiedi la correzione al Coordinatore.");
@@ -250,7 +259,7 @@ export function assignFinding(document: ProjectDocument, audit: FocusAudit, find
 export function findingPactCard(document: ProjectDocument, audit: FocusAudit, findingId: string, now = new Date()): DecisionRequest {
   const finding = actionableFinding(audit, findingId);
   requireNoFollowUp(finding, "pactCard");
-  const candidate = findCandidate(document, audit.target.candidateId);
+  const candidate = (auditCandidateId(audit) ? findCandidate(document, auditCandidateId(audit)!) : null);
   const work = candidate ? findAssignment(document, candidate.assignmentId) : null;
   const proof = evidenceLabel(finding.evidence);
   const request = createDecisionRequest(
@@ -319,7 +328,7 @@ export function auditReportMarkdown(document: ProjectDocument, audit: FocusAudit
 export function publicationTarget(document: ProjectDocument, audit: FocusAudit): { kind: "pullRequestComment"; number: number; url: string } | { kind: "issue" } {
   if (audit.status !== "done") throw new FindingWorkError("L'esame non è concluso: si pubblica solo un rapporto finito.");
   if (audit.publication) throw new FindingWorkError("Hai già pubblicato questo rapporto su GitHub.");
-  const pull = findCandidate(document, audit.target.candidateId)?.pullRequest;
+  const pull = (auditCandidateId(audit) ? findCandidate(document, auditCandidateId(audit)!) : null)?.pullRequest;
   return pull && !pull.mergedAt ? { kind: "pullRequestComment", number: pull.number, url: pull.url } : { kind: "issue" };
 }
 

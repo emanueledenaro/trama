@@ -965,13 +965,14 @@ export function EvidenceRow({ check, evidence }: { check: string; evidence: Cand
   const failed = evidence?.result === "fail";
   return (
     <div data-testid="candidate-evidence" data-check={check} data-result={evidence?.result ?? "missing"}>
-      <div className="flex items-center gap-1.5 text-ui-sm">
+      {/* Wraps in a narrow column, such as the progress of the full-screen focus mode (F03). */}
+      <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-ui-sm">
         {evidence?.result === "pass" ? (
-          <IconCircleCheck className="size-3.5 text-success" />
+          <IconCircleCheck className="size-3.5 shrink-0 text-success" />
         ) : failed ? (
-          <IconCircleX className="size-3.5 text-destructive" />
+          <IconCircleX className="size-3.5 shrink-0 text-destructive" />
         ) : (
-          <span className="inline-block size-3.5 rounded-full border border-dashed border-muted-foreground/50" />
+          <span className="inline-block size-3.5 shrink-0 rounded-full border border-dashed border-muted-foreground/50" />
         )}
         <span title={check}>{checkName(check)}</span>
         <span className="text-muted-foreground">{checkResult(check, evidence?.result ?? null)}</span>
@@ -1520,10 +1521,10 @@ export function CandidateCard({ candidateId }: { candidateId: string }) {
           size="sm"
           variant="outline"
           onClick={() => {
-            // Focus mode opens the latest examination of this candidate, or starts the first one (F01).
-            const latest = (project.document.audits ?? []).filter((a) => a.target.candidateId === candidateId).at(-1);
-            if (latest) setInspector({ kind: "audit", id: latest.id });
-            else void act("candidate:focusAudit", { candidateId }).then((id) => id && setInspector({ kind: "audit", id }));
+            // Focus mode opens the latest examination of this candidate, or starts the first one (F01), full screen (F03).
+            const latest = (project.document.audits ?? []).filter((a) => a.target.kind === "candidate" && a.target.candidateId === candidateId).at(-1);
+            if (latest) void act("focusMode:enter", { auditId: latest.id });
+            else void act("candidate:focusAudit", { candidateId }).then((id) => (id ? act("focusMode:enter", { auditId: id }) : undefined));
           }}
         >
           <IconFocus2 /> Esame approfondito

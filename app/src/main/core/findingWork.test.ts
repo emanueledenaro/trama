@@ -6,6 +6,7 @@ import { declareCandidate } from "./candidates";
 import { emptyDocument } from "./document";
 import {
   assignFinding,
+  auditCandidateId,
   auditReportMarkdown,
   type FindingAssignmentInput,
   findingIssueBody,
@@ -139,7 +140,7 @@ describe("finding to ticket", () => {
     expect(body).toContain("`Sources/Payments/Refund.swift:12`, riga citata: `try! refund()`");
     expect(body).toContain("Verificato da Trama");
     expect(body).toContain("sul candidato di Ada");
-    expect(body).not.toContain(audit.target.candidateId);
+    expect(body).not.toContain(auditCandidateId(audit)!);
     expect(body).toContain(`<!-- trama-finding: ${audit.id}/standards-1 -->`);
   });
 
@@ -249,7 +250,7 @@ describe("report publication", () => {
     expect(text).toContain("## Esame approfondito sul candidato di Ada");
     expect(text).toContain("**Grave.** Rilievo standards-1 (verificato da trama; prova: Sources/Payments/Refund.swift:12)");
     expect(text).toContain("Nessuna spec disponibile");
-    expect(text).not.toContain(audit.target.candidateId);
+    expect(text).not.toContain(auditCandidateId(audit)!);
   });
 
   it("goes to the candidate's open pull request, else to a new issue, once", () => {
@@ -269,7 +270,7 @@ describe("report publication", () => {
     const { document, audit } = project();
     audit.status = "failed";
     expect(() => publicationTarget(document, audit)).toThrow("non è concluso");
-    expect(findAssignment(document, audit.target.assignmentId)).not.toBeNull();
+    expect(audit.target.kind === "candidate" && findAssignment(document, audit.target.assignmentId)).not.toBeNull();
   });
 });
 

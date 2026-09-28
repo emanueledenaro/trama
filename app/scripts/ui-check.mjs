@@ -2909,7 +2909,12 @@ await page.evaluate(() => document.documentElement.classList.remove("dark"));
 
 // F01: focus mode on a candidate. Trama runs the real checks first, then code-review's Standards and Spec axes, and
 // the report keeps them apart. The slice candidate reads its slice as the spec; the corrected one has none.
+// F03: the examination opens full screen, over the whole window, until the person leaves it.
 const focusAudit = page.getByTestId("focus-audit");
+const leaveFocus = async () => {
+  await page.locator("[data-focus-mode]").getByRole("button", { name: "Esci dall'esame" }).click();
+  await page.locator("[data-focus-mode]").waitFor({ state: "detached" });
+};
 // An examination that ends in "failed" says why: the check reports that text instead of waiting out its timeout.
 const auditDone = async () => {
   await page.locator('[data-testid="focus-audit"]:is([data-status="done"], [data-status="failed"])').waitFor({ timeout: 60_000 });
@@ -2926,6 +2931,8 @@ for (const check of ["swift_build", "swift_test"]) {
 await focusAudit.locator('[data-testid="audit-axis"][data-axis="standards"][data-status="done"]').getByText(/Mysterious Name/).first().waitFor();
 // Issue #277: the report names the slice it read, as a link with the slice's title.
 const specAxis = focusAudit.locator('[data-testid="audit-axis"][data-axis="spec"][data-status="done"]');
+// Full screen, each axis's own report is one click away under its findings.
+await specAxis.getByText("Rapporto dell'asse Spec").click();
 await specAxis.getByText(/Fonte: Fetta/).waitFor();
 await specAxis.locator('a[data-reference="slice"][data-reference-id="S1"]').filter({ hasText: /^1, / }).waitFor();
 const auditText = await focusAudit.innerText();
@@ -2936,7 +2943,9 @@ await focusAudit.getByTestId("focus-audit-summary").getByText(/Standards: 1 rili
 // serious Spec finding; the minor one, whose command is not one of Trama's checks, stays a hypothesis.
 const auditFinding = (axis, status) => focusAudit.locator(`[data-testid="audit-axis"][data-axis="${axis}"] [data-testid="audit-finding"][data-status="${status}"]`);
 await auditFinding("standards", "verified").getByText("Verificato da Trama").waitFor();
-await auditFinding("spec", "confirmed").getByText(/Confermato da gpt-5\.5:/).waitFor();
+// The proof column shows how Trama verified the finding the person picks.
+await auditFinding("spec", "confirmed").getByTestId("audit-finding-select").click();
+await focusAudit.getByTestId("focus-proof").getByText(/Confermato da gpt-5\.5:/).waitFor();
 await auditFinding("spec", "hypothesis").getByText("Ipotesi", { exact: true }).waitFor();
 if ((await auditFinding("spec", "hypothesis").getByTestId("audit-finding-evidence").innerText()) !== "Prova: make check") throw new Error("Focus mode: the hypothesis does not show its proof");
 if (await focusAudit.locator('[data-testid="audit-finding"][data-status="verified"]').filter({ hasText: "Prova: Nessuna prova" }).count()) throw new Error("Focus mode: a finding is verified without a proof");
@@ -2947,7 +2956,9 @@ const lensNote = focusAudit.getByTestId("focus-audit-lenses-note");
 await lensNote.getByText(/controlli in più di Trama: non vengono dal metodo AI Hero/).waitFor();
 if ((await focusAudit.getByText("Aggiunta di Trama", { exact: true }).count()) !== 3) throw new Error("Focus mode: each lens is not marked as Trama's addition");
 await auditLens("security").locator('[data-testid="audit-finding"][data-status="verified"][data-severity="serious"]').getByText("Verificato da Trama").waitFor();
-await auditLens("tests").locator('[data-testid="audit-finding"][data-status="confirmed"]').getByText(/Confermato da gpt-5\.5:/).waitFor();
+// Full screen, how Trama verified a finding shows in the proof column once the person picks it (F03).
+await auditLens("tests").locator('[data-testid="audit-finding"][data-status="confirmed"]').getByTestId("audit-finding-select").click();
+await focusAudit.getByTestId("focus-proof").getByText(/Confermato da gpt-5\.5:/).waitFor();
 if ((await auditLens("docs").locator('[data-testid="audit-finding"][data-status="hypothesis"] [data-testid="audit-finding-evidence"]').innerText()) !== "Prova: Nessuna prova") {
   throw new Error("Focus mode: the documents lens finding without a proof is not a hypothesis");
 }
@@ -3000,11 +3011,13 @@ await themeShots("20h-finding-work");
 // Issue #337: the backlog left Activity; the finding's link opens it in Lavoro, Issue, on the "Nel backlog" filter.
 await verifiedFinding.locator('[data-testid="audit-finding-followups"] [data-kind="ticket"]').getByRole("button", { name: "backlog di Trama" }).click();
 await page.locator('[data-testid="side-bar"][data-view="work"]').getByTestId("problem-backlog").getByTestId("problem-backlog-item").first().waitFor({ timeout: 10_000 });
-// The correction is Ada's new assignment in the work's dialog; it ends before the next step gives her work.
+// The correction is Ada's new assignment in the work's dialog, behind the full-screen view (F03); it ends before the
+// next step gives her work.
+await leaveFocus();
 const correctionWork = assignmentCards.nth(6);
 await waitInCard(correctionWork, (card) => card.getByText(/Correggere il rilievo: Possibile Mysterious Name/), "finding correction");
 await waitInCard(correctionWork, (card) => card.getByText("Concluso", { exact: true }), "finding correction ended", 30_000);
-await page.getByRole("button", { name: "Chiudi la barra laterale" }).click();
+if (await page.getByRole("button", { name: "Chiudi la barra laterale" }).count()) await page.getByRole("button", { name: "Chiudi la barra laterale" }).click();
 await showWaiting();
 await correctedCard.scrollIntoViewIfNeeded();
 await correctedCard.getByRole("button", { name: "Esame approfondito" }).click();
@@ -3022,11 +3035,13 @@ await app.evaluate(({ nativeTheme }) => {
 });
 await page.evaluate(() => document.documentElement.classList.remove("dark"));
 // Opened again, the card shows the same examination instead of starting a new one.
-await page.getByRole("button", { name: "Chiudi la barra laterale" }).click();
+await leaveFocus();
+if (await page.getByRole("button", { name: "Chiudi la barra laterale" }).count()) await page.getByRole("button", { name: "Chiudi la barra laterale" }).click();
 await showWaiting();
 await correctedCard.getByRole("button", { name: "Esame approfondito" }).click();
 await page.locator('[data-testid="focus-audit"][data-status="done"]').waitFor({ timeout: 10_000 });
-await page.getByRole("button", { name: "Chiudi la barra laterale" }).click();
+await leaveFocus();
+if (await page.getByRole("button", { name: "Chiudi la barra laterale" }).count()) await page.getByRole("button", { name: "Chiudi la barra laterale" }).click();
 
 // W06: a developer with a doubt asks the Coordinator with ask_coordinator, and the slice pauses. The question stays in
 // the report's doubts. The Coordinator puts it on a Pact card that blocks the work; the person's answer resumes the
@@ -5074,6 +5089,134 @@ const savedSetting = await page.evaluate(async () => (await window.trama.getStat
 if (savedSetting !== "automatic") throw new Error(`Cloud sessions: the setting was not saved: ${savedSetting}`);
 await page.evaluate(() => window.trama.invoke("settings:update", { theme: "system" }));
 await app.close();
+
+// F03 #127: focus mode on a module or on the whole project, from a fixed point the person chooses. A point that does
+// not exist or an empty diff is a clear error in the dialog; the examination then takes the whole window, with the
+// progress on the left, the findings in the middle and the proof on the right, the exit on the right of the header
+// and the notifications paused. Several window sizes, both themes.
+{
+  const focusProject = await mkdtemp(join(tmpdir(), "trama-ui-esame-"));
+  await cp(resolve("resources/DemoProject"), focusProject, { recursive: true });
+  // Only git's checks: a machine with Swift would build and test the package before the axes open.
+  await rm(join(focusProject, "Package.swift"));
+  const focusGit = (...args) => execFileSync("git", ["-C", focusProject, "-c", "user.name=Trama UI", "-c", "user.email=ui@trama.local", ...args], { stdio: "ignore" });
+  focusGit("init", "-q", "-b", "main");
+  focusGit("add", ".");
+  focusGit("commit", "-q", "-m", "Negozio");
+  focusGit("tag", "v1");
+  const focusOrder = join(focusProject, "Sources/Orders/Order.swift");
+  await writeFile(focusOrder, `${await readFile(focusOrder, "utf8")}\n// Paid orders go to review.\n`);
+  focusGit("add", ".");
+  focusGit("commit", "-q", "-m", "feat: send paid orders to review");
+  ({ app, page } = await launch());
+  await page.evaluate(() => window.trama.invoke("settings:update", { continuousWork: false, theme: "light" }));
+  await page.evaluate((path) => window.trama.invoke("project:open", { path }), focusProject);
+  await page.getByTestId("dialog-title").filter({ hasText: "trama-ui-esame" }).waitFor({ timeout: 30_000 });
+  await page.getByText("Ho letto lo studio").first().waitFor({ timeout: 30_000 });
+  // The primary action of a row is the last one, on the right.
+  const lastAction = async (row, label) => {
+    const labels = (await row.locator("button").allTextContents()).map((text) => text.trim());
+    if (labels.at(-1) !== label) throw new Error(`"${label}" is not the last action: ${labels}`);
+    const [button, box] = [await row.getByRole("button", { name: label }).boundingBox(), await row.boundingBox()];
+    if (!button || !box || box.x + box.width - (button.x + button.width) > 4) throw new Error(`"${label}" is not on the right`);
+  };
+  await openModules();
+  const inspectorPane = page.getByTestId("side-bar");
+  await inspectorPane.getByRole("button", { name: "Esame approfondito del progetto" }).waitFor();
+  await themeShots("31a-focus-map");
+  await inspectorPane.getByRole("option", { name: /Orders/ }).click();
+  const moduleActions = inspectorPane.locator(".cta-row").first();
+  await lastAction(moduleActions, "Chiedi al Coordinatore su questo modulo");
+  await themeShots("31b-focus-module");
+
+  // The dialog starts on the module. A fixed point that does not exist, then a module with no change, fail there.
+  await moduleActions.getByRole("button", { name: "Esame approfondito" }).click();
+  const focusStart = page.getByRole("dialog", { name: "Esame approfondito" });
+  await focusStart.getByRole("radio", { name: /Il modulo Orders/ }).and(page.locator('[aria-checked="true"]')).waitFor();
+  await focusStart.getByRole("button", { name: "v1", exact: true }).waitFor();
+  await focusStart.getByRole("button", { name: "HEAD~1", exact: true }).waitFor();
+  await focusStart.getByLabel("Punto fisso").fill("release-9");
+  await focusStart.getByRole("button", { name: "Avvia l'esame" }).click();
+  await focusStart.getByTestId("focus-start-error").getByText('Il punto fisso "release-9" non esiste in questo repository: scrivi un commit, un branch o un tag che esiste.').waitFor();
+  await themeShots("31c-focus-start-missing-point");
+  await focusStart.getByRole("radio", { name: /Il modulo Payments/ }).click();
+  await focusStart.getByRole("button", { name: "v1", exact: true }).click();
+  await focusStart.getByRole("button", { name: "Avvia l'esame" }).click();
+  await focusStart.getByTestId("focus-start-error").getByText(/Nessun cambiamento nel modulo Payments tra il punto fisso "v1"/).waitFor();
+  await themeShots("31d-focus-start-empty-diff");
+  if (await page.locator("[data-focus-mode]").count()) throw new Error("Focus mode opened on a failed fixed point");
+
+  // The module from v1: full screen, three columns, the exit last on the right, notifications paused.
+  await focusStart.getByRole("radio", { name: /Il modulo Orders/ }).click();
+  await focusStart.getByRole("button", { name: "Avvia l'esame" }).click();
+  const focusView = page.locator("[data-focus-mode]");
+  await focusView.waitFor({ timeout: 20_000 });
+  await page.locator('[data-focus-mode][data-status="done"]').waitFor({ timeout: 60_000 });
+  await focusView.getByTestId("focus-mode-title").getByText("Esame approfondito del modulo Orders").waitFor();
+  await focusView.getByTestId("focus-mode-notifications").getByText("Notifiche in pausa").waitFor();
+  await lastAction(focusView.locator("header .cta-row"), "Esci dall'esame");
+  // The examination takes the editor area; the window's activity bar and status bar stay (issue #330).
+  for (const bar of ["activity-bar", "status-bar"]) {
+    if (!(await page.getByTestId(bar).isVisible())) throw new Error(`Focus mode hides the ${bar}`);
+  }
+  await focusView.getByTestId("focus-progress").getByText("v1, ", { exact: false }).waitFor();
+  await focusView.locator('[data-testid="audit-axis"][data-axis="spec"][data-status="skipped"]').getByText("Nessun piano da confrontare").waitFor();
+  const moduleFinding = focusView.locator('[data-testid="audit-axis"][data-axis="standards"] [data-testid="audit-finding"][data-status="verified"]');
+  await moduleFinding.getByText(/Mysterious Name in Sources\/Orders\/Order\.swift/).waitFor();
+  await focusView.getByTestId("focus-proof").getByText("Trama ha letto Sources/Orders/Order.swift:1 e la riga contiene il testo citato.").waitFor();
+  // Each column stays inside the window at every size, with no horizontal scroll.
+  const columnsFit = async (size) => {
+    const layout = await page.evaluate(() => {
+      const box = (id) => document.querySelector(`[data-testid="${id}"]`)?.getBoundingClientRect() ?? null;
+      return {
+        width: window.innerWidth,
+        scroll: document.documentElement.scrollWidth,
+        columns: ["focus-progress", "focus-findings", "focus-proof-column"].map((id) => {
+          const b = box(id);
+          return b && { left: b.left, right: b.right, width: b.width, height: b.height };
+        }),
+      };
+    });
+    if (layout.scroll > layout.width) throw new Error(`Focus mode scrolls sideways at ${size}: ${JSON.stringify(layout)}`);
+    for (const column of layout.columns) {
+      if (!column || column.width < 150 || column.height < 120 || column.left < 0 || column.right > layout.width + 1) throw new Error(`A focus mode column does not fit at ${size}: ${JSON.stringify(layout)}`);
+    }
+  };
+  for (const [width, height] of [[1280, 820], [1600, 1000], [1024, 700], [720, 640]]) {
+    await page.setViewportSize({ width, height });
+    await columnsFit(`${width}x${height}`);
+    await themeShots(`31e-focus-module-${width}x${height}`);
+  }
+  await page.setViewportSize({ width: 1280, height: 820 });
+  // The bottom panel (issue #383) opens under the examination: both stay in the editor area and the columns still fit.
+  const focusPanel = page.getByTestId("bottom-panel");
+  if (!(await focusPanel.count())) await page.getByRole("button", { name: "Pannello Attività" }).click();
+  await focusPanel.waitFor();
+  if (!(await focusView.isVisible())) throw new Error("The bottom panel hides focus mode");
+  const [focusBox, panelBox] = [await focusView.boundingBox(), await focusPanel.boundingBox()];
+  if (!focusBox || !panelBox || focusBox.y + focusBox.height > panelBox.y + 1) throw new Error("Focus mode runs under the bottom panel");
+  await columnsFit("1280x820 with the bottom panel");
+  await themeShots("31g-focus-module-activity-panel");
+  await page.getByRole("button", { name: "Chiudi il pannello" }).click();
+  await focusPanel.waitFor({ state: "detached" });
+  // Esc leaves too; the module is still where the person left it.
+  await page.keyboard.press("Escape");
+  await focusView.waitFor({ state: "detached" });
+  await page.getByTestId("side-bar").getByText("Sources/Orders").first().waitFor();
+
+  // The whole project from HEAD~1, left with the exit button.
+  await openModules();
+  await page.getByTestId("side-bar").getByRole("button", { name: "Esame approfondito del progetto" }).click();
+  await focusStart.getByRole("radio", { name: "L'intero progetto" }).and(page.locator('[aria-checked="true"]')).waitFor();
+  await focusStart.getByRole("button", { name: "HEAD~1", exact: true }).click();
+  await focusStart.getByRole("button", { name: "Avvia l'esame" }).click();
+  await page.locator('[data-focus-mode][data-status="done"]').waitFor({ timeout: 60_000 });
+  await focusView.getByTestId("focus-mode-title").getByText("Esame approfondito dell'intero progetto").waitFor();
+  await themeShots("31f-focus-project");
+  await focusView.getByRole("button", { name: "Esci dall'esame" }).click();
+  await focusView.waitFor({ state: "detached" });
+  await app.close();
+}
 
 // Issue #247: with the Coordinator's green light and the gate passed, Trama publishes and merges a candidate by itself,
 // and Activity says so. A candidate that changes the interface waits in Aspetta te with the screenshots before and
