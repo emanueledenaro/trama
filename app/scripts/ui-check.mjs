@@ -1448,7 +1448,8 @@ for (let step = 0; step < 12 && !reached; step++) {
 if (!reached) throw new Error("The goal is not reachable with Tab after reopening");
 await shot("13-goals-reopened");
 await page.keyboard.press("Enter");
-await page.getByText(goalId, { exact: true }).waitFor();
+// Issue #270: the goal keeps its id after the restart, on the hover of its detail.
+await page.locator(`[data-goal-id="${goalId}"]`).waitFor();
 // Issue #277: the chat's echoed headings also name the goal by its title, so the check stays in the inspector.
 await page.getByTestId("inspector").getByRole("heading", { name: goalTitle }).waitFor();
 await shot("13a-goal-reopened");
