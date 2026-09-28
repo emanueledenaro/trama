@@ -1145,7 +1145,7 @@ if (await recapNeeds.count()) {
 } else {
   await recapCard.getByText("Niente: per ora vado avanti da solo.").waitFor();
 }
-await recapCard.scrollIntoViewIfNeeded();
+await recapCard.evaluate((card) => card.scrollIntoView({ block: "center" }));
 await themeShots("15e-recap");
 await page.keyboard.press("Control+K");
 await page.getByRole("textbox", { name: "Cerca in Trama" }).fill("cancel");
@@ -1965,7 +1965,7 @@ if (unblocked.join() !== "done,ready,ready") throw new Error(`A verified slice d
 const milestoneRecap = page.locator('[data-testid="recap-card"][data-reason="milestone"]').filter({ hasText: "Fetta S1 fatta" });
 await milestoneRecap.waitFor({ timeout: 20_000 });
 if ((await milestoneRecap.count()) !== 1) throw new Error("The slice done was told in more than one recap");
-await milestoneRecap.scrollIntoViewIfNeeded();
+await milestoneRecap.evaluate((card) => card.scrollIntoView({ block: "center" }));
 await themeShots("22c-recap-milestone");
 if ((await assignmentCards.count()) !== 8) throw new Error("A developer took a slice while continuous work was off");
 // Continuous work on: at the next event of the work (here the end of a Coordinator turn) Ada is free and takes S2 in

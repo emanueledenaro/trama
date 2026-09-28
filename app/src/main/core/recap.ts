@@ -7,7 +7,7 @@ import type {
   RecapRecord,
   SliceView,
 } from "@shared/domain";
-import { ACTIVITY_OUTCOME_LABELS, activityLog } from "@shared/activity";
+import { ACTIVITY_OUTCOME_LABELS, type ActivityOutcome, activityLog } from "@shared/activity";
 import { waitingForYou, type WaitingSources } from "@shared/waitingForYou";
 import { statusLine } from "./statusLine";
 
@@ -107,6 +107,14 @@ function openedIssues(document: ProjectDocument, since: string | null): (RecapFa
   return facts.sort((a, b) => a.at.localeCompare(b.at));
 }
 
+/** A move in "Cosa ho fatto": "Esegui le verifiche: non riuscita. L'incarico A-1 è concluso ma ...". */
+function moveLine(label: string, outcome: ActivityOutcome, detail: string | null): string {
+  // The outcome already says the move was not made: the reason follows without repeating it.
+  const reason = detail?.replace(/^La mossa automatica non è riuscita:\s*/, "").trim();
+  const sentence = reason ? `. ${reason.charAt(0).toUpperCase()}${reason.slice(1)}` : "";
+  return `${label}: ${ACTIVITY_OUTCOME_LABELS[outcome].toLowerCase()}${sentence}`;
+}
+
 /**
  * "Cosa ho fatto": the moves and rounds in Activity since the last recap, oldest first, and the issues the Coordinator
  * opened, with their number. Moves still running belong to "Cosa faccio". Pure.
@@ -117,7 +125,7 @@ export function doneSince(document: ProjectDocument, since: string | null): Reca
     .reverse();
   const moves = entries.map((entry) => ({
     at: entry.startedAt,
-    text: entry.kind === "round" ? `${entry.label}: ${entry.detail ?? ""}`.trim() : `${entry.label}: ${ACTIVITY_OUTCOME_LABELS[entry.outcome].toLowerCase()}${entry.detail ? `, ${entry.detail}` : ""}`,
+    text: entry.kind === "round" ? `${entry.label}: ${entry.detail ?? ""}`.trim() : moveLine(entry.label, entry.outcome, entry.detail),
     number: null,
     url: null,
   }));

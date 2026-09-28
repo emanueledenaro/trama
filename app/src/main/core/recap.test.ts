@@ -175,6 +175,15 @@ describe("the content of a recap", () => {
     expect(second.done).toEqual([{ text: "Verifica il candidato: fatta", number: null, url: null }]);
   });
 
+  it("gives the reason of a move not made without repeating the outcome", () => {
+    const document = emptyDocument("p");
+    move(document, "m1", 1, "Esegui le verifiche");
+    document.requests[0]!.step!.stalled = "La mossa automatica non è riuscita: l'incarico A-1 è concluso ma il suo candidato non è stato dichiarato.";
+    expect(recap(document, 2, "request").done).toEqual([
+      { text: "Esegui le verifiche: non riuscita. L'incarico A-1 è concluso ma il suo candidato non è stato dichiarato.", number: null, url: null },
+    ]);
+  });
+
   it("says when nothing happened since the last recap", () => {
     const document = emptyDocument("p");
     recap(document, 1, "request");
