@@ -89,6 +89,10 @@ export interface ActionMap {
     void,
   ];
   "mandate:revoke": [{ reason: string }, void];
+  /** Narrows the mandate in force without revoking it: fewer modules or actions, never more (issue #244). */
+  "mandate:restrict": [{ scopeModuleIds: string[]; authorizedActions: MandateAction[] }, void];
+  /** The person has seen an action a fixed ban stopped; it leaves Aspetta te (issue #244). */
+  "fixedBan:acknowledge": [{ id: string }, void];
   "mandate:reject": [{ requestId: string; reason: string }, void];
   "team:answer": [{ proposalId: string; keeping: string[] | null; note: string | null }, void];
   "assignment:stop": [{ assignmentId: string }, void];

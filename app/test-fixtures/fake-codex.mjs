@@ -651,6 +651,12 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
         });
         return;
       }
+      if (text.includes("[vietato:")) {
+        // [vietato:<command>]: the model starts a command a fixed ban covers (issue #244); Trama interrupts the turn.
+        const command = text.match(/\[vietato:([^\]]+)\]/)[1];
+        send({ method: "item/started", params: { threadId, turnId, item: { id: "banned", type: "commandExecution", command } } });
+        return;
+      }
       if (text.includes("[chiedi-mandato")) {
         // [chiedi-mandato] or [chiedi-mandato:<reason>]: a mandate request, which supersedes a pending one (W14).
         const reason = text.match(/\[chiedi-mandato:([^\]]+)\]/)?.[1] ?? "Serve un piano per gli ordini";

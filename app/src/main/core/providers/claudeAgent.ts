@@ -39,6 +39,7 @@ import {
   extractJsonAnswer,
 } from "./types";
 import { deniedReadFolders, expandHome, readableRoots, toolchainRoots } from "../readScope";
+import { commandBan, type FixedBan, fixedBanMessage, pathBan } from "@shared/fixedBans";
 import { isGitPushCommand } from "../push";
 import { absoluteUnnormalized, isWritableTarget, PendingTurn } from "./providerSupport";
 import { externalToolKind, refusalReason } from "./toolRefusal";
@@ -371,13 +372,20 @@ export interface ToolPolicy {
   readableRoots?: string[];
   /** Names of the tools on Trama's server, so a refusal can name the one to use (issue #228). */
   hostTools?: readonly string[];
+  /** The project's main branch names, for the fixed ban on pushing to it (issue #244); main and master always count. */
+  mainBranches?: string[];
 }
 
 /**
  * A refused read outside the readable roots names its path, so Trama can record it. `providerTool` marks one of
  * Claude's own tools that a Trama tool replaces (issue #228): the reason names that tool.
  */
-export type ToolDecision = { allow: true } | { allow: false; reason: string; outsideRead?: string; providerTool?: boolean };
+export type ToolDecision =
+  | { allow: true }
+  | { allow: false; reason: string; outsideRead?: string; providerTool?: boolean; ban?: { ban: FixedBan; action: string } };
+
+/** A refusal by a fixed ban (issue #244): it holds whatever the mandate and the sandbox would allow. */
+const banned = (ban: FixedBan, action: string): ToolDecision => ({ allow: false, reason: fixedBanMessage(ban), ban: { ban, action } });
 
 /** Tools that reach the network, ask the person, or start agents Trama cannot see. Always removed. */
 export const ALWAYS_DISALLOWED_TOOLS = [
@@ -433,6 +441,13 @@ export function decideToolPermission(
   if (toolName === "WebFetch" || toolName === "WebSearch") return providerTool(toolName, "fetch");
   if (ALWAYS_DISALLOWED_TOOLS.includes(toolName)) {
     return { allow: false, reason: `${toolName} is not available in Trama.` };
+  }
+  // The fixed bans come before every other rule: no mandate, sandbox or writable root lifts them (issue #244).
+  const bannedPath = READ_TOOLS.has(toolName) || WRITE_TOOLS.has(toolName) ? toolPath(input) : null;
+  if (bannedPath && pathBan(bannedPath)) return banned(pathBan(bannedPath)!, `${toolName} ${bannedPath}`);
+  if (SHELL_TOOLS.has(toolName) && typeof input.command === "string") {
+    const ban = commandBan(input.command, policy.mainBranches);
+    if (ban) return banned(ban, input.command);
   }
   if (READ_TOOLS.has(toolName)) {
     const path = toolPath(input);
@@ -1197,6 +1212,11 @@ export class ClaudeAgentRuntime implements AgentRuntime {
       if (!decision.allow && decision.outsideRead && !reported.has(`${toolName}:${decision.outsideRead}`)) {
         reported.add(`${toolName}:${decision.outsideRead}`);
         options.onEvent({ type: "readOutsideScope", itemId, path: decision.outsideRead, tool: toolName });
+      }
+      // A fixed ban is recorded once per call, for "Aspetta te" (issue #244).
+      if (!decision.allow && decision.ban && !reported.has(`banned:${itemId}`)) {
+        reported.add(`banned:${itemId}`);
+        options.onEvent({ type: "fixedBanRefused", itemId, ban: decision.ban.ban, action: decision.ban.action });
       }
       // canUseTool and the hook may both refuse the same call: one activity per call (issue #228).
       if (!decision.allow && decision.providerTool && !reported.has(`refused:${itemId}`)) {

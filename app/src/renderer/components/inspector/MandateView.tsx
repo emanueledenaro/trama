@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { type MandateAction, pendingMandateRequest } from "@shared/domain";
-import { MandateCard } from "@/components/chat/Cards";
+import { type MandateAction, type MandateSnapshot, pendingMandateRequest } from "@shared/domain";
+import { FixedBansField, MandateCard } from "@/components/chat/Cards";
 import { Button } from "@/components/ui/button";
 import { Badge, Label, TextArea } from "@/components/ui/field";
 import { formatDate } from "@/lib/format";
@@ -10,6 +10,15 @@ import { EmptyNote, InspectorSection } from "./Inspector";
 import { Sep } from "@/components/ui/sep";
 import { AgentName } from "@/components/AgentIdentity";
 import { workStoppedBy } from "@shared/mandate";
+
+/** What a restriction took away, in one line. */
+function restrictionText(restriction: NonNullable<MandateSnapshot["restriction"]>, moduleName: (id: string) => string): string {
+  const parts = [
+    restriction.removedModuleIds.length ? `tolti ${restriction.removedModuleIds.map(moduleName).join(", ")}` : null,
+    restriction.removedActions.length ? `tolte ${restriction.removedActions.map((a) => ACTION_LABELS[a].toLowerCase()).join(", ")}` : null,
+  ].filter(Boolean);
+  return `Ristretto: ${parts.join("; ")}.`;
+}
 
 const lines = (text: string) => text.split("\n").map((l) => l.trim()).filter(Boolean);
 
@@ -28,6 +37,21 @@ export function MandateView() {
   // Revoking asks for a reason and shows what stops before it takes effect.
   const [revoking, setRevoking] = useState(false);
   const stopping = revoking ? workStoppedBy(project.document, null) : [];
+  // Restricting keeps the mandate and takes modules or actions away (issue #244).
+  const [restricting, setRestricting] = useState(false);
+  const [keptModules, setKeptModules] = useState<string[]>([]);
+  const [keptActions, setKeptActions] = useState<MandateAction[]>([]);
+  const moduleName = (id: string) => project.snapshot.modules.find((m) => m.id === id)?.name ?? id;
+  const startRestricting = () => {
+    setKeptModules(mandate?.scopeModuleIds ?? []);
+    setKeptActions(mandate?.authorizedActions ?? []);
+    setRestricting(true);
+  };
+  const narrower =
+    mandate?.status === "granted" &&
+    keptModules.length > 0 &&
+    keptActions.length > 0 &&
+    (keptModules.length < mandate.scopeModuleIds.length || keptActions.length < mandate.authorizedActions.length);
 
   useEffect(() => {
     setObjectives(source?.objectives.join("\n") ?? "");
@@ -67,7 +91,8 @@ export function MandateView() {
           <p className="text-ui text-foreground/90">Revocato: {mandate.revocation?.reason}</p>
         ) : (
           <div className="space-y-1.5 text-ui text-foreground/90">
-            <p>Concesso il {formatDate(mandate.grantedAt)}.</p>
+            <p>{mandate.restriction ? `Ristretto il ${formatDate(mandate.grantedAt)}.` : `Concesso il ${formatDate(mandate.grantedAt)}.`}</p>
+            {mandate.restriction ? <p className="text-ui-sm text-muted-foreground" data-testid="mandate-restriction">{restrictionText(mandate.restriction, moduleName)}</p> : null}
             <div className="text-ui-sm text-muted-foreground">
               Obiettivi
               <ul className="list-disc pl-4 text-foreground/90">
@@ -86,7 +111,67 @@ export function MandateView() {
             </div>
           </div>
         )}
+        {/* Every mandate, also one granted before the fixed bans existed, excludes them (issue #244). */}
+        <FixedBansField />
       </InspectorSection>
+      {mandate?.status === "granted" ? (
+        <InspectorSection
+          title="Restringi il mandato"
+          aside={!restricting ? <Button size="xs" variant="ghost" onClick={startRestricting}>Restringi</Button> : null}
+        >
+          {restricting ? (
+            <div className="space-y-3" data-testid="mandate-restrict">
+              <p className="text-ui-sm text-muted-foreground">Togli i moduli o le azioni che il Coordinatore non deve più usare. Il mandato resta in vigore; la restrizione vale dal suo prossimo turno.</p>
+              <div>
+                <Label>Moduli che restano</Label>
+                <div className="flex max-h-40 flex-col gap-0.5 overflow-y-auto rounded-lg border border-input p-1">
+                  {mandate.scopeModuleIds.map((id) => (
+                    <label key={id} className="flex cursor-pointer items-center gap-2 rounded-md px-1.5 py-1 text-ui hover:bg-[var(--sidebar-accent)]">
+                      <input
+                        type="checkbox"
+                        className="accent-[var(--color-text-accent)]"
+                        checked={keptModules.includes(id)}
+                        onChange={(e) => setKeptModules(e.target.checked ? [...keptModules, id] : keptModules.filter((m) => m !== id))}
+                      />
+                      <span className="min-w-0 flex-1 truncate">{moduleName(id)}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <Label>Azioni che restano</Label>
+                <div className="flex flex-col gap-1">
+                  {mandate.authorizedActions.map((action) => (
+                    <label key={action} className="flex cursor-pointer items-center gap-2 text-ui">
+                      <input
+                        type="checkbox"
+                        className="accent-[var(--color-text-accent)]"
+                        checked={keptActions.includes(action)}
+                        onChange={(e) => setKeptActions(e.target.checked ? [...keptActions, action] : keptActions.filter((a) => a !== action))}
+                      />
+                      {ACTION_LABELS[action]}
+                    </label>
+                  ))}
+                </div>
+              </div>
+              <div className="cta-row">
+                <Button size="sm" variant="ghost" onClick={() => setRestricting(false)}>
+                  Annulla
+                </Button>
+                <Button
+                  size="sm"
+                  disabled={!narrower}
+                  onClick={() => void act("mandate:restrict", { scopeModuleIds: keptModules, authorizedActions: keptActions }).then(() => setRestricting(false))}
+                >
+                  Restringi il mandato
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <EmptyNote>Puoi togliere moduli o azioni senza revocare il mandato. Allargarlo resta una correzione.</EmptyNote>
+          )}
+        </InspectorSection>
+      ) : null}
       {pending ? (
         <InspectorSection title="Proposta del Coordinatore">
           <MandateCard requestId={pending.id} />
@@ -220,7 +305,7 @@ export function MandateView() {
           <ol className="space-y-1.5 text-ui-sm text-muted-foreground">
             {[...mandate.history].reverse().map((snapshot) => (
               <li key={snapshot.version}>
-                v{snapshot.version}<Sep />{formatDate(snapshot.grantedAt)}<Sep />{snapshot.objectives.join(", ")}
+                v{snapshot.version}<Sep />{formatDate(snapshot.grantedAt)}<Sep />{snapshot.restriction ? restrictionText(snapshot.restriction, moduleName) : snapshot.objectives.join(", ")}
               </li>
             ))}
           </ol>

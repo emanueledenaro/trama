@@ -4,6 +4,7 @@ import { homedir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
 import { createInterface } from "node:readline";
 import type { AccountStatus, CodexModel, TurnEvent } from "@shared/codex";
+import { commandBan, type FixedBan, pathBan } from "@shared/fixedBans";
 import type { LoadedSkill } from "@shared/skills";
 import { runProcess } from "./process";
 
@@ -45,6 +46,20 @@ const asObject = (value: Json | undefined): JsonObject | null =>
   value && typeof value === "object" && !Array.isArray(value) ? value : null;
 const asString = (value: Json | undefined): string | null => (typeof value === "string" ? value : null);
 const asArray = (value: Json | undefined): Json[] => (Array.isArray(value) ? value : []);
+
+/** The fixed ban a command or a file change Codex started runs into (issue #244), with what it named; null otherwise. */
+export function startedItemBan(item: JsonObject): { ban: FixedBan; action: string } | null {
+  if (item.type === "commandExecution") {
+    const command = asString(item.command) ?? "";
+    const ban = command ? commandBan(command) : null;
+    return ban ? { ban, action: command } : null;
+  }
+  if (item.type === "fileChange") {
+    const path = asArray(item.changes).map((c) => asString(asObject(c)?.path)).find((p) => p && pathBan(p));
+    return path ? { ban: pathBan(path)!, action: `Modifica di ${path}` } : null;
+  }
+  return null;
+}
 
 /** Folders searched for Codex, also on the PATH app-server gets. */
 export function searchPath(): string[] {
@@ -687,6 +702,12 @@ export class CodexClient {
         if (item.type === "agentMessage") turn.messagePhases.set(itemId, asString(item.phase));
         if (item.type === "mcpToolCall") {
           turn.onEvent({ type: "toolCallStarted", itemId, server: asString(item.server) ?? "", tool: asString(item.tool) ?? "" });
+        }
+        // Codex runs commands in its sandbox without asking: a fixed ban stops the turn as soon as one starts (issue #244).
+        const banned = startedItemBan(item);
+        if (banned) {
+          turn.onEvent({ type: "fixedBanRefused", itemId, ...banned });
+          void this.interrupt().catch(() => undefined);
         }
         return;
       }

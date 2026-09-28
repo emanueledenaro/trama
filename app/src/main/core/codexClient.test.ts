@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { TurnEvent } from "@shared/codex";
-import { CodexClient } from "./codexClient";
+import { CodexClient, startedItemBan } from "./codexClient";
 
 const fake = join(import.meta.dirname, "../../../test-fixtures/fake-codex.mjs");
 let client: CodexClient | null = null;
@@ -276,5 +276,20 @@ describe("CodexClient failures (T02)", () => {
   it("reports a missing executable", async () => {
     client = new CodexClient({ executable: "/nonexistent/codex" });
     expect(await client.readAccount()).toMatchObject({ kind: "unavailable", message: expect.stringMatching(/non trovato/) });
+  });
+});
+
+describe("fixed bans on what Codex starts (issue #244)", () => {
+  it("names the ban of a command or a file change as soon as Codex starts it", () => {
+    expect(startedItemBan({ type: "commandExecution", id: "i1", command: "/bin/zsh -lc 'git push --force origin x'" })).toEqual({
+      ban: "forcePush",
+      action: "/bin/zsh -lc 'git push --force origin x'",
+    });
+    expect(startedItemBan({ type: "fileChange", id: "i2", changes: [{ path: "/work/src/a.ts" }, { path: "/work/.env" }] })).toEqual({
+      ban: "secrets",
+      action: "Modifica di /work/.env",
+    });
+    expect(startedItemBan({ type: "commandExecution", id: "i3", command: "/bin/zsh -lc 'npm test'" })).toBeNull();
+    expect(startedItemBan({ type: "agentMessage", id: "i4" })).toBeNull();
   });
 });

@@ -279,6 +279,8 @@ export interface MandateSnapshot {
   authorizedActions: MandateAction[];
   limits: string[];
   grantedAt: string;
+  /** Set when the person narrowed the mandate before this version without revoking it (issue #244). */
+  restriction?: { removedModuleIds: string[]; removedActions: MandateAction[] } | null;
 }
 
 export type MandateAction = "plan" | "executeInWorktree" | "openPullRequest" | "integrateCandidate" | "composeTeam";
@@ -300,6 +302,11 @@ export interface MandateRequest {
   limits: string[];
   askedAt: string;
   /**
+   * The project mandate for the whole cycle (issue #244): Trama asks for it on the Coordinator's behalf when a project
+   * opens without a mandate. Absent on the requests the Coordinator asks with request_mandate.
+   */
+  projectCycle?: boolean;
+  /**
    * Null while the request waits for the person. "superseded" means a newer request replaced it before the
    * person answered (W14): it can no longer be granted and names the newer one in `supersededBy`. "rejected" means
    * the person turned the proposal down and the mandate in force stayed as it was; "revoked" is kept for requests
@@ -311,6 +318,20 @@ export interface MandateRequest {
     resolvedAt: string;
     supersededBy?: string | null;
   } | null;
+}
+
+/**
+ * An action a fixed ban stopped before it started (issue #244): who tried it, the command or the file, and whether the
+ * person has seen it. It waits in "Aspetta te" until the person acknowledges it.
+ */
+export interface FixedBanRefusal {
+  id: string;
+  ban: import("./fixedBans").FixedBan;
+  /** The command, the file or the branch the action named. */
+  action: string;
+  by: { kind: "coordinator" } | { kind: "specialist"; specialistId: string; assignmentId: string } | { kind: "trama" };
+  refusedAt: string;
+  acknowledgedAt: string | null;
 }
 
 /** The one mandate request waiting for the person: the latest unresolved one (W14). */
@@ -1194,6 +1215,8 @@ export interface ProjectDocument {
   decisionHistory: PactDecision[];
   mandate: ProjectMandate | null;
   mandateRequests: MandateRequest[];
+  /** Actions the fixed bans stopped (issue #244); absent in documents written before. */
+  fixedBanRefusals?: FixedBanRefusal[];
   decisionRequests: DecisionRequest[];
   coordinator: CoordinatorState;
   /** The composer's selection for the project's one chat (ADR 0010, U01). Absent provider means Codex. */

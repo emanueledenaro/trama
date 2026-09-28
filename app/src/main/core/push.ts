@@ -1,4 +1,5 @@
 import type { EventContent, ProjectMandate } from "@shared/domain";
+import { type FixedBan, fixedBanInfo, pushBan } from "@shared/fixedBans";
 import { runProcess } from "./process";
 import { type Authorization, authorize } from "./team";
 
@@ -15,7 +16,8 @@ import { type Authorization, authorize } from "./team";
 type ActivityContent = Extract<EventContent, { type: "activity" }>;
 
 export type PushRecord =
-  | { outcome: "refused"; branch: string; remote: string; reason: string }
+  /** `ban` is set when a fixed ban refused it, whatever the mandate (issue #244). */
+  | { outcome: "refused"; branch: string; remote: string; reason: string; ban?: FixedBan }
   | { outcome: "started"; branch: string; remote: string }
   | { outcome: "pushed"; branch: string; remote: string }
   | { outcome: "failed"; branch: string; remote: string; reason: string };
@@ -39,8 +41,14 @@ export function pushRefusal(authorization: Authorization): string {
   }
 }
 
+/** The fixed ban on pushing `branch`, with its reason in the person's words; null when none applies (issue #244). */
+export function fixedPushRefusal(branch: string, mainBranches: string[] = []): { ban: FixedBan; reason: string } | null {
+  const ban = pushBan(branch, mainBranches);
+  return ban ? { ban, reason: `${fixedBanInfo(ban).reason} Nessun mandato lo concede: Trama non pubblica ${branch}.` } : null;
+}
+
 /**
- * Pushes `branch` from `root` to `remote` when the mandate allows it. The refusal is recorded and thrown before git
+ * Pushes `branch` from `root` to `remote` when the mandate allows it and no fixed ban covers it. The refusal is recorded and thrown before git
  * runs; the attempt is recorded before the push starts, so a push cut short still leaves a trace.
  */
 export async function pushBranch(input: {
@@ -49,8 +57,16 @@ export async function pushBranch(input: {
   mandate: ProjectMandate | null;
   onRecord: (record: PushRecord) => void;
   remote?: string;
+  /** The project's main branch names besides main and master: never pushed to directly. */
+  mainBranches?: string[];
 }): Promise<void> {
   const remote = input.remote ?? "origin";
+  // The fixed bans come before the mandate: no mandate grants a direct push to the main branch (issue #244).
+  const banned = fixedPushRefusal(input.branch, input.mainBranches);
+  if (banned) {
+    input.onRecord({ outcome: "refused", branch: input.branch, remote, reason: banned.reason, ban: banned.ban });
+    throw new PushRefusedError(banned.reason);
+  }
   const reason = pushRefusal(pushAuthorization(input.mandate));
   if (reason) {
     input.onRecord({ outcome: "refused", branch: input.branch, remote, reason });
@@ -75,6 +91,7 @@ export function pushActivity(record: PushRecord): ActivityContent {
   const where = `${record.branch} su ${record.remote}`;
   switch (record.outcome) {
     case "refused":
+      if (record.ban) return { type: "activity", title: "Pubblicazione fermata da un divieto fisso", detail: `${where}\n${record.reason}`, tone: "error" };
       return { type: "activity", title: "Pubblicazione fermata dal mandato", detail: `${where}\n${record.reason}`, tone: "error" };
     case "started":
       return { type: "activity", title: "Trama sta pubblicando un branch su GitHub", detail: where, tone: "info" };

@@ -14,6 +14,7 @@ import { accessSync, constants, existsSync, lstatSync, readdirSync } from "node:
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { delimiter, dirname, extname, isAbsolute, join, resolve } from "node:path";
+import { commandBan, type FixedBan, fixedBanMessage, pathBan } from "@shared/fixedBans";
 import type { LoadedSkill } from "@shared/skills";
 import {
   type AgentRuntime,
@@ -464,6 +465,14 @@ export function decidePermission(input: {
     default:
       return "reject";
   }
+}
+
+/** The fixed ban a permission request runs into (issue #244): a secret file it names, or a banned command. */
+export function permissionBan(kind: string | null, paths: string[], command: string | null): { ban: FixedBan; action: string } | null {
+  const secret = paths.find((path) => pathBan(path));
+  if (secret) return { ban: pathBan(secret)!, action: `${kind ?? "accesso"} ${secret}` };
+  const ban = kind === "execute" && command ? commandBan(command) : null;
+  return ban && command ? { ban, action: command } : null;
 }
 
 /** Picks the provider option for a decision; `null` means answer with `cancelled`. */
@@ -1270,6 +1279,7 @@ export class AcpAgentRuntime implements AgentRuntime {
         return this.answerPermission(params, policy);
       case "fs/read_text_file": {
         const path = asString(params.path);
+        this.refuseBannedPath(path, "fs/read_text_file");
         const inside = path !== null && isAbsolute(path) && (policy.readableRoots ?? [policy.cwd]).some((root) => resolvesInside(root, path));
         if (policy.active && path && isAbsolute(path) && !inside) this.reportOutsideRead(path, "fs/read_text_file", "fs/read_text_file");
         if (!policy.active || !path || !inside || lstatSync(path, { throwIfNoEntry: false })?.isSymbolicLink()) {
@@ -1285,6 +1295,7 @@ export class AcpAgentRuntime implements AgentRuntime {
       }
       case "fs/write_text_file": {
         const path = asString(params.path);
+        this.refuseBannedPath(path, "fs/write_text_file");
         const content = asString(params.content);
         const target = policy.active && policy.writableRoot && path && isAbsolute(path) ? containedWriteTarget(policy.writableRoot, path) : null;
         if (target === null || content === null) {
@@ -1320,6 +1331,13 @@ export class AcpAgentRuntime implements AgentRuntime {
           readableRoots: policy.readableRoots,
         });
     const itemId = trimmed(toolCall.toolCallId) ?? randomUUID();
+    // The fixed bans hold before every other rule (issue #244): a secret file or a banned command is refused and recorded.
+    const banned = policy.active ? permissionBan(kind, paths, toolCallCommand(toolCall.rawInput, title)) : null;
+    if (banned) {
+      this.activeTurn?.onEvent({ type: "fixedBanRefused", itemId, ...banned });
+      const optionId = selectPermissionOption("reject", params.options);
+      return optionId ? { outcome: { outcome: "selected", optionId } } : { outcome: { outcome: "cancelled" } };
+    }
     if (policy.active && decision === "reject" && (kind === "read" || kind === "search" || kind === "think")) {
       const outside = paths.find((path) => !(policy.readableRoots ?? [policy.cwd]).some((root) => resolvesInside(root, path)));
       if (outside) this.reportOutsideRead(outside, itemId, title ?? kind);
@@ -1337,6 +1355,14 @@ export class AcpAgentRuntime implements AgentRuntime {
     // With no active turn the request is cancelled: late or replayed requests must not inherit a turn's authority.
     const optionId = policy.active ? selectPermissionOption(decision, params.options) : null;
     return optionId ? { outcome: { outcome: "selected", optionId } } : { outcome: { outcome: "cancelled" } };
+  }
+
+  /** A secret or credential file is refused whatever the turn allows, and recorded for "Aspetta te" (issue #244). */
+  private refuseBannedPath(path: string | null, tool: string): void {
+    const ban = path ? pathBan(path) : null;
+    if (!ban || !path) return;
+    this.activeTurn?.onEvent({ type: "fixedBanRefused", itemId: randomUUID(), ban, action: `${tool} ${path}` });
+    throw new AcpRequestError(-32000, fixedBanMessage(ban), undefined);
   }
 
   /** Records a read Trama refused outside the session's folders (issue #206). */
