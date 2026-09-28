@@ -36,13 +36,27 @@ const launch = async (env = {}) => {
   return { app, page };
 };
 let { app, page } = await launch();
+// Chromium under xvfb now and then fails a capture with this protocol error even on a shown, painted window. For that
+// exact error only the capture is retried up to 3 times, 250ms apart; any other error, or a fourth failure, throws.
+const UNCAPTURED = "Protocol error (Page.captureScreenshot): Unable to capture screenshot";
+const capture = async (options) => {
+  for (let retry = 0; ; retry++) {
+    try {
+      return await page.screenshot(options);
+    } catch (error) {
+      if (retry >= 3 || !String(error?.message).includes(UNCAPTURED)) throw error;
+      console.log(`[capture] ${UNCAPTURED}, retry ${retry + 1} of 3`);
+      await page.waitForTimeout(250);
+    }
+  }
+};
 // Every screenshot has its own name: a second one with the same name would overwrite the first without a word.
 const shotNames = new Set();
 const shot = async (name) => {
   if (shotNames.has(name)) throw new Error(`Two screenshots named ${name}`);
   shotNames.add(name);
   await page.waitForTimeout(400);
-  await page.screenshot({ path: join(out, `${name}.png`) });
+  await capture({ path: join(out, `${name}.png`) });
   console.log("saved", name);
 };
 // Issue #271: a card that asks nothing more is one line; this opens the line when it is closed.
@@ -190,7 +204,7 @@ const introFrames = async (label, times) => {
       }
     }, time);
     await painted();
-    await page.screenshot({ path: join(out, `00-intro-${label}-${String(time).padStart(4, "0")}ms.png`) });
+    await capture({ path: join(out, `00-intro-${label}-${String(time).padStart(4, "0")}ms.png`) });
   }
   const running = await page.evaluate(() => document.querySelector('[data-testid="launch-intro"]')?.getAnimations({ subtree: true }).length ?? 0);
   await page.evaluate(() => window.dispatchEvent(new Event("trama:end-intro")));
