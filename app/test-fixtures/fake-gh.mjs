@@ -10,7 +10,8 @@
 // after that base and the issues list holds the issues created so far, as the Coordinator opens them for the problems
 // it finds (A08); the label writes of the triage are answered. With FAKE_GH_TICKET, a JSON file holds one issue with its
 // comments and the pull requests `gh pr view` answers for: the ticket updates (C10) read and write it, and with
-// "failComment" true posting a comment fails like a GitHub error.
+// "failComment" true posting a comment fails like a GitHub error. With FAKE_GH_WORK the issues list holds three more
+// open issues and the project's slice has a draft pull request, for the Lavoro view (issue #332).
 import { appendFileSync, readFileSync, writeFileSync } from "node:fs";
 
 const args = process.argv.slice(2);
@@ -142,6 +143,22 @@ if (rest === "/issues") {
                 },
               ]
             : []),
+          ...(process.env.FAKE_GH_WORK
+            ? [
+                [21, "Il totale del carrello ignora lo sconto", "2026-09-28T09:00:00Z"],
+                [19, "Traduzione della pagina resi", "2026-09-27T16:00:00Z"],
+                [17, "Immagini lente nel catalogo", "2026-09-26T11:00:00Z"],
+              ].map(([number, title, updated]) => ({
+                number,
+                title,
+                state: "open",
+                body: "",
+                html_url: `https://github.com/${name}/issues/${number}`,
+                user: { login: "collega" },
+                labels: [],
+                updated_at: updated,
+              }))
+            : []),
           ...(process.env.FAKE_GH_MERGED_PULL
             ? [
                 {
@@ -185,8 +202,8 @@ const branches = [
 ];
 if (rest === "/branches") reply(firstPage ? branches : []);
 if (rest === "/pulls") {
-  reply(
-    team && firstPage
+  reply([
+    ...(team && firstPage
       ? [
           {
             number: 12,
@@ -199,9 +216,25 @@ if (rest === "/pulls") {
             updated_at: new Date(Date.now() - 40 * 60_000).toISOString(),
           },
         ]
-      : [],
+      : []),
+      ...(process.env.FAKE_GH_WORK && firstPage
+        ? [
+            {
+              number: 42,
+              title: "Spese di spedizione per zona",
+              user: { login: "trama-ui" },
+              head: { ref: "trama/luca-s2", sha: "3333333333333333333333333333333333333333", repo: { full_name: name } },
+              base: { ref: "main" },
+              html_url: `https://github.com/${name}/pull/42`,
+              draft: true,
+              updated_at: new Date(Date.now() - 10 * 60_000).toISOString(),
+            },
+          ]
+        : []),
+    ],
   );
 }
 if (/^\/pulls\/\d+\/reviews$/.test(rest)) reply([]);
+if (process.env.FAKE_GH_WORK && rest === "/commits/3333333333333333333333333333333333333333/check-runs") reply({ check_runs: [{ status: "in_progress", conclusion: null }] });
 if (/^\/commits\/[0-9a-f]+\/check-runs$/.test(rest)) reply({ check_runs: [] });
 fail(`fake gh: ${endpoint} not supported`);
