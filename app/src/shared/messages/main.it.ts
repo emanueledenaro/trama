@@ -424,13 +424,6 @@ export const mainIt = {
   "main.controller.candidateRejectedMessageNoDeveloper":
     "Ho rifiutato il candidato {candidate}: {reason}\nIl lavoro non riprende da solo ({waiting}): fallo correggere con un nuovo incarico.",
   // Tickets and monitor
-  "main.controller.ticketClosedTitle": "Issue #{issue}: chiusa con le prove",
-  "main.controller.ticketProgressRepeatedTitle":
-    "Issue #{issue}: avanzamento già registrato",
-  "main.controller.ticketProgressTitle":
-    "Issue #{issue}: avanzamento registrato",
-  "main.controller.ticketStillOpen": "Resta aperta: {blockers}",
-  "main.controller.ticketCriteriaChecked": "Criteri spuntati: {criteria}",
   "main.controller.monitorNotificationTitle": "Trama: aggiornamenti condivisi",
   "main.controller.monitorNotificationBody":
     "{count} novità su {repository}. Apri Trama per valutarne l'impatto sul tuo lavoro.",
@@ -869,10 +862,6 @@ export const mainIt = {
   "main.acpRuntime.callFailed": "Chiamata non riuscita.",
 
   // antigravity.ts
-  "main.antigravity.hookAction":
-    "Aggiorna Antigravity CLI con agy update o reinstallalo, poi riprova.",
-  "main.antigravity.hookNotCalled":
-    "Antigravity CLI non ha chiamato l'hook di Trama, quindi la sola lettura non era garantita e Trama ha fermato il turno. {action}",
   "main.antigravity.notInstalled":
     "Antigravity CLI (agy) non è installato o non è nel PATH.",
   "main.antigravity.unknownModel":
@@ -897,16 +886,8 @@ export const mainIt = {
     "Il controllo della versione di Antigravity CLI è scaduto.",
   "main.antigravity.versionCheckFailed":
     "Il controllo della versione di Antigravity CLI non è riuscito.",
-  "main.antigravity.tooOld":
-    "Antigravity CLI {version} è troppo vecchio per Trama. Aggiorna alla {minimum} o successiva con agy update.",
   "main.antigravity.modelsTimeout": "agy models non ha risposto in tempo.",
   "main.antigravity.modelsFailed": "agy models non è riuscito.",
-  "main.antigravity.pluginInstallFailed":
-    "Trama non è riuscito a installare il plugin di cattura per Antigravity: {error}",
-  "main.antigravity.pluginRequiredForReadOnly":
-    "{message}. Senza il plugin la sola lettura non è garantita. {action}",
-  "main.antigravity.hookNotLoaded":
-    "L'hook di Trama per Antigravity non si è caricato ({error}), quindi Trama non apre la sessione in sola lettura. {action}",
   "main.antigravity.unknownThread":
     "Thread Antigravity sconosciuto: aprilo prima di avviare un turno.",
   "main.antigravity.cwdOutsideWorktree":

@@ -414,13 +414,6 @@ export const mainEn: Record<keyof typeof mainIt, string> = {
   "main.controller.candidateRejectedMessageNoDeveloper":
     "I rejected candidate {candidate}: {reason}\nThe work does not resume by itself ({waiting}): have it fixed with a new assignment.",
   // Tickets and monitor
-  "main.controller.ticketClosedTitle":
-    "Issue #{issue}: closed with the evidence",
-  "main.controller.ticketProgressRepeatedTitle":
-    "Issue #{issue}: progress already recorded",
-  "main.controller.ticketProgressTitle": "Issue #{issue}: progress recorded",
-  "main.controller.ticketStillOpen": "Still open: {blockers}",
-  "main.controller.ticketCriteriaChecked": "Criteria ticked: {criteria}",
   "main.controller.monitorNotificationTitle": "Trama: shared updates",
   "main.controller.monitorNotificationBody":
     "{count} updates on {repository}. Open Trama to see how they affect your work.",
@@ -839,10 +832,6 @@ export const mainEn: Record<keyof typeof mainIt, string> = {
   "main.acpRuntime.callFailed": "The call failed.",
 
   // antigravity.ts
-  "main.antigravity.hookAction":
-    "Update Antigravity CLI with agy update or reinstall it, then try again.",
-  "main.antigravity.hookNotCalled":
-    "Antigravity CLI did not call Trama's hook, so read-only access was not guaranteed and Trama stopped the turn. {action}",
   "main.antigravity.notInstalled":
     "Antigravity CLI (agy) is not installed or not on the PATH.",
   "main.antigravity.unknownModel":
@@ -866,16 +855,8 @@ export const mainEn: Record<keyof typeof mainIt, string> = {
     "The Antigravity CLI version check timed out.",
   "main.antigravity.versionCheckFailed":
     "The Antigravity CLI version check failed.",
-  "main.antigravity.tooOld":
-    "Antigravity CLI {version} is too old for Trama. Update to {minimum} or later with agy update.",
   "main.antigravity.modelsTimeout": "agy models did not answer in time.",
   "main.antigravity.modelsFailed": "agy models failed.",
-  "main.antigravity.pluginInstallFailed":
-    "Trama could not install the capture plugin for Antigravity: {error}",
-  "main.antigravity.pluginRequiredForReadOnly":
-    "{message}. Without the plugin read-only access is not guaranteed. {action}",
-  "main.antigravity.hookNotLoaded":
-    "Trama's hook for Antigravity did not load ({error}), so Trama does not open the read-only session. {action}",
   "main.antigravity.unknownThread":
     "Unknown Antigravity thread: open it before starting a turn.",
   "main.antigravity.cwdOutsideWorktree":
