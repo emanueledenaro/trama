@@ -43,6 +43,21 @@ function ActivityRow({ entry, dialog }: { entry: ActivityEntry; dialog: string }
         {dialog}
       </p>
       {entry.detail ? <p className="mt-1 text-ui-sm text-muted-foreground">{entry.detail}</p> : null}
+      {entry.toolErrors.length ? (
+        <details className="mt-1 text-ui-xs text-muted-foreground" data-testid="activity-tool-errors">
+          <summary className="cursor-pointer">
+            {entry.toolErrors.length === 1 ? "Uno strumento non è riuscito" : `${entry.toolErrors.length} strumenti non sono riusciti`}
+          </summary>
+          <ul className="mt-1 flex flex-col gap-1">
+            {entry.toolErrors.map((error, index) => (
+              <li key={index}>
+                <span className="text-foreground/80">{error.title}</span>
+                {error.detail ? <span className="block break-words font-mono text-[11px]">{error.detail}</span> : null}
+              </li>
+            ))}
+          </ul>
+        </details>
+      ) : null}
       <div className="cta-row mt-1.5">
         <Button size="xs" variant="ghost" onClick={() => openDialog(entry.goalId)}>
           Apri il dialogo

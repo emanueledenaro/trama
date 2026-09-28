@@ -79,6 +79,12 @@ async function setup() {
   return { data, project };
 }
 
+/** The detail of the latest failed tool call: where a tool's refusal stays, out of the Coordinator's reply. */
+function lastToolError(document: ProjectDocument): string {
+  const content = document.events.findLast((e) => e.content.type === "activity" && e.content.tone === "error")?.content;
+  return content?.type === "activity" ? (content.detail ?? "") : "";
+}
+
 describe("TramaController", () => {
   it("prepares the AI Hero method when a project without it opens (T04)", async () => {
     const { project } = await setup();
@@ -453,7 +459,8 @@ describe("TramaController", () => {
     // The next round waits for the whole frontier; the answers stay recorded as Pact decisions.
     await controller!.answerDecision(round1[0]!.id, 0, null);
     await controller!.send("[grilling:2]", null, null, null);
-    expect(document.events.at(-1)!.content).toMatchObject({ text: expect.stringContaining("still has open questions") });
+    // The refusal stays in the turn's activity; the reply does not paste it (issue #241).
+    expect(lastToolError(document)).toContain("still has open questions");
     await controller!.answerDecision(round1[1]!.id, 1, null);
     await controller!.send("[grilling:2]", null, null, null);
     const round2 = document.decisionRequests[2]!;
@@ -476,7 +483,8 @@ describe("TramaController", () => {
     await controller!.send("[passo:preparePlan] Ciao", null, null, null);
     const greeting = document.requests[0]!;
     expect(greeting.nextStep).toBeUndefined();
-    expect(document.events.at(-1)!.content).toMatchObject({ text: expect.stringContaining("No move is allowed now") });
+    // The refusal stays in the turn's activity; the reply does not paste it (issue #241).
+    expect(lastToolError(document)).toContain("No move is allowed now");
 
     // A request for work: the grilling round, then one step, the person's answers.
     await controller!.send("[grilling:1] [passo:answerQuestions] Gli ordini pagati annullati vanno in revisione", null, null, null);

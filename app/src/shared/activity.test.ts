@@ -54,6 +54,22 @@ describe("activityLog: the Coordinator's automatic moves (issue #241)", () => {
     expect(log[4]).toMatchObject({ move: "preparePlan", goalId: null, startedAt: requests[2]!.createdAt, endedAt: requests[2]!.completedAt });
   });
 
+  it("keeps the failed tools of a move, with their technical error, out of the chat", () => {
+    const requests = [request("verify", "completed", { move: "verifyCandidate", by: "trama" }, 0)];
+    const failed: ConversationEvent = {
+      id: "E-tool",
+      sequence: 2,
+      origin: "trama",
+      requestId: "verify",
+      createdAt: "",
+      content: { type: "activity", title: "Strumento di Trama: verify_candidate", detail: "A-1 is an assignment, not a candidate.", tone: "error" },
+    };
+    const passed: ConversationEvent = { ...failed, id: "E-ok", content: { type: "activity", title: "Strumento di Trama: read_team", detail: null, tone: "tool" } };
+    expect(activityLog(requests, [line("verify", "Esegui le verifiche"), failed, passed])[0]!.toolErrors).toEqual([
+      { title: "Strumento di Trama: verify_candidate", detail: "A-1 is an assignment, not a candidate." },
+    ]);
+  });
+
   it("is empty without automatic moves", () => {
     expect(activityLog([request("person", "completed", null, 0)], [])).toEqual([]);
   });

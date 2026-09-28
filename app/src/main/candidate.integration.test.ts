@@ -2,7 +2,9 @@ import { cp, mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { activityLog } from "@shared/activity";
 import type { ProjectDocument } from "@shared/domain";
+import { TOOL_ERROR_PLACEHOLDER } from "./core/toolErrors";
 import { TramaController } from "./controller";
 import { git } from "./core/process";
 import { findSpecialist } from "./core/team";
@@ -190,8 +192,11 @@ describe("the checks after an ended assignment (issue #204)", () => {
     expect(sent).toContain("chiama prima declare_candidate");
     // Twice the assignment id, as in the live run: each refusal names the move to make first, and nothing is declared.
     expect(toolResults(document, move.id, "verify_candidate").length).toBeGreaterThanOrEqual(2);
+    // The reply pasted the tool's English error: Trama keeps it in Activity and the chat says it in Italian (issue #241).
     const reply = document.events.findLast((e) => e.requestId === move.id && e.content.type === "coordinatorText")!;
-    expect(reply.content).toMatchObject({ text: expect.stringContaining(`First call declare_candidate with assignment ${work.id}`) });
+    expect(reply.content).toMatchObject({ text: `Non posso eseguire le verifiche: ${TOOL_ERROR_PLACEHOLDER}` });
+    const activity = activityLog(document.requests, document.events).find((e) => e.requestId === move.id)!;
+    expect(activity.toolErrors.some((e) => e.detail?.includes(`First call declare_candidate with assignment ${work.id}`))).toBe(true);
     expect(document.candidates).toEqual([]);
 
     // The work waits for the person, who sees why and the move to take again.
