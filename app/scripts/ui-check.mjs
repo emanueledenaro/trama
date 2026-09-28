@@ -793,9 +793,127 @@ await page.getByLabel("Messaggio al Coordinatore").fill("[memoria] ricorda il ge
 await page.keyboard.press("Enter");
 await page.getByText(/^Salvato\./).first().waitFor({ timeout: 20_000 });
 await openView("Memoria");
-await page.getByRole("button", { name: "Rivedi ora" }).click();
+// Issue #335: Memoria is a view of the side bar. "Come impara" sits closed at the bottom: no review takes room until
+// the person opens it, and its Rivedi ora is an icon on the closed row.
+const memoryView = page.getByTestId("memory-view");
+const howItLearns = memoryView.getByTestId("how-it-learns");
+if ((await howItLearns.getAttribute("data-open")) !== "false") throw new Error("Come impara is open before the person opens it");
+await memoryView.getByRole("button", { name: "Rivedi ora" }).click();
+await howItLearns.getByRole("button", { name: /^Come impara/ }).click();
+// The last review stays in view; the earlier ones wait in the history, closed until the person opens it.
+await howItLearns.getByTestId("review-run").filter({ hasText: "chiesta da te" }).filter({ hasNotText: "In corso" }).first().waitFor({ timeout: 30_000 });
+if ((await howItLearns.getByTestId("review-run").count()) !== 1) throw new Error("The review history is open before the person opens it");
+await memoryView.getByTestId("review-history-toggle").click();
+await memoryView.getByTestId("review-history").waitFor();
 await page.getByText("Skill 'release-flow' creata").first().waitFor({ timeout: 30_000 });
 await shot("04i-memory");
+await memoryView.getByTestId("review-history-toggle").click();
+await memoryView.getByTestId("review-history").waitFor({ state: "detached" });
+// The memory proposals wait in Aspetta te only: the view keeps one line that points there, without Scarta or Applica.
+// A notes file edited by hand past its limit: the next note is refused and Trama proposes to shorten it (issue #305).
+const learningDirs = async (dir) => {
+  const found = [];
+  for (const entry of await readdir(dir, { withFileTypes: true })) {
+    const path = join(dir, entry.name);
+    if (entry.isDirectory()) found.push(...(await learningDirs(path)));
+    else if (entry.name === "reviews.json") found.push(dir);
+  }
+  return found;
+};
+const [projectLearningDir] = await learningDirs(dataDir);
+if (!projectLearningDir) throw new Error("No learning folder for the example project");
+await writeFile(
+  join(projectLearningDir, "MEMORY.md"),
+  [`Nota vecchia: ${"a".repeat(1400)}`, `Nota recente: ${"b".repeat(1000)}`].join("\n§\n"),
+);
+await memoryView.getByRole("button", { name: "Aggiungi una nota sul progetto" }).click();
+await memoryView.getByRole("textbox", { name: "Aggiungi una nota sul progetto" }).fill("Il catalogo si aggiorna di notte");
+await memoryView.getByRole("button", { name: "Aggiungi", exact: true }).click();
+const memoryWaiting = memoryView.getByTestId("memory-waiting");
+await memoryWaiting.filter({ hasText: /^1 proposta aspetta te: / }).waitFor({ timeout: 20_000 });
+await memoryView.getByRole("button", { name: "Annulla", exact: true }).click();
+await page.getByRole("alert").filter({ hasText: "La memoria del progetto è piena" }).getByRole("button", { name: "Chiudi" }).click();
+if (await memoryView.getByTestId("memory-proposal").count()) throw new Error("A memory proposal shows in Memoria too");
+if (await memoryView.getByRole("button", { name: /^(Scarta|Applica)$/ }).count()) throw new Error("Memoria offers the proposal's answers");
+await themeShots("35-memory-waiting-line");
+await memoryWaiting.click();
+const memoryProposal = page.getByTestId("side-bar").getByTestId("memory-proposal");
+await memoryProposal.waitFor();
+const proposalAnswers = await memoryProposal.locator(".cta-row button").allInnerTexts();
+if (proposalAnswers.join("|") !== "Scarta|Applica") throw new Error(`The memory proposal's answers: ${proposalAnswers.join(", ")}`);
+await memoryProposal.getByRole("button", { name: "Applica" }).click();
+await memoryProposal.waitFor({ state: "detached", timeout: 10_000 });
+await openView("Memoria");
+if (await memoryView.getByTestId("memory-waiting").count()) throw new Error("The proposal still waits after Applica");
+// Modifica and Salva rewrite the note that stayed.
+const keptNote = memoryView.getByTestId("memory-entry").filter({ hasText: "Nota recente" });
+await keptNote.getByRole("button", { name: "Modifica" }).click();
+await memoryView.getByRole("textbox", { name: "Modifica" }).fill("Il catalogo si aggiorna di notte: le modifiche ai prezzi arrivano la mattina dopo.");
+await memoryView.getByRole("button", { name: "Salva", exact: true }).click();
+await memoryView.getByTestId("memory-entry").filter({ hasText: "Il catalogo si aggiorna di notte" }).waitFor({ timeout: 10_000 });
+if ((await howItLearns.getAttribute("data-open")) !== "true") await howItLearns.getByRole("button", { name: /^Come impara/ }).click();
+// The learning switches live only here, in Come impara, one copy (they left Impostazioni).
+const learningSwitches = howItLearns.getByTestId("learning-switches");
+if ((await learningSwitches.getByRole("switch").count()) !== 5) throw new Error("Come impara does not hold the five learning switches");
+const consolidateSwitch = learningSwitches.getByRole("switch", { name: "Unire con un modello le skill troppo simili" });
+const consolidateBefore = await consolidateSwitch.getAttribute("aria-checked");
+await consolidateSwitch.click();
+await learningSwitches.locator(`[role="switch"][aria-label="Unire con un modello le skill troppo simili"][aria-checked="${consolidateBefore === "true" ? "false" : "true"}"]`).waitFor();
+await consolidateSwitch.click();
+await learningSwitches.locator(`[role="switch"][aria-label="Unire con un modello le skill troppo simili"][aria-checked="${consolidateBefore}"]`).waitFor();
+// Upkeep of the skills: Controlla ora and Anteprima are icons; the result reads in the person's language, never the
+// upkeep's technical summary; "Sospendi la manutenzione" takes the place of "Metti in pausa".
+const curatorStatus = howItLearns.getByTestId("curator-status");
+await howItLearns.getByRole("button", { name: "Controlla ora" }).click();
+await curatorStatus.filter({ hasText: /^Ultimo controllo .+: .+\./ }).waitFor({ timeout: 20_000 });
+await howItLearns.getByRole("button", { name: /^Anteprima/ }).click();
+await curatorStatus.filter({ hasText: /anteprima, / }).waitFor({ timeout: 20_000 });
+if (/auto:|llm|deferred|curator|seeded|[–—]/.test(await curatorStatus.innerText())) throw new Error(`The upkeep speaks its technical summary: ${await curatorStatus.innerText()}`);
+if (await howItLearns.getByRole("button", { name: "Metti in pausa" }).count()) throw new Error("The upkeep still offers Metti in pausa");
+await howItLearns.getByRole("button", { name: "Sospendi la manutenzione" }).click();
+await howItLearns.getByRole("button", { name: "Riprendi la manutenzione" }).click();
+await howItLearns.getByRole("button", { name: "Sospendi la manutenzione" }).waitFor();
+// Notes and profile: Aggiungi and Modifica are icons; the text buttons of the editor sit on the right, Salva last.
+await memoryView.getByRole("button", { name: "Aggiungi una nota sul progetto" }).click();
+await memoryView.getByRole("textbox", { name: "Aggiungi una nota sul progetto" }).fill("I rilasci partono dal branch main");
+await memoryView.getByRole("button", { name: "Aggiungi", exact: true }).click();
+const addedNote = memoryView.getByTestId("memory-entry").filter({ hasText: "I rilasci partono dal branch main" });
+await addedNote.waitFor({ timeout: 10_000 });
+await addedNote.getByRole("button", { name: "Modifica" }).click();
+const noteActions = await memoryView.getByTestId("memory-entry").locator(".cta-row button").allInnerTexts();
+if (noteActions.join("|") !== "Togli|Annulla|Salva") throw new Error(`The note editor's buttons: ${noteActions.join(", ")}`);
+await memoryView.getByTestId("memory-entry").getByRole("button", { name: "Togli" }).click();
+await addedNote.waitFor({ state: "detached", timeout: 10_000 });
+// Skills: Apri, Fissa and Archivia are icons with a tooltip and a name; Elimina keeps its text.
+const learnedSkill = memoryView.getByTestId("learned-skill").filter({ hasText: "release-flow" });
+for (const name of ["Apri", "Fissa", "Archivia"]) await learnedSkill.getByRole("button", { name, exact: true }).waitFor();
+if (!(await learnedSkill.getByRole("button", { name: "Elimina" }).innerText()).includes("Elimina")) throw new Error("Elimina lost its text");
+await learnedSkill.getByRole("button", { name: "Apri", exact: true }).click();
+await learnedSkill.getByLabel("Testo della skill release-flow").waitFor();
+await learnedSkill.getByRole("button", { name: "Chiudi", exact: true }).first().click();
+// Every button of the view has a name, and nothing scrolls sideways.
+const unnamed = await memoryView.locator("button").evaluateAll((buttons) => buttons.filter((b) => !(b.getAttribute("aria-label") || b.textContent.trim())).length);
+if (unnamed) throw new Error(`${unnamed} buttons of Memoria have no name`);
+// Before and after of the slice: the view with Come impara open, narrow and wide, Codex and Claude, light and dark.
+const memoryLook = await lookOf();
+for (const [size, width, height] of [["1280x800", 1280, 800], ["1680x1050", 1680, 1050]]) {
+  await page.setViewportSize({ width, height });
+  await page.waitForTimeout(300);
+  await noHorizontalScroll(`Memoria ${size}`);
+  for (const open of [false, true]) {
+    if ((await howItLearns.getAttribute("data-open")) !== String(open)) await howItLearns.getByRole("button", { name: /^Come impara/ }).click();
+    if (open) await howItLearns.scrollIntoViewIfNeeded();
+    else await memoryView.evaluate((view) => view.closest(".overflow-y-auto")?.scrollTo(0, 0));
+    for (const provider of ["codex", "claudeAgent"]) {
+      for (const dark of [false, true]) {
+        await setLookTo(provider, dark);
+        await shot(`35-memory-${open ? "how-it-learns-" : ""}${size}-${provider}-${dark ? "dark" : "light"}`);
+      }
+    }
+  }
+}
+await setLookTo(memoryLook.provider, memoryLook.dark);
+await page.setViewportSize({ width: 1280, height: 820 });
 await page.getByRole("button", { name: "Chiudi la barra laterale" }).click();
 
 // Candidate: correct the mandate to allow integration, then declare, verify, review and clear.
@@ -1501,6 +1619,9 @@ await page.getByRole("button", { name: "Indietro" }).first().click();
 await page.getByRole("button", { name: "Impostazioni" }).click();
 const settings = page.getByTestId("settings");
 await settings.waitFor();
+// Issue #335: the learning switches left Impostazioni for Memoria, Come impara: one copy.
+if (await settings.getByRole("button", { name: /^Apprendimento/ }).count()) throw new Error("Impostazioni still has Apprendimento");
+if (await settings.getByRole("switch", { name: "Revisione dell'esperienza dopo il lavoro" }).count()) throw new Error("A learning switch is still in Impostazioni");
 await settings.getByRole("button", { name: /^Collegamenti/ }).first().click();
 await shot("11-connections");
 // Issue #71: every provider, ChatGPT included, shows its capabilities in the same panel.

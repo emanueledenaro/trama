@@ -235,6 +235,7 @@ import { approvePactDemo, inspectPactDemo, runPactDemo } from "./core/pactDemo";
 import { readRepositoryFile, scanRepository } from "./core/repositoryScanner";
 import { messageStyle } from "./core/messageStyle";
 import { DEFAULT_LANGUAGE, isLanguage, type Language, languageFromSystem, translator } from "@shared/i18n";
+import { curatorRunLine, curatorRunView } from "@shared/curatorReport";
 import { toolErrorMessage, toolErrorsRule, withoutToolErrors } from "./core/toolErrors";
 import { installedSkillVersion, prepareSkills, rollbackSkills, SELECTED_SKILLS, SKILL_VERSION, type SetupReport, updateSkills } from "./core/skillSetup";
 import {
@@ -7051,11 +7052,22 @@ export class TramaController {
     });
     const owner = this.projectById(project.id);
     if (owner && (counts.markedStale || counts.archived || report.consolidated.length || report.pruned.length)) {
-      const archived = [...report.consolidated.map((c) => `${c.name} → ${c.into}`), ...report.pruned.map((p) => `${p.name} (ritirata)`)];
+      const t = translator(this.state.language);
+      const archived = [
+        ...report.consolidated.map((c) => `${c.name} → ${c.into}`),
+        ...report.pruned.map((p) => t("memory.curator.retiredSkill", { name: p.name })),
+      ];
       appendEvent(owner.document, "trama", {
         type: "activity",
-        title: "Manutenzione delle skill apprese",
-        detail: [summary, archived.length ? `Archiviate: ${archived.join(", ")}` : null, "Le skill archiviate si ripristinano da Memoria."].filter(Boolean).join("\n"),
+        title: t("memory.curator.activityTitle"),
+        // The person reads the counts in their language, not the upkeep's technical summary (issue #335).
+        detail: [
+          curatorRunLine(t, curatorRunView({ dryRun, autoTransitions: counts, ...report, llmError })!),
+          archived.length ? t("memory.curator.activityArchived", { names: archived.join(", ") }) : null,
+          t("memory.curator.activityRestore"),
+        ]
+          .filter(Boolean)
+          .join("\n"),
         tone: "info",
       });
       this.changedIn(owner);
