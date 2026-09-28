@@ -4,7 +4,7 @@ import remarkGfm from "remark-gfm";
 import { parseReferenceHref } from "@shared/references";
 import { cn } from "@/lib/cn";
 import { remarkCallouts } from "@/lib/remarkCallouts";
-import { remarkReferences } from "@/lib/remarkReferences";
+import { remarkPlainText, remarkReferences } from "@/lib/remarkReferences";
 import { projectFileLink } from "@/lib/chatLinks";
 import { openReference, useReferenceIndex } from "@/lib/references";
 import { act, useUi } from "@/lib/store";
@@ -61,9 +61,16 @@ const COMPONENTS: Components = {
   table: (props) => <ChatTable {...props} components={INNER} />,
 };
 
-export const ChatMarkdown = memo(function ChatMarkdown({ text, user = false, className }: { text: string; user?: boolean; className?: string }) {
+/**
+ * `plain`: the text is an agent's result or report that Trama shows in a card, made plain for the person (issue #270).
+ * Messages, issues and other published text stay as written.
+ */
+export const ChatMarkdown = memo(function ChatMarkdown({ text, user = false, plain = false, className }: { text: string; user?: boolean; plain?: boolean; className?: string }) {
   const index = useReferenceIndex();
-  const plugins = useMemo<NonNullable<Options["remarkPlugins"]>>(() => [remarkGfm, remarkCallouts, [remarkReferences, { index }]], [index]);
+  const plugins = useMemo<NonNullable<Options["remarkPlugins"]>>(
+    () => [remarkGfm, remarkCallouts, ...(plain ? [remarkPlainText] : []), [remarkReferences, { index }]],
+    [index, plain],
+  );
   return (
     <div className={cn("chat-markdown w-full min-w-0 text-foreground", user && "chat-markdown--user", className)}>
       <ReactMarkdown remarkPlugins={plugins} components={COMPONENTS} urlTransform={urlTransform}>

@@ -121,10 +121,15 @@ export function conventionsFromText(input: { instructions: { path: string; text:
     let used = false;
     // A line that names types lists them in backticks: "Tipi usati: `feat`, `fix`, ...".
     if (!input.commitlint) {
-      for (const line of file.text.split("\n")) {
+      const lines = file.text.split("\n");
+      for (const [at, line] of lines.entries()) {
         if (!/\b(types?|tipi)\b/i.test(line)) continue;
         const listed = [...line.matchAll(/`([a-z]+)`/g)].map((m) => m[1]!);
-        if (listed.length >= 3) {
+        // A list of other things ("types: `strict`, `esnext`, `bundler`") is not a list of commit types. A list of
+        // commit types names Conventional Commits' own, or sits where the text speaks of commits: the same line or
+        // the three before it, as "Commit messages" above "Types: `add`, `change`, `remove`".
+        const aboutCommits = /\bcommit/i.test(lines.slice(Math.max(0, at - 3), at + 1).join("\n"));
+        if (listed.length >= 3 && (aboutCommits || listed.filter((t) => CONVENTIONAL_TYPES.includes(t)).length >= 2)) {
           types = [...new Set(listed)];
           used = true;
           break;
@@ -178,6 +183,27 @@ export async function readProjectConventions(root: string): Promise<CommitConven
 
 // MARK: Parsing and validation
 
+/**
+ * Words a complete description does not end with, in Italian and English: articles, prepositions and conjunctions.
+ * "in", "on" and "out" stay out of the list: "log in" and "opt out" end a description well. Single letters stay out
+ * too: "change a" may name a file or a variable.
+ */
+const DANGLING_WORDS = new Set(
+  (
+    "il lo la gli le un uno una di ad da con su per tra fra ed od ma che del dello della dei degli delle al allo alla ai agli alle " +
+    "dal dallo dalla dai dagli dalle nel nello nella nei negli nelle sul sullo sulla sui sugli sulle col coi the an of to for with and or but by from into as that"
+  ).split(" "),
+);
+
+/** The word or mark a description stops on when it was cut in the middle; null when it reads complete. */
+function danglingEnd(description: string): string | null {
+  const text = description.trim();
+  if (/(\.\.\.|…)$/.test(text)) return text.endsWith("…") ? "…" : "...";
+  if (/[,(:;-]$/.test(text)) return text.at(-1)!;
+  const last = /([\p{L}']+)$/u.exec(text)?.[1]?.toLowerCase();
+  return last && DANGLING_WORDS.has(last.replace(/'$/, "")) && text.split(/\s+/).length > 1 ? last : null;
+}
+
 export interface CommitFooter {
   token: string;
   separator: ": " | " #";
@@ -228,6 +254,10 @@ export function parseCommitMessage(message: string, conventions: CommitConventio
   }
   if (!description.trim()) problems.push("Manca la descrizione dopo i due punti.");
   else if (/^\s/.test(description)) problems.push("La descrizione segue subito i due punti e un solo spazio.");
+  else {
+    const dangling = danglingEnd(description);
+    if (dangling) problems.push(`La descrizione sembra tagliata a metà: finisce con "${dangling}". Scrivila completa.`);
+  }
   if (header.length > conventions.headerMaxLength) problems.push(`Il titolo ha ${header.length} caratteri: il progetto ne ammette al massimo ${conventions.headerMaxLength}.`);
   if (lines.length > 1 && lines[1]!.trim() !== "") problems.push("Il corpo inizia dopo una riga vuota sotto il titolo.");
 
@@ -337,8 +367,18 @@ export function commitDescription(title: string, room: number): string {
   if (line.length > 1 && !/^[A-Z]{2}/.test(line)) line = line[0]!.toLowerCase() + line.slice(1);
   if (line.length <= room) return line;
   const cut = line.slice(0, room + 1);
+  // A clause ends well: cut at the last comma or semicolon when it keeps at least half the room.
+  const clause = Math.max(cut.lastIndexOf(", "), cut.lastIndexOf("; "));
+  if (clause > room / 2) return completeEnd(cut.slice(0, clause));
   const space = cut.lastIndexOf(" ");
-  return (space > room / 2 ? cut.slice(0, space) : line.slice(0, room)).replace(/[\s,.;:-]+$/, "");
+  return completeEnd(space > room / 2 ? cut.slice(0, space) : line.slice(0, room));
+}
+
+/** Drops the articles, prepositions and conjunctions a cut leaves at the end, so the description reads complete. */
+function completeEnd(text: string): string {
+  let words = text.replace(/[\s,.;:(-]+$/, "").split(" ");
+  while (words.length > 1 && danglingEnd(words.join(" "))) words = words.slice(0, -1);
+  return words.join(" ").replace(/[\s,.;:(-]+$/, "");
 }
 
 export interface CommitParts {

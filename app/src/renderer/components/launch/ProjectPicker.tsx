@@ -1,19 +1,17 @@
 import { IconBrandGithub, IconFolder, IconFolderOpen, IconPlus, IconSchool, IconUsers, IconX } from "@tabler/icons-react";
 import { useEffect, useRef, useState } from "react";
 import type { ProjectOverview } from "@shared/domain";
+import { formatAgo } from "@shared/i18n";
 import { hasUsableProvider, recentProjectStatus } from "@shared/onboarding";
 import { TramaMark } from "@/components/brand/TramaMark";
 import { useSeam } from "@/components/Seam";
 import { Spinner } from "@/components/Spinner";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/cn";
-import { formatRelativeTime } from "@/lib/format";
+import { currentLanguage } from "@/lib/i18n";
 import { act, useUi } from "@/lib/store";
 
-const ago = (iso: string) => {
-  const relative = formatRelativeTime(iso);
-  return relative === "ora" ? "ora" : `${relative} fa`;
-};
+const ago = (iso: string) => formatAgo(currentLanguage(), iso);
 
 /** Trama's mark on the start screen, stitched like the bots (W17), outside the mark's clear space. */
 function PickerMark() {
