@@ -117,17 +117,22 @@ export function waitingForYou(document: ProjectDocument, sources: WaitingSources
       targetId: question.id,
       label: question.blocksWork
         ? "Domanda di uno sviluppatore"
-        : question.grilling
-          ? "Chiarimento"
-          : question.category === "destructive"
-            ? "Caso distruttivo"
-            : "Decisione",
+        : question.fromFinding
+          ? "Compromesso"
+          : question.grilling
+            ? "Chiarimento"
+            : question.category === "destructive"
+              ? "Caso distruttivo"
+              : "Decisione",
       title: oneLine(question.question),
       goalId: question.goalId ?? requestGoal(document, question.requestId),
       askedAt: question.askedAt,
+      // A trade-off from an examination holds no work: the candidate is already delivered (F04).
       blocks: question.blocksWork
         ? heldByDeveloperQuestion(document, sources, question.blocksWork.assignmentId)
-        : heldWork(document, sources, question.grilling?.subjectRequestId ?? question.requestId),
+        : question.fromFinding
+          ? 0
+          : heldWork(document, sources, question.grilling?.subjectRequestId ?? question.requestId),
     });
   }
 
