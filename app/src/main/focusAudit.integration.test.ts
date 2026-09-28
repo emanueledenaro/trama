@@ -119,6 +119,8 @@ describe("focus mode on a candidate (F01)", () => {
     );
     expect(checksEnded).toHaveLength(candidate.requiredChecks.length);
     expect(axesOpened).toHaveLength(2);
+    // Both axes open under the read-only profile; the turns then leave it unnamed (Codex 0.155).
+    for (const index of axesOpened) expect(entries[index]!.params).toMatchObject({ permissions: "trama_read" });
     expect(Math.max(...checksEnded)).toBeLessThan(Math.min(...axesOpened));
     await writeFile(join(gates, "first"), "");
     await until(() => audit.status === "done");
