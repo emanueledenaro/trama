@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { SpecialistAssignment } from "@shared/domain";
 import { activeTerms } from "@shared/mandate";
 import { DELEGABLE_ACTIONS } from "@shared/labels";
 import { waitingForYou } from "@shared/waitingForYou";
@@ -95,6 +96,20 @@ describe("restricting the mandate (issue #244)", () => {
     expect(message).toContain("tolti i moduli Catalog");
     expect(message).toContain("prossimo turno");
     expect(message).not.toMatch(/[–—]/);
+  });
+
+  it("names the work the restriction stopped, and the work it depends on (C06)", () => {
+    const document = granted();
+    const restricted = restrictMandate(document, { scopeModuleIds: ["Sources/Orders"], authorizedActions: [...DELEGABLE_ACTIONS] }, at(5));
+    const work = (id: string) => ({ id }) as SpecialistAssignment;
+    const message = restrictionMessage(restricted, (id) => id, [
+      { assignment: work("A-1"), dependsOn: null },
+      { assignment: work("A-2"), dependsOn: work("A-1") },
+    ]);
+    expect(message).toContain("Ho fermato A-1, A-2 (dipende da A-1)");
+    expect(message).toContain("il diff non si perde");
+    expect(message).toContain("il resto continua");
+    expect(restrictionMessage(restricted)).toContain("Nessun lavoro in corso era fuori dal mandato ristretto.");
   });
 
   it("refuses to widen, to remove nothing or to remove everything", () => {

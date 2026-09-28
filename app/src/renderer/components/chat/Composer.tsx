@@ -86,6 +86,7 @@ export function Composer() {
     setImages((current) => [...current, ...read].slice(0, MAXIMUM_IMAGES));
   };
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingDraft = useRef("");
 
   const running = Boolean(project.runningRequestId);
   const busy = running || project.phase.kind === "studying";
@@ -106,9 +107,14 @@ export function Composer() {
     setImages(restored?.images ?? []);
     setPastes(restored?.pastes ?? []);
     setText(selection.composerDraft);
-    // Keep what was not sent when the person moves to another project.
+    // Keep what was not sent when the person moves to another project, and save its draft there now (issue #39).
     return () => {
       unsentByProject.set(projectKey, unsent.current);
+      if (saveTimer.current) {
+        clearTimeout(saveTimer.current);
+        saveTimer.current = null;
+        void act("coordinator:saveDraft", { text: pendingDraft.current, projectId: projectKey });
+      }
     };
     // Only when switching project: the draft on disk follows local edits, not the other way round.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -188,7 +194,13 @@ export function Composer() {
   const updateText = (value: string) => {
     setText(value);
     if (saveTimer.current) clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(() => void act("coordinator:saveDraft", { text: value }), 400);
+    pendingDraft.current = value;
+    // The draft belongs to the project it was written in, even if the person switches before it is saved.
+    const projectId = project.id;
+    saveTimer.current = setTimeout(() => {
+      saveTimer.current = null;
+      void act("coordinator:saveDraft", { text: value, projectId });
+    }, 400);
   };
 
   /** Ask Trama from its button (M07): the draft starts with /ask-trama and the person describes the situation after it. */
