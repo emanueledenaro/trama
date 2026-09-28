@@ -31,7 +31,9 @@ export type CardKind =
   /** The route Ask Trama chose for the person's situation (M07); referenceId is the route. */
   | "route"
   /** The Coordinator points out an overlap with a colleague's work (G03); referenceId is the overlap's id. */
-  | "overlap";
+  | "overlap"
+  /** The Coordinator's recap at a milestone or on the person's request (A03); referenceId is the recap. */
+  | "recap";
 
 export interface ConflictAssessment {
   id: string;
@@ -158,6 +160,52 @@ export interface ContinuousWorkRecord {
   changedAt: string | null;
   /** The latest rounds with an outcome, oldest first, capped. */
   rounds: RoundRecord[];
+}
+
+/** What made the Coordinator write a recap (A03): one or more milestones, or the person's request. */
+export type RecapReason = "milestone" | "request";
+
+/** A milestone of the work (A03): a slice done, a candidate merged, a goal achieved. */
+export type MilestoneKind = "sliceDone" | "candidateMerged" | "goalAchieved";
+
+/** One line of "Cosa ho fatto": a fact from the records, with the issue or pull request it names, if any. */
+export interface RecapFact {
+  text: string;
+  /** The number of the issue or pull request the line names, so the card can link it. */
+  number: number | null;
+  url: string | null;
+}
+
+/** One line of "Cosa mi serve da te": an item of "Aspetta te" as it was when the recap was written. */
+export interface RecapNeed {
+  /** The item's key in "Aspetta te", so the card opens it there while it still waits. */
+  key: string;
+  label: string;
+  title: string;
+}
+
+/**
+ * The Coordinator's recap (A03): what it did, what it does, what it needs from the person. Trama writes it from the
+ * records (Activity, the state of the work, "Aspetta te"), never from a model's text, and keeps it as written.
+ */
+export interface RecapRecord {
+  id: string;
+  at: string;
+  reason: RecapReason;
+  /** The milestones the recap is about, in the person's words; empty for a recap the person asked for. */
+  milestones: string[];
+  done: RecapFact[];
+  /** The status line when the recap was written. */
+  doing: string;
+  needs: RecapNeed[];
+}
+
+/** The recaps of a project and the milestones already told (A03). Absent until Trama first reads the milestones. */
+export interface RecapLedger {
+  /** The milestone keys already told in a recap, or already reached when Trama first read them. */
+  told: string[];
+  /** The recaps, oldest first, capped. */
+  recaps: RecapRecord[];
 }
 
 /** The phase of a request's work, computed by Trama from the records, never by the model (W01). */
@@ -1244,6 +1292,8 @@ export interface ProjectDocument {
   gates?: CandidateGate[];
   /** The Pause and the rounds of continuous work (A05); absent until the first pause or round with an outcome. */
   continuousWork?: ContinuousWorkRecord;
+  /** The Coordinator's recaps and the milestones already told (A03); absent until Trama first reads the milestones. */
+  recap?: RecapLedger;
 }
 
 export interface ProjectSettings {

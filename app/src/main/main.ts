@@ -129,6 +129,7 @@ const handlers: { [K in ActionName]: Handler<K> } = {
   "coordinator:takeStep": ({ requestId }) => controller.takeStep(requestId),
   "coordinator:interrupt": () => controller.interrupt(),
   "coordinator:pause": ({ paused }) => controller.pauseContinuousWork(paused),
+  "coordinator:recap": ({ goalId }) => controller.recap(null, goalId ?? null),
   "coordinator:retry": () => controller.startCoordinator(),
   "coordinator:retryRequest": ({ requestId }) => controller.retryRequest(requestId),
   "coordinator:stopRetry": () => controller.stopProviderRetry(),

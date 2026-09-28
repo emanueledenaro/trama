@@ -1104,6 +1104,31 @@ if (await statusLine.getByRole("button", { name: /^Ferma/ }).count()) throw new 
 await resumeButton.click();
 await page.locator('[data-testid="status-line"][data-paused="false"]').waitFor({ timeout: 20_000 });
 await statusLine.getByRole("button", { name: "Pausa", exact: true }).waitFor();
+// Issue #242: the person asks for the recap with /riepilogo, offered first by the composer's menu. Trama writes it
+// in the chat from the records at once: what I did, what I do, what I need from you, with
+// each item of Aspetta te opening on the right. The chat before the recap, then the recap, in light and dark.
+await themeShots("15d-recap-before");
+await composer().fill("/riep");
+await page.getByRole("option", { name: /^\/riepilogo/ }).first().waitFor();
+await page.keyboard.press("Enter");
+await page.waitForFunction(() => document.querySelector('textarea[aria-label="Messaggio al Coordinatore"]')?.value.startsWith("/riepilogo"));
+await page.keyboard.press("Enter");
+const recapCard = page.getByTestId("recap-card").last();
+await recapCard.waitFor({ timeout: 20_000 });
+for (const part of ["Cosa ho fatto", "Cosa faccio", "Cosa mi serve da te"]) await recapCard.getByText(part, { exact: true }).waitFor();
+const recapDoing = (await recapCard.getByTestId("recap-doing").innerText()).trim();
+if (!recapDoing) throw new Error("The recap does not say what the Coordinator does");
+if ((await recapCard.getAttribute("data-reason")) !== "request") throw new Error("The recap the person asked for is not marked as asked");
+const recapNeeds = recapCard.locator('[data-testid="recap-need"][data-waiting="true"]');
+if (await recapNeeds.count()) {
+  const needBox = await recapNeeds.first().boundingBox();
+  const openBox = await recapNeeds.first().getByRole("button", { name: "Apri in Aspetta te" }).boundingBox();
+  if (!needBox || !openBox || needBox.x + needBox.width - (openBox.x + openBox.width) > 2) throw new Error("The recap's Apri in Aspetta te is not on the right");
+} else {
+  await recapCard.getByText("Niente: per ora vado avanti da solo.").waitFor();
+}
+await recapCard.scrollIntoViewIfNeeded();
+await themeShots("15e-recap");
 await page.keyboard.press("Control+K");
 await page.getByRole("textbox", { name: "Cerca in Trama" }).fill("cancel");
 await page.getByRole("option").first().waitFor();
@@ -1918,11 +1943,18 @@ const teamSlices = sliceSpec.getByTestId("plan-slices");
 await teamSlices.locator('[data-testid="plan-slice"][data-state="done"]').first().waitFor({ timeout: 30_000 });
 const unblocked = await teamSlices.getByTestId("plan-slice").evaluateAll((items) => items.map((item) => item.getAttribute("data-state")));
 if (unblocked.join() !== "done,ready,ready") throw new Error(`A verified slice did not unblock its dependents: ${unblocked}`);
+// Issue #242: the slice done is a milestone, told in one recap of the Coordinator in the chat, in light and dark.
+const milestoneRecap = page.locator('[data-testid="recap-card"][data-reason="milestone"]').filter({ hasText: "Fetta S1 fatta" });
+await milestoneRecap.waitFor({ timeout: 20_000 });
+if ((await milestoneRecap.count()) !== 1) throw new Error("The slice done was told in more than one recap");
+await milestoneRecap.scrollIntoViewIfNeeded();
+await themeShots("22c-recap-milestone");
 if ((await assignmentCards.count()) !== 8) throw new Error("A developer took a slice while continuous work was off");
 // Continuous work on: at the next event of the work (here the end of a Coordinator turn) Ada is free and takes S2 in
 // autonomy; the assignment card says so and the slice shows who took it.
 await page.evaluate(() => window.trama.invoke("settings:update", { continuousWork: true }));
-await send("Come procede il lavoro?");
+// "Come procede il lavoro?" would ask for a recap, which opens no turn (issue #242): the check writes to the Coordinator.
+await send("Vai avanti con il lavoro");
 const pickedCard = assignmentCards.nth(8);
 await pickedCard.getByTestId("assignment-self-picked").waitFor({ timeout: 20_000 });
 await pickedCard.getByText(/^S2 Il supporto vede gli ordini in revisione$/).waitFor();

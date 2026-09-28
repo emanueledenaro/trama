@@ -59,7 +59,7 @@ import { AgentName } from "@/components/AgentIdentity";
 import { OverlapRow } from "@/components/OverlapNotice";
 import { compareSides, linesLabel, type OverlapItem } from "@shared/overlap";
 
-function CardFrame({
+export function CardFrame({
   icon,
   title,
   aside,
@@ -90,7 +90,7 @@ function CardFrame({
 /** The provider's name; an absent provider is Codex, as in documents written before providers. */
 const providerLabel = (id: string | undefined | null) => PROVIDERS.find((p) => p.id === (id ?? "codex"))?.name ?? id ?? "Codex";
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+export function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="mt-2">
       <div className="text-ui-xs text-muted-foreground/70">{label}</div>

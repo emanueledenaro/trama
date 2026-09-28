@@ -49,11 +49,14 @@ import type {
   ProjectDocument,
   WorkKind,
   WorkPlan,
+  RecapReason,
+  RecapRecord,
   RecentProject,
   RequestStep,
   SpecialistAssignment,
 } from "@shared/domain";
 import { isOpenQuestion } from "@shared/domain";
+import type { WaitingSources } from "@shared/waitingForYou";
 import { resolveCodexExecutable } from "./core/codexClient";
 import { CodexRuntime } from "./core/providers/codex";
 import { createRuntime, hasAdapter } from "./core/providers/registry";
@@ -174,6 +177,7 @@ import {
 } from "./core/pact";
 import { availableChecks, CHECKS, lendNodeDependencies, type ReadOnlyCheck, runReadOnlyCheck } from "./core/checks";
 import { checkSpecSections, PlanError, type PlannerSkills, plannerTurn, readPlannerAnswer, SPEC_TRIAGE_LABEL, specMarkdown, supersedeGoalPlans } from "./core/plan";
+import { asksForRecap, markTold, type Milestone, milestones, recapTitle, untoldMilestones, writeRecap } from "./core/recap";
 import { draftSlicing, readSlicerAnswer, sliceViews, slicerTurn, TICKET_TRIAGE_LABEL, ticketMarkdown } from "./core/slices";
 import { approvePactDemo, inspectPactDemo, runPactDemo } from "./core/pactDemo";
 import { readRepositoryFile, scanRepository } from "./core/repositoryScanner";
@@ -832,6 +836,8 @@ export class TramaController {
   private publishNow(): void {
     if (this.publishTimer) clearTimeout(this.publishTimer);
     this.publishTimer = null;
+    // Every change reaches the person through here: a milestone it brought becomes a recap, saved with the project.
+    if (this.state.project && this.recapMilestones(this.state.project)) this.scheduleSave();
     this.refreshDerived();
     this.host.publish(this.state);
   }
@@ -857,6 +863,64 @@ export class TramaController {
   private changed(): void {
     this.scheduleSave();
     this.publish();
+  }
+
+  /** What "Aspetta te" reads besides the document: the slices of each approved breakdown and the memory proposals. */
+  private waitingSources(project: ActiveProjectState): WaitingSources {
+    const views = Object.fromEntries(project.document.plans.filter((p) => p.slicing?.status === "approved").map((p) => [p.id, sliceViews(project.document, p)]));
+    return { sliceViews: views, memoryProposals: project === this.state.project ? this.state.learning?.proposals : undefined };
+  }
+
+  /**
+   * The milestones the project reached since the last reading become one recap of the Coordinator in the chat (A03),
+   * however many arrived together. The first reading of a project only takes note of what it already reached. Returns
+   * whether the document changed.
+   */
+  private recapMilestones(project: ActiveProjectState): boolean {
+    if (!project.stateWritable) return false;
+    const sources = this.waitingSources(project);
+    const untold = untoldMilestones(project.document, sources.sliceViews ?? {});
+    if (untold === null) {
+      markTold(project.document, milestones(project.document, sources.sliceViews ?? {}).map((m) => m.key));
+      return true;
+    }
+    if (!untold.length) return false;
+    this.appendRecap(project, "milestone", untold, sources);
+    return true;
+  }
+
+  /** Writes a recap and its card in the chat (A03): under the goal the person asked it in, else on the whole project. */
+  private appendRecap(project: ActiveProjectState, reason: RecapReason, reached: Milestone[], sources: WaitingSources, goalId: string | null = null): RecapRecord {
+    const now = new Date();
+    const recap = writeRecap(project.document, {
+      id: randomUUID(),
+      at: now.toISOString(),
+      reason,
+      milestones: reached,
+      runningRequestId: project.runningRequestId,
+      sources,
+    });
+    appendEvent(project.document, "coordinator", { type: "card", kind: "recap", title: recapTitle(recap), detail: null, referenceId: recap.id }, null, now, null, goalId);
+    return recap;
+  }
+
+  /**
+   * The person asks for a recap (A03), with the command, a short request in the chat or the search palette: their
+   * message and the recap go in the chat at once, without a provider turn, also while the Coordinator works.
+   */
+  recap(text: string | null = null, goalId: string | null = null): void {
+    const project = this.requireProject();
+    if (!project.stateWritable) throw new DomainError("Lo stato di questo progetto è in sola lettura.");
+    const goal = goalId ? requireGoal(project.document, goalId).id : null;
+    if (text) {
+      appendEvent(project.document, "person", { type: "personMessage", text, moduleId: null, moduleName: null, imageCount: 0 }, null, new Date(), null, goal);
+      project.document.composerDraft = "";
+    }
+    // Milestones reached and not told yet are part of this recap, so they are not told again right after it.
+    const sources = this.waitingSources(project);
+    const untold = untoldMilestones(project.document, sources.sliceViews ?? {}) ?? [];
+    this.appendRecap(project, untold.length ? "milestone" : "request", untold, sources, goal);
+    this.changed();
   }
 
   private async saveSettings(): Promise<void> {
@@ -2199,6 +2263,8 @@ export class TramaController {
     const project = this.requireProject();
     const trimmed = text.trim();
     if (!trimmed) return;
+    // A request for a recap is answered by Trama from the records, not by a provider turn (A03).
+    if (!step && !retry && removable && images.length === 0 && asksForRecap(trimmed)) return this.recap(trimmed, goalId);
     // A new message or a step decides for the person: a waiting automatic retry no longer applies.
     if (!retry) this.cancelProviderRetry(project);
     const goal = goalId ? requireGoal(project.document, goalId) : null;
@@ -3351,6 +3417,7 @@ export class TramaController {
       this.changed();
       return;
     }
+    this.recapMilestones(project);
     if (project.stateWritable) void this.storage.saveDocument(project.document).catch((error) => this.fail(error));
     this.publish();
   }
