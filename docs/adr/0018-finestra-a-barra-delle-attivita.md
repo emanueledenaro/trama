@@ -28,3 +28,11 @@ Conseguenze:
 - La barra laterale ad albero con le viste del progetto, l'ispettore e le fasce sopra la chat escono dal renderer. Il lavoro è diviso in fette verticali B01-B09 collegate alla #314; la prima costruisce l'impianto e tiene raggiungibili tutte le viste di oggi, così nessuna funzione si perde durante il passaggio.
 - ui-check tiene tutti i passi di oggi, spostati sulle nuove superfici, e aggiunge schermate in chiaro e scuro, stretta e larga.
 - Ogni testo visibile nuovo entra nei due cataloghi di `app/src/shared/messages` (italiano e inglese).
+
+## Aggiunta del 28 settembre: il Benvenuto è una scheda dell'editor
+
+Decisione della persona (issue #354, B11). Il primo avvio non ha più una schermata a sé davanti all'app: la scheda Benvenuto nell'area dell'editor, come la pagina Welcome di VS Code, prende il posto della schermata di configurazione, della Guida introduttiva, della schermata senza progetto e del pulsante Esercizi della barra del titolo. Ha quattro blocchi (Inizia, Recenti, Configura, Impara). Senza progetto è l'unica cosa nella finestra; con un progetto si apre da sola solo se nessun provider è collegato.
+
+Alternative scartate: un assistente a tutto schermo con un passo per schermata, che bloccava l'app fino alla fine; una sola schermata riordinata, che lasciava tre punti d'ingresso diversi per le stesse cose.
+
+Conseguenza: la configurazione non blocca più l'uso di Trama, e ogni funzione del primo avvio ha un solo posto.
