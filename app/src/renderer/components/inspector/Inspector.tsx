@@ -4,6 +4,7 @@ import { cn } from "@/lib/cn";
 import { Sash, useResizableWidth } from "@/lib/resizable";
 import { useUi } from "@/lib/store";
 import { ActivityView } from "./ActivityView";
+import { AgentThreadView } from "./AgentThreadView";
 import { AuditView } from "./AuditView";
 import { CandidateView } from "./CandidateView";
 import { GoalView, GoalsView } from "./GoalsView";
@@ -31,6 +32,7 @@ const TITLES = {
   memory: "Memoria del Coordinatore",
   team: "Team del progetto",
   specialist: "Specialista",
+  agentThread: "Chat tra agenti",
   candidate: "Candidato",
   audit: "Focus mode",
   group: "Il lavoro del gruppo",
@@ -104,6 +106,7 @@ export function Inspector() {
         {target.kind === "memory" ? <MemoryView /> : null}
         {target.kind === "team" ? <TeamView /> : null}
         {target.kind === "specialist" ? <SpecialistView id={target.id} /> : null}
+        {target.kind === "agentThread" ? <AgentThreadView id={target.id} /> : null}
         {target.kind === "candidate" ? <CandidateView id={target.id} /> : null}
         {target.kind === "audit" ? <AuditView id={target.id} /> : null}
         {target.kind === "group" ? <GroupView /> : null}

@@ -1992,6 +1992,43 @@ await shot("19h-developer-question-resumed");
 await setLook("claudeAgent", true);
 await shot("19i-developer-question-resumed-claude-dark");
 await setLook(questionLook.provider, questionLook.dark);
+// W07: the developer's question lives in a conversation between agents, recorded with the author of every message:
+// the developer's question, the Coordinator's Pact card, the person's answer on it. The person reads it from the
+// assignment's card or the specialist's page, never from the sidebar, and cannot write in it: the person talks only
+// with the Coordinator (Q32 of #239).
+if (await page.getByTestId("sidebar-agent-thread").count()) throw new Error("A conversation between agents is in the sidebar");
+const threadLink = questionWork.getByTestId("assignment-threads").getByRole("button", { name: /Domanda al Coordinatore, fetta S1/ });
+await threadLink.waitFor({ timeout: 10_000 });
+await threadLink.click();
+const agentThread = page.locator('[data-testid="agent-thread"][data-kind="question"]');
+await agentThread.waitFor();
+const threadMessages = agentThread.getByTestId("agent-thread-message");
+await threadMessages.nth(2).waitFor();
+const authors = await threadMessages.evaluateAll((nodes) => nodes.map((node) => node.dataset.author));
+if (authors.join(",") !== "specialist,coordinator,person") throw new Error(`Unexpected authors in the conversation: ${authors}`);
+await threadMessages.nth(0).getByText(/buono/).first().waitFor();
+await threadMessages.nth(0).getByTestId("agent-tag").waitFor();
+await threadMessages.nth(1).getByText("Coordinatore", { exact: true }).waitFor();
+await threadMessages.nth(2).getByText(/Dalla scheda del Patto .*Va in revisione come gli altri/).waitFor();
+if (await agentThread.locator("textarea, button[data-variant]").count()) throw new Error("The conversation between agents is not read-only");
+await agentThread.getByText("Per dire qualcosa a un agente scrivi al Coordinatore, che lo inoltra.", { exact: false }).waitFor();
+await shot("19j-agent-thread");
+for (const provider of ["codex", "claudeAgent"]) {
+  for (const dark of [false, true]) {
+    await setLook(provider, dark);
+    await shot(`19l-agent-thread-${provider}-${dark ? "dark" : "light"}`);
+  }
+}
+await setLook(questionLook.provider, questionLook.dark);
+// The specialist's page lists every conversation the developer takes part in.
+await agentThread.getByRole("button", { name: "Apri lo sviluppatore" }).click();
+const specialistThreads = page.getByTestId("specialist-threads").getByRole("button", { name: /Domanda al Coordinatore, fetta S1/ });
+await specialistThreads.waitFor();
+await specialistThreads.scrollIntoViewIfNeeded();
+await shot("19m-specialist-threads");
+await specialistThreads.click();
+await agentThread.waitFor();
+await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
 // W08: independent movement, after the work of #204 and W06 (two more assignment cards). The person sets the project's
 // parallel limit in the settings; a verified slice unblocks the ones that depended on it, and with continuous work on
 // the free developer takes the next ready one in its modules by itself, without a Coordinator turn.
