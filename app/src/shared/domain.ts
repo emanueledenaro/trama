@@ -41,8 +41,16 @@ export interface ConflictAssessment {
   snapshotId: string;
   remoteSHA: string;
   references: string[];
-  classification: "conflict" | "overlap" | "clean" | "unknown";
+  /**
+   * `hypothesis` is an AI's reading that two changes in different files may not work together: an interpretation, never
+   * evidence. `semantic` is the same case once the scenario on the combined candidate failed where each side passed.
+   */
+  classification: "conflict" | "overlap" | "clean" | "unknown" | "hypothesis" | "semantic";
   conflictingFiles: string[];
+  /** When Trama read the other side on GitHub, apart from `checkedAt`, when it compared; absent for local sides. */
+  remoteReadAt?: string;
+  /** The AI's hypothesis and the scenario that tests it (issue #40); only on `hypothesis` and `semantic`. */
+  semantic?: SemanticHypothesis;
   /** The lines in conflict for each file, in the candidate's version (G03); absent in older assessments. */
   conflictingLines?: Record<string, import("./overlap").LineRange[]>;
   /**
@@ -53,6 +61,23 @@ export interface ConflictAssessment {
   otherSnapshotId?: string;
   detail: string;
   checkedAt: string;
+}
+
+/**
+ * Why two candidates that change different files may still not work together, as an AI read it, and the scenario Trama
+ * runs to find out: a required check on the two candidates merged in a separate copy (issue #40).
+ */
+export interface SemanticHypothesis {
+  /** The AI's reading of the risk: an interpretation, never evidence. */
+  explanation: string;
+  /** When the AI wrote the reading; a hypothesis carried to newer snapshots keeps the time of the original reading. */
+  analyzedAt: string;
+  /** The required check the scenario runs on the combined candidate. */
+  check: string;
+  /** The run on the combined candidate; null while it has not run on these snapshots yet. */
+  scenario: { result: "pass" | "fail" | "notRun"; command: string; output: string; ranAt: string } | null;
+  /** The assessment this one carries on after one of the two candidates changed: its reading, not its scenario. */
+  carriedFrom?: string;
 }
 
 /** A divergence between the project's branch and the default branch on GitHub, with the files the merge leaves in conflict. */
@@ -440,6 +465,8 @@ export interface DecisionRequest {
   withdrawal?: { reason: string; withdrawnAt: string } | null;
   /** Set when the card answers a developer's question (W06): it blocks that work until the person answers. */
   blocksWork?: { assignmentId: string; questionId: string } | null;
+  /** Set when the person turned a finding of an examination into a trade-off card (F04): no work waits for it. */
+  fromFinding?: { auditId: string; findingId: string } | null;
 }
 
 /** A question still waiting for the person: neither answered nor withdrawn. */
@@ -619,6 +646,62 @@ export interface SpecialistAssignment {
   questions?: DeveloperQuestion[];
   /** The candidate gate sent the work back with blocking findings (W10); the latest return, absent before any. */
   gateReturn?: { gateId: string; candidateId: string; findings: string[]; at: string } | null;
+  /** Where the work runs and why (A19, issue #260); absent for work that never had a choice, which runs locally. */
+  place?: AssignmentPlace | null;
+  /** The person's move of this work between local and cloud (A19); it holds for the next start or resume. */
+  placeChoice?: WorkPlace | null;
+  /** The cloud session that runs the work (A19); absent for local work. */
+  cloud?: CloudSession | null;
+}
+
+/** Where a developer's work runs (A19, ADR 0017): in a worktree on the Mac, or in a provider's cloud session. */
+export type WorkPlace = "local" | "cloud";
+
+/** The project's setting for the place of work (A19): automatic unless the person changes it. */
+export type WorkPlaceSetting = "automatic" | "local" | "cloud";
+
+/** The place Trama chose for a start of the work, with why in the person's words (A19). */
+export interface AssignmentPlace {
+  where: WorkPlace;
+  /** Who decided: the project setting, the Coordinator in automatic, or the person on the card. */
+  chosenBy: "setting" | "coordinator" | "person";
+  /** Why, in plain Italian. */
+  reason: string;
+  /** When the cloud was wanted but cannot be used: why, and the step that enables it. */
+  cloudBlocked: { reason: string; enable: string } | null;
+  at: string;
+}
+
+/**
+ * "starting": Trama is opening the session. "working": the session writes the code. "draft": the session opened its
+ * draft pull request, and Trama brings its branch to the Mac. "returned": the branch is in a local worktree and the
+ * work goes on as a candidate. "stopped": the person stopped the work in Trama. "failed": the session could not start
+ * or its result could not return.
+ */
+export type CloudSessionStatus = "starting" | "working" | "draft" | "returned" | "stopped" | "failed";
+
+/** A cloud session of Claude Code that runs a developer's work (A19, ADR 0017). */
+export interface CloudSession {
+  provider: ProviderId;
+  /** The provider's link to the session; null when it gave none. */
+  url: string | null;
+  /** The branch the session works on and pushes: the branch of the assignment. */
+  branch: string;
+  baseBranch: string;
+  status: CloudSessionStatus;
+  /** The draft pull request the session opened: it becomes the candidate. */
+  pullRequest: { number: number; url: string; draft: boolean } | null;
+  startedAt: string;
+  /** When Trama last read the state of the session on GitHub. */
+  checkedAt: string | null;
+  failure: string | null;
+  /** What Trama asked the session, in order (Q26): kept on the assignment. */
+  instructions: { text: string; at: string }[];
+  /**
+   * Trama's own run on the Mac of the publication checks the session also runs (no secrets or sensitive files,
+   * clean `git diff --check`, valid commit messages), on the snapshot it checked. A problem stops the candidate.
+   */
+  macChecks: { snapshotId: string; problems: string[]; at: string } | null;
 }
 
 /**
@@ -1422,8 +1505,8 @@ export interface ProjectDocument {
 }
 
 /**
- * What a conversation between agents is about (W07): a developer's question to the Coordinator, the technical review
- * of the developer's candidate, or a regression the guardian found on it.
+ * What a conversation between agents is about (W07): a developer's question to the Coordinator, the findings of the
+ * candidate gate's reviewers on the developer's candidate (W10), or a regression the guardian found on it.
  */
 export type AgentThreadKind = "question" | "review" | "regression";
 
@@ -1532,6 +1615,8 @@ export type TechnicalBlock = "checkFailed" | "worktreeConflict" | "stalledAssign
 export interface ProjectSettings {
   /** Developers at work at the same time (W08); absent means three. */
   parallelDevelopers?: number;
+  /** Where developers' work runs (A19); absent means automatic. */
+  workPlace?: WorkPlaceSetting;
 }
 
 /** "verifying": both axes ended and Trama rechecks the proof of each finding (F02). */
@@ -1565,6 +1650,8 @@ export interface AuditFinding {
   observed: string | null;
   /** The stronger model's answer for a serious finding Trama could not recheck. */
   confirmation: { model: string; confirmed: boolean; reason: string; at: string } | null;
+  /** What the person made of the finding (F04), at most one of each kind; absent before the first. */
+  followUps?: FindingFollowUp[];
 }
 
 /**
@@ -1573,6 +1660,16 @@ export interface AuditFinding {
  * whose findings go through the same verification as the axes' (F02).
  */
 export type LensName = "security" | "tests" | "docs";
+
+/**
+ * What the person made of a finding with one click (F04, issue #128). "ticket": a found problem in Trama's ledger, with
+ * its GitHub issue when the repository is linked, else kept as Trama's own work. "assignment": the correction given
+ * to a developer within the mandate. "pactCard": a trade-off put to the person as a question of the Pact.
+ */
+export type FindingFollowUp =
+  | { kind: "ticket"; problemId: string; issue: { number: number; url: string } | null; at: string }
+  | { kind: "assignment"; assignmentId: string; at: string }
+  | { kind: "pactCard"; questionId: string; at: string };
 
 /** One axis of AI Hero's code-review skill, or one of Trama's lenses, run as a read-only session of its own (F01, F05). */
 export interface AuditAxis {
@@ -1619,6 +1716,11 @@ export interface FocusAudit {
   startedAt: string;
   updatedAt: string;
   finishedAt: string | null;
+  /**
+   * Where the person published the report on GitHub (F04), only when they chose to: a comment on the candidate's pull
+   * request, or an issue when it has none. Absent while the report stays in Trama.
+   */
+  publication?: { kind: "pullRequestComment" | "issue"; number: number; url: string; at: string } | null;
 }
 
 /** The figures of the team that review a candidate at its moment (W10, spec #137 Q10). */
