@@ -40,6 +40,7 @@ export const VIEW_OF: Record<TargetKind, Exclude<SideBarView, "projects">> = {
   specialist: "teams",
   agentThread: "teams",
   mandate: "rules",
+  standard: "rules",
   pact: "rules",
   decision: "rules",
   map: "rules",
@@ -53,7 +54,7 @@ export const VIEW_TABS: Record<Exclude<SideBarView, "projects">, TargetKind[]> =
   waiting: ["waiting"],
   work: ["goals", "work", "group", "issues", "activity"],
   teams: ["team"],
-  rules: ["mandate", "pact", "map"],
+  rules: ["mandate", "pact", "standard"],
   memory: ["memory"],
 };
 
@@ -65,7 +66,7 @@ export const TAB_LABELS: Partial<Record<TargetKind, MessageKey>> = {
   activity: "workbench.tab.activity",
   mandate: "workbench.tab.mandate",
   pact: "workbench.tab.pact",
-  map: "workbench.tab.map",
+  standard: "workbench.tab.standard",
 };
 
 /** The tab a detail belongs to: a module under the map, a candidate under the candidates, a goal under the goals. */
@@ -80,19 +81,30 @@ const TAB_OF: Partial<Record<TargetKind, TargetKind>> = {
   specialist: "team",
   agentThread: "team",
   decision: "pact",
-  module: "map",
-  file: "map",
+  // Issue #334: the map is the Moduli section of the mandate, so a module and a file belong to Mandato.
+  map: "mandate",
+  module: "mandate",
+  file: "mandate",
+};
+
+/** Where a detail's way back leads when there is no history: a module back to the modules, else to its tab. */
+const PARENT_OF: Partial<Record<TargetKind, InspectorTarget>> = {
+  module: { kind: "map" },
 };
 
 export const viewOf = (target: InspectorTarget): Exclude<SideBarView, "projects"> => VIEW_OF[target.kind];
 
 export const tabOf = (target: InspectorTarget): TargetKind => TAB_OF[target.kind] ?? target.kind;
 
+export const parentOf = (target: InspectorTarget): InspectorTarget => PARENT_OF[target.kind] ?? ({ kind: tabOf(target) } as InspectorTarget);
+
 /** A panel that is not one of its view's tabs is a detail: its header offers a way back. */
 export const isDetail = (target: InspectorTarget): boolean => {
   if (target.kind === "waiting") return false;
   if (target.kind === "goals") return Boolean(target.create);
   if (target.kind === "activity") return Boolean(target.work);
+  // The map is Mandato with its Moduli open, not a detail (issue #334).
+  if (target.kind === "map") return false;
   return !VIEW_TABS[viewOf(target)].includes(target.kind);
 };
 
