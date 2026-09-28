@@ -6,8 +6,9 @@ import { ChatView } from "@/components/chat/ChatView";
 import { Dialogs } from "@/components/Dialogs";
 import { FocusModeView } from "@/components/focus/FocusModeView";
 import { WelcomeView } from "@/components/launch/WelcomeView";
-import { Sash, useResizableWidth } from "@/lib/resizable";
+import { Sash, useResizableHeight, useResizableWidth } from "@/lib/resizable";
 import { ActivityBar } from "@/components/workbench/ActivityBar";
+import { ActivityPanel } from "@/components/workbench/ActivityPanel";
 import { SideBar } from "@/components/workbench/SideBar";
 import { StatusBar } from "@/components/workbench/StatusBar";
 import { TitleBar } from "@/components/workbench/TitleBar";
@@ -16,7 +17,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { cn } from "@/lib/cn";
 import { useDocumentLanguage, useT } from "@/lib/i18n";
 import { act, refreshProject, useUi } from "@/lib/store";
-import { SIDE_BAR_MIN_WIDTH, sideBarDefaultWidth, sideBarMaxWidth } from "@/lib/workbench";
+import { PANEL_MIN_HEIGHT, SIDE_BAR_MIN_WIDTH, panelDefaultHeight, panelMaxHeight, sideBarDefaultWidth, sideBarMaxWidth } from "@/lib/workbench";
 
 function useThemeClass(theme: "system" | "light" | "dark" | undefined) {
   useEffect(() => {
@@ -55,6 +56,13 @@ export function App() {
   // The side bar: 300 px, 340 from a 1500 px window, remembered; the chat keeps 420 px beside it (issue #330).
   const sidebar = useResizableWidth("trama.sideBarWidth", { initial: sideBarDefaultWidth, min: SIDE_BAR_MIN_WIDTH, max: sideBarMaxWidth });
   const welcomeOpen = useUi((s) => s.welcome !== null);
+  // The bottom panel with Activity: 200 px, 260 from a 1500 px wide window, remembered; the editor keeps its height above (issue #337).
+  const panelOpen = useUi((s) => s.panelOpen && Boolean(s.app?.project));
+  const panel = useResizableHeight("trama.panelHeight", {
+    initial: () => panelDefaultHeight(window.innerWidth),
+    min: PANEL_MIN_HEIGHT,
+    max: panelMaxHeight,
+  });
 
   useEffect(() => {
     void window.trama.getState().then(setApp);
@@ -157,10 +165,25 @@ export function App() {
                 onDragChange={sidebar.setResizing}
               />
             ) : null}
-            <main className="chat-content-card @container/main relative z-[15] flex min-w-0 flex-1 overflow-hidden">
-              {/* Full-screen focus mode (F03) takes the editor area, inside the window's bars, until the person leaves it. */}
-              {inFocus ? <FocusModeView /> : <ChatView />}
-            </main>
+            <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+              <main className="chat-content-card @container/main relative z-[15] flex min-h-0 min-w-0 flex-1 overflow-hidden">
+                {/* Full-screen focus mode (F03) takes the editor area, inside the window's bars and above the bottom panel, until the person leaves it. */}
+                {inFocus ? <FocusModeView /> : <ChatView />}
+              </main>
+              {panelOpen ? (
+                <ActivityPanel
+                  size={{
+                    height: panel.height,
+                    min: panel.bounds.min,
+                    max: panel.bounds.max,
+                    setHeight: panel.setHeight,
+                    reset: panel.reset,
+                    resizing: panel.resizing,
+                    setResizing: panel.setResizing,
+                  }}
+                />
+              ) : null}
+            </div>
           </div>
         </div>
         <StatusBar />
