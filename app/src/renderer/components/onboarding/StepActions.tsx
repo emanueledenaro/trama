@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { GuideStepId, StepState } from "@shared/onboarding";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/Spinner";
+import { useT, withNodes } from "@/lib/i18n";
 import { act, useUi } from "@/lib/store";
 
 type SetupReport = { pathsCreated: string[]; existingPreserved: string[]; warnings: string[]; version: string };
@@ -11,6 +12,7 @@ type SetupReport = { pathsCreated: string[]; existingPreserved: string[]; warnin
  * right with the primary last; in the welcome the footer owns "skip", so `where="welcome"` leaves it out.
  */
 export function StepActions({ step, where = "guide" }: { step: StepState; where?: "guide" | "welcome" }) {
+  const t = useT();
   const app = useUi((s) => s.app)!;
   const setDialog = useUi((s) => s.setDialog);
   const setExercise = useUi((s) => s.setExercise);
@@ -22,11 +24,11 @@ export function StepActions({ step, where = "guide" }: { step: StepState; where?
   const skip =
     where === "welcome" || step.status === "done" ? null : skipped ? (
       <Button variant="ghost" size={size} onClick={() => void act("onboarding:update", { unskipStep: id })}>
-        Riprendi questo passo
+        {t("step.resumeThis")}
       </Button>
     ) : (
       <Button variant="ghost" size={size} onClick={() => void act("onboarding:update", { skipStep: id })}>
-        {step.optional ? "Rimanda" : "Salta questo passo"}
+        {step.optional ? t("step.postpone") : t("step.skipThis")}
       </Button>
     );
   const note = (text: React.ReactNode) => <span className="w-full text-ui-xs text-muted-foreground">{text}</span>;
@@ -45,7 +47,7 @@ export function StepActions({ step, where = "guide" }: { step: StepState; where?
                 useUi.getState().openSettings("connections");
               }}
             >
-              Tutti i provider
+              {t("step.allProviders")}
             </Button>
           ) : null}
           <Button
@@ -56,11 +58,11 @@ export function StepActions({ step, where = "guide" }: { step: StepState; where?
               void act("providers:refresh", {});
             }}
           >
-            Controlla di nuovo
+            {t("step.checkAgain")}
           </Button>
           {app.codex.account?.kind === "signedOut" ? (
             <Button size={size} onClick={() => void act("codex:login", undefined)}>
-              Accedi con ChatGPT
+              {t("step.signInChatGpt")}
             </Button>
           ) : null}
         </>
@@ -71,14 +73,15 @@ export function StepActions({ step, where = "guide" }: { step: StepState; where?
           {step.status !== "done"
             ? note(
                 <>
-                  {app.gitHubCli.status === "missing" ? "Installa GitHub CLI, poi nel terminale: " : "Nel terminale: "}
-                  <code className="font-mono">gh auth login</code>. Puoi rimandare: l'esempio e i progetti locali restano disponibili.
+                  {withNodes(t(app.gitHubCli.status === "missing" ? "step.github.missing" : "step.github.signIn"), {
+                    command: <code className="font-mono">gh auth login</code>,
+                  })}
                 </>,
               )
             : null}
           {skip}
           <Button variant="outline" size={size} disabled={app.gitHubCli.status === "checking"} onClick={() => void act("onboarding:checkGitHub", undefined)}>
-            Controlla di nuovo
+            {t("step.checkAgain")}
           </Button>
         </>
       );
@@ -87,10 +90,10 @@ export function StepActions({ step, where = "guide" }: { step: StepState; where?
         <>
           {skip}
           <Button variant="outline" size={size} onClick={() => setDialog("createProject", "guide")}>
-            Crea un progetto
+            {t("step.createProject")}
           </Button>
           <Button size={size} onClick={() => void act("project:openDialog", undefined)}>
-            Apri un progetto
+            {t("step.openProject")}
           </Button>
         </>
       );
@@ -103,10 +106,10 @@ export function StepActions({ step, where = "guide" }: { step: StepState; where?
           <>
             {skip}
             <Button variant={choice?.prepare === false ? "subtle" : "outline"} size={size} onClick={() => void act("onboarding:update", { methodChoice: false })}>
-              Non preparare
+              {t("step.dontPrepare")}
             </Button>
             <Button variant={choice?.prepare ? "subtle" : "default"} size={size} onClick={() => void act("onboarding:update", { methodChoice: true })}>
-              Prepara il metodo
+              {t("step.prepareMethod")}
             </Button>
           </>
         );
@@ -124,13 +127,13 @@ export function StepActions({ step, where = "guide" }: { step: StepState; where?
                 setRunning(false);
               }}
             >
-              {running ? <Spinner /> : null} Prepara il metodo in {project.name}
+              {running ? <Spinner /> : null} {t("step.prepareMethodIn", { name: project.name })}
             </Button>
           ) : null}
           {report
             ? note(
                 <>
-                  AI Hero {report.version}: {report.pathsCreated.length} percorsi creati, {report.existingPreserved.length} preservati.
+                  {t("method.report", { version: report.version, created: report.pathsCreated.length, preserved: report.existingPreserved.length })}
                   {report.warnings.length ? ` ${report.warnings.join(" ")}` : ""}
                 </>,
               )
@@ -151,7 +154,7 @@ export function StepActions({ step, where = "guide" }: { step: StepState; where?
               })
             }
           >
-            {step.status === "done" ? "Altri esercizi" : app.project?.isDemo ? "Riprendi l'esercizio" : "Inizia il primo esercizio"}
+            {step.status === "done" ? t("step.moreExercises") : app.project?.isDemo ? t("step.resumeExercise") : t("step.startExercise")}
           </Button>
         </>
       );
