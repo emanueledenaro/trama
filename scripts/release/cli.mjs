@@ -83,7 +83,7 @@ function prepare(requested) {
       previousTag: tag,
       // A pull request the changelog already cites, by hand under [Unreleased]
       // or in an older section, is not listed again.
-      generated: groupCommits(uncitedCommits(commits, current), repoUrl),
+      generated: groupCommits(uncitedCommits(commits, current, repoUrl), repoUrl),
       repoUrl,
     });
   } catch (error) {

@@ -85,10 +85,16 @@ export function pullRequestNumber(subject) {
   return match ? Number(match[1]) : null;
 }
 
-/** Every pull request or issue number the changelog already links to. */
-export function citedNumbers(changelog) {
+/**
+ * Every pull request or issue number of this repository the changelog
+ * already links to. Links to other repositories do not count.
+ */
+export function citedNumbers(changelog, repoUrl) {
   const numbers = new Set();
-  for (const match of changelog.matchAll(/\/(?:pull|issues)\/(\d+)\)/g)) numbers.add(Number(match[1]));
+  const prefix = `${repoUrl}/`;
+  for (const match of changelog.matchAll(/\((https?:\/\/[^)\s]+)\/(?:pull|issues)\/(\d+)\)/g)) {
+    if (`${match[1]}/` === prefix) numbers.add(Number(match[2]));
+  }
   return numbers;
 }
 
@@ -97,8 +103,8 @@ export function citedNumbers(changelog) {
  * the notes written by hand under [Unreleased]. The first release reads the
  * whole history, so this keeps each pull request in the notes once.
  */
-export function uncitedCommits(commits, changelog) {
-  const cited = citedNumbers(changelog);
+export function uncitedCommits(commits, changelog, repoUrl) {
+  const cited = citedNumbers(changelog, repoUrl);
   return commits.filter((commit) => {
     const number = pullRequestNumber(commit.subject);
     return number === null || !cited.has(number);

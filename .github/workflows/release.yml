@@ -155,7 +155,6 @@ jobs:
         with:
           path: packages
           merge-multiple: true
-      # The notes are in English, like CHANGELOG.md they extend (docs/agents/versioning.md).
       - name: Note sulla firma
         env:
           GH_TOKEN: ${{ github.token }}
@@ -167,25 +166,25 @@ jobs:
         run: |
           gh release view "$TAG" --json body --jq .body > notes.md
           # A retry after a failed publish finds the section already there.
-          if grep -q '^## Packages$' notes.md; then exit 0; fi
+          if grep -q '^## Pacchetti$' notes.md; then exit 0; fi
           {
             echo
-            echo "## Packages"
+            echo "## Pacchetti"
             echo
-            echo "- macOS: \`.dmg\` and \`.zip\` for Apple Silicon (\`arm64\`) and Intel (\`x64\`)."
-            echo "- Windows: \`.exe\` installer (\`x64\`)."
+            echo "- macOS: \`.dmg\` e \`.zip\` per Apple Silicon (\`arm64\`) e Intel (\`x64\`)."
+            echo "- Windows: installer \`.exe\` (\`x64\`)."
             echo "- Linux: \`.AppImage\` (\`x86_64\`)."
-            echo "- SHA-256 checksum of every file in \`SHA256SUMS.txt\`."
+            echo "- Checksum SHA-256 di ogni file in \`SHA256SUMS.txt\`."
             echo
             if [ "$MAC_SIGNED" != "true" ] || [ "$MAC_NOTARIZED" != "true" ]; then
-              echo "The macOS packages are not signed and notarized. On first launch Gatekeeper says it cannot verify the developer: open Trama with right-click, Open, or from System Settings, Privacy & Security, Open Anyway."
+              echo "I pacchetti macOS non sono firmati e notarizzati. Al primo avvio Gatekeeper dice che non può verificare lo sviluppatore: aprire Trama con clic destro, Apri, oppure da Impostazioni di Sistema, Privacy e sicurezza, Apri comunque."
               echo
             fi
             if [ "$WIN_SIGNED" != "true" ]; then
-              echo "The Windows installer is not signed. SmartScreen shows \"Windows protected your PC\": choose More info, then Run anyway."
+              echo "L'installer Windows non è firmato. SmartScreen mostra \"Windows ha protetto il PC\": scegliere Ulteriori informazioni, poi Esegui comunque."
               echo
             fi
-            echo "The AppImage has no signature: make it executable with \`chmod +x\` before opening it."
+            echo "L'AppImage non ha una firma: prima di aprirla va resa eseguibile con \`chmod +x\`."
           } >> notes.md
           gh release edit "$TAG" --notes-file notes.md
       - name: Pubblicazione

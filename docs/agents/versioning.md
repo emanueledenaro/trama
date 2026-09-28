@@ -40,7 +40,7 @@ La 1.0 la decide la persona. Da lì in poi vale SemVer pieno: un cambiamento inc
 - Le voci vengono dai Conventional Commits, con il link alla PR. `feat` va in Added, `fix` in Fixed, `perf`, `refactor` e `revert` in Changed. Ogni voce è una frase: iniziale maiuscola e punto finale.
 - La sezione di una release copre ogni PR unita su `main` dall'ultimo tag. La prima release, senza tag, legge tutta la cronologia di `main`. Una PR che il CHANGELOG cita già non viene ripetuta.
 - Le note sotto `[Unreleased]` si possono scrivere a mano, con il link alla PR: la release successiva le sposta nella propria sezione e non aggiunge la voce generata per la stessa PR.
-- `CHANGELOG.md` e le note delle release sono in inglese, come il `README.md`: si rivolgono a chi scarica Trama da GitHub e le voci vengono dai titoli delle PR, che sono in inglese. Si scrivono in inglese semplice, senza gergo interno.
+- Lingua: le voci generate vengono dai titoli delle PR, quindi escono in inglese, come il resto di `CHANGELOG.md`. La regola sulla lingua di `AGENTS.md` fa un'eccezione solo per il `README.md`. Finché la persona non decide, la sezione di ogni release si traduce in italiano semplice nella PR di rilascio, oppure la persona aggiunge `CHANGELOG.md` alle eccezioni di `AGENTS.md`. Il paragrafo "Pacchetti" che il workflow aggiunge alle note è in italiano.
 - La sezione si può correggere nella PR di rilascio, prima dell'unione.
 
 ## Come nasce una release
@@ -77,7 +77,7 @@ Ogni release ha i pacchetti delle tre piattaforme, i checksum e le note:
 
 Per controllare un file scaricato: `sha256sum -c SHA256SUMS.txt --ignore-missing` (Linux), `shasum -a 256 -c SHA256SUMS.txt --ignore-missing` (macOS), `Get-FileHash .\Trama-X.Y.Z-x64.exe` (Windows, da confrontare con la riga del file).
 
-Le note sono la sezione del CHANGELOG, più un paragrafo "Packages" che dice quali file ci sono e se sono firmati.
+Le note sono la sezione del CHANGELOG, più un paragrafo "Pacchetti" che dice quali file ci sono e se sono firmati.
 
 ## Firma e notarizzazione
 

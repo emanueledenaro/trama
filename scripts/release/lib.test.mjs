@@ -209,8 +209,17 @@ test('skips the pull requests the changelog already cites', () => {
   const changelog = `## [Unreleased]\n\n### Added\n\n- Palette ([#5](${REPO}/pull/5)).\n- Templates ([#9](${REPO}/issues/9)).\n`;
   const commits = [commit('feat: palette (#5)'), commit('feat: search (#7)'), commit('fix: templates (#9)'), commit('fix: no number')];
   assert.deepEqual(
-    uncitedCommits(commits, changelog).map((c) => c.subject),
+    uncitedCommits(commits, changelog, REPO).map((c) => c.subject),
     ['feat: search (#7)', 'fix: no number'],
+  );
+});
+
+test('a link to another repository does not hide a pull request of this one', () => {
+  const changelog = `## [Unreleased]\n\n### Fixed\n\n- Upstream bug ([other#123](https://github.com/other/project/issues/123)).\n- Old ([#4](${REPO}-fork/pull/4)).\n`;
+  const commits = [commit('feat: own change (#123)'), commit('fix: old (#4)')];
+  assert.deepEqual(
+    uncitedCommits(commits, changelog, REPO).map((c) => c.subject),
+    ['feat: own change (#123)', 'fix: old (#4)'],
   );
 });
 
@@ -236,7 +245,7 @@ Reconstructed up to the 26th.
     version: '0.2.0',
     date: '2026-09-28',
     previousTag: null,
-    generated: groupCommits(uncitedCommits(history, changelog), REPO),
+    generated: groupCommits(uncitedCommits(history, changelog, REPO), REPO),
     repoUrl: REPO,
   });
   const section = extractSection(result, '0.2.0');
