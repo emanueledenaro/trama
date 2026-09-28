@@ -7,7 +7,7 @@ Le conversazioni sono in sola lettura e non stanno nella barra laterale, secondo
 ## Metodo
 
 - "Prima": `main` a cf7eede, passo W06 dell'ui-check (`19h-developer-question-resumed`). La domanda dello sviluppatore e la risposta esistono solo dentro la scheda dell'incarico.
-- "Dopo": il branch della issue unito a `origin/main`, passo W07 dell'ui-check subito dopo W06 (`19j` a `19m`).
+- "Dopo": il branch della issue unito a `origin/main` a 7763d2d (chat unica e barra laterale pulita incluse), passo W07 dell'ui-check subito dopo W06 (`19j` a `19m`).
 - Il passo W07 controlla: nessuna conversazione nella barra laterale; il collegamento "Chat tra agenti" nella scheda dell'incarico; gli autori dei messaggi nell'ordine sviluppatore, Coordinatore, persona (la risposta sulla scheda del Patto); il tag colorato dello sviluppatore; nessun campo di testo né pulsante per scrivere; l'elenco delle conversazioni nella scheda dello specialista.
 
 ## Schermate
@@ -24,4 +24,4 @@ Le conversazioni sono in sola lettura e non stanno nella barra laterale, secondo
 
 ## Limiti
 
-I messaggi del revisore e del guardiano delle regressioni sono coperti dai test in `app/src/main/core/agentThreads.test.ts`, non da una schermata dedicata.
+I messaggi dei revisori del candidato e del guardiano delle regressioni nascono alla fine del gate dei revisori (W10) e sono coperti dai test in `app/src/main/core/agentThreads.test.ts`, non da una schermata dedicata.
