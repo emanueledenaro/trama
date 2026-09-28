@@ -37,7 +37,7 @@ describe("overview reasons in English (issue #301)", () => {
     setPersonLanguage("en");
     const english = summarizeProject(recent, emptyDocument("a"), { ...input, runningAssignments: 2, waitingForCapacity: 1 });
     expect(english.name).toBe("Example project");
-    expect(english.reasons).toEqual(["2 assignments in progress", "1 assignment waits for a free Developer", "CI red on 1 pull request"]);
+    expect(english.reasons).toEqual(["2 assignments in progress", "1 assignment waits for a free developer", "CI red on 1 pull request"]);
     setPersonLanguage("it");
     const italian = summarizeProject(recent, emptyDocument("a"), { ...input, runningAssignments: 1, waitingForCapacity: 2 });
     expect(italian.name).toBe("Progetto di esempio");

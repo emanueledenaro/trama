@@ -185,7 +185,7 @@ describe("merge of a candidate (issue #247)", () => {
       });
       expect(mergeActivity(s.candidate, { kind: "merged", number: 2, url: "u" }, "person").title).toBe(`Candidate ${s.candidate.id} merged with your ok`);
       expect(mergeRoute(s.document, s.candidate, null).reason).toBe("The project has no GitHub remote: Trama does not open or merge the pull request.");
-      expect(() => rejectCandidate(s.document, s.candidate.id, " ", "persona")).toThrow("Write why you reject the candidate: the reason goes back to the Developer.");
+      expect(() => rejectCandidate(s.document, s.candidate.id, " ", "persona")).toThrow("Write why you reject the candidate: the reason goes back to the developer.");
     });
   });
 });
