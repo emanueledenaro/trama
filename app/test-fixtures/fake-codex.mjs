@@ -693,6 +693,25 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
         finish(done.join(" ") || "Non ho fatto la mossa.");
         return;
       }
+      if (text.includes("[ticket")) {
+        // [ticket] reports a partial increment on issue 42 and asks to close it (C10); [ticket:errore] reports another
+        // one, for a GitHub that fails the write. Trama keeps the issue open and says what is missing or what failed.
+        const failing = text.includes("[ticket:errore]");
+        callTool(threadId, "update_ticket", {
+          issueNumber: 42,
+          summary: failing ? "La prova nell'app è fatta; manca la CI." : "Il riepilogo mostra l'annullo; mancano la prova nell'app e la CI.",
+          criteria: [
+            { index: 0, outcome: "partial", evidence: [], limits: failing ? "Manca la CI" : "Manca la prova nell'app" },
+            { index: 1, outcome: "notMet", evidence: [] },
+          ],
+          openParts: ["Le verifiche passano"],
+          close: true,
+        }).then((result) => {
+          toolDone("update_ticket", result);
+          finish(result.isError ? "Non sono riuscito ad aggiornare la issue #42: il resoconto non è su GitHub." : "Ho registrato l'avanzamento sulla issue #42, che resta aperta.");
+        });
+        return;
+      }
       if (text.includes("[memoria-piena]")) {
         // A model that keeps retrying a note too long for the memory, then pastes the first error (issue #305).
         (async () => {

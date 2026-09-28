@@ -6,6 +6,7 @@
  * Derived from third-party MIT code; see THIRD_PARTY_NOTICES.md.
  */
 import type { ProviderAccount, ProviderId, ProviderModel, TurnEvent } from "@shared/codex";
+import type { Language } from "@shared/i18n";
 import type { LoadedSkill } from "@shared/skills";
 
 export type { ProviderAccount, ProviderId, ProviderModel, TurnEvent };
@@ -72,6 +73,8 @@ export interface RuntimeOptions {
   toolServer?: HostToolServer | null;
   requestTimeoutMs?: number;
   onAccountChanged?: () => void;
+  /** The person's language now, for the messages the runtime writes itself. Italian when absent. */
+  language?: () => Language;
 }
 
 /**
