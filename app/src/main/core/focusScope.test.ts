@@ -47,7 +47,7 @@ describe("the fixed point of a module or the project (F03)", () => {
 
   it("keeps a module's diff and commits inside its folder", async () => {
     const repo = await repository();
-    const range = await captureFocusRange(repo, "v1.0.0", "Sources/Orders");
+    const range = await captureFocusRange(repo, "v1.0.0", { path: "Sources/Orders", name: "Orders" });
     expect(range.changedFiles).toEqual(["Sources/Orders/Order.swift"]);
     expect(range.diff).not.toContain("README.md");
     expect(range.commits.map((c) => c.replace(/^[0-9a-f]+ /, ""))).toEqual(["feat: track paid orders (#12)"]);
@@ -62,10 +62,10 @@ describe("the fixed point of a module or the project (F03)", () => {
 
   it("fails clearly on an empty diff, also when the module did not change", async () => {
     const repo = await repository();
-    expect((await refusal(captureFocusRange(repo, "HEAD", null))).message).toBe('Nessun cambiamento tra il punto fisso "HEAD" e HEAD: scegli un punto fisso più indietro.');
-    const module = await refusal(captureFocusRange(repo, "v1.0.0", "Sources/Billing"));
+    expect((await refusal(captureFocusRange(repo, "HEAD", null))).message).toBe('Nessun cambiamento tra il punto fisso "HEAD" e l\'ultimo commit: scegli un punto fisso più indietro.');
+    const module = await refusal(captureFocusRange(repo, "v1.0.0", { path: "Sources/Billing", name: "Billing" }));
     expect(module.code).toBe("empty_diff");
-    expect(module.message).toContain("nel modulo `Sources/Billing`");
+    expect(module.message).toBe('Nessun cambiamento nel modulo Billing tra il punto fisso "v1.0.0" e l\'ultimo commit: scegli un punto fisso più indietro.');
   });
 
   it("refuses text that could pass for an option or a range", async () => {

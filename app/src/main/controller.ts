@@ -4986,7 +4986,7 @@ export class TramaController {
     let audit: FocusAudit;
     let diff: string;
     try {
-      const range = await captureFocusRange(project.rootPath, fixedPoint, module ? module.relativePath : null);
+      const range = await captureFocusRange(project.rootPath, fixedPoint, module ? { path: module.relativePath, name: module.name } : null);
       if (this.state.project !== project) throw new DomainError("Il progetto è cambiato mentre Trama leggeva il punto fisso.");
       audit = openScopedAudit(project.document, scoped, range);
       diff = range.diff;
@@ -5033,8 +5033,8 @@ export class TramaController {
     if (focus.held.length === 1 && only) this.host.notify(only.title, only.body, only.sound);
     else {
       this.host.notify(
-        "Trama: novità durante la focus mode",
-        `${focus.held.length} notifiche sono arrivate mentre eri in focus mode: ${focus.held.map((n) => n.title.replace(/^Trama: /, "")).join("; ")}.`,
+        "Trama: novità durante l'esame approfondito",
+        `${focus.held.length} notifiche sono arrivate durante l'esame approfondito: ${focus.held.map((n) => n.title.replace(/^Trama: /, "")).join("; ")}.`,
         focus.held.some((n) => n.sound),
       );
     }

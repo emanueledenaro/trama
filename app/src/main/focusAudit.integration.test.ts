@@ -223,7 +223,7 @@ describe("focus mode on a module or the whole project, full screen (F03)", () =>
 
     // Step 1 of code-review happens before anything starts: a point that does not exist, or no change, is a clear error.
     await expect(controller.startScopedFocusAudit({ kind: "project" }, "release-9")).rejects.toThrow('Il punto fisso "release-9" non esiste in questo repository');
-    await expect(controller.startScopedFocusAudit({ kind: "module", moduleId: "Sources/Payments" }, "HEAD~1")).rejects.toThrow("Nessun cambiamento nel modulo `Sources/Payments`");
+    await expect(controller.startScopedFocusAudit({ kind: "module", moduleId: "Sources/Payments" }, "HEAD~1")).rejects.toThrow("Nessun cambiamento nel modulo Payments");
     await expect(controller.startScopedFocusAudit({ kind: "project" }, "HEAD")).rejects.toThrow("Nessun cambiamento tra il punto fisso");
     expect(document.audits ?? []).toEqual([]);
     expect(await controller.focusFixedPoints()).toEqual(["HEAD~1"]);
@@ -293,8 +293,8 @@ describe("focus mode on a module or the whole project, full screen (F03)", () =>
     notify("Trama: aggiornamenti condivisi");
     controller.exitFocusMode();
     expect(notified.at(-1)).toEqual({
-      title: "Trama: novità durante la focus mode",
-      body: "2 notifiche sono arrivate mentre eri in focus mode: conflitto con #4; aggiornamenti condivisi.",
+      title: "Trama: novità durante l'esame approfondito",
+      body: "2 notifiche sono arrivate durante l'esame approfondito: conflitto con #4; aggiornamenti condivisi.",
     });
     expect(notified).toHaveLength(2);
     notify("Trama: dopo");

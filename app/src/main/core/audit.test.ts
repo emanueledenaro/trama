@@ -284,12 +284,12 @@ describe("focus mode on a module or the whole project (F03)", () => {
     const document = project();
     const audit = openScopedAudit(document, orders, range, at(5));
     expect(audit).toMatchObject({ target: orders, fixedPoint: "f1f2f3f4f5", fixedPointRef: "main", snapshotId: "abc123", changedFiles: ["Sources/Orders/Order.swift"], status: "checking" });
-    expect(() => openScopedAudit(document, orders, range)).toThrow("La focus mode sul modulo Orders è già in corso.");
+    expect(() => openScopedAudit(document, orders, range)).toThrow("L'esame approfondito del modulo Orders è già in corso.");
     // Another target is another examination: the project can be examined while the module is.
     const whole = openScopedAudit(document, { kind: "project" }, range, at(6));
     expect(latestAuditOn(document, { kind: "project" })).toBe(whole);
     expect(latestAuditOn(document, orders)).toBe(audit);
-    expect(() => openScopedAudit(document, { kind: "project" }, range)).toThrow("La focus mode sull'intero progetto è già in corso.");
+    expect(() => openScopedAudit(document, { kind: "project" }, range)).toThrow("L'esame approfondito dell'intero progetto è già in corso.");
   });
 
   it("reads the spec from the issues the commits cite, and skips the Spec axis without one", () => {

@@ -1,7 +1,7 @@
 import { IconBellPause, IconCircleCheck, IconCircleDashed, IconCircleX, IconFocus2 } from "@tabler/icons-react";
 import { useEffect, useState } from "react";
 import type { AuditAxis, AuditFinding, FocusAudit } from "@shared/domain";
-import { evidenceLabel, FINDING_STATUS_TEXT, findingTally, fixedPointText, focusTargetText } from "@shared/findings";
+import { evidenceLabel, FINDING_STATUS_TEXT, findingTally, fixedPointText, focusTargetOf } from "@shared/findings";
 import { plainText } from "@shared/plainLanguage";
 import { EvidenceRow } from "@/components/chat/Cards";
 import { ChatMarkdown } from "@/components/chat/ChatMarkdown";
@@ -241,7 +241,7 @@ export function FocusModeView({ isMac }: { isMac: boolean }) {
 
   const exit = (
     <Button size="sm" onClick={() => void act("focusMode:exit", undefined)}>
-      Esci dalla focus mode
+      Esci dall'esame
     </Button>
   );
   if (!audit) {
@@ -268,10 +268,9 @@ export function FocusModeView({ isMac }: { isMac: boolean }) {
       >
         <div className="flex min-w-[12rem] flex-1 items-center gap-2">
           <IconFocus2 className="size-4 shrink-0 text-muted-foreground" stroke={1.7} />
-          <h1 className="shrink-0 font-system-ui text-ui font-medium text-foreground">Focus mode</h1>
-          <span className="min-w-0 truncate text-ui text-muted-foreground" data-testid="focus-mode-target">
-            {focusTargetText(audit.target, assignment?.objective)}
-          </span>
+          <h1 className="min-w-0 truncate font-system-ui text-ui text-foreground" data-testid="focus-mode-title">
+            <span className="font-medium">Esame approfondito</span> <span className="text-muted-foreground">{focusTargetOf(audit.target, assignment?.objective)}</span>
+          </h1>
           <span className="flex shrink-0 items-center gap-1.5 text-ui-sm text-muted-foreground" data-testid="focus-audit-status">
             <Sep />
             {running ? <Spinner /> : null}
@@ -279,7 +278,7 @@ export function FocusModeView({ isMac }: { isMac: boolean }) {
           </span>
         </div>
         <div className="no-drag flex flex-wrap items-center justify-end gap-2">
-          <span className="inline-flex items-center gap-1 text-ui-sm text-muted-foreground" data-testid="focus-mode-notifications" title="Le notifiche degli altri progetti arrivano quando esci">
+          <span className="inline-flex items-center gap-1 text-ui-sm text-muted-foreground" data-testid="focus-mode-notifications" title="Le notifiche arrivano quando esci dall'esame">
             <IconBellPause className="size-3.5" stroke={1.7} />
             {focus.pausedNotifications ? `Notifiche in pausa: ${focus.pausedNotifications}` : "Notifiche in pausa"}
           </span>

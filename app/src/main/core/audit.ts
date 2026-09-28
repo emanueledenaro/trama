@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { AuditAxis, AuditFinding, Candidate, CandidateEvidence, FindingEvidence, FocusAudit, FocusTarget, GitHubIssue, ProjectDocument, SpecialistAssignment } from "@shared/domain";
-import { focusTargetOn } from "@shared/findings";
+import { focusTargetOf } from "@shared/findings";
 import { shortId } from "@shared/ids";
 import type { LoadedSkill } from "@shared/skills";
 import { assignmentSlice } from "./implementation";
@@ -183,7 +183,7 @@ export function openScopedAudit(
   now = new Date(),
 ): FocusAudit {
   const running = latestAuditOn(document, target);
-  if (running && isAuditRunning(running)) throw new AuditError("audit_running", `La focus mode ${focusTargetOn(target)} è già in corso.`);
+  if (running && isAuditRunning(running)) throw new AuditError("audit_running", `L'esame approfondito ${focusTargetOf(target)} è già in corso.`);
   const audit: FocusAudit = {
     id: shortId("F", randomUUID()),
     target: { ...target },

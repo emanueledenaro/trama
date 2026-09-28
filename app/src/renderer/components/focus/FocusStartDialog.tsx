@@ -64,8 +64,8 @@ export function FocusStartDialog() {
     <Dialog
       open={open}
       onOpenChange={(value) => setDialog(value ? "focusMode" : null)}
-      title="Focus mode"
-      description="Un esame approfondito in sola lettura: Trama esegue le verifiche reali, poi gli assi Standards e Spec di code-review sui cambiamenti dal punto fisso a oggi."
+      title="Esame approfondito"
+      description="Una lettura completa in sola lettura: Trama esegue le verifiche reali, poi confronta i cambiamenti dal punto fisso con le regole del codice e con il piano."
       icon={<IconFocus2 className="size-4 text-muted-foreground" stroke={1.7} />}
       footer={
         <>
@@ -73,7 +73,7 @@ export function FocusStartDialog() {
             Annulla
           </Button>
           <Button size="sm" disabled={!fixedPoint.trim() || opening} onClick={() => void submit()}>
-            Apri la focus mode
+            Avvia l'esame
           </Button>
         </>
       }
@@ -117,6 +117,7 @@ export function FocusStartDialog() {
               if (e.key === "Enter") void submit();
             }}
             placeholder="main, un tag, un commit o HEAD~5"
+            aria-label="Punto fisso"
             aria-invalid={error !== null}
             aria-describedby="focus-start-note"
             className="font-mono"
@@ -149,8 +150,8 @@ export function FocusStartDialog() {
           </p>
         ) : (
           <p className="text-ui-xs text-muted-foreground" id="focus-start-note">
-            Trama confronta HEAD con il punto fisso e non cambia il codice. Mentre sei in focus mode gli altri progetti continuano a lavorare e le notifiche
-            aspettano la tua uscita.
+            Trama confronta l'ultimo commit con il punto fisso e non cambia il codice. L'esame occupa tutta la finestra: gli altri progetti continuano a
+            lavorare e le notifiche aspettano che tu esca.
           </p>
         )}
       </div>

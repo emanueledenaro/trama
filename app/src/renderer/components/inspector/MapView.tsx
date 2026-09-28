@@ -39,7 +39,7 @@ export function MapView() {
         ) : null}
         <div className="cta-row mt-3">
           <Button size="sm" variant="outline" onClick={() => openFocusStart({ kind: "project" })}>
-            <IconFocus2 stroke={1.8} /> Focus mode sul progetto
+            <IconFocus2 stroke={1.8} /> Esame approfondito del progetto
           </Button>
         </div>
       </InspectorSection>
@@ -87,7 +87,7 @@ export function ModuleView({ id }: { id: string }) {
         <p className="mt-0.5 font-mono text-[11px] text-muted-foreground">{module.relativePath}</p>
         <div className="cta-row mt-3">
           <Button size="sm" variant="outline" onClick={() => openFocusStart({ kind: "module", moduleId: module.id })}>
-            <IconFocus2 stroke={1.8} /> Focus mode
+            <IconFocus2 stroke={1.8} /> Esame approfondito
           </Button>
           <Button size="sm" onClick={() => askCoordinator(moduleQuestion(module.name), { moduleId: module.id })}>
             <IconMessageCircle stroke={1.8} /> Chiedi al Coordinatore su questo modulo

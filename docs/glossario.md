@@ -15,7 +15,8 @@ La stessa tabella sta in `app/src/shared/plainLanguage.ts`. Un test controlla ch
 | Candidato | Il risultato di un incarico, pronto per le verifiche e per essere unito. | candidate |
 | Verifiche | I comandi di prova che Trama esegue davvero sul candidato, come i test. | check, evidence |
 | Revisori | Gli agenti che leggono il candidato prima dell'unione e segnalano i problemi. | gate, review gate |
-| Esame approfondito | Una lettura completa di un candidato: prima le verifiche, poi il confronto con le regole del codice e con il piano. | Focus mode, audit |
+| Esame approfondito | Una lettura completa di un candidato, di un modulo o dell'intero progetto: prima le verifiche, poi il confronto con le regole del codice e con il piano. Occupa tutta la finestra finché non esci. | Focus mode, audit |
+| Punto fisso | Il commit, il branch o il tag da cui l'esame approfondito di un modulo o del progetto legge i cambiamenti. | fixed point |
 | Punti di prova | I punti del codice da cui i test controllano un comportamento senza toccare il resto. | seam |
 | Copia di lavoro | Una cartella separata del progetto dove uno sviluppatore lavora senza toccare la tua. | worktree |
 | Patto Vivo | Le decisioni che hai preso sul comportamento del prodotto, con la loro versione. | pact |

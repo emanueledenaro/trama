@@ -36,19 +36,13 @@ export function findingTally(audit: FocusAudit): string | null {
 }
 
 /**
- * What focus mode examines, in Italian and with names instead of ids (F03): "il modulo Orders", "l'intero progetto",
- * or the candidate by the objective of its assignment when it is known.
+ * What focus mode examines, in Italian after "Esame approfondito" and with names instead of ids (F03): "del modulo
+ * Orders", "dell'intero progetto", or the candidate by the objective of its assignment when it is known.
  */
-export function focusTargetText(target: FocusTarget, objective?: string | null): string {
-  if (target.kind === "module") return `il modulo ${target.moduleName}`;
-  if (target.kind === "project") return "l'intero progetto";
-  return objective ? `il candidato di «${objective}»` : "il candidato";
-}
-
-/** The same with "su": "sul modulo Orders", "sull'intero progetto", "sul candidato". */
-export function focusTargetOn(target: FocusTarget): string {
-  if (target.kind === "module") return `sul modulo ${target.moduleName}`;
-  return target.kind === "project" ? "sull'intero progetto" : "sul candidato";
+export function focusTargetOf(target: FocusTarget, objective?: string | null): string {
+  if (target.kind === "module") return `del modulo ${target.moduleName}`;
+  if (target.kind === "project") return "dell'intero progetto";
+  return objective ? `del candidato di «${objective}»` : "del candidato";
 }
 
 /** The fixed point as the person reads it: the revision they wrote and its short commit, or the candidate's base. */

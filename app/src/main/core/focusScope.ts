@@ -38,10 +38,12 @@ export function readFixedPointRef(text: string): string {
 /** Git's pathspec for a module: its folder, or the whole checkout for the root module. */
 export const modulePathspec = (path: string | null): string[] => (path && path !== "." ? ["--", path] : ["--"]);
 
-export async function captureFocusRange(root: string, text: string, path: string | null): Promise<FocusRange> {
+/** `module` limits the diff to a module's folder; its name is the one the error shows. Null for the whole project. */
+export async function captureFocusRange(root: string, text: string, module: { path: string; name: string } | null): Promise<FocusRange> {
+  const path = module?.path ?? null;
   const ref = readFixedPointRef(text);
   const headSHA = (await git(["rev-parse", "--verify", "HEAD"], root).catch(() => "")).trim();
-  if (!headSHA) throw new AuditError("no_head", "Il progetto non ha ancora un commit: la focus mode confronta HEAD con un punto fisso.");
+  if (!headSHA) throw new AuditError("no_head", "Il progetto non ha ancora un commit: l'esame approfondito confronta l'ultimo commit con un punto fisso.");
   const fixedPoint = (await git(["rev-parse", "--verify", "--quiet", "--end-of-options", `${ref}^{commit}`], root).catch(() => "")).trim();
   if (!fixedPoint) throw new AuditError("fixed_point_not_found", `Il punto fisso "${ref}" non esiste in questo repository: scrivi un commit, un branch o un tag che esiste.`);
   const pathspec = modulePathspec(path);
@@ -49,9 +51,9 @@ export async function captureFocusRange(root: string, text: string, path: string
   const excludedSensitiveFiles = listed.filter(isSensitive);
   const changedFiles = listed.filter((p) => !isSensitive(p));
   if (!changedFiles.length) {
-    const where = path && path !== "." ? ` nel modulo \`${path}\`` : "";
+    const where = module ? ` nel modulo ${module.name}` : "";
     const hidden = excludedSensitiveFiles.length ? ", a parte file sensibili che Trama non legge" : "";
-    throw new AuditError("empty_diff", `Nessun cambiamento${where} tra il punto fisso "${ref}" e HEAD${hidden}: scegli un punto fisso più indietro.`);
+    throw new AuditError("empty_diff", `Nessun cambiamento${where} tra il punto fisso "${ref}" e l'ultimo commit${hidden}: scegli un punto fisso più indietro.`);
   }
   const diff = await git(["diff", "--no-renames", `${fixedPoint}...HEAD`, "--", ...changedFiles], root);
   const log = await git(["log", "--oneline", "--no-decorate", `-${COMMIT_LIMIT}`, `${fixedPoint}..HEAD`, ...pathspec], root);
