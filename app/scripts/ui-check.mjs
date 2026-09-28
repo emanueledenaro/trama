@@ -3083,7 +3083,7 @@ await page.keyboard.press("Enter");
 await page.locator('[role="alert"][data-failure-kind="quotaExhausted"]').last().waitFor({ timeout: 30_000 });
 await checkWaitingLine("Limit");
 await page.getByTestId("status-line").scrollIntoViewIfNeeded();
-await waitShots("27a-status-line-provider-wait");
+await waitShots("28a-status-line-provider-wait");
 
 // Esci while the quota is still used up: after reopening, the turn waits again, and no new turn starts meanwhile.
 await app.close();
@@ -3092,13 +3092,13 @@ await page.getByTestId("dialog-title").filter({ hasText: "trama-ui-sempre-attivo
 await checkWaitingLine("Reopened limit");
 await page.waitForTimeout(7_000);
 if ((await page.locator('[role="alert"][data-failure-kind="quotaExhausted"]').count()) !== 1) throw new Error("Trama started a turn while the quota was used up");
-await waitShots("27b-reopened-provider-wait");
+await waitShots("28b-reopened-provider-wait");
 let alwaysSoFar = await alwaysReplies();
 await rm(alwaysQuota);
 await waitForAlwaysReply(alwaysSoFar, "Reopened limit");
 await page.locator('[data-testid="status-line"][data-provider-wait="false"]').waitFor({ timeout: 30_000 });
 if ((await page.getByText("Prepara il riepilogo dei resi", { exact: true }).count()) !== 1) throw new Error("The resumed turn wrote the message again");
-await shot("27c-reopened-limit-resumed");
+await shot("28c-reopened-limit-resumed");
 
 // Esci during a turn: after reopening, the turn resumes by itself, and the Coordinator checks first what was done.
 await page.getByLabel("Messaggio al Coordinatore").fill("[attesa] Controlla i test dei resi");
@@ -3118,7 +3118,7 @@ const reopenedRow = page.getByText("Turno ripreso alla riapertura", { exact: tru
 await reopenedRow.waitFor({ timeout: 10_000 });
 await page.waitForTimeout(1_000);
 await reopenedRow.scrollIntoViewIfNeeded();
-await waitShots("27d-reopened-turn-resumed");
+await waitShots("28d-reopened-turn-resumed");
 
 // A project in Pause stays in Pause after the restart: the turn Esci ended waits for the person.
 await page.locator('[data-testid="status-line"]').getByRole("button", { name: "Pausa", exact: true }).click();
@@ -3140,6 +3140,6 @@ const pausedQuit = page.getByRole("status").filter({ hasText: "Trama è stato ch
 await pausedQuit.waitFor({ timeout: 30_000 });
 await page.waitForTimeout(2_000);
 if ((await alwaysReplies()) !== alwaysSoFar) throw new Error("A turn resumed in Pause");
-await waitShots("27e-reopened-paused");
+await waitShots("28e-reopened-paused");
 await page.evaluate(() => window.trama.invoke("settings:update", { theme: "system" }));
 await app.close();
