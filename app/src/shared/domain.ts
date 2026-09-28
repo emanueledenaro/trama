@@ -1326,6 +1326,43 @@ export interface ProjectDocument {
   recap?: RecapLedger;
   /** The problems found outside the work in progress and their issues (A08); absent until Trama first looks for them. */
   problems?: ProblemLedger;
+  /** The conversations between agents (W07), oldest first; absent before the first one. */
+  agentThreads?: AgentThread[];
+}
+
+/**
+ * What a conversation between agents is about (W07): a developer's question to the Coordinator, the technical review
+ * of the developer's candidate, or a regression the guardian found on it.
+ */
+export type AgentThreadKind = "question" | "review" | "regression";
+
+/** Who wrote a message in a conversation between agents: a member of the team, the Coordinator, or the person on a Pact card. */
+export type AgentThreadAuthor = { kind: "specialist"; specialistId: string } | { kind: "coordinator" } | { kind: "person" };
+
+export interface AgentThreadMessage {
+  id: string;
+  author: AgentThreadAuthor;
+  text: string;
+  at: string;
+}
+
+/**
+ * A conversation between agents (W07): always visible and recorded, never private. One per kind and assignment; the
+ * person reads it from the specialist's page and talks only with the Coordinator (Q32 of #239).
+ */
+export interface AgentThread {
+  id: string;
+  kind: AgentThreadKind;
+  /** The developer's work the conversation is about. */
+  assignmentId: string;
+  /** The members of the team in the conversation, the developer first; the Coordinator is not a member. */
+  specialistIds: string[];
+  /** Whether the Coordinator takes part, as in a developer's question. */
+  withCoordinator: boolean;
+  title: string;
+  createdAt: string;
+  updatedAt: string;
+  messages: AgentThreadMessage[];
 }
 
 /** The proof a found problem refers to (A08): a red check or a reviewer's finding. */
