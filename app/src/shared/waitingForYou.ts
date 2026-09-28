@@ -244,6 +244,8 @@ export function waitingForYou(document: ProjectDocument, sources: WaitingSources
   for (const candidate of document.candidates.filter((c) => !c.pullRequest)) {
     const report = sources.candidateReports?.[candidate.id];
     if (!report || report.state === "superseded") continue;
+    // A merge the Coordinator stopped on a destructive change waits below as its own item, with its consequences (issue #41).
+    if (candidate.merge?.status === "stopped" && candidate.merge.stop) continue;
     const settled = report.state === "verified" || report.state === "decided";
     const stopped = settled ? candidate.merge?.status === "stopped" : report.blockers.some((b) => PERSON_BLOCKERS.includes(b.code));
     if (!stopped) {
@@ -260,6 +262,23 @@ export function waitingForYou(document: ProjectDocument, sources: WaitingSources
       title: oneLine(assignment?.objective ?? "") || `Candidato ${candidate.id}`,
       goalId: candidate.goalId ?? null,
       askedAt: candidate.updatedAt,
+      blocks: 1,
+    });
+  }
+
+  // A merge the Coordinator stopped because it destroys something (issue #41): the choice is the person's.
+  for (const candidate of document.candidates) {
+    const merge = candidate.merge;
+    if (merge?.status !== "stopped" || !merge.stop || merge.stop.acknowledgedAt || candidate.pullRequest?.mergedAt) continue;
+    if (sources.candidateReports?.[candidate.id]?.state === "superseded") continue;
+    items.push({
+      key: `merge:${candidate.id}`,
+      kind: "candidate",
+      targetId: candidate.id,
+      label: "Unione fermata",
+      title: merge.stop.reasons.join(" "),
+      goalId: candidate.goalId ?? null,
+      askedAt: merge.at,
       blocks: 1,
     });
   }
