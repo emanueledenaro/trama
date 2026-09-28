@@ -49,6 +49,8 @@ export type TurnEvent =
   | { type: "readOutsideScope"; itemId: string; path: string; tool: string }
   /** Trama blocked one of the provider's own tools (GitHub, web, commands, connectors); `reason` names the Trama tool to use (issue #228). */
   | { type: "toolRefused"; itemId: string; tool: string; reason: string }
+  /** Trama stopped an action a fixed ban covers before it started (issue #244): no mandate grants it. */
+  | { type: "fixedBanRefused"; itemId: string; ban: import("./fixedBans").FixedBan; action: string }
   | { type: "tokenUsage"; usedTokens: number; contextWindow: number | null }
   | { type: "compacted" }
   | { type: "completed"; text: string }

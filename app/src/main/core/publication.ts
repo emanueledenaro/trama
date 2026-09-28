@@ -2,7 +2,7 @@ import type { Candidate, CommitConventions, PactDecision, ProjectMandate, Specia
 import { commitHeader, parseCommitMessage, requireValidCommitMessage } from "./conventions";
 import { ghEnvironment } from "./github";
 import { git, runProcess } from "./process";
-import { pushAuthorization, pushBranch, type PushRecord, pushRefusal, PushRefusedError } from "./push";
+import { fixedPushRefusal, pushAuthorization, pushBranch, type PushRecord, pushRefusal, PushRefusedError } from "./push";
 import { candidateTrailer } from "./quality";
 import { reviewWorktree } from "./workspace";
 
@@ -78,6 +78,12 @@ export async function publishCandidate(input: {
 }): Promise<{ url: string; number: number; branch: string }> {
   const workspace = input.assignment.workspace;
   if (!workspace) throw new Error("L'incarico non ha un worktree da pubblicare.");
+  // The fixed bans hold before the mandate and before anything is committed (issue #244).
+  const banned = fixedPushRefusal(workspace.branch, [input.baseBranch]);
+  if (banned) {
+    input.onPush({ outcome: "refused", branch: workspace.branch, remote: "origin", reason: banned.reason, ban: banned.ban });
+    throw new PushRefusedError(banned.reason);
+  }
   const refusal = pushRefusal(pushAuthorization(input.mandate));
   if (refusal) {
     input.onPush({ outcome: "refused", branch: workspace.branch, remote: "origin", reason: refusal });
@@ -110,7 +116,7 @@ export async function publishCandidate(input: {
     if (extra.length) throw new Error(`L'indice contiene file fuori dal candidato: ${extra.join(", ")}.`);
     await git(["commit", "--no-verify", "--cleanup=whitespace", "-m", input.message], root, false);
   }
-  await pushBranch({ root, branch: workspace.branch, mandate: input.mandate, onRecord: input.onPush });
+  await pushBranch({ root, branch: workspace.branch, mandate: input.mandate, onRecord: input.onPush, mainBranches: [input.baseBranch] });
   // An open pull request of this branch now carries the candidate; a closed or merged one belongs to earlier work.
   // GitHub refuses a second pull request for the same branch, so an unreadable list is safe to skip.
   const afterPush = await findPullRequest(input.repository, workspace.branch).catch(() => null);

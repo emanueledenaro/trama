@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/field";
 import { Sep } from "@/components/ui/sep";
 import { cn } from "@/lib/cn";
 import { useUi } from "@/lib/store";
-import { CandidateCard, DecisionCard, MandateCard, PlanCard, PresenceConsentCard, RouteCard, TeamProposalCard } from "@/components/chat/Cards";
+import { CandidateCard, DecisionCard, FixedBanCard, MandateCard, PlanCard, PresenceConsentCard, RouteCard, TeamProposalCard } from "@/components/chat/Cards";
 import { GoalCard } from "@/components/inspector/GoalsView";
 import { EmptyNote, InspectorSection } from "@/components/inspector/Inspector";
 import { MemoryProposalCard } from "@/components/inspector/MemoryView";
@@ -122,6 +122,8 @@ function WaitingCard({ item }: { item: WaitingItem }) {
       return <RouteCard routeId={item.targetId} />;
     case "candidate":
       return <CandidateCard candidateId={item.targetId} />;
+    case "fixedBan":
+      return <FixedBanCard refusalId={item.targetId} />;
     case "memory":
       return proposal ? (
         <div className="my-3">

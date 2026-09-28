@@ -45,6 +45,7 @@ import type {
   LearningReviewRun,
   ProjectOverview,
   ProviderState,
+  FixedBanRefusal,
   MandateAction,
   ProjectDocument,
   WorkKind,
@@ -55,7 +56,7 @@ import type {
   RequestStep,
   SpecialistAssignment,
 } from "@shared/domain";
-import { isOpenQuestion } from "@shared/domain";
+import { isOpenQuestion, pendingMandateRequest } from "@shared/domain";
 import { waitingForYou, type WaitingSources } from "@shared/waitingForYou";
 import { resolveCodexExecutable } from "./core/codexClient";
 import { CodexRuntime } from "./core/providers/codex";
@@ -252,6 +253,15 @@ import { assessWorktreePair, worktreePairs } from "./core/worktreeConflicts";
 import { clampParallelDevelopers } from "@shared/parallel";
 import { pullRequestBody, publishCandidate } from "./core/publication";
 import { agentPushActivity, isGitPushCommand, pushActivity, pushAuthorization, pushRefusal } from "./core/push";
+import {
+  acknowledgeFixedBanRefusal,
+  fixedBanActivity,
+  needsProjectMandate,
+  proposeProjectMandate,
+  recordFixedBanRefusal,
+  restrictMandate,
+  restrictionMessage,
+} from "./core/projectMandate";
 import { branchPrefix, commitHeader, readProjectConventions, requireValidCommitMessage, validateCommitMessage } from "./core/conventions";
 import { candidateCommit, qualityGate, qualityMissing, relatedIssue, secretFindings, workCommitType } from "./core/quality";
 import {
@@ -1173,6 +1183,8 @@ export class TramaController {
       if (!isDemo) this.startPresence(project);
       // Paused work whose question got its answer before a restart resumes now (W06).
       if (loaded.writable) this.resumeAnsweredWork(project);
+      // A project without a mandate gets the proposal of the project mandate for the whole cycle (issue #244).
+      if (!isDemo && loaded.writable) this.proposeProjectMandate(project);
       if (!isDemo && loaded.writable && shouldAutoPrepareMethod(this.state.settings, this.state.onboarding) && !hasAiHero(root)) {
         // T04: the method is ready when the project opens; existing files are never overwritten.
         void this.prepareSkills().catch((error) => this.fail(error));
@@ -2224,6 +2236,8 @@ export class TramaController {
           this.publish();
         } else if (event.type === "tokenUsage") {
           project.contextUsage = { usedTokens: event.usedTokens, contextWindow: event.contextWindow };
+        } else if (event.type === "fixedBanRefused") {
+          this.recordFixedBan(project, event, { kind: "coordinator" });
         } else if (event.type === "toolRefused") {
           // A refusal during the study is visible too (issue #228).
           appendEvent(document, "trama", { type: "activity", title: TOOL_REFUSED_TITLE, detail: toolRefusedDetail(event), tone: "error" }, null);
@@ -2926,6 +2940,9 @@ export class TramaController {
       case "toolRefused":
         activity(TOOL_REFUSED_TITLE, toolRefusedDetail(event), "error");
         return;
+      case "fixedBanRefused":
+        this.recordFixedBan(project, event, { kind: "coordinator" }, request.id);
+        return;
       case "reasoning":
         activity("Ragionamento", event.text, "info");
         return;
@@ -3362,15 +3379,42 @@ export class TramaController {
     limits: string[];
   }): Promise<void> {
     const project = this.requireProject();
-    assertMandateRequestAnswerable(project.document, input.requestId);
+    // A mandate the person writes answers the pending project mandate too (issue #244): it does not wait any longer.
+    const pending = pendingMandateRequest(project.document);
+    const requestId = input.requestId ?? (pending?.projectCycle ? pending.id : null);
+    assertMandateRequestAnswerable(project.document, requestId);
     const hadMandate = project.document.mandate?.status === "granted";
     const mandate = grantMandate(project.document, input);
     const kind = hadMandate ? "corrected" : "granted";
-    if (input.requestId) resolveMandateRequest(project.document, input.requestId, kind, mandate.version);
+    if (requestId) resolveMandateRequest(project.document, requestId, kind, mandate.version);
     this.stopWorkOutsideMandate("Il mandato corretto non copre più questo lavoro.");
     this.changed();
     void this.runDuties();
     await this.send(mandateMessage(kind, mandate.version), null, null, null, [], null, null, false);
+  }
+
+  /**
+   * Asks for the project mandate on the Coordinator's behalf when the project has none and nothing waits (issue #244).
+   * Trama asks it by rule, without a turn of the model; the proposal waits in "Aspetta te".
+   */
+  private proposeProjectMandate(project: ActiveProjectState): void {
+    const moduleIds = project.snapshot.modules.map((m) => m.id);
+    if (!needsProjectMandate(project.document, moduleIds)) return;
+    const request = proposeProjectMandate(project.document, moduleIds);
+    appendEvent(project.document, "trama", { type: "card", kind: "mandate", title: "Mandato di progetto", detail: null, referenceId: request.id });
+    this.changedIn(project);
+  }
+
+  /**
+   * Narrows the mandate in force without revoking it (issue #244). Running turns end as they are; from the next turn
+   * the Coordinator reads the new version, and work outside it does not start again.
+   */
+  async restrictMandate(input: { scopeModuleIds: string[]; authorizedActions: MandateAction[] }): Promise<void> {
+    const project = this.requireProject();
+    const mandate = restrictMandate(project.document, input);
+    this.changed();
+    const moduleName = (id: string) => project.snapshot.modules.find((m) => m.id === id)?.name ?? id;
+    await this.send(restrictionMessage(mandate, moduleName), null, null, null, [], null, null, false);
   }
 
   /** Revokes the mandate in force, from the Mandate view only: a proposal card never reaches it. */
@@ -3396,6 +3440,31 @@ export class TramaController {
 
   private get worktreesRoot(): string {
     return join(this.storage.root, "Worktrees");
+  }
+
+  /**
+   * An action a fixed ban stopped before it started (issue #244): it becomes an item of "Aspetta te" with its reason and
+   * an activity line where it happened. Every attempt counts, also the same command tried again; the providers report
+   * each call once, however many of their hooks refuse it.
+   */
+  private recordFixedBan(
+    project: ActiveProjectState,
+    event: Extract<TurnEvent, { type: "fixedBanRefused" }>,
+    by: FixedBanRefusal["by"],
+    requestId: string | null = null,
+    work: { assignmentId: string; workKey: string } | null = null,
+  ): void {
+    const document = project.document;
+    const refusal = recordFixedBanRefusal(document, { ban: event.ban, action: event.action, by });
+    appendEvent(document, by.kind === "specialist" ? "specialist" : "trama", fixedBanActivity(refusal), requestId, new Date(), work);
+    this.changedIn(project);
+  }
+
+  /** The person has seen an action a fixed ban stopped: it leaves "Aspetta te" (issue #244). */
+  acknowledgeFixedBan(id: string): void {
+    const project = this.requireProject();
+    acknowledgeFixedBanRefusal(project.document, id);
+    this.changed();
   }
 
   private specialistActivity(
@@ -3592,6 +3661,11 @@ export class TramaController {
             case "toolRefused":
               this.specialistActivity(project, assignmentId, key, TOOL_REFUSED_TITLE, toolRefusedDetail(event), "error");
               return;
+            case "fixedBanRefused": {
+              const specialistId = findAssignment(project.document, assignmentId)?.specialistId ?? "";
+              this.recordFixedBan(project, event, { kind: "specialist", specialistId, assignmentId }, null, { assignmentId, workKey: `${assignmentId}:${key}` });
+              return;
+            }
             default:
               return;
           }
@@ -4683,6 +4757,8 @@ export class TramaController {
       mandate: document.mandate,
       onPush: (record) => {
         appendEvent(document, "trama", pushActivity(record));
+        // A push a fixed ban stopped waits for the person in Aspetta te (issue #244).
+        if (record.outcome === "refused" && record.ban) recordFixedBanRefusal(document, { ban: record.ban, action: `git push ${record.remote} ${record.branch}`, by: { kind: "trama" } });
         this.changed();
       },
     });

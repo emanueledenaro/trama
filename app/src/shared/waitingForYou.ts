@@ -1,4 +1,5 @@
 import { type CandidateReport, isOpenQuestion, pendingMandateRequest, type ProjectDocument, type SliceView, type WorkPlan } from "./domain";
+import { fixedBanInfo } from "./fixedBans";
 import { workingGoals } from "./goals";
 import { workRequests } from "./grilling";
 
@@ -9,7 +10,18 @@ import { workRequests } from "./grilling";
  * main process computes the list once, and the summary, the sidebar counter and the recap read it.
  */
 
-export type WaitingKind = "question" | "mandate" | "team" | "seams" | "slices" | "goal" | "presence" | "route" | "candidate" | "memory";
+export type WaitingKind =
+  | "question"
+  | "mandate"
+  | "team"
+  | "seams"
+  | "slices"
+  | "goal"
+  | "presence"
+  | "route"
+  | "candidate"
+  | "memory"
+  | "fixedBan";
 
 export interface WaitingItem {
   /** Unique among the items: the kind and the record, for example `question:D-1`. */
@@ -17,7 +29,7 @@ export interface WaitingItem {
   kind: WaitingKind;
   /**
    * The record the item is about: a question, a mandate request, a team proposal, a plan, a proposed goal, a presence
-   * proposal, a route, a candidate or a memory proposal.
+   * proposal, a route, a candidate, a memory proposal or a refused action.
    */
   targetId: string;
   /** What kind of move it is, in the person's words. */
@@ -127,7 +139,7 @@ export function waitingForYou(document: ProjectDocument, sources: WaitingSources
       key: `mandate:${mandate.id}`,
       kind: "mandate",
       targetId: mandate.id,
-      label: granted ? "Proposta di mandato" : "Mandato",
+      label: granted ? "Proposta di mandato" : mandate.projectCycle ? "Mandato di progetto" : "Mandato",
       title: oneLine(mandate.reason) || "Il Coordinatore chiede il mandato per lavorare.",
       goalId: requestGoal(document, mandate.requestId),
       askedAt: mandate.askedAt,
@@ -222,6 +234,20 @@ export function waitingForYou(document: ProjectDocument, sources: WaitingSources
       title: oneLine(assignment?.objective ?? "") || `Candidato ${candidate.id}`,
       goalId: candidate.goalId ?? null,
       askedAt: candidate.updatedAt,
+      blocks: 1,
+    });
+  }
+
+  // An action a fixed ban stopped (issue #244): no mandate grants it, so it waits for the person until they have seen it.
+  for (const refusal of (document.fixedBanRefusals ?? []).filter((r) => !r.acknowledgedAt)) {
+    items.push({
+      key: `fixedBan:${refusal.id}`,
+      kind: "fixedBan",
+      targetId: refusal.id,
+      label: "Azione vietata",
+      title: `${fixedBanInfo(refusal.ban).label}: ${oneLine(refusal.action)}`,
+      goalId: null,
+      askedAt: refusal.refusedAt,
       blocks: 1,
     });
   }
