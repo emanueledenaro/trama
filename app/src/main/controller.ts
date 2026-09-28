@@ -7,7 +7,7 @@ import { type ContextUsage, contextNoticeDetail, contextReading, invalidContextU
 import { isUsableAccount, type ProviderAccount, type ProviderId, type ProviderModel, READ_OUTSIDE_SCOPE_TITLE, TOOL_REFUSED_TITLE, type TurnEvent } from "@shared/codex";
 import { PROVIDERS, canCoordinate, catalogModel, catalogOffers, coordinatorDefaultModel, coordinatorUnavailableReason, supportsReadOnly, type CatalogEntry } from "@shared/providers";
 import { shortId } from "@shared/ids";
-import { activeTerms, workStoppedBy } from "@shared/mandate";
+import { activeTerms, type StoppedWork, workStoppedBy } from "@shared/mandate";
 import { mentionContextBlock } from "@shared/mentions";
 import { buildReferenceIndex, referenceListing, type ReferenceIndex } from "@shared/references";
 import { codexSkillText, type LoadedSkill, skillInvocations } from "@shared/skills";
@@ -43,6 +43,7 @@ import type {
   CoordinatorPhase,
   CoordinatorRequest,
   GitHubIssue,
+  GitHubSnapshot,
   GitHubState,
   Practice,
   PracticeView,
@@ -185,7 +186,8 @@ import {
   restoreGoal,
   updateGoal,
 } from "./core/goals";
-import { activeColleagues, orderByAttention, summarizeProject, unreadableProject } from "./core/overview";
+import { activeColleagues, ciSummary, orderByAttention, summarizeProject, unreadableProject } from "./core/overview";
+import { type CapacityRequest, inLine, moveProject, projectOrder } from "./core/sharedCapacity";
 import {
   closeIssue,
   commentOnIssue,
@@ -302,7 +304,7 @@ import { assessBranchDivergence } from "./core/branchDivergence";
 import { assessConflict } from "./core/conflicts";
 import { pickSlices } from "./core/slicePicking";
 import { assessWorktreePair, worktreePairs } from "./core/worktreeConflicts";
-import { clampParallelDevelopers } from "@shared/parallel";
+import { clampParallelDevelopers, clampSharedDevelopers, sharedDevelopers } from "@shared/parallel";
 import { pullRequestBody, publishCandidate } from "./core/publication";
 import { agentPushActivity, isGitPushCommand, pushActivity, pushAuthorization, pushRefusal, PushRefusedError } from "./core/push";
 import { CHECKS_RETRY_MS, MERGE_RETRY_MS, mergeAction, mergeActivity, mergeCommitTitle, mergeReadiness, mergeRoute, recordMerge, rejectCandidate } from "./core/merge";
@@ -704,6 +706,7 @@ export class TramaController {
       language: DEFAULT_LANGUAGE,
       error: null,
       backgroundProjects: [],
+      sharedCapacity: { running: 0, limit: sharedDevelopers({}), waiting: 0 },
       practices: [],
       platform: process.platform,
       onboarding: { ...EMPTY_ONBOARDING },
@@ -792,6 +795,11 @@ export class TramaController {
       pendingDecisions: p.document.decisionRequests.filter(isOpenQuestion).length,
       lastUpdate: p.document.team.specialists.map((s) => s.updatedAt).sort().at(-1) ?? null,
     }));
+    this.state.sharedCapacity = {
+      running: this.developerSlots.size,
+      limit: sharedDevelopers(this.state.settings),
+      waiting: this.capacityQueue.filter((r) => this.waitsForCapacity(r)).length,
+    };
     const project = this.state.project;
     if ((project?.id ?? null) !== this.learningViewProject) {
       // The view is rebuilt when learning changes; here only when the selected project changes.
@@ -834,6 +842,8 @@ export class TramaController {
       continuousWork: settings.continuousWork !== false,
       learning: learningSettings(settings.learning),
       coordinatorModels: coordinatorModelSettings(settings.coordinatorModels),
+      ...(clampSharedDevelopers(settings.sharedDevelopers) !== null ? { sharedDevelopers: clampSharedDevelopers(settings.sharedDevelopers)! } : {}),
+      ...(Array.isArray(settings.projectPriority) ? { projectPriority: settings.projectPriority.filter((id): id is string => typeof id === "string") } : {}),
     };
     this.state.language = this.resolveLanguage();
     if (this.openGeneration === opens) this.lastProjectId = settings.lastProjectId ?? null;
@@ -1186,6 +1196,8 @@ export class TramaController {
 
     try {
       const existing = await this.findRecentProject(root);
+      // The example project reopened by its folder, from the sidebar or the overview, stays the example (issue #39).
+      if (existing?.isDemo) isDemo = true;
       const id = existing?.id ?? randomUUID();
       const snapshot = await scanRepository(root, isDemo);
       if (overtaken()) return;
@@ -1995,7 +2007,17 @@ export class TramaController {
   private readonly parkedProjects = new Map<string, ActiveProjectState>();
 
   private hasRunningWork(projectId: string): boolean {
-    return [...this.specialistRuntimes.values()].some((r) => r.projectId === projectId) || [...this.auditRuns.values(), ...this.gateRuns.values()].some((r) => r.projectId === projectId);
+    return (
+      [...this.specialistRuntimes.values()].some((r) => r.projectId === projectId) ||
+      [...this.auditRuns.values(), ...this.gateRuns.values()].some((r) => r.projectId === projectId) ||
+      this.capacityQueue.some((r) => r.projectId === projectId && this.waitsForCapacity(r))
+    );
+  }
+
+  /** An open project by id: the selected one or one whose team keeps working in the background (C07). */
+  private openProjectById(projectId: string): ActiveProjectState | null {
+    if (this.state.project?.id === projectId) return this.state.project;
+    return this.parkedProjects.get(projectId) ?? null;
   }
 
   /**
@@ -3188,13 +3210,15 @@ export class TramaController {
       "trama",
       {
         type: "activity",
-        title: paused ? "Lavoro continuo in pausa" : "Lavoro continuo ripreso",
-        detail: paused ? "Nessuna mossa automatica, nessun giro e nessun lavoro automatico partono finché non riprendi." : null,
+        title: paused ? "Coordinatore in pausa" : "Coordinatore ripreso",
+        detail: paused ? "Nessuna mossa automatica, nessun giro e nessun lavoro automatico partono finché non riprendi il Coordinatore." : null,
         tone: "info",
       },
       null,
     );
     this.changedIn(project);
+    // Work of this project in line for a shared slot starts again after Riprendi (issue #39).
+    if (!paused) this.startNextInLine();
     if (!paused) await this.runRound();
   }
 
@@ -3546,12 +3570,29 @@ export class TramaController {
     this.changed();
   }
 
-  /** The chat has one composer (U01): its draft lives on the document whatever goal the chat is filtered on. */
-  saveDraft(text: string): void {
-    const project = this.state.project;
-    if (!project) return;
-    project.document.composerDraft = text;
-    this.scheduleSave();
+  /**
+   * The chat has one composer (U01): its draft lives on the document whatever goal the chat is filtered on. The draft
+   * goes to the project it was written in, also when the person switched project before it was saved (issue #39).
+   */
+  async saveDraft(text: string, projectId: string | null = null): Promise<void> {
+    const selected = this.state.project;
+    if (!projectId || selected?.id === projectId) {
+      if (!selected) return;
+      selected.document.composerDraft = text;
+      this.scheduleSave();
+      return;
+    }
+    const parked = this.parkedProjects.get(projectId);
+    if (parked) {
+      parked.document.composerDraft = text;
+      if (parked.stateWritable) await this.storage.saveDocument(parked.document);
+      return;
+    }
+    // A project already let go: its saved document takes the draft, nothing else changes.
+    const loaded = await this.storage.loadDocument(projectId);
+    if (!loaded.document || !loaded.writable || this.openProjectById(projectId)) return;
+    loaded.document.composerDraft = text;
+    await this.storage.saveDocument(loaded.document);
   }
 
   // MARK: Goals
@@ -3671,7 +3712,9 @@ export class TramaController {
     const live = new Map<string, ActiveProjectState>([...this.parkedProjects].map(([id, p]) => [id, p]));
     if (this.state.project) live.set(this.state.project.id, this.state.project);
     const entries: ProjectOverview[] = [];
+    const order = this.projectPriority();
     for (const recent of this.state.recentProjects) {
+      const priority = order.indexOf(recent.id) + 1;
       const project = live.get(recent.id);
       if (project) {
         const reports = project.document.candidates.map((c) => candidateReport(project.document, c, project.snapshot.headSHA));
@@ -3682,15 +3725,18 @@ export class TramaController {
             runningAssignments: [...this.specialistRuntimes.values()].filter((r) => r.projectId === project.id).length,
             candidateReports: reports,
             colleagues: project.isDemo ? null : activeColleagues(project.presence ?? this.lastPresence.get(project.id)),
+            priority,
+            waitingForCapacity: this.capacityQueue.filter((r) => r.projectId === project.id && this.waitsForCapacity(r)).length,
+            ci: project.isDemo ? null : ciSummary(project.github.snapshot ?? (await this.savedGitHubSnapshot(recent))),
           }),
         );
         continue;
       }
       const loaded = await this.storage.loadDocument(recent.id).catch((error: Error) => ({ document: null, writable: false, error: error.message }));
       if (loaded.error && !loaded.document) {
-        entries.push(unreadableProject(recent, loaded.error));
+        entries.push(unreadableProject(recent, loaded.error, priority));
       } else if (!loaded.document) {
-        entries.push(unreadableProject(recent, null));
+        entries.push(unreadableProject(recent, null, priority));
       } else {
         const document = loaded.document;
         entries.push(
@@ -3700,11 +3746,42 @@ export class TramaController {
             runningAssignments: 0,
             candidateReports: document.candidates.map((c) => candidateReport(document, c, null)),
             colleagues: activeColleagues(this.lastPresence.get(recent.id)),
+            priority,
+            ci: recent.isDemo ? null : ciSummary(await this.savedGitHubSnapshot(recent)),
           }),
         );
       }
     }
     return orderByAttention(entries);
+  }
+
+  /** The GitHub repository of each recent project's folder, read once: the overview refreshes often. */
+  private readonly repositoryOfPath = new Map<string, Promise<string | null>>();
+
+  /** The last GitHub reading Trama saved for a project's repository, without a new connection (issue #39). */
+  private async savedGitHubSnapshot(recent: RecentProject): Promise<GitHubSnapshot | null> {
+    if (recent.isDemo) return null;
+    let repository = this.repositoryOfPath.get(recent.path);
+    if (!repository) {
+      repository = readGitHubRepository(recent.path);
+      this.repositoryOfPath.set(recent.path, repository);
+    }
+    const name = await repository;
+    return name ? ((await this.monitorStore.load(name).catch(() => null))?.snapshot ?? null) : null;
+  }
+
+  /** The Product Owner's order of the recent projects (issue #39). */
+  private projectPriority(): string[] {
+    return projectOrder(this.state.settings.projectPriority, this.state.recentProjects);
+  }
+
+  /** The person moves a project up or down in the order that shares out the free developers (issue #39). */
+  async prioritizeProject(projectId: string, direction: "up" | "down"): Promise<void> {
+    const order = this.projectPriority();
+    if (!order.includes(projectId)) throw new DomainError("Il progetto non è tra quelli recenti.");
+    this.state.settings = { ...this.state.settings, projectPriority: moveProject(order, projectId, direction) };
+    this.publish();
+    await this.saveSettings();
   }
 
   // MARK: Pact and mandate
@@ -3792,15 +3869,17 @@ export class TramaController {
   }
 
   /**
-   * Narrows the mandate in force without revoking it (issue #244). Running turns end as they are; from the next turn
-   * the Coordinator reads the new version, and work outside it does not start again.
+   * Narrows the mandate in force without revoking it (issue #244). The work it no longer covers, and the work that
+   * depends on it, stops now with its worktree kept (C06); the rest goes on. From the next turn the Coordinator reads
+   * the new version.
    */
   async restrictMandate(input: { scopeModuleIds: string[]; authorizedActions: MandateAction[] }): Promise<void> {
     const project = this.requireProject();
     const mandate = restrictMandate(project.document, input);
+    const stopped = this.stopWorkOutsideMandate("Il mandato ristretto non copre più questo lavoro. Il worktree resta com'è.");
     this.changed();
     const moduleName = (id: string) => project.snapshot.modules.find((m) => m.id === id)?.name ?? id;
-    await this.send(restrictionMessage(mandate, moduleName), null, null, null, [], null, null, false);
+    await this.send(restrictionMessage(mandate, moduleName, stopped), null, null, null, [], null, null, false);
   }
 
   /** Revokes the mandate in force, from the Mandate view only: a proposal card never reaches it. */
@@ -3823,6 +3902,65 @@ export class TramaController {
   // MARK: Team
 
   private readonly specialistRuntimes = new Map<string, { client: AgentRuntime; projectId: string }>();
+
+  /** The developer assignments that hold one of the slots shared by all open projects (issue #39). */
+  private readonly developerSlots = new Set<string>();
+  /** Authorized developer work that found every shared slot taken, in order of arrival. */
+  private capacityQueue: CapacityRequest[] = [];
+  private capacitySequence = 0;
+
+  /** A request still waits while its project is open and its assignment has not started or stopped. */
+  private waitsForCapacity(request: CapacityRequest): boolean {
+    const project = this.openProjectById(request.projectId);
+    return !!project && findAssignment(project.document, request.assignmentId)?.status === "preparing";
+  }
+
+  /**
+   * Takes a shared developer slot for the assignment, or puts it in line when every slot is taken: it starts later, in
+   * its own project, when a slot frees up (issue #39).
+   */
+  private takeDeveloperSlot(project: ActiveProjectState, assignment: SpecialistAssignment): boolean {
+    this.capacityQueue = this.capacityQueue.filter((r) => this.waitsForCapacity(r));
+    const limit = sharedDevelopers(this.state.settings);
+    // A free slot is never left to work in line: startNextInLine hands it out as soon as it frees up.
+    if (this.developerSlots.size < limit) {
+      this.capacityQueue = this.capacityQueue.filter((r) => r.assignmentId !== assignment.id);
+      this.developerSlots.add(assignment.id);
+      return true;
+    }
+    if (this.capacityQueue.some((r) => r.assignmentId === assignment.id)) return false;
+    this.capacityQueue.push({ projectId: project.id, assignmentId: assignment.id, sequence: ++this.capacitySequence });
+    this.specialistActivity(
+      project,
+      assignment.id,
+      `${assignment.turns.length + 1}`,
+      "In attesa di uno sviluppatore libero",
+      `Nei progetti aperti lavorano già ${limit} ${limit === 1 ? "sviluppatore" : "sviluppatori"}, il massimo condiviso. L'incarico parte appena se ne libera uno, secondo l'ordine dei progetti della Panoramica.`,
+      "info",
+    );
+    return false;
+  }
+
+  /** A freed slot goes to the work in line of the project ranked first; paused projects keep their place (A05). */
+  private startNextInLine(): void {
+    if (this.quitting) return;
+    this.capacityQueue = this.capacityQueue.filter((r) => this.waitsForCapacity(r));
+    for (const request of inLine(this.capacityQueue, this.projectPriority())) {
+      if (this.developerSlots.size >= sharedDevelopers(this.state.settings)) return;
+      const project = this.openProjectById(request.projectId)!;
+      if (isPaused(project.document)) continue;
+      const assignment = findAssignment(project.document, request.assignmentId)!;
+      if (!withinMandate(project.document, assignment)) {
+        this.capacityQueue = this.capacityQueue.filter((r) => r !== request);
+        confirmStopWithoutTurn(project.document, assignment.id, "Il mandato non copre più questo incarico.");
+        this.specialistActivity(project, assignment.id, `${assignment.turns.length + 1}`, "Avvio non eseguito", "Il mandato non copre più questo incarico.", "info");
+        this.releaseParkedProject(project);
+        continue;
+      }
+      this.capacityQueue = this.capacityQueue.filter((r) => r !== request);
+      void this.startAssignment(assignment.id, project);
+    }
+  }
 
   private get worktreesRoot(): string {
     return join(this.storage.root, "Worktrees");
@@ -3888,9 +4026,9 @@ export class TramaController {
   }
 
   /** Runs one turn of an assignment: worktree, Codex thread, turn, outcome. */
-  async startAssignment(assignmentId: string): Promise<void> {
-    const project = this.state.project;
-    if (!project || this.quitting || this.specialistRuntimes.has(assignmentId)) return;
+  async startAssignment(assignmentId: string, project: ActiveProjectState | null = this.state.project): Promise<void> {
+    // Work in line for a shared slot starts in its own project, also after the person left it (issue #39).
+    if (!project || project !== this.openProjectById(project.id) || this.quitting || this.specialistRuntimes.has(assignmentId)) return;
     const document = project.document;
     const assignment = findAssignment(document, assignmentId);
     if (!assignment || assignment.status !== "preparing") return;
@@ -3902,9 +4040,20 @@ export class TramaController {
       this.specialistActivity(project, assignmentId, `${assignment.turns.length + 1}`, "Incarico in attesa del provider", blocked, "error");
       return;
     }
+    // Developers share one pool of slots across the open projects; the fixed roles never count (issue #39).
+    const developer = specialist.role === "developer";
+    if (developer && !this.developerSlots.has(assignmentId) && !this.takeDeveloperSlot(project, assignment)) {
+      this.publish();
+      return;
+    }
     // A developer asks the Coordinator with its one Trama tool (W06); a fixed role's automatic work has none.
     const toolServer = asksCoordinator(specialist, assignment) ? this.developerToolServer(project, assignmentId) : null;
-    if (toolServer) await toolServer.start();
+    try {
+      if (toolServer) await toolServer.start();
+    } catch (error) {
+      this.releaseDeveloperSlot(assignmentId);
+      throw error;
+    }
     const client = createRuntime(provider, {
       executable: provider === "codex" ? this.host.codexExecutable : null,
       requestTimeoutMs: 15_000,
@@ -4066,6 +4215,7 @@ export class TramaController {
       client.stop();
       toolServer?.stop();
       this.specialistRuntimes.delete(assignmentId);
+      this.releaseDeveloperSlot(assignmentId);
     }
     if (turnId) {
       endTurn(document, assignmentId, turnId, outcome);
@@ -4107,7 +4257,11 @@ export class TramaController {
           `${providerUnavailableReason(provider, account)} Trama riprende da solo l'incarico quando torna disponibile, se il mandato lo copre ancora.`,
           "info",
         );
-        this.host.notify(`Trama: ${providerName(provider)} bloccato`, `L'incarico ${assignmentId} aspetta che ${providerName(provider)} si sblocchi.`, this.state.settings.sounds === true);
+        this.host.notify(
+          `Trama: ${providerName(provider)} bloccato`,
+          `Il lavoro di ${specialist.name} in ${project.isDemo ? "Progetto di esempio" : project.name} aspetta che ${providerName(provider)} si sblocchi.`,
+          this.state.settings.sounds === true,
+        );
         this.scheduleProviderWait(provider);
       } else if (classifyProviderFailure(outcome.message).kind === "temporaryLimit" && isUsableAccount(account)) {
         // A temporary limit (P10): the assignment waits a growing time, then resumes like after a block.
@@ -4133,6 +4287,11 @@ export class TramaController {
     this.continueWork(project, final.requestId, "assignmentEnded");
     this.releaseParkedProject(project);
     void this.runDuties();
+  }
+
+  /** Frees the assignment's shared slot, if it held one, and hands it to the next work in line (issue #39). */
+  private releaseDeveloperSlot(assignmentId: string): void {
+    if (this.developerSlots.delete(assignmentId)) this.startNextInLine();
   }
 
   /** The developer's tool server (W06): ask_coordinator records the question on its running work. */
@@ -4453,7 +4612,8 @@ export class TramaController {
       for (let pairs = worktreePairs(project.document).slice(0, 4); pairs.length; pairs = worktreePairs(project.document).slice(0, 4)) {
         for (const pair of pairs) {
           const assessment = await assessWorktreePair(project.document, pair, join(this.storage.root, "ConflictProbe"));
-          if (this.state.project !== project) return;
+          // A project the person left keeps its result in its own history (issue #39); a closed one drops it.
+          if (this.openProjectById(project.id) !== project) return;
           const document = project.document;
           (document.conflicts ??= []).push(assessment);
           if (assessment.classification === "conflict" || assessment.classification === "overlap") {
@@ -4494,6 +4654,7 @@ export class TramaController {
   private async stopAssignmentRuntime(assignmentId: string): Promise<void> {
     const project = this.state.project;
     const runtime = this.specialistRuntimes.get(assignmentId);
+    this.capacityQueue = this.capacityQueue.filter((r) => r.assignmentId !== assignmentId);
     if (runtime) {
       await runtime.client.interrupt().catch(() => runtime.client.stop());
       return;
@@ -4628,15 +4789,21 @@ export class TramaController {
   }
 
   /** Stops running work the mandate no longer covers, after a correction or a revocation. */
-  private stopWorkOutsideMandate(reason: string): void {
+  /**
+   * Stops the work the mandate in force no longer covers and the work that depends on it (C06). The stop keeps each
+   * worktree as it is, so the diff already written stays for the resume or for a new assignment.
+   */
+  private stopWorkOutsideMandate(reason: string): StoppedWork[] {
     const project = this.state.project;
-    if (!project) return;
+    if (!project) return [];
     const document = project.document;
-    for (const { specialist, assignment } of workStoppedBy(document, activeTerms(document.mandate))) {
-      requestStop(document, specialist.id, "Trama", reason);
+    const stopped = workStoppedBy(document, activeTerms(document.mandate));
+    for (const { specialist, assignment, dependsOn } of stopped) {
+      requestStop(document, specialist.id, "Trama", dependsOn ? `Dipende da ${dependsOn.id}. ${reason}` : reason);
       void this.stopAssignmentRuntime(assignment.id);
     }
     this.changed();
+    return stopped;
   }
 
   private async runCheck(check: ReadOnlyCheck, root: string, requestId: string | null) {
@@ -6660,6 +6827,16 @@ export class TramaController {
 
   async updateSettings(update: Partial<AppSettings>): Promise<void> {
     if ("language" in update && update.language !== undefined && !isLanguage(update.language)) throw new DomainError("Lingua non disponibile.");
+    if (update.sharedDevelopers !== undefined) {
+      const limit = clampSharedDevelopers(update.sharedDevelopers);
+      if (limit === null) throw new DomainError("Il numero di sviluppatori condivisi deve essere un numero intero.");
+      update = { ...update, sharedDevelopers: limit };
+    }
+    // The order of the projects changes only with the arrows of the Panoramica.
+    if (update.projectPriority !== undefined) {
+      const { projectPriority: _ignored, ...rest } = update;
+      update = rest;
+    }
     const learning = update.learning ? learningSettings({ ...this.state.settings.learning, ...update.learning }) : this.state.settings.learning;
     this.state.settings = { ...this.state.settings, ...update, learning };
     // The new language holds at once: the window re-renders with the state, and the agents' next turn gets the updated rules.
@@ -6673,6 +6850,8 @@ export class TramaController {
     if (update.theme) this.host.applyTheme(update.theme);
     this.publish();
     await this.saveSettings();
+    // A higher shared limit lets the work in line start now.
+    if (update.sharedDevelopers !== undefined) this.startNextInLine();
   }
 
   dismissError(): void {
