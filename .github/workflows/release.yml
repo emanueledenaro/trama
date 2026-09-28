@@ -3,6 +3,20 @@ on:
   push:
     tags: ["v*"]
   workflow_dispatch:
+  # Called by release-publish.yml with the commit to build and the draft
+  # release that receives the packages.
+  workflow_call:
+    inputs:
+      ref:
+        description: Commit da impacchettare
+        required: true
+        type: string
+      tag:
+        description: Release in bozza che riceve i pacchetti
+        required: true
+        type: string
+permissions:
+  contents: read
 jobs:
   package:
     strategy:
@@ -22,6 +36,8 @@ jobs:
         shell: bash
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref }}
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -55,3 +71,26 @@ jobs:
             app/release/*.exe
             app/release/*.AppImage
           if-no-files-found: error
+  # Attaches the packages to the draft release and publishes it. Publishing
+  # creates the tag, so it happens only once every package is in place.
+  publish:
+    needs: package
+    if: inputs.tag
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: packages
+          pattern: trama-*
+          merge-multiple: true
+      - name: Pubblicazione
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          # A retry after a failed publish finds the assets already there.
+          gh release upload "$TAG" packages/* --clobber
+          gh release edit "$TAG" --draft=false --latest
