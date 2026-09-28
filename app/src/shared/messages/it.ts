@@ -246,6 +246,13 @@ export const it = {
   "settings.presence.openProject": "Apri un progetto per scegliere se condividere la presenza.",
   "settings.presence.demo": "Il progetto di esempio non condivide la presenza.",
   "settings.presence.share": "Condividi la presenza in {name}",
+
+  // Work a change of the mandate stops (C06)
+  "mandate.stoppedWork.revokeLead": "Senza mandato il Coordinatore legge e propone, ma non agisce.",
+  "mandate.stoppedWork.restrictLead": "Il lavoro fuori dal mandato ristretto, e quello che dipende da esso, si ferma subito; il resto continua.",
+  "mandate.stoppedWork.some": "Si fermano questi lavori; il loro worktree resta com'è:",
+  "mandate.stoppedWork.none": "Nessun lavoro in corso si ferma.",
+  "mandate.stoppedWork.dependsOn": "(dipende da «{objective}»)",
 } satisfies Record<string, string>;
 
 export type MessageKey = Exclude<keyof typeof it, `${string}.one`>;

@@ -1,6 +1,6 @@
 # C06: arresto selettivo quando si restringe il perimetro
 
-Data: 28 settembre 2026. Issue #38.
+Data: 28 settembre 2026. Issue #38. Base: `origin/main` 8bf9f4a.
 
 ## Cosa c'era già su main
 
@@ -23,6 +23,7 @@ Restringere il mandato (issue #244) lasciava finire il lavoro in corso fuori dal
 - Un incarico dipendente non riprende finché il lavoro da cui dipende resta fuori dal mandato, né dalla persona né dal Coordinatore (`withinMandate` in `app/src/main/core/duties.ts`).
 - `assign_task` rifiuta un incarico che dipende da lavoro fuori dal mandato (`dependency_outside_mandate`): il Coordinatore deve ripianificare dentro il perimetro.
 - Il messaggio al Coordinatore dopo la restrizione elenca il lavoro fermato e i dipendenti, oppure dice che nessun lavoro era fuori.
+- I testi nuovi dell'interfaccia sono nel catalogo delle traduzioni, in italiano e in inglese (`mandate.stoppedWork.*`).
 - Nella vista Mandato, il modulo "Restringi il mandato" mostra prima della conferma quali lavori si fermano; la scheda di una proposta di mandato e la revoca indicano anche da quale lavoro dipende un incarico che si ferma.
 
 Correzione e revoca del mandato usano la stessa regola, perché passano dalla stessa funzione (`workStoppedBy` in `app/src/shared/mandate.ts`).
@@ -32,9 +33,9 @@ Correzione e revoca del mandato usano la stessa regola, perché passano dalla st
 Tutte le prove usano il Codex finto (`app/test-fixtures/fake-codex.mjs`). Nessuna esecuzione reale di un provider.
 
 - `npx tsc --noEmit -p .`: nessun errore.
-- `npx vitest run`: tutti i test superati, i dettagli sono nella PR.
+- `npx vitest run`: 135 file, 1286 test superati, 3 saltati.
 - `npm run build`: riuscito.
-- `xvfb-run -a node scripts/ui-check.mjs`: corsa completa, uscita 0. Il passo `26b-mandate-restrict` controlla la nuova anteprima, il passo `26c-mandate-restricted` il nuovo messaggio.
+- `xvfb-run -a node scripts/ui-check.mjs`: corsa completa, uscita 0, 361 schermate. Il passo `26b-mandate-restrict` controlla la nuova anteprima, il passo `26c-mandate-restricted` il nuovo messaggio.
 
 Test nuovi:
 

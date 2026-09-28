@@ -50,6 +50,7 @@ import { Button } from "@/components/ui/button";
 import { Badge, TextArea } from "@/components/ui/field";
 import { cn } from "@/lib/cn";
 import { act, useUi } from "@/lib/store";
+import { useT } from "@/lib/i18n";
 import { ACTION_LABELS } from "@/lib/labels";
 import { ChatMarkdown } from "./ChatMarkdown";
 import { RecordName, ReferenceText } from "./ReferenceText";
@@ -221,6 +222,7 @@ function ChangeRow({ label, change, testId }: { label: string; change: ListChang
 
 /** What granting the proposal would change in the mandate in force, and which running work would stop. */
 function MandateDiffField({ diff, moduleName }: { diff: MandateProposalDiff; moduleName: (id: string) => string }) {
+  const t = useT();
   const named = (c: ListChange<string>, name: (v: string) => string) => ({ added: c.added.map(name), removed: c.removed.map(name) });
   return (
     <Field label={`Cosa cambia rispetto al mandato in vigore, versione ${diff.version}`}>
@@ -245,7 +247,7 @@ function MandateDiffField({ diff, moduleName }: { diff: MandateProposalDiff; mod
                   <AgentName agent={specialist} />
                   <Sep />
                   {assignment.objective}
-                  {dependsOn ? <span className="text-muted-foreground"> (dipende da «{dependsOn.objective}»)</span> : null}
+                  {dependsOn ? <span className="text-muted-foreground"> {t("mandate.stoppedWork.dependsOn", { objective: dependsOn.objective })}</span> : null}
                 </li>
               ))}
             </ul>
