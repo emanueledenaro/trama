@@ -12,6 +12,9 @@ export const en: Record<keyof typeof it, string> = {
   "time.years": "{count}y",
   "time.ago": "{time} ago",
 
+  // Coordinator replies
+  "toolError.placeholder": "a Trama tool refused the request (the details are in Activity)",
+
   // Language
   "language.label": "Language",
   "language.description":

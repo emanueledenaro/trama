@@ -214,7 +214,7 @@ import { approvePactDemo, inspectPactDemo, runPactDemo } from "./core/pactDemo";
 import { readRepositoryFile, scanRepository } from "./core/repositoryScanner";
 import { messageStyle } from "./core/messageStyle";
 import { DEFAULT_LANGUAGE, isLanguage, type Language, languageFromSystem } from "@shared/i18n";
-import { TOOL_ERRORS_RULE, toolErrorMessage, withoutToolErrors } from "./core/toolErrors";
+import { toolErrorMessage, toolErrorsRule, withoutToolErrors } from "./core/toolErrors";
 import { installedSkillVersion, prepareSkills, rollbackSkills, SELECTED_SKILLS, SKILL_VERSION, type SetupReport, updateSkills } from "./core/skillSetup";
 import {
   beginTurn,
@@ -466,7 +466,7 @@ const coordinatorSkillParts = (skills: NativeSkill[]) => skills.map((skill, inde
 type CleanCodeReview = { threadId: string; answer: ReviewAnswer; standard: StandardCheck | null };
 
 function lateRules(skills: NativeSkill[], provider: ProviderId, language: Language): LateRules {
-  const style = [messageStyle("the person", language), TOOL_ERRORS_RULE].join("\n");
+  const style = [messageStyle("the person", language), toolErrorsRule(language)].join("\n");
   const full = [style, NEXT_STEP_RULES, deliverNativeSkills(coordinatorSkillParts(skills), false).text].join("\n\n");
   const delivery = deliverNativeSkills(coordinatorSkillParts(skills), provider === "codex");
   return {
@@ -2597,7 +2597,7 @@ export class TramaController {
       request.completedAt = new Date().toISOString();
       const references = referencedPaths(reply, paths);
       if (reply) {
-        recordReply(document, request.id, withoutToolErrors(reply, this.turnToolErrors.get(request.id) ?? []), selectedModel, references, activeProvider);
+        recordReply(document, request.id, withoutToolErrors(reply, this.turnToolErrors.get(request.id) ?? [], this.state.language), selectedModel, references, activeProvider);
         // Options to pick in the text leave the person without a card: recorded, and the next turn is told (issue #228).
         const choice = choicesWithoutCard(document, request.id, reply);
         if (choice) appendEvent(document, "trama", { type: "activity", title: CHOICES_IN_TEXT_TITLE, detail: choice, tone: "error" }, request.id);
@@ -4703,7 +4703,7 @@ export class TramaController {
         const spec = auditSpec(document, assignment, project.github.issues);
         beginReviews(gate, { spec: spec !== null, model: runner?.model ?? null, cleanCodeModel: provider.model });
         this.changedIn(project);
-        const input = { projectName: project.name, gate, candidate, assignment, spec };
+        const input = { projectName: project.name, gate, candidate, assignment, spec, language: this.state.language };
         const skill = await this.nativeSkill("code-review");
         const sessions = SESSION_ROLES.filter((role) => gateReview(gate, role).status === "running").map((role) =>
           this.runGateReviewer(project, gate, role, runner, () => reviewerTurn(input, role, usesCodeReview(role) ? skill : null, runner?.provider === "codex"), assignment.workspace!.worktreeRoot),
@@ -4782,7 +4782,7 @@ export class TramaController {
         cwd: assignment.workspace!.worktreeRoot,
         ephemeral: true,
         readableRoots: this.readableRoots(project),
-        developerInstructions: reviewerInstructions(document.cleanCode),
+        developerInstructions: reviewerInstructions(document.cleanCode, this.state.language),
       });
       const decisions = candidate.requiredDecisionIds
         .map((id) => document.decisions.find((d) => d.id === id))
@@ -5004,7 +5004,7 @@ export class TramaController {
       const spec = auditSpec(document, assignment, project.github.issues);
       const axes = beginAxes(audit, spec?.source ?? null, runner.model);
       this.changedIn(project);
-      const input = { projectName: project.name, audit, candidate, assignment, spec };
+      const input = { projectName: project.name, audit, candidate, assignment, spec, language: this.state.language };
       await Promise.all(axes.map((axis) => this.runAuditAxis(project, audit, axis, axisTurn(input, axis, skill, runner.provider === "codex"), runner, assignment.workspace!.worktreeRoot)));
       await this.verifyAuditFindings(project, audit, candidate.id, runner, assignment.workspace.worktreeRoot);
       closeAudit(audit);
@@ -5040,7 +5040,7 @@ export class TramaController {
       for (const { axis, finding } of serious) {
         try {
           if (this.quitting) throw new Error("Trama si sta chiudendo.");
-          const turn = confirmationTurn({ projectName: project.name, audit, candidateId }, axis, finding);
+          const turn = confirmationTurn({ projectName: project.name, audit, candidateId, language: this.state.language }, axis, finding);
           const opening = await client.openThread({ model, cwd, developerInstructions: turn.instructions, sandbox: "read-only", ephemeral: true, readableRoots: this.readableRoots(project) });
           const raw = await client.runTurn({ threadId: opening.threadId, prompt: turn.prompt, cwd, model, outputSchema: turn.outputSchema, onEvent: () => undefined });
           confirmFinding(finding, { model, ...readConfirmation(raw) });

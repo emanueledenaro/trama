@@ -11,6 +11,9 @@ export const it = {
   "time.years": "{count}a",
   "time.ago": "{time} fa",
 
+  // Coordinator replies
+  "toolError.placeholder": "uno strumento di Trama ha rifiutato la richiesta (il dettaglio è in Attività)",
+
   // Language
   "language.label": "Lingua",
   "language.description":

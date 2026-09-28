@@ -242,6 +242,9 @@ describe("the candidate gate (W10)", () => {
       expect(turn.prompt).toContain("Diff catturato da Trama");
       expect(turn.prompt).not.toContain("Trama binding");
     }
+    // The report is written in the language the person reads Trama in (issue #301).
+    expect(reviewerTurn({ projectName: "ordini", gate, candidate, assignment, spec }, "ux", skill, false).instructions).toContain("Write the report in Italian");
+    expect(reviewerTurn({ projectName: "ordini", gate, candidate, assignment, spec, language: "en" }, "ux", skill, false).instructions).toContain("Write the report in English");
     // The binding maps the skill's words and never copies its method.
     const text = original.toString("utf8");
     for (const sentence of text.split(/(?<=\.)\s+/).filter((s) => s.length > 40)) expect(GATE_BINDING).not.toContain(sentence.trim());
