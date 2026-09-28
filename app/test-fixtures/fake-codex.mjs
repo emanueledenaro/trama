@@ -293,9 +293,11 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
         return;
       }
       if (required.includes("findings") && required.includes("worst")) {
-        // Focus mode (F01): one axis of code-review, named by its binding. Without the skill input it has no method.
+        // Focus mode (F01): one axis of code-review, named by its binding, or one of Trama's lenses (F05), named by
+        // its prompt. An axis without the skill input has no method; a lens carries Trama's brief and no skill.
         const skills = params.input.filter((item) => item.type === "skill").map((item) => item.name);
-        if (!skills.includes("code-review")) {
+        const lens = text.match(/lente di Trama "([^"]+)"/)?.[1] ?? null;
+        if (!lens && !skills.includes("code-review")) {
           setTimeout(() => finish(JSON.stringify({ report: "", findings: [], worst: "" })), 10);
           return;
         }
@@ -313,7 +315,34 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
           firstLine = "";
         }
         const proof = (kind, fields) => ({ kind, file: "", line: 0, quote: "", command: "", steps: "", ...fields });
-        const answer = text.includes("You are the Spec sub-agent")
+        // The lenses go through the same verification: a serious security finding on a line Trama rereads, a serious
+        // test finding only a stronger model can confirm, and a documents finding without a proof.
+        const lensAnswers = {
+          Sicurezza: {
+            report: `### Problemi di sicurezza\n\n- L'annullamento in \`${file}\` non controlla chi lo chiede.\n\nDiff letto con \`git diff ${fixedPoint}\`. Skill ricevute: ${skills.join(", ") || "nessuna"}.`,
+            findings: [{ title: `L'annullamento in ${file} non controlla chi lo chiede`, severity: "serious", evidence: proof("fileLine", { file, line: 1, quote: firstLine }) }],
+            worst: `L'annullamento in ${file} non controlla chi lo chiede`,
+          },
+          "Qualità dei test": {
+            report: "### Test mancanti o deboli\n\n- Il ramo dell'ordine già annullato non ha un test.",
+            findings: [
+              {
+                title: "Il ramo dell'ordine già annullato non ha un test",
+                severity: "serious",
+                evidence: proof("reproduction", { steps: "Annullare due volte lo stesso ordine e cercare nel diff un test che lo copra: non ce n'è." }),
+              },
+            ],
+            worst: "Il ramo dell'ordine già annullato non ha un test",
+          },
+          "Documenti e codice": {
+            report: "### Documenti non allineati\n\n- Il README non dice che un ordine pagato annullato va in revisione.",
+            findings: [{ title: "Il README non descrive la revisione dopo l'annullamento", severity: "minor", evidence: proof("none", {}) }],
+            worst: "Il README non descrive la revisione dopo l'annullamento",
+          },
+        };
+        const answer = lens
+          ? (lensAnswers[lens] ?? { report: "", findings: [], worst: "" })
+          : text.includes("You are the Spec sub-agent")
           ? {
               report: `### Requisiti mancanti o parziali\n\n- Il criterio \"Un ordine non pagato si annulla come prima\" non ha un test nel diff.\n- Il messaggio di annullamento non cita la revisione.\n\n### Fuori perimetro\n\nNessuno.\n\nFonte: ${text.match(/Spec, fonte: ([^(]+)/)?.[1]?.trim() ?? "?"}. Skill ricevute: ${skills.join(", ")}.`,
               findings: [
@@ -541,6 +570,11 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
         // "[impostazioni]" also changes the code owners, a setting of the repository: its merge runs into a fixed ban (issue #247).
         if (text.includes("[impostazioni]")) {
           writeFileSync(join(root, "CODEOWNERS"), "* @trama-fixture\n");
+        }
+        // "[cancella]" also deletes a tracked file: a destructive candidate the Coordinator does not merge alone (issue #41).
+        if (text.includes("[cancella]")) {
+          const { rmSync } = await import("node:fs");
+          rmSync(join(root, "README.md"), { force: true });
         }
         // "[interfaccia]" also changes the accent of the shop's page: a candidate that changes the interface (issue #247).
         if (text.includes("[interfaccia]")) {
@@ -829,7 +863,7 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
                 ? ["git_status", "node_test"]
                 : ["git_status"],
           tools: ["edits"],
-          instructions: `${text.includes("[segreto]") ? "[segreto] " : ""}${text.includes("[bloccante]") ? "[bloccante] " : ""}${text.includes("[lento]") ? "[lento] " : ""}${text.includes("[lento:sempre]") ? "[lento:sempre] " : ""}${text.includes("[specialista-pieno]") ? "[specialista-pieno] " : ""}${text.includes("[spazi]") ? "[spazi] " : ""}${text.includes("[domanda]") ? "[domanda] " : ""}${text.includes("[interfaccia]") ? "[interfaccia] " : ""}${text.includes("[impostazioni]") ? "[impostazioni] " : ""}Scrivi una nota`,
+          instructions: `${text.includes("[segreto]") ? "[segreto] " : ""}${text.includes("[bloccante]") ? "[bloccante] " : ""}${text.includes("[lento]") ? "[lento] " : ""}${text.includes("[lento:sempre]") ? "[lento:sempre] " : ""}${text.includes("[specialista-pieno]") ? "[specialista-pieno] " : ""}${text.includes("[spazi]") ? "[spazi] " : ""}${text.includes("[domanda]") ? "[domanda] " : ""}${text.includes("[interfaccia]") ? "[interfaccia] " : ""}${text.includes("[impostazioni]") ? "[impostazioni] " : ""}${text.includes("[cancella]") ? "[cancella] " : ""}Scrivi una nota`,
         }).then((result) => {
           toolDone("assign_task", result);
           finish(result.isError ? `Rifiutato: ${result.content[0].text}` : "Ho assegnato il lavoro ad Ada.");

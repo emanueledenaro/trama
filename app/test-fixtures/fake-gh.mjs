@@ -36,7 +36,21 @@ if (args[0] === "auth" && args[1] === "status") reply("github.com\n  ✓ Logged 
 // With FAKE_GH_PULLS Trama may publish and merge (issue #247): the account can push, a new pull request takes number 21,
 // `gh pr view` says it is open with no checks, and a merge at the head Trama pushed succeeds.
 const pulls = Boolean(process.env.FAKE_GH_PULLS);
-if (pulls && args[0] === "pr" && args[1] === "view") reply({ number: Number(args[2]), state: "OPEN", mergedAt: null, statusCheckRollup: [] });
+// With FAKE_GH_MERGE_LOST a merge happens but its answer is lost (issue #41): the PUT fails like a timeout and the
+// pull request then reads as merged. With FAKE_GH_PULL_HEAD the pull request's head is that commit, as after a push
+// Trama did not make.
+const mergeCalls = () => (process.env.FAKE_GH_LOG ? readFileSync(process.env.FAKE_GH_LOG, "utf8").split("\n").filter((line) => line.includes('"PUT"') && line.includes("/merge")).length : 0);
+if (pulls && args[0] === "pr" && args[1] === "view") {
+  const merged = Boolean(process.env.FAKE_GH_MERGE_LOST) && mergeCalls() > 0;
+  reply({
+    number: Number(args[2]),
+    state: merged ? "MERGED" : "OPEN",
+    mergedAt: merged ? "2026-09-28T10:00:00Z" : null,
+    statusCheckRollup: [],
+    ...(merged ? { mergeCommit: { oid: "0dd5e1ec0dd5e1ec0dd5e1ec0dd5e1ec0dd5e1ec" } } : {}),
+    ...(process.env.FAKE_GH_PULL_HEAD ? { headRefOid: process.env.FAKE_GH_PULL_HEAD } : {}),
+  });
+}
 if (args[0] !== "api") fail(`fake gh: ${args.join(" ")} not supported`);
 
 const endpoint = args.slice(1).find((arg, index, list) => !arg.startsWith("-") && list[index - 1] !== "--method" && list[index - 1] !== "--jq" && list[index - 1] !== "--raw-field" && list[index - 1] !== "--field");
@@ -95,6 +109,7 @@ if (pulls && method === "POST" && rest === "/pulls") reply({ number: 21, html_ur
 if (pulls && method === "PUT" && /^\/pulls\/\d+\/merge$/.test(rest)) {
   const sha = args.find((arg) => arg.startsWith("sha="))?.slice(4);
   if (!sha) fail("gh: Head branch was modified. Review and try the merge again. (HTTP 409)");
+  if (process.env.FAKE_GH_MERGE_LOST) fail("gh: request timed out");
   reply({ merged: true, sha: "feedfacefeedfacefeedfacefeedfacefeedface", message: "Pull Request successfully merged" });
 }
 if (method !== "GET") fail(`fake gh: ${method} ${endpoint} not supported`);

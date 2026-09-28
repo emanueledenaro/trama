@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { AuditFinding, FocusAudit, ProjectDocument } from "@shared/domain";
 import type { RepositoryModule } from "@shared/repository";
-import { beginAxes, closeAudit, openAudit } from "./audit";
+import { beginAxes, beginLenses, closeAudit, openAudit } from "./audit";
 import { declareCandidate } from "./candidates";
 import { emptyDocument } from "./document";
 import {
@@ -270,5 +270,36 @@ describe("report publication", () => {
     audit.status = "failed";
     expect(() => publicationTarget(document, audit)).toThrow("non è concluso");
     expect(findAssignment(document, audit.target.assignmentId)).not.toBeNull();
+  });
+});
+
+describe("Trama's lenses in the finding work (F05)", () => {
+  /** The same project, with the lenses run: a verified security finding, the other two lenses without findings. */
+  function withLenses() {
+    const { document, audit } = project();
+    beginLenses(audit, "gpt-6-luna", at(3));
+    Object.assign(audit.lenses!.security, { status: "done", report: "Rapporto", findings: 1, items: [finding("security-1", { title: "Il rimborso non controlla chi lo chiede" })] });
+    Object.assign(audit.lenses!.tests, { status: "done", report: "Rapporto", findings: 0, items: [] });
+    Object.assign(audit.lenses!.docs, { status: "failed", failure: "Sessione chiusa." });
+    return { document, audit };
+  }
+
+  it("acts on a lens finding and names the lens as its source", () => {
+    const { document, audit } = withLenses();
+    const lensFinding = audit.lenses!.security.items![0]!;
+    const body = findingIssueBody(document, audit, lensFinding);
+    expect(body).toContain("**Rilievo della lente di Trama Sicurezza, grave:** Il rimborso non controlla chi lo chiede");
+    recordFindingTicket(document, audit, lensFinding, null, at(6));
+    expect(lensFinding.followUps).toEqual([expect.objectContaining({ kind: "ticket" })]);
+    expect(findingIssueBody(document, audit, item(audit, "standards-1"))).toContain("**Rilievo dell'asse Standards, grave:**");
+  });
+
+  it("publishes the lenses after the two axes, marked as Trama's", () => {
+    const { document, audit } = withLenses();
+    const text = auditReportMarkdown(document, audit);
+    expect(text.indexOf("### Spec")).toBeLessThan(text.indexOf("### Sicurezza (lente di Trama)"));
+    expect(text).toContain("**Grave.** Il rimborso non controlla chi lo chiede (verificato da trama; prova: Sources/Payments/Refund.swift:12)");
+    expect(text).toContain("### Qualità dei test (lente di Trama)\n\nNessun rilievo.");
+    expect(text).toContain("### Documenti e codice (lente di Trama)\n\nLa lente non ha prodotto un rapporto.");
   });
 });
