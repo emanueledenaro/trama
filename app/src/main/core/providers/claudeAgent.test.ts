@@ -132,6 +132,22 @@ describe("tool permissions", () => {
   const readOnly = { cwd: "/repo", writableRoot: null, hostServer: "trama" };
   const writable = { cwd: "/work/tree", writableRoot: "/work/tree", hostServer: null };
 
+  it("refuses what a fixed ban covers before anything runs, in every turn (issue #244)", () => {
+    const force = decideToolPermission("Bash", { command: "git push --force origin feature/x" }, writable, identity);
+    expect(force).toMatchObject({ allow: false, ban: { ban: "forcePush", action: "git push --force origin feature/x" } });
+    expect(force.allow ? "" : force.reason).toMatch(/fixed ban/);
+    expect(decideToolPermission("Bash", { command: "git tag v1.0.0" }, writable, identity)).toMatchObject({ ban: { ban: "tagOrRelease" } });
+    expect(decideToolPermission("Bash", { command: "gh repo edit --visibility public" }, writable, identity)).toMatchObject({ ban: { ban: "repositorySettings" } });
+    // Secret files: reads by the Coordinator's read-only turn and writes by a specialist alike.
+    expect(decideToolPermission("Read", { file_path: "/repo/.env" }, readOnly, identity)).toMatchObject({ allow: false, ban: { ban: "secrets" } });
+    expect(decideToolPermission("Write", { file_path: "/work/tree/certs/server.pem" }, writable, identity)).toMatchObject({ allow: false, ban: { ban: "secrets" } });
+    // The Coordinator's shell is off anyway; a banned command is still recorded as the ban.
+    expect(decideToolPermission("Bash", { command: "gh auth token" }, readOnly, identity)).toMatchObject({ ban: { ban: "secrets" } });
+    // Ordinary work goes on.
+    expect(decideToolPermission("Bash", { command: "npm test" }, writable, identity).allow).toBe(true);
+    expect(decideToolPermission("Read", { file_path: "/repo/.env.example" }, readOnly, identity).allow).toBe(true);
+  });
+
   it("keeps read-only turns from writing or running commands", () => {
     expect(decideToolPermission("Read", { file_path: "/repo/a.ts" }, readOnly, identity).allow).toBe(true);
     expect(decideToolPermission("Grep", {}, readOnly, identity).allow).toBe(true);
@@ -147,7 +163,9 @@ describe("tool permissions", () => {
     expect(decideToolPermission("Grep", { pattern: "ordini" }, scoped, identity).allow).toBe(true);
     const memory = decideToolPermission("Grep", { pattern: "ordini", path: "~/.codex/memories/MEMORY.md" }, scoped, identity);
     expect(memory).toMatchObject({ allow: false, outsideRead: resolve(homedir(), ".codex/memories/MEMORY.md") });
-    expect(decideToolPermission("Read", { file_path: "../altro/.env" }, scoped, identity)).toMatchObject({ allow: false, outsideRead: "/altro/.env" });
+    expect(decideToolPermission("Read", { file_path: "../altro/note.md" }, scoped, identity)).toMatchObject({ allow: false, outsideRead: "/altro/note.md" });
+    // A secret file is refused by its fixed ban first, wherever it is (issue #244).
+    expect(decideToolPermission("Read", { file_path: "../altro/.env" }, scoped, identity)).toMatchObject({ allow: false, ban: { ban: "secrets" } });
     expect(decideToolPermission("Glob", { pattern: "*", path: "/home" }, scoped, identity).allow).toBe(false);
     expect(decideToolPermission("LS", { path: "/etc" }, readOnly, identity).allow).toBe(false);
   });

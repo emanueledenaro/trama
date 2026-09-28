@@ -1,4 +1,5 @@
-import type { ConversationEvent, CoordinatorRequest, NextMove, RoundRecord, WorkEvent } from "./domain";
+import type { ConversationEvent, CoordinatorRequest, FoundProblem, NextMove, RoundRecord, WorkEvent } from "./domain";
+import { problemActivity } from "./problems";
 
 /**
  * Activity (Q6): the project's log of the Coordinator's automatic moves and of the rounds that did something (A05). The
@@ -12,8 +13,8 @@ export type ActivityOutcome = "running" | "done" | "stalled" | "stopped" | "fail
 export interface ActivityEntry {
   /** The request of the move, or the round's id. */
   id: string;
-  /** An automatic move of the Coordinator, or a round of continuous work (A05). */
-  kind: "move" | "round";
+  /** An automatic move of the Coordinator, a round of continuous work (A05), or a step of a found problem (A08). */
+  kind: "move" | "round" | "problem";
   /** The request of the move; for a round, the move it started, or null. */
   requestId: string | null;
   /** The move; null for a round. */
@@ -31,6 +32,8 @@ export interface ActivityEntry {
   detail: string | null;
   /** The tools of the move that failed, with their technical error: they stay here, never in the chat (issue #241). */
   toolErrors: { title: string; detail: string | null }[];
+  /** The issue a problem's step names (A08); absent for moves and rounds. */
+  issue?: { number: number; url: string } | null;
 }
 
 export const ACTIVITY_OUTCOME_LABELS: Record<ActivityOutcome, string> = {
@@ -73,10 +76,10 @@ export const TRIGGER_LABELS: Record<WorkEvent, string> = {
 export const ROUND_LABEL = "Giro del Coordinatore";
 
 /**
- * The automatic moves and the rounds with an outcome of the project, newest first, from the requests, the move lines
- * Trama recorded and the rounds. Pure.
+ * The automatic moves, the rounds with an outcome and the steps of the found problems of the project, newest first, from
+ * the requests, the move lines Trama recorded, the rounds and the problems. Pure.
  */
-export function activityLog(requests: CoordinatorRequest[], events: ConversationEvent[], rounds: RoundRecord[] = []): ActivityEntry[] {
+export function activityLog(requests: CoordinatorRequest[], events: ConversationEvent[], rounds: RoundRecord[] = [], problems: FoundProblem[] = []): ActivityEntry[] {
   const labels = new Map<string, string>();
   const toolErrors = new Map<string, ActivityEntry["toolErrors"]>();
   for (const event of events) {
@@ -118,7 +121,8 @@ export function activityLog(requests: CoordinatorRequest[], events: Conversation
       toolErrors: [],
     }),
   );
-  if (!done.length) return moves;
+  const found = problemActivity(problems);
+  if (!done.length && !found.length) return moves;
   // Newest first; a move and the round that started it at the same moment keep the round below its move.
-  return [...moves, ...done].sort((a, b) => b.startedAt.localeCompare(a.startedAt));
+  return [...moves, ...done, ...found].sort((a, b) => b.startedAt.localeCompare(a.startedAt));
 }

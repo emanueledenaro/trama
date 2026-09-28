@@ -5,7 +5,8 @@ import { describe, expect, it } from "vitest";
 import type { ProjectMandate } from "@shared/domain";
 import { decideToolPermission } from "./providers/claudeAgent";
 import { git } from "./process";
-import { agentPushActivity, isGitPushCommand, pushActivity, pushBranch, type PushRecord, PushRefusedError } from "./push";
+import { commandBan } from "@shared/fixedBans";
+import { agentPushActivity, checkedOutBranch, isGitPushCommand, pushActivity, pushBranch, type PushRecord, PushRefusedError } from "./push";
 
 const mandate = (authorizedActions: ProjectMandate["authorizedActions"]) =>
   ({ version: 1, objectives: [], priorities: [], scopeModuleIds: [], authorizedActions, limits: [], grantedAt: "", status: "granted", revocation: null, history: [] }) as ProjectMandate;
@@ -54,6 +55,36 @@ describe("pushing a branch (issue #273)", () => {
     });
     expect(pushActivity({ outcome: "refused", ...where, reason: "no" }).tone).toBe("error");
     expect(pushActivity({ outcome: "failed", ...where, reason: "rete" }).detail).toContain("rete");
+  });
+});
+
+describe("fixed bans on Trama's own pushes (issue #244)", () => {
+  it("never pushes the main branch, whatever the mandate, and records the ban", async () => {
+    const { remote, repo } = await repository();
+    const records: PushRecord[] = [];
+    await expect(pushBranch({ root: repo, branch: "main", mandate: mandate(["openPullRequest"]), onRecord: (r) => records.push(r) })).rejects.toBeInstanceOf(PushRefusedError);
+    expect((await git(["branch", "--list"], remote)).trim()).toBe("");
+    expect(records).toEqual([{ outcome: "refused", branch: "main", remote: "origin", reason: expect.stringMatching(/Nessun mandato/), ban: "pushMainBranch" }]);
+    expect(pushActivity(records[0]!).title).toBe("Pubblicazione fermata da un divieto fisso");
+  });
+
+  it("reads the branch checked out, for an implicit push", async () => {
+    const { repo, branch } = await repository();
+    expect(checkedOutBranch(repo)).toBe("main");
+    expect(commandBan("git push", undefined, () => checkedOutBranch(repo))).toBe("pushMainBranch");
+    await git(["checkout", "-q", branch], repo, false);
+    expect(commandBan("git push", undefined, () => checkedOutBranch(repo))).toBeNull();
+    expect(checkedOutBranch(tmpdir())).toBeNull();
+  });
+
+  it("counts the project's default branch as the main one", async () => {
+    const { repo } = await repository();
+    await git(["branch", "trunk"], repo, false);
+    const records: PushRecord[] = [];
+    await expect(
+      pushBranch({ root: repo, branch: "trunk", mandate: mandate(["openPullRequest"]), mainBranches: ["trunk"], onRecord: (r) => records.push(r) }),
+    ).rejects.toBeInstanceOf(PushRefusedError);
+    expect(records[0]).toMatchObject({ outcome: "refused", ban: "pushMainBranch" });
   });
 });
 
@@ -111,8 +142,10 @@ describe("the only pushes in Trama's code (issue #273)", () => {
     }
     const branchPushes = found.filter((l) => l.startsWith("main/core/push.ts:"));
     const presencePushes = found.filter((l) => l.startsWith("main/core/presence.ts:"));
+    // The fixed bans read `git push` commands to refuse them (issue #244); they run nothing.
+    const recognised = found.filter((l) => l.startsWith("shared/fixedBans.ts:") && /case "push":/.test(l));
     // A new push anywhere else must go through pushBranch and its mandate check.
-    expect(found.filter((l) => !branchPushes.includes(l) && !presencePushes.includes(l))).toEqual([]);
+    expect(found.filter((l) => !branchPushes.includes(l) && !presencePushes.includes(l) && !recognised.includes(l))).toEqual([]);
     expect(branchPushes).toHaveLength(1);
     // Presence writes only refs/trama/presence/<user> (ADR 0015), never a branch.
     expect(presencePushes.length).toBeGreaterThan(0);

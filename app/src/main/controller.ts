@@ -38,6 +38,7 @@ import type {
   AppState,
   CoordinatorPhase,
   CoordinatorRequest,
+  GitHubIssue,
   GitHubState,
   Practice,
   PracticeView,
@@ -45,15 +46,19 @@ import type {
   LearningReviewRun,
   ProjectOverview,
   ProviderState,
+  FixedBanRefusal,
   MandateAction,
   ProjectDocument,
   WorkKind,
   WorkPlan,
+  RecapReason,
+  RecapRecord,
   RecentProject,
   RequestStep,
   SpecialistAssignment,
 } from "@shared/domain";
-import { isOpenQuestion } from "@shared/domain";
+import { isOpenQuestion, pendingMandateRequest } from "@shared/domain";
+import { waitingForYou, type WaitingSources } from "@shared/waitingForYou";
 import { resolveCodexExecutable } from "./core/codexClient";
 import { CodexRuntime } from "./core/providers/codex";
 import { createRuntime, hasAdapter } from "./core/providers/registry";
@@ -143,7 +148,10 @@ import {
   closeIssue,
   commentOnIssue,
   addBlockedBy,
+  addIssueLabels,
   createIssue,
+  listIssues,
+  removeIssueLabel,
   linkedIssueNumbers,
   listIssuesAndPullLinks,
   readGitHubRepository,
@@ -174,6 +182,7 @@ import {
 } from "./core/pact";
 import { availableChecks, CHECKS, lendNodeDependencies, type ReadOnlyCheck, runReadOnlyCheck } from "./core/checks";
 import { checkSpecSections, PlanError, type PlannerSkills, plannerTurn, readPlannerAnswer, SPEC_TRIAGE_LABEL, specMarkdown, supersedeGoalPlans } from "./core/plan";
+import { asksForRecap, type Milestone, newMilestones, recapTitle, writeRecap } from "./core/recap";
 import { draftSlicing, readSlicerAnswer, sliceViews, slicerTurn, TICKET_TRIAGE_LABEL, ticketMarkdown } from "./core/slices";
 import { approvePactDemo, inspectPactDemo, runPactDemo } from "./core/pactDemo";
 import { readRepositoryFile, scanRepository } from "./core/repositoryScanner";
@@ -249,6 +258,15 @@ import { assessWorktreePair, worktreePairs } from "./core/worktreeConflicts";
 import { clampParallelDevelopers } from "@shared/parallel";
 import { pullRequestBody, publishCandidate } from "./core/publication";
 import { agentPushActivity, isGitPushCommand, pushActivity, pushAuthorization, pushRefusal } from "./core/push";
+import {
+  acknowledgeFixedBanRefusal,
+  fixedBanActivity,
+  needsProjectMandate,
+  proposeProjectMandate,
+  recordFixedBanRefusal,
+  restrictMandate,
+  restrictionMessage,
+} from "./core/projectMandate";
 import { branchPrefix, commitHeader, readProjectConventions, requireValidCommitMessage, validateCommitMessage } from "./core/conventions";
 import { candidateCommit, qualityGate, qualityMissing, relatedIssue, secretFindings, workCommitType } from "./core/quality";
 import {
@@ -317,6 +335,7 @@ import {
   type DutyRunner,
   dutySession,
   nextDuty,
+  observeIssues,
   recordCheckOutcome,
   startDomainWriting,
   startDutyOnRequest,
@@ -324,6 +343,21 @@ import {
   withinMandate,
 } from "./core/duties";
 import { findDomainProposal } from "@shared/domainDocs";
+import {
+  collectProblems,
+  keepInLocalBacklog,
+  labelsAfterTriage,
+  latestTriage,
+  parseTriageLabels,
+  placeProblems,
+  problemIssueBody,
+  problemsToOpen,
+  recordIssueFailure,
+  recordProblemIssue,
+  sameProblemIssue,
+  ISSUE_RETRY_MS,
+  TRIAGE_LABELS_PATH,
+} from "./core/problems";
 
 /** The person's Coordinator models as read from settings.json: entries without a model name are dropped. */
 function coordinatorModelSettings(saved: unknown): NonNullable<AppSettings["coordinatorModels"]> {
@@ -713,6 +747,7 @@ export class TramaController {
     );
     project.focus = focusView(project.document);
     project.statusLine = statusLine(project.document, project.runningRequestId);
+    project.waiting = waitingForYou(project.document, this.waitingSources(project, { sliceViews: project.sliceViews, candidateReports: project.candidateReports }));
     project.automaticWork = project.isDemo ? [] : automaticWorkStatus(project.document, this.dutyContext(project, project.snapshot.headSHA));
     project.overlaps = projectOverlaps(project, this.presenceProbes);
     project.pactDemoBlockers = project.document.pactDemo ? inspectPactDemo(project.document, project.document.pactDemo) : [];
@@ -833,6 +868,8 @@ export class TramaController {
   private publishNow(): void {
     if (this.publishTimer) clearTimeout(this.publishTimer);
     this.publishTimer = null;
+    // Every change reaches the person through here: a milestone it brought becomes a recap, saved with the project.
+    if (this.state.project && this.recapMilestones(this.state.project)) this.scheduleSave();
     this.refreshDerived();
     this.host.publish(this.state);
   }
@@ -858,6 +895,69 @@ export class TramaController {
   private changed(): void {
     this.scheduleSave();
     this.publish();
+  }
+
+  /**
+   * What "Aspetta te" reads besides the document: the slices of each approved breakdown, the verdict of each candidate
+   * not yet published and the memory proposals. `derived` passes the slices and verdicts the published state has just
+   * computed, so they are not computed twice.
+   */
+  private waitingSources(project: ActiveProjectState, derived?: Pick<WaitingSources, "sliceViews" | "candidateReports">): WaitingSources {
+    const document = project.document;
+    const views =
+      derived?.sliceViews ?? Object.fromEntries(document.plans.filter((p) => p.slicing?.status === "approved").map((p) => [p.id, sliceViews(document, p)]));
+    const reports =
+      derived?.candidateReports ??
+      Object.fromEntries(document.candidates.filter((c) => !c.pullRequest).map((c) => [c.id, candidateReport(document, c, project.snapshot.headSHA)]));
+    return { sliceViews: views, candidateReports: reports, memoryProposals: project === this.state.project ? this.state.learning?.proposals : undefined };
+  }
+
+  /**
+   * The milestones the project reached since the last reading become one recap of the Coordinator in the chat (A03),
+   * however many arrived together. The first reading of a project only takes note of what it already reached. Returns
+   * whether the document changed.
+   */
+  private recapMilestones(project: ActiveProjectState): boolean {
+    if (!project.stateWritable) return false;
+    const sources = this.waitingSources(project);
+    const first = !project.document.recap;
+    const untold = newMilestones(project.document, sources.sliceViews ?? {});
+    if (untold.length) this.appendRecap(project, "milestone", untold, sources);
+    return first || untold.length > 0;
+  }
+
+  /** Writes a recap and its card in the chat (A03): under the goal the person asked it in, else on the whole project. */
+  private appendRecap(project: ActiveProjectState, reason: RecapReason, reached: Milestone[], sources: WaitingSources, goalId: string | null = null): RecapRecord {
+    const now = new Date();
+    const recap = writeRecap(project.document, {
+      id: randomUUID(),
+      at: now.toISOString(),
+      reason,
+      milestones: reached,
+      runningRequestId: project.runningRequestId,
+      sources,
+    });
+    appendEvent(project.document, "coordinator", { type: "card", kind: "recap", title: recapTitle(recap), detail: null, referenceId: recap.id }, null, now, null, goalId);
+    return recap;
+  }
+
+  /**
+   * The person asks for a recap (A03), with the command, a short request in the chat or the search palette: their
+   * message and the recap go in the chat at once, without a provider turn, also while the Coordinator works.
+   */
+  recap(text: string | null = null, goalId: string | null = null): void {
+    const project = this.requireProject();
+    if (!project.stateWritable) throw new DomainError("Lo stato di questo progetto è in sola lettura.");
+    const goal = goalId ? requireGoal(project.document, goalId).id : null;
+    if (text) {
+      appendEvent(project.document, "person", { type: "personMessage", text, moduleId: null, moduleName: null, imageCount: 0 }, null, new Date(), null, goal);
+      project.document.composerDraft = "";
+    }
+    // Milestones reached and not told yet are part of this recap, so they are not told again right after it.
+    const sources = this.waitingSources(project);
+    const untold = newMilestones(project.document, sources.sliceViews ?? {});
+    this.appendRecap(project, untold.length ? "milestone" : "request", untold, sources, goal);
+    this.changed();
   }
 
   private async saveSettings(): Promise<void> {
@@ -1108,6 +1208,8 @@ export class TramaController {
       if (!isDemo) this.startPresence(project);
       // Paused work whose question got its answer before a restart resumes now (W06).
       if (loaded.writable) this.resumeAnsweredWork(project);
+      // A project without a mandate gets the proposal of the project mandate for the whole cycle (issue #244).
+      if (!isDemo && loaded.writable) this.proposeProjectMandate(project);
       if (!isDemo && loaded.writable && shouldAutoPrepareMethod(this.state.settings, this.state.onboarding) && !hasAiHero(root)) {
         // T04: the method is ready when the project opens; existing files are never overwritten.
         void this.prepareSkills().catch((error) => this.fail(error));
@@ -2164,6 +2266,8 @@ export class TramaController {
           this.publish();
         } else if (event.type === "tokenUsage") {
           project.contextUsage = { usedTokens: event.usedTokens, contextWindow: event.contextWindow };
+        } else if (event.type === "fixedBanRefused") {
+          this.recordFixedBan(project, event, { kind: "coordinator" });
         } else if (event.type === "toolRefused") {
           // A refusal during the study is visible too (issue #228).
           appendEvent(document, "trama", { type: "activity", title: TOOL_REFUSED_TITLE, detail: toolRefusedDetail(event), tone: "error" }, null);
@@ -2205,6 +2309,8 @@ export class TramaController {
     const project = this.requireProject();
     const trimmed = text.trim();
     if (!trimmed) return;
+    // A request for a recap is answered by Trama from the records, not by a provider turn (A03).
+    if (!step && !retry && removable && images.length === 0 && asksForRecap(trimmed)) return this.recap(trimmed, goalId);
     // A new message or a step decides for the person: a waiting automatic retry no longer applies.
     if (!retry) this.cancelProviderRetry(project);
     const goal = goalId ? requireGoal(project.document, goalId) : null;
@@ -2865,6 +2971,9 @@ export class TramaController {
       case "toolRefused":
         activity(TOOL_REFUSED_TITLE, toolRefusedDetail(event), "error");
         return;
+      case "fixedBanRefused":
+        this.recordFixedBan(project, event, { kind: "coordinator" }, request.id);
+        return;
       case "reasoning":
         activity("Ragionamento", event.text, "info");
         return;
@@ -3301,15 +3410,42 @@ export class TramaController {
     limits: string[];
   }): Promise<void> {
     const project = this.requireProject();
-    assertMandateRequestAnswerable(project.document, input.requestId);
+    // A mandate the person writes answers the pending project mandate too (issue #244): it does not wait any longer.
+    const pending = pendingMandateRequest(project.document);
+    const requestId = input.requestId ?? (pending?.projectCycle ? pending.id : null);
+    assertMandateRequestAnswerable(project.document, requestId);
     const hadMandate = project.document.mandate?.status === "granted";
     const mandate = grantMandate(project.document, input);
     const kind = hadMandate ? "corrected" : "granted";
-    if (input.requestId) resolveMandateRequest(project.document, input.requestId, kind, mandate.version);
+    if (requestId) resolveMandateRequest(project.document, requestId, kind, mandate.version);
     this.stopWorkOutsideMandate("Il mandato corretto non copre più questo lavoro.");
     this.changed();
     void this.runDuties();
     await this.send(mandateMessage(kind, mandate.version), null, null, null, [], null, null, false);
+  }
+
+  /**
+   * Asks for the project mandate on the Coordinator's behalf when the project has none and nothing waits (issue #244).
+   * Trama asks it by rule, without a turn of the model; the proposal waits in "Aspetta te".
+   */
+  private proposeProjectMandate(project: ActiveProjectState): void {
+    const moduleIds = project.snapshot.modules.map((m) => m.id);
+    if (!needsProjectMandate(project.document, moduleIds)) return;
+    const request = proposeProjectMandate(project.document, moduleIds);
+    appendEvent(project.document, "trama", { type: "card", kind: "mandate", title: "Mandato di progetto", detail: null, referenceId: request.id });
+    this.changedIn(project);
+  }
+
+  /**
+   * Narrows the mandate in force without revoking it (issue #244). Running turns end as they are; from the next turn
+   * the Coordinator reads the new version, and work outside it does not start again.
+   */
+  async restrictMandate(input: { scopeModuleIds: string[]; authorizedActions: MandateAction[] }): Promise<void> {
+    const project = this.requireProject();
+    const mandate = restrictMandate(project.document, input);
+    this.changed();
+    const moduleName = (id: string) => project.snapshot.modules.find((m) => m.id === id)?.name ?? id;
+    await this.send(restrictionMessage(mandate, moduleName), null, null, null, [], null, null, false);
   }
 
   /** Revokes the mandate in force, from the Mandate view only: a proposal card never reaches it. */
@@ -3337,6 +3473,31 @@ export class TramaController {
     return join(this.storage.root, "Worktrees");
   }
 
+  /**
+   * An action a fixed ban stopped before it started (issue #244): it becomes an item of "Aspetta te" with its reason and
+   * an activity line where it happened. Every attempt counts, also the same command tried again; the providers report
+   * each call once, however many of their hooks refuse it.
+   */
+  private recordFixedBan(
+    project: ActiveProjectState,
+    event: Extract<TurnEvent, { type: "fixedBanRefused" }>,
+    by: FixedBanRefusal["by"],
+    requestId: string | null = null,
+    work: { assignmentId: string; workKey: string } | null = null,
+  ): void {
+    const document = project.document;
+    const refusal = recordFixedBanRefusal(document, { ban: event.ban, action: event.action, by });
+    appendEvent(document, by.kind === "specialist" ? "specialist" : "trama", fixedBanActivity(refusal), requestId, new Date(), work);
+    this.changedIn(project);
+  }
+
+  /** The person has seen an action a fixed ban stopped: it leaves "Aspetta te" (issue #244). */
+  acknowledgeFixedBan(id: string): void {
+    const project = this.requireProject();
+    acknowledgeFixedBanRefusal(project.document, id);
+    this.changed();
+  }
+
   private specialistActivity(
     project: ActiveProjectState,
     assignmentId: string,
@@ -3358,6 +3519,7 @@ export class TramaController {
       this.changed();
       return;
     }
+    this.recapMilestones(project);
     if (project.stateWritable) void this.storage.saveDocument(project.document).catch((error) => this.fail(error));
     this.publish();
   }
@@ -3530,6 +3692,11 @@ export class TramaController {
             case "toolRefused":
               this.specialistActivity(project, assignmentId, key, TOOL_REFUSED_TITLE, toolRefusedDetail(event), "error");
               return;
+            case "fixedBanRefused": {
+              const specialistId = findAssignment(project.document, assignmentId)?.specialistId ?? "";
+              this.recordFixedBan(project, event, { kind: "specialist", specialistId, assignmentId }, null, { assignmentId, workKey: `${assignmentId}:${key}` });
+              return;
+            }
             default:
               return;
           }
@@ -3750,6 +3917,7 @@ export class TramaController {
       try {
         do {
           this.dutiesAgain = false;
+          await this.handleProblems();
           await this.startNextDuty();
           await this.moveTeam();
         } while (this.dutiesAgain);
@@ -3758,6 +3926,97 @@ export class TramaController {
       }
     })();
     return this.dutiesRun;
+  }
+
+  /**
+   * The problems found outside the work in progress (A08): Trama records them, opens one issue each on GitHub or links
+   * the open one about the same problem, applies the triage labels after the triage and places each problem with the
+   * assignment that works on it or in the backlog. Without GitHub the problems stay in Trama as backlog items. Nothing
+   * is opened in pause, in the example project or without a granted mandate. Every step goes to Activity.
+   */
+  /** When Trama last tried to apply the triage labels to a problem's issue, by problem id. */
+  private readonly problemLabelAttempts = new Map<string, number>();
+
+  private async handleProblems(): Promise<void> {
+    const project = this.state.project;
+    if (!project || !project.stateWritable || project.isDemo || this.quitting) return;
+    const document = project.document;
+    if (isPaused(document)) return;
+    const github = project.github;
+    const ready = github.status === "ready" && github.repository !== null;
+    let changed = !document.problems;
+    changed = collectProblems(document, ready ? github.issues : null).length > 0 || changed;
+    changed = placeProblems(document).length > 0 || changed;
+    if (github.status === "unavailable") changed = keepInLocalBacklog(document).length > 0 || changed;
+    if (!ready || document.mandate?.status !== "granted") {
+      if (changed) this.changedIn(project);
+      return;
+    }
+    const repository = github.repository!;
+    const labels = parseTriageLabels(await readRepositoryFile(TRIAGE_LABELS_PATH, project.rootPath).catch(() => null));
+    const waiting = problemsToOpen(document);
+    if (waiting.length) {
+      // Read again just before opening, so an issue opened meanwhile about the same problem is not duplicated.
+      const issues = await listIssues(repository).catch((error: Error) => {
+        for (const problem of waiting) recordIssueFailure(problem, `GitHub CLI non ha letto le issue: ${classifyGitHubError(error.message).message}`);
+        return null;
+      });
+      if (this.state.project !== project) return;
+      if (issues) {
+        // The rule of new issues must know them before the Coordinator opens one, or the new one would count as old.
+        observeIssues(document, { issues, pullRequests: github.pullRequestLinks ?? null });
+        for (const problem of waiting) {
+          const existing = sameProblemIssue(problem, issues);
+          if (existing) {
+            recordProblemIssue(problem, existing, false);
+            continue;
+          }
+          const body = problemIssueBody(problem);
+          try {
+            const created = await createIssue(repository, problem.title, body, [labels["needs-triage"]]);
+            recordProblemIssue(problem, created, true);
+            const issue: GitHubIssue = {
+              number: created.number,
+              title: problem.title,
+              state: "open",
+              body,
+              url: created.url,
+              author: github.capabilities?.login ?? null,
+              labels: [labels["needs-triage"]],
+              updatedAt: new Date().toISOString(),
+            };
+            issues.push(issue);
+            // The triage rule reads the issues Trama keeps: the new one reaches the bug triage without waiting for a refresh.
+            if (this.state.project === project) project.github = { ...project.github, issues: [...project.github.issues, issue] };
+          } catch (error) {
+            recordIssueFailure(problem, `La issue non è stata aperta: ${classifyGitHubError((error as Error).message).message}`);
+          }
+        }
+      }
+      changed = true;
+    }
+    for (const problem of document.problems?.items ?? []) {
+      const issue = problem.issue;
+      const outcome = issue?.opened && !problem.labelsApplied ? latestTriage(document, issue.number)?.duty?.outcome : null;
+      if (!issue || outcome?.kind !== "triage") continue;
+      // A failed attempt waits before the next one, like the opening of the issue.
+      const tried = this.problemLabelAttempts.get(problem.id);
+      if (tried && Date.now() - tried < ISSUE_RETRY_MS) continue;
+      this.problemLabelAttempts.set(problem.id, Date.now());
+      const { add, remove } = labelsAfterTriage(labels, outcome);
+      try {
+        await addIssueLabels(repository, issue.number, add);
+        if (remove) await removeIssueLabel(repository, issue.number, remove);
+        problem.labelsApplied = add;
+        changed = true;
+      } catch {
+        // The labels are applied at the next look.
+      }
+    }
+    if (changed && this.state.project === project) {
+      placeProblems(document);
+      this.changedIn(project);
+    }
   }
 
   private async startNextDuty(): Promise<void> {
@@ -4199,6 +4458,8 @@ export class TramaController {
     if (gate.status === "blocked" && !gate.checksFailed.length) this.returnToDeveloper(project, gate);
     this.changedIn(project);
     this.releaseParkedProject(project);
+    // A check red on the base too or a finding outside the candidate is a problem to open an issue for (A08).
+    void this.runDuties();
     return review;
   }
 
@@ -4621,6 +4882,8 @@ export class TramaController {
       mandate: document.mandate,
       onPush: (record) => {
         appendEvent(document, "trama", pushActivity(record));
+        // A push a fixed ban stopped waits for the person in Aspetta te (issue #244).
+        if (record.outcome === "refused" && record.ban) recordFixedBanRefusal(document, { ban: record.ban, action: `git push ${record.remote} ${record.branch}`, by: { kind: "trama" } });
         this.changed();
       },
     });

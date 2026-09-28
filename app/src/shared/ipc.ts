@@ -47,6 +47,8 @@ export interface ActionMap {
   "coordinator:interrupt": [void, void];
   /** Pauses or resumes the project's continuous work (A05): the Pause stops automatic moves, rounds and automatic work. */
   "coordinator:pause": [{ paused: boolean }, void];
+  /** The person asks the Coordinator for a recap (A03): Trama writes it in the chat from the records. */
+  "coordinator:recap": [{ goalId?: string | null }, void];
   "coordinator:retry": [void, void];
   /** Repeats a failed turn without writing the message again (P10). */
   "coordinator:retryRequest": [{ requestId: string }, void];
@@ -89,6 +91,10 @@ export interface ActionMap {
     void,
   ];
   "mandate:revoke": [{ reason: string }, void];
+  /** Narrows the mandate in force without revoking it: fewer modules or actions, never more (issue #244). */
+  "mandate:restrict": [{ scopeModuleIds: string[]; authorizedActions: MandateAction[] }, void];
+  /** The person has seen an action a fixed ban stopped; it leaves Aspetta te (issue #244). */
+  "fixedBan:acknowledge": [{ id: string }, void];
   "mandate:reject": [{ requestId: string; reason: string }, void];
   "team:answer": [{ proposalId: string; keeping: string[] | null; note: string | null }, void];
   "assignment:stop": [{ assignmentId: string }, void];

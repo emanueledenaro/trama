@@ -9,6 +9,7 @@ import type { AppState, ProjectDocument } from "@shared/domain";
 import { chatEvents, decisionDependents, dialogEvents, findGoal, projectGoals } from "@shared/goals";
 import { activityLog } from "@shared/activity";
 import { deriveTimelineRows } from "@shared/timeline";
+import { waitingForYou } from "@shared/waitingForYou";
 import { TramaController } from "./controller";
 import { QUIT_NOTE } from "./core/document";
 import { AppStorage } from "./core/storage";
@@ -153,7 +154,8 @@ describe("TramaController", () => {
     await controller!.send("Come funziona l'annullamento?", "Sources/Orders", null, null);
     const request = project.document.requests[0]!;
     expect(request.state).toBe("completed");
-    const kinds = project.document.events.map((e) => e.content.type);
+    // The project mandate proposed at the opening (issue #244) waits in Aspetta te and is not part of this exchange.
+    const kinds = project.document.events.filter((e) => !(e.content.type === "card" && e.content.kind === "mandate")).map((e) => e.content.type);
     // The study card, then the first goal the Coordinator proposed in it (UX07).
     expect(kinds).toEqual(["card", "card", "personMessage", "activity", "activity", "coordinatorText"]);
     const reply = project.document.events.at(-1)!.content;
@@ -627,6 +629,45 @@ describe("TramaController", () => {
     }
   }, 90_000);
 
+  it("writes the recap asked with the command or in the chat from the records, without a provider turn (A03)", async () => {
+    await setup();
+    const document = controller!.snapshot.project!.document;
+    const requests = document.requests.length;
+    await controller!.send("/riepilogo", null, null, null);
+    await controller!.send("A che punto siamo?", null, null, null);
+    expect(document.requests).toHaveLength(requests);
+    const cards = document.events.filter((e) => e.content.type === "card" && e.content.kind === "recap");
+    expect(cards).toHaveLength(2);
+    expect(document.events.filter((e) => e.content.type === "personMessage").map((e) => (e.content as { text: string }).text)).toEqual(["/riepilogo", "A che punto siamo?"]);
+    const recaps = document.recap!.recaps;
+    expect(recaps.map((r) => r.reason)).toEqual(["request", "request"]);
+    expect(recaps[0]).toMatchObject({ milestones: [], doing: controller!.snapshot.project!.statusLine!.text });
+    // A longer message is the Coordinator's, as any other.
+    await controller!.send("Fammi un riepilogo delle scelte sul checkout e poi prepara il piano", null, null, null);
+    expect(document.requests).toHaveLength(requests + 1);
+  }, 60_000);
+
+  it("writes one recap for a milestone, and tells it once (A03)", async () => {
+    await setup();
+    const document = controller!.snapshot.project!.document;
+    const goalId = await controller!.createGoal({ title: "Resi senza telefonate", outcome: "Il cliente apre un reso da solo", examples: [] });
+    await new Promise((r) => setTimeout(r, 100));
+    expect(document.recap?.recaps ?? []).toEqual([]);
+    await controller!.updateGoal(goalId, { status: "achieved" });
+    await until(() => (document.recap?.recaps.length ?? 0) > 0);
+    // More changes after the milestone do not tell it again.
+    await controller!.updateGoal(goalId, { title: "Resi senza telefonate al supporto" });
+    await controller!.send("/riepilogo", null, null, null);
+    await new Promise((r) => setTimeout(r, 100));
+    const recaps = document.recap!.recaps;
+    expect(recaps.map((r) => r.reason)).toEqual(["milestone", "request"]);
+    expect(recaps[0]!.milestones).toEqual(["Obiettivo raggiunto: Resi senza telefonate"]);
+    expect(recaps[1]!.milestones).toEqual([]);
+    const card = document.events.find((e) => e.content.type === "card" && e.content.kind === "recap");
+    expect(card?.content).toMatchObject({ title: "Riepilogo: un traguardo", referenceId: recaps[0]!.id });
+    expect(card?.goalId).toBeUndefined();
+  }, 60_000);
+
   it("runs no round on a project without open work (A05)", async () => {
     await setup();
     const document = controller!.snapshot.project!.document;
@@ -879,18 +920,78 @@ describe("TramaController", () => {
     expect(sentDetail(document.requests[2]!.id)).not.toMatchObject({ detail: expect.stringContaining("richiamo") });
   }, 60_000);
 
+  it("proposes the project mandate when a project opens without one, and not again once it is granted (issue #244)", async () => {
+    const { project: path } = await setup();
+    const document = controller!.snapshot.project!.document;
+    expect(document.mandateRequests).toHaveLength(1);
+    const [request] = document.mandateRequests;
+    expect(request).toMatchObject({ projectCycle: true, requestId: null, resolution: null, authorizedActions: ["plan", "executeInWorktree", "openPullRequest", "integrateCandidate", "composeTeam"] });
+    expect(document.events.filter((e) => e.content.type === "card" && e.content.kind === "mandate").map((e) => e.content)).toEqual([
+      expect.objectContaining({ title: "Mandato di progetto", referenceId: request!.id }),
+    ]);
+    // Opening it again while the proposal waits asks nothing more.
+    await controller!.closeProject();
+    await controller!.openProject(path);
+    expect(controller!.snapshot.project!.document.mandateRequests).toHaveLength(1);
+
+    await controller!.grantMandate({ ...request!, requestId: request!.id });
+    const granted = controller!.snapshot.project!.document;
+    expect(granted.mandate).toMatchObject({ status: "granted", version: 1 });
+    await controller!.closeProject();
+    await controller!.openProject(path);
+    expect(controller!.snapshot.project!.document.mandateRequests).toHaveLength(1);
+  });
+
+  it("restricts the mandate without revoking it and tells the Coordinator (issue #244)", async () => {
+    await setup();
+    const document = controller!.snapshot.project!.document;
+    const [request] = document.mandateRequests;
+    await controller!.grantMandate({ ...request!, requestId: request!.id });
+    await controller!.restrictMandate({ scopeModuleIds: request!.scopeModuleIds, authorizedActions: ["plan", "executeInWorktree"] });
+    expect(document.mandate).toMatchObject({ status: "granted", version: 2, authorizedActions: ["plan", "executeInWorktree"] });
+    expect(document.mandate!.history.map((h) => h.version)).toEqual([1]);
+    const message = document.events.findLast((e) => e.content.type === "personMessage")!.content;
+    expect(message).toMatchObject({ text: expect.stringContaining("Ho ristretto il mandato") });
+  });
+
+  it("stops a command a fixed ban covers, whatever the mandate, and puts it in Aspetta te (issue #244)", async () => {
+    await setup();
+    const project = controller!.snapshot.project!;
+    const document = project.document;
+    const [request] = document.mandateRequests;
+    await controller!.grantMandate({ ...request!, requestId: request!.id });
+    await controller!.send("[vietato:git push --force origin main]", null, null, null);
+    await until(() => project.runningRequestId === null && document.requests.at(-1)!.state !== "running", 20_000);
+    expect(document.requests.at(-1)!.state).toBe("interrupted");
+    expect(document.fixedBanRefusals).toEqual([
+      expect.objectContaining({ ban: "forcePush", action: "git push --force origin main", by: { kind: "coordinator" }, acknowledgedAt: null }),
+    ]);
+    // The goal the study proposed waits as well (issue #292): only the refusals are counted here.
+    const refusals = () => waitingForYou(document).filter((i) => i.kind === "fixedBan");
+    expect(refusals()).toHaveLength(1);
+    expect(document.events.some((e) => e.content.type === "activity" && e.content.title.startsWith("Azione fermata da un divieto fisso"))).toBe(true);
+    // The same command tried again is a second refusal, not folded into the first.
+    await controller!.send("[vietato:git push --force origin main]", null, null, null);
+    await until(() => project.runningRequestId === null && document.fixedBanRefusals!.length === 2, 20_000);
+    expect(refusals()).toHaveLength(2);
+    for (const refusal of document.fixedBanRefusals!) controller!.acknowledgeFixedBan(refusal.id);
+    expect(refusals()).toEqual([]);
+  });
+
   it("supersedes a pending mandate request with a newer one, which alone can be granted (W14)", async () => {
     await setup();
     const document = controller!.snapshot.project!.document;
     await controller!.send("[chiedi-mandato:Primo]", null, null, null);
     await controller!.send("[chiedi-mandato:Secondo]", null, null, null);
-    const [first, second] = document.mandateRequests;
+    // The project mandate proposed at the opening (issue #244) is the oldest request: the Coordinator's first supersedes it.
+    const [project, first, second] = document.mandateRequests;
+    expect(project).toMatchObject({ projectCycle: true, resolution: { kind: "superseded", supersededBy: first!.id } });
     expect(first!.resolution).toMatchObject({ kind: "superseded", supersededBy: second!.id });
     expect(second!.resolution).toBeNull();
     // The Coordinator learns which request the new one replaced.
     expect(document.events.at(-1)!.content).toMatchObject({ text: expect.stringContaining(first!.id) });
-    // Both cards stay in the history.
-    expect(document.events.filter((e) => e.content.type === "card" && e.content.kind === "mandate")).toHaveLength(2);
+    // Every card stays in the history.
+    expect(document.events.filter((e) => e.content.type === "card" && e.content.kind === "mandate")).toHaveLength(3);
 
     const input = { objectives: ["o"], priorities: [], scopeModuleIds: ["Sources/Orders"], authorizedActions: ["plan" as const], limits: [] };
     await expect(controller!.grantMandate({ ...input, requestId: first!.id })).rejects.toThrow(/superata/);

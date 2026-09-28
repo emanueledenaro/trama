@@ -31,7 +31,9 @@ export type CardKind =
   /** The route Ask Trama chose for the person's situation (M07); referenceId is the route. */
   | "route"
   /** The Coordinator points out an overlap with a colleague's work (G03); referenceId is the overlap's id. */
-  | "overlap";
+  | "overlap"
+  /** The Coordinator's recap at a milestone or on the person's request (A03); referenceId is the recap. */
+  | "recap";
 
 export interface ConflictAssessment {
   id: string;
@@ -160,6 +162,52 @@ export interface ContinuousWorkRecord {
   rounds: RoundRecord[];
 }
 
+/** What made the Coordinator write a recap (A03): one or more milestones, or the person's request. */
+export type RecapReason = "milestone" | "request";
+
+/** A milestone of the work (A03): a slice done, a candidate merged, a goal achieved. */
+export type MilestoneKind = "sliceDone" | "candidateMerged" | "goalAchieved";
+
+/** One line of "Cosa ho fatto": a fact from the records, with the issue or pull request it names, if any. */
+export interface RecapFact {
+  text: string;
+  /** The number of the issue or pull request the line names, so the card can link it. */
+  number: number | null;
+  url: string | null;
+}
+
+/** One line of "Cosa mi serve da te": an item of "Aspetta te" as it was when the recap was written. */
+export interface RecapNeed {
+  /** The item's key in "Aspetta te", so the card opens it there while it still waits. */
+  key: string;
+  label: string;
+  title: string;
+}
+
+/**
+ * The Coordinator's recap (A03): what it did, what it does, what it needs from the person. Trama writes it from the
+ * records (Activity, the state of the work, "Aspetta te"), never from a model's text, and keeps it as written.
+ */
+export interface RecapRecord {
+  id: string;
+  at: string;
+  reason: RecapReason;
+  /** The milestones the recap is about, in the person's words; empty for a recap the person asked for. */
+  milestones: string[];
+  done: RecapFact[];
+  /** The status line when the recap was written. */
+  doing: string;
+  needs: RecapNeed[];
+}
+
+/** The recaps of a project and the milestones already told (A03). Absent until Trama first reads the milestones. */
+export interface RecapLedger {
+  /** The milestone keys already told in a recap, or already reached when Trama first read them. */
+  told: string[];
+  /** The recaps, oldest first, capped. */
+  recaps: RecapRecord[];
+}
+
 /** The phase of a request's work, computed by Trama from the records, never by the model (W01). */
 export type WorkPhase = "clarification" | "spec" | "slices" | "execution" | "verification" | "candidate" | "merged" | "blocked";
 
@@ -279,6 +327,8 @@ export interface MandateSnapshot {
   authorizedActions: MandateAction[];
   limits: string[];
   grantedAt: string;
+  /** Set when the person narrowed the mandate before this version without revoking it (issue #244). */
+  restriction?: { removedModuleIds: string[]; removedActions: MandateAction[] } | null;
 }
 
 export type MandateAction = "plan" | "executeInWorktree" | "openPullRequest" | "integrateCandidate" | "composeTeam";
@@ -300,6 +350,11 @@ export interface MandateRequest {
   limits: string[];
   askedAt: string;
   /**
+   * The project mandate for the whole cycle (issue #244): Trama asks for it on the Coordinator's behalf when a project
+   * opens without a mandate. Absent on the requests the Coordinator asks with request_mandate.
+   */
+  projectCycle?: boolean;
+  /**
    * Null while the request waits for the person. "superseded" means a newer request replaced it before the
    * person answered (W14): it can no longer be granted and names the newer one in `supersededBy`. "rejected" means
    * the person turned the proposal down and the mandate in force stayed as it was; "revoked" is kept for requests
@@ -311,6 +366,20 @@ export interface MandateRequest {
     resolvedAt: string;
     supersededBy?: string | null;
   } | null;
+}
+
+/**
+ * An action a fixed ban stopped before it started (issue #244): who tried it, the command or the file, and whether the
+ * person has seen it. It waits in "Aspetta te" until the person acknowledges it.
+ */
+export interface FixedBanRefusal {
+  id: string;
+  ban: import("./fixedBans").FixedBan;
+  /** The command, the file or the branch the action named. */
+  action: string;
+  by: { kind: "coordinator" } | { kind: "specialist"; specialistId: string; assignmentId: string } | { kind: "trama" };
+  refusedAt: string;
+  acknowledgedAt: string | null;
 }
 
 /** The one mandate request waiting for the person: the latest unresolved one (W14). */
@@ -1194,6 +1263,8 @@ export interface ProjectDocument {
   decisionHistory: PactDecision[];
   mandate: ProjectMandate | null;
   mandateRequests: MandateRequest[];
+  /** Actions the fixed bans stopped (issue #244); absent in documents written before. */
+  fixedBanRefusals?: FixedBanRefusal[];
   decisionRequests: DecisionRequest[];
   coordinator: CoordinatorState;
   /** The composer's selection for the project's one chat (ADR 0010, U01). Absent provider means Codex. */
@@ -1244,6 +1315,57 @@ export interface ProjectDocument {
   gates?: CandidateGate[];
   /** The Pause and the rounds of continuous work (A05); absent until the first pause or round with an outcome. */
   continuousWork?: ContinuousWorkRecord;
+  /** The Coordinator's recaps and the milestones already told (A03); absent until Trama first reads the milestones. */
+  recap?: RecapLedger;
+  /** The problems found outside the work in progress and their issues (A08); absent until Trama first looks for them. */
+  problems?: ProblemLedger;
+}
+
+/** The proof a found problem refers to (A08): a red check or a reviewer's finding. */
+export interface ProblemEvidence {
+  kind: "check" | "finding";
+  /** The record it names: the check failure or the gate. */
+  reference: string;
+  /** The proof in the person's words, for the issue and for Activity. */
+  label: string;
+}
+
+/**
+ * A problem Trama found outside the work in progress (A08, Q10): a check red on the checkout or on a candidate's base
+ * too, or a reviewer's finding on a file the candidate did not change. The Coordinator opens one issue for it, or links
+ * the open one about the same problem, has it triaged and assigns it or puts it in the backlog. Without GitHub it stays
+ * in Trama as a backlog item.
+ */
+export interface FoundProblem {
+  id: string;
+  /** The same problem has the same key, whatever found it: `check:<check>`, `finding:<role>:<file>:<title>`. */
+  key: string;
+  title: string;
+  /** What Trama saw, in Markdown, for the issue body. */
+  detail: string;
+  evidence: ProblemEvidence;
+  foundAt: string;
+  /** The issue of the problem; `opened` false when an open issue about the same problem was already there. */
+  issue: { number: number; url: string; at: string; opened: boolean } | null;
+  /** Why the issue could not be opened the last time Trama tried; null otherwise. */
+  issueFailure: { message: string; at: string } | null;
+  /** The triage labels Trama applied to the issue after the triage, once. */
+  labelsApplied: string[] | null;
+  /** Where the problem went after the triage: an assignment that works on it, or the backlog. */
+  placement: ProblemPlacement | null;
+}
+
+export type ProblemPlacement =
+  | { kind: "assignment"; assignmentId: string; at: string; reason: string }
+  | { kind: "backlog"; at: string; reason: string };
+
+/** Trama's bookkeeping of found problems (A08). */
+export interface ProblemLedger {
+  /** When Trama started looking: records older than this are not new problems. */
+  since: string;
+  /** The records already read, as `failure:<id>` or `gate:<id>:<check or finding>`, so each is read once. */
+  seen: string[];
+  items: FoundProblem[];
 }
 
 export interface ProjectSettings {
@@ -1523,6 +1645,11 @@ export interface ActiveProjectState {
   sliceViews?: Record<string, SliceView[]>;
   /** The task in focus and the queue, computed by the main process (W02). */
   focus: FocusView;
+  /**
+   * What waits for the person, ordered (issue #292): the one list the summary, the sidebar counter and the next step
+   * read, computed by the main process; absent before the first computation.
+   */
+  waiting?: import("./waitingForYou").WaitingItem[];
   /** The Coordinator's status line (Q6), computed by the main process; absent before the first computation. */
   statusLine?: StatusLineView | null;
   /** The AI Hero skills Trama copies are present in the project. */

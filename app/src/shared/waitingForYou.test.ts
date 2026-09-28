@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
-import type { DecisionRequest, MandateRequest, ProjectDocument, SliceTicket, SliceView, Specialist, TeamProposal, WorkPlan } from "./domain";
+import type { Candidate, CandidateReport, DecisionRequest, MandateRequest, ProjectDocument, ProjectGoal, SliceTicket, SliceView, Specialist, TeamProposal, WorkPlan } from "./domain";
+import type { AskTramaRoute } from "./askTrama";
+import { emptyConsent } from "./presence";
 import { emptyDocument } from "../main/core/document";
 import { blocksText, sortWaiting, type WaitingItem, waitingForYou, waitingItemFor, waitingSummary } from "./waitingForYou";
 
@@ -178,5 +180,90 @@ describe("Aspetta te (issue #240)", () => {
     expect(waitingItemFor(items, "mandate", "D1")).toBeNull();
     document.decisionRequests[0]!.outcome = { answer: "a", alternativeIndex: 0, decisionId: "PD1", version: 1, answeredAt: "" };
     expect(waitingItemFor(waitingForYou(document), "question", "D1")).toBeNull();
+  });
+
+  describe("every card that waits for the person (issue #292)", () => {
+    const goal = (id: string, status: ProjectGoal["status"], createdAt: string, extra: Partial<ProjectGoal> = {}): ProjectGoal => ({
+      id,
+      title: `Obiettivo ${id}`,
+      outcome: "",
+      examples: [],
+      status,
+      origin: "coordinator",
+      createdAt,
+      updatedAt: createdAt,
+      decisionIds: [],
+      ...extra,
+    });
+    const route = (id: string, requestId: string, status: AskTramaRoute["status"]): AskTramaRoute => ({
+      id,
+      requestId,
+      goalId: null,
+      situation: `Situazione ${id}`,
+      path: "mainFlow",
+      steps: [],
+      boundary: "continue",
+      reason: "",
+      status,
+      createdAt: "2026-09-01T07:00:00Z",
+      answeredAt: null,
+    });
+    const candidate = (id: string, extra: Partial<Candidate> = {}) =>
+      ({ id, assignmentId: "A1", goalId: null, updatedAt: "2026-09-01T06:00:00Z", humanApproval: null, pullRequest: null, ...extra }) as unknown as Candidate;
+    const report = (state: CandidateReport["state"], approvalInvalidated = false): CandidateReport => ({ state, blockers: [], clearanceInvalidated: false, approvalInvalidated });
+
+    it("lists proposed goals, the pending presence proposal, proposed routes and candidates to look at", () => {
+      const document = withRequests(["R1", null]);
+      document.goals = [goal("G1", "proposed", "2026-09-01T05:00:00Z"), goal("G2", "open", "2026-09-01T05:00:00Z"), goal("G3", "proposed", "2026-09-01T05:00:00Z", { archivedAt: "2026-09-02T00:00:00Z" })];
+      document.presence = { ...emptyConsent(), pending: "initial", proposedAt: "2026-09-01T04:00:00Z" };
+      document.routes = [route("AT-1", "R1", "proposed"), route("AT-2", "R1", "declined")];
+      document.team.specialists.push({ id: "SP1", assignments: [{ id: "A1", objective: "Aggiungi il filtro per data" }] } as unknown as Specialist);
+      document.candidates.push(
+        candidate("C1"),
+        candidate("C2", { humanApproval: { actor: "persona", fingerprint: "x", at: "" } }),
+        candidate("C3", { humanApproval: { actor: "persona", fingerprint: "x", at: "" } }),
+        candidate("C4"),
+        candidate("C5", { pullRequest: { url: "", number: 1, branch: "b", at: "" } }),
+      );
+      const items = waitingForYou(document, {
+        candidateReports: { C1: report("verified"), C2: report("decided"), C3: report("verified", true), C4: report("building"), C5: report("verified") },
+      });
+
+      expect(items.map((i) => i.key).sort()).toEqual(["candidate:C1", "candidate:C3", "goal:G1", "presence:initial", "route:AT-1"]);
+      expect(items.find((i) => i.kind === "goal")).toMatchObject({ label: "Obiettivo proposto", title: "Obiettivo G1", blocks: 0 });
+      expect(items.find((i) => i.kind === "presence")).toMatchObject({ label: "Presenza", askedAt: "2026-09-01T04:00:00Z", blocks: 0 });
+      expect(items.find((i) => i.key === "candidate:C1")).toMatchObject({ label: "Candidato da guardare", title: "Aggiungi il filtro per data", blocks: 1 });
+      expect(items.find((i) => i.kind === "route")).toMatchObject({ label: "Percorso di Ask Trama", title: "Situazione AT-1", blocks: 1 });
+    });
+
+    it("keeps one order for every kind: the work held first, then the oldest", () => {
+      const document = withRequests(["R1", null]);
+      document.goals = [goal("G1", "proposed", "2026-09-01T05:00:00Z")];
+      document.presence = { ...emptyConsent(), pending: "conflict", proposedAt: "2026-09-01T01:00:00Z", reproposedAt: "2026-09-01T04:00:00Z" };
+      document.decisionRequests.push(question("D1", "R1", "2026-09-01T10:00:00Z"));
+      document.candidates.push(candidate("C1"));
+      const items = waitingForYou(document, {
+        candidateReports: { C1: report("verified") },
+        memoryProposals: [{ id: "L1", target: "memory", summary: "Nota", createdAt: "2026-09-01T03:00:00Z" }],
+      });
+      // Candidate and question hold work, the older first; then what holds none, from the oldest.
+      expect(items.map((i) => i.key)).toEqual(["candidate:C1", "question:D1", "memory:L1", "presence:conflict", "goal:G1"]);
+    });
+
+    it("drops each item once the person answers its card", () => {
+      const document = withRequests(["R1", null]);
+      document.goals = [goal("G1", "proposed", "2026-09-01T05:00:00Z")];
+      document.presence = { ...emptyConsent(), pending: "initial", proposedAt: "2026-09-01T04:00:00Z" };
+      document.routes = [route("AT-1", "R1", "proposed")];
+      document.candidates.push(candidate("C1"));
+      const sources = { candidateReports: { C1: report("verified") } };
+      expect(waitingItemFor(waitingForYou(document, sources), "goal", "G1")?.key).toBe("goal:G1");
+
+      document.goals[0]!.status = "open";
+      document.presence.pending = null;
+      document.routes[0]!.status = "started";
+      document.candidates[0]!.humanApproval = { actor: "persona", fingerprint: "x", at: "" };
+      expect(waitingForYou(document, sources)).toEqual([]);
+    });
   });
 });
