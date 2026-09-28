@@ -48,6 +48,7 @@ export const BLOCKER_TEXT: Record<string, string> = {
   GATE_RUNNING: "I revisori stanno leggendo",
   GATE_FAILED: "La lettura dei revisori va ripetuta",
   REMOTE_CONFLICT: "In conflitto con il lavoro su GitHub",
+  CLOUD_CHECK_FAILED: "Il lavoro della sessione cloud non ha superato i controlli sul Mac",
   WORKTREE_CONFLICT: "Tocca gli stessi file di un altro lavoro",
 };
 
