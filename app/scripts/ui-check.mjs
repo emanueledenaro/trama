@@ -2051,7 +2051,7 @@ await page.evaluate(() => document.documentElement.classList.add("dark"));
 await shot("20f-focus-audit-findings-dark");
 await focusAudit.getByTestId("focus-audit-status").scrollIntoViewIfNeeded();
 await shot("20b-focus-audit-dark");
-await lensNote.evaluate((node) => node.scrollIntoView({ block: "start" }));
+await lensNote.evaluate((node) => node.closest("section").scrollIntoView({ block: "start" }));
 await shot("20h-focus-audit-lenses-dark");
 await app.evaluate(({ nativeTheme }) => {
   nativeTheme.themeSource = "system";
