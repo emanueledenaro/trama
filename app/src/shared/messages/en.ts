@@ -568,6 +568,10 @@ export const en: Record<keyof typeof it, string> = {
   "settings.workPlace.openProject": "Open a project to choose the place of work.",
   "settings.workPlace.demo": "The example project works locally.",
   "settings.workPlace.localOnly": "{provider} works only locally: the cloud is available with Claude and Codex.",
+  "team.rename.followsName": "The name changes everywhere: assignments, chat and history show the new name.",
+  "architecture.strength.strong": "recommended",
+  "architecture.strength.worthExploring": "worth exploring",
+  "architecture.strength.speculative": "speculative",
 
   // Window (issue #330)
   "workbench.views": "Views",
@@ -645,8 +649,4 @@ export const en: Record<keyof typeof it, string> = {
   "divergence.showFiles": "Show the {count} files",
   "divergence.showFiles.one": "Show the file",
   "divergence.ask": "Ask the Coordinator how to realign",
-  "team.rename.followsName": "The name changes everywhere: assignments, chat and history show the new name.",
-  "architecture.strength.strong": "recommended",
-  "architecture.strength.worthExploring": "worth exploring",
-  "architecture.strength.speculative": "speculative",
 };

@@ -570,6 +570,10 @@ export const it = {
   "settings.workPlace.openProject": "Apri un progetto per scegliere il luogo di lavoro.",
   "settings.workPlace.demo": "Il progetto di esempio lavora in locale.",
   "settings.workPlace.localOnly": "{provider} lavora solo in locale: il cloud c'è con Claude e Codex.",
+  "team.rename.followsName": "Il nome cambia ovunque: incarichi, chat e cronologia mostrano il nuovo nome.",
+  "architecture.strength.strong": "consigliata",
+  "architecture.strength.worthExploring": "da valutare",
+  "architecture.strength.speculative": "ipotesi",
   // Window (issue #330)
   "workbench.views": "Viste",
   "workbench.view.projects": "Progetti",
@@ -646,10 +650,6 @@ export const it = {
   "divergence.showFiles": "Mostra i {count} file",
   "divergence.showFiles.one": "Mostra il file",
   "divergence.ask": "Chiedi al Coordinatore come riallineare",
-  "team.rename.followsName": "Il nome cambia ovunque: incarichi, chat e cronologia mostrano il nuovo nome.",
-  "architecture.strength.strong": "consigliata",
-  "architecture.strength.worthExploring": "da valutare",
-  "architecture.strength.speculative": "ipotesi",
 } satisfies Record<string, string>;
 
 export type MessageKey = Exclude<keyof typeof it, `${string}.one`>;
