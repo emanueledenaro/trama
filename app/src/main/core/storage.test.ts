@@ -86,16 +86,16 @@ describe("AppStorage", () => {
     expect((await storage.loadDocument("p1")).document?.composerDraft).toBe("ultima");
   });
 
-  // Issue #317: a project reopened right after it left the parked projects must not read a save still on its way.
-  it("reads a document only after the saves already asked for it", async () => {
+  // A parked project saves without waiting; reopened at once, it must read that save, not the file before it (#181).
+  it("reads a document after the save already asked for it", async () => {
     const storage = new AppStorage(await mkdtemp(join(tmpdir(), "trama-storage-")));
-    const first = emptyDocument("p1");
-    first.composerDraft = "prima";
-    await storage.saveDocument(first);
+    const saved = emptyDocument("p1");
+    saved.composerDraft = "prima";
+    await storage.saveDocument(saved);
     const latest = emptyDocument("p1");
-    latest.composerDraft = `ultima${"x".repeat(8 * 1_048_576)}`;
+    latest.composerDraft = "y".repeat(8 * 1_048_576);
     const saving = storage.saveDocument(latest);
-    expect((await storage.loadDocument("p1")).document?.composerDraft?.startsWith("ultima")).toBe(true);
+    expect((await storage.loadDocument("p1")).document?.composerDraft).toHaveLength(8 * 1_048_576);
     await saving;
   });
 

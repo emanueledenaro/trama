@@ -42,7 +42,7 @@ async function writeNow(path: string, contents: string): Promise<void> {
   await chmod(path, 0o600).catch(() => undefined);
 }
 
-/** Reads after the writes already asked for the path: a read in between would see contents about to be replaced. */
+/** Reads after the writes already asked for on the same path: a save still in flight is the latest state, not the file. */
 async function readJson<T>(path: string): Promise<T | null> {
   await pendingWrites.get(path);
   if (!existsSync(path)) return null;
