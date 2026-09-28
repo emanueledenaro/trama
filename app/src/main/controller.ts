@@ -815,6 +815,7 @@ export class TramaController {
   }
 
   async start(): Promise<void> {
+    const opens = this.openGeneration;
     const settings = await this.storage.loadSettings();
     this.state.settings = {
       theme: settings.theme ?? "system",
@@ -827,7 +828,7 @@ export class TramaController {
       coordinatorModels: coordinatorModelSettings(settings.coordinatorModels),
     };
     this.state.language = this.resolveLanguage();
-    this.lastProjectId = settings.lastProjectId ?? null;
+    if (this.openGeneration === opens) this.lastProjectId = settings.lastProjectId ?? null;
     this.practices = await this.practiceStore.load();
     this.state.onboarding = normalizeOnboarding(settings.onboarding);
     if (settings.monitor) this.state.monitor = { ...this.state.monitor, ...settings.monitor, status: {} };
@@ -849,6 +850,8 @@ export class TramaController {
     void this.refreshProviders();
     // GitHub CLI is read at startup too: "not checked yet" never reads as "not connected" (P10).
     void this.checkGitHubCli();
+    // A project the person opened while Trama was starting wins over the last one.
+    if (this.openGeneration !== opens) return;
     const last = this.state.recentProjects.find((p) => p.id === this.lastProjectId);
     if (last && existsSync(last.path)) {
       await this.openProject(last.path, last.isDemo).catch((error) => this.fail(error));
@@ -1152,7 +1155,12 @@ export class TramaController {
     return undefined;
   }
 
+  /** Counts the projects asked for: an open that a later one overtook leaves the state to it. */
+  private openGeneration = 0;
+
   async openProject(path: string, isDemo = false, idea: string | null = null): Promise<void> {
+    const generation = ++this.openGeneration;
+    const overtaken = () => generation !== this.openGeneration;
     const root = await realpath(path).catch(() => {
       throw new DomainError(`La cartella non è leggibile: ${path}`);
     });
@@ -1161,6 +1169,7 @@ export class TramaController {
       throw new DomainError("Scegli la cartella di un progetto, non la radice del disco o la cartella Inizio.");
     }
     await this.flushSave();
+    if (overtaken()) return;
     this.parkSelectedProject();
     this.unwatchProject();
     this.state.loadingProject = root;
@@ -1171,6 +1180,7 @@ export class TramaController {
       const existing = await this.findRecentProject(root);
       const id = existing?.id ?? randomUUID();
       const snapshot = await scanRepository(root, isDemo);
+      if (overtaken()) return;
       const parked = this.parkedProjects.get(id);
       if (parked) {
         // Its team kept working: resume the same state instead of reading an older copy from disk.
@@ -1187,6 +1197,7 @@ export class TramaController {
         await this.storage.saveRecentProjects(this.state.recentProjects);
         await this.saveSettings();
         this.publishNow();
+        if (overtaken()) return;
         if (!isDemo) void this.refreshGitHub();
         this.watchProject(root);
         if (!isDemo) this.startPresence(parked);
@@ -1216,6 +1227,7 @@ export class TramaController {
           await this.storage.saveDocument(document);
         }
       }
+      if (overtaken()) return;
       document ??= emptyDocument(id);
       if (idea && !document.events.length) document.createdFromIdea = idea;
       const orphanNote = ASSIGNMENT_CRASH_NOTE;
@@ -1269,6 +1281,7 @@ export class TramaController {
       await this.storage.saveRecentProjects(this.state.recentProjects);
       await this.saveSettings();
       this.publishNow();
+      if (overtaken()) return;
       if (!isDemo) void this.refreshGitHub();
       this.watchProject(root);
       if (!isDemo) this.startPresence(project);
@@ -1295,6 +1308,7 @@ export class TramaController {
       const waiting = new Set(document.team.specialists.flatMap((sp) => sp.assignments.flatMap((a) => (a.waitingForProvider ? [a.waitingForProvider.provider] : []))));
       for (const provider of waiting) void this.resumeWaitingWork(provider);
     } catch (error) {
+      if (overtaken()) throw error;
       this.state.loadingProject = null;
       this.publishNow();
       throw error;
@@ -5226,7 +5240,7 @@ export class TramaController {
     this.changedIn(project);
     if (!serious.length) return;
     const document = project.document;
-    const model = confirmationModel(runner.model, document.coordinator.threadModel ?? this.coordinatorModel(document, runner.provider));
+    const model = confirmationModel(runner.model, document.coordinator.threadModel ?? this.coordinatorModel(document, runner.provider), this.state.providers[runner.provider]?.models ?? []);
     if (!model) {
       for (const { finding } of serious) confirmFinding(finding, { failure: NO_STRONGER_MODEL });
       return;

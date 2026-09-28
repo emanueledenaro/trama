@@ -137,7 +137,7 @@ describe("focus mode on a candidate (F01)", () => {
     // stays a hypothesis.
     expect(audit.standards.model).toBe("gpt-5.5-mini");
     expect(audit.standards.items).toEqual([
-      expect.objectContaining({ status: "verified", evidence: { kind: "fileLine", file: candidate.changedFiles[0], line: 1, quote: "" }, confirmation: null }),
+      expect.objectContaining({ status: "verified", evidence: { kind: "fileLine", file: candidate.changedFiles[0], line: 1, quote: expect.stringMatching(/\S/) }, confirmation: null }),
     ]);
     const [serious, minor] = audit.spec.items!;
     expect(serious).toMatchObject({ severity: "serious", status: "confirmed", confirmation: { model: "gpt-5.5", confirmed: true } });

@@ -42,7 +42,7 @@ export const CODE_REVIEW_BINDING = [
   "The issue tracker, /setup-trama and fetching an issue: this session has no network and runs no setup. Trama already looked for the spec (step 2) and puts it in this turn when it found one.",
   "Trama's real checks on this candidate ran before this session, in the sandbox: their results are in this turn and are evidence. Do not run them again.",
   "Your final answer follows the JSON schema that comes with the turn: `report` is your report as your brief asks, in Markdown, in the language your session instructions name; `findings` lists the same findings, one entry each; `worst` is your worst finding in one line, empty when there is none. Trama aggregates the two reports as step 5 says.",
-  "Proof of each finding (a Trama addition, spec #124): give the `evidence` Trama can recheck. `fileLine` names a file of the worktree relative to its root, the line number and the text of that line in `quote`; `command` names a command whose failure shows the finding; `reproduction` gives the steps in `steps`; `none` when you have no proof, and the finding then stays a hypothesis. `severity` is `serious` when the finding breaks behaviour, a hard documented standard or a requirement of the spec, `minor` otherwise. Leave the fields a kind does not use empty, with `line` 0.",
+  "Proof of each finding (a Trama addition, spec #124): give the `evidence` Trama can recheck. `fileLine` names a file of the worktree relative to its root, the line number and, in `quote`, the text of that line that shows the finding (required); `command` names a command whose failure shows the finding, and Trama rechecks it only when it is one of Trama's checks in this turn, written as its name or its command with no other arguments; `reproduction` gives the steps in `steps`; `none` when you have no proof, and the finding then stays a hypothesis. `severity` is `serious` when the finding breaks behaviour, a hard documented standard or a requirement of the spec, `minor` otherwise. Leave the fields a kind does not use empty, with `line` 0.",
 ].join("\n");
 
 /**
@@ -278,7 +278,8 @@ function readEvidence(raw: unknown): FindingEvidence | null {
   const text = (key: string) => (typeof value[key] === "string" ? (value[key] as string).trim() : "");
   if (value.kind === "fileLine") {
     const line = typeof value.line === "number" && Number.isInteger(value.line) ? value.line : 0;
-    return text("file") && line > 0 ? { kind: "fileLine", file: text("file"), line, quote: text("quote") } : null;
+    // The quoted text is what supports the finding: without it the line proves nothing.
+    return text("file") && line > 0 && text("quote") ? { kind: "fileLine", file: text("file"), line, quote: text("quote") } : null;
   }
   if (value.kind === "command") return text("command") ? { kind: "command", command: text("command") } : null;
   if (value.kind === "reproduction") return text("steps") ? { kind: "reproduction", steps: text("steps") } : null;
