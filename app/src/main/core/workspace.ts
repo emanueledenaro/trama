@@ -67,6 +67,44 @@ export async function prepareWorktree(
   return { sourceRoot, worktreeRoot: resolved, branch: branch, baseSHA };
 }
 
+/**
+ * Brings the branch a cloud session pushed (A19) to the Mac: fetches it and checks it out in a new worktree of Trama
+ * under the same name. The base is where the branch left the project's HEAD, so the candidate compares with it.
+ */
+export async function adoptRemoteBranch(repository: string, branch: string, worktreesRoot: string): Promise<WorktreeSession> {
+  if (!isTramaBranch(branch)) throw new Error(`Il branch ${branch} non è un branch di Trama.`);
+  const sourceRoot = (await git(["rev-parse", "--show-toplevel"], repository)).trim();
+  const remoteRef = `refs/remotes/origin/${branch}`;
+  const fetched = await runProcess("git", ["-c", "core.hooksPath=/dev/null", "fetch", "--no-tags", "--quiet", "origin", `+refs/heads/${branch}:${remoteRef}`], {
+    cwd: sourceRoot,
+    env: { ...process.env, GIT_TERMINAL_PROMPT: "0" },
+    timeoutMs: 120_000,
+  });
+  if (fetched.exitCode !== 0) throw new Error(`git fetch del branch ${branch} non riuscito: ${fetched.stderr.trim().split("\n").at(-1) ?? ""}`.trim());
+  const baseSHA = (await git(["merge-base", remoteRef, "HEAD"], sourceRoot)).trim();
+  if (!/^[0-9a-f]{40,64}$/.test(baseSHA)) throw new Error(`Il branch ${branch} non ha una base in comune con il progetto.`);
+  await mkdir(worktreesRoot, { recursive: true });
+  const managedRoot = await realpath(worktreesRoot);
+  const worktreeRoot = join(managedRoot, randomUUID());
+  if (!isStrictDescendant(worktreeRoot, managedRoot) || existsSync(worktreeRoot)) throw new Error(`Percorso non sicuro: ${worktreeRoot}`);
+  const local = (await git(["for-each-ref", "--format=%(refname)", `refs/heads/${branch}`], sourceRoot)).trim();
+  if (local) await git(["worktree", "add", worktreeRoot, branch], sourceRoot, false);
+  else await git(["worktree", "add", "-b", branch, worktreeRoot, remoteRef], sourceRoot, false);
+  if (local) await git(["reset", "--quiet", "--hard", remoteRef], worktreeRoot, false);
+  const resolved = await realpath(worktreeRoot);
+  if (!isStrictDescendant(resolved, managedRoot)) throw new Error(`Percorso non sicuro: ${resolved}`);
+  return { sourceRoot, worktreeRoot: resolved, branch, baseSHA };
+}
+
+/** The messages of the commits the worktree's branch has beyond its base, oldest first. */
+export async function branchCommitMessages(session: WorktreeSession): Promise<string[]> {
+  const log = await git(["log", "--reverse", "--format=%B%x00", `${session.baseSHA}..HEAD`], session.worktreeRoot);
+  return log
+    .split("\0")
+    .map((message) => message.replace(/^\n+/, "").trimEnd())
+    .filter(Boolean);
+}
+
 /** Checks that a stored session still points at the worktree Trama created. */
 export async function validateWorktree(session: WorktreeSession, worktreesRoot: string): Promise<void> {
   const managedRoot = await realpath(worktreesRoot);

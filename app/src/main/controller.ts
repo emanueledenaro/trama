@@ -61,6 +61,7 @@ import type {
   RecapRecord,
   RecentProject,
   RequestStep,
+  Specialist,
   SpecialistAssignment,
 } from "@shared/domain";
 import { isOpenQuestion, pendingMandateRequest } from "@shared/domain";
@@ -95,7 +96,20 @@ import {
   revisePractice,
   rollbackPractice,
 } from "./core/practices";
-import { checkItems, closeBlockers, evidenceProblems, parseChecklist, progressComment, progressKey, progressMarker } from "./core/tickets";
+import {
+  blockerMessage,
+  blockerText,
+  checkItems,
+  citedCommits,
+  closeBlockers,
+  type CloseBlocker,
+  evidenceProblems,
+  isCommitReference,
+  parseChecklist,
+  progressComment,
+  progressKey,
+  progressMarker,
+} from "./core/tickets";
 import { assignmentSlice, developerSkillsDelivery, sliceBriefing } from "./core/implementation";
 import {
   type CleanCodeChange,
@@ -220,12 +234,16 @@ import { draftSlicing, readSlicerAnswer, sliceViews, slicerTurn, TICKET_TRIAGE_L
 import { approvePactDemo, inspectPactDemo, runPactDemo } from "./core/pactDemo";
 import { readRepositoryFile, scanRepository } from "./core/repositoryScanner";
 import { messageStyle } from "./core/messageStyle";
-import { DEFAULT_LANGUAGE, isLanguage, type Language, languageFromSystem, translate } from "@shared/i18n";
+import { DEFAULT_LANGUAGE, isLanguage, type Language, languageFromSystem, translate, translator } from "@shared/i18n";
 import { toolErrorMessage, toolErrorsRule, withoutToolErrors } from "./core/toolErrors";
 import { installedSkillVersion, prepareSkills, rollbackSkills, SELECTED_SKILLS, SKILL_VERSION, type SetupReport, updateSkills } from "./core/skillSetup";
 import {
+  beginCloudWork,
   beginTurn,
   confirmStopWithoutTurn,
+  recordPlace,
+  stopCloudWork,
+  updateCloudSession,
   confirmTeam,
   endTurn,
   findAssignment,
@@ -252,7 +270,19 @@ import {
   type TurnEnd,
 } from "./core/team";
 import { answeredWork, ASK_COORDINATOR_TOOL, askCoordinator, asksCoordinator, DEVELOPER_TOOL_SERVER_INSTRUCTIONS, personAnswered, QuestionError } from "./core/developerQuestions";
-import { checkoutCommit, prepareWorktree, removeWorktree, reviewWorktree, validateWorktree } from "./core/workspace";
+import { adoptRemoteBranch, branchCommitMessages, checkoutCommit, prepareWorktree, removeWorktree, reviewWorktree, validateWorktree } from "./core/workspace";
+import {
+  claudeCloudTransport,
+  cloudBranchName,
+  cloudSessionPrompt,
+  type CloudTransport,
+  fixtureCloudTransport,
+  macPublicationProblems,
+  markPullRequestReady,
+  readBranchPullRequest,
+  readCloudConditions,
+} from "./core/cloudSession";
+import { canMovePlace, chooseWorkPlace, type CloudConditions, cloudEligible, cloudWorking, isWorkPlaceSetting, workPlaceSetting } from "@shared/workPlace";
 import {
   beginReviews,
   checksToRun,
@@ -1499,6 +1529,8 @@ export class TramaController {
     void this.assessRemoteConflicts();
     void this.recordMergedPullRequests(project, repository);
     void this.integrateCandidates(project).catch((error) => this.fail(error));
+    // Cloud sessions that went on with Trama closed come back now (A19, Q28).
+    void this.refreshCloudSessions(project).catch(() => undefined);
     void this.runDuties();
   }
 
@@ -3160,6 +3192,9 @@ export class TramaController {
   async runRound(): Promise<void> {
     const project = this.state.project;
     if (!project || this.quitting || this.roundRunning || !project.stateWritable || project.isDemo) return;
+    // The results of cloud sessions come back also in pause: collecting them starts no provider turn (A19).
+    await this.refreshCloudSessions(project).catch(() => undefined);
+    if (this.state.project !== project || this.quitting) return;
     if (this.state.settings.continuousWork === false || isPaused(project.document) || !hasOpenWork(project.document)) return;
     // A provider limit holds the round until it ends (issue #249); a blocked account is checked again at its end.
     if (this.coordinatorWait(project)) {
@@ -3975,6 +4010,241 @@ export class TramaController {
     return join(this.storage.root, "Worktrees");
   }
 
+  /** How Trama opens a cloud session (A19): Claude Code's CLI, or the declared fixture of the UI check. */
+  private readonly cloudTransport: CloudTransport = process.env.TRAMA_CLOUD_FIXTURE ? fixtureCloudTransport() : claudeCloudTransport();
+
+  /**
+   * Where this start of a developer's work runs (A19, issue #260), recorded on the assignment with the reason. Work
+   * that may not leave the Mac (Q24) records nothing and runs locally.
+   */
+  private async chooseAssignmentPlace(project: ActiveProjectState, specialist: Specialist, assignment: SpecialistAssignment, provider: ProviderId): Promise<"local" | "cloud"> {
+    if (!cloudEligible(specialist, assignment)) return "local";
+    const document = project.document;
+    const setting = workPlaceSetting(document);
+    const unread: CloudConditions = { repository: project.github.repository, unpushed: { kind: "unreadable" }, localOnlyFiles: [], account: null, mandateRefuses: false };
+    // Always local reads nothing: no session can start.
+    const conditions =
+      setting === "local" && assignment.placeChoice !== "cloud"
+        ? unread
+        : await readCloudConditions({
+            root: project.rootPath,
+            repository: project.github.repository,
+            account: this.state.providers[provider]?.account ?? null,
+            mandate: document.mandate,
+          }).catch(() => unread);
+    const place = chooseWorkPlace({ t: translator(this.state.language), setting, provider, assignment, conditions });
+    if (!findAssignment(document, assignment.id) || assignment.status !== "preparing") return "local";
+    const previous = assignment.place;
+    recordPlace(document, assignment.id, place);
+    if (previous?.where !== place.where || previous?.reason !== place.reason) {
+      this.specialistActivity(project, assignment.id, `${assignment.turns.length + 1}`, place.where === "cloud" ? "Lavora in cloud" : "Lavora in locale", place.reason, "info");
+    }
+    return place.where;
+  }
+
+  /**
+   * Opens the cloud session of the work (A19): the session starts from the project's repository on GitHub, works on
+   * the assignment's branch, runs the publication checks that do not need the Mac, pushes and opens a draft pull
+   * request. The work runs until Trama finds that pull request, and counts among the developers in parallel.
+   */
+  private async startCloudWork(project: ActiveProjectState, specialist: Specialist, assignment: SpecialistAssignment, provider: ProviderId): Promise<void> {
+    const document = project.document;
+    const assignmentId = assignment.id;
+    const preKey = `${assignment.turns.length + 1}`;
+    let prompt: string;
+    let branch: string;
+    const baseBranch = project.snapshot.branch ?? "main";
+    try {
+      const conventions = await readProjectConventions(project.rootPath);
+      const type = workCommitType(assignment, conventions);
+      const title = assignmentSlice(document, assignment)?.ticket.title ?? assignment.objective;
+      const issue = relatedIssue(document, assignment);
+      branch = cloudBranchName(branchPrefix(type, assignment.commit?.hotfix ?? false, conventions), title, issue, conventions);
+      const developer = developerSkillsDelivery({ implement: await this.nativeSkill("implement"), tdd: await this.nativeSkill("tdd") }, false, true);
+      prompt = cloudSessionPrompt({
+        projectName: project.name,
+        developerName: specialist.name,
+        competence: specialist.competence,
+        branch,
+        baseBranch,
+        conventions,
+        issue,
+        instructions: specialistInstructionsWithStandard("", developerStandard(document.cleanCode), developer.text),
+        // Every cloud session starts from GitHub on a branch of its own: a resume there is a new start of the work.
+        task: [openingInput(assignment, document.decisions), sliceBriefing(document, assignment)].filter(Boolean).join("\n\n"),
+      });
+    } catch (error) {
+      confirmStopWithoutTurn(document, assignmentId, `La sessione cloud non è partita: ${(error as Error).message}`);
+      this.releaseDeveloperSlot(assignmentId);
+      this.specialistActivity(project, assignmentId, preKey, "Sessione cloud non avviata", (error as Error).message, "error");
+      this.changedIn(project);
+      return;
+    }
+    if (assignment.status !== "preparing") {
+      this.releaseDeveloperSlot(assignmentId);
+      return;
+    }
+    const now = new Date().toISOString();
+    beginCloudWork(document, assignmentId, {
+      provider,
+      url: null,
+      branch,
+      baseBranch,
+      status: "starting",
+      pullRequest: null,
+      startedAt: now,
+      checkedAt: null,
+      failure: null,
+      instructions: [{ text: `Lavora sul branch ${branch}, esegui i controlli di pubblicazione prima del push e apri la pull request in bozza verso ${baseBranch}.`, at: now }],
+      macChecks: null,
+    });
+    this.specialistActivity(project, assignmentId, preKey, "Avvio della sessione cloud", `${providerName(provider)}, branch ${branch}`, "info");
+    this.changedIn(project);
+    try {
+      const { url } = await this.cloudTransport.start({ cwd: project.rootPath, prompt });
+      updateCloudSession(document, assignmentId, (session) => {
+        session.url = url;
+        if (session.status === "starting") session.status = "working";
+      });
+      this.specialistActivity(project, assignmentId, preKey, "Sessione cloud avviata", url ?? "Claude Code non ha dato il link della sessione.", "info");
+    } catch (error) {
+      const message = describeFailure((error as Error).message);
+      updateCloudSession(document, assignmentId, (session) => {
+        session.status = "failed";
+        session.failure = message;
+      });
+      if (isActive(assignment)) endTurn(document, assignmentId, null, { kind: "failed", message: `La sessione cloud non è partita: ${message}` });
+      this.specialistActivity(project, assignmentId, preKey, "Sessione cloud non avviata", message, "error");
+      this.releaseDeveloperSlot(assignmentId);
+      this.changedIn(project);
+      this.continueWork(project, assignment.requestId, "assignmentEnded");
+      return;
+    }
+    // A stop the person asked while the session was opening ends the following here: the session is the provider's.
+    if ((assignment.status as string) === "stopRequested") {
+      stopCloudWork(document, assignmentId, "Fermato dalla persona mentre la sessione cloud partiva.");
+      this.releaseDeveloperSlot(assignmentId);
+    }
+    this.changedIn(project);
+  }
+
+  /**
+   * Reads the cloud sessions of the project on GitHub (A19, Q25, Q28): a draft pull request on the branch of a session
+   * brings its branch to the Mac, where Trama runs the publication checks again and the work becomes a candidate. It
+   * runs in the round and on reopening, so the results of sessions that went on with Trama closed are collected.
+   */
+  async refreshCloudSessions(project: ActiveProjectState | null = this.state.project): Promise<void> {
+    if (!project || this.quitting || project.isDemo || !project.stateWritable || this.refreshingCloud) return;
+    // A session that went on with Trama closed holds its shared slot again after the reopening (Q29).
+    for (const assignment of project.document.team.specialists.flatMap((s) => s.assignments)) {
+      if (assignment.status === "running" && cloudWorking(assignment)) this.developerSlots.add(assignment.id);
+    }
+    const repository = project.github.repository;
+    if (!repository) return;
+    this.refreshingCloud = true;
+    try {
+      await this.collectCloudResults(project, repository);
+    } finally {
+      this.refreshingCloud = false;
+    }
+    void this.runDuties();
+  }
+
+  /** A refresh of the cloud sessions runs now: a second one waits for the next round. */
+  private refreshingCloud = false;
+
+  private async collectCloudResults(project: ActiveProjectState, repository: string): Promise<void> {
+    const document = project.document;
+    const working = document.team.specialists.flatMap((s) => s.assignments).filter((a) => a.status === "running" && a.cloud && cloudWorking(a));
+    for (const assignment of working) {
+      const session = assignment.cloud!;
+      const pull = await readBranchPullRequest(repository, session.branch).catch(() => undefined);
+      if (pull === undefined || this.state.project !== project || assignment.status !== "running") continue;
+      if (!pull) {
+        updateCloudSession(document, assignment.id, () => undefined);
+        continue;
+      }
+      const key = `${assignment.turns.length}`;
+      if (pull.state !== "open") {
+        updateCloudSession(document, assignment.id, (s) => {
+          s.status = "failed";
+          s.failure = `La pull request #${pull.number} è stata chiusa prima delle verifiche di Trama.`;
+          s.pullRequest = { number: pull.number, url: pull.url, draft: pull.draft };
+        });
+        endTurn(document, assignment.id, null, { kind: "failed", message: `La pull request #${pull.number} della sessione cloud è stata chiusa prima delle verifiche di Trama.` });
+        this.specialistActivity(project, assignment.id, key, "Sessione cloud non riuscita", pull.url, "error");
+        this.releaseDeveloperSlot(assignment.id);
+        this.changedIn(project);
+        continue;
+      }
+      updateCloudSession(document, assignment.id, (s) => {
+        s.status = "draft";
+        s.pullRequest = { number: pull.number, url: pull.url, draft: pull.draft };
+      });
+      this.changedIn(project);
+      try {
+        const workspace = await adoptRemoteBranch(project.rootPath, session.branch, this.worktreesRoot);
+        recordWorkspace(document, assignment.id, workspace);
+        const review = await reviewWorktree(workspace);
+        const conventions = await readProjectConventions(project.rootPath);
+        const problems = macPublicationProblems(review, await branchCommitMessages(workspace), conventions);
+        updateCloudSession(document, assignment.id, (s) => {
+          s.status = "returned";
+          s.macChecks = { snapshotId: review.snapshotId, problems, at: new Date().toISOString() };
+        });
+        endTurn(document, assignment.id, null, { kind: "completed", text: pull.body.trim() || `La sessione cloud ha aperto la pull request in bozza #${pull.number}.` });
+        this.specialistActivity(project, assignment.id, key, "Sessione cloud tornata sul Mac", `Pull request in bozza #${pull.number}, branch ${session.branch}: ${pull.url}`, "info");
+        this.specialistActivity(
+          project,
+          assignment.id,
+          key,
+          problems.length ? "Controlli sul Mac non superati" : "Controlli sul Mac superati",
+          problems.length ? `${problems.join(" ")} Il candidato resta fermo finché il lavoro non li supera.` : "Niente segreti né file sensibili, git diff --check pulito, messaggi di commit validi.",
+          problems.length ? "error" : "info",
+        );
+      } catch (error) {
+        const message = describeFailure((error as Error).message);
+        updateCloudSession(document, assignment.id, (s) => {
+          s.status = "failed";
+          s.failure = message;
+        });
+        endTurn(document, assignment.id, null, { kind: "failed", message: `Il lavoro della sessione cloud non è tornato sul Mac: ${message}` });
+        this.specialistActivity(project, assignment.id, key, "Sessione cloud non tornata sul Mac", message, "error");
+      }
+      this.releaseDeveloperSlot(assignment.id);
+      this.changedIn(project);
+      this.continueWork(project, assignment.requestId, "assignmentEnded");
+    }
+  }
+
+  /** The person checks the cloud session of the work now, from its card (A19). */
+  async checkCloudSession(assignmentId: string): Promise<void> {
+    const project = this.requireProject();
+    const assignment = findAssignment(project.document, assignmentId);
+    if (!assignment?.cloud) throw new DomainError("L'incarico non lavora in una sessione cloud.");
+    if (!project.github.repository) throw new DomainError("Il progetto non ha un remoto GitHub: Trama non può leggere la sessione.");
+    await this.refreshCloudSessions(project);
+  }
+
+  /** The person moves the work between local and cloud (A19, Q30): before it starts, or for its next resume. */
+  moveAssignmentPlace(assignmentId: string, where: "local" | "cloud"): void {
+    const project = this.requireProject();
+    const assignment = findAssignment(project.document, assignmentId);
+    if (!assignment) throw new DomainError("Incarico non trovato.");
+    if (!canMovePlace(assignment)) throw new DomainError("Puoi spostare l'incarico prima dell'avvio o quando aspetta una ripresa.");
+    assignment.placeChoice = where;
+    assignment.updatedAt = new Date().toISOString();
+    this.specialistActivity(
+      project,
+      assignmentId,
+      `${assignment.turns.length + 1}`,
+      where === "cloud" ? "Spostato in cloud" : "Spostato in locale",
+      where === "cloud" ? "Alla prossima ripresa lavora in una sessione cloud, se il cloud si può usare." : "Alla prossima ripresa lavora sul Mac.",
+      "info",
+    );
+    this.changed();
+  }
+
   /**
    * An action a fixed ban stopped before it started (issue #244): it becomes an item of "Aspetta te" with its reason and
    * an activity line where it happened. Every attempt counts, also the same command tried again; the providers report
@@ -4053,6 +4323,16 @@ export class TramaController {
     const developer = specialist.role === "developer";
     if (developer && !this.developerSlots.has(assignmentId) && !this.takeDeveloperSlot(project, assignment)) {
       this.publish();
+      return;
+    }
+    // A developer's slice may run in a cloud session of the provider (A19): the setting, the person's move and the
+    // conditions of the cloud decide, and the card says why. The session keeps its shared slot while it works (Q29).
+    if ((await this.chooseAssignmentPlace(project, specialist, assignment, provider)) === "cloud") {
+      await this.startCloudWork(project, specialist, assignment, provider);
+      return;
+    }
+    if (assignment.status !== "preparing" || this.specialistRuntimes.has(assignmentId)) {
+      if (!this.specialistRuntimes.has(assignmentId)) this.releaseDeveloperSlot(assignmentId);
       return;
     }
     // A developer asks the Coordinator with its one Trama tool (W06); a fixed role's automatic work has none.
@@ -4660,6 +4940,10 @@ export class TramaController {
       if (limit === null) throw new DomainError("Il numero di sviluppatori in parallelo deve essere un numero intero.");
       settings.parallelDevelopers = limit;
     }
+    if (update.workPlace !== undefined) {
+      if (!isWorkPlaceSetting(update.workPlace)) throw new DomainError("Il luogo di lavoro deve essere Automatico, Sempre in locale o Cloud quando possibile.");
+      settings.workPlace = update.workPlace;
+    }
     project.document.settings = settings;
     this.changedIn(project);
     // A higher limit lets free developers take the ready slices now.
@@ -4675,7 +4959,13 @@ export class TramaController {
       return;
     }
     if (project) {
-      confirmStopWithoutTurn(project.document, assignmentId, "Nessun turno in corso.");
+      const assignment = findAssignment(project.document, assignmentId);
+      if (assignment && cloudWorking(assignment)) {
+        stopCloudWork(project.document, assignmentId, "Trama non segue più la sessione cloud. La sessione si ferma dalla sua pagina di Claude Code.");
+        this.releaseDeveloperSlot(assignmentId);
+      } else {
+        confirmStopWithoutTurn(project.document, assignmentId, "Nessun turno in corso.");
+      }
       this.changed();
     }
   }
@@ -5563,6 +5853,9 @@ export class TramaController {
     if (!capabilities.canPush) throw new DomainError(`Il tuo account GitHub non ha il permesso di push su ${repository}.`);
     const assignment = findAssignment(document, candidate.assignmentId)!;
     const baseBranch = project.snapshot.branch ?? "main";
+    // Work from a cloud session already has its draft pull request (A19): Trama checks it again on the Mac and takes it out of draft.
+    if (assignment.cloud?.status === "returned" && assignment.cloud.pullRequest) return this.publishCloudCandidate(project, candidate, assignment, repository, message);
+    // Every push, refused, failed or done, stays in the conversation (issue #273).
     const published = await publishCandidate({
       candidate,
       assignment,
@@ -5800,12 +6093,71 @@ export class TramaController {
     );
   }
 
+  /**
+   * Publishes the candidate of a cloud session (A19, Q25): Trama runs the publication checks again on the Mac, on the
+   * exact candidate, then takes the session's draft pull request out of draft with its own body. Changes made on the Mac
+   * after the session (a resume after the reviewers) are committed and pushed on the same branch first. A failed check
+   * stops the candidate with its reason and the pull request stays a draft.
+   */
+  private async publishCloudCandidate(
+    project: ActiveProjectState,
+    candidate: Candidate,
+    assignment: SpecialistAssignment,
+    repository: string,
+    message: string,
+  ): Promise<NonNullable<Candidate["pullRequest"]>> {
+    const document = project.document;
+    const session = assignment.cloud!;
+    const pull = session.pullRequest!;
+    const workspace = assignment.workspace;
+    if (!workspace) throw new DomainError("Il lavoro della sessione cloud non ha una copia di lavoro sul Mac.");
+    const review = await reviewWorktree(workspace);
+    if (review.snapshotId !== candidate.snapshotId) throw new DomainError("La copia di lavoro è cambiata dopo il candidato: serve un nuovo candidato con nuove verifiche.");
+    const conventions = await readProjectConventions(project.rootPath);
+    const problems = macPublicationProblems(review, await branchCommitMessages(workspace), conventions);
+    updateCloudSession(document, assignment.id, (s) => {
+      s.macChecks = { snapshotId: review.snapshotId, problems, at: new Date().toISOString() };
+    });
+    if (problems.length) {
+      appendEvent(document, "trama", { type: "activity", title: "Controlli sul Mac non superati", detail: `${problems.join(" ")} La pull request #${pull.number} resta in bozza.`, tone: "error" });
+      this.changedIn(project);
+      throw new DomainError(`Trama ha ripetuto sul Mac i controlli di pubblicazione e non sono superati: ${problems.join(" ")}`);
+    }
+    const body = pullRequestBody(candidate, assignment, document.decisions, relatedIssue(document, assignment));
+    if ((await git(["status", "--porcelain"], workspace.worktreeRoot)).trim()) {
+      await publishCandidate({
+        candidate,
+        assignment,
+        repository,
+        baseBranch: session.baseBranch,
+        message,
+        conventions: candidate.commit!.conventions,
+        body,
+        mandate: document.mandate,
+        onPush: (record) => {
+          appendEvent(document, "trama", pushActivity(record));
+          if (record.outcome === "refused" && record.ban) recordFixedBanRefusal(document, { ban: record.ban, action: `git push ${record.remote} ${record.branch}`, by: { kind: "trama" } });
+          this.changedIn(project);
+        },
+      });
+    }
+    await markPullRequestReady(repository, pull.number, body);
+    updateCloudSession(document, assignment.id, (s) => {
+      s.pullRequest = { ...pull, draft: false };
+    });
+    candidate.pullRequest = { url: pull.url, number: pull.number, branch: session.branch, at: new Date().toISOString() };
+    appendEvent(document, "trama", { type: "activity", title: `Pull request #${pull.number} pronta per la revisione`, detail: `Controlli sul Mac superati, bozza tolta: ${pull.url}`, tone: "tool" });
+    this.changedIn(project);
+    return candidate.pullRequest;
+  }
+
   // MARK: Tickets
 
   /**
    * Reports progress on an issue with evidence Trama can see (C10). Comment and checklist are
    * idempotent, so a retry after a timeout duplicates nothing; the issue closes only when every
-   * criterion is ticked and a merged pull request has green checks.
+   * criterion is ticked and a merged pull request has green checks. A GitHub write that fails is
+   * recorded in the chat as not done, with what did reach GitHub, and the error goes back to the caller.
    */
   async updateTicket(input: TicketUpdate, requestId: string | null = null): Promise<TicketUpdateResult> {
     const project = this.requireProject();
@@ -5824,51 +6176,98 @@ export class TramaController {
       document.candidates.map((c) => [c.id, { report: candidateReport(document, c, head), pullRequestNumber: c.pullRequest?.number ?? null }]),
     );
     const pullRequests = new Set(document.candidates.flatMap((c) => (c.pullRequest ? [c.pullRequest.number] : [])));
-    const problems = input.criteria.flatMap((c) => evidenceProblems(c, { candidates, pullRequests }));
+    const commits = new Set<string>();
+    for (const sha of citedCommits(input.criteria)) {
+      const found = await git(["cat-file", "-e", `${sha}^{commit}`], project.rootPath).then(
+        () => true,
+        () => false,
+      );
+      if (found) commits.add(sha);
+    }
+    const problems = input.criteria.flatMap((c) => evidenceProblems(c, { candidates, pullRequests, commits }));
     if (problems.length) throw new TicketRefusal("evidence_insufficient", problems.join(" "));
 
+    const references = this.referenceIndex(project);
+    const describe = (reference: string) => {
+      const candidate = document.candidates.find((c) => c.id === reference);
+      if (candidate) {
+        const name = references.ids.get(reference)?.label ?? "candidato";
+        return candidate.pullRequest ? `${name} (PR #${candidate.pullRequest.number})` : name;
+      }
+      return isCommitReference(reference) ? reference.slice(0, 12) : reference;
+    };
+    const t = translator(this.state.language);
+    const number = String(input.issueNumber);
+    const issueName = issue.title.trim() ? t("ticket.issue", { number, title: issue.title.trim() }) : t("ticket.issueUntitled", { number });
     const key = progressKey(input.issueNumber, input.criteria, input.summary);
     const duplicate = issue.comments.some((c) => c.includes(progressMarker(key)));
-    if (!duplicate) await commentOnIssue(repository, input.issueNumber, progressComment(key, items, input.criteria, input.summary, input.openParts));
     const met = input.criteria.filter((c) => c.outcome === "met" && !items[c.index]!.checked).map((c) => c.index);
-    let body = issue.body;
-    if (met.length) {
-      body = checkItems(issue.body, met);
-      await updateIssueBody(repository, input.issueNumber, body);
-    }
+    let commentPosted = false;
+    let checklistUpdated = false;
     let closed = issue.state === "closed";
-    let blockers: string[] = [];
-    if (input.close && !closed) {
-      const numbers = new Set<number>();
-      for (const criterion of input.criteria.filter((c) => c.outcome === "met")) {
-        for (const reference of criterion.evidence) {
-          const pull = /^#(\d+)$/.exec(reference);
-          if (pull && pullRequests.has(Number(pull[1]))) numbers.add(Number(pull[1]));
-          const number = candidates.get(reference)?.pullRequestNumber;
-          if (number) numbers.add(number);
+    let blockers: CloseBlocker[] = [];
+    try {
+      if (!duplicate) {
+        await commentOnIssue(repository, input.issueNumber, progressComment(key, items, input.criteria, input.summary, input.openParts, describe));
+        commentPosted = true;
+      }
+      let body = issue.body;
+      if (met.length) {
+        body = checkItems(issue.body, met);
+        await updateIssueBody(repository, input.issueNumber, body);
+        checklistUpdated = true;
+      }
+      if (input.close && !closed) {
+        const numbers = new Set<number>();
+        for (const criterion of input.criteria.filter((c) => c.outcome === "met")) {
+          for (const reference of criterion.evidence) {
+            const pull = /^#(\d+)$/.exec(reference);
+            if (pull && pullRequests.has(Number(pull[1]))) numbers.add(Number(pull[1]));
+            const number = candidates.get(reference)?.pullRequestNumber;
+            if (number) numbers.add(number);
+          }
+        }
+        const statuses = await Promise.all([...numbers].map((n) => readPullRequestStatus(repository, n)));
+        blockers = closeBlockers(parseChecklist(body), statuses);
+        if (!blockers.length) {
+          await closeIssue(repository, input.issueNumber);
+          closed = true;
         }
       }
-      const statuses = await Promise.all([...numbers].map((n) => readPullRequestStatus(repository, n)));
-      blockers = closeBlockers(parseChecklist(body), statuses);
-      if (!blockers.length) {
-        await closeIssue(repository, input.issueNumber);
-        closed = true;
-      }
+    } catch (error) {
+      const done = [
+        t(duplicate ? "ticket.failed.reportAlreadyThere" : commentPosted ? "ticket.failed.reportPosted" : "ticket.failed.reportNotPosted"),
+        met.length ? t(checklistUpdated ? "ticket.failed.criteriaChecked" : "ticket.failed.criteriaNotChecked") : null,
+        input.close ? t("ticket.failed.stillOpen") : null,
+      ].filter(Boolean);
+      appendEvent(
+        document,
+        "trama",
+        { type: "activity", title: t("ticket.failed", { issue: issueName }), detail: t("ticket.failedDetail", { done: done.join(", ") }), tone: "error" },
+        requestId,
+      );
+      this.changed();
+      throw error;
     }
+    const criterionNames = met.map((i) => t("ticket.criterion", { text: items[i]!.text })).join(", ");
     appendEvent(
       document,
       "trama",
       {
         type: "activity",
-        title: `Issue #${input.issueNumber}: ${closed && input.close ? "chiusa con le prove" : duplicate ? "avanzamento già registrato" : "avanzamento registrato"}`,
-        detail: blockers.length ? `Resta aperta: ${blockers.join(" ")}` : met.length ? `Criteri spuntati: ${met.map((i) => i + 1).join(", ")}` : null,
+        title: t(closed && input.close ? "ticket.closed" : duplicate ? "ticket.duplicate" : "ticket.registered", { issue: issueName }),
+        detail: blockers.length
+          ? t("ticket.stillOpen", { blockers: blockers.map((b) => blockerText(b, t)).join("; ") })
+          : met.length
+            ? t("ticket.checked", { criteria: criterionNames, count: met.length })
+            : null,
         tone: "tool",
       },
       requestId,
     );
     this.changed();
     void this.refreshGitHub();
-    return { commentPosted: !duplicate, duplicate, checkedCriteria: met, closed, closeBlockers: blockers };
+    return { commentPosted, duplicate, checkedCriteria: met, closed, closeBlockers: blockers.map(blockerMessage) };
   }
 
   // MARK: Team monitor

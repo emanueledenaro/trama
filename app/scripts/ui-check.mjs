@@ -3720,6 +3720,63 @@ await problemShots("27c-found-problem-local-backlog");
 await app.close();
 
 
+// Issue #42 (C10): the Coordinator reports on a ticket. A partial increment leaves the issue open, and Activity says what
+// is missing in Italian, with the criteria by name; a GitHub write that fails is a step "non riuscito", never an update.
+const ticketFile = join(await mkdtemp(join(tmpdir(), "trama-ui-ticket-gh-")), "ticket.json");
+const ticketIssue = { number: 42, title: "Annullo degli ordini dal riepilogo", state: "open", body: "## Criteri\n\n- [ ] Il riepilogo mostra l'annullo\n- [ ] Le verifiche passano", comments: [], pulls: {} };
+await writeFile(ticketFile, JSON.stringify(ticketIssue));
+({ app, page } = await launch({ PATH: `${ghBin}:${process.env.PATH}`, FAKE_GH_TICKET: ticketFile }));
+await page.evaluate(() => window.trama.invoke("settings:update", { continuousWork: false, theme: "light" }));
+await page.evaluate((project) => window.trama.invoke("project:open", { path: project }), await problemProject("ticket", "https://github.com/trama-ui/ticket.git"));
+await page.getByTestId("dialog-title").filter({ hasText: "trama-ui-ticket" }).waitFor({ timeout: 30_000 });
+await page.getByText("Ho letto lo studio").first().waitFor({ timeout: 30_000 });
+await page.evaluate(() =>
+  window.trama.invoke("mandate:grant", {
+    requestId: null,
+    objectives: ["Chiudere i ticket con le prove"],
+    priorities: [],
+    scopeModuleIds: ["Sources/Orders"],
+    authorizedActions: ["openPullRequest", "integrateCandidate"],
+    limits: [],
+  }),
+);
+await page.getByText("Ho concesso il mandato (versione 1).").first().waitFor({ timeout: 20_000 });
+await page.getByRole("button", { name: "Interrompi" }).waitFor({ state: "hidden", timeout: 20_000 });
+const askTicket = async (text, reply) => {
+  await composer().click({ timeout: 60_000 });
+  await composer().pressSequentially(text);
+  await page.keyboard.press("Enter");
+  await page.getByText(reply).first().waitFor({ timeout: 30_000 });
+  await page.getByRole("button", { name: "Interrompi" }).waitFor({ state: "hidden", timeout: 30_000 });
+};
+// Opens the turn's steps in Activity from its line in the chat, with the ticket's steps unfolded.
+const ticketSteps = async (reply) => {
+  await page.getByTestId("work-line").getByRole("button", { name: /^Ha lavorato per/ }).last().click();
+  const steps = page.getByTestId("inspector").getByTestId("technical-step").filter({ hasText: /^Issue #42 «Annullo degli ordini dal riepilogo»/ });
+  const step = steps.filter({ hasText: reply }).first();
+  await step.waitFor({ timeout: 10_000 });
+  if ((await step.locator("button + *").count()) === 0) await step.getByRole("button").click();
+  return step;
+};
+await askTicket("[ticket] Aggiorna la issue 42", /Ho registrato l'avanzamento sulla issue #42/);
+const partialStep = await ticketSteps("avanzamento registrato");
+await partialStep.getByText("Resta aperta: manca «Il riepilogo mostra l'annullo»; manca «Le verifiche passano»; nessuna pull request di questo lavoro è stata unita.").waitFor();
+if (/Criterion|pull request of this work|[–—]/.test(await partialStep.innerText())) throw new Error("The ticket step is not plain Italian");
+let ticketState = JSON.parse(await readFile(ticketFile, "utf8"));
+if (ticketState.state !== "open" || ticketState.comments.length !== 1 || ticketState.body !== ticketIssue.body) throw new Error("The partial report closed the issue or ticked a criterion");
+await partialStep.scrollIntoViewIfNeeded();
+await problemShots("30a-ticket-partial");
+await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
+await writeFile(ticketFile, JSON.stringify({ ...ticketState, failComment: true }));
+await askTicket("[ticket:errore] Aggiorna ancora la issue 42", /Non sono riuscito ad aggiornare la issue #42/);
+const failedStep = await ticketSteps("aggiornamento non riuscito");
+await failedStep.getByText("GitHub non ha risposto come atteso: il resoconto non è stato pubblicato, la issue resta aperta.").waitFor();
+ticketState = JSON.parse(await readFile(ticketFile, "utf8"));
+if (ticketState.state !== "open" || ticketState.comments.length !== 1) throw new Error("The failed report changed the issue");
+await failedStep.scrollIntoViewIfNeeded();
+await problemShots("30b-ticket-failed");
+await app.close();
+
 // Issue #249: the always active Coordinator of a project with a mandate. A provider limit holds moves, rounds and new
 // turns, and the status line says what it waits for; on reopening Trama the turn that waited for the limit waits again
 // and resumes by itself at its end, the turn Esci ended resumes by itself, reconciled first, and a project in Pause
@@ -3839,6 +3896,178 @@ await pausedQuit.waitFor({ timeout: 30_000 });
 await page.waitForTimeout(2_000);
 if ((await alwaysReplies()) !== alwaysSoFar) throw new Error("A turn resumed in Pause");
 await waitShots("28e-reopened-paused");
+await page.evaluate(() => window.trama.invoke("settings:update", { theme: "system" }));
+await app.close();
+
+// Issue #260 (A19): a developer's slice in a Claude Code cloud session, with the place of work the person chooses. The
+// project's setting sits in the settings; the assignment card says where the work runs, who chose it and why, the step
+// that enables the cloud when it cannot be used, and the session's link and state. The sessions are a declared fixture:
+// their state is written in the project's document and no real session opens. Light and dark.
+const cloudProject = await mkdtemp(join(tmpdir(), "trama-ui-cloud-"));
+await cp(resolve("resources/DemoProject"), cloudProject, { recursive: true });
+({ app, page } = await launch());
+await page.evaluate(() => window.trama.invoke("settings:update", { continuousWork: false, theme: "light" }));
+await page.evaluate((path) => window.trama.invoke("project:open", { path }), cloudProject);
+await page.getByText("Ho letto lo studio").first().waitFor({ timeout: 30_000 });
+await app.close();
+let cloudPath = null;
+for (const file of await readdir(join(dataDir, "Projects"))) {
+  if ((await readFile(join(dataDir, "Projects", file), "utf8")).includes("trama-ui-cloud-")) cloudPath = join(dataDir, "Projects", file);
+}
+if (!cloudPath) throw new Error("Cloud sessions: the project's state was not saved");
+{
+  const document = JSON.parse(await readFile(cloudPath, "utf8"));
+  const start = Date.now();
+  const at = (minute) => new Date(start + minute * 60_000).toISOString();
+  const session = (overrides) => ({
+    provider: "claudeAgent",
+    url: "https://claude.ai/code/session_01ui",
+    branch: "feature/issue-21-carrello-trama-0c1a2b3c",
+    baseBranch: "main",
+    status: "working",
+    pullRequest: null,
+    startedAt: at(2),
+    checkedAt: at(3),
+    failure: null,
+    instructions: [{ text: "Lavora sul branch, esegui i controlli di pubblicazione prima del push e apri la pull request in bozza verso main.", at: at(2) }],
+    macChecks: null,
+    ...overrides,
+  });
+  const work = (id, specialistId, objective, extra) => ({
+    id,
+    specialistId,
+    requestId: null,
+    kind: "agreedTicket",
+    objective,
+    issueNumber: null,
+    exercise: null,
+    moduleIds: [],
+    dependencies: [],
+    model: "claude-sonnet-5",
+    provider: "claudeAgent",
+    modelReason: "Fetta di codice di media difficoltà.",
+    tools: ["commands", "edits"],
+    requiredChecks: ["git_status"],
+    instructions: "",
+    mandateVersion: 1,
+    createdAt: at(1),
+    workspace: null,
+    threadId: null,
+    stops: [],
+    failure: null,
+    updatedAt: at(3),
+    reportedStatus: null,
+    ...extra,
+  });
+  const cloudReason = "È una fetta di codice senza prove dal vivo: in cloud libera il Mac e continua anche con Trama chiusa.";
+  const working = work("A-C10D0001", "S-ADA", "Il carrello ricorda i prodotti tra due visite", {
+    status: "running",
+    turns: [{ id: "cloud-1", number: 1, model: "claude-sonnet-5", provider: "claudeAgent", startedAt: at(2), endedAt: null, outcome: null }],
+    result: null,
+    lastUpdate: "Al lavoro in una sessione cloud sul branch feature/issue-21-carrello-trama-0c1a2b3c",
+    place: { where: "cloud", chosenBy: "coordinator", reason: cloudReason, cloudBlocked: null, at: at(2) },
+    cloud: session({}),
+  });
+  const returned = work("A-C10D0002", "S-BRUNO", "Il prezzo scontato si vede nella scheda", {
+    status: "completed",
+    turns: [{ id: "cloud-2", number: 1, model: "claude-sonnet-5", provider: "claudeAgent", startedAt: at(1), endedAt: at(3), outcome: "completed" }],
+    result: "La sessione cloud ha aperto la pull request in bozza #34.",
+    lastUpdate: "Incarico concluso",
+    workspace: { sourceRoot: cloudProject, worktreeRoot: join(cloudProject, "..", "wt-cloud-2"), branch: "feature/issue-22-prezzo-scontato-trama-5d6e7f80", baseSHA: "0".repeat(40) },
+    place: { where: "cloud", chosenBy: "setting", reason: "Il progetto usa il cloud quando possibile.", cloudBlocked: null, at: at(1) },
+    cloud: session({
+      url: "https://claude.ai/code/session_02ui",
+      branch: "feature/issue-22-prezzo-scontato-trama-5d6e7f80",
+      status: "returned",
+      pullRequest: { number: 34, url: "https://github.com/acme/negozio/pull/34", draft: true },
+      macChecks: { snapshotId: "snap-cloud-2", problems: [], at: at(3) },
+    }),
+  });
+  const local = work("A-C10D0003", "S-CARLA", "La pagina dell'ordine mostra lo stato della spedizione", {
+    status: "stopped",
+    turns: [],
+    result: null,
+    lastUpdate: "Fermato: la persona ha fermato il lavoro",
+    place: {
+      where: "local",
+      chosenBy: "coordinator",
+      reason: "Il cloud non si può usare ora, quindi lavora in locale. Il progetto non è su GitHub, e la sessione cloud parte dal repository su GitHub.",
+      cloudBlocked: {
+        reason: "Il progetto non è su GitHub, e la sessione cloud parte dal repository su GitHub.",
+        enable: "Pubblica il progetto su GitHub con il remoto origin, poi riprendi l'incarico.",
+      },
+      at: at(1),
+    },
+  });
+  const developer = (id, name, color, assignment) => ({
+    id,
+    name,
+    competence: "Next.js",
+    reason: "",
+    moduleIds: [],
+    role: "developer",
+    origin: "teamProposal",
+    color,
+    tag: "Next.js",
+    createdAt: at(0),
+    status: assignment.status === "running" ? "working" : "available",
+    model: "claude-sonnet-5",
+    tools: ["commands", "edits"],
+    updatedAt: at(3),
+    lastUpdate: "",
+    removal: null,
+    assignments: [assignment],
+  });
+  document.team.specialists.push(developer("S-ADA", "Ada", "blue", working), developer("S-BRUNO", "Bruno", "green", returned), developer("S-CARLA", "Carla", "orange", local));
+  document.settings = { ...(document.settings ?? {}), workPlace: "cloud" };
+  let sequence = Math.max(0, ...document.events.map((e) => e.sequence));
+  const card = (minute, referenceId) => ({ id: `E-cloud-${++sequence}`, sequence, origin: "trama", requestId: null, createdAt: at(minute), content: { type: "card", kind: "assignment", title: "assignment", detail: null, referenceId } });
+  document.events.push(card(1, local.id), card(2, working.id), card(3, returned.id));
+  await writeFile(cloudPath, JSON.stringify(document));
+}
+({ app, page } = await launch());
+await page.evaluate((path) => window.trama.invoke("project:open", { path }), cloudProject);
+const cloudCard = (name) => page.locator('.chat-card:not([data-testid="settled-card"] .chat-card), [data-testid="settled-card"]').filter({ hasText: /^Incarico / }).filter({ hasText: name }).last();
+// Trama closing and reopening does not stop a running cloud session (Q28): Ada's work is still at work.
+for (const [name, testid, file] of [
+  ["Ada", '[data-testid="cloud-session"][data-status="working"]', "31b-cloud-session-working"],
+  ["Bruno", '[data-testid="cloud-mac-checks"][data-passed="yes"]', "31c-cloud-session-returned"],
+  ["Carla", '[data-testid="assignment-place-enable"]', "31d-cloud-blocked-local"],
+]) {
+  const found = cloudCard(name);
+  await waitInCard(found, (card) => card.locator(testid), `${name}: ${testid}`, 30_000);
+  // The card from its top, so its buttons stay above the composer.
+  await found.evaluate((card) => card.scrollIntoView({ block: "start" }));
+  for (const dark of [false, true]) {
+    await page.evaluate((theme) => window.trama.invoke("settings:update", { theme }), dark ? "dark" : "light");
+    await page.waitForFunction((wanted) => document.documentElement.classList.contains("dark") === wanted, dark);
+    await shot(`${file}-${dark ? "dark" : "light"}`);
+  }
+}
+if (!(await cloudCard("Ada").getByRole("button", { name: "Controlla la sessione" }).isVisible())) throw new Error("Cloud sessions: a running session has no check");
+if (!(await cloudCard("Carla").getByRole("button", { name: "Sposta in cloud" }).isVisible())) throw new Error("Cloud sessions: stopped local work cannot move to the cloud");
+const cloudState = await page.evaluate(async () => (await window.trama.getState()).project.document.team.specialists.find((s) => s.name === "Ada").assignments[0]);
+if (cloudState.status !== "running" || cloudState.cloud.status !== "working") throw new Error(`Cloud sessions: reopening stopped the cloud work: ${cloudState.status}`);
+// The person moves Carla's work to the cloud for its next resume: the card says so.
+await cloudCard("Carla").getByRole("button", { name: "Sposta in cloud" }).click();
+await cloudCard("Carla").getByText("Alla prossima ripresa lavora in cloud, come hai scelto.").waitFor();
+await cloudCard("Carla").getByRole("button", { name: "Sposta in locale" }).waitFor();
+// The project's setting: three values, the person's choice kept.
+await page.getByRole("button", { name: "Impostazioni" }).click();
+const cloudSettings = page.getByTestId("settings");
+await cloudSettings.getByRole("button", { name: /^Metodo di lavoro/ }).first().click();
+const workPlace = cloudSettings.getByTestId("work-place");
+await workPlace.getByRole("radio", { name: "Cloud quando possibile", checked: true }).waitFor();
+await workPlace.getByRole("radio", { name: "Automatico" }).click();
+await workPlace.getByRole("radio", { name: "Automatico", checked: true }).waitFor();
+await workPlace.scrollIntoViewIfNeeded();
+for (const dark of [false, true]) {
+  await page.evaluate((theme) => window.trama.invoke("settings:update", { theme }), dark ? "dark" : "light");
+  await page.waitForFunction((wanted) => document.documentElement.classList.contains("dark") === wanted, dark);
+  await shot(`31a-work-place-setting-${dark ? "dark" : "light"}`);
+}
+const savedSetting = await page.evaluate(async () => (await window.trama.getState()).project.document.settings.workPlace);
+if (savedSetting !== "automatic") throw new Error(`Cloud sessions: the setting was not saved: ${savedSetting}`);
 await page.evaluate(() => window.trama.invoke("settings:update", { theme: "system" }));
 await app.close();
 
