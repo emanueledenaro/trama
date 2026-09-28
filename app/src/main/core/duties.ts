@@ -80,7 +80,7 @@ export const DIAGNOSABLE_CHECKS: ReadOnlyCheck[] = ["swift_build", "swift_test",
  * failure says nothing about the code, so it never becomes a diagnosis of the project.
  */
 const ENVIRONMENT_FAILURES: RegExp[] = [
-  /\[Trama\] Alcuni fallimenti vengono dalla sandbox/,
+  /\[Trama\] (?:Alcuni fallimenti vengono dalla sandbox|Some failures come from the sandbox)/,
   /\b(?:EPERM|EACCES|EROFS|ENOSPC)\b/,
   /\bOperation not permitted\b/i,
   /\bread-only file system\b/i,

@@ -51,7 +51,7 @@ export const mainPlanningEn: Record<keyof typeof mainPlanningIt, string> = {
   "main.projectMandate.removedActions": "removed the actions {actions}",
   "main.projectMandate.dependsOn": "{id} (depends on {dependsOn})",
   "main.projectMandate.halted":
-    "I stopped {work}: the worktrees stay as they were, the diff is not lost. To resume, plan again and delegate again within the narrowed mandate.",
+    "I stopped {work}: the working copies stay as they were, the diff is not lost. To resume, plan again and delegate again within the narrowed mandate.",
   "main.projectMandate.nothingHalted": "No work in progress was outside the narrowed mandate.",
   "main.projectMandate.restricted":
     "I narrowed the mandate: it is now at version {version}, {parts}. {halted} It applies from your next turn: work outside the narrowed mandate does not restart, the rest goes on.",
@@ -85,7 +85,7 @@ export const mainPlanningEn: Record<keyof typeof mainPlanningIt, string> = {
   "main.plan.specTooLarge": "The spec is larger than the allowed size.",
   "main.plan.invalidJson": "The planner's answer is not valid JSON.",
   "main.plan.otherSnapshot": "The spec refers to another snapshot of the project.",
-  "main.plan.noSeams": "The planner proposed no seams to test.",
+  "main.plan.noSeams": "The planner proposed no test points.",
   "main.plan.fieldMissing": "The planner's spec has no field {field}.",
 
   // slices.ts

@@ -148,7 +148,7 @@ export const mainCoordinatorEn: Record<keyof typeof mainCoordinatorIt, string> =
   "main.team.superseded": "The previous team proposal no longer applies.",
   "main.team.left": "Left the team: {why}",
   "main.team.assignmentReceived": "Assignment received: {objective}",
-  "main.team.worktreeReady": "Worktree ready on branch {branch}",
+  "main.team.worktreeReady": "Working copy ready on branch {branch}",
   "main.team.turnRunning": "Turn {number} running with {model}",
   "main.team.stopped": "Stopped: {note}",
   "main.team.assignmentDone": "Assignment finished",

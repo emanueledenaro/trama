@@ -4,7 +4,7 @@ import type { mainControllerAIt } from "./main.controllerA.it";
 export const mainControllerAEn: Record<keyof typeof mainControllerAIt, string> = {
   // Developers, tools and practices
   "main.controller.selfPickDetail":
-    "It was the next ready Slice in its modules: the Developer takes it without waiting for the Coordinator, within the Mandate and the project's limit of parallel Developers.",
+    "It was the next ready slice in its modules: the developer takes it without waiting for the Coordinator, within the mandate and the project's limit of parallel developers.",
   "main.controller.leftProjectNote": "You left the project while the Coordinator was replying.",
   "main.controller.readOutsideScopeDetail": "{path} is not part of the project: Trama does not let it be read.\nRequest: {tool}",
   "main.controller.choicesInTextTitle": "Choice written in the text instead of a card",
@@ -29,11 +29,11 @@ export const mainControllerAEn: Record<keyof typeof mainControllerAIt, string> =
   "main.controller.providerNoAdapter": "{name} does not have an adapter in Trama yet.",
   "main.controller.providerAccountCheckTimeout": "{name} did not answer the account check.",
   "main.controller.providerBackTitle": "{provider} is available again",
-  "main.controller.providerBackDetail": "Trama resumes the Assignment.",
+  "main.controller.providerBackDetail": "Trama resumes the assignment.",
   "main.controller.providerSwitchWait": "Wait for the end of the turn and the queue before changing provider.",
   "main.controller.providerSwitchTitle": "Coordinator on {provider}",
   "main.controller.providerSwitchDetail":
-    "You moved the Coordinator from {from} to {to}. The conversation stays: {to} opens a new session and receives the Project study, Memory and transcript.",
+    "You moved the Coordinator from {from} to {to}. The conversation stays: {to} opens a new session and receives the project study, Memory and transcript.",
   "main.controller.providerSwitchProposal": "You can switch to {providers} with Change provider: they are already connected.",
   "main.controller.providerSwitchProposal.one": "You can switch to {providers} with Change provider: it is already connected.",
   "main.controller.providerBlockedTitle": "{provider} blocked",
@@ -42,7 +42,7 @@ export const mainControllerAEn: Record<keyof typeof mainControllerAIt, string> =
   // Retries and resumes of a turn
   "main.controller.retryReopenedTitle": "Turn resumed on reopening",
   "main.controller.retryReopenedDetail":
-    "Trama resumes by itself, within the Mandate, the turn that closing interrupted. The Coordinator first checks what was already done.",
+    "Trama resumes by itself, within the mandate, the turn that closing interrupted. The Coordinator first checks what was already done.",
   "main.controller.retryResumedTitle": "Turn resumed",
   "main.controller.retryResumedDetail": "Trama resumes the message of the interrupted turn. The Coordinator first checks what was already done.",
   "main.controller.retryManualTitle": "New attempt",
@@ -59,9 +59,9 @@ export const mainControllerAEn: Record<keyof typeof mainControllerAIt, string> =
   "main.controller.retriesStoppedTitle": "Automatic attempts stopped",
   "main.controller.retriesStoppedDetail": "You stopped the attempts with {provider}.",
   "main.controller.resumeSkippedTitle": "Not resumed",
-  "main.controller.resumeOutsideMandate": "The Mandate no longer covers this Assignment.",
+  "main.controller.resumeOutsideMandate": "The mandate no longer covers this assignment.",
   "main.controller.assignmentResumedOnReopeningTitle": "Assignment resumed on reopening",
-  "main.controller.assignmentResumedOnReopeningDetail": "Trama resumes the Assignment in its worktree, as it was at closing.",
+  "main.controller.assignmentResumedOnReopeningDetail": "Trama resumes the assignment in its working copy, as it was at closing.",
 
   // Projects
   "main.controller.projectMoved":
@@ -76,7 +76,7 @@ export const mainControllerAEn: Record<keyof typeof mainControllerAIt, string> =
   "main.controller.cloneRepositoryInvalid": "Write the repository as owner/name or paste its GitHub address.",
   "main.controller.legacyImportTitle": "Conversation imported from the SwiftUI version",
   "main.controller.legacyImportDetail":
-    "Conversation, Pact, Mandate, Memory and the Coordinator's thread come from the previous app. The original file stays unchanged.",
+    "Conversation, Pact, mandate, Memory and the Coordinator's thread come from the previous app. The original file stays unchanged.",
   "main.controller.orphanStopConfirmedTitle": "Stop confirmed",
   "main.controller.demoWithoutGitHub": "Example project without GitHub.",
   "main.controller.demoProjectName": "Example project",
@@ -104,7 +104,7 @@ export const mainControllerAEn: Record<keyof typeof mainControllerAIt, string> =
   "main.controller.coordinatorNotReady": "The Coordinator is not ready.",
   "main.controller.assignmentCardTitle": "Assignment",
   "main.controller.newThreadTitle": "New Coordinator thread",
-  "main.controller.newThreadDetail": "The Coordinator's previous session is no longer available. The Coordinator starts again from the Project study and Memory.",
+  "main.controller.newThreadDetail": "The Coordinator's previous session is no longer available. The Coordinator starts again from the project study and Memory.",
   "main.controller.studyCardTitle": "Project study",
   "main.controller.messageSentTitle": "Message sent to the Coordinator",
   "main.controller.messageSentEffort": "effort {effort}",
@@ -128,15 +128,15 @@ export const mainControllerAEn: Record<keyof typeof mainControllerAIt, string> =
 
   // Continuous work and delegated steps
   "main.controller.stepUnderstandingSummary": "Understanding of the request \"{request}\".",
-  "main.controller.stepSeamsSummary": "Seams of Plan {plan}: {seams}.",
-  "main.controller.stepSlicesSummary": "Slices of Plan {plan}: {slices}.",
+  "main.controller.stepSeamsSummary": "Test points of plan {plan}: {seams}.",
+  "main.controller.stepSlicesSummary": "Slices of plan {plan}: {slices}.",
   "main.controller.stepStillWriting": "The Coordinator is still writing this step: correct it when it has finished.",
   "main.controller.stepCorrectedTitle": "{step}: corrected",
-  "main.controller.slicesBackTitle": "The Slices of Plan {plan} go back into preparation",
+  "main.controller.slicesBackTitle": "The slices of plan {plan} go back into preparation",
   "main.controller.slicesBackDetail": "The issues already published ({issues}) stay on GitHub: the Coordinator updates or closes them.",
   "main.controller.roundFallbackSpecialist": "A specialist",
-  "main.controller.roundWorksOnSlice": "{name} works on Slice {slice}",
-  "main.controller.roundWorksOnAssignment": "{name} works on Assignment {assignment}",
+  "main.controller.roundWorksOnSlice": "{name} works on slice {slice}",
+  "main.controller.roundWorksOnAssignment": "{name} works on assignment {assignment}",
   "main.controller.roundStartedMove": "Started the move \"{move}\"",
   "main.controller.coordinatorPausedTitle": "Coordinator paused",
   "main.controller.coordinatorPausedDetail": "No automatic move, Round or automatic work starts until you resume the Coordinator.",
@@ -144,8 +144,8 @@ export const mainControllerAEn: Record<keyof typeof mainControllerAIt, string> =
   "main.controller.stepNoLongerAvailable": "This step is no longer available.",
   "main.controller.queuedMessageGone": "The message has already left or is no longer in the queue.",
   "main.controller.queuedMessageNotRemovable": "This message tells the Coordinator about a choice already recorded: it leaves anyway.",
-  "main.controller.goalDialogBusyTurn": "The Coordinator is replying on this Goal: wait for the end of the turn.",
-  "main.controller.goalDialogBusyQueue": "The Goal has a queued message: wait for it to leave or delete it.",
+  "main.controller.goalDialogBusyTurn": "The Coordinator is replying on this goal: wait for the end of the turn.",
+  "main.controller.goalDialogBusyQueue": "The goal has a queued message: wait for it to leave or delete it.",
 
   // Ask Trama routes
   "main.controller.routeNotFound": "Route {route} not found.",

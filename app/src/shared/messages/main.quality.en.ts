@@ -109,7 +109,7 @@ export const mainQualityEn: Record<keyof typeof mainQualityIt, string> = {
   "main.auditFindings.noStrongerModel": "No model stronger than the axes' model is available to confirm it.",
 
   // audit.ts
-  "main.audit.running": "Focus mode on candidate {candidate} is already running.",
+  "main.audit.running": "Deep review on candidate {candidate} is already running.",
   "main.audit.sliceSource": "Slice {slice} of plan {plan}",
   "main.audit.sliceSourceIssue": "Slice {slice} of plan {plan}, issue #{issue}",
   "main.audit.unreadableAnswer": "The axis did not return a readable report.",
@@ -122,7 +122,7 @@ export const mainQualityEn: Record<keyof typeof mainQualityIt, string> = {
   "main.audit.axisLineWorst": "{title}: {findings}, the most serious: {worst}.",
   "main.audit.noReport": "No axis produced a report.",
   "main.audit.verificationStopped": "The verification stopped before rechecking the proof.",
-  "main.audit.interrupted": "Focus mode stopped when Trama closed: open it again.",
+  "main.audit.interrupted": "Deep review stopped when Trama closed: open it again.",
 
   // checks.ts
   "main.checks.title.gitStatus": "Git status",
