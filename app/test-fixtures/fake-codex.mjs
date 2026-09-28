@@ -516,6 +516,11 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
         if (text.includes("[impostazioni]")) {
           writeFileSync(join(root, "CODEOWNERS"), "* @trama-fixture\n");
         }
+        // "[cancella]" also deletes a tracked file: a destructive candidate the Coordinator does not merge alone (issue #41).
+        if (text.includes("[cancella]")) {
+          const { rmSync } = await import("node:fs");
+          rmSync(join(root, "README.md"), { force: true });
+        }
         // "[interfaccia]" also changes the accent of the shop's page: a candidate that changes the interface (issue #247).
         if (text.includes("[interfaccia]")) {
           const { mkdirSync } = await import("node:fs");
@@ -800,7 +805,7 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
                 ? ["git_status", "node_test"]
                 : ["git_status"],
           tools: ["edits"],
-          instructions: `${text.includes("[segreto]") ? "[segreto] " : ""}${text.includes("[bloccante]") ? "[bloccante] " : ""}${text.includes("[lento]") ? "[lento] " : ""}${text.includes("[lento:sempre]") ? "[lento:sempre] " : ""}${text.includes("[spazi]") ? "[spazi] " : ""}${text.includes("[domanda]") ? "[domanda] " : ""}${text.includes("[interfaccia]") ? "[interfaccia] " : ""}${text.includes("[impostazioni]") ? "[impostazioni] " : ""}Scrivi una nota`,
+          instructions: `${text.includes("[segreto]") ? "[segreto] " : ""}${text.includes("[bloccante]") ? "[bloccante] " : ""}${text.includes("[lento]") ? "[lento] " : ""}${text.includes("[lento:sempre]") ? "[lento:sempre] " : ""}${text.includes("[spazi]") ? "[spazi] " : ""}${text.includes("[domanda]") ? "[domanda] " : ""}${text.includes("[interfaccia]") ? "[interfaccia] " : ""}${text.includes("[impostazioni]") ? "[impostazioni] " : ""}${text.includes("[cancella]") ? "[cancella] " : ""}Scrivi una nota`,
         }).then((result) => {
           toolDone("assign_task", result);
           finish(result.isError ? `Rifiutato: ${result.content[0].text}` : "Ho assegnato il lavoro ad Ada.");
