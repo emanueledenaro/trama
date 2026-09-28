@@ -21,6 +21,13 @@ export interface HostToolServer {
   tools?: readonly string[];
 }
 
+/**
+ * How long a provider waits for one call to Trama's tools. review_candidate runs the required checks and every candidate
+ * reviewer before it answers, which takes minutes: two minutes cut it off while the gate was still at work (issue #389).
+ * A call cut off anyway leaves the gate running, and the next review_candidate waits for the same gate.
+ */
+export const HOST_TOOL_TIMEOUT_MS = 30 * 60_000;
+
 export interface OpenThreadOptions {
   model: string;
   cwd: string;

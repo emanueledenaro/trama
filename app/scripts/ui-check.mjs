@@ -2211,6 +2211,15 @@ await correctedCard.getByText("Deciso", { exact: true }).waitFor({ timeout: 30_0
 await correctedCard.locator('[data-testid="candidate-evidence"][data-check="git_diff_check"][data-result="pass"]').waitFor();
 await correctedCard.getByText("Revisione tecnica, approvata").waitFor();
 await correctedCard.getByText("Via libera del Coordinatore.").waitFor();
+// Issue #389: the correction replaced the failed candidate, so its card settles as one "Superato" line; the line opens it.
+const supersededLines = page.getByTestId("settled-card").filter({ hasText: "Superato" });
+await supersededLines.first().waitFor({ timeout: 20_000 });
+for (const line of await supersededLines.all()) {
+  if (await failedCard.isVisible().catch(() => false)) break;
+  await openSettled(line);
+  if (!(await failedCard.isVisible().catch(() => false))) await line.getByRole("button", { name: /^Chiudi: / }).first().click();
+}
+await failedCard.getByTestId("candidate-superseded").waitFor();
 if ((await failedCard.innerText()).includes("Deciso")) throw new Error("The failed candidate took the correction's state");
 await correctedCard.scrollIntoViewIfNeeded();
 await shot("18d-candidate-corrected");

@@ -30,6 +30,7 @@ import type { LoadedSkill } from "@shared/skills";
 import {
   type AgentRuntime,
   extractJsonAnswer,
+  HOST_TOOL_TIMEOUT_MS,
   type HostToolServer,
   interruptedTurnError,
   isInside,
@@ -328,7 +329,7 @@ export function buildToolServerMcp(toolServer: HostToolServer): McpRemoteConfig 
     enabled: true,
     headers: { Authorization: `Bearer ${toolServer.token}` },
     oauth: false,
-    timeout: 120_000,
+    timeout: HOST_TOOL_TIMEOUT_MS,
   };
 }
 

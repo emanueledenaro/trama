@@ -26,7 +26,7 @@ import {
   parseMcpToolName,
   usageLimitFromRateLimit,
 } from "./claudeAgent";
-import { isInside } from "./types";
+import { HOST_TOOL_TIMEOUT_MS, isInside } from "./types";
 import { setPersonLanguage } from "../personLanguage";
 
 const ok = (stdout: string, code = 0) => ({ stdout, stderr: "", code });
@@ -307,7 +307,9 @@ describe("query options", () => {
       policy: { cwd: "/work", writableRoot: "/work", hostServer: "trama" },
       outputSchema: { type: "object" },
     });
-    expect(options.mcpServers?.trama).toMatchObject({ type: "sdk", name: "trama", timeout: 120_000 });
+    // review_candidate waits for the whole gate: two minutes cut it off in the audit (issue #389).
+    expect(options.mcpServers?.trama).toMatchObject({ type: "sdk", name: "trama", timeout: HOST_TOOL_TIMEOUT_MS });
+    expect(HOST_TOOL_TIMEOUT_MS).toBeGreaterThanOrEqual(30 * 60_000);
     expect(typeof (options.mcpServers?.trama as { instance?: { connect?: unknown } }).instance?.connect).toBe("function");
     expect(options.allowedTools).toEqual(["mcp__trama"]);
     expect(options.resume).toBe("22222222-2222-4222-8222-222222222222");

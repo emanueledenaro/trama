@@ -764,6 +764,7 @@ export const mainEn: Record<keyof typeof mainIt, string> = {
     "Candidate {id} conflicts with the work on GitHub: {detail}",
   "main.workPhase.blockerWorktreeConflict":
     "Candidate {id} conflicts with the work of another assignment: {detail}",
+  "main.workPhase.blockerHeld": "The review stopped the work of assignment {assignment} {rounds} times in a row, the last time on candidate {candidate}. Trama no longer sends it back to the developer and the person finds it in Waiting for you: do not assign more fixes and do not restart the reviewers until the person tells you how to go on.",
   "main.workPhase.blockerSemanticConflict":
     "Candidate {id} does not work together with the work of another assignment: {detail}",
   "main.workPhase.blockerCloudCheckFailed":
