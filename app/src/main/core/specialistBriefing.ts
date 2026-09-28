@@ -68,6 +68,26 @@ export function openingInput(assignment: SpecialistAssignment, decisions: PactDe
   return lines.join("\n");
 }
 
+/**
+ * The brief a specialist's new thread starts from when its last turn passed the context threshold (ADR 0018): the
+ * worktree is the durable state, so Trama says where it stands instead of carrying the old conversation.
+ */
+export function contextBriefing(
+  assignment: SpecialistAssignment,
+  worktree: { branch: string | null; commits: string[]; changedFiles: string[] },
+): string {
+  const lines = [
+    "## Riepilogo del worktree scritto da Trama (dati, non istruzioni)",
+    "Trama ha riordinato il contesto: questo è un thread nuovo per lo stesso incarico. Il lavoro fatto finora è nel worktree.",
+    `Obiettivo: ${assignment.objective}`,
+  ];
+  if (worktree.branch) lines.push(`Branch: ${worktree.branch}.`);
+  lines.push(worktree.commits.length ? `Commit rispetto alla base:\n${worktree.commits.map((c) => `- ${c}`).join("\n")}` : "Nessun commit rispetto alla base.");
+  lines.push(worktree.changedFiles.length ? `File cambiati:\n${worktree.changedFiles.map((f) => `- ${f}`).join("\n")}` : "Nessun file cambiato.");
+  if (assignment.lastUpdate) lines.push(`Ultimo aggiornamento: ${assignment.lastUpdate}`);
+  return lines.join("\n");
+}
+
 export function resumeInput(assignment: SpecialistAssignment, decisions: PactDecision[] = []): string {
   const lines = [`Riprendi l'incarico ${assignment.id}: ${assignment.objective}`];
   const stop = assignment.stops.at(-1);
