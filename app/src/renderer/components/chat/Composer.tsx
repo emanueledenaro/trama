@@ -6,6 +6,7 @@ import type { ImageAttachmentInput } from "@shared/ipc";
 import { type MentionCandidate, mentionCandidates, mentionToken } from "@shared/mentions";
 import { normalizePaste, pasteSizeLabel, pasteTitle, serializePastes, shouldCollapsePaste } from "@shared/pastedText";
 import { AIHERO_ATTRIBUTION, skillCandidates } from "@shared/skills";
+import { RECAP_COMMAND } from "@shared/recap";
 import { ASK_TRAMA_SKILL } from "@shared/askTrama";
 import { chatComposer, findGoal } from "@shared/goals";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
@@ -148,15 +149,22 @@ export function Composer() {
     ? []
     : mention.sigil === "@"
       ? mentionCandidates(mention.query, mentionSources).slice(0, 12)
-      : skillCandidates(mention.query, project.skills)
-          .slice(0, 12)
-          .map((skill) => ({ mention: { kind: "file" as const, key: `/${skill.name}` }, title: `/${skill.name}`, subtitle: skill.description ?? "Skill" }));
+      : [
+          // Trama's own command (A03) comes first, while the query can still become it.
+          ...(mention.sigil === "/" && RECAP_COMMAND.slice(1).startsWith(mention.query.toLowerCase())
+            ? [{ mention: { kind: "file" as const, key: RECAP_COMMAND }, title: RECAP_COMMAND, subtitle: "Riepilogo del Coordinatore: cosa ho fatto, cosa faccio, cosa mi serve da te" }]
+            : []),
+          ...skillCandidates(mention.query, project.skills)
+            .slice(0, 12)
+            .map((skill) => ({ mention: { kind: "file" as const, key: `/${skill.name}` }, title: `/${skill.name}`, subtitle: skill.description ?? "Skill" })),
+        ].slice(0, 12);
 
   /** Opens the mention menu while the word before the cursor starts with @. */
   const trackMention = (value: string, cursor: number) => {
     const before = value.slice(0, cursor);
     const match = before.match(/(^|\s)([@$/])([^\s@"$/]*)$/);
-    if (match && (match[2] === "@" || project.skills.length)) {
+    const recap = match?.[2] === "/" && RECAP_COMMAND.slice(1).startsWith(match[3]!.toLowerCase());
+    if (match && (match[2] === "@" || project.skills.length || recap)) {
       setMention({ start: cursor - match[3]!.length - 1, query: match[3]!, index: 0, sigil: match[2] as "@" | "$" | "/" });
     } else setMention(null);
   };
@@ -165,7 +173,8 @@ export function Composer() {
     if (!mention) return;
     const element = textarea.current;
     const cursor = element?.selectionStart ?? text.length;
-    const token = `${candidate.mention.key.startsWith("$") ? candidate.mention.key : mentionToken(candidate.mention)} `;
+    const bare = candidate.mention.key.startsWith("$") || candidate.mention.key === RECAP_COMMAND;
+    const token = `${bare ? candidate.mention.key : mentionToken(candidate.mention)} `;
     const next = text.slice(0, mention.start) + token + text.slice(cursor);
     updateText(next);
     setMention(null);
