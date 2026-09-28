@@ -18,7 +18,7 @@ import {
 import { useEffect, useState } from "react";
 import type { MessageKey } from "@shared/i18n";
 import { ChatView } from "@/components/chat/ChatView";
-import { InspectorBody, TITLES, useTargetTitle } from "@/components/inspector/Inspector";
+import { InspectorBody, targetTitle, useTargetTitle } from "@/components/inspector/Inspector";
 import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/cn";
 import { useT } from "@/lib/i18n";
@@ -197,10 +197,11 @@ function TabStrip({ tabs, conversation, selected, label }: { tabs: EditorTab[]; 
 
 /** The detail of a record in its editor tab: the same panel of today, with the room of the editor. */
 function DetailPane({ target }: { target: InspectorTarget }) {
+  const t = useT();
   return (
     <div
       className="@container/inspector min-h-0 flex-1 overflow-y-auto"
-      aria-label={TITLES[target.kind]}
+      aria-label={targetTitle(target.kind, t)}
       data-testid="editor-detail"
       data-kind={target.kind}
       role="tabpanel"

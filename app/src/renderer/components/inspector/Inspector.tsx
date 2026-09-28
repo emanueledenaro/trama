@@ -1,3 +1,5 @@
+import type { Translate } from "@shared/i18n";
+import { useT } from "@/lib/i18n";
 import { DisclosureChevron } from "@/components/chat/WorkSteps";
 import { useUi } from "@/lib/store";
 import { AgentThreadView } from "./AgentThreadView";
@@ -9,7 +11,7 @@ import { WorkView } from "./WorkView";
 import { IssueDetail, IssuesView } from "./IssuesView";
 import { MandateView } from "./MandateView";
 import { MemoryView } from "./MemoryView";
-import { SpecialistView, TeamView } from "./TeamView";
+import { SpecialistView, SquadsView } from "./TeamView";
 import { FilePreview, ModuleView } from "./MapView";
 import { DecisionView, PactView } from "./PactView";
 import { StandardView } from "./StandardView";
@@ -29,7 +31,7 @@ export const TITLES = {
   mandate: "Mandato del Coordinatore",
   standard: "Standard del codice",
   memory: "Memoria del Coordinatore",
-  team: "Team del progetto",
+  team: "Squadre del progetto",
   specialist: "Specialista",
   agentThread: "Chat tra agenti",
   candidate: "Candidato",
@@ -45,6 +47,11 @@ export const TITLES = {
   goal: "Obiettivo",
 } as const;
 
+/** The panel's name; the person of the squad (issue #333) takes it from the catalogs. */
+export function targetTitle(kind: InspectorTarget["kind"], t: Translate): string {
+  return kind === "specialist" ? t("teams.person.title") : TITLES[kind];
+}
+
 // Panels that already open with the record's name (an agent, a goal) keep their generic title, not the name twice.
 const targetId = (target: InspectorTarget): string | null => (target.kind === "candidate" || target.kind === "audit" || target.kind === "decision" ? target.id : null);
 
@@ -53,6 +60,7 @@ const targetId = (target: InspectorTarget): string | null => (target.kind === "c
  * on one item says which one, since the card on screen is that item's.
  */
 export function InspectorTitle({ target }: { target: InspectorTarget }) {
+  const t = useT();
   const waitingItem = useUi((s) => (target.kind === "waiting" && target.key ? (s.app?.project?.waiting ?? []).find((i) => i.key === target.key) ?? null : null));
   const candidateId = waitingItem?.kind === "candidate" ? waitingItem.targetId : null;
   const record = useRecord(targetId(target) ?? candidateId);
@@ -70,7 +78,7 @@ export function InspectorTitle({ target }: { target: InspectorTarget }) {
       </h3>
     );
   }
-  const title = targetTitle(target, record ? asTitle(record.label) : null);
+  const title = detailTitle(target, record ? asTitle(record.label) : null, t);
   return (
     <h3 className="min-w-0 flex-1 truncate font-system-ui text-ui text-foreground" title={id} data-testid="side-bar-title">
       {title}
@@ -78,23 +86,24 @@ export function InspectorTitle({ target }: { target: InspectorTarget }) {
   );
 }
 
-function targetTitle(target: InspectorTarget, recordTitle: string | null): string {
+function detailTitle(target: InspectorTarget, recordTitle: string | null, t: Translate): string {
   if (target.kind === "issue") return `Issue #${target.number}`;
   if (target.kind === "pullRequest") return `Pull request #${target.number}`;
   if (target.kind === "commit") return target.sha.slice(0, 7);
   if (target.kind === "branch") return target.name;
   if (target.kind === "file") return target.path.split("/").at(-1) ?? target.path;
   if (target.kind === "module") return target.id;
-  return recordTitle ?? TITLES[target.kind];
+  return recordTitle ?? targetTitle(target.kind, t);
 }
 
 /** The name of a detail on its editor tab (issue #336): the record by its name, with its id for the hover. */
 export function useTargetTitle(target: InspectorTarget): { title: string; id: string | undefined } {
+  const t = useT();
   const recordId = targetId(target) ?? (target.kind === "specialist" || target.kind === "goal" ? target.id : null);
   const record = useRecord(recordId);
   // The id stays on the hover of the tab (issue #270).
   const id = recordId ?? undefined;
-  return { title: targetTitle(target, record ? asTitle(record.label) : null), id };
+  return { title: detailTitle(target, record ? asTitle(record.label) : null, t), id };
 }
 
 /** The panel of a target, shown in the side bar under its view (issue #330). */
@@ -112,7 +121,7 @@ export function InspectorBody({ target }: { target: InspectorTarget }) {
       {target.kind === "decision" ? <DecisionView id={target.id} /> : null}
       {target.kind === "standard" ? <StandardView /> : null}
       {target.kind === "memory" ? <MemoryView /> : null}
-      {target.kind === "team" ? <TeamView /> : null}
+      {target.kind === "team" ? <SquadsView /> : null}
       {target.kind === "specialist" ? <SpecialistView id={target.id} /> : null}
       {target.kind === "agentThread" ? <AgentThreadView id={target.id} /> : null}
       {target.kind === "candidate" ? <CandidateView id={target.id} audit={target.audit} diff={target.diff} /> : null}
