@@ -1,3 +1,5 @@
+import { formatDuration } from "./states";
+
 /**
  * Presence (G01, #174): who works on what in the team. Each person using Trama publishes, with consent, one small
  * record on the project's remote in `refs/trama/presence/<user>` (ADR 0015): active branch, local branches, the paths
@@ -8,7 +10,7 @@
 export const PRESENCE_REF_PREFIX = "refs/trama/presence/";
 /** Decision 7: an update every 30-60 seconds; Trama uses 45. */
 export const PRESENCE_INTERVAL_MS = 45_000;
-/** Decision 7: "inattivo da N min" after 10 minutes without changes. */
+/** Decision 7: "inattivo da 12 min", "inattivo da 3 ore" after 10 minutes without changes. */
 export const PRESENCE_IDLE_MS = 10 * 60_000;
 /** Without a heartbeat for this long, a record whose app did not close cleanly counts as closed. */
 export const PRESENCE_STALE_MS = 3 * PRESENCE_INTERVAL_MS;
@@ -163,7 +165,7 @@ export function presenceFreshness(record: PresenceRecord, now: Date): PresenceFr
 
 /** The freshness in words, as the Gruppo view shows it. */
 export function freshnessLabel(entry: PresenceFreshness, now: Date): string {
-  if (entry.status === "idle") return `inattivo da ${entry.idleMinutes} min`;
+  if (entry.status === "idle") return `inattivo da ${formatDuration(entry.idleMinutes ?? 0)}`;
   if (entry.status === "offline" || entry.status === "expired") return `visto l'ultima volta ${relativeAgo(entry.lastSeenAt, now)}`;
   return "attivo ora";
 }

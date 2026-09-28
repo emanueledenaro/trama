@@ -23,6 +23,8 @@ export interface CleanCodeRule {
   label: string;
   /** Italian, one line for the settings page. */
   summary: string;
+  /** Italian: what an acronym label stands for, shown on hover wherever the label appears (issue #272). */
+  expansion?: string;
   /** English, as the developer and the reviewer read it. */
   instruction: string;
   severity: CleanCodeSeverity;
@@ -62,6 +64,7 @@ export const CLEAN_CODE_RULES: CleanCodeRule[] = [
   {
     id: "kiss",
     label: "KISS",
+    expansion: "Keep It Simple: la soluzione più semplice che funziona.",
     summary: "Niente complessità superflua.",
     instruction: "KISS: no complexity the task does not need.",
     severity: "suggestion",
@@ -69,6 +72,7 @@ export const CLEAN_CODE_RULES: CleanCodeRule[] = [
   {
     id: "dry",
     label: "DRY",
+    expansion: "Don't Repeat Yourself: ogni logica si scrive una volta sola.",
     summary: "La stessa logica non si scrive due volte.",
     instruction: "DRY: the same logic is written once. Duplicated logic is a blocking finding.",
     severity: "blocking",
@@ -76,6 +80,7 @@ export const CLEAN_CODE_RULES: CleanCodeRule[] = [
   {
     id: "yagni",
     label: "YAGNI",
+    expansion: "You Aren't Gonna Need It: niente di quello che ancora non serve.",
     summary: "Niente funzioni prima che servano.",
     instruction: "YAGNI: no function, option or abstraction before something needs it.",
     severity: "suggestion",
@@ -83,6 +88,7 @@ export const CLEAN_CODE_RULES: CleanCodeRule[] = [
   {
     id: "solid",
     label: "SOLID",
+    expansion: "Cinque principi per il codice a oggetti: responsabilità singola, aperto alle estensioni, sostituibilità, interfacce piccole, dipendenze dalle astrazioni.",
     summary: "Per il codice a oggetti.",
     instruction: "SOLID, for object-oriented code only: leave it aside where the project does not use classes.",
     severity: "suggestion",
