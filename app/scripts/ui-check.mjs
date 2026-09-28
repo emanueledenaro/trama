@@ -3708,6 +3708,63 @@ await problemShots("27c-found-problem-local-backlog");
 await app.close();
 
 
+// Issue #42 (C10): the Coordinator reports on a ticket. A partial increment leaves the issue open, and Activity says what
+// is missing in Italian, with the criteria by name; a GitHub write that fails is a step "non riuscito", never an update.
+const ticketFile = join(await mkdtemp(join(tmpdir(), "trama-ui-ticket-gh-")), "ticket.json");
+const ticketIssue = { number: 42, title: "Annullo degli ordini dal riepilogo", state: "open", body: "## Criteri\n\n- [ ] Il riepilogo mostra l'annullo\n- [ ] Le verifiche passano", comments: [], pulls: {} };
+await writeFile(ticketFile, JSON.stringify(ticketIssue));
+({ app, page } = await launch({ PATH: `${ghBin}:${process.env.PATH}`, FAKE_GH_TICKET: ticketFile }));
+await page.evaluate(() => window.trama.invoke("settings:update", { continuousWork: false, theme: "light" }));
+await page.evaluate((project) => window.trama.invoke("project:open", { path: project }), await problemProject("ticket", "https://github.com/trama-ui/ticket.git"));
+await page.getByTestId("dialog-title").filter({ hasText: "trama-ui-ticket" }).waitFor({ timeout: 30_000 });
+await page.getByText("Ho letto lo studio").first().waitFor({ timeout: 30_000 });
+await page.evaluate(() =>
+  window.trama.invoke("mandate:grant", {
+    requestId: null,
+    objectives: ["Chiudere i ticket con le prove"],
+    priorities: [],
+    scopeModuleIds: ["Sources/Orders"],
+    authorizedActions: ["openPullRequest", "integrateCandidate"],
+    limits: [],
+  }),
+);
+await page.getByText("Ho concesso il mandato (versione 1).").first().waitFor({ timeout: 20_000 });
+await page.getByRole("button", { name: "Interrompi" }).waitFor({ state: "hidden", timeout: 20_000 });
+const askTicket = async (text, reply) => {
+  await composer().click({ timeout: 60_000 });
+  await composer().pressSequentially(text);
+  await page.keyboard.press("Enter");
+  await page.getByText(reply).first().waitFor({ timeout: 30_000 });
+  await page.getByRole("button", { name: "Interrompi" }).waitFor({ state: "hidden", timeout: 30_000 });
+};
+// Opens the turn's steps in Activity from its line in the chat, with the ticket's steps unfolded.
+const ticketSteps = async (reply) => {
+  await page.getByTestId("work-line").getByRole("button", { name: /^Ha lavorato per/ }).last().click();
+  const steps = page.getByTestId("inspector").getByTestId("technical-step").filter({ hasText: /^Issue #42 «Annullo degli ordini dal riepilogo»/ });
+  const step = steps.filter({ hasText: reply }).first();
+  await step.waitFor({ timeout: 10_000 });
+  if ((await step.locator("button + *").count()) === 0) await step.getByRole("button").click();
+  return step;
+};
+await askTicket("[ticket] Aggiorna la issue 42", /Ho registrato l'avanzamento sulla issue #42/);
+const partialStep = await ticketSteps("avanzamento registrato");
+await partialStep.getByText("Resta aperta: manca «Il riepilogo mostra l'annullo»; manca «Le verifiche passano»; nessuna pull request di questo lavoro è stata unita.").waitFor();
+if (/Criterion|pull request of this work|[–—]/.test(await partialStep.innerText())) throw new Error("The ticket step is not plain Italian");
+let ticketState = JSON.parse(await readFile(ticketFile, "utf8"));
+if (ticketState.state !== "open" || ticketState.comments.length !== 1 || ticketState.body !== ticketIssue.body) throw new Error("The partial report closed the issue or ticked a criterion");
+await partialStep.scrollIntoViewIfNeeded();
+await problemShots("30a-ticket-partial");
+await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
+await writeFile(ticketFile, JSON.stringify({ ...ticketState, failComment: true }));
+await askTicket("[ticket:errore] Aggiorna ancora la issue 42", /Non sono riuscito ad aggiornare la issue #42/);
+const failedStep = await ticketSteps("aggiornamento non riuscito");
+await failedStep.getByText("GitHub non ha risposto come atteso: il resoconto non è stato pubblicato, la issue resta aperta.").waitFor();
+ticketState = JSON.parse(await readFile(ticketFile, "utf8"));
+if (ticketState.state !== "open" || ticketState.comments.length !== 1) throw new Error("The failed report changed the issue");
+await failedStep.scrollIntoViewIfNeeded();
+await problemShots("30b-ticket-failed");
+await app.close();
+
 // Issue #249: the always active Coordinator of a project with a mandate. A provider limit holds moves, rounds and new
 // turns, and the status line says what it waits for; on reopening Trama the turn that waited for the limit waits again
 // and resumes by itself at its end, the turn Esci ended resumes by itself, reconciled first, and a project in Pause

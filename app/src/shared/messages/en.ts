@@ -17,6 +17,24 @@ export const en: Record<keyof typeof it, string> = {
   // Coordinator replies
   "toolError.placeholder": "a Trama tool refused the request (the details are in Activity)",
 
+  // Automatic repair of a provider's CLI
+  "providerRepair.title": "Trama repaired {cli}",
+  "providerRepair.failedTitle": "Trama could not repair {cli}",
+  "providerRepair.retry": "Trama runs the turn again, once.",
+  "providerRepair.updateCli.done": "Updated with {command}: it is now version {detail}.",
+  "providerRepair.updateCli.failed": "{command} did not work: {detail}",
+  "providerRepair.updateCli.notNeeded": "Version {detail}: no update needed.",
+  "providerRepair.reinstallPlugin.done": "Trama's plugin reinstalled with {command}.",
+  "providerRepair.reinstallPlugin.failed": "Trama's plugin did not reinstall: {detail}",
+  "providerRepair.checkHook.done": "Trama's hook answers as it should.",
+  "providerRepair.checkHook.failed": "Trama's hook does not answer as it should: {detail}",
+  "providerRepair.problem.notCalled": "{cli} did not call Trama's hook, the check that keeps the turn read-only.",
+  "providerRepair.problem.notReady": "Trama's plugin for {cli} is not ready, and without its hook Trama cannot check what the agent does.",
+  "providerRepair.gaveUp": "{problem} Trama tried to repair it by itself. {steps} Without the hook Trama does not start the turn. One thing is left for you: {action}",
+  "providerRepair.action.update": "update {cli} from a terminal with {command}, then try again.",
+  "providerRepair.action.reinstall": "reinstall {cli}, then try again.",
+  "providerRepair.outdated": "{cli} {version} is too old for Trama, which tried to update it by itself. {steps} One thing is left for you: update it from a terminal with {command} to version {minimum} or later.",
+
   // Language
   "language.label": "Language",
   "language.description":
@@ -270,6 +288,32 @@ export const en: Record<keyof typeof it, string> = {
   "settings.presence.openProject": "Open a project to choose whether to share your presence.",
   "settings.presence.demo": "The example project does not share presence.",
   "settings.presence.share": "Share your presence in {name}",
+
+  // Ticket updates in Activity (C10)
+  "ticket.issue": "Issue #{number} “{title}”",
+  "ticket.issueUntitled": "Issue #{number}",
+  "ticket.registered": "{issue}: progress recorded",
+  "ticket.duplicate": "{issue}: progress already recorded",
+  "ticket.closed": "{issue}: closed with the evidence",
+  "ticket.failed": "{issue}: update failed",
+  "ticket.stillOpen": "Still open: {blockers}.",
+  "ticket.checked": "Criteria ticked: {criteria}.",
+  "ticket.checked.one": "Criterion ticked: {criteria}.",
+  "ticket.criterion": "“{text}”",
+  "ticket.failedDetail": "GitHub did not answer as expected: {done}.",
+  "ticket.failed.reportAlreadyThere": "the report was already on the issue",
+  "ticket.failed.reportPosted": "the report was posted",
+  "ticket.failed.reportNotPosted": "the report was not posted",
+  "ticket.failed.criteriaChecked": "the criteria were ticked",
+  "ticket.failed.criteriaNotChecked": "the criteria were not ticked",
+  "ticket.failed.stillOpen": "the issue stays open",
+  "ticket.blocker.noChecklist": "the issue has no criteria to tick",
+  "ticket.blocker.criterionOpen": "“{text}” is missing",
+  "ticket.blocker.notMerged": "no pull request of this work is merged",
+  "ticket.blocker.checks.failure": "the checks of PR #{number} failed",
+  "ticket.blocker.checks.pending": "the checks of PR #{number} are still running",
+  "ticket.blocker.checks.none": "the checks of PR #{number} did not run",
+  "ticket.blocker.checks.success": "the checks of PR #{number} passed",
 
   // Work a change of the mandate stops (C06)
   "mandate.stoppedWork.revokeLead": "Without a mandate the Coordinator reads and proposes, but does not act.",
