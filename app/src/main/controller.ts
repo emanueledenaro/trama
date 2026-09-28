@@ -38,6 +38,7 @@ import type {
   AppState,
   CoordinatorPhase,
   CoordinatorRequest,
+  GitHubIssue,
   GitHubState,
   Practice,
   PracticeView,
@@ -158,7 +159,10 @@ import {
   closeIssue,
   commentOnIssue,
   addBlockedBy,
+  addIssueLabels,
   createIssue,
+  listIssues,
+  removeIssueLabel,
   linkedIssueNumbers,
   listIssuesAndPullLinks,
   readGitHubRepository,
@@ -341,6 +345,7 @@ import {
   type DutyRunner,
   dutySession,
   nextDuty,
+  observeIssues,
   recordCheckOutcome,
   startDomainWriting,
   startDutyOnRequest,
@@ -348,6 +353,21 @@ import {
   withinMandate,
 } from "./core/duties";
 import { findDomainProposal } from "@shared/domainDocs";
+import {
+  collectProblems,
+  keepInLocalBacklog,
+  labelsAfterTriage,
+  latestTriage,
+  parseTriageLabels,
+  placeProblems,
+  problemIssueBody,
+  problemsToOpen,
+  recordIssueFailure,
+  recordProblemIssue,
+  sameProblemIssue,
+  ISSUE_RETRY_MS,
+  TRIAGE_LABELS_PATH,
+} from "./core/problems";
 
 /** The person's Coordinator models as read from settings.json: entries without a model name are dropped. */
 function coordinatorModelSettings(saved: unknown): NonNullable<AppSettings["coordinatorModels"]> {
@@ -4007,6 +4027,7 @@ export class TramaController {
       try {
         do {
           this.dutiesAgain = false;
+          await this.handleProblems();
           await this.startNextDuty();
           await this.moveTeam();
         } while (this.dutiesAgain);
@@ -4015,6 +4036,97 @@ export class TramaController {
       }
     })();
     return this.dutiesRun;
+  }
+
+  /**
+   * The problems found outside the work in progress (A08): Trama records them, opens one issue each on GitHub or links
+   * the open one about the same problem, applies the triage labels after the triage and places each problem with the
+   * assignment that works on it or in the backlog. Without GitHub the problems stay in Trama as backlog items. Nothing
+   * is opened in pause, in the example project or without a granted mandate. Every step goes to Activity.
+   */
+  /** When Trama last tried to apply the triage labels to a problem's issue, by problem id. */
+  private readonly problemLabelAttempts = new Map<string, number>();
+
+  private async handleProblems(): Promise<void> {
+    const project = this.state.project;
+    if (!project || !project.stateWritable || project.isDemo || this.quitting) return;
+    const document = project.document;
+    if (isPaused(document)) return;
+    const github = project.github;
+    const ready = github.status === "ready" && github.repository !== null;
+    let changed = !document.problems;
+    changed = collectProblems(document, ready ? github.issues : null).length > 0 || changed;
+    changed = placeProblems(document).length > 0 || changed;
+    if (github.status === "unavailable") changed = keepInLocalBacklog(document).length > 0 || changed;
+    if (!ready || document.mandate?.status !== "granted") {
+      if (changed) this.changedIn(project);
+      return;
+    }
+    const repository = github.repository!;
+    const labels = parseTriageLabels(await readRepositoryFile(TRIAGE_LABELS_PATH, project.rootPath).catch(() => null));
+    const waiting = problemsToOpen(document);
+    if (waiting.length) {
+      // Read again just before opening, so an issue opened meanwhile about the same problem is not duplicated.
+      const issues = await listIssues(repository).catch((error: Error) => {
+        for (const problem of waiting) recordIssueFailure(problem, `GitHub CLI non ha letto le issue: ${classifyGitHubError(error.message).message}`);
+        return null;
+      });
+      if (this.state.project !== project) return;
+      if (issues) {
+        // The rule of new issues must know them before the Coordinator opens one, or the new one would count as old.
+        observeIssues(document, { issues, pullRequests: github.pullRequestLinks ?? null });
+        for (const problem of waiting) {
+          const existing = sameProblemIssue(problem, issues);
+          if (existing) {
+            recordProblemIssue(problem, existing, false);
+            continue;
+          }
+          const body = problemIssueBody(problem);
+          try {
+            const created = await createIssue(repository, problem.title, body, [labels["needs-triage"]]);
+            recordProblemIssue(problem, created, true);
+            const issue: GitHubIssue = {
+              number: created.number,
+              title: problem.title,
+              state: "open",
+              body,
+              url: created.url,
+              author: github.capabilities?.login ?? null,
+              labels: [labels["needs-triage"]],
+              updatedAt: new Date().toISOString(),
+            };
+            issues.push(issue);
+            // The triage rule reads the issues Trama keeps: the new one reaches the bug triage without waiting for a refresh.
+            if (this.state.project === project) project.github = { ...project.github, issues: [...project.github.issues, issue] };
+          } catch (error) {
+            recordIssueFailure(problem, `La issue non è stata aperta: ${classifyGitHubError((error as Error).message).message}`);
+          }
+        }
+      }
+      changed = true;
+    }
+    for (const problem of document.problems?.items ?? []) {
+      const issue = problem.issue;
+      const outcome = issue?.opened && !problem.labelsApplied ? latestTriage(document, issue.number)?.duty?.outcome : null;
+      if (!issue || outcome?.kind !== "triage") continue;
+      // A failed attempt waits before the next one, like the opening of the issue.
+      const tried = this.problemLabelAttempts.get(problem.id);
+      if (tried && Date.now() - tried < ISSUE_RETRY_MS) continue;
+      this.problemLabelAttempts.set(problem.id, Date.now());
+      const { add, remove } = labelsAfterTriage(labels, outcome);
+      try {
+        await addIssueLabels(repository, issue.number, add);
+        if (remove) await removeIssueLabel(repository, issue.number, remove);
+        problem.labelsApplied = add;
+        changed = true;
+      } catch {
+        // The labels are applied at the next look.
+      }
+    }
+    if (changed && this.state.project === project) {
+      placeProblems(document);
+      this.changedIn(project);
+    }
   }
 
   private async startNextDuty(): Promise<void> {
@@ -4456,6 +4568,8 @@ export class TramaController {
     if (gate.status === "blocked" && !gate.checksFailed.length) this.returnToDeveloper(project, gate);
     this.changedIn(project);
     this.releaseParkedProject(project);
+    // A check red on the base too or a finding outside the candidate is a problem to open an issue for (A08).
+    void this.runDuties();
     return review;
   }
 
