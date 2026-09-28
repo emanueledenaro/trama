@@ -20,13 +20,15 @@ import { DEFAULT_LEARNING_SETTINGS, type LearningSettings, type ThemePreference 
 import { classifyProviderFailure } from "@shared/providerFailure";
 import { capabilityLines, coordinatorUnavailableReason, PROVIDERS, type ProviderDescriptor } from "@shared/providers";
 import { AIHERO_ATTRIBUTION } from "@shared/skills";
-import { MAX_PARALLEL_DEVELOPERS_SETTING, MIN_PARALLEL_DEVELOPERS, parallelDevelopers } from "@shared/parallel";
+import { MAX_PARALLEL_DEVELOPERS_SETTING, MIN_PARALLEL_DEVELOPERS, parallelDevelopers, sharedDevelopers } from "@shared/parallel";
+import { offersCloud, WORK_PLACE_SETTINGS, workPlaceSetting } from "@shared/workPlace";
 import { GitHubCliDescription } from "@/components/GitHubCliStatus";
 import { TramaMark } from "@/components/brand/TramaMark";
 import { ProviderIcon } from "@/components/ProviderIcon";
 import { Spinner } from "@/components/Spinner";
 import { Button } from "@/components/ui/button";
 import { Badge, TextArea } from "@/components/ui/field";
+import { RuleLabel } from "@/components/chat/RuleLabel";
 import { activeRules, CLEAN_CODE_RULES, CLEAN_CODE_SOURCE, CLEAN_CODE_VERSION } from "@shared/cleanCode";
 import { cn } from "@/lib/cn";
 import { useLanguage, useT } from "@/lib/i18n";
@@ -220,7 +222,10 @@ function GeneralSection() {
           <TramaMark size={40} variant="tile" />
           <div className="min-w-0 flex-1">
             <div className="text-ui text-foreground">Trama</div>
-            <div className="mt-0.5 text-ui-sm text-muted-foreground">{t("settings.about.version", { version: __TRAMA_VERSION__ })}</div>
+            <div className="mt-0.5 text-ui-sm text-muted-foreground" data-testid="about-version">
+              {t("settings.about.version", { version: __TRAMA_VERSION__ })}
+            </div>
+            {__TRAMA_COMMIT__ && <div className="mt-0.5 font-mono text-ui-sm text-muted-foreground">{t("settings.about.commit", { commit: __TRAMA_COMMIT__ })}</div>}
           </div>
         </div>
       </Group>
@@ -525,9 +530,13 @@ function MethodSection() {
         />
       </Group>
       <ParallelDevelopersGroup />
+      <WorkPlaceGroup />
     </>
   );
 }
+
+/** The shared limit's choices (issue #39): the small numbers one by one, then the larger steps. */
+const SHARED_OPTIONS = [1, 2, 3, 4, 5, 6, 8, 10, 12];
 
 const PARALLEL_OPTIONS = Array.from({ length: MAX_PARALLEL_DEVELOPERS_SETTING - MIN_PARALLEL_DEVELOPERS + 1 }, (_, index) => MIN_PARALLEL_DEVELOPERS + index);
 
@@ -537,6 +546,7 @@ function ParallelDevelopersGroup() {
   const usable = project && !project.isDemo && project.stateWritable;
   const limit = project ? parallelDevelopers(project.document) : null;
   const t = useT();
+  const shared = useUi((s) => (s.app ? sharedDevelopers(s.app.settings) : null));
   return (
     <Group title={t("settings.parallel.title")} note={t("settings.parallel.note")}>
       <Row
@@ -558,6 +568,82 @@ function ParallelDevelopersGroup() {
                   )}
                 >
                   {value}
+                </button>
+              ))}
+            </div>
+          ) : null
+        }
+      />
+      <Row
+        label={t("settings.parallel.shared")}
+        description={t("settings.parallel.sharedDescription")}
+        control={
+          <div role="radiogroup" aria-label={t("settings.parallel.sharedLabel")} className="flex rounded-lg bg-[var(--color-background-button-secondary)] p-0.5" data-testid="shared-developers">
+            {SHARED_OPTIONS.map((value) => (
+              <button
+                key={value}
+                type="button"
+                role="radio"
+                aria-checked={shared === value}
+                onClick={() => void act("settings:update", { sharedDevelopers: value })}
+                className={cn(
+                  "flex h-6 min-w-7 items-center justify-center rounded-md px-2 text-ui-sm tabular-nums transition-colors",
+                  shared === value ? "bg-[var(--color-background-surface)] text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                {value}
+              </button>
+            ))}
+          </div>
+        }
+      />
+    </Group>
+  );
+}
+
+/**
+ * A19 (issue #260): where the developers' work runs in the open project. Automatic unless the person changes it; the
+ * cloud is offered only when the project's provider has one (Claude or Codex).
+ */
+function WorkPlaceGroup() {
+  const t = useT();
+  const project = useUi((s) => s.app?.project ?? null);
+  const usable = project && !project.isDemo && project.stateWritable;
+  const provider = project ? (project.document.coordinator.threadProvider ?? project.document.selectedProvider ?? "codex") : null;
+  const cloud = offersCloud(provider);
+  const setting = project ? workPlaceSetting(project.document) : null;
+  const options = cloud ? WORK_PLACE_SETTINGS : WORK_PLACE_SETTINGS.filter((value) => value === "local");
+  const selected = cloud ? setting : "local";
+  return (
+    <Group title={t("settings.workPlace.title")} note={t("settings.workPlace.note")}>
+      <Row
+        label={project ? t("settings.workPlace.inProject", { name: project.name }) : t("settings.workPlace.inOpenProject")}
+        description={
+          !project
+            ? t("settings.workPlace.openProject")
+            : project.isDemo
+              ? t("settings.workPlace.demo")
+              : !cloud
+                ? t("settings.workPlace.localOnly", { provider: PROVIDERS.find((p) => p.id === provider)?.name ?? String(provider) })
+                : t(`workPlace.setting.${setting!}.description`)
+        }
+        control={
+          usable ? (
+            <div role="radiogroup" aria-label={t("settings.workPlace.title")} className="flex rounded-lg bg-[var(--color-background-button-secondary)] p-0.5" data-testid="work-place">
+              {options.map((value) => (
+                <button
+                  key={value}
+                  type="button"
+                  role="radio"
+                  aria-checked={selected === value}
+                  disabled={!cloud}
+                  onClick={() => void act("project:settings", { workPlace: value })}
+                  className={cn(
+                    "flex h-6 items-center justify-center whitespace-nowrap rounded-md px-2 text-ui-sm transition-colors",
+                    selected === value ? "bg-[var(--color-background-surface)] text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  {t(`workPlace.setting.${value}`)}
                 </button>
               ))}
             </div>
@@ -595,7 +681,7 @@ function StandardSection() {
                 key={rule.id}
                 label={
                   <span className="flex items-center gap-2">
-                    {rule.label}
+                    <RuleLabel rule={rule} />
                     {rule.severity === "blocking" ? <Badge tone="warning">{t("settings.standard.blocking")}</Badge> : null}
                   </span>
                 }
@@ -680,7 +766,10 @@ function MonitorSection() {
         ) : null}
       </Group>
       <Group title={t("settings.monitor.repositories")}>
-        {monitor.repositories.length === 0 ? <Row label={<span className="text-muted-foreground">{t("settings.monitor.none")}</span>} /> : null}
+        {/* The empty note never sits above the open project's repository: that row says it is not observed yet (issue #272). */}
+        {monitor.repositories.length === 0 && !(repository && !monitored) ? (
+          <Row label={<span className="text-muted-foreground">{t("settings.monitor.none")}</span>} />
+        ) : null}
         {monitor.repositories.map((repo) => {
           const status = monitor.status[repo];
           return (
