@@ -125,28 +125,10 @@ function Fold({
   );
 }
 
-/** A fold that keeps its own state; `stored` remembers it in this browser, for the folds the person reopens often. */
-function useFold(stored?: string): [boolean, () => void] {
-  const [open, setOpen] = useState(() => {
-    if (!stored) return false;
-    try {
-      return window.localStorage.getItem(stored) === "open";
-    } catch {
-      return false;
-    }
-  });
-  const toggle = () =>
-    setOpen((was) => {
-      if (stored) {
-        try {
-          window.localStorage.setItem(stored, was ? "closed" : "open");
-        } catch {
-          // The fold still works, it only forgets its state.
-        }
-      }
-      return !was;
-    });
-  return [open, toggle];
+/** A fold that keeps its own state, closed each time its view opens. */
+function useFold(): [boolean, () => void] {
+  const [open, setOpen] = useState(false);
+  return [open, () => setOpen((was) => !was)];
 }
 
 /** The AI Hero skills a figure relies on, or the note that the role is Trama's own addition. */
@@ -320,7 +302,7 @@ export function SquadsView() {
   const shared = sharedRoleMembers(document);
   const sharedAtWork = shared.filter((s) => memberSign(document, project.candidateReports, s) === "working").length;
   const limits = squadLimits(document);
-  const [sharedOpen, toggleShared] = useFold("trama.teams.sharedRoles");
+  const [sharedOpen, toggleShared] = useFold();
   const [formerOpen, toggleFormer] = useFold();
   const [aboutOpen, toggleAbout] = useFold();
   return (

@@ -793,6 +793,9 @@ const botSizes = await page.evaluate(() => [...document.querySelectorAll('[data-
 if (Math.min(...botSizes) < 20) throw new Error(`A bot is smaller than 20 px: ${botSizes}`);
 const rowBot = await teamPanel.getByTestId("team-figure").first().getByTestId("agent-bot").boundingBox();
 if (!rowBot || rowBot.width < 32) throw new Error(`The Team rows' bots are under 32 px: ${rowBot?.width}`);
+// Issue #333: the cost at rest is read on the view as the person first sees it, with the shared roles closed.
+await teamPanel.getByTestId("shared-roles-toggle").click();
+await teamPanel.getByTestId("shared-roles").waitFor({ state: "detached" });
 // W16, cost: CSS runs the steady moves; the frame loop runs only while a bot morphs, at most 24 times per second,
 // and not at all at rest. The eyes do not follow the cursor. Reduced motion stops everything and keeps the still pose.
 await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.focus());
