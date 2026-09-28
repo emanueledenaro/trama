@@ -3773,11 +3773,15 @@ const placedProblem = problemLog.locator('[data-testid="activity-problem"]').fil
 await placedProblem.waitFor({ timeout: 90_000 });
 await placedProblem.getByText(/Triage: /).waitFor();
 await placedProblem.locator(".cta-row").getByRole("button", { name: "Apri la issue #21" }).waitFor();
-const problemCalls = (await readFile(problemsGhLog, "utf8")).trim().split("\n").map((line) => JSON.parse(line));
+const readProblemCalls = async () => (await readFile(problemsGhLog, "utf8")).trim().split("\n").map((line) => JSON.parse(line));
+const labelled = (calls) => calls.some((call) => call.includes("POST") && call.some((arg) => /\/issues\/21\/labels$/.test(arg)));
+// The triage shows in Activity first; Trama writes its labels at the next look at the problems, a moment later.
+let problemCalls = await readProblemCalls();
+for (const end = Date.now() + 60_000; !labelled(problemCalls) && Date.now() < end; problemCalls = await readProblemCalls()) await page.waitForTimeout(500);
 const openedIssues = problemCalls.filter((call) => call.includes("POST") && call.some((arg) => /\/issues$/.test(arg)));
 if (openedIssues.length !== 1) throw new Error(`Expected one issue for the red check, got ${openedIssues.length}`);
 if (!openedIssues[0].includes("labels[]=needs-triage")) throw new Error("The issue of the problem does not carry the needs-triage label");
-if (!problemCalls.some((call) => call.includes("POST") && call.some((arg) => /\/issues\/21\/labels$/.test(arg)))) throw new Error("Trama did not apply the triage labels");
+if (!labelled(problemCalls)) throw new Error("Trama did not apply the triage labels");
 if (/[–—]/.test(await problemLog.innerText())) throw new Error("A dash in the steps of the found problem");
 await lookShots("27a-found-problem-issue");
 // The recap cites the issue the Coordinator opened, with its number.
@@ -4502,6 +4506,39 @@ await page.getByTestId("status-line").getByRole("button", { name: "Attività" })
 await page.getByTestId("activity-log").locator('[data-testid="activity-merge"]').filter({ hasText: "Candidato unito con il tuo ok" }).waitFor({ timeout: 20_000 });
 await themeShots("30e-merge-activity-person");
 await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
+
+// Issue #41: a candidate that deletes a file is a serious destructive change. The Coordinator does not merge it on its
+// green light: it waits in Aspetta te with the reasons, the consequences and the alternatives, and "Unisci comunque"
+// merges it as the person's act. The merge on the green light names the mandate version it ran under.
+await send("[assegna] [cancella]");
+const deletingWork = await workDone(correctedWork);
+await send(`[candidato:${deletingWork}:${vetrinaDecision}]`);
+await stateUntil((document) => candidateOfWork(document, deletingWork)?.merge?.stop, "Destructive merge stopped");
+const stoppedItem = await openWaiting("candidate", undefined, 60_000);
+if ((await stoppedItem.getAttribute("data-waiting-key")) !== `merge:${await stateUntil((document) => candidateOfWork(document, deletingWork)?.id, "Stopped candidate")}`) {
+  throw new Error("The stopped merge is not its own item in Aspetta te");
+}
+const stopField = stoppedItem.getByTestId("candidate-merge-stop");
+await stopField.getByText("Il Coordinatore non unisce questo candidato da solo: la scelta è tua.", { exact: false }).waitFor();
+await stopField.getByText("Conseguenze", { exact: true }).waitFor();
+await stopField.getByText("Cosa puoi fare", { exact: true }).waitFor();
+await stopField.getByText(/README\.md/).waitFor();
+if (/[–—]/.test(await stoppedItem.innerText())) throw new Error("A dash in the stopped merge");
+await primaryLast(stoppedItem.locator(".cta-row").filter({ has: page.getByRole("button", { name: "Unisci comunque" }) }), "Stopped merge");
+if ((await readFile(vetrinaGhLog, "utf8")).split("\n").filter((line) => line.includes('"PUT"')).length !== 2) throw new Error("The destructive candidate was merged without the person");
+await stopField.evaluate((node) => node.scrollIntoView({ block: "center" }));
+await themeShots("30f-merge-stopped-destructive");
+await stoppedItem.getByRole("button", { name: "Unisci comunque" }).click();
+await stateUntil((document) => candidateOfWork(document, deletingWork)?.pullRequest?.mergedBy === "person", "Destructive merge on the person's ok");
+await stoppedItem.waitFor({ state: "detached", timeout: 20_000 });
+if (await page.getByRole("button", { name: "Chiudi l'ispettore" }).count()) await page.getByRole("button", { name: "Chiudi l'ispettore" }).click();
+// The first candidate, merged on the green light, names the mandate it ran under: its reference opens it.
+const plainCandidate = await stateUntil((document) => candidateOfWork(document, plainWork)?.id, "Merged candidate");
+await page.locator(`[data-reference="candidate"][data-reference-id="${plainCandidate}"]`).first().click();
+const plainMerged = page.getByTestId("inspector");
+await plainMerged.getByTestId("candidate-merge-mandate").filter({ hasText: "Mandato versione 1." }).waitFor({ timeout: 20_000 });
+await plainMerged.getByTestId("candidate-merge").evaluate((node) => node.scrollIntoView({ block: "center" }));
+await themeShots("30g-merge-mandate-version");
 await page.evaluate(() => window.trama.invoke("settings:update", { theme: "system" }));
 await app.close();
 
