@@ -38,7 +38,7 @@ import {
   ProviderError,
   extractJsonAnswer,
 } from "./types";
-import { deniedReadFolders, expandHome, readableRoots, toolchainRoots } from "../readScope";
+import { deniedReadFolders, expandHome, readableRoots, sandboxGitEnvironment, toolchainRoots } from "../readScope";
 import { commandBan, type FixedBan, fixedBanMessage, pathBan } from "@shared/fixedBans";
 import { checkedOutBranch, isGitPushCommand } from "../push";
 import { absoluteUnnormalized, isWritableTarget, PendingTurn } from "./providerSupport";
@@ -520,7 +520,8 @@ export function buildQueryOptions(input: QueryOptionsInput): ClaudeQueryOptions 
     model: input.model,
     ...(effort ? { effort } : {}),
     pathToClaudeCodeExecutable: input.executable,
-    env: input.env,
+    // The sandbox hides the home folder, ~/.gitconfig included: git in its commands reads no global file (issue #391).
+    env: { ...input.env, ...sandboxGitEnvironment() },
     settingSources: [],
     strictMcpConfig: true,
     plugins: [],

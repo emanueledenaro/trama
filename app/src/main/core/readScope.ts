@@ -3,6 +3,7 @@
  * Trama authorizes, such as the bundled skills. Codex's own home, with its memories, the person's other
  * projects and the rest of the home folder stay out, for every provider.
  */
+import { spawnSync } from "node:child_process";
 import { readdirSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
@@ -151,4 +152,39 @@ export function codexPermissionProfiles(roots: readonly string[], writableRoot: 
     profiles[`permissions.${CODEX_WRITE_PROFILE}`] = { filesystem: write, network: { enabled: false } };
   }
   return profiles;
+}
+
+/** The name and email git would sign a commit with, read outside the sandbox; null when git has none. */
+export interface GitIdentity {
+  name: string;
+  email: string;
+}
+
+let hostIdentity: GitIdentity | null | undefined;
+
+/** The person's git identity from their global configuration, read once. */
+export function hostGitIdentity(): GitIdentity | null {
+  if (hostIdentity !== undefined) return hostIdentity;
+  const read = (key: string) => {
+    const result = spawnSync("git", ["config", "--global", "--get", key], { encoding: "utf8", timeout: 3_000 });
+    return result.status === 0 ? result.stdout.trim() : "";
+  };
+  const name = read("user.name");
+  const email = read("user.email");
+  hostIdentity = name && email ? { name, email } : null;
+  return hostIdentity;
+}
+
+/**
+ * Git's environment in a sandboxed shell (issue #391). The sandbox hides the home folder, so git could not read
+ * `~/.gitconfig` and each command failed with an access error. There git reads no global file at all; the person's
+ * identity, read by Trama outside the sandbox, still signs any commit made there.
+ */
+export function sandboxGitEnvironment(identity: GitIdentity | null = hostGitIdentity()): Record<string, string> {
+  return {
+    GIT_CONFIG_GLOBAL: "/dev/null",
+    ...(identity
+      ? { GIT_AUTHOR_NAME: identity.name, GIT_AUTHOR_EMAIL: identity.email, GIT_COMMITTER_NAME: identity.name, GIT_COMMITTER_EMAIL: identity.email }
+      : {}),
+  };
 }

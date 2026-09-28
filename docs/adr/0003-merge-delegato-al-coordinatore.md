@@ -1,6 +1,6 @@
 # Merge delegato al Coordinatore entro il mandato
 
-Stato: accettata durante l'intervista, risposta Q7. Aggiornata dall'ADR 0017: dentro il mandato Trama unisce la pull request del candidato con il via libera del Coordinatore, e i candidati che cambiano l'interfaccia aspettano l'ok della persona (issue #247).
+Stato: accettata durante l'intervista, risposta Q7. Aggiornata dall'ADR 0017: dentro il mandato Trama unisce la pull request del candidato con il via libera del Coordinatore, e i candidati che cambiano l'interfaccia aspettano l'ok della persona (issue #247). I casi distruttivi seri (modifica incompatibile, file cancellati, SQL che cancella dati) aspettano l'ok della persona con conseguenze e alternative, e il via libera vale solo con la versione del mandato con cui è stato dato (issue #41).
 
 La persona ha scelto di delegare al Coordinatore la valutazione e il merge delle modifiche ordinarie o previste dai ticket entro il mandato del progetto. Nei casi distruttivi seri il Coordinatore ferma l'operazione e coinvolge il Product Owner. Questa scelta evita la conferma umana ripetuta per ogni integrazione tecnica mantenendo umane le decisioni di prodotto.
 
