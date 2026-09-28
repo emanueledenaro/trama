@@ -40,6 +40,11 @@ export interface OpenThreadOptions {
    * Every other read outside `cwd` is refused (issue #206).
    */
   readableRoots?: string[];
+  /**
+   * Where the provider's own automatic compaction may start, in tokens: above Trama's threshold, so the provider
+   * compacts only as a fallback within a very long turn (ADR 0018). Adapters that cannot set it ignore it.
+   */
+  autoCompactTokenLimit?: number | null;
 }
 
 export interface RunTurnOptions {
@@ -89,6 +94,11 @@ export interface AgentRuntime {
   /** Runs one turn and resolves with the final answer. Rejects with a message containing "interrott" when interrupted. */
   runTurn(options: RunTurnOptions): Promise<string>;
   interrupt(): Promise<void>;
+  /**
+   * Asks the provider to compact the session's context now (ADR 0018). Only a fallback: Trama reorders the context
+   * itself with a new session, and uses this when that session could not open. Absent where the provider has no way.
+   */
+  compact?(threadId: string): Promise<void>;
   stop(): void;
 }
 
