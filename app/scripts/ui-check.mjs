@@ -4088,7 +4088,7 @@ await englishLine.getByRole("button", { name: /^(Attività|Activity)$/ }).click(
 const englishActivity = page.getByTestId("activity-log");
 await englishActivity.waitFor();
 await themeShots("41-main-en");
-await englishLine.getByTestId("status-line-text").getByText(/^Coordinator paused: the turns in progress finish/).waitFor({ timeout: 10_000 });
+await englishLine.getByTestId("status-line-text").getByText(/^Coordinator paused: running turns finish/).waitFor({ timeout: 10_000 });
 await englishActivity.getByText("Coordinator paused", { exact: true }).first().waitFor({ timeout: 10_000 });
 await noHorizontalScroll("main texts in English");
 const englishLayout = await englishLine.evaluate((line) => {
