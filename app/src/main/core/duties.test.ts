@@ -1,6 +1,6 @@
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import type { DutySkill, GitHubIssue, MandateAction, ProjectDocument, PullRequestLink, SpecialistAssignment } from "@shared/domain";
 import { dutyTriggerText } from "@shared/duties";
 import { declareCandidate } from "./candidates";
@@ -28,12 +28,15 @@ import {
 } from "./duties";
 import { proposeDomainDocs } from "./domainDocs";
 import { loadNativeSkill } from "./nativeSkills";
+import { setPersonLanguage } from "./personLanguage";
 import { answerDecisionRequest, decide, grantMandate, withdrawDecisionRequest } from "./pact";
 import { assign, beginTurn, confirmTeam, endTurn, findAssignment, proposeTeam, recordWorkspace } from "./team";
 
 const skillsDirectory = join(import.meta.dirname, "../../../resources/AIHero/skills");
 const runner = { provider: "codex" as const, model: "gpt-5.6-luna", modelReason: "Il modello più leggero del catalogo." };
 const HEAD = "a".repeat(40);
+
+afterEach(() => setPersonLanguage("it"));
 
 const issue = (number: number, labels: string[] = [], state: "open" | "closed" = "open"): GitHubIssue => ({
   number,
@@ -553,6 +556,8 @@ describe("mandate and model of the automatic work (W11)", () => {
     expect(dutyModel([model("claude-sonnet-4-5", true), model("claude-haiku-4-5")], "claude-sonnet-4-5")?.model).toBe("claude-haiku-4-5");
     expect(dutyModel([model("gpt-5.5", true), model("gpt-5.5-fast")], "gpt-5.5")).toEqual({ model: "gpt-5.5", reason: expect.stringMatching(/Coordinatore/) });
     expect(dutyModel([], null)).toBeNull();
+    setPersonLanguage("en");
+    expect(dutyModel([model("gpt-5.5-mini")], null)?.reason).toBe("Chosen by Trama: the lightest model in the catalog, for the fixed roles' automatic work.");
   });
 });
 
@@ -623,6 +628,29 @@ describe("the state of the automatic work (issue #231)", () => {
     const review = nextDuty(document, context())!;
     expect(byKind(document).architectureReview).toMatchObject({ state: "running", assignmentId: review.id });
     expect(byKind(document).architectureReview!.onRequest).toMatchObject({ allowed: false });
+  });
+
+  it("says where the work stands in the person's language (issue #301)", () => {
+    setPersonLanguage("en");
+    const document = project();
+    withCandidate(document);
+    assign(
+      document,
+      { specialist: "Ada", kind: "agreedTicket", objective: "Altro", issueNumber: null, exercise: null, moduleIds: ["app"], dependencies: [], model: "m", tools: ["commands"], requiredChecks: [], instructions: "i" },
+      1,
+      null,
+    );
+    expect(byKind(document).architectureReview!.detail).toBe("Waits for the team to be free: one assignment is at work.");
+    expect(byKind(project(null), { issues: [] }).triage!.detail).toBe(
+      "No new issue to triage: it starts when an issue is opened after Trama started following the project, not yet in work and with no linked pull request.",
+    );
+    expect(() => startDutyOnRequest(project(null), { kind: "architectureReview" }, context(), "person")).toThrow(
+      "Without a granted mandate Trama does not start the fixed roles' automatic work.",
+    );
+    const review = startDutyOnRequest(project(), { kind: "architectureReview" }, context(), "person");
+    expect(review.objective).toBe(`Architecture review at commit ${HEAD.slice(0, 7)}`);
+    // The instructions are for the agent: they stay as they are.
+    expect(review.instructions).toContain("Revisione dell'architettura con la skill improve-codebase-architecture");
   });
 
   it("says why nothing starts: no mandate, no provider, no new issue", () => {
