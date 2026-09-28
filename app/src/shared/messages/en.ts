@@ -15,6 +15,24 @@ export const en: Record<keyof typeof it, string> = {
   // Coordinator replies
   "toolError.placeholder": "a Trama tool refused the request (the details are in Activity)",
 
+  // Automatic repair of a provider's CLI
+  "providerRepair.title": "Trama repaired {cli}",
+  "providerRepair.failedTitle": "Trama could not repair {cli}",
+  "providerRepair.retry": "Trama runs the turn again, once.",
+  "providerRepair.updateCli.done": "Updated with {command}: it is now version {detail}.",
+  "providerRepair.updateCli.failed": "{command} did not work: {detail}",
+  "providerRepair.updateCli.notNeeded": "Version {detail}: no update needed.",
+  "providerRepair.reinstallPlugin.done": "Trama's plugin reinstalled with {command}.",
+  "providerRepair.reinstallPlugin.failed": "Trama's plugin did not reinstall: {detail}",
+  "providerRepair.checkHook.done": "Trama's hook answers as it should.",
+  "providerRepair.checkHook.failed": "Trama's hook does not answer as it should: {detail}",
+  "providerRepair.problem.notCalled": "{cli} did not call Trama's hook, the check that keeps the turn read-only.",
+  "providerRepair.problem.notReady": "Trama's plugin for {cli} is not ready, and without its hook Trama cannot check what the agent does.",
+  "providerRepair.gaveUp": "{problem} Trama tried to repair it by itself. {steps} Without the hook Trama does not start the turn. One thing is left for you: {action}",
+  "providerRepair.action.update": "update {cli} from a terminal with {command}, then try again.",
+  "providerRepair.action.reinstall": "reinstall {cli}, then try again.",
+  "providerRepair.outdated": "{cli} {version} is too old for Trama, which tried to update it by itself. {steps} One thing is left for you: update it from a terminal with {command} to version {minimum} or later.",
+
   // Language
   "language.label": "Language",
   "language.description":
@@ -157,8 +175,10 @@ export const en: Record<keyof typeof it, string> = {
   "settings.guide": "Getting started guide",
   "settings.guide.description": "Connections, project, AI Hero method and exercises on the example copy. It picks up where you left off.",
   "settings.guide.open": "Open the guide",
+  "menu.about": "About Trama",
   "settings.about": "About",
   "settings.about.version": "Version {version}. Coordinates decisions, work and checks on a local repository.",
+  "settings.about.commit": "Commit {commit}",
 
   "settings.connections.description": "You sign in through the official browser page or in the terminal. Trama does not copy your credentials.",
   "settings.connections.checkAll": "Check all",
@@ -191,7 +211,7 @@ export const en: Record<keyof typeof it, string> = {
   "settings.continuous.title": "Continuous work",
   "settings.continuous.label": "The Coordinator keeps going on its own within the mandate",
   "settings.continuous.description":
-    "It prepares the plan, assigns the work and runs the checks without asking. It asks you only for product decisions, the mandate, the team and merging the candidate. You can stop any move from the status line, and stop all automatic work in the project with Pause.",
+    "It prepares the plan, assigns the work and runs the checks without asking. It asks you only for product decisions, the mandate, the team and merging the candidate. You can stop any move from the status line, and stop all automatic work in the project with «Pause the Coordinator».",
   "settings.parallel.title": "Developers in parallel",
   "settings.parallel.note":
     "Each free developer picks up the next ready slice in its modules on its own, within the mandate and with continuous work on. Fixed roles do not count toward the limit.",
@@ -200,6 +220,28 @@ export const en: Record<keyof typeof it, string> = {
   "settings.parallel.openProject": "Open a project to choose the limit.",
   "settings.parallel.demo": "The example project has no limit to choose.",
   "settings.parallel.default": "Three, unless you change it.",
+  "settings.parallel.shared": "At most in all projects",
+  "settings.parallel.sharedLabel": "Developers in all projects",
+  "settings.parallel.sharedDescription":
+    "It also covers the projects you leave while their team works. Work without a free slot waits and starts in the project order of the Overview. Six, unless you change it.",
+
+  // Projects overview (issue #39)
+  "overview.ci.summary": "CI of the open pull requests: {parts}",
+  "overview.ci.none": "CI: no open pull request with checks",
+  "overview.ci.failing": "{count} failing",
+  "overview.ci.failing.one": "{count} failing",
+  "overview.ci.pending": "{count} running",
+  "overview.ci.passing": "{count} passing",
+  "overview.ci.passing.one": "{count} passing",
+  "overview.priority.title": "Project order",
+  "overview.priority.note":
+    "The projects you leave go on with the work already authorized. When a developer is free, it goes to the first project in this list with work waiting. Opening a project does not change the order.",
+  "overview.priority.capacity": "Developers at work in all projects: {running} of {limit}.",
+  "overview.priority.waiting": "{count} assignments wait for a free developer.",
+  "overview.priority.waiting.one": "{count} assignment waits for a free developer.",
+  "overview.priority.waitingBadge": "{count} waiting",
+  "overview.priority.up": "Move {name} up",
+  "overview.priority.down": "Move {name} down",
 
   "settings.standard.description":
     "Trama's Clean Code standard, version {version}. Developers get it as Trama's text next to the skills, which keep their original text, and the technical review also checks the diff against this standard.",
@@ -231,10 +273,10 @@ export const en: Record<keyof typeof it, string> = {
   "settings.monitor.enabled": "Monitor on",
   "settings.monitor.openAtLogin": "Start Trama at login, in the background",
   "settings.monitor.repositories": "Watched repositories",
-  "settings.monitor.none": "No repositories.",
+  "settings.monitor.none": "No watched repositories.",
   "settings.monitor.updated": "Up to date",
   "settings.monitor.remove": "Remove",
-  "settings.monitor.openRepository": "Repository of the open project.",
+  "settings.monitor.openRepository": "Repository of the open project, not watched yet.",
   "settings.monitor.watch": "Watch",
 
   "settings.presence.title": "Presence",
@@ -244,4 +286,37 @@ export const en: Record<keyof typeof it, string> = {
   "settings.presence.openProject": "Open a project to choose whether to share your presence.",
   "settings.presence.demo": "The example project does not share presence.",
   "settings.presence.share": "Share your presence in {name}",
+
+  // Ticket updates in Activity (C10)
+  "ticket.issue": "Issue #{number} “{title}”",
+  "ticket.issueUntitled": "Issue #{number}",
+  "ticket.registered": "{issue}: progress recorded",
+  "ticket.duplicate": "{issue}: progress already recorded",
+  "ticket.closed": "{issue}: closed with the evidence",
+  "ticket.failed": "{issue}: update failed",
+  "ticket.stillOpen": "Still open: {blockers}.",
+  "ticket.checked": "Criteria ticked: {criteria}.",
+  "ticket.checked.one": "Criterion ticked: {criteria}.",
+  "ticket.criterion": "“{text}”",
+  "ticket.failedDetail": "GitHub did not answer as expected: {done}.",
+  "ticket.failed.reportAlreadyThere": "the report was already on the issue",
+  "ticket.failed.reportPosted": "the report was posted",
+  "ticket.failed.reportNotPosted": "the report was not posted",
+  "ticket.failed.criteriaChecked": "the criteria were ticked",
+  "ticket.failed.criteriaNotChecked": "the criteria were not ticked",
+  "ticket.failed.stillOpen": "the issue stays open",
+  "ticket.blocker.noChecklist": "the issue has no criteria to tick",
+  "ticket.blocker.criterionOpen": "“{text}” is missing",
+  "ticket.blocker.notMerged": "no pull request of this work is merged",
+  "ticket.blocker.checks.failure": "the checks of PR #{number} failed",
+  "ticket.blocker.checks.pending": "the checks of PR #{number} are still running",
+  "ticket.blocker.checks.none": "the checks of PR #{number} did not run",
+  "ticket.blocker.checks.success": "the checks of PR #{number} passed",
+
+  // Work a change of the mandate stops (C06)
+  "mandate.stoppedWork.revokeLead": "Without a mandate the Coordinator reads and proposes, but does not act.",
+  "mandate.stoppedWork.restrictLead": "The work outside the narrower mandate, and the work that depends on it, stops now; the rest goes on.",
+  "mandate.stoppedWork.some": "This work stops; its worktree stays as it is:",
+  "mandate.stoppedWork.none": "No work in progress stops.",
+  "mandate.stoppedWork.dependsOn": "(depends on «{objective}»)",
 };

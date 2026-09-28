@@ -3,6 +3,7 @@ import type { FixedBanRefusal, MandateAction, MandateRequest, ProjectDocument, P
 import { type FixedBan, fixedBanInfo } from "@shared/fixedBans";
 import { shortId } from "@shared/ids";
 import { ACTION_LABELS, DELEGABLE_ACTIONS } from "@shared/labels";
+import type { StoppedWork } from "@shared/mandate";
 import { createMandateRequest, DomainError } from "./pact";
 
 /**
@@ -86,14 +87,23 @@ export function restrictMandate(
   return restricted;
 }
 
-/** What the Coordinator reads after a restriction, as the person's message: what went and from when. */
-export function restrictionMessage(mandate: ProjectMandate, moduleName: (id: string) => string = (id) => id): string {
+/** What the Coordinator reads after a restriction, as the person's message: what went, the work it stopped and from when. */
+export function restrictionMessage(
+  mandate: ProjectMandate,
+  moduleName: (id: string) => string = (id) => id,
+  stopped: Pick<StoppedWork, "assignment" | "dependsOn">[] = [],
+): string {
   const removed = mandate.restriction;
   const parts = [
     removed?.removedModuleIds.length ? `tolti i moduli ${removed.removedModuleIds.map(moduleName).join(", ")}` : null,
     removed?.removedActions.length ? `tolte le azioni ${removed.removedActions.map((a) => ACTION_LABELS[a].toLowerCase()).join(", ")}` : null,
   ].filter(Boolean);
-  return `Ho ristretto il mandato: ora è alla versione ${mandate.version}, ${parts.join("; ")}. Vale dal tuo prossimo turno: il lavoro fuori dal mandato ristretto non riparte.`;
+  const outside = stopped.filter((w) => !w.dependsOn).map((w) => w.assignment.id);
+  const dependents = stopped.filter((w) => w.dependsOn).map((w) => `${w.assignment.id} (dipende da ${w.dependsOn!.id})`);
+  const halted = stopped.length
+    ? ` Ho fermato ${[...outside, ...dependents].join(", ")}: i worktree restano com'erano, il diff non si perde. Per riprendere, ripianifica e delega di nuovo dentro il mandato ristretto.`
+    : " Nessun lavoro in corso era fuori dal mandato ristretto.";
+  return `Ho ristretto il mandato: ora è alla versione ${mandate.version}, ${parts.join("; ")}.${halted} Vale dal tuo prossimo turno: il lavoro fuori dal mandato ristretto non riparte, il resto continua.`;
 }
 
 // MARK: Refusals

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AssignmentDuty, ProjectDocument, SpecialistAssignment } from "./domain";
-import { dutyOutcomeText, dutyTriggerText, issueTriage } from "./duties";
+import { assignmentLine, dutyOutcomeText, dutyTriggerText, issueTriage } from "./duties";
 
 const document = {
   duties: {
@@ -57,6 +57,24 @@ describe("automatic work in the person's words (W11)", () => {
     ]);
     expect(dutyOutcomeText(duty(trigger))).toBeNull();
     for (const text of texts) expect(text).not.toMatch(/[\u2013\u2014]/);
+  });
+
+  it("follows the Pact card of an architecture review after the answer (issue #272)", () => {
+    const proposal = { title: "Unire i pagamenti", files: [], problem: "", solution: "", benefits: "", strength: "Strong" as const, adrConflict: null };
+    const outcome = { kind: "architecture" as const, proposals: [proposal, { ...proposal, title: "Approfondire l'annullamento" }], topRecommendation: null, decisionRequestId: "Q-1" };
+    const work = { lastUpdate: "Revisione dell'architettura: 2 proposte da decidere", duty: { ...duty({ kind: "idleTeam", headSHA: "1", afterWork: [] }, outcome), skill: "improve-codebase-architecture" } } as unknown as SpecialistAssignment;
+    const card = { id: "Q-1", alternatives: [{ behavior: "Unire i pagamenti" }, { behavior: "Approfondire l'annullamento" }], withdrawal: null };
+    const open = { decisionRequests: [{ ...card, outcome: null }] } as unknown as ProjectDocument;
+    const answered = { decisionRequests: [{ ...card, outcome: { alternativeIndex: 0, answer: "" } }] } as unknown as ProjectDocument;
+    expect(assignmentLine(open, work)).toBe("Revisione dell'architettura: 2 proposte da decidere");
+    expect(dutyOutcomeText(work.duty!, open)).toBe("2 proposte: scegli nella scheda del Patto quale approfondire.");
+    expect(assignmentLine(answered, work)).toBe("Revisione dell'architettura: hai scelto «Unire i pagamenti»");
+    expect(dutyOutcomeText(work.duty!, answered)).toBe("2 proposte: hai scelto «Unire i pagamenti».");
+  });
+
+  it("says a paused work waits for an answer, as its badge does, also in records written before (issue #272)", () => {
+    const paused = { status: "paused", lastUpdate: "In pausa: aspetta la risposta alla domanda Q-1" } as SpecialistAssignment;
+    expect(assignmentLine(null, paused)).toBe("Aspetta la risposta alla domanda Q-1");
   });
 
   it("finds the latest triage of an issue", () => {

@@ -1,4 +1,5 @@
 // Derived from third-party MIT code; see THIRD_PARTY_NOTICES.md.
+import { COORDINATOR_PAUSE, FOCUS_STATUS, TASK_SUSPEND } from "@shared/states";
 import {
   IconAlertTriangle,
   IconChevronDown,
@@ -59,6 +60,16 @@ const STATUS_ICONS: Record<StatusLineView["state"], React.ReactNode> = {
   idle: <IconCircleDashed className="size-3.5 shrink-0 text-muted-foreground" stroke={1.8} />,
 };
 
+/** The full name where the chat is wide; the short one in a narrow window, where the button keeps the full name for screen readers. */
+function ShortName({ full, short }: { full: string; short: string }) {
+  return (
+    <>
+      <span className="@min-[640px]/chat:hidden">{short}</span>
+      <span className="hidden @min-[640px]/chat:inline">{full}</span>
+    </>
+  );
+}
+
 /**
  * The Coordinator's status line (Q6): what it does now and next, why the work is held and what unblocks it, computed by
  * Trama from the records, and the provider limit it waits for (issue #249). On the right: Activity, the Pause of continuous work or its Riprendi (A05), the stop of the
@@ -108,19 +119,25 @@ function StatusLine({ line }: { line: StatusLineView }) {
           Attività
         </Button>
         {line.paused ? (
-          <Button size="xs" variant={line.action || line.runningMove ? "outline" : "default"} onClick={() => void act("coordinator:pause", { paused: false })}>
+          <Button
+            size="xs"
+            variant={line.action || line.runningMove ? "outline" : "default"}
+            aria-label={COORDINATOR_PAUSE.resume}
+            onClick={() => void act("coordinator:pause", { paused: false })}
+          >
             <IconPlayerPlay className="size-3.5" stroke={1.8} />
-            Riprendi
+            <ShortName full={COORDINATOR_PAUSE.resume} short="Riprendi" />
           </Button>
         ) : (
           <Button
             size="xs"
             variant="ghost"
             title="Ferma mosse automatiche, giri e lavoro automatico del progetto"
+            aria-label={COORDINATOR_PAUSE.pause}
             onClick={() => void act("coordinator:pause", { paused: true })}
           >
             <IconPlayerPause className="size-3.5" stroke={1.8} />
-            Pausa
+            <ShortName full={COORDINATOR_PAUSE.pause} short="Pausa" />
           </Button>
         )}
         {line.runningMove ? (
@@ -197,7 +214,7 @@ function QueueRow({ task }: { task: FocusTask }) {
         </div>
         {task.status === "paused" || hold ? (
           <span className="min-w-0 text-ui-xs text-muted-foreground">
-            {[task.status === "paused" ? "In pausa" : null, hold].filter(Boolean).join(". ")}
+            {[task.status === "paused" ? FOCUS_STATUS.paused : null, hold].filter(Boolean).join(". ")}
           </span>
         ) : null}
         {overlap ? (
@@ -214,7 +231,7 @@ function QueueRow({ task }: { task: FocusTask }) {
         </Button>
         {task.status === "paused" ? (
           <Button size="xs" variant="outline" onClick={() => void change("resume", task.id)}>
-            Riprendi
+            {TASK_SUSPEND.resume}
           </Button>
         ) : null}
         <Button size="xs" onClick={() => void change("focus", task.id).then(() => openDialog(task.goalId))}>
@@ -239,7 +256,7 @@ export function FocusBar() {
   const focus = view.focus;
   const queued = view.queue.filter((t) => t.status === "queued").length;
   const paused = view.queue.length - queued;
-  const queueLabel = paused ? `In coda ${queued}, in pausa ${paused}` : `In coda ${queued}`;
+  const queueLabel = paused ? `In coda ${queued}, ${paused === 1 ? "1 sospeso" : `${paused} sospesi`}` : `In coda ${queued}`;
   const elsewhere = focus !== null && (focus.goalId ?? null) !== dialogGoalId;
   return (
     <section aria-label="Lavoro in primo piano" className="chat-surface-divider shrink-0 px-3 sm:px-5" data-testid="focus-bar">
@@ -258,7 +275,7 @@ export function FocusBar() {
                   <PhaseChip task={focus} />
                 </div>
               ) : (
-                <span className="min-w-0 text-ui text-muted-foreground">Nessun lavoro in primo piano: sono tutti in pausa.</span>
+                <span className="min-w-0 text-ui text-muted-foreground">Nessun lavoro in primo piano: sono tutti sospesi.</span>
               )}
             </div>
             <div className="cta-row ml-auto">
@@ -269,8 +286,8 @@ export function FocusBar() {
                 </Button>
               ) : null}
               {focus ? (
-                <Button size="xs" variant="outline" onClick={() => void change("pause", focus.id)}>
-                  Metti in pausa
+                <Button size="xs" variant="outline" title="Toglie questo lavoro dal primo piano: passa al prossimo in coda" onClick={() => void change("pause", focus.id)}>
+                  {TASK_SUSPEND.suspend}
                 </Button>
               ) : null}
               {focus && elsewhere ? (
