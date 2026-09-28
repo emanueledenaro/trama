@@ -1130,6 +1130,14 @@ export async function runCoordinatorTool(name: string, args: JsonObject, context
         const namedGoal = typeof args.goalID === "string" && args.goalID.trim() ? args.goalID.trim() : null;
         if (namedGoal && !findGoal(document, namedGoal)) return toolFailure("unknown_goal", `Unknown goal ${namedGoal}. Read the goals with read_goals.`);
         const goalId = namedGoal ?? requestGoalId(document, context.runningRequestId);
+        // New work is a proposed goal until the person confirms it (A06, Q3): it never becomes an assignment before.
+        const goal = goalId ? findGoal(document, goalId) : null;
+        if (goal?.status === "proposed") {
+          return toolFailure(
+            "goal_not_confirmed",
+            `Goal ${goal.id} is only proposed: the person has not confirmed it. New work stays a proposal until then; assign work only for confirmed goals.`,
+          );
+        }
         // With an approved breakdown (M05) work with edits delivers one unblocked slice of it.
         const scope = context.runningRequestId ? workRequests(document, context.runningRequestId) : null;
         const plan = scope ? document.plans.filter((p) => p.requestId !== null && scope.has(p.requestId)).at(-1) : undefined;

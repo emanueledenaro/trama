@@ -124,6 +124,16 @@ export interface RequestStep {
   stalled?: string | null;
   /** What started Trama's automatic move (A05): the event of the work, or the periodic round; absent on older records. */
   trigger?: WorkEvent;
+  /**
+   * The technical block the automatic move resolves (A06): its kind, the reason for the Coordinator and for the person,
+   * and the outcome Trama read when the turn ended; absent on a move that resolves no block.
+   */
+  block?: {
+    kind: TechnicalBlock;
+    blocker: string;
+    why: string;
+    outcome?: { resolved: boolean; detail: string; at: string } | null;
+  } | null;
 }
 
 /**
@@ -1147,6 +1157,8 @@ export interface SeamsAnswer {
   confirmed: boolean;
   note: string | null;
   at: string;
+  /** Set when the Coordinator confirmed the seams by itself within the mandate (A06); absent when the person answered. */
+  by?: "coordinator";
 }
 
 /** A plan written as a spec with AI Hero's to-spec skill and codebase-design's vocabulary (M04). */
@@ -1195,6 +1207,8 @@ export interface PlanSlicing {
   /** The person's correction of the last breakdown, which the next draft receives. */
   feedback: string | null;
   approvedAt: string | null;
+  /** Set when the Coordinator approved the breakdown by itself within the mandate (A06); absent when the person did. */
+  approvedBy?: "coordinator" | null;
   failure: string | null;
   /** Why the publication on GitHub did not fully succeed. */
   publishFailure: string | null;
@@ -1324,6 +1338,8 @@ export interface ProjectDocument {
   continuousWork?: ContinuousWorkRecord;
   /** The Coordinator's recaps and the milestones already told (A03); absent until Trama first reads the milestones. */
   recap?: RecapLedger;
+  /** The person's steps the Coordinator took by itself within the mandate (A06); absent until the first one. */
+  autonomousSteps?: AutonomousStep[];
   /** The problems found outside the work in progress and their issues (A08); absent until Trama first looks for them. */
   problems?: ProblemLedger;
   /** The conversations between agents (W07), oldest first; absent before the first one. */
@@ -1411,6 +1427,32 @@ export interface ProblemLedger {
   seen: string[];
   items: FoundProblem[];
 }
+
+/** The person's steps the project mandate lets the Coordinator take by itself (A06, Q1). */
+export type DelegableMove = "confirmUnderstanding" | "confirmTeam" | "confirmSeams" | "confirmSlices";
+
+/**
+ * A step of the person the Coordinator took by itself within the mandate (A06): the understanding, the team, the seams
+ * or the slices it confirmed. It is told in Activity and in the recap, and the person can correct it in their own words:
+ * the correction is kept here and the work starts again from that step.
+ */
+export interface AutonomousStep {
+  id: string;
+  move: DelegableMove;
+  /** The request of the dialog the step belongs to; null for the team, which is the project's. */
+  requestId: string | null;
+  goalId: string | null;
+  /** The record the step confirmed: the plan of the seams or the slices, the team proposal; null for the understanding. */
+  targetId: string | null;
+  /** What was confirmed, in the person's words. */
+  summary: string;
+  at: string;
+  /** The person's correction, once they gave one. */
+  correction: { note: string; at: string } | null;
+}
+
+/** A technical block the Coordinator resolves by itself within the mandate (A06, Q3). */
+export type TechnicalBlock = "checkFailed" | "worktreeConflict" | "stalledAssignment";
 
 export interface ProjectSettings {
   /** Developers at work at the same time (W08); absent means three. */

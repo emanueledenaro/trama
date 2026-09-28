@@ -210,6 +210,13 @@ describe("automaticMove: the Coordinator's move Trama starts by itself (W04)", (
     team(failedWork);
     const assignment = work(failedWork, "r3");
     endTurn(failedWork, assignment.id, null, { kind: "failed", message: "Il provider ha chiuso la sessione." });
+    // An assignment that stopped is a technical block the Coordinator resolves by itself within the mandate (A06, Q3).
+    const resolution = automaticMove(failedWork, "r3", "assignmentEnded", free);
+    expect(resolution?.move).toBe("assignWork");
+    expect(resolution?.label).toBe("Riprendi l'incarico fermo");
+    expect(resolution?.block).toMatchObject({ kind: "stalledAssignment", why: expect.stringContaining("Ada") });
+    // Outside the mandate the same block waits for the person.
+    failedWork.mandate!.authorizedActions = ["plan"];
     expect(moveOf(failedWork, "r3", "assignmentEnded")).toBeNull();
   });
 

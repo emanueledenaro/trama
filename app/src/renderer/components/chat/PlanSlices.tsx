@@ -97,6 +97,8 @@ export function PlanSlices({ plan }: { plan: WorkPlan }) {
   if (!slicing) return null;
   const connected = Boolean(project.github.repository) && project.github.status !== "unavailable";
   const unpublished = slicing.tickets.some((t) => !t.issue);
+  // Confirmed by the Coordinator within the mandate (A06) or by the person.
+  const confirmedBy = slicing.approvedBy === "coordinator" ? "Confermate dal Coordinatore dentro il mandato" : "Confermate da te";
   const document = project.document;
   const atWork = document.team.specialists.filter(
     (s) => s.role === "developer" && s.status !== "removed" && s.assignments.some((a) => ACTIVE.includes(a.status)),
@@ -188,16 +190,16 @@ export function PlanSlices({ plan }: { plan: WorkPlan }) {
       {slicing.status === "approved" ? (
         <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-ui-sm text-muted-foreground" data-testid="plan-slices-publication">
           {!unpublished ? (
-            <span>Confermate da te e pubblicate su GitHub come issue.</span>
+            <span>{confirmedBy} e pubblicate su GitHub come issue.</span>
           ) : connected ? (
             <>
-              <span>Confermate da te, non ancora tutte pubblicate su GitHub.</span>
+              <span>{confirmedBy}, non ancora tutte pubblicate su GitHub.</span>
               <button type="button" className="text-[var(--color-text-accent)] hover:underline" onClick={() => void act("plan:publishSlices", { planId: plan.id })}>
                 Pubblica su GitHub
               </button>
             </>
           ) : (
-            <span>Confermate da te. Restano in Trama: il progetto non ha GitHub collegato.</span>
+            <span>{confirmedBy}. Restano in Trama: il progetto non ha GitHub collegato.</span>
           )}
           {slicing.publishFailure ? <span className="text-warning">{slicing.publishFailure}</span> : null}
         </div>
