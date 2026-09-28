@@ -409,6 +409,7 @@ export function MandateCard({ requestId }: { requestId: string }) {
  * The person handles it outside Trama if they want it; "Ho visto" takes it out of Aspetta te.
  */
 export function FixedBanCard({ refusalId }: { refusalId: string }) {
+  const t = useT();
   const project = useUi((s) => s.app?.project)!;
   const refusal = project.document.fixedBanRefusals?.find((r) => r.id === refusalId);
   if (!refusal) return null;
@@ -422,7 +423,9 @@ export function FixedBanCard({ refusalId }: { refusalId: string }) {
       aside={refusal.acknowledgedAt ? <Badge tone="secondary">Vista</Badge> : <Badge tone="warning">Fermata</Badge>}
     >
       <div data-testid="fixed-ban-card">
-        <p className="text-ui text-foreground/90">{info.reason} Nessun mandato la concede: se serve, la fai tu fuori da Trama.</p>
+        <p className="text-ui text-foreground/90">
+          {info.reason} {t("fixedBan.card.handle")}
+        </p>
         <Field label="Divieto">{info.label}</Field>
         <Field label="Chi l'ha chiesta">
           {specialist ? <AgentName agent={specialist} /> : by.kind === "coordinator" ? "Il Coordinatore" : "Trama"}

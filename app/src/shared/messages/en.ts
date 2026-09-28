@@ -917,7 +917,7 @@ export const en: Record<keyof typeof it, string> = {
   "rules.mandate.never": "Never",
   "rules.mandate.whereModules": "{modules} ({count} of {total} modules)",
   "rules.mandate.whereModules.one": "{modules} (1 of {total} modules)",
-  "rules.mandate.neverNote": "No mandate grants them. If the work needs one, Trama stops it before it starts and puts it in Waiting for you.",
+  "rules.mandate.neverNote": "No mandate grants them. If the work needs one, Trama stops it before it starts and puts it in Waiting for you. If you write it to the Coordinator, it does it; before deleting something it asks you to confirm.",
   "rules.mandate.restriction": "Restricted: {parts}.",
   "rules.mandate.removedModules": "removed {list}",
   "rules.mandate.removedActions": "removed {list}",
@@ -996,6 +996,7 @@ export const en: Record<keyof typeof it, string> = {
   "reviewLoop.held": "the review stopped it {count} times in a row, so Trama no longer sends it back by itself. Decide how to go on in Waiting for you.",
 
   // Actions the person asked for in the composer, which a fixed ban stops otherwise (issue #422)
+  "fixedBan.card.handle": "No mandate grants it. If you want it done, write it to the Coordinator in the chat: it does it because you asked, and before deleting something it asks you to confirm.",
   "requestedAction.ban.branchPush": "a push of the branch",
   "requestedAction.ban.forcePush": "a force push",
   "requestedAction.ban.pushMainBranch": "a direct push to the main branch",

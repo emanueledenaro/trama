@@ -918,7 +918,7 @@ export const it = {
   "rules.mandate.never": "Mai",
   "rules.mandate.whereModules": "{modules} ({count} moduli su {total})",
   "rules.mandate.whereModules.one": "{modules} (1 modulo su {total})",
-  "rules.mandate.neverNote": "Nessun mandato li concede. Se il lavoro ne richiede uno, Trama lo ferma prima che parta e lo mette in Aspetta te.",
+  "rules.mandate.neverNote": "Nessun mandato li concede. Se il lavoro ne richiede uno, Trama lo ferma prima che parta e lo mette in Aspetta te. Se lo scrivi tu al Coordinatore, lo fa; prima di cancellare qualcosa ti chiede conferma.",
   "rules.mandate.restriction": "Ristretto: {parts}.",
   "rules.mandate.removedModules": "tolti {list}",
   "rules.mandate.removedActions": "tolte {list}",
@@ -997,6 +997,7 @@ export const it = {
   "reviewLoop.held": "la revisione l'ha fermato {count} volte di seguito, quindi Trama non lo rimanda più indietro da sola. Decidi tu come andare avanti in Aspetta te.",
 
   // Actions the person asked for in the composer, which a fixed ban stops otherwise (issue #422)
+  "fixedBan.card.handle": "Nessun mandato la concede. Se vuoi che la faccia, scrivilo al Coordinatore in chat: la fa perché gliel'hai chiesto, e prima di cancellare qualcosa ti chiede conferma.",
   "requestedAction.ban.branchPush": "un push del branch",
   "requestedAction.ban.forcePush": "un force push",
   "requestedAction.ban.pushMainBranch": "un push diretto sul branch principale",
