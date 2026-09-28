@@ -19,6 +19,7 @@ import {
   parseAntigravityPrintResult,
   resolveAntigravityCliModelLabel,
   ANTIGRAVITY_KNOWN_MODELS,
+  antigravityContextWindow,
   antigravityHelpOffersEffort,
   antigravityModelArgs,
 } from "./antigravity";
@@ -254,6 +255,12 @@ describe("Antigravity models and health", () => {
     expect(models[1]).toMatchObject({ id: "Claude Opus 4.6", defaultReasoningEffort: "thinking" });
     expect(resolveAntigravityCliModelLabel("Gemini 3.5 Flash", "high")).toBe("Gemini 3.5 Flash (High)");
     expect(resolveAntigravityCliModelLabel("slug\tGemini 3.1 Pro")).toBe("Gemini 3.1 Pro (Low)");
+  });
+
+  it("knows the context window of every model in its list, and none of an unknown one (issue #305)", () => {
+    for (const model of Object.keys(ANTIGRAVITY_KNOWN_MODELS)) expect(antigravityContextWindow(`${model} (High)`)).toBeGreaterThan(0);
+    expect(antigravityContextWindow("Gemini 3.8 Flash (High)")).toBe(1_048_576);
+    expect(antigravityContextWindow("Gemini 9 Ultra")).toBeNull();
   });
 
   it("builds a label agy 1.2.11 accepts for every model and effort in its list", async () => {
@@ -656,7 +663,8 @@ describe("Antigravity turns", () => {
     expect(events).toContainEqual(expect.objectContaining({ type: "fileChangeCompleted", paths: [join(worktree, "a.txt")], succeeded: true }));
     expect(events).toContainEqual(expect.objectContaining({ type: "toolCallStarted", tool: "view_file" }));
     expect(events).toContainEqual(expect.objectContaining({ type: "toolCallCompleted", tool: "view_file", succeeded: false, error: "boom" }));
-    expect(events).toContainEqual({ type: "tokenUsage", usedTokens: 110, contextWindow: null });
+    // The window comes from the catalog of the model (issue #305).
+    expect(events).toContainEqual({ type: "tokenUsage", usedTokens: 110, contextWindow: 1_048_576 });
     expect(events.filter((event) => event.type === "textDelta").map((event) => (event as { delta: string }).delta).join("")).toBe(
       '{"ok":true}',
     );
