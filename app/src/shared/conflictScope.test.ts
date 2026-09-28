@@ -31,13 +31,15 @@ const divergence: BranchDivergence = {
 };
 
 describe("conflict scope (U02)", () => {
-  it("replaces work by the same developer on the same modules or issue, never parallel work of two developers", () => {
+  it("replaces work on the same issue or slice, never other work on the same modules", () => {
     const first = work("A-1", {});
-    expect(replacedBy(first, work("A-2", { createdAt: "2026-09-27T11:00:00Z" }))).toBe(true);
+    // A new task of the same developer on the same modules is other work, not a correction.
+    expect(replacedBy(first, work("A-2", { createdAt: "2026-09-27T11:00:00Z" }))).toBe(false);
     expect(replacedBy(first, work("A-2", { createdAt: "2026-09-27T11:00:00Z", specialistId: "S-Marco" }))).toBe(false);
-    expect(replacedBy(first, work("A-2", { createdAt: "2026-09-27T09:00:00Z" }))).toBe(false);
     const issue = work("A-1", { issueNumber: 13, moduleIds: [] });
     expect(replacedBy(issue, work("A-2", { createdAt: "2026-09-27T11:00:00Z", issueNumber: 13, specialistId: "S-Marco" }))).toBe(true);
+    expect(replacedBy(issue, work("A-2", { createdAt: "2026-09-27T09:00:00Z", issueNumber: 13 }))).toBe(false);
+    expect(replacedBy(issue, work("A-2", { createdAt: "2026-09-27T11:00:00Z", issueNumber: 14 }))).toBe(false);
     // A slice is replaced only by later work on the same slice: the next slice builds on it.
     const slice = work("A-1", { slice: { planId: "P", sliceId: "S1" } });
     expect(replacedBy(slice, work("A-2", { createdAt: "2026-09-27T11:00:00Z", slice: { planId: "P", sliceId: "S2" } }))).toBe(false);

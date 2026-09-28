@@ -10,17 +10,16 @@ import type { PresenceRecord } from "./presence";
 const assignmentsOf = (document: ProjectDocument) => document.team.specialists.flatMap((s) => s.assignments);
 
 /**
- * Later work replaces `assignment` when it delivers the same slice, the same issue, or, outside slices, when the same
- * developer takes up the same modules again: a correction or a new attempt. Two developers on the same modules in
- * parallel do not replace each other: that is the case the worktree comparison is for.
+ * Later work replaces `assignment` when it delivers the same slice or, outside slices, the same issue: a correction or
+ * a new attempt. Other work on the same modules, by the same developer or another, does not replace it: two open
+ * candidates there are the case the worktree comparison is for.
  */
 export function replacedBy(assignment: SpecialistAssignment, later: SpecialistAssignment): boolean {
   if (later.id === assignment.id || !(later.createdAt > assignment.createdAt)) return false;
   if (assignment.slice || later.slice) {
     return Boolean(assignment.slice && later.slice && later.slice.planId === assignment.slice.planId && later.slice.sliceId === assignment.slice.sliceId);
   }
-  if (assignment.issueNumber != null && later.issueNumber === assignment.issueNumber) return true;
-  return later.specialistId === assignment.specialistId && (later.moduleIds ?? []).some((m) => (assignment.moduleIds ?? []).includes(m));
+  return assignment.issueNumber != null && later.issueNumber === assignment.issueNumber;
 }
 
 /**
